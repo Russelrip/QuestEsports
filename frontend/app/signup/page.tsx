@@ -15,37 +15,29 @@ type SignupFormData = {
   terms: boolean;
 };
 
+const initialFormData: SignupFormData = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  username: "",
+  password: "",
+  confirmPassword: "",
+  phone: "",
+  discordTag: "",
+  terms: false,
+};
+
 export default function SignupPage() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
-
-  const [formData, setFormData] = useState<SignupFormData>({
-    firstName: "",
-    lastName: "",
-    email: "",
-    username: "",
-    password: "",
-    confirmPassword: "",
-    phone: "",
-    discordTag: "",
-    terms: false,
-  });
+  const [formData, setFormData] = useState<SignupFormData>(initialFormData);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type } = e.target;
-
-    if (type === "checkbox") {
-      const checked = e.target.checked;
-      setFormData((prev) => ({
-        ...prev,
-        [name]: checked,
-      }));
-      return;
-    }
+    const { name, value, type, checked } = e.target;
 
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: type === "checkbox" ? checked : value,
     }));
   };
 
@@ -59,8 +51,36 @@ export default function SignupPage() {
       return;
     }
 
-    console.log("Signup submitted:", formData);
-    setSubmitted(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          username: formData.username,
+          password: formData.password,
+          phone: formData.phone,
+          discordTag: formData.discordTag,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.message || "Signup failed.");
+        return;
+      }
+
+      setSubmitted(true);
+      setFormData(initialFormData);
+    } catch (error) {
+      console.error("Error submitting signup form:", error);
+      setError("Something went wrong. Please try again.");
+    }
   };
 
   return (
@@ -88,6 +108,7 @@ export default function SignupPage() {
                     onChange={handleChange}
                   />
                 </div>
+
                 <div className="form-group">
                   <label htmlFor="lastName">Last Name *</label>
                   <input
@@ -137,6 +158,7 @@ export default function SignupPage() {
                     onChange={handleChange}
                   />
                 </div>
+
                 <div className="form-group">
                   <label htmlFor="confirmPassword">Confirm Password *</label>
                   <input
