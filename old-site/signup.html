@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - Quest Esports</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="index.html" class="logo">
+                <img src="images/logo-header.png" alt="Quest Esports Logo">
+            </a>
+
+            <ul class="nav-menu">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="tournaments.html">Tournaments</a></li>
+                <li><a href="match-videos.html">Match Videos</a></li>
+                <li><a href="gallery.html">Gallery</a></li>
+                <li><a href="tournament-registration.html">Tournament Registration</a></li>
+                <li><a href="contact.html">Contact Us</a></li>
+                <li><a href="signup.html" class="active">Sign Up</a></li>
+                <li><a href="login.html">Login</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <section class="page-header">
+        <h1>Create Account</h1>
+        <p>Join Quest Esports and start competing</p>
+    </section>
+
+    <section class="signup-section">
+        <div class="form-container signup-container">
+            <div class="signup-box">
+                <h2>Player Account Registration</h2>
+
+                <form id="signupForm" class="signup-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="firstName">First Name *</label>
+                            <input type="text" id="firstName" name="firstName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="lastName">Last Name *</label>
+                            <input type="text" id="lastName" name="lastName" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">Email Address *</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="username">Username *</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="password">Password *</label>
+                            <input type="password" id="password" name="password" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword">Confirm Password *</label>
+                            <input type="password" id="confirmPassword" name="confirmPassword" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="phone">Phone Number</label>
+                        <input type="tel" id="phone" name="phone">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="discordTag">Discord Tag</label>
+                        <input type="text" id="discordTag" name="discordTag" placeholder="username#1234">
+                    </div>
+
+                    <div class="form-group checkbox">
+                        <label>
+                            <input type="checkbox" name="terms" required>
+                            I agree to the Terms of Service and Privacy Policy *
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Create Account</button>
+                </form>
+
+                <p class="form-footer">
+                    Already have an account? <a href="login.html">Login here</a>
+                </p>
+
+                <div id="signupSuccess" class="success-message" style="display: none;">
+                    <h3>Account Created Successfully!</h3>
+                    <p>Welcome to Quest Esports! You can now login and join tournaments.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+<footer class="footer">
+    <div class="container">
+        <p>&copy; 2026 Quest Esports. All rights reserved.</p>
+        <div class="social-links">
+            <a href="https://api.whatsapp.com/send?phone=94761195666" target="_blank">
+                <img src="images/whatsapp.png" alt="WhatsApp">
+            </a>
+            <a href="https://discord.gg/cxkM7dk9CM" target="_blank">
+                <img src="images/discord.png" alt="Discord">
+            </a>
+            <a href="https://accounts.google.com/" target="_blank">
+                <img src="images/gmail.png" alt="Gmail">
+            </a>
+            <a href="https://www.facebook.com/share/1HNNM3e9ub/?mibextid=wwXIfr" target="_blank">
+                <img src="images/facebook.png" alt="Facebook">
+            </a>
+            <a href="https://www.instagram.com/" target="_blank">
+                <img src="images/instagram.png" alt="Instagram">
+            </a>
+            <a href="https://www.tiktok.com/@senumii" target="_blank">
+                <img src="images/tiktok.png" alt="TikTok">
+            </a>
+        </div>
+    </div>
+</footer>
+
+    <script src="js/script.js"></script>
+</body>
+</html>
