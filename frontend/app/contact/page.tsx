@@ -9,15 +9,19 @@ type ContactFormData = {
   message: string;
 };
 
+const initialFormData: ContactFormData = {
+  name: "",
+  email: "",
+  subject: "",
+  message: "",
+};
+
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const [formData, setFormData] = useState<ContactFormData>({
-    name: "",
-    email: "",
-    subject: "",
-    message: "",
-  });
+  const [formData, setFormData] = useState<ContactFormData>(initialFormData);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -32,6 +36,9 @@ export default function ContactPage() {
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError("");
+    setSubmitted(false);
+    setLoading(true);
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/contact`, {
@@ -44,17 +51,19 @@ export default function ContactPage() {
 
       const data = await res.json();
 
-      if (data.success) {
-        setSubmitted(true);
-        setFormData({
-          name: "",
-          email: "",
-          subject: "",
-          message: "",
-        });
+      if (!res.ok || !data.success) {
+        setError(data.message || "Failed to send message.");
+        setLoading(false);
+        return;
       }
+
+      setSubmitted(true);
+      setFormData(initialFormData);
     } catch (error) {
       console.error("Error submitting contact form:", error);
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -298,8 +307,10 @@ export default function ContactPage() {
                   />
                 </div>
 
-                <button type="submit" className="btn btn-primary">
-                  Send Message
+                {error && <p className="error-message">{error}</p>}
+
+                <button type="submit" className="btn btn-primary" disabled={loading}>
+                  {loading ? "Sending..." : "Send Message"}
                 </button>
               </form>
 

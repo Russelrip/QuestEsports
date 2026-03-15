@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 type LoginFormData = {
-  username: string;
+  emailOrUsername: string;
   password: string;
   remember: boolean;
 };
@@ -14,25 +14,17 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   const [formData, setFormData] = useState<LoginFormData>({
-    username: "",
+    emailOrUsername: "",
     password: "",
     remember: false,
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type } = e.target;
-
-    if (type === "checkbox") {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: e.target.checked,
-      }));
-      return;
-    }
+    const { name, value, type, checked } = e.target;
 
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: type === "checkbox" ? checked : value,
     }));
   };
 
@@ -41,13 +33,48 @@ export default function LoginPage() {
     setError("");
     setSubmitted(false);
 
-    if (!formData.username || !formData.password) {
+    if (!formData.emailOrUsername || !formData.password) {
       setError("Please enter your username/email and password.");
       return;
     }
 
-    console.log("Login submitted:", formData);
-    setSubmitted(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          emailOrUsername: formData.emailOrUsername,
+          password: formData.password,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.message || "Login failed.");
+        return;
+      }
+
+      if (formData.remember) {
+        localStorage.setItem("questUser", JSON.stringify(data.user));
+      } else {
+        sessionStorage.setItem("questUser", JSON.stringify(data.user));
+      }
+
+      setSubmitted(true);
+      setFormData({
+        emailOrUsername: "",
+        password: "",
+        remember: false,
+      });
+
+      console.log("Login successful:", data.user);
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("Something went wrong. Please try again.");
+    }
   };
 
   return (
@@ -64,13 +91,13 @@ export default function LoginPage() {
 
             <form id="loginForm" className="login-form" onSubmit={handleSubmit}>
               <div className="form-group">
-                <label htmlFor="username">Email or Username *</label>
+                <label htmlFor="emailOrUsername">Email or Username *</label>
                 <input
                   type="text"
-                  id="username"
-                  name="username"
+                  id="emailOrUsername"
+                  name="emailOrUsername"
                   required
-                  value={formData.username}
+                  value={formData.emailOrUsername}
                   onChange={handleChange}
                 />
               </div>
@@ -107,11 +134,6 @@ export default function LoginPage() {
             </form>
 
             <p className="form-footer">
-              Admin login: <strong>admin</strong> /{" "}
-              <strong>Bloodchaos2025@</strong>
-            </p>
-
-            <p className="form-footer">
               <a href="#">Forgot Password?</a> |{" "}
               <Link href="/signup">Register Account</Link>
             </p>
@@ -120,7 +142,7 @@ export default function LoginPage() {
           {submitted && (
             <div id="loginSuccess" className="success-message">
               <h3>Login Successful!</h3>
-              <p>Welcome back! You will be redirected shortly.</p>
+              <p>Welcome back! You can now access your account.</p>
             </div>
           )}
         </div>

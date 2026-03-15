@@ -1,60 +1,30 @@
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
+const authRoutes = require("./routes/authRoutes");
+const contactRoutes = require("./routes/contactRoutes");
+const tournamentRoutes = require("./routes/tournamentRoutes");
 
 const app = express();
 
-app.use(cors({
-  origin: "http://localhost:3000",
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    credentials: true,
+  })
+);
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.get("/api/health", (req, res) => {
   res.json({ message: "Backend is running" });
 });
 
-app.post("/api/contact", (req, res) => {
-  const { name, email, subject, message } = req.body;
-
-  console.log("Contact form received:", {
-    name,
-    email,
-    subject,
-    message,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: "Message received successfully",
-  });
-});
-
-app.post("/api/signup", (req, res) => {
-  const {
-    firstName,
-    lastName,
-    email,
-    username,
-    password,
-    phone,
-    discordTag,
-  } = req.body;
-
-  console.log("Signup form received:", {
-    firstName,
-    lastName,
-    email,
-    username,
-    password,
-    phone,
-    discordTag,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: "Signup successful",
-  });
-});
+app.use("/api", authRoutes);
+app.use("/api", contactRoutes);
+app.use("/api", tournamentRoutes);
 
 module.exports = app;
