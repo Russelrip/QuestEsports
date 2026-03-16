@@ -1,6 +1,6 @@
 import "./globals.css";
-import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
+import Footer from "@/components/Footer";
+import Navbar from "@/components/Navbar";
 
 export const metadata = {
   title: "Quest Esports",
