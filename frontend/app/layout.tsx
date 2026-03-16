@@ -1,4 +1,5 @@
 import "./globals.css";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 
@@ -15,10 +16,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        {/* Keep global navigation and footer around every page rendered by the App Router. */}
-        <Navbar />
-        {children}
-        <Footer />
+        <AuthProvider>
+          {/* Keep global navigation and footer around every page rendered by the App Router. */}
+          <Navbar />
+          {children}
+          <Footer />
+        </AuthProvider>
       </body>
     </html>
   );

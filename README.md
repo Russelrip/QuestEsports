@@ -5,7 +5,7 @@ Quest Esports is a full-stack esports website for showcasing tournaments, publis
 The repository is split into:
 
 - `frontend/`: Next.js 16 + React 19 marketing site and registration UI
-- `backend/`: Express + Prisma API backed by PostgreSQL
+- `backend/`: Express API backed by a local SQLite database
 
 ## Current Features
 
@@ -31,16 +31,18 @@ The repository is split into:
 
 ### Database
 
-Prisma currently manages three core models:
+The rebuilt backend stores these core records:
 
 - `User`
-- `ContactMessage`
-- `TournamentRegistration`
+- `ContactSubmission`
+- `Tournament`
+- `TeamRegistration`
+- `RegistrationMember`
 
 ## Tech Stack
 
 - Frontend: Next.js App Router, React, TypeScript, Tailwind CSS v4
-- Backend: Express 5, Prisma, PostgreSQL, Multer, bcryptjs
+- Backend: Express 5, SQLite, Multer, bcryptjs
 - Tooling: ESLint, Nodemon
 
 ## Project Structure
@@ -48,12 +50,13 @@ Prisma currently manages three core models:
 ```text
 QuestEsports/
 |-- backend/
-|   |-- prisma/
-|   |   |-- migrations/
-|   |   `-- schema.prisma
+|   |-- data/
 |   `-- src/
 |       |-- config/
-|       |-- controllers/
+|       |-- constants/
+|       |-- lib/
+|       |-- middleware/
+|       |-- modules/
 |       |-- routes/
 |       |-- app.js
 |       `-- server.js
@@ -88,8 +91,8 @@ Create a `.env` file inside `backend/`:
 
 ```env
 PORT=5001
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/quest_esports
-DIRECT_DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/quest_esports
+CORS_ORIGIN=http://localhost:3000
+DATABASE_PATH=./data/quest-esports.db
 ```
 
 Create a `.env.local` file inside `frontend/`:
@@ -98,26 +101,7 @@ Create a `.env.local` file inside `frontend/`:
 NEXT_PUBLIC_API_URL=http://localhost:5001
 ```
 
-Notes:
-
-- `DATABASE_URL` is used by Prisma CLI configuration.
-- `DIRECT_DATABASE_URL` is what the running backend currently uses to connect through `pg` and the Prisma Postgres adapter.
-
-### 3. Run database migrations
-
-From `backend/`:
-
-```bash
-npx prisma migrate dev
-```
-
-If needed, generate the client explicitly:
-
-```bash
-npx prisma generate
-```
-
-### 4. Start the apps
+### 3. Start the apps
 
 Backend:
 
@@ -218,27 +202,24 @@ Backend:
 ```bash
 npm run dev
 npm start
-npx prisma migrate dev
 ```
 
 ## Implementation Notes
 
-- CORS is currently configured in the backend for `http://localhost:3000`.
+- CORS is configurable through `CORS_ORIGIN` and defaults to `http://localhost:3000`.
 - Login stores returned user data in `localStorage` or `sessionStorage`; there is no token-based auth yet.
 - The generic `/registration` page is currently a frontend-only form scaffold and is separate from the API-backed `/tournament-registration` flow.
-- Tournament registration prevents duplicate submissions for the same tournament by `teamName` or `captainEmail`.
+- Tournament registration stores a normalized roster and prevents duplicates for the same tournament by `teamName` or `captainEmail`.
 
 ## Gaps To Be Aware Of
 
 - No automated test suite is present yet.
 - No production deployment configuration is documented in the repo yet.
 - Auth is sessionless and does not currently issue JWTs or cookies.
-- The backend expects the upload directory to exist and be writable in local/runtime environments.
+- The backend creates its upload directories on boot if they do not already exist.
 
 ## Suggested Next Steps
 
-- Add root and per-app `.env.example` files
-- Add API validation and centralized error handling
 - Create authenticated player dashboards or admin tooling
 - Add tests for controllers and form submission flows
-- Document deployment for frontend hosting and PostgreSQL-backed API hosting
+- Document deployment for frontend hosting and the API/database runtime of your choice

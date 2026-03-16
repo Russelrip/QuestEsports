@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const featuredTournaments = [
@@ -27,10 +28,12 @@ export default function FeaturedTournaments() {
         <div className="tournament-grid">
           {featuredTournaments.map((tournament) => (
             <div className="tournament-card" key={tournament.title}>
-              <img
+              <Image
                 src={tournament.image}
                 alt={tournament.alt}
                 className="tournament-poster-img"
+                width={800}
+                height={1140}
               />
               <h3>{tournament.title}</h3>
               <p>{tournament.prize}</p>

@@ -288,10 +288,12 @@ function VideoSection({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <img
+                <Image
                   className="video-thumb"
                   src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`}
                   alt={video.alt}
+                  width={480}
+                  height={360}
                 />
               </a>
               <div className="video-card-content">
@@ -324,3 +326,4 @@ export default function MatchVideosContent() {
     </>
   );
 }
+import Image from "next/image";

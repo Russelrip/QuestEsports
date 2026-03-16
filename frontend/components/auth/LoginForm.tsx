@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { apiFetch } from "@/lib/auth";
 
 type LoginFormData = {
   emailOrUsername: string;
@@ -16,6 +19,8 @@ const initialFormData: LoginFormData = {
 };
 
 export default function LoginForm() {
+  const router = useRouter();
+  const { login } = useAuth();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [formData, setFormData] = useState<LoginFormData>(initialFormData);
@@ -30,7 +35,7 @@ export default function LoginForm() {
     }));
   };
 
-  // The backend returns a user object, which is stored in localStorage or sessionStorage based on remember-me.
+  // Login creates a server session cookie and returns the signed-in user payload.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -42,15 +47,13 @@ export default function LoginForm() {
     }
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/login`, {
+      const res = await apiFetch("/api/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        json: {
           emailOrUsername: formData.emailOrUsername,
           password: formData.password,
-        }),
+          remember: formData.remember,
+        },
       });
 
       const data = await res.json();
@@ -60,15 +63,11 @@ export default function LoginForm() {
         return;
       }
 
-      // Persist the user in longer-lived storage only when the player explicitly asks to be remembered.
-      if (formData.remember) {
-        localStorage.setItem("questUser", JSON.stringify(data.user));
-      } else {
-        sessionStorage.setItem("questUser", JSON.stringify(data.user));
-      }
+      login(data.user);
 
       setSubmitted(true);
       setFormData(initialFormData);
+      router.push(data.user.role === "admin" ? "/admin" : "/profile");
 
       console.log("Login successful:", data.user);
     } catch (err) {

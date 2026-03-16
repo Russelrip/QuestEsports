@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 
 const tournaments = [
@@ -94,7 +95,12 @@ export default function TournamentsContent() {
                 <div className="tournament-image">
                   {/* Show a poster when one exists, otherwise render a placeholder for upcoming events. */}
                   {tournament.image ? (
-                    <img src={tournament.image} alt={tournament.title} />
+                    <Image
+                      src={tournament.image}
+                      alt={tournament.title}
+                      width={800}
+                      height={600}
+                    />
                   ) : (
                     <div className="coming-soon-block">
                       <span>COMING SOON</span>

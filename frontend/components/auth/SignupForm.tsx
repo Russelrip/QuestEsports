@@ -219,7 +219,8 @@ export default function SignupForm() {
             <div id="signupSuccess" className="success-message">
               <h3>Account Created Successfully!</h3>
               <p>
-                Welcome to Quest Esports! You can now login and join tournaments.
+                Welcome to Quest Esports! You can now login, open your profile,
+                and join tournaments.
               </p>
             </div>
           )}

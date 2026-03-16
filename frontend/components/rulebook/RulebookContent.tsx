@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export default function RulebookContent() {
@@ -274,9 +275,11 @@ export default function RulebookContent() {
           <h3>Face Camera Angle Examples</h3>
           <p>Approved face camera angle examples for player verification and monitoring.</p>
           <div className="rulebook-image-wrap">
-            <img
+            <Image
               src="/images/face-camera-angle-examples.jpg"
               alt="Face Camera Angle Examples"
+              width={1600}
+              height={900}
             />
           </div>
         </div>
@@ -344,7 +347,12 @@ export default function RulebookContent() {
           <h3>Back View / Side View Camera Examples</h3>
           <p>Examples of correct and incorrect camera setups for player monitoring.</p>
           <div className="rulebook-image-wrap">
-            <img src="/images/pc-camera-dos-donts.jpg" alt="PC Camera Dos and Donts" />
+            <Image
+              src="/images/pc-camera-dos-donts.jpg"
+              alt="PC Camera Dos and Donts"
+              width={1600}
+              height={900}
+            />
           </div>
         </div>
 

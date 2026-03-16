@@ -1,15 +1,16 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 
-type GalleryItem = {
+type PosterItem = {
   title: string;
   image: string;
   alt: string;
   href?: string;
 };
 
-const galleryItems: GalleryItem[] = [
+const posterItems: PosterItem[] = [
   {
     title: "Open Tournament Winners",
     image: "/images/openwinners.jpg",
@@ -98,8 +99,8 @@ const galleryItems: GalleryItem[] = [
   },
 ];
 
-export default function GalleryContent() {
-  const [selectedImage, setSelectedImage] = useState<GalleryItem | null>(null);
+export default function PostersContent() {
+  const [selectedImage, setSelectedImage] = useState<PosterItem | null>(null);
 
   return (
     <>
@@ -107,7 +108,7 @@ export default function GalleryContent() {
         <div className="container">
           <div className="gallery-grid">
             {/* Items with external links behave like outbound cards; the rest open in the local lightbox. */}
-            {galleryItems.map((item) =>
+            {posterItems.map((item) =>
               item.href ? (
                 <a
                   key={item.title}
@@ -116,7 +117,7 @@ export default function GalleryContent() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <img src={item.image} alt={item.alt} />
+                  <Image src={item.image} alt={item.alt} width={800} height={520} />
                   <div className="gallery-overlay">
                     <h3>{item.title}</h3>
                   </div>
@@ -134,7 +135,7 @@ export default function GalleryContent() {
                     cursor: "pointer",
                   }}
                 >
-                  <img src={item.image} alt={item.alt} />
+                  <Image src={item.image} alt={item.alt} width={800} height={520} />
                   <div className="gallery-overlay">
                     <h3>{item.title}</h3>
                   </div>
@@ -149,7 +150,7 @@ export default function GalleryContent() {
         // Clicking the backdrop closes the lightbox, while clicks inside the content stay open.
         <div
           id="galleryPopup"
-          className="gallery-popup"
+          className="gallery-popup active"
           onClick={() => setSelectedImage(null)}
         >
           <span
@@ -163,10 +164,12 @@ export default function GalleryContent() {
             className="gallery-popup-content"
             onClick={(e) => e.stopPropagation()}
           >
-            <img
+            <Image
               id="galleryPopupImg"
               src={selectedImage.image}
               alt={selectedImage.alt}
+              width={1400}
+              height={900}
             />
             <p id="galleryPopupCaption">{selectedImage.title}</p>
           </div>

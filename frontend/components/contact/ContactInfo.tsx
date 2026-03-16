@@ -21,12 +21,12 @@ export default function ContactInfo() {
         <h3>Social Media</h3>
 
         <p style={rowStyle}>
-          <img src="/images/gmail.png" alt="Gmail" style={iconStyle} />
+          <Image src="/images/gmail.png" alt="Gmail" width={20} height={20} style={iconStyle} />
           <a href="mailto:questesportslk@gmail.com">questesportslk@gmail.com</a>
         </p>
 
         <p style={rowStyle}>
-          <img src="/images/discord.png" alt="Discord" style={iconStyle} />
+          <Image src="/images/discord.png" alt="Discord" width={20} height={20} style={iconStyle} />
           <a
             href="https://discord.gg/cxkM7dk9CM"
             target="_blank"
@@ -37,7 +37,7 @@ export default function ContactInfo() {
         </p>
 
         <p style={rowStyle}>
-          <img src="/images/facebook.png" alt="Facebook" style={iconStyle} />
+          <Image src="/images/facebook.png" alt="Facebook" width={20} height={20} style={iconStyle} />
           <a
             href="https://www.facebook.com/share/1HNNM3e9ub/?mibextid=wwXIfr"
             target="_blank"
@@ -48,7 +48,7 @@ export default function ContactInfo() {
         </p>
 
         <p style={rowStyle}>
-          <img src="/images/instagram.png" alt="Instagram" style={iconStyle} />
+          <Image src="/images/instagram.png" alt="Instagram" width={20} height={20} style={iconStyle} />
           <a
             href="https://www.instagram.com/"
             target="_blank"
@@ -59,7 +59,7 @@ export default function ContactInfo() {
         </p>
 
         <p style={rowStyle}>
-          <img src="/images/tiktok.png" alt="TikTok" style={iconStyle} />
+          <Image src="/images/tiktok.png" alt="TikTok" width={20} height={20} style={iconStyle} />
           <a
             href="https://www.tiktok.com/@senumii"
             target="_blank"
@@ -79,9 +79,11 @@ export default function ContactInfo() {
             gap: "10px",
           }}
         >
-          <img
+          <Image
             src="/images/whatsapp.png"
             alt="WhatsApp"
+            width={22}
+            height={22}
             style={{
               width: "22px",
               height: "22px",
@@ -113,3 +115,4 @@ export default function ContactInfo() {
     </div>
   );
 }
+import Image from "next/image";

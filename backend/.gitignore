@@ -54,12 +54,12 @@ backend/coverage/
 backend/.turbo/
 
 # =========================
-# PRISMA
+# LOCAL DATABASE
 # =========================
-backend/prisma/dev.db
-backend/prisma/dev.db-journal
-backend/prisma/*.db
-backend/prisma/*.db-journal
+backend/data/*.db
+backend/data/*.db-journal
+data/*.db
+data/*.db-journal
 
 # =========================
 # GENERATED FILES

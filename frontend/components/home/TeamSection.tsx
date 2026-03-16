@@ -35,7 +35,7 @@ export default function TeamSection() {
         <div className="team-grid">
           {teamMembers.map((member) => (
             <div className="team-member" key={member.name}>
-              <img src={member.image} alt={member.name} />
+              <Image src={member.image} alt={member.name} width={480} height={480} />
               <h3>{member.name}</h3>
               <p>{member.role}</p>
             </div>
@@ -45,3 +45,4 @@ export default function TeamSection() {
     </section>
   );
 }
+import Image from "next/image";
