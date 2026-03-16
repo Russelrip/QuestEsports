@@ -15,6 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        {/* Keep global navigation and footer around every page rendered by the App Router. */}
         <Navbar />
         {children}
         <Footer />

@@ -1,5 +1,6 @@
 export default function AboutSection() {
   return (
+    // This section is static brand copy introducing the organization’s mission.
     <section className="about-section">
       <div className="container">
         <h2>About Quest Esports</h2>

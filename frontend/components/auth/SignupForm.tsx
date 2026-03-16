@@ -32,6 +32,7 @@ export default function SignupForm() {
   const [error, setError] = useState("");
   const [formData, setFormData] = useState<SignupFormData>(initialFormData);
 
+  // This keeps all signup inputs controlled through the same state object.
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
 
@@ -41,6 +42,7 @@ export default function SignupForm() {
     }));
   };
 
+  // Validate password confirmation locally, then send the account payload to the signup API.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");

@@ -6,6 +6,7 @@ import TeamSection from "@/components/home/TeamSection";
 export default function HomePage() {
   return (
     <>
+      {/* The home page is assembled from reusable marketing sections. */}
       <HomeHero />
       <AboutSection />
       <TeamSection />

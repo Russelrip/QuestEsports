@@ -278,6 +278,7 @@ function VideoSection({
       <div className="container">
         <h2>{title}</h2>
 
+        {/* Each card links to YouTube and uses the standard thumbnail format generated from the video ID. */}
         <div className="videos-grid">
           {videos.map((video) => (
             <article className="video-card" key={video.href}>
@@ -308,6 +309,7 @@ function VideoSection({
 export default function MatchVideosContent() {
   return (
     <>
+      {/* Reuse the same section renderer for each tournament archive. */}
       <VideoSection
         title="THE VALORANT SHOWDOWN 2026"
         videos={showdownVideos}

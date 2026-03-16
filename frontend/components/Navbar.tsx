@@ -8,6 +8,7 @@ export default function Navbar() {
           <img src="/images/logo-header.png" alt="Quest Esports Logo" />
         </Link>
 
+        {/* The navbar exposes the main marketing pages and account-related routes. */}
         <ul className="nav-menu">
           <li>
             <Link href="/" className="active">

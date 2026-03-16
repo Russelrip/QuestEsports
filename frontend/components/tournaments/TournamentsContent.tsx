@@ -42,6 +42,7 @@ const tournaments = [
 export default function TournamentsContent() {
   const [gameFilter, setGameFilter] = useState("all");
 
+  // Recompute the visible cards only when the selected game changes.
   const filteredTournaments = useMemo(() => {
     if (gameFilter === "all") return tournaments;
     return tournaments.filter(
@@ -91,6 +92,7 @@ export default function TournamentsContent() {
                 key={tournament.title}
               >
                 <div className="tournament-image">
+                  {/* Show a poster when one exists, otherwise render a placeholder for upcoming events. */}
                   {tournament.image ? (
                     <img src={tournament.image} alt={tournament.title} />
                   ) : (
@@ -123,6 +125,7 @@ export default function TournamentsContent() {
 
                     <p>
                       <strong>Status:</strong>{" "}
+                      {/* Completed tournaments get a styled badge, while planning items stay as plain text. */}
                       {tournament.status === "Completed" ? (
                         <span className="status status-completed">
                           {tournament.status}

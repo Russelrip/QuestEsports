@@ -66,6 +66,7 @@ const submitTournamentRegistration = async (req, res) => {
       });
     }
 
+    // Prevent duplicate registrations for the same tournament by either team name or captain email.
     const existingRegistration = await prisma.tournamentRegistration.findFirst({
       where: {
         tournament,
@@ -83,6 +84,7 @@ const submitTournamentRegistration = async (req, res) => {
       });
     }
 
+    // Optional substitutes, coach details, and the uploaded logo are normalized before persistence.
     await prisma.tournamentRegistration.create({
       data: {
         tournament,

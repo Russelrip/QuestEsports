@@ -7,6 +7,7 @@ datasource db {
   provider = "postgresql"
 }
 
+// Stores player accounts created through the signup form.
 model User {
   id         Int      @id @default(autoincrement())
   firstName  String
@@ -19,6 +20,7 @@ model User {
   createdAt  DateTime @default(now())
 }
 
+// Persists messages submitted from the public contact page.
 model ContactMessage {
   id        Int      @id @default(autoincrement())
   name      String
@@ -28,6 +30,7 @@ model ContactMessage {
   createdAt DateTime @default(now())
 }
 
+// Captures the full tournament team registration payload, including optional roster members.
 model TournamentRegistration {
   id              Int      @id @default(autoincrement())
   tournament      String

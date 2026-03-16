@@ -11,6 +11,7 @@ const submitContact = async (req, res) => {
       });
     }
 
+    // Contact messages are stored directly for later review by the Quest team.
     await prisma.contactMessage.create({
       data: {
         name,

@@ -79,11 +79,13 @@ export default function TournamentRegistrationForm() {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<FormDataType>(initialFormData);
 
+  // One shared change handler keeps every input wired to the same form state object.
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value, type } = e.target;
 
+    // Checkboxes store booleans instead of strings.
     if (type === "checkbox") {
       const checked = (e.target as HTMLInputElement).checked;
       setFormData((prev) => ({
@@ -93,6 +95,7 @@ export default function TournamentRegistrationForm() {
       return;
     }
 
+    // File inputs store the uploaded file so it can be sent through FormData.
     if (type === "file") {
       const files = (e.target as HTMLInputElement).files;
       setFormData((prev) => ({
@@ -108,6 +111,7 @@ export default function TournamentRegistrationForm() {
     }));
   };
 
+  // Submit the registration as multipart form data so text fields and the team logo can travel together.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSubmitted(false);
@@ -168,6 +172,7 @@ export default function TournamentRegistrationForm() {
         return;
       }
 
+      // Reset the UI after a successful registration so a new team can be entered cleanly.
       setSubmitted(true);
       setFormData(initialFormData);
     } catch (err) {

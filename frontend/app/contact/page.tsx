@@ -7,6 +7,7 @@ export default function ContactPage() {
     <>
       <ContactHero />
 
+      {/* Contact details and the API-backed message form sit side by side in the main content grid. */}
       <section className="contact-section">
         <div className="container">
           <div className="contact-grid">

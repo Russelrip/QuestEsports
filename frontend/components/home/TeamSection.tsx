@@ -31,6 +31,7 @@ export default function TeamSection() {
           experiences.
         </p>
 
+        {/* Team member cards are generated from a small data array to keep the markup repetitive but maintainable. */}
         <div className="team-grid">
           {teamMembers.map((member) => (
             <div className="team-member" key={member.name}>

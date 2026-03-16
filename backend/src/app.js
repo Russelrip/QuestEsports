@@ -17,12 +17,14 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Expose uploaded team logos so the frontend can load them by URL when needed.
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.get("/api/health", (req, res) => {
   res.json({ message: "Backend is running" });
 });
 
+// Mount feature-specific route modules under a shared /api prefix.
 app.use("/api", authRoutes);
 app.use("/api", contactRoutes);
 app.use("/api", tournamentRoutes);

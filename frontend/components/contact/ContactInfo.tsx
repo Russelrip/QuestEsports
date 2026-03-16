@@ -16,6 +16,7 @@ export default function ContactInfo() {
     <div className="contact-info">
       <h2>Contact Information</h2>
 
+      {/* Social links are grouped separately from direct WhatsApp numbers for easier scanning. */}
       <div className="info-item">
         <h3>Social Media</h3>
 
@@ -70,6 +71,7 @@ export default function ContactInfo() {
       </div>
 
       <div className="info-item">
+        {/* Inline styles keep the WhatsApp heading aligned with its icon without a separate CSS rule. */}
         <h3
           style={{
             display: "flex",

@@ -4,6 +4,7 @@ export default function RulebookContent() {
   return (
     <section className="registration-section">
       <div className="form-container">
+        {/* Intro block explains how the general rules and the women's-event exceptions relate to each other. */}
         <div className="rulebook-box">
           <h2 className="rulebook-title">
             QUEST ESPORTS - VALORANT TOURNAMENT RULEBOOK
@@ -119,6 +120,7 @@ export default function RulebookContent() {
           </ul>
 
           <h4>2.11 Map Veto System</h4>
+          {/* Each subcard documents the pick/ban flow for a different match length. */}
           <div className="rulebook-subcard">
             <h5>BO1</h5>
             <ul className="rule-list">
@@ -347,6 +349,7 @@ export default function RulebookContent() {
         </div>
 
         <div className="rulebook-back-btn">
+          {/* Quick path back to the signup form after players finish reading the rules. */}
           <Link href="/tournament-registration" className="btn btn-primary">
             Back to Registration
           </Link>

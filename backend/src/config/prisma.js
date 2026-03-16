@@ -8,6 +8,7 @@ const pool = new Pool({
   connectionString,
 });
 
+// Prisma uses the pg adapter here instead of the default engine-managed connection layer.
 const adapter = new PrismaPg(pool);
 
 const prisma = new PrismaClient({

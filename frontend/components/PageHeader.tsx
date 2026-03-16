@@ -8,6 +8,7 @@ export default function PageHeader({
   description,
 }: PageHeaderProps) {
   return (
+    // Shared hero-style heading for inner pages so titles and descriptions stay consistent.
     <section className="page-header">
       <h1>{title}</h1>
       <p>{description}</p>

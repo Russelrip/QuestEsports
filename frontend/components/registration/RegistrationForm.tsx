@@ -30,6 +30,7 @@ export default function RegistrationForm() {
     initialFormData
   );
 
+  // All fields feed into one local state object because this form is currently frontend-only.
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
@@ -51,6 +52,7 @@ export default function RegistrationForm() {
     }));
   };
 
+  // This form is still a scaffold, so submit currently just logs the data and shows a success state.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     console.log("Registration submitted:", formData);

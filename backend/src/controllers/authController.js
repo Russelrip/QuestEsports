@@ -20,6 +20,7 @@ const signup = async (req, res) => {
       });
     }
 
+    // Enforce unique email and username before creating the player account.
     const existingEmail = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
     });
@@ -42,6 +43,7 @@ const signup = async (req, res) => {
       });
     }
 
+    // Passwords are hashed before storage so raw credentials never reach the database.
     const hashedPassword = await bcrypt.hash(password, 10);
 
     await prisma.user.create({
@@ -96,6 +98,7 @@ const login = async (req, res) => {
       });
     }
 
+    // Compare the submitted password against the stored hash for the matched user.
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {

@@ -3,6 +3,7 @@ export default function Footer() {
     <footer className="footer">
       <div className="container">
         <p>&copy; 2026 Quest Esports. All rights reserved.</p>
+        {/* Social icons in the footer link out to the organization’s public channels. */}
         <div className="social-links">
           <a
             href="https://api.whatsapp.com/send?phone=94761195666"

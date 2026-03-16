@@ -23,6 +23,7 @@ export default function FeaturedTournaments() {
       <div className="container">
         <h2>Featured Tournaments</h2>
 
+        {/* Completed events come from the data array, followed by a static placeholder card for future events. */}
         <div className="tournament-grid">
           {featuredTournaments.map((tournament) => (
             <div className="tournament-card" key={tournament.title}>

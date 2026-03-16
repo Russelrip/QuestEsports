@@ -20,6 +20,7 @@ export default function LoginForm() {
   const [error, setError] = useState("");
   const [formData, setFormData] = useState<LoginFormData>(initialFormData);
 
+  // A single handler updates both text inputs and the remember-me checkbox.
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
 
@@ -29,6 +30,7 @@ export default function LoginForm() {
     }));
   };
 
+  // The backend returns a user object, which is stored in localStorage or sessionStorage based on remember-me.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -58,6 +60,7 @@ export default function LoginForm() {
         return;
       }
 
+      // Persist the user in longer-lived storage only when the player explicitly asks to be remembered.
       if (formData.remember) {
         localStorage.setItem("questUser", JSON.stringify(data.user));
       } else {

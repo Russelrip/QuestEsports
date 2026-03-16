@@ -5,6 +5,7 @@ const { submitTournamentRegistration } = require("../controllers/tournamentContr
 
 const router = express.Router();
 
+// Multer stores uploaded team logos on disk with unique filenames to avoid collisions.
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, "uploads/team-logos");
@@ -15,6 +16,7 @@ const storage = multer.diskStorage({
   },
 });
 
+// Restrict uploads to images because the registration form only accepts team logo files.
 const fileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
@@ -31,6 +33,7 @@ const upload = multer({
   },
 });
 
+// The controller receives both text fields and the optional uploaded file from this route.
 router.post("/tournament-registration", upload.single("teamLogo"), submitTournamentRegistration);
 
 module.exports = router;

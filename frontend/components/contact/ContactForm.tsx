@@ -22,6 +22,7 @@ export default function ContactForm() {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<ContactFormData>(initialFormData);
 
+  // Keep the form controlled so the UI always reflects the latest state object.
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
@@ -33,6 +34,7 @@ export default function ContactForm() {
     }));
   };
 
+  // Send the contact message to the backend as JSON and surface either success or API errors.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");

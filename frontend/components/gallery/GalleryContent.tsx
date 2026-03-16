@@ -106,6 +106,7 @@ export default function GalleryContent() {
       <section className="gallery-section">
         <div className="container">
           <div className="gallery-grid">
+            {/* Items with external links behave like outbound cards; the rest open in the local lightbox. */}
             {galleryItems.map((item) =>
               item.href ? (
                 <a
@@ -145,6 +146,7 @@ export default function GalleryContent() {
       </section>
 
       {selectedImage && (
+        // Clicking the backdrop closes the lightbox, while clicks inside the content stay open.
         <div
           id="galleryPopup"
           className="gallery-popup"
