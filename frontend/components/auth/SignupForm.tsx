@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useFormFields } from "@/hooks/useFormFields";
+import { apiFetch } from "@/lib/auth";
 
 type SignupFormData = {
   firstName: string;
@@ -30,19 +32,12 @@ const initialFormData: SignupFormData = {
 export default function SignupForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
-  const [formData, setFormData] = useState<SignupFormData>(initialFormData);
+  const {
+    fields: formData,
+    handleFieldChange,
+    resetFields,
+  } = useFormFields<SignupFormData>(initialFormData);
 
-  // This keeps all signup inputs controlled through the same state object.
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type, checked } = e.target;
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  };
-
-  // Validate password confirmation locally, then send the account payload to the signup API.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -54,12 +49,9 @@ export default function SignupForm() {
     }
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/signup`, {
+      const res = await apiFetch("/api/signup", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        json: {
           firstName: formData.firstName,
           lastName: formData.lastName,
           email: formData.email,
@@ -67,7 +59,7 @@ export default function SignupForm() {
           password: formData.password,
           phone: formData.phone,
           discordTag: formData.discordTag,
-        }),
+        },
       });
 
       const data = await res.json();
@@ -78,7 +70,7 @@ export default function SignupForm() {
       }
 
       setSubmitted(true);
-      setFormData(initialFormData);
+      resetFields();
     } catch (error) {
       console.error("Error submitting signup form:", error);
       setError("Something went wrong. Please try again.");
@@ -101,7 +93,7 @@ export default function SignupForm() {
                   name="firstName"
                   required
                   value={formData.firstName}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                 />
               </div>
 
@@ -113,7 +105,7 @@ export default function SignupForm() {
                   name="lastName"
                   required
                   value={formData.lastName}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                 />
               </div>
             </div>
@@ -126,7 +118,7 @@ export default function SignupForm() {
                 name="email"
                 required
                 value={formData.email}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
 
@@ -138,7 +130,7 @@ export default function SignupForm() {
                 name="username"
                 required
                 value={formData.username}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
 
@@ -151,7 +143,7 @@ export default function SignupForm() {
                   name="password"
                   required
                   value={formData.password}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                 />
               </div>
 
@@ -163,7 +155,7 @@ export default function SignupForm() {
                   name="confirmPassword"
                   required
                   value={formData.confirmPassword}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                 />
               </div>
             </div>
@@ -175,7 +167,7 @@ export default function SignupForm() {
                 id="phone"
                 name="phone"
                 value={formData.phone}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
 
@@ -187,7 +179,7 @@ export default function SignupForm() {
                 name="discordTag"
                 placeholder="username#1234"
                 value={formData.discordTag}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
 
@@ -195,11 +187,11 @@ export default function SignupForm() {
               <label>
                 <input
                   type="checkbox"
-                  name="terms"
-                  required
-                  checked={formData.terms}
-                  onChange={handleChange}
-                />{" "}
+                name="terms"
+                required
+                checked={formData.terms}
+                onChange={handleFieldChange}
+              />{" "}
                 I agree to the Terms of Service and Privacy Policy *
               </label>
             </div>

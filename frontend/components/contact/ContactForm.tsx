@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useFormFields } from "@/hooks/useFormFields";
+import { apiFetch } from "@/lib/auth";
 
 type ContactFormData = {
   name: string;
@@ -20,21 +22,12 @@ export default function ContactForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState<ContactFormData>(initialFormData);
+  const {
+    fields: formData,
+    handleFieldChange,
+    resetFields,
+  } = useFormFields<ContactFormData>(initialFormData);
 
-  // Keep the form controlled so the UI always reflects the latest state object.
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // Send the contact message to the backend as JSON and surface either success or API errors.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -42,12 +35,9 @@ export default function ContactForm() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/contact`, {
+      const res = await apiFetch("/api/contact", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
+        json: formData,
       });
 
       const data = await res.json();
@@ -59,7 +49,7 @@ export default function ContactForm() {
       }
 
       setSubmitted(true);
-      setFormData(initialFormData);
+      resetFields();
     } catch (error) {
       console.error("Error submitting contact form:", error);
       setError("Something went wrong. Please try again.");
@@ -81,7 +71,7 @@ export default function ContactForm() {
             name="name"
             required
             value={formData.name}
-            onChange={handleChange}
+            onChange={handleFieldChange}
           />
         </div>
 
@@ -93,7 +83,7 @@ export default function ContactForm() {
             name="email"
             required
             value={formData.email}
-            onChange={handleChange}
+            onChange={handleFieldChange}
           />
         </div>
 
@@ -105,7 +95,7 @@ export default function ContactForm() {
             name="subject"
             required
             value={formData.subject}
-            onChange={handleChange}
+            onChange={handleFieldChange}
           />
         </div>
 
@@ -117,7 +107,7 @@ export default function ContactForm() {
             rows={6}
             required
             value={formData.message}
-            onChange={handleChange}
+            onChange={handleFieldChange}
           />
         </div>
 

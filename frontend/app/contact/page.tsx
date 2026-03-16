@@ -1,13 +1,11 @@
 import ContactForm from "@/components/contact/ContactForm";
-import ContactHero from "@/components/contact/ContactHero";
 import ContactInfo from "@/components/contact/ContactInfo";
+import PageLayout from "@/components/PageLayout";
+import { defaultPageDescriptions } from "@/lib/site";
 
 export default function ContactPage() {
   return (
-    <>
-      <ContactHero />
-
-      {/* Contact details and the API-backed message form sit side by side in the main content grid. */}
+    <PageLayout title="Contact Us" description={defaultPageDescriptions.contact}>
       <section className="contact-section">
         <div className="container">
           <div className="contact-grid">
@@ -16,6 +14,6 @@ export default function ContactPage() {
           </div>
         </div>
       </section>
-    </>
+    </PageLayout>
   );
 }

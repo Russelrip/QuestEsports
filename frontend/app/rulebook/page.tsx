@@ -1,15 +1,14 @@
-import PageHeader from "@/components/PageHeader";
+import PageLayout from "@/components/PageLayout";
 import RulebookContent from "@/components/rulebook/RulebookContent";
+import { defaultPageDescriptions } from "@/lib/site";
 
 export default function RulebookPage() {
   return (
-    <>
-      {/* The dedicated rulebook page combines a shared heading with the long-form policy content. */}
-      <PageHeader
-        title="Quest Esports Rulebook"
-        description="Official VALORANT Tournament Rules"
-      />
+    <PageLayout
+      title="Quest Esports Rulebook"
+      description={defaultPageDescriptions.rulebook}
+    >
       <RulebookContent />
-    </>
+    </PageLayout>
   );
 }

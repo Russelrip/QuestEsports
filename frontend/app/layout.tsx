@@ -2,11 +2,9 @@ import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
+import { siteMetadata } from "@/lib/site";
 
-export const metadata = {
-  title: "Quest Esports",
-  description: "Quest Esports website",
-};
+export const metadata = siteMetadata;
 
 export default function RootLayout({
   children,
@@ -17,7 +15,6 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>
-          {/* Keep global navigation and footer around every page rendered by the App Router. */}
           <Navbar />
           {children}
           <Footer />

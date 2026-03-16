@@ -107,10 +107,10 @@ const initializeDatabase = async () => {
 
   const upsertTournament = db.prepare(`
     INSERT INTO tournaments (id, slug, title, is_active)
-    VALUES (@id, @slug, @title, 1)
+    VALUES (@id, @slug, @title, @isActive)
     ON CONFLICT(slug) DO UPDATE SET
       title = excluded.title,
-      is_active = 1,
+      is_active = excluded.is_active,
       updated_at = CURRENT_TIMESTAMP
   `);
 
@@ -119,6 +119,7 @@ const initializeDatabase = async () => {
       id: crypto.randomUUID(),
       slug: tournament.slug,
       title: tournament.title,
+      isActive: tournament.isActive ? 1 : 0,
     });
   }
 };

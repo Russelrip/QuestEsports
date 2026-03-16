@@ -1,25 +1,5 @@
-const teamMembers = [
-  {
-    name: "Sahan Jayasuriya",
-    role: "Owner",
-    image: "/images/sahan.jpg",
-  },
-  {
-    name: "Senumi Ekanayake",
-    role: "Owner / Founder",
-    image: "/images/senumi.jpg",
-  },
-  {
-    name: "Russel Perera",
-    role: "Director / Co-Owner",
-    image: "/images/russel.jpg",
-  },
-  {
-    name: "Deshika Peiris",
-    role: "Head Admin",
-    image: "/images/deshika.jpg",
-  },
-];
+import Image from "next/image";
+import { teamMembers } from "@/lib/site";
 
 export default function TeamSection() {
   return (
@@ -31,7 +11,6 @@ export default function TeamSection() {
           experiences.
         </p>
 
-        {/* Team member cards are generated from a small data array to keep the markup repetitive but maintainable. */}
         <div className="team-grid">
           {teamMembers.map((member) => (
             <div className="team-member" key={member.name}>
@@ -45,4 +24,3 @@ export default function TeamSection() {
     </section>
   );
 }
-import Image from "next/image";

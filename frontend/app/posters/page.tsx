@@ -1,15 +1,11 @@
+import PageLayout from "@/components/PageLayout";
 import PostersContent from "@/components/Posters/PostersContent";
-import PageHeader from "@/components/PageHeader";
+import { defaultPageDescriptions } from "@/lib/site";
 
 export default function PostersPage() {
   return (
-    <>
-      {/* Reuse the shared page header component for consistent inner-page branding. */}
-      <PageHeader
-        title="Posters"
-        description="Tournament posters, highlights, and community event visuals"
-      />
+    <PageLayout title="Posters" description={defaultPageDescriptions.posters}>
       <PostersContent />
-    </>
+    </PageLayout>
   );
 }

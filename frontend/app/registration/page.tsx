@@ -1,15 +1,14 @@
-import PageHeader from "@/components/PageHeader";
+import PageLayout from "@/components/PageLayout";
 import RegistrationForm from "@/components/registration/RegistrationForm";
+import { defaultPageDescriptions } from "@/lib/site";
 
 export default function RegistrationPage() {
   return (
-    <>
-      {/* This legacy registration route currently renders a frontend-only form scaffold. */}
-      <PageHeader
-        title="Team Registration"
-        description="Join Quest Esports tournaments"
-      />
+    <PageLayout
+      title="Team Registration"
+      description={defaultPageDescriptions.registration}
+    >
       <RegistrationForm />
-    </>
+    </PageLayout>
   );
 }

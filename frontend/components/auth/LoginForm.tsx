@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useFormFields } from "@/hooks/useFormFields";
 import { apiFetch } from "@/lib/auth";
 
 type LoginFormData = {
@@ -23,19 +24,12 @@ export default function LoginForm() {
   const { login } = useAuth();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
-  const [formData, setFormData] = useState<LoginFormData>(initialFormData);
+  const {
+    fields: formData,
+    handleFieldChange,
+    resetFields,
+  } = useFormFields<LoginFormData>(initialFormData);
 
-  // A single handler updates both text inputs and the remember-me checkbox.
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type, checked } = e.target;
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  };
-
-  // Login creates a server session cookie and returns the signed-in user payload.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -66,10 +60,8 @@ export default function LoginForm() {
       login(data.user);
 
       setSubmitted(true);
-      setFormData(initialFormData);
+      resetFields();
       router.push(data.user.role === "admin" ? "/admin" : "/profile");
-
-      console.log("Login successful:", data.user);
     } catch (err) {
       console.error("Login error:", err);
       setError("Something went wrong. Please try again.");
@@ -91,7 +83,7 @@ export default function LoginForm() {
                 name="emailOrUsername"
                 required
                 value={formData.emailOrUsername}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
 
@@ -103,7 +95,7 @@ export default function LoginForm() {
                 name="password"
                 required
                 value={formData.password}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
 
@@ -113,7 +105,7 @@ export default function LoginForm() {
                   type="checkbox"
                   name="remember"
                   checked={formData.remember}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                 />{" "}
                 Remember me
               </label>

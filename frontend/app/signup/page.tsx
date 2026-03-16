@@ -1,15 +1,11 @@
-import PageHeader from "@/components/PageHeader";
+import PageLayout from "@/components/PageLayout";
 import SignupForm from "@/components/auth/SignupForm";
+import { defaultPageDescriptions } from "@/lib/site";
 
 export default function SignupPage() {
   return (
-    <>
-      {/* Signup uses the same page shell pattern as the other inner routes. */}
-      <PageHeader
-        title="Create Account"
-        description="Join Quest Esports and start competing"
-      />
+    <PageLayout title="Create Account" description={defaultPageDescriptions.signup}>
       <SignupForm />
-    </>
+    </PageLayout>
   );
 }

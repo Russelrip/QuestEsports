@@ -1,14 +1,11 @@
-import PageHeader from "@/components/PageHeader";
+import PageLayout from "@/components/PageLayout";
 import ProfileView from "@/components/auth/ProfileView";
+import { defaultPageDescriptions } from "@/lib/site";
 
 export default function ProfilePage() {
   return (
-    <>
-      <PageHeader
-        title="My Profile"
-        description="View your account details and update your player profile"
-      />
+    <PageLayout title="My Profile" description={defaultPageDescriptions.profile}>
       <ProfileView />
-    </>
+    </PageLayout>
   );
 }

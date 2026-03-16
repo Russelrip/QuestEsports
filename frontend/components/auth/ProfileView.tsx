@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/auth";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useFormFields } from "@/hooks/useFormFields";
 
 type ProfileFormState = {
   firstName: string;
@@ -27,7 +28,11 @@ const emptyForm: ProfileFormState = {
 export default function ProfileView() {
   const router = useRouter();
   const { user, refreshUser, logout, isLoading } = useAuth();
-  const [formData, setFormData] = useState<ProfileFormState>(emptyForm);
+  const {
+    fields: formData,
+    handleFieldChange,
+    resetFields,
+  } = useFormFields<ProfileFormState>(emptyForm);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -42,7 +47,7 @@ export default function ProfileView() {
       return;
     }
 
-    setFormData({
+    resetFields({
       firstName: user.firstName || "",
       lastName: user.lastName || "",
       username: user.username || "",
@@ -50,7 +55,7 @@ export default function ProfileView() {
       phone: user.phone || "",
       discordTag: user.discordTag || "",
     });
-  }, [isLoading, router, user]);
+  }, [isLoading, resetFields, router, user]);
 
   if (isLoading) {
     return null;
@@ -59,17 +64,6 @@ export default function ProfileView() {
   if (!user) {
     return null;
   }
-
-  const handleChange = (
-    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = event.target;
-
-    setFormData((current) => ({
-      ...current,
-      [name]: value,
-    }));
-  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -154,7 +148,7 @@ export default function ProfileView() {
                   id="firstName"
                   name="firstName"
                   value={formData.firstName}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                   required
                 />
               </div>
@@ -164,7 +158,7 @@ export default function ProfileView() {
                   id="lastName"
                   name="lastName"
                   value={formData.lastName}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                   required
                 />
               </div>
@@ -177,7 +171,7 @@ export default function ProfileView() {
                   id="username"
                   name="username"
                   value={formData.username}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                   required
                 />
               </div>
@@ -194,7 +188,7 @@ export default function ProfileView() {
                   id="phone"
                   name="phone"
                   value={formData.phone}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                 />
               </div>
               <div className="form-group">
@@ -203,7 +197,7 @@ export default function ProfileView() {
                   id="discordTag"
                   name="discordTag"
                   value={formData.discordTag}
-                  onChange={handleChange}
+                  onChange={handleFieldChange}
                 />
               </div>
             </div>

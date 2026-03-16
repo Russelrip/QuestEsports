@@ -1,6 +1,13 @@
 "use client";
 
-import { createContext, ReactNode, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { apiFetch, AuthUser } from "@/lib/auth";
 
 type AuthContextValue = {
@@ -19,35 +26,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadSession = async () => {
+  const setLoggedInUser = (nextUser: AuthUser | null) => {
+    setUser(nextUser);
+  };
+
+  const loadSession = useCallback(async () => {
     try {
       const response = await apiFetch("/api/me");
       const data = await response.json();
-      setUser(data?.user || null);
+      setLoggedInUser(data?.user || null);
     } catch (error) {
       console.error("Failed to refresh session:", error);
-      setUser(null);
+      setLoggedInUser(null);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const refreshSession = async () => {
+  const refreshSession = useCallback(async () => {
     setIsLoading(true);
     await loadSession();
-  };
+  }, [loadSession]);
 
   useEffect(() => {
     void loadSession();
-  }, []);
+  }, [loadSession]);
 
   const value: AuthContextValue = {
     user,
     isAuthenticated: Boolean(user),
     isLoading,
-    login: (nextUser) => {
-      setUser(nextUser);
-    },
+    login: setLoggedInUser,
     logout: async () => {
       try {
         await apiFetch("/api/logout", {
@@ -57,11 +66,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Failed to logout session:", error);
       }
 
-      setUser(null);
+      setLoggedInUser(null);
     },
-    refreshUser: (nextUser) => {
-      setUser(nextUser);
-    },
+    refreshUser: setLoggedInUser,
     refreshSession,
   };
 

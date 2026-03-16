@@ -1,55 +1,18 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useMemo, useState } from "react";
-
-const tournaments = [
-  {
-    title: "Valorant Women's Championship 2025",
-    game: "valorant",
-    image: "/images/womens.jpg",
-    prizePool: "LKR 50,000",
-    completed: "August 2025",
-    format: "BO3 / 5v5",
-    status: "Completed",
-    description:
-      "A special tournament created to spotlight women in competitive Valorant and support the local esports scene.",
-  },
-  {
-    title: "The Valorant Showdown 2026",
-    game: "valorant",
-    image: "/images/open.jpg",
-    prizePool: "LKR 40,000",
-    completed: "February 12",
-    format: "BO3 / 5v5",
-    status: "Completed",
-    description:
-      "A competitive Valorant event featuring open teams, structured brackets, and a strong finals stage.",
-  },
-  {
-    title: "Coming Soon",
-    game: "all",
-    image: null,
-    prizePool: "To Be Announced",
-    completed: null,
-    format: "To Be Announced",
-    status: "Planning Stage",
-    description:
-      "More Quest Esports tournaments are currently being planned. Stay tuned for upcoming announcements.",
-    registration: "Coming Soon",
-  },
-];
+import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
+import TournamentInfoList from "@/components/tournaments/TournamentInfoList";
+import EmptyState from "@/components/ui/EmptyState";
+import { getVisibleTournaments } from "@/lib/tournaments";
 
 export default function TournamentsContent() {
   const [gameFilter, setGameFilter] = useState("all");
 
-  // Recompute the visible cards only when the selected game changes.
   const filteredTournaments = useMemo(() => {
-    if (gameFilter === "all") return tournaments;
-    return tournaments.filter(
-      (tournament) =>
-        tournament.game === gameFilter || tournament.game === "all"
-    );
+    return getVisibleTournaments(gameFilter);
   }, [gameFilter]);
 
   return (
@@ -85,74 +48,63 @@ export default function TournamentsContent() {
         style={{ padding: "12px 0 50px" }}
       >
         <div className="container">
-          <div className="tournament-list">
-            {filteredTournaments.map((tournament) => (
-              <div
-                className="tournament-item"
-                data-game={tournament.game}
-                key={tournament.title}
-              >
-                <div className="tournament-image">
-                  {/* Show a poster when one exists, otherwise render a placeholder for upcoming events. */}
-                  {tournament.image ? (
-                    <Image
-                      src={tournament.image}
-                      alt={tournament.title}
-                      width={800}
-                      height={600}
-                    />
-                  ) : (
-                    <div className="coming-soon-block">
-                      <span>COMING SOON</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="tournament-details">
-                  <h2>{tournament.title}</h2>
-
-                  <div className="tournament-info">
-                    <p>
-                      <strong>Prize Pool:</strong> {tournament.prizePool}
-                    </p>
-
-                    {tournament.completed && (
-                      <p>
-                        <strong>Completed:</strong>{" "}
-                        <span className="completed-date-inline">
-                          {tournament.completed}
-                        </span>
-                      </p>
-                    )}
-
-                    <p>
-                      <strong>Format:</strong> {tournament.format}
-                    </p>
-
-                    <p>
-                      <strong>Status:</strong>{" "}
-                      {/* Completed tournaments get a styled badge, while planning items stay as plain text. */}
-                      {tournament.status === "Completed" ? (
-                        <span className="status status-completed">
-                          {tournament.status}
-                        </span>
-                      ) : (
-                        tournament.status
-                      )}
-                    </p>
-
-                    {"registration" in tournament && tournament.registration && (
-                      <p>
-                        <strong>Registration:</strong> {tournament.registration}
-                      </p>
+          {filteredTournaments.length > 0 ? (
+            <div className="tournament-list">
+              {filteredTournaments.map((tournament) => (
+                <div
+                  className="tournament-item"
+                  data-game={tournament.game}
+                  key={tournament.slug}
+                >
+                  <div className="tournament-image">
+                    {tournament.image ? (
+                      <Link href={`/tournaments/${tournament.slug}`}>
+                        <Image
+                          src={tournament.image}
+                          alt={tournament.title}
+                          width={800}
+                          height={600}
+                        />
+                      </Link>
+                    ) : (
+                      <div className="coming-soon-block">
+                        <span>COMING SOON</span>
+                      </div>
                     )}
                   </div>
 
-                  <p className="description">{tournament.description}</p>
+                  <div className="tournament-details">
+                    <Link href={`/tournaments/${tournament.slug}`}>
+                      <h2>{tournament.title}</h2>
+                    </Link>
+
+                    <TournamentInfoList tournament={tournament} />
+
+                    <p className="description">{tournament.description}</p>
+
+                    <div className="tournament-actions">
+                      <Link
+                        href={`/tournaments/${tournament.slug}`}
+                        className="btn btn-secondary"
+                      >
+                        View Details
+                      </Link>
+                      <RegisterTournamentButton tournament={tournament} />
+                    </div>
+                  </div>
                 </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No tournaments available right now"
+              description="More Quest Esports tournaments are currently being planned. Stay tuned for upcoming announcements."
+            >
+              <div className="coming-soon-block">
+                <span>COMING SOON</span>
               </div>
-            ))}
-          </div>
+            </EmptyState>
+          )}
         </div>
       </section>
     </>

@@ -1,3 +1,6 @@
+import Image from "next/image";
+import { contactLinks, whatsappContacts } from "@/lib/site";
+
 const iconStyle = {
   width: "20px",
   height: "20px",
@@ -16,62 +19,28 @@ export default function ContactInfo() {
     <div className="contact-info">
       <h2>Contact Information</h2>
 
-      {/* Social links are grouped separately from direct WhatsApp numbers for easier scanning. */}
-      <div className="info-item">
-        <h3>Social Media</h3>
+      {contactLinks.map((group) => (
+        <div className="info-item" key={group.title}>
+          <h3>{group.title}</h3>
 
-        <p style={rowStyle}>
-          <Image src="/images/gmail.png" alt="Gmail" width={20} height={20} style={iconStyle} />
-          <a href="mailto:questesportslk@gmail.com">questesportslk@gmail.com</a>
-        </p>
-
-        <p style={rowStyle}>
-          <Image src="/images/discord.png" alt="Discord" width={20} height={20} style={iconStyle} />
-          <a
-            href="https://discord.gg/cxkM7dk9CM"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Quest Esports Discord
-          </a>
-        </p>
-
-        <p style={rowStyle}>
-          <Image src="/images/facebook.png" alt="Facebook" width={20} height={20} style={iconStyle} />
-          <a
-            href="https://www.facebook.com/share/1HNNM3e9ub/?mibextid=wwXIfr"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Quest E-Sports LK
-          </a>
-        </p>
-
-        <p style={rowStyle}>
-          <Image src="/images/instagram.png" alt="Instagram" width={20} height={20} style={iconStyle} />
-          <a
-            href="https://www.instagram.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            @questesportslk
-          </a>
-        </p>
-
-        <p style={rowStyle}>
-          <Image src="/images/tiktok.png" alt="TikTok" width={20} height={20} style={iconStyle} />
-          <a
-            href="https://www.tiktok.com/@senumii"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            @senumii
-          </a>
-        </p>
-      </div>
+          {group.items.map((item) => (
+            <p style={rowStyle} key={item.label}>
+              <Image
+                src={item.icon}
+                alt={item.label}
+                width={20}
+                height={20}
+                style={iconStyle}
+              />
+              <a href={item.href} target="_blank" rel="noopener noreferrer">
+                {item.label}
+              </a>
+            </p>
+          ))}
+        </div>
+      ))}
 
       <div className="info-item">
-        {/* Inline styles keep the WhatsApp heading aligned with its icon without a separate CSS rule. */}
         <h3
           style={{
             display: "flex",
@@ -93,26 +62,14 @@ export default function ContactInfo() {
           WhatsApp
         </h3>
 
-        <p style={{ marginTop: "10px" }}>
-          <a
-            href="https://wa.me/94761195666"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            076 119 5666
-          </a>
-        </p>
-        <p>
-          <a
-            href="https://wa.me/94767186060"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            076 718 6060
-          </a>
-        </p>
+        {whatsappContacts.map((contact, index) => (
+          <p key={contact.label} style={index === 0 ? { marginTop: "10px" } : undefined}>
+            <a href={contact.href} target="_blank" rel="noopener noreferrer">
+              {contact.label}
+            </a>
+          </p>
+        ))}
       </div>
     </div>
   );
 }
-import Image from "next/image";

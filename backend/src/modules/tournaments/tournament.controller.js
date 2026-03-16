@@ -47,6 +47,53 @@ const buildOptionalMembers = (body) => {
   return [...substitutes, ...coach];
 };
 
+const getTournamentRegistrationStatus = asyncHandler(async (req, res) => {
+  const tournamentSlug = normalizeText(req.params.slug);
+
+  if (!tournamentSlug) {
+    throw new HttpError(400, "Tournament slug is required.");
+  }
+
+  const tournament = db
+    .prepare(
+      `
+        SELECT id
+        FROM tournaments
+        WHERE slug = ?
+        LIMIT 1
+      `
+    )
+    .get(tournamentSlug);
+
+  if (!tournament) {
+    throw new HttpError(404, "Tournament not found.");
+  }
+
+  if (!req.user?.email) {
+    res.status(200).json({
+      success: true,
+      isRegistered: false,
+    });
+    return;
+  }
+
+  const existingRegistration = db
+    .prepare(
+      `
+        SELECT id
+        FROM team_registrations
+        WHERE tournament_id = ? AND captain_email = ?
+        LIMIT 1
+      `
+    )
+    .get(tournament.id, normalizeEmail(req.user.email));
+
+  res.status(200).json({
+    success: true,
+    isRegistered: Boolean(existingRegistration),
+  });
+});
+
 const submitTournamentRegistration = asyncHandler(async (req, res) => {
   const tournamentSlug = normalizeText(req.body.tournament);
   const teamName = normalizeText(req.body.teamName);
@@ -194,4 +241,7 @@ const submitTournamentRegistration = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { submitTournamentRegistration };
+module.exports = {
+  getTournamentRegistrationStatus,
+  submitTournamentRegistration,
+};

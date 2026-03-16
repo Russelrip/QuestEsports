@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/auth";
 import { useAuth } from "@/components/auth/AuthProvider";
+import EmptyState from "@/components/ui/EmptyState";
 
 type DashboardStats = {
   totalUsers: number;
@@ -107,13 +108,9 @@ export default function AdminDashboard() {
         </div>
 
         {loading ? (
-          <div className="empty-state">
-            <p>Loading dashboard data...</p>
-          </div>
+          <EmptyState description="Loading dashboard data..." />
         ) : error ? (
-          <div className="empty-state">
-            <p>{error}</p>
-          </div>
+          <EmptyState description={error} />
         ) : (
           <>
             <div className="admin-stats-grid">

@@ -586,6 +586,10 @@ legend,
     margin-bottom: 12px;
 }
 
+.tournament-details h2:hover {
+    color: #f3e8ff;
+}
+
 .tournament-info p,
 .description {
     color: var(--text-soft);
@@ -632,6 +636,59 @@ legend,
     text-shadow:
         0 0 12px rgba(168, 85, 247, 0.35),
         0 0 24px rgba(124, 58, 237, 0.22);
+}
+
+.tournament-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+}
+
+.tournament-register-cta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.registration-status-note {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.btn.is-disabled,
+.btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.8;
+    transform: none;
+}
+
+.btn.is-disabled:hover,
+.btn:disabled:hover {
+    transform: none;
+    filter: none;
+}
+
+.tournament-item-detail {
+    grid-template-columns: minmax(320px, 500px) minmax(0, 1fr);
+}
+
+.tournament-detail-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.tournament-eyebrow {
+    color: #d8b4fe;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 0.78rem;
+    margin-bottom: 6px;
 }
 
 /* RULEBOOK BOX */

@@ -1,15 +1,11 @@
 import LoginForm from "@/components/auth/LoginForm";
-import PageHeader from "@/components/PageHeader";
+import PageLayout from "@/components/PageLayout";
+import { defaultPageDescriptions } from "@/lib/site";
 
 export default function LoginPage() {
   return (
-    <>
-      {/* This route is just a thin wrapper around the shared page heading and login form. */}
-      <PageHeader
-        title="Login"
-        description="Access your Quest Esports account"
-      />
+    <PageLayout title="Login" description={defaultPageDescriptions.login}>
       <LoginForm />
-    </>
+    </PageLayout>
   );
 }

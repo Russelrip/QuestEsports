@@ -1,15 +1,14 @@
 import MatchVideosContent from "@/components/match-videos/MatchVideosContent";
-import PageHeader from "@/components/PageHeader";
+import PageLayout from "@/components/PageLayout";
+import { defaultPageDescriptions } from "@/lib/site";
 
 export default function MatchVideosPage() {
   return (
-    <>
-      {/* The page header introduces the archive before the video sections render below it. */}
-      <PageHeader
-        title="Match Videos"
-        description="Watch official Quest Esports tournament uploads and live matches"
-      />
+    <PageLayout
+      title="Match Videos"
+      description={defaultPageDescriptions.matchVideos}
+    >
       <MatchVideosContent />
-    </>
+    </PageLayout>
   );
 }

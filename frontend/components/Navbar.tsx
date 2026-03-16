@@ -4,18 +4,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { authNavItems, primaryNavItems } from "@/lib/site";
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, isAuthenticated, logout, isLoading } = useAuth();
-  const navItems = [
-    { href: "/", label: "Home" },
-    { href: "/tournaments", label: "Tournaments" },
-    { href: "/match-videos", label: "Match Videos" },
-    { href: "/posters", label: "Posters" },
-    { href: "/rulebook", label: "Rulebook" },
-  ];
 
   return (
     <nav className="navbar">
@@ -29,10 +23,8 @@ export default function Navbar() {
             priority
           />
         </Link>
-
-        {/* The navbar exposes the main marketing pages and account-related routes. */}
         <ul className="nav-menu">
-          {navItems.map(({ href, label }) => (
+          {primaryNavItems.map(({ href, label }) => (
             <li key={href}>
               <Link href={href} className={pathname === href ? "active" : ""}>
                 {label}
@@ -77,22 +69,13 @@ export default function Navbar() {
             </>
           ) : !isLoading ? (
             <>
-              <li>
-                <Link
-                  href="/signup"
-                  className={pathname === "/signup" ? "active" : ""}
-                >
-                  Sign Up
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/login"
-                  className={pathname === "/login" ? "active" : ""}
-                >
-                  Login
-                </Link>
-              </li>
+              {authNavItems.map(({ href, label }) => (
+                <li key={href}>
+                  <Link href={href} className={pathname === href ? "active" : ""}>
+                    {label}
+                  </Link>
+                </li>
+              ))}
             </>
           ) : null}
         </ul>

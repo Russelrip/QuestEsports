@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useFormFields } from "@/hooks/useFormFields";
 
 type RegistrationFormData = {
   teamName: string;
@@ -26,36 +27,11 @@ const initialFormData: RegistrationFormData = {
 
 export default function RegistrationForm() {
   const [submitted, setSubmitted] = useState(false);
-  const [formData, setFormData] = useState<RegistrationFormData>(
-    initialFormData
-  );
+  const { fields: formData, handleFieldChange } =
+    useFormFields<RegistrationFormData>(initialFormData);
 
-  // All fields feed into one local state object because this form is currently frontend-only.
-  const handleChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-    >
-  ) => {
-    const { name, value, type } = e.target;
-
-    if (type === "checkbox") {
-      setFormData((prev) => ({
-        ...prev,
-        [name]: (e.target as HTMLInputElement).checked,
-      }));
-      return;
-    }
-
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // This form is still a scaffold, so submit currently just logs the data and shows a success state.
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log("Registration submitted:", formData);
     setSubmitted(true);
   };
 
@@ -77,7 +53,7 @@ export default function RegistrationForm() {
               name="teamName"
               required
               value={formData.teamName}
-              onChange={handleChange}
+              onChange={handleFieldChange}
             />
           </div>
 
@@ -90,7 +66,7 @@ export default function RegistrationForm() {
                 name="captainName"
                 required
                 value={formData.captainName}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
             <div className="form-group">
@@ -101,7 +77,7 @@ export default function RegistrationForm() {
                 name="captainEmail"
                 required
                 value={formData.captainEmail}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
           </div>
@@ -115,7 +91,7 @@ export default function RegistrationForm() {
                 name="captainPhone"
                 required
                 value={formData.captainPhone}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />
             </div>
             <div className="form-group">
@@ -125,7 +101,7 @@ export default function RegistrationForm() {
                 name="teamSize"
                 required
                 value={formData.teamSize}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               >
                 <option value="">Select team size</option>
                 <option value="5">5 Players</option>
@@ -142,7 +118,7 @@ export default function RegistrationForm() {
               name="tournament"
               required
               value={formData.tournament}
-              onChange={handleChange}
+              onChange={handleFieldChange}
             >
               <option value="">Select a tournament</option>
               <option value="valorant">Valorant Open Series</option>
@@ -161,7 +137,7 @@ export default function RegistrationForm() {
               rows={4}
               placeholder="Tell us about your team..."
               value={formData.teamBio}
-              onChange={handleChange}
+              onChange={handleFieldChange}
             />
           </div>
 
@@ -172,7 +148,7 @@ export default function RegistrationForm() {
                 name="terms"
                 required
                 checked={formData.terms}
-                onChange={handleChange}
+                onChange={handleFieldChange}
               />{" "}
               I agree to the terms and conditions *
             </label>
