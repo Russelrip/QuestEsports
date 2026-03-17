@@ -99,18 +99,19 @@ const validateImageUpload = ({ file, invalidMessage }) => {
 const buildSafeUploadFilename = (extension) =>
   `${Date.now()}-${crypto.randomUUID()}${extension}`;
 
-const createImageUpload = (directory, invalidMessage) =>
+const isAllowedImageMimeType = (mimetype) =>
+  mimetype === "image/jpeg" ||
+  mimetype === "image/png" ||
+  mimetype === "image/webp";
+
+const createImageUpload = (invalidMessage) =>
   multer({
     storage: multer.memoryStorage(),
     limits: {
       fileSize: 5 * 1024 * 1024,
     },
     fileFilter: (req, file, callback) => {
-      if (
-        file.mimetype === "image/jpeg" ||
-        file.mimetype === "image/png" ||
-        file.mimetype === "image/webp"
-      ) {
+      if (isAllowedImageMimeType(file.mimetype)) {
         callback(null, true);
         return;
       }
@@ -119,13 +120,9 @@ const createImageUpload = (directory, invalidMessage) =>
     },
   });
 
-const imageUpload = createImageUpload(
-  teamLogoDirectory,
-  "Only image files are allowed for team logos."
-);
+const imageUpload = createImageUpload("Only image files are allowed for team logos.");
 
 const tournamentBannerUpload = createImageUpload(
-  tournamentBannerDirectory,
   "Only image files are allowed for tournament banners."
 );
 
@@ -136,11 +133,7 @@ const dbImageUpload = multer({
     files: 10,
   },
   fileFilter: (req, file, callback) => {
-    if (
-      file.mimetype === "image/png" ||
-      file.mimetype === "image/jpeg" ||
-      file.mimetype === "image/webp"
-    ) {
+    if (isAllowedImageMimeType(file.mimetype)) {
       callback(null, true);
       return;
     }

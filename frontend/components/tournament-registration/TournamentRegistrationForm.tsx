@@ -68,6 +68,9 @@ export default function TournamentRegistrationForm({
     initialTournamentRegistrationFormData
   );
   const lastPrefillRef = useRef<Partial<TournamentRegistrationFormData>>({});
+  const loginRedirectPath = formData.tournament
+    ? `/tournament-registration?tournament=${encodeURIComponent(formData.tournament)}`
+    : "/tournament-registration";
 
   const tournamentMap = useMemo(
     () =>
@@ -180,11 +183,7 @@ export default function TournamentRegistrationForm({
     }
 
     if (!user) {
-      const redirectPath = formData.tournament
-        ? `/tournament-registration?tournament=${encodeURIComponent(formData.tournament)}`
-        : "/tournament-registration";
-
-      router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
+      router.push(`/login?redirect=${encodeURIComponent(loginRedirectPath)}`);
       return;
     }
 
@@ -244,11 +243,7 @@ export default function TournamentRegistrationForm({
           <h2>Register Your Team</h2>
           <p>You need to log in before registering for a tournament.</p>
           <Link
-            href={`/login?redirect=${encodeURIComponent(
-              formData.tournament
-                ? `/tournament-registration?tournament=${encodeURIComponent(formData.tournament)}`
-                : "/tournament-registration"
-            )}`}
+            href={`/login?redirect=${encodeURIComponent(loginRedirectPath)}`}
             className="btn btn-primary"
           >
             Go to Login

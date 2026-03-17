@@ -11,6 +11,13 @@ const {
   deletePosterById,
 } = require("./media.service");
 
+const sendImageBuffer = (res, image, cacheControl) => {
+  res.setHeader("Content-Type", image.contentType);
+  res.setHeader("Content-Length", image.data.length);
+  res.setHeader("Cache-Control", cacheControl);
+  res.status(200).send(image.data);
+};
+
 const uploadImages = asyncHandler(async (req, res) => {
   const assets = await createImageAssets({
     body: req.body,
@@ -46,19 +53,13 @@ const getImage = asyncHandler(async (req, res) => {
 const streamImage = asyncHandler(async (req, res) => {
   const image = await getImageAssetById(req.params.imageId);
 
-  res.setHeader("Content-Type", image.contentType);
-  res.setHeader("Content-Length", image.data.length);
-  res.setHeader("Cache-Control", "private, no-store");
-  res.status(200).send(image.data);
+  sendImageBuffer(res, image, "private, no-store");
 });
 
 const streamPosterImage = asyncHandler(async (req, res) => {
   const image = await getPosterImageAssetByPosterId(req.params.posterId);
 
-  res.setHeader("Content-Type", image.contentType);
-  res.setHeader("Content-Length", image.data.length);
-  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-  res.status(200).send(image.data);
+  sendImageBuffer(res, image, "public, max-age=31536000, immutable");
 });
 
 const createPosterEntry = asyncHandler(async (req, res) => {
