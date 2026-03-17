@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+const apiOrigin = apiUrl ? new URL(apiUrl).origin : null;
 const isProduction = process.env.NODE_ENV === "production";
 const apiRemotePattern = apiUrl
   ? (() => {
@@ -15,7 +16,12 @@ const apiRemotePattern = apiUrl
 
 const connectSources = ["'self'"];
 if (apiUrl) {
-  connectSources.push(apiUrl);
+  connectSources.push(apiOrigin || apiUrl);
+}
+
+const imageSources = ["'self'", "data:", "blob:", "https:"];
+if (apiOrigin) {
+  imageSources.push(apiOrigin);
 }
 
 const contentSecurityPolicy = [
@@ -23,7 +29,7 @@ const contentSecurityPolicy = [
   "base-uri 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-  "img-src 'self' data: blob: https:",
+  `img-src ${imageSources.join(" ")}`,
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
   `connect-src ${connectSources.join(" ")}`,
@@ -31,7 +37,7 @@ const contentSecurityPolicy = [
     ? "script-src 'self' 'unsafe-inline'"
     : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
   "form-action 'self'",
-  "upgrade-insecure-requests",
+  ...(isProduction ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 
 const nextConfig: NextConfig = {

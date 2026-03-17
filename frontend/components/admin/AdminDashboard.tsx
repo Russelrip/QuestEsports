@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/auth";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { resolveMediaUrl } from "@/lib/media";
 import EmptyState from "@/components/ui/EmptyState";
 
 type AdminTab = "dashboard" | "users" | "contacts" | "registrations";
@@ -159,10 +160,7 @@ function RegistrationDetailsModal({
     return null;
   }
 
-  const logoSrc =
-    registration.logoUrl && process.env.NEXT_PUBLIC_API_URL
-      ? `${process.env.NEXT_PUBLIC_API_URL}${registration.logoUrl}`
-      : registration.logoUrl || null;
+  const logoSrc = registration.logoUrl ? resolveMediaUrl(registration.logoUrl) : null;
 
   return (
     <div className="admin-modal-backdrop" role="presentation" onClick={onClose}>

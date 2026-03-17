@@ -310,7 +310,22 @@ export const videoSections = [
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "";
 
-export const resolveMediaUrl = (path: string) => `${apiBaseUrl}${path}`;
+export const resolveMediaUrl = (path: string) => {
+  if (!path) {
+    return path;
+  }
+
+  if (
+    path.startsWith("http://") ||
+    path.startsWith("https://") ||
+    path.startsWith("data:") ||
+    path.startsWith("blob:")
+  ) {
+    return path;
+  }
+
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+};
 
 const parseMediaResponse = async <T>(response: Response) => {
   const data = (await response.json()) as Partial<MediaSuccess<T>> & {
