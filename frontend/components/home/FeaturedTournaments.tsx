@@ -1,6 +1,6 @@
-import Image from "next/image";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
+import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
@@ -15,22 +15,14 @@ export default async function FeaturedTournaments() {
     <section className="featured">
       <div className="container">
         <h2>Featured Tournaments</h2>
-        <div className="tournament-grid">
+        <div className="tournament-grid featured-tournament-grid">
           {featuredTournaments.map((tournament) => (
-            <div className="tournament-card" key={tournament.id}>
-              {tournament.bannerUrl ? (
-                <Image
-                  src={`${process.env.NEXT_PUBLIC_API_URL}${tournament.bannerUrl}`}
-                  alt={tournament.title}
-                  className="tournament-poster-img"
-                  width={800}
-                  height={1140}
-                />
-              ) : (
-                <div className="coming-soon-visual">
-                  <span>QUEST</span>
-                </div>
-              )}
+            <div className="tournament-card featured-tournament-card" key={tournament.id}>
+              <TournamentBannerImage
+                bannerUrl={tournament.bannerUrl}
+                title={tournament.title}
+                className="featured-tournament-img"
+              />
               <h3>{tournament.title}</h3>
               <p>{tournament.prizePool} Prize Pool</p>
               <p>{tournament.format}</p>

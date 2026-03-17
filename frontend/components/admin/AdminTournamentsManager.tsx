@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/EmptyState";
-import { adminRequest } from "@/lib/admin";
+import { adminRequest, emptyPagination, type Pagination } from "@/lib/admin";
 import {
   Tournament,
   getTournamentRegistrationLabel,
@@ -19,6 +19,8 @@ export default function AdminTournamentsManager() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [visibility, setVisibility] = useState("");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<Pagination>(emptyPagination);
 
   const loadTournaments = useCallback(async () => {
     setLoading(true);
@@ -35,12 +37,17 @@ export default function AdminTournamentsManager() {
       if (visibility) {
         params.set("isPublished", visibility);
       }
+      params.set("page", String(page));
 
       const suffix = params.toString() ? `?${params.toString()}` : "";
-      const data = await adminRequest<{ tournaments: Tournament[] }>(
+      const data = await adminRequest<{
+        tournaments: Tournament[];
+        pagination: Pagination;
+      }>(
         `/api/admin/tournaments${suffix}`
       );
       setTournaments(data.tournaments);
+      setPagination(data.pagination);
     } catch (nextError) {
       setError(
         nextError instanceof Error ? nextError.message : "Unable to load tournaments."
@@ -48,11 +55,15 @@ export default function AdminTournamentsManager() {
     } finally {
       setLoading(false);
     }
-  }, [search, status, visibility]);
+  }, [page, search, status, visibility]);
 
   useEffect(() => {
     void loadTournaments();
   }, [loadTournaments]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, status, visibility]);
 
   const handleDelete = async (tournamentId: string) => {
     if (
@@ -67,9 +78,11 @@ export default function AdminTournamentsManager() {
       await adminRequest(`/api/admin/tournaments/${tournamentId}`, {
         method: "DELETE",
       });
-      setTournaments((current) =>
-        current.filter((tournament) => tournament.id !== tournamentId)
-      );
+      if (tournaments.length === 1 && page > 1) {
+        setPage((current) => Math.max(1, current - 1));
+      } else {
+        void loadTournaments();
+      }
     } catch (nextError) {
       setError(
         nextError instanceof Error ? nextError.message : "Unable to delete tournament."
@@ -182,87 +195,115 @@ export default function AdminTournamentsManager() {
         ) : tournaments.length === 0 ? (
           <EmptyState description="No tournaments matched your current search or filters." />
         ) : (
-          <div className="admin-users-table-wrap">
-            <table className="admin-users-table">
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Game</th>
-                  <th>Status</th>
-                  <th>Visibility</th>
-                  <th>Registrations</th>
-                  <th>Registration</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tournaments.map((tournament) => (
-                  <tr key={tournament.id}>
-                    <td>
-                      <strong>{tournament.title}</strong>
-                      <br />
-                      <small>{tournament.slug}</small>
-                    </td>
-                    <td>{tournament.game}</td>
-                    <td>
-                      <span className={getTournamentStatusBadgeClassName(tournament.status)}>
-                        {getTournamentStatusLabel(tournament.status)}
-                      </span>
-                    </td>
-                    <td>{tournament.isPublished ? "Published" : "Hidden"}</td>
-                    <td>
-                      {tournament.registrationCount} / {tournament.maxTeams}
-                    </td>
-                    <td>{getTournamentRegistrationLabel(tournament)}</td>
-                    <td>
-                      <div className="admin-table-actions">
-                        <Link
-                          href={`/admin/tournaments/${tournament.id}/edit`}
-                          className="btn btn-secondary btn-small"
-                        >
-                          Edit
-                        </Link>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-small"
-                          onClick={() =>
-                            handleQuickUpdate(tournament, {
-                              isPublished: !tournament.isPublished,
-                            })
-                          }
-                        >
-                          {tournament.isPublished ? "Unpublish" : "Publish"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-small"
-                          onClick={() =>
-                            handleQuickUpdate(tournament, {
-                              status:
-                                tournament.status === "registration_open"
-                                  ? "upcoming"
-                                  : "registration_open",
-                            })
-                          }
-                        >
-                          {tournament.status === "registration_open"
-                            ? "Close Reg"
-                            : "Open Reg"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-small admin-danger-button"
-                          onClick={() => handleDelete(tournament.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
+          <>
+            <div className="admin-users-table-wrap">
+              <table className="admin-users-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Game</th>
+                    <th>Status</th>
+                    <th>Visibility</th>
+                    <th>Registrations</th>
+                    <th>Registration</th>
+                    <th>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {tournaments.map((tournament) => (
+                    <tr key={tournament.id}>
+                      <td>
+                        <strong>{tournament.title}</strong>
+                        <br />
+                        <small>{tournament.slug}</small>
+                      </td>
+                      <td>{tournament.game}</td>
+                      <td>
+                        <span className={getTournamentStatusBadgeClassName(tournament.status)}>
+                          {getTournamentStatusLabel(tournament.status)}
+                        </span>
+                      </td>
+                      <td>{tournament.isPublished ? "Published" : "Hidden"}</td>
+                      <td>
+                        {tournament.registrationCount} / {tournament.maxTeams}
+                      </td>
+                      <td>{getTournamentRegistrationLabel(tournament)}</td>
+                      <td>
+                        <div className="admin-table-actions">
+                          <Link
+                            href={`/admin/tournaments/${tournament.id}/edit`}
+                            className="btn btn-secondary btn-small"
+                          >
+                            Edit
+                          </Link>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-small"
+                            onClick={() =>
+                              handleQuickUpdate(tournament, {
+                                isPublished: !tournament.isPublished,
+                              })
+                            }
+                          >
+                            {tournament.isPublished ? "Unpublish" : "Publish"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-small"
+                            onClick={() =>
+                              handleQuickUpdate(tournament, {
+                                status:
+                                  tournament.status === "registration_open"
+                                    ? "upcoming"
+                                    : "registration_open",
+                              })
+                            }
+                          >
+                            {tournament.status === "registration_open"
+                              ? "Close Reg"
+                              : "Open Reg"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-small admin-danger-button"
+                            onClick={() => handleDelete(tournament.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="admin-pagination-row">
+              <p>
+                Showing page {pagination.page} of {pagination.totalPages} ({pagination.total}{" "}
+                tournaments)
+              </p>
+              <div className="admin-table-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  disabled={pagination.page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  disabled={pagination.page >= pagination.totalPages}
+                  onClick={() =>
+                    setPage((current) => Math.min(pagination.totalPages, current + 1))
+                  }
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </AdminShell>

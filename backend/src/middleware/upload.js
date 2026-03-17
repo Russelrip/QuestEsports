@@ -54,8 +54,29 @@ const tournamentBannerUpload = createImageUpload(
   "Only image files are allowed for tournament banners."
 );
 
+const dbImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 10,
+  },
+  fileFilter: (req, file, callback) => {
+    if (
+      file.mimetype === "image/png" ||
+      file.mimetype === "image/jpeg" ||
+      file.mimetype === "image/jpg"
+    ) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new HttpError(400, "Only PNG and JPG images are allowed."));
+  },
+});
+
 module.exports = {
   ensureUploadDirectories,
   imageUpload,
   tournamentBannerUpload,
+  dbImageUpload,
 };

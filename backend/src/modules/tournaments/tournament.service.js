@@ -2,6 +2,10 @@ const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const {
+  buildPagination,
+  buildPagedResponse,
+} = require("../../lib/pagination");
+const {
   normalizeEmail,
   normalizeText,
   normalizeSlug,
@@ -149,6 +153,26 @@ const mapTournamentWithRegistrations = (tournament) => ({
     createdAt: registration.createdAt,
   })),
 });
+
+const sortPublicTournaments = (tournaments) =>
+  [...tournaments].sort((left, right) => {
+    if (left.isRegistrationOpen !== right.isRegistrationOpen) {
+      return left.isRegistrationOpen ? -1 : 1;
+    }
+
+    if (left.isFeatured !== right.isFeatured) {
+      return left.isFeatured ? -1 : 1;
+    }
+
+    const startDateDifference =
+      new Date(left.startDate).getTime() - new Date(right.startDate).getTime();
+
+    if (startDateDifference !== 0) {
+      return startDateDifference;
+    }
+
+    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+  });
 
 const getTournamentLookup = (body) => {
   const tournamentId = normalizeText(body.tournamentId);
@@ -308,11 +332,13 @@ const listPublicTournaments = async ({ game } = {}) => {
     },
   });
 
-  return tournaments.map((tournament) =>
-    mapTournament({
-      ...tournament,
-      registrationCount: tournament._count.teamRegistrations,
-    })
+  return sortPublicTournaments(
+    tournaments.map((tournament) =>
+      mapTournament({
+        ...tournament,
+        registrationCount: tournament._count.teamRegistrations,
+      })
+    )
   );
 };
 
@@ -347,44 +373,56 @@ const getPublicTournamentBySlug = async (slug) => {
   });
 };
 
-const listAdminTournaments = async ({ search, status, isPublished } = {}) => {
+const listAdminTournaments = async ({ page, pageSize, search, status, isPublished } = {}) => {
+  const pagination = buildPagination({ page, pageSize });
   const normalizedSearch = normalizeText(search);
   const normalizedStatus = normalizeText(status).toLowerCase();
   const visibilityFilter =
     typeof isPublished === "string" && isPublished.length > 0
       ? normalizeBooleanFlag(isPublished)
       : undefined;
+  const where = {
+    ...(normalizedSearch
+      ? {
+          OR: [
+            { title: { contains: normalizedSearch, mode: "insensitive" } },
+            { slug: { contains: normalizedSearch, mode: "insensitive" } },
+            { game: { contains: normalizedSearch, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+    ...(TOURNAMENT_STATUSES.has(normalizedStatus) ? { status: normalizedStatus } : {}),
+    ...(typeof visibilityFilter === "boolean" ? { isPublished: visibilityFilter } : {}),
+  };
 
-  const tournaments = await prisma.tournament.findMany({
-    where: {
-      ...(normalizedSearch
-        ? {
-            OR: [
-              { title: { contains: normalizedSearch, mode: "insensitive" } },
-              { slug: { contains: normalizedSearch, mode: "insensitive" } },
-              { game: { contains: normalizedSearch, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-      ...(TOURNAMENT_STATUSES.has(normalizedStatus) ? { status: normalizedStatus } : {}),
-      ...(typeof visibilityFilter === "boolean" ? { isPublished: visibilityFilter } : {}),
-    },
-    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
-    include: {
-      _count: {
-        select: {
-          teamRegistrations: true,
+  const [total, tournaments] = await prisma.$transaction([
+    prisma.tournament.count({ where }),
+    prisma.tournament.findMany({
+      where,
+      orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+      skip: (pagination.page - 1) * pagination.pageSize,
+      take: pagination.pageSize,
+      include: {
+        _count: {
+          select: {
+            teamRegistrations: true,
+          },
         },
       },
-    },
-  });
+    }),
+  ]);
 
-  return tournaments.map((tournament) =>
-    mapTournament({
-      ...tournament,
-      registrationCount: tournament._count.teamRegistrations,
-    })
-  );
+  return buildPagedResponse({
+    items: tournaments.map((tournament) =>
+      mapTournament({
+        ...tournament,
+        registrationCount: tournament._count.teamRegistrations,
+      })
+    ),
+    total,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+  });
 };
 
 const getAdminTournamentById = async (tournamentId) => {

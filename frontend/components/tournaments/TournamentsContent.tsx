@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
+import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
 import TournamentInfoList from "@/components/tournaments/TournamentInfoList";
 import EmptyState from "@/components/ui/EmptyState";
 import { Tournament } from "@/lib/tournaments";
@@ -59,20 +59,12 @@ export default function TournamentsContent({
                   key={tournament.id}
                 >
                   <div className="tournament-image">
-                    {tournament.bannerUrl ? (
-                      <Link href={`/tournaments/${tournament.slug}`}>
-                        <Image
-                          src={`${process.env.NEXT_PUBLIC_API_URL}${tournament.bannerUrl}`}
-                          alt={tournament.title}
-                          width={800}
-                          height={600}
-                        />
-                      </Link>
-                    ) : (
-                      <div className="coming-soon-block">
-                        <span>QUEST</span>
-                      </div>
-                    )}
+                    <Link href={`/tournaments/${tournament.slug}`}>
+                      <TournamentBannerImage
+                        bannerUrl={tournament.bannerUrl}
+                        title={tournament.title}
+                      />
+                    </Link>
                   </div>
 
                   <div className="tournament-details">
@@ -81,7 +73,6 @@ export default function TournamentsContent({
                     </Link>
 
                     <TournamentInfoList tournament={tournament} />
-                    <p className="description">{tournament.shortDescription}</p>
 
                     <div className="tournament-actions">
                       <Link

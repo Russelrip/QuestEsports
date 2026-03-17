@@ -115,9 +115,14 @@ export default function RegisterTournamentButton({
         className={`btn ${isRegistered ? "btn-secondary is-disabled" : "btn-primary"}`}
         disabled={isRegistered || isChecking}
         aria-disabled={isRegistered || isChecking}
-        onClick={() =>
-          router.push(`/tournament-registration?tournament=${tournament.slug}`)
-        }
+        onClick={() => {
+          const registrationPath = `/tournament-registration?tournament=${tournament.slug}`;
+          const destination = user
+            ? registrationPath
+            : `/login?redirect=${encodeURIComponent(registrationPath)}`;
+
+          router.push(destination);
+        }}
       >
         {isRegistered ? "Registered" : isChecking ? "Checking..." : "Register Now"}
       </button>

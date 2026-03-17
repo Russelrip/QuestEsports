@@ -1,5 +1,6 @@
 const { HttpError } = require("../lib/http-error");
 const { logger } = require("../lib/logger");
+const { captureException } = require("../lib/monitoring");
 const { mapPrismaError } = require("../lib/prisma-errors");
 
 const notFoundHandler = (req, res) => {
@@ -25,6 +26,11 @@ const errorHandler = (error, req, res, next) => {
         statusCode: normalizedError.statusCode,
         error: normalizedError,
       });
+      captureException(normalizedError, {
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: normalizedError.statusCode,
+      });
     }
 
     res.status(normalizedError.statusCode).json({
@@ -47,6 +53,11 @@ const errorHandler = (error, req, res, next) => {
     method: req.method,
     path: req.originalUrl,
     error: normalizedError,
+  });
+  captureException(normalizedError, {
+    method: req.method,
+    path: req.originalUrl,
+    statusCode: 500,
   });
 
   res.status(500).json({

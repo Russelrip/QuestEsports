@@ -1,5 +1,6 @@
 const { env } = require("../../config/env");
 const { asyncHandler } = require("../../lib/async-handler");
+const { logger } = require("../../lib/logger");
 const {
   createSession,
   deleteSessionByToken,
@@ -29,6 +30,10 @@ const signup = asyncHandler(async (req, res) => {
 const login = asyncHandler(async (req, res) => {
   const { userId, rememberMe, user } = await authenticateUser({
     body: req.body,
+    requestMeta: {
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+    },
   });
 
   const { token, expiresAt } = await createSession({
@@ -37,6 +42,12 @@ const login = asyncHandler(async (req, res) => {
   });
 
   setSessionCookie(res, token, expiresAt);
+
+  logger.info("User login succeeded", {
+    userId,
+    rememberMe,
+    ip: req.ip,
+  });
 
   res.status(200).json({
     success: true,
@@ -51,6 +62,11 @@ const logout = asyncHandler(async (req, res) => {
   }
 
   clearSessionCookie(res);
+
+  logger.info("User logout completed", {
+    userId: req.user?.id || null,
+    ip: req.ip,
+  });
 
   res.status(200).json({
     success: true,

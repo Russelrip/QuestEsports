@@ -2,17 +2,15 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import RosterMemberFields from "@/components/tournament-registration/RosterMemberFields";
+import RegistrationRosterSection from "@/components/tournament-registration/RegistrationRosterSection";
 import { useFormFields } from "@/hooks/useFormFields";
-import { apiFetch } from "@/lib/auth";
 import {
-  isTournamentRegisteredLocally,
-  markTournamentRegistered,
-} from "@/lib/registered-tournaments";
+  submitTournamentRegistration,
+  useTournamentRegistrationStatus,
+} from "@/hooks/useTournamentRegistration";
 import {
-  appendTournamentRegistrationFormData,
   initialTournamentRegistrationFormData,
   requiredPlayerGroups,
   substitutePlayerGroups,
@@ -46,18 +44,17 @@ export default function TournamentRegistrationForm({
   const { user, isLoading: authLoading } = useAuth();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isAlreadyRegistered, setIsAlreadyRegistered] = useState(false);
-  const [registrationCheckLoading, setRegistrationCheckLoading] = useState(false);
   const {
     fields: formData,
     handleFieldChange,
     updateField,
+    setFields,
     resetFields,
   } = useFormFields<TournamentRegistrationFormData>(
     initialTournamentRegistrationFormData
   );
+  const lastPrefillRef = useRef<Partial<TournamentRegistrationFormData>>({});
 
   const tournamentMap = useMemo(
     () =>
@@ -71,6 +68,73 @@ export default function TournamentRegistrationForm({
   const selectedTournament = formData.tournament
     ? tournamentMap[formData.tournament]
     : undefined;
+  const {
+    isAlreadyRegistered,
+    registrationCheckLoading,
+    setIsAlreadyRegistered,
+    setStatusMessage,
+    statusMessage,
+  } = useTournamentRegistrationStatus({
+    authLoading,
+    tournamentSlug: formData.tournament,
+    user,
+  });
+
+  useEffect(() => {
+    if (!user) {
+      lastPrefillRef.current = {};
+      return;
+    }
+
+    const nextPrefill: Partial<TournamentRegistrationFormData> = {
+      captainName: [user.firstName, user.lastName].filter(Boolean).join(" ").trim(),
+      captainEmail: user.email || "",
+      captainPhone: user.phone || "",
+      captainDiscord: user.discordTag || "",
+      contactEmail: user.email || "",
+    };
+
+    setFields((current) => {
+      const previousPrefill = lastPrefillRef.current;
+      let hasChanges = false;
+      const nextFields = { ...current };
+
+      (Object.keys(nextPrefill) as (keyof typeof nextPrefill)[]).forEach((key) => {
+        const prefilledValue = nextPrefill[key] || "";
+        const currentValue = current[key] || "";
+        const previousValue = previousPrefill[key] || "";
+
+        if (!currentValue || currentValue === previousValue) {
+          if (currentValue !== prefilledValue) {
+            nextFields[key] = prefilledValue;
+            hasChanges = true;
+          }
+        }
+      });
+
+      lastPrefillRef.current = nextPrefill;
+      return hasChanges ? nextFields : current;
+    });
+  }, [setFields, user]);
+
+  useEffect(() => {
+    if (authLoading || user) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    const selectedSlug = searchParams.get("tournament");
+
+    if (selectedSlug) {
+      params.set("tournament", selectedSlug);
+    }
+
+    const redirectPath = params.toString()
+      ? `/tournament-registration?${params.toString()}`
+      : "/tournament-registration";
+
+    router.replace(`/login?redirect=${encodeURIComponent(redirectPath)}`);
+  }, [authLoading, router, searchParams, user]);
 
   useEffect(() => {
     const requestedTournamentSlug = searchParams.get("tournament");
@@ -92,87 +156,24 @@ export default function TournamentRegistrationForm({
     }
   }, [formData.tournament, searchParams, tournamentMap, updateField]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const checkRegistration = async () => {
-      if (!formData.tournament) {
-        setIsAlreadyRegistered(false);
-        setRegistrationCheckLoading(false);
-        setStatusMessage("");
-        return;
-      }
-
-      if (isTournamentRegisteredLocally(formData.tournament)) {
-        setIsAlreadyRegistered(true);
-        setRegistrationCheckLoading(false);
-        setStatusMessage("You are already registered for this tournament.");
-        return;
-      }
-
-      if (authLoading) {
-        setRegistrationCheckLoading(true);
-        return;
-      }
-
-      if (!user) {
-        setIsAlreadyRegistered(false);
-        setRegistrationCheckLoading(false);
-        return;
-      }
-
-      try {
-        setRegistrationCheckLoading(true);
-        setStatusMessage("");
-
-        const response = await apiFetch(
-          `/api/tournament-registration/status/${formData.tournament}`
-        );
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-          throw new Error(data.message || "Could not verify your registration.");
-        }
-
-        if (cancelled) {
-          return;
-        }
-
-        const registered = Boolean(data.isRegistered);
-        setIsAlreadyRegistered(registered);
-        if (registered) {
-          setStatusMessage("You are already registered for this tournament.");
-        }
-      } catch (nextError) {
-        if (cancelled) {
-          return;
-        }
-
-        setStatusMessage(
-          nextError instanceof Error
-            ? nextError.message
-            : "Could not verify your registration."
-        );
-        setIsAlreadyRegistered(false);
-      } finally {
-        if (!cancelled) {
-          setRegistrationCheckLoading(false);
-        }
-      }
-    };
-
-    void checkRegistration();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, formData.tournament, user]);
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitted(false);
     setError("");
     setStatusMessage("");
+
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
+      const redirectPath = formData.tournament
+        ? `/tournament-registration?tournament=${encodeURIComponent(formData.tournament)}`
+        : "/tournament-registration";
+
+      router.push(`/login?redirect=${encodeURIComponent(redirectPath)}`);
+      return;
+    }
 
     if (!selectedTournament || !canRegisterForTournament(selectedTournament)) {
       setError("Please choose a tournament that is currently open.");
@@ -187,18 +188,7 @@ export default function TournamentRegistrationForm({
     setLoading(true);
 
     try {
-      const response = await apiFetch("/api/tournament-registration", {
-        method: "POST",
-        body: appendTournamentRegistrationFormData(formData),
-      });
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        setError(data.message || "Registration failed.");
-        return;
-      }
-
-      markTournamentRegistered(formData.tournament);
+      await submitTournamentRegistration(formData);
       setSubmitted(true);
       setIsAlreadyRegistered(true);
       setStatusMessage("Registration saved. Your team is now marked as registered.");
@@ -222,6 +212,38 @@ export default function TournamentRegistrationForm({
       : registrationCheckLoading
         ? "Checking..."
         : "Submit Registration";
+
+  if (authLoading) {
+    return (
+      <section className="tournament-registration-section">
+        <div className="form-container">
+          <h2>Register Your Team</h2>
+          <p>Checking your login status...</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!user) {
+    return (
+      <section className="tournament-registration-section">
+        <div className="form-container">
+          <h2>Register Your Team</h2>
+          <p>You need to log in before registering for a tournament.</p>
+          <Link
+            href={`/login?redirect=${encodeURIComponent(
+              formData.tournament
+                ? `/tournament-registration?tournament=${encodeURIComponent(formData.tournament)}`
+                : "/tournament-registration"
+            )}`}
+            className="btn btn-primary"
+          >
+            Go to Login
+          </Link>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="tournament-registration-section">
@@ -358,33 +380,19 @@ export default function TournamentRegistrationForm({
             </div>
           </fieldset>
 
-          <fieldset>
-            <legend>Player Details</legend>
-            {requiredPlayerGroups.map((player) => (
-              <RosterMemberFields
-                key={player.key}
-                prefix={player.key}
-                title={player.title}
-                required={player.required}
-                values={formData}
-                onChange={handleFieldChange}
-              />
-            ))}
-          </fieldset>
+          <RegistrationRosterSection
+            legend="Player Details"
+            groups={requiredPlayerGroups}
+            values={formData}
+            onChange={handleFieldChange}
+          />
 
-          <fieldset>
-            <legend>Substitute Players</legend>
-            {substitutePlayerGroups.map((player) => (
-              <RosterMemberFields
-                key={player.key}
-                prefix={player.key}
-                title={player.title}
-                required={player.required}
-                values={formData}
-                onChange={handleFieldChange}
-              />
-            ))}
-          </fieldset>
+          <RegistrationRosterSection
+            legend="Substitute Players"
+            groups={substitutePlayerGroups}
+            values={formData}
+            onChange={handleFieldChange}
+          />
 
           <fieldset>
             <legend>Coach Details (Optional)</legend>

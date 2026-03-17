@@ -3,6 +3,11 @@ const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const {
+  buildPagination,
+  buildPagedResponse,
+} = require("../../lib/pagination");
+const { importLegacyPosters } = require("../media/legacy-import.service");
+const {
   normalizeEmail,
   normalizeText,
   normalizeUsername,
@@ -10,38 +15,11 @@ const {
 } = require("../../lib/validation");
 const { mapUserForResponse, validateUserBasics } = require("../auth/auth.service");
 
-const DEFAULT_PAGE = 1;
-const DEFAULT_PAGE_SIZE = 10;
-const MAX_PAGE_SIZE = 50;
-
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
 const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
 
-const normalizePageNumber = (value, fallback) => {
-  const parsed = Number.parseInt(String(value || ""), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-};
-
-const buildPagination = ({ page, pageSize }) => ({
-  page: normalizePageNumber(page, DEFAULT_PAGE),
-  pageSize: Math.min(
-    normalizePageNumber(pageSize, DEFAULT_PAGE_SIZE),
-    MAX_PAGE_SIZE
-  ),
-});
-
 const USER_ROLES = new Set(["user", "admin"]);
-
-const buildPagedResponse = ({ items, total, page, pageSize }) => ({
-  items,
-  pagination: {
-    page,
-    pageSize,
-    total,
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
-  },
-});
 
 const mapContactMessage = (message) => ({
   id: message.id,
@@ -628,6 +606,8 @@ const updateTeamRegistrationStatus = async (registrationId, body) => {
   return mapTeamRegistration(registration);
 };
 
+const runLegacyPosterImport = async () => importLegacyPosters();
+
 module.exports = {
   getAdminDashboardData,
   listAdminUsers,
@@ -641,4 +621,5 @@ module.exports = {
   listTeamRegistrations,
   getRegistrationsByTournament,
   updateTeamRegistrationStatus,
+  runLegacyPosterImport,
 };

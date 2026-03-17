@@ -13,6 +13,7 @@ const {
   getTeamRegistrations,
   getTournamentRegistrations,
   updateRegistrationStatus,
+  importLegacyPosterMedia,
 } = require("./admin.controller");
 
 const router = express.Router();
@@ -32,5 +33,6 @@ router.delete("/admin/contact-messages/:messageId", removeContactMessage);
 router.get("/admin/team-registrations", getTeamRegistrations);
 router.get("/admin/tournaments/:tournamentId/registrations", getTournamentRegistrations);
 router.patch("/admin/team-registrations/:registrationId/status", updateRegistrationStatus);
+router.post("/admin/media/import-legacy-posters", importLegacyPosterMedia);
 
 module.exports = router;

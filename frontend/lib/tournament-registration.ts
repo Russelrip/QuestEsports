@@ -68,7 +68,7 @@ export const initialTournamentRegistrationFormData: TournamentRegistrationFormDa
   falsityWarning: false,
 };
 
-type MemberFieldGroup = {
+export type MemberFieldGroup = {
   key: "player2" | "player3" | "player4" | "player5" | "sub1" | "sub2";
   title: string;
   required: boolean;

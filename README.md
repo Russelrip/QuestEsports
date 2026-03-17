@@ -246,6 +246,10 @@ App URLs:
 
 Returns a basic status payload to confirm the API is running.
 
+### `GET /api/openapi.json`
+
+Returns the current OpenAPI-style contract document for the API. This is the repo's starting point for Swagger UI or any future generated API documentation flow.
+
 ### `POST /api/signup`
 
 Creates a user account using:
@@ -336,9 +340,18 @@ npm run prisma:studio
 
 - CORS is configurable through `CORS_ORIGIN` and supports comma-separated origins.
 - Auth uses `HttpOnly` session cookies backed by the `sessions` table; sensitive fields such as password hashes are never returned by the API.
+- The backend applies origin-based CSRF protection for unsafe requests, security response headers, and rate limiting on login, signup, contact, and tournament-registration submissions.
+- Admin list endpoints now share page/pageSize pagination semantics, including `/api/admin/users`, `/api/admin/contact-messages`, `/api/admin/team-registrations`, and `/api/admin/tournaments`.
 - The generic `/registration` page is currently a frontend-only form scaffold and is separate from the API-backed `/tournament-registration` flow.
 - Tournament registration stores a normalized roster and prevents duplicates for the same tournament by `teamName` or `captainEmail`.
 - Tournament catalogue rows are upserted on backend boot so configured events stay in sync with the API.
+
+## Scaling Recommendations
+
+- Frontend data fetching: the current fetch helpers are intentionally small, but the next step should be introducing React Query or SWR for request caching, background refetching, and optimistic admin mutations.
+- Monitoring: `backend/src/lib/monitoring.js` is a logger-backed adapter so Sentry, Datadog, or OpenTelemetry can be wired in without changing the error middleware contract.
+- Background jobs: `backend/src/lib/jobs.js` is a placeholder seam for queue-backed email, webhook, poster-processing, or audit jobs; BullMQ is the most natural fit if you already have Redis.
+- API contracts: `/api/openapi.json` can be fed into Swagger UI or Redoc once you choose a docs surface for the backend.
 
 ## Gaps To Be Aware Of
 

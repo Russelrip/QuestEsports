@@ -15,6 +15,15 @@ export type AdminDashboardStats = {
   unreadContactMessages: number;
 };
 
+export type LegacyPosterImportSummary = {
+  importedCount: number;
+  skippedCount: number;
+  results: {
+    status: "imported" | "skipped";
+    title: string;
+  }[];
+};
+
 export type AdminUser = {
   id: string;
   firstName: string;
@@ -84,6 +93,10 @@ export const emptyPagination: Pagination = {
   total: 0,
   totalPages: 1,
 };
+
+export type PagedAdminResponse<TItemKey extends string, TItem> = {
+  pagination: Pagination;
+} & Record<TItemKey, TItem[]>;
 
 export const adminRequest = async <T>(
   path: string,

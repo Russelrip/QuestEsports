@@ -12,6 +12,7 @@ const {
   listTeamRegistrations,
   getRegistrationsByTournament,
   updateTeamRegistrationStatus,
+  runLegacyPosterImport,
 } = require("./admin.service");
 
 const getDashboard = asyncHandler(async (req, res) => {
@@ -149,6 +150,16 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
   });
 });
 
+const importLegacyPosterMedia = asyncHandler(async (req, res) => {
+  const summary = await runLegacyPosterImport();
+
+  res.status(200).json({
+    success: true,
+    message: "Legacy poster import finished.",
+    summary,
+  });
+});
+
 module.exports = {
   getDashboard,
   getUsers,
@@ -162,4 +173,5 @@ module.exports = {
   getTeamRegistrations,
   getTournamentRegistrations,
   updateRegistrationStatus,
+  importLegacyPosterMedia,
 };

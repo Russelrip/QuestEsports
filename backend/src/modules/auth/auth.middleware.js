@@ -1,6 +1,7 @@
 const { HttpError } = require("../../lib/http-error");
 const { asyncHandler } = require("../../lib/async-handler");
 const { getSessionFromRequest } = require("./session.service");
+const { logger } = require("../../lib/logger");
 
 const attachSession = asyncHandler(async (req, res, next) => {
   const session = await getSessionFromRequest(req);
@@ -20,6 +21,12 @@ const requireAuth = (req, res, next) => {
 
 const requireAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== "admin") {
+    logger.warn("Blocked admin route access", {
+      method: req.method,
+      path: req.originalUrl,
+      userId: req.user?.id || null,
+      ip: req.ip,
+    });
     next(new HttpError(403, "Admin access is required."));
     return;
   }

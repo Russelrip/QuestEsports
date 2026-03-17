@@ -30,11 +30,12 @@ const getPublicTournament = asyncHandler(async (req, res) => {
 });
 
 const getAdminTournaments = asyncHandler(async (req, res) => {
-  const tournaments = await listAdminTournaments(req.query);
+  const result = await listAdminTournaments(req.query);
 
   res.status(200).json({
     success: true,
-    tournaments,
+    tournaments: result.items,
+    pagination: result.pagination,
   });
 });
 

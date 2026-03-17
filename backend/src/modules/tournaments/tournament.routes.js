@@ -1,6 +1,7 @@
 const express = require("express");
 const { imageUpload, tournamentBannerUpload } = require("../../middleware/upload");
-const { attachSession, requireAdmin } = require("../auth/auth.middleware");
+const { attachSession, requireAuth, requireAdmin } = require("../auth/auth.middleware");
+const { createRateLimiter } = require("../../middleware/rate-limit");
 const {
   getPublicTournaments,
   getPublicTournament,
@@ -14,6 +15,12 @@ const {
 } = require("./tournament.controller");
 
 const router = express.Router();
+const tournamentRegistrationRateLimiter = createRateLimiter({
+  name: "tournament-registration-submit",
+  windowMs: 60 * 60 * 1000,
+  maxRequests: 10,
+  message: "Too many tournament registrations. Please try again later.",
+});
 
 router.use(attachSession);
 
@@ -22,6 +29,8 @@ router.get("/tournaments/:slug", getPublicTournament);
 router.get("/tournament-registration/status/:slug", getTournamentRegistrationStatus);
 router.post(
   "/tournament-registration",
+  requireAuth,
+  tournamentRegistrationRateLimiter,
   imageUpload.single("teamLogo"),
   submitTournamentRegistration
 );

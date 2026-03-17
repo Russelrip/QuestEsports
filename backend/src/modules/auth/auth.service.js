@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { logger } = require("../../lib/logger");
 const {
   normalizeEmail,
   normalizeText,
@@ -115,7 +116,7 @@ const createSignup = async ({ body, adminEmails }) => {
   });
 };
 
-const authenticateUser = async ({ body }) => {
+const authenticateUser = async ({ body, requestMeta = {} }) => {
   const emailOrUsername = normalizeText(body.emailOrUsername);
   const password = String(body.password || "");
 
@@ -149,11 +150,22 @@ const authenticateUser = async ({ body }) => {
   });
 
   if (!user) {
+    logger.warn("Failed login attempt", {
+      ...requestMeta,
+      emailOrUsername,
+      reason: "user_not_found",
+    });
     throw new HttpError(401, "Invalid credentials.");
   }
 
   const isMatch = await bcrypt.compare(password, user.passwordHash);
   if (!isMatch) {
+    logger.warn("Failed login attempt", {
+      ...requestMeta,
+      emailOrUsername,
+      userId: user.id,
+      reason: "invalid_password",
+    });
     throw new HttpError(401, "Invalid credentials.");
   }
 

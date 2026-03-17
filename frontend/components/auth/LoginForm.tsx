@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useFormFields } from "@/hooks/useFormFields";
 import { apiFetch } from "@/lib/auth";
@@ -21,6 +21,7 @@ const initialFormData: LoginFormData = {
 
 export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login } = useAuth();
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
@@ -29,6 +30,12 @@ export default function LoginForm() {
     handleFieldChange,
     resetFields,
   } = useFormFields<LoginFormData>(initialFormData);
+
+  const redirectTo = searchParams.get("redirect");
+  const nextPath =
+    redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//")
+      ? redirectTo
+      : null;
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -61,7 +68,7 @@ export default function LoginForm() {
 
       setSubmitted(true);
       resetFields();
-      router.push(data.user.role === "admin" ? "/admin" : "/profile");
+      router.push(nextPath || (data.user.role === "admin" ? "/admin" : "/profile"));
     } catch (err) {
       console.error("Login error:", err);
       setError("Something went wrong. Please try again.");

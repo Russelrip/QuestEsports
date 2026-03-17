@@ -122,6 +122,7 @@ model Tournament {
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   teamRegistrations TeamRegistration[]
+  posters           Poster[]
 
   @@index([isActive])
   @@index([isPublished, status, startDate])
@@ -173,4 +174,44 @@ model RegistrationMember {
   @@unique([registrationId, role, memberOrder])
   @@index([registrationId])
   @@map("registration_members")
+}
+
+model ImageAsset {
+  id           String   @id @default(uuid()) @db.Uuid
+  title        String
+  description  String?
+  category     String
+  originalName String?  @map("original_name")
+  contentType  String   @map("content_type")
+  data         Bytes
+  createdAt    DateTime @default(now()) @map("created_at")
+  posters      Poster[]
+
+  @@index([category, createdAt])
+  @@index([createdAt])
+  @@map("image_assets")
+}
+
+model Poster {
+  id            String      @id @default(uuid()) @db.Uuid
+  imageAssetId  String      @map("image_asset_id") @db.Uuid
+  tournamentId  String?     @map("tournament_id") @db.Uuid
+  title         String
+  description   String?
+  category      String      @default("poster")
+  headline      String
+  subheadline   String?     @map("subheadline")
+  accentColor   String      @default("#7c3aed") @map("accent_color")
+  textColor     String      @default("#ffffff") @map("text_color")
+  overlayAlign  String      @default("bottom-left") @map("overlay_align")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  imageAsset    ImageAsset  @relation(fields: [imageAssetId], references: [id], onDelete: Cascade)
+  tournament    Tournament? @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+
+  @@index([imageAssetId])
+  @@index([tournamentId])
+  @@index([category, createdAt])
+  @@index([createdAt])
+  @@map("posters")
 }

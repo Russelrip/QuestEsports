@@ -6,12 +6,40 @@ export type VideoItem = {
   alt: string;
 };
 
-export type PosterItem = {
+export type ImageAsset = {
+  id: string;
   title: string;
-  image: string;
-  alt: string;
-  href?: string;
+  description?: string | null;
+  category: string;
+  originalName?: string | null;
+  contentType: string;
+  createdAt: string;
+  imageUrl: string;
 };
+
+export type Poster = {
+  id: string;
+  title: string;
+  description?: string | null;
+  category: string;
+  headline: string;
+  subheadline?: string | null;
+  accentColor: string;
+  textColor: string;
+  overlayAlign: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  createdAt: string;
+  updatedAt: string;
+  imageAsset: ImageAsset;
+  tournament?: {
+    id: string;
+    slug: string;
+    title: string;
+    status: string;
+    isPublished: boolean;
+  } | null;
+};
+
+type MediaSuccess<T> = T & { success: true; message?: string };
 
 export const videoSections = [
   {
@@ -280,91 +308,39 @@ export const videoSections = [
   },
 ] as const;
 
-export const posterItems: PosterItem[] = [
-  {
-    title: "Open Tournament Winners",
-    image: "/images/openwinners.jpg",
-    alt: "Open Tournament Winners",
-  },
-  {
-    title: "Open Tournament 2nd Place",
-    image: "/images/open2place.jpg",
-    alt: "Open Tournament 2nd Place",
-  },
-  {
-    title: "Open Tournament 3rd Place",
-    image: "/images/open3place.jpg",
-    alt: "Open Tournament 3rd Place",
-  },
-  {
-    title: "Appreciation Post",
-    image: "/images/appreciationpost.jpg",
-    alt: "Appreciation Post",
-    href: "https://www.facebook.com/share/p/171tYjHPh5/",
-  },
-  {
-    title: "Open Tournament Poster",
-    image: "/images/openposter.jpg",
-    alt: "Open Tournament Poster",
-  },
-  {
-    title: "Open Tournament Finals",
-    image: "/images/openfinals.jpg",
-    alt: "Open Tournament Finals",
-  },
-  {
-    title: "Open Tournament Semi Finals 2",
-    image: "/images/opensemis2.jpg",
-    alt: "Open Tournament Semi Finals 2",
-  },
-  {
-    title: "Open Tournament Semi Finals 1",
-    image: "/images/opensemis1.jpg",
-    alt: "Open Tournament Semi Finals 1",
-  },
-  {
-    title: "Open Tournament Brackets",
-    image: "/images/openbrackets.jpg",
-    alt: "Open Tournament Brackets",
-  },
-  {
-    title: "Women's Tournament Winners",
-    image: "/images/womenswinners.jpg",
-    alt: "Women's Tournament Winners",
-  },
-  {
-    title: "Women's Tournament 2nd Place",
-    image: "/images/womens2place.jpg",
-    alt: "Women's Tournament 2nd Place",
-  },
-  {
-    title: "Women's Tournament Brackets",
-    image: "/images/womensbrackets.jpg",
-    alt: "Women's Tournament Brackets",
-  },
-  {
-    title: "Women's Tournament Poster",
-    image: "/images/womensposter.jpg",
-    alt: "Women's Tournament Poster",
-  },
-  {
-    title: "Women's Prize Pool",
-    image: "/images/womensprizepool.jpg",
-    alt: "Women's Prize Pool",
-  },
-  {
-    title: "Women's Semi Finals 2",
-    image: "/images/semi2womens.jpg",
-    alt: "Women's Semi Finals 2",
-  },
-  {
-    title: "Women's Semi Finals 1",
-    image: "/images/semi1womens.jpg",
-    alt: "Women's Semi Finals 1",
-  },
-  {
-    title: "Women's Tournament Summary",
-    image: "/images/summarywomens.jpg",
-    alt: "Women's Tournament Summary",
-  },
-];
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "";
+
+export const resolveMediaUrl = (path: string) => `${apiBaseUrl}${path}`;
+
+const parseMediaResponse = async <T>(response: Response) => {
+  const data = (await response.json()) as Partial<MediaSuccess<T>> & {
+    success?: boolean;
+    message?: string;
+  };
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Media request failed.");
+  }
+
+  return data as MediaSuccess<T>;
+};
+
+export const fetchImages = async (searchParams?: URLSearchParams) => {
+  const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
+  const response = await fetch(`${resolveMediaUrl("/api/images")}${suffix}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+
+  return parseMediaResponse<{ images: ImageAsset[] }>(response);
+};
+
+export const fetchPosters = async (searchParams?: URLSearchParams) => {
+  const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
+  const response = await fetch(`${resolveMediaUrl("/api/posters")}${suffix}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+
+  return parseMediaResponse<{ posters: Poster[] }>(response);
+};

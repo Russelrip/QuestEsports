@@ -1,8 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
+import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
 import TournamentInfoList from "@/components/tournaments/TournamentInfoList";
 import { Tournament } from "@/lib/tournaments";
 
@@ -11,27 +11,15 @@ export default function TournamentDetailsContent({
 }: {
   tournament: Tournament;
 }) {
-  const bannerSrc = tournament.bannerUrl
-    ? `${process.env.NEXT_PUBLIC_API_URL}${tournament.bannerUrl}`
-    : null;
-
   return (
     <section className="tournaments-section" style={{ padding: "24px 0 50px" }}>
       <div className="container">
         <div className="tournament-item tournament-item-detail">
           <div className="tournament-image">
-            {bannerSrc ? (
-              <Image
-                src={bannerSrc}
-                alt={tournament.title}
-                width={1000}
-                height={800}
-              />
-            ) : (
-              <div className="coming-soon-block">
-                <span>QUEST</span>
-              </div>
-            )}
+            <TournamentBannerImage
+              bannerUrl={tournament.bannerUrl}
+              title={tournament.title}
+            />
           </div>
 
           <div className="tournament-details">
@@ -48,11 +36,6 @@ export default function TournamentDetailsContent({
             <TournamentInfoList tournament={tournament} />
 
             <div className="tournament-rich-copy">
-              <section className="tournament-copy-card">
-                <h3>Overview</h3>
-                <p>{tournament.fullDescription}</p>
-              </section>
-
               <section className="tournament-copy-card">
                 <h3>Rules</h3>
                 <p>{tournament.rules || "Rules will be shared by the admins soon."}</p>
