@@ -104,5 +104,9 @@ export const appendTournamentRegistrationFormData = (
     submitData.append(key, String(value));
   });
 
+  if (formData.tournament) {
+    submitData.append("tournamentSlug", formData.tournament);
+  }
+
   return submitData;
 };

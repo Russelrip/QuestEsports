@@ -23,6 +23,33 @@ const mapUserForResponse = (user) => ({
   createdAt: user.createdAt,
 });
 
+const validateUserBasics = ({
+  firstName,
+  lastName,
+  email,
+  username,
+}) => {
+  const fieldErrors = {};
+
+  if (!isNonEmptyString(firstName)) {
+    fieldErrors.firstName = "First name is required.";
+  }
+
+  if (!isNonEmptyString(lastName)) {
+    fieldErrors.lastName = "Last name is required.";
+  }
+
+  if (!isNonEmptyString(username)) {
+    fieldErrors.username = "Username is required.";
+  }
+
+  if (!normalizeEmail(email)) {
+    fieldErrors.email = "Email is required.";
+  }
+
+  return fieldErrors;
+};
+
 const createSignup = async ({ body, adminEmails }) => {
   const firstName = normalizeText(body.firstName);
   const lastName = normalizeText(body.lastName);
@@ -245,44 +272,11 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
   return mapUserForResponse(user);
 };
 
-const getAdminDashboardData = async () => {
-  const [totalUsers, totalAdmins, totalContacts, totalTeamRegistrations, users] =
-    await prisma.$transaction([
-      prisma.user.count(),
-      prisma.user.count({ where: { role: "admin" } }),
-      prisma.contactSubmission.count(),
-      prisma.teamRegistration.count(),
-      prisma.user.findMany({
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          username: true,
-          role: true,
-          lastLoginAt: true,
-          createdAt: true,
-        },
-      }),
-    ]);
-
-  return {
-    stats: {
-      totalUsers,
-      totalAdmins,
-      totalContacts,
-      totalTeamRegistrations,
-    },
-    users: users.map(mapUserForResponse),
-  };
-};
-
 module.exports = {
   createSignup,
   authenticateUser,
   getUserProfile,
   updateUserProfile,
-  getAdminDashboardData,
   mapUserForResponse,
+  validateUserBasics,
 };

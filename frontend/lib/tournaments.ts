@@ -1,110 +1,105 @@
+export type TournamentStatus =
+  | "draft"
+  | "upcoming"
+  | "registration_open"
+  | "ongoing"
+  | "completed"
+  | "cancelled";
+
+export type TournamentRegistrationState =
+  | "registration_open"
+  | "registration_closed"
+  | "slots_full";
+
 export type Tournament = {
+  id: string;
   slug: string;
   title: string;
   game: string;
-  image: string | null;
-  prizePool: string;
-  completed: string | null;
+  bannerUrl: string | null;
+  shortDescription: string;
+  fullDescription: string;
+  rules: string | null;
+  startDate: string;
+  endDate: string;
+  registrationDeadline: string;
   format: string;
-  status: string;
-  description: string;
-  registration?: string;
-  registrationOpen: boolean;
+  teamSize: number;
+  maxTeams: number;
+  registrationCount: number;
+  prizePool: string;
+  status: TournamentStatus;
+  isPublished: boolean;
+  bracketLink: string | null;
+  contactLink: string | null;
+  isFeatured: boolean;
+  registrationState: TournamentRegistrationState;
+  isRegistrationOpen: boolean;
+  isSlotsFull: boolean;
+  isRegistrationClosed: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
-export const TOURNAMENTS: Tournament[] = [
-  {
-    slug: "valorant-women",
-    title: "Valorant Women's Championship 2025",
-    game: "valorant",
-    image: "/images/womens.jpg",
-    prizePool: "LKR 50,000",
-    completed: "August 2025",
-    format: "BO3 / 5v5",
-    status: "Completed",
-    description:
-      "A special tournament created to spotlight women in competitive Valorant and support the local esports scene.",
-    registrationOpen: false,
-  },
-  {
-    slug: "valorant-showdown",
-    title: "The Valorant Showdown 2026",
-    game: "valorant",
-    image: "/images/open.jpg",
-    prizePool: "LKR 40,000",
-    completed: "February 12",
-    format: "BO3 / 5v5",
-    status: "Completed",
-    description:
-      "A competitive Valorant event featuring open teams, structured brackets, and a strong finals stage.",
-    registrationOpen: false,
-  },
-  {
-    slug: "quest-masters-open",
-    title: "Quest Masters Open 2026",
-    game: "valorant",
-    image: "/images/openposter.jpg",
-    prizePool: "LKR 75,000",
-    completed: null,
-    format: "BO3 / 5v5",
-    status: "Registration Open",
-    description:
-      "An open-entry Valorant tournament with a polished bracket flow, live coverage, and room for new teams to break through.",
-    registration: "Open Now",
-    registrationOpen: true,
-  },
-];
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-export const isTournamentCompleted = (tournament: Tournament) =>
-  tournament.status === "Completed";
+const fetchJson = async <T>(path: string): Promise<T> => {
+  const response = await fetch(`${API_URL}${path}`, {
+    cache: "no-store",
+  });
+  const data = await response.json();
 
-export const isTournamentRegistrationOpen = (tournament: Tournament) =>
-  tournament.registrationOpen;
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Request failed.");
+  }
+
+  return data;
+};
+
+export const getTournamentStatusLabel = (status: TournamentStatus) =>
+  status.replace(/_/g, " ");
+
+export const getTournamentStatusBadgeClassName = (status: TournamentStatus) =>
+  `status status-${status}`;
 
 export const canRegisterForTournament = (tournament: Tournament) =>
-  !isTournamentCompleted(tournament) && isTournamentRegistrationOpen(tournament);
+  tournament.registrationState === "registration_open";
 
-const getTournamentSortPriority = (tournament: Tournament) => {
-  if (canRegisterForTournament(tournament)) {
-    return 0;
+export const getTournamentRegistrationLabel = (tournament: Tournament) => {
+  if (tournament.registrationState === "slots_full") {
+    return "Slots Full";
   }
 
-  if (!isTournamentCompleted(tournament)) {
-    return 1;
+  if (tournament.registrationState === "registration_closed") {
+    return "Registration Closed";
   }
 
-  return 2;
+  return "Registration Open";
 };
 
-export const getTournamentBySlug = (slug: string) =>
-  TOURNAMENTS.find((tournament) => tournament.slug === slug);
-
-export const getVisibleTournaments = (gameFilter: string) => {
-  const filteredTournaments = TOURNAMENTS.filter(
-    (tournament) =>
-      gameFilter === "all" ||
-      tournament.game === gameFilter ||
-      tournament.game === "all"
-  );
-
-  return filteredTournaments
-    .map((tournament, index) => ({ tournament, index }))
-    .sort((left, right) => {
-      const priorityDifference =
-        getTournamentSortPriority(left.tournament) -
-        getTournamentSortPriority(right.tournament);
-
-      if (priorityDifference !== 0) {
-        return priorityDifference;
-      }
-
-      return left.index - right.index;
-    })
-    .map(({ tournament }) => tournament);
+export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => {
+  const featured = tournaments.filter((tournament) => tournament.isFeatured);
+  const source = featured.length > 0 ? featured : tournaments;
+  return source.slice(0, limit);
 };
 
-export const getRegisterableTournaments = () =>
-  TOURNAMENTS.filter(canRegisterForTournament);
+export const fetchPublicTournaments = async (game?: string) => {
+  const params = new URLSearchParams();
+  if (game && game !== "all") {
+    params.set("game", game);
+  }
 
-export const getFeaturedTournaments = (limit = 3) =>
-  getVisibleTournaments("all").slice(0, limit);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const data = await fetchJson<{ tournaments: Tournament[] }>(`/api/tournaments${suffix}`);
+  return data.tournaments;
+};
+
+export const fetchPublicTournamentBySlug = async (slug: string) => {
+  const data = await fetchJson<{ tournament: Tournament }>(`/api/tournaments/${slug}`);
+  return data.tournament;
+};
+
+export const fetchRegisterableTournaments = async () => {
+  const tournaments = await fetchPublicTournaments();
+  return tournaments.filter(canRegisterForTournament);
+};

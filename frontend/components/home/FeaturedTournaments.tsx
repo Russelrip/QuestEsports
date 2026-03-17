@@ -2,12 +2,14 @@ import Image from "next/image";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import {
+  fetchPublicTournaments,
   getFeaturedTournaments,
-  isTournamentCompleted,
+  getTournamentStatusLabel,
 } from "@/lib/tournaments";
 
-export default function FeaturedTournaments() {
-  const featuredTournaments = getFeaturedTournaments();
+export default async function FeaturedTournaments() {
+  const tournaments = await fetchPublicTournaments();
+  const featuredTournaments = getFeaturedTournaments(tournaments);
 
   return (
     <section className="featured">
@@ -15,26 +17,26 @@ export default function FeaturedTournaments() {
         <h2>Featured Tournaments</h2>
         <div className="tournament-grid">
           {featuredTournaments.map((tournament) => (
-            <div className="tournament-card" key={tournament.slug}>
-              <Image
-                src={tournament.image}
-                alt={tournament.title}
-                className="tournament-poster-img"
-                width={800}
-                height={1140}
-              />
+            <div className="tournament-card" key={tournament.id}>
+              {tournament.bannerUrl ? (
+                <Image
+                  src={`${process.env.NEXT_PUBLIC_API_URL}${tournament.bannerUrl}`}
+                  alt={tournament.title}
+                  className="tournament-poster-img"
+                  width={800}
+                  height={1140}
+                />
+              ) : (
+                <div className="coming-soon-visual">
+                  <span>QUEST</span>
+                </div>
+              )}
               <h3>{tournament.title}</h3>
               <p>{tournament.prizePool} Prize Pool</p>
               <p>{tournament.format}</p>
 
               <div className="tournament-card-footer">
-                {isTournamentCompleted(tournament) ? (
-                  <p className="date completed-date">
-                    Completed - {tournament.completed}
-                  </p>
-                ) : (
-                  <p className="date">{tournament.status}</p>
-                )}
+                <p className="date">{getTournamentStatusLabel(tournament.status)}</p>
                 <Link
                   href={`/tournaments/${tournament.slug}`}
                   className="btn btn-small btn-secondary"

@@ -1,4 +1,16 @@
-import { isTournamentCompleted, Tournament } from "@/lib/tournaments";
+import {
+  Tournament,
+  getTournamentRegistrationLabel,
+  getTournamentStatusBadgeClassName,
+  getTournamentStatusLabel,
+} from "@/lib/tournaments";
+
+const formatDate = (value: string) =>
+  new Date(value).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 
 export default function TournamentInfoList({
   tournament,
@@ -8,34 +20,36 @@ export default function TournamentInfoList({
   return (
     <div className="tournament-info">
       <p>
+        <strong>Game:</strong> {tournament.game}
+      </p>
+      <p>
         <strong>Prize Pool:</strong> {tournament.prizePool}
       </p>
-
-      {tournament.completed ? (
-        <p>
-          <strong>Completed:</strong>{" "}
-          <span className="completed-date-inline">{tournament.completed}</span>
-        </p>
-      ) : null}
-
       <p>
         <strong>Format:</strong> {tournament.format}
       </p>
-
+      <p>
+        <strong>Team Size:</strong> {tournament.teamSize}v{tournament.teamSize}
+      </p>
+      <p>
+        <strong>Slots:</strong> {tournament.registrationCount} / {tournament.maxTeams}
+      </p>
+      <p>
+        <strong>Registration Deadline:</strong> {formatDate(tournament.registrationDeadline)}
+      </p>
+      <p>
+        <strong>Event Dates:</strong> {formatDate(tournament.startDate)} -{" "}
+        {formatDate(tournament.endDate)}
+      </p>
       <p>
         <strong>Status:</strong>{" "}
-        {isTournamentCompleted(tournament) ? (
-          <span className="status status-completed">{tournament.status}</span>
-        ) : (
-          tournament.status
-        )}
+        <span className={getTournamentStatusBadgeClassName(tournament.status)}>
+          {getTournamentStatusLabel(tournament.status)}
+        </span>
       </p>
-
-      {tournament.registration ? (
-        <p>
-          <strong>Registration:</strong> {tournament.registration}
-        </p>
-      ) : null}
+      <p>
+        <strong>Registration:</strong> {getTournamentRegistrationLabel(tournament)}
+      </p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import PageLayout from "@/components/PageLayout";
 import TournamentDetailsContent from "@/components/tournaments/TournamentDetailsContent";
-import { getTournamentBySlug } from "@/lib/tournaments";
+import { Tournament, fetchPublicTournamentBySlug } from "@/lib/tournaments";
 
 export default async function TournamentDetailsPage({
   params,
@@ -9,9 +9,10 @@ export default async function TournamentDetailsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const tournament = getTournamentBySlug(slug);
-
-  if (!tournament) {
+  let tournament: Tournament;
+  try {
+    tournament = await fetchPublicTournamentBySlug(slug);
+  } catch {
     notFound();
   }
 

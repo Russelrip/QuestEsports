@@ -121,9 +121,14 @@ export default function ProfileView() {
           </div>
           <div className="profile-actions">
             {user.role === "admin" && (
-              <Link href="/admin" className="btn btn-primary btn-small">
-                Open Admin Dashboard
-              </Link>
+              <>
+                <Link href="/admin" className="btn btn-primary btn-small">
+                  Open Admin Dashboard
+                </Link>
+                <Link href="/admin/users" className="btn btn-secondary btn-small">
+                  Manage Users
+                </Link>
+              </>
             )}
             <button
               type="button"

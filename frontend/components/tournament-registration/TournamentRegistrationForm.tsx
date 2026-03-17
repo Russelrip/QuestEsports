@@ -19,33 +19,28 @@ import {
   type TournamentRegistrationFormData,
 } from "@/lib/tournament-registration";
 import {
+  Tournament,
   canRegisterForTournament,
-  getRegisterableTournaments,
-  getTournamentBySlug,
+  getTournamentRegistrationLabel,
 } from "@/lib/tournaments";
 
 function RegistrationStatusNote({
-  tournamentSlug,
+  tournament,
 }: {
-  tournamentSlug: string;
+  tournament?: Tournament;
 }) {
-  const selectedTournament = getTournamentBySlug(tournamentSlug);
-
-  if (!selectedTournament) {
+  if (!tournament) {
     return null;
   }
 
-  return (
-    <small>
-      Status: {selectedTournament.status}
-      {selectedTournament.registration
-        ? ` • Registration: ${selectedTournament.registration}`
-        : ""}
-    </small>
-  );
+  return <small>Status: {getTournamentRegistrationLabel(tournament)}</small>;
 }
 
-export default function TournamentRegistrationForm() {
+export default function TournamentRegistrationForm({
+  tournaments,
+}: {
+  tournaments: Tournament[];
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = useAuth();
@@ -64,11 +59,18 @@ export default function TournamentRegistrationForm() {
     initialTournamentRegistrationFormData
   );
 
-  const availableTournaments = useMemo(() => getRegisterableTournaments(), []);
-  const selectedTournament = useMemo(
-    () => getTournamentBySlug(formData.tournament),
-    [formData.tournament]
+  const tournamentMap = useMemo(
+    () =>
+      tournaments.reduce<Record<string, Tournament>>((accumulator, tournament) => {
+        accumulator[tournament.slug] = tournament;
+        return accumulator;
+      }, {}),
+    [tournaments]
   );
+
+  const selectedTournament = formData.tournament
+    ? tournamentMap[formData.tournament]
+    : undefined;
 
   useEffect(() => {
     const requestedTournamentSlug = searchParams.get("tournament");
@@ -76,7 +78,7 @@ export default function TournamentRegistrationForm() {
       return;
     }
 
-    const requestedTournament = getTournamentBySlug(requestedTournamentSlug);
+    const requestedTournament = tournamentMap[requestedTournamentSlug];
 
     if (!requestedTournament || !canRegisterForTournament(requestedTournament)) {
       setError("The selected tournament is not open for registration.");
@@ -88,7 +90,7 @@ export default function TournamentRegistrationForm() {
     if (formData.tournament !== requestedTournamentSlug) {
       updateField("tournament", requestedTournamentSlug);
     }
-  }, [formData.tournament, searchParams, updateField]);
+  }, [formData.tournament, searchParams, tournamentMap, updateField]);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,9 +229,7 @@ export default function TournamentRegistrationForm() {
         <h2>Register Your Team</h2>
 
         <div className="rulebook-box">
-          <h3 className="rulebook-title">
-            Quest Esports Official VALORANT Rulebook
-          </h3>
+          <h3 className="rulebook-title">Quest Esports Official VALORANT Rulebook</h3>
           <p className="rulebook-text">
             Please read the official Quest Esports VALORANT Tournament Rulebook
             before submitting your registration.
@@ -257,13 +257,13 @@ export default function TournamentRegistrationForm() {
                 disabled={loading}
               >
                 <option value="">-- Select a Tournament --</option>
-                {availableTournaments.map((tournament) => (
-                  <option key={tournament.slug} value={tournament.slug}>
+                {tournaments.map((tournament) => (
+                  <option key={tournament.id} value={tournament.slug}>
                     {tournament.title}
                   </option>
                 ))}
               </select>
-              <RegistrationStatusNote tournamentSlug={formData.tournament} />
+              <RegistrationStatusNote tournament={selectedTournament} />
             </div>
           </fieldset>
 
@@ -446,8 +446,8 @@ export default function TournamentRegistrationForm() {
                   checked={formData.rulebook}
                   onChange={handleFieldChange}
                 />{" "}
-                I confirm that I have read and agree to the Quest Esports
-                VALORANT Tournament Rulebook *
+                I confirm that I have read and agree to the Quest Esports VALORANT
+                Tournament Rulebook *
               </label>
             </div>
 
@@ -460,8 +460,8 @@ export default function TournamentRegistrationForm() {
                   checked={formData.falsityWarning}
                   onChange={handleFieldChange}
                 />{" "}
-                I acknowledge that providing false information or rule
-                violations may result in disqualification *
+                I acknowledge that providing false information or rule violations
+                may result in disqualification *
               </label>
             </div>
           </fieldset>

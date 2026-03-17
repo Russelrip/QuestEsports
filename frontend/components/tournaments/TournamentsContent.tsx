@@ -6,21 +6,26 @@ import { useMemo, useState } from "react";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentInfoList from "@/components/tournaments/TournamentInfoList";
 import EmptyState from "@/components/ui/EmptyState";
-import { getVisibleTournaments } from "@/lib/tournaments";
+import { Tournament } from "@/lib/tournaments";
 
-export default function TournamentsContent() {
+export default function TournamentsContent({
+  tournaments,
+}: {
+  tournaments: Tournament[];
+}) {
   const [gameFilter, setGameFilter] = useState("all");
 
   const filteredTournaments = useMemo(() => {
-    return getVisibleTournaments(gameFilter);
-  }, [gameFilter]);
+    if (gameFilter === "all") {
+      return tournaments;
+    }
+
+    return tournaments.filter((tournament) => tournament.game === gameFilter);
+  }, [gameFilter, tournaments]);
 
   return (
     <>
-      <section
-        className="tournament-filters"
-        style={{ padding: "22px 0 10px" }}
-      >
+      <section className="tournament-filters" style={{ padding: "22px 0 10px" }}>
         <div className="container">
           <div className="filter-group">
             <label htmlFor="gameFilter">Filter by Game:</label>
@@ -28,7 +33,7 @@ export default function TournamentsContent() {
               id="gameFilter"
               className="filter-select"
               value={gameFilter}
-              onChange={(e) => setGameFilter(e.target.value)}
+              onChange={(event) => setGameFilter(event.target.value)}
             >
               <option value="all">All Games</option>
               <option value="valorant">Valorant</option>
@@ -43,24 +48,21 @@ export default function TournamentsContent() {
         </div>
       </section>
 
-      <section
-        className="tournaments-section"
-        style={{ padding: "12px 0 50px" }}
-      >
+      <section className="tournaments-section" style={{ padding: "12px 0 50px" }}>
         <div className="container">
           {filteredTournaments.length > 0 ? (
             <div className="tournament-list">
               {filteredTournaments.map((tournament) => (
-                <div
+                <article
                   className="tournament-item"
                   data-game={tournament.game}
-                  key={tournament.slug}
+                  key={tournament.id}
                 >
                   <div className="tournament-image">
-                    {tournament.image ? (
+                    {tournament.bannerUrl ? (
                       <Link href={`/tournaments/${tournament.slug}`}>
                         <Image
-                          src={tournament.image}
+                          src={`${process.env.NEXT_PUBLIC_API_URL}${tournament.bannerUrl}`}
                           alt={tournament.title}
                           width={800}
                           height={600}
@@ -68,7 +70,7 @@ export default function TournamentsContent() {
                       </Link>
                     ) : (
                       <div className="coming-soon-block">
-                        <span>COMING SOON</span>
+                        <span>QUEST</span>
                       </div>
                     )}
                   </div>
@@ -79,8 +81,7 @@ export default function TournamentsContent() {
                     </Link>
 
                     <TournamentInfoList tournament={tournament} />
-
-                    <p className="description">{tournament.description}</p>
+                    <p className="description">{tournament.shortDescription}</p>
 
                     <div className="tournament-actions">
                       <Link
@@ -92,18 +93,14 @@ export default function TournamentsContent() {
                       <RegisterTournamentButton tournament={tournament} />
                     </div>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
           ) : (
             <EmptyState
               title="No tournaments available right now"
               description="More Quest Esports tournaments are currently being planned. Stay tuned for upcoming announcements."
-            >
-              <div className="coming-soon-block">
-                <span>COMING SOON</span>
-              </div>
-            </EmptyState>
+            />
           )}
         </div>
       </section>

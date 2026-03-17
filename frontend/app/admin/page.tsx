@@ -1,11 +1,11 @@
-import AdminDashboard from "@/components/admin/AdminDashboard";
+import AdminOverview from "@/components/admin/AdminOverview";
 import PageLayout from "@/components/PageLayout";
 import { defaultPageDescriptions } from "@/lib/site";
 
 export default function AdminPage() {
   return (
-    <PageLayout title="Admin Dashboard" description={defaultPageDescriptions.admin}>
-      <AdminDashboard />
+    <PageLayout title="Admin Overview" description={defaultPageDescriptions.admin}>
+      <AdminOverview />
     </PageLayout>
   );
 }

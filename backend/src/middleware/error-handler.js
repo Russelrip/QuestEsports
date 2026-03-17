@@ -38,7 +38,7 @@ const errorHandler = (error, req, res, next) => {
   if (normalizedError && normalizedError.code === "LIMIT_FILE_SIZE") {
     res.status(400).json({
       success: false,
-      message: "Team logo must be 5MB or smaller.",
+      message: "Uploaded image must be 5MB or smaller.",
     });
     return;
   }

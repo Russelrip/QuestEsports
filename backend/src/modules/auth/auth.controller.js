@@ -11,7 +11,6 @@ const {
   authenticateUser,
   getUserProfile,
   updateUserProfile,
-  getAdminDashboardData,
   mapUserForResponse,
 } = require("./auth.service");
 
@@ -92,16 +91,6 @@ const updateProfile = asyncHandler(async (req, res) => {
   });
 });
 
-const getAdminDashboard = asyncHandler(async (req, res) => {
-  const dashboard = await getAdminDashboardData();
-
-  res.status(200).json({
-    success: true,
-    stats: dashboard.stats,
-    users: dashboard.users,
-  });
-});
-
 module.exports = {
   signup,
   login,
@@ -109,5 +98,4 @@ module.exports = {
   getCurrentSession,
   getProfile,
   updateProfile,
-  getAdminDashboard,
 };

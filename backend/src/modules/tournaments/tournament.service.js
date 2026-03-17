@@ -4,12 +4,163 @@ const { HttpError } = require("../../lib/http-error");
 const {
   normalizeEmail,
   normalizeText,
+  normalizeSlug,
+  normalizeInteger,
+  normalizeOptionalUrl,
   isValidEmail,
 } = require("../../lib/validation");
 
-const normalizeBooleanFlag = (value) => value === true || value === "true";
+const TOURNAMENT_STATUSES = new Set([
+  "draft",
+  "upcoming",
+  "registration_open",
+  "ongoing",
+  "completed",
+  "cancelled",
+]);
 
 const requiredPlayerIndexes = [2, 3, 4, 5];
+
+const normalizeBooleanFlag = (value) =>
+  value === true || value === "true" || value === "on" || value === 1 || value === "1";
+
+const parseDateValue = (value, fieldLabel) => {
+  const normalized = normalizeText(value);
+
+  if (!normalized) {
+    throw new HttpError(400, `${fieldLabel} is required.`);
+  }
+
+  const parsed = new Date(normalized);
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HttpError(400, `${fieldLabel} must be a valid date.`);
+  }
+
+  return parsed;
+};
+
+const parseOptionalDateValue = (value) => {
+  const normalized = normalizeText(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const parseTournamentStatus = (value) => {
+  const normalized = normalizeText(value).toLowerCase();
+
+  if (!TOURNAMENT_STATUSES.has(normalized)) {
+    throw new HttpError(400, "Invalid tournament status.");
+  }
+
+  return normalized;
+};
+
+const ensureSlugAvailable = async (slug, excludedTournamentId) => {
+  const existingTournament = await prisma.tournament.findFirst({
+    where: {
+      slug,
+      ...(excludedTournamentId ? { id: { not: excludedTournamentId } } : {}),
+    },
+    select: { id: true },
+  });
+
+  if (existingTournament) {
+    throw new HttpError(400, "A tournament with this slug already exists.");
+  }
+};
+
+const getTournamentBannerUrl = (bannerImageName) =>
+  bannerImageName ? `/uploads/tournament-banners/${bannerImageName}` : null;
+
+const getRegistrationState = (tournament) => {
+  const now = new Date();
+  const registrationCount = tournament.registrationCount || 0;
+
+  if (registrationCount >= tournament.maxTeams) {
+    return "slots_full";
+  }
+
+  if (tournament.registrationDeadline && tournament.registrationDeadline < now) {
+    return "registration_closed";
+  }
+
+  if (tournament.status !== "registration_open") {
+    return "registration_closed";
+  }
+
+  return "registration_open";
+};
+
+const mapTournament = (tournament) => {
+  const registrationState = getRegistrationState(tournament);
+
+  return {
+    id: tournament.id,
+    slug: tournament.slug,
+    title: tournament.title,
+    game: tournament.game,
+    bannerUrl: getTournamentBannerUrl(tournament.bannerImageName),
+    shortDescription: tournament.shortDescription,
+    fullDescription: tournament.fullDescription,
+    rules: tournament.rules,
+    startDate: tournament.startDate,
+    endDate: tournament.endDate,
+    registrationDeadline: tournament.registrationDeadline,
+    format: tournament.format,
+    teamSize: tournament.teamSize,
+    maxTeams: tournament.maxTeams,
+    registrationCount: tournament.registrationCount || 0,
+    prizePool: tournament.prizePool,
+    status: tournament.status,
+    isPublished: tournament.isPublished,
+    bracketLink: tournament.bracketLink,
+    contactLink: tournament.contactLink,
+    isFeatured: tournament.isFeatured,
+    registrationState,
+    isRegistrationOpen: registrationState === "registration_open",
+    isSlotsFull: registrationState === "slots_full",
+    isRegistrationClosed: registrationState === "registration_closed",
+    createdAt: tournament.createdAt,
+    updatedAt: tournament.updatedAt,
+  };
+};
+
+const mapTournamentWithRegistrations = (tournament) => ({
+  ...mapTournament({
+    ...tournament,
+    registrationCount:
+      tournament.registrationCount || tournament._count?.teamRegistrations || 0,
+  }),
+  registrations: (tournament.teamRegistrations || []).map((registration) => ({
+    id: registration.id,
+    teamName: registration.teamName,
+    captainName: registration.captainName,
+    captainEmail: registration.captainEmail,
+    contactEmail: registration.contactEmail,
+    status: registration.status,
+    paymentStatus: registration.paymentStatus,
+    verificationStatus: registration.verificationStatus,
+    createdAt: registration.createdAt,
+  })),
+});
+
+const getTournamentLookup = (body) => {
+  const tournamentId = normalizeText(body.tournamentId);
+  const tournamentSlug =
+    normalizeText(body.tournamentSlug) || normalizeText(body.tournament);
+
+  if (!tournamentId && !tournamentSlug) {
+    throw new HttpError(400, "Tournament ID or slug is required.");
+  }
+
+  return { tournamentId, tournamentSlug };
+};
 
 const buildRequiredPlayers = (body) =>
   requiredPlayerIndexes.map((index) => ({
@@ -46,8 +197,302 @@ const buildOptionalMembers = (body) => {
   return [...substitutes, ...coach];
 };
 
+const parseTournamentPayload = ({ body, existingTournament }) => {
+  const title = normalizeText(body.title);
+  const titleFallback = existingTournament?.title || "";
+  const slug =
+    normalizeSlug(body.slug) ||
+    normalizeSlug(title) ||
+    normalizeSlug(titleFallback);
+  const game = normalizeText(body.game).toLowerCase();
+  const shortDescription = normalizeText(body.shortDescription);
+  const fullDescription = normalizeText(body.fullDescription);
+  const rules = normalizeText(body.rules);
+  const format = normalizeText(body.format);
+  const prizePool = normalizeText(body.prizePool);
+  const teamSize = normalizeInteger(body.teamSize);
+  const maxTeams = normalizeInteger(body.maxTeams);
+  const status = parseTournamentStatus(body.status || existingTournament?.status);
+  const startDate = parseDateValue(
+    body.startDate || existingTournament?.startDate,
+    "Start date"
+  );
+  const endDate = parseDateValue(
+    body.endDate || existingTournament?.endDate,
+    "End date"
+  );
+  const registrationDeadline = parseDateValue(
+    body.registrationDeadline || existingTournament?.registrationDeadline,
+    "Registration deadline"
+  );
+  const bracketLink = normalizeText(body.bracketLink)
+    ? normalizeOptionalUrl(body.bracketLink)
+    : null;
+  const contactLink = normalizeText(body.contactLink)
+    ? normalizeOptionalUrl(body.contactLink)
+    : null;
+
+  if (
+    !title ||
+    !slug ||
+    !game ||
+    !shortDescription ||
+    !fullDescription ||
+    !rules ||
+    !format ||
+    !prizePool
+  ) {
+    throw new HttpError(400, "Please fill all required tournament fields.");
+  }
+
+  if (!teamSize || teamSize <= 0 || !maxTeams || maxTeams <= 0) {
+    throw new HttpError(400, "Team size and max teams must be valid numbers.");
+  }
+
+  if (registrationDeadline > startDate) {
+    throw new HttpError(
+      400,
+      "Registration deadline must be before or on the tournament start date."
+    );
+  }
+
+  if (endDate < startDate) {
+    throw new HttpError(400, "End date must be after the start date.");
+  }
+
+  if (normalizeText(body.bracketLink) && !bracketLink) {
+    throw new HttpError(400, "Bracket link must be a valid URL.");
+  }
+
+  if (normalizeText(body.contactLink) && !contactLink) {
+    throw new HttpError(400, "Discord/contact link must be a valid URL.");
+  }
+
+  return {
+    title,
+    slug,
+    game,
+    shortDescription,
+    fullDescription,
+    rules,
+    startDate,
+    endDate,
+    registrationDeadline,
+    format,
+    teamSize,
+    maxTeams,
+    prizePool,
+    status,
+    isPublished: normalizeBooleanFlag(body.isPublished),
+    isFeatured: normalizeBooleanFlag(body.isFeatured),
+    bracketLink,
+    contactLink,
+    isActive: status === "registration_open",
+  };
+};
+
+const listPublicTournaments = async ({ game } = {}) => {
+  const normalizedGame = normalizeText(game).toLowerCase();
+  const tournaments = await prisma.tournament.findMany({
+    where: {
+      isPublished: true,
+      ...(normalizedGame && normalizedGame !== "all" ? { game: normalizedGame } : {}),
+    },
+    orderBy: [{ isFeatured: "desc" }, { startDate: "asc" }, { createdAt: "desc" }],
+    include: {
+      _count: {
+        select: {
+          teamRegistrations: true,
+        },
+      },
+    },
+  });
+
+  return tournaments.map((tournament) =>
+    mapTournament({
+      ...tournament,
+      registrationCount: tournament._count.teamRegistrations,
+    })
+  );
+};
+
+const getPublicTournamentBySlug = async (slug) => {
+  const normalizedSlug = normalizeSlug(slug);
+
+  if (!normalizedSlug) {
+    throw new HttpError(400, "Tournament slug is required.");
+  }
+
+  const tournament = await prisma.tournament.findFirst({
+    where: {
+      slug: normalizedSlug,
+      isPublished: true,
+    },
+    include: {
+      _count: {
+        select: {
+          teamRegistrations: true,
+        },
+      },
+    },
+  });
+
+  if (!tournament) {
+    throw new HttpError(404, "Tournament not found.");
+  }
+
+  return mapTournament({
+    ...tournament,
+    registrationCount: tournament._count.teamRegistrations,
+  });
+};
+
+const listAdminTournaments = async ({ search, status, isPublished } = {}) => {
+  const normalizedSearch = normalizeText(search);
+  const normalizedStatus = normalizeText(status).toLowerCase();
+  const visibilityFilter =
+    typeof isPublished === "string" && isPublished.length > 0
+      ? normalizeBooleanFlag(isPublished)
+      : undefined;
+
+  const tournaments = await prisma.tournament.findMany({
+    where: {
+      ...(normalizedSearch
+        ? {
+            OR: [
+              { title: { contains: normalizedSearch, mode: "insensitive" } },
+              { slug: { contains: normalizedSearch, mode: "insensitive" } },
+              { game: { contains: normalizedSearch, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+      ...(TOURNAMENT_STATUSES.has(normalizedStatus) ? { status: normalizedStatus } : {}),
+      ...(typeof visibilityFilter === "boolean" ? { isPublished: visibilityFilter } : {}),
+    },
+    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+    include: {
+      _count: {
+        select: {
+          teamRegistrations: true,
+        },
+      },
+    },
+  });
+
+  return tournaments.map((tournament) =>
+    mapTournament({
+      ...tournament,
+      registrationCount: tournament._count.teamRegistrations,
+    })
+  );
+};
+
+const getAdminTournamentById = async (tournamentId) => {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    include: {
+      teamRegistrations: {
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          teamName: true,
+          captainName: true,
+          captainEmail: true,
+          contactEmail: true,
+          status: true,
+          paymentStatus: true,
+          verificationStatus: true,
+          createdAt: true,
+        },
+      },
+      _count: {
+        select: {
+          teamRegistrations: true,
+        },
+      },
+    },
+  });
+
+  if (!tournament) {
+    throw new HttpError(404, "Tournament not found.");
+  }
+
+  return mapTournamentWithRegistrations({
+    ...tournament,
+    registrationCount: tournament._count.teamRegistrations,
+  });
+};
+
+const createAdminTournament = async ({ body, file }) => {
+  const payload = parseTournamentPayload({ body });
+  await ensureSlugAvailable(payload.slug);
+
+  const tournament = await prisma.tournament.create({
+    data: {
+      id: crypto.randomUUID(),
+      ...payload,
+      bannerImageName: file ? file.filename : null,
+    },
+    include: {
+      _count: {
+        select: {
+          teamRegistrations: true,
+        },
+      },
+    },
+  });
+
+  return mapTournament({
+    ...tournament,
+    registrationCount: tournament._count.teamRegistrations,
+  });
+};
+
+const updateAdminTournament = async ({ tournamentId, body, file }) => {
+  const existingTournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+  });
+
+  if (!existingTournament) {
+    throw new HttpError(404, "Tournament not found.");
+  }
+
+  const payload = parseTournamentPayload({ body, existingTournament });
+  await ensureSlugAvailable(payload.slug, tournamentId);
+
+  const tournament = await prisma.tournament.update({
+    where: { id: tournamentId },
+    data: {
+      ...payload,
+      ...(file ? { bannerImageName: file.filename } : {}),
+    },
+    include: {
+      _count: {
+        select: {
+          teamRegistrations: true,
+        },
+      },
+    },
+  });
+
+  return mapTournament({
+    ...tournament,
+    registrationCount: tournament._count.teamRegistrations,
+  });
+};
+
+const deleteAdminTournament = async (tournamentId) => {
+  const deleted = await prisma.tournament.deleteMany({
+    where: { id: tournamentId },
+  });
+
+  if (deleted.count === 0) {
+    throw new HttpError(404, "Tournament not found.");
+  }
+};
+
 const getTournamentRegistrationStatus = async ({ slug, user }) => {
-  const tournamentSlug = normalizeText(slug);
+  const tournamentSlug = normalizeSlug(slug);
 
   if (!tournamentSlug) {
     throw new HttpError(400, "Tournament slug is required.");
@@ -55,7 +500,13 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
 
   const tournament = await prisma.tournament.findUnique({
     where: { slug: tournamentSlug },
-    select: { id: true },
+    include: {
+      _count: {
+        select: {
+          teamRegistrations: true,
+        },
+      },
+    },
   });
 
   if (!tournament) {
@@ -63,7 +514,13 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
   }
 
   if (!user?.email) {
-    return { isRegistered: false };
+    return {
+      isRegistered: false,
+      tournament: mapTournament({
+        ...tournament,
+        registrationCount: tournament._count.teamRegistrations,
+      }),
+    };
   }
 
   const existingRegistration = await prisma.teamRegistration.findFirst({
@@ -74,11 +531,17 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
     select: { id: true },
   });
 
-  return { isRegistered: Boolean(existingRegistration) };
+  return {
+    isRegistered: Boolean(existingRegistration),
+    tournament: mapTournament({
+      ...tournament,
+      registrationCount: tournament._count.teamRegistrations,
+    }),
+  };
 };
 
 const createTournamentRegistration = async ({ body, file }) => {
-  const tournamentSlug = normalizeText(body.tournament);
+  const { tournamentId, tournamentSlug } = getTournamentLookup(body);
   const teamName = normalizeText(body.teamName);
   const captainName = normalizeText(body.captainName);
   const captainEmail = normalizeEmail(body.captainEmail);
@@ -92,7 +555,6 @@ const createTournamentRegistration = async ({ body, file }) => {
   const optionalMembers = buildOptionalMembers(body);
 
   if (
-    !tournamentSlug ||
     !teamName ||
     !captainName ||
     !captainPhone ||
@@ -111,15 +573,31 @@ const createTournamentRegistration = async ({ body, file }) => {
   }
 
   const tournament = await prisma.tournament.findUnique({
-    where: { slug: tournamentSlug },
-    select: {
-      id: true,
-      isActive: true,
+    where: tournamentId ? { id: tournamentId } : { slug: normalizeSlug(tournamentSlug) },
+    include: {
+      _count: {
+        select: {
+          teamRegistrations: true,
+        },
+      },
     },
   });
 
-  if (!tournament || !tournament.isActive) {
-    throw new HttpError(400, "Selected tournament is not available.");
+  if (!tournament) {
+    throw new HttpError(404, "Selected tournament was not found.");
+  }
+
+  const mappedTournament = mapTournament({
+    ...tournament,
+    registrationCount: tournament._count.teamRegistrations,
+  });
+
+  if (!mappedTournament.isRegistrationOpen) {
+    if (mappedTournament.isSlotsFull) {
+      throw new HttpError(400, "Registration is full for the selected tournament.");
+    }
+
+    throw new HttpError(400, "Registration is closed for the selected tournament.");
   }
 
   const existingRegistration = await prisma.teamRegistration.findFirst({
@@ -187,6 +665,14 @@ const createTournamentRegistration = async ({ body, file }) => {
 };
 
 module.exports = {
+  listPublicTournaments,
+  getPublicTournamentBySlug,
+  listAdminTournaments,
+  getAdminTournamentById,
+  createAdminTournament,
+  updateAdminTournament,
+  deleteAdminTournament,
   getTournamentRegistrationStatus,
   createTournamentRegistration,
+  parseOptionalDateValue,
 };

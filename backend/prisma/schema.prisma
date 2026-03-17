@@ -19,6 +19,33 @@ enum RegistrationMemberRole {
   COACH
 }
 
+enum TournamentStatus {
+  draft
+  upcoming
+  registration_open
+  ongoing
+  completed
+  cancelled
+}
+
+enum TeamRegistrationStatus {
+  pending
+  approved
+  rejected
+}
+
+enum RegistrationPaymentStatus {
+  unpaid
+  pending
+  paid
+}
+
+enum RegistrationVerificationStatus {
+  pending
+  verified
+  flagged
+}
+
 model User {
   id                 String       @id @default(uuid()) @db.Uuid
   firstName          String       @map("first_name")
@@ -61,10 +88,12 @@ model ContactSubmission {
   email     String
   subject   String
   message   String
+  isRead    Boolean  @default(false) @map("is_read")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([createdAt])
+  @@index([isRead, createdAt])
   @@map("contact_submissions")
 }
 
@@ -72,12 +101,31 @@ model Tournament {
   id                String             @id @default(uuid()) @db.Uuid
   slug              String             @unique
   title             String
+  game              String
+  bannerImageName   String?            @map("banner_image_name")
+  shortDescription  String             @map("short_description")
+  fullDescription   String             @map("full_description")
+  rules             String?
+  startDate         DateTime           @map("start_date")
+  endDate           DateTime           @map("end_date")
+  registrationDeadline DateTime        @map("registration_deadline")
+  format            String
+  teamSize          Int                @map("team_size")
+  maxTeams          Int                @map("max_teams")
+  prizePool         String             @map("prize_pool")
+  status            TournamentStatus   @default(draft)
+  isPublished       Boolean            @default(false) @map("is_published")
+  bracketLink       String?            @map("bracket_link")
+  contactLink       String?            @map("contact_link")
+  isFeatured        Boolean            @default(false) @map("is_featured")
   isActive          Boolean            @default(true) @map("is_active")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   teamRegistrations TeamRegistration[]
 
   @@index([isActive])
+  @@index([isPublished, status, startDate])
+  @@index([isFeatured, isPublished])
   @@map("tournaments")
 }
 
@@ -92,6 +140,9 @@ model TeamRegistration {
   captainRiotId          String               @map("captain_riot_id")
   contactEmail           String               @map("contact_email")
   teamLogoName           String?              @map("team_logo_name")
+  status                 TeamRegistrationStatus @default(pending)
+  paymentStatus          RegistrationPaymentStatus @default(unpaid) @map("payment_status")
+  verificationStatus     RegistrationVerificationStatus @default(pending) @map("verification_status")
   rulebookAccepted       Boolean              @default(false) @map("rulebook_accepted")
   falsityWarningAccepted Boolean              @default(false) @map("falsity_warning_accepted")
   createdAt              DateTime             @default(now()) @map("created_at")
@@ -103,6 +154,8 @@ model TeamRegistration {
   @@unique([tournamentId, captainEmail])
   @@index([tournamentId])
   @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([paymentStatus, verificationStatus])
   @@map("team_registrations")
 }
 

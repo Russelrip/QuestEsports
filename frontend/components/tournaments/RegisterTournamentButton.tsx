@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/auth";
 import {
-  canRegisterForTournament,
   Tournament,
+  canRegisterForTournament,
+  getTournamentRegistrationLabel,
 } from "@/lib/tournaments";
-import {
-  isTournamentRegisteredLocally,
-} from "@/lib/registered-tournaments";
+import { isTournamentRegisteredLocally } from "@/lib/registered-tournaments";
 
 type RegistrationStatus = "loading" | "ready" | "registered";
 
@@ -92,15 +91,18 @@ export default function RegisterTournamentButton({
 
     return () => {
       cancelled = true;
-      window.removeEventListener(
-        "quest:tournament-registered",
-        handleRegistered
-      );
+      window.removeEventListener("quest:tournament-registered", handleRegistered);
     };
   }, [authLoading, tournament, user]);
 
   if (!canRegisterForTournament(tournament)) {
-    return null;
+    return (
+      <div className={`tournament-register-cta ${className}`.trim()}>
+        <span className="registration-closed-chip">
+          {getTournamentRegistrationLabel(tournament)}
+        </span>
+      </div>
+    );
   }
 
   const isRegistered = status === "registered";

@@ -3,9 +3,33 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const normalizeText = (value) => String(value || "").trim();
 const normalizeUsername = (value) => normalizeText(value).toLowerCase();
+const normalizeSlug = (value) =>
+  normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 
 const isNonEmptyString = (value) => normalizeText(value).length > 0;
 const isValidEmail = (value) => EMAIL_REGEX.test(normalizeEmail(value));
+const normalizeInteger = (value) => {
+  const parsed = Number.parseInt(String(value || "").trim(), 10);
+  return Number.isInteger(parsed) ? parsed : null;
+};
+
+const normalizeOptionalUrl = (value) => {
+  const normalized = normalizeText(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
 
 const getSignupFieldErrors = ({
   firstName,
@@ -57,6 +81,9 @@ module.exports = {
   normalizeEmail,
   normalizeText,
   normalizeUsername,
+  normalizeSlug,
+  normalizeInteger,
+  normalizeOptionalUrl,
   isNonEmptyString,
   isValidEmail,
   getSignupFieldErrors,

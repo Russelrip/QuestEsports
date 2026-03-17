@@ -11,21 +11,25 @@ export default function TournamentDetailsContent({
 }: {
   tournament: Tournament;
 }) {
+  const bannerSrc = tournament.bannerUrl
+    ? `${process.env.NEXT_PUBLIC_API_URL}${tournament.bannerUrl}`
+    : null;
+
   return (
     <section className="tournaments-section" style={{ padding: "24px 0 50px" }}>
       <div className="container">
         <div className="tournament-item tournament-item-detail">
           <div className="tournament-image">
-            {tournament.image ? (
+            {bannerSrc ? (
               <Image
-                src={tournament.image}
+                src={bannerSrc}
                 alt={tournament.title}
                 width={1000}
                 height={800}
               />
             ) : (
               <div className="coming-soon-block">
-                <span>COMING SOON</span>
+                <span>QUEST</span>
               </div>
             )}
           </div>
@@ -43,7 +47,40 @@ export default function TournamentDetailsContent({
 
             <TournamentInfoList tournament={tournament} />
 
-            <p className="description">{tournament.description}</p>
+            <div className="tournament-rich-copy">
+              <section className="tournament-copy-card">
+                <h3>Overview</h3>
+                <p>{tournament.fullDescription}</p>
+              </section>
+
+              <section className="tournament-copy-card">
+                <h3>Rules</h3>
+                <p>{tournament.rules || "Rules will be shared by the admins soon."}</p>
+              </section>
+            </div>
+
+            <div className="tournament-link-row">
+              {tournament.bracketLink ? (
+                <a
+                  href={tournament.bracketLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary btn-small"
+                >
+                  View Bracket
+                </a>
+              ) : null}
+              {tournament.contactLink ? (
+                <a
+                  href={tournament.contactLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary btn-small"
+                >
+                  Discord / Contact
+                </a>
+              ) : null}
+            </div>
 
             <div className="tournament-actions">
               <RegisterTournamentButton tournament={tournament} />
