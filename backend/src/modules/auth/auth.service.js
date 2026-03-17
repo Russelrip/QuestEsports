@@ -51,7 +51,7 @@ const validateUserBasics = ({
   return fieldErrors;
 };
 
-const createSignup = async ({ body, adminEmails }) => {
+const createSignup = async ({ body }) => {
   const firstName = normalizeText(body.firstName);
   const lastName = normalizeText(body.lastName);
   const email = normalizeEmail(body.email);
@@ -62,7 +62,6 @@ const createSignup = async ({ body, adminEmails }) => {
   const terms = body.terms === true;
   const phone = normalizeText(body.phone) || null;
   const discordTag = normalizeText(body.discordTag) || null;
-  const role = adminEmails.includes(email) ? "admin" : "user";
 
   const fieldErrors = getSignupFieldErrors({
     firstName,
@@ -109,7 +108,7 @@ const createSignup = async ({ body, adminEmails }) => {
       username,
       usernameNormalized,
       passwordHash,
-      role,
+      role: "user",
       phone,
       discordTag,
     },

@@ -230,14 +230,12 @@ function RegistrationDetailsModal({
           {logoSrc ? (
             <div className="admin-detail-card admin-detail-card-wide">
               <h4>Team Logo</h4>
-              <a href={logoSrc} target="_blank" rel="noreferrer" className="admin-logo-link">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={logoSrc}
-                  alt={`${registration.teamName} logo`}
-                  className="admin-logo-preview"
-                />
-              </a>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={logoSrc}
+                alt={`${registration.teamName} logo`}
+                className="admin-logo-preview"
+              />
             </div>
           ) : null}
         </div>

@@ -93,7 +93,6 @@ const getTournamentRegistrationStatusController = asyncHandler(async (req, res) 
   res.status(200).json({
     success: true,
     isRegistered: result.isRegistered,
-    tournament: result.tournament,
   });
 });
 
@@ -101,6 +100,7 @@ const submitTournamentRegistration = asyncHandler(async (req, res) => {
   await createTournamentRegistration({
     body: req.body,
     file: req.file,
+    user: req.user,
   });
 
   res.status(201).json({

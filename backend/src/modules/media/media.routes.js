@@ -9,18 +9,20 @@ const {
   createPosterEntry,
   getPosters,
   getPoster,
+  streamPosterImage,
   deletePoster,
 } = require("./media.controller");
 
 const router = express.Router();
 
-router.get("/images", getImages);
-router.get("/images/:imageId", getImage);
-router.get("/images/:imageId/binary", streamImage);
 router.get("/posters", getPosters);
 router.get("/posters/:posterId", getPoster);
+router.get("/posters/:posterId/image", streamPosterImage);
 
 router.use(attachSession);
+router.get("/images", requireAdmin, getImages);
+router.get("/images/:imageId", requireAdmin, getImage);
+router.get("/images/:imageId/binary", requireAdmin, streamImage);
 router.post("/images", requireAdmin, dbImageUpload.array("images", 10), uploadImages);
 router.post("/posters", requireAdmin, createPosterEntry);
 router.delete("/posters/:posterId", requireAdmin, deletePoster);

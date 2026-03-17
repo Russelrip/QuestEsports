@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { detectImageType } = require("../../middleware/upload");
 const { normalizeText } = require("../../lib/validation");
 
 const DEFAULT_PAGE = 1;
@@ -59,7 +60,10 @@ const mapPoster = (poster) => ({
   createdAt: poster.createdAt,
   updatedAt: poster.updatedAt,
   tournament: poster.tournament || null,
-  imageAsset: mapImageAsset(poster.imageAsset),
+  imageAsset: {
+    ...mapImageAsset(poster.imageAsset),
+    imageUrl: `/api/posters/${poster.id}/image`,
+  },
 });
 
 const buildPagedResponse = ({ items, total, page, pageSize }) => ({
@@ -95,16 +99,36 @@ const createImageAssets = async ({ body, files }) => {
     throw new HttpError(400, "Upload at least one image.");
   }
 
+  const validatedFiles = files.map((file) => {
+    const detectedType = detectImageType(file.buffer);
+
+    if (!detectedType) {
+      throw new HttpError(400, "Only JPEG, PNG, and WebP images are allowed.");
+    }
+
+    const contentType =
+      detectedType === "jpeg"
+        ? "image/jpeg"
+        : detectedType === "png"
+          ? "image/png"
+          : "image/webp";
+
+    return {
+      ...file,
+      contentType,
+    };
+  });
+
   const createdAssets = await prisma.$transaction(
-    files.map((file, index) =>
+    validatedFiles.map((file, index) =>
       prisma.imageAsset.create({
         data: {
           id: crypto.randomUUID(),
-          title: files.length === 1 ? title : `${title} ${index + 1}`,
+          title: validatedFiles.length === 1 ? title : `${title} ${index + 1}`,
           description,
           category,
           originalName: file.originalname || null,
-          contentType: file.mimetype,
+          contentType: file.contentType,
           data: file.buffer,
         },
       })
@@ -171,6 +195,21 @@ const getImageAssetMetadata = async (imageId) => {
   }
 
   return mapImageAsset(asset);
+};
+
+const getPosterImageAssetByPosterId = async (posterId) => {
+  const poster = await prisma.poster.findUnique({
+    where: { id: posterId },
+    select: {
+      imageAsset: true,
+    },
+  });
+
+  if (!poster?.imageAsset) {
+    throw new HttpError(404, "Poster not found.");
+  }
+
+  return poster.imageAsset;
 };
 
 const createPoster = async ({ body }) => {
@@ -301,6 +340,7 @@ module.exports = {
   listImageAssets,
   getImageAssetById,
   getImageAssetMetadata,
+  getPosterImageAssetByPosterId,
   createPoster,
   listPosters,
   getPosterById,

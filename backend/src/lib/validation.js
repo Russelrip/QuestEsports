@@ -25,6 +25,9 @@ const normalizeOptionalUrl = (value) => {
 
   try {
     const parsed = new URL(normalized);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return null;
+    }
     return parsed.toString();
   } catch {
     return null;

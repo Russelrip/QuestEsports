@@ -3,13 +3,13 @@ const { HttpError } = require("../lib/http-error");
 const stores = new Map();
 
 const getClientIp = (req) => {
-  const forwardedFor = req.headers["x-forwarded-for"];
+  const trustProxy = req.app?.get("trust proxy");
 
-  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
-    return forwardedFor.split(",")[0].trim();
+  if (trustProxy) {
+    return req.ip || req.socket?.remoteAddress || "unknown";
   }
 
-  return req.ip || req.socket?.remoteAddress || "unknown";
+  return req.socket?.remoteAddress || req.ip || "unknown";
 };
 
 const getStore = (name) => {

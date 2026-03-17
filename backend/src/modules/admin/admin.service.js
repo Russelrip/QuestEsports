@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const { Prisma } = require("@prisma/client");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const {
@@ -80,7 +81,7 @@ const mapTeamRegistration = (registration) => ({
   createdAt: registration.createdAt,
   contactEmail: registration.contactEmail,
   logoUrl: registration.teamLogoName
-    ? `/uploads/team-logos/${registration.teamLogoName}`
+    ? `/api/uploads/team-logos/${registration.teamLogoName}`
     : null,
   tournament: registration.tournament,
   captain: {
@@ -373,21 +374,38 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
     });
   }
 
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      firstName,
-      lastName,
-      email,
-      emailNormalized: email,
-      username,
-      usernameNormalized,
-      phone,
-      discordTag,
-      role,
-      ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
-    },
-    select: ADMIN_USER_SELECT,
+  let nextPasswordHash = null;
+  if (password) {
+    nextPasswordHash = await bcrypt.hash(password, 10);
+  }
+
+  const user = await prisma.$transaction(async (tx) => {
+    const updatedUser = await tx.user.update({
+      where: { id: userId },
+      data: {
+        firstName,
+        lastName,
+        email,
+        emailNormalized: email,
+        username,
+        usernameNormalized,
+        phone,
+        discordTag,
+        role,
+        ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {}),
+      },
+      select: ADMIN_USER_SELECT,
+    });
+
+    if (nextPasswordHash) {
+      await tx.session.deleteMany({
+        where: {
+          userId,
+        },
+      });
+    }
+
+    return updatedUser;
   });
 
   return mapUserForResponse(user);

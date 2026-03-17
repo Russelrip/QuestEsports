@@ -348,8 +348,10 @@ export default function TournamentRegistrationForm({
                 name="captainEmail"
                 required
                 value={formData.captainEmail}
-                onChange={handleFieldChange}
+                readOnly
+                disabled
               />
+              <small>Captain email is tied to your signed-in account.</small>
             </div>
 
             <div className="form-row">

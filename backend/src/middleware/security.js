@@ -41,6 +41,13 @@ const setSecurityHeaders = (req, res, next) => {
     );
   }
 
+  if (env.NODE_ENV === "production") {
+    res.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains"
+    );
+  }
+
   next();
 };
 

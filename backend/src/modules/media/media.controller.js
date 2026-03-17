@@ -4,6 +4,7 @@ const {
   listImageAssets,
   getImageAssetById,
   getImageAssetMetadata,
+  getPosterImageAssetByPosterId,
   createPoster,
   listPosters,
   getPosterById,
@@ -44,6 +45,15 @@ const getImage = asyncHandler(async (req, res) => {
 
 const streamImage = asyncHandler(async (req, res) => {
   const image = await getImageAssetById(req.params.imageId);
+
+  res.setHeader("Content-Type", image.contentType);
+  res.setHeader("Content-Length", image.data.length);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.status(200).send(image.data);
+});
+
+const streamPosterImage = asyncHandler(async (req, res) => {
+  const image = await getPosterImageAssetByPosterId(req.params.posterId);
 
   res.setHeader("Content-Type", image.contentType);
   res.setHeader("Content-Length", image.data.length);
@@ -94,6 +104,7 @@ module.exports = {
   getImages,
   getImage,
   streamImage,
+  streamPosterImage,
   createPosterEntry,
   getPosters,
   getPoster,

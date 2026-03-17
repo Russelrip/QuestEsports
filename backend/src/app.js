@@ -1,6 +1,5 @@
 const express = require("express");
 const cors = require("cors");
-const path = require("path");
 const { env } = require("./config/env");
 const apiRouter = require("./routes");
 const { openApiDocument } = require("./lib/openapi");
@@ -17,7 +16,7 @@ const buildHealthPayload = () => ({
   monitoring: monitoringStatus(),
 });
 
-app.set("trust proxy", 1);
+app.set("trust proxy", env.TRUST_PROXY);
 
 app.use(setSecurityHeaders);
 app.use(
@@ -29,7 +28,6 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(protectAgainstCsrf);
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.get("/api/health", (req, res) => res.status(200).json(buildHealthPayload()));
 app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));

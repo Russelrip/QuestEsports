@@ -1,4 +1,3 @@
-const { env } = require("../../config/env");
 const { asyncHandler } = require("../../lib/async-handler");
 const { logger } = require("../../lib/logger");
 const {
@@ -16,10 +15,7 @@ const {
 } = require("./auth.service");
 
 const signup = asyncHandler(async (req, res) => {
-  await createSignup({
-    body: req.body,
-    adminEmails: env.ADMIN_EMAILS,
-  });
+  await createSignup({ body: req.body });
 
   res.status(201).json({
     success: true,

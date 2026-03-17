@@ -26,7 +26,11 @@ router.use(attachSession);
 
 router.get("/tournaments", getPublicTournaments);
 router.get("/tournaments/:slug", getPublicTournament);
-router.get("/tournament-registration/status/:slug", getTournamentRegistrationStatus);
+router.get(
+  "/tournament-registration/status/:slug",
+  requireAuth,
+  getTournamentRegistrationStatus
+);
 router.post(
   "/tournament-registration",
   requireAuth,
