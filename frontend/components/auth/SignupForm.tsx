@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useState } from "react";
 import { useFormFields } from "@/hooks/useFormFields";
 import { apiFetch } from "@/lib/auth";
 
@@ -17,6 +17,25 @@ type SignupFormData = {
   terms: boolean;
 };
 
+type SignupFieldName =
+  | "firstName"
+  | "lastName"
+  | "email"
+  | "username"
+  | "password"
+  | "confirmPassword"
+  | "terms";
+
+type SignupFieldErrors = Partial<Record<SignupFieldName, string>>;
+
+type SignupApiResponse = {
+  success?: boolean;
+  message?: string;
+  details?: {
+    fieldErrors?: SignupFieldErrors;
+  };
+};
+
 const initialFormData: SignupFormData = {
   firstName: "",
   lastName: "",
@@ -29,22 +48,80 @@ const initialFormData: SignupFormData = {
   terms: false,
 };
 
+const validateSignupForm = (formData: SignupFormData): SignupFieldErrors => {
+  const fieldErrors: SignupFieldErrors = {};
+
+  if (!formData.firstName.trim()) {
+    fieldErrors.firstName = "First name is required.";
+  }
+
+  if (!formData.lastName.trim()) {
+    fieldErrors.lastName = "Last name is required.";
+  }
+
+  if (!formData.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+    fieldErrors.email = "Please enter a valid email address.";
+  }
+
+  if (!formData.username.trim()) {
+    fieldErrors.username = "Username is required.";
+  }
+
+  if (!formData.password) {
+    fieldErrors.password = "Password is required.";
+  } else if (formData.password.length < 8) {
+    fieldErrors.password = "Password must be at least 8 characters long.";
+  }
+
+  if (!formData.confirmPassword) {
+    fieldErrors.confirmPassword = "Please confirm your password.";
+  } else if (formData.password !== formData.confirmPassword) {
+    fieldErrors.confirmPassword = "Confirm password must match.";
+  }
+
+  if (!formData.terms) {
+    fieldErrors.terms = "You must agree to the Terms of Service and Privacy Policy.";
+  }
+
+  return fieldErrors;
+};
+
 export default function SignupForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<SignupFieldErrors>({});
   const {
     fields: formData,
+    updateField,
     handleFieldChange,
     resetFields,
   } = useFormFields<SignupFormData>(initialFormData);
+
+  const handleSignupFieldChange = (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    handleFieldChange(event);
+
+    const fieldName = event.target.name as SignupFieldName;
+    setFieldErrors((currentErrors) => {
+      if (!currentErrors[fieldName]) {
+        return currentErrors;
+      }
+
+      const nextErrors = { ...currentErrors };
+      delete nextErrors[fieldName];
+      return nextErrors;
+    });
+  };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
     setSubmitted(false);
+    const nextFieldErrors = validateSignupForm(formData);
+    setFieldErrors(nextFieldErrors);
 
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match.");
+    if (Object.keys(nextFieldErrors).length > 0) {
       return;
     }
 
@@ -57,19 +134,29 @@ export default function SignupForm() {
           email: formData.email,
           username: formData.username,
           password: formData.password,
+          confirmPassword: formData.confirmPassword,
           phone: formData.phone,
           discordTag: formData.discordTag,
+          terms: formData.terms,
         },
       });
 
-      const data = await res.json();
+      const data: SignupApiResponse = await res.json();
 
       if (!res.ok || !data.success) {
-        setError(data.message || "Signup failed.");
+        const serverFieldErrors = data.details?.fieldErrors ?? {};
+        setFieldErrors(serverFieldErrors);
+        setError(
+          Object.keys(serverFieldErrors).length === 0
+            ? data.message || "Signup failed."
+            : ""
+        );
         return;
       }
 
       setSubmitted(true);
+      setFieldErrors({});
+      setError("");
       resetFields();
     } catch (error) {
       console.error("Error submitting signup form:", error);
@@ -93,8 +180,12 @@ export default function SignupForm() {
                   name="firstName"
                   required
                   value={formData.firstName}
-                  onChange={handleFieldChange}
+                  onChange={handleSignupFieldChange}
+                  aria-invalid={Boolean(fieldErrors.firstName)}
                 />
+                {fieldErrors.firstName ? (
+                  <p className="field-error">{fieldErrors.firstName}</p>
+                ) : null}
               </div>
 
               <div className="form-group">
@@ -105,8 +196,12 @@ export default function SignupForm() {
                   name="lastName"
                   required
                   value={formData.lastName}
-                  onChange={handleFieldChange}
+                  onChange={handleSignupFieldChange}
+                  aria-invalid={Boolean(fieldErrors.lastName)}
                 />
+                {fieldErrors.lastName ? (
+                  <p className="field-error">{fieldErrors.lastName}</p>
+                ) : null}
               </div>
             </div>
 
@@ -118,8 +213,12 @@ export default function SignupForm() {
                 name="email"
                 required
                 value={formData.email}
-                onChange={handleFieldChange}
+                onChange={handleSignupFieldChange}
+                aria-invalid={Boolean(fieldErrors.email)}
               />
+              {fieldErrors.email ? (
+                <p className="field-error">{fieldErrors.email}</p>
+              ) : null}
             </div>
 
             <div className="form-group">
@@ -130,8 +229,12 @@ export default function SignupForm() {
                 name="username"
                 required
                 value={formData.username}
-                onChange={handleFieldChange}
+                onChange={handleSignupFieldChange}
+                aria-invalid={Boolean(fieldErrors.username)}
               />
+              {fieldErrors.username ? (
+                <p className="field-error">{fieldErrors.username}</p>
+              ) : null}
             </div>
 
             <div className="form-row">
@@ -143,8 +246,12 @@ export default function SignupForm() {
                   name="password"
                   required
                   value={formData.password}
-                  onChange={handleFieldChange}
+                  onChange={handleSignupFieldChange}
+                  aria-invalid={Boolean(fieldErrors.password)}
                 />
+                {fieldErrors.password ? (
+                  <p className="field-error">{fieldErrors.password}</p>
+                ) : null}
               </div>
 
               <div className="form-group">
@@ -155,8 +262,12 @@ export default function SignupForm() {
                   name="confirmPassword"
                   required
                   value={formData.confirmPassword}
-                  onChange={handleFieldChange}
+                  onChange={handleSignupFieldChange}
+                  aria-invalid={Boolean(fieldErrors.confirmPassword)}
                 />
+                {fieldErrors.confirmPassword ? (
+                  <p className="field-error">{fieldErrors.confirmPassword}</p>
+                ) : null}
               </div>
             </div>
 
@@ -167,7 +278,7 @@ export default function SignupForm() {
                 id="phone"
                 name="phone"
                 value={formData.phone}
-                onChange={handleFieldChange}
+                onChange={handleSignupFieldChange}
               />
             </div>
 
@@ -179,7 +290,7 @@ export default function SignupForm() {
                 name="discordTag"
                 placeholder="username#1234"
                 value={formData.discordTag}
-                onChange={handleFieldChange}
+                onChange={handleSignupFieldChange}
               />
             </div>
 
@@ -187,13 +298,28 @@ export default function SignupForm() {
               <label>
                 <input
                   type="checkbox"
-                name="terms"
-                required
-                checked={formData.terms}
-                onChange={handleFieldChange}
-              />{" "}
+                  name="terms"
+                  required
+                  checked={formData.terms}
+                  onChange={(event) => {
+                    updateField("terms", event.target.checked);
+                    setFieldErrors((currentErrors) => {
+                      if (!currentErrors.terms) {
+                        return currentErrors;
+                      }
+
+                      const nextErrors = { ...currentErrors };
+                      delete nextErrors.terms;
+                      return nextErrors;
+                    });
+                  }}
+                  aria-invalid={Boolean(fieldErrors.terms)}
+                />{" "}
                 I agree to the Terms of Service and Privacy Policy *
               </label>
+              {fieldErrors.terms ? (
+                <p className="field-error">{fieldErrors.terms}</p>
+              ) : null}
             </div>
 
             {error && <p className="error-message">{error}</p>}

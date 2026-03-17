@@ -15,7 +15,7 @@ const {
   normalizeText,
   normalizeUsername,
   isNonEmptyString,
-  isValidEmail,
+  getSignupFieldErrors,
 } = require("../../lib/validation");
 
 const mapUserForResponse = (user) => ({
@@ -38,20 +38,27 @@ const signup = asyncHandler(async (req, res) => {
   const username = normalizeText(req.body.username);
   const usernameNormalized = normalizeUsername(req.body.username);
   const password = String(req.body.password || "");
+  const confirmPassword = String(req.body.confirmPassword || "");
+  const terms = req.body.terms === true;
   const phone = normalizeText(req.body.phone) || null;
   const discordTag = normalizeText(req.body.discordTag) || null;
   const role = env.ADMIN_EMAILS.includes(email) ? "admin" : "user";
 
-  if (
-    !isNonEmptyString(firstName) ||
-    !isNonEmptyString(lastName) ||
-    !isValidEmail(email) ||
-    !isNonEmptyString(username) ||
-    password.length < 8
-  ) {
+  const fieldErrors = getSignupFieldErrors({
+    firstName,
+    lastName,
+    email,
+    username,
+    password,
+    confirmPassword,
+    terms,
+  });
+
+  if (Object.keys(fieldErrors).length > 0) {
     throw new HttpError(
       400,
-      "Please provide first name, last name, a valid email, username, and a password with at least 8 characters."
+      "Please correct the highlighted fields.",
+      { fieldErrors }
     );
   }
 
@@ -68,10 +75,18 @@ const signup = asyncHandler(async (req, res) => {
 
   if (existingUser) {
     if (existingUser.emailNormalized === email) {
-      throw new HttpError(400, "Email already exists.");
+      throw new HttpError(400, "Please correct the highlighted fields.", {
+        fieldErrors: {
+          email: "Email already exists.",
+        },
+      });
     }
 
-    throw new HttpError(400, "Username already exists.");
+    throw new HttpError(400, "Please correct the highlighted fields.", {
+      fieldErrors: {
+        username: "Username already exists.",
+      },
+    });
   }
 
   const passwordHash = await bcrypt.hash(password, 10);

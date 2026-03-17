@@ -924,6 +924,13 @@ legend,
     color: var(--text-muted);
 }
 
+.field-error {
+    margin-top: 8px;
+    margin-bottom: 0;
+    color: #ffb4d0;
+    font-size: 0.95rem;
+}
+
 input,
 select,
 textarea {
@@ -952,6 +959,15 @@ textarea:focus {
     box-shadow:
         0 0 0 3px rgba(124, 58, 237, 0.10),
         0 0 24px rgba(168, 85, 247, 0.18);
+}
+
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+    border-color: rgba(255, 120, 170, 0.72);
+    box-shadow:
+        0 0 0 3px rgba(255, 120, 170, 0.10),
+        0 0 24px rgba(255, 120, 170, 0.14);
 }
 
 textarea {
