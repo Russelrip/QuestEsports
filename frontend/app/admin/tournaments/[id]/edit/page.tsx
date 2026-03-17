@@ -1,6 +1,12 @@
 import PageLayout from "@/components/PageLayout";
 import TournamentEditor from "@/components/admin/TournamentEditor";
-import { defaultPageDescriptions } from "@/lib/site";
+import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
+
+export const metadata = buildNoIndexMetadata(
+  "Edit Tournament",
+  defaultPageDescriptions.adminTournaments,
+  "/admin/tournaments/edit"
+);
 
 export default async function AdminEditTournamentPage({
   params,

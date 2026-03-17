@@ -8,9 +8,16 @@ import type { AuthUser } from "@/lib/auth";
 type UserMenuProps = {
   user: AuthUser;
   logout: () => Promise<void>;
+  onNavigate?: () => void;
+  isAdmin?: boolean;
 };
 
-export default function UserMenu({ user, logout }: UserMenuProps) {
+export default function UserMenu({
+  user,
+  logout,
+  onNavigate,
+  isAdmin = false,
+}: UserMenuProps) {
   const pathname = usePathname();
   const router = useRouter();
   const menuRef = useRef<HTMLLIElement>(null);
@@ -59,7 +66,7 @@ export default function UserMenu({ user, logout }: UserMenuProps) {
         </span>
         <span className="nav-user-name">{user.username}</span>
         <span className="nav-user-chevron" aria-hidden="true">
-          v
+          ^
         </span>
       </button>
 
@@ -72,16 +79,33 @@ export default function UserMenu({ user, logout }: UserMenuProps) {
             href="/profile"
             className="nav-user-dropdown-link"
             role="menuitem"
-            onClick={() => setIsOpen(false)}
+            onClick={() => {
+              setIsOpen(false);
+              onNavigate?.();
+            }}
           >
             Profile
           </Link>
+          {isAdmin ? (
+            <Link
+              href="/admin"
+              className="nav-user-dropdown-link"
+              role="menuitem"
+              onClick={() => {
+                setIsOpen(false);
+                onNavigate?.();
+              }}
+            >
+              Admin Panel
+            </Link>
+          ) : null}
           <button
             type="button"
             className="nav-user-dropdown-button"
             role="menuitem"
             onClick={async () => {
               setIsOpen(false);
+              onNavigate?.();
               await logout();
               router.push("/");
             }}

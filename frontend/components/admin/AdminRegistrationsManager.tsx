@@ -9,10 +9,9 @@ import {
   TournamentOption,
   adminRequest,
   emptyPagination,
+  formatAdminDateTime,
+  getAdminPaginationSummary,
 } from "@/lib/admin";
-
-const formatDate = (value?: string | null) =>
-  value ? new Date(value).toLocaleString() : "N/A";
 
 export default function AdminRegistrationsManager() {
   const [registrations, setRegistrations] = useState<TeamRegistration[]>([]);
@@ -171,15 +170,17 @@ export default function AdminRegistrationsManager() {
                 <tbody>
                   {registrations.map((registration) => (
                     <tr key={registration.id}>
-                      <td>{registration.teamName}</td>
-                      <td>{registration.tournament.title}</td>
-                      <td>
+                      <td data-label="Team">{registration.teamName}</td>
+                      <td data-label="Tournament">{registration.tournament.title}</td>
+                      <td data-label="Captain">
                         {registration.captain.name}
                         <br />
                         <small>{registration.captain.email}</small>
                       </td>
-                      <td>{formatDate(registration.createdAt)}</td>
-                      <td>
+                      <td data-label="Submitted">
+                        {formatAdminDateTime(registration.createdAt)}
+                      </td>
+                      <td data-label="Approval">
                         <select
                           value={registration.status}
                           onChange={(event) =>
@@ -193,7 +194,7 @@ export default function AdminRegistrationsManager() {
                           <option value="rejected">Rejected</option>
                         </select>
                       </td>
-                      <td>
+                      <td data-label="Payment">
                         <select
                           value={registration.paymentStatus}
                           onChange={(event) =>
@@ -208,7 +209,7 @@ export default function AdminRegistrationsManager() {
                           <option value="paid">Paid</option>
                         </select>
                       </td>
-                      <td>
+                      <td data-label="Verification">
                         <select
                           value={registration.verificationStatus}
                           onChange={(event) =>
@@ -230,9 +231,7 @@ export default function AdminRegistrationsManager() {
             </div>
 
             <div className="admin-pagination">
-              <p>
-                Page {pagination.page} of {pagination.totalPages} - {pagination.total} total
-              </p>
+              <p>{getAdminPaginationSummary(pagination)}</p>
               <div className="admin-pagination-actions">
                 <button
                   type="button"

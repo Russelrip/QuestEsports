@@ -1,6 +1,12 @@
 import AdminOverview from "@/components/admin/AdminOverview";
 import PageLayout from "@/components/PageLayout";
-import { defaultPageDescriptions } from "@/lib/site";
+import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
+
+export const metadata = buildNoIndexMetadata(
+  "Admin Overview",
+  defaultPageDescriptions.admin,
+  "/admin"
+);
 
 export default function AdminPage() {
   return (

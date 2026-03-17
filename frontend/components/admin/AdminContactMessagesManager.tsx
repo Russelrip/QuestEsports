@@ -8,16 +8,9 @@ import {
   Pagination,
   adminRequest,
   emptyPagination,
+  formatAdminCompactDateTime,
+  getAdminPaginationSummary,
 } from "@/lib/admin";
-
-const formatDate = (value: string) =>
-  new Date(value).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 export default function AdminContactMessagesManager() {
   const [messages, setMessages] = useState<ContactMessage[]>([]);
@@ -169,16 +162,18 @@ export default function AdminContactMessagesManager() {
                 <tbody>
                   {messages.map((message) => (
                     <tr key={message.id}>
-                      <td>
+                      <td data-label="Sender">
                         <strong>{message.name}</strong>
                         <br />
                         <small>{message.email}</small>
                       </td>
-                      <td>{message.subject}</td>
-                      <td className="admin-message-cell">{message.message}</td>
-                      <td>{formatDate(message.createdAt)}</td>
-                      <td>{message.isRead ? "Read" : "Unread"}</td>
-                      <td>
+                      <td data-label="Subject">{message.subject}</td>
+                      <td className="admin-message-cell" data-label="Message">{message.message}</td>
+                      <td data-label="Submitted">
+                        {formatAdminCompactDateTime(message.createdAt)}
+                      </td>
+                      <td data-label="Status">{message.isRead ? "Read" : "Unread"}</td>
+                      <td data-label="Actions">
                         <div className="admin-table-actions">
                           <button
                             type="button"
@@ -203,9 +198,7 @@ export default function AdminContactMessagesManager() {
             </div>
 
             <div className="admin-pagination">
-              <p>
-                Page {pagination.page} of {pagination.totalPages} - {pagination.total} total
-              </p>
+              <p>{getAdminPaginationSummary(pagination)}</p>
               <div className="admin-pagination-actions">
                 <button
                   type="button"

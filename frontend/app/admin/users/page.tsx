@@ -1,6 +1,12 @@
 import PageLayout from "@/components/PageLayout";
 import AdminUsersManager from "@/components/admin/AdminUsersManager";
-import { defaultPageDescriptions } from "@/lib/site";
+import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
+
+export const metadata = buildNoIndexMetadata(
+  "User Management",
+  defaultPageDescriptions.adminUsers,
+  "/admin/users"
+);
 
 export default function AdminUsersPage() {
   return (

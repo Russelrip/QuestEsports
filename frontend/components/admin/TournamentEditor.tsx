@@ -435,11 +435,11 @@ export default function TournamentEditor({
                     <tbody>
                       {registrations.map((registration) => (
                         <tr key={registration.id}>
-                          <td>{registration.teamName}</td>
-                          <td>{registration.captain.name}</td>
-                          <td>{registration.status}</td>
-                          <td>{registration.paymentStatus}</td>
-                          <td>{registration.verificationStatus}</td>
+                          <td data-label="Team">{registration.teamName}</td>
+                          <td data-label="Captain">{registration.captain.name}</td>
+                          <td data-label="Status">{registration.status}</td>
+                          <td data-label="Payment">{registration.paymentStatus}</td>
+                          <td data-label="Verification">{registration.verificationStatus}</td>
                         </tr>
                       ))}
                     </tbody>

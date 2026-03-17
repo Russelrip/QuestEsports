@@ -1,11 +1,41 @@
 import Link from "next/link";
-import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
+  getTournamentStatusBadgeClassName,
   getTournamentStatusLabel,
 } from "@/lib/tournaments";
+
+const formatTournamentDateRange = (startDate: string, endDate: string) => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+
+  const fullFormatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "Dates to be announced";
+  }
+
+  if (start.toDateString() === end.toDateString()) {
+    return fullFormatter.format(start);
+  }
+
+  if (start.getFullYear() === end.getFullYear()) {
+    return `${formatter.format(start)} - ${fullFormatter.format(end)}`;
+  }
+
+  return `${fullFormatter.format(start)} - ${fullFormatter.format(end)}`;
+};
 
 export default async function FeaturedTournaments() {
   const tournaments = await fetchPublicTournaments();
@@ -18,27 +48,41 @@ export default async function FeaturedTournaments() {
         <div className="tournament-grid featured-tournament-grid">
           {featuredTournaments.map((tournament) => (
             <div className="tournament-card featured-tournament-card" key={tournament.id}>
-              <TournamentBannerImage
-                bannerUrl={tournament.bannerUrl}
-                title={tournament.title}
-                className="featured-tournament-img"
-              />
-              <h3>{tournament.title}</h3>
-              <p>{tournament.prizePool} Prize Pool</p>
-              <p>{tournament.format}</p>
-
-              <div className="tournament-card-footer">
-                <p className="date">{getTournamentStatusLabel(tournament.status)}</p>
-                <Link
-                  href={`/tournaments/${tournament.slug}`}
-                  className="btn btn-small btn-secondary"
-                >
-                  View Details
-                </Link>
-                <RegisterTournamentButton
-                  tournament={tournament}
-                  className="featured-register-cta"
+              <div className="featured-tournament-media">
+                <TournamentBannerImage
+                  bannerUrl={tournament.bannerUrl}
+                  title={tournament.title}
+                  className="featured-tournament-img"
                 />
+                <div className="featured-tournament-overlay">
+                  <span
+                    className={`featured-status-badge ${getTournamentStatusBadgeClassName(
+                      tournament.status
+                    )}`}
+                  >
+                    {getTournamentStatusLabel(tournament.status)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="featured-tournament-content">
+                <div className="featured-tournament-copy">
+                  <p className="featured-tournament-game">{tournament.game}</p>
+                  <h3>{tournament.title}</h3>
+                  <p className="featured-tournament-inline-meta">
+                    <span>{tournament.prizePool} Prize Pool</span>
+                    <span>{formatTournamentDateRange(tournament.startDate, tournament.endDate)}</span>
+                  </p>
+                </div>
+
+                <div className="tournament-card-footer featured-tournament-footer">
+                  <Link
+                    href={`/tournaments/${tournament.slug}`}
+                    className="btn btn-primary featured-primary-btn"
+                  >
+                    View Tournament
+                  </Link>
+                </div>
               </div>
             </div>
           ))}

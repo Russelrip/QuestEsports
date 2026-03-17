@@ -22,6 +22,19 @@ import {
   getTournamentRegistrationLabel,
 } from "@/lib/tournaments";
 
+const prefillKeys: Array<
+  keyof Pick<
+    TournamentRegistrationFormData,
+    "captainName" | "captainEmail" | "captainPhone" | "captainDiscord" | "contactEmail"
+  >
+> = [
+  "captainName",
+  "captainEmail",
+  "captainPhone",
+  "captainDiscord",
+  "contactEmail",
+];
+
 function RegistrationStatusNote({
   tournament,
 }: {
@@ -97,9 +110,9 @@ export default function TournamentRegistrationForm({
     setFields((current) => {
       const previousPrefill = lastPrefillRef.current;
       let hasChanges = false;
-      const nextFields = { ...current };
+      const nextFields: TournamentRegistrationFormData = { ...current };
 
-      (Object.keys(nextPrefill) as (keyof typeof nextPrefill)[]).forEach((key) => {
+      prefillKeys.forEach((key) => {
         const prefilledValue = nextPrefill[key] || "";
         const currentValue = current[key] || "";
         const previousValue = previousPrefill[key] || "";

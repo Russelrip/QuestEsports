@@ -9,11 +9,10 @@ import {
   UserFormValues,
   adminRequest,
   emptyPagination,
+  formatAdminDateTime,
+  getAdminPaginationSummary,
   initialUserFormValues,
 } from "@/lib/admin";
-
-const formatDate = (value?: string | null) =>
-  value ? new Date(value).toLocaleString() : "N/A";
 
 export default function AdminUsersManager() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -343,19 +342,19 @@ export default function AdminUsersManager() {
                 <tbody>
                   {users.map((user) => (
                     <tr key={user.id}>
-                      <td>
+                      <td data-label="Name">
                         {user.firstName} {user.lastName}
                       </td>
-                      <td>{user.username}</td>
-                      <td>{user.email}</td>
-                      <td>
+                      <td data-label="Username">{user.username}</td>
+                      <td data-label="Email">{user.email}</td>
+                      <td data-label="Role">
                         <span className={`table-role ${user.role === "admin" ? "is-approved" : ""}`}>
                           {user.role}
                         </span>
                       </td>
-                      <td>{formatDate(user.createdAt)}</td>
-                      <td>{formatDate(user.lastLoginAt)}</td>
-                      <td>
+                      <td data-label="Created">{formatAdminDateTime(user.createdAt)}</td>
+                      <td data-label="Last Login">{formatAdminDateTime(user.lastLoginAt)}</td>
+                      <td data-label="Actions">
                         <div className="admin-table-actions">
                           <button
                             type="button"
@@ -380,9 +379,7 @@ export default function AdminUsersManager() {
             </div>
 
             <div className="admin-pagination">
-              <p>
-                Page {pagination.page} of {pagination.totalPages} - {pagination.total} total
-              </p>
+              <p>{getAdminPaginationSummary(pagination)}</p>
               <div className="admin-pagination-actions">
                 <button
                   type="button"

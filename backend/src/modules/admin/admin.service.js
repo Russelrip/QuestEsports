@@ -21,6 +21,36 @@ const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
 
 const USER_ROLES = new Set(["user", "admin"]);
 
+const ADMIN_USER_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  username: true,
+  role: true,
+  phone: true,
+  discordTag: true,
+  lastLoginAt: true,
+  createdAt: true,
+};
+
+const TOURNAMENT_SUMMARY_SELECT = {
+  id: true,
+  slug: true,
+  title: true,
+  status: true,
+  isPublished: true,
+};
+
+const TEAM_REGISTRATION_INCLUDE = {
+  members: {
+    orderBy: [{ role: "asc" }, { memberOrder: "asc" }],
+  },
+  tournament: {
+    select: TOURNAMENT_SUMMARY_SELECT,
+  },
+};
+
 const mapContactMessage = (message) => ({
   id: message.id,
   name: message.name,
@@ -129,6 +159,18 @@ const getAdminDashboardData = async () => {
   };
 };
 
+const findUserIdentityConflict = ({ email, usernameNormalized, excludeUserId }) =>
+  prisma.user.findFirst({
+    where: {
+      OR: [{ emailNormalized: email }, { usernameNormalized }],
+      ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+    },
+    select: {
+      emailNormalized: true,
+      usernameNormalized: true,
+    },
+  });
+
 const listAdminUsers = async ({ page, pageSize, search, role }) => {
   const pagination = buildPagination({ page, pageSize });
   const normalizedSearch = normalizeText(search);
@@ -155,18 +197,7 @@ const listAdminUsers = async ({ page, pageSize, search, role }) => {
       orderBy: { createdAt: "desc" },
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        username: true,
-        role: true,
-        phone: true,
-        discordTag: true,
-        lastLoginAt: true,
-        createdAt: true,
-      },
+      select: ADMIN_USER_SELECT,
     }),
   ]);
 
@@ -181,18 +212,7 @@ const listAdminUsers = async ({ page, pageSize, search, role }) => {
 const getAdminUserById = async (userId) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      username: true,
-      role: true,
-      phone: true,
-      discordTag: true,
-      lastLoginAt: true,
-      createdAt: true,
-    },
+    select: ADMIN_USER_SELECT,
   });
 
   if (!user) {
@@ -245,14 +265,9 @@ const createAdminUser = async ({ body }) => {
     });
   }
 
-  const existingUser = await prisma.user.findFirst({
-    where: {
-      OR: [{ emailNormalized: email }, { usernameNormalized }],
-    },
-    select: {
-      emailNormalized: true,
-      usernameNormalized: true,
-    },
+  const existingUser = await findUserIdentityConflict({
+    email,
+    usernameNormalized,
   });
 
   if (existingUser) {
@@ -280,18 +295,7 @@ const createAdminUser = async ({ body }) => {
       phone,
       discordTag,
     },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      username: true,
-      role: true,
-      phone: true,
-      discordTag: true,
-      lastLoginAt: true,
-      createdAt: true,
-    },
+    select: ADMIN_USER_SELECT,
   });
 
   return mapUserForResponse(user);
@@ -354,15 +358,10 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
     });
   }
 
-  const conflictingUser = await prisma.user.findFirst({
-    where: {
-      OR: [{ emailNormalized: email }, { usernameNormalized }],
-      id: { not: userId },
-    },
-    select: {
-      emailNormalized: true,
-      usernameNormalized: true,
-    },
+  const conflictingUser = await findUserIdentityConflict({
+    email,
+    usernameNormalized,
+    excludeUserId: userId,
   });
 
   if (conflictingUser) {
@@ -388,18 +387,7 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
       role,
       ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
     },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      username: true,
-      role: true,
-      phone: true,
-      discordTag: true,
-      lastLoginAt: true,
-      createdAt: true,
-    },
+    select: ADMIN_USER_SELECT,
   });
 
   return mapUserForResponse(user);
@@ -485,30 +473,11 @@ const listTeamRegistrations = async (query = {}) => {
       orderBy: { createdAt: "desc" },
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
-      include: {
-        members: {
-          orderBy: [{ role: "asc" }, { memberOrder: "asc" }],
-        },
-        tournament: {
-          select: {
-            id: true,
-            slug: true,
-            title: true,
-            status: true,
-            isPublished: true,
-          },
-        },
-      },
+      include: TEAM_REGISTRATION_INCLUDE,
     }),
     prisma.tournament.findMany({
       orderBy: { startDate: "desc" },
-      select: {
-        id: true,
-        slug: true,
-        title: true,
-        status: true,
-        isPublished: true,
-      },
+      select: TOURNAMENT_SUMMARY_SELECT,
     }),
   ]);
 
@@ -526,13 +495,7 @@ const listTeamRegistrations = async (query = {}) => {
 const getRegistrationsByTournament = async (tournamentId, query = {}) => {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      status: true,
-      isPublished: true,
-    },
+    select: TOURNAMENT_SUMMARY_SELECT,
   });
 
   if (!tournament) {
@@ -587,20 +550,7 @@ const updateTeamRegistrationStatus = async (registrationId, body) => {
   const registration = await prisma.teamRegistration.update({
     where: { id: registrationId },
     data: updateData,
-    include: {
-      members: {
-        orderBy: [{ role: "asc" }, { memberOrder: "asc" }],
-      },
-      tournament: {
-        select: {
-          id: true,
-          slug: true,
-          title: true,
-          status: true,
-          isPublished: true,
-        },
-      },
-    },
+    include: TEAM_REGISTRATION_INCLUDE,
   });
 
   return mapTeamRegistration(registration);

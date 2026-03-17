@@ -1,6 +1,14 @@
 import { apiFetch } from "@/lib/auth";
 import { Tournament } from "@/lib/tournaments";
 
+export const adminNavigationLinks = [
+  { href: "/admin", label: "Overview" },
+  { href: "/admin/users", label: "Users" },
+  { href: "/admin/tournaments", label: "Tournaments" },
+  { href: "/admin/registrations", label: "Registrations" },
+  { href: "/admin/contact-messages", label: "Contact Messages" },
+] as const;
+
 export type Pagination = {
   page: number;
   pageSize: number;
@@ -93,6 +101,28 @@ export const emptyPagination: Pagination = {
   total: 0,
   totalPages: 1,
 };
+
+export const formatAdminDateTime = (
+  value?: string | null,
+  options?: Intl.DateTimeFormatOptions
+) =>
+  value
+    ? new Date(value).toLocaleString(undefined, options)
+    : "N/A";
+
+export const formatAdminCompactDateTime = (value?: string | null) =>
+  formatAdminDateTime(value, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+export const getAdminPaginationSummary = (
+  pagination: Pagination,
+  totalLabel = "total"
+) => `Page ${pagination.page} of ${pagination.totalPages} - ${pagination.total} ${totalLabel}`;
 
 export type PagedAdminResponse<TItemKey extends string, TItem> = {
   pagination: Pagination;

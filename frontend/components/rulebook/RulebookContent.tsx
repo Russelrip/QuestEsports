@@ -1,5 +1,4 @@
 import Image from "next/image";
-import Link from "next/link";
 
 export default function RulebookContent() {
   return (
@@ -356,12 +355,6 @@ export default function RulebookContent() {
           </div>
         </div>
 
-        <div className="rulebook-back-btn">
-          {/* Quick path back to the signup form after players finish reading the rules. */}
-          <Link href="/tournament-registration" className="btn btn-primary">
-            Back to Registration
-          </Link>
-        </div>
       </div>
     </section>
   );

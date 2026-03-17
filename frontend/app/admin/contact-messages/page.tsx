@@ -1,6 +1,12 @@
 import PageLayout from "@/components/PageLayout";
 import AdminContactMessagesManager from "@/components/admin/AdminContactMessagesManager";
-import { defaultPageDescriptions } from "@/lib/site";
+import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
+
+export const metadata = buildNoIndexMetadata(
+  "Contact Messages",
+  defaultPageDescriptions.adminContactMessages,
+  "/admin/contact-messages"
+);
 
 export default function AdminContactMessagesPage() {
   return (

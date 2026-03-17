@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import AdminGuard from "@/components/admin/AdminGuard";
-
-const links = [
-  { href: "/admin", label: "Overview" },
-  { href: "/admin/users", label: "Users" },
-  { href: "/admin/tournaments", label: "Tournaments" },
-  { href: "/admin/registrations", label: "Registrations" },
-  { href: "/admin/contact-messages", label: "Contact Messages" },
-];
+import { adminNavigationLinks } from "@/lib/admin";
 
 export default function AdminShell({
   title,
@@ -39,7 +32,7 @@ export default function AdminShell({
           </div>
 
           <nav className="admin-tabs" aria-label="Admin navigation">
-            {links.map((link) => (
+            {adminNavigationLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}

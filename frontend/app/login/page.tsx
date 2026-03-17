@@ -1,11 +1,16 @@
+import { Suspense } from "react";
 import LoginForm from "@/components/auth/LoginForm";
 import PageLayout from "@/components/PageLayout";
-import { defaultPageDescriptions } from "@/lib/site";
+import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
+
+export const metadata = buildNoIndexMetadata("Login", defaultPageDescriptions.login, "/login");
 
 export default function LoginPage() {
   return (
     <PageLayout title="Login" description={defaultPageDescriptions.login}>
-      <LoginForm />
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
     </PageLayout>
   );
 }

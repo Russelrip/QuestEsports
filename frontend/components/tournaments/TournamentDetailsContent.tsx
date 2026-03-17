@@ -12,7 +12,7 @@ export default function TournamentDetailsContent({
   tournament: Tournament;
 }) {
   return (
-    <section className="tournaments-section" style={{ padding: "24px 0 50px" }}>
+    <section className="tournaments-section tournament-detail-section">
       <div className="container">
         <div className="tournament-item tournament-item-detail">
           <div className="tournament-image">
@@ -24,11 +24,11 @@ export default function TournamentDetailsContent({
 
           <div className="tournament-details">
             <div className="tournament-detail-top">
-              <div>
+              <div className="tournament-detail-heading">
                 <p className="tournament-eyebrow">Tournament Details</p>
                 <h2>{tournament.title}</h2>
               </div>
-              <Link href="/tournaments" className="btn btn-secondary btn-small">
+              <Link href="/tournaments" className="btn btn-secondary btn-small tournament-back-btn">
                 Back to Tournaments
               </Link>
             </div>

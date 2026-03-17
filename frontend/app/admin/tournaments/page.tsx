@@ -1,6 +1,12 @@
 import PageLayout from "@/components/PageLayout";
 import AdminTournamentsManager from "@/components/admin/AdminTournamentsManager";
-import { defaultPageDescriptions } from "@/lib/site";
+import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
+
+export const metadata = buildNoIndexMetadata(
+  "Tournament Management",
+  defaultPageDescriptions.adminTournaments,
+  "/admin/tournaments"
+);
 
 export default function AdminTournamentsPage() {
   return (

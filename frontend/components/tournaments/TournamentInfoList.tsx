@@ -19,37 +19,54 @@ export default function TournamentInfoList({
 }) {
   return (
     <div className="tournament-info">
-      <p>
-        <strong>Game:</strong> {tournament.game}
-      </p>
-      <p>
-        <strong>Prize Pool:</strong> {tournament.prizePool}
-      </p>
-      <p>
-        <strong>Format:</strong> {tournament.format}
-      </p>
-      <p>
-        <strong>Team Size:</strong> {tournament.teamSize}v{tournament.teamSize}
-      </p>
-      <p>
-        <strong>Slots:</strong> {tournament.registrationCount} / {tournament.maxTeams}
-      </p>
-      <p>
-        <strong>Registration Deadline:</strong> {formatDate(tournament.registrationDeadline)}
-      </p>
-      <p>
-        <strong>Event Dates:</strong> {formatDate(tournament.startDate)} -{" "}
-        {formatDate(tournament.endDate)}
-      </p>
-      <p>
-        <strong>Status:</strong>{" "}
-        <span className={getTournamentStatusBadgeClassName(tournament.status)}>
-          {getTournamentStatusLabel(tournament.status)}
+      <div className="tournament-info-item">
+        <span className="tournament-info-label">Game</span>
+        <span className="tournament-info-value tournament-info-value-caps">
+          {tournament.game}
         </span>
-      </p>
-      <p>
-        <strong>Registration:</strong> {getTournamentRegistrationLabel(tournament)}
-      </p>
+      </div>
+      <div className="tournament-info-item">
+        <span className="tournament-info-label">Prize Pool</span>
+        <span className="tournament-info-value">{tournament.prizePool}</span>
+      </div>
+      <div className="tournament-info-item">
+        <span className="tournament-info-label">Team Size</span>
+        <span className="tournament-info-value">
+          {tournament.teamSize}v{tournament.teamSize}
+        </span>
+      </div>
+      <div className="tournament-info-item">
+        <span className="tournament-info-label">Slots</span>
+        <span className="tournament-info-value">
+          {tournament.registrationCount} / {tournament.maxTeams}
+        </span>
+      </div>
+      <div className="tournament-info-item">
+        <span className="tournament-info-label">Registration Deadline</span>
+        <span className="tournament-info-value">
+          {formatDate(tournament.registrationDeadline)}
+        </span>
+      </div>
+      <div className="tournament-info-item">
+        <span className="tournament-info-label">Event Dates</span>
+        <span className="tournament-info-value">
+          {formatDate(tournament.startDate)} - {formatDate(tournament.endDate)}
+        </span>
+      </div>
+      <div className="tournament-info-item">
+        <span className="tournament-info-label">Status</span>
+        <span className="tournament-info-value">
+          <span className={getTournamentStatusBadgeClassName(tournament.status)}>
+            {getTournamentStatusLabel(tournament.status)}
+          </span>
+        </span>
+      </div>
+      <div className="tournament-info-item">
+        <span className="tournament-info-label">Registration</span>
+        <span className="tournament-info-value">
+          {getTournamentRegistrationLabel(tournament)}
+        </span>
+      </div>
     </div>
   );
 }

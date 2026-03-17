@@ -4,7 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/EmptyState";
-import { adminRequest, emptyPagination, type Pagination } from "@/lib/admin";
+import {
+  adminRequest,
+  emptyPagination,
+  getAdminPaginationSummary,
+  type Pagination,
+} from "@/lib/admin";
 import {
   Tournament,
   getTournamentRegistrationLabel,
@@ -212,23 +217,23 @@ export default function AdminTournamentsManager() {
                 <tbody>
                   {tournaments.map((tournament) => (
                     <tr key={tournament.id}>
-                      <td>
+                      <td data-label="Title">
                         <strong>{tournament.title}</strong>
                         <br />
                         <small>{tournament.slug}</small>
                       </td>
-                      <td>{tournament.game}</td>
-                      <td>
+                      <td data-label="Game">{tournament.game}</td>
+                      <td data-label="Status">
                         <span className={getTournamentStatusBadgeClassName(tournament.status)}>
                           {getTournamentStatusLabel(tournament.status)}
                         </span>
                       </td>
-                      <td>{tournament.isPublished ? "Published" : "Hidden"}</td>
-                      <td>
+                      <td data-label="Visibility">{tournament.isPublished ? "Published" : "Hidden"}</td>
+                      <td data-label="Registrations">
                         {tournament.registrationCount} / {tournament.maxTeams}
                       </td>
-                      <td>{getTournamentRegistrationLabel(tournament)}</td>
-                      <td>
+                      <td data-label="Registration">{getTournamentRegistrationLabel(tournament)}</td>
+                      <td data-label="Actions">
                         <div className="admin-table-actions">
                           <Link
                             href={`/admin/tournaments/${tournament.id}/edit`}
@@ -278,10 +283,7 @@ export default function AdminTournamentsManager() {
               </table>
             </div>
             <div className="admin-pagination-row">
-              <p>
-                Showing page {pagination.page} of {pagination.totalPages} ({pagination.total}{" "}
-                tournaments)
-              </p>
+              <p>{getAdminPaginationSummary(pagination, "tournaments")}</p>
               <div className="admin-table-actions">
                 <button
                   type="button"
