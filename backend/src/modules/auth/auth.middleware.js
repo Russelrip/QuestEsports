@@ -3,7 +3,7 @@ const { asyncHandler } = require("../../lib/async-handler");
 const { getSessionFromRequest } = require("./session.service");
 
 const attachSession = asyncHandler(async (req, res, next) => {
-  const session = getSessionFromRequest(req);
+  const session = await getSessionFromRequest(req);
   req.session = session;
   req.user = session ? session.user : null;
   next();

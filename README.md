@@ -5,27 +5,31 @@ Quest Esports is a full-stack esports website for showcasing tournaments, publis
 The repository is split into:
 
 - `frontend/`: Next.js 16 + React 19 marketing site and registration UI
-- `backend/`: Express API backed by a local SQLite database
+- `backend/`: Express API backed by PostgreSQL via Prisma
 
 ## Current Features
 
 ### Frontend
 
 - Homepage with hero, about, team, and featured tournament sections
-- Tournament listing page
+- Tournament listing page with game filters
+- Tournament details page for individual events
 - Tournament registration page with full 5-player team intake
 - Rulebook page for VALORANT tournament policies
 - Match videos page
-- Gallery page
+- Posters gallery page
 - Contact page with backend form submission
 - Player signup page with backend account creation
 - Player login page with browser storage of returned user data
+- User profile page
+- Admin dashboard page
 
 ### Backend
 
 - `POST /api/signup` for player account creation
 - `POST /api/login` for email-or-username login
 - `POST /api/contact` for contact form submissions
+- `GET /api/tournament-registration/status/:slug` for checking registration status
 - `POST /api/tournament-registration` for team registration with optional logo upload
 - `GET /api/health` for basic health checking
 
@@ -34,6 +38,7 @@ The repository is split into:
 The rebuilt backend stores these core records:
 
 - `User`
+- `Session`
 - `ContactSubmission`
 - `Tournament`
 - `TeamRegistration`
@@ -42,31 +47,139 @@ The rebuilt backend stores these core records:
 ## Tech Stack
 
 - Frontend: Next.js App Router, React, TypeScript, Tailwind CSS v4
-- Backend: Express 5, SQLite, Multer, bcryptjs
+- Backend: Express 5, Prisma ORM, PostgreSQL, Multer, bcryptjs
 - Tooling: ESLint, Nodemon
 
 ## Project Structure
 
 ```text
 QuestEsports/
+|-- README.md
 |-- backend/
-|   |-- data/
+|   |-- package.json
+|   |-- prisma/
+|   |   |-- schema.prisma
+|   |   `-- migrations/
 |   `-- src/
-|       |-- config/
-|       |-- constants/
-|       |-- lib/
-|       |-- middleware/
-|       |-- modules/
-|       |-- routes/
 |       |-- app.js
-|       `-- server.js
+|       |-- server.js
+|       |-- config/
+|       |   `-- env.js
+|       |-- constants/
+|       |   `-- tournaments.js
+|       |-- lib/
+|       |   |-- async-handler.js
+|       |   |-- database.js
+|       |   |-- http-error.js
+|       |   |-- logger.js
+|       |   |-- prisma-errors.js
+|       |   |-- prisma.js
+|       |   |-- validation.js
+|       |-- middleware/
+|       |   |-- error-handler.js
+|       |   `-- upload.js
+|       |-- modules/
+|       |   |-- auth/
+|       |   |   |-- auth.controller.js
+|       |   |   |-- auth.middleware.js
+|       |   |   |-- auth.routes.js
+|       |   |   |-- auth.service.js
+|       |   |   `-- session.service.js
+|       |   |-- contact/
+|       |   |   |-- contact.controller.js
+|       |   |   |-- contact.routes.js
+|       |   |   `-- contact.service.js
+|       |   `-- tournaments/
+|       |       |-- tournament.controller.js
+|       |       |-- tournament.routes.js
+|       |       `-- tournament.service.js
+|       `-- routes/
+|           `-- index.js
 `-- frontend/
+    |-- eslint.config.mjs
+    |-- next-env.d.ts
+    |-- next.config.ts
+    |-- package.json
+    |-- postcss.config.mjs
+    |-- tsconfig.json
     |-- app/
+    |   |-- globals.css
+    |   |-- layout.tsx
+    |   |-- page.tsx
+    |   |-- admin/
+    |   |   `-- page.tsx
+    |   |-- contact/
+    |   |   `-- page.tsx
+    |   |-- login/
+    |   |   `-- page.tsx
+    |   |-- match-videos/
+    |   |   `-- page.tsx
+    |   |-- posters/
+    |   |   `-- page.tsx
+    |   |-- profile/
+    |   |   `-- page.tsx
+    |   |-- registration/
+    |   |   `-- page.tsx
+    |   |-- rulebook/
+    |   |   `-- page.tsx
+    |   |-- signup/
+    |   |   `-- page.tsx
+    |   |-- tournament-registration/
+    |   |   `-- page.tsx
+    |   `-- tournaments/
+    |       |-- page.tsx
+    |       `-- [slug]/
+    |           `-- page.tsx
     |-- components/
-    |-- public/
-    |   |-- fonts/
-    |   `-- images/
-    `-- package.json
+    |   |-- Footer.tsx
+    |   |-- Navbar.tsx
+    |   |-- PageHeader.tsx
+    |   |-- PageLayout.tsx
+    |   |-- UserMenu.tsx
+    |   |-- admin/
+    |   |   `-- AdminDashboard.tsx
+    |   |-- auth/
+    |   |   |-- AuthProvider.tsx
+    |   |   |-- LoginForm.tsx
+    |   |   |-- ProfileView.tsx
+    |   |   `-- SignupForm.tsx
+    |   |-- contact/
+    |   |   |-- ContactForm.tsx
+    |   |   `-- ContactInfo.tsx
+    |   |-- home/
+    |   |   |-- AboutSection.tsx
+    |   |   |-- FeaturedTournaments.tsx
+    |   |   |-- HomeHero.tsx
+    |   |   `-- TeamSection.tsx
+    |   |-- match-videos/
+    |   |   `-- MatchVideosContent.tsx
+    |   |-- Posters/
+    |   |   `-- PostersContent.tsx
+    |   |-- registration/
+    |   |   `-- RegistrationForm.tsx
+    |   |-- rulebook/
+    |   |   `-- RulebookContent.tsx
+    |   |-- tournament-registration/
+    |   |   |-- RosterMemberFields.tsx
+    |   |   `-- TournamentRegistrationForm.tsx
+    |   |-- tournaments/
+    |   |   |-- RegisterTournamentButton.tsx
+    |   |   |-- TournamentDetailsContent.tsx
+    |   |   |-- TournamentInfoList.tsx
+    |   |   `-- TournamentsContent.tsx
+    |   `-- ui/
+    |       `-- EmptyState.tsx
+    |-- hooks/
+    |   `-- useFormFields.ts
+    |-- lib/
+    |   |-- auth.ts
+    |   |-- media.ts
+    |   |-- registered-tournaments.ts
+    |   |-- site.ts
+    |   `-- tournaments.ts
+    `-- public/
+        |-- fonts/
+        `-- images/
 ```
 
 ## Local Development
@@ -92,7 +205,11 @@ Create a `.env` file inside `backend/`:
 ```env
 PORT=5001
 CORS_ORIGIN=http://localhost:3000
-DATABASE_PATH=./data/quest-esports.db
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+ADMIN_EMAILS=admin@questesports.com
+SESSION_COOKIE_NAME=quest_session
+SESSION_TTL_DAYS=1
+REMEMBER_ME_SESSION_TTL_DAYS=30
 ```
 
 Create a `.env.local` file inside `frontend/`:
@@ -107,6 +224,7 @@ Backend:
 
 ```bash
 cd backend
+npm run prisma:migrate
 npm run dev
 ```
 
@@ -156,6 +274,10 @@ Stores a contact message using:
 - `subject`
 - `message`
 
+### `GET /api/tournament-registration/status/:slug`
+
+Checks if the authenticated user has registered for the specified tournament.
+
 ### `POST /api/tournament-registration`
 
 Accepts `multipart/form-data` with:
@@ -176,16 +298,19 @@ Uploaded logos are stored under `backend/uploads/team-logos`.
 
 The current app includes these pages:
 
-- `/`
-- `/tournaments`
-- `/tournament-registration`
-- `/rulebook`
-- `/match-videos`
-- `/gallery`
-- `/contact`
-- `/signup`
-- `/login`
-- `/registration`
+- `/` - Homepage
+- `/tournaments` - Tournament listings with game filters
+- `/tournaments/[slug]` - Individual tournament details
+- `/tournament-registration` - Team registration form
+- `/rulebook` - Tournament policies
+- `/match-videos` - Event videos gallery
+- `/posters` - Posters gallery
+- `/contact` - Contact form
+- `/signup` - Player signup
+- `/login` - Player login
+- `/profile` - User profile
+- `/admin` - Admin dashboard
+- `/registration` - Legacy registration page (frontend-only)
 
 ## Useful Commands
 
@@ -202,20 +327,23 @@ Backend:
 ```bash
 npm run dev
 npm start
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:studio
 ```
 
 ## Implementation Notes
 
-- CORS is configurable through `CORS_ORIGIN` and defaults to `http://localhost:3000`.
-- Login stores returned user data in `localStorage` or `sessionStorage`; there is no token-based auth yet.
+- CORS is configurable through `CORS_ORIGIN` and supports comma-separated origins.
+- Auth uses `HttpOnly` session cookies backed by the `sessions` table; sensitive fields such as password hashes are never returned by the API.
 - The generic `/registration` page is currently a frontend-only form scaffold and is separate from the API-backed `/tournament-registration` flow.
 - Tournament registration stores a normalized roster and prevents duplicates for the same tournament by `teamName` or `captainEmail`.
+- Tournament catalogue rows are upserted on backend boot so configured events stay in sync with the API.
 
 ## Gaps To Be Aware Of
 
 - No automated test suite is present yet.
 - No production deployment configuration is documented in the repo yet.
-- Auth is sessionless and does not currently issue JWTs or cookies.
 - The backend creates its upload directories on boot if they do not already exist.
 
 ## Suggested Next Steps

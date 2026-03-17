@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { db } = require("../../config/database");
+const { prisma } = require("../../lib/prisma");
 const { env } = require("../../config/env");
 
 const SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME;
@@ -72,36 +72,49 @@ const buildExpiredCookieValue = () => {
   return segments.join("; ");
 };
 
-const createSession = ({ userId, rememberMe }) => {
+const createSession = async ({ userId, rememberMe }) => {
   const token = crypto.randomBytes(48).toString("hex");
   const tokenHash = hashToken(token);
   const expiresAt = new Date(
     Date.now() + getSessionDurationMs(rememberMe)
   ).toISOString();
 
-  db.prepare(
-    `
-      INSERT INTO sessions (id, user_id, token_hash, expires_at, last_seen_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `
-  ).run(crypto.randomUUID(), userId, tokenHash, expiresAt);
+  await prisma.session.create({
+    data: {
+      id: crypto.randomUUID(),
+      userId,
+      tokenHash,
+      expiresAt: new Date(expiresAt),
+      lastSeenAt: new Date(),
+    },
+  });
 
   return { token, expiresAt };
 };
 
-const deleteSessionByToken = (token) => {
+const deleteSessionByToken = async (token) => {
   if (!token) {
     return;
   }
 
-  db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+  await prisma.session.deleteMany({
+    where: {
+      tokenHash: hashToken(token),
+    },
+  });
 };
 
-const deleteExpiredSessions = () => {
-  db.prepare("DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP").run();
+const deleteExpiredSessions = async () => {
+  await prisma.session.deleteMany({
+    where: {
+      expiresAt: {
+        lte: new Date(),
+      },
+    },
+  });
 };
 
-const getSessionFromRequest = (req) => {
+const getSessionFromRequest = async (req) => {
   const cookies = parseCookies(req.headers.cookie || "");
   const token = cookies[SESSION_COOKIE_NAME];
 
@@ -109,53 +122,57 @@ const getSessionFromRequest = (req) => {
     return null;
   }
 
-  deleteExpiredSessions();
+  await deleteExpiredSessions();
 
-  const session = db
-    .prepare(
-      `
-        SELECT
-          sessions.id AS sessionId,
-          sessions.user_id AS userId,
-          sessions.expires_at AS expiresAt,
-          users.first_name AS firstName,
-          users.last_name AS lastName,
-          users.email AS email,
-          users.username AS username,
-          users.phone AS phone,
-          users.discord_tag AS discordTag,
-          users.role AS role,
-          users.last_login_at AS lastLoginAt,
-          users.created_at AS createdAt
-        FROM sessions
-        INNER JOIN users ON users.id = sessions.user_id
-        WHERE sessions.token_hash = ?
-        LIMIT 1
-      `
-    )
-    .get(hashToken(token));
+  const session = await prisma.session.findUnique({
+    where: {
+      tokenHash: hashToken(token),
+    },
+    select: {
+      id: true,
+      expiresAt: true,
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          username: true,
+          phone: true,
+          discordTag: true,
+          role: true,
+          lastLoginAt: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
 
   if (!session) {
     return null;
   }
 
-  if (new Date(session.expiresAt).getTime() <= Date.now()) {
-    deleteSessionByToken(token);
+  if (session.expiresAt.getTime() <= Date.now()) {
+    await deleteSessionByToken(token);
     return null;
   }
 
-  db.prepare(
-    `
-      UPDATE sessions
-      SET last_seen_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `
-  ).run(session.sessionId);
+  await prisma.session.update({
+    where: {
+      id: session.id,
+    },
+    data: {
+      lastSeenAt: new Date(),
+    },
+  });
 
   return {
     token,
-    sessionId: session.sessionId,
-    user: mapUserForSession(session),
+    sessionId: session.id,
+    user: mapUserForSession({
+      userId: session.user.id,
+      ...session.user,
+    }),
   };
 };
 

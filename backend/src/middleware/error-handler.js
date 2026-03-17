@@ -1,4 +1,6 @@
 const { HttpError } = require("../lib/http-error");
+const { logger } = require("../lib/logger");
+const { mapPrismaError } = require("../lib/prisma-errors");
 
 const notFoundHandler = (req, res) => {
   res.status(404).json({
@@ -8,21 +10,32 @@ const notFoundHandler = (req, res) => {
 };
 
 const errorHandler = (error, req, res, next) => {
+  const normalizedError = mapPrismaError(error);
+
   if (res.headersSent) {
-    next(error);
+    next(normalizedError);
     return;
   }
 
-  if (error instanceof HttpError) {
-    res.status(error.statusCode).json({
+  if (normalizedError instanceof HttpError) {
+    if (normalizedError.statusCode >= 500) {
+      logger.error("Handled API error", {
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: normalizedError.statusCode,
+        error: normalizedError,
+      });
+    }
+
+    res.status(normalizedError.statusCode).json({
       success: false,
-      message: error.message,
-      details: error.details || undefined,
+      message: normalizedError.message,
+      details: normalizedError.details || undefined,
     });
     return;
   }
 
-  if (error && error.code === "LIMIT_FILE_SIZE") {
+  if (normalizedError && normalizedError.code === "LIMIT_FILE_SIZE") {
     res.status(400).json({
       success: false,
       message: "Team logo must be 5MB or smaller.",
@@ -30,7 +43,12 @@ const errorHandler = (error, req, res, next) => {
     return;
   }
 
-  console.error("Unhandled API error:", error);
+  logger.error("Unhandled API error", {
+    method: req.method,
+    path: req.originalUrl,
+    error: normalizedError,
+  });
+
   res.status(500).json({
     success: false,
     message: "Internal server error.",

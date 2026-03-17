@@ -7,9 +7,11 @@ const { notFoundHandler, errorHandler } = require("./middleware/error-handler");
 
 const app = express();
 
+app.set("trust proxy", 1);
+
 app.use(
   cors({
-    origin: env.CORS_ORIGIN,
+    origin: env.CORS_ORIGINS,
     credentials: true,
   })
 );
