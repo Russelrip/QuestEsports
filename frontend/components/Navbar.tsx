@@ -2,13 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import UserMenu from "@/components/UserMenu";
 import { authNavItems, primaryNavItems } from "@/lib/site";
 
 export default function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { user, isAuthenticated, logout, isLoading } = useAuth();
 
   return (
@@ -33,17 +33,7 @@ export default function Navbar() {
           ))}
           {!isLoading && isAuthenticated && user ? (
             <>
-              <li className="nav-user-status">
-                <span>Logged in as {user.username}</span>
-              </li>
-              <li>
-                <Link
-                  href="/profile"
-                  className={pathname === "/profile" ? "active" : ""}
-                >
-                  Profile
-                </Link>
-              </li>
+              <UserMenu user={user} logout={logout} />
               {user.role === "admin" && (
                 <li>
                   <Link
@@ -54,18 +44,6 @@ export default function Navbar() {
                   </Link>
                 </li>
               )}
-              <li>
-                <button
-                  type="button"
-                  className="nav-logout"
-                  onClick={async () => {
-                    await logout();
-                    router.push("/");
-                  }}
-                >
-                  Logout
-                </button>
-              </li>
             </>
           ) : !isLoading ? (
             <>
