@@ -40,23 +40,33 @@ export default function PostersContent() {
     setError("");
 
     try {
-      const [imagesData, postersData] = await Promise.all([fetchImages(), fetchPosters()]);
-      setImages(imagesData.images);
+      const postersData = await fetchPosters();
       setPosters(postersData.posters);
-      setPosterDraft((current) => ({
-        ...current,
-        imageAssetId:
-          current.imageAssetId ||
-          imagesData.images[0]?.id ||
-          postersData.posters[0]?.imageAsset.id ||
-          "",
-      }));
+
+      if (!authLoading && isAdmin) {
+        const imagesData = await fetchImages();
+        setImages(imagesData.images);
+        setPosterDraft((current) => ({
+          ...current,
+          imageAssetId:
+            current.imageAssetId ||
+            imagesData.images[0]?.id ||
+            postersData.posters[0]?.imageAsset.id ||
+            "",
+        }));
+      } else {
+        setImages([]);
+        setPosterDraft((current) => ({
+          ...current,
+          imageAssetId: current.imageAssetId || postersData.posters[0]?.imageAsset.id || "",
+        }));
+      }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to load posters.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authLoading, isAdmin]);
 
   useEffect(() => {
     void loadMedia();
