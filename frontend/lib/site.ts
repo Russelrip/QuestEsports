@@ -5,7 +5,9 @@ const siteName = "Quest Esports";
 const siteTitle = "Quest Esports LK";
 const siteDescription =
   "Quest Esports runs Sri Lankan esports tournaments, match broadcasts, posters, and community events built for competitive players and gaming fans.";
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://questesports.lk";
+const fallbackSiteUrl =
+  process.env.NODE_ENV === "production" ? "https://questesports.lk" : "http://localhost:3000";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || fallbackSiteUrl;
 const creatorHandle = "@questesportslk";
 const defaultLocale = "en_US";
 const defaultSocialImage = "/images/banner.jpg";
@@ -254,7 +256,7 @@ export const organizationStructuredData = {
   logo: absoluteUrl("/images/logo-header.png"),
   image: absoluteUrl(defaultSocialImage),
   description: siteDescription,
-  email: "questesportslk@gmail.com",
+  email: "contact@mail.questesports.lk",
   sameAs: [
     "https://discord.gg/cxkM7dk9CM",
     "https://www.facebook.com/share/1HNNM3e9ub/?mibextid=wwXIfr",
@@ -381,8 +383,8 @@ export const contactLinks = [
     title: "Social Media",
     items: [
       {
-        label: "questesportslk@gmail.com",
-        href: "mailto:questesportslk@gmail.com",
+        label: "contact@mail.questesports.lk",
+        href: "mailto:contact@mail.questesports.lk",
         icon: "/images/gmail.png",
       },
       {

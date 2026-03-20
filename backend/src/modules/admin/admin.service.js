@@ -1,6 +1,6 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const { Prisma } = require("@prisma/client");
+const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const {
@@ -8,6 +8,7 @@ const {
   buildPagedResponse,
 } = require("../../lib/pagination");
 const { importLegacyPosters } = require("../media/legacy-import.service");
+const { migrateImageAssetsToFilesystem } = require("../media/media.service");
 const {
   normalizeEmail,
   normalizeText,
@@ -577,6 +578,7 @@ const updateTeamRegistrationStatus = async (registrationId, body) => {
 };
 
 const runLegacyPosterImport = async () => importLegacyPosters();
+const runPosterImageAssetMigration = async () => migrateImageAssetsToFilesystem();
 
 module.exports = {
   getAdminDashboardData,
@@ -592,4 +594,5 @@ module.exports = {
   getRegistrationsByTournament,
   updateTeamRegistrationStatus,
   runLegacyPosterImport,
+  runPosterImageAssetMigration,
 };

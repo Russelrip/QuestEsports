@@ -55,8 +55,8 @@ export default function AdminPosterStudio({
             <span className="profile-badge">Media Studio</span>
             <h2>Upload images and build posters</h2>
             <p className="section-intro admin-section-intro">
-              Store poster artwork directly in PostgreSQL, then save it to the public poster
-              gallery.
+              Upload poster artwork to the backend media library, then save it to the public
+              poster gallery.
             </p>
           </div>
         </div>
@@ -66,7 +66,7 @@ export default function AdminPosterStudio({
             <div className="admin-users-head">
               <div>
                 <h3>Upload Images</h3>
-                <p>Choose one or more PNG or JPG files and add them to the poster library.</p>
+                <p>Choose one or more PNG or JPG files and add them to the poster media library.</p>
               </div>
             </div>
 
@@ -112,7 +112,7 @@ export default function AdminPosterStudio({
             {error ? <p className="error-message">{error}</p> : null}
             {uploadSuccess ? <p className="success-inline">{uploadSuccess}</p> : null}
             <button type="submit" className="btn btn-primary" disabled={uploading}>
-              {uploading ? "Uploading..." : "Upload to database"}
+              {uploading ? "Uploading..." : "Upload image"}
             </button>
           </form>
 

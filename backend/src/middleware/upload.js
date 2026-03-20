@@ -7,6 +7,7 @@ const { HttpError } = require("../lib/http-error");
 const uploadRoot = path.join(__dirname, "../../uploads");
 const teamLogoDirectory = path.join(uploadRoot, "team-logos");
 const tournamentBannerDirectory = path.join(uploadRoot, "tournament-banners");
+const posterImageDirectory = path.join(uploadRoot, "poster-images");
 const ALLOWED_UPLOAD_TYPES = {
   jpeg: {
     extensions: new Set([".jpg", ".jpeg"]),
@@ -25,6 +26,7 @@ const ALLOWED_UPLOAD_TYPES = {
 const ensureUploadDirectories = async () => {
   await fs.mkdir(teamLogoDirectory, { recursive: true });
   await fs.mkdir(tournamentBannerDirectory, { recursive: true });
+  await fs.mkdir(posterImageDirectory, { recursive: true });
 };
 
 const detectImageType = (buffer) => {
@@ -176,6 +178,13 @@ const persistTournamentBannerUpload = (file) =>
     invalidMessage: "Only JPEG, PNG, and WebP tournament banners are allowed.",
   });
 
+const persistPosterImageUpload = (file) =>
+  persistValidatedUpload({
+    file,
+    directory: posterImageDirectory,
+    invalidMessage: "Only JPEG, PNG, and WebP poster images are allowed.",
+  });
+
 module.exports = {
   ALLOWED_UPLOAD_TYPES,
   detectImageType,
@@ -185,6 +194,8 @@ module.exports = {
   dbImageUpload,
   persistTeamLogoUpload,
   persistTournamentBannerUpload,
+  persistPosterImageUpload,
   teamLogoDirectory,
   tournamentBannerDirectory,
+  posterImageDirectory,
 };

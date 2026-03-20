@@ -178,7 +178,7 @@ export default function RulebookContent() {
           <h5>2.12.3 Player Account Update Procedure</h5>
           <p>To update or correct player details, the Team Captain must contact Quest Esports using the official channels below:</p>
           <ul className="rule-list">
-            <li>Email: questtesports@gmail.com</li>
+            <li>Email: contact@mail.questesports.lk</li>
             <li>WhatsApp: 076 119 5666 (Ms. Senumi)</li>
             <li>WhatsApp: 076 718 6060 (Mr. Russel)</li>
             <li>An additional referee number may be given if needed.</li>

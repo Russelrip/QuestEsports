@@ -47,8 +47,8 @@ This repository is split into two apps:
 - Origin-based CSRF protection for unsafe requests
 - Security headers on both backend and frontend
 - Prisma-backed pagination helpers for admin lists
-- File-system uploads for team logos and tournament banners
-- Database-backed image storage for poster/media assets
+- File-system uploads for team logos, tournament banners, and poster images
+- Prisma-backed metadata storage for poster/media assets
 
 ## Repository Structure
 
@@ -62,7 +62,8 @@ QuestEsports/
 |   |   |-- schema.prisma
 |   |   `-- migrations/
 |   |-- scripts/
-|   |   `-- import-legacy-posters.js
+|   |   |-- import-legacy-posters.js
+|   |   `-- migrate-image-assets.js
 |   `-- src/
 |       |-- app.js
 |       |-- server.js
@@ -115,7 +116,9 @@ Important enums currently in use:
 
 ### Backend
 
-Create `backend/.env` from `backend/.env.example` and set:
+Create `backend/.env` from `backend/.env.example`.
+
+Local development example:
 
 ```env
 PORT=5001
@@ -129,8 +132,16 @@ SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
 SMTP_USER=resend
 SMTP_PASS=re_your_resend_api_key
-MAIL_FROM="Quest Esports <onboarding@resend.dev>"
+MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 APP_URL=http://localhost:3000
+```
+
+Production values:
+
+```env
+CORS_ORIGIN=https://questesports.lk
+APP_URL=https://questesports.lk
+MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 ```
 
 Notes:
@@ -145,11 +156,20 @@ Notes:
 
 ### Frontend
 
-Create `frontend/.env.local`:
+Create `frontend/.env.local`.
+
+Local development example:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+Production values:
+
+```env
+NEXT_PUBLIC_API_URL=https://api.questesports.lk
+NEXT_PUBLIC_SITE_URL=https://questesports.lk
 ```
 
 Notes:
@@ -213,6 +233,7 @@ npm run prisma:generate
 npm run prisma:migrate
 npm run prisma:studio
 npm run media:import-legacy-posters
+npm run media:migrate-image-assets
 ```
 
 ### Frontend
@@ -270,6 +291,7 @@ npm run lint
 - `PATCH /api/admin/tournaments/:tournamentId`
 - `DELETE /api/admin/tournaments/:tournamentId`
 - `POST /api/admin/media/import-legacy-posters`
+- `POST /api/admin/media/migrate-image-assets`
 
 ### Media
 
@@ -318,7 +340,7 @@ npm run lint
 - The frontend expects cookies to be included on authenticated API calls.
 - Tournament registration requires a verified email address.
 - Public tournament pages fetch live API data with `cache: "no-store"`.
-- Poster images are stored in PostgreSQL as `ImageAsset.data` and streamed through the backend.
+- Poster image metadata is stored in PostgreSQL, while the actual poster files live under `backend/uploads/poster-images/`.
 - Team logos and tournament banners are stored on disk under `backend/uploads/`.
 - The frontend `next.config.ts` adds CSP and remote image rules based on `NEXT_PUBLIC_API_URL`.
 - The backend creates upload directories on boot via `ensureUploadDirectories()`.
@@ -336,3 +358,4 @@ npm run lint
 - Create at least one admin user through the API or Prisma Studio if you need admin pages immediately.
 - For email flows, configure Resend SMTP in `backend/.env` and use your HTTPS frontend origin as `APP_URL` in production.
 - If poster pages or uploaded images do not render, verify `NEXT_PUBLIC_API_URL`, the backend upload routes, and the CSP/image settings in `frontend/next.config.ts`.
+- For local testing, keep frontend and backend env files pointed at `localhost` and only use the `questesports.lk` values in your production deployment environment.

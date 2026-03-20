@@ -1,7 +1,13 @@
+const fs = require("fs/promises");
+const path = require("path");
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { detectImageType } = require("../../middleware/upload");
+const {
+  detectImageType,
+  persistPosterImageUpload,
+  posterImageDirectory,
+} = require("../../middleware/upload");
 const { normalizeText } = require("../../lib/validation");
 
 const DEFAULT_PAGE = 1;
@@ -9,6 +15,16 @@ const DEFAULT_PAGE_SIZE = 18;
 const MAX_PAGE_SIZE = 60;
 const IMAGE_CATEGORIES = new Set(["poster", "logo", "banner", "graphic"]);
 const POSTER_ALIGNMENTS = new Set(["top-left", "top-right", "bottom-left", "bottom-right"]);
+const CONTENT_TYPE_BY_IMAGE_TYPE = {
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
+const EXTENSION_BY_CONTENT_TYPE = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+};
 const TOURNAMENT_POSTER_SELECT = {
   id: true,
   slug: true,
@@ -36,6 +52,14 @@ const buildPagination = ({ page, pageSize }) => ({
   ),
 });
 
+const buildImageUrl = (asset) => {
+  if (asset.storedFilename) {
+    return `/api/uploads/poster-images/${asset.storedFilename}`;
+  }
+
+  return `/api/images/${asset.id}/binary`;
+};
+
 const mapImageAsset = (asset) => ({
   id: asset.id,
   title: asset.title,
@@ -44,7 +68,7 @@ const mapImageAsset = (asset) => ({
   originalName: asset.originalName,
   contentType: asset.contentType,
   createdAt: asset.createdAt,
-  imageUrl: `/api/images/${asset.id}/binary`,
+  imageUrl: buildImageUrl(asset),
 });
 
 const mapPoster = (poster) => ({
@@ -86,6 +110,73 @@ const normalizeAlignment = (value) => {
   return POSTER_ALIGNMENTS.has(normalized) ? normalized : "bottom-left";
 };
 
+const buildStoredFilenameFromContentType = (contentType) =>
+  `${Date.now()}-${crypto.randomUUID()}${
+    EXTENSION_BY_CONTENT_TYPE[contentType] || ".jpg"
+  }`;
+
+const isPathInsideDirectory = (directory, targetPath) => {
+  const relativePath = path.relative(path.resolve(directory), path.resolve(targetPath));
+  return (
+    relativePath &&
+    !relativePath.startsWith("..") &&
+    !path.isAbsolute(relativePath)
+  );
+};
+
+const readStoredImageAsset = async (asset) => {
+  if (!asset.storedFilename) {
+    return null;
+  }
+
+  const filePath = path.join(posterImageDirectory, asset.storedFilename);
+
+  if (!isPathInsideDirectory(posterImageDirectory, filePath)) {
+    throw new HttpError(404, "Image not found.");
+  }
+
+  try {
+    const data = await fs.readFile(path.resolve(filePath));
+    const detectedType = detectImageType(data);
+
+    if (!detectedType) {
+      throw new HttpError(404, "Image not found.");
+    }
+
+    return {
+      contentType: CONTENT_TYPE_BY_IMAGE_TYPE[detectedType] || asset.contentType,
+      data,
+    };
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw error;
+    }
+
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+const getBinaryImageAsset = async (asset) => {
+  const storedImage = await readStoredImageAsset(asset);
+
+  if (storedImage) {
+    return storedImage;
+  }
+
+  if (asset.data) {
+    return {
+      contentType: asset.contentType,
+      data: asset.data,
+    };
+  }
+
+  throw new HttpError(404, "Image not found.");
+};
+
 const createImageAssets = async ({ body, files }) => {
   const title = normalizeText(body.title);
   const description = normalizeText(body.description) || null;
@@ -99,37 +190,34 @@ const createImageAssets = async ({ body, files }) => {
     throw new HttpError(400, "Upload at least one image.");
   }
 
-  const validatedFiles = files.map((file) => {
-    const detectedType = detectImageType(file.buffer);
+  const persistedFiles = await Promise.all(
+    files.map(async (file, index) => {
+      const persistedImage = await persistPosterImageUpload(file);
 
-    if (!detectedType) {
-      throw new HttpError(400, "Only JPEG, PNG, and WebP images are allowed.");
-    }
+      if (!persistedImage) {
+        throw new HttpError(400, "Upload at least one image.");
+      }
 
-    const contentType =
-      detectedType === "jpeg"
-        ? "image/jpeg"
-        : detectedType === "png"
-          ? "image/png"
-          : "image/webp";
-
-    return {
-      ...file,
-      contentType,
-    };
-  });
+      return {
+        file,
+        persistedImage,
+        title: files.length === 1 ? title : `${title} ${index + 1}`,
+      };
+    })
+  );
 
   const createdAssets = await prisma.$transaction(
-    validatedFiles.map((file, index) =>
+    persistedFiles.map(({ file, persistedImage, title: assetTitle }) =>
       prisma.imageAsset.create({
         data: {
           id: crypto.randomUUID(),
-          title: validatedFiles.length === 1 ? title : `${title} ${index + 1}`,
+          title: assetTitle,
           description,
           category,
           originalName: file.originalname || null,
-          contentType: file.contentType,
-          data: file.buffer,
+          storedFilename: persistedImage.filename,
+          contentType: persistedImage.contentType,
+          byteSize: file.buffer.length,
         },
       })
     )
@@ -173,7 +261,7 @@ const listImageAssets = async (query = {}) => {
   });
 };
 
-const getImageAssetById = async (imageId) => {
+const getImageAssetRecordById = async (imageId) => {
   const asset = await prisma.imageAsset.findUnique({
     where: { id: imageId },
   });
@@ -185,15 +273,13 @@ const getImageAssetById = async (imageId) => {
   return asset;
 };
 
+const getImageAssetById = async (imageId) => {
+  const asset = await getImageAssetRecordById(imageId);
+  return getBinaryImageAsset(asset);
+};
+
 const getImageAssetMetadata = async (imageId) => {
-  const asset = await prisma.imageAsset.findUnique({
-    where: { id: imageId },
-  });
-
-  if (!asset) {
-    throw new HttpError(404, "Image not found.");
-  }
-
+  const asset = await getImageAssetRecordById(imageId);
   return mapImageAsset(asset);
 };
 
@@ -209,7 +295,7 @@ const getPosterImageAssetByPosterId = async (posterId) => {
     throw new HttpError(404, "Poster not found.");
   }
 
-  return poster.imageAsset;
+  return getBinaryImageAsset(poster.imageAsset);
 };
 
 const createPoster = async ({ body }) => {
@@ -335,6 +421,63 @@ const deletePosterById = async (posterId) => {
   }
 };
 
+const migrateImageAssetsToFilesystem = async () => {
+  await fs.mkdir(posterImageDirectory, { recursive: true });
+
+  const assets = await prisma.imageAsset.findMany({
+    where: {
+      OR: [
+        { storedFilename: null },
+        { data: { not: null } },
+      ],
+    },
+  });
+
+  let migratedCount = 0;
+  let skippedCount = 0;
+
+  for (const asset of assets) {
+    if (!asset.data && asset.storedFilename) {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (!asset.data) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const storedFilename =
+      asset.storedFilename || buildStoredFilenameFromContentType(asset.contentType);
+    const filePath = path.join(posterImageDirectory, storedFilename);
+
+    await fs.writeFile(filePath, asset.data);
+
+    await prisma.imageAsset.update({
+      where: { id: asset.id },
+      data: {
+        storedFilename,
+        byteSize: asset.data.length,
+        data: null,
+      },
+    });
+
+    migratedCount += 1;
+  }
+
+  const remainingDbImages = await prisma.imageAsset.count({
+    where: {
+      data: { not: null },
+    },
+  });
+
+  return {
+    migratedCount,
+    skippedCount,
+    remainingDbImages,
+  };
+};
+
 module.exports = {
   createImageAssets,
   listImageAssets,
@@ -345,4 +488,5 @@ module.exports = {
   listPosters,
   getPosterById,
   deletePosterById,
+  migrateImageAssetsToFilesystem,
 };

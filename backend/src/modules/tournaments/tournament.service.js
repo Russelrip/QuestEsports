@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { Prisma } = require("@prisma/client");
+const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { persistTeamLogoUpload, persistTournamentBannerUpload } = require("../../middleware/upload");

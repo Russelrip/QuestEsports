@@ -13,6 +13,7 @@ const {
   getRegistrationsByTournament,
   updateTeamRegistrationStatus,
   runLegacyPosterImport,
+  runPosterImageAssetMigration,
 } = require("./admin.service");
 
 const getDashboard = asyncHandler(async (req, res) => {
@@ -160,6 +161,16 @@ const importLegacyPosterMedia = asyncHandler(async (req, res) => {
   });
 });
 
+const migratePosterMediaToFilesystem = asyncHandler(async (req, res) => {
+  const summary = await runPosterImageAssetMigration();
+
+  res.status(200).json({
+    success: true,
+    message: "Poster image asset migration finished.",
+    summary,
+  });
+});
+
 module.exports = {
   getDashboard,
   getUsers,
@@ -174,4 +185,5 @@ module.exports = {
   getTournamentRegistrations,
   updateRegistrationStatus,
   importLegacyPosterMedia,
+  migratePosterMediaToFilesystem,
 };

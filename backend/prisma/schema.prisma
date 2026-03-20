@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -214,8 +215,10 @@ model ImageAsset {
   description  String?
   category     String
   originalName String?  @map("original_name")
+  storedFilename String? @map("stored_filename")
   contentType  String   @map("content_type")
-  data         Bytes
+  byteSize     Int?     @map("byte_size")
+  data         Bytes?
   createdAt    DateTime @default(now()) @map("created_at")
   posters      Poster[]
 

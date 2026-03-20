@@ -9,7 +9,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "media:import-legacy-posters": "node scripts/import-legacy-posters.js"
+    "media:import-legacy-posters": "node scripts/import-legacy-posters.js",
+    "media:migrate-image-assets": "node scripts/migrate-image-assets.js"
   },
   "keywords": [],
   "author": "",

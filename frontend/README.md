@@ -2,7 +2,9 @@ This is the Quest Esports frontend built with Next.js.
 
 ## Getting Started
 
-Create a `.env.local` file with:
+Create a `.env.local` file.
+
+Local development example:
 
 ```bash
 NEXT_PUBLIC_API_URL=http://localhost:5001
@@ -10,6 +12,13 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
 If the backend is sending verification or reset emails through Resend SMTP, make sure the backend `APP_URL` points at this frontend origin.
+
+Production values:
+
+```bash
+NEXT_PUBLIC_API_URL=https://api.questesports.lk
+NEXT_PUBLIC_SITE_URL=https://questesports.lk
+```
 
 Then run the development server:
 

@@ -1,4 +1,4 @@
-const { Prisma } = require("@prisma/client");
+const { Prisma } = require("../generated/prisma");
 const { HttpError } = require("./http-error");
 
 const isTransientConnectionError = (error) => {

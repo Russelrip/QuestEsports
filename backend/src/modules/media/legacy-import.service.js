@@ -3,6 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 const { prisma } = require("../../lib/prisma");
+const { posterImageDirectory } = require("../../middleware/upload");
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..", "..");
 
@@ -133,6 +134,9 @@ const getContentType = (filePath) => {
   return extension === ".png" ? "image/png" : "image/jpeg";
 };
 
+const getStoredFilename = (filePath) =>
+  `${Date.now()}-${crypto.randomUUID()}${path.extname(filePath).toLowerCase() || ".jpg"}`;
+
 const readLegacyAsset = async (relativeFilePath) => {
   const absolutePath = path.join(repoRoot, relativeFilePath);
 
@@ -164,6 +168,10 @@ const importLegacyPoster = async (definition) => {
   const buffer = await readLegacyAsset(definition.filePath);
   const originalName = path.basename(definition.filePath);
   const contentType = getContentType(definition.filePath);
+  const storedFilename = getStoredFilename(definition.filePath);
+
+  await fs.mkdir(posterImageDirectory, { recursive: true });
+  await fs.writeFile(path.join(posterImageDirectory, storedFilename), buffer);
 
   await prisma.$transaction(async (tx) => {
     const imageAsset = await tx.imageAsset.create({
@@ -173,8 +181,9 @@ const importLegacyPoster = async (definition) => {
         description: null,
         category: definition.category,
         originalName,
+        storedFilename,
         contentType,
-        data: buffer,
+        byteSize: buffer.length,
       },
     });
 
