@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { env } = require("../../config/env");
+const { PUBLIC_USER_SELECT } = require("./auth.service");
 
 const SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME;
 
@@ -16,6 +17,8 @@ const mapUserForSession = (record) => ({
   phone: record.phone,
   discordTag: record.discordTag,
   role: record.role,
+  emailVerified: Boolean(record.emailVerified),
+  emailVerifiedAt: record.emailVerifiedAt || null,
   lastLoginAt: record.lastLoginAt,
   createdAt: record.createdAt,
 });
@@ -132,18 +135,7 @@ const getSessionFromRequest = async (req) => {
       id: true,
       expiresAt: true,
       user: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          username: true,
-          phone: true,
-          discordTag: true,
-          role: true,
-          lastLoginAt: true,
-          createdAt: true,
-        },
+        select: PUBLIC_USER_SELECT,
       },
     },
   });

@@ -5,7 +5,7 @@ import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useFormFields } from "@/hooks/useFormFields";
-import { apiFetch } from "@/lib/auth";
+import { apiFetchJson, AuthUser, getApiErrorMessage } from "@/lib/auth";
 
 type LoginFormData = {
   emailOrUsername: string;
@@ -48,7 +48,11 @@ export default function LoginForm() {
     }
 
     try {
-      const res = await apiFetch("/api/login", {
+      const { response, data } = await apiFetchJson<{
+        success?: boolean;
+        message?: string;
+        user: AuthUser;
+      }>("/api/login", {
         method: "POST",
         json: {
           emailOrUsername: formData.emailOrUsername,
@@ -57,10 +61,9 @@ export default function LoginForm() {
         },
       });
 
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setError(data.message || "Login failed.");
+      const errorMessage = getApiErrorMessage(response, data, "Login failed.");
+      if (errorMessage) {
+        setError(errorMessage);
         return;
       }
 
@@ -126,7 +129,7 @@ export default function LoginForm() {
           </form>
 
           <p className="form-footer">
-            <a href="#">Forgot Password?</a> |{" "}
+            <Link href="/forgot-password">Forgot Password?</Link> |{" "}
             <Link href="/signup">Register Account</Link>
           </p>
         </div>

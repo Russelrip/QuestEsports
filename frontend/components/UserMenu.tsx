@@ -75,6 +75,11 @@ export default function UserMenu({
           <p className="nav-user-dropdown-status">
             Logged in as <strong>{user.username}</strong>
           </p>
+          {!user.emailVerified ? (
+            <p className="nav-user-dropdown-status">
+              Email verification is still pending.
+            </p>
+          ) : null}
           <Link
             href="/profile"
             className="nav-user-dropdown-link"

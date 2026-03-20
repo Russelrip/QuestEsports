@@ -8,7 +8,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { apiFetch, AuthUser } from "@/lib/auth";
+import { apiFetch, apiFetchJson, AuthUser } from "@/lib/auth";
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -32,8 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadSession = useCallback(async () => {
     try {
-      const response = await apiFetch("/api/me");
-      const data = await response.json();
+      const { data } = await apiFetchJson<{ user?: AuthUser | null }>("/api/me");
       setLoggedInUser(data?.user || null);
     } catch (error) {
       console.error("Failed to refresh session:", error);

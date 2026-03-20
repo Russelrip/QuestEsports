@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useState } from "react";
 import { useFormFields } from "@/hooks/useFormFields";
-import { apiFetch } from "@/lib/auth";
+import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
+import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 
 type SignupFormData = {
   firstName: string;
@@ -88,6 +89,7 @@ const validateSignupForm = (formData: SignupFormData): SignupFieldErrors => {
 
 export default function SignupForm() {
   const [submitted, setSubmitted] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState("");
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<SignupFieldErrors>({});
   const {
@@ -126,7 +128,7 @@ export default function SignupForm() {
     }
 
     try {
-      const res = await apiFetch("/api/signup", {
+      const { response, data } = await apiFetchJson<SignupApiResponse>("/api/signup", {
         method: "POST",
         json: {
           firstName: formData.firstName,
@@ -141,20 +143,20 @@ export default function SignupForm() {
         },
       });
 
-      const data: SignupApiResponse = await res.json();
-
-      if (!res.ok || !data.success) {
+      const errorMessage = getApiErrorMessage(response, data, "Signup failed.");
+      if (errorMessage) {
         const serverFieldErrors = data.details?.fieldErrors ?? {};
         setFieldErrors(serverFieldErrors);
         setError(
           Object.keys(serverFieldErrors).length === 0
-            ? data.message || "Signup failed."
+            ? errorMessage
             : ""
         );
         return;
       }
 
       setSubmitted(true);
+      setSubmittedEmail(formData.email.trim());
       setFieldErrors({});
       setError("");
       resetFields();
@@ -337,9 +339,9 @@ export default function SignupForm() {
             <div id="signupSuccess" className="success-message">
               <h3>Account Created Successfully!</h3>
               <p>
-                Welcome to Quest Esports! You can now login, open your profile,
-                and join tournaments.
+                Check your email to verify your account before registering for tournaments.
               </p>
+              <ResendVerificationButton email={submittedEmail} />
             </div>
           )}
         </div>

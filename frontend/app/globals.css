@@ -2021,6 +2021,38 @@ legend {
     color: var(--accent);
 }
 
+.auth-callout {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    margin: 18px 0;
+    border-radius: 18px;
+    border: 1px solid rgba(168, 85, 247, 0.22);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.auth-callout h3 {
+    margin: 0;
+}
+
+.auth-callout-warning {
+    border-color: rgba(251, 191, 36, 0.34);
+    background: rgba(251, 191, 36, 0.08);
+}
+
+.auth-callout-success {
+    border-color: rgba(74, 222, 128, 0.34);
+    background: rgba(34, 197, 94, 0.08);
+}
+
+.auth-inline-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-top: 14px;
+}
+
 /* RESPONSIVE */
 @media (max-width: 992px) {
     .nav-container {

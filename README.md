@@ -11,6 +11,7 @@ This repository is split into two apps:
 
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS v4
 - Backend: Express 5, Prisma ORM, PostgreSQL, Multer, bcryptjs
+- Email: Nodemailer over Resend SMTP
 - Tooling: ESLint, Nodemon
 
 ## What The App Does
@@ -25,6 +26,7 @@ This repository is split into two apps:
 - Posters gallery backed by API data
 - Rulebook and contact pages
 - Signup, login, logout, and profile management
+- Email verification, resend-verification, forgot-password, and reset-password flows
 
 ### Admin Experience
 
@@ -39,6 +41,7 @@ This repository is split into two apps:
 ### Backend Capabilities
 
 - Session-cookie authentication with `HttpOnly` cookies
+- Email verification and password reset with hashed single-use expiring tokens
 - Role-based access control for admin-only routes
 - Rate limiting for signup, login, contact, and tournament registration
 - Origin-based CSRF protection for unsafe requests
@@ -91,6 +94,8 @@ The Prisma schema currently centers on these main records:
 
 - `User`
 - `Session`
+- `VerificationToken`
+- `PasswordResetToken`
 - `ContactSubmission`
 - `Tournament`
 - `TeamRegistration`
@@ -120,6 +125,12 @@ SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
 TRUST_PROXY=false
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=465
+SMTP_USER=resend
+SMTP_PASS=re_your_resend_api_key
+MAIL_FROM="Quest Esports <onboarding@resend.dev>"
+APP_URL=http://localhost:3000
 ```
 
 Notes:
@@ -127,6 +138,9 @@ Notes:
 - `DATABASE_URL` is required
 - `CORS_ORIGIN` supports a comma-separated allowlist
 - `NODE_ENV` is validated as `development`, `test`, or `production`
+- Resend SMTP maps to `smtp.resend.com:465` with username `resend` and your Resend API key as `SMTP_PASS`
+- `MAIL_FROM` should be a sender address verified in Resend for real delivery
+- `APP_URL` is used to generate verification and reset-password links
 - `MONITORING_PROVIDER` is optional and only affects health/monitoring metadata
 
 ### Frontend
@@ -218,6 +232,10 @@ npm run lint
 - `POST /api/login`
 - `POST /api/logout`
 - `GET /api/me`
+- `GET /api/email-verification/verify`
+- `POST /api/email-verification/resend`
+- `POST /api/forgot-password`
+- `POST /api/reset-password`
 - `GET /api/users/:userId`
 - `PATCH /api/users/:userId`
 
@@ -280,6 +298,9 @@ npm run lint
 - `/contact`
 - `/signup`
 - `/login`
+- `/verify-email`
+- `/forgot-password`
+- `/reset-password`
 - `/profile`
 
 ### Admin Routes
@@ -295,6 +316,7 @@ npm run lint
 ## Implementation Notes
 
 - The frontend expects cookies to be included on authenticated API calls.
+- Tournament registration requires a verified email address.
 - Public tournament pages fetch live API data with `cache: "no-store"`.
 - Poster images are stored in PostgreSQL as `ImageAsset.data` and streamed through the backend.
 - Team logos and tournament banners are stored on disk under `backend/uploads/`.
@@ -312,4 +334,5 @@ npm run lint
 
 - Start by applying Prisma migrations before opening the frontend.
 - Create at least one admin user through the API or Prisma Studio if you need admin pages immediately.
+- For email flows, configure Resend SMTP in `backend/.env` and use your HTTPS frontend origin as `APP_URL` in production.
 - If poster pages or uploaded images do not render, verify `NEXT_PUBLIC_API_URL`, the backend upload routes, and the CSP/image settings in `frontend/next.config.ts`.

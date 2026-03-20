@@ -1,6 +1,17 @@
 const { Prisma } = require("@prisma/client");
 const { HttpError } = require("./http-error");
 
+const isTransientConnectionError = (error) => {
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    message.includes("can't reach database server") ||
+    message.includes("error in postgresql connection") ||
+    message.includes("kind: closed") ||
+    message.includes("connection is closed")
+  );
+};
+
 const mapPrismaError = (error) => {
   if (error instanceof HttpError) {
     return error;
@@ -25,8 +36,19 @@ const mapPrismaError = (error) => {
     return new HttpError(503, "Database connection is unavailable.");
   }
 
+  if (
+    error instanceof Prisma.PrismaClientUnknownRequestError &&
+    isTransientConnectionError(error)
+  ) {
+    return new HttpError(503, "Database connection is temporarily unavailable.");
+  }
+
   if (error instanceof Prisma.PrismaClientValidationError) {
     return new HttpError(400, "Invalid database request.");
+  }
+
+  if (isTransientConnectionError(error)) {
+    return new HttpError(503, "Database connection is temporarily unavailable.");
   }
 
   return error;

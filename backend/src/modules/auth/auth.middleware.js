@@ -34,8 +34,28 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const requireVerifiedEmail = (req, res, next) => {
+  if (!req.user) {
+    next(new HttpError(401, "You must be logged in to access this resource."));
+    return;
+  }
+
+  if (req.user.emailVerified) {
+    next();
+    return;
+  }
+
+  next(
+    new HttpError(
+      403,
+      "Please verify your email address before performing this action."
+    )
+  );
+};
+
 module.exports = {
   attachSession,
   requireAuth,
   requireAdmin,
+  requireVerifiedEmail,
 };

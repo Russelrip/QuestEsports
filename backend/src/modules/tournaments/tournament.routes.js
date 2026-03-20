@@ -1,6 +1,11 @@
 const express = require("express");
 const { imageUpload, tournamentBannerUpload } = require("../../middleware/upload");
-const { attachSession, requireAuth, requireAdmin } = require("../auth/auth.middleware");
+const {
+  attachSession,
+  requireAuth,
+  requireAdmin,
+  requireVerifiedEmail,
+} = require("../auth/auth.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 const {
   getPublicTournaments,
@@ -34,6 +39,7 @@ router.get(
 router.post(
   "/tournament-registration",
   requireAuth,
+  requireVerifiedEmail,
   tournamentRegistrationRateLimiter,
   imageUpload.single("teamLogo"),
   submitTournamentRegistration

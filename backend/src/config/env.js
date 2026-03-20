@@ -1,4 +1,4 @@
-const normalizePort = (value, fallback) => {
+const normalizePositiveInteger = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
@@ -18,6 +18,8 @@ const required = (name) => {
 
   return value;
 };
+
+const optional = (name, fallback = "") => String(process.env[name] || fallback).trim();
 
 const normalizeNodeEnv = (value) => {
   const normalized = String(value || "development").trim().toLowerCase();
@@ -58,17 +60,23 @@ const normalizeTrustProxy = (value) => {
 };
 
 const env = {
-  PORT: normalizePort(process.env.PORT, 5001),
+  PORT: normalizePositiveInteger(process.env.PORT, 5001),
   CORS_ORIGINS: normalizeCsv(process.env.CORS_ORIGIN || "http://localhost:3000"),
   DATABASE_URL: required("DATABASE_URL"),
   NODE_ENV: normalizeNodeEnv(process.env.NODE_ENV),
   SESSION_COOKIE_NAME: required("SESSION_COOKIE_NAME"),
-  SESSION_TTL_DAYS: normalizePort(process.env.SESSION_TTL_DAYS, 1),
-  REMEMBER_ME_SESSION_TTL_DAYS: normalizePort(
+  SESSION_TTL_DAYS: normalizePositiveInteger(process.env.SESSION_TTL_DAYS, 1),
+  REMEMBER_ME_SESSION_TTL_DAYS: normalizePositiveInteger(
     process.env.REMEMBER_ME_SESSION_TTL_DAYS,
     30
   ),
   TRUST_PROXY: normalizeTrustProxy(process.env.TRUST_PROXY),
+  SMTP_HOST: optional("SMTP_HOST"),
+  SMTP_PORT: normalizePositiveInteger(process.env.SMTP_PORT, 587),
+  SMTP_USER: optional("SMTP_USER"),
+  SMTP_PASS: optional("SMTP_PASS"),
+  MAIL_FROM: optional("MAIL_FROM"),
+  APP_URL: optional("APP_URL"),
 };
 
 if (env.CORS_ORIGINS.length === 0) {

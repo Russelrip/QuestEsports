@@ -16,6 +16,7 @@ import {
   substitutePlayerGroups,
   type TournamentRegistrationFormData,
 } from "@/lib/tournament-registration";
+import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import {
   Tournament,
   canRegisterForTournament,
@@ -187,6 +188,11 @@ export default function TournamentRegistrationForm({
       return;
     }
 
+    if (!user.emailVerified) {
+      setError("Please verify your email before registering for a tournament.");
+      return;
+    }
+
     if (!selectedTournament || !canRegisterForTournament(selectedTournament)) {
       setError("Please choose a tournament that is currently open.");
       return;
@@ -211,7 +217,11 @@ export default function TournamentRegistrationForm({
       router.replace(`/tournament-registration?tournament=${formData.tournament}`);
     } catch (requestError) {
       console.error("Tournament registration error:", requestError);
-      setError("Something went wrong. Please try again.");
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -248,6 +258,24 @@ export default function TournamentRegistrationForm({
           >
             Go to Login
           </Link>
+        </div>
+      </section>
+    );
+  }
+
+  if (!user.emailVerified) {
+    return (
+      <section className="tournament-registration-section">
+        <div className="form-container">
+          <h2>Register Your Team</h2>
+          <div className="auth-callout auth-callout-warning">
+            <h3>Verify your email first</h3>
+            <p>
+              Tournament registration is only available for verified accounts.
+              Check your inbox for the verification email, or send a new one below.
+            </p>
+            <ResendVerificationButton email={user.email} />
+          </div>
         </div>
       </section>
     );

@@ -3,13 +3,32 @@ const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
+const { createTokenPair, hashToken } = require("../../lib/tokens");
+const { sendVerificationEmail } = require("../../lib/mail/sendVerificationEmail");
+const { sendResetPasswordEmail } = require("../../lib/mail/sendResetPasswordEmail");
 const {
   normalizeEmail,
   normalizeText,
   normalizeUsername,
   isNonEmptyString,
+  isValidEmail,
   getSignupFieldErrors,
 } = require("../../lib/validation");
+
+const PUBLIC_USER_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  username: true,
+  phone: true,
+  discordTag: true,
+  role: true,
+  emailVerified: true,
+  emailVerifiedAt: true,
+  lastLoginAt: true,
+  createdAt: true,
+};
 
 const mapUserForResponse = (user) => ({
   id: user.id,
@@ -20,9 +39,77 @@ const mapUserForResponse = (user) => ({
   phone: user.phone,
   discordTag: user.discordTag,
   role: user.role,
+  emailVerified: Boolean(user.emailVerified),
+  emailVerifiedAt: user.emailVerifiedAt || null,
   lastLoginAt: user.lastLoginAt,
   createdAt: user.createdAt,
 });
+
+const markOutstandingTokensAsUsed = async ({
+  tx,
+  model,
+  userId,
+  excludeId,
+  usedAt = new Date(),
+}) => {
+  await tx[model].updateMany({
+    where: {
+      userId,
+      usedAt: null,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    data: {
+      usedAt,
+    },
+  });
+
+  return usedAt;
+};
+
+const issueUserToken = async ({
+  tx,
+  model,
+  userId,
+  token,
+}) => {
+  await markOutstandingTokensAsUsed({
+    tx,
+    model,
+    userId,
+  });
+
+  return tx[model].create({
+    data: {
+      id: crypto.randomUUID(),
+      userId,
+      tokenHash: token.tokenHash,
+      expiresAt: token.expiresAt,
+    },
+  });
+};
+
+const consumeUserToken = async ({
+  tx,
+  model,
+  recordId,
+  userId,
+  usedAt = new Date(),
+}) => {
+  await tx[model].update({
+    where: { id: recordId },
+    data: { usedAt },
+  });
+
+  await markOutstandingTokensAsUsed({
+    tx,
+    model,
+    userId,
+    excludeId: recordId,
+    usedAt,
+  });
+
+  return usedAt;
+};
 
 const validateUserBasics = ({
   firstName,
@@ -97,22 +184,52 @@ const createSignup = async ({ body }) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const verificationToken = createTokenPair({ hours: 24 });
 
-  await prisma.user.create({
-    data: {
-      id: crypto.randomUUID(),
-      firstName,
-      lastName,
-      email,
-      emailNormalized: email,
-      username,
-      usernameNormalized,
-      passwordHash,
-      role: "user",
-      phone,
-      discordTag,
-    },
+  const user = await prisma.$transaction(async (tx) => {
+    const createdUser = await tx.user.create({
+      data: {
+        id: crypto.randomUUID(),
+        firstName,
+        lastName,
+        email,
+        emailNormalized: email,
+        username,
+        usernameNormalized,
+        passwordHash,
+        role: "user",
+        phone,
+        discordTag,
+        emailVerified: false,
+      },
+      select: PUBLIC_USER_SELECT,
+    });
+
+    await issueUserToken({
+      tx,
+      model: "verificationToken",
+      userId: createdUser.id,
+      token: verificationToken,
+    });
+
+    return createdUser;
   });
+
+  try {
+    await sendVerificationEmail({
+      email: user.email,
+      firstName: user.firstName,
+      rawToken: verificationToken.rawToken,
+    });
+  } catch (error) {
+    logger.error("Failed to send verification email after signup.", {
+      userId: user.id,
+      email: user.email,
+      error,
+    });
+  }
+
+  return mapUserForResponse(user);
 };
 
 const authenticateUser = async ({ body, requestMeta = {} }) => {
@@ -134,17 +251,8 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
       ],
     },
     select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      username: true,
-      phone: true,
-      discordTag: true,
-      role: true,
-      lastLoginAt: true,
+      ...PUBLIC_USER_SELECT,
       passwordHash: true,
-      createdAt: true,
     },
   });
 
@@ -191,18 +299,7 @@ const getUserProfile = async ({ requestedUserId, currentUser }) => {
 
   const user = await prisma.user.findUnique({
     where: { id: requestedUserId },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      username: true,
-      phone: true,
-      discordTag: true,
-      role: true,
-      lastLoginAt: true,
-      createdAt: true,
-    },
+    select: PUBLIC_USER_SELECT,
   });
 
   if (!user) {
@@ -266,28 +363,210 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
       phone,
       discordTag,
     },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      username: true,
-      phone: true,
-      discordTag: true,
-      role: true,
-      lastLoginAt: true,
-      createdAt: true,
-    },
+    select: PUBLIC_USER_SELECT,
   });
 
   return mapUserForResponse(user);
 };
 
+const verifyEmailAddress = async ({ token }) => {
+  const tokenHash = hashToken(token);
+  const now = new Date();
+
+  const verificationRecord = await prisma.verificationToken.findFirst({
+    where: {
+      tokenHash,
+      usedAt: null,
+      expiresAt: {
+        gt: now,
+      },
+    },
+    include: {
+      user: {
+        select: PUBLIC_USER_SELECT,
+      },
+    },
+  });
+
+  if (!verificationRecord) {
+    throw new HttpError(400, "This verification link is invalid or has expired.");
+  }
+
+  const emailVerifiedAt = new Date();
+
+  const user = await prisma.$transaction(async (tx) => {
+    const updatedUser = await tx.user.update({
+      where: { id: verificationRecord.userId },
+      data: {
+        emailVerified: true,
+        emailVerifiedAt,
+      },
+      select: PUBLIC_USER_SELECT,
+    });
+
+    await consumeUserToken({
+      tx,
+      model: "verificationToken",
+      recordId: verificationRecord.id,
+      userId: verificationRecord.userId,
+      usedAt: emailVerifiedAt,
+    });
+
+    return updatedUser;
+  });
+
+  return mapUserForResponse(user);
+};
+
+const resendVerificationEmail = async ({ body }) => {
+  const email = normalizeEmail(body.email);
+
+  if (!isValidEmail(email)) {
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { emailNormalized: email },
+    select: PUBLIC_USER_SELECT,
+  });
+
+  if (!user || user.emailVerified) {
+    return;
+  }
+
+  const verificationToken = createTokenPair({ hours: 24 });
+
+  await prisma.$transaction(async (tx) => {
+    await issueUserToken({
+      tx,
+      model: "verificationToken",
+      userId: user.id,
+      token: verificationToken,
+    });
+  });
+
+  try {
+    await sendVerificationEmail({
+      email: user.email,
+      firstName: user.firstName,
+      rawToken: verificationToken.rawToken,
+    });
+  } catch (error) {
+    logger.error("Failed to resend verification email.", {
+      userId: user.id,
+      email: user.email,
+      error,
+    });
+  }
+};
+
+const requestPasswordReset = async ({ body }) => {
+  const email = normalizeEmail(body.email);
+
+  if (!isValidEmail(email)) {
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { emailNormalized: email },
+    select: PUBLIC_USER_SELECT,
+  });
+
+  if (!user) {
+    return;
+  }
+
+  const resetToken = createTokenPair({ minutes: 20 });
+
+  await prisma.$transaction(async (tx) => {
+    await issueUserToken({
+      tx,
+      model: "passwordResetToken",
+      userId: user.id,
+      token: resetToken,
+    });
+  });
+
+  try {
+    await sendResetPasswordEmail({
+      email: user.email,
+      firstName: user.firstName,
+      rawToken: resetToken.rawToken,
+    });
+  } catch (error) {
+    logger.error("Failed to send password reset email.", {
+      userId: user.id,
+      email: user.email,
+      error,
+    });
+  }
+};
+
+const resetPassword = async ({ body }) => {
+  const token = normalizeText(body.token);
+  const newPassword = String(body.newPassword || "");
+
+  if (!token || !newPassword) {
+    throw new HttpError(400, "Token and new password are required.");
+  }
+
+  if (newPassword.length < 8) {
+    throw new HttpError(400, "Password must be at least 8 characters long.");
+  }
+
+  const resetRecord = await prisma.passwordResetToken.findFirst({
+    where: {
+      tokenHash: hashToken(token),
+      usedAt: null,
+      expiresAt: {
+        gt: new Date(),
+      },
+    },
+    select: {
+      id: true,
+      userId: true,
+    },
+  });
+
+  if (!resetRecord) {
+    throw new HttpError(400, "This password reset link is invalid or has expired.");
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const usedAt = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: resetRecord.userId },
+      data: { passwordHash },
+    });
+
+    await consumeUserToken({
+      tx,
+      model: "passwordResetToken",
+      recordId: resetRecord.id,
+      userId: resetRecord.userId,
+      usedAt,
+    });
+
+    await tx.session.deleteMany({
+      where: {
+        userId: resetRecord.userId,
+      },
+    });
+  });
+};
+
 module.exports = {
+  PUBLIC_USER_SELECT,
   createSignup,
   authenticateUser,
   getUserProfile,
   updateUserProfile,
+  verifyEmailAddress,
+  resendVerificationEmail,
+  requestPasswordReset,
+  resetPassword,
   mapUserForResponse,
   validateUserBasics,
 };

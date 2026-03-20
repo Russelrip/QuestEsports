@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/auth";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useFormFields } from "@/hooks/useFormFields";
+import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 
 type ProfileFormState = {
   firstName: string;
@@ -118,7 +119,17 @@ export default function ProfileView() {
               <span>Email</span>
               {user.email}
             </p>
+            <p>
+              <span>Email Status</span>
+              {user.emailVerified ? "Verified" : "Not verified"}
+            </p>
           </div>
+          {!user.emailVerified ? (
+            <div className="auth-callout auth-callout-warning">
+              <p>Verify your email before registering for tournaments.</p>
+              <ResendVerificationButton email={user.email} />
+            </div>
+          ) : null}
           <div className="profile-actions">
             {user.role === "admin" && (
               <>

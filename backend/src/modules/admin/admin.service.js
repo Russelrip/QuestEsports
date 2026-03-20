@@ -31,6 +31,8 @@ const ADMIN_USER_SELECT = {
   role: true,
   phone: true,
   discordTag: true,
+  emailVerified: true,
+  emailVerifiedAt: true,
   lastLoginAt: true,
   createdAt: true,
 };
