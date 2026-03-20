@@ -4,6 +4,10 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { persistTeamLogoUpload, persistTournamentBannerUpload } = require("../../middleware/upload");
 const {
+  syncSavedTeamFromRegistration,
+  sendTeamInvites,
+} = require("../teams/team.service");
+const {
   buildPagination,
   buildPagedResponse,
 } = require("../../lib/pagination");
@@ -226,6 +230,7 @@ const buildRequiredPlayers = (body) =>
   requiredPlayerIndexes.map((index) => ({
     order: index - 1,
     name: normalizeText(body[`player${index}Name`]),
+    email: normalizeEmail(body[`player${index}Email`]),
     discord: normalizeText(body[`player${index}Discord`]),
     riotId: normalizeText(body[`player${index}RiotId`]),
   }));
@@ -236,6 +241,7 @@ const buildOptionalMembers = (body) => {
       role: "SUBSTITUTE",
       order: index,
       name: normalizeText(body[`sub${index}Name`]),
+      email: normalizeEmail(body[`sub${index}Email`]),
       discord: normalizeText(body[`sub${index}Discord`]) || null,
       riotId: normalizeText(body[`sub${index}RiotId`]) || null,
     }))
@@ -248,6 +254,7 @@ const buildOptionalMembers = (body) => {
           role: "COACH",
           order: 1,
           name: coachName,
+          email: normalizeEmail(body.coachEmail),
           discord: normalizeText(body.coachDiscord) || null,
           riotId: normalizeText(body.coachRiotId) || null,
         },
@@ -271,6 +278,7 @@ const ensureRegistrationOpen = (registrationState) => {
 
 const buildTournamentRegistrationMembers = ({
   captainName,
+  captainEmail,
   captainDiscord,
   captainRiotId,
   requiredPlayers,
@@ -280,6 +288,7 @@ const buildTournamentRegistrationMembers = ({
     role: "CAPTAIN",
     order: 1,
     name: captainName,
+    email: captainEmail,
     discord: captainDiscord,
     riotId: captainRiotId,
   },
@@ -289,6 +298,26 @@ const buildTournamentRegistrationMembers = ({
   })),
   ...optionalMembers,
 ];
+
+const hasDuplicateMemberEmails = (members) => {
+  const seenEmails = new Set();
+
+  for (const member of members) {
+    const email = normalizeEmail(member.email);
+
+    if (!email) {
+      continue;
+    }
+
+    if (seenEmails.has(email)) {
+      return true;
+    }
+
+    seenEmails.add(email);
+  }
+
+  return false;
+};
 
 const parseTournamentPayload = ({ body, existingTournament }) => {
   const title = normalizeText(body.title);
@@ -612,13 +641,35 @@ const createTournamentRegistration = async ({ body, file, user }) => {
 
   const members = buildTournamentRegistrationMembers({
     captainName,
+    captainEmail,
     captainDiscord,
     captainRiotId,
     requiredPlayers,
     optionalMembers,
   });
 
+  if (
+    requiredPlayers.some(
+      (player) => !player.name || !player.email || !player.discord || !player.riotId
+    ) ||
+    optionalMembers.some(
+      (member) =>
+        !member.name ||
+        !member.email ||
+        (member.role !== "COACH" && !member.discord) ||
+        (member.role !== "COACH" && !member.riotId)
+    ) ||
+    members.some((member) => !isValidEmail(member.email)) ||
+    hasDuplicateMemberEmails(members)
+  ) {
+    throw new HttpError(
+      400,
+      "Each roster member needs a unique valid email address before you can register."
+    );
+  }
+
   const registrationId = crypto.randomUUID();
+  let inviteDispatches = [];
 
   try {
     await prisma.$transaction(
@@ -671,9 +722,20 @@ const createTournamentRegistration = async ({ body, file, user }) => {
             role: member.role,
             memberOrder: member.order,
             name: member.name,
+            email: member.email,
+            emailNormalized: normalizeEmail(member.email),
             discord: member.discord,
             riotId: member.riotId,
           })),
+        });
+
+        inviteDispatches = await syncSavedTeamFromRegistration({
+          tx,
+          user,
+          teamName,
+          logoName: persistedLogo ? persistedLogo.filename : null,
+          members,
+          tournamentTitle: tournament.title,
         });
       },
       {
@@ -696,6 +758,8 @@ const createTournamentRegistration = async ({ body, file, user }) => {
 
     throw error;
   }
+
+  await sendTeamInvites(inviteDispatches);
 };
 
 module.exports = {

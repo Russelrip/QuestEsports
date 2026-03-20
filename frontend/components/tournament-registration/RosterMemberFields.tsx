@@ -19,6 +19,7 @@ export default function RosterMemberFields({
 }: RosterMemberFieldsProps) {
   const optionalLabel = required ? " *" : " (Optional)";
   const nameField = `${prefix}Name` as keyof TournamentRegistrationFormData;
+  const emailField = `${prefix}Email` as keyof TournamentRegistrationFormData;
   const discordField = `${prefix}Discord` as keyof TournamentRegistrationFormData;
   const riotField = `${prefix}RiotId` as keyof TournamentRegistrationFormData;
 
@@ -43,6 +44,22 @@ export default function RosterMemberFields({
             onChange={onChange}
           />
         </div>
+        <div className="form-group">
+          <label htmlFor={String(emailField)}>
+            Email Address
+            {required ? " *" : ""}
+          </label>
+          <input
+            type="email"
+            id={String(emailField)}
+            name={String(emailField)}
+            required={required}
+            value={String(values[emailField])}
+            onChange={onChange}
+          />
+        </div>
+      </div>
+      <div className="form-row">
         <div className="form-group">
           <label htmlFor={String(discordField)}>
             Discord Username

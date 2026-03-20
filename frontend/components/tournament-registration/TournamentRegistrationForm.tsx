@@ -18,6 +18,11 @@ import {
 } from "@/lib/tournament-registration";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import {
+  applySavedTeamToRegistrationForm,
+  fetchProfileTeams,
+  type SavedTeam,
+} from "@/lib/teams";
+import {
   Tournament,
   canRegisterForTournament,
   getTournamentRegistrationLabel,
@@ -59,6 +64,9 @@ export default function TournamentRegistrationForm({
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [savedTeams, setSavedTeams] = useState<SavedTeam[]>([]);
+  const [savedTeamsLoading, setSavedTeamsLoading] = useState(false);
+  const [selectedSavedTeamId, setSelectedSavedTeamId] = useState("");
   const {
     fields: formData,
     handleFieldChange,
@@ -135,6 +143,45 @@ export default function TournamentRegistrationForm({
   }, [setFields, user]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadSavedTeams = async () => {
+      if (!user) {
+        setSavedTeams([]);
+        setSelectedSavedTeamId("");
+        return;
+      }
+
+      try {
+        setSavedTeamsLoading(true);
+        const teams = await fetchProfileTeams();
+
+        if (cancelled) {
+          return;
+        }
+
+        setSavedTeams(teams);
+      } catch (requestError) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error("Failed to load saved teams:", requestError);
+      } finally {
+        if (!cancelled) {
+          setSavedTeamsLoading(false);
+        }
+      }
+    };
+
+    void loadSavedTeams();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
     if (authLoading || user) {
       return;
     }
@@ -173,6 +220,22 @@ export default function TournamentRegistrationForm({
     }
   }, [formData.tournament, searchParams, tournamentMap, updateField]);
 
+  useEffect(() => {
+    const savedTeamId = searchParams.get("savedTeam");
+
+    if (!savedTeamId || savedTeams.length === 0) {
+      return;
+    }
+
+    const selectedTeam = savedTeams.find((team) => team.id === savedTeamId);
+    if (!selectedTeam) {
+      return;
+    }
+
+    setSelectedSavedTeamId(selectedTeam.id);
+    setFields((current) => applySavedTeamToRegistrationForm(selectedTeam, current));
+  }, [savedTeams, searchParams, setFields]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitted(false);
@@ -210,6 +273,16 @@ export default function TournamentRegistrationForm({
       setSubmitted(true);
       setIsAlreadyRegistered(true);
       setStatusMessage("Registration saved. Your team is now marked as registered.");
+      try {
+        const nextSavedTeams = await fetchProfileTeams();
+        setSavedTeams(nextSavedTeams);
+        const matchingTeam = nextSavedTeams.find(
+          (team) => team.name.toLowerCase() === formData.teamName.trim().toLowerCase()
+        );
+        setSelectedSavedTeamId(matchingTeam?.id || "");
+      } catch (teamReloadError) {
+        console.error("Failed to refresh saved teams:", teamReloadError);
+      }
       resetFields({
         ...initialTournamentRegistrationFormData,
         tournament: formData.tournament,
@@ -302,6 +375,55 @@ export default function TournamentRegistrationForm({
           className="tournament-registration-form"
           onSubmit={handleSubmit}
         >
+          <fieldset>
+            <legend>Saved Teams</legend>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="savedTeam">Reuse Saved Team</label>
+                <select
+                  id="savedTeam"
+                  name="savedTeam"
+                  value={selectedSavedTeamId}
+                  disabled={loading || savedTeamsLoading || savedTeams.length === 0}
+                  onChange={(event) => {
+                    const nextTeamId = event.target.value;
+                    setSelectedSavedTeamId(nextTeamId);
+
+                    if (!nextTeamId) {
+                      return;
+                    }
+
+                    const selectedTeam = savedTeams.find((team) => team.id === nextTeamId);
+                    if (!selectedTeam) {
+                      return;
+                    }
+
+                    setFields((current) =>
+                      applySavedTeamToRegistrationForm(selectedTeam, current)
+                    );
+                  }}
+                >
+                  <option value="">
+                    {savedTeamsLoading
+                      ? "Loading saved teams..."
+                      : savedTeams.length > 0
+                        ? "-- Select a saved team --"
+                        : "No saved teams yet"}
+                  </option>
+                  {savedTeams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  Every tournament registration saves or updates the team on your
+                  profile and sends verification emails to roster members.
+                </small>
+              </div>
+            </div>
+          </fieldset>
+
           <fieldset>
             <legend>Tournament Selection</legend>
             <div className="form-group">
@@ -446,6 +568,18 @@ export default function TournamentRegistrationForm({
                 />
               </div>
               <div className="form-group">
+                <label htmlFor="coachEmail">Coach Email Address</label>
+                <input
+                  type="email"
+                  id="coachEmail"
+                  name="coachEmail"
+                  value={formData.coachEmail}
+                  onChange={handleFieldChange}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
                 <label htmlFor="coachDiscord">Discord Username</label>
                 <input
                   type="text"
@@ -455,16 +589,16 @@ export default function TournamentRegistrationForm({
                   onChange={handleFieldChange}
                 />
               </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="coachRiotId">Riot ID</label>
-              <input
-                type="text"
-                id="coachRiotId"
-                name="coachRiotId"
-                value={formData.coachRiotId}
-                onChange={handleFieldChange}
-              />
+              <div className="form-group">
+                <label htmlFor="coachRiotId">Riot ID</label>
+                <input
+                  type="text"
+                  id="coachRiotId"
+                  name="coachRiotId"
+                  value={formData.coachRiotId}
+                  onChange={handleFieldChange}
+                />
+              </div>
             </div>
           </fieldset>
 
@@ -528,8 +662,8 @@ export default function TournamentRegistrationForm({
           <div id="registrationSuccess" className="success-message">
             <h3>Registration Successful!</h3>
             <p>
-              Your team has been registered for the tournament. You will receive
-              a confirmation email shortly.
+              Your team has been registered and saved to your profile. Roster members
+              will receive email invites to confirm their place on the team.
             </p>
           </div>
         ) : null}

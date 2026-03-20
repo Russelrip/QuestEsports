@@ -8,24 +8,31 @@ export type TournamentRegistrationFormData = {
   captainDiscord: string;
   captainRiotId: string;
   player2Name: string;
+  player2Email: string;
   player2Discord: string;
   player2RiotId: string;
   player3Name: string;
+  player3Email: string;
   player3Discord: string;
   player3RiotId: string;
   player4Name: string;
+  player4Email: string;
   player4Discord: string;
   player4RiotId: string;
   player5Name: string;
+  player5Email: string;
   player5Discord: string;
   player5RiotId: string;
   sub1Name: string;
+  sub1Email: string;
   sub1Discord: string;
   sub1RiotId: string;
   sub2Name: string;
+  sub2Email: string;
   sub2Discord: string;
   sub2RiotId: string;
   coachName: string;
+  coachEmail: string;
   coachDiscord: string;
   coachRiotId: string;
   contactEmail: string;
@@ -43,24 +50,31 @@ export const initialTournamentRegistrationFormData: TournamentRegistrationFormDa
   captainDiscord: "",
   captainRiotId: "",
   player2Name: "",
+  player2Email: "",
   player2Discord: "",
   player2RiotId: "",
   player3Name: "",
+  player3Email: "",
   player3Discord: "",
   player3RiotId: "",
   player4Name: "",
+  player4Email: "",
   player4Discord: "",
   player4RiotId: "",
   player5Name: "",
+  player5Email: "",
   player5Discord: "",
   player5RiotId: "",
   sub1Name: "",
+  sub1Email: "",
   sub1Discord: "",
   sub1RiotId: "",
   sub2Name: "",
+  sub2Email: "",
   sub2Discord: "",
   sub2RiotId: "",
   coachName: "",
+  coachEmail: "",
   coachDiscord: "",
   coachRiotId: "",
   contactEmail: "",

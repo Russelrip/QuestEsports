@@ -1,10 +1,12 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { createTokenPair, hashToken } = require("../../lib/tokens");
 const { sendVerificationEmail } = require("../../lib/mail/sendVerificationEmail");
+const { sendEmailChangeEmail } = require("../../lib/mail/sendEmailChangeEmail");
 const { sendResetPasswordEmail } = require("../../lib/mail/sendResetPasswordEmail");
 const {
   normalizeEmail,
@@ -24,6 +26,7 @@ const PUBLIC_USER_SELECT = {
   phone: true,
   discordTag: true,
   role: true,
+  pendingEmail: true,
   emailVerified: true,
   emailVerifiedAt: true,
   lastLoginAt: true,
@@ -39,6 +42,7 @@ const mapUserForResponse = (user) => ({
   phone: user.phone,
   discordTag: user.discordTag,
   role: user.role,
+  pendingEmail: user.pendingEmail || null,
   emailVerified: Boolean(user.emailVerified),
   emailVerifiedAt: user.emailVerifiedAt || null,
   lastLoginAt: user.lastLoginAt,
@@ -71,6 +75,7 @@ const issueUserToken = async ({
   model,
   userId,
   token,
+  extraData = {},
 }) => {
   await markOutstandingTokensAsUsed({
     tx,
@@ -84,6 +89,7 @@ const issueUserToken = async ({
       userId,
       tokenHash: token.tokenHash,
       expiresAt: token.expiresAt,
+      ...extraData,
     },
   });
 };
@@ -502,6 +508,197 @@ const requestPasswordReset = async ({ body }) => {
   }
 };
 
+const requestEmailChange = async ({ currentUser, body }) => {
+  const newEmail = normalizeEmail(body.newEmail);
+  const currentPassword = String(body.currentPassword || "");
+
+  const fieldErrors = {};
+
+  if (!isValidEmail(newEmail)) {
+    fieldErrors.newEmail = "Please enter a valid email address.";
+  }
+
+  if (!currentPassword) {
+    fieldErrors.currentPassword = "Current password is required.";
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new HttpError(400, "Please correct the highlighted fields.", {
+      fieldErrors,
+    });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: currentUser.id },
+    select: {
+      ...PUBLIC_USER_SELECT,
+      emailNormalized: true,
+      pendingEmailNormalized: true,
+      passwordHash: true,
+    },
+  });
+
+  if (!user) {
+    throw new HttpError(404, "User not found.");
+  }
+
+  const passwordMatches = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!passwordMatches) {
+    throw new HttpError(400, "Please correct the highlighted fields.", {
+      fieldErrors: {
+        currentPassword: "Current password is incorrect.",
+      },
+    });
+  }
+
+  if (newEmail === user.emailNormalized) {
+    throw new HttpError(400, "Please correct the highlighted fields.", {
+      fieldErrors: {
+        newEmail: "That is already your current email address.",
+      },
+    });
+  }
+
+  const conflictingUser = await prisma.user.findFirst({
+    where: {
+      id: { not: currentUser.id },
+      OR: [
+        { emailNormalized: newEmail },
+        { pendingEmailNormalized: newEmail },
+      ],
+    },
+    select: { id: true },
+  });
+
+  if (conflictingUser) {
+    throw new HttpError(400, "Please correct the highlighted fields.", {
+      fieldErrors: {
+        newEmail: "Email already exists.",
+      },
+    });
+  }
+
+  const emailChangeToken = createTokenPair({ hours: 24 });
+
+  const updatedUser = await prisma.$transaction(async (tx) => {
+    const nextUser = await tx.user.update({
+      where: { id: currentUser.id },
+      data: {
+        pendingEmail: newEmail,
+        pendingEmailNormalized: newEmail,
+      },
+      select: PUBLIC_USER_SELECT,
+    });
+
+    await issueUserToken({
+      tx,
+      model: "emailChangeToken",
+      userId: currentUser.id,
+      token: emailChangeToken,
+      extraData: {
+        nextEmail: newEmail,
+        nextEmailNormalized: newEmail,
+      },
+    });
+
+    return nextUser;
+  });
+
+  try {
+    await sendEmailChangeEmail({
+      email: newEmail,
+      firstName: updatedUser.firstName,
+      nextEmail: newEmail,
+      rawToken: emailChangeToken.rawToken,
+    });
+  } catch (error) {
+    logger.error("Failed to send email change confirmation.", {
+      userId: updatedUser.id,
+      email: newEmail,
+      error,
+    });
+  }
+
+  return mapUserForResponse(updatedUser);
+};
+
+const confirmEmailChange = async ({ token }) => {
+  const tokenHash = hashToken(token);
+  const now = new Date();
+
+  const emailChangeRecord = await prisma.emailChangeToken.findFirst({
+    where: {
+      tokenHash,
+      usedAt: null,
+      expiresAt: {
+        gt: now,
+      },
+    },
+    include: {
+      user: {
+        select: {
+          ...PUBLIC_USER_SELECT,
+          pendingEmailNormalized: true,
+        },
+      },
+    },
+  });
+
+  if (!emailChangeRecord) {
+    throw new HttpError(400, "This email change link is invalid or has expired.");
+  }
+
+  const emailVerifiedAt = new Date();
+
+  try {
+    const user = await prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id: emailChangeRecord.userId },
+        data: {
+          email: emailChangeRecord.nextEmail,
+          emailNormalized: emailChangeRecord.nextEmailNormalized,
+          pendingEmail: null,
+          pendingEmailNormalized: null,
+          emailVerified: true,
+          emailVerifiedAt,
+        },
+        select: PUBLIC_USER_SELECT,
+      });
+
+      await consumeUserToken({
+        tx,
+        model: "emailChangeToken",
+        recordId: emailChangeRecord.id,
+        userId: emailChangeRecord.userId,
+        usedAt: emailVerifiedAt,
+      });
+
+      await markOutstandingTokensAsUsed({
+        tx,
+        model: "verificationToken",
+        userId: emailChangeRecord.userId,
+        usedAt: emailVerifiedAt,
+      });
+
+      return updatedUser;
+    });
+
+    return mapUserForResponse(user);
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new HttpError(
+        400,
+        "That email address is no longer available. Please request a new email change."
+      );
+    }
+
+    throw error;
+  }
+};
+
 const resetPassword = async ({ body }) => {
   const token = normalizeText(body.token);
   const newPassword = String(body.newPassword || "");
@@ -565,6 +762,8 @@ module.exports = {
   updateUserProfile,
   verifyEmailAddress,
   resendVerificationEmail,
+  requestEmailChange,
+  confirmEmailChange,
   requestPasswordReset,
   resetPassword,
   mapUserForResponse,

@@ -13,6 +13,8 @@ const {
   updateUserProfile,
   verifyEmailAddress,
   resendVerificationEmail,
+  requestEmailChange,
+  confirmEmailChange,
   requestPasswordReset,
   resetPassword,
   mapUserForResponse,
@@ -136,6 +138,40 @@ const resendVerification = asyncHandler(async (req, res) => {
   });
 });
 
+const requestEmailChangeController = asyncHandler(async (req, res) => {
+  const user = await requestEmailChange({
+    currentUser: req.user,
+    body: req.body,
+  });
+
+  res.status(200).json({
+    success: true,
+    message:
+      "We sent a confirmation link to your new email address. Your current email will stay active until you confirm the change.",
+    user,
+  });
+});
+
+const confirmEmailChangeController = asyncHandler(async (req, res) => {
+  const token = String(req.query.token || "").trim();
+
+  if (!token) {
+    res.status(400).json({
+      success: false,
+      message: "Email change token is required.",
+    });
+    return;
+  }
+
+  const user = await confirmEmailChange({ token });
+
+  res.status(200).json({
+    success: true,
+    message: "Your email address has been updated successfully.",
+    user,
+  });
+});
+
 const forgotPassword = asyncHandler(async (req, res) => {
   await requestPasswordReset({ body: req.body });
 
@@ -163,6 +199,8 @@ module.exports = {
   updateProfile,
   verifyEmail,
   resendVerification,
+  requestEmailChange: requestEmailChangeController,
+  confirmEmailChange: confirmEmailChangeController,
   forgotPassword,
   resetPassword: resetPasswordController,
 };

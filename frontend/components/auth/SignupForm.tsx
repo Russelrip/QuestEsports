@@ -341,6 +341,10 @@ export default function SignupForm() {
               <p>
                 Check your email to verify your account before registering for tournaments.
               </p>
+              <p>
+                Used the wrong email? You can still <Link href="/login">log in</Link> and
+                change it from your profile before verifying.
+              </p>
               <ResendVerificationButton email={submittedEmail} />
             </div>
           )}

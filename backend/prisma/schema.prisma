@@ -47,12 +47,20 @@ enum RegistrationVerificationStatus {
   flagged
 }
 
+enum TeamMemberInviteStatus {
+  pending
+  accepted
+  declined
+}
+
 model User {
   id                 String       @id @default(uuid()) @db.Uuid
   firstName          String       @map("first_name")
   lastName           String       @map("last_name")
   email              String
   emailNormalized    String       @unique @map("email_normalized")
+  pendingEmail       String?      @map("pending_email")
+  pendingEmailNormalized String?  @unique @map("pending_email_normalized")
   username           String
   usernameNormalized String       @unique @map("username_normalized")
   passwordHash       String       @map("password_hash")
@@ -66,7 +74,9 @@ model User {
   updatedAt          DateTime     @updatedAt @map("updated_at")
   sessions           Session[]
   verificationTokens VerificationToken[]
+  emailChangeTokens  EmailChangeToken[]
   passwordResetTokens PasswordResetToken[]
+  savedTeams         SavedTeam[]
 
   @@index([role])
   @@index([createdAt])
@@ -99,6 +109,23 @@ model PasswordResetToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("password_reset_tokens")
+}
+
+model EmailChangeToken {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  nextEmail           String   @map("next_email")
+  nextEmailNormalized String   @map("next_email_normalized")
+  tokenHash           String   @unique @map("token_hash")
+  expiresAt           DateTime @map("expires_at")
+  usedAt              DateTime? @map("used_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([nextEmailNormalized])
+  @@index([expiresAt])
+  @@map("email_change_tokens")
 }
 
 model Session {
@@ -199,6 +226,8 @@ model RegistrationMember {
   role           RegistrationMemberRole
   memberOrder    Int                    @map("member_order")
   name           String
+  email          String?
+  emailNormalized String?               @map("email_normalized")
   discord        String?
   riotId         String?                @map("riot_id")
   createdAt      DateTime               @default(now()) @map("created_at")
@@ -206,7 +235,50 @@ model RegistrationMember {
 
   @@unique([registrationId, role, memberOrder])
   @@index([registrationId])
+  @@index([emailNormalized])
   @@map("registration_members")
+}
+
+model SavedTeam {
+  id            String            @id @default(uuid()) @db.Uuid
+  captainUserId String            @map("captain_user_id") @db.Uuid
+  name          String
+  logoName      String?           @map("logo_name")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  captainUser   User              @relation(fields: [captainUserId], references: [id], onDelete: Cascade)
+  members       SavedTeamMember[]
+
+  @@unique([captainUserId, name])
+  @@index([captainUserId])
+  @@index([createdAt])
+  @@map("saved_teams")
+}
+
+model SavedTeamMember {
+  id                String               @id @default(uuid()) @db.Uuid
+  teamId            String               @map("team_id") @db.Uuid
+  role              RegistrationMemberRole
+  memberOrder       Int                  @map("member_order")
+  name              String
+  email             String
+  emailNormalized   String               @map("email_normalized")
+  discord           String?
+  riotId            String?              @map("riot_id")
+  inviteStatus      TeamMemberInviteStatus @default(pending) @map("invite_status")
+  inviteTokenHash   String?              @unique @map("invite_token_hash")
+  inviteSentAt      DateTime?            @map("invite_sent_at")
+  inviteRespondedAt DateTime?            @map("invite_responded_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  team              SavedTeam            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, role, memberOrder])
+  @@unique([teamId, emailNormalized])
+  @@index([teamId])
+  @@index([emailNormalized])
+  @@index([inviteStatus])
+  @@map("saved_team_members")
 }
 
 model ImageAsset {

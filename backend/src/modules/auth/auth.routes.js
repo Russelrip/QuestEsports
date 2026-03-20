@@ -8,6 +8,8 @@ const {
   updateProfile,
   verifyEmail,
   resendVerification,
+  requestEmailChange,
+  confirmEmailChange,
   forgotPassword,
   resetPassword,
 } = require("./auth.controller");
@@ -39,6 +41,12 @@ const resendVerificationRateLimiter = createRateLimiter({
   maxRequests: 5,
   message: "Too many verification email requests. Please try again later.",
 });
+const emailChangeRateLimiter = createRateLimiter({
+  name: "auth-email-change",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 5,
+  message: "Too many email change requests. Please try again later.",
+});
 const resetPasswordRateLimiter = createRateLimiter({
   name: "auth-reset-password",
   windowMs: 15 * 60 * 1000,
@@ -52,10 +60,17 @@ router.post("/login", authRateLimiter, login);
 router.post("/logout", logout);
 router.get("/me", getCurrentSession);
 router.get("/email-verification/verify", verifyEmail);
+router.get("/email-change/confirm", confirmEmailChange);
 router.post(
   "/email-verification/resend",
   resendVerificationRateLimiter,
   resendVerification
+);
+router.post(
+  "/email-change/request",
+  emailChangeRateLimiter,
+  requireAuth,
+  requestEmailChange
 );
 router.post("/forgot-password", forgotPasswordRateLimiter, forgotPassword);
 router.post("/reset-password", resetPasswordRateLimiter, resetPassword);

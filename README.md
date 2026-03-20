@@ -1,87 +1,72 @@
 # Quest Esports
 
-Quest Esports is a full-stack esports platform for publishing tournaments, collecting team registrations, managing community contact messages, and curating media like posters and match videos.
+Quest Esports is a full-stack esports platform for publishing tournaments, registering teams, managing community communications, and curating poster/media content. The repository contains a public-facing Next.js application and an Express + Prisma API that powers authentication, tournament operations, admin tooling, and media workflows.
 
-This repository is split into two apps:
+## Documentation
 
-- `frontend/`: Next.js 16 App Router site for public pages, player auth, tournament browsing, registration, and admin screens
-- `backend/`: Express 5 API with Prisma/PostgreSQL for auth, tournament management, registrations, contact inboxes, and poster media
+- [API Documentation](./docs/api-documentation.md)
+- [Authentication Flow](./docs/authentication-flow.md)
+- [Database and Storage](./docs/database-and-storage.md)
+- [Setup and Deployment Guide](./docs/setup-and-deployment.md)
 
-## Tech Stack
+## Stack
 
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS v4
-- Backend: Express 5, Prisma ORM, PostgreSQL, Multer, bcryptjs
-- Email: Nodemailer over Resend SMTP
-- Tooling: ESLint, Nodemon
+- Backend: Express 5, Prisma ORM, PostgreSQL
+- Auth: Cookie-based sessions with server-side session storage
+- Uploads: Multer, filesystem-backed image storage
+- Email: Nodemailer with SMTP
 
-## What The App Does
+## What The Platform Includes
 
-### Public Experience
+### Public product features
 
-- Homepage with hero, brand, team, and featured tournament sections
-- Tournament listing page with game filtering
-- Tournament detail pages with schedule, format, prize pool, banner image, and registration state
-- Team registration flow for authenticated users
-- Match videos page backed by curated YouTube content
-- Posters gallery backed by API data
+- Marketing homepage and brand sections
+- Tournament listing and tournament detail pages
+- Team tournament registration flow
+- Email verification, login, logout, password reset, and email change flows
+- Posters gallery and match-video archive
 - Rulebook and contact pages
-- Signup, login, logout, and profile management
-- Email verification, resend-verification, forgot-password, and reset-password flows
+- Player profile page
 
-### Admin Experience
+### Admin features
 
-- Dashboard with tournament, registration, and unread-contact summary cards
-- User management pages for creating, editing, and removing users
-- Tournament management pages for creating, editing, publishing, and deleting tournaments
-- Registration review pages with status, payment, and verification controls
-- Contact inbox pages for reading and deleting submissions
-- Poster studio for uploading image assets and creating poster entries
-- Legacy poster import endpoint and script for migrating older assets
-
-### Backend Capabilities
-
-- Session-cookie authentication with `HttpOnly` cookies
-- Email verification and password reset with hashed single-use expiring tokens
-- Role-based access control for admin-only routes
-- Rate limiting for signup, login, contact, and tournament registration
-- Origin-based CSRF protection for unsafe requests
-- Security headers on both backend and frontend
-- Prisma-backed pagination helpers for admin lists
-- File-system uploads for team logos, tournament banners, and poster images
-- Prisma-backed metadata storage for poster/media assets
+- Dashboard summary cards
+- User management
+- Tournament creation and editing
+- Registration review and status management
+- Contact inbox moderation
+- Poster/image asset management
+- Legacy poster import and image migration utilities
 
 ## Repository Structure
 
 ```text
 QuestEsports/
 |-- README.md
+|-- docs/
+|   |-- api-documentation.md
+|   |-- authentication-flow.md
+|   |-- database-and-storage.md
+|   `-- setup-and-deployment.md
 |-- backend/
-|   |-- package.json
 |   |-- .env.example
+|   |-- package.json
 |   |-- prisma/
 |   |   |-- schema.prisma
 |   |   `-- migrations/
 |   |-- scripts/
-|   |   |-- import-legacy-posters.js
-|   |   `-- migrate-image-assets.js
 |   `-- src/
 |       |-- app.js
 |       |-- server.js
 |       |-- config/
-|       |-- constants/
 |       |-- lib/
 |       |-- middleware/
 |       |-- modules/
-|       |   |-- admin/
-|       |   |-- auth/
-|       |   |-- contact/
-|       |   |-- media/
-|       |   `-- tournaments/
 |       `-- routes/
 `-- frontend/
     |-- package.json
     |-- next.config.ts
-    |-- tsconfig.json
     |-- app/
     |-- components/
     |-- hooks/
@@ -89,36 +74,76 @@ QuestEsports/
     `-- public/
 ```
 
-## Data Model
+## Architecture Summary
 
-The Prisma schema currently centers on these main records:
+- The frontend runs on Next.js App Router and calls the backend with `credentials: "include"` so browser cookies are sent on authenticated requests.
+- The backend exposes JSON APIs under `/api`, stores business data in PostgreSQL through Prisma, and persists session state in the `sessions` table.
+- Tournament banners, team logos, and poster image files are written to `backend/uploads/`.
+- Poster/image metadata is stored in PostgreSQL. Poster assets support filesystem-backed storage with a database binary fallback for older records.
+- Email flows generate signed random tokens, store only token hashes in the database, and send action links that point to the frontend origin configured by `APP_URL`.
 
-- `User`
-- `Session`
-- `VerificationToken`
-- `PasswordResetToken`
+## Main Data Domains
+
+- `User`, `Session`, `VerificationToken`, `PasswordResetToken`, `EmailChangeToken`
+- `Tournament`, `TeamRegistration`, `RegistrationMember`
+- `SavedTeam`, `SavedTeamMember`
 - `ContactSubmission`
-- `Tournament`
-- `TeamRegistration`
-- `RegistrationMember`
-- `ImageAsset`
-- `Poster`
+- `ImageAsset`, `Poster`
 
-Important enums currently in use:
+## Frontend Routes
 
-- `UserRole`: `user`, `admin`
-- `TournamentStatus`: `draft`, `upcoming`, `registration_open`, `ongoing`, `completed`, `cancelled`
-- `TeamRegistrationStatus`: `pending`, `approved`, `rejected`
-- `RegistrationPaymentStatus`: `unpaid`, `pending`, `paid`
-- `RegistrationVerificationStatus`: `pending`, `verified`, `flagged`
+### Public routes
+
+- `/`
+- `/tournaments`
+- `/tournaments/[slug]`
+- `/tournament-registration`
+- `/registration`
+- `/match-videos`
+- `/posters`
+- `/rulebook`
+- `/contact`
+- `/signup`
+- `/login`
+- `/verify-email`
+- `/confirm-email-change`
+- `/forgot-password`
+- `/reset-password`
+- `/team-invite`
+
+### Authenticated routes
+
+- `/profile`
+
+### Admin routes
+
+- `/admin`
+- `/admin/users`
+- `/admin/tournaments`
+- `/admin/tournaments/new`
+- `/admin/tournaments/[id]/edit`
+- `/admin/registrations`
+- `/admin/contact-messages`
+
+## API Surface
+
+The backend exposes these main route groups:
+
+- Auth: `/api/signup`, `/api/login`, `/api/logout`, `/api/me`, verification, email-change, and password-reset endpoints
+- Public tournaments: `/api/tournaments`, `/api/tournaments/:slug`
+- Tournament registration: `/api/tournament-registration`, `/api/tournament-registration/status/:slug`
+- Teams: `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
+- Contact: `/api/contact`
+- Media: `/api/posters`, `/api/images`, `/api/uploads/...`
+- Admin: `/api/admin/...`
+
+See [API Documentation](./docs/api-documentation.md) for the complete reference.
 
 ## Environment Variables
 
 ### Backend
 
 Create `backend/.env` from `backend/.env.example`.
-
-Local development example:
 
 ```env
 PORT=5001
@@ -132,50 +157,30 @@ SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
 SMTP_USER=resend
 SMTP_PASS=re_your_resend_api_key
-MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
+MAIL_FROM="Quest Esports <no-reply@example.com>"
 APP_URL=http://localhost:3000
-```
-
-Production values:
-
-```env
-CORS_ORIGIN=https://questesports.lk
-APP_URL=https://questesports.lk
-MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 ```
 
 Notes:
 
-- `DATABASE_URL` is required
-- `CORS_ORIGIN` supports a comma-separated allowlist
-- `NODE_ENV` is validated as `development`, `test`, or `production`
-- Resend SMTP maps to `smtp.resend.com:465` with username `resend` and your Resend API key as `SMTP_PASS`
-- `MAIL_FROM` should be a sender address verified in Resend for real delivery
-- `APP_URL` is used to generate verification and reset-password links
-- `MONITORING_PROVIDER` is optional and only affects health/monitoring metadata
+- `DATABASE_URL` and `SESSION_COOKIE_NAME` are required.
+- `CORS_ORIGIN` supports a comma-separated allowlist.
+- `APP_URL` must point at the frontend origin used in verification, password reset, and invite emails.
+- SMTP values are optional for local development, but required for real email delivery.
 
 ### Frontend
 
 Create `frontend/.env.local`.
-
-Local development example:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-Production values:
-
-```env
-NEXT_PUBLIC_API_URL=https://api.questesports.lk
-NEXT_PUBLIC_SITE_URL=https://questesports.lk
-```
-
 Notes:
 
-- `NEXT_PUBLIC_API_URL` is used for API requests and media URL resolution
-- `NEXT_PUBLIC_SITE_URL` is used for metadata, canonical URLs, sitemap/manifest output, and structured data
+- `NEXT_PUBLIC_API_URL` must point at the backend origin.
+- `NEXT_PUBLIC_SITE_URL` is used for metadata, canonical URLs, sitemap generation, and structured data.
 
 ## Local Development
 
@@ -191,7 +196,7 @@ cd frontend
 npm install
 ```
 
-### 2. Prepare the database
+### 2. Apply database migrations
 
 ```bash
 cd backend
@@ -215,147 +220,24 @@ cd frontend
 npm run dev
 ```
 
-Local URLs:
+Default local URLs:
 
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:5001`
+- Health: `http://localhost:5001/api/health`
 - OpenAPI JSON: `http://localhost:5001/api/openapi.json`
-- Health check: `http://localhost:5001/api/health`
 
-## Available Scripts
+## Operational Notes
 
-### Backend
+- The backend creates upload directories automatically at startup.
+- Team registration requires a logged-in user with a verified email address.
+- Team logos are intentionally protected behind admin access.
+- The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
+- There is currently no automated test suite in the repository.
+- Background jobs and monitoring are placeholder integrations and should be wired to production services before scaling email/media workloads.
 
-```bash
-npm run dev
-npm start
-npm run prisma:generate
-npm run prisma:migrate
-npm run prisma:studio
-npm run media:import-legacy-posters
-npm run media:migrate-image-assets
-```
+## Recommended Next Steps
 
-### Frontend
-
-```bash
-npm run dev
-npm run build
-npm run start
-npm run lint
-```
-
-## API Overview
-
-### Auth
-
-- `POST /api/signup`
-- `POST /api/login`
-- `POST /api/logout`
-- `GET /api/me`
-- `GET /api/email-verification/verify`
-- `POST /api/email-verification/resend`
-- `POST /api/forgot-password`
-- `POST /api/reset-password`
-- `GET /api/users/:userId`
-- `PATCH /api/users/:userId`
-
-### Contact
-
-- `POST /api/contact`
-
-### Tournaments And Registration
-
-- `GET /api/tournaments`
-- `GET /api/tournaments/:slug`
-- `GET /api/tournament-registration/status/:slug`
-- `POST /api/tournament-registration`
-
-### Admin
-
-- `GET /api/admin/dashboard`
-- `GET /api/admin/users`
-- `POST /api/admin/users`
-- `GET /api/admin/users/:userId`
-- `PATCH /api/admin/users/:userId`
-- `DELETE /api/admin/users/:userId`
-- `GET /api/admin/contact-messages`
-- `PATCH /api/admin/contact-messages/:messageId`
-- `DELETE /api/admin/contact-messages/:messageId`
-- `GET /api/admin/team-registrations`
-- `GET /api/admin/tournaments/:tournamentId/registrations`
-- `PATCH /api/admin/team-registrations/:registrationId/status`
-- `GET /api/admin/tournaments`
-- `GET /api/admin/tournaments/:tournamentId`
-- `POST /api/admin/tournaments`
-- `PATCH /api/admin/tournaments/:tournamentId`
-- `DELETE /api/admin/tournaments/:tournamentId`
-- `POST /api/admin/media/import-legacy-posters`
-- `POST /api/admin/media/migrate-image-assets`
-
-### Media
-
-- `GET /api/posters`
-- `GET /api/posters/:posterId`
-- `GET /api/posters/:posterId/image`
-- `GET /api/images` admin only
-- `GET /api/images/:imageId` admin only
-- `GET /api/images/:imageId/binary` admin only
-- `POST /api/images` admin only
-- `POST /api/posters` admin only
-- `DELETE /api/posters/:posterId` admin only
-
-## Frontend Routes
-
-### Public Routes
-
-- `/`
-- `/tournaments`
-- `/tournaments/[slug]`
-- `/tournament-registration`
-- `/registration`
-- `/match-videos`
-- `/posters`
-- `/rulebook`
-- `/contact`
-- `/signup`
-- `/login`
-- `/verify-email`
-- `/forgot-password`
-- `/reset-password`
-- `/profile`
-
-### Admin Routes
-
-- `/admin`
-- `/admin/users`
-- `/admin/tournaments`
-- `/admin/tournaments/new`
-- `/admin/tournaments/[id]/edit`
-- `/admin/registrations`
-- `/admin/contact-messages`
-
-## Implementation Notes
-
-- The frontend expects cookies to be included on authenticated API calls.
-- Tournament registration requires a verified email address.
-- Public tournament pages fetch live API data with `cache: "no-store"`.
-- Poster image metadata is stored in PostgreSQL, while the actual poster files live under `backend/uploads/poster-images/`.
-- Team logos and tournament banners are stored on disk under `backend/uploads/`.
-- The frontend `next.config.ts` adds CSP and remote image rules based on `NEXT_PUBLIC_API_URL`.
-- The backend creates upload directories on boot via `ensureUploadDirectories()`.
-- The monitoring layer is currently a logger-backed adapter and is ready to be swapped for Sentry, Datadog, or OpenTelemetry.
-
-## Current Caveats
-
-- There is no automated test suite yet.
-- There is no documented production deployment workflow yet.
-- The route index references `backend/src/modules/uploads/upload.routes.js`; if that module is missing in your branch, upload-serving routes for generated `/api/uploads/...` URLs need to be restored before file uploads can be accessed publicly.
-
-## Onboarding Tips
-
-- Start by applying Prisma migrations before opening the frontend.
-- Create at least one admin user through the API or Prisma Studio if you need admin pages immediately.
-- For email flows, configure Resend SMTP in `backend/.env` and use your HTTPS frontend origin as `APP_URL` in production.
-- If poster pages or uploaded images do not render, verify `NEXT_PUBLIC_API_URL`, the backend upload routes, and the CSP/image settings in `frontend/next.config.ts`.
-- For local testing, keep frontend and backend env files pointed at `localhost` and only use the `questesports.lk` values in your production deployment environment.
+- Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
+- Read [Authentication Flow](./docs/authentication-flow.md) before changing session or email logic.
+- Read [Database and Storage](./docs/database-and-storage.md) before touching uploads, Prisma schema, or media migration scripts.

@@ -105,7 +105,8 @@ const submitTournamentRegistration = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: "Tournament registration submitted successfully.",
+    message:
+      "Tournament registration submitted successfully. Team invites have been sent to your roster members.",
   });
 });
 

@@ -51,7 +51,43 @@ const buildResetPasswordEmail = ({ firstName, resetUrl }) =>
       "This reset link expires soon. If you did not request a password reset, you can safely ignore this email.",
   });
 
+const buildEmailChangeEmail = ({ firstName, nextEmail, confirmUrl }) =>
+  renderEmailLayout({
+    title: "Confirm your new Quest Esports email",
+    intro: buildGreeting(
+      firstName,
+      `confirm ${nextEmail} as the new email address for your Quest Esports account.`
+    ),
+    actionLabel: "Confirm New Email",
+    actionUrl: confirmUrl,
+    outro:
+      "This confirmation link expires in 24 hours. If you did not request this change, you can ignore this email and keep your current address.",
+  });
+
+const buildTeamInviteEmail = ({
+  recipientName,
+  teamName,
+  captainName,
+  tournamentTitle,
+  inviteUrl,
+}) =>
+  renderEmailLayout({
+    title: "Confirm your Quest Esports team invite",
+    intro: buildGreeting(
+      recipientName,
+      `you have been invited by ${captainName} to join ${teamName}${
+        tournamentTitle ? ` for ${tournamentTitle}` : ""
+      }.`
+    ),
+    actionLabel: "Review Invite",
+    actionUrl: inviteUrl,
+    outro:
+      "Open the invite to accept or decline your place on the roster. If you were not expecting this, you can safely ignore the email.",
+  });
+
 module.exports = {
   buildVerificationEmail,
   buildResetPasswordEmail,
+  buildEmailChangeEmail,
+  buildTeamInviteEmail,
 };

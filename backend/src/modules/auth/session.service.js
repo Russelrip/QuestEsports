@@ -17,6 +17,7 @@ const mapUserForSession = (record) => ({
   phone: record.phone,
   discordTag: record.discordTag,
   role: record.role,
+  pendingEmail: record.pendingEmail || null,
   emailVerified: Boolean(record.emailVerified),
   emailVerifiedAt: record.emailVerifiedAt || null,
   lastLoginAt: record.lastLoginAt,

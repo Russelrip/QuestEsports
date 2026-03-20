@@ -1498,6 +1498,111 @@ legend {
     gap: 12px;
 }
 
+.profile-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 22px;
+}
+
+.profile-tab {
+    min-width: auto;
+    padding: 10px 18px;
+    min-height: 44px;
+    border-radius: 999px;
+    border: 1px solid rgba(168, 85, 247, 0.22);
+    background: rgba(14, 8, 24, 0.65);
+    color: var(--text-soft);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.profile-tab:hover,
+.profile-tab.is-active {
+    color: #fff;
+    background: rgba(124, 58, 237, 0.24);
+    border-color: rgba(192, 132, 252, 0.45);
+    box-shadow: 0 0 18px rgba(124, 58, 237, 0.18);
+}
+
+.profile-team-panel,
+.profile-team-list,
+.profile-team-members {
+    display: grid;
+    gap: 16px;
+}
+
+.profile-team-card,
+.profile-team-member,
+.team-invite-summary {
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(168, 85, 247, 0.16);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.profile-team-head,
+.profile-team-member {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.profile-team-head p,
+.profile-team-member p,
+.team-invite-summary p {
+    color: var(--text-soft);
+}
+
+.profile-team-head .btn {
+    min-width: auto;
+}
+
+.team-invite-summary {
+    margin-top: 16px;
+}
+
+.team-invite-summary p + p {
+    margin-top: 10px;
+}
+
+.team-invite-summary span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+}
+
+.status-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 999px;
+    text-transform: capitalize;
+    font-size: 0.82rem;
+    border: 1px solid transparent;
+}
+
+.status-chip-accepted {
+    background: rgba(34, 197, 94, 0.14);
+    color: #dcfce7;
+    border-color: rgba(74, 222, 128, 0.26);
+}
+
+.status-chip-pending {
+    background: rgba(245, 158, 11, 0.14);
+    color: #fde68a;
+    border-color: rgba(251, 191, 36, 0.26);
+}
+
+.status-chip-declined {
+    background: rgba(239, 68, 68, 0.14);
+    color: #fecaca;
+    border-color: rgba(248, 113, 113, 0.26);
+}
+
 .admin-dashboard {
     display: grid;
     gap: 24px;
@@ -2051,6 +2156,18 @@ legend {
     gap: 12px;
     align-items: center;
     margin-top: 14px;
+}
+
+.auth-divider {
+    width: 100%;
+    height: 1px;
+    margin: 28px 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(168, 85, 247, 0.35),
+        transparent
+    );
 }
 
 /* RESPONSIVE */

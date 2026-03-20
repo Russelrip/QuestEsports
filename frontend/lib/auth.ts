@@ -9,6 +9,7 @@ export type AuthUser = {
   phone?: string | null;
   discordTag?: string | null;
   role: "admin" | "user";
+  pendingEmail?: string | null;
   emailVerified: boolean;
   emailVerifiedAt?: string | null;
   lastLoginAt?: string | null;
