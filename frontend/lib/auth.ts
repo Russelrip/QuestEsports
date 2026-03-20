@@ -40,7 +40,7 @@ export const apiFetch = async (path: string, options: ApiFetchOptions = {}) => {
   });
 };
 
-export async function apiFetchJson<T extends ApiSuccessResponse>(
+export async function apiFetchJson<T = unknown>(
   path: string,
   options: ApiFetchOptions = {}
 ) {
