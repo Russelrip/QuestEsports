@@ -3,6 +3,8 @@ import type { Viewport } from "next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
+import { ToastProvider } from "@/components/ui/toast-provider";
+import { designTokenCssVariables } from "@/lib/design-tokens";
 import { siteMetadata } from "@/lib/site";
 
 export const metadata = siteMetadata;
@@ -18,11 +20,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
+      <body className="page-shell">
+        <style>{designTokenCssVariables}</style>
         <AuthProvider>
           <Navbar />
-          {children}
+          <main>{children}</main>
           <Footer />
+          <ToastProvider />
         </AuthProvider>
       </body>
     </html>

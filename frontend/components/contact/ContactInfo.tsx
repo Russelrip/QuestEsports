@@ -1,75 +1,47 @@
 import Image from "next/image";
+import { Card } from "@/components/ui/card";
 import { contactLinks, whatsappContacts } from "@/lib/site";
-
-const iconStyle = {
-  width: "20px",
-  height: "20px",
-  objectFit: "contain" as const,
-};
-
-const rowStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "10px",
-  marginBottom: "10px",
-};
 
 export default function ContactInfo() {
   return (
-    <div className="contact-info">
-      <h2>Contact Information</h2>
+    <Card className="p-6 sm:p-8">
+      <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Direct Channels</p>
+      <h2 className="mt-3 text-3xl text-white">Contact information</h2>
 
-      {contactLinks.map((group) => (
-        <div className="info-item" key={group.title}>
-          <h3>{group.title}</h3>
-
-          {group.items.map((item) => (
-            <p style={rowStyle} key={item.label}>
-              <Image
-                src={item.icon}
-                alt={item.label}
-                width={20}
-                height={20}
-                style={iconStyle}
-              />
-              <a href={item.href} target="_blank" rel="noopener noreferrer">
-                {item.label}
+      <div className="mt-8 grid gap-6">
+        {contactLinks.map((group) => (
+          <div key={group.title} className="grid gap-3">
+            <h3 className="text-lg font-semibold text-white">{group.title}</h3>
+            {group.items.map((item) => (
+              <a
+                key={item.label}
+                href={item.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300 transition hover:bg-white/8 hover:text-white"
+              >
+                <Image src={item.icon} alt={item.label} width={18} height={18} />
+                <span>{item.label}</span>
               </a>
-            </p>
-          ))}
-        </div>
-      ))}
+            ))}
+          </div>
+        ))}
 
-      <div className="info-item">
-        <h3
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-          }}
-        >
-          <Image
-            src="/images/whatsapp.png"
-            alt="WhatsApp"
-            width={22}
-            height={22}
-            style={{
-              width: "22px",
-              height: "22px",
-              objectFit: "contain",
-            }}
-          />
-          WhatsApp
-        </h3>
-
-        {whatsappContacts.map((contact, index) => (
-          <p key={contact.label} style={index === 0 ? { marginTop: "10px" } : undefined}>
-            <a href={contact.href} target="_blank" rel="noopener noreferrer">
+        <div className="grid gap-3">
+          <h3 className="text-lg font-semibold text-white">WhatsApp</h3>
+          {whatsappContacts.map((contact) => (
+            <a
+              key={contact.label}
+              href={contact.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300 transition hover:bg-white/8 hover:text-white"
+            >
               {contact.label}
             </a>
-          </p>
-        ))}
+          ))}
+        </div>
       </div>
-    </div>
+    </Card>
   );
 }

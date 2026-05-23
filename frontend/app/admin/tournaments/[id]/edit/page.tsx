@@ -1,4 +1,3 @@
-import PageLayout from "@/components/PageLayout";
 import TournamentEditor from "@/components/admin/TournamentEditor";
 import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
 
@@ -15,12 +14,5 @@ export default async function AdminEditTournamentPage({
 }) {
   const { id } = await params;
 
-  return (
-    <PageLayout
-      title="Edit Tournament"
-      description={defaultPageDescriptions.adminTournaments}
-    >
-      <TournamentEditor tournamentId={id} />
-    </PageLayout>
-  );
+  return <TournamentEditor tournamentId={id} />;
 }

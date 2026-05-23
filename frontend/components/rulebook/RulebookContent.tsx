@@ -1,361 +1,235 @@
 import Image from "next/image";
+import { buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Section } from "@/components/ui/section";
+
+const sections = [
+  {
+    title: "1. Introduction",
+    content: [
+      "Quest Esports reserves the right to amend rules, schedules, or formats whenever necessary in order to preserve fair competition, tournament integrity, and player safety.",
+    ],
+  },
+  {
+    title: "2. General Rules (All Tournaments)",
+    subsections: [
+      {
+        title: "2.1 Player & Team Eligibility",
+        items: [
+          "All players must register and compete using their own valid Riot ID.",
+          "Using another player's account, fake information, or false identity is strictly prohibited.",
+          "Quest Esports may request identity verification using NIC, passport, student ID, or equivalent documents.",
+          "Failure or refusal to provide verification may result in immediate disqualification.",
+          "Team rosters become locked once the team has played its first official match.",
+          "No roster changes are allowed after the first official match unless Quest Esports approves an exceptional case.",
+          "Team names, player names, logos, and profile images must not contain offensive, obscene, or discriminatory content.",
+        ],
+      },
+      {
+        title: "2.2 Tournament Format",
+        items: [
+          "Tournament format will be announced before each event.",
+          "Teams consist of 5 core players with up to 2 substitutes.",
+          "Substitutions are allowed only between maps, never during a round.",
+          "Stand-ins who are not officially registered are not allowed in online events.",
+        ],
+      },
+      {
+        title: "2.3 Match Scheduling",
+        items: [
+          "Online tournaments: teams must check in 30 minutes before the match start time.",
+          "LAN tournaments: teams must check in 1 hour before the match start time.",
+          "A team not ready within 10 minutes of the official start time may forfeit the match.",
+          "Matches may be played 4v5 only if the opponent agrees.",
+        ],
+      },
+    ],
+  },
+];
+
+type RulebookSection = (typeof sections)[number];
+
+function hasParagraphContent(section: RulebookSection): section is RulebookSection & { content: string[] } {
+  return "content" in section;
+}
+
+const mapVetoSections = {
+  BO1: [
+    "Team A bans 1 map",
+    "Team B bans 1 map",
+    "Team A bans 1 map",
+    "Team B bans 1 map",
+    "Team A bans 1 map",
+    "Team B bans 1 map",
+    "Map 7 remains and Team A chooses side",
+  ],
+  BO3: [
+    "Team A bans 1 map",
+    "Team B bans 1 map",
+    "Team A picks Map 1 and Team B chooses side",
+    "Team B picks Map 2 and Team A chooses side",
+    "Team A bans 1 map",
+    "Team B bans 1 map",
+    "Map 3 remains and Team A chooses side",
+  ],
+  BO5: [
+    "Team A bans 1 map",
+    "Team B bans 1 map",
+    "Team A picks Map 1 and Team B chooses side",
+    "Team B picks Map 2 and Team A chooses side",
+    "Team A picks Map 3 and Team B chooses side",
+    "Team B picks Map 4 and Team A chooses side",
+    "Map 5 remains and Team B chooses side",
+  ],
+};
 
 export default function RulebookContent() {
   return (
-    <section className="registration-section">
-      <div className="form-container">
-        {/* Intro block explains how the general rules and the women's-event exceptions relate to each other. */}
-        <div className="rulebook-box">
-          <h2 className="rulebook-title">
-            QUEST ESPORTS - VALORANT TOURNAMENT RULEBOOK
-          </h2>
-          <p className="rulebook-text">
-            This page contains the official rules for Quest Esports VALORANT
-            tournaments in Sri Lanka. General Rules apply to all tournaments,
-            while Women&apos;s Tournament Rules apply only to female-only events
-            and override the general rules where specified.
+    <Section className="pt-6">
+      <div className="grid gap-6">
+        <Card className="p-6 sm:p-8">
+          <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Official Rulebook</p>
+          <h2 className="mt-3 text-3xl text-white">Quest Esports VALORANT Tournament Rulebook</h2>
+          <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
+            This page contains the official rules for Quest Esports VALORANT tournaments in Sri Lanka. General rules apply to all tournaments, while women&apos;s tournament rules apply only to female-only events and override the general rules where specified.
           </p>
-        </div>
+        </Card>
 
-        <div className="rulebook-section">
-          <h3>1. Introduction</h3>
-          <p>
-            Quest Esports reserves the right to amend rules, schedules, or
-            formats whenever necessary in order to preserve fair competition,
-            tournament integrity, and player safety.
-          </p>
-        </div>
+        {sections.map((section) => (
+          <Card key={section.title} className="p-6 sm:p-8">
+            <h3 className="text-2xl text-white">{section.title}</h3>
+            {hasParagraphContent(section) ? (
+              section.content.map((paragraph) => (
+                <p key={paragraph} className="mt-4 text-sm leading-7 text-slate-300">{paragraph}</p>
+              ))
+            ) : (
+              <div className="mt-5 grid gap-5">
+                {section.subsections.map((subsection) => (
+                  <div key={subsection.title} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+                    <h4 className="text-xl text-white">{subsection.title}</h4>
+                    <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
+                      {subsection.items.map((item) => (
+                        <li key={item} className="flex gap-3">
+                          <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        ))}
 
-        <div className="rulebook-section">
-          <h3>2. General Rules (All Tournaments)</h3>
-          <h4>2.1 Player &amp; Team Eligibility</h4>
-          <ul className="rule-list">
-            <li>All players must register and compete using their own valid Riot ID.</li>
-            <li>Using another player&apos;s account, fake information, or false identity is strictly prohibited.</li>
-            <li>Quest Esports may request identity verification using NIC, passport, student ID, or equivalent documents.</li>
-            <li>Failure or refusal to provide verification may result in immediate disqualification.</li>
-            <li>Team rosters become locked once the team has played its first official match.</li>
-            <li>No roster changes are allowed after the first official match unless Quest Esports approves an exceptional case.</li>
-            <li>Team names, player names, logos, and profile images must not contain offensive, obscene, or discriminatory content.</li>
-          </ul>
-
-          <h4>2.2 Tournament Format</h4>
-          <ul className="rule-list">
-            <li>Tournament format will be announced before each event.</li>
-            <li>Teams consist of 5 core players with up to 2 substitutes.</li>
-            <li>Substitutions are allowed only between maps, never during a round.</li>
-            <li>Stand-ins who are not officially registered are not allowed in online events.</li>
-          </ul>
-
-          <h4>2.3 Match Scheduling</h4>
-          <ul className="rule-list">
-            <li>Online tournaments: teams must check in 30 minutes before the match start time.</li>
-            <li>LAN tournaments: teams must check in 1 hour before the match start time.</li>
-            <li>A team not ready within 10 minutes of the official start time may forfeit the match.</li>
-            <li>Matches may be played 4v5 only if the opponent agrees.</li>
-          </ul>
-
-          <h4>2.4 Lobby &amp; Game Settings</h4>
-          <ul className="rule-list">
-            <li>Mode: Tournament</li>
-            <li>Default Server: Singapore</li>
-            <li>Cheats: Off</li>
-            <li>Overtime: Win by Two</li>
-            <li>Lobby Type: Closed</li>
-            <li>Only tournament staff and official casters may observe.</li>
-          </ul>
-
-          <h4>2.4.1 Server Change Exception</h4>
-          <ul className="rule-list">
-            <li>A different server may be used only if both teams agree.</li>
-            <li>Any server change must be approved by tournament admins before the match begins.</li>
-            <li>Once the match starts, the server cannot be changed.</li>
-            <li>If both teams do not agree, the Singapore server will be used.</li>
-          </ul>
-
-          <h4>2.5 Coaches</h4>
-          <ul className="rule-list">
-            <li>Each team may have one coach.</li>
-            <li>Coaches may communicate only during map/agent select, tactical timeouts, halftime, and between maps.</li>
-            <li>Teams may use Discord, TeamSpeak, or similar communication platforms.</li>
-            <li>If TeamSpeak is used, admins must be informed in advance.</li>
-          </ul>
-
-          <h4>2.6 Gameplay Rules</h4>
-          <ul className="rule-list">
-            <li>Hacking, scripting, macros, exploits, and third-party cheats are strictly prohibited.</li>
-            <li>Smurfing, account sharing, or impersonation results in instant disqualification.</li>
-            <li>Match-fixing, collusion, or bribery may result in a permanent ban.</li>
-            <li>Toxicity, harassment, or discrimination may result in immediate disqualification.</li>
-            <li>Tournaments follow Riot Games&apos; official seasonal map pool.</li>
-            <li>New agents are locked for 2 weeks after release.</li>
-            <li>New maps are locked for 4 weeks after release.</li>
-          </ul>
-
-          <h4>2.7 Pauses</h4>
-          <ul className="rule-list">
-            <li>Each team gets 2 tactical timeouts per map, 60 seconds each.</li>
-            <li>One additional timeout is allowed in overtime.</li>
-            <li>Technical pauses are allowed for up to 10 minutes per map.</li>
-            <li>The reason for the technical pause must be clearly stated.</li>
-          </ul>
-
-          <h4>2.8 Crashes &amp; Disconnects</h4>
-          <ul className="rule-list">
-            <li>If a crash happens before damage is dealt, the round may be replayed.</li>
-            <li>If significant gameplay has already happened, the round continues.</li>
-            <li>An entire map may be replayed only at admin discretion.</li>
-          </ul>
-
-          <h4>2.9 Organizer Rights</h4>
-          <ul className="rule-list">
-            <li>Quest Esports may adjust schedules, formats, or match outcomes when necessary to ensure fairness.</li>
-            <li>Prize distribution timelines and requirements will be announced for each event separately.</li>
-          </ul>
-
-          <h4>2.10 Prize Distribution</h4>
-          <ul className="rule-list">
-            <li>Prize money will be sent to the team captain within 7 working days.</li>
-            <li>The team captain must provide bank details within 3 days after the tournament ends.</li>
-          </ul>
-
-          <h4>2.11 Map Veto System</h4>
-          {/* Each subcard documents the pick/ban flow for a different match length. */}
-          <div className="rulebook-subcard">
-            <h5>BO1</h5>
-            <ul className="rule-list">
-              <li>Team A bans 1 map</li>
-              <li>Team B bans 1 map</li>
-              <li>Team A bans 1 map</li>
-              <li>Team B bans 1 map</li>
-              <li>Team A bans 1 map</li>
-              <li>Team B bans 1 map</li>
-              <li>Map 7 remains and Team A chooses side</li>
-            </ul>
+        <Card className="p-6 sm:p-8">
+          <h3 className="text-2xl text-white">2.11 Map Veto System</h3>
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            {Object.entries(mapVetoSections).map(([label, items]) => (
+              <div key={label} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+                <h4 className="text-xl text-white">{label}</h4>
+                <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
+                  {items.map((item) => (
+                    <li key={item} className="flex gap-3">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
+        </Card>
 
-          <div className="rulebook-subcard">
-            <h5>BO3</h5>
-            <ul className="rule-list">
-              <li>Team A bans 1 map</li>
-              <li>Team B bans 1 map</li>
-              <li>Team A picks Map 1 and Team B chooses side</li>
-              <li>Team B picks Map 2 and Team A chooses side</li>
-              <li>Team A bans 1 map</li>
-              <li>Team B bans 1 map</li>
-              <li>Map 3 remains and Team A chooses side</li>
-            </ul>
-          </div>
-
-          <div className="rulebook-subcard">
-            <h5>BO5</h5>
-            <ul className="rule-list">
-              <li>Team A bans 1 map</li>
-              <li>Team B bans 1 map</li>
-              <li>Team A picks Map 1 and Team B chooses side</li>
-              <li>Team B picks Map 2 and Team A chooses side</li>
-              <li>Team A picks Map 3 and Team B chooses side</li>
-              <li>Team B picks Map 4 and Team A chooses side</li>
-              <li>Map 5 remains and Team B chooses side</li>
-            </ul>
-          </div>
-
-          <h4>2.12 Additional Eligibility Rules</h4>
-          <h5>2.12.1 Regional Restriction</h5>
-          <ul className="rule-list">
-            <li>All Quest Esports VALORANT tournaments are currently restricted to Sri Lankan residents only.</li>
-            <li>Players must be living in Sri Lanka at the time of the tournament.</li>
-            <li>Proof of residency may be requested if false information is suspected.</li>
+        <Card className="p-6 sm:p-8">
+          <h3 className="text-2xl text-white">2.13 Spectra Client Requirement</h3>
+          <ul className="mt-5 grid gap-2 text-sm leading-7 text-slate-300">
+            {[
+              "All players must have the Spectra Client installed and running.",
+              "This is mandatory for in-game data tracking and stream overlays.",
+              "Players must run the Spectra Player Client as Administrator.",
+              "Spectra must be started before launching VALORANT.",
+              "Players must select EU as the server inside Spectra.",
+              "Failure to comply may result in delays, penalties, or match forfeiture.",
+            ].map((item) => (
+              <li key={item} className="flex gap-3">
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                <span>{item}</span>
+              </li>
+            ))}
           </ul>
-
-          <h5>2.12.2 Community Tournament Participation</h5>
-          <ul className="rule-list">
-            <li>Coaches, organizers, staff members, and admins may participate as players.</li>
-            <li>They cannot referee or administer their own matches.</li>
-            <li>Another authorized tournament official must handle rulings for those matches.</li>
-          </ul>
-
-          <h5>2.12.3 Player Account Update Procedure</h5>
-          <p>To update or correct player details, the Team Captain must contact Quest Esports using the official channels below:</p>
-          <ul className="rule-list">
-            <li>Email: contact@mail.questesports.lk</li>
-            <li>WhatsApp: 076 119 5666 (Ms. Senumi)</li>
-            <li>WhatsApp: 076 718 6060 (Mr. Russel)</li>
-            <li>An additional referee number may be given if needed.</li>
-          </ul>
-
-          <p>Each request must include:</p>
-          <ul className="rule-list">
-            <li>Tournament Name</li>
-            <li>Team Name</li>
-            <li>Player Name</li>
-            <li>Riot ID</li>
-            <li>Discord Username</li>
-          </ul>
-
-          <ul className="rule-list">
-            <li>Corrections and roster updates are allowed only before the first official match.</li>
-            <li>No changes are accepted once a team has started a match.</li>
-            <li>Requests from non-captain or unregistered email addresses will not be accepted.</li>
-          </ul>
-
-          <h5>2.12.4 Roster Lock &amp; Player Changes</h5>
-          <ul className="rule-list">
-            <li>Players may be changed or substitutes added only before the first official match.</li>
-            <li>Once a team has played its first official match, the roster is fully locked.</li>
-            <li>No further player additions or replacements are permitted after that point.</li>
-          </ul>
-
-          <h4>2.13 Spectra Client Requirement</h4>
-          <ul className="rule-list">
-            <li>All players must have the Spectra Client installed and running.</li>
-            <li>This is mandatory for in-game data tracking and stream overlays.</li>
-            <li>Players must run the Spectra Player Client as Administrator.</li>
-            <li>Spectra must be started before launching VALORANT.</li>
-            <li>Players must select EU as the server inside Spectra.</li>
-            <li>Failure to comply may result in delays, penalties, or match forfeiture.</li>
-          </ul>
-
-          <div className="rulebook-subcard">
-            <h4>Download Spectra Client</h4>
-            <p>
-              All participating players must install and use the official
-              Spectra client if required by Quest Esports tournament officials.
-            </p>
-            <a
-              href="https://valospectra.com/download"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-secondary"
-            >
+          <div className="mt-6">
+            <a href="https://valospectra.com/download" target="_blank" rel="noopener noreferrer" className={buttonClassName({ variant: "secondary" })}>
               Download Spectra Client
             </a>
           </div>
+        </Card>
 
-          <h4>2.14 Discord Presence, Spectra &amp; Webcam Requirement</h4>
-          <ul className="rule-list">
-            <li>If a team uses a coach, that coach must be present on Discord for all matches.</li>
-            <li>When a coach is present, the whole team must stay in the same Discord voice channel with the coach throughout the match.</li>
-            <li>If the team has no coach, the Team Captain or Team Leader must remain on Discord during the match.</li>
-            <li>If webcams are required by tournament admins, all players must keep webcams on for the entire match.</li>
-            <li>Webcam feeds may be used for live broadcasts and competitive integrity monitoring.</li>
-          </ul>
-
-          <h5>Webcam Setup &amp; Verification</h5>
-          <ul className="rule-list">
-            <li>Admins will provide a Spectra verification link before the match.</li>
-            <li>Players must open the link in a web browser.</li>
-            <li>Players must enter the same Riot ID used for tournament registration.</li>
-            <li>The webcam feed must stay active and uninterrupted during the match.</li>
-            <li>The Spectra browser page must stay open throughout the match.</li>
-          </ul>
-
-          <h5>Phone Webcam Usage</h5>
-          <ul className="rule-list">
-            <li>Players using a mobile phone as a webcam must disable screen lock or auto-rotate lock.</li>
-            <li>The phone must be rotated into landscape mode.</li>
-            <li>The webcam view must remain stable and correctly oriented.</li>
-          </ul>
-
-          <h5>Webcam Angles</h5>
-          <ul className="rule-list">
-            <li>Players must follow the approved webcam angles given by tournament administrators.</li>
-            <li>Detailed examples will be shared before the match.</li>
-          </ul>
-
-          <h5>Compliance &amp; Penalties</h5>
-          <ul className="rule-list">
-            <li>Disabling the webcam, closing Spectra, using unapproved angles, or entering incorrect Riot ID details may result in warnings, penalties, forfeits, or disqualification.</li>
-            <li>Additional Spectra or webcam instructions may be given by admins when required.</li>
-          </ul>
-        </div>
-
-        <div className="rulebook-section">
-          <h3>Face Camera Angle Examples</h3>
-          <p>Approved face camera angle examples for player verification and monitoring.</p>
-          <div className="rulebook-image-wrap">
-            <Image
-              src="/images/face-camera-angle-examples.jpg"
-              alt="Face Camera Angle Examples"
-              width={1600}
-              height={900}
-            />
+        <Card className="p-6 sm:p-8">
+          <h3 className="text-2xl text-white">Face Camera Angle Examples</h3>
+          <p className="mt-3 text-sm text-slate-400">Approved face camera angle examples for player verification and monitoring.</p>
+          <div className="mt-5 overflow-hidden rounded-[24px] border border-white/8">
+            <Image src="/images/face-camera-angle-examples.jpg" alt="Face Camera Angle Examples" width={1600} height={900} />
           </div>
-        </div>
+        </Card>
 
-        <div className="rulebook-section">
-          <h3>3. Women&apos;s Tournament - Special Rules</h3>
-          <h4>3.1 Eligibility</h4>
-          <ul className="rule-list">
-            <li>Players must identify only as female (cisgender).</li>
-            <li>All players must be Sri Lankan citizens or residents.</li>
-            <li>Minimum age is 10 years, and parental consent is required for players under 16.</li>
-            <li>Riot ID must match the registration details.</li>
-            <li>Quest Esports may request official ID for verification.</li>
-          </ul>
-
-          <h4>3.2 Team Formation</h4>
-          <ul className="rule-list">
-            <li>Teams must have 5 core players.</li>
-            <li>Up to 2 substitutes are allowed.</li>
-            <li>Solo registrations may be placed into teams by the organizers.</li>
-          </ul>
-
-          <h4>3.3 Registration &amp; Check-In</h4>
-          <ul className="rule-list">
-            <li>Registration deadlines will be announced for each event.</li>
-            <li>Teams must check in 30 minutes before the match start time.</li>
-            <li>Late arrival without notice may result in a forfeit.</li>
-          </ul>
-
-          <h4>3.4 Match Format</h4>
-          <ul className="rule-list">
-            <li>All matches are 5v5 online.</li>
-            <li>Preliminary matches may be BO1 or BO3 depending on the number of teams.</li>
-            <li>Finals may be BO3 or BO5.</li>
-            <li>The elimination format will be announced before the event.</li>
-          </ul>
-
-          <h4>3.5 CAM-on Refereeing</h4>
-          <ul className="rule-list">
-            <li>Video verification through Zoom, Discord, or Google Meet may be mandatory when requested.</li>
-            <li>Teams must inform organizers of the chosen platform 30 minutes before the match.</li>
-            <li>Refusal or failure to comply may result in disqualification.</li>
-          </ul>
-
-          <h4>3.6 Conduct &amp; Fair Play</h4>
-          <ul className="rule-list">
-            <li>Toxicity, harassment, or discrimination may result in immediate disqualification.</li>
-            <li>Cheating, smurfing, and account sharing are strictly prohibited.</li>
-          </ul>
-
-          <h4>3.7 Technical &amp; Timeout Rules</h4>
-          <ul className="rule-list">
-            <li>Each team is allowed 1 technical pause per map for a maximum of 10 minutes.</li>
-            <li>Each team is allowed 1 tactical timeout per side per map, plus 1 in overtime.</li>
-          </ul>
-
-          <p className="rulebook-note">
-            All images used in the rulebook are sourced from official VCT
-            rulebooks and/or VCT tournament broadcasts and are included only for
-            reference and illustrative purposes.
+        <Card className="p-6 sm:p-8">
+          <h3 className="text-2xl text-white">3. Women&apos;s Tournament - Special Rules</h3>
+          <div className="mt-5 grid gap-5">
+            {[
+              {
+                title: "3.1 Eligibility",
+                items: [
+                  "Players must identify only as female (cisgender).",
+                  "All players must be Sri Lankan citizens or residents.",
+                  "Minimum age is 10 years, and parental consent is required for players under 16.",
+                  "Riot ID must match the registration details.",
+                  "Quest Esports may request official ID for verification.",
+                ],
+              },
+              {
+                title: "3.2 Team Formation",
+                items: [
+                  "Teams must have 5 core players.",
+                  "Up to 2 substitutes are allowed.",
+                  "Solo registrations may be placed into teams by the organizers.",
+                ],
+              },
+              {
+                title: "3.5 CAM-on Refereeing",
+                items: [
+                  "Video verification through Zoom, Discord, or Google Meet may be mandatory when requested.",
+                  "Teams must inform organizers of the chosen platform 30 minutes before the match.",
+                  "Refusal or failure to comply may result in disqualification.",
+                ],
+              },
+            ].map((subsection) => (
+              <div key={subsection.title} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+                <h4 className="text-xl text-white">{subsection.title}</h4>
+                <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
+                  {subsection.items.map((item) => (
+                    <li key={item} className="flex gap-3">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 text-sm italic text-slate-500">
+            All images used in the rulebook are sourced from official VCT rulebooks and/or VCT tournament broadcasts and are included only for reference and illustrative purposes.
           </p>
-        </div>
+        </Card>
 
-        <div className="rulebook-section">
-          <h3>Back View / Side View Camera Examples</h3>
-          <p>Examples of correct and incorrect camera setups for player monitoring.</p>
-          <div className="rulebook-image-wrap">
-            <Image
-              src="/images/pc-camera-dos-donts.jpg"
-              alt="PC Camera Dos and Donts"
-              width={1600}
-              height={900}
-            />
+        <Card className="p-6 sm:p-8">
+          <h3 className="text-2xl text-white">Back View / Side View Camera Examples</h3>
+          <p className="mt-3 text-sm text-slate-400">Examples of correct and incorrect camera setups for player monitoring.</p>
+          <div className="mt-5 overflow-hidden rounded-[24px] border border-white/8">
+            <Image src="/images/pc-camera-dos-donts.jpg" alt="PC Camera Dos and Donts" width={1600} height={900} />
           </div>
-        </div>
-
+        </Card>
       </div>
-    </section>
+    </Section>
   );
 }

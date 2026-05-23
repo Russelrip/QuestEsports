@@ -1,46 +1,37 @@
 import Image from "next/image";
+import { Card } from "@/components/ui/card";
+import { Section } from "@/components/ui/section";
 import { videoSections, type VideoItem } from "@/lib/media";
 
-function VideoSection({
-  title,
-  videos,
-  paddingTop,
-}: {
-  title: string;
-  videos: VideoItem[];
-  paddingTop: string;
-}) {
+function VideoSection({ title, videos }: { title: string; videos: VideoItem[] }) {
   return (
-    <section className="videos-gallery-section" style={{ paddingTop }}>
-      <div className="container">
-        <h2>{title}</h2>
+    <Section className="pt-6">
+      <div className="mb-6">
+        <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Video Library</p>
+        <h2 className="mt-3 text-3xl text-white">{title}</h2>
+      </div>
 
-        <div className="videos-grid">
-          {videos.map((video) => (
-            <article className="video-card" key={video.href}>
-              <a
-                className="video-thumb-link"
-                href={video.href}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {videos.map((video) => (
+          <Card key={video.href} className="overflow-hidden">
+            <a href={video.href} target="_blank" rel="noopener noreferrer" className="block">
+              <div className="relative aspect-video">
                 <Image
-                  className="video-thumb"
                   src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`}
                   alt={video.alt}
-                  width={480}
-                  height={360}
+                  fill
+                  className="object-cover"
                 />
-              </a>
-              <div className="video-card-content">
-                <h3>{video.title}</h3>
-                <p>{video.subtitle}</p>
               </div>
-            </article>
-          ))}
-        </div>
+            </a>
+            <div className="space-y-2 p-5">
+              <h3 className="text-xl text-white">{video.title}</h3>
+              <p className="text-sm text-slate-400">{video.subtitle}</p>
+            </div>
+          </Card>
+        ))}
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -48,12 +39,7 @@ export default function MatchVideosContent() {
   return (
     <>
       {videoSections.map((section) => (
-        <VideoSection
-          key={section.title}
-          title={section.title}
-          videos={[...section.videos]}
-          paddingTop={section.paddingTop}
-        />
+        <VideoSection key={section.title} title={section.title} videos={[...section.videos]} />
       ))}
     </>
   );

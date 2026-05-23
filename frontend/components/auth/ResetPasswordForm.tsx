@@ -1,52 +1,46 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useFormFields } from "@/hooks/useFormFields";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import AuthPanel from "@/components/auth/AuthPanel";
+import { Button, buttonClassName } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 
-type ResetPasswordFields = {
-  newPassword: string;
-  confirmPassword: string;
-};
+const resetPasswordSchema = z
+  .object({
+    newPassword: z.string().min(8, "Password must be at least 8 characters long."),
+    confirmPassword: z.string().min(1, "Please confirm your password."),
+  })
+  .refine((value) => value.newPassword === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Confirm password must match.",
+  });
 
-const initialFields: ResetPasswordFields = {
-  newPassword: "",
-  confirmPassword: "",
-};
+type ResetPasswordValues = z.infer<typeof resetPasswordSchema>;
 
 export default function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = useMemo(() => searchParams.get("token") || "", [searchParams]);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const { fields, handleFieldChange, resetFields } =
-    useFormFields<ResetPasswordFields>(initialFields);
+  const form = useForm<ResetPasswordValues>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: {
+      newPassword: "",
+      confirmPassword: "",
+    },
+  });
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSuccessMessage("");
-    setError("");
-
+  const onSubmit = form.handleSubmit(async (values) => {
     if (!token) {
-      setError("Reset token is missing.");
+      form.setError("root", { message: "Reset token is missing." });
       return;
     }
-
-    if (fields.newPassword.length < 8) {
-      setError("Password must be at least 8 characters long.");
-      return;
-    }
-
-    if (fields.newPassword !== fields.confirmPassword) {
-      setError("Confirm password must match.");
-      return;
-    }
-
-    setIsSubmitting(true);
 
     try {
       const { response, data } = await apiFetchJson<{
@@ -56,91 +50,58 @@ export default function ResetPasswordForm() {
         method: "POST",
         json: {
           token,
-          newPassword: fields.newPassword,
+          newPassword: values.newPassword,
         },
       });
 
-      const errorMessage = getApiErrorMessage(
-        response,
-        data,
-        "Could not reset your password."
-      );
+      const errorMessage = getApiErrorMessage(response, data, "Could not reset your password.");
       if (errorMessage) {
-        setError(errorMessage);
+        form.setError("root", { message: errorMessage });
         return;
       }
 
-      setSuccessMessage(
-        data.message || "Your password has been reset successfully. Please sign in again."
-      );
-      resetFields();
+      form.reset();
       window.setTimeout(() => {
         router.push("/login");
       }, 1200);
-    } catch (requestError) {
-      console.error("Reset password request failed:", requestError);
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setIsSubmitting(false);
+      form.setError("root", {
+        message: data.message || "Your password has been reset successfully. Redirecting to login...",
+      });
+    } catch (error) {
+      console.error("Reset password request failed:", error);
+      form.setError("root", { message: "Something went wrong. Please try again." });
     }
-  };
+  });
 
   return (
-    <section className="login-section">
-      <div className="form-container login-container">
-        <div className="login-box">
-          <h2>Reset Password</h2>
-          <p className="section-intro">
-            Choose a new password for your Quest Esports account.
-          </p>
-
-          {!token ? (
-            <div className="auth-callout auth-callout-warning">
-              <p>This reset link is missing its token. Request a fresh password reset email.</p>
-              <Link href="/forgot-password" className="btn btn-secondary btn-small">
-                Request New Link
-              </Link>
-            </div>
-          ) : (
-            <form className="login-form" onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label htmlFor="newPassword">New Password *</label>
-                <input
-                  id="newPassword"
-                  name="newPassword"
-                  type="password"
-                  value={fields.newPassword}
-                  onChange={handleFieldChange}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="confirmPassword">Confirm Password *</label>
-                <input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  value={fields.confirmPassword}
-                  onChange={handleFieldChange}
-                  required
-                />
-              </div>
-
-              {successMessage ? <p className="success-inline">{successMessage}</p> : null}
-              {error ? <p className="error-message">{error}</p> : null}
-
-              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                {isSubmitting ? "Resetting..." : "Reset Password"}
-              </button>
-            </form>
-          )}
-
-          <p className="form-footer">
-            <Link href="/login">Back to Login</Link>
-          </p>
+    <AuthPanel
+      title="Reset Password"
+      description="Choose a new password to regain access to your Quest Esports account."
+      eyebrow="Secure Reset"
+    >
+      {!token ? (
+        <div className="rounded-[24px] border border-amber-300/20 bg-amber-400/8 p-5">
+          <p className="text-sm text-slate-200">This reset link is missing its token. Request a fresh password reset email.</p>
+          <div className="mt-4">
+            <Link href="/forgot-password" className={buttonClassName({ variant: "secondary" })}>
+              Request New Link
+            </Link>
+          </div>
         </div>
-      </div>
-    </section>
+      ) : (
+        <form className="grid gap-5" onSubmit={onSubmit}>
+          <FormField label="New Password" htmlFor="newPassword" error={form.formState.errors.newPassword?.message} required>
+            <Input id="newPassword" type="password" {...form.register("newPassword")} />
+          </FormField>
+          <FormField label="Confirm Password" htmlFor="confirmPassword" error={form.formState.errors.confirmPassword?.message} required>
+            <Input id="confirmPassword" type="password" {...form.register("confirmPassword")} />
+          </FormField>
+          {form.formState.errors.root?.message ? <p className="text-sm text-slate-300">{form.formState.errors.root.message}</p> : null}
+          <Button type="submit" disabled={form.formState.isSubmitting}>
+            {form.formState.isSubmitting ? "Resetting..." : "Reset Password"}
+          </Button>
+        </form>
+      )}
+    </AuthPanel>
   );
 }

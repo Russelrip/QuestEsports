@@ -1,259 +1,160 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/EmptyState";
-import {
-  Pagination,
-  TeamRegistration,
-  TournamentOption,
-  adminRequest,
-  emptyPagination,
-  formatAdminDateTime,
-  getAdminPaginationSummary,
-} from "@/lib/admin";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { AdminTableSkeleton } from "@/components/ui/skeleton";
+import { useAdminRegistrations } from "@/hooks/api/useAdmin";
+import { useToastStore } from "@/hooks/useToastStore";
+import { adminRequest, getAdminPaginationSummary, type TeamRegistration } from "@/lib/admin";
 
 export default function AdminRegistrationsManager() {
-  const [registrations, setRegistrations] = useState<TeamRegistration[]>([]);
-  const [tournaments, setTournaments] = useState<TournamentOption[]>([]);
-  const [pagination, setPagination] = useState<Pagination>(emptyPagination);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [tournament, setTournament] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
+  const { data, error, loading, refetch } = useAdminRegistrations(search, tournament, status, page);
+  const showToast = useToastStore((state) => state.showToast);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        pageSize: "10",
-      });
-
-      if (search.trim()) {
-        params.set("search", search.trim());
-      }
-      if (tournament) {
-        params.set("tournament", tournament);
-      }
-      if (status) {
-        params.set("status", status);
-      }
-
-      const data = await adminRequest<{
-        registrations: TeamRegistration[];
-        tournaments: TournamentOption[];
-        pagination: Pagination;
-      }>(`/api/admin/team-registrations?${params.toString()}`);
-
-      setRegistrations(data.registrations);
-      setTournaments(data.tournaments);
-      setPagination(data.pagination);
-    } catch (nextError) {
-      setError(
-        nextError instanceof Error ? nextError.message : "Unable to load registrations."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, status, tournament]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const registrations = data?.registrations || [];
+  const tournaments = data?.tournaments || [];
+  const pagination = data?.pagination;
 
   const updateRegistration = async (
     registrationId: string,
-    updates: Partial<
-      Pick<TeamRegistration, "status" | "paymentStatus" | "verificationStatus">
-    >
+    updates: Partial<Pick<TeamRegistration, "status" | "paymentStatus" | "verificationStatus">>
   ) => {
     try {
-      const data = await adminRequest<{ registration: TeamRegistration }>(
-        `/api/admin/team-registrations/${registrationId}/status`,
-        {
-          method: "PATCH",
-          json: updates,
-        }
-      );
-
-      setRegistrations((current) =>
-        current.map((registration) =>
-          registration.id === registrationId ? data.registration : registration
-        )
-      );
+      await adminRequest(`/api/admin/team-registrations/${registrationId}/status`, {
+        method: "PATCH",
+        json: updates,
+      });
+      showToast({ tone: "success", title: "Registration updated" });
+      await refetch();
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to update registration."
-      );
+      showToast({
+        tone: "error",
+        title: "Unable to update registration",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     }
   };
 
   return (
     <AdminShell
       title="Registrations"
-      description="Review registrations, filter by tournament, and update approval or payment status."
+      description="Review submissions, adjust approval and payment status, and keep tournament entry data clean."
     >
-      <div className="admin-users-card">
-        <div className="admin-users-head">
+      <Card className="p-6 sm:p-8">
+        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h3>Team Registrations</h3>
-            <p>Each registration is clearly attached to one tournament.</p>
+            <h3 className="text-2xl text-white">Team Registrations</h3>
+            <p className="text-sm text-slate-400">Each registration is attached to one tournament and one captain account.</p>
           </div>
-          <div className="admin-filter-row">
-            <input
-              type="search"
-              className="admin-search-input"
-              value={search}
-              onChange={(event) => {
-                setPage(1);
-                setSearch(event.target.value);
-              }}
-              placeholder="Search teams or captains..."
-            />
-            <select
-              value={tournament}
-              onChange={(event) => {
-                setPage(1);
-                setTournament(event.target.value);
-              }}
-            >
+          <div className="grid gap-3 md:grid-cols-3">
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search teams or captains..." />
+            <Select value={tournament} onChange={(event) => setTournament(event.target.value)}>
               <option value="">All tournaments</option>
               {tournaments.map((item) => (
-                <option key={item.id} value={item.slug}>
-                  {item.title}
-                </option>
+                <option key={item.id} value={item.slug}>{item.title}</option>
               ))}
-            </select>
-            <select
-              value={status}
-              onChange={(event) => {
-                setPage(1);
-                setStatus(event.target.value);
-              }}
-            >
+            </Select>
+            <Select value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">All statuses</option>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
-            </select>
+            </Select>
           </div>
         </div>
 
         {loading ? (
-          <EmptyState description="Loading registrations..." />
+          <AdminTableSkeleton />
         ) : error ? (
           <EmptyState description={error} />
         ) : registrations.length === 0 ? (
           <EmptyState description="No registrations matched your filters." />
         ) : (
-          <>
-            <div className="admin-users-table-wrap">
-              <table className="admin-users-table">
-                <thead>
-                  <tr>
-                    <th>Team</th>
-                    <th>Tournament</th>
-                    <th>Captain</th>
-                    <th>Submitted</th>
-                    <th>Approval</th>
-                    <th>Payment</th>
-                    <th>Verification</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {registrations.map((registration) => (
-                    <tr key={registration.id}>
-                      <td data-label="Team">{registration.teamName}</td>
-                      <td data-label="Tournament">{registration.tournament.title}</td>
-                      <td data-label="Captain">
-                        {registration.captain.name}
-                        <br />
-                        <small>{registration.captain.email}</small>
-                      </td>
-                      <td data-label="Submitted">
-                        {formatAdminDateTime(registration.createdAt)}
-                      </td>
-                      <td data-label="Approval">
-                        <select
-                          value={registration.status}
-                          onChange={(event) =>
-                            updateRegistration(registration.id, {
-                              status: event.target.value as TeamRegistration["status"],
-                            })
-                          }
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="approved">Approved</option>
-                          <option value="rejected">Rejected</option>
-                        </select>
-                      </td>
-                      <td data-label="Payment">
-                        <select
-                          value={registration.paymentStatus}
-                          onChange={(event) =>
-                            updateRegistration(registration.id, {
-                              paymentStatus:
-                                event.target.value as TeamRegistration["paymentStatus"],
-                            })
-                          }
-                        >
-                          <option value="unpaid">Unpaid</option>
-                          <option value="pending">Pending</option>
-                          <option value="paid">Paid</option>
-                        </select>
-                      </td>
-                      <td data-label="Verification">
-                        <select
-                          value={registration.verificationStatus}
-                          onChange={(event) =>
-                            updateRegistration(registration.id, {
-                              verificationStatus:
-                                event.target.value as TeamRegistration["verificationStatus"],
-                            })
-                          }
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="verified">Verified</option>
-                          <option value="flagged">Flagged</option>
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="admin-pagination">
-              <p>{getAdminPaginationSummary(pagination)}</p>
-              <div className="admin-pagination-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={pagination.page <= 1}
-                  onClick={() => setPage((current) => current - 1)}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => setPage((current) => current + 1)}
-                >
-                  Next
-                </button>
+          <div className="grid gap-4">
+            {registrations.map((registration) => (
+              <div key={registration.id} className="grid gap-4 rounded-[24px] border border-white/8 bg-white/5 p-5 xl:grid-cols-[1.1fr_1fr_1fr]">
+                <div>
+                  <p className="font-semibold text-white">{registration.teamName}</p>
+                  <p className="text-sm text-slate-400">{registration.tournament.title}</p>
+                  <p className="mt-2 text-sm text-slate-500">{registration.captain.name} · {registration.captain.email}</p>
+                  <p className="text-sm text-slate-500">Submitted {new Date(registration.createdAt).toLocaleString()}</p>
+                </div>
+                <div className="grid gap-3">
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Approval
+                    <Select
+                      value={registration.status}
+                      onChange={(event) =>
+                        updateRegistration(registration.id, {
+                          status: event.target.value as TeamRegistration["status"],
+                        })
+                      }
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </Select>
+                  </label>
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Payment
+                    <Select
+                      value={registration.paymentStatus}
+                      onChange={(event) =>
+                        updateRegistration(registration.id, {
+                          paymentStatus: event.target.value as TeamRegistration["paymentStatus"],
+                        })
+                      }
+                    >
+                      <option value="unpaid">Unpaid</option>
+                      <option value="pending">Pending</option>
+                      <option value="paid">Paid</option>
+                    </Select>
+                  </label>
+                </div>
+                <div className="grid gap-3">
+                  <label className="grid gap-2 text-sm text-slate-300">
+                    Verification
+                    <Select
+                      value={registration.verificationStatus}
+                      onChange={(event) =>
+                        updateRegistration(registration.id, {
+                          verificationStatus: event.target.value as TeamRegistration["verificationStatus"],
+                        })
+                      }
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="verified">Verified</option>
+                      <option value="flagged">Flagged</option>
+                    </Select>
+                  </label>
+                  <div className="rounded-[20px] border border-white/8 bg-black/20 p-3 text-sm text-slate-400">
+                    <p>Players: {registration.members.length}</p>
+                    <p>Contact: {registration.contactEmail}</p>
+                  </div>
+                </div>
               </div>
-            </div>
-          </>
+            ))}
+            {pagination ? (
+              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-400">{getAdminPaginationSummary(pagination)}</p>
+                <div className="flex gap-3">
+                  <Button type="button" variant="secondary" disabled={pagination.page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button>
+                  <Button type="button" variant="secondary" disabled={pagination.page >= pagination.totalPages} onClick={() => setPage((current) => current + 1)}>Next</Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         )}
-      </div>
+      </Card>
     </AdminShell>
   );
 }

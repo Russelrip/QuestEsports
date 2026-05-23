@@ -1,86 +1,41 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/EmptyState";
-import {
-  ContactMessage,
-  Pagination,
-  adminRequest,
-  emptyPagination,
-  formatAdminCompactDateTime,
-  getAdminPaginationSummary,
-} from "@/lib/admin";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { AdminTableSkeleton } from "@/components/ui/skeleton";
+import { useAdminMessages } from "@/hooks/api/useAdmin";
+import { useToastStore } from "@/hooks/useToastStore";
+import { adminRequest, getAdminPaginationSummary } from "@/lib/admin";
 
 export default function AdminContactMessagesManager() {
-  const [messages, setMessages] = useState<ContactMessage[]>([]);
-  const [pagination, setPagination] = useState<Pagination>(emptyPagination);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [isRead, setIsRead] = useState("");
   const [page, setPage] = useState(1);
+  const { data, error, loading, refetch } = useAdminMessages(search, isRead, page);
+  const showToast = useToastStore((state) => state.showToast);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        pageSize: "10",
-      });
-
-      if (search.trim()) {
-        params.set("search", search.trim());
-      }
-      if (isRead) {
-        params.set("isRead", isRead);
-      }
-
-      const data = await adminRequest<{
-        messages: ContactMessage[];
-        pagination: Pagination;
-      }>(`/api/admin/contact-messages?${params.toString()}`);
-
-      setMessages(data.messages);
-      setPagination(data.pagination);
-    } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to load contact messages."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [isRead, page, search]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const messages = data?.messages || [];
+  const pagination = data?.pagination;
 
   const updateReadStatus = async (messageId: string, nextIsRead: boolean) => {
     try {
-      const data = await adminRequest<{ contactMessage: ContactMessage }>(
-        `/api/admin/contact-messages/${messageId}`,
-        {
-          method: "PATCH",
-          json: { isRead: nextIsRead },
-        }
-      );
-
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === messageId ? data.contactMessage : message
-        )
-      );
+      await adminRequest(`/api/admin/contact-messages/${messageId}`, {
+        method: "PATCH",
+        json: { isRead: nextIsRead },
+      });
+      showToast({ tone: "success", title: nextIsRead ? "Marked as read" : "Marked as unread" });
+      await refetch();
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to update contact message."
-      );
+      showToast({
+        tone: "error",
+        title: "Unable to update message",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     }
   };
 
@@ -90,137 +45,81 @@ export default function AdminContactMessagesManager() {
     }
 
     try {
-      await adminRequest(`/api/admin/contact-messages/${messageId}`, {
-        method: "DELETE",
-      });
-      setMessages((current) => current.filter((message) => message.id !== messageId));
+      await adminRequest(`/api/admin/contact-messages/${messageId}`, { method: "DELETE" });
+      showToast({ tone: "success", title: "Message deleted" });
+      await refetch();
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to delete contact message."
-      );
+      showToast({
+        tone: "error",
+        title: "Unable to delete message",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     }
   };
 
   return (
     <AdminShell
       title="Contact Messages"
-      description="Review incoming messages, mark them read or unread, and remove spam."
+      description="Review support and partnership messages, update read status, and clear spam quickly."
     >
-      <div className="admin-users-card">
-        <div className="admin-users-head">
+      <Card className="p-6 sm:p-8">
+        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h3>Inbox</h3>
-            <p>Monitor questions and partnership requests coming from the website.</p>
+            <h3 className="text-2xl text-white">Inbox</h3>
+            <p className="text-sm text-slate-400">Monitor incoming messages from the public contact form.</p>
           </div>
-          <div className="admin-filter-row">
-            <input
-              type="search"
-              className="admin-search-input"
-              value={search}
-              onChange={(event) => {
-                setPage(1);
-                setSearch(event.target.value);
-              }}
-              placeholder="Search sender or subject..."
-            />
-            <select
-              value={isRead}
-              onChange={(event) => {
-                setPage(1);
-                setIsRead(event.target.value);
-              }}
-            >
+          <div className="grid gap-3 md:grid-cols-2">
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search sender or subject..." />
+            <Select value={isRead} onChange={(event) => setIsRead(event.target.value)}>
               <option value="">All statuses</option>
               <option value="false">Unread</option>
               <option value="true">Read</option>
-            </select>
+            </Select>
           </div>
         </div>
 
         {loading ? (
-          <EmptyState description="Loading contact messages..." />
+          <AdminTableSkeleton />
         ) : error ? (
           <EmptyState description={error} />
         ) : messages.length === 0 ? (
           <EmptyState description="No contact messages found." />
         ) : (
-          <>
-            <div className="admin-users-table-wrap">
-              <table className="admin-users-table">
-                <thead>
-                  <tr>
-                    <th>Sender</th>
-                    <th>Subject</th>
-                    <th>Message</th>
-                    <th>Submitted</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {messages.map((message) => (
-                    <tr key={message.id}>
-                      <td data-label="Sender">
-                        <strong>{message.name}</strong>
-                        <br />
-                        <small>{message.email}</small>
-                      </td>
-                      <td data-label="Subject">{message.subject}</td>
-                      <td className="admin-message-cell" data-label="Message">{message.message}</td>
-                      <td data-label="Submitted">
-                        {formatAdminCompactDateTime(message.createdAt)}
-                      </td>
-                      <td data-label="Status">{message.isRead ? "Read" : "Unread"}</td>
-                      <td data-label="Actions">
-                        <div className="admin-table-actions">
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-small"
-                            onClick={() => updateReadStatus(message.id, !message.isRead)}
-                          >
-                            Mark {message.isRead ? "Unread" : "Read"}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-small admin-danger-button"
-                            onClick={() => deleteMessage(message.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="admin-pagination">
-              <p>{getAdminPaginationSummary(pagination)}</p>
-              <div className="admin-pagination-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={pagination.page <= 1}
-                  onClick={() => setPage((current) => current - 1)}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={pagination.page >= pagination.totalPages}
-                  onClick={() => setPage((current) => current + 1)}
-                >
-                  Next
-                </button>
+          <div className="grid gap-4">
+            {messages.map((message) => (
+              <div key={message.id} className="grid gap-4 rounded-[24px] border border-white/8 bg-white/5 p-5 xl:grid-cols-[0.85fr_1.7fr_auto]">
+                <div>
+                  <p className="font-semibold text-white">{message.name}</p>
+                  <p className="text-sm text-slate-400">{message.email}</p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">{message.isRead ? "Read" : "Unread"}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-white">{message.subject}</p>
+                  <p className="mt-3 text-sm leading-7 text-slate-300">{message.message}</p>
+                  <p className="mt-3 text-xs text-slate-500">{new Date(message.createdAt).toLocaleString()}</p>
+                </div>
+                <div className="flex flex-wrap gap-3 xl:flex-col xl:items-end">
+                  <Button type="button" variant="secondary" onClick={() => updateReadStatus(message.id, !message.isRead)}>
+                    Mark {message.isRead ? "Unread" : "Read"}
+                  </Button>
+                  <Button type="button" variant="danger" onClick={() => deleteMessage(message.id)}>
+                    Delete
+                  </Button>
+                </div>
               </div>
-            </div>
-          </>
+            ))}
+            {pagination ? (
+              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-400">{getAdminPaginationSummary(pagination)}</p>
+                <div className="flex gap-3">
+                  <Button type="button" variant="secondary" disabled={pagination.page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button>
+                  <Button type="button" variant="secondary" disabled={pagination.page >= pagination.totalPages} onClick={() => setPage((current) => current + 1)}>Next</Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         )}
-      </div>
+      </Card>
     </AdminShell>
   );
 }

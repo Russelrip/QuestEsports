@@ -1,74 +1,41 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  fetchTeamInvitePreview,
-  respondToTeamInvite,
-  type TeamInvitePreview,
-} from "@/lib/teams";
+import AuthPanel from "@/components/auth/AuthPanel";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonClassName } from "@/components/ui/button";
+import { LoadingState } from "@/components/ui/loading-state";
+import { useTeamInvite } from "@/hooks/api/useTeams";
+import { respondToTeamInvite } from "@/lib/teams";
 
 export default function TeamInviteContent() {
   const searchParams = useSearchParams();
   const token = useMemo(() => searchParams.get("token") || "", [searchParams]);
-  const [status, setStatus] = useState<"loading" | "ready" | "success" | "error">(
-    "loading"
-  );
-  const [message, setMessage] = useState("Loading your team invite...");
-  const [invite, setInvite] = useState<TeamInvitePreview | null>(null);
+  const [status, setStatus] = useState<"ready" | "success" | "error">("ready");
+  const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState<"" | "accept" | "decline">("");
+  const { data: invite, loading, error, setData: setInvite } = useTeamInvite(token);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadInvite = async () => {
-      if (!token) {
-        setStatus("error");
-        setMessage("Team invite token is missing.");
-        return;
-      }
-
-      try {
-        const nextInvite = await fetchTeamInvitePreview(token);
-
-        if (cancelled) {
-          return;
-        }
-
-        setInvite(nextInvite);
-        if (nextInvite.inviteStatus === "pending") {
-          setStatus("ready");
-          setMessage("Review this team invite and choose whether to join.");
-          return;
-        }
-
-        setStatus("success");
-        setMessage(
-          nextInvite.inviteStatus === "accepted"
-            ? "This invite has already been accepted."
-            : "This invite has already been declined."
-        );
-      } catch (requestError) {
-        if (cancelled) {
-          return;
-        }
-
-        setStatus("error");
-        setMessage(
-          requestError instanceof Error
-            ? requestError.message
-            : "Could not load this team invite."
-        );
-      }
-    };
-
-    void loadInvite();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  const inviteStatus = invite?.inviteStatus;
+  const resolvedStatus =
+    status === "success" || status === "error"
+      ? status
+      : inviteStatus && inviteStatus !== "pending"
+        ? "success"
+        : "ready";
+  const resolvedMessage =
+    message ||
+    (!token
+      ? "Team invite token is missing."
+      : error
+        ? error
+        : inviteStatus === "accepted"
+          ? "This invite has already been accepted."
+          : inviteStatus === "declined"
+            ? "This invite has already been declined."
+            : "Review this team invite and choose whether to join.");
 
   const handleDecision = async (decision: "accept" | "decline") => {
     try {
@@ -77,86 +44,82 @@ export default function TeamInviteContent() {
       setInvite(response.invite);
       setStatus("success");
       setMessage(response.message);
-    } catch (requestError) {
+    } catch (nextError) {
       setStatus("error");
-      setMessage(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not update this team invite."
-      );
+      setMessage(nextError instanceof Error ? nextError.message : "Could not update this team invite.");
     } finally {
       setSubmitting("");
     }
   };
 
   return (
-    <section className="login-section">
-      <div className="form-container login-container">
-        <div className="login-box">
-          <h2>Team Invitation</h2>
-
+    <AuthPanel
+      title="Team Invitation"
+      description="Confirm whether you're joining the roster before the team locks in tournament registration."
+      eyebrow="Roster Invite"
+    >
+      <div className="grid gap-5">
+        {loading ? (
+          <LoadingState title="Loading invite" description="Fetching the roster invitation details." />
+        ) : (
           <div
-            className={`auth-callout ${
-              status === "success" ? "auth-callout-success" : "auth-callout-warning"
+            className={`rounded-[24px] p-5 text-sm ${
+              resolvedStatus === "success"
+                ? "border border-emerald-300/20 bg-emerald-400/8 text-slate-100"
+                : "border border-amber-300/20 bg-amber-400/8 text-slate-100"
             }`}
           >
-            <p>{message}</p>
+            {resolvedMessage}
           </div>
+        )}
 
-          {invite ? (
-            <div className="team-invite-summary">
-              <p>
-                <span>Player</span>
-                {invite.memberName}
-              </p>
-              <p>
-                <span>Team</span>
-                {invite.team.name}
-              </p>
-              <p>
-                <span>Captain</span>
-                {invite.team.captainName}
-              </p>
-              <p>
-                <span>Email</span>
-                {invite.email}
-              </p>
+        {invite ? (
+          <div className="grid gap-3 rounded-[24px] border border-white/8 bg-white/5 p-5 text-sm text-slate-300">
+            <div className="flex items-center justify-between gap-3">
+              <span>Invite Status</span>
+              <Badge>{invite.inviteStatus}</Badge>
             </div>
-          ) : null}
+            <p>
+              <span className="text-slate-500">Player:</span> {invite.memberName}
+            </p>
+            <p>
+              <span className="text-slate-500">Team:</span> {invite.team.name}
+            </p>
+            <p>
+              <span className="text-slate-500">Captain:</span> {invite.team.captainName}
+            </p>
+            <p>
+              <span className="text-slate-500">Email:</span> {invite.email}
+            </p>
+          </div>
+        ) : null}
 
-          {status === "ready" ? (
-            <div className="auth-inline-actions">
-              <button
-                type="button"
-                className="btn btn-primary btn-small"
-                disabled={Boolean(submitting)}
-                onClick={() => void handleDecision("accept")}
-              >
-                {submitting === "accept" ? "Accepting..." : "Accept Invite"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-small"
-                disabled={Boolean(submitting)}
-                onClick={() => void handleDecision("decline")}
-              >
-                {submitting === "decline" ? "Declining..." : "Decline"}
-              </button>
-            </div>
-          ) : null}
+        {resolvedStatus === "ready" ? (
+          <div className="flex flex-wrap gap-3">
+            <Button disabled={Boolean(submitting)} onClick={() => void handleDecision("accept")}>
+              {submitting === "accept" ? "Accepting..." : "Accept Invite"}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={Boolean(submitting)}
+              onClick={() => void handleDecision("decline")}
+            >
+              {submitting === "decline" ? "Declining..." : "Decline"}
+            </Button>
+          </div>
+        ) : null}
 
-          {status !== "loading" ? (
-            <div className="auth-inline-actions">
-              <Link href="/profile" className="btn btn-secondary btn-small">
-                Open Profile
-              </Link>
-              <Link href="/login" className="btn btn-primary btn-small">
-                Go to Login
-              </Link>
-            </div>
-          ) : null}
-        </div>
+        {!loading ? (
+          <div className="flex flex-wrap gap-3">
+            <Link href="/profile" className={buttonClassName({ variant: "secondary" })}>
+              Open Profile
+            </Link>
+            <Link href="/login" className={buttonClassName({})}>
+              Go to Login
+            </Link>
+          </div>
+        ) : null}
       </div>
-    </section>
+    </AuthPanel>
   );
 }

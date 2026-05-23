@@ -1,4 +1,3 @@
-import PageLayout from "@/components/PageLayout";
 import AdminRegistrationsManager from "@/components/admin/AdminRegistrationsManager";
 import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
 
@@ -9,12 +8,5 @@ export const metadata = buildNoIndexMetadata(
 );
 
 export default function AdminRegistrationsPage() {
-  return (
-    <PageLayout
-      title="Registration Management"
-      description={defaultPageDescriptions.adminRegistrations}
-    >
-      <AdminRegistrationsManager />
-    </PageLayout>
-  );
+  return <AdminRegistrationsManager />;
 }

@@ -1,80 +1,79 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { apiFetch, apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useFormFields } from "@/hooks/useFormFields";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
-import { fetchProfileTeams, type SavedTeam } from "@/lib/teams";
+import { Button, buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Container } from "@/components/ui/container";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { LoadingState } from "@/components/ui/loading-state";
+import { useTeams } from "@/hooks/api/useTeams";
+import { useToastStore } from "@/hooks/useToastStore";
+import { getInitials } from "@/lib/utils";
 
-type ProfileFormState = {
-  firstName: string;
-  lastName: string;
-  username: string;
-  email: string;
-  phone: string;
-  discordTag: string;
-};
+const profileSchema = z.object({
+  firstName: z.string().min(1, "First name is required."),
+  lastName: z.string().min(1, "Last name is required."),
+  username: z.string().min(1, "Username is required."),
+  email: z.string(),
+  phone: z.string().optional(),
+  discordTag: z.string().optional(),
+});
 
-type EmailChangeFormState = {
-  newEmail: string;
-  currentPassword: string;
-};
+const emailChangeSchema = z.object({
+  newEmail: z.string().email("Please enter a valid email address."),
+  currentPassword: z.string().min(1, "Current password is required."),
+});
 
-type EmailChangeFieldName = "newEmail" | "currentPassword";
-type EmailChangeFieldErrors = Partial<Record<EmailChangeFieldName, string>>;
-
-const emptyForm: ProfileFormState = {
-  firstName: "",
-  lastName: "",
-  username: "",
-  email: "",
-  phone: "",
-  discordTag: "",
-};
+type ProfileFormValues = z.infer<typeof profileSchema>;
+type EmailChangeValues = z.infer<typeof emailChangeSchema>;
 
 const formatMemberRole = (role: string, memberOrder: number) => {
   if (role === "CAPTAIN") {
     return "Captain";
   }
-
   if (role === "COACH") {
     return "Coach";
   }
-
   return `${role === "PLAYER" ? "Player" : "Substitute"} ${memberOrder}`;
 };
 
 export default function ProfileView() {
   const router = useRouter();
   const { user, refreshUser, logout, isLoading } = useAuth();
-  const {
-    fields: formData,
-    handleFieldChange,
-    resetFields,
-  } = useFormFields<ProfileFormState>(emptyForm);
-  const {
-    fields: emailChangeData,
-    handleFieldChange: handleEmailChangeField,
-    resetFields: resetEmailChangeFields,
-  } = useFormFields<EmailChangeFormState>({
-    newEmail: "",
-    currentPassword: "",
-  });
-  const [isSaving, setIsSaving] = useState(false);
-  const [isChangingEmail, setIsChangingEmail] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [emailChangeMessage, setEmailChangeMessage] = useState("");
-  const [emailChangeError, setEmailChangeError] = useState("");
-  const [emailChangeFieldErrors, setEmailChangeFieldErrors] =
-    useState<EmailChangeFieldErrors>({});
   const [activeTab, setActiveTab] = useState<"account" | "teams">("account");
-  const [teams, setTeams] = useState<SavedTeam[]>([]);
-  const [teamsLoading, setTeamsLoading] = useState(false);
-  const [teamsError, setTeamsError] = useState("");
+  const { data: teamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
+  const showToast = useToastStore((state) => state.showToast);
+  const teams = teamsData ?? [];
+
+  const profileForm = useForm<ProfileFormValues>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      username: "",
+      email: "",
+      phone: "",
+      discordTag: "",
+    },
+  });
+
+  const emailForm = useForm<EmailChangeValues>({
+    resolver: zodResolver(emailChangeSchema),
+    defaultValues: {
+      newEmail: "",
+      currentPassword: "",
+    },
+  });
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -82,487 +81,307 @@ export default function ProfileView() {
       return;
     }
 
-    if (!user) {
-      return;
+    if (user) {
+      profileForm.reset({
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        username: user.username || "",
+        email: user.email || "",
+        phone: user.phone || "",
+        discordTag: user.discordTag || "",
+      });
     }
-
-    resetFields({
-      firstName: user.firstName || "",
-      lastName: user.lastName || "",
-      username: user.username || "",
-      email: user.email || "",
-      phone: user.phone || "",
-      discordTag: user.discordTag || "",
-    });
-  }, [isLoading, resetFields, router, user]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadTeams = async () => {
-      if (!user) {
-        setTeams([]);
-        setTeamsError("");
-        return;
-      }
-
-      try {
-        setTeamsLoading(true);
-        setTeamsError("");
-        const nextTeams = await fetchProfileTeams();
-
-        if (cancelled) {
-          return;
-        }
-
-        setTeams(nextTeams);
-      } catch (requestError) {
-        if (cancelled) {
-          return;
-        }
-
-        console.error("Failed to load teams:", requestError);
-        setTeamsError("Could not load your saved teams right now.");
-      } finally {
-        if (!cancelled) {
-          setTeamsLoading(false);
-        }
-      }
-    };
-
-    void loadTeams();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  }, [isLoading, profileForm, router, user]);
 
   if (isLoading) {
-    return null;
+    return (
+      <section className="py-10">
+        <Container>
+          <LoadingState title="Loading profile" description="Checking your account and saved teams." />
+        </Container>
+      </section>
+    );
   }
 
   if (!user) {
     return null;
   }
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsSaving(true);
-    setMessage("");
-    setError("");
+  const initials = getInitials(user.firstName, user.lastName, user.username);
 
+  const submitProfile = profileForm.handleSubmit(async (values) => {
     try {
       const response = await apiFetch(`/api/users/${user.id}`, {
         method: "PATCH",
         json: {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          username: formData.username,
-          phone: formData.phone,
-          discordTag: formData.discordTag,
+          firstName: values.firstName,
+          lastName: values.lastName,
+          username: values.username,
+          phone: values.phone,
+          discordTag: values.discordTag,
         },
       });
 
       const data = await response.json();
-
       if (!response.ok || !data.success) {
-        setError(data.message || "Failed to update profile.");
+        profileForm.setError("root", { message: data.message || "Failed to update profile." });
         return;
       }
 
       refreshUser(data.user);
-      setMessage("Profile updated successfully.");
-    } catch (requestError) {
-      console.error("Profile update failed:", requestError);
-      setError("Something went wrong while updating your profile.");
-    } finally {
-      setIsSaving(false);
+      profileForm.setError("root", { message: "Profile updated successfully." });
+      showToast({ tone: "success", title: "Profile updated" });
+    } catch (error) {
+      console.error("Profile update failed:", error);
+      profileForm.setError("root", { message: "Something went wrong while updating your profile." });
+      showToast({ tone: "error", title: "Profile update failed" });
     }
-  };
+  });
 
-  const handleEmailChangeSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsChangingEmail(true);
-    setEmailChangeMessage("");
-    setEmailChangeError("");
-
-    const nextFieldErrors: EmailChangeFieldErrors = {};
-
-    if (
-      !emailChangeData.newEmail.trim() ||
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailChangeData.newEmail.trim())
-    ) {
-      nextFieldErrors.newEmail = "Please enter a valid email address.";
-    }
-
-    if (!emailChangeData.currentPassword) {
-      nextFieldErrors.currentPassword = "Current password is required.";
-    }
-
-    setEmailChangeFieldErrors(nextFieldErrors);
-    if (Object.keys(nextFieldErrors).length > 0) {
-      setIsChangingEmail(false);
-      return;
-    }
-
+  const submitEmailChange = emailForm.handleSubmit(async (values) => {
     try {
       const { response, data } = await apiFetchJson<{
         success?: boolean;
         message?: string;
         user?: typeof user;
         details?: {
-          fieldErrors?: EmailChangeFieldErrors;
+          fieldErrors?: Partial<Record<"newEmail" | "currentPassword", string>>;
         };
       }>("/api/email-change/request", {
         method: "POST",
-        json: {
-          newEmail: emailChangeData.newEmail,
-          currentPassword: emailChangeData.currentPassword,
-        },
+        json: values,
       });
 
-      const errorMessage = getApiErrorMessage(
-        response,
-        data,
-        "Failed to request email change."
-      );
-
+      const errorMessage = getApiErrorMessage(response, data, "Failed to request email change.");
       if (errorMessage) {
-        const serverFieldErrors = data.details?.fieldErrors ?? {};
-        setEmailChangeFieldErrors(serverFieldErrors);
-        setEmailChangeError(
-          Object.keys(serverFieldErrors).length === 0 ? errorMessage : ""
-        );
+        const fieldErrors = data.details?.fieldErrors ?? {};
+        for (const [key, value] of Object.entries(fieldErrors)) {
+          emailForm.setError(key as keyof EmailChangeValues, { message: value });
+        }
+        if (Object.keys(fieldErrors).length === 0) {
+          emailForm.setError("root", { message: errorMessage });
+        }
         return;
       }
 
       if (data.user) {
         refreshUser(data.user);
       }
-
-      setEmailChangeFieldErrors({});
-      setEmailChangeMessage(
-        data.message ||
-          "We sent a confirmation link to your new email address."
-      );
-      resetEmailChangeFields({
-        newEmail: "",
-        currentPassword: "",
+      emailForm.reset();
+      emailForm.setError("root", {
+        message: data.message || "We sent a confirmation link to your new email address.",
       });
-    } catch (requestError) {
-      console.error("Email change request failed:", requestError);
-      setEmailChangeError("Something went wrong while requesting the email change.");
-    } finally {
-      setIsChangingEmail(false);
+      showToast({ tone: "success", title: "Email change requested" });
+    } catch (error) {
+      console.error("Email change request failed:", error);
+      emailForm.setError("root", { message: "Something went wrong while requesting the email change." });
+      showToast({ tone: "error", title: "Email change failed" });
     }
-  };
+  });
 
   return (
-    <section className="profile-section">
-      <div className="form-container profile-layout">
-        <div className="profile-summary">
-          <span className="profile-badge">
-            {user.role === "admin" ? "Admin Account" : "Player Account"}
-          </span>
-          <h2>
-            {user.firstName} {user.lastName}
-          </h2>
-          <p className="profile-lead">
-            You are logged in as <strong>{user.username}</strong>.
-          </p>
-          <div className="profile-meta">
-            <p>
-              <span>Email</span>
-              {user.email}
-            </p>
-            <p>
-              <span>Email Status</span>
-              {user.emailVerified ? "Verified" : "Not verified"}
-            </p>
-          </div>
-          {user.pendingEmail ? (
-            <div className="auth-callout auth-callout-warning">
-              <p>
-                Email change pending for <strong>{user.pendingEmail}</strong>. Your
-                current email stays active until you confirm the link sent to the new
-                address.
-              </p>
+    <section className="py-8 sm:py-12">
+      <Container>
+        <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
+          <Card className="p-6 sm:p-8">
+            <div className="flex items-start gap-4">
+              <div className="flex size-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,rgba(139,92,246,0.95),rgba(34,211,238,0.72))] text-lg font-bold text-white">
+                {initials}
+              </div>
+              <div>
+                <Badge className="border-cyan-300/20 bg-cyan-400/10 text-cyan-100">
+                  {user.role === "admin" ? "Admin Account" : "Player Account"}
+                </Badge>
+                <h2 className="mt-4 text-3xl text-white">
+                  {user.firstName} {user.lastName}
+                </h2>
+                <p className="mt-2 text-sm text-slate-400">@{user.username}</p>
+              </div>
             </div>
-          ) : null}
-          {!user.emailVerified ? (
-            <div className="auth-callout auth-callout-warning">
-              <p>
-                Verify your email before registering for tournaments. If you signed up
-                with the wrong address, change it below first.
-              </p>
-              <ResendVerificationButton email={user.email} />
+
+            <div className="mt-8 grid gap-4">
+              <div className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Email</p>
+                <p className="mt-2 text-sm text-white">{user.email}</p>
+              </div>
+              <div className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Verification</p>
+                <p className="mt-2 text-sm text-white">{user.emailVerified ? "Verified" : "Not verified"}</p>
+              </div>
             </div>
-          ) : null}
-          <div className="profile-actions">
-            {user.role === "admin" && (
-              <>
-                <Link href="/admin" className="btn btn-primary btn-small">
+
+            {user.pendingEmail ? (
+              <div className="mt-6 rounded-[24px] border border-amber-300/20 bg-amber-400/8 p-5 text-sm text-slate-200">
+                Email change pending for <strong>{user.pendingEmail}</strong>. Your current email stays active until the new address is confirmed.
+              </div>
+            ) : null}
+
+            {!user.emailVerified ? (
+              <div className="mt-6 rounded-[24px] border border-amber-300/20 bg-amber-400/8 p-5">
+                <p className="text-sm text-slate-200">
+                  Verify your email before registering for tournaments. If you signed up with the wrong address, update it below first.
+                </p>
+                <div className="mt-4">
+                  <ResendVerificationButton email={user.email} />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              {user.role === "admin" ? (
+                <Link href="/admin" className={buttonClassName({ variant: "secondary" })}>
                   Open Admin Dashboard
                 </Link>
-                <Link href="/admin/users" className="btn btn-secondary btn-small">
-                  Manage Users
-                </Link>
-              </>
-            )}
-            <button
-              type="button"
-              className="btn btn-secondary btn-small"
-              onClick={async () => {
-                await logout();
-                router.push("/");
-              }}
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-
-        <div className="profile-card">
-          <div className="profile-tabs">
-            <button
-              type="button"
-              className={`profile-tab ${activeTab === "account" ? "is-active" : ""}`}
-              onClick={() => setActiveTab("account")}
-            >
-              Account
-            </button>
-            <button
-              type="button"
-              className={`profile-tab ${activeTab === "teams" ? "is-active" : ""}`}
-              onClick={() => setActiveTab("teams")}
-            >
-              Teams
-            </button>
-          </div>
-
-          {activeTab === "account" ? (
-            <>
-              <h3>Edit Profile</h3>
-              <form className="profile-form" onSubmit={handleSubmit}>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="firstName">First Name *</label>
-                    <input
-                      id="firstName"
-                      name="firstName"
-                      value={formData.firstName}
-                      onChange={handleFieldChange}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="lastName">Last Name *</label>
-                    <input
-                      id="lastName"
-                      name="lastName"
-                      value={formData.lastName}
-                      onChange={handleFieldChange}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="username">Username *</label>
-                    <input
-                      id="username"
-                      name="username"
-                      value={formData.username}
-                      onChange={handleFieldChange}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="email">Email</label>
-                    <input id="email" name="email" value={formData.email} disabled />
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="phone">Phone</label>
-                    <input
-                      id="phone"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleFieldChange}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="discordTag">Discord Tag</label>
-                    <input
-                      id="discordTag"
-                      name="discordTag"
-                      value={formData.discordTag}
-                      onChange={handleFieldChange}
-                    />
-                  </div>
-                </div>
-
-                {error && <p className="error-message">{error}</p>}
-                {message && <p className="success-inline">{message}</p>}
-
-                <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? "Saving..." : "Save Changes"}
-                </button>
-              </form>
-
-              <div className="auth-divider" />
-
-              <h3>Change Email</h3>
-              <p className="profile-lead">
-                Enter your new email and current password. We&apos;ll keep your
-                existing email active until the new one is confirmed.
-              </p>
-              <form className="profile-form" onSubmit={handleEmailChangeSubmit}>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="newEmail">New Email *</label>
-                    <input
-                      id="newEmail"
-                      name="newEmail"
-                      type="email"
-                      value={emailChangeData.newEmail}
-                      onChange={(event) => {
-                        handleEmailChangeField(event);
-                        const fieldName = event.target.name as EmailChangeFieldName;
-                        setEmailChangeFieldErrors((currentErrors) => {
-                          if (!currentErrors[fieldName]) {
-                            return currentErrors;
-                          }
-
-                          const nextErrors = { ...currentErrors };
-                          delete nextErrors[fieldName];
-                          return nextErrors;
-                        });
-                      }}
-                      aria-invalid={Boolean(emailChangeFieldErrors.newEmail)}
-                      required
-                    />
-                    {emailChangeFieldErrors.newEmail ? (
-                      <p className="field-error">{emailChangeFieldErrors.newEmail}</p>
-                    ) : null}
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="currentPassword">Current Password *</label>
-                    <input
-                      id="currentPassword"
-                      name="currentPassword"
-                      type="password"
-                      value={emailChangeData.currentPassword}
-                      onChange={(event) => {
-                        handleEmailChangeField(event);
-                        const fieldName = event.target.name as EmailChangeFieldName;
-                        setEmailChangeFieldErrors((currentErrors) => {
-                          if (!currentErrors[fieldName]) {
-                            return currentErrors;
-                          }
-
-                          const nextErrors = { ...currentErrors };
-                          delete nextErrors[fieldName];
-                          return nextErrors;
-                        });
-                      }}
-                      aria-invalid={Boolean(emailChangeFieldErrors.currentPassword)}
-                      required
-                    />
-                    {emailChangeFieldErrors.currentPassword ? (
-                      <p className="field-error">
-                        {emailChangeFieldErrors.currentPassword}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                {emailChangeError ? (
-                  <p className="error-message">{emailChangeError}</p>
-                ) : null}
-                {emailChangeMessage ? (
-                  <p className="success-inline">{emailChangeMessage}</p>
-                ) : null}
-
-                <button
-                  type="submit"
-                  className="btn btn-secondary"
-                  disabled={isChangingEmail}
-                >
-                  {isChangingEmail
-                    ? "Sending..."
-                    : user.pendingEmail
-                      ? "Send New Confirmation"
-                      : "Change Email"}
-                </button>
-              </form>
-            </>
-          ) : (
-            <div className="profile-team-panel">
-              <h3>Saved Teams</h3>
-              <p className="profile-lead">
-                Teams created during tournament registration appear here. Each added
-                player receives an email invite they can accept or decline.
-              </p>
-
-              {teamsError ? <p className="error-message">{teamsError}</p> : null}
-              {teamsLoading ? (
-                <p className="profile-lead">Loading your teams...</p>
-              ) : teams.length === 0 ? (
-                <div className="auth-callout">
-                  <p>
-                    No saved teams yet. Register a tournament team to save it here for
-                    future use.
-                  </p>
-                  <Link href="/tournament-registration" className="btn btn-primary btn-small">
-                    Register a Team
-                  </Link>
-                </div>
-              ) : (
-                <div className="profile-team-list">
-                  {teams.map((team) => (
-                    <article key={team.id} className="profile-team-card">
-                      <div className="profile-team-head">
-                        <div>
-                          <h4>{team.name}</h4>
-                          <p>
-                            Updated {new Date(team.updatedAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <Link
-                          href={`/tournament-registration?savedTeam=${team.id}`}
-                          className="btn btn-secondary btn-small"
-                        >
-                          Reuse Team
-                        </Link>
-                      </div>
-                      <div className="profile-team-members">
-                        {team.members.map((member) => (
-                          <div key={member.id} className="profile-team-member">
-                            <div>
-                              <strong>{member.name}</strong>
-                              <p>{formatMemberRole(member.role, member.memberOrder)}</p>
-                              <p>{member.email}</p>
-                            </div>
-                            <span
-                              className={`status-chip status-chip-${member.inviteStatus}`}
-                            >
-                              {member.inviteStatus}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
+              ) : null}
+              <Button
+                variant="ghost"
+                onClick={async () => {
+                  await logout();
+                  router.push("/");
+                }}
+              >
+                Logout
+              </Button>
             </div>
-          )}
+          </Card>
+
+          <Card className="p-6 sm:p-8">
+            <div className="mb-6 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "account" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
+                onClick={() => setActiveTab("account")}
+              >
+                Account
+              </button>
+              <button
+                type="button"
+                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "teams" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
+                onClick={() => setActiveTab("teams")}
+              >
+                Teams
+              </button>
+            </div>
+
+            {activeTab === "account" ? (
+              <div className="grid gap-8">
+                <div>
+                  <h3 className="text-2xl text-white">Edit Profile</h3>
+                  <form className="mt-5 grid gap-5" onSubmit={submitProfile}>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <FormField label="First Name" htmlFor="firstName" error={profileForm.formState.errors.firstName?.message} required>
+                        <Input id="firstName" {...profileForm.register("firstName")} />
+                      </FormField>
+                      <FormField label="Last Name" htmlFor="lastName" error={profileForm.formState.errors.lastName?.message} required>
+                        <Input id="lastName" {...profileForm.register("lastName")} />
+                      </FormField>
+                    </div>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <FormField label="Username" htmlFor="username" error={profileForm.formState.errors.username?.message} required>
+                        <Input id="username" {...profileForm.register("username")} />
+                      </FormField>
+                      <FormField label="Email" htmlFor="email">
+                        <Input id="email" disabled {...profileForm.register("email")} />
+                      </FormField>
+                    </div>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <FormField label="Phone" htmlFor="phone">
+                        <Input id="phone" {...profileForm.register("phone")} />
+                      </FormField>
+                      <FormField label="Discord Tag" htmlFor="discordTag">
+                        <Input id="discordTag" {...profileForm.register("discordTag")} />
+                      </FormField>
+                    </div>
+                    {profileForm.formState.errors.root?.message ? <p className="text-sm text-slate-300">{profileForm.formState.errors.root.message}</p> : null}
+                    <Button type="submit" disabled={profileForm.formState.isSubmitting}>
+                      {profileForm.formState.isSubmitting ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </form>
+                </div>
+
+                <div className="border-t border-white/8 pt-8">
+                  <h3 className="text-2xl text-white">Change Email</h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    We keep your current email active until the new address is confirmed.
+                  </p>
+                  <form className="mt-5 grid gap-5" onSubmit={submitEmailChange}>
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <FormField label="New Email" htmlFor="newEmail" error={emailForm.formState.errors.newEmail?.message} required>
+                        <Input id="newEmail" type="email" {...emailForm.register("newEmail")} />
+                      </FormField>
+                      <FormField label="Current Password" htmlFor="currentPassword" error={emailForm.formState.errors.currentPassword?.message} required>
+                        <Input id="currentPassword" type="password" {...emailForm.register("currentPassword")} />
+                      </FormField>
+                    </div>
+                    {emailForm.formState.errors.root?.message ? <p className="text-sm text-slate-300">{emailForm.formState.errors.root.message}</p> : null}
+                    <Button type="submit" variant="secondary" disabled={emailForm.formState.isSubmitting}>
+                      {emailForm.formState.isSubmitting ? "Sending..." : user.pendingEmail ? "Send New Confirmation" : "Change Email"}
+                    </Button>
+                  </form>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <h3 className="text-2xl text-white">Saved Teams</h3>
+                <p className="mt-2 text-sm text-slate-400">
+                  Teams created during tournament registration appear here for reuse in future events.
+                </p>
+
+                {teamsError ? <p className="mt-5 text-sm text-rose-300">{teamsError}</p> : null}
+                {teamsLoading ? (
+                  <div className="mt-6">
+                    <LoadingState title="Loading teams" description="Fetching your saved roster data." />
+                  </div>
+                ) : teams.length === 0 ? (
+                  <div className="mt-6 rounded-[24px] border border-white/8 bg-white/5 p-5">
+                    <p className="text-sm text-slate-300">
+                      No saved teams yet. Register a tournament team to save it here for future use.
+                    </p>
+                    <div className="mt-4">
+                      <Link href="/tournament-registration" className={buttonClassName({})}>
+                        Register a Team
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-6 grid gap-4">
+                    {teams.map((team) => (
+                      <div key={team.id} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h4 className="text-xl font-semibold text-white">{team.name}</h4>
+                            <p className="text-sm text-slate-400">
+                              Updated {new Date(team.updatedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Link
+                            href={`/tournament-registration?savedTeam=${team.id}`}
+                            className={buttonClassName({ variant: "secondary" })}
+                          >
+                            Reuse Team
+                          </Link>
+                        </div>
+                        <div className="mt-5 grid gap-3">
+                          {team.members.map((member) => (
+                            <div key={member.id} className="flex flex-col gap-3 rounded-[20px] border border-white/8 bg-black/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="font-medium text-white">{member.name}</p>
+                                <p className="text-sm text-slate-400">{formatMemberRole(member.role, member.memberOrder)}</p>
+                                <p className="text-sm text-slate-500">{member.email}</p>
+                              </div>
+                              <Badge>{member.inviteStatus}</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
         </div>
-      </div>
+      </Container>
     </section>
   );
 }

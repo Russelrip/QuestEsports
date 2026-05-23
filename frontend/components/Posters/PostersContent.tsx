@@ -3,9 +3,11 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
 import AdminPosterStudio from "@/components/Posters/AdminPosterStudio";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { Button } from "@/components/ui/button";
 import MediaModal from "@/components/Posters/MediaModal";
 import PosterGallery from "@/components/Posters/PosterGallery";
 import PosterPreview from "@/components/Posters/PosterPreview";
+import { useToastStore } from "@/hooks/useToastStore";
 import { fetchImages, fetchPosters, ImageAsset, Poster } from "@/lib/media";
 import {
   buildUploadPreviews,
@@ -21,6 +23,7 @@ import {
 export default function PostersContent() {
   const { user, isLoading: authLoading } = useAuth();
   const isAdmin = user?.role === "admin";
+  const showToast = useToastStore((state) => state.showToast);
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [posters, setPosters] = useState<Poster[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,10 +66,15 @@ export default function PostersContent() {
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to load posters.");
+      showToast({
+        tone: "error",
+        title: "Unable to load posters",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     } finally {
       setLoading(false);
     }
-  }, [authLoading, isAdmin]);
+  }, [authLoading, isAdmin, showToast]);
 
   useEffect(() => {
     void loadMedia();
@@ -114,6 +122,11 @@ export default function PostersContent() {
         imageAssetId: nextImages[0]?.id || current.imageAssetId,
       }));
       setUploadSuccess(`${nextImages.length} image${nextImages.length > 1 ? "s" : ""} uploaded.`);
+      showToast({
+        tone: "success",
+        title: "Images uploaded",
+        description: `${nextImages.length} image${nextImages.length > 1 ? "s" : ""} uploaded.`,
+      });
       setUploadTitle("");
       setUploadPreviews((current) => {
         revokeUploadPreviews(current);
@@ -121,6 +134,11 @@ export default function PostersContent() {
       });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to upload images.");
+      showToast({
+        tone: "error",
+        title: "Upload failed",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     } finally {
       setUploading(false);
     }
@@ -136,12 +154,18 @@ export default function PostersContent() {
       setPosters((current) => [createdPoster, ...current]);
       setSelectedPoster(createdPoster);
       setPosterSuccess("Poster entry saved.");
+      showToast({ tone: "success", title: "Poster saved" });
       setPosterDraft((current) => ({
         ...current,
         title: "",
       }));
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to create poster.");
+      showToast({
+        tone: "error",
+        title: "Unable to save poster",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     } finally {
       setPosterSaving(false);
     }
@@ -152,6 +176,11 @@ export default function PostersContent() {
       await exportPosterPng(asset, draft);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to export poster.");
+      showToast({
+        tone: "error",
+        title: "Export failed",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     }
   };
 
@@ -167,8 +196,14 @@ export default function PostersContent() {
       await deletePoster(poster.id);
       setPosters((current) => current.filter((item) => item.id !== poster.id));
       setSelectedPoster((current) => (current?.id === poster.id ? null : current));
+      showToast({ tone: "success", title: "Poster deleted" });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to delete poster.");
+      showToast({
+        tone: "error",
+        title: "Delete failed",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     } finally {
       setDeletingPosterId("");
     }
@@ -221,26 +256,28 @@ export default function PostersContent() {
             draft={selectedPoster}
             showOverlay={false}
           />
-          <div className="media-modal-copy">
-            <p>{selectedPoster.title}</p>
-            {selectedPoster.description ? <p>{selectedPoster.description}</p> : null}
-            <div className="admin-table-actions">
-              <button
+          <div className="mt-5 grid gap-4">
+            <div>
+              <p className="text-xl font-semibold text-white">{selectedPoster.title}</p>
+              {selectedPoster.description ? <p className="mt-2 text-sm text-slate-400">{selectedPoster.description}</p> : null}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button
                 type="button"
-                className="btn btn-secondary btn-small"
+                variant="secondary"
                 onClick={() => void handleExport(selectedPoster.imageAsset, selectedPoster)}
               >
                 Download PNG
-              </button>
+              </Button>
               {isAdmin ? (
-                <button
+                <Button
                   type="button"
-                  className="btn btn-secondary btn-small admin-danger-button"
+                  variant="danger"
                   onClick={() => void handleDeletePoster(selectedPoster)}
                   disabled={deletingPosterId === selectedPoster.id}
                 >
                   {deletingPosterId === selectedPoster.id ? "Deleting..." : "Delete Poster"}
-                </button>
+                </Button>
               ) : null}
             </div>
           </div>

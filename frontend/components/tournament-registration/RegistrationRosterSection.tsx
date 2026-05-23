@@ -1,29 +1,24 @@
 "use client";
 
 import RosterMemberFields from "@/components/tournament-registration/RosterMemberFields";
-import type {
-  MemberFieldGroup,
-  TournamentRegistrationFormData,
-} from "@/lib/tournament-registration";
-
-type RegistrationRosterSectionProps = {
-  legend: string;
-  groups: MemberFieldGroup[];
-  values: TournamentRegistrationFormData;
-  onChange: React.ChangeEventHandler<
-    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-  >;
-};
+import type { MemberFieldGroup, TournamentRegistrationFormData } from "@/lib/tournament-registration";
 
 export default function RegistrationRosterSection({
   legend,
   groups,
   values,
   onChange,
-}: RegistrationRosterSectionProps) {
+}: {
+  legend: string;
+  groups: MemberFieldGroup[];
+  values: TournamentRegistrationFormData;
+  onChange: React.ChangeEventHandler<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>;
+}) {
   return (
-    <fieldset>
-      <legend>{legend}</legend>
+    <section className="grid gap-4">
+      <div>
+        <h3 className="text-2xl text-white">{legend}</h3>
+      </div>
       {groups.map((player) => (
         <RosterMemberFields
           key={player.key}
@@ -34,6 +29,6 @@ export default function RegistrationRosterSection({
           onChange={onChange}
         />
       ))}
-    </fieldset>
+    </section>
   );
 }

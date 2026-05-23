@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import AuthPanel from "@/components/auth/AuthPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
+import { buttonClassName } from "@/components/ui/button";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 
 export default function VerifyEmailContent() {
@@ -25,88 +27,59 @@ export default function VerifyEmailContent() {
       }
 
       try {
-        const { response, data } = await apiFetchJson<{
-          success?: boolean;
-          message?: string;
-        }>(
+        const { response, data } = await apiFetchJson<{ success?: boolean; message?: string }>(
           `/api/email-verification/verify?token=${encodeURIComponent(token)}`
         );
-        const errorMessage = getApiErrorMessage(
-          response,
-          data,
-          "Could not verify your email."
-        );
+
+        const errorMessage = getApiErrorMessage(response, data, "Could not verify your email.");
         if (errorMessage) {
           throw new Error(errorMessage);
         }
 
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setStatus("success");
+          setMessage(data.message || "Your email has been verified successfully.");
+          await refreshSession();
         }
-
-        setStatus("success");
-        setMessage(data.message || "Your email has been verified successfully.");
-        await refreshSession();
-      } catch (requestError) {
-        if (cancelled) {
-          return;
+      } catch (error) {
+        if (!cancelled) {
+          setStatus("error");
+          setMessage(error instanceof Error ? error.message : "Could not verify your email.");
         }
-
-        setStatus("error");
-        setMessage(
-          requestError instanceof Error
-            ? requestError.message
-            : "Could not verify your email."
-        );
       }
     };
 
     void verifyEmail();
-
     return () => {
       cancelled = true;
     };
   }, [refreshSession, token]);
 
   return (
-    <section className="login-section">
-      <div className="form-container login-container">
-        <div className="login-box">
-          <h2>Verify Email</h2>
-
-          <div
-            className={`auth-callout ${
-              status === "success" ? "auth-callout-success" : "auth-callout-warning"
-            }`}
-          >
-            <p>{message}</p>
-          </div>
-
-          {status === "loading" ? null : status === "success" ? (
-            <div className="auth-inline-actions">
-              <Link href="/login" className="btn btn-primary btn-small">
-                Continue to Login
-              </Link>
-              <Link href="/profile" className="btn btn-secondary btn-small">
-                Open Profile
-              </Link>
-            </div>
-          ) : (
-            <div className="auth-inline-actions">
-              {user?.email && !user.emailVerified ? (
-                <ResendVerificationButton email={user.email} />
-              ) : (
-                <Link href="/signup" className="btn btn-secondary btn-small">
-                  Create Account
-                </Link>
-              )}
-              <Link href="/login" className="btn btn-primary btn-small">
-                Go to Login
-              </Link>
-            </div>
-          )}
+    <AuthPanel title="Verify Email" description="We’re confirming your account so you can register for events and manage your team." eyebrow="Email Verification">
+      <div className="grid gap-5">
+        <div className={`rounded-[24px] p-5 text-sm ${status === "success" ? "border border-emerald-300/20 bg-emerald-400/8 text-slate-100" : "border border-amber-300/20 bg-amber-400/8 text-slate-100"}`}>
+          {message}
         </div>
+
+        {status === "success" ? (
+          <div className="flex flex-wrap gap-3">
+            <Link href="/login" className={buttonClassName({})}>
+              Continue to Login
+            </Link>
+            <Link href="/profile" className={buttonClassName({ variant: "secondary" })}>
+              Open Profile
+            </Link>
+          </div>
+        ) : status === "error" ? (
+          <div className="flex flex-wrap gap-3">
+            {user?.email && !user.emailVerified ? <ResendVerificationButton email={user.email} /> : null}
+            <Link href="/login" className={buttonClassName({ variant: "secondary" })}>
+              Go to Login
+            </Link>
+          </div>
+        ) : null}
       </div>
-    </section>
+    </AuthPanel>
   );
 }

@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/auth";
+import { Badge } from "@/components/ui/badge";
 import {
   Tournament,
   canRegisterForTournament,
@@ -16,9 +18,11 @@ type RegistrationStatus = "loading" | "ready" | "registered";
 export default function RegisterTournamentButton({
   tournament,
   className = "",
+  closedAsButton = false,
 }: {
   tournament: Tournament;
   className?: string;
+  closedAsButton?: boolean;
 }) {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
@@ -54,9 +58,7 @@ export default function RegisterTournamentButton({
 
       try {
         setStatus("loading");
-        const response = await apiFetch(
-          `/api/tournament-registration/status/${tournament.slug}`
-        );
+        const response = await apiFetch(`/api/tournament-registration/status/${tournament.slug}`);
         const data = await response.json();
 
         if (!response.ok || !data.success) {
@@ -68,11 +70,7 @@ export default function RegisterTournamentButton({
         }
       } catch (nextError) {
         if (!cancelled) {
-          setError(
-            nextError instanceof Error
-              ? nextError.message
-              : "Could not verify registration status."
-          );
+          setError(nextError instanceof Error ? nextError.message : "Could not verify registration status.");
           setStatus("ready");
         }
       }
@@ -88,7 +86,6 @@ export default function RegisterTournamentButton({
     };
 
     window.addEventListener("quest:tournament-registered", handleRegistered);
-
     return () => {
       cancelled = true;
       window.removeEventListener("quest:tournament-registered", handleRegistered);
@@ -96,38 +93,35 @@ export default function RegisterTournamentButton({
   }, [authLoading, tournament, user]);
 
   if (!canRegisterForTournament(tournament)) {
-    return (
-      <div className={`tournament-register-cta ${className}`.trim()}>
-        <span className="registration-closed-chip">
+    if (closedAsButton) {
+      return (
+        <Button type="button" variant="secondary" disabled className={className}>
           {getTournamentRegistrationLabel(tournament)}
-        </span>
-      </div>
-    );
+        </Button>
+      );
+    }
+
+    return <Badge className={className}>{getTournamentRegistrationLabel(tournament)}</Badge>;
   }
 
   const isRegistered = status === "registered";
   const isChecking = status === "loading";
 
   return (
-    <div className={`tournament-register-cta ${className}`.trim()}>
-      <button
+    <div className={className}>
+      <Button
         type="button"
-        className={`btn ${isRegistered ? "btn-secondary is-disabled" : "btn-primary"}`}
+        variant={isRegistered ? "secondary" : "primary"}
         disabled={isRegistered || isChecking}
-        aria-disabled={isRegistered || isChecking}
         onClick={() => {
           const registrationPath = `/tournament-registration?tournament=${tournament.slug}`;
-          const destination = user
-            ? registrationPath
-            : `/login?redirect=${encodeURIComponent(registrationPath)}`;
-
+          const destination = user ? registrationPath : `/login?redirect=${encodeURIComponent(registrationPath)}`;
           router.push(destination);
         }}
       >
         {isRegistered ? "Registered" : isChecking ? "Checking..." : "Register Now"}
-      </button>
-
-      {error ? <p className="registration-status-note">{error}</p> : null}
+      </Button>
+      {error ? <p className="mt-2 text-xs text-rose-300">{error}</p> : null}
     </div>
   );
 }

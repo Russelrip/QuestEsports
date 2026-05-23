@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/EmptyState";
+import { buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { LoadingState } from "@/components/ui/loading-state";
 import { AdminDashboardStats, adminRequest } from "@/lib/admin";
 
 const emptyStats: AdminDashboardStats = {
@@ -13,6 +16,33 @@ const emptyStats: AdminDashboardStats = {
   unreadContactMessages: 0,
 };
 
+const statCards = (stats: AdminDashboardStats) => [
+  {
+    label: "Total Tournaments",
+    value: stats.totalTournaments,
+    href: "/admin/tournaments",
+    action: "Manage events",
+  },
+  {
+    label: "Open Tournaments",
+    value: stats.openTournaments,
+    href: "/admin/tournaments",
+    action: "Review status",
+  },
+  {
+    label: "Total Registrations",
+    value: stats.totalRegistrations,
+    href: "/admin/registrations",
+    action: "Review queue",
+  },
+  {
+    label: "Unread Contact Messages",
+    value: stats.unreadContactMessages,
+    href: "/admin/contact-messages",
+    action: "Open inbox",
+  },
+];
+
 export default function AdminOverview() {
   const [stats, setStats] = useState<AdminDashboardStats>(emptyStats);
   const [loading, setLoading] = useState(true);
@@ -21,16 +51,10 @@ export default function AdminOverview() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await adminRequest<{ stats: AdminDashboardStats }>(
-          "/api/admin/dashboard"
-        );
+        const data = await adminRequest<{ stats: AdminDashboardStats }>("/api/admin/dashboard");
         setStats(data.stats);
       } catch (nextError) {
-        setError(
-          nextError instanceof Error
-            ? nextError.message
-            : "Unable to load dashboard stats."
-        );
+        setError(nextError instanceof Error ? nextError.message : "Unable to load dashboard stats.");
       } finally {
         setLoading(false);
       }
@@ -42,64 +66,32 @@ export default function AdminOverview() {
   return (
     <AdminShell
       title="Control Center"
-      description="Track tournaments, registrations, and contact messages from a single place."
+      description="Track tournament health, registration load, and incoming community messages from one place."
       actions={
-        <Link href="/admin/tournaments/new" className="btn btn-primary btn-small">
+        <Link href="/admin/tournaments/new" className={buttonClassName({})}>
           New Tournament
         </Link>
       }
     >
       {loading ? (
-        <EmptyState description="Loading dashboard stats..." />
+        <LoadingState title="Loading dashboard" description="Fetching the latest platform stats." />
       ) : error ? (
         <EmptyState description={error} />
       ) : (
-        <div className="admin-stats-grid">
-          <article className="admin-stat-card">
-            <span>Total Tournaments</span>
-            <strong>{stats.totalTournaments}</strong>
-            <div className="admin-stat-actions">
-              <Link href="/admin/tournaments" className="btn btn-secondary btn-small">
-                View All
-              </Link>
-              <Link href="/admin/tournaments/new" className="btn btn-secondary btn-small">
-                Create
-              </Link>
-            </div>
-          </article>
-          <article className="admin-stat-card">
-            <span>Open Tournaments</span>
-            <strong>{stats.openTournaments}</strong>
-            <div className="admin-stat-actions">
-              <Link href="/admin/tournaments" className="btn btn-secondary btn-small">
-                Manage
-              </Link>
-            </div>
-          </article>
-          <article className="admin-stat-card">
-            <span>Total Registrations</span>
-            <strong>{stats.totalRegistrations}</strong>
-            <div className="admin-stat-actions">
-              <Link href="/admin/registrations" className="btn btn-secondary btn-small">
-                Review
-              </Link>
-            </div>
-          </article>
-          <article className="admin-stat-card">
-            <span>Unread Contact Messages</span>
-            <strong>{stats.unreadContactMessages}</strong>
-            <div className="admin-stat-actions">
-              <Link
-                href="/admin/contact-messages"
-                className="btn btn-secondary btn-small"
-              >
-                Open Inbox
-              </Link>
-            </div>
-          </article>
+        <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
+          {statCards(stats).map((card) => (
+            <Card key={card.label} className="p-6">
+              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{card.label}</p>
+              <p className="mt-5 text-4xl font-semibold text-white">{card.value}</p>
+              <div className="mt-6">
+                <Link href={card.href} className={buttonClassName({ variant: "secondary", className: "w-full" })}>
+                  {card.action}
+                </Link>
+              </div>
+            </Card>
+          ))}
         </div>
       )}
-
     </AdminShell>
   );
 }

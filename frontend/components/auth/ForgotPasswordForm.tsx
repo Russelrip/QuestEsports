@@ -1,94 +1,79 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import { useFormFields } from "@/hooks/useFormFields";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import AuthPanel from "@/components/auth/AuthPanel";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 
-type ForgotPasswordFields = {
-  email: string;
-};
+const forgotPasswordSchema = z.object({
+  email: z.string().email("Please enter a valid email address."),
+});
 
-const initialFields: ForgotPasswordFields = {
-  email: "",
-};
+type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
 
 export default function ForgotPasswordForm() {
-  const [successMessage, setSuccessMessage] = useState("");
-  const [error, setError] = useState("");
-  const { fields, handleFieldChange, resetFields } =
-    useFormFields<ForgotPasswordFields>(initialFields);
+  const form = useForm<ForgotPasswordValues>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: {
+      email: "",
+    },
+  });
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSuccessMessage("");
-    setError("");
-
+  const onSubmit = form.handleSubmit(async (values) => {
     try {
       const { response, data } = await apiFetchJson<{
         success?: boolean;
         message?: string;
       }>("/api/forgot-password", {
         method: "POST",
-        json: { email: fields.email },
+        json: values,
       });
 
-      const errorMessage = getApiErrorMessage(
-        response,
-        data,
-        "Could not submit your request."
-      );
+      const errorMessage = getApiErrorMessage(response, data, "Could not submit your request.");
       if (errorMessage) {
-        setError(errorMessage);
+        form.setError("root", { message: errorMessage });
         return;
       }
 
-      setSuccessMessage(
-        data.message ||
-          "If that email is registered, you will receive password reset instructions shortly."
-      );
-      resetFields();
-    } catch (requestError) {
-      console.error("Forgot password request failed:", requestError);
-      setError("Something went wrong. Please try again.");
+      form.reset();
+      form.setError("root", {
+        message:
+          data.message || "If that email is registered, you will receive password reset instructions shortly.",
+      });
+    } catch (error) {
+      console.error("Forgot password request failed:", error);
+      form.setError("root", { message: "Something went wrong. Please try again." });
     }
-  };
+  });
 
   return (
-    <section className="login-section">
-      <div className="form-container login-container">
-        <div className="login-box">
-          <h2>Forgot Password</h2>
-          <p className="section-intro">
-            Enter your email address and we&apos;ll send you a reset link if an account exists.
-          </p>
+    <AuthPanel
+      title="Forgot Password"
+      description="Request a secure reset link. If the address exists in our system, we’ll send instructions right away."
+      eyebrow="Account Recovery"
+    >
+      <form className="grid gap-5" onSubmit={onSubmit}>
+        <FormField label="Email Address" htmlFor="email" error={form.formState.errors.email?.message} required>
+          <Input id="email" type="email" {...form.register("email")} />
+        </FormField>
 
-          <form className="login-form" onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="email">Email Address *</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                value={fields.email}
-                onChange={handleFieldChange}
-                required
-              />
-            </div>
+        {form.formState.errors.root?.message ? (
+          <p className="text-sm text-slate-300">{form.formState.errors.root.message}</p>
+        ) : null}
 
-            {successMessage ? <p className="success-inline">{successMessage}</p> : null}
-            {error ? <p className="error-message">{error}</p> : null}
+        <Button type="submit" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? "Sending..." : "Send Reset Link"}
+        </Button>
 
-            <button type="submit" className="btn btn-primary">
-              Send Reset Link
-            </button>
-          </form>
-
-          <p className="form-footer">
-            <Link href="/login">Back to Login</Link>
-          </p>
-        </div>
-      </div>
-    </section>
+        <p className="text-sm text-slate-400">
+          <Link href="/login" className="text-white">Back to login</Link>
+        </p>
+      </form>
+    </AuthPanel>
   );
 }

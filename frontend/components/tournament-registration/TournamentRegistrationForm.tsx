@@ -5,11 +5,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import RegistrationRosterSection from "@/components/tournament-registration/RegistrationRosterSection";
+import { Button, buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { ProfileSkeleton } from "@/components/ui/skeleton";
+import { Section } from "@/components/ui/section";
+import { Select } from "@/components/ui/select";
 import { useFormFields } from "@/hooks/useFormFields";
 import {
   submitTournamentRegistration,
   useTournamentRegistrationStatus,
 } from "@/hooks/useTournamentRegistration";
+import { useTeams } from "@/hooks/api/useTeams";
+import { useToastStore } from "@/hooks/useToastStore";
 import {
   initialTournamentRegistrationFormData,
   requiredPlayerGroups,
@@ -17,11 +26,7 @@ import {
   type TournamentRegistrationFormData,
 } from "@/lib/tournament-registration";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
-import {
-  applySavedTeamToRegistrationForm,
-  fetchProfileTeams,
-  type SavedTeam,
-} from "@/lib/teams";
+import { applySavedTeamToRegistrationForm } from "@/lib/teams";
 import {
   Tournament,
   canRegisterForTournament,
@@ -41,18 +46,6 @@ const prefillKeys: Array<
   "contactEmail",
 ];
 
-function RegistrationStatusNote({
-  tournament,
-}: {
-  tournament?: Tournament;
-}) {
-  if (!tournament) {
-    return null;
-  }
-
-  return <small>Status: {getTournamentRegistrationLabel(tournament)}</small>;
-}
-
 export default function TournamentRegistrationForm({
   tournaments,
 }: {
@@ -64,9 +57,10 @@ export default function TournamentRegistrationForm({
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [savedTeams, setSavedTeams] = useState<SavedTeam[]>([]);
-  const [savedTeamsLoading, setSavedTeamsLoading] = useState(false);
   const [selectedSavedTeamId, setSelectedSavedTeamId] = useState("");
+  const showToast = useToastStore((state) => state.showToast);
+  const { data: savedTeamsData, loading: savedTeamsLoading, refetch: refetchTeams } = useTeams(Boolean(user));
+  const savedTeams = useMemo(() => savedTeamsData ?? [], [savedTeamsData]);
   const {
     fields: formData,
     handleFieldChange,
@@ -141,45 +135,6 @@ export default function TournamentRegistrationForm({
       return hasChanges ? nextFields : current;
     });
   }, [setFields, user]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadSavedTeams = async () => {
-      if (!user) {
-        setSavedTeams([]);
-        setSelectedSavedTeamId("");
-        return;
-      }
-
-      try {
-        setSavedTeamsLoading(true);
-        const teams = await fetchProfileTeams();
-
-        if (cancelled) {
-          return;
-        }
-
-        setSavedTeams(teams);
-      } catch (requestError) {
-        if (cancelled) {
-          return;
-        }
-
-        console.error("Failed to load saved teams:", requestError);
-      } finally {
-        if (!cancelled) {
-          setSavedTeamsLoading(false);
-        }
-      }
-    };
-
-    void loadSavedTeams();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
 
   useEffect(() => {
     if (authLoading || user) {
@@ -274,8 +229,7 @@ export default function TournamentRegistrationForm({
       setIsAlreadyRegistered(true);
       setStatusMessage("Registration saved. Your team is now marked as registered.");
       try {
-        const nextSavedTeams = await fetchProfileTeams();
-        setSavedTeams(nextSavedTeams);
+        const nextSavedTeams = (await refetchTeams()) ?? [];
         const matchingTeam = nextSavedTeams.find(
           (team) => team.name.toLowerCase() === formData.teamName.trim().toLowerCase()
         );
@@ -283,6 +237,7 @@ export default function TournamentRegistrationForm({
       } catch (teamReloadError) {
         console.error("Failed to refresh saved teams:", teamReloadError);
       }
+      showToast({ tone: "success", title: "Registration submitted", description: "Your team is now marked as registered." });
       resetFields({
         ...initialTournamentRegistrationFormData,
         tournament: formData.tournament,
@@ -295,6 +250,11 @@ export default function TournamentRegistrationForm({
           ? requestError.message
           : "Something went wrong. Please try again."
       );
+      showToast({
+        tone: "error",
+        title: "Registration failed",
+        description: requestError instanceof Error ? requestError.message : "Something went wrong. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
@@ -310,77 +270,77 @@ export default function TournamentRegistrationForm({
 
   if (authLoading) {
     return (
-      <section className="tournament-registration-section">
-        <div className="form-container">
-          <h2>Register Your Team</h2>
-          <p>Checking your login status...</p>
-        </div>
-      </section>
+      <Section className="pt-6">
+        <ProfileSkeleton />
+      </Section>
     );
   }
 
   if (!user) {
     return (
-      <section className="tournament-registration-section">
-        <div className="form-container">
-          <h2>Register Your Team</h2>
-          <p>You need to log in before registering for a tournament.</p>
-          <Link
-            href={`/login?redirect=${encodeURIComponent(loginRedirectPath)}`}
-            className="btn btn-primary"
-          >
-            Go to Login
-          </Link>
-        </div>
-      </section>
+      <Section className="pt-6">
+        <Card className="p-6 sm:p-8">
+          <h2 className="text-3xl text-white">Register Your Team</h2>
+          <p className="mt-3 text-sm text-slate-400">You need to log in before registering for a tournament.</p>
+          <div className="mt-6">
+            <Link href={`/login?redirect=${encodeURIComponent(loginRedirectPath)}`} className={buttonClassName({})}>
+              Go to Login
+            </Link>
+          </div>
+        </Card>
+      </Section>
     );
   }
 
   if (!user.emailVerified) {
     return (
-      <section className="tournament-registration-section">
-        <div className="form-container">
-          <h2>Register Your Team</h2>
-          <div className="auth-callout auth-callout-warning">
-            <h3>Verify your email first</h3>
-            <p>
-              Tournament registration is only available for verified accounts.
-              Check your inbox for the verification email, or send a new one below.
+      <Section className="pt-6">
+        <Card className="p-6 sm:p-8">
+          <h2 className="text-3xl text-white">Register Your Team</h2>
+          <div className="mt-5 rounded-[24px] border border-amber-300/20 bg-amber-400/8 p-5">
+            <h3 className="text-xl text-white">Verify your email first</h3>
+            <p className="mt-3 text-sm text-slate-300">
+              Tournament registration is only available for verified accounts. Check your inbox for the verification email, or send a new one below.
             </p>
-            <ResendVerificationButton email={user.email} />
+            <div className="mt-4">
+              <ResendVerificationButton email={user.email} />
+            </div>
           </div>
-        </div>
-      </section>
+        </Card>
+      </Section>
     );
   }
 
   return (
-    <section className="tournament-registration-section">
-      <div className="form-container">
-        <h2>Register Your Team</h2>
+    <Section className="pt-6">
+      <div className="grid gap-6">
+        <Card className="p-6 sm:p-8">
+          <h2 className="text-3xl text-white">Register Your Team</h2>
+          <p className="mt-3 text-sm text-slate-400">Complete the full roster submission for the selected tournament.</p>
+          <div className="mt-5 rounded-[24px] border border-white/8 bg-white/5 p-5">
+            <h3 className="text-xl text-white">Quest Esports Official VALORANT Rulebook</h3>
+            <p className="mt-3 text-sm text-slate-400">
+              Please read the official Quest Esports VALORANT Tournament Rulebook before submitting your registration.
+            </p>
+            <div className="mt-4">
+              <Link href="/rulebook" className={buttonClassName({ variant: "secondary" })}>
+                Open Rulebook
+              </Link>
+            </div>
+          </div>
+        </Card>
 
-        <div className="rulebook-box">
-          <h3 className="rulebook-title">Quest Esports Official VALORANT Rulebook</h3>
-          <p className="rulebook-text">
-            Please read the official Quest Esports VALORANT Tournament Rulebook
-            before submitting your registration.
-          </p>
-          <Link href="/rulebook" className="btn btn-secondary">
-            Open Rulebook
-          </Link>
-        </div>
-
-        <form
-          id="tournamentRegistrationForm"
-          className="tournament-registration-form"
-          onSubmit={handleSubmit}
-        >
+        <Card className="p-6 sm:p-8">
+        <form id="tournamentRegistrationForm" className="grid gap-6" onSubmit={handleSubmit}>
           <fieldset>
             <legend>Saved Teams</legend>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="savedTeam">Reuse Saved Team</label>
-                <select
+            <div className="grid gap-5">
+              <FormField
+                label="Reuse Saved Team"
+                htmlFor="savedTeam"
+                hint="Every tournament registration saves or updates the team on your profile and sends verification emails to roster members."
+              >
+                <Select
                   id="savedTeam"
                   name="savedTeam"
                   value={selectedSavedTeamId}
@@ -415,20 +375,15 @@ export default function TournamentRegistrationForm({
                       {team.name}
                     </option>
                   ))}
-                </select>
-                <small>
-                  Every tournament registration saves or updates the team on your
-                  profile and sends verification emails to roster members.
-                </small>
-              </div>
+                </Select>
+              </FormField>
             </div>
           </fieldset>
 
           <fieldset>
             <legend>Tournament Selection</legend>
-            <div className="form-group">
-              <label htmlFor="tournament">Select Tournament *</label>
-              <select
+            <FormField label="Select Tournament" htmlFor="tournament" required hint={selectedTournament ? `Status: ${getTournamentRegistrationLabel(selectedTournament)}` : undefined}>
+              <Select
                 id="tournament"
                 name="tournament"
                 required
@@ -442,101 +397,34 @@ export default function TournamentRegistrationForm({
                     {tournament.title}
                   </option>
                 ))}
-              </select>
-              <RegistrationStatusNote tournament={selectedTournament} />
-            </div>
+              </Select>
+            </FormField>
           </fieldset>
 
           <fieldset>
             <legend>Team &amp; Captain Information</legend>
-            <div className="form-group">
-              <label htmlFor="teamName">Team Name *</label>
-              <input
-                type="text"
-                id="teamName"
-                name="teamName"
-                required
-                value={formData.teamName}
-                onChange={handleFieldChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="teamLogo">Team Logo</label>
-              <input
-                type="file"
-                id="teamLogo"
-                name="teamLogo"
-                accept="image/*"
-                onChange={handleFieldChange}
-              />
-              <small>Upload team logo (PNG, JPG, max 5MB)</small>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="captainName">Team Captain Full Name *</label>
-              <input
-                type="text"
-                id="captainName"
-                name="captainName"
-                required
-                value={formData.captainName}
-                onChange={handleFieldChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="captainEmail">Team Captain Email Address *</label>
-              <input
-                type="email"
-                id="captainEmail"
-                name="captainEmail"
-                required
-                value={formData.captainEmail}
-                readOnly
-                disabled
-              />
-              <small>Captain email is tied to your signed-in account.</small>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="captainPhone">WhatsApp Contact Number *</label>
-                <input
-                  type="tel"
-                  id="captainPhone"
-                  name="captainPhone"
-                  placeholder="076 XXX XXXX"
-                  required
-                  value={formData.captainPhone}
-                  onChange={handleFieldChange}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="captainDiscord">Discord Tag *</label>
-                <input
-                  type="text"
-                  id="captainDiscord"
-                  name="captainDiscord"
-                  placeholder="username#1234"
-                  required
-                  value={formData.captainDiscord}
-                  onChange={handleFieldChange}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="captainRiotId">Riot ID (Valorant) *</label>
-              <input
-                type="text"
-                id="captainRiotId"
-                name="captainRiotId"
-                placeholder="Username#Region"
-                required
-                value={formData.captainRiotId}
-                onChange={handleFieldChange}
-              />
+            <div className="grid gap-5 sm:grid-cols-2">
+              <FormField label="Team Name" htmlFor="teamName" required>
+                <Input type="text" id="teamName" name="teamName" required value={formData.teamName} onChange={handleFieldChange} />
+              </FormField>
+              <FormField label="Team Logo" htmlFor="teamLogo" hint="Upload team logo (PNG, JPG, max 5MB)">
+                <Input type="file" id="teamLogo" name="teamLogo" accept="image/*" onChange={handleFieldChange} />
+              </FormField>
+              <FormField label="Team Captain Full Name" htmlFor="captainName" required>
+                <Input type="text" id="captainName" name="captainName" required value={formData.captainName} onChange={handleFieldChange} />
+              </FormField>
+              <FormField label="Team Captain Email Address" htmlFor="captainEmail" required hint="Captain email is tied to your signed-in account.">
+                <Input type="email" id="captainEmail" name="captainEmail" required value={formData.captainEmail} readOnly disabled />
+              </FormField>
+              <FormField label="WhatsApp Contact Number" htmlFor="captainPhone" required>
+                <Input type="tel" id="captainPhone" name="captainPhone" placeholder="076 XXX XXXX" required value={formData.captainPhone} onChange={handleFieldChange} />
+              </FormField>
+              <FormField label="Discord Tag" htmlFor="captainDiscord" required>
+                <Input type="text" id="captainDiscord" name="captainDiscord" placeholder="username#1234" required value={formData.captainDiscord} onChange={handleFieldChange} />
+              </FormField>
+              <FormField label="Riot ID (Valorant)" htmlFor="captainRiotId" required className="sm:col-span-2">
+                <Input type="text" id="captainRiotId" name="captainRiotId" placeholder="Username#Region" required value={formData.captainRiotId} onChange={handleFieldChange} />
+              </FormField>
             </div>
           </fieldset>
 
@@ -556,118 +444,59 @@ export default function TournamentRegistrationForm({
 
           <fieldset>
             <legend>Coach Details (Optional)</legend>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="coachName">Coach Full Name</label>
-                <input
-                  type="text"
-                  id="coachName"
-                  name="coachName"
-                  value={formData.coachName}
-                  onChange={handleFieldChange}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="coachEmail">Coach Email Address</label>
-                <input
-                  type="email"
-                  id="coachEmail"
-                  name="coachEmail"
-                  value={formData.coachEmail}
-                  onChange={handleFieldChange}
-                />
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="coachDiscord">Discord Username</label>
-                <input
-                  type="text"
-                  id="coachDiscord"
-                  name="coachDiscord"
-                  value={formData.coachDiscord}
-                  onChange={handleFieldChange}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="coachRiotId">Riot ID</label>
-                <input
-                  type="text"
-                  id="coachRiotId"
-                  name="coachRiotId"
-                  value={formData.coachRiotId}
-                  onChange={handleFieldChange}
-                />
-              </div>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <FormField label="Coach Full Name" htmlFor="coachName">
+                <Input type="text" id="coachName" name="coachName" value={formData.coachName} onChange={handleFieldChange} />
+              </FormField>
+              <FormField label="Coach Email Address" htmlFor="coachEmail">
+                <Input type="email" id="coachEmail" name="coachEmail" value={formData.coachEmail} onChange={handleFieldChange} />
+              </FormField>
+              <FormField label="Discord Username" htmlFor="coachDiscord">
+                <Input type="text" id="coachDiscord" name="coachDiscord" value={formData.coachDiscord} onChange={handleFieldChange} />
+              </FormField>
+              <FormField label="Riot ID" htmlFor="coachRiotId">
+                <Input type="text" id="coachRiotId" name="coachRiotId" value={formData.coachRiotId} onChange={handleFieldChange} />
+              </FormField>
             </div>
           </fieldset>
 
           <fieldset>
             <legend>Contact &amp; Agreement</legend>
-            <div className="form-group">
-              <label htmlFor="contactEmail">Contact Email Address *</label>
-              <input
-                type="email"
-                id="contactEmail"
-                name="contactEmail"
-                required
-                value={formData.contactEmail}
-                onChange={handleFieldChange}
-              />
-              <small>This email will be used for tournament notifications</small>
-            </div>
-
-            <div className="form-group checkbox">
-              <label>
-                <input
-                  type="checkbox"
-                  name="rulebook"
-                  required
-                  checked={formData.rulebook}
-                  onChange={handleFieldChange}
-                />{" "}
-                I confirm that I have read and agree to the Quest Esports VALORANT
-                Tournament Rulebook *
-              </label>
-            </div>
-
-            <div className="form-group checkbox">
-              <label>
-                <input
-                  type="checkbox"
-                  name="falsityWarning"
-                  required
-                  checked={formData.falsityWarning}
-                  onChange={handleFieldChange}
-                />{" "}
-                I acknowledge that providing false information or rule violations
-                may result in disqualification *
-              </label>
-            </div>
+            <FormField label="Contact Email Address" htmlFor="contactEmail" required hint="This email will be used for tournament notifications">
+              <Input type="email" id="contactEmail" name="contactEmail" required value={formData.contactEmail} onChange={handleFieldChange} />
+            </FormField>
+            <label className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
+              <input type="checkbox" name="rulebook" required checked={formData.rulebook} onChange={handleFieldChange} />
+              <span>I confirm that I have read and agree to the Quest Esports VALORANT Tournament Rulebook.</span>
+            </label>
+            <label className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
+              <input type="checkbox" name="falsityWarning" required checked={formData.falsityWarning} onChange={handleFieldChange} />
+              <span>I acknowledge that providing false information or rule violations may result in disqualification.</span>
+            </label>
           </fieldset>
 
-          {error ? <p className="error-message">{error}</p> : null}
-          {statusMessage ? <p className="success-inline">{statusMessage}</p> : null}
+          {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+          {statusMessage ? <p className="text-sm text-emerald-300">{statusMessage}</p> : null}
 
-          <button
+          <Button
             type="submit"
-            className="btn btn-primary"
             disabled={loading || registrationCheckLoading || isAlreadyRegistered}
           >
             {submitButtonLabel}
-          </button>
+          </Button>
         </form>
+        </Card>
 
         {submitted ? (
-          <div id="registrationSuccess" className="success-message">
-            <h3>Registration Successful!</h3>
-            <p>
+          <Card id="registrationSuccess" className="p-6 sm:p-8">
+            <h3 className="text-2xl text-white">Registration Successful!</h3>
+            <p className="mt-3 text-sm text-slate-300">
               Your team has been registered and saved to your profile. Roster members
               will receive email invites to confirm their place on the team.
             </p>
-          </div>
+          </Card>
         ) : null}
       </div>
-    </section>
+    </Section>
   );
 }

@@ -1,97 +1,45 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/EmptyState";
-import {
-  adminRequest,
-  emptyPagination,
-  getAdminPaginationSummary,
-  type Pagination,
-} from "@/lib/admin";
-import {
-  Tournament,
-  getTournamentRegistrationLabel,
-  getTournamentStatusBadgeClassName,
-  getTournamentStatusLabel,
-} from "@/lib/tournaments";
+import { Button, buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { AdminTableSkeleton } from "@/components/ui/skeleton";
+import { useAdminTournaments } from "@/hooks/api/useAdmin";
+import { useToastStore } from "@/hooks/useToastStore";
+import { adminRequest, getAdminPaginationSummary } from "@/lib/admin";
+import { type Tournament, getTournamentRegistrationLabel, getTournamentStatusLabel } from "@/lib/tournaments";
 
 export default function AdminTournamentsManager() {
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [visibility, setVisibility] = useState("");
   const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState<Pagination>(emptyPagination);
+  const { data, error, loading, refetch } = useAdminTournaments(search, status, visibility, page);
+  const showToast = useToastStore((state) => state.showToast);
 
-  const loadTournaments = useCallback(async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const params = new URLSearchParams();
-      if (search.trim()) {
-        params.set("search", search.trim());
-      }
-      if (status) {
-        params.set("status", status);
-      }
-      if (visibility) {
-        params.set("isPublished", visibility);
-      }
-      params.set("page", String(page));
-
-      const suffix = params.toString() ? `?${params.toString()}` : "";
-      const data = await adminRequest<{
-        tournaments: Tournament[];
-        pagination: Pagination;
-      }>(
-        `/api/admin/tournaments${suffix}`
-      );
-      setTournaments(data.tournaments);
-      setPagination(data.pagination);
-    } catch (nextError) {
-      setError(
-        nextError instanceof Error ? nextError.message : "Unable to load tournaments."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, status, visibility]);
-
-  useEffect(() => {
-    void loadTournaments();
-  }, [loadTournaments]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [search, status, visibility]);
+  const tournaments = data?.tournaments || [];
+  const pagination = data?.pagination;
 
   const handleDelete = async (tournamentId: string) => {
-    if (
-      !window.confirm(
-        "Delete this tournament? This will also remove related registrations."
-      )
-    ) {
+    if (!window.confirm("Delete this tournament? This will also remove related registrations.")) {
       return;
     }
 
     try {
-      await adminRequest(`/api/admin/tournaments/${tournamentId}`, {
-        method: "DELETE",
-      });
-      if (tournaments.length === 1 && page > 1) {
-        setPage((current) => Math.max(1, current - 1));
-      } else {
-        void loadTournaments();
-      }
+      await adminRequest(`/api/admin/tournaments/${tournamentId}`, { method: "DELETE" });
+      showToast({ tone: "success", title: "Tournament deleted" });
+      await refetch();
     } catch (nextError) {
-      setError(
-        nextError instanceof Error ? nextError.message : "Unable to delete tournament."
-      );
+      showToast({
+        tone: "error",
+        title: "Unable to delete tournament",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     }
   };
 
@@ -115,37 +63,20 @@ export default function AdminTournamentsManager() {
       body.append("maxTeams", String(tournament.maxTeams));
       body.append("prizePool", tournament.prizePool);
       body.append("status", updates.status || tournament.status);
-      body.append(
-        "isPublished",
-        String(
-          typeof updates.isPublished === "boolean"
-            ? updates.isPublished
-            : tournament.isPublished
-        )
-      );
+      body.append("isPublished", String(typeof updates.isPublished === "boolean" ? updates.isPublished : tournament.isPublished));
       body.append("isFeatured", String(tournament.isFeatured));
-      if (tournament.bracketLink) {
-        body.append("bracketLink", tournament.bracketLink);
-      }
-      if (tournament.contactLink) {
-        body.append("contactLink", tournament.contactLink);
-      }
+      if (tournament.bracketLink) body.append("bracketLink", tournament.bracketLink);
+      if (tournament.contactLink) body.append("contactLink", tournament.contactLink);
 
-      const data = await adminRequest<{ tournament: Tournament }>(
-        `/api/admin/tournaments/${tournament.id}`,
-        {
-          method: "PATCH",
-          body,
-        }
-      );
-
-      setTournaments((current) =>
-        current.map((item) => (item.id === tournament.id ? data.tournament : item))
-      );
+      await adminRequest(`/api/admin/tournaments/${tournament.id}`, { method: "PATCH", body });
+      showToast({ tone: "success", title: "Tournament updated" });
+      await refetch();
     } catch (nextError) {
-      setError(
-        nextError instanceof Error ? nextError.message : "Unable to update tournament."
-      );
+      showToast({
+        tone: "error",
+        title: "Unable to update tournament",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     }
   };
 
@@ -153,27 +84,17 @@ export default function AdminTournamentsManager() {
     <AdminShell
       title="Tournaments"
       description="Create, edit, publish, and manage every tournament from the dashboard."
-      actions={
-        <Link href="/admin/tournaments/new" className="btn btn-primary btn-small">
-          New Tournament
-        </Link>
-      }
+      actions={<Link href="/admin/tournaments/new" className={buttonClassName({})}>New Tournament</Link>}
     >
-      <div className="admin-users-card">
-        <div className="admin-users-head">
+      <Card className="p-6 sm:p-8">
+        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h3>Tournament List</h3>
-            <p>Search and filter tournaments before editing or publishing them.</p>
+            <h3 className="text-2xl text-white">Tournament List</h3>
+            <p className="text-sm text-slate-400">Search and filter tournaments before editing or publishing them.</p>
           </div>
-          <div className="admin-filter-row">
-            <input
-              type="search"
-              className="admin-search-input"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search title, slug, or game..."
-            />
-            <select value={status} onChange={(event) => setStatus(event.target.value)}>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Input value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Search title, slug, or game..." />
+            <Select value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
               <option value="">All statuses</option>
               <option value="draft">Draft</option>
               <option value="upcoming">Upcoming</option>
@@ -181,133 +102,70 @@ export default function AdminTournamentsManager() {
               <option value="ongoing">Ongoing</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
-            </select>
-            <select
-              value={visibility}
-              onChange={(event) => setVisibility(event.target.value)}
-            >
+            </Select>
+            <Select value={visibility} onChange={(event) => { setPage(1); setVisibility(event.target.value); }}>
               <option value="">All visibility</option>
               <option value="true">Published</option>
               <option value="false">Hidden</option>
-            </select>
+            </Select>
           </div>
         </div>
 
         {loading ? (
-          <EmptyState description="Loading tournaments..." />
+          <AdminTableSkeleton />
         ) : error ? (
           <EmptyState description={error} />
         ) : tournaments.length === 0 ? (
           <EmptyState description="No tournaments matched your current search or filters." />
         ) : (
-          <>
-            <div className="admin-users-table-wrap">
-              <table className="admin-users-table">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Game</th>
-                    <th>Status</th>
-                    <th>Visibility</th>
-                    <th>Registrations</th>
-                    <th>Registration</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tournaments.map((tournament) => (
-                    <tr key={tournament.id}>
-                      <td data-label="Title">
-                        <strong>{tournament.title}</strong>
-                        <br />
-                        <small>{tournament.slug}</small>
-                      </td>
-                      <td data-label="Game">{tournament.game}</td>
-                      <td data-label="Status">
-                        <span className={getTournamentStatusBadgeClassName(tournament.status)}>
-                          {getTournamentStatusLabel(tournament.status)}
-                        </span>
-                      </td>
-                      <td data-label="Visibility">{tournament.isPublished ? "Published" : "Hidden"}</td>
-                      <td data-label="Registrations">
-                        {tournament.registrationCount} / {tournament.maxTeams}
-                      </td>
-                      <td data-label="Registration">{getTournamentRegistrationLabel(tournament)}</td>
-                      <td data-label="Actions">
-                        <div className="admin-table-actions">
-                          <Link
-                            href={`/admin/tournaments/${tournament.id}/edit`}
-                            className="btn btn-secondary btn-small"
-                          >
-                            Edit
-                          </Link>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-small"
-                            onClick={() =>
-                              handleQuickUpdate(tournament, {
-                                isPublished: !tournament.isPublished,
-                              })
-                            }
-                          >
-                            {tournament.isPublished ? "Unpublish" : "Publish"}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-small"
-                            onClick={() =>
-                              handleQuickUpdate(tournament, {
-                                status:
-                                  tournament.status === "registration_open"
-                                    ? "upcoming"
-                                    : "registration_open",
-                              })
-                            }
-                          >
-                            {tournament.status === "registration_open"
-                              ? "Close Reg"
-                              : "Open Reg"}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-small admin-danger-button"
-                            onClick={() => handleDelete(tournament.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="admin-pagination-row">
-              <p>{getAdminPaginationSummary(pagination, "tournaments")}</p>
-              <div className="admin-table-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={pagination.page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  disabled={pagination.page >= pagination.totalPages}
-                  onClick={() =>
-                    setPage((current) => Math.min(pagination.totalPages, current + 1))
-                  }
-                >
-                  Next
-                </button>
+          <div className="grid gap-4">
+            {tournaments.map((tournament) => (
+              <div key={tournament.id} className="grid gap-4 rounded-[24px] border border-white/8 bg-white/5 p-5 xl:grid-cols-[1.1fr_0.8fr_auto] xl:items-center">
+                <div>
+                  <p className="font-semibold text-white">{tournament.title}</p>
+                  <p className="text-sm text-slate-400">{tournament.slug} · {tournament.game}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                    <span className="rounded-full border border-white/8 bg-black/20 px-3 py-1">{getTournamentStatusLabel(tournament.status)}</span>
+                    <span className="rounded-full border border-white/8 bg-black/20 px-3 py-1">{tournament.isPublished ? "Published" : "Hidden"}</span>
+                    <span className="rounded-full border border-white/8 bg-black/20 px-3 py-1">{getTournamentRegistrationLabel(tournament)}</span>
+                  </div>
+                </div>
+                <div className="grid gap-1 text-sm text-slate-400">
+                  <p>Registrations: <span className="text-white">{tournament.registrationCount} / {tournament.maxTeams}</span></p>
+                  <p>Prize Pool: <span className="text-white">{tournament.prizePool}</span></p>
+                </div>
+                <div className="flex flex-wrap gap-3 xl:justify-end">
+                  <Link href={`/admin/tournaments/${tournament.id}/edit`} className={buttonClassName({ variant: "secondary" })}>Edit</Link>
+                  <Button type="button" variant="secondary" onClick={() => handleQuickUpdate(tournament, { isPublished: !tournament.isPublished })}>
+                    {tournament.isPublished ? "Unpublish" : "Publish"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      handleQuickUpdate(tournament, {
+                        status: tournament.status === "registration_open" ? "upcoming" : "registration_open",
+                      })
+                    }
+                  >
+                    {tournament.status === "registration_open" ? "Close Reg" : "Open Reg"}
+                  </Button>
+                  <Button type="button" variant="danger" onClick={() => handleDelete(tournament.id)}>Delete</Button>
+                </div>
               </div>
-            </div>
-          </>
+            ))}
+            {pagination ? (
+              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-400">{getAdminPaginationSummary(pagination, "tournaments")}</p>
+                <div className="flex gap-3">
+                  <Button type="button" variant="secondary" disabled={pagination.page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+                  <Button type="button" variant="secondary" disabled={pagination.page >= pagination.totalPages} onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}>Next</Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         )}
-      </div>
+      </Card>
     </AdminShell>
   );
 }

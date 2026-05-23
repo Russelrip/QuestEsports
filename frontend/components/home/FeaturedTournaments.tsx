@@ -1,107 +1,83 @@
 import Link from "next/link";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
+import { Badge } from "@/components/ui/badge";
+import { buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Section } from "@/components/ui/section";
+import { formatDisplayDate } from "@/lib/utils";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
-  getTournamentStatusBadgeClassName,
   getTournamentStatusLabel,
 } from "@/lib/tournaments";
-
-const formatTournamentDateRange = (startDate: string, endDate: string) => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-
-  const fullFormatter = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return "Dates to be announced";
-  }
-
-  if (start.toDateString() === end.toDateString()) {
-    return fullFormatter.format(start);
-  }
-
-  if (start.getFullYear() === end.getFullYear()) {
-    return `${formatter.format(start)} - ${fullFormatter.format(end)}`;
-  }
-
-  return `${fullFormatter.format(start)} - ${fullFormatter.format(end)}`;
-};
 
 export default async function FeaturedTournaments() {
   const tournaments = await fetchPublicTournaments();
   const featuredTournaments = getFeaturedTournaments(tournaments);
 
   return (
-    <section className="featured">
-      <div className="container">
-        <h2>Featured Tournaments</h2>
-        <div className="tournament-grid featured-tournament-grid">
-          {featuredTournaments.map((tournament) => (
-            <div className="tournament-card featured-tournament-card" key={tournament.id}>
-              <div className="featured-tournament-media">
+    <Section>
+      <div className="mb-8 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Featured Events</p>
+          <h2 className="mt-3 text-3xl text-white sm:text-4xl">Active campaigns and upcoming competition drops.</h2>
+        </div>
+        <Link href="/tournaments" className={`${buttonClassName({ variant: "secondary" })} hidden sm:inline-flex`}>
+          View all
+        </Link>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        {featuredTournaments.length > 0 ? (
+          featuredTournaments.map((tournament) => (
+            <Card key={tournament.id} className="group overflow-hidden">
+              <div className="relative">
                 <TournamentBannerImage
                   bannerUrl={tournament.bannerUrl}
                   title={tournament.title}
-                  className="featured-tournament-img"
+                  className="h-64 w-full object-cover transition duration-500 group-hover:scale-[1.03]"
                 />
-                <div className="featured-tournament-overlay">
-                  <span
-                    className={`featured-status-badge ${getTournamentStatusBadgeClassName(
-                      tournament.status
-                    )}`}
-                  >
-                    {getTournamentStatusLabel(tournament.status)}
-                  </span>
+                <div className="absolute left-4 top-4">
+                  <Badge className="bg-black/45 text-white">{getTournamentStatusLabel(tournament.status)}</Badge>
                 </div>
               </div>
-
-              <div className="featured-tournament-content">
-                <div className="featured-tournament-copy">
-                  <p className="featured-tournament-game">{tournament.game}</p>
-                  <h3>{tournament.title}</h3>
-                  <p className="featured-tournament-inline-meta">
-                    <span>{tournament.prizePool} Prize Pool</span>
-                    <span>{formatTournamentDateRange(tournament.startDate, tournament.endDate)}</span>
-                  </p>
+              <div className="space-y-4 p-5">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/80">{tournament.game}</p>
+                  <h3 className="mt-2 text-2xl text-white">{tournament.title}</h3>
                 </div>
-
-                <div className="tournament-card-footer featured-tournament-footer">
-                  <Link
-                    href={`/tournaments/${tournament.slug}`}
-                    className="btn btn-primary featured-primary-btn"
-                  >
-                    View Tournament
-                  </Link>
+                <div className="grid grid-cols-2 gap-3 text-sm text-slate-400">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Prize pool</p>
+                    <p className="mt-1 text-white">{tournament.prizePool}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Event dates</p>
+                    <p className="mt-1 text-white">
+                      {formatDisplayDate(tournament.startDate)} - {formatDisplayDate(tournament.endDate)}
+                    </p>
+                  </div>
                 </div>
+                <Link href={`/tournaments/${tournament.slug}`} className={buttonClassName({ className: "w-full" })}>
+                  View tournament
+                </Link>
               </div>
-            </div>
-          ))}
-
-          {featuredTournaments.length === 0 ? (
-            <div className="tournament-card coming-soon-card">
-              <div className="coming-soon-visual">
-                <span>COMING SOON</span>
-              </div>
-              <h3>Coming Soon</h3>
-              <p>Stay tuned for more upcoming Quest Esports tournaments.</p>
-              <p className="date">Check back regularly</p>
-              <Link href="/tournaments" className="btn btn-small btn-primary">
-                View All
+            </Card>
+          ))
+        ) : (
+          <Card className="p-8 lg:col-span-3">
+            <h3 className="text-2xl text-white">More events are on the way.</h3>
+            <p className="mt-3 max-w-2xl text-sm text-slate-400">
+              Quest Esports is preparing the next tournament cycle. Check the full listing for announcements and registration windows.
+            </p>
+            <div className="mt-6">
+              <Link href="/tournaments" className={buttonClassName({})}>
+                Browse tournaments
               </Link>
             </div>
-          ) : null}
-        </div>
+          </Card>
+        )}
       </div>
-    </section>
+    </Section>
   );
 }

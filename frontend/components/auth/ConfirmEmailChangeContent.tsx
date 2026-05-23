@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import AuthPanel from "@/components/auth/AuthPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { buttonClassName } from "@/components/ui/button";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 
 export default function ConfirmEmailChangeContent() {
@@ -24,75 +26,49 @@ export default function ConfirmEmailChangeContent() {
       }
 
       try {
-        const { response, data } = await apiFetchJson<{
-          success?: boolean;
-          message?: string;
-        }>(`/api/email-change/confirm?token=${encodeURIComponent(token)}`);
-
-        const errorMessage = getApiErrorMessage(
-          response,
-          data,
-          "Could not confirm your new email."
+        const { response, data } = await apiFetchJson<{ success?: boolean; message?: string }>(
+          `/api/email-change/confirm?token=${encodeURIComponent(token)}`
         );
-
+        const errorMessage = getApiErrorMessage(response, data, "Could not confirm your new email.");
         if (errorMessage) {
           throw new Error(errorMessage);
         }
-
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setStatus("success");
+          setMessage(data.message || "Your email address has been updated successfully.");
+          await refreshSession();
         }
-
-        setStatus("success");
-        setMessage(data.message || "Your email address has been updated successfully.");
-        await refreshSession();
-      } catch (requestError) {
-        if (cancelled) {
-          return;
+      } catch (error) {
+        if (!cancelled) {
+          setStatus("error");
+          setMessage(error instanceof Error ? error.message : "Could not confirm your new email.");
         }
-
-        setStatus("error");
-        setMessage(
-          requestError instanceof Error
-            ? requestError.message
-            : "Could not confirm your new email."
-        );
       }
     };
 
     void confirmEmailChange();
-
     return () => {
       cancelled = true;
     };
   }, [refreshSession, token]);
 
   return (
-    <section className="login-section">
-      <div className="form-container login-container">
-        <div className="login-box">
-          <h2>Confirm Email Change</h2>
-
-          <div
-            className={`auth-callout ${
-              status === "success" ? "auth-callout-success" : "auth-callout-warning"
-            }`}
-          >
-            <p>{message}</p>
-          </div>
-
-          {status === "loading" ? null : (
-            <div className="auth-inline-actions">
-              <Link href="/profile" className="btn btn-primary btn-small">
-                Open Profile
-              </Link>
-              <Link href="/login" className="btn btn-secondary btn-small">
-                Go to Login
-              </Link>
-            </div>
-          )}
+    <AuthPanel title="Confirm Email Change" description="We’re applying the email change request to your account now." eyebrow="Identity Update">
+      <div className="grid gap-5">
+        <div className={`rounded-[24px] p-5 text-sm ${status === "success" ? "border border-emerald-300/20 bg-emerald-400/8 text-slate-100" : "border border-amber-300/20 bg-amber-400/8 text-slate-100"}`}>
+          {message}
         </div>
+        {status !== "loading" ? (
+          <div className="flex flex-wrap gap-3">
+            <Link href="/profile" className={buttonClassName({})}>
+              Open Profile
+            </Link>
+            <Link href="/login" className={buttonClassName({ variant: "secondary" })}>
+              Go to Login
+            </Link>
+          </div>
+        ) : null}
       </div>
-    </section>
+    </AuthPanel>
   );
 }

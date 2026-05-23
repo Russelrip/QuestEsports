@@ -4,14 +4,22 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { AdminTableSkeleton } from "@/components/ui/skeleton";
+import { useToastStore } from "@/hooks/useToastStore";
 import {
-  TeamRegistration,
-  TournamentFormValues,
+  type TeamRegistration,
+  type TournamentFormValues,
   adminRequest,
   buildTournamentFormData,
   initialTournamentFormValues,
 } from "@/lib/admin";
-import { Tournament } from "@/lib/tournaments";
+import { type Tournament } from "@/lib/tournaments";
 
 const slugify = (value: string) =>
   value
@@ -49,23 +57,17 @@ const mapTournamentToFormValues = (tournament: Tournament): TournamentFormValues
   bannerImage: null,
 });
 
-export default function TournamentEditor({
-  tournamentId,
-}: {
-  tournamentId?: string;
-}) {
+export default function TournamentEditor({ tournamentId }: { tournamentId?: string }) {
   const router = useRouter();
   const isEdit = Boolean(tournamentId);
-  const [formValues, setFormValues] = useState<TournamentFormValues>(
-    initialTournamentFormValues
-  );
+  const [formValues, setFormValues] = useState<TournamentFormValues>(initialTournamentFormValues);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [registrations, setRegistrations] = useState<TeamRegistration[]>([]);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(isEdit);
   const hydratedRef = useRef(false);
+  const showToast = useToastStore((state) => state.showToast);
 
   useEffect(() => {
     if (!tournamentId) {
@@ -74,16 +76,14 @@ export default function TournamentEditor({
 
     const load = async () => {
       try {
-        const data = await adminRequest<{
-          tournament: Tournament & { registrations: TeamRegistration[] };
-        }>(`/api/admin/tournaments/${tournamentId}`);
+        const data = await adminRequest<{ tournament: Tournament & { registrations: TeamRegistration[] } }>(
+          `/api/admin/tournaments/${tournamentId}`
+        );
         setFormValues(mapTournamentToFormValues(data.tournament));
         setRegistrations(data.tournament.registrations || []);
         setSlugManuallyEdited(true);
       } catch (nextError) {
-        setError(
-          nextError instanceof Error ? nextError.message : "Unable to load tournament."
-        );
+        setError(nextError instanceof Error ? nextError.message : "Unable to load tournament.");
       } finally {
         setLoading(false);
       }
@@ -102,16 +102,10 @@ export default function TournamentEditor({
       return;
     }
 
-    setFormValues((current) => ({
-      ...current,
-      slug: slugify(current.title),
-    }));
+    setFormValues((current) => ({ ...current, slug: slugify(current.title) }));
   }, [formValues.title, slugManuallyEdited]);
 
-  const updateField = <K extends keyof TournamentFormValues>(
-    key: K,
-    value: TournamentFormValues[K]
-  ) => {
+  const updateField = <K extends keyof TournamentFormValues>(key: K, value: TournamentFormValues[K]) => {
     setFormValues((current) => ({ ...current, [key]: value }));
   };
 
@@ -119,21 +113,18 @@ export default function TournamentEditor({
     event.preventDefault();
     setSaving(true);
     setError("");
-    setSuccessMessage("");
 
     try {
       const response = await adminRequest<{ tournament: Tournament }>(
         isEdit ? `/api/admin/tournaments/${tournamentId}` : "/api/admin/tournaments",
-        {
-          method: isEdit ? "PATCH" : "POST",
-          body: buildTournamentFormData(formValues),
-        }
+        { method: isEdit ? "PATCH" : "POST", body: buildTournamentFormData(formValues) }
       );
 
-      setSuccessMessage(
-        response.message ||
-          (isEdit ? "Tournament updated successfully." : "Tournament created successfully.")
-      );
+      showToast({
+        tone: "success",
+        title: isEdit ? "Tournament updated" : "Tournament created",
+        description: response.message,
+      });
 
       if (!isEdit) {
         router.push("/admin/tournaments");
@@ -142,9 +133,9 @@ export default function TournamentEditor({
 
       setFormValues(mapTournamentToFormValues(response.tournament));
     } catch (nextError) {
-      setError(
-        nextError instanceof Error ? nextError.message : "Unable to save tournament."
-      );
+      const message = nextError instanceof Error ? nextError.message : "Unable to save tournament.";
+      setError(message);
+      showToast({ tone: "error", title: "Unable to save tournament", description: message });
     } finally {
       setSaving(false);
     }
@@ -160,293 +151,119 @@ export default function TournamentEditor({
       }
     >
       {loading ? (
-        <EmptyState description="Loading tournament..." />
+        <AdminTableSkeleton rows={6} />
       ) : (
         <>
-          <div className="admin-users-card">
-            <form className="admin-form-grid" onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label htmlFor="title">Title *</label>
-                <input
-                  id="title"
-                  value={formValues.title}
-                  onChange={(event) => {
-                    setSuccessMessage("");
-                    updateField("title", event.target.value);
-                  }}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="slug">Slug *</label>
-                <input
+          <Card className="p-6 sm:p-8">
+            <form className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" onSubmit={handleSubmit}>
+              <FormField label="Title" htmlFor="title" required className="xl:col-span-2">
+                <Input id="title" value={formValues.title} onChange={(event) => updateField("title", event.target.value)} required />
+              </FormField>
+              <FormField label="Slug" htmlFor="slug" hint="Auto-generated from the title until you edit it manually." required>
+                <Input
                   id="slug"
                   value={formValues.slug}
                   onChange={(event) => {
-                    setSuccessMessage("");
                     setSlugManuallyEdited(true);
                     updateField("slug", slugify(event.target.value));
                   }}
                   required
                 />
-                <small>Auto-generated from the title until you edit it manually.</small>
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="game">Game *</label>
-                <input
-                  id="game"
-                  value={formValues.game}
-                  onChange={(event) => updateField("game", event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="status">Status *</label>
-                <select
-                  id="status"
-                  value={formValues.status}
-                  onChange={(event) =>
-                    updateField("status", event.target.value as Tournament["status"])
-                  }
-                >
+              </FormField>
+              <FormField label="Game" htmlFor="game" required>
+                <Input id="game" value={formValues.game} onChange={(event) => updateField("game", event.target.value)} required />
+              </FormField>
+              <FormField label="Status" htmlFor="status" required>
+                <Select id="status" value={formValues.status} onChange={(event) => updateField("status", event.target.value as Tournament["status"])}>
                   <option value="draft">Draft</option>
                   <option value="upcoming">Upcoming</option>
                   <option value="registration_open">Registration Open</option>
                   <option value="ongoing">Ongoing</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
-
-              <div className="form-group admin-form-full">
-                <label htmlFor="shortDescription">Short Description *</label>
-                <textarea
-                  id="shortDescription"
-                  value={formValues.shortDescription}
-                  onChange={(event) =>
-                    updateField("shortDescription", event.target.value)
-                  }
-                  required
-                />
-              </div>
-
-              <div className="form-group admin-form-full">
-                <label htmlFor="fullDescription">Full Description *</label>
-                <textarea
-                  id="fullDescription"
-                  value={formValues.fullDescription}
-                  onChange={(event) =>
-                    updateField("fullDescription", event.target.value)
-                  }
-                  required
-                />
-              </div>
-
-              <div className="form-group admin-form-full">
-                <label htmlFor="rules">Rules *</label>
-                <textarea
-                  id="rules"
-                  value={formValues.rules}
-                  onChange={(event) => updateField("rules", event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="startDate">Start Date *</label>
-                <input
-                  id="startDate"
-                  type="datetime-local"
-                  value={formValues.startDate}
-                  onChange={(event) => updateField("startDate", event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="endDate">End Date *</label>
-                <input
-                  id="endDate"
-                  type="datetime-local"
-                  value={formValues.endDate}
-                  onChange={(event) => updateField("endDate", event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="registrationDeadline">Registration Deadline *</label>
-                <input
-                  id="registrationDeadline"
-                  type="datetime-local"
-                  value={formValues.registrationDeadline}
-                  onChange={(event) =>
-                    updateField("registrationDeadline", event.target.value)
-                  }
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="format">Format *</label>
-                <input
-                  id="format"
-                  value={formValues.format}
-                  onChange={(event) => updateField("format", event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="teamSize">Team Size *</label>
-                <input
-                  id="teamSize"
-                  type="number"
-                  min="1"
-                  value={formValues.teamSize}
-                  onChange={(event) => updateField("teamSize", event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="maxTeams">Max Teams *</label>
-                <input
-                  id="maxTeams"
-                  type="number"
-                  min="1"
-                  value={formValues.maxTeams}
-                  onChange={(event) => updateField("maxTeams", event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="prizePool">Prize Pool *</label>
-                <input
-                  id="prizePool"
-                  value={formValues.prizePool}
-                  onChange={(event) => updateField("prizePool", event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bracketLink">Bracket Link</label>
-                <input
-                  id="bracketLink"
-                  type="url"
-                  value={formValues.bracketLink}
-                  onChange={(event) => updateField("bracketLink", event.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="contactLink">Discord / Contact Link</label>
-                <input
-                  id="contactLink"
-                  type="url"
-                  value={formValues.contactLink}
-                  onChange={(event) => updateField("contactLink", event.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bannerImage">Banner Image</label>
-                <input
-                  id="bannerImage"
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) =>
-                    updateField("bannerImage", event.target.files?.[0] || null)
-                  }
-                />
-              </div>
-
-              <div className="form-group admin-checkbox-stack">
-                <label className="admin-inline-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={formValues.isPublished}
-                    onChange={(event) =>
-                      updateField("isPublished", event.target.checked)
-                    }
-                  />
+                </Select>
+              </FormField>
+              <FormField label="Format" htmlFor="format" required>
+                <Input id="format" value={formValues.format} onChange={(event) => updateField("format", event.target.value)} required />
+              </FormField>
+              <FormField label="Team Size" htmlFor="teamSize" required>
+                <Input id="teamSize" type="number" min="1" value={formValues.teamSize} onChange={(event) => updateField("teamSize", event.target.value)} required />
+              </FormField>
+              <FormField label="Max Teams" htmlFor="maxTeams" required>
+                <Input id="maxTeams" type="number" min="1" value={formValues.maxTeams} onChange={(event) => updateField("maxTeams", event.target.value)} required />
+              </FormField>
+              <FormField label="Prize Pool" htmlFor="prizePool" required>
+                <Input id="prizePool" value={formValues.prizePool} onChange={(event) => updateField("prizePool", event.target.value)} required />
+              </FormField>
+              <FormField label="Start Date" htmlFor="startDate" required>
+                <Input id="startDate" type="datetime-local" value={formValues.startDate} onChange={(event) => updateField("startDate", event.target.value)} required />
+              </FormField>
+              <FormField label="End Date" htmlFor="endDate" required>
+                <Input id="endDate" type="datetime-local" value={formValues.endDate} onChange={(event) => updateField("endDate", event.target.value)} required />
+              </FormField>
+              <FormField label="Registration Deadline" htmlFor="registrationDeadline" required>
+                <Input id="registrationDeadline" type="datetime-local" value={formValues.registrationDeadline} onChange={(event) => updateField("registrationDeadline", event.target.value)} required />
+              </FormField>
+              <FormField label="Bracket Link" htmlFor="bracketLink">
+                <Input id="bracketLink" type="url" value={formValues.bracketLink} onChange={(event) => updateField("bracketLink", event.target.value)} />
+              </FormField>
+              <FormField label="Discord / Contact Link" htmlFor="contactLink">
+                <Input id="contactLink" type="url" value={formValues.contactLink} onChange={(event) => updateField("contactLink", event.target.value)} />
+              </FormField>
+              <FormField label="Banner Image" htmlFor="bannerImage">
+                <Input id="bannerImage" type="file" accept="image/*" onChange={(event) => updateField("bannerImage", event.target.files?.[0] || null)} />
+              </FormField>
+              <FormField label="Short Description" htmlFor="shortDescription" required className="md:col-span-2 xl:col-span-3">
+                <Textarea id="shortDescription" value={formValues.shortDescription} onChange={(event) => updateField("shortDescription", event.target.value)} required />
+              </FormField>
+              <FormField label="Full Description" htmlFor="fullDescription" required className="md:col-span-2 xl:col-span-3">
+                <Textarea id="fullDescription" value={formValues.fullDescription} onChange={(event) => updateField("fullDescription", event.target.value)} required />
+              </FormField>
+              <FormField label="Rules" htmlFor="rules" required className="md:col-span-2 xl:col-span-3">
+                <Textarea id="rules" value={formValues.rules} onChange={(event) => updateField("rules", event.target.value)} required />
+              </FormField>
+              <div className="md:col-span-2 xl:col-span-3 flex flex-wrap gap-6 rounded-[24px] border border-white/8 bg-white/5 p-4 text-sm text-slate-300">
+                <label className="flex items-center gap-3">
+                  <input type="checkbox" checked={formValues.isPublished} onChange={(event) => updateField("isPublished", event.target.checked)} />
                   Published / Visible
                 </label>
-                <label className="admin-inline-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={formValues.isFeatured}
-                    onChange={(event) =>
-                      updateField("isFeatured", event.target.checked)
-                    }
-                  />
+                <label className="flex items-center gap-3">
+                  <input type="checkbox" checked={formValues.isFeatured} onChange={(event) => updateField("isFeatured", event.target.checked)} />
                   Featured
                 </label>
               </div>
-
-              {error ? <p className="error-message admin-form-full">{error}</p> : null}
-              {successMessage ? (
-                <p className="success-inline admin-form-full">{successMessage}</p>
-              ) : null}
-
-              <div className="admin-table-actions admin-form-full">
-                <button type="submit" className="btn btn-primary" disabled={saving}>
-                  {saving ? "Saving..." : isEdit ? "Save Tournament" : "Create Tournament"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => router.push("/admin/tournaments")}
-                >
-                  Back to Tournaments
-                </button>
+              {error ? <p className="md:col-span-2 xl:col-span-3 text-sm text-rose-300">{error}</p> : null}
+              <div className="md:col-span-2 xl:col-span-3 flex flex-wrap gap-3">
+                <Button type="submit" disabled={saving}>{saving ? "Saving..." : isEdit ? "Save Tournament" : "Create Tournament"}</Button>
+                <Button type="button" variant="secondary" onClick={() => router.push("/admin/tournaments")}>Back to Tournaments</Button>
               </div>
             </form>
-          </div>
+          </Card>
 
           {isEdit ? (
-            <div className="admin-users-card">
-              <div className="admin-users-head">
-                <div>
-                  <h3>Registered Teams</h3>
-                  <p>All registrations currently tied to this tournament.</p>
-                </div>
+            <Card className="p-6 sm:p-8">
+              <div className="mb-6">
+                <h3 className="text-2xl text-white">Registered Teams</h3>
+                <p className="text-sm text-slate-400">All registrations currently tied to this tournament.</p>
               </div>
-
               {registrations.length === 0 ? (
                 <EmptyState description="No teams have registered for this tournament yet." />
               ) : (
-                <div className="admin-users-table-wrap">
-                  <table className="admin-users-table">
-                    <thead>
-                      <tr>
-                        <th>Team</th>
-                        <th>Captain</th>
-                        <th>Status</th>
-                        <th>Payment</th>
-                        <th>Verification</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {registrations.map((registration) => (
-                        <tr key={registration.id}>
-                          <td data-label="Team">{registration.teamName}</td>
-                          <td data-label="Captain">{registration.captain.name}</td>
-                          <td data-label="Status">{registration.status}</td>
-                          <td data-label="Payment">{registration.paymentStatus}</td>
-                          <td data-label="Verification">{registration.verificationStatus}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="grid gap-4">
+                  {registrations.map((registration) => (
+                    <div key={registration.id} className="grid gap-3 rounded-[24px] border border-white/8 bg-white/5 p-4 md:grid-cols-4">
+                      <div>
+                        <p className="font-medium text-white">{registration.teamName}</p>
+                        <p className="text-sm text-slate-400">{registration.captain.name}</p>
+                      </div>
+                      <p className="text-sm text-slate-400">Status: <span className="text-white">{registration.status}</span></p>
+                      <p className="text-sm text-slate-400">Payment: <span className="text-white">{registration.paymentStatus}</span></p>
+                      <p className="text-sm text-slate-400">Verification: <span className="text-white">{registration.verificationStatus}</span></p>
+                    </div>
+                  ))}
                 </div>
               )}
-            </div>
+            </Card>
           ) : null}
         </>
       )}

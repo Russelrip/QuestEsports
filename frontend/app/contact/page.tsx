@@ -1,6 +1,7 @@
 import ContactForm from "@/components/contact/ContactForm";
 import ContactInfo from "@/components/contact/ContactInfo";
 import PageLayout from "@/components/PageLayout";
+import { Section } from "@/components/ui/section";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 
 export const metadata = buildPageMetadata({
@@ -18,14 +19,12 @@ export const metadata = buildPageMetadata({
 export default function ContactPage() {
   return (
     <PageLayout title="Contact Us" description={defaultPageDescriptions.contact}>
-      <section className="contact-section">
-        <div className="container">
-          <div className="contact-grid">
-            <ContactInfo />
-            <ContactForm />
-          </div>
+      <Section className="pt-6">
+        <div className="grid gap-6 xl:grid-cols-[0.88fr_1.12fr]">
+          <ContactInfo />
+          <ContactForm />
         </div>
-      </section>
+      </Section>
     </PageLayout>
   );
 }

@@ -1,52 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import AuthPanel from "@/components/auth/AuthPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useFormFields } from "@/hooks/useFormFields";
+import { Button } from "@/components/ui/button";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
 import { apiFetchJson, AuthUser, getApiErrorMessage } from "@/lib/auth";
 
-type LoginFormData = {
-  emailOrUsername: string;
-  password: string;
-  remember: boolean;
-};
+const loginSchema = z.object({
+  emailOrUsername: z.string().min(1, "Please enter your username or email."),
+  password: z.string().min(1, "Please enter your password."),
+  remember: z.boolean(),
+});
 
-const initialFormData: LoginFormData = {
-  emailOrUsername: "",
-  password: "",
-  remember: false,
-};
+type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
-  const {
-    fields: formData,
-    handleFieldChange,
-    resetFields,
-  } = useFormFields<LoginFormData>(initialFormData);
-
   const redirectTo = searchParams.get("redirect");
-  const nextPath =
-    redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//")
-      ? redirectTo
-      : null;
+  const nextPath = redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//") ? redirectTo : null;
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError("");
-    setSubmitted(false);
+  const form = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      emailOrUsername: "",
+      password: "",
+      remember: false,
+    },
+  });
 
-    if (!formData.emailOrUsername || !formData.password) {
-      setError("Please enter your username/email and password.");
-      return;
-    }
-
+  const onSubmit = form.handleSubmit(async (values) => {
     try {
       const { response, data } = await apiFetchJson<{
         success?: boolean;
@@ -54,93 +44,61 @@ export default function LoginForm() {
         user: AuthUser;
       }>("/api/login", {
         method: "POST",
-        json: {
-          emailOrUsername: formData.emailOrUsername,
-          password: formData.password,
-          remember: formData.remember,
-        },
+        json: values,
       });
 
       const errorMessage = getApiErrorMessage(response, data, "Login failed.");
       if (errorMessage) {
-        setError(errorMessage);
+        form.setError("root", { message: errorMessage });
         return;
       }
 
       login(data.user);
-
-      setSubmitted(true);
-      resetFields();
+      form.reset();
       router.push(nextPath || (data.user.role === "admin" ? "/admin" : "/profile"));
-    } catch (err) {
-      console.error("Login error:", err);
-      setError("Something went wrong. Please try again.");
+    } catch (error) {
+      console.error("Login error:", error);
+      form.setError("root", { message: "Something went wrong. Please try again." });
     }
-  };
+  });
 
   return (
-    <section className="login-section">
-      <div className="form-container login-container">
-        <div className="login-box">
-          <h2>Player Login</h2>
-
-          <form id="loginForm" className="login-form" onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="emailOrUsername">Email or Username *</label>
-              <input
-                type="text"
-                id="emailOrUsername"
-                name="emailOrUsername"
-                required
-                value={formData.emailOrUsername}
-                onChange={handleFieldChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="password">Password *</label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                required
-                value={formData.password}
-                onChange={handleFieldChange}
-              />
-            </div>
-
-            <div className="form-group checkbox">
-              <label>
-                <input
-                  type="checkbox"
-                  name="remember"
-                  checked={formData.remember}
-                  onChange={handleFieldChange}
-                />{" "}
-                Remember me
-              </label>
-            </div>
-
-            {error && <p className="error-message">{error}</p>}
-
-            <button type="submit" className="btn btn-primary">
-              Login
-            </button>
-          </form>
-
-          <p className="form-footer">
-            <Link href="/forgot-password">Forgot Password?</Link> |{" "}
-            <Link href="/signup">Register Account</Link>
-          </p>
+    <AuthPanel
+      title="Player Login"
+      description="Sign in to manage your roster, registrations, and account status across Quest Esports."
+      aside={
+        <div className="rounded-[24px] border border-white/8 bg-black/20 p-5 text-sm text-slate-300">
+          Returning admins land directly in the control center after sign-in.
         </div>
+      }
+    >
+      <form className="grid gap-5" onSubmit={onSubmit}>
+        <FormField label="Email or Username" htmlFor="emailOrUsername" error={form.formState.errors.emailOrUsername?.message} required>
+          <Input id="emailOrUsername" {...form.register("emailOrUsername")} />
+        </FormField>
 
-        {submitted && (
-          <div id="loginSuccess" className="success-message">
-            <h3>Login Successful!</h3>
-            <p>Welcome back! You can now access your account.</p>
-          </div>
-        )}
-      </div>
-    </section>
+        <FormField label="Password" htmlFor="password" error={form.formState.errors.password?.message} required>
+          <Input id="password" type="password" {...form.register("password")} />
+        </FormField>
+
+        <label className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
+          <input type="checkbox" className="size-4 accent-cyan-300" {...form.register("remember")} />
+          Remember me on this device
+        </label>
+
+        {form.formState.errors.root?.message ? (
+          <p className="text-sm text-rose-300">{form.formState.errors.root.message}</p>
+        ) : null}
+
+        <Button type="submit" disabled={form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? "Logging in..." : "Login"}
+        </Button>
+
+        <div className="flex flex-wrap gap-4 text-sm text-slate-400">
+          <Link href="/forgot-password" className="hover:text-white">Forgot password?</Link>
+          <Link href="/signup" className="hover:text-white">Create account</Link>
+        </div>
+      </form>
+    </AuthPanel>
   );
 }
