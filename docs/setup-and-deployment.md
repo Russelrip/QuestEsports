@@ -47,6 +47,8 @@ MAIL_FROM="Quest Esports <no-reply@example.com>"
 APP_URL=http://localhost:3000
 ```
 
+For purely local development, SMTP values can be left blank. The backend will still run, but verification, password reset, invite, and email-change emails will be skipped instead of sent.
+
 Frontend `frontend/.env.local`:
 
 ```env
@@ -83,6 +85,7 @@ npm run dev
 - Frontend loads on `http://localhost:3000`
 - Backend health is available at `http://localhost:5001/api/health`
 - Backend OpenAPI JSON is available at `http://localhost:5001/api/openapi.json`
+- Backend and frontend are started separately; there is no root workspace dev command.
 
 ## First Admin User
 
@@ -90,7 +93,7 @@ There is no seed script for bootstrapping the first admin account.
 
 Recommended options:
 
-1. Create a user in the database via Prisma Studio.
+1. Sign up through the app or create a user in the database via Prisma Studio.
 2. Update that user's `role` to `admin`.
 
 Prisma Studio:
@@ -191,6 +194,12 @@ MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 APP_URL=https://questesports.lk
 ```
 
+Notes:
+
+- `DATABASE_URL` and `SESSION_COOKIE_NAME` are required.
+- `APP_URL` must point to the frontend origin because email links are generated from it.
+- `CORS_ORIGIN` can be a comma-separated allowlist.
+
 ### Frontend
 
 ```env
@@ -240,7 +249,9 @@ Check all of the following:
 - login sets a session cookie
 - `/api/me` returns the authenticated user
 - verification emails contain the correct frontend URL
+- email-change confirmation emails contain the correct frontend URL
 - password reset emails contain the correct frontend URL
+- team invite emails contain the correct frontend URL
 - tournament banners render
 - poster images render
 - admin can access team logos

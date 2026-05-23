@@ -8,6 +8,8 @@ This project uses PostgreSQL through Prisma for relational data, plus local file
 - Filesystem for uploaded images
 - SMTP provider for transactional email delivery
 
+The backend starts by ensuring its upload directories exist, so a missing `backend/uploads/` folder is created automatically on boot.
+
 ## Prisma Models
 
 ## Users And Auth
@@ -143,6 +145,12 @@ Upload directories are created under `backend/uploads/`:
 - Preferred storage: filesystem via `ImageAsset.storedFilename`
 - Legacy fallback: `ImageAsset.data`
 - Access: public poster-image route, admin binary image route
+
+### Sessions
+
+- Session records: PostgreSQL `sessions` table
+- Browser state: `HttpOnly` cookie whose name comes from `SESSION_COOKIE_NAME`
+- Access pattern: the browser sends the cookie, and the backend looks up a SHA-256 token hash in the database
 
 ## Why Poster Images Have Two Storage Modes
 

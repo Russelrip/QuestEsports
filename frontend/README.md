@@ -1,54 +1,70 @@
-This is the Quest Esports frontend built with Next.js.
+# Quest Esports Frontend
 
-## Getting Started
+This is the public and admin-facing Next.js application for Quest Esports. It renders the marketing site, tournament pages, auth flows, profile UI, admin dashboard, and media views, and it talks to the Express API in `../backend`.
 
-Create a `.env.local` file.
+## Requirements
+
+- Node.js 20+
+- A running backend API
+
+## Environment Variables
+
+Create `frontend/.env.local`.
 
 Local development example:
 
-```bash
+```env
 NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-If the backend is sending verification or reset emails through Resend SMTP, make sure the backend `APP_URL` points at this frontend origin.
+Production example:
 
-Production values:
-
-```bash
+```env
 NEXT_PUBLIC_API_URL=https://api.questesports.lk
 NEXT_PUBLIC_SITE_URL=https://questesports.lk
 ```
 
-Then run the development server:
+Notes:
+
+- `NEXT_PUBLIC_API_URL` must match the backend origin.
+- `NEXT_PUBLIC_SITE_URL` is used for metadata, sitemap generation, canonical URLs, and structured data.
+- If the backend sends verification, reset, invite, or email-change emails, its `APP_URL` must point to this frontend origin.
+
+## Install And Run
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app runs at `http://localhost:3000` by default.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Main Route Groups
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Public: `/`, `/tournaments`, `/posters`, `/match-videos`, `/rulebook`, `/contact`
+- Auth: `/signup`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/confirm-email-change`, `/team-invite`
+- User: `/profile`
+- Admin: `/admin`, `/admin/users`, `/admin/tournaments`, `/admin/registrations`, `/admin/contact-messages`
 
-## Learn More
+## Related Backend Endpoints
 
-To learn more about Next.js, take a look at the following resources:
+The frontend expects the backend to expose:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- auth routes under `/api`
+- tournament routes under `/api/tournaments` and `/api/tournament-registration`
+- team routes under `/api/teams/profile` and `/api/team-invite`
+- media routes under `/api/posters`, `/api/images`, and `/api/uploads/...`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Build For Production
 
-## Deploy on Vercel
+```bash
+npm run build
+npm run start
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Notes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- This app uses the Next.js App Router.
+- Auth is session-cookie based, so frontend requests include `credentials: "include"` when needed.
+- Admin screens depend on a logged-in user whose backend role is `admin`.

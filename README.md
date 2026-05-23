@@ -2,6 +2,103 @@
 
 Quest Esports is a full-stack esports platform for publishing tournaments, registering teams, managing community communications, and curating poster/media content. The repository contains a public-facing Next.js application and an Express + Prisma API that powers authentication, tournament operations, admin tooling, and media workflows.
 
+## Quick Start
+
+This repository does not have a single root `npm run dev` command. Run the backend and frontend separately.
+
+### Requirements
+
+- Node.js 20+
+- npm 10+
+- PostgreSQL 15+ recommended
+
+### 1. Configure environment variables
+
+Backend: create `backend/.env`
+
+```env
+PORT=5001
+CORS_ORIGIN=http://localhost:3000
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+SESSION_COOKIE_NAME=quest_session
+SESSION_TTL_DAYS=1
+REMEMBER_ME_SESSION_TTL_DAYS=30
+TRUST_PROXY=false
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+MAIL_FROM=
+APP_URL=http://localhost:3000
+```
+
+Frontend: create `frontend/.env.local`
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5001
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+Notes:
+
+- `DATABASE_URL` and `SESSION_COOKIE_NAME` are required for the backend to boot.
+- `NEXT_PUBLIC_API_URL` must point at the backend origin.
+- `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
+- SMTP is optional for local development. If mail is not configured, signup, verification, password reset, team invites, and email-change requests still execute, but email delivery is skipped.
+
+### 2. Install dependencies
+
+```bash
+cd backend
+npm install
+```
+
+```bash
+cd frontend
+npm install
+```
+
+### 3. Apply database migrations
+
+```bash
+cd backend
+npm run prisma:migrate
+npm run prisma:generate
+```
+
+### 4. Start both apps
+
+Backend:
+
+```bash
+cd backend
+npm run dev
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm run dev
+```
+
+### 5. Verify startup
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:5001`
+- Health: `http://localhost:5001/api/health`
+- OpenAPI JSON: `http://localhost:5001/api/openapi.json`
+
+### 6. Bootstrap the first admin user
+
+There is no seed script for the first admin account.
+
+Recommended flow:
+
+1. Sign up through the app or create a user in Prisma Studio.
+2. Open Prisma Studio with `cd backend && npm run prisma:studio`.
+3. Change that user's `role` to `admin`.
+
 ## Documentation
 
 - [API Documentation](./docs/api-documentation.md)
@@ -165,8 +262,8 @@ Notes:
 
 - `DATABASE_URL` and `SESSION_COOKIE_NAME` are required.
 - `CORS_ORIGIN` supports a comma-separated allowlist.
-- `APP_URL` must point at the frontend origin used in verification, password reset, and invite emails.
-- SMTP values are optional for local development, but required for real email delivery.
+- `APP_URL` must point at the frontend origin used in verification, password reset, email-change, and invite emails when SMTP is enabled.
+- SMTP values are optional for local development. When SMTP is not configured, mail-triggering actions log and skip delivery instead of crashing startup.
 
 ### Frontend
 
@@ -230,10 +327,12 @@ Default local URLs:
 ## Operational Notes
 
 - The backend creates upload directories automatically at startup.
+- There is no root workspace runner; start `backend` and `frontend` in separate terminals.
 - Team registration requires a logged-in user with a verified email address.
 - Team logos are intentionally protected behind admin access.
 - The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
 - There is currently no automated test suite in the repository.
+- There is currently no admin seed/bootstrap script beyond creating a user and promoting it through Prisma Studio.
 - Background jobs and monitoring are placeholder integrations and should be wired to production services before scaling email/media workloads.
 
 ## Recommended Next Steps

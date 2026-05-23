@@ -64,6 +64,7 @@ The cookie name comes from `SESSION_COOKIE_NAME`.
 Important note:
 
 - Signup does not log the user in automatically.
+- If SMTP is not configured, account creation still succeeds but the verification email is skipped.
 
 ## Resend Verification
 
@@ -80,6 +81,10 @@ Important note:
 5. The frontend posts `token` and `newPassword` to `POST /api/reset-password`.
 6. The backend validates the token, hashes the new password, consumes the token, and deletes all active sessions for that user.
 
+Important note:
+
+- If SMTP is not configured, forgot-password requests do not fail the API, but no email is delivered.
+
 ## Email Change Flow
 
 1. An authenticated user requests an email change through `POST /api/email-change/request`.
@@ -95,6 +100,7 @@ Important note:
 Important note:
 
 - The old email stays active until the new email is confirmed.
+- If SMTP is not configured, the request can be accepted but the confirmation email is skipped.
 
 ## Authorization Layers
 
@@ -144,4 +150,5 @@ This is especially important because authentication is cookie-based.
 - Use HTTPS so the `Secure` cookie flag is active.
 - Set `TRUST_PROXY` correctly when the backend runs behind Nginx, a load balancer, or a platform proxy.
 - Keep frontend and backend origins aligned with `CORS_ORIGIN`, `APP_URL`, and `NEXT_PUBLIC_API_URL`.
+- `SESSION_COOKIE_NAME` is required at boot because the backend does not fall back to a default cookie name.
 - Replace the placeholder monitoring adapter if you need auth/security observability in production.
