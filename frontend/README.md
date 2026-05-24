@@ -59,6 +59,7 @@ The frontend expects the backend to expose:
 ## Build For Production
 
 ```bash
+npm run lint
 npm run build
 npm run start
 ```
@@ -67,4 +68,5 @@ npm run start
 
 - This app uses the Next.js App Router.
 - Auth is session-cookie based, so frontend requests include `credentials: "include"` when needed.
+- Login supports password auth, MFA challenges, and Google/Discord OAuth hand-offs via the backend.
 - Admin screens depend on a logged-in user whose backend role is `admin`.

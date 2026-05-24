@@ -1,17 +1,30 @@
 const express = require("express");
 const {
   signup,
+  startGoogleAuth,
+  startDiscordAuth,
+  googleCallback,
+  discordCallback,
   login,
+  verifyMfaLogin,
   logout,
   getCurrentSession,
   getProfile,
   updateProfile,
+  changePassword,
   verifyEmail,
   resendVerification,
   requestEmailChange,
   confirmEmailChange,
   forgotPassword,
   resetPassword,
+  getMfaSetup,
+  verifyMfaSetup,
+  disableMfa,
+  regenerateBackupCodes,
+  getSessions,
+  revokeSession,
+  revokeOtherSessions,
 } = require("./auth.controller");
 const { attachSession, requireAuth } = require("./auth.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
@@ -55,8 +68,13 @@ const resetPasswordRateLimiter = createRateLimiter({
 });
 
 router.use(attachSession);
+router.get("/auth/google/start", startGoogleAuth);
+router.get("/auth/google/callback", googleCallback);
+router.get("/auth/discord/start", startDiscordAuth);
+router.get("/auth/discord/callback", discordCallback);
 router.post("/signup", signupRateLimiter, signup);
 router.post("/login", authRateLimiter, login);
+router.post("/login/mfa", authRateLimiter, verifyMfaLogin);
 router.post("/logout", logout);
 router.get("/me", getCurrentSession);
 router.get("/email-verification/verify", verifyEmail);
@@ -74,6 +92,14 @@ router.post(
 );
 router.post("/forgot-password", forgotPasswordRateLimiter, forgotPassword);
 router.post("/reset-password", resetPasswordRateLimiter, resetPassword);
+router.get("/mfa/setup", requireAuth, getMfaSetup);
+router.post("/mfa/verify-setup", requireAuth, verifyMfaSetup);
+router.post("/mfa/disable", requireAuth, disableMfa);
+router.post("/mfa/backup-codes/regenerate", requireAuth, regenerateBackupCodes);
+router.get("/sessions", requireAuth, getSessions);
+router.delete("/sessions/:sessionId", requireAuth, revokeSession);
+router.post("/sessions/revoke-others", requireAuth, revokeOtherSessions);
+router.post("/change-password", requireAuth, changePassword);
 router.get("/users/:userId", requireAuth, getProfile);
 router.patch("/users/:userId", requireAuth, updateProfile);
 

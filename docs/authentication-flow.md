@@ -29,10 +29,32 @@ The cookie name comes from `SESSION_COOKIE_NAME`.
 1. The user submits `emailOrUsername` and `password` to `POST /api/login`.
 2. The backend looks up the user by normalized email or username.
 3. The password is validated with bcrypt.
-4. `lastLoginAt` is updated.
-5. A session record is created in the database.
-6. The backend sends the session cookie.
-7. The frontend stores the returned user object in `AuthProvider`.
+4. Failed-login counters are reset on success, or incremented on failure.
+5. If the account has MFA enabled, the backend returns a short-lived login challenge instead of creating the session immediately.
+6. Otherwise, a session record is created in the database.
+7. The backend sends the session cookie.
+8. The frontend stores the returned user object in `AuthProvider`.
+
+## Account Lockout
+
+- Failed password attempts increment `failedLoginCount`.
+- After `LOGIN_LOCKOUT_THRESHOLD` consecutive failures, the account is locked for `LOGIN_LOCKOUT_MINUTES`.
+- Successful login clears the failure counters and lockout timestamp.
+
+## MFA Challenge Login
+
+1. The user submits credentials to `POST /api/login`.
+2. If `mfaEnabled` is true, the backend creates a `LoginChallenge` that expires after `LOGIN_CHALLENGE_MINUTES`.
+3. The frontend renders the MFA challenge step and posts to `POST /api/login/mfa`.
+4. The user can complete the challenge with either:
+   - a TOTP authenticator code
+   - a one-time backup code
+5. On success, the challenge is marked used, a normal session is created, and the login continues as usual.
+
+Important notes:
+
+- Backup codes are single-use.
+- MFA login does not set the session cookie until the challenge is completed.
 
 ## Session Rehydration
 
@@ -102,6 +124,73 @@ Important note:
 - The old email stays active until the new email is confirmed.
 - If SMTP is not configured, the request can be accepted but the confirmation email is skipped.
 
+## OAuth Login Flow
+
+Supported providers:
+
+- Google
+- Discord
+
+Flow:
+
+1. The frontend starts auth through `/api/auth/google/start` or `/api/auth/discord/start`.
+2. The backend signs a short-lived OAuth `state` payload that contains the provider and optional redirect path.
+3. The provider redirects back to `/api/auth/:provider/callback`.
+4. The backend exchanges the authorization code for an access token.
+5. The backend loads the provider profile, finds or creates a linked local user, creates a session, and redirects the browser to the frontend.
+
+Important notes:
+
+- OAuth account links are stored in `oauth_accounts`.
+- New OAuth-only users still receive a local `User` record and random password hash.
+- `APP_URL` must be configured correctly for the final redirect to the frontend.
+- The provider redirect URI must match the backend callback URL exactly.
+- If OAuth is not configured, leave the provider client ID and secret blank; placeholder strings are treated as invalid configuration.
+
+## MFA Management
+
+Authenticated users can manage MFA from the profile security area.
+
+### Setup
+
+1. The frontend calls `GET /api/mfa/setup`.
+2. The backend generates a TOTP secret, encrypts it, and stores it in `mfa_credentials`.
+3. The backend returns the raw secret and an `otpauth://` URL for QR-code setup.
+4. The frontend confirms setup through `POST /api/mfa/verify-setup`.
+5. The backend validates the code, enables MFA, and issues backup codes.
+
+### Disable
+
+1. The frontend posts to `POST /api/mfa/disable`.
+2. The backend verifies the current password.
+3. If MFA is enabled, the user must also provide an authenticator code or backup code.
+4. The backend deletes backup codes, login challenges, and MFA credentials, then disables MFA.
+
+### Regenerate backup codes
+
+1. The frontend posts to `POST /api/mfa/backup-codes/regenerate`.
+2. The backend verifies the current password and a second factor.
+3. Existing backup codes are replaced with a new one-time set.
+
+## Session Management
+
+Authenticated users can review and revoke sessions:
+
+- `GET /api/sessions`
+- `DELETE /api/sessions/:sessionId`
+- `POST /api/sessions/revoke-others`
+
+Each session stores:
+
+- creation time
+- last seen time
+- expiry
+- remember-me flag
+- user agent
+- IP address
+
+The backend also uses the stored user-agent and IP fingerprint to send a security alert email on sign-in from a new device or location.
+
 ## Authorization Layers
 
 ### `attachSession`
@@ -151,4 +240,6 @@ This is especially important because authentication is cookie-based.
 - Set `TRUST_PROXY` correctly when the backend runs behind Nginx, a load balancer, or a platform proxy.
 - Keep frontend and backend origins aligned with `CORS_ORIGIN`, `APP_URL`, and `NEXT_PUBLIC_API_URL`.
 - `SESSION_COOKIE_NAME` is required at boot because the backend does not fall back to a default cookie name.
+- Set `AUTH_ENCRYPTION_KEY` in production so MFA secrets and OAuth state signing do not depend on fallback material.
+- OAuth providers require their client IDs, secrets, callback URLs, and a valid `APP_URL`.
 - Replace the placeholder monitoring adapter if you need auth/security observability in production.

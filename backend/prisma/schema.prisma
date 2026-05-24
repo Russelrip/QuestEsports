@@ -13,6 +13,11 @@ enum UserRole {
   admin
 }
 
+enum AuthProvider {
+  google
+  discord
+}
+
 enum RegistrationMemberRole {
   CAPTAIN
   PLAYER
@@ -54,32 +59,41 @@ enum TeamMemberInviteStatus {
 }
 
 model User {
-  id                 String       @id @default(uuid()) @db.Uuid
-  firstName          String       @map("first_name")
-  lastName           String       @map("last_name")
-  email              String
-  emailNormalized    String       @unique @map("email_normalized")
-  pendingEmail       String?      @map("pending_email")
-  pendingEmailNormalized String?  @unique @map("pending_email_normalized")
-  username           String
-  usernameNormalized String       @unique @map("username_normalized")
-  passwordHash       String       @map("password_hash")
-  emailVerified      Boolean      @default(false) @map("email_verified")
-  emailVerifiedAt    DateTime?    @map("email_verified_at")
-  role               UserRole     @default(user)
-  phone              String?
-  discordTag         String?      @map("discord_tag")
-  lastLoginAt        DateTime?    @map("last_login_at")
-  createdAt          DateTime     @default(now()) @map("created_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
-  sessions           Session[]
-  verificationTokens VerificationToken[]
-  emailChangeTokens  EmailChangeToken[]
+  id                     String            @id @default(uuid()) @db.Uuid
+  firstName              String            @map("first_name")
+  lastName               String            @map("last_name")
+  email                  String
+  emailNormalized        String            @unique @map("email_normalized")
+  pendingEmail           String?           @map("pending_email")
+  pendingEmailNormalized String?           @unique @map("pending_email_normalized")
+  username               String
+  usernameNormalized     String            @unique @map("username_normalized")
+  passwordHash           String            @map("password_hash")
+  emailVerified          Boolean           @default(false) @map("email_verified")
+  emailVerifiedAt        DateTime?         @map("email_verified_at")
+  role                   UserRole          @default(user)
+  phone                  String?
+  discordTag             String?           @map("discord_tag")
+  lastLoginAt            DateTime?         @map("last_login_at")
+  failedLoginCount       Int               @default(0) @map("failed_login_count")
+  lastFailedLoginAt      DateTime?         @map("last_failed_login_at")
+  lockedUntil            DateTime?         @map("locked_until")
+  mfaEnabled             Boolean           @default(false) @map("mfa_enabled")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+  sessions               Session[]
+  verificationTokens     VerificationToken[]
+  emailChangeTokens      EmailChangeToken[]
   passwordResetTokens PasswordResetToken[]
-  savedTeams         SavedTeam[]
+  mfaCredential          MfaCredential?
+  backupCodes            BackupCode[]
+  loginChallenges        LoginChallenge[]
+  oauthAccounts          OAuthAccount[]
+  savedTeams             SavedTeam[]
 
   @@index([role])
   @@index([createdAt])
+  @@index([lockedUntil])
   @@map("users")
 }
 
@@ -134,12 +148,70 @@ model Session {
   tokenHash  String    @unique @map("token_hash")
   expiresAt  DateTime  @map("expires_at")
   lastSeenAt DateTime? @map("last_seen_at")
+  userAgent  String?   @map("user_agent")
+  ipAddress  String?   @map("ip_address")
+  rememberMe Boolean   @default(false) @map("remember_me")
   createdAt  DateTime  @default(now()) @map("created_at")
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+model MfaCredential {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @map("user_id") @db.Uuid
+  secretCiphertext String   @map("secret_ciphertext")
+  enabledAt        DateTime? @map("enabled_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mfa_credentials")
+}
+
+model BackupCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @unique @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([usedAt])
+  @@map("backup_codes")
+}
+
+model LoginChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  rememberMe Boolean   @default(false) @map("remember_me")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("login_challenges")
+}
+
+model OAuthAccount {
+  id                String       @id @default(uuid()) @db.Uuid
+  userId            String       @map("user_id") @db.Uuid
+  provider          AuthProvider
+  providerUserId    String       @map("provider_user_id")
+  email             String?      @map("email")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("oauth_accounts")
 }
 
 model ContactSubmission {

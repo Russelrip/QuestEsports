@@ -12,8 +12,25 @@ export type AuthUser = {
   pendingEmail?: string | null;
   emailVerified: boolean;
   emailVerifiedAt?: string | null;
+  mfaEnabled?: boolean;
   lastLoginAt?: string | null;
   createdAt?: string | null;
+};
+
+export type PendingMfaUser = Pick<
+  AuthUser,
+  "id" | "email" | "username" | "firstName" | "lastName" | "role" | "mfaEnabled"
+>;
+
+export type UserSession = {
+  id: string;
+  createdAt: string;
+  lastSeenAt?: string | null;
+  expiresAt: string;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+  rememberMe: boolean;
+  isCurrent: boolean;
 };
 
 type ApiFetchOptions = RequestInit & {

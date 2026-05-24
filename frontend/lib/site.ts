@@ -260,7 +260,7 @@ export const organizationStructuredData = {
   sameAs: [
     "https://discord.gg/cxkM7dk9CM",
     "https://www.facebook.com/share/1HNNM3e9ub/?mibextid=wwXIfr",
-    "https://www.instagram.com/",
+    "https://www.instagram.com/questesportslk/",
     "https://www.tiktok.com/@senumii",
     "https://www.youtube.com/",
     "https://www.linkedin.com/",
@@ -367,7 +367,7 @@ export const socialLinks = [
     icon: "/images/facebook.png",
   },
   {
-    href: "https://www.instagram.com/",
+    href: "https://www.instagram.com/questesportslk/",
     label: "Instagram",
     icon: "/images/instagram.png",
   },
@@ -399,7 +399,7 @@ export const contactLinks = [
       },
       {
         label: "@questesportslk",
-        href: "https://www.instagram.com/",
+        href: "https://www.instagram.com/questesportslk/",
         icon: "/images/instagram.png",
       },
       {

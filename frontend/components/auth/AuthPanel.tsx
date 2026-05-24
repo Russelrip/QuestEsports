@@ -18,24 +18,21 @@ export default function AuthPanel({
   return (
     <section className="py-8 sm:py-12">
       <Container>
-        <div className="grid gap-6 lg:grid-cols-[0.78fr_1.22fr]">
-          <Card className="flex flex-col justify-between p-6 sm:p-8">
-            <div>
-              <Badge className="border-cyan-300/20 bg-cyan-400/10 text-cyan-100">{eyebrow}</Badge>
-              <h2 className="mt-5 text-3xl text-white sm:text-4xl">{title}</h2>
-              <p className="mt-4 max-w-md text-sm leading-7 text-slate-300">{description}</p>
-            </div>
-            <div className="mt-8 grid gap-4">
-              <div className="rounded-[24px] border border-white/8 bg-white/5 p-5">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Why it matters</p>
-                <p className="mt-3 text-sm text-slate-300">
-                  Registrations, team invites, and account recovery all rely on the same session and verification layer.
-                </p>
+        <div className="mx-auto max-w-xl">
+          <Card className="relative overflow-hidden border-slate-800/90 bg-[linear-gradient(180deg,rgba(9,14,29,0.98),rgba(5,8,18,0.99))] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)] sm:p-8">
+            <div className="pointer-events-none absolute inset-x-8 top-0 h-32 rounded-full bg-red-500/8 blur-3xl" />
+            <div className="relative">
+              <div className="flex flex-col items-center text-center">
+                <Badge className="border-red-400/20 bg-red-500/10 text-red-100">{eyebrow}</Badge>
+                <h2 className="mt-5 text-3xl text-white sm:text-4xl">{title}</h2>
+                <p className="mt-3 max-w-md text-sm leading-7 text-slate-400">{description}</p>
               </div>
-              {aside}
+
+              <div className="mt-8">{children}</div>
+
+              {aside ? <div className="mt-6">{aside}</div> : null}
             </div>
           </Card>
-          <Card className="p-6 sm:p-8">{children}</Card>
         </div>
       </Container>
     </section>

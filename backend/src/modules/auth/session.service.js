@@ -20,6 +20,7 @@ const mapUserForSession = (record) => ({
   pendingEmail: record.pendingEmail || null,
   emailVerified: Boolean(record.emailVerified),
   emailVerifiedAt: record.emailVerifiedAt || null,
+  mfaEnabled: Boolean(record.mfaEnabled),
   lastLoginAt: record.lastLoginAt,
   createdAt: record.createdAt,
 });
@@ -76,24 +77,32 @@ const buildExpiredCookieValue = () => {
   return segments.join("; ");
 };
 
-const createSession = async ({ userId, rememberMe }) => {
+const createSession = async ({
+  userId,
+  rememberMe,
+  userAgent = null,
+  ipAddress = null,
+}) => {
   const token = crypto.randomBytes(48).toString("hex");
   const tokenHash = hashToken(token);
   const expiresAt = new Date(
     Date.now() + getSessionDurationMs(rememberMe)
   ).toISOString();
 
-  await prisma.session.create({
+  const session = await prisma.session.create({
     data: {
       id: crypto.randomUUID(),
       userId,
       tokenHash,
       expiresAt: new Date(expiresAt),
       lastSeenAt: new Date(),
+      userAgent,
+      ipAddress,
+      rememberMe: Boolean(rememberMe),
     },
   });
 
-  return { token, expiresAt };
+  return { token, expiresAt, sessionId: session.id };
 };
 
 const deleteSessionByToken = async (token) => {
@@ -118,6 +127,17 @@ const deleteExpiredSessions = async () => {
   });
 };
 
+const mapSessionSummary = (session, currentSessionId = null) => ({
+  id: session.id,
+  createdAt: session.createdAt,
+  lastSeenAt: session.lastSeenAt,
+  expiresAt: session.expiresAt,
+  userAgent: session.userAgent,
+  ipAddress: session.ipAddress,
+  rememberMe: Boolean(session.rememberMe),
+  isCurrent: session.id === currentSessionId,
+});
+
 const getSessionFromRequest = async (req) => {
   const cookies = parseCookies(req.headers.cookie || "");
   const token = cookies[SESSION_COOKIE_NAME];
@@ -135,6 +155,11 @@ const getSessionFromRequest = async (req) => {
     select: {
       id: true,
       expiresAt: true,
+      createdAt: true,
+      lastSeenAt: true,
+      userAgent: true,
+      ipAddress: true,
+      rememberMe: true,
       user: {
         select: PUBLIC_USER_SELECT,
       },
@@ -162,11 +187,70 @@ const getSessionFromRequest = async (req) => {
   return {
     token,
     sessionId: session.id,
+    createdAt: session.createdAt,
+    lastSeenAt: session.lastSeenAt,
+    expiresAt: session.expiresAt,
+    userAgent: session.userAgent,
+    ipAddress: session.ipAddress,
+    rememberMe: Boolean(session.rememberMe),
     user: mapUserForSession({
       userId: session.user.id,
       ...session.user,
     }),
   };
+};
+
+const listUserSessions = async ({ userId, currentSessionId = null }) => {
+  await deleteExpiredSessions();
+
+  const sessions = await prisma.session.findMany({
+    where: { userId },
+    orderBy: [{ lastSeenAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      createdAt: true,
+      lastSeenAt: true,
+      expiresAt: true,
+      userAgent: true,
+      ipAddress: true,
+      rememberMe: true,
+    },
+  });
+
+  return sessions.map((session) => mapSessionSummary(session, currentSessionId));
+};
+
+const deleteSessionById = async ({ userId, sessionId }) => {
+  await prisma.session.deleteMany({
+    where: {
+      id: sessionId,
+      userId,
+    },
+  });
+};
+
+const deleteOtherSessions = async ({ userId, excludeSessionId }) => {
+  await prisma.session.deleteMany({
+    where: {
+      userId,
+      ...(excludeSessionId ? { id: { not: excludeSessionId } } : {}),
+    },
+  });
+};
+
+const hasSessionFingerprint = async ({
+  userId,
+  userAgent = null,
+  ipAddress = null,
+}) => {
+  return prisma.session.findFirst({
+    where: {
+      userId,
+      userAgent,
+      ipAddress,
+    },
+    select: { id: true },
+  });
 };
 
 const setSessionCookie = (res, token, expiresAt) => {
@@ -183,4 +267,8 @@ module.exports = {
   getSessionFromRequest,
   setSessionCookie,
   clearSessionCookie,
+  listUserSessions,
+  deleteSessionById,
+  deleteOtherSessions,
+  hasSessionFingerprint,
 };

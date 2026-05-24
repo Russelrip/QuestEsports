@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type QueryOptions<TData> = {
   enabled?: boolean;
@@ -13,31 +13,45 @@ export function useApiQuery<TData>(
   options: QueryOptions<TData> = {}
 ) {
   const { enabled = true, initialData = null } = options;
+  const stableKey = JSON.stringify(key);
   const [data, setData] = useState<TData | null>(initialData);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(enabled);
+  const queryFnRef = useRef(queryFn);
+  const requestIdRef = useRef(0);
 
-  const stableKey = useMemo(() => JSON.stringify(key), [key]);
+  useEffect(() => {
+    queryFnRef.current = queryFn;
+  }, [queryFn]);
 
   const refetch = useCallback(async () => {
     if (!enabled) {
+      setLoading(false);
       return null;
     }
 
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setLoading(true);
     setError("");
 
     try {
-      const nextData = await queryFn();
-      setData(nextData);
+      const nextData = await queryFnRef.current();
+      if (requestIdRef.current === requestId) {
+        setData(nextData);
+      }
       return nextData;
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Request failed.");
+      if (requestIdRef.current === requestId) {
+        setError(nextError instanceof Error ? nextError.message : "Request failed.");
+      }
       return null;
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
-  }, [enabled, queryFn]);
+  }, [enabled]);
 
   useEffect(() => {
     void refetch();

@@ -6,10 +6,20 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import AuthPanel from "@/components/auth/AuthPanel";
+import {
+  AuthInput,
+  AuthPasswordInput,
+  DiscordBadgeIcon,
+  EmailIcon,
+  LockIcon,
+  PhoneIcon,
+  ShieldIcon,
+  SocialAuthButtons,
+  UserIcon,
+} from "@/components/auth/AuthFormControls";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
-import { Input } from "@/components/ui/input";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 
 const signupSchema = z
@@ -97,63 +107,88 @@ export default function SignupForm() {
 
   return (
     <AuthPanel
-      title="Create Player Account"
-      description="Set up your Quest Esports identity so you can register teams, confirm invites, and receive tournament updates."
-      eyebrow="Player Onboarding"
+      title="Join Quest Esports"
+      description="Create your gaming account to register teams, manage invites, and stay ready for upcoming events."
+      eyebrow="Create Account"
     >
+      <div className="mb-6 flex justify-center">
+        <DiscordBadgeIcon />
+      </div>
+
       <form className="grid gap-5" onSubmit={onSubmit}>
         <div className="grid gap-5 sm:grid-cols-2">
           <FormField label="First Name" htmlFor="firstName" error={form.formState.errors.firstName?.message} required>
-            <Input id="firstName" {...form.register("firstName")} />
+            <AuthInput id="firstName" placeholder="Your first name" autoComplete="given-name" icon={<UserIcon />} {...form.register("firstName")} />
           </FormField>
           <FormField label="Last Name" htmlFor="lastName" error={form.formState.errors.lastName?.message} required>
-            <Input id="lastName" {...form.register("lastName")} />
+            <AuthInput id="lastName" placeholder="Your last name" autoComplete="family-name" icon={<UserIcon />} {...form.register("lastName")} />
           </FormField>
         </div>
 
         <FormField label="Email Address" htmlFor="email" error={form.formState.errors.email?.message} required>
-          <Input id="email" type="email" {...form.register("email")} />
+          <AuthInput id="email" type="email" placeholder="Enter your email" autoComplete="email" icon={<EmailIcon />} {...form.register("email")} />
         </FormField>
 
         <FormField label="Username" htmlFor="username" error={form.formState.errors.username?.message} required>
-          <Input id="username" {...form.register("username")} />
+          <AuthInput id="username" placeholder="Choose a username" autoComplete="username" icon={<UserIcon />} {...form.register("username")} />
         </FormField>
 
         <div className="grid gap-5 sm:grid-cols-2">
           <FormField label="Password" htmlFor="password" error={form.formState.errors.password?.message} required>
-            <Input id="password" type="password" {...form.register("password")} />
+            <AuthPasswordInput
+              id="password"
+              placeholder="Create a password"
+              autoComplete="new-password"
+              icon={<LockIcon />}
+              {...form.register("password")}
+            />
           </FormField>
           <FormField label="Confirm Password" htmlFor="confirmPassword" error={form.formState.errors.confirmPassword?.message} required>
-            <Input id="confirmPassword" type="password" {...form.register("confirmPassword")} />
+            <AuthPasswordInput
+              id="confirmPassword"
+              placeholder="Confirm your password"
+              autoComplete="new-password"
+              icon={<ShieldIcon />}
+              {...form.register("confirmPassword")}
+            />
           </FormField>
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2">
           <FormField label="Phone Number" htmlFor="phone" hint="Optional">
-            <Input id="phone" {...form.register("phone")} />
+            <AuthInput id="phone" placeholder="+94 77 123 4567" autoComplete="tel" icon={<PhoneIcon />} {...form.register("phone")} />
           </FormField>
           <FormField label="Discord Tag" htmlFor="discordTag" hint="Optional">
-            <Input id="discordTag" placeholder="username#1234" {...form.register("discordTag")} />
+            <AuthInput id="discordTag" placeholder="username#1234" icon={<ShieldIcon />} {...form.register("discordTag")} />
           </FormField>
         </div>
 
-        <label className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
-          <input type="checkbox" className="mt-1 size-4 accent-cyan-300" {...form.register("terms")} />
+        <label className="flex items-start gap-3 rounded-[16px] border border-slate-800 bg-slate-900/65 px-4 py-3 text-sm text-slate-300">
+          <input type="checkbox" className="mt-1 size-4 accent-red-500" {...form.register("terms")} />
           <span>I agree to the Terms of Service and Privacy Policy.</span>
         </label>
         {form.formState.errors.terms?.message ? <p className="text-sm text-rose-300">{form.formState.errors.terms.message}</p> : null}
         {form.formState.errors.root?.message ? <p className="text-sm text-rose-300">{form.formState.errors.root.message}</p> : null}
 
-        <Button type="submit" disabled={form.formState.isSubmitting}>
+        <Button
+          type="submit"
+          disabled={form.formState.isSubmitting}
+          className="h-12 rounded-[16px] border-red-400/30 bg-[linear-gradient(180deg,#ff3131,#df1f1f)] shadow-[0_18px_30px_rgba(223,31,31,0.22)] hover:brightness-105"
+        >
           {form.formState.isSubmitting ? "Creating account..." : "Create Account"}
         </Button>
 
-        <p className="text-sm text-slate-400">
-          Already have an account? <Link href="/login" className="text-white">Login here</Link>
+        <SocialAuthButtons mode="signup" />
+
+        <p className="text-center text-sm text-slate-400">
+          Already have an account?{" "}
+          <Link href="/login" className="text-red-300 transition hover:text-red-200">
+            Sign in
+          </Link>
         </p>
 
         {submittedEmail ? (
-          <div className="rounded-[24px] border border-emerald-300/20 bg-emerald-400/8 p-5">
+          <div className="rounded-[20px] border border-emerald-300/20 bg-emerald-400/8 p-5">
             <h3 className="text-lg font-semibold text-white">Account created successfully</h3>
             <p className="mt-2 text-sm text-slate-300">
               Check your inbox to verify your email before joining a tournament.

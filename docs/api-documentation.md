@@ -107,9 +107,75 @@ Body:
 
 Behavior:
 
-- Creates a server-side session record.
-- Sets an `HttpOnly`, `SameSite=Lax` cookie.
+- Creates a server-side session record when MFA is not enabled.
+- Sets an `HttpOnly`, `SameSite=Lax` cookie after a completed login.
 - Uses the remember-me TTL when `remember` is truthy.
+- Applies account lockout rules after repeated password failures.
+
+Possible MFA response:
+
+```json
+{
+  "success": true,
+  "message": "Verification code required.",
+  "requiresMfa": true,
+  "challengeToken": "raw-login-challenge-token",
+  "challengeExpiresAt": "2026-05-25T12:00:00.000Z",
+  "user": {
+    "id": "uuid",
+    "email": "jane@example.com",
+    "username": "janeplayer",
+    "firstName": "Jane",
+    "lastName": "Player",
+    "role": "user",
+    "mfaEnabled": true
+  }
+}
+```
+
+### `POST /api/login/mfa`
+
+Completes an MFA login challenge and sets the session cookie.
+
+Body:
+
+```json
+{
+  "challengeToken": "raw-login-challenge-token",
+  "code": "123456",
+  "backupCode": "AB12CD34"
+}
+```
+
+Behavior:
+
+- Requires either `code` or `backupCode`.
+- Authenticator codes are checked against the encrypted TOTP secret.
+- Backup codes are single-use.
+
+### `GET /api/auth/google/start`
+
+Starts Google OAuth and redirects to Google.
+
+Optional query params:
+
+- `redirect`: relative frontend path to return to after login
+
+### `GET /api/auth/discord/start`
+
+Starts Discord OAuth and redirects to Discord.
+
+Optional query params:
+
+- `redirect`: relative frontend path to return to after login
+
+### `GET /api/auth/google/callback`
+
+Completes Google OAuth, creates a local session, and redirects to the frontend.
+
+### `GET /api/auth/discord/callback`
+
+Completes Discord OAuth, creates a local session, and redirects to the frontend.
 
 ### `POST /api/logout`
 
@@ -221,6 +287,86 @@ Behavior:
 - Resets the password
 - Consumes the token
 - Deletes all existing sessions for that user
+
+### `GET /api/mfa/setup`
+
+Protected route.
+
+Creates or refreshes the pending MFA secret for the current user.
+
+Returns:
+
+- `secret`
+- `otpauthUrl`
+
+### `POST /api/mfa/verify-setup`
+
+Protected route.
+
+Body:
+
+```json
+{
+  "code": "123456"
+}
+```
+
+Behavior:
+
+- Enables MFA
+- Returns a new backup-code set
+- Revokes other active sessions
+
+### `POST /api/mfa/disable`
+
+Protected route.
+
+Body:
+
+```json
+{
+  "currentPassword": "secret123",
+  "code": "123456",
+  "backupCode": "AB12CD34"
+}
+```
+
+Behavior:
+
+- Verifies the current password
+- Requires an authenticator code or backup code when MFA is enabled
+- Deletes MFA credentials, login challenges, and backup codes
+- Revokes other active sessions
+
+### `POST /api/mfa/backup-codes/regenerate`
+
+Protected route.
+
+Uses the same request body as MFA disable.
+
+Behavior:
+
+- Verifies the current password plus a second factor
+- Replaces all existing backup codes
+- Revokes other active sessions
+
+### `GET /api/sessions`
+
+Protected route.
+
+Returns a list of active sessions for the current user.
+
+### `DELETE /api/sessions/:sessionId`
+
+Protected route.
+
+Revokes one session owned by the current user.
+
+### `POST /api/sessions/revoke-others`
+
+Protected route.
+
+Revokes all other sessions while keeping the current session active.
 
 ## Contact Endpoint
 

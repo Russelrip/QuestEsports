@@ -1,4 +1,3 @@
-require("dotenv").config();
 const app = require("./app");
 const { initializeDatabase, closeDatabase } = require("./lib/database");
 const { logger } = require("./lib/logger");

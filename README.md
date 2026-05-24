@@ -1,6 +1,6 @@
 # Quest Esports
 
-Quest Esports is a full-stack esports platform for publishing tournaments, registering teams, managing community communications, and curating poster/media content. The repository contains a public-facing Next.js application and an Express + Prisma API that powers authentication, tournament operations, admin tooling, and media workflows.
+Quest Esports is a full-stack esports platform for publishing tournaments, registering teams, managing community communications, and curating poster/media content. The repository contains a public-facing Next.js application and an Express + Prisma API that powers authentication, tournament operations, admin tooling, security workflows, and media management.
 
 ## Quick Start
 
@@ -23,6 +23,8 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
+MFA_ISSUER=Quest Esports
+AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 SMTP_HOST=
 SMTP_PORT=587
@@ -30,6 +32,12 @@ SMTP_USER=
 SMTP_PASS=
 MAIL_FROM=
 APP_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
 ```
 
 Frontend: create `frontend/.env.local`
@@ -45,6 +53,7 @@ Notes:
 - `NEXT_PUBLIC_API_URL` must point at the backend origin.
 - `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
 - SMTP is optional for local development. If mail is not configured, signup, verification, password reset, team invites, and email-change requests still execute, but email delivery is skipped.
+- OAuth is optional. If you enable Google or Discord login, use real client credentials and register the callback URLs shown above. Do not leave placeholder values like `your_google_client_id`.
 
 ### 2. Install dependencies
 
@@ -122,6 +131,7 @@ Recommended flow:
 - Tournament listing and tournament detail pages
 - Team tournament registration flow
 - Email verification, login, logout, password reset, and email change flows
+- MFA setup, MFA login challenge, backup codes, session management, and Google/Discord OAuth sign-in
 - Posters gallery and match-video archive
 - Rulebook and contact pages
 - Player profile page
@@ -226,7 +236,7 @@ QuestEsports/
 
 The backend exposes these main route groups:
 
-- Auth: `/api/signup`, `/api/login`, `/api/logout`, `/api/me`, verification, email-change, and password-reset endpoints
+- Auth: `/api/signup`, `/api/login`, `/api/login/mfa`, OAuth start/callback routes, `/api/logout`, `/api/me`, verification, email-change, password-reset, MFA, and session endpoints
 - Public tournaments: `/api/tournaments`, `/api/tournaments/:slug`
 - Tournament registration: `/api/tournament-registration`, `/api/tournament-registration/status/:slug`
 - Teams: `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
@@ -249,6 +259,8 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
+MFA_ISSUER=Quest Esports
+AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
@@ -256,6 +268,12 @@ SMTP_USER=resend
 SMTP_PASS=re_your_resend_api_key
 MAIL_FROM="Quest Esports <no-reply@example.com>"
 APP_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
 ```
 
 Notes:
@@ -264,6 +282,26 @@ Notes:
 - `CORS_ORIGIN` supports a comma-separated allowlist.
 - `APP_URL` must point at the frontend origin used in verification, password reset, email-change, and invite emails when SMTP is enabled.
 - SMTP values are optional for local development. When SMTP is not configured, mail-triggering actions log and skip delivery instead of crashing startup.
+- If OAuth is enabled locally, register these redirect URIs with the providers:
+  - Google: `http://localhost:5001/api/auth/google/callback`
+  - Discord: `http://localhost:5001/api/auth/discord/callback`
+- If OAuth is disabled, leave the OAuth client ID and secret values blank rather than using placeholder text.
+
+## OAuth Setup
+
+Use these values for local development:
+
+- `APP_URL=http://localhost:3000`
+- `GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback`
+- `DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback`
+
+Use these values for production:
+
+- `APP_URL=https://questesports.lk`
+- `GOOGLE_CALLBACK_URL=https://api.questesports.lk/api/auth/google/callback`
+- `DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback`
+
+Provider dashboard redirects should match the callback URL values exactly.
 
 ### Frontend
 
@@ -329,11 +367,30 @@ Default local URLs:
 - The backend creates upload directories automatically at startup.
 - There is no root workspace runner; start `backend` and `frontend` in separate terminals.
 - Team registration requires a logged-in user with a verified email address.
+- Direct imports that touch backend config now load `.env` automatically, so scripts and one-off Node entrypoints behave the same as `node src/server.js`.
 - Team logos are intentionally protected behind admin access.
 - The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
 - There is currently no automated test suite in the repository.
 - There is currently no admin seed/bootstrap script beyond creating a user and promoting it through Prisma Studio.
 - Background jobs and monitoring are placeholder integrations and should be wired to production services before scaling email/media workloads.
+
+## Verification Commands
+
+Frontend:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+Backend:
+
+```bash
+cd backend
+npm run prisma:generate
+node src/server.js
+```
 
 ## Recommended Next Steps
 

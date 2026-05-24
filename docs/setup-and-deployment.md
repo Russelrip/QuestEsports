@@ -38,6 +38,8 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
+MFA_ISSUER=Quest Esports
+AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
@@ -45,9 +47,16 @@ SMTP_USER=resend
 SMTP_PASS=re_your_resend_api_key
 MAIL_FROM="Quest Esports <no-reply@example.com>"
 APP_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
 ```
 
 For purely local development, SMTP values can be left blank. The backend will still run, but verification, password reset, invite, and email-change emails will be skipped instead of sent.
+If OAuth is not being used locally, leave the OAuth client ID and secret values blank.
 
 Frontend `frontend/.env.local`:
 
@@ -118,6 +127,31 @@ For production:
 - set `MAIL_FROM`
 - set `APP_URL` to the public frontend origin
 
+Security-related optional variables:
+
+- `MFA_ISSUER` to customize authenticator app labeling
+- `AUTH_ENCRYPTION_KEY` for encrypting MFA secrets and signing OAuth state
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` for Google login
+- `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_CALLBACK_URL` for Discord login
+
+## OAuth Provider Configuration
+
+Local redirect URIs:
+
+- Google: `http://localhost:5001/api/auth/google/callback`
+- Discord: `http://localhost:5001/api/auth/discord/callback`
+
+Production redirect URIs:
+
+- Google: `https://api.questesports.lk/api/auth/google/callback`
+- Discord: `https://api.questesports.lk/api/auth/discord/callback`
+
+Notes:
+
+- The provider dashboard redirect must match your backend callback URL exactly.
+- `APP_URL` must point to the frontend origin, not the API origin, because the backend redirects the browser back to the frontend after OAuth completes.
+- Do not use placeholder strings such as `your_google_client_id` or `your_discord_client_id`; leave values blank until real credentials are available.
+
 If you use Resend SMTP:
 
 - host: `smtp.resend.com`
@@ -185,6 +219,8 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
+MFA_ISSUER=Quest Esports
+AUTH_ENCRYPTION_KEY=replace_with_a_long_random_secret
 TRUST_PROXY=1
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
@@ -192,6 +228,12 @@ SMTP_USER=resend
 SMTP_PASS=re_your_resend_api_key
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 APP_URL=https://questesports.lk
+GOOGLE_CLIENT_ID=your_real_google_client_id
+GOOGLE_CLIENT_SECRET=your_real_google_client_secret
+GOOGLE_CALLBACK_URL=https://api.questesports.lk/api/auth/google/callback
+DISCORD_CLIENT_ID=your_real_discord_client_id
+DISCORD_CLIENT_SECRET=your_real_discord_client_secret
+DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback
 ```
 
 Notes:
@@ -247,11 +289,15 @@ Check all of the following:
 - `GET /api/health` returns `200`
 - signup works
 - login sets a session cookie
+- MFA setup can be started and confirmed
+- MFA login challenge works with both authenticator and backup code paths
+- active sessions appear under `/api/sessions`
 - `/api/me` returns the authenticated user
 - verification emails contain the correct frontend URL
 - email-change confirmation emails contain the correct frontend URL
 - password reset emails contain the correct frontend URL
 - team invite emails contain the correct frontend URL
+- Google and Discord login redirect back to the expected frontend route when enabled
 - tournament banners render
 - poster images render
 - admin can access team logos

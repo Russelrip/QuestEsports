@@ -8,7 +8,10 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { apiFetch, apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 import { useAuth } from "@/components/auth/AuthProvider";
+import ChangePasswordForm from "@/components/auth/ChangePasswordForm";
+import MfaSettingsPanel from "@/components/auth/MfaSettingsPanel";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
+import SessionList from "@/components/auth/SessionList";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
@@ -50,7 +53,7 @@ const formatMemberRole = (role: string, memberOrder: number) => {
 export default function ProfileView() {
   const router = useRouter();
   const { user, refreshUser, logout, isLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<"account" | "teams">("account");
+  const [activeTab, setActiveTab] = useState<"account" | "security" | "teams">("account");
   const { data: teamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
   const teams = teamsData ?? [];
@@ -261,6 +264,13 @@ export default function ProfileView() {
               >
                 Teams
               </button>
+              <button
+                type="button"
+                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "security" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
+                onClick={() => setActiveTab("security")}
+              >
+                Security
+              </button>
             </div>
 
             {activeTab === "account" ? (
@@ -319,6 +329,12 @@ export default function ProfileView() {
                     </Button>
                   </form>
                 </div>
+              </div>
+            ) : activeTab === "security" ? (
+              <div className="grid gap-6">
+                <ChangePasswordForm />
+                <MfaSettingsPanel />
+                <SessionList />
               </div>
             ) : (
               <div>

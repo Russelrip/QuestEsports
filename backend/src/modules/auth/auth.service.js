@@ -1,13 +1,21 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { Prisma } = require("../../generated/prisma");
+const { env } = require("../../config/env");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { createTokenPair, hashToken } = require("../../lib/tokens");
+const { encryptSecret, decryptSecret } = require("../../lib/secret-box");
+const {
+  generateTotpSecret,
+  verifyTotpCode,
+  buildOtpAuthUrl,
+} = require("../../lib/totp");
 const { sendVerificationEmail } = require("../../lib/mail/sendVerificationEmail");
 const { sendEmailChangeEmail } = require("../../lib/mail/sendEmailChangeEmail");
 const { sendResetPasswordEmail } = require("../../lib/mail/sendResetPasswordEmail");
+const { sendSecurityEventEmail } = require("../../lib/mail/sendSecurityEventEmail");
 const {
   normalizeEmail,
   normalizeText,
@@ -16,6 +24,11 @@ const {
   isValidEmail,
   getSignupFieldErrors,
 } = require("../../lib/validation");
+
+const LOGIN_LOCKOUT_THRESHOLD = 5;
+const LOGIN_LOCKOUT_MINUTES = 15;
+const LOGIN_CHALLENGE_MINUTES = 10;
+const BACKUP_CODE_COUNT = 8;
 
 const PUBLIC_USER_SELECT = {
   id: true,
@@ -29,6 +42,7 @@ const PUBLIC_USER_SELECT = {
   pendingEmail: true,
   emailVerified: true,
   emailVerifiedAt: true,
+  mfaEnabled: true,
   lastLoginAt: true,
   createdAt: true,
 };
@@ -45,6 +59,7 @@ const mapUserForResponse = (user) => ({
   pendingEmail: user.pendingEmail || null,
   emailVerified: Boolean(user.emailVerified),
   emailVerifiedAt: user.emailVerifiedAt || null,
+  mfaEnabled: Boolean(user.mfaEnabled),
   lastLoginAt: user.lastLoginAt,
   createdAt: user.createdAt,
 });
@@ -115,6 +130,144 @@ const consumeUserToken = async ({
   });
 
   return usedAt;
+};
+
+const createChallengeRecord = async ({ userId, rememberMe }) => {
+  const challengeToken = createTokenPair({ minutes: LOGIN_CHALLENGE_MINUTES });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.loginChallenge.updateMany({
+      where: {
+        userId,
+        usedAt: null,
+      },
+      data: {
+        usedAt: new Date(),
+      },
+    });
+
+    await tx.loginChallenge.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId,
+        tokenHash: challengeToken.tokenHash,
+        expiresAt: challengeToken.expiresAt,
+        rememberMe: Boolean(rememberMe),
+      },
+    });
+  });
+
+  return challengeToken;
+};
+
+const getLoginChallenge = async ({ token }) => {
+  const challenge = await prisma.loginChallenge.findFirst({
+    where: {
+      tokenHash: hashToken(token),
+      usedAt: null,
+      expiresAt: {
+        gt: new Date(),
+      },
+    },
+    include: {
+      user: {
+        select: {
+          ...PUBLIC_USER_SELECT,
+          emailNormalized: true,
+          passwordHash: true,
+          mfaCredential: true,
+        },
+      },
+    },
+  });
+
+  if (!challenge) {
+    throw new HttpError(400, "This verification challenge is invalid or has expired.");
+  }
+
+  return challenge;
+};
+
+const markLoginChallengeUsed = async ({ challengeId }) => {
+  await prisma.loginChallenge.update({
+    where: { id: challengeId },
+    data: { usedAt: new Date() },
+  });
+};
+
+const buildLoginChallengeResponse = (user, challengeToken) => ({
+  requiresMfa: true,
+  challengeToken: challengeToken.rawToken,
+  challengeExpiresAt: challengeToken.expiresAt.toISOString(),
+  user: {
+    id: user.id,
+    email: user.email,
+    username: user.username,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    role: user.role,
+    mfaEnabled: true,
+  },
+});
+
+const generateBackupCodeValues = () =>
+  Array.from({ length: BACKUP_CODE_COUNT }, () =>
+    crypto.randomBytes(4).toString("hex").toUpperCase()
+  );
+
+const normalizeBackupCode = (code) =>
+  String(code || "")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .toUpperCase();
+
+const hashBackupCode = (code) => hashToken(normalizeBackupCode(code));
+
+const issueBackupCodes = async ({ tx, userId }) => {
+  const codes = generateBackupCodeValues();
+
+  await tx.backupCode.deleteMany({
+    where: { userId },
+  });
+
+  await tx.backupCode.createMany({
+    data: codes.map((code) => ({
+      id: crypto.randomUUID(),
+      userId,
+      codeHash: hashBackupCode(code),
+    })),
+  });
+
+  return codes;
+};
+
+const sendSecurityAlert = async ({
+  user,
+  subject,
+  title,
+  message,
+  actionLabel,
+  actionUrl,
+  outro,
+}) => {
+  try {
+    await sendSecurityEventEmail({
+      email: user.email,
+      firstName: user.firstName,
+      subject,
+      title,
+      message,
+      actionLabel,
+      actionUrl,
+      outro,
+    });
+  } catch (error) {
+    logger.error("Failed to send security alert email.", {
+      userId: user.id,
+      email: user.email,
+      subject,
+      error,
+    });
+  }
 };
 
 const validateUserBasics = ({
@@ -259,6 +412,8 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
     select: {
       ...PUBLIC_USER_SELECT,
       passwordHash: true,
+      failedLoginCount: true,
+      lockedUntil: true,
     },
   });
 
@@ -271,30 +426,67 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
     throw new HttpError(401, "Invalid credentials.");
   }
 
+  if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+    logger.warn("Blocked login for locked account", {
+      ...requestMeta,
+      emailOrUsername,
+      userId: user.id,
+      lockedUntil: user.lockedUntil,
+    });
+    throw new HttpError(
+      429,
+      "Too many failed login attempts. Please try again later."
+    );
+  }
+
   const isMatch = await bcrypt.compare(password, user.passwordHash);
   if (!isMatch) {
+    const failedLoginCount = (user.failedLoginCount || 0) + 1;
+    const lockAccount = failedLoginCount >= LOGIN_LOCKOUT_THRESHOLD;
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginCount,
+        lastFailedLoginAt: new Date(),
+        lockedUntil: lockAccount
+          ? new Date(Date.now() + LOGIN_LOCKOUT_MINUTES * 60 * 1000)
+          : null,
+      },
+    });
+
     logger.warn("Failed login attempt", {
       ...requestMeta,
       emailOrUsername,
       userId: user.id,
       reason: "invalid_password",
+      failedLoginCount,
     });
     throw new HttpError(401, "Invalid credentials.");
   }
 
-  const lastLoginAt = new Date();
   await prisma.user.update({
     where: { id: user.id },
-    data: { lastLoginAt },
+    data: {
+      failedLoginCount: 0,
+      lastFailedLoginAt: null,
+      lockedUntil: null,
+    },
   });
+
+  if (user.mfaEnabled) {
+    const challengeToken = await createChallengeRecord({
+      userId: user.id,
+      rememberMe: Boolean(body.remember),
+    });
+
+    return buildLoginChallengeResponse(user, challengeToken);
+  }
 
   return {
     userId: user.id,
     rememberMe: Boolean(body.remember),
-    user: mapUserForResponse({
-      ...user,
-      lastLoginAt: lastLoginAt.toISOString(),
-    }),
+    user: mapUserForResponse(user),
   };
 };
 
@@ -373,6 +565,324 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
   });
 
   return mapUserForResponse(user);
+};
+
+const markUserLoginSucceeded = async ({ userId }) => {
+  const lastLoginAt = new Date();
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      lastLoginAt,
+      failedLoginCount: 0,
+      lastFailedLoginAt: null,
+      lockedUntil: null,
+    },
+    select: PUBLIC_USER_SELECT,
+  });
+
+  return mapUserForResponse(user);
+};
+
+const completeMfaLogin = async ({ body }) => {
+  const challengeToken = normalizeText(body.challengeToken);
+  const verificationCode = normalizeText(body.code);
+  const backupCode = normalizeBackupCode(body.backupCode);
+
+  if (!challengeToken || (!verificationCode && !backupCode)) {
+    throw new HttpError(400, "A verification challenge and code are required.");
+  }
+
+  const challenge = await getLoginChallenge({ token: challengeToken });
+  const credential = challenge.user.mfaCredential;
+
+  if (!credential || !challenge.user.mfaEnabled) {
+    throw new HttpError(400, "Multi-factor authentication is not enabled for this account.");
+  }
+
+  let usedRecoveryCode = false;
+
+  if (backupCode) {
+    const backupCodeRecord = await prisma.backupCode.findFirst({
+      where: {
+        userId: challenge.userId,
+        codeHash: hashBackupCode(backupCode),
+        usedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!backupCodeRecord) {
+      throw new HttpError(400, "Invalid recovery code.");
+    }
+
+    await prisma.backupCode.update({
+      where: { id: backupCodeRecord.id },
+      data: { usedAt: new Date() },
+    });
+    usedRecoveryCode = true;
+  } else {
+    const secret = decryptSecret(credential.secretCiphertext);
+    if (!verifyTotpCode(secret, verificationCode)) {
+      throw new HttpError(400, "Invalid verification code.");
+    }
+  }
+
+  await markLoginChallengeUsed({ challengeId: challenge.id });
+
+  return {
+    userId: challenge.userId,
+    rememberMe: Boolean(challenge.rememberMe),
+    user: mapUserForResponse(challenge.user),
+    usedRecoveryCode,
+  };
+};
+
+const beginMfaSetup = async ({ currentUser }) => {
+  const user = await prisma.user.findUnique({
+    where: { id: currentUser.id },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      mfaEnabled: true,
+    },
+  });
+
+  if (!user) {
+    throw new HttpError(404, "User not found.");
+  }
+
+  if (user.mfaEnabled) {
+    throw new HttpError(400, "Multi-factor authentication is already enabled.");
+  }
+
+  const secret = generateTotpSecret();
+
+  await prisma.mfaCredential.upsert({
+    where: { userId: currentUser.id },
+    update: {
+      secretCiphertext: encryptSecret(secret),
+      enabledAt: null,
+    },
+    create: {
+      id: crypto.randomUUID(),
+      userId: currentUser.id,
+      secretCiphertext: encryptSecret(secret),
+      enabledAt: null,
+    },
+  });
+
+  return {
+      secret,
+      otpauthUrl: buildOtpAuthUrl({
+        secret,
+        accountName: user.email,
+        issuer: env.MFA_ISSUER,
+      }),
+    };
+};
+
+const confirmMfaSetup = async ({ currentUser, body }) => {
+  const code = normalizeText(body.code);
+
+  if (!code) {
+    throw new HttpError(400, "Verification code is required.");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: currentUser.id },
+    select: {
+      ...PUBLIC_USER_SELECT,
+      mfaCredential: true,
+    },
+  });
+
+  if (!user || !user.mfaCredential) {
+    throw new HttpError(400, "Start MFA setup before confirming it.");
+  }
+
+  const secret = decryptSecret(user.mfaCredential.secretCiphertext);
+  if (!verifyTotpCode(secret, code)) {
+    throw new HttpError(400, "Invalid verification code.");
+  }
+
+  const enabledAt = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    const updatedUser = await tx.user.update({
+      where: { id: currentUser.id },
+      data: { mfaEnabled: true },
+      select: PUBLIC_USER_SELECT,
+    });
+
+    await tx.mfaCredential.update({
+      where: { userId: currentUser.id },
+      data: {
+        enabledAt,
+      },
+    });
+
+    const backupCodes = await issueBackupCodes({
+      tx,
+      userId: currentUser.id,
+    });
+
+    return {
+      user: updatedUser,
+      backupCodes,
+    };
+  });
+
+  await sendSecurityAlert({
+    user: result.user,
+    subject: "Quest Esports MFA enabled",
+    title: "Multi-factor authentication enabled",
+    message:
+      "multi-factor authentication has been enabled on your Quest Esports account.",
+    outro:
+      "If you did not enable MFA, change your password immediately and contact support.",
+  });
+
+  return {
+    user: mapUserForResponse(result.user),
+    backupCodes: result.backupCodes,
+  };
+};
+
+const verifyUserSecurityCheck = async ({
+  currentUser,
+  currentPassword,
+  code,
+  backupCode,
+}) => {
+  const user = await prisma.user.findUnique({
+    where: { id: currentUser.id },
+    select: {
+      ...PUBLIC_USER_SELECT,
+      passwordHash: true,
+      mfaCredential: true,
+    },
+  });
+
+  if (!user) {
+    throw new HttpError(404, "User not found.");
+  }
+
+  const passwordMatches = await bcrypt.compare(String(currentPassword || ""), user.passwordHash);
+  if (!passwordMatches) {
+    throw new HttpError(400, "Current password is incorrect.");
+  }
+
+  if (user.mfaEnabled) {
+    if (!code && !backupCode) {
+      throw new HttpError(400, "An authenticator code or backup code is required.");
+    }
+
+    if (backupCode) {
+      const backupCodeRecord = await prisma.backupCode.findFirst({
+        where: {
+          userId: currentUser.id,
+          codeHash: hashBackupCode(backupCode),
+          usedAt: null,
+        },
+        select: { id: true },
+      });
+
+      if (!backupCodeRecord) {
+        throw new HttpError(400, "Invalid backup code.");
+      }
+
+      await prisma.backupCode.update({
+        where: { id: backupCodeRecord.id },
+        data: { usedAt: new Date() },
+      });
+    } else {
+      const secret = decryptSecret(user.mfaCredential?.secretCiphertext || "");
+      if (!verifyTotpCode(secret, code)) {
+        throw new HttpError(400, "Invalid verification code.");
+      }
+    }
+  }
+
+  return user;
+};
+
+const disableMfa = async ({ currentUser, body }) => {
+  const currentPassword = String(body.currentPassword || "");
+  const code = normalizeText(body.code);
+  const backupCode = normalizeBackupCode(body.backupCode);
+  const user = await verifyUserSecurityCheck({
+    currentUser,
+    currentPassword,
+    code,
+    backupCode,
+  });
+
+  if (!user.mfaEnabled) {
+    throw new HttpError(400, "Multi-factor authentication is not enabled.");
+  }
+
+  const updatedUser = await prisma.$transaction(async (tx) => {
+    await tx.backupCode.deleteMany({
+      where: { userId: currentUser.id },
+    });
+    await tx.mfaCredential.deleteMany({
+      where: { userId: currentUser.id },
+    });
+    await tx.loginChallenge.deleteMany({
+      where: { userId: currentUser.id },
+    });
+
+    return tx.user.update({
+      where: { id: currentUser.id },
+      data: { mfaEnabled: false },
+      select: PUBLIC_USER_SELECT,
+    });
+  });
+
+  await sendSecurityAlert({
+    user: updatedUser,
+    subject: "Quest Esports MFA disabled",
+    title: "Multi-factor authentication disabled",
+    message:
+      "multi-factor authentication has been removed from your Quest Esports account.",
+  });
+
+  return mapUserForResponse(updatedUser);
+};
+
+const regenerateBackupCodes = async ({ currentUser, body }) => {
+  const currentPassword = String(body.currentPassword || "");
+  const code = normalizeText(body.code);
+  const backupCode = normalizeBackupCode(body.backupCode);
+  const user = await verifyUserSecurityCheck({
+    currentUser,
+    currentPassword,
+    code,
+    backupCode,
+  });
+
+  if (!user.mfaEnabled) {
+    throw new HttpError(400, "Enable multi-factor authentication first.");
+  }
+
+  const backupCodes = await prisma.$transaction((tx) =>
+    issueBackupCodes({
+      tx,
+      userId: currentUser.id,
+    })
+  );
+
+  await sendSecurityAlert({
+    user,
+    subject: "Quest Esports backup codes regenerated",
+    title: "Backup codes regenerated",
+    message:
+      "your Quest Esports backup codes were regenerated. Your previous backup codes no longer work.",
+  });
+
+  return backupCodes;
 };
 
 const verifyEmailAddress = async ({ token }) => {
@@ -680,7 +1190,21 @@ const confirmEmailChange = async ({ token }) => {
         usedAt: emailVerifiedAt,
       });
 
+      await tx.session.deleteMany({
+        where: {
+          userId: emailChangeRecord.userId,
+        },
+      });
+
       return updatedUser;
+    });
+
+    await sendSecurityAlert({
+      user,
+      subject: "Quest Esports email address changed",
+      title: "Email address changed",
+      message:
+        "the email address on your Quest Esports account was updated successfully.",
     });
 
     return mapUserForResponse(user);
@@ -752,20 +1276,101 @@ const resetPassword = async ({ body }) => {
       },
     });
   });
+
+  const user = await prisma.user.findUnique({
+    where: { id: resetRecord.userId },
+    select: PUBLIC_USER_SELECT,
+  });
+
+  if (user) {
+    await sendSecurityAlert({
+      user,
+      subject: "Quest Esports password reset completed",
+      title: "Password reset completed",
+      message:
+        "your Quest Esports password was reset and all active sessions were signed out.",
+    });
+  }
+};
+
+const changePassword = async ({ currentUser, body, currentSessionId }) => {
+  const currentPassword = String(body.currentPassword || "");
+  const newPassword = String(body.newPassword || "");
+  const confirmNewPassword = String(body.confirmNewPassword || "");
+  const verificationCode = normalizeText(body.code);
+  const backupCode = normalizeBackupCode(body.backupCode);
+
+  if (!currentPassword || !newPassword || !confirmNewPassword) {
+    throw new HttpError(400, "Current password, new password, and confirmation are required.");
+  }
+
+  if (newPassword.length < 8) {
+    throw new HttpError(400, "Password must be at least 8 characters long.");
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    throw new HttpError(400, "Confirm password must match.");
+  }
+
+  const user = await verifyUserSecurityCheck({
+    currentUser,
+    currentPassword,
+    code: verificationCode,
+    backupCode,
+  });
+
+  if (await bcrypt.compare(newPassword, user.passwordHash)) {
+    throw new HttpError(400, "Choose a new password that is different from your current password.");
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const updatedUser = await prisma.$transaction(async (tx) => {
+    const nextUser = await tx.user.update({
+      where: { id: currentUser.id },
+      data: { passwordHash },
+      select: PUBLIC_USER_SELECT,
+    });
+
+    await tx.session.deleteMany({
+      where: {
+        userId: currentUser.id,
+        ...(currentSessionId ? { id: { not: currentSessionId } } : {}),
+      },
+    });
+
+    return nextUser;
+  });
+
+  await sendSecurityAlert({
+    user: updatedUser,
+    subject: "Quest Esports password changed",
+    title: "Password changed",
+    message:
+      "your Quest Esports password was changed and other active sessions were signed out.",
+  });
+
+  return mapUserForResponse(updatedUser);
 };
 
 module.exports = {
   PUBLIC_USER_SELECT,
   createSignup,
   authenticateUser,
+  markUserLoginSucceeded,
   getUserProfile,
   updateUserProfile,
+  completeMfaLogin,
+  beginMfaSetup,
+  confirmMfaSetup,
+  disableMfa,
+  regenerateBackupCodes,
   verifyEmailAddress,
   resendVerificationEmail,
   requestEmailChange,
   confirmEmailChange,
   requestPasswordReset,
   resetPassword,
+  changePassword,
   mapUserForResponse,
   validateUserBasics,
 };

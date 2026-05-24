@@ -13,13 +13,23 @@ const renderEmailLayout = ({ title, intro, actionLabel, actionUrl, outro }) => (
         <p style="margin:0 0 12px;font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#c4b5fd;">Quest Esports</p>
         <h1 style="margin:0 0 16px;font-size:28px;line-height:1.2;color:#ffffff;">${escapeHtml(title)}</h1>
         <p style="margin:0 0 24px;font-size:16px;line-height:1.7;color:#ddd6fe;">${escapeHtml(intro)}</p>
-        <a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:14px 22px;border-radius:999px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#ffffff;text-decoration:none;font-weight:700;">${escapeHtml(actionLabel)}</a>
+        ${
+          actionLabel && actionUrl
+            ? `<a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:14px 22px;border-radius:999px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#ffffff;text-decoration:none;font-weight:700;">${escapeHtml(actionLabel)}</a>`
+            : ""
+        }
         <p style="margin:24px 0 0;font-size:14px;line-height:1.7;color:#c4b5fd;">${escapeHtml(outro)}</p>
-        <p style="margin:16px 0 0;font-size:13px;line-height:1.7;color:#a78bfa;word-break:break-all;">${escapeHtml(actionUrl)}</p>
+        ${
+          actionUrl
+            ? `<p style="margin:16px 0 0;font-size:13px;line-height:1.7;color:#a78bfa;word-break:break-all;">${escapeHtml(actionUrl)}</p>`
+            : ""
+        }
       </div>
     </div>
   `,
-  text: `${title}\n\n${intro}\n\n${actionLabel}: ${actionUrl}\n\n${outro}`,
+  text: `${title}\n\n${intro}${
+    actionLabel && actionUrl ? `\n\n${actionLabel}: ${actionUrl}` : ""
+  }\n\n${outro}`,
 });
 
 const buildGreeting = (firstName, message) =>
@@ -85,9 +95,28 @@ const buildTeamInviteEmail = ({
       "Open the invite to accept or decline your place on the roster. If you were not expecting this, you can safely ignore the email.",
   });
 
+const buildSecurityAlertEmail = ({
+  firstName,
+  title,
+  message,
+  actionLabel,
+  actionUrl,
+  outro,
+}) =>
+  renderEmailLayout({
+    title,
+    intro: buildGreeting(firstName, message),
+    actionLabel,
+    actionUrl,
+    outro:
+      outro ||
+      "If this activity was not yours, secure your account immediately and contact support.",
+  });
+
 module.exports = {
   buildVerificationEmail,
   buildResetPasswordEmail,
   buildEmailChangeEmail,
   buildTeamInviteEmail,
+  buildSecurityAlertEmail,
 };

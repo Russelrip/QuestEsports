@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const normalizePositiveInteger = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -70,6 +72,8 @@ const env = {
     process.env.REMEMBER_ME_SESSION_TTL_DAYS,
     30
   ),
+  MFA_ISSUER: optional("MFA_ISSUER", "Quest Esports"),
+  AUTH_ENCRYPTION_KEY: optional("AUTH_ENCRYPTION_KEY"),
   TRUST_PROXY: normalizeTrustProxy(process.env.TRUST_PROXY),
   SMTP_HOST: optional("SMTP_HOST"),
   SMTP_PORT: normalizePositiveInteger(process.env.SMTP_PORT, 587),
@@ -77,6 +81,12 @@ const env = {
   SMTP_PASS: optional("SMTP_PASS"),
   MAIL_FROM: optional("MAIL_FROM"),
   APP_URL: optional("APP_URL"),
+  GOOGLE_CLIENT_ID: optional("GOOGLE_CLIENT_ID"),
+  GOOGLE_CLIENT_SECRET: optional("GOOGLE_CLIENT_SECRET"),
+  GOOGLE_CALLBACK_URL: optional("GOOGLE_CALLBACK_URL"),
+  DISCORD_CLIENT_ID: optional("DISCORD_CLIENT_ID"),
+  DISCORD_CLIENT_SECRET: optional("DISCORD_CLIENT_SECRET"),
+  DISCORD_CALLBACK_URL: optional("DISCORD_CALLBACK_URL"),
 };
 
 if (env.CORS_ORIGINS.length === 0) {
