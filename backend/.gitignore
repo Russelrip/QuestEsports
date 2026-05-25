@@ -4,6 +4,8 @@ node_modules/
 !.env.example
 
 uploads/
+!src/modules/uploads/
+!src/modules/uploads/*.js
 dist/
 build/
 coverage/
