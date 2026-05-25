@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AdminTableSkeleton } from "@/components/ui/skeleton";
 import { useAdminRegistrations } from "@/hooks/api/useAdmin";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
 import { adminRequest, getAdminPaginationSummary, type TeamRegistration } from "@/lib/admin";
 
@@ -17,7 +18,15 @@ export default function AdminRegistrationsManager() {
   const [tournament, setTournament] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
-  const { data, error, loading, refetch } = useAdminRegistrations(search, tournament, status, page);
+  const debouncedSearch = useDebouncedValue(search);
+  const debouncedTournament = useDebouncedValue(tournament);
+  const debouncedStatus = useDebouncedValue(status);
+  const { data, error, loading, refetch } = useAdminRegistrations(
+    debouncedSearch,
+    debouncedTournament,
+    debouncedStatus,
+    page
+  );
   const showToast = useToastStore((state) => state.showToast);
 
   const registrations = data?.registrations || [];

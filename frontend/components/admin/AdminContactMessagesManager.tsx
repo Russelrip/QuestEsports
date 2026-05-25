@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AdminTableSkeleton } from "@/components/ui/skeleton";
 import { useAdminMessages } from "@/hooks/api/useAdmin";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
 import { adminRequest, getAdminPaginationSummary } from "@/lib/admin";
 
@@ -16,7 +17,13 @@ export default function AdminContactMessagesManager() {
   const [search, setSearch] = useState("");
   const [isRead, setIsRead] = useState("");
   const [page, setPage] = useState(1);
-  const { data, error, loading, refetch } = useAdminMessages(search, isRead, page);
+  const debouncedSearch = useDebouncedValue(search);
+  const debouncedIsRead = useDebouncedValue(isRead);
+  const { data, error, loading, refetch } = useAdminMessages(
+    debouncedSearch,
+    debouncedIsRead,
+    page
+  );
   const showToast = useToastStore((state) => state.showToast);
 
   const messages = data?.messages || [];

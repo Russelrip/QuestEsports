@@ -4,6 +4,10 @@ const { env } = require("../../config/env");
 const { PUBLIC_USER_SELECT } = require("./auth.service");
 
 const SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME;
+const LAST_SEEN_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+const EXPIRED_SESSION_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+let lastExpiredSessionCleanupStartedAt = 0;
+let expiredSessionCleanupPromise = null;
 
 const hashToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
@@ -127,6 +131,24 @@ const deleteExpiredSessions = async () => {
   });
 };
 
+const scheduleExpiredSessionCleanup = () => {
+  const now = Date.now();
+
+  if (
+    expiredSessionCleanupPromise ||
+    now - lastExpiredSessionCleanupStartedAt < EXPIRED_SESSION_CLEANUP_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  lastExpiredSessionCleanupStartedAt = now;
+  expiredSessionCleanupPromise = deleteExpiredSessions()
+    .catch(() => null)
+    .finally(() => {
+      expiredSessionCleanupPromise = null;
+    });
+};
+
 const mapSessionSummary = (session, currentSessionId = null) => ({
   id: session.id,
   createdAt: session.createdAt,
@@ -146,7 +168,7 @@ const getSessionFromRequest = async (req) => {
     return null;
   }
 
-  await deleteExpiredSessions();
+  scheduleExpiredSessionCleanup();
 
   const session = await prisma.session.findUnique({
     where: {
@@ -175,14 +197,19 @@ const getSessionFromRequest = async (req) => {
     return null;
   }
 
-  await prisma.session.update({
-    where: {
-      id: session.id,
-    },
-    data: {
-      lastSeenAt: new Date(),
-    },
-  });
+  if (
+    !session.lastSeenAt ||
+    Date.now() - session.lastSeenAt.getTime() >= LAST_SEEN_UPDATE_INTERVAL_MS
+  ) {
+    await prisma.session.update({
+      where: {
+        id: session.id,
+      },
+      data: {
+        lastSeenAt: new Date(),
+      },
+    });
+  }
 
   return {
     token,
@@ -201,10 +228,15 @@ const getSessionFromRequest = async (req) => {
 };
 
 const listUserSessions = async ({ userId, currentSessionId = null }) => {
-  await deleteExpiredSessions();
+  scheduleExpiredSessionCleanup();
 
   const sessions = await prisma.session.findMany({
-    where: { userId },
+    where: {
+      userId,
+      expiresAt: {
+        gt: new Date(),
+      },
+    },
     orderBy: [{ lastSeenAt: "desc" }, { createdAt: "desc" }],
     select: {
       id: true,

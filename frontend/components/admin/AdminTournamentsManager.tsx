@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AdminTableSkeleton } from "@/components/ui/skeleton";
 import { useAdminTournaments } from "@/hooks/api/useAdmin";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
 import { adminRequest, getAdminPaginationSummary } from "@/lib/admin";
 import { type Tournament, getTournamentRegistrationLabel, getTournamentStatusLabel } from "@/lib/tournaments";
@@ -19,7 +20,15 @@ export default function AdminTournamentsManager() {
   const [status, setStatus] = useState("");
   const [visibility, setVisibility] = useState("");
   const [page, setPage] = useState(1);
-  const { data, error, loading, refetch } = useAdminTournaments(search, status, visibility, page);
+  const debouncedSearch = useDebouncedValue(search);
+  const debouncedStatus = useDebouncedValue(status);
+  const debouncedVisibility = useDebouncedValue(visibility);
+  const { data, error, loading, refetch } = useAdminTournaments(
+    debouncedSearch,
+    debouncedStatus,
+    debouncedVisibility,
+    page
+  );
   const showToast = useToastStore((state) => state.showToast);
 
   const tournaments = data?.tournaments || [];

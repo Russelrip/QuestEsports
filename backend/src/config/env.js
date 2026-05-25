@@ -126,4 +126,10 @@ if (!["debug", "info", "warn", "error"].includes(env.LOG_LEVEL)) {
   throw new Error('LOG_LEVEL must be one of: debug, info, warn, error.');
 }
 
+if (env.NODE_ENV === "production" && !env.AUTH_ENCRYPTION_KEY) {
+  throw new Error(
+    "AUTH_ENCRYPTION_KEY is required in production for MFA secret encryption and OAuth state signing."
+  );
+}
+
 module.exports = { env };

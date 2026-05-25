@@ -10,6 +10,10 @@ import {
 } from "react";
 import { apiFetch, apiFetchJson, AuthUser } from "@/lib/auth";
 
+const SESSION_CACHE_TTL_MS = 30 * 1000;
+let cachedSessionUser: AuthUser | null = null;
+let cachedSessionFetchedAt = 0;
+
 type AuthContextValue = {
   user: AuthUser | null;
   isAuthenticated: boolean;
@@ -27,10 +31,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const setLoggedInUser = (nextUser: AuthUser | null) => {
+    cachedSessionUser = nextUser;
+    cachedSessionFetchedAt = Date.now();
     setUser(nextUser);
   };
 
-  const loadSession = useCallback(async () => {
+  const loadSession = useCallback(async (options?: { force?: boolean }) => {
+    if (
+      !options?.force &&
+      cachedSessionFetchedAt > 0 &&
+      Date.now() - cachedSessionFetchedAt < SESSION_CACHE_TTL_MS
+    ) {
+      setLoggedInUser(cachedSessionUser);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { data } = await apiFetchJson<{ user?: AuthUser | null }>("/api/me");
       setLoggedInUser(data?.user || null);
@@ -44,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     setIsLoading(true);
-    await loadSession();
+    await loadSession({ force: true });
   }, [loadSession]);
 
   useEffect(() => {
@@ -65,6 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Failed to logout session:", error);
       }
 
+      cachedSessionUser = null;
+      cachedSessionFetchedAt = 0;
       setLoggedInUser(null);
     },
     refreshUser: setLoggedInUser,

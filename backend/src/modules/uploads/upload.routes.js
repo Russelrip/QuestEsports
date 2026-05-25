@@ -1,6 +1,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../lib/async-handler");
 const { streamUpload } = require("./upload.service");
+const { attachSession, requireAdmin } = require("../auth/auth.middleware");
 
 const router = express.Router();
 
@@ -30,6 +31,8 @@ router.get(
 
 router.get(
   "/uploads/team-logos/:filename",
+  attachSession,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const file = await streamUpload("team-logos", req.params.filename);
 

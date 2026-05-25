@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AdminTableSkeleton } from "@/components/ui/skeleton";
 import { useAdminUsers } from "@/hooks/api/useAdmin";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
 import {
   type AdminUser,
@@ -26,7 +27,13 @@ export default function AdminUsersManager() {
   const [saving, setSaving] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<UserFormValues>(initialUserFormValues);
-  const { data, error, loading, refetch } = useAdminUsers(search, roleFilter, page);
+  const debouncedSearch = useDebouncedValue(search);
+  const debouncedRoleFilter = useDebouncedValue(roleFilter);
+  const { data, error, loading, refetch } = useAdminUsers(
+    debouncedSearch,
+    debouncedRoleFilter,
+    page
+  );
   const showToast = useToastStore((state) => state.showToast);
 
   const users = data?.users || [];
