@@ -131,7 +131,7 @@ Recommended flow:
 
 - Marketing homepage and brand sections
 - Tournament listing and tournament detail pages
-- Tournament schedule tables rendered from uploaded XLSX, XLS, or CSV files
+- Tournament schedule tables rendered from uploaded XLSX or CSV files
 - Completed-tournament showcase sections with official poster plus 1st, 2nd, and 3rd place visuals
 - Public tournament team lists with approved registered teams and team logos
 - Team tournament registration flow
@@ -381,6 +381,7 @@ Default local URLs:
 - Team logos are intentionally protected behind admin access.
 - The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
 - The backend includes a Node test suite under `backend/tests`.
+- Session/auth lifecycle behavior now has dedicated unit coverage for session rehydration, throttled `lastSeenAt` writes, expired-session handling, and active-session listing.
 - There is currently no admin seed/bootstrap script beyond creating a user and promoting it through Prisma Studio.
 - Background jobs and monitoring are placeholder integrations and should be wired to production services before scaling email/media workloads.
 
@@ -402,6 +403,19 @@ npm run prisma:generate
 npm test
 node src/server.js
 ```
+
+## Testing
+
+Backend tests use Node's built-in test runner and live in `backend/tests`.
+
+- Run all backend unit tests: `cd backend && npm test`
+- Run one file: `cd backend && node --test tests/session.service.test.js`
+- Existing coverage focuses on backend behavior that benefits from deterministic unit testing, including jobs, observability, rate limiting, team helpers, and session/auth lifecycle logic.
+
+For frontend verification, the current baseline remains:
+
+- `cd frontend && npm run lint`
+- `cd frontend && npm run build`
 
 ## Recommended Next Steps
 

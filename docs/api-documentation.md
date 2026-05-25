@@ -51,7 +51,7 @@ Field-level validation errors are returned in `details.fieldErrors` on validatio
 - Allowed origins come from `CORS_ORIGIN`.
 - Rate limiting is applied to login, signup, contact, password reset, invite response, and tournament registration endpoints.
 - Uploads accept JPEG, PNG, and WebP only, with a 5 MB file limit.
-- Admin tournament asset uploads also accept `.xlsx`, `.xls`, and `.csv` schedule files.
+- Admin tournament asset uploads also accept `.xlsx` and `.csv` schedule files.
 
 ## System Endpoints
 

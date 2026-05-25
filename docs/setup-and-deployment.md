@@ -209,6 +209,28 @@ npm run build
 npm run start
 ```
 
+## Test And Verification Workflow
+
+Before shipping backend changes, run:
+
+```bash
+cd backend
+npm test
+npm run prisma:generate
+```
+
+The backend unit suite uses Node's built-in test runner and covers core behavior such as rate limiting, background jobs, observability helpers, team helpers, and session/auth lifecycle logic.
+
+For frontend changes, run:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+This project does not currently include a dedicated end-to-end suite, so production-facing validation still depends on the manual checks listed later in this document.
+
 ## Recommended Production Topology
 
 ### Option A: Two-process deployment behind a reverse proxy

@@ -61,9 +61,11 @@ Important notes:
 1. On frontend boot, `AuthProvider` calls `GET /api/me`.
 2. The backend reads the session cookie.
 3. The backend hashes the cookie token and looks up the session record.
-4. Expired sessions are removed.
-5. If valid, the request is decorated with `req.user` and `req.session`.
-6. The frontend updates local auth state.
+4. Expired-session cleanup is scheduled opportunistically in the background instead of blocking every authenticated request.
+5. If the specific session has already expired, it is deleted immediately and authentication fails closed.
+6. Valid sessions only update `lastSeenAt` when the previous timestamp is stale, which avoids a write on every authenticated request.
+7. If valid, the request is decorated with `req.user` and `req.session`.
+8. The frontend updates local auth state.
 
 ## Logout Flow
 
@@ -188,6 +190,13 @@ Each session stores:
 - remember-me flag
 - user agent
 - IP address
+
+Recent backend unit tests cover the most performance-sensitive session behaviors:
+
+- recently seen sessions do not rewrite `lastSeenAt`
+- stale sessions refresh `lastSeenAt`
+- expired sessions are deleted on lookup
+- session listings only return active sessions
 
 The backend also uses the stored user-agent and IP fingerprint to send a security alert email on sign-in from a new device or location.
 
