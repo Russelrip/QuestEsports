@@ -359,3 +359,12 @@ export const fetchPosters = async (searchParams?: URLSearchParams) => {
 
   return parseMediaResponse<{ posters: Poster[] }>(response);
 };
+
+export const fetchPublicPosters = async (searchParams?: URLSearchParams) => {
+  const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
+  const response = await fetch(`${resolveMediaUrl("/api/posters")}${suffix}`, {
+    next: { revalidate: 300 },
+  });
+
+  return parseMediaResponse<{ posters: Poster[] }>(response);
+};

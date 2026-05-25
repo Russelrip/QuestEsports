@@ -88,10 +88,7 @@ const mapPoster = (poster) => ({
   createdAt: poster.createdAt,
   updatedAt: poster.updatedAt,
   tournament: poster.tournament || null,
-  imageAsset: {
-    ...mapImageAsset(poster.imageAsset),
-    imageUrl: `/api/posters/${poster.id}/image`,
-  },
+  imageAsset: mapImageAsset(poster.imageAsset),
 });
 
 const buildPagedResponse = ({ items, total, page, pageSize }) => ({

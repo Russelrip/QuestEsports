@@ -1,5 +1,6 @@
 import PageLayout from "@/components/PageLayout";
 import PostersContent from "@/components/Posters/PostersContent";
+import { fetchPublicPosters, type Poster } from "@/lib/media";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 
 export const metadata = buildPageMetadata({
@@ -14,10 +15,19 @@ export const metadata = buildPageMetadata({
   ],
 });
 
-export default function PostersPage() {
+export default async function PostersPage() {
+  let initialPosters: Poster[] = [];
+
+  try {
+    const postersData = await fetchPublicPosters();
+    initialPosters = postersData.posters;
+  } catch {
+    initialPosters = [];
+  }
+
   return (
     <PageLayout title="Posters" description={defaultPageDescriptions.posters}>
-      <PostersContent />
+      <PostersContent initialPosters={initialPosters} />
     </PageLayout>
   );
 }

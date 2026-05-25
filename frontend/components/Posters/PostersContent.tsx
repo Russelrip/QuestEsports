@@ -20,13 +20,13 @@ import {
   UploadPreview,
 } from "@/lib/poster-studio";
 
-export default function PostersContent() {
+export default function PostersContent({ initialPosters = [] }: { initialPosters?: Poster[] }) {
   const { user, isLoading: authLoading } = useAuth();
   const isAdmin = user?.role === "admin";
   const showToast = useToastStore((state) => state.showToast);
   const [images, setImages] = useState<ImageAsset[]>([]);
-  const [posters, setPosters] = useState<Poster[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [posters, setPosters] = useState<Poster[]>(initialPosters);
+  const [loading, setLoading] = useState(initialPosters.length === 0);
   const [error, setError] = useState("");
   const [selectedPoster, setSelectedPoster] = useState<Poster | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
@@ -43,8 +43,12 @@ export default function PostersContent() {
     setError("");
 
     try {
-      const postersData = await fetchPosters();
-      setPosters(postersData.posters);
+      let postersData = null;
+
+      if (initialPosters.length === 0 || isAdmin) {
+        postersData = await fetchPosters();
+        setPosters(postersData.posters);
+      }
 
       if (!authLoading && isAdmin) {
         const imagesData = await fetchImages();
@@ -54,14 +58,19 @@ export default function PostersContent() {
           imageAssetId:
             current.imageAssetId ||
             imagesData.images[0]?.id ||
-            postersData.posters[0]?.imageAsset.id ||
+            postersData?.posters[0]?.imageAsset.id ||
+            initialPosters[0]?.imageAsset.id ||
             "",
         }));
       } else {
         setImages([]);
         setPosterDraft((current) => ({
           ...current,
-          imageAssetId: current.imageAssetId || postersData.posters[0]?.imageAsset.id || "",
+          imageAssetId:
+            current.imageAssetId ||
+            postersData?.posters[0]?.imageAsset.id ||
+            initialPosters[0]?.imageAsset.id ||
+            "",
         }));
       }
     } catch (nextError) {
@@ -74,7 +83,7 @@ export default function PostersContent() {
     } finally {
       setLoading(false);
     }
-  }, [authLoading, isAdmin, showToast]);
+  }, [authLoading, initialPosters, isAdmin, showToast]);
 
   useEffect(() => {
     void loadMedia();
