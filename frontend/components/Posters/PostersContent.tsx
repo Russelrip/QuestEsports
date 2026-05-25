@@ -39,18 +39,28 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
   const [deletingPosterId, setDeletingPosterId] = useState("");
 
   const loadMedia = useCallback(async () => {
-    setLoading(true);
+    const shouldFetchPosters = initialPosters.length === 0 || isAdmin;
+    const shouldFetchImages = !authLoading && isAdmin;
+
+    if (!shouldFetchPosters && !shouldFetchImages) {
+      setLoading(false);
+      return;
+    }
+
+    if (shouldFetchPosters) {
+      setLoading(true);
+    }
     setError("");
 
     try {
       let postersData = null;
 
-      if (initialPosters.length === 0 || isAdmin) {
+      if (shouldFetchPosters) {
         postersData = await fetchPosters();
         setPosters(postersData.posters);
       }
 
-      if (!authLoading && isAdmin) {
+      if (shouldFetchImages) {
         const imagesData = await fetchImages();
         setImages(imagesData.images);
         setPosterDraft((current) => ({
@@ -81,7 +91,9 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
         description: nextError instanceof Error ? nextError.message : "Request failed.",
       });
     } finally {
-      setLoading(false);
+      if (shouldFetchPosters) {
+        setLoading(false);
+      }
     }
   }, [authLoading, initialPosters, isAdmin, showToast]);
 
@@ -252,7 +264,6 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
 
       <PosterGallery
         loading={loading}
-        authLoading={authLoading}
         error={error}
         posters={posters}
         onSelectPoster={setSelectedPoster}

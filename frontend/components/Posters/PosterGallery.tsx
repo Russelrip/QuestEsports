@@ -9,13 +9,11 @@ import { Poster, resolveMediaUrl } from "@/lib/media";
 
 export default function PosterGallery({
   loading,
-  authLoading,
   error,
   posters,
   onSelectPoster,
 }: {
   loading: boolean;
-  authLoading: boolean;
   error: string;
   posters: Poster[];
   onSelectPoster: (poster: Poster) => void;
@@ -27,7 +25,7 @@ export default function PosterGallery({
         <h2 className="mt-3 text-3xl text-white">Promotional artwork and tournament visuals.</h2>
       </div>
 
-      {loading || authLoading ? (
+      {loading ? (
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={index} className="aspect-[4/5] rounded-[28px]" />
