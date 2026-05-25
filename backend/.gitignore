@@ -4,6 +4,12 @@ node_modules/
 !.env.example
 
 uploads/
+!uploads/
+uploads/*
+!uploads/poster-images/
+!uploads/poster-images/**
+!uploads/tournament-banners/
+!uploads/tournament-banners/**
 !src/modules/uploads/
 !src/modules/uploads/*.js
 dist/
