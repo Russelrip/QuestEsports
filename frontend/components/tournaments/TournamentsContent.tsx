@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
-import TournamentInfoList from "@/components/tournaments/TournamentInfoList";
 import { Badge } from "@/components/ui/badge";
 import EmptyState from "@/components/ui/EmptyState";
 import { buttonClassName } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Select } from "@/components/ui/select";
 import { Tournament, getTournamentRegistrationLabel, getTournamentStatusLabel } from "@/lib/tournaments";
@@ -28,19 +28,23 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
   const [gameFilter, setGameFilter] = useState("all");
 
   const filteredTournaments = useMemo(() => {
-    if (gameFilter === "all") {
-      return tournaments;
-    }
+    const base =
+      gameFilter === "all"
+        ? tournaments
+        : tournaments.filter((tournament) => tournament.game === gameFilter);
 
-    return tournaments.filter((tournament) => tournament.game === gameFilter);
+    return {
+      active: base.filter((tournament) => !tournament.isCompleted),
+      completed: base.filter((tournament) => tournament.isCompleted),
+    };
   }, [gameFilter, tournaments]);
 
   return (
     <Section className="pt-6">
-      <div className="mb-8 flex flex-col gap-4 rounded-[28px] border border-white/8 bg-white/5 p-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-8 flex flex-col gap-4 rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,27,0.9),rgba(9,9,18,0.96))] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.2)] sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Tournament board</p>
-          <h2 className="mt-2 text-2xl text-white">Browse events by title, status, and registration window.</h2>
+          <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Tournament Board</p>
+          <h2 className="mt-2 text-2xl text-white">Track live events, registrations, and completed campaigns.</h2>
         </div>
         <div className="w-full max-w-xs">
           <label htmlFor="gameFilter" className="mb-2 block text-sm font-medium text-slate-300">
@@ -56,9 +60,9 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
         </div>
       </div>
 
-      {filteredTournaments.length > 0 ? (
+      {filteredTournaments.active.length > 0 ? (
         <div className="grid gap-6">
-          {filteredTournaments.map((tournament) => (
+          {filteredTournaments.active.map((tournament) => (
             <article
               key={tournament.id}
               className="group grid gap-7 overflow-hidden rounded-[36px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,18,30,0.94),rgba(7,7,14,0.98))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.3)] transition duration-300 hover:border-fuchsia-300/20 hover:shadow-[0_34px_90px_rgba(27,15,69,0.55)] lg:grid-cols-[380px_1fr] lg:p-6"
@@ -92,7 +96,11 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
                     </p>
                   </div>
 
-                  <TournamentInfoList tournament={tournament} variant="compact" />
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <InfoChip label="Dates" value={`${formatDisplayDate(tournament.startDate)} - ${formatDisplayDate(tournament.endDate)}`} />
+                    <InfoChip label="Slots" value={`${tournament.registrationCount} / ${tournament.maxTeams}`} />
+                    <InfoChip label="Prize Pool" value={tournament.prizePool} />
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-4 border-t border-white/8 pt-6 sm:flex-row sm:items-end sm:justify-between">
@@ -122,11 +130,71 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
         </div>
       ) : (
         <EmptyState
-          title="No tournaments match this filter"
-          description="Try switching the selected game or check back soon for the next Quest Esports announcement."
+          title="No active tournaments match this filter"
+          description="Try another game selection or check the completed showcase below."
         />
       )}
+
+      <div className="mt-12">
+        <div className="mb-5">
+          <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Completed Showcase</p>
+          <h3 className="mt-2 text-3xl text-white">Finished tournaments, podium visuals, and event posters.</h3>
+        </div>
+
+        {filteredTournaments.completed.length > 0 ? (
+          <div className="grid gap-5 lg:grid-cols-2">
+            {filteredTournaments.completed.map((tournament) => (
+              <Card key={tournament.id} className="overflow-hidden border-white/10">
+                <div className="grid gap-5 p-5 md:grid-cols-[220px_1fr]">
+                  <div className="overflow-hidden rounded-[24px] border border-white/8 bg-black/40">
+                    <TournamentBannerImage
+                      bannerUrl={tournament.showcase.posterUrl || tournament.bannerUrl}
+                      title={tournament.title}
+                      className="h-full min-h-[240px] w-full object-cover"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-between gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/80">{tournament.game}</p>
+                      <h4 className="mt-2 text-2xl text-white">{tournament.title}</h4>
+                      <p className="mt-2 text-sm text-slate-400">
+                        Completed on {formatDisplayDate(tournament.endDate)}
+                      </p>
+                      <p className="mt-4 text-sm leading-7 text-slate-300">{tournament.shortDescription}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                      <Link
+                        href={`/tournaments/${tournament.slug}`}
+                        className={buttonClassName({
+                          className:
+                            "border-cyan-300/35 bg-cyan-500 shadow-[0_20px_50px_rgba(8,145,178,0.24),0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:bg-cyan-400 hover:shadow-[0_24px_60px_rgba(8,145,178,0.32)]",
+                        })}
+                      >
+                        View Showcase
+                      </Link>
+                      <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-xs uppercase tracking-[0.18em] text-cyan-100">
+                        Completed
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <EmptyState description="Completed tournaments will appear here once Quest Esports publishes the showcase assets." />
+        )}
+      </div>
     </Section>
+  );
+}
+
+function InfoChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[22px] border border-white/8 bg-white/5 p-4">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-white">{value}</p>
+    </div>
   );
 }
 

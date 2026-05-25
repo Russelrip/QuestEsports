@@ -51,7 +51,7 @@ const getAdminTournament = asyncHandler(async (req, res) => {
 const createTournament = asyncHandler(async (req, res) => {
   const tournament = await createAdminTournament({
     body: req.body,
-    file: req.file,
+    files: req.files,
   });
 
   res.status(201).json({
@@ -65,7 +65,7 @@ const updateTournament = asyncHandler(async (req, res) => {
   const tournament = await updateAdminTournament({
     tournamentId: req.params.tournamentId,
     body: req.body,
-    file: req.file,
+    files: req.files,
   });
 
   res.status(200).json({

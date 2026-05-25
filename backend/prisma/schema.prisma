@@ -242,7 +242,14 @@ model Tournament {
   slug              String             @unique
   title             String
   game              String
+  displayPriority   Int                @default(100) @map("display_priority")
   bannerImageName   String?            @map("banner_image_name")
+  scheduleFileName  String?            @map("schedule_file_name")
+  scheduleData      Json?              @map("schedule_data")
+  completedPosterImageName String?     @map("completed_poster_image_name")
+  firstPlaceImageName String?          @map("first_place_image_name")
+  secondPlaceImageName String?         @map("second_place_image_name")
+  thirdPlaceImageName String?          @map("third_place_image_name")
   shortDescription  String             @map("short_description")
   fullDescription   String             @map("full_description")
   rules             String?
@@ -267,6 +274,7 @@ model Tournament {
   @@index([isActive])
   @@index([isPublished, status, startDate])
   @@index([isFeatured, isPublished])
+  @@index([displayPriority, startDate])
   @@map("tournaments")
 }
 

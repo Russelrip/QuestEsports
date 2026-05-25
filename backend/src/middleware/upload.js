@@ -8,6 +8,7 @@ const uploadRoot = path.join(__dirname, "../../uploads");
 const teamLogoDirectory = path.join(uploadRoot, "team-logos");
 const tournamentBannerDirectory = path.join(uploadRoot, "tournament-banners");
 const posterImageDirectory = path.join(uploadRoot, "poster-images");
+const tournamentScheduleDirectory = path.join(uploadRoot, "tournament-schedules");
 const ALLOWED_UPLOAD_TYPES = {
   jpeg: {
     extensions: new Set([".jpg", ".jpeg"]),
@@ -27,6 +28,7 @@ const ensureUploadDirectories = async () => {
   await fs.mkdir(teamLogoDirectory, { recursive: true });
   await fs.mkdir(tournamentBannerDirectory, { recursive: true });
   await fs.mkdir(posterImageDirectory, { recursive: true });
+  await fs.mkdir(tournamentScheduleDirectory, { recursive: true });
 };
 
 const detectImageType = (buffer) => {
@@ -144,6 +146,36 @@ const dbImageUpload = multer({
   },
 });
 
+const adminTournamentAssetsUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 8 * 1024 * 1024,
+    files: 6,
+  },
+  fileFilter: (req, file, callback) => {
+    if (
+      file.fieldname === "scheduleFile" &&
+      [
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/csv",
+        "application/csv",
+        "text/plain",
+      ].includes(file.mimetype)
+    ) {
+      callback(null, true);
+      return;
+    }
+
+    if (isAllowedImageMimeType(file.mimetype)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new HttpError(400, "Only supported image or spreadsheet files are allowed."));
+  },
+});
+
 const persistValidatedUpload = async ({ file, directory, invalidMessage }) => {
   if (!file?.buffer) {
     return null;
@@ -185,17 +217,41 @@ const persistPosterImageUpload = (file) =>
     invalidMessage: "Only JPEG, PNG, and WebP poster images are allowed.",
   });
 
+const persistTournamentScheduleUpload = async (file) => {
+  if (!file?.buffer) {
+    return null;
+  }
+
+  const extension = path.extname(file.originalname || "").toLowerCase();
+
+  if (![".xlsx", ".xls", ".csv"].includes(extension)) {
+    throw new HttpError(400, "Only XLSX, XLS, and CSV schedule files are allowed.");
+  }
+
+  const filename = buildSafeUploadFilename(extension);
+  const filePath = path.join(tournamentScheduleDirectory, filename);
+  await fs.writeFile(filePath, file.buffer);
+
+  return {
+    filename,
+    extension,
+  };
+};
+
 module.exports = {
   ALLOWED_UPLOAD_TYPES,
   detectImageType,
   ensureUploadDirectories,
   imageUpload,
   tournamentBannerUpload,
+  adminTournamentAssetsUpload,
   dbImageUpload,
   persistTeamLogoUpload,
   persistTournamentBannerUpload,
   persistPosterImageUpload,
+  persistTournamentScheduleUpload,
   teamLogoDirectory,
   tournamentBannerDirectory,
   posterImageDirectory,
+  tournamentScheduleDirectory,
 };

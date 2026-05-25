@@ -1,5 +1,5 @@
 const express = require("express");
-const { imageUpload, tournamentBannerUpload } = require("../../middleware/upload");
+const { imageUpload, adminTournamentAssetsUpload } = require("../../middleware/upload");
 const {
   attachSession,
   requireAuth,
@@ -50,13 +50,27 @@ router.get("/admin/tournaments/:tournamentId", requireAdmin, getAdminTournament)
 router.post(
   "/admin/tournaments",
   requireAdmin,
-  tournamentBannerUpload.single("bannerImage"),
+  adminTournamentAssetsUpload.fields([
+    { name: "bannerImage", maxCount: 1 },
+    { name: "scheduleFile", maxCount: 1 },
+    { name: "completedPosterImage", maxCount: 1 },
+    { name: "firstPlaceImage", maxCount: 1 },
+    { name: "secondPlaceImage", maxCount: 1 },
+    { name: "thirdPlaceImage", maxCount: 1 },
+  ]),
   createTournament
 );
 router.patch(
   "/admin/tournaments/:tournamentId",
   requireAdmin,
-  tournamentBannerUpload.single("bannerImage"),
+  adminTournamentAssetsUpload.fields([
+    { name: "bannerImage", maxCount: 1 },
+    { name: "scheduleFile", maxCount: 1 },
+    { name: "completedPosterImage", maxCount: 1 },
+    { name: "firstPlaceImage", maxCount: 1 },
+    { name: "secondPlaceImage", maxCount: 1 },
+    { name: "thirdPlaceImage", maxCount: 1 },
+  ]),
   updateTournament
 );
 router.delete("/admin/tournaments/:tournamentId", requireAdmin, deleteTournament);

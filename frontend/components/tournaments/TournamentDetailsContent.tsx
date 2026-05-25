@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
@@ -6,25 +7,25 @@ import TournamentBannerImage from "@/components/tournaments/TournamentBannerImag
 import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
+import { resolveMediaUrl } from "@/lib/media";
 import {
   Tournament,
+  TournamentScheduleData,
   getTournamentRegistrationLabel,
   getTournamentStatusLabel,
 } from "@/lib/tournaments";
 import { formatDisplayDate } from "@/lib/utils";
 
 const heroStats = (tournament: Tournament) => [
-  { label: "Prize Pool", value: tournament.prizePool, icon: TrophyIcon },
-  { label: "Format", value: tournament.format, icon: GridIcon },
-  { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}`, icon: UsersIcon },
+  { label: "Prize Pool", value: tournament.prizePool },
+  { label: "Format", value: tournament.format },
+  { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
   {
     label: "Dates",
     value: `${formatDisplayDate(tournament.startDate)} - ${formatDisplayDate(tournament.endDate)}`,
-    icon: CalendarIcon,
   },
-  { label: "Deadline", value: formatDisplayDate(tournament.registrationDeadline), icon: ClockIcon },
-  { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}`, icon: LayersIcon },
-  { label: "Tournament", value: toTitleCase(getTournamentStatusLabel(tournament.status)), icon: SignalIcon },
+  { label: "Deadline", value: formatDisplayDate(tournament.registrationDeadline) },
+  { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}` },
 ];
 
 export default function TournamentDetailsContent({ tournament }: { tournament: Tournament }) {
@@ -32,12 +33,13 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
     tournament.fullDescription ||
     tournament.shortDescription ||
     "Tournament information will be updated soon.";
+  const bracketEmbedUrl = getChallongeEmbedUrl(tournament.bracketLink);
 
   return (
     <Section className="pt-6">
       <div className="space-y-6">
         <Card className="overflow-hidden p-4 sm:p-5 xl:p-6">
-          <div className="grid gap-6 xl:grid-cols-[minmax(360px,420px)_minmax(0,1fr)]">
+          <div className="grid gap-6 xl:grid-cols-[minmax(340px,420px)_minmax(0,1fr)]">
             <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-black/30">
               <TournamentBannerImage
                 bannerUrl={tournament.bannerUrl}
@@ -50,7 +52,7 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
               <div className="space-y-6">
                 <header className="space-y-4">
                   <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">{tournament.game}</p>
+                    <p className="text-xs uppercase tracking-[0.28em] text-fuchsia-200/80">{tournament.game}</p>
                     <StatusBadge tournament={tournament} />
                   </div>
 
@@ -101,7 +103,13 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
           </div>
         </Card>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.92fr)]">
+          <TeamsPanel tournament={tournament} />
+          <SchedulePanel scheduleData={tournament.scheduleData} />
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.92fr)]">
+          <BracketPanel bracketLink={tournament.bracketLink} bracketEmbedUrl={bracketEmbedUrl} />
           <Card className="p-6">
             <p className="text-[11px] tracking-[0.12em] text-slate-500">Rules & Notes</p>
             <h3 className="mt-3 text-2xl text-white">Format requirements and tournament expectations</h3>
@@ -109,34 +117,9 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
               {tournament.rules || "Rules will be shared by the admins soon."}
             </p>
           </Card>
-
-          <Card className="p-6">
-            <p className="text-[11px] tracking-[0.12em] text-slate-500">Resources</p>
-            <h3 className="mt-3 text-2xl text-white">Brackets, support, and quick links</h3>
-            <div className="mt-5 flex flex-wrap gap-3">
-              {tournament.bracketLink ? (
-                <a
-                  href={tournament.bracketLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={buttonClassName({ variant: "secondary" })}
-                >
-                  View Bracket
-                </a>
-              ) : null}
-              {tournament.contactLink ? (
-                <a
-                  href={tournament.contactLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={buttonClassName({ variant: "secondary" })}
-                >
-                  Discord / Contact
-                </a>
-              ) : null}
-            </div>
-          </Card>
         </div>
+
+        {tournament.isCompleted ? <CompletedShowcase tournament={tournament} /> : null}
       </div>
     </Section>
   );
@@ -146,54 +129,16 @@ function StatsPanel({ tournament }: { tournament: Tournament }) {
   const items = heroStats(tournament);
 
   return (
-    <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="grid md:grid-cols-4">
-        {items.slice(0, 4).map((item, index) => (
-          <StatItem
-            key={item.label}
-            label={item.label}
-            value={item.value}
-            icon={<item.icon />}
-            className={index < 3 ? "border-b border-white/8 p-5 md:border-b-0 md:border-r" : "border-b border-white/8 p-5 md:border-b-0"}
-          />
-        ))}
-      </div>
-      <div className="grid md:grid-cols-3">
-        {items.slice(4).map((item, index) => (
-          <StatItem
-            key={item.label}
-            label={item.label}
-            value={item.value}
-            icon={<item.icon />}
-            className={index < 2 ? "border-b border-white/8 p-5 md:border-b-0 md:border-r" : "p-5"}
-          />
+    <section className="overflow-hidden rounded-[28px] border border-white/10 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="grid gap-px bg-white/5 md:grid-cols-3">
+        {items.map((item) => (
+          <div key={item.label} className="bg-[#0c0a14] p-5">
+            <p className="text-[11px] tracking-[0.08em] text-slate-400">{item.label}</p>
+            <p className="mt-3 text-base font-semibold text-white sm:text-lg">{item.value}</p>
+          </div>
         ))}
       </div>
     </section>
-  );
-}
-
-function StatItem({
-  label,
-  value,
-  icon,
-  className,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={className}>
-      <div className="flex items-center gap-2 text-slate-400">
-        <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/6 text-cyan-200/90">
-          {icon}
-        </span>
-        <p className="text-[11px] tracking-[0.08em] text-slate-400">{label}</p>
-      </div>
-      <p className="mt-4 text-base font-semibold text-white sm:text-lg">{value}</p>
-    </div>
   );
 }
 
@@ -205,7 +150,7 @@ function RegistrationPanel({ tournament }: { tournament: Tournament }) {
   );
 
   return (
-    <section className="rounded-[28px] border border-fuchsia-400/18 bg-[linear-gradient(180deg,rgba(35,12,61,0.42),rgba(12,14,24,0.88))] p-5 shadow-[0_20px_50px_rgba(61,9,115,0.22)]">
+    <section className="rounded-[28px] border border-fuchsia-400/18 bg-[#120d1d] p-5 shadow-[0_20px_50px_rgba(61,9,115,0.18)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-2">
           <p className="text-[11px] tracking-[0.08em] text-slate-400">Registration</p>
@@ -222,10 +167,7 @@ function RegistrationPanel({ tournament }: { tournament: Tournament }) {
       </div>
 
       <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-white/8">
-        <div
-          className="h-full rounded-full bg-[linear-gradient(90deg,rgba(168,85,247,0.95),rgba(34,211,238,0.85))]"
-          style={{ width: `${filledPercentage}%` }}
-        />
+        <div className="h-full rounded-full bg-fuchsia-500" style={{ width: `${filledPercentage}%` }} />
       </div>
 
       <p className="mt-3 text-sm text-slate-400">
@@ -234,6 +176,154 @@ function RegistrationPanel({ tournament }: { tournament: Tournament }) {
           : "Registration is not currently accepting new teams for this event."}
       </p>
     </section>
+  );
+}
+
+function TeamsPanel({ tournament }: { tournament: Tournament }) {
+  return (
+    <Card className="p-6">
+      <p className="text-[11px] tracking-[0.12em] text-slate-500">Registered Teams</p>
+      <h3 className="mt-3 text-2xl text-white">Qualified lineups and submitted rosters</h3>
+      {tournament.registeredTeams && tournament.registeredTeams.length > 0 ? (
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          {tournament.registeredTeams.map((team) => (
+            <div key={team.id} className="rounded-[24px] border border-white/8 bg-white/5 p-4 transition hover:border-fuchsia-400/25 hover:bg-white/7">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-white/8 bg-black/30">
+                  {team.logoUrl ? (
+                    <img src={resolveMediaUrl(team.logoUrl)} alt={team.teamName} className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-xs uppercase tracking-[0.2em] text-slate-500">No Logo</span>
+                  )}
+                </div>
+                <div>
+                  <p className="text-base font-semibold text-white">{team.teamName}</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{team.status}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-5 text-sm text-slate-400">Approved teams will appear here once registrations are confirmed.</p>
+      )}
+    </Card>
+  );
+}
+
+function SchedulePanel({ scheduleData }: { scheduleData: TournamentScheduleData | null }) {
+  return (
+    <Card className="p-6">
+      <p className="text-[11px] tracking-[0.12em] text-slate-500">Schedule</p>
+      <h3 className="mt-3 text-2xl text-white">Spreadsheet-driven event timeline</h3>
+      {scheduleData?.rows?.length ? (
+        <div className="mt-5 overflow-hidden rounded-[22px] border border-white/8">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-white/5">
+                <tr>
+                  {scheduleData.headers.map((header) => (
+                    <th key={header} className="px-4 py-3 font-medium uppercase tracking-[0.12em] text-slate-400">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {scheduleData.rows.map((row, index) => (
+                  <tr key={`${scheduleData.sheetName}-${index}`} className="border-t border-white/8 bg-[#0c0a14]">
+                    {scheduleData.headers.map((header) => (
+                      <td key={`${header}-${index}`} className="px-4 py-3 text-slate-200">
+                        {String(row[header] || "-")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-5 text-sm text-slate-400">A schedule spreadsheet has not been published for this tournament yet.</p>
+      )}
+    </Card>
+  );
+}
+
+function BracketPanel({
+  bracketLink,
+  bracketEmbedUrl,
+}: {
+  bracketLink: string | null;
+  bracketEmbedUrl: string | null;
+}) {
+  return (
+    <Card className="p-6">
+      <p className="text-[11px] tracking-[0.12em] text-slate-500">Bracket</p>
+      <h3 className="mt-3 text-2xl text-white">Live bracket and match progression</h3>
+      {bracketEmbedUrl ? (
+        <div className="mt-5 overflow-hidden rounded-[24px] border border-white/8 bg-black/30">
+          <iframe
+            src={bracketEmbedUrl}
+            title="Tournament bracket"
+            className="h-[520px] w-full"
+            loading="lazy"
+          />
+        </div>
+      ) : (
+        <p className="mt-5 text-sm text-slate-400">Bracket embed will appear here once a Challonge bracket is connected.</p>
+      )}
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        {bracketLink ? (
+          <a href={bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>
+            View on Challonge
+          </a>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function CompletedShowcase({ tournament }: { tournament: Tournament }) {
+  const items = [
+    { label: "Official Tournament Poster", imageUrl: tournament.showcase.posterUrl },
+    { label: "1st Place Winners", imageUrl: tournament.showcase.firstPlaceUrl },
+    { label: "2nd Place Winners", imageUrl: tournament.showcase.secondPlaceUrl },
+    { label: "3rd Place Winners", imageUrl: tournament.showcase.thirdPlaceUrl },
+  ].filter((item) => item.imageUrl);
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs uppercase tracking-[0.3em] text-fuchsia-200/80">Completed Showcase</p>
+        <h3 className="mt-2 text-3xl text-white">Posters, podium moments, and final campaign assets.</h3>
+      </div>
+
+      {items.map((item, index) => (
+        <Card
+          key={item.label}
+          className="overflow-hidden border-fuchsia-400/10 bg-[#09080f] transition duration-300 hover:border-fuchsia-300/25"
+        >
+          <div className="grid gap-6 p-5 lg:grid-cols-[280px_1fr] lg:p-6">
+            <div className="overflow-hidden rounded-[24px] border border-white/8 bg-black/30">
+              <img src={resolveMediaUrl(item.imageUrl || "")} alt={item.label} className="h-full w-full object-cover" />
+            </div>
+            <div className="flex flex-col justify-center">
+              <p className="text-xs uppercase tracking-[0.24em] text-fuchsia-200/75">Showcase {index + 1}</p>
+              <h4 className="mt-3 text-3xl text-white">{item.label}</h4>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
+                Published as part of the completed tournament presentation for {tournament.title}.
+              </p>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
   );
 }
 
@@ -267,85 +357,30 @@ function getShortRegistrationLabel(tournament: Tournament) {
   return "Closed";
 }
 
+function getChallongeEmbedUrl(bracketLink: string | null) {
+  if (!bracketLink) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(bracketLink);
+
+    if (!parsed.hostname.includes("challonge.com")) {
+      return null;
+    }
+
+    const slug = parsed.pathname.replace(/^\/+|\/+$/g, "");
+
+    if (!slug) {
+      return null;
+    }
+
+    return `https://challonge.com/${slug}/module?show_final_results=1&show_standings=1&theme=7670`;
+  } catch {
+    return null;
+  }
+}
+
 function toTitleCase(value: string) {
   return value.replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function TrophyIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current stroke-[1.7]">
-      <path d="M6 3h8v3a4 4 0 0 1-8 0V3Z" />
-      <path d="M6 5H4a2 2 0 0 0 2 3" />
-      <path d="M14 5h2a2 2 0 0 1-2 3" />
-      <path d="M10 10v3" />
-      <path d="M7 17h6" />
-      <path d="M8 13h4v4H8z" />
-    </svg>
-  );
-}
-
-function GridIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current stroke-[1.7]">
-      <rect x="3.5" y="3.5" width="5" height="5" rx="1" />
-      <rect x="11.5" y="3.5" width="5" height="5" rx="1" />
-      <rect x="3.5" y="11.5" width="5" height="5" rx="1" />
-      <rect x="11.5" y="11.5" width="5" height="5" rx="1" />
-    </svg>
-  );
-}
-
-function UsersIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current stroke-[1.7]">
-      <path d="M7 10a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
-      <path d="M13.5 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />
-      <path d="M3.5 15a3.5 3.5 0 0 1 7 0" />
-      <path d="M11.5 15a2.8 2.8 0 0 1 5 0" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current stroke-[1.7]">
-      <path d="M5 3v3" />
-      <path d="M15 3v3" />
-      <path d="M4 6h12" />
-      <rect x="3" y="4.5" width="14" height="12" rx="2.5" />
-      <path d="M6.5 10h2" />
-      <path d="M11.5 10h2" />
-      <path d="M6.5 13.5h2" />
-      <path d="M11.5 13.5h2" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current stroke-[1.7]">
-      <circle cx="10" cy="10" r="6.5" />
-      <path d="M10 6.5v4l2.5 1.5" />
-    </svg>
-  );
-}
-
-function LayersIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current stroke-[1.7]">
-      <path d="m10 3 6 3.2-6 3.2-6-3.2L10 3Z" />
-      <path d="m4 10 6 3.2 6-3.2" />
-      <path d="m4 13.8 6 3.2 6-3.2" />
-    </svg>
-  );
-}
-
-function SignalIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current stroke-[1.7]">
-      <path d="M4 13.5a6 6 0 0 1 12 0" />
-      <path d="M6.5 13.5a3.5 3.5 0 0 1 7 0" />
-      <path d="M10 13.5h.01" />
-    </svg>
-  );
 }

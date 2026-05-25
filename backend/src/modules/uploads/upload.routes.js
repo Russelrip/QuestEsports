@@ -1,5 +1,4 @@
 const express = require("express");
-const { attachSession, requireAdmin } = require("../auth/auth.middleware");
 const { asyncHandler } = require("../../lib/async-handler");
 const { streamUpload } = require("./upload.service");
 
@@ -29,16 +28,14 @@ router.get(
   })
 );
 
-router.use(attachSession);
 router.get(
   "/uploads/team-logos/:filename",
-  requireAdmin,
   asyncHandler(async (req, res) => {
     const file = await streamUpload("team-logos", req.params.filename);
 
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Length", file.size);
-    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     res.status(200).send(file.data);
   })
 );

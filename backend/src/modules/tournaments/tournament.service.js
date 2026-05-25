@@ -1,8 +1,13 @@
 const crypto = require("crypto");
+const XLSX = require("xlsx");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { persistTeamLogoUpload, persistTournamentBannerUpload } = require("../../middleware/upload");
+const {
+  persistTeamLogoUpload,
+  persistTournamentBannerUpload,
+  persistTournamentScheduleUpload,
+} = require("../../middleware/upload");
 const {
   syncSavedTeamFromRegistration,
   sendTeamInvites,
@@ -42,7 +47,11 @@ const adminRegistrationSummarySelect = {
   teamName: true,
   captainName: true,
   captainEmail: true,
+  captainPhone: true,
+  captainDiscord: true,
+  captainRiotId: true,
   contactEmail: true,
+  teamLogoName: true,
   status: true,
   paymentStatus: true,
   verificationStatus: true,
@@ -119,6 +128,48 @@ const ensureSlugAvailable = async (slug, excludedTournamentId) => {
 const getTournamentBannerUrl = (bannerImageName) =>
   bannerImageName ? `/api/uploads/tournament-banners/${bannerImageName}` : null;
 
+const getTeamLogoUrl = (teamLogoName) =>
+  teamLogoName ? `/api/uploads/team-logos/${teamLogoName}` : null;
+
+const getShowcaseImageUrl = (imageName) =>
+  imageName ? `/api/uploads/tournament-banners/${imageName}` : null;
+
+const getUploadedFile = (files, key) =>
+  Array.isArray(files?.[key]) ? files[key][0] : null;
+
+const buildScheduleData = (file) => {
+  if (!file?.buffer) {
+    return null;
+  }
+
+  const workbook = XLSX.read(file.buffer, { type: "buffer" });
+  const firstSheetName = workbook.SheetNames[0];
+
+  if (!firstSheetName) {
+    return null;
+  }
+
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, {
+    defval: "",
+    raw: false,
+  });
+  const matrix = XLSX.utils.sheet_to_json(worksheet, {
+    header: 1,
+    defval: "",
+    raw: false,
+  });
+  const headers = Array.isArray(matrix[0])
+    ? matrix[0].map((header, index) => String(header || `Column ${index + 1}`))
+    : [];
+
+  return {
+    sheetName: firstSheetName,
+    headers,
+    rows,
+  };
+};
+
 const withRegistrationCount = (tournament) => ({
   ...tournament,
   registrationCount:
@@ -153,6 +204,7 @@ const mapTournament = (tournament) => {
     slug: tournamentWithRegistrationCount.slug,
     title: tournamentWithRegistrationCount.title,
     game: tournamentWithRegistrationCount.game,
+    displayPriority: tournamentWithRegistrationCount.displayPriority,
     bannerUrl: getTournamentBannerUrl(tournamentWithRegistrationCount.bannerImageName),
     shortDescription: tournamentWithRegistrationCount.shortDescription,
     fullDescription: tournamentWithRegistrationCount.fullDescription,
@@ -170,6 +222,14 @@ const mapTournament = (tournament) => {
     bracketLink: tournamentWithRegistrationCount.bracketLink,
     contactLink: tournamentWithRegistrationCount.contactLink,
     isFeatured: tournamentWithRegistrationCount.isFeatured,
+    scheduleData: tournamentWithRegistrationCount.scheduleData || null,
+    isCompleted: tournamentWithRegistrationCount.status === "completed",
+    showcase: {
+      posterUrl: getShowcaseImageUrl(tournamentWithRegistrationCount.completedPosterImageName),
+      firstPlaceUrl: getShowcaseImageUrl(tournamentWithRegistrationCount.firstPlaceImageName),
+      secondPlaceUrl: getShowcaseImageUrl(tournamentWithRegistrationCount.secondPlaceImageName),
+      thirdPlaceUrl: getShowcaseImageUrl(tournamentWithRegistrationCount.thirdPlaceImageName),
+    },
     registrationState,
     isRegistrationOpen: registrationState === "registration_open",
     isSlotsFull: registrationState === "slots_full",
@@ -184,18 +244,40 @@ const mapTournamentWithRegistrations = (tournament) => ({
   registrations: (tournament.teamRegistrations || []).map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
-    captainName: registration.captainName,
-    captainEmail: registration.captainEmail,
     contactEmail: registration.contactEmail,
+    logoUrl: getTeamLogoUrl(registration.teamLogoName),
     status: registration.status,
     paymentStatus: registration.paymentStatus,
     verificationStatus: registration.verificationStatus,
     createdAt: registration.createdAt,
+    captain: {
+      name: registration.captainName,
+      email: registration.captainEmail,
+      phone: registration.captainPhone,
+      discord: registration.captainDiscord,
+      riotId: registration.captainRiotId,
+    },
+  })),
+});
+
+const mapTournamentWithPublicTeams = (tournament) => ({
+  ...mapTournament(tournament),
+  registeredTeams: (tournament.teamRegistrations || []).map((registration) => ({
+    id: registration.id,
+    teamName: registration.teamName,
+    logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    status: registration.status,
   })),
 });
 
 const sortPublicTournaments = (tournaments) =>
   [...tournaments].sort((left, right) => {
+    const priorityDifference = left.displayPriority - right.displayPriority;
+
+    if (priorityDifference !== 0) {
+      return priorityDifference;
+    }
+
     if (left.isRegistrationOpen !== right.isRegistrationOpen) {
       return left.isRegistrationOpen ? -1 : 1;
     }
@@ -327,6 +409,9 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     normalizeSlug(title) ||
     normalizeSlug(titleFallback);
   const game = normalizeText(body.game).toLowerCase();
+  const normalizedDisplayPriority = normalizeInteger(body.displayPriority);
+  const displayPriority =
+    normalizedDisplayPriority ?? existingTournament?.displayPriority ?? 100;
   const shortDescription = normalizeText(body.shortDescription);
   const fullDescription = normalizeText(body.fullDescription);
   const rules = normalizeText(body.rules);
@@ -394,6 +479,7 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     title,
     slug,
     game,
+    displayPriority,
     shortDescription,
     fullDescription,
     rules,
@@ -420,7 +506,7 @@ const listPublicTournaments = async ({ game } = {}) => {
       isPublished: true,
       ...(normalizedGame && normalizedGame !== "all" ? { game: normalizedGame } : {}),
     },
-    orderBy: [{ isFeatured: "desc" }, { startDate: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ displayPriority: "asc" }, { isFeatured: "desc" }, { startDate: "asc" }, { createdAt: "desc" }],
     include: registrationCountInclude,
   });
 
@@ -439,14 +525,28 @@ const getPublicTournamentBySlug = async (slug) => {
       slug: normalizedSlug,
       isPublished: true,
     },
-    include: registrationCountInclude,
+    include: {
+      ...registrationCountInclude,
+      teamRegistrations: {
+        where: {
+          status: "approved",
+        },
+        orderBy: [{ teamName: "asc" }],
+        select: {
+          id: true,
+          teamName: true,
+          teamLogoName: true,
+          status: true,
+        },
+      },
+    },
   });
 
   if (!tournament) {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  return mapTournament(tournament);
+  return mapTournamentWithPublicTeams(tournament);
 };
 
 const listAdminTournaments = async ({ page, pageSize, search, status, isPublished } = {}) => {
@@ -475,7 +575,7 @@ const listAdminTournaments = async ({ page, pageSize, search, status, isPublishe
     prisma.tournament.count({ where }),
     prisma.tournament.findMany({
       where,
-      orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ displayPriority: "asc" }, { startDate: "desc" }, { createdAt: "desc" }],
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
       include: registrationCountInclude,
@@ -509,16 +609,57 @@ const getAdminTournamentById = async (tournamentId) => {
   return mapTournamentWithRegistrations(tournament);
 };
 
-const createAdminTournament = async ({ body, file }) => {
+const buildTournamentAssetUpdates = async ({ body, files }) => {
+  const bannerUpload = await persistTournamentBannerUpload(getUploadedFile(files, "bannerImage"));
+  const completedPosterUpload = await persistTournamentBannerUpload(getUploadedFile(files, "completedPosterImage"));
+  const firstPlaceUpload = await persistTournamentBannerUpload(getUploadedFile(files, "firstPlaceImage"));
+  const secondPlaceUpload = await persistTournamentBannerUpload(getUploadedFile(files, "secondPlaceImage"));
+  const thirdPlaceUpload = await persistTournamentBannerUpload(getUploadedFile(files, "thirdPlaceImage"));
+  const scheduleFile = getUploadedFile(files, "scheduleFile");
+  const persistedSchedule = await persistTournamentScheduleUpload(scheduleFile);
+  const scheduleData = buildScheduleData(scheduleFile);
+
+  return {
+    ...(bannerUpload ? { bannerImageName: bannerUpload.filename } : {}),
+    ...(completedPosterUpload ? { completedPosterImageName: completedPosterUpload.filename } : {}),
+    ...(firstPlaceUpload ? { firstPlaceImageName: firstPlaceUpload.filename } : {}),
+    ...(secondPlaceUpload ? { secondPlaceImageName: secondPlaceUpload.filename } : {}),
+    ...(thirdPlaceUpload ? { thirdPlaceImageName: thirdPlaceUpload.filename } : {}),
+    ...(persistedSchedule
+      ? {
+          scheduleFileName: persistedSchedule.filename,
+          scheduleData,
+        }
+      : {}),
+    ...(normalizeBooleanFlag(body.removeBannerImage) ? { bannerImageName: null } : {}),
+    ...(normalizeBooleanFlag(body.removeScheduleFile)
+      ? { scheduleFileName: null, scheduleData: Prisma.JsonNull }
+      : {}),
+    ...(normalizeBooleanFlag(body.removeCompletedPosterImage)
+      ? { completedPosterImageName: null }
+      : {}),
+    ...(normalizeBooleanFlag(body.removeFirstPlaceImage)
+      ? { firstPlaceImageName: null }
+      : {}),
+    ...(normalizeBooleanFlag(body.removeSecondPlaceImage)
+      ? { secondPlaceImageName: null }
+      : {}),
+    ...(normalizeBooleanFlag(body.removeThirdPlaceImage)
+      ? { thirdPlaceImageName: null }
+      : {}),
+  };
+};
+
+const createAdminTournament = async ({ body, files }) => {
   const payload = parseTournamentPayload({ body });
   await ensureSlugAvailable(payload.slug);
-  const persistedBanner = await persistTournamentBannerUpload(file);
+  const assetUpdates = await buildTournamentAssetUpdates({ body, files });
 
   const tournament = await prisma.tournament.create({
     data: {
       id: crypto.randomUUID(),
       ...payload,
-      bannerImageName: persistedBanner ? persistedBanner.filename : null,
+      ...assetUpdates,
     },
     include: registrationCountInclude,
   });
@@ -526,7 +667,7 @@ const createAdminTournament = async ({ body, file }) => {
   return mapTournament(tournament);
 };
 
-const updateAdminTournament = async ({ tournamentId, body, file }) => {
+const updateAdminTournament = async ({ tournamentId, body, files }) => {
   const existingTournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
   });
@@ -537,15 +678,16 @@ const updateAdminTournament = async ({ tournamentId, body, file }) => {
 
   const payload = parseTournamentPayload({ body, existingTournament });
   await ensureSlugAvailable(payload.slug, tournamentId);
-  const persistedBanner = await persistTournamentBannerUpload(file);
-  const removeBannerImage = normalizeBooleanFlag(body.removeBannerImage);
+  const assetUpdates = await buildTournamentAssetUpdates({
+    body,
+    files,
+  });
 
   const tournament = await prisma.tournament.update({
     where: { id: tournamentId },
     data: {
       ...payload,
-      ...(removeBannerImage ? { bannerImageName: null } : {}),
-      ...(persistedBanner ? { bannerImageName: persistedBanner.filename } : {}),
+      ...assetUpdates,
     },
     include: registrationCountInclude,
   });

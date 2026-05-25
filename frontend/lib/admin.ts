@@ -149,6 +149,7 @@ export type TournamentFormValues = {
   title: string;
   slug: string;
   game: string;
+  displayPriority: string;
   shortDescription: string;
   fullDescription: string;
   rules: string;
@@ -165,7 +166,17 @@ export type TournamentFormValues = {
   contactLink: string;
   isFeatured: boolean;
   bannerImage: File | null;
+  scheduleFile: File | null;
+  completedPosterImage: File | null;
+  firstPlaceImage: File | null;
+  secondPlaceImage: File | null;
+  thirdPlaceImage: File | null;
   removeBannerImage: boolean;
+  removeScheduleFile: boolean;
+  removeCompletedPosterImage: boolean;
+  removeFirstPlaceImage: boolean;
+  removeSecondPlaceImage: boolean;
+  removeThirdPlaceImage: boolean;
 };
 
 export type UserFormValues = {
@@ -196,6 +207,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   title: "",
   slug: "",
   game: "valorant",
+  displayPriority: "100",
   shortDescription: "",
   fullDescription: "",
   rules: "",
@@ -212,7 +224,17 @@ export const initialTournamentFormValues: TournamentFormValues = {
   contactLink: "",
   isFeatured: false,
   bannerImage: null,
+  scheduleFile: null,
+  completedPosterImage: null,
+  firstPlaceImage: null,
+  secondPlaceImage: null,
+  thirdPlaceImage: null,
   removeBannerImage: false,
+  removeScheduleFile: false,
+  removeCompletedPosterImage: false,
+  removeFirstPlaceImage: false,
+  removeSecondPlaceImage: false,
+  removeThirdPlaceImage: false,
 };
 
 export const buildTournamentFormData = (values: TournamentFormValues) => {

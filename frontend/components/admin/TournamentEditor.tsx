@@ -39,6 +39,7 @@ const mapTournamentToFormValues = (tournament: Tournament): TournamentFormValues
   title: tournament.title,
   slug: tournament.slug,
   game: tournament.game,
+  displayPriority: String(tournament.displayPriority ?? 100),
   shortDescription: tournament.shortDescription,
   fullDescription: tournament.fullDescription,
   rules: tournament.rules || "",
@@ -55,7 +56,17 @@ const mapTournamentToFormValues = (tournament: Tournament): TournamentFormValues
   contactLink: tournament.contactLink || "",
   isFeatured: tournament.isFeatured,
   bannerImage: null,
+  scheduleFile: null,
+  completedPosterImage: null,
+  firstPlaceImage: null,
+  secondPlaceImage: null,
+  thirdPlaceImage: null,
   removeBannerImage: false,
+  removeScheduleFile: false,
+  removeCompletedPosterImage: false,
+  removeFirstPlaceImage: false,
+  removeSecondPlaceImage: false,
+  removeThirdPlaceImage: false,
 });
 
 const formatFileSize = (bytes: number) => {
@@ -74,6 +85,21 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [registrations, setRegistrations] = useState<TeamRegistration[]>([]);
+  const [assetPreview, setAssetPreview] = useState<{
+    bannerUrl: string | null;
+    completedPosterUrl: string | null;
+    firstPlaceUrl: string | null;
+    secondPlaceUrl: string | null;
+    thirdPlaceUrl: string | null;
+    scheduleRows: number;
+  }>({
+    bannerUrl: null,
+    completedPosterUrl: null,
+    firstPlaceUrl: null,
+    secondPlaceUrl: null,
+    thirdPlaceUrl: null,
+    scheduleRows: 0,
+  });
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(isEdit);
   const hydratedRef = useRef(false);
   const bannerImageInputRef = useRef<HTMLInputElement>(null);
@@ -91,6 +117,14 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
         );
         setFormValues(mapTournamentToFormValues(data.tournament));
         setRegistrations(data.tournament.registrations || []);
+        setAssetPreview({
+          bannerUrl: data.tournament.bannerUrl,
+          completedPosterUrl: data.tournament.showcase?.posterUrl || null,
+          firstPlaceUrl: data.tournament.showcase?.firstPlaceUrl || null,
+          secondPlaceUrl: data.tournament.showcase?.secondPlaceUrl || null,
+          thirdPlaceUrl: data.tournament.showcase?.thirdPlaceUrl || null,
+          scheduleRows: data.tournament.scheduleData?.rows?.length || 0,
+        });
         setSlugManuallyEdited(true);
       } catch (nextError) {
         setError(nextError instanceof Error ? nextError.message : "Unable to load tournament.");
@@ -142,6 +176,14 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
       }
 
       setFormValues(mapTournamentToFormValues(response.tournament));
+      setAssetPreview({
+        bannerUrl: response.tournament.bannerUrl,
+        completedPosterUrl: response.tournament.showcase?.posterUrl || null,
+        firstPlaceUrl: response.tournament.showcase?.firstPlaceUrl || null,
+        secondPlaceUrl: response.tournament.showcase?.secondPlaceUrl || null,
+        thirdPlaceUrl: response.tournament.showcase?.thirdPlaceUrl || null,
+        scheduleRows: response.tournament.scheduleData?.rows?.length || 0,
+      });
       if (bannerImageInputRef.current) {
         bannerImageInputRef.current.value = "";
       }
@@ -185,6 +227,16 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               </FormField>
               <FormField label="Game" htmlFor="game" required>
                 <Input id="game" value={formValues.game} onChange={(event) => updateField("game", event.target.value)} required />
+              </FormField>
+              <FormField label="Display Priority" htmlFor="displayPriority" hint="Lower numbers appear first." required>
+                <Input
+                  id="displayPriority"
+                  type="number"
+                  min="0"
+                  value={formValues.displayPriority}
+                  onChange={(event) => updateField("displayPriority", event.target.value)}
+                  required
+                />
               </FormField>
               <FormField label="Status" htmlFor="status" required>
                 <Select id="status" value={formValues.status} onChange={(event) => updateField("status", event.target.value as Tournament["status"])}>
@@ -275,15 +327,91 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   </div>
                 </div>
               </FormField>
+              <FormField label="Schedule File" htmlFor="scheduleFile" hint="Upload XLSX, XLS, or CSV to render the schedule automatically.">
+                <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                  <Input
+                    id="scheduleFile"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(event) => {
+                      updateField("scheduleFile", event.target.files?.[0] || null);
+                      if (event.target.files?.[0]) {
+                        updateField("removeScheduleFile", false);
+                      }
+                    }}
+                  />
+                  <p className="mt-2 text-xs text-slate-500">
+                    {formValues.scheduleFile
+                      ? `${formValues.scheduleFile.name} selected`
+                      : assetPreview.scheduleRows > 0
+                        ? `${assetPreview.scheduleRows} schedule rows currently available`
+                        : "No schedule uploaded yet"}
+                  </p>
+                </div>
+              </FormField>
+              <FormField label="Completed Poster" htmlFor="completedPosterImage" hint="Official poster shown first in completed showcase.">
+                <FileUploadField
+                  id="completedPosterImage"
+                  accept="image/png,image/jpeg,image/webp"
+                  file={formValues.completedPosterImage}
+                  existingUrl={assetPreview.completedPosterUrl}
+                  onChange={(file) => {
+                    updateField("completedPosterImage", file);
+                    if (file) {
+                      updateField("removeCompletedPosterImage", false);
+                    }
+                  }}
+                />
+              </FormField>
+              <FormField label="1st Place Image" htmlFor="firstPlaceImage">
+                <FileUploadField
+                  id="firstPlaceImage"
+                  accept="image/png,image/jpeg,image/webp"
+                  file={formValues.firstPlaceImage}
+                  existingUrl={assetPreview.firstPlaceUrl}
+                  onChange={(file) => {
+                    updateField("firstPlaceImage", file);
+                    if (file) {
+                      updateField("removeFirstPlaceImage", false);
+                    }
+                  }}
+                />
+              </FormField>
+              <FormField label="2nd Place Image" htmlFor="secondPlaceImage">
+                <FileUploadField
+                  id="secondPlaceImage"
+                  accept="image/png,image/jpeg,image/webp"
+                  file={formValues.secondPlaceImage}
+                  existingUrl={assetPreview.secondPlaceUrl}
+                  onChange={(file) => {
+                    updateField("secondPlaceImage", file);
+                    if (file) {
+                      updateField("removeSecondPlaceImage", false);
+                    }
+                  }}
+                />
+              </FormField>
+              <FormField label="3rd Place Image" htmlFor="thirdPlaceImage">
+                <FileUploadField
+                  id="thirdPlaceImage"
+                  accept="image/png,image/jpeg,image/webp"
+                  file={formValues.thirdPlaceImage}
+                  existingUrl={assetPreview.thirdPlaceUrl}
+                  onChange={(file) => {
+                    updateField("thirdPlaceImage", file);
+                    if (file) {
+                      updateField("removeThirdPlaceImage", false);
+                    }
+                  }}
+                />
+              </FormField>
               {isEdit ? (
                 <div className="md:col-span-2 xl:col-span-3 rounded-[24px] border border-white/8 bg-white/5 p-4 text-sm text-slate-300">
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-white/20 bg-black/30 accent-cyan-300"
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <AssetRemovalCheckbox
+                      label="Remove current banner image"
                       checked={formValues.removeBannerImage}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
+                      onChange={(checked) => {
                         updateField("removeBannerImage", checked);
                         if (checked) {
                           updateField("bannerImage", null);
@@ -293,8 +421,32 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                         }
                       }}
                     />
-                    Remove current banner image
-                  </label>
+                    <AssetRemovalCheckbox
+                      label="Remove schedule file"
+                      checked={formValues.removeScheduleFile}
+                      onChange={(checked) => updateField("removeScheduleFile", checked)}
+                    />
+                    <AssetRemovalCheckbox
+                      label="Remove completed poster"
+                      checked={formValues.removeCompletedPosterImage}
+                      onChange={(checked) => updateField("removeCompletedPosterImage", checked)}
+                    />
+                    <AssetRemovalCheckbox
+                      label="Remove 1st place image"
+                      checked={formValues.removeFirstPlaceImage}
+                      onChange={(checked) => updateField("removeFirstPlaceImage", checked)}
+                    />
+                    <AssetRemovalCheckbox
+                      label="Remove 2nd place image"
+                      checked={formValues.removeSecondPlaceImage}
+                      onChange={(checked) => updateField("removeSecondPlaceImage", checked)}
+                    />
+                    <AssetRemovalCheckbox
+                      label="Remove 3rd place image"
+                      checked={formValues.removeThirdPlaceImage}
+                      onChange={(checked) => updateField("removeThirdPlaceImage", checked)}
+                    />
+                  </div>
                 </div>
               ) : null}
               <FormField label="Short Description" htmlFor="shortDescription" required className="md:col-span-2 xl:col-span-3">
@@ -352,5 +504,55 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
         </>
       )}
     </AdminShell>
+  );
+}
+
+function AssetRemovalCheckbox({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-3">
+      <input
+        type="checkbox"
+        className="h-4 w-4 rounded border-white/20 bg-black/30 accent-cyan-300"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      {label}
+    </label>
+  );
+}
+
+function FileUploadField({
+  id,
+  accept,
+  file,
+  existingUrl,
+  onChange,
+}: {
+  id: string;
+  accept: string;
+  file: File | null;
+  existingUrl: string | null;
+  onChange: (file: File | null) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+      <Input
+        id={id}
+        type="file"
+        accept={accept}
+        onChange={(event) => onChange(event.target.files?.[0] || null)}
+      />
+      <p className="mt-2 text-xs text-slate-500">
+        {file ? file.name : existingUrl ? "Existing image on file" : "No image uploaded yet"}
+      </p>
+    </div>
   );
 }

@@ -11,11 +11,32 @@ export type TournamentRegistrationState =
   | "registration_closed"
   | "slots_full";
 
+export type TournamentScheduleData = {
+  sheetName: string;
+  headers: string[];
+  rows: Record<string, string>[];
+};
+
+export type TournamentShowcase = {
+  posterUrl: string | null;
+  firstPlaceUrl: string | null;
+  secondPlaceUrl: string | null;
+  thirdPlaceUrl: string | null;
+};
+
+export type RegisteredTournamentTeam = {
+  id: string;
+  teamName: string;
+  logoUrl: string | null;
+  status: string;
+};
+
 export type Tournament = {
   id: string;
   slug: string;
   title: string;
   game: string;
+  displayPriority: number;
   bannerUrl: string | null;
   shortDescription: string;
   fullDescription: string;
@@ -33,6 +54,10 @@ export type Tournament = {
   bracketLink: string | null;
   contactLink: string | null;
   isFeatured: boolean;
+  scheduleData: TournamentScheduleData | null;
+  showcase: TournamentShowcase;
+  registeredTeams?: RegisteredTournamentTeam[];
+  isCompleted: boolean;
   registrationState: TournamentRegistrationState;
   isRegistrationOpen: boolean;
   isSlotsFull: boolean;

@@ -31,6 +31,10 @@ const TOURNAMENT_POSTER_SELECT = {
   title: true,
   status: true,
   isPublished: true,
+  displayPriority: true,
+  startDate: true,
+  endDate: true,
+  createdAt: true,
 };
 const POSTER_INCLUDE = {
   imageAsset: true,
@@ -99,6 +103,28 @@ const buildPagedResponse = ({ items, total, page, pageSize }) => ({
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
   },
 });
+
+const sortPostersByPriority = (posters) =>
+  [...posters].sort((left, right) => {
+    const leftPriority = left.tournament?.displayPriority ?? Number.MAX_SAFE_INTEGER;
+    const rightPriority = right.tournament?.displayPriority ?? Number.MAX_SAFE_INTEGER;
+
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+
+    const leftTournamentDate = left.tournament?.endDate || left.tournament?.startDate || left.tournament?.createdAt;
+    const rightTournamentDate =
+      right.tournament?.endDate || right.tournament?.startDate || right.tournament?.createdAt;
+    const leftDate = new Date(leftTournamentDate || left.createdAt).getTime();
+    const rightDate = new Date(rightTournamentDate || right.createdAt).getTime();
+
+    if (leftDate !== rightDate) {
+      return rightDate - leftDate;
+    }
+
+    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+  });
 
 const normalizeCategory = (value, fallback = "poster") => {
   const normalized = normalizeText(value).toLowerCase();
@@ -391,7 +417,7 @@ const listPosters = async (query = {}) => {
   ]);
 
   return buildPagedResponse({
-    items: posters.map(mapPoster),
+    items: sortPostersByPriority(posters.map(mapPoster)),
     total,
     page: pagination.page,
     pageSize: pagination.pageSize,

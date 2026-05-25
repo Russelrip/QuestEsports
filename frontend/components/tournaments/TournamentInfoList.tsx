@@ -48,7 +48,7 @@ export default function TournamentInfoList({
 
     return (
       <div className="space-y-5">
-        <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#0c0a14] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
           <div className="grid md:grid-cols-4">
             {compactItems(tournament).slice(0, 4).map((item) => {
               const Icon = item.icon;
@@ -88,7 +88,7 @@ export default function TournamentInfoList({
           </div>
         </div>
 
-        <div className="rounded-[26px] border border-fuchsia-400/18 bg-[linear-gradient(180deg,rgba(34,10,61,0.42),rgba(12,14,24,0.82))] p-5 shadow-[0_18px_45px_rgba(61,9,115,0.22)]">
+        <div className="rounded-[26px] border border-fuchsia-400/18 bg-[#120d1d] p-5 shadow-[0_18px_45px_rgba(61,9,115,0.22)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-2">
               <div>
@@ -107,7 +107,7 @@ export default function TournamentInfoList({
           </div>
           <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-white/8">
             <div
-              className="h-full rounded-full bg-[linear-gradient(90deg,rgba(168,85,247,0.95),rgba(34,211,238,0.85))]"
+              className="h-full rounded-full bg-fuchsia-500"
               style={{ width: `${filledPercentage}%` }}
             />
           </div>

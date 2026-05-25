@@ -141,7 +141,7 @@ export default function LoginForm() {
         <Button
           type="submit"
           disabled={form.formState.isSubmitting}
-          className="h-12 rounded-[16px] border-red-400/30 bg-[linear-gradient(180deg,#ff3131,#df1f1f)] shadow-[0_18px_30px_rgba(223,31,31,0.22)] hover:brightness-105"
+          className="h-12 rounded-[16px] border-red-400/30 bg-red-600 shadow-[0_18px_30px_rgba(223,31,31,0.22)] hover:bg-red-500"
         >
           {form.formState.isSubmitting ? "Logging in..." : "Sign In"}
         </Button>
