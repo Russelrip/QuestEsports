@@ -55,7 +55,6 @@ export default function ForgotPasswordForm() {
     <AuthPanel
       title="Forgot Password"
       description="Request a secure reset link. If the address exists in our system, we’ll send instructions right away."
-      eyebrow="Account Recovery"
     >
       <form className="grid gap-5" onSubmit={onSubmit}>
         <FormField label="Email Address" htmlFor="email" error={form.formState.errors.email?.message} required>

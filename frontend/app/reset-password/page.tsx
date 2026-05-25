@@ -14,6 +14,7 @@ export default function ResetPasswordPage() {
     <PageLayout
       title="Reset Password"
       description="Choose a new password using your Quest Esports reset link."
+      showEyebrow={false}
     >
       <Suspense fallback={null}>
         <ResetPasswordForm />

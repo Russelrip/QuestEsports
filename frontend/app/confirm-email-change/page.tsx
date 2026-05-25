@@ -14,6 +14,7 @@ export default function ConfirmEmailChangePage() {
     <PageLayout
       title="Confirm Email Change"
       description="Finish updating your Quest Esports account email address."
+      showEyebrow={false}
     >
       <Suspense fallback={null}>
         <ConfirmEmailChangeContent />

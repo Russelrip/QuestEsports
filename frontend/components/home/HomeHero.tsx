@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { buttonClassName } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 
@@ -17,8 +16,7 @@ export default function HomeHero() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.14),transparent_25%),radial-gradient(circle_at_left,rgba(139,92,246,0.18),transparent_32%)]" />
           <div className="relative grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
             <div className="max-w-3xl">
-              <Badge>Competitive Platform</Badge>
-              <h1 className="mt-6 text-5xl leading-[0.95] text-white sm:text-6xl lg:text-7xl">
+              <h1 className="text-5xl leading-[0.95] text-white sm:text-6xl lg:text-7xl">
                 Run premium esports events with a UI that feels match ready.
               </h1>
               <p className="mt-6 max-w-2xl text-base text-slate-300 sm:text-lg">

@@ -56,7 +56,6 @@ export default function TeamInviteContent() {
     <AuthPanel
       title="Team Invitation"
       description="Confirm whether you're joining the roster before the team locks in tournament registration."
-      eyebrow="Roster Invite"
     >
       <div className="grid gap-5">
         {loading ? (

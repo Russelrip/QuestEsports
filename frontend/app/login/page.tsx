@@ -7,7 +7,7 @@ export const metadata = buildNoIndexMetadata("Login", defaultPageDescriptions.lo
 
 export default function LoginPage() {
   return (
-    <PageLayout title="Login" description={defaultPageDescriptions.login}>
+    <PageLayout title="Login" description={defaultPageDescriptions.login} showEyebrow={false}>
       <Suspense fallback={null}>
         <LoginForm />
       </Suspense>

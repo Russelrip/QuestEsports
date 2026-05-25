@@ -44,16 +44,6 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
                 title={tournament.title}
                 className="h-full min-h-[340px] w-full object-cover sm:min-h-[420px] xl:min-h-[100%]"
               />
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(5,6,10,0.08),rgba(5,6,10,0.2)_40%,rgba(5,6,10,0.88))]" />
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 p-5 sm:p-6">
-                <div className="max-w-[78%] rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(10,12,18,0.08),rgba(10,12,18,0.42))] px-4 py-3 backdrop-blur-sm">
-                  <p className="text-[11px] tracking-[0.12em] text-cyan-100/80">{tournament.game}</p>
-                  <p className="mt-1 font-display text-2xl leading-tight text-white">{tournament.title}</p>
-                  <p className="mt-2 text-sm text-slate-300">
-                    {formatDisplayDate(tournament.startDate)} - {formatDisplayDate(tournament.endDate)}
-                  </p>
-                </div>
-              </div>
             </div>
 
             <div className="flex flex-col justify-between gap-6">
@@ -144,14 +134,6 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
                   Discord / Contact
                 </a>
               ) : null}
-            </div>
-            <div className="mt-5 space-y-3 rounded-[24px] border border-white/8 bg-white/[0.035] p-4">
-              <p className="text-sm text-slate-300">
-                Use the registration CTA to secure a slot, then check the bracket and contact channels as the event gets closer.
-              </p>
-              <p className="text-sm text-slate-400">
-                Quest keeps this panel lightweight so the tournament overview stays focused on the competition itself.
-              </p>
             </div>
           </Card>
         </div>

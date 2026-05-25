@@ -14,6 +14,7 @@ export default function TeamInvitePage() {
     <PageLayout
       title="Team Invite"
       description="Accept or decline your Quest Esports team invitation."
+      showEyebrow={false}
     >
       <Suspense fallback={null}>
         <TeamInviteContent />

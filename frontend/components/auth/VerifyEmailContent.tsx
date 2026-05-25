@@ -56,7 +56,7 @@ export default function VerifyEmailContent() {
   }, [refreshSession, token]);
 
   return (
-    <AuthPanel title="Verify Email" description="We’re confirming your account so you can register for events and manage your team." eyebrow="Email Verification">
+    <AuthPanel title="Verify Email" description="We’re confirming your account so you can register for events and manage your team.">
       <div className="grid gap-5">
         <div className={`rounded-[24px] p-5 text-sm ${status === "success" ? "border border-emerald-300/20 bg-emerald-400/8 text-slate-100" : "border border-amber-300/20 bg-amber-400/8 text-slate-100"}`}>
           {message}

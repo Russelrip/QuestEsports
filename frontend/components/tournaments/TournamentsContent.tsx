@@ -69,16 +69,6 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
                   title={tournament.title}
                   className="h-full min-h-[320px] w-full object-cover transition duration-500 group-hover:scale-[1.02]"
                 />
-                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(6,7,12,0.08),rgba(6,7,12,0.35)_42%,rgba(6,7,12,0.88))]" />
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 p-5">
-                  <div className="max-w-[78%] rounded-[20px] bg-[linear-gradient(180deg,rgba(6,7,12,0.1),rgba(6,7,12,0.58))] px-1 py-1">
-                    <p className="text-[10px] tracking-[0.08em] text-cyan-100/80">{tournament.game}</p>
-                    <p className="mt-1 font-display text-xl text-white">{tournament.title}</p>
-                    <p className="mt-2 text-xs text-slate-300">
-                      {formatDisplayDate(tournament.startDate)} - {formatDisplayDate(tournament.endDate)}
-                    </p>
-                  </div>
-                </div>
               </Link>
 
               <div className="flex flex-col justify-between gap-7">

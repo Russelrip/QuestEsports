@@ -9,7 +9,6 @@ import AuthPanel from "@/components/auth/AuthPanel";
 import {
   AuthInput,
   AuthPasswordInput,
-  DiscordBadgeIcon,
   EmailIcon,
   LockIcon,
   PhoneIcon,
@@ -109,12 +108,7 @@ export default function SignupForm() {
     <AuthPanel
       title="Join Quest Esports"
       description="Create your gaming account to register teams, manage invites, and stay ready for upcoming events."
-      eyebrow="Create Account"
     >
-      <div className="mb-6 flex justify-center">
-        <DiscordBadgeIcon />
-      </div>
-
       <form className="grid gap-5" onSubmit={onSubmit}>
         <div className="grid gap-5 sm:grid-cols-2">
           <FormField label="First Name" htmlFor="firstName" error={form.formState.errors.firstName?.message} required>

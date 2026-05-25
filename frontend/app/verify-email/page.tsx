@@ -14,6 +14,7 @@ export default function VerifyEmailPage() {
     <PageLayout
       title="Verify Email"
       description="Confirm your email address to unlock full Quest Esports account access."
+      showEyebrow={false}
     >
       <Suspense fallback={null}>
         <VerifyEmailContent />

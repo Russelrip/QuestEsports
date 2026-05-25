@@ -1,18 +1,15 @@
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
-import { Badge } from "@/components/ui/badge";
 
 export default function AuthPanel({
   title,
   description,
   children,
-  eyebrow = "Account Access",
   aside,
 }: {
   title: string;
   description: string;
   children: React.ReactNode;
-  eyebrow?: string;
   aside?: React.ReactNode;
 }) {
   return (
@@ -23,8 +20,7 @@ export default function AuthPanel({
             <div className="pointer-events-none absolute inset-x-8 top-0 h-32 rounded-full bg-red-500/8 blur-3xl" />
             <div className="relative">
               <div className="flex flex-col items-center text-center">
-                <Badge className="border-red-400/20 bg-red-500/10 text-red-100">{eyebrow}</Badge>
-                <h2 className="mt-5 text-3xl text-white sm:text-4xl">{title}</h2>
+                <h2 className="text-3xl text-white sm:text-4xl">{title}</h2>
                 <p className="mt-3 max-w-md text-sm leading-7 text-slate-400">{description}</p>
               </div>
 

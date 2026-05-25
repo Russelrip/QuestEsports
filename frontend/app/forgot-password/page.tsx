@@ -13,6 +13,7 @@ export default function ForgotPasswordPage() {
     <PageLayout
       title="Forgot Password"
       description="Request a secure password reset link for your Quest Esports account."
+      showEyebrow={false}
     >
       <ForgotPasswordForm />
     </PageLayout>

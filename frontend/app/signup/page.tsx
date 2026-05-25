@@ -10,7 +10,7 @@ export const metadata = buildNoIndexMetadata(
 
 export default function SignupPage() {
   return (
-    <PageLayout title="Create Account" description={defaultPageDescriptions.signup}>
+    <PageLayout title="Create Account" description={defaultPageDescriptions.signup} showEyebrow={false}>
       <SignupForm />
     </PageLayout>
   );

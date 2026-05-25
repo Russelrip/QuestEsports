@@ -11,7 +11,6 @@ import MfaChallengeForm from "@/components/auth/MfaChallengeForm";
 import {
   AuthInput,
   AuthPasswordInput,
-  DiscordBadgeIcon,
   LockIcon,
   SocialAuthButtons,
   UserIcon,
@@ -91,17 +90,7 @@ export default function LoginForm() {
     <AuthPanel
       title="Welcome Back"
       description="Sign in to manage your roster, registrations, and tournament profile."
-      eyebrow="Player Login"
-      aside={
-        <div className="rounded-[20px] border border-slate-800 bg-slate-900/65 p-4 text-center text-sm text-slate-400">
-          Returning admins are still routed straight into the control center after sign-in.
-        </div>
-      }
     >
-      <div className="mb-6 flex justify-center">
-        <DiscordBadgeIcon />
-      </div>
-
       {mfaChallengeToken ? (
         <MfaChallengeForm
           challengeToken={mfaChallengeToken}
