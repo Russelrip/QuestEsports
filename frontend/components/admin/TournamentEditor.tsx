@@ -55,6 +55,7 @@ const mapTournamentToFormValues = (tournament: Tournament): TournamentFormValues
   contactLink: tournament.contactLink || "",
   isFeatured: tournament.isFeatured,
   bannerImage: null,
+  removeBannerImage: false,
 });
 
 export default function TournamentEditor({ tournamentId }: { tournamentId?: string }) {
@@ -211,8 +212,37 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                 <Input id="contactLink" type="url" value={formValues.contactLink} onChange={(event) => updateField("contactLink", event.target.value)} />
               </FormField>
               <FormField label="Banner Image" htmlFor="bannerImage">
-                <Input id="bannerImage" type="file" accept="image/*" onChange={(event) => updateField("bannerImage", event.target.files?.[0] || null)} />
+                <Input
+                  id="bannerImage"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => {
+                    const nextFile = event.target.files?.[0] || null;
+                    updateField("bannerImage", nextFile);
+                    if (nextFile) {
+                      updateField("removeBannerImage", false);
+                    }
+                  }}
+                />
               </FormField>
+              {isEdit ? (
+                <div className="md:col-span-2 xl:col-span-3 rounded-[24px] border border-white/8 bg-white/5 p-4 text-sm text-slate-300">
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={formValues.removeBannerImage}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        updateField("removeBannerImage", checked);
+                        if (checked) {
+                          updateField("bannerImage", null);
+                        }
+                      }}
+                    />
+                    Remove current banner image
+                  </label>
+                </div>
+              ) : null}
               <FormField label="Short Description" htmlFor="shortDescription" required className="md:col-span-2 xl:col-span-3">
                 <Textarea id="shortDescription" value={formValues.shortDescription} onChange={(event) => updateField("shortDescription", event.target.value)} required />
               </FormField>

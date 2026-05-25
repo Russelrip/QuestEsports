@@ -165,6 +165,7 @@ export type TournamentFormValues = {
   contactLink: string;
   isFeatured: boolean;
   bannerImage: File | null;
+  removeBannerImage: boolean;
 };
 
 export type UserFormValues = {
@@ -211,6 +212,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   contactLink: "",
   isFeatured: false,
   bannerImage: null,
+  removeBannerImage: false,
 };
 
 export const buildTournamentFormData = (values: TournamentFormValues) => {

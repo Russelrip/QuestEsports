@@ -538,11 +538,13 @@ const updateAdminTournament = async ({ tournamentId, body, file }) => {
   const payload = parseTournamentPayload({ body, existingTournament });
   await ensureSlugAvailable(payload.slug, tournamentId);
   const persistedBanner = await persistTournamentBannerUpload(file);
+  const removeBannerImage = normalizeBooleanFlag(body.removeBannerImage);
 
   const tournament = await prisma.tournament.update({
     where: { id: tournamentId },
     data: {
       ...payload,
+      ...(removeBannerImage ? { bannerImageName: null } : {}),
       ...(persistedBanner ? { bannerImageName: persistedBanner.filename } : {}),
     },
     include: registrationCountInclude,
