@@ -340,6 +340,7 @@ model SavedTeamMember {
   inviteStatus      TeamMemberInviteStatus @default(pending) @map("invite_status")
   inviteTokenHash   String?              @unique @map("invite_token_hash")
   inviteSentAt      DateTime?            @map("invite_sent_at")
+  inviteExpiresAt   DateTime?            @map("invite_expires_at")
   inviteRespondedAt DateTime?            @map("invite_responded_at")
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
@@ -351,6 +352,20 @@ model SavedTeamMember {
   @@index([emailNormalized])
   @@index([inviteStatus])
   @@map("saved_team_members")
+}
+
+model RateLimitBucket {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  key       String
+  count     Int      @default(0)
+  resetAt   DateTime @map("reset_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([name, key])
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
 }
 
 model ImageAsset {

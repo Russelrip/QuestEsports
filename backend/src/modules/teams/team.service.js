@@ -32,6 +32,7 @@ const ROLE_SORT_ORDER = {
   SUBSTITUTE: 2,
   COACH: 3,
 };
+const TEAM_INVITE_TTL_HOURS = 72;
 
 const mapSavedTeamMember = (member) => ({
   id: member.id,
@@ -100,6 +101,7 @@ const listProfileTeams = async ({ user }) => {
 
 const getTeamInvitePreview = async ({ token }) => {
   const normalizedToken = normalizeText(token);
+  const now = new Date();
 
   if (!normalizedToken) {
     throw new HttpError(400, "Team invite token is required.");
@@ -108,6 +110,10 @@ const getTeamInvitePreview = async ({ token }) => {
   const member = await prisma.savedTeamMember.findFirst({
     where: {
       inviteTokenHash: hashToken(normalizedToken),
+      inviteStatus: "pending",
+      inviteExpiresAt: {
+        gt: now,
+      },
     },
     select: invitePreviewSelect,
   });
@@ -122,6 +128,7 @@ const getTeamInvitePreview = async ({ token }) => {
 const respondToTeamInvite = async ({ token, decision }) => {
   const normalizedToken = normalizeText(token);
   const normalizedDecision = normalizeText(decision).toLowerCase();
+  const now = new Date();
 
   if (!normalizedToken) {
     throw new HttpError(400, "Team invite token is required.");
@@ -134,19 +141,16 @@ const respondToTeamInvite = async ({ token, decision }) => {
   const member = await prisma.savedTeamMember.findFirst({
     where: {
       inviteTokenHash: hashToken(normalizedToken),
+      inviteStatus: "pending",
+      inviteExpiresAt: {
+        gt: now,
+      },
     },
     select: invitePreviewSelect,
   });
 
   if (!member) {
     throw new HttpError(400, "This team invite link is invalid or has expired.");
-  }
-
-  if (member.inviteStatus !== "pending") {
-    return {
-      ...mapInvitePreview(member),
-      inviteStatus: member.inviteStatus,
-    };
   }
 
   const inviteStatus = normalizedDecision === "accept" ? "accepted" : "declined";
@@ -158,6 +162,7 @@ const respondToTeamInvite = async ({ token, decision }) => {
       inviteStatus,
       inviteRespondedAt,
       inviteTokenHash: null,
+      inviteExpiresAt: null,
     },
     select: invitePreviewSelect,
   });
@@ -230,6 +235,9 @@ const syncSavedTeamFromRegistration = async ({
 
   const inviteDispatches = [];
   const inviteSentAt = new Date();
+  const inviteExpiresAt = new Date(
+    inviteSentAt.getTime() + TEAM_INVITE_TTL_HOURS * 60 * 60 * 1000
+  );
   const captainName =
     [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.username;
 
@@ -253,6 +261,7 @@ const syncSavedTeamFromRegistration = async ({
           riotId: member.riotId,
           inviteStatus: "accepted",
           inviteSentAt: acceptedMember?.inviteSentAt || null,
+          inviteExpiresAt: null,
           inviteRespondedAt: acceptedMember?.inviteRespondedAt || new Date(),
         };
       }
@@ -280,6 +289,7 @@ const syncSavedTeamFromRegistration = async ({
         inviteStatus: "pending",
         inviteTokenHash: token.tokenHash,
         inviteSentAt,
+        inviteExpiresAt,
       };
     }),
   });

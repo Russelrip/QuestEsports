@@ -1,6 +1,14 @@
+const crypto = require("crypto");
+const { Prisma } = require("../generated/prisma");
+const { prisma } = require("../lib/prisma");
 const { HttpError } = require("../lib/http-error");
+const { logger } = require("../lib/logger");
 
-const stores = new Map();
+const MAX_TRANSACTION_RETRIES = 3;
+const BUCKET_RETENTION_MULTIPLIER = 4;
+
+const hashRateLimitKey = (value) =>
+  crypto.createHash("sha256").update(String(value || "unknown")).digest("hex");
 
 const getClientIp = (req) => {
   const trustProxy = req.app?.get("trust proxy");
@@ -12,12 +20,90 @@ const getClientIp = (req) => {
   return req.socket?.remoteAddress || req.ip || "unknown";
 };
 
-const getStore = (name) => {
-  if (!stores.has(name)) {
-    stores.set(name, new Map());
+const pruneExpiredBuckets = async ({ cutoff }) => {
+  try {
+    await prisma.rateLimitBucket.deleteMany({
+      where: {
+        resetAt: {
+          lt: cutoff,
+        },
+      },
+    });
+  } catch (error) {
+    logger.warn("Failed to prune expired rate-limit buckets.", { error });
+  }
+};
+
+const consumeRateLimit = async ({
+  name,
+  key,
+  windowMs,
+}) => {
+  const now = new Date();
+  const nextResetAt = new Date(now.getTime() + windowMs);
+
+  for (let attempt = 1; attempt <= MAX_TRANSACTION_RETRIES; attempt += 1) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const existing = await tx.rateLimitBucket.findUnique({
+            where: {
+              name_key: {
+                name,
+                key,
+              },
+            },
+          });
+
+          if (!existing) {
+            return tx.rateLimitBucket.create({
+              data: {
+                id: crypto.randomUUID(),
+                name,
+                key,
+                count: 1,
+                resetAt: nextResetAt,
+              },
+            });
+          }
+
+          if (existing.resetAt.getTime() <= now.getTime()) {
+            return tx.rateLimitBucket.update({
+              where: { id: existing.id },
+              data: {
+                count: 1,
+                resetAt: nextResetAt,
+              },
+            });
+          }
+
+          return tx.rateLimitBucket.update({
+            where: { id: existing.id },
+            data: {
+              count: {
+                increment: 1,
+              },
+            },
+          });
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        }
+      );
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        (error.code === "P2002" || error.code === "P2034") &&
+        attempt < MAX_TRANSACTION_RETRIES
+      ) {
+        continue;
+      }
+
+      throw error;
+    }
   }
 
-  return stores.get(name);
+  throw new Error("Unable to apply rate limit after retries.");
 };
 
 const createRateLimiter = ({
@@ -31,39 +117,44 @@ const createRateLimiter = ({
     throw new Error("Rate limiter name is required.");
   }
 
-  const store = getStore(name);
+  return async (req, res, next) => {
+    try {
+      const rawKey = keyGenerator(req);
+      const key = hashRateLimitKey(rawKey);
+      const bucket = await consumeRateLimit({
+        name,
+        key,
+        windowMs,
+      });
 
-  return (req, res, next) => {
-    const key = keyGenerator(req);
-    const now = Date.now();
-    const existing =
-      store.get(key) || { count: 0, resetAt: now + windowMs };
+      const now = Date.now();
+      const retryAfterSeconds = Math.max(
+        Math.ceil((bucket.resetAt.getTime() - now) / 1000),
+        1
+      );
+      const remaining = Math.max(maxRequests - bucket.count, 0);
 
-    if (existing.resetAt <= now) {
-      existing.count = 0;
-      existing.resetAt = now + windowMs;
+      res.setHeader("RateLimit-Limit", String(maxRequests));
+      res.setHeader("RateLimit-Remaining", String(remaining));
+      res.setHeader("RateLimit-Reset", String(retryAfterSeconds));
+
+      if (bucket.count > maxRequests) {
+        res.setHeader("Retry-After", String(retryAfterSeconds));
+        next(new HttpError(429, message));
+        return;
+      }
+
+      if (Math.random() < 0.02) {
+        const cutoff = new Date(
+          Date.now() - windowMs * BUCKET_RETENTION_MULTIPLIER
+        );
+        void pruneExpiredBuckets({ cutoff });
+      }
+
+      next();
+    } catch (error) {
+      next(error);
     }
-
-    existing.count += 1;
-    store.set(key, existing);
-
-    const remaining = Math.max(maxRequests - existing.count, 0);
-    const retryAfterSeconds = Math.max(
-      Math.ceil((existing.resetAt - now) / 1000),
-      1
-    );
-
-    res.setHeader("RateLimit-Limit", String(maxRequests));
-    res.setHeader("RateLimit-Remaining", String(remaining));
-    res.setHeader("RateLimit-Reset", String(retryAfterSeconds));
-
-    if (existing.count > maxRequests) {
-      res.setHeader("Retry-After", String(retryAfterSeconds));
-      next(new HttpError(429, message));
-      return;
-    }
-
-    next();
   };
 };
 

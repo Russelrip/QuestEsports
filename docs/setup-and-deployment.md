@@ -73,6 +73,8 @@ npm run prisma:migrate
 npm run prisma:generate
 ```
 
+Use `npm run prisma:migrate` only for local development. For production deployments, use `npm run prisma:migrate:deploy`.
+
 ### 4. Start both apps
 
 Backend:
@@ -271,7 +273,7 @@ This matters because:
 2. Provision persistent storage for `backend/uploads/`.
 3. Set environment variables.
 4. Install dependencies with `npm install`.
-5. Run `npm run prisma:migrate`.
+5. Run `npm run prisma:migrate:deploy`.
 6. Run the service with `npm start`.
 
 ### Frontend
