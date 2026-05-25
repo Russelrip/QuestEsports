@@ -45,7 +45,17 @@ Single-use email change confirmation tokens.
 
 ### `Tournament`
 
-Stores tournament metadata, publication state, dates, registration window, and banner reference.
+Stores tournament metadata, publication state, dates, registration window, manual display ordering, banner reference, parsed schedule data, and completed-showcase image references.
+
+Fields of note:
+
+- `displayPriority`
+- `scheduleFileName`
+- `scheduleData`
+- `completedPosterImageName`
+- `firstPlaceImageName`
+- `secondPlaceImageName`
+- `thirdPlaceImageName`
 
 ### `TeamRegistration`
 
@@ -125,6 +135,7 @@ Upload directories are created under `backend/uploads/`:
 - `team-logos/`
 - `tournament-banners/`
 - `poster-images/`
+- `tournament-schedules/`
 
 ## What Lives Where
 
@@ -138,6 +149,19 @@ Upload directories are created under `backend/uploads/`:
 
 - File bytes: filesystem
 - DB reference: `Tournament.bannerImageName`
+- Access: public file serving route
+
+### Tournament schedules
+
+- File bytes: filesystem
+- DB reference: `Tournament.scheduleFileName`
+- Parsed display data: `Tournament.scheduleData`
+- Access: the stored file supports admin workflow, while the public site renders the parsed JSON data returned by the API
+
+### Completed tournament showcase images
+
+- File bytes: filesystem
+- DB reference: `Tournament.completedPosterImageName`, `Tournament.firstPlaceImageName`, `Tournament.secondPlaceImageName`, `Tournament.thirdPlaceImageName`
 - Access: public file serving route
 
 ### Poster images
@@ -208,11 +232,14 @@ From the migration names, the schema evolved through:
 - email change flow
 - saved teams and invites
 - file-backed poster assets
+- background jobs
+- tournament schedule and completed-showcase asset support
 
 ## Backup And Operations Guidance
 
 - Back up PostgreSQL and `backend/uploads/` together.
 - Restoring the database without the uploads directory will break tournament banner, logo, and poster file references.
+- Restoring the database without the uploads directory will also break tournament schedule file references and completed-showcase images.
 - Restoring uploads without the database will orphan files because metadata and filenames live in PostgreSQL.
 - Treat `backend/uploads/` as persistent application data in production.
 

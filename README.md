@@ -20,6 +20,7 @@ Backend: create `backend/.env`
 PORT=5001
 CORS_ORIGIN=http://localhost:3000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
@@ -49,7 +50,8 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 Notes:
 
-- `DATABASE_URL` and `SESSION_COOKIE_NAME` are required for the backend to boot.
+- `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required for the backend to boot.
+- In hosted Postgres setups, `DATABASE_URL` can use a pooled connection string while `DIRECT_URL` should use the direct connection string for Prisma migrations.
 - `NEXT_PUBLIC_API_URL` must point at the backend origin.
 - `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
 - SMTP is optional for local development. If mail is not configured, signup, verification, password reset, team invites, and email-change requests still execute, but email delivery is skipped.
@@ -129,6 +131,9 @@ Recommended flow:
 
 - Marketing homepage and brand sections
 - Tournament listing and tournament detail pages
+- Tournament schedule tables rendered from uploaded XLSX, XLS, or CSV files
+- Completed-tournament showcase sections with official poster plus 1st, 2nd, and 3rd place visuals
+- Public tournament team lists with approved registered teams and team logos
 - Team tournament registration flow
 - Email verification, login, logout, password reset, and email change flows
 - MFA setup, MFA login challenge, backup codes, session management, and Google/Discord OAuth sign-in
@@ -141,6 +146,7 @@ Recommended flow:
 - Dashboard summary cards
 - User management
 - Tournament creation and editing
+- Tournament asset management for banners, schedules, and completed-event showcase images
 - Registration review and status management
 - Contact inbox moderation
 - Poster/image asset management
@@ -185,7 +191,7 @@ QuestEsports/
 
 - The frontend runs on Next.js App Router and calls the backend with `credentials: "include"` so browser cookies are sent on authenticated requests.
 - The backend exposes JSON APIs under `/api`, stores business data in PostgreSQL through Prisma, and persists session state in the `sessions` table.
-- Tournament banners, team logos, and poster image files are written to `backend/uploads/`.
+- Tournament banners, completed-showcase images, team logos, poster image files, and uploaded tournament schedules are written to `backend/uploads/`.
 - Poster/image metadata is stored in PostgreSQL. Poster assets support filesystem-backed storage with a database binary fallback for older records.
 - Email flows generate signed random tokens, store only token hashes in the database, and send action links that point to the frontend origin configured by `APP_URL`.
 
@@ -196,6 +202,7 @@ QuestEsports/
 - `SavedTeam`, `SavedTeamMember`
 - `ContactSubmission`
 - `ImageAsset`, `Poster`
+- `BackgroundJob`
 
 ## Frontend Routes
 
@@ -256,6 +263,7 @@ Create `backend/.env` from `backend/.env.example`.
 PORT=5001
 CORS_ORIGIN=http://localhost:3000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
@@ -278,7 +286,7 @@ DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
 
 Notes:
 
-- `DATABASE_URL` and `SESSION_COOKIE_NAME` are required.
+- `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `CORS_ORIGIN` supports a comma-separated allowlist.
 - `APP_URL` must point at the frontend origin used in verification, password reset, email-change, and invite emails when SMTP is enabled.
 - SMTP values are optional for local development. When SMTP is not configured, mail-triggering actions log and skip delivery instead of crashing startup.
@@ -367,10 +375,12 @@ Default local URLs:
 - The backend creates upload directories automatically at startup.
 - There is no root workspace runner; start `backend` and `frontend` in separate terminals.
 - Team registration requires a logged-in user with a verified email address.
+- Admin tournament management supports spreadsheet uploads for schedules and showcase-image uploads for completed events.
+- Public tournament responses now include `displayPriority`, `scheduleData`, `isCompleted`, `showcase`, and per-tournament `registeredTeams` on detail pages.
 - Direct imports that touch backend config now load `.env` automatically, so scripts and one-off Node entrypoints behave the same as `node src/server.js`.
 - Team logos are intentionally protected behind admin access.
 - The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
-- There is currently no automated test suite in the repository.
+- The backend includes a Node test suite under `backend/tests`.
 - There is currently no admin seed/bootstrap script beyond creating a user and promoting it through Prisma Studio.
 - Background jobs and monitoring are placeholder integrations and should be wired to production services before scaling email/media workloads.
 
@@ -389,6 +399,7 @@ Backend:
 ```bash
 cd backend
 npm run prisma:generate
+npm test
 node src/server.js
 ```
 

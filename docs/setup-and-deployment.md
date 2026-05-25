@@ -35,6 +35,7 @@ Backend `backend/.env`:
 PORT=5001
 CORS_ORIGIN=http://localhost:3000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
@@ -82,6 +83,8 @@ npm run prisma:generate
 ```
 
 Use `npm run prisma:migrate` only for local development. For production deployments, use `npm run prisma:migrate:deploy`.
+
+If `DATABASE_URL` points at a pooled connection, set `DIRECT_URL` to the direct non-pooled connection string so Prisma migrations and schema operations can run reliably.
 
 ### 4. Start both apps
 
@@ -180,6 +183,7 @@ The backend writes persistent files to:
 - `backend/uploads/team-logos`
 - `backend/uploads/tournament-banners`
 - `backend/uploads/poster-images`
+- `backend/uploads/tournament-schedules`
 
 Production requirement:
 
@@ -231,6 +235,7 @@ NODE_ENV=production
 PORT=5001
 CORS_ORIGIN=https://questesports.lk
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
@@ -261,7 +266,7 @@ DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback
 
 Notes:
 
-- `DATABASE_URL` and `SESSION_COOKIE_NAME` are required.
+- `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
 
@@ -325,8 +330,9 @@ Production notes:
 2. Provision persistent storage for `backend/uploads/`.
 3. Set environment variables.
 4. Install dependencies with `npm install`.
-5. Run `npm run prisma:migrate:deploy`.
-6. Run the service with `npm start`.
+5. Run `npm run prisma:generate`.
+6. Run `npm run prisma:migrate:deploy`.
+7. Run the service with `npm start`.
 
 ### Frontend
 
@@ -335,6 +341,26 @@ Production notes:
 3. Install dependencies with `npm install`.
 4. Run `npm run build`.
 5. Start with `npm run start`.
+
+## VPS Backend-Only Deploy Flow
+
+This repository can be cloned in full on a VPS even when only the backend is served there.
+
+Typical Quest Esports backend deploy flow:
+
+```bash
+cd /var/www/QuestEsports
+git pull
+
+cd backend
+npm install
+npm run prisma:generate
+npm run prisma:migrate:deploy
+pm2 restart quest-backend --update-env
+pm2 save
+```
+
+If your frontend is hosted somewhere else, such as Vercel, you do not need to build or restart `frontend/` on this VPS.
 
 ## Post-Deployment Validation
 
@@ -353,6 +379,7 @@ Check all of the following:
 - team invite emails contain the correct frontend URL
 - Google and Discord login redirect back to the expected frontend route when enabled
 - tournament banners render
+- tournament detail pages render registered teams, schedules, and completed showcase sections correctly
 - poster images render
 - admin can access team logos
 - public cannot access admin-only media endpoints

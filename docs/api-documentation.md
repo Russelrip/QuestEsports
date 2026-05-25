@@ -51,6 +51,7 @@ Field-level validation errors are returned in `details.fieldErrors` on validatio
 - Allowed origins come from `CORS_ORIGIN`.
 - Rate limiting is applied to login, signup, contact, password reset, invite response, and tournament registration endpoints.
 - Uploads accept JPEG, PNG, and WebP only, with a 5 MB file limit.
+- Admin tournament asset uploads also accept `.xlsx`, `.xls`, and `.csv` schedule files.
 
 ## System Endpoints
 
@@ -397,15 +398,26 @@ Returns published tournaments only.
 
 Important response fields:
 
+- `displayPriority`
 - `registrationState`
 - `isRegistrationOpen`
 - `isSlotsFull`
 - `isRegistrationClosed`
 - `bannerUrl`
+- `scheduleData`
+- `isCompleted`
+- `showcase`
 
 ### `GET /api/tournaments/:slug`
 
 Returns a single published tournament by slug.
+
+Additional response fields:
+
+- `registeredTeams`
+- `scheduleData`
+- `showcase`
+- `isCompleted`
 
 ## Tournament Registration Endpoints
 
@@ -631,6 +643,7 @@ Main fields:
 - `title`
 - `slug`
 - `game`
+- `displayPriority`
 - `shortDescription`
 - `fullDescription`
 - `rules`
@@ -647,6 +660,20 @@ Main fields:
 - `bracketLink`
 - `contactLink`
 - `bannerImage`
+- `scheduleFile`
+- `completedPosterImage`
+- `firstPlaceImage`
+- `secondPlaceImage`
+- `thirdPlaceImage`
+
+Optional remove flags during update:
+
+- `removeBannerImage`
+- `removeScheduleFile`
+- `removeCompletedPosterImage`
+- `removeFirstPlaceImage`
+- `removeSecondPlaceImage`
+- `removeThirdPlaceImage`
 
 ### Admin media jobs
 
