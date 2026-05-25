@@ -39,6 +39,20 @@ const isMissingOAuthValue = (value) => {
   return /^your_(google|discord)_client_(id|secret)$/i.test(normalized);
 };
 
+const ensureAbsoluteUrl = (value, label) => {
+  const normalized = String(value || "").trim();
+
+  if (!normalized) {
+    throw new HttpError(503, `${label} is not configured.`);
+  }
+
+  try {
+    return new URL(normalized).toString();
+  } catch {
+    throw new HttpError(503, `${label} must be a valid absolute URL.`);
+  }
+};
+
 const getStateSigningKey = () => {
   const source = env.AUTH_ENCRYPTION_KEY || `${env.SESSION_COOKIE_NAME}:${env.DATABASE_URL}`;
   return crypto.createHash("sha256").update(source).digest();
@@ -128,7 +142,13 @@ const getProviderConfig = (provider) => {
     throw new HttpError(503, `${provider} login is not configured.`);
   }
 
-  return config;
+  return {
+    ...config,
+    callbackUrl: ensureAbsoluteUrl(
+      config.callbackUrl,
+      `${provider} callback URL`
+    ),
+  };
 };
 
 const buildAuthorizationUrl = ({ provider, redirectTo }) => {

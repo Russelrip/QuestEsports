@@ -1,5 +1,6 @@
 const { asyncHandler } = require("../../lib/async-handler");
 const { env } = require("../../config/env");
+const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { sendSecurityEventEmail } = require("../../lib/mail/sendSecurityEventEmail");
 const { buildAuthorizationUrl, handleOAuthCallback } = require("./oauth.service");
@@ -53,6 +54,16 @@ const notifyNewSignIn = async (user) => {
       error,
     });
   }
+};
+
+const getAppRedirectUrl = (destination) => {
+  const appUrl = String(env.APP_URL || "").trim();
+
+  if (!appUrl) {
+    throw new HttpError(503, "APP_URL must be configured for OAuth redirects.");
+  }
+
+  return new URL(destination, appUrl).toString();
 };
 
 const completeAuthenticatedLogin = async ({
@@ -191,7 +202,7 @@ const completeOAuthLogin = async ({ provider, req, res }) => {
   });
 
   const destination = redirectTo || (refreshedUser.role === "admin" ? "/admin" : "/profile");
-  const appRedirectUrl = new URL(destination, env.APP_URL).toString();
+  const appRedirectUrl = getAppRedirectUrl(destination);
   res.redirect(appRedirectUrl);
 };
 

@@ -63,7 +63,18 @@ export async function apiFetchJson<T = unknown>(
   options: ApiFetchOptions = {}
 ) {
   const response = await apiFetch(path, options);
-  const data = (await response.json()) as T;
+  const contentType = response.headers.get("content-type") || "";
+  let data: T;
+
+  if (contentType.includes("application/json")) {
+    data = (await response.json()) as T;
+  } else {
+    const text = await response.text();
+    data = {
+      success: false,
+      message: text || `Request failed with status ${response.status}.`,
+    } as T;
+  }
 
   return { response, data };
 }
