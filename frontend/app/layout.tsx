@@ -1,5 +1,7 @@
 import "./globals.css";
 import type { Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
@@ -27,6 +29,8 @@ export default function RootLayout({
           <main>{children}</main>
           <Footer />
           <ToastProvider />
+          <Analytics />
+          <SpeedInsights />
         </AuthProvider>
       </body>
     </html>
