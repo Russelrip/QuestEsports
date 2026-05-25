@@ -31,7 +31,7 @@ export default function Navbar() {
               <Link href="/" className="flex items-center gap-3 sm:gap-4">
                 <div className="rounded-2xl border border-white/10 bg-black/30 p-1.5 sm:p-2">
                   <Image
-                    src="/images/logo-header.png"
+                    src="/images/logo-new.png"
                     alt="Quest Esports"
                     width={48}
                     height={48}
