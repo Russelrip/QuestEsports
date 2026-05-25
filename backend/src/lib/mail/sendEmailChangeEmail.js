@@ -1,18 +1,13 @@
-const { buildEmailChangeEmail } = require("./templates");
-const { buildActionUrl, sendMail } = require("./sendMail");
+const { enqueueJob } = require("../jobs");
+const { EMAIL_JOB_NAME, EMAIL_TEMPLATE_TYPES } = require("./mail-job-definitions");
 
 const sendEmailChangeEmail = async ({ email, firstName, nextEmail, rawToken }) => {
-  return sendMail({
+  return enqueueJob(EMAIL_JOB_NAME, {
+    type: EMAIL_TEMPLATE_TYPES.emailChange,
     email,
-    subject: "Confirm your new Quest Esports email",
-    skippedLogMessage:
-      "Email change confirmation skipped because SMTP is not configured.",
-    templateBuilder: () =>
-      buildEmailChangeEmail({
-        firstName,
-        nextEmail,
-        confirmUrl: buildActionUrl("/confirm-email-change", rawToken),
-      }),
+    firstName,
+    nextEmail,
+    rawToken,
   });
 };
 

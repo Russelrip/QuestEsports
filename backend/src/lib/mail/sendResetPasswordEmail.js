@@ -1,17 +1,12 @@
-const { buildResetPasswordEmail } = require("./templates");
-const { buildActionUrl, sendMail } = require("./sendMail");
+const { enqueueJob } = require("../jobs");
+const { EMAIL_JOB_NAME, EMAIL_TEMPLATE_TYPES } = require("./mail-job-definitions");
 
 const sendResetPasswordEmail = async ({ email, firstName, rawToken }) => {
-  return sendMail({
+  return enqueueJob(EMAIL_JOB_NAME, {
+    type: EMAIL_TEMPLATE_TYPES.resetPassword,
     email,
-    subject: "Reset your Quest Esports password",
-    skippedLogMessage:
-      "Password reset email skipped because SMTP is not configured.",
-    templateBuilder: () =>
-      buildResetPasswordEmail({
-        firstName,
-        resetUrl: buildActionUrl("/reset-password", rawToken),
-      }),
+    firstName,
+    rawToken,
   });
 };
 

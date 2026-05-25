@@ -58,6 +58,13 @@ enum TeamMemberInviteStatus {
   declined
 }
 
+enum BackgroundJobStatus {
+  queued
+  processing
+  succeeded
+  failed
+}
+
 model User {
   id                     String            @id @default(uuid()) @db.Uuid
   firstName              String            @map("first_name")
@@ -366,6 +373,27 @@ model RateLimitBucket {
   @@unique([name, key])
   @@index([resetAt])
   @@map("rate_limit_buckets")
+}
+
+model BackgroundJob {
+  id          String              @id @default(uuid()) @db.Uuid
+  name        String
+  payload     Json
+  status      BackgroundJobStatus @default(queued)
+  attempts    Int                 @default(0)
+  maxAttempts Int                 @default(5) @map("max_attempts")
+  availableAt DateTime            @default(now()) @map("available_at")
+  lockedAt    DateTime?           @map("locked_at")
+  completedAt DateTime?           @map("completed_at")
+  failedAt    DateTime?           @map("failed_at")
+  lastError   String?             @map("last_error")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  @@index([status, availableAt])
+  @@index([lockedAt])
+  @@index([createdAt])
+  @@map("background_jobs")
 }
 
 model ImageAsset {

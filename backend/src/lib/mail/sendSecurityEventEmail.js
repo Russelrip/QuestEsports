@@ -1,6 +1,6 @@
 const { env } = require("../../config/env");
-const { buildSecurityAlertEmail } = require("./templates");
-const { sendMail } = require("./sendMail");
+const { enqueueJob } = require("../jobs");
+const { EMAIL_JOB_NAME, EMAIL_TEMPLATE_TYPES } = require("./mail-job-definitions");
 
 const buildProfileUrl = () => {
   if (!env.APP_URL) {
@@ -20,20 +20,16 @@ const sendSecurityEventEmail = async ({
   actionUrl = buildProfileUrl(),
   outro,
 }) => {
-  return sendMail({
+  return enqueueJob(EMAIL_JOB_NAME, {
+    type: EMAIL_TEMPLATE_TYPES.securityAlert,
     email,
+    firstName,
     subject,
-    skippedLogMessage:
-      "Security alert email skipped because SMTP is not configured.",
-    templateBuilder: () =>
-      buildSecurityAlertEmail({
-        firstName,
-        title,
-        message,
-        actionLabel,
-        actionUrl,
-        outro,
-      }),
+    title,
+    message,
+    actionLabel,
+    actionUrl,
+    outro,
   });
 };
 

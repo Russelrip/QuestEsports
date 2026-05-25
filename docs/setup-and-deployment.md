@@ -42,6 +42,9 @@ REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
+JOB_WORKER_ENABLED=true
+JOB_WORKER_POLL_MS=5000
+JOB_WORKER_MAX_ATTEMPTS=5
 LOG_DRAIN_URL=
 LOG_DRAIN_TOKEN=
 MONITORING_WEBHOOK_URL=
@@ -138,6 +141,7 @@ Security-related optional variables:
 
 - `MFA_ISSUER` to customize authenticator app labeling
 - `AUTH_ENCRYPTION_KEY` for encrypting MFA secrets and signing OAuth state
+- `JOB_WORKER_ENABLED`, `JOB_WORKER_POLL_MS`, and `JOB_WORKER_MAX_ATTEMPTS` for persistent background job processing
 - `LOG_LEVEL` to control backend log verbosity
 - `LOG_DRAIN_URL` and `LOG_DRAIN_TOKEN` for centralized structured log shipping
 - `MONITORING_WEBHOOK_URL` and `MONITORING_WEBHOOK_TOKEN` for remote exception capture
@@ -234,6 +238,9 @@ REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=replace_with_a_long_random_secret
 TRUST_PROXY=1
+JOB_WORKER_ENABLED=true
+JOB_WORKER_POLL_MS=5000
+JOB_WORKER_MAX_ATTEMPTS=5
 LOG_DRAIN_URL=https://logs.example.com/ingest
 LOG_DRAIN_TOKEN=replace_with_log_ingest_token
 MONITORING_WEBHOOK_URL=https://monitoring.example.com/events
@@ -293,6 +300,22 @@ Recommended production setup:
 - send stdout to your platform log collector even if you also configure `LOG_DRAIN_URL`
 - wire `MONITORING_WEBHOOK_URL` to your incident or error-ingestion pipeline
 - include `requestId` when debugging user-reported failures
+
+## Background Jobs
+
+The backend now uses a persistent `background_jobs` table for email delivery.
+
+Current behavior:
+
+- auth, invite, and security emails are enqueued instead of sent inline during the request
+- the API process starts a polling worker automatically when `JOB_WORKER_ENABLED=true`
+- failed jobs are retried with backoff until `JOB_WORKER_MAX_ATTEMPTS` is reached
+
+Production notes:
+
+- keep `JOB_WORKER_ENABLED=true` on at least one backend instance
+- if you scale horizontally, more than one instance can safely poll the queue
+- monitor the `background_jobs` table for jobs stuck in `failed` status
 
 ## Deployment Steps
 
@@ -358,7 +381,6 @@ Before calling the system fully production-hardened, consider adding:
 
 - broader automated test coverage, including end-to-end flows
 - centralized logging/monitoring
-- real queue-backed background jobs
 - object storage for uploads
 - an admin bootstrap script
 - CI/CD and migration rollout automation

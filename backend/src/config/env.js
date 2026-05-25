@@ -61,6 +61,24 @@ const normalizeTrustProxy = (value) => {
   );
 };
 
+const normalizeBoolean = (value, fallback = false) => {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  throw new Error(`Invalid boolean value "${value}".`);
+};
+
 const env = {
   PORT: normalizePositiveInteger(process.env.PORT, 5001),
   CORS_ORIGINS: normalizeCsv(process.env.CORS_ORIGIN || "http://localhost:3000"),
@@ -76,6 +94,12 @@ const env = {
   MFA_ISSUER: optional("MFA_ISSUER", "Quest Esports"),
   AUTH_ENCRYPTION_KEY: optional("AUTH_ENCRYPTION_KEY"),
   TRUST_PROXY: normalizeTrustProxy(process.env.TRUST_PROXY),
+  JOB_WORKER_ENABLED: normalizeBoolean(process.env.JOB_WORKER_ENABLED, true),
+  JOB_WORKER_POLL_MS: normalizePositiveInteger(process.env.JOB_WORKER_POLL_MS, 5000),
+  JOB_WORKER_MAX_ATTEMPTS: normalizePositiveInteger(
+    process.env.JOB_WORKER_MAX_ATTEMPTS,
+    5
+  ),
   SMTP_HOST: optional("SMTP_HOST"),
   SMTP_PORT: normalizePositiveInteger(process.env.SMTP_PORT, 587),
   SMTP_USER: optional("SMTP_USER"),

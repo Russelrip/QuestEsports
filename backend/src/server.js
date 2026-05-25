@@ -1,5 +1,6 @@
 const app = require("./app");
 const { initializeDatabase, closeDatabase } = require("./lib/database");
+const { startJobWorker, stopJobWorker } = require("./lib/jobs");
 const { logger } = require("./lib/logger");
 const { env } = require("./config/env");
 const { ensureUploadDirectories } = require("./middleware/upload");
@@ -36,6 +37,7 @@ const shutdown = async (signal) => {
   logger.info("Shutting down Quest Esports API", { signal });
 
   if (!server || !isServerListening || !server.listening) {
+    await stopJobWorker();
     await closeDatabase();
     process.exit(0);
     return;
@@ -44,12 +46,14 @@ const shutdown = async (signal) => {
   server.close(async (error) => {
     if (error) {
       logger.error("HTTP server closed with an error", { error, signal });
+      await stopJobWorker();
       await closeDatabase();
       process.exit(1);
       return;
     }
 
     logger.info("HTTP server closed", { signal });
+    await stopJobWorker();
     await closeDatabase();
     process.exit(0);
   });
@@ -59,6 +63,7 @@ const start = async () => {
   registerProcessDiagnostics();
   await ensureUploadDirectories();
   await initializeDatabase();
+  startJobWorker();
 
   server = app.listen(env.PORT);
 

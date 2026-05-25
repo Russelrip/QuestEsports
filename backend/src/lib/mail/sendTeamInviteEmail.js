@@ -1,5 +1,5 @@
-const { buildTeamInviteEmail } = require("./templates");
-const { buildActionUrl, sendMail } = require("./sendMail");
+const { enqueueJob } = require("../jobs");
+const { EMAIL_JOB_NAME, EMAIL_TEMPLATE_TYPES } = require("./mail-job-definitions");
 
 const sendTeamInviteEmail = async ({
   email,
@@ -9,19 +9,14 @@ const sendTeamInviteEmail = async ({
   tournamentTitle,
   rawToken,
 }) => {
-  return sendMail({
+  return enqueueJob(EMAIL_JOB_NAME, {
+    type: EMAIL_TEMPLATE_TYPES.teamInvite,
     email,
-    subject: "Quest Esports team invitation",
-    skippedLogMessage:
-      "Team invitation email skipped because SMTP is not configured.",
-    templateBuilder: () =>
-      buildTeamInviteEmail({
-        recipientName,
-        teamName,
-        captainName,
-        tournamentTitle,
-        inviteUrl: buildActionUrl("/team-invite", rawToken),
-      }),
+    recipientName,
+    teamName,
+    captainName,
+    tournamentTitle,
+    rawToken,
   });
 };
 

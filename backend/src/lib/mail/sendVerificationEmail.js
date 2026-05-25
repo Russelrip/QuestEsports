@@ -1,16 +1,12 @@
-const { buildVerificationEmail } = require("./templates");
-const { buildActionUrl, sendMail } = require("./sendMail");
+const { enqueueJob } = require("../jobs");
+const { EMAIL_JOB_NAME, EMAIL_TEMPLATE_TYPES } = require("./mail-job-definitions");
 
 const sendVerificationEmail = async ({ email, firstName, rawToken }) => {
-  return sendMail({
+  return enqueueJob(EMAIL_JOB_NAME, {
+    type: EMAIL_TEMPLATE_TYPES.verification,
     email,
-    subject: "Verify your Quest Esports account",
-    skippedLogMessage: "Verification email skipped because SMTP is not configured.",
-    templateBuilder: () =>
-      buildVerificationEmail({
-        firstName,
-        verificationUrl: buildActionUrl("/verify-email", rawToken),
-      }),
+    firstName,
+    rawToken,
   });
 };
 
