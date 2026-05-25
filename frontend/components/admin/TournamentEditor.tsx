@@ -58,6 +58,14 @@ const mapTournamentToFormValues = (tournament: Tournament): TournamentFormValues
   removeBannerImage: false,
 });
 
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export default function TournamentEditor({ tournamentId }: { tournamentId?: string }) {
   const router = useRouter();
   const isEdit = Boolean(tournamentId);
@@ -68,6 +76,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
   const [registrations, setRegistrations] = useState<TeamRegistration[]>([]);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(isEdit);
   const hydratedRef = useRef(false);
+  const bannerImageInputRef = useRef<HTMLInputElement>(null);
   const showToast = useToastStore((state) => state.showToast);
 
   useEffect(() => {
@@ -133,6 +142,9 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
       }
 
       setFormValues(mapTournamentToFormValues(response.tournament));
+      if (bannerImageInputRef.current) {
+        bannerImageInputRef.current.value = "";
+      }
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : "Unable to save tournament.";
       setError(message);
@@ -211,31 +223,73 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Discord / Contact Link" htmlFor="contactLink">
                 <Input id="contactLink" type="url" value={formValues.contactLink} onChange={(event) => updateField("contactLink", event.target.value)} />
               </FormField>
-              <FormField label="Banner Image" htmlFor="bannerImage">
-                <Input
-                  id="bannerImage"
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => {
-                    const nextFile = event.target.files?.[0] || null;
-                    updateField("bannerImage", nextFile);
-                    if (nextFile) {
-                      updateField("removeBannerImage", false);
-                    }
-                  }}
-                />
+              <FormField label="Banner Image" htmlFor="bannerImage" hint="Upload a tournament banner (PNG, JPG, or WebP)">
+                <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                  <input
+                    ref={bannerImageInputRef}
+                    id="bannerImage"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="sr-only"
+                    onChange={(event) => {
+                      const nextFile = event.target.files?.[0] || null;
+                      updateField("bannerImage", nextFile);
+                      if (nextFile) {
+                        updateField("removeBannerImage", false);
+                      }
+                    }}
+                  />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-white">
+                        {formValues.bannerImage ? formValues.bannerImage.name : "No banner selected"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formValues.bannerImage
+                          ? `${formatFileSize(formValues.bannerImage.size)} selected`
+                          : "PNG, JPG, or WebP recommended"}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      {formValues.bannerImage ? (
+                        <button
+                          type="button"
+                          className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:border-white/20 hover:text-white"
+                          onClick={() => {
+                            updateField("bannerImage", null);
+                            if (bannerImageInputRef.current) {
+                              bannerImageInputRef.current.value = "";
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                      <label
+                        htmlFor="bannerImage"
+                        className="cursor-pointer rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:border-cyan-200/40 hover:bg-cyan-400/15"
+                      >
+                        Choose Banner
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </FormField>
               {isEdit ? (
                 <div className="md:col-span-2 xl:col-span-3 rounded-[24px] border border-white/8 bg-white/5 p-4 text-sm text-slate-300">
                   <label className="flex items-center gap-3">
                     <input
                       type="checkbox"
+                      className="h-4 w-4 rounded border-white/20 bg-black/30 accent-cyan-300"
                       checked={formValues.removeBannerImage}
                       onChange={(event) => {
                         const checked = event.target.checked;
                         updateField("removeBannerImage", checked);
                         if (checked) {
                           updateField("bannerImage", null);
+                          if (bannerImageInputRef.current) {
+                            bannerImageInputRef.current.value = "";
+                          }
                         }
                       }}
                     />
