@@ -46,6 +46,14 @@ const prefillKeys: Array<
   "contactEmail",
 ];
 
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export default function TournamentRegistrationForm({
   tournaments,
 }: {
@@ -71,6 +79,7 @@ export default function TournamentRegistrationForm({
     initialTournamentRegistrationFormData
   );
   const lastPrefillRef = useRef<Partial<TournamentRegistrationFormData>>({});
+  const teamLogoInputRef = useRef<HTMLInputElement>(null);
   const loginRedirectPath = formData.tournament
     ? `/tournament-registration?tournament=${encodeURIComponent(formData.tournament)}`
     : "/tournament-registration";
@@ -242,6 +251,9 @@ export default function TournamentRegistrationForm({
         ...initialTournamentRegistrationFormData,
         tournament: formData.tournament,
       });
+      if (teamLogoInputRef.current) {
+        teamLogoInputRef.current.value = "";
+      }
       router.replace(`/tournament-registration?tournament=${formData.tournament}`);
     } catch (requestError) {
       console.error("Tournament registration error:", requestError);
@@ -408,7 +420,51 @@ export default function TournamentRegistrationForm({
                 <Input type="text" id="teamName" name="teamName" required value={formData.teamName} onChange={handleFieldChange} />
               </FormField>
               <FormField label="Team Logo" htmlFor="teamLogo" hint="Upload team logo (PNG, JPG, max 5MB)">
-                <Input type="file" id="teamLogo" name="teamLogo" accept="image/*" onChange={handleFieldChange} />
+                <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                  <input
+                    ref={teamLogoInputRef}
+                    type="file"
+                    id="teamLogo"
+                    name="teamLogo"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="sr-only"
+                    onChange={handleFieldChange}
+                  />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-white">
+                        {formData.teamLogo ? formData.teamLogo.name : "No logo selected"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formData.teamLogo
+                          ? `${formatFileSize(formData.teamLogo.size)} selected`
+                          : "PNG, JPG, or WebP up to 5MB"}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      {formData.teamLogo ? (
+                        <button
+                          type="button"
+                          className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 transition hover:border-white/20 hover:text-white"
+                          onClick={() => {
+                            updateField("teamLogo", null);
+                            if (teamLogoInputRef.current) {
+                              teamLogoInputRef.current.value = "";
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                      <label
+                        htmlFor="teamLogo"
+                        className="cursor-pointer rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:border-cyan-200/40 hover:bg-cyan-400/15"
+                      >
+                        Choose Logo
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </FormField>
               <FormField label="Team Captain Full Name" htmlFor="captainName" required>
                 <Input type="text" id="captainName" name="captainName" required value={formData.captainName} onChange={handleFieldChange} />
