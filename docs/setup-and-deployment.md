@@ -35,12 +35,17 @@ Backend `backend/.env`:
 PORT=5001
 CORS_ORIGIN=http://localhost:3000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
+LOG_DRAIN_URL=
+LOG_DRAIN_TOKEN=
+MONITORING_WEBHOOK_URL=
+MONITORING_WEBHOOK_TOKEN=
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
 SMTP_USER=resend
@@ -133,6 +138,9 @@ Security-related optional variables:
 
 - `MFA_ISSUER` to customize authenticator app labeling
 - `AUTH_ENCRYPTION_KEY` for encrypting MFA secrets and signing OAuth state
+- `LOG_LEVEL` to control backend log verbosity
+- `LOG_DRAIN_URL` and `LOG_DRAIN_TOKEN` for centralized structured log shipping
+- `MONITORING_WEBHOOK_URL` and `MONITORING_WEBHOOK_TOKEN` for remote exception capture
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` for Google login
 - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_CALLBACK_URL` for Discord login
 
@@ -181,6 +189,7 @@ Backend:
 
 ```bash
 cd backend
+npm test
 npm start
 ```
 
@@ -218,12 +227,17 @@ NODE_ENV=production
 PORT=5001
 CORS_ORIGIN=https://questesports.lk
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=replace_with_a_long_random_secret
 TRUST_PROXY=1
+LOG_DRAIN_URL=https://logs.example.com/ingest
+LOG_DRAIN_TOKEN=replace_with_log_ingest_token
+MONITORING_WEBHOOK_URL=https://monitoring.example.com/events
+MONITORING_WEBHOOK_TOKEN=replace_with_monitoring_token
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
 SMTP_USER=resend
@@ -264,6 +278,21 @@ This matters because:
 - session cookies are marked `Secure` in production
 - CSRF origin checking depends on correct origins
 - generated URLs and canonical URLs must match the public origin
+
+## Observability
+
+The backend now emits:
+
+- structured JSON logs to stdout
+- `X-Request-Id` response headers for request tracing
+- best-effort remote log shipping when `LOG_DRAIN_URL` is configured
+- best-effort remote exception shipping when `MONITORING_WEBHOOK_URL` is configured
+
+Recommended production setup:
+
+- send stdout to your platform log collector even if you also configure `LOG_DRAIN_URL`
+- wire `MONITORING_WEBHOOK_URL` to your incident or error-ingestion pipeline
+- include `requestId` when debugging user-reported failures
 
 ## Deployment Steps
 
@@ -327,7 +356,7 @@ Run these in a controlled environment and back up the database plus uploads firs
 
 Before calling the system fully production-hardened, consider adding:
 
-- automated tests
+- broader automated test coverage, including end-to-end flows
 - centralized logging/monitoring
 - real queue-backed background jobs
 - object storage for uploads

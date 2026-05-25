@@ -5,6 +5,10 @@ const apiRouter = require("./routes");
 const { openApiDocument } = require("./lib/openapi");
 const { monitoringStatus } = require("./lib/monitoring");
 const { notFoundHandler, errorHandler } = require("./middleware/error-handler");
+const {
+  attachRequestContext,
+  logRequestLifecycle,
+} = require("./middleware/observability");
 const { setSecurityHeaders, protectAgainstCsrf } = require("./middleware/security");
 
 const app = express();
@@ -19,6 +23,8 @@ const buildHealthPayload = () => ({
 app.set("trust proxy", env.TRUST_PROXY);
 
 app.use(setSecurityHeaders);
+app.use(attachRequestContext);
+app.use(logRequestLifecycle);
 app.use(
   cors({
     origin: env.CORS_ORIGINS,

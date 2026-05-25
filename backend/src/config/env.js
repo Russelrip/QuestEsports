@@ -66,6 +66,7 @@ const env = {
   CORS_ORIGINS: normalizeCsv(process.env.CORS_ORIGIN || "http://localhost:3000"),
   DATABASE_URL: required("DATABASE_URL"),
   NODE_ENV: normalizeNodeEnv(process.env.NODE_ENV),
+  LOG_LEVEL: optional("LOG_LEVEL", "info").toLowerCase(),
   SESSION_COOKIE_NAME: required("SESSION_COOKIE_NAME"),
   SESSION_TTL_DAYS: normalizePositiveInteger(process.env.SESSION_TTL_DAYS, 1),
   REMEMBER_ME_SESSION_TTL_DAYS: normalizePositiveInteger(
@@ -81,6 +82,10 @@ const env = {
   SMTP_PASS: optional("SMTP_PASS"),
   MAIL_FROM: optional("MAIL_FROM"),
   APP_URL: optional("APP_URL"),
+  LOG_DRAIN_URL: optional("LOG_DRAIN_URL"),
+  LOG_DRAIN_TOKEN: optional("LOG_DRAIN_TOKEN"),
+  MONITORING_WEBHOOK_URL: optional("MONITORING_WEBHOOK_URL"),
+  MONITORING_WEBHOOK_TOKEN: optional("MONITORING_WEBHOOK_TOKEN"),
   GOOGLE_CLIENT_ID: optional("GOOGLE_CLIENT_ID"),
   GOOGLE_CLIENT_SECRET: optional("GOOGLE_CLIENT_SECRET"),
   GOOGLE_CALLBACK_URL: optional("GOOGLE_CALLBACK_URL"),
@@ -91,6 +96,10 @@ const env = {
 
 if (env.CORS_ORIGINS.length === 0) {
   throw new Error("CORS_ORIGIN must define at least one allowed origin.");
+}
+
+if (!["debug", "info", "warn", "error"].includes(env.LOG_LEVEL)) {
+  throw new Error('LOG_LEVEL must be one of: debug, info, warn, error.');
 }
 
 module.exports = { env };
