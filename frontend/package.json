@@ -11,7 +11,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "framer-motion": "^12.38.0",
-    "next": "16.1.6",
+    "next": "^16.2.6",
     "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -25,8 +25,15 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "^16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "brace-expansion@1.1.12": "1.1.13",
+    "brace-expansion@5.0.4": "5.0.6",
+    "flatted": "3.4.2",
+    "picomatch@4.0.3": "4.0.4",
+    "postcss": "8.5.15"
   }
 }

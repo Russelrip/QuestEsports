@@ -156,7 +156,6 @@ const adminTournamentAssetsUpload = multer({
     if (
       file.fieldname === "scheduleFile" &&
       [
-        "application/vnd.ms-excel",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "text/csv",
         "application/csv",
@@ -224,8 +223,8 @@ const persistTournamentScheduleUpload = async (file) => {
 
   const extension = path.extname(file.originalname || "").toLowerCase();
 
-  if (![".xlsx", ".xls", ".csv"].includes(extension)) {
-    throw new HttpError(400, "Only XLSX, XLS, and CSV schedule files are allowed.");
+  if (![".xlsx", ".csv"].includes(extension)) {
+    throw new HttpError(400, "Only XLSX and CSV schedule files are allowed.");
   }
 
   const filename = buildSafeUploadFilename(extension);

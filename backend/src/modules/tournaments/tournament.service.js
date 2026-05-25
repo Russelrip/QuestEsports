@@ -1,5 +1,6 @@
 const crypto = require("crypto");
-const XLSX = require("xlsx");
+const { parse: parseCsv } = require("csv-parse/sync");
+const readXlsxFile = require("read-excel-file/node");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
@@ -137,37 +138,90 @@ const getShowcaseImageUrl = (imageName) =>
 const getUploadedFile = (files, key) =>
   Array.isArray(files?.[key]) ? files[key][0] : null;
 
-const buildScheduleData = (file) => {
+const normalizeScheduleCellValue = (value) => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "object") {
+    if ("text" in value && typeof value.text === "string") {
+      return value.text;
+    }
+
+    if ("result" in value && value.result !== undefined) {
+      return String(value.result);
+    }
+  }
+
+  return String(value);
+};
+
+const buildScheduleDataFromMatrix = ({ sheetName, matrix }) => {
+  if (!Array.isArray(matrix) || matrix.length === 0) {
+    return null;
+  }
+
+  const nonEmptyRows = matrix.filter((row) =>
+    Array.isArray(row) && row.some((cell) => String(cell || "").trim().length > 0)
+  );
+
+  if (nonEmptyRows.length === 0) {
+    return null;
+  }
+
+  const headerRow = nonEmptyRows[0];
+  const headers = headerRow.map((header, index) =>
+    String(header || `Column ${index + 1}`)
+  );
+  const rows = nonEmptyRows.slice(1).map((row) => {
+    const record = {};
+
+    headers.forEach((header, index) => {
+      record[header] = String(row[index] || "");
+    });
+
+    return record;
+  });
+
+  return {
+    sheetName,
+    headers,
+    rows,
+  };
+};
+
+const buildScheduleData = async (file) => {
   if (!file?.buffer) {
     return null;
   }
 
-  const workbook = XLSX.read(file.buffer, { type: "buffer" });
-  const firstSheetName = workbook.SheetNames[0];
+  const extension = String(file.originalname || "")
+    .split(".")
+    .pop()
+    ?.toLowerCase();
 
-  if (!firstSheetName) {
-    return null;
+  if (extension === "csv") {
+    const records = parseCsv(file.buffer, {
+      bom: true,
+      skip_empty_lines: true,
+    });
+
+    return buildScheduleDataFromMatrix({
+      sheetName: "Schedule",
+      matrix: records,
+    });
   }
 
-  const worksheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json(worksheet, {
-    defval: "",
-    raw: false,
-  });
-  const matrix = XLSX.utils.sheet_to_json(worksheet, {
-    header: 1,
-    defval: "",
-    raw: false,
-  });
-  const headers = Array.isArray(matrix[0])
-    ? matrix[0].map((header, index) => String(header || `Column ${index + 1}`))
-    : [];
+  if (extension === "xlsx") {
+    const matrix = await readXlsxFile(file.buffer);
 
-  return {
-    sheetName: firstSheetName,
-    headers,
-    rows,
-  };
+    return buildScheduleDataFromMatrix({
+      sheetName: "Schedule",
+      matrix: matrix.map((row) => row.map(normalizeScheduleCellValue)),
+    });
+  }
+
+  throw new HttpError(400, "Only XLSX and CSV schedule files are supported.");
 };
 
 const withRegistrationCount = (tournament) => ({
@@ -617,7 +671,7 @@ const buildTournamentAssetUpdates = async ({ body, files }) => {
   const thirdPlaceUpload = await persistTournamentBannerUpload(getUploadedFile(files, "thirdPlaceImage"));
   const scheduleFile = getUploadedFile(files, "scheduleFile");
   const persistedSchedule = await persistTournamentScheduleUpload(scheduleFile);
-  const scheduleData = buildScheduleData(scheduleFile);
+  const scheduleData = await buildScheduleData(scheduleFile);
 
   return {
     ...(bannerUpload ? { bannerImageName: bannerUpload.filename } : {}),

@@ -327,12 +327,12 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   </div>
                 </div>
               </FormField>
-              <FormField label="Schedule File" htmlFor="scheduleFile" hint="Upload XLSX, XLS, or CSV to render the schedule automatically.">
+              <FormField label="Schedule File" htmlFor="scheduleFile" hint="Upload XLSX or CSV to render the schedule automatically.">
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
                   <Input
                     id="scheduleFile"
                     type="file"
-                    accept=".xlsx,.xls,.csv"
+                    accept=".xlsx,.csv"
                     onChange={(event) => {
                       updateField("scheduleFile", event.target.files?.[0] || null);
                       if (event.target.files?.[0]) {

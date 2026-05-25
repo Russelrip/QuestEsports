@@ -23,17 +23,25 @@
     "node": "20.x"
   },
   "dependencies": {
-    "@prisma/client": "^6.17.1",
+    "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
+    "csv-parse": "^6.2.1",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "multer": "^2.1.1",
-    "nodemailer": "^8.0.3",
-    "xlsx": "^0.18.5"
+    "nodemailer": "^8.0.8"
+    ,
+    "read-excel-file": "^9.0.10"
   },
   "devDependencies": {
     "nodemon": "^3.1.14",
-    "prisma": "^6.17.1"
+    "prisma": "^6.19.3"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.6",
+    "path-to-regexp": "8.4.2",
+    "picomatch": "2.3.2",
+    "qs": "6.15.2"
   }
 }
