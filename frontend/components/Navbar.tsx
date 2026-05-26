@@ -25,11 +25,26 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 border-b border-white/8 bg-[rgba(5,3,11,0.82)] backdrop-blur-xl">
       <Container className="py-2 sm:py-3">
-        <div className="rounded-[28px] border border-white/10 bg-white/5 px-4 py-3 shadow-[0_20px_60px_rgba(0,0,0,0.25)] sm:px-6 lg:px-8">
+        <div className="px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex min-h-12 items-center lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-8">
-            <div className="flex min-w-0 items-center justify-start">
+            <div className="hidden items-center gap-8 lg:flex lg:justify-self-start xl:gap-10">
+              {primaryNavItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
+                    pathname === item.href && "text-white"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+
+            <div className="flex min-w-0 items-center justify-start lg:justify-self-center">
               <Link href="/" className="flex items-center gap-3 sm:gap-4">
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-1.5 sm:p-2">
+                <div className="flex items-center justify-center rounded-2xl border border-white/10 bg-black/30 p-1.5 sm:p-2">
                   <Image
                     src="/images/logo-new.png"
                     alt="Quest Esports"
@@ -46,22 +61,7 @@ export default function Navbar() {
               </Link>
             </div>
 
-            <nav className="hidden items-center justify-center gap-8 xl:gap-10 lg:flex">
-              {primaryNavItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
-                    pathname === item.href && "text-white"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-
-            <div className="hidden items-center justify-end gap-4 lg:flex">
+            <div className="hidden items-center justify-end gap-4 lg:flex lg:justify-self-end">
               {!isLoading && isAuthenticated && user ? (
                 <UserMenu user={user} logout={logout} isAdmin={user.role === "admin"} />
               ) : !isLoading ? (

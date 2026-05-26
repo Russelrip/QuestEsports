@@ -335,9 +335,16 @@ export const buildTournamentStructuredData = (tournament: Tournament) => ({
 export const primaryNavItems = [
   { href: "/", label: "Home" },
   { href: "/tournaments", label: "Tournaments" },
+] as const;
+
+export const footerNavItems = [
+  { href: "/contact", label: "Contact" },
+  { href: "/terms-of-service", label: "Terms of Service" },
+  { href: "/privacy-policy", label: "Privacy Policy" },
   { href: "/match-videos", label: "Match Videos" },
   { href: "/posters", label: "Posters" },
   { href: "/rulebook", label: "Rulebook" },
+  { href: "/tournaments", label: "Tournaments" },
 ] as const;
 
 export const authNavItems = [
