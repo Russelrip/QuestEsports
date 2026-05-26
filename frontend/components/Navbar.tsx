@@ -24,7 +24,7 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/8 bg-[rgba(5,3,11,0.82)] backdrop-blur-xl">
-      <Container className="py-3 sm:py-4">
+      <Container className="py-2 sm:py-3">
         <div className="rounded-[28px] border border-white/10 bg-white/5 px-4 py-3 shadow-[0_20px_60px_rgba(0,0,0,0.25)] sm:px-6 lg:px-8">
           <div className="flex min-h-12 items-center lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-8">
             <div className="flex min-w-0 items-center justify-start">

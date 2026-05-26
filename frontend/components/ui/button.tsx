@@ -36,7 +36,7 @@ export const buttonClassName = ({
   className?: string;
 }) =>
   cn(
-    "inline-flex items-center justify-center gap-2 font-semibold tracking-[0.01em] transition duration-200 disabled:cursor-not-allowed disabled:opacity-60",
+    "inline-flex items-center justify-center gap-2 font-sans text-sm font-medium tracking-[0.01em] transition duration-200 disabled:cursor-not-allowed disabled:opacity-60",
     variantClasses[variant],
     sizeClasses[size],
     className

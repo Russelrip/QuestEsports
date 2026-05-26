@@ -122,20 +122,20 @@ export default function TournamentInfoList({
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
       {infoItems(tournament).map((item) => (
-        <div key={item.label} className="rounded-[24px] border border-white/8 bg-white/5 p-4">
+        <div key={item.label}>
           <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">{item.label}</p>
           <p className="mt-2 text-sm font-medium text-white">{item.value}</p>
         </div>
       ))}
-      <div className="rounded-[24px] border border-white/8 bg-white/5 p-4">
+      <div>
         <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Status</p>
         <div className="mt-2">
           <Badge>{getTournamentStatusLabel(tournament.status)}</Badge>
         </div>
       </div>
-      <div className="rounded-[24px] border border-white/8 bg-white/5 p-4">
+      <div>
         <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Registration</p>
         <div className="mt-2">
           <Badge className="border-cyan-300/20 bg-cyan-400/10 text-cyan-100">

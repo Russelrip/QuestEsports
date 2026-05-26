@@ -129,10 +129,10 @@ function StatsPanel({ tournament }: { tournament: Tournament }) {
   const items = heroStats(tournament);
 
   return (
-    <section className="overflow-hidden rounded-[28px] border border-white/10 bg-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-      <div className="grid gap-px bg-white/5 md:grid-cols-3">
+    <section>
+      <div className="grid gap-6 md:grid-cols-3">
         {items.map((item) => (
-          <div key={item.label} className="bg-[#0c0a14] p-5">
+          <div key={item.label}>
             <p className="text-[11px] tracking-[0.08em] text-slate-400">{item.label}</p>
             <p className="mt-3 text-base font-semibold text-white sm:text-lg">{item.value}</p>
           </div>

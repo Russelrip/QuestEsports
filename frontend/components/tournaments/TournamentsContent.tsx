@@ -41,7 +41,7 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
 
   return (
     <Section className="pt-6">
-      <div className="mb-8 flex flex-col gap-4 rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,27,0.9),rgba(9,9,18,0.96))] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.2)] sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-8 flex flex-col gap-4 rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,27,0.9),rgba(9,9,18,0.96))] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.2)] sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Tournament Board</p>
           <h2 className="mt-2 text-2xl text-white">Track live events, registrations, and completed campaigns.</h2>
@@ -96,21 +96,14 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
                     </p>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-6 sm:grid-cols-3">
                     <InfoChip label="Dates" value={`${formatDisplayDate(tournament.startDate)} - ${formatDisplayDate(tournament.endDate)}`} />
                     <InfoChip label="Slots" value={`${tournament.registrationCount} / ${tournament.maxTeams}`} />
                     <InfoChip label="Prize Pool" value={tournament.prizePool} />
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-4 border-t border-white/8 pt-6 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <p className="text-[11px] tracking-[0.08em] text-slate-500">Registration Summary</p>
-                    <p className="mt-2 text-base font-semibold text-white">
-                      {tournament.registrationCount} / {tournament.maxTeams} teams registered
-                    </p>
-                    <p className="mt-1 text-sm text-slate-400">{getRegistrationHelperText(tournament)}</p>
-                  </div>
+                <div className="flex flex-col gap-4 border-t border-white/8 pt-6 sm:flex-row sm:items-end sm:justify-end">
                   <div className="flex flex-wrap gap-3">
                     <Link
                       href={`/tournaments/${tournament.slug}`}
@@ -191,7 +184,7 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
 
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[22px] border border-white/8 bg-white/5 p-4">
+    <div>
       <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{label}</p>
       <p className="mt-2 text-sm font-semibold text-white">{value}</p>
     </div>
@@ -208,12 +201,6 @@ function getRegistrationBadgeLabel(tournament: Tournament) {
   }
 
   return "Closed";
-}
-
-function getRegistrationHelperText(tournament: Tournament) {
-  const registrationLabel = getTournamentRegistrationLabel(tournament);
-  const tournamentState = toTitleCase(getTournamentStatusLabel(tournament.status));
-  return `Registration: ${registrationLabel}. Tournament: ${tournamentState}.`;
 }
 
 function toTitleCase(value: string) {
