@@ -10,7 +10,7 @@ const stats = [
 
 export default function HomeHero() {
   return (
-    <section className="relative overflow-hidden pb-10 pt-12 sm:pb-16 sm:pt-16">
+    <section className="relative overflow-hidden pb-4 pt-12 sm:pb-6 sm:pt-16">
       <Container>
         <div className="relative overflow-hidden rounded-[36px] border border-white/10 bg-[linear-gradient(135deg,rgba(16,11,30,0.96),rgba(8,8,15,0.92))] px-6 py-12 shadow-[0_28px_100px_rgba(0,0,0,0.35)] sm:px-10 sm:py-16">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.14),transparent_25%),radial-gradient(circle_at_left,rgba(139,92,246,0.18),transparent_32%)]" />
