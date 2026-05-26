@@ -114,9 +114,9 @@ export const siteMetadata: Metadata = {
     },
   },
   icons: {
-    icon: "/images/logo-new.png",
-    shortcut: "/images/logo-new.png",
-    apple: "/images/logo-new.png",
+    icon: "/images/logo.png",
+    shortcut: "/images/logo.png",
+    apple: "/images/logo.png",
   },
   manifest: "/manifest.webmanifest",
   other: {
@@ -253,7 +253,7 @@ export const organizationStructuredData = {
   "@type": "SportsOrganization",
   name: siteTitle,
   url: siteUrl,
-  logo: absoluteUrl("/images/logo-new.png"),
+  logo: absoluteUrl("/images/logo.png"),
   image: absoluteUrl(defaultSocialImage),
   description: siteDescription,
   email: "contact@mail.questesports.lk",
