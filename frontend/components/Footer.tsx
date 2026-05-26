@@ -10,9 +10,6 @@ export default function Footer() {
         <div className="grid gap-8 rounded-[32px] border border-white/8 bg-[linear-gradient(180deg,rgba(12,12,20,0.84),rgba(7,7,14,0.96))] p-6 sm:p-8 lg:grid-cols-[1.4fr_1fr]">
           <div className="space-y-3">
             <p className="font-display text-lg tracking-[0.22em] text-white">QUEST ESPORTS</p>
-            <p className="max-w-xl text-sm text-slate-400">
-              Tournament operations, community touchpoints, and media publishing built for a real esports audience.
-            </p>
             <div className="flex flex-wrap gap-3 text-sm text-slate-300">
               <Link href="/contact" className="hover:text-white">
                 Contact
@@ -32,7 +29,7 @@ export default function Footer() {
             </div>
           </div>
 
-          <div className="flex flex-col items-start gap-4 lg:items-end">
+          <div className="flex flex-col items-start gap-6 lg:items-end">
             <div className="social-links">
               {socialLinks.map(({ href, label, icon }) => (
                 <a href={href} target="_blank" rel="noopener noreferrer" key={label} aria-label={label}>
@@ -40,7 +37,7 @@ export default function Footer() {
                 </a>
               ))}
             </div>
-            <p className="text-sm text-slate-500">© 2026 Quest Esports. All rights reserved.</p>
+            <p className="mt-1 text-sm text-slate-500">&copy; 2026 Quest Esports. All rights reserved.</p>
           </div>
         </div>
       </Container>
