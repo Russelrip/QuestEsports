@@ -44,16 +44,14 @@ export default function Navbar() {
 
             <div className="flex min-w-0 items-center justify-start lg:justify-self-center">
               <Link href="/" className="flex items-center gap-3 sm:gap-4">
-                <div className="flex items-center justify-center rounded-2xl border border-white/10 bg-black/30 p-1.5 sm:p-2">
-                  <Image
-                    src="/images/logo.png"
-                    alt="Quest Esports"
-                    width={48}
-                    height={48}
-                    priority
-                    className="h-11 w-11 sm:h-12 sm:w-12"
-                  />
-                </div>
+                <Image
+                  src="/images/logo.png"
+                  alt="Quest Esports"
+                  width={48}
+                  height={48}
+                  priority
+                  className="h-11 w-11 sm:h-12 sm:w-12"
+                />
                 <div className="hidden min-w-0 sm:block">
                   <p className="font-display text-base tracking-[0.24em] text-white">QUEST</p>
                   <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Esports Platform</p>
