@@ -463,4 +463,8 @@ export const defaultPageDescriptions = {
     "Read the official Quest Esports VALORANT tournament rules, eligibility guidelines, and match conduct standards.",
   contact:
     "Contact Quest Esports for tournament inquiries, sponsorship conversations, community support, and collaboration requests.",
+  termsOfService:
+    "Read the terms that govern use of Quest Esports accounts, tournaments, content submissions, and platform services.",
+  privacyPolicy:
+    "Read how Quest Esports collects, uses, stores, and protects personal information across accounts, tournament registration, and support flows.",
 } as const;

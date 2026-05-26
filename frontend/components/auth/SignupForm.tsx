@@ -159,7 +159,17 @@ export default function SignupForm() {
 
         <label className="flex items-start gap-3 rounded-[16px] border border-slate-800 bg-slate-900/65 px-4 py-3 text-sm text-slate-300">
           <input type="checkbox" className="mt-1 size-4 accent-red-500" {...form.register("terms")} />
-          <span>I agree to the Terms of Service and Privacy Policy.</span>
+          <span>
+            I agree to the{" "}
+            <Link href="/terms-of-service" className="text-red-300 transition hover:text-red-200">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy-policy" className="text-red-300 transition hover:text-red-200">
+              Privacy Policy
+            </Link>
+            .
+          </span>
         </label>
         {form.formState.errors.terms?.message ? <p className="text-sm text-rose-300">{form.formState.errors.terms.message}</p> : null}
         {form.formState.errors.root?.message ? <p className="text-sm text-rose-300">{form.formState.errors.root.message}</p> : null}

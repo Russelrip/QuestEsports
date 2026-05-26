@@ -102,7 +102,17 @@ export default function RegistrationForm() {
             </FormField>
             <label className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
               <input type="checkbox" className="mt-1 size-4 accent-cyan-300" {...form.register("terms")} />
-              <span>I agree to the terms and conditions.</span>
+              <span>
+                I agree to the{" "}
+                <Link href="/terms-of-service" className="text-cyan-200 transition hover:text-cyan-100">
+                  Terms of Service
+                </Link>{" "}
+                and the{" "}
+                <Link href="/privacy-policy" className="text-cyan-200 transition hover:text-cyan-100">
+                  Privacy Policy
+                </Link>
+                .
+              </span>
             </label>
             {form.formState.errors.terms?.message ? <p className="text-sm text-rose-300">{form.formState.errors.terms.message}</p> : null}
             {form.formState.errors.root?.message ? <p className="text-sm text-slate-300">{form.formState.errors.root.message}</p> : null}
