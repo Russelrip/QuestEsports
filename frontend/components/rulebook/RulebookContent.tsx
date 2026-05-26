@@ -87,14 +87,6 @@ export default function RulebookContent() {
   return (
     <Section className="pt-6">
       <div className="grid gap-6">
-        <Card className="p-6 sm:p-8">
-          <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Official Rulebook</p>
-          <h2 className="mt-3 text-3xl text-white">Quest Esports VALORANT Tournament Rulebook</h2>
-          <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
-            This page contains the official rules for Quest Esports VALORANT tournaments in Sri Lanka. General rules apply to all tournaments, while women&apos;s tournament rules apply only to female-only events and override the general rules where specified.
-          </p>
-        </Card>
-
         {sections.map((section) => (
           <Card key={section.title} className="p-6 sm:p-8">
             <h3 className="text-2xl text-white">{section.title}</h3>
@@ -105,7 +97,7 @@ export default function RulebookContent() {
             ) : (
               <div className="mt-5 grid gap-5">
                 {section.subsections.map((subsection) => (
-                  <div key={subsection.title} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+                  <div key={subsection.title} className="py-1">
                     <h4 className="text-xl text-white">{subsection.title}</h4>
                     <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
                       {subsection.items.map((item) => (
@@ -126,7 +118,7 @@ export default function RulebookContent() {
           <h3 className="text-2xl text-white">2.11 Map Veto System</h3>
           <div className="mt-5 grid gap-4 lg:grid-cols-3">
             {Object.entries(mapVetoSections).map(([label, items]) => (
-              <div key={label} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+              <div key={label} className="py-1">
                 <h4 className="text-xl text-white">{label}</h4>
                 <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
                   {items.map((item) => (
@@ -204,7 +196,7 @@ export default function RulebookContent() {
                 ],
               },
             ].map((subsection) => (
-              <div key={subsection.title} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+              <div key={subsection.title} className="py-1">
                 <h4 className="text-xl text-white">{subsection.title}</h4>
                 <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
                   {subsection.items.map((item) => (
