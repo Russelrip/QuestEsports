@@ -208,6 +208,75 @@ test("runJobWorkerTick processes queued jobs and marks them succeeded", async ()
   }
 });
 
+test("runJobWorkerTick retries transient job claim transaction timeouts", async () => {
+  class PrismaClientKnownRequestError extends Error {
+    constructor(message, code) {
+      super(message);
+      this.code = code;
+    }
+  }
+
+  const prismaMock = createJobsPrismaMock();
+  const baseTransaction = prismaMock.prisma.$transaction;
+  let transactionCalls = 0;
+  let processedCount = 0;
+
+  prismaMock.prisma.$transaction = async (callback, options) => {
+    transactionCalls += 1;
+
+    assert.equal(options.isolationLevel, "Serializable");
+    assert.equal(options.maxWait, 10000);
+    assert.equal(options.timeout, 15000);
+
+    if (transactionCalls < 3) {
+      throw new PrismaClientKnownRequestError(
+        "Unable to start a transaction in the given time.",
+        "P2028"
+      );
+    }
+
+    return baseTransaction(callback, options);
+  };
+
+  const { module: jobsModule, restore } = loadModuleWithMocks(jobsPath, {
+    [prismaModulePath]: { prisma: prismaMock.prisma },
+    [generatedPrismaPath]: {
+      Prisma: {
+        TransactionIsolationLevel: { Serializable: "Serializable" },
+        PrismaClientKnownRequestError,
+      },
+    },
+    [envPath]: {
+      env: {
+        JOB_WORKER_ENABLED: true,
+        JOB_WORKER_POLL_MS: 5000,
+        JOB_WORKER_MAX_ATTEMPTS: 5,
+      },
+    },
+    [loggerPath]: { logger: { info: () => {}, warn: () => {}, error: () => {} } },
+    [monitoringPath]: { captureException: () => {} },
+    [mailDefinitionsPath]: {
+      EMAIL_JOB_NAME: "email.send",
+      processQueuedMailJob: async () => {
+        processedCount += 1;
+        return true;
+      },
+    },
+  });
+
+  try {
+    await jobsModule.enqueueJob("email.send", { type: "verification" });
+    const tickProcessedCount = await jobsModule.runJobWorkerTick();
+
+    assert.equal(tickProcessedCount, 1);
+    assert.equal(processedCount, 1);
+    assert.equal(transactionCalls, 4);
+    assert.equal(prismaMock.jobs[0].status, "succeeded");
+  } finally {
+    restore();
+  }
+});
+
 test("runJobWorkerTick retries failed jobs until the max attempt threshold", async () => {
   const prismaMock = createJobsPrismaMock();
   const capturedExceptions = [];

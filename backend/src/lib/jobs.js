@@ -10,6 +10,8 @@ const JOB_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 const JOB_RETRY_BASE_DELAY_MS = 30 * 1000;
 const MAX_CLAIM_RETRIES = 3;
 const MAX_JOBS_PER_TICK = 10;
+const CLAIM_TRANSACTION_MAX_WAIT_MS = 10 * 1000;
+const CLAIM_TRANSACTION_TIMEOUT_MS = 15 * 1000;
 
 let workerInterval = null;
 let workerRunning = false;
@@ -43,6 +45,10 @@ const summarizeJobError = (error) => {
 
 const computeRetryDelayMs = (attempts) =>
   JOB_RETRY_BASE_DELAY_MS * Math.max(attempts, 1);
+
+const isRetryableClaimError = (error) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  (error.code === "P2028" || error.code === "P2034");
 
 const enqueueJob = async (name, payload = {}, options = {}) => {
   const maxAttempts = Math.max(
@@ -140,6 +146,8 @@ const claimNextJob = async () => {
         },
         {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          maxWait: CLAIM_TRANSACTION_MAX_WAIT_MS,
+          timeout: CLAIM_TRANSACTION_TIMEOUT_MS,
         }
       );
 
@@ -149,11 +157,7 @@ const claimNextJob = async () => {
 
       return claimedJob;
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2034" &&
-        attempt < MAX_CLAIM_RETRIES
-      ) {
+      if (isRetryableClaimError(error) && attempt < MAX_CLAIM_RETRIES) {
         continue;
       }
 
