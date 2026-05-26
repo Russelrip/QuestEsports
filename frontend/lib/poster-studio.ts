@@ -1,3 +1,4 @@
+import { parseApiResponse } from "@/lib/api";
 import { apiFetch } from "@/lib/auth";
 import { ImageAsset, Poster, resolveMediaUrl } from "@/lib/media";
 
@@ -51,15 +52,10 @@ export const uploadImages = async (input: {
     method: "POST",
     body: formData,
   });
-  const data = (await response.json()) as {
-    success?: boolean;
-    message?: string;
-    images?: ImageAsset[];
-  };
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || "Unable to upload images.");
-  }
+  const data = await parseApiResponse<{ images?: ImageAsset[] }>(
+    response,
+    "Unable to upload images."
+  );
 
   const images = data.images || [];
   if (images.length === 0) {
@@ -86,15 +82,10 @@ export const savePoster = async (draft: PosterDraft) => {
     method: "POST",
     json: payload,
   });
-  const data = (await response.json()) as {
-    success?: boolean;
-    message?: string;
-    poster?: Poster;
-  };
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || "Unable to create poster.");
-  }
+  const data = await parseApiResponse<{ poster?: Poster }>(
+    response,
+    "Unable to create poster."
+  );
 
   if (!data.poster) {
     throw new Error("Poster response was missing the saved poster entry.");
@@ -107,14 +98,7 @@ export const deletePoster = async (posterId: string) => {
   const response = await apiFetch(`/api/posters/${posterId}`, {
     method: "DELETE",
   });
-  const data = (await response.json()) as {
-    success?: boolean;
-    message?: string;
-  };
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || "Unable to delete poster.");
-  }
+  await parseApiResponse(response, "Unable to delete poster.");
 };
 
 const loadImageElement = (src: string) =>

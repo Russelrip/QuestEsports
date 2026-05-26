@@ -419,6 +419,8 @@ Additional response fields:
 - `showcase`
 - `isCompleted`
 
+`registeredTeams` includes approved team names and statuses. Team-logo URLs are intentionally omitted from this public response because `/api/uploads/team-logos/:filename` is admin-only.
+
 ## Tournament Registration Endpoints
 
 ### `GET /api/tournament-registration/status/:slug`

@@ -30,8 +30,7 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "multer": "^2.1.1",
-    "nodemailer": "^8.0.8"
-    ,
+    "nodemailer": "^8.0.8",
     "read-excel-file": "^9.0.10"
   },
   "devDependencies": {

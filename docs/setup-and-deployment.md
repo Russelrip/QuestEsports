@@ -429,7 +429,7 @@ Run these in a controlled environment and back up the database plus uploads firs
 Before calling the system fully production-hardened, consider adding:
 
 - broader automated test coverage, including end-to-end flows
-- centralized logging/monitoring
+- production-grade log retention, alerting, and monitoring dashboards
 - object storage for uploads
 - an admin bootstrap script
 - CI/CD and migration rollout automation

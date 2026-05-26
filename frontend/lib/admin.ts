@@ -1,3 +1,4 @@
+import { parseApiResponse } from "@/lib/api";
 import { apiFetch } from "@/lib/auth";
 import { Tournament } from "@/lib/tournaments";
 
@@ -93,8 +94,6 @@ export type TeamRegistration = {
   members: RegistrationMember[];
 };
 
-type ApiSuccess<T> = T & { success: true; message?: string };
-
 export const emptyPagination: Pagination = {
   page: 1,
   pageSize: 10,
@@ -133,16 +132,7 @@ export const adminRequest = async <T>(
   options?: Parameters<typeof apiFetch>[1]
 ) => {
   const response = await apiFetch(path, options);
-  const data = (await response.json()) as Partial<ApiSuccess<T>> & {
-    success?: boolean;
-    message?: string;
-  };
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || "Request failed.");
-  }
-
-  return data as ApiSuccess<T>;
+  return parseApiResponse<T>(response);
 };
 
 export type TournamentFormValues = {

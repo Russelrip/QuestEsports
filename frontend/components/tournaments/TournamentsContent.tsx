@@ -10,7 +10,11 @@ import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Select } from "@/components/ui/select";
-import { Tournament, getTournamentRegistrationLabel, getTournamentStatusLabel } from "@/lib/tournaments";
+import {
+  Tournament,
+  getTournamentRegistrationShortLabel,
+  getTournamentStatusLabel,
+} from "@/lib/tournaments";
 import { formatDisplayDate } from "@/lib/utils";
 
 const gameOptions = [
@@ -80,7 +84,7 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
                   <div className="flex flex-wrap items-center gap-3">
                     <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">{tournament.game}</p>
                     <Badge className="border-fuchsia-300/20 bg-fuchsia-400/10 text-fuchsia-100">
-                      {getRegistrationBadgeLabel(tournament)}
+                      {getTournamentRegistrationShortLabel(tournament)}
                     </Badge>
                   </div>
 
@@ -189,18 +193,6 @@ function InfoChip({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-semibold text-white">{value}</p>
     </div>
   );
-}
-
-function getRegistrationBadgeLabel(tournament: Tournament) {
-  if (tournament.registrationState === "registration_open") {
-    return "Open";
-  }
-
-  if (tournament.registrationState === "slots_full") {
-    return "Full";
-  }
-
-  return "Closed";
 }
 
 function toTitleCase(value: string) {

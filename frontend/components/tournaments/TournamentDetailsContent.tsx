@@ -11,7 +11,9 @@ import { resolveMediaUrl } from "@/lib/media";
 import {
   Tournament,
   TournamentScheduleData,
+  getTournamentCapacityPercentage,
   getTournamentRegistrationLabel,
+  getTournamentRegistrationShortLabel,
   getTournamentStatusLabel,
 } from "@/lib/tournaments";
 import { formatDisplayDate } from "@/lib/utils";
@@ -82,7 +84,7 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
                   </p>
                   <p className="mt-1 text-sm text-slate-400">
                     {getTournamentRegistrationLabel(tournament)}. Capacity is{" "}
-                    {Math.min(100, Math.round((tournament.registrationCount / Math.max(tournament.maxTeams, 1)) * 100))}% full.
+                    {getTournamentCapacityPercentage(tournament)}% full.
                   </p>
                 </div>
 
@@ -144,10 +146,7 @@ function StatsPanel({ tournament }: { tournament: Tournament }) {
 
 function RegistrationPanel({ tournament }: { tournament: Tournament }) {
   const registrationLabel = getTournamentRegistrationLabel(tournament);
-  const filledPercentage = Math.min(
-    100,
-    Math.round((tournament.registrationCount / Math.max(tournament.maxTeams, 1)) * 100)
-  );
+  const filledPercentage = getTournamentCapacityPercentage(tournament);
 
   return (
     <section className="rounded-[28px] border border-fuchsia-400/18 bg-[#120d1d] p-5 shadow-[0_20px_50px_rgba(61,9,115,0.18)]">
@@ -328,7 +327,7 @@ function CompletedShowcase({ tournament }: { tournament: Tournament }) {
 }
 
 function StatusBadge({ tournament }: { tournament: Tournament }) {
-  const label = getShortRegistrationLabel(tournament);
+  const label = getTournamentRegistrationShortLabel(tournament);
   const toneClassName =
     label === "Open"
       ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
@@ -343,18 +342,6 @@ function StatusBadge({ tournament }: { tournament: Tournament }) {
       {label}
     </span>
   );
-}
-
-function getShortRegistrationLabel(tournament: Tournament) {
-  if (tournament.registrationState === "registration_open") {
-    return "Open";
-  }
-
-  if (tournament.registrationState === "slots_full") {
-    return "Full";
-  }
-
-  return "Closed";
 }
 
 function getChallongeEmbedUrl(bracketLink: string | null) {

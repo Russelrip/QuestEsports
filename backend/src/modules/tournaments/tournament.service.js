@@ -319,7 +319,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
   registeredTeams: (tournament.teamRegistrations || []).map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
-    logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    logoUrl: null,
     status: registration.status,
   })),
 });

@@ -133,7 +133,7 @@ Recommended flow:
 - Tournament listing and tournament detail pages
 - Tournament schedule tables rendered from uploaded XLSX or CSV files
 - Completed-tournament showcase sections with official poster plus 1st, 2nd, and 3rd place visuals
-- Public tournament team lists with approved registered teams and team logos
+- Public tournament team lists with approved registered teams
 - Team tournament registration flow
 - Email verification, login, logout, password reset, and email change flows
 - MFA setup, MFA login challenge, backup codes, session management, and Google/Discord OAuth sign-in
@@ -379,6 +379,7 @@ Default local URLs:
 - Public tournament responses now include `displayPriority`, `scheduleData`, `isCompleted`, `showcase`, and per-tournament `registeredTeams` on detail pages.
 - Direct imports that touch backend config now load `.env` automatically, so scripts and one-off Node entrypoints behave the same as `node src/server.js`.
 - Team logos are intentionally protected behind admin access.
+- Public tournament detail responses include approved team names and statuses, but omit team-logo URLs because logo files are served through admin-only media routes.
 - The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
 - The backend includes a Node test suite under `backend/tests`.
 - Session/auth lifecycle behavior now has dedicated unit coverage for session rehydration, throttled `lastSeenAt` writes, expired-session handling, and active-session listing.

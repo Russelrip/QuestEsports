@@ -1,3 +1,5 @@
+import { buildApiUrl, parseApiResponse } from "@/lib/api";
+
 export type VideoItem = {
   title: string;
   subtitle: string;
@@ -38,8 +40,6 @@ export type Poster = {
     isPublished: boolean;
   } | null;
 };
-
-type MediaSuccess<T> = T & { success: true; message?: string };
 
 export const videoSections = [
   {
@@ -308,8 +308,6 @@ export const videoSections = [
   },
 ] as const;
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "";
-
 export const resolveMediaUrl = (path: string) => {
   if (!path) {
     return path;
@@ -324,20 +322,7 @@ export const resolveMediaUrl = (path: string) => {
     return path;
   }
 
-  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
-};
-
-const parseMediaResponse = async <T>(response: Response) => {
-  const data = (await response.json()) as Partial<MediaSuccess<T>> & {
-    success?: boolean;
-    message?: string;
-  };
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || "Media request failed.");
-  }
-
-  return data as MediaSuccess<T>;
+  return buildApiUrl(path);
 };
 
 export const fetchImages = async (searchParams?: URLSearchParams) => {
@@ -347,7 +332,7 @@ export const fetchImages = async (searchParams?: URLSearchParams) => {
     credentials: "include",
   });
 
-  return parseMediaResponse<{ images: ImageAsset[] }>(response);
+  return parseApiResponse<{ images: ImageAsset[] }>(response, "Media request failed.");
 };
 
 export const fetchPosters = async (searchParams?: URLSearchParams) => {
@@ -357,7 +342,7 @@ export const fetchPosters = async (searchParams?: URLSearchParams) => {
     credentials: "include",
   });
 
-  return parseMediaResponse<{ posters: Poster[] }>(response);
+  return parseApiResponse<{ posters: Poster[] }>(response, "Media request failed.");
 };
 
 export const fetchPublicPosters = async (searchParams?: URLSearchParams) => {
@@ -366,5 +351,5 @@ export const fetchPublicPosters = async (searchParams?: URLSearchParams) => {
     next: { revalidate: 300 },
   });
 
-  return parseMediaResponse<{ posters: Poster[] }>(response);
+  return parseApiResponse<{ posters: Poster[] }>(response, "Media request failed.");
 };

@@ -1,5 +1,7 @@
 "use client";
 
+import { buildApiUrl, readApiResponse } from "@/lib/api";
+
 export type AuthUser = {
   id: string;
   firstName: string;
@@ -42,12 +44,10 @@ type ApiSuccessResponse = {
   message?: string;
 };
 
-const getApiUrl = (path: string) => `${process.env.NEXT_PUBLIC_API_URL}${path}`;
-
 export const apiFetch = async (path: string, options: ApiFetchOptions = {}) => {
   const { json, headers, ...rest } = options;
 
-  return fetch(getApiUrl(path), {
+  return fetch(buildApiUrl(path), {
     ...rest,
     credentials: "include",
     headers: {
@@ -63,18 +63,7 @@ export async function apiFetchJson<T = unknown>(
   options: ApiFetchOptions = {}
 ) {
   const response = await apiFetch(path, options);
-  const contentType = response.headers.get("content-type") || "";
-  let data: T;
-
-  if (contentType.includes("application/json")) {
-    data = (await response.json()) as T;
-  } else {
-    const text = await response.text();
-    data = {
-      success: false,
-      message: text || `Request failed with status ${response.status}.`,
-    } as T;
-  }
+  const data = await readApiResponse<T>(response);
 
   return { response, data };
 }

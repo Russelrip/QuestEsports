@@ -1,3 +1,5 @@
+import { fetchApiJson } from "@/lib/api";
+
 export type TournamentStatus =
   | "draft"
   | "upcoming"
@@ -66,19 +68,8 @@ export type Tournament = {
   updatedAt?: string;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
 const fetchJson = async <T>(path: string): Promise<T> => {
-  const response = await fetch(`${API_URL}${path}`, {
-    cache: "no-store",
-  });
-  const data = await response.json();
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || "Request failed.");
-  }
-
-  return data;
+  return fetchApiJson<T>(path, { cache: "no-store" }, "Tournament request failed.");
 };
 
 export const getTournamentStatusLabel = (status: TournamentStatus) =>
@@ -101,6 +92,24 @@ export const getTournamentRegistrationLabel = (tournament: Tournament) => {
 
   return "Registration Open";
 };
+
+export const getTournamentRegistrationShortLabel = (tournament: Tournament) => {
+  if (tournament.registrationState === "slots_full") {
+    return "Full";
+  }
+
+  if (tournament.registrationState === "registration_closed") {
+    return "Closed";
+  }
+
+  return "Open";
+};
+
+export const getTournamentCapacityPercentage = (tournament: Tournament) =>
+  Math.min(
+    100,
+    Math.round((tournament.registrationCount / Math.max(tournament.maxTeams, 1)) * 100)
+  );
 
 export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => {
   const featured = tournaments.filter((tournament) => tournament.isFeatured);

@@ -246,6 +246,6 @@ From the migration names, the schema evolved through:
 ## Production Improvement Opportunities
 
 - Move uploads to object storage such as S3, R2, or GCS for horizontal scaling.
-- Add a formal background job queue for email and media processing.
+- Move background-job processing to a dedicated worker process or external queue if email/media volume grows beyond the built-in database-backed worker.
 - Add scheduled cleanup for expired tokens and stale uploads.
 - Add a seed/bootstrap workflow for the first admin user.
