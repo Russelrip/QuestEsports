@@ -8,8 +8,8 @@ export default function Footer() {
     <footer className="border-t border-white/8 bg-black/35">
       <Container className="py-10">
         <div className="grid gap-8 rounded-[32px] border border-white/8 bg-[linear-gradient(180deg,rgba(12,12,20,0.84),rgba(7,7,14,0.96))] p-6 sm:p-8 lg:grid-cols-[1.4fr_1fr]">
-          <div className="space-y-3">
-            <p className="font-display text-lg tracking-[0.22em] text-white">QUEST ESPORTS</p>
+          <div className="space-y-3 lg:flex lg:h-full lg:flex-col lg:justify-between lg:space-y-0">
+            <p className="pt-2 font-display text-lg tracking-[0.22em] text-white lg:pt-3">QUEST ESPORTS</p>
             <div className="flex flex-wrap gap-3 text-sm text-slate-300">
               <Link href="/contact" className="hover:text-white">
                 Contact
@@ -29,7 +29,7 @@ export default function Footer() {
             </div>
           </div>
 
-          <div className="flex flex-col items-start gap-6 lg:items-end">
+          <div className="flex flex-col items-start gap-6 lg:h-full lg:items-end lg:justify-between">
             <div className="social-links">
               {socialLinks.map(({ href, label, icon }) => (
                 <a href={href} target="_blank" rel="noopener noreferrer" key={label} aria-label={label}>
