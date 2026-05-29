@@ -114,6 +114,7 @@ Recommended flow:
 
 - [API Documentation](./docs/api-documentation.md)
 - [Authentication Flow](./docs/authentication-flow.md)
+- [CI/CD Pipeline](./docs/ci-cd.md)
 - [Database and Storage](./docs/database-and-storage.md)
 - [Setup and Deployment Guide](./docs/setup-and-deployment.md)
 

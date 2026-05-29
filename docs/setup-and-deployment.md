@@ -436,4 +436,4 @@ Before calling the system fully production-hardened, consider adding:
 - production-grade log retention, alerting, and monitoring dashboards
 - object storage for uploads
 - an admin bootstrap script
-- CI/CD and migration rollout automation
+- blue-green or canary release automation for zero-downtime deploys
