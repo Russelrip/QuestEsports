@@ -45,17 +45,35 @@ Single-use email change confirmation tokens.
 
 ### `Tournament`
 
-Stores tournament metadata, publication state, dates, registration window, manual display ordering, banner reference, parsed schedule data, and completed-showcase image references.
+Stores tournament metadata, publication state, dates, optional registration opening time, manual display ordering, banner reference, parsed schedule data, and completed-showcase image references.
 
 Fields of note:
 
 - `displayPriority`
+- `registrationOpenAt`
 - `scheduleFileName`
 - `scheduleData`
 - `completedPosterImageName`
 - `firstPlaceImageName`
 - `secondPlaceImageName`
 - `thirdPlaceImageName`
+
+### `TournamentBracket`
+
+Stores the native bracket generated for a tournament.
+
+Fields of note:
+
+- `tournamentId`
+- `format`
+- `status`
+- `seedData`
+- `bracketData`
+- `generatedAt`
+- `publishedAt`
+- `lastUpdatedAt`
+
+`seedData` stores the approved registration seed list used for generation. `bracketData` stores the exported `brackets-manager` database shape, including participants, stages, groups, rounds, matches, and match games. Public API responses include this bracket only when `status` is `published`.
 
 ### `TeamRegistration`
 
@@ -143,7 +161,7 @@ Upload directories are created under `backend/uploads/`:
 
 - File bytes: filesystem
 - DB reference: `TeamRegistration.teamLogoName`, `SavedTeam.logoName`
-- Access: admin-only file serving route
+- Access: upload route is public; tournament detail responses expose logo URLs only for approved registrations
 
 ### Tournament banners
 
@@ -157,6 +175,12 @@ Upload directories are created under `backend/uploads/`:
 - DB reference: `Tournament.scheduleFileName`
 - Parsed display data: `Tournament.scheduleData`
 - Access: the stored file supports admin workflow, while the public site renders the parsed JSON data returned by the API
+
+### Native brackets
+
+- Bracket seed and match data: PostgreSQL `tournament_brackets`
+- Generation/update logic: `brackets-manager`
+- Access: admin APIs can create, update, and publish brackets; public tournament details receive bracket data only after publication
 
 ### Completed tournament showcase images
 
@@ -215,7 +239,7 @@ Key protections implemented in the schema and services:
 ## Important Relationships
 
 - A `User` has many `Session`, `VerificationToken`, `PasswordResetToken`, and `EmailChangeToken` records.
-- A `Tournament` has many `TeamRegistration` and `Poster` records.
+- A `Tournament` has many `TeamRegistration` and `Poster` records, and at most one `TournamentBracket`.
 - A `TeamRegistration` has many `RegistrationMember` records.
 - A `SavedTeam` belongs to a captain `User` and has many `SavedTeamMember` records.
 - A `Poster` belongs to an `ImageAsset` and may belong to a `Tournament`.
@@ -234,6 +258,7 @@ From the migration names, the schema evolved through:
 - file-backed poster assets
 - background jobs
 - tournament schedule and completed-showcase asset support
+- native tournament bracket persistence and optional registration opening time
 
 ## Backup And Operations Guidance
 

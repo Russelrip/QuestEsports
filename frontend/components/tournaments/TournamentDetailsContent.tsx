@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
@@ -9,363 +10,367 @@ import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { resolveMediaUrl } from "@/lib/media";
 import {
+  BracketMatch,
+  BracketParticipant,
   Tournament,
-  TournamentScheduleData,
-  getTournamentCapacityPercentage,
-  getTournamentRegistrationLabel,
-  getTournamentRegistrationShortLabel,
-  getTournamentStatusLabel,
+  TournamentBracketData,
 } from "@/lib/tournaments";
-import { formatDisplayDate } from "@/lib/utils";
 
-const heroStats = (tournament: Tournament) => [
-  { label: "Prize Pool", value: tournament.prizePool },
-  { label: "Format", value: tournament.format },
-  { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
-  {
-    label: "Dates",
-    value: `${formatDisplayDate(tournament.startDate)} - ${formatDisplayDate(tournament.endDate)}`,
-  },
-  { label: "Deadline", value: formatDisplayDate(tournament.registrationDeadline) },
-  { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}` },
-];
+const TEAMS_PER_PAGE = 10;
+const MATCH_STATUS_LABELS: Record<number, string> = {
+  0: "Locked",
+  1: "Waiting",
+  2: "Upcoming",
+  3: "Live",
+  4: "Completed",
+  5: "Completed",
+  6: "Paused",
+};
 
 export default function TournamentDetailsContent({ tournament }: { tournament: Tournament }) {
-  const description =
-    tournament.fullDescription ||
-    tournament.shortDescription ||
-    "Tournament information will be updated soon.";
-  const bracketEmbedUrl = getChallongeEmbedUrl(tournament.bracketLink);
+  const [teamPage, setTeamPage] = useState(1);
+  const teamPageCount = Math.max(1, Math.ceil((tournament.registeredTeams?.length || 0) / TEAMS_PER_PAGE));
+  const visibleTeams = (tournament.registeredTeams || []).slice(
+    (teamPage - 1) * TEAMS_PER_PAGE,
+    teamPage * TEAMS_PER_PAGE
+  );
+
+  const bracketData = useMemo(() => tournament.bracketData, [tournament.bracketData]);
 
   return (
     <Section className="pt-6">
-      <div className="space-y-6">
-        <Card className="overflow-hidden p-4 sm:p-5 xl:p-6">
-          <div className="grid gap-6 xl:grid-cols-[minmax(340px,420px)_minmax(0,1fr)]">
-            <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-black/30">
+      <div className="space-y-8 tournament-print-root">
+        <Link href="/tournaments" className="inline-flex text-sm text-slate-400 transition hover:text-white">
+          Back to Tournaments
+        </Link>
+
+        <Card className="overflow-hidden border-white/10 bg-[linear-gradient(180deg,rgba(18,18,27,0.94),rgba(8,8,15,0.96))] p-4 sm:p-6 xl:p-8">
+          <div className="grid gap-8 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
+            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#100817]">
               <TournamentBannerImage
                 bannerUrl={tournament.bannerUrl}
                 title={tournament.title}
-                className="h-full min-h-[340px] w-full object-cover sm:min-h-[420px] xl:min-h-[100%]"
+                className="h-full min-h-[340px] w-full object-cover sm:min-h-[520px]"
               />
             </div>
 
-            <div className="flex flex-col justify-between gap-6">
+            <div className="flex min-w-0 flex-col justify-between gap-6">
               <div className="space-y-6">
-                <header className="space-y-4">
+                <header>
                   <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-xs uppercase tracking-[0.28em] text-fuchsia-200/80">{tournament.game}</p>
-                    <StatusBadge tournament={tournament} />
-                  </div>
-
-                  <div className="max-w-4xl">
-                    <h2 className="text-3xl leading-tight text-white sm:text-[2.7rem] sm:leading-[1.02]">
-                      {tournament.title}
-                    </h2>
-                    <p className="mt-3 text-sm text-slate-400">
-                      Tournament status: {toTitleCase(getTournamentStatusLabel(tournament.status))}
-                    </p>
-                    <p className="mt-5 max-w-3xl text-sm leading-7 text-slate-300 sm:text-[15px]">
-                      {description}
+                    <p className="text-xs uppercase tracking-[0.32em] text-fuchsia-200/80">
+                      {toTitleCase(tournament.game)}
                     </p>
                   </div>
+                  <h2 className="mt-4 text-4xl leading-tight text-white sm:text-5xl">
+                    {tournament.title}
+                  </h2>
+                  <p className="mt-4 text-sm text-slate-400">
+                    Tournament status: {toTitleCase(tournament.status.replace(/_/g, " "))}
+                  </p>
+                  <p className="mt-6 max-w-4xl text-base leading-8 text-slate-300">
+                    {tournament.fullDescription || tournament.shortDescription || "Tournament information will be updated soon."}
+                  </p>
                 </header>
 
-                <StatsPanel tournament={tournament} />
-
-                <RegistrationPanel tournament={tournament} />
+                <StatsGrid tournament={tournament} />
               </div>
 
-              <footer className="flex flex-col gap-4 border-t border-white/8 pt-5 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-[11px] tracking-[0.1em] text-slate-500">Registration Summary</p>
-                  <p className="mt-2 text-base font-semibold text-white">
-                    {tournament.registrationCount} / {tournament.maxTeams} teams registered
-                  </p>
-                  <p className="mt-1 text-sm text-slate-400">
-                    {getTournamentRegistrationLabel(tournament)}. Capacity is{" "}
-                    {getTournamentCapacityPercentage(tournament)}% full.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
+              <footer className="flex flex-wrap gap-3 border-t border-white/10 pt-6">
                   <Link
-                    href="/tournaments"
+                    href="/rulebook"
                     className={buttonClassName({
                       variant: "secondary",
                       className: "border-white/14 bg-transparent hover:border-white/20 hover:bg-white/6",
                     })}
                   >
-                    Back to Tournaments
+                    Rulebook
                   </Link>
                   <RegisterTournamentButton tournament={tournament} closedAsButton />
-                </div>
               </footer>
             </div>
           </div>
         </Card>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.92fr)]">
-          <TeamsPanel tournament={tournament} />
-          <SchedulePanel scheduleData={tournament.scheduleData} />
-        </div>
+        {(tournament.registeredTeams?.length || 0) > 0 ? (
+          <TeamsPanel
+            teams={visibleTeams}
+            totalTeams={tournament.registeredTeams?.length || 0}
+            page={teamPage}
+            pageCount={teamPageCount}
+            onPageChange={setTeamPage}
+          />
+        ) : null}
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.92fr)]">
-          <BracketPanel bracketLink={tournament.bracketLink} bracketEmbedUrl={bracketEmbedUrl} />
-          <Card className="p-6">
-            <p className="text-[11px] tracking-[0.12em] text-slate-500">Rules & Notes</p>
-            <h3 className="mt-3 text-2xl text-white">Format requirements and tournament expectations</h3>
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-300">
-              {tournament.rules || "Rules will be shared by the admins soon."}
-            </p>
-          </Card>
-        </div>
-
-        {tournament.isCompleted ? <CompletedShowcase tournament={tournament} /> : null}
+        {bracketData ? (
+          <section className="space-y-5">
+            <h3 className="text-3xl text-white">Brackets</h3>
+            <LiveBracketView bracketData={bracketData} />
+          </section>
+        ) : null}
       </div>
     </Section>
   );
 }
 
-function StatsPanel({ tournament }: { tournament: Tournament }) {
-  const items = heroStats(tournament);
+function StatsGrid({ tournament }: { tournament: Tournament }) {
+  const stats = [
+    { label: "Prize Pool", value: tournament.prizePool },
+    { label: "Format", value: tournament.format },
+    { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
+    {
+      label: "Registration Deadline",
+      value: formatDateTime(tournament.registrationDeadline),
+    },
+    {
+      label: "Bracket Release",
+      value: tournament.bracketSummary?.lastUpdatedAt ? formatDateTime(tournament.bracketSummary.lastUpdatedAt) : "To be announced",
+    },
+    { label: "Tournament Start", value: formatDateTime(tournament.startDate) },
+  ];
 
   return (
-    <section>
-      <div className="grid gap-6 md:grid-cols-3">
-        {items.map((item) => (
-          <div key={item.label}>
-            <p className="text-[11px] tracking-[0.08em] text-slate-400">{item.label}</p>
-            <p className="mt-3 text-base font-semibold text-white sm:text-lg">{item.value}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function RegistrationPanel({ tournament }: { tournament: Tournament }) {
-  const registrationLabel = getTournamentRegistrationLabel(tournament);
-  const filledPercentage = getTournamentCapacityPercentage(tournament);
-
-  return (
-    <section className="rounded-[28px] border border-fuchsia-400/18 bg-[#120d1d] p-5 shadow-[0_20px_50px_rgba(61,9,115,0.18)]">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-2">
-          <p className="text-[11px] tracking-[0.08em] text-slate-400">Registration</p>
-          <p className="text-lg font-semibold text-white">{registrationLabel}</p>
-          <p className="text-sm text-slate-300">
-            {tournament.registrationCount} / {tournament.maxTeams} teams registered
-          </p>
+    <div className="grid gap-x-10 gap-y-7 sm:grid-cols-2 xl:grid-cols-3">
+      {stats.map((stat) => (
+        <div key={stat.label}>
+          <p className="text-[11px] tracking-[0.14em] text-slate-400">{stat.label}</p>
+          <p className="mt-3 text-lg font-semibold text-white">{stat.value}</p>
         </div>
-
-        <div className="min-w-44 rounded-[18px] border border-white/10 bg-black/20 px-4 py-3 lg:text-right">
-          <p className="text-[11px] tracking-[0.08em] text-slate-400">Capacity</p>
-          <p className="mt-1 text-2xl font-semibold text-white">{filledPercentage}%</p>
-        </div>
-      </div>
-
-      <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-white/8">
-        <div className="h-full rounded-full bg-fuchsia-500" style={{ width: `${filledPercentage}%` }} />
-      </div>
-
-      <p className="mt-3 text-sm text-slate-400">
-        {registrationLabel === "Registration Open"
-          ? "Registration is open for eligible rosters. Complete signup early to secure your slot."
-          : "Registration is not currently accepting new teams for this event."}
-      </p>
-    </section>
-  );
-}
-
-function TeamsPanel({ tournament }: { tournament: Tournament }) {
-  return (
-    <Card className="p-6">
-      <p className="text-[11px] tracking-[0.12em] text-slate-500">Registered Teams</p>
-      <h3 className="mt-3 text-2xl text-white">Qualified lineups and submitted rosters</h3>
-      {tournament.registeredTeams && tournament.registeredTeams.length > 0 ? (
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          {tournament.registeredTeams.map((team) => (
-            <div key={team.id} className="rounded-[24px] border border-white/8 bg-white/5 p-4 transition hover:border-fuchsia-400/25 hover:bg-white/7">
-              <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-white/8 bg-black/30">
-                  {team.logoUrl ? (
-                    <img src={resolveMediaUrl(team.logoUrl)} alt={team.teamName} className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="text-xs uppercase tracking-[0.2em] text-slate-500">No Logo</span>
-                  )}
-                </div>
-                <div>
-                  <p className="text-base font-semibold text-white">{team.teamName}</p>
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{team.status}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-5 text-sm text-slate-400">Approved teams will appear here once registrations are confirmed.</p>
-      )}
-    </Card>
-  );
-}
-
-function SchedulePanel({ scheduleData }: { scheduleData: TournamentScheduleData | null }) {
-  return (
-    <Card className="p-6">
-      <p className="text-[11px] tracking-[0.12em] text-slate-500">Schedule</p>
-      <h3 className="mt-3 text-2xl text-white">Spreadsheet-driven event timeline</h3>
-      {scheduleData?.rows?.length ? (
-        <div className="mt-5 overflow-hidden rounded-[22px] border border-white/8">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-white/5">
-                <tr>
-                  {scheduleData.headers.map((header) => (
-                    <th key={header} className="px-4 py-3 font-medium uppercase tracking-[0.12em] text-slate-400">
-                      {header}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {scheduleData.rows.map((row, index) => (
-                  <tr key={`${scheduleData.sheetName}-${index}`} className="border-t border-white/8 bg-[#0c0a14]">
-                    {scheduleData.headers.map((header) => (
-                      <td key={`${header}-${index}`} className="px-4 py-3 text-slate-200">
-                        {String(row[header] || "-")}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <p className="mt-5 text-sm text-slate-400">A schedule spreadsheet has not been published for this tournament yet.</p>
-      )}
-    </Card>
-  );
-}
-
-function BracketPanel({
-  bracketLink,
-  bracketEmbedUrl,
-}: {
-  bracketLink: string | null;
-  bracketEmbedUrl: string | null;
-}) {
-  return (
-    <Card className="p-6">
-      <p className="text-[11px] tracking-[0.12em] text-slate-500">Bracket</p>
-      <h3 className="mt-3 text-2xl text-white">Live bracket and match progression</h3>
-      {bracketEmbedUrl ? (
-        <div className="mt-5 overflow-hidden rounded-[24px] border border-white/8 bg-black/30">
-          <iframe
-            src={bracketEmbedUrl}
-            title="Tournament bracket"
-            className="h-[520px] w-full"
-            loading="lazy"
-          />
-        </div>
-      ) : (
-        <p className="mt-5 text-sm text-slate-400">Bracket embed will appear here once a Challonge bracket is connected.</p>
-      )}
-
-      <div className="mt-5 flex flex-wrap gap-3">
-        {bracketLink ? (
-          <a href={bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>
-            View on Challonge
-          </a>
-        ) : null}
-      </div>
-    </Card>
-  );
-}
-
-function CompletedShowcase({ tournament }: { tournament: Tournament }) {
-  const items = [
-    { label: "Official Tournament Poster", imageUrl: tournament.showcase.posterUrl },
-    { label: "1st Place Winners", imageUrl: tournament.showcase.firstPlaceUrl },
-    { label: "2nd Place Winners", imageUrl: tournament.showcase.secondPlaceUrl },
-    { label: "3rd Place Winners", imageUrl: tournament.showcase.thirdPlaceUrl },
-  ].filter((item) => item.imageUrl);
-
-  if (items.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-fuchsia-200/80">Completed Showcase</p>
-        <h3 className="mt-2 text-3xl text-white">Posters, podium moments, and final campaign assets.</h3>
-      </div>
-
-      {items.map((item, index) => (
-        <Card
-          key={item.label}
-          className="overflow-hidden border-fuchsia-400/10 bg-[#09080f] transition duration-300 hover:border-fuchsia-300/25"
-        >
-          <div className="grid gap-6 p-5 lg:grid-cols-[280px_1fr] lg:p-6">
-            <div className="overflow-hidden rounded-[24px] border border-white/8 bg-black/30">
-              <img src={resolveMediaUrl(item.imageUrl || "")} alt={item.label} className="h-full w-full object-cover" />
-            </div>
-            <div className="flex flex-col justify-center">
-              <p className="text-xs uppercase tracking-[0.24em] text-fuchsia-200/75">Showcase {index + 1}</p>
-              <h4 className="mt-3 text-3xl text-white">{item.label}</h4>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
-                Published as part of the completed tournament presentation for {tournament.title}.
-              </p>
-            </div>
-          </div>
-        </Card>
       ))}
     </div>
   );
 }
 
-function StatusBadge({ tournament }: { tournament: Tournament }) {
-  const label = getTournamentRegistrationShortLabel(tournament);
-  const toneClassName =
-    label === "Open"
-      ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
-      : label === "Full"
-        ? "border-amber-300/20 bg-amber-400/10 text-amber-100"
-        : "border-fuchsia-300/20 bg-fuchsia-400/10 text-fuchsia-100";
-
+function TeamsPanel({
+  teams,
+  totalTeams,
+  page,
+  pageCount,
+  onPageChange,
+}: {
+  teams: Tournament["registeredTeams"];
+  totalTeams: number;
+  page: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
+}) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold tracking-[0.14em] ${toneClassName}`.trim()}
-    >
-      {label}
-    </span>
+    <section className="space-y-4">
+      <h3 className="text-3xl text-white">Registered Teams</h3>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {teams?.map((team) => (
+          <div key={team.id} className="rounded-xl border border-blue-300/20 bg-[#0d1626] p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-white text-sm font-bold text-black">
+                {team.logoUrl ? (
+                  <img src={resolveMediaUrl(team.logoUrl)} alt={team.teamName} className="h-full w-full object-cover" />
+                ) : (
+                  team.shortCode
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-white">{team.teamName}</p>
+                <p className="text-xs text-slate-400">
+                  {team.shortCode} - {team.memberCount} members
+                </p>
+              </div>
+              <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-3 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          Showing {(page - 1) * TEAMS_PER_PAGE + 1}-{Math.min(page * TEAMS_PER_PAGE, totalTeams)} of {totalTeams} teams
+        </span>
+        <div className="flex items-center gap-2">
+          <button className="rounded-lg border border-white/10 px-4 py-2 disabled:opacity-40" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+            Previous
+          </button>
+          <span className="font-semibold text-white">Page {page} / {pageCount}</span>
+          <button className="rounded-lg border border-white/10 px-4 py-2 disabled:opacity-40" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>
+            Next
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
-function getChallongeEmbedUrl(bracketLink: string | null) {
-  if (!bracketLink) {
-    return null;
+function LiveBracketView({
+  bracketData,
+}: {
+  bracketData: TournamentBracketData | null;
+}) {
+  if (!bracketData) {
+    return (
+      <div className="overflow-hidden rounded-sm border border-[#454545] bg-[#2f2f2f] text-white tournament-print-bracket">
+        <div className="flex min-h-[260px] items-center justify-center border-t border-[#454545] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] [background-size:6px_6px]">
+          <div className="text-center">
+            <h4 className="text-xl text-white">Bracket not published yet.</h4>
+            <p className="mt-2 text-sm text-slate-300">Once admins generate and publish the native bracket, it will appear here.</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  try {
-    const parsed = new URL(bracketLink);
+  const participants = new Map(bracketData.participant.map((participant) => [participant.id, participant]));
+  const groupedRounds = bracketData.group.map((group) => {
+    const groupRounds = bracketData.round
+      .filter((round) => round.group_id === group.id)
+      .sort((left, right) => left.number - right.number)
+      .map((round) => ({
+        ...round,
+        matches: bracketData.match
+          .filter((match) => match.round_id === round.id)
+          .sort((left, right) => left.number - right.number),
+      }))
+      .filter((round) => round.matches.length > 0);
 
-    if (!parsed.hostname.includes("challonge.com")) {
-      return null;
-    }
+    return {
+      group,
+      label: getGroupLabel(group.number),
+      tone: getGroupTone(group.number),
+      rounds: groupRounds,
+    };
+  }).filter((group) => group.rounds.length > 0);
 
-    const slug = parsed.pathname.replace(/^\/+|\/+$/g, "");
+  return (
+    <div className="overflow-hidden rounded-sm border border-[#454545] bg-[#303030] text-white shadow-[0_20px_70px_rgba(0,0,0,0.35)] tournament-print-bracket">
+      <div className="flex items-center justify-between border-y border-[#454545] bg-[#383838] text-[11px] font-bold text-slate-200">
+        <div className="flex min-w-0 flex-1">
+          {groupedRounds[0]?.rounds.slice(0, 6).map((round) => (
+            <div key={round.id} className="w-[210px] shrink-0 border-r border-[#444] px-3 py-2 text-center">
+              {getRoundLabel(groupedRounds[0].group.number, round.number)}
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 border-l border-[#444] px-3 py-2 text-slate-300">
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> LIVE</span>
+          <span>FULL BRACKET</span>
+        </div>
+      </div>
 
-    if (!slug) {
-      return null;
-    }
+      <div className="max-h-[820px] overflow-auto bg-[#303030] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.075)_1px,transparent_0)] p-5 [background-size:6px_6px]">
+        <div
+          className="grid origin-top-left gap-12"
+          style={{
+            transform: "scale(0.85)",
+            width: `${10000 / 85}%`,
+          }}
+        >
+          {groupedRounds.map((group) => (
+            <div key={group.group.id} className="min-w-[900px]">
+              <div className={`mb-3 border-t-2 pt-2 text-sm font-bold ${group.tone.border} ${group.tone.text}`}>
+                {group.label}
+              </div>
+              <div className="flex items-start gap-8">
+                {group.rounds.map((round) => (
+                  <div key={round.id} className="w-[210px] shrink-0">
+                    <p className="mb-4 bg-[#3a3a3a] px-3 py-2 text-center text-[11px] font-bold text-slate-200">
+                      {getRoundLabel(group.group.number, round.number)}
+                    </p>
+                    <div className="grid gap-7">
+                      {round.matches.map((match) => (
+                        <MatchCard key={match.id} match={match} participants={participants} groupNumber={group.group.number} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-    return `https://challonge.com/${slug}/module?show_final_results=1&show_standings=1&theme=7670`;
-  } catch {
-    return null;
+function MatchCard({
+  match,
+  participants,
+  groupNumber,
+}: {
+  match: BracketMatch;
+  participants: Map<number, BracketParticipant>;
+  groupNumber: number;
+}) {
+  const tone = getGroupTone(groupNumber);
+  const status = MATCH_STATUS_LABELS[match.status] || "Pending";
+
+  return (
+    <div className="relative pl-5">
+      <span className="absolute left-0 top-7 text-[11px] text-slate-400">{match.id + 1}</span>
+      <div className="absolute left-[calc(100%+2px)] top-1/2 hidden h-px w-8 bg-[#9a9a9a] xl:block" />
+      <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.08em] text-slate-300">
+        <span>{status}</span>
+        <span className={tone.text}>{getGroupLabel(groupNumber)}</span>
+      </div>
+      <div className="overflow-hidden rounded-[2px] shadow-[0_2px_0_rgba(0,0,0,0.25)]">
+        <OpponentRow opponent={match.opponent1} participants={participants} />
+        <OpponentRow opponent={match.opponent2} participants={participants} />
+      </div>
+    </div>
+  );
+}
+
+function OpponentRow({
+  opponent,
+  participants,
+}: {
+  opponent: BracketMatch["opponent1"];
+  participants: Map<number, BracketParticipant>;
+}) {
+  const participant = opponent?.id !== null && opponent?.id !== undefined ? participants.get(opponent.id) : null;
+  const won = opponent?.result === "win";
+
+  return (
+    <div className={`flex h-7 items-center text-[11px] ${won ? "bg-[#777]" : "bg-[#666]"}`}>
+      <span className="min-w-0 flex-1 truncate px-2 font-semibold text-white">{participant?.name || "TBD"}</span>
+      <span className={`${won ? "bg-[#ff8a45] text-[#222]" : "bg-[#8a8a8a] text-white"} flex h-full w-8 items-center justify-center font-bold`}>
+        {opponent?.score ?? ""}
+      </span>
+    </div>
+  );
+}
+
+function getGroupLabel(groupNumber: number) {
+  if (groupNumber === 1) return "Winners Bracket";
+  if (groupNumber === 2) return "Elimination Bracket";
+  return "Finals Route";
+}
+
+function getGroupTone(groupNumber: number) {
+  if (groupNumber === 1) {
+    return { text: "text-orange-300", border: "border-orange-400" };
   }
+  if (groupNumber === 2) {
+    return { text: "text-red-300", border: "border-red-400" };
+  }
+  return { text: "text-yellow-200", border: "border-yellow-300" };
+}
+
+function getRoundLabel(groupNumber: number, roundNumber: number) {
+  if (groupNumber === 3) {
+    return roundNumber > 1 ? "Reset Final" : "Grand Final";
+  }
+
+  return `Round ${roundNumber}`;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return "To be announced";
+  }
+
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function toTitleCase(value: string) {

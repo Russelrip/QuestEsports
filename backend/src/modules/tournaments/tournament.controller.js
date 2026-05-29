@@ -10,6 +10,12 @@ const {
   getTournamentRegistrationStatus,
   createTournamentRegistration,
 } = require("./tournament.service");
+const {
+  generateTournamentBracket,
+  getAdminTournamentBracket,
+  updateTournamentBracketMatch,
+  publishTournamentBracket,
+} = require("./bracket.service");
 
 const getPublicTournaments = asyncHandler(async (req, res) => {
   const tournaments = await listPublicTournaments(req.query);
@@ -110,6 +116,49 @@ const submitTournamentRegistration = asyncHandler(async (req, res) => {
   });
 });
 
+const getTournamentBracket = asyncHandler(async (req, res) => {
+  const bracket = await getAdminTournamentBracket(req.params.tournamentId);
+
+  res.status(200).json({
+    success: true,
+    bracket,
+  });
+});
+
+const generateBracket = asyncHandler(async (req, res) => {
+  const bracket = await generateTournamentBracket(req.params.tournamentId);
+
+  res.status(201).json({
+    success: true,
+    message: "Bracket generated from approved teams.",
+    bracket,
+  });
+});
+
+const updateBracketMatch = asyncHandler(async (req, res) => {
+  const bracket = await updateTournamentBracketMatch(
+    req.params.tournamentId,
+    req.params.matchId,
+    req.body
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Bracket match updated.",
+    bracket,
+  });
+});
+
+const publishBracket = asyncHandler(async (req, res) => {
+  const bracket = await publishTournamentBracket(req.params.tournamentId, req.body);
+
+  res.status(200).json({
+    success: true,
+    message: bracket.status === "published" ? "Bracket published." : "Bracket unpublished.",
+    bracket,
+  });
+});
+
 module.exports = {
   getPublicTournaments,
   getPublicTournament,
@@ -120,4 +169,8 @@ module.exports = {
   deleteTournament,
   getTournamentRegistrationStatus: getTournamentRegistrationStatusController,
   submitTournamentRegistration,
+  getTournamentBracket,
+  generateBracket,
+  updateBracketMatch,
+  publishBracket,
 };

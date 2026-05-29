@@ -329,3 +329,21 @@ legend {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+@media print {
+  body {
+    background: #05070c;
+  }
+
+  nav,
+  footer,
+  .page-header,
+  .tournament-print-root > a,
+  .tournament-print-root button {
+    display: none !important;
+  }
+
+  .tournament-print-bracket {
+    break-inside: avoid;
+  }
+}

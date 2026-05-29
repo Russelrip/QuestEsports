@@ -1,6 +1,6 @@
 # Quest Esports Frontend
 
-This is the public and admin-facing Next.js application for Quest Esports. It renders the marketing site, tournament pages, auth flows, profile UI, admin dashboard, and media views, and it talks to the Express API in `../backend`.
+This is the public and admin-facing Next.js application for Quest Esports. It renders the marketing site, tournament pages, native bracket views, auth flows, profile UI, admin dashboard, and media views, and it talks to the Express API in `../backend`.
 
 ## Requirements
 
@@ -53,6 +53,7 @@ The frontend expects the backend to expose:
 
 - auth routes under `/api`
 - tournament routes under `/api/tournaments` and `/api/tournament-registration`
+- native bracket admin routes under `/api/admin/tournaments/:tournamentId/bracket`
 - team routes under `/api/teams/profile` and `/api/team-invite`
 - media routes under `/api/posters`, `/api/images`, and `/api/uploads/...`
 
@@ -70,3 +71,5 @@ npm run start
 - Auth is session-cookie based, so frontend requests include `credentials: "include"` when needed.
 - Login supports password auth, MFA challenges, and Google/Discord OAuth hand-offs via the backend.
 - Admin screens depend on a logged-in user whose backend role is `admin`.
+- The public tournament board currently shows prize pool, registration deadline, and tournament start on active tournament cards.
+- Tournament detail pages hide empty registered-team and bracket sections; published native brackets render in a compact Challonge-style board.

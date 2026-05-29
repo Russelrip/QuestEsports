@@ -30,7 +30,75 @@ export type RegisteredTournamentTeam = {
   id: string;
   teamName: string;
   logoUrl: string | null;
+  shortCode: string;
+  memberCount: number;
   status: string;
+};
+
+export type BracketParticipant = {
+  id: number;
+  tournament_id: number;
+  name: string;
+  registrationId?: string;
+  shortCode?: string;
+  logoUrl?: string | null;
+  seed?: number;
+};
+
+export type BracketOpponent = {
+  id: number | null;
+  position?: number;
+  score?: number;
+  result?: "win" | "loss" | "draw";
+};
+
+export type BracketStage = {
+  id: number;
+  name: string;
+  type: string;
+};
+
+export type BracketGroup = {
+  id: number;
+  stage_id: number;
+  number: number;
+};
+
+export type BracketRound = {
+  id: number;
+  stage_id: number;
+  group_id: number;
+  number: number;
+};
+
+export type BracketMatch = {
+  id: number;
+  number: number;
+  stage_id: number;
+  group_id: number;
+  round_id: number;
+  child_count: number;
+  status: number;
+  opponent1: BracketOpponent | null;
+  opponent2: BracketOpponent | null;
+};
+
+export type TournamentBracketData = {
+  participant: BracketParticipant[];
+  stage: BracketStage[];
+  group: BracketGroup[];
+  round: BracketRound[];
+  match: BracketMatch[];
+  match_game: unknown[];
+};
+
+export type TournamentBracketSummary = {
+  total: number;
+  completed: number;
+  live: number;
+  paused: number;
+  pending: number;
+  lastUpdatedAt?: string | null;
 };
 
 export type Tournament = {
@@ -43,6 +111,7 @@ export type Tournament = {
   shortDescription: string;
   fullDescription: string;
   rules: string | null;
+  registrationOpenAt: string | null;
   startDate: string;
   endDate: string;
   registrationDeadline: string;
@@ -57,6 +126,8 @@ export type Tournament = {
   contactLink: string | null;
   isFeatured: boolean;
   scheduleData: TournamentScheduleData | null;
+  bracketSummary: TournamentBracketSummary | null;
+  bracketData: TournamentBracketData | null;
   showcase: TournamentShowcase;
   registeredTeams?: RegisteredTournamentTeam[];
   isCompleted: boolean;

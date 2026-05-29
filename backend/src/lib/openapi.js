@@ -127,8 +127,24 @@ const openApiDocument = {
           status: { type: "string" },
           isPublished: { type: "boolean" },
           registrationState: { type: "string" },
+          registrationOpenAt: { type: ["string", "null"], format: "date-time" },
           registrationCount: { type: "integer" },
           maxTeams: { type: "integer" },
+        },
+      },
+      TournamentBracket: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          tournamentId: { type: "string" },
+          format: { type: "string" },
+          status: { type: "string", enum: ["draft", "published"] },
+          seedData: { type: "array", items: { type: "object" } },
+          bracketData: { type: "object" },
+          summary: { type: "object" },
+          generatedAt: { type: "string", format: "date-time" },
+          publishedAt: { type: ["string", "null"], format: "date-time" },
+          lastUpdatedAt: { type: "string", format: "date-time" },
         },
       },
       TeamRegistration: {
@@ -203,6 +219,49 @@ const openApiDocument = {
         { $ref: "#/components/parameters/Search" },
       ]
     ),
+    "/api/admin/tournaments/{tournamentId}/bracket": {
+      get: {
+        tags: ["Admin"],
+        summary: "Get a tournament's native bracket",
+        parameters: [createPathParameter("tournamentId", { type: "string" })],
+        responses: {
+          200: createResponse("Tournament bracket payload"),
+        },
+      },
+    },
+    "/api/admin/tournaments/{tournamentId}/bracket/generate": {
+      post: {
+        tags: ["Admin"],
+        summary: "Generate a native double-elimination bracket from approved teams",
+        parameters: [createPathParameter("tournamentId", { type: "string" })],
+        responses: {
+          201: createResponse("Generated tournament bracket"),
+        },
+      },
+    },
+    "/api/admin/tournaments/{tournamentId}/bracket/matches/{matchId}": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Update a native bracket match result",
+        parameters: [
+          createPathParameter("tournamentId", { type: "string" }),
+          createPathParameter("matchId", { type: "integer" }),
+        ],
+        responses: {
+          200: createResponse("Updated tournament bracket"),
+        },
+      },
+    },
+    "/api/admin/tournaments/{tournamentId}/bracket/publish": {
+      patch: {
+        tags: ["Admin"],
+        summary: "Publish or unpublish a native bracket",
+        parameters: [createPathParameter("tournamentId", { type: "string" })],
+        responses: {
+          200: createResponse("Updated bracket publication state"),
+        },
+      },
+    },
   },
   "x-quest-operations": {
     monitoring: monitoringStatus(),

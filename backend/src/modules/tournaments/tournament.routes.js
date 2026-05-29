@@ -17,6 +17,10 @@ const {
   deleteTournament,
   getTournamentRegistrationStatus,
   submitTournamentRegistration,
+  getTournamentBracket,
+  generateBracket,
+  updateBracketMatch,
+  publishBracket,
 } = require("./tournament.controller");
 
 const router = express.Router();
@@ -47,6 +51,20 @@ router.post(
 
 router.get("/admin/tournaments", requireAdmin, getAdminTournaments);
 router.get("/admin/tournaments/:tournamentId", requireAdmin, getAdminTournament);
+router.get("/admin/tournaments/:tournamentId/bracket", requireAdmin, getTournamentBracket);
+router.post("/admin/tournaments/:tournamentId/bracket/generate", requireAdmin, generateBracket);
+router.patch(
+  "/admin/tournaments/:tournamentId/bracket/matches/:matchId",
+  requireAdmin,
+  express.json(),
+  updateBracketMatch
+);
+router.patch(
+  "/admin/tournaments/:tournamentId/bracket/publish",
+  requireAdmin,
+  express.json(),
+  publishBracket
+);
 router.post(
   "/admin/tournaments",
   requireAdmin,

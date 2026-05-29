@@ -101,9 +101,9 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
                   </div>
 
                   <div className="grid gap-6 sm:grid-cols-3">
-                    <InfoChip label="Dates" value={`${formatDisplayDate(tournament.startDate)} - ${formatDisplayDate(tournament.endDate)}`} />
-                    <InfoChip label="Slots" value={`${tournament.registrationCount} / ${tournament.maxTeams}`} />
                     <InfoChip label="Prize Pool" value={tournament.prizePool} />
+                    <InfoChip label="Registration Deadline" value={formatDisplayDate(tournament.registrationDeadline)} />
+                    <InfoChip label="Tournament Start" value={formatDisplayDate(tournament.startDate)} />
                   </div>
                 </div>
 
@@ -159,19 +159,16 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
                       </p>
                       <p className="mt-4 text-sm leading-7 text-slate-300">{tournament.shortDescription}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <div className="flex justify-end">
                       <Link
                         href={`/tournaments/${tournament.slug}`}
                         className={buttonClassName({
-                          className:
-                            "border-cyan-300/35 bg-cyan-500 shadow-[0_20px_50px_rgba(8,145,178,0.24),0_0_0_1px_rgba(255,255,255,0.04)_inset] hover:bg-cyan-400 hover:shadow-[0_24px_60px_rgba(8,145,178,0.32)]",
+                          variant: "secondary",
+                          className: "border-white/14 bg-transparent hover:border-white/20 hover:bg-white/6",
                         })}
                       >
                         View Showcase
                       </Link>
-                      <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-xs uppercase tracking-[0.18em] text-cyan-100">
-                        Completed
-                      </span>
                     </div>
                   </div>
                 </div>

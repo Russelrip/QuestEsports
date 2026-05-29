@@ -25,6 +25,10 @@ const {
   normalizeOptionalUrl,
   isValidEmail,
 } = require("../../lib/validation");
+const {
+  buildShortCode,
+  mapPublicBracket,
+} = require("./bracket.service");
 
 const TOURNAMENT_STATUSES = new Set([
   "draft",
@@ -263,6 +267,7 @@ const mapTournament = (tournament) => {
     shortDescription: tournamentWithRegistrationCount.shortDescription,
     fullDescription: tournamentWithRegistrationCount.fullDescription,
     rules: tournamentWithRegistrationCount.rules,
+    registrationOpenAt: tournamentWithRegistrationCount.registrationOpenAt,
     startDate: tournamentWithRegistrationCount.startDate,
     endDate: tournamentWithRegistrationCount.endDate,
     registrationDeadline: tournamentWithRegistrationCount.registrationDeadline,
@@ -295,6 +300,7 @@ const mapTournament = (tournament) => {
 
 const mapTournamentWithRegistrations = (tournament) => ({
   ...mapTournament(tournament),
+  bracket: tournament.bracket || null,
   registrations: (tournament.teamRegistrations || []).map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
@@ -316,10 +322,13 @@ const mapTournamentWithRegistrations = (tournament) => ({
 
 const mapTournamentWithPublicTeams = (tournament) => ({
   ...mapTournament(tournament),
+  ...mapPublicBracket(tournament.bracket),
   registeredTeams: (tournament.teamRegistrations || []).map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
-    logoUrl: null,
+    logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    shortCode: buildShortCode(registration.teamName),
+    memberCount: registration.members?.length || 0,
     status: registration.status,
   })),
 });
@@ -478,6 +487,9 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     body.startDate || existingTournament?.startDate,
     "Start date"
   );
+  const registrationOpenAt = parseOptionalDateValue(
+    body.registrationOpenAt || existingTournament?.registrationOpenAt
+  );
   const endDate = parseDateValue(
     body.endDate || existingTournament?.endDate,
     "End date"
@@ -537,6 +549,7 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     shortDescription,
     fullDescription,
     rules,
+    registrationOpenAt,
     startDate,
     endDate,
     registrationDeadline,
@@ -591,8 +604,12 @@ const getPublicTournamentBySlug = async (slug) => {
           teamName: true,
           teamLogoName: true,
           status: true,
+          members: {
+            select: { id: true },
+          },
         },
       },
+      bracket: true,
     },
   });
 
@@ -652,6 +669,7 @@ const getAdminTournamentById = async (tournamentId) => {
         orderBy: { createdAt: "desc" },
         select: adminRegistrationSummarySelect,
       },
+      bracket: true,
       ...registrationCountInclude,
     },
   });

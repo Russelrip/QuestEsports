@@ -122,6 +122,7 @@ Recommended flow:
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS v4
 - Backend: Express 5, Prisma ORM, PostgreSQL
 - Auth: Cookie-based sessions with server-side session storage
+- Brackets: `brackets-manager` with Prisma-persisted native bracket data
 - Uploads: Multer, filesystem-backed image storage
 - Email: Nodemailer with SMTP
 
@@ -131,9 +132,12 @@ Recommended flow:
 
 - Marketing homepage and brand sections
 - Tournament listing and tournament detail pages
-- Tournament schedule tables rendered from uploaded XLSX or CSV files
+- Tournament listing cards with prize pool, registration deadline, and tournament start summaries
+- Tournament detail pages with native tournament metadata, rulebook link, registered-team cards, and published bracket boards
+- Tournament schedule data parsed from uploaded XLSX or CSV files for admin/event workflows
 - Completed-tournament showcase sections with official poster plus 1st, 2nd, and 3rd place visuals
-- Public tournament team lists with approved registered teams
+- Public tournament team lists with approved registered teams, team logos, short codes, and member counts
+- Native double-elimination bracket viewing when an admin publishes bracket data
 - Team tournament registration flow
 - Email verification, login, logout, password reset, and email change flows
 - MFA setup, MFA login challenge, backup codes, session management, and Google/Discord OAuth sign-in
@@ -147,6 +151,7 @@ Recommended flow:
 - User management
 - Tournament creation and editing
 - Tournament asset management for banners, schedules, and completed-event showcase images
+- Native bracket generation from approved teams, match-result updates, and publish/unpublish controls
 - Registration review and status management
 - Contact inbox moderation
 - Poster/image asset management
@@ -192,13 +197,14 @@ QuestEsports/
 - The frontend runs on Next.js App Router and calls the backend with `credentials: "include"` so browser cookies are sent on authenticated requests.
 - The backend exposes JSON APIs under `/api`, stores business data in PostgreSQL through Prisma, and persists session state in the `sessions` table.
 - Tournament banners, completed-showcase images, team logos, poster image files, and uploaded tournament schedules are written to `backend/uploads/`.
+- Native bracket data is generated with `brackets-manager`, exported as JSON, and persisted in PostgreSQL through the `tournament_brackets` table.
 - Poster/image metadata is stored in PostgreSQL. Poster assets support filesystem-backed storage with a database binary fallback for older records.
 - Email flows generate signed random tokens, store only token hashes in the database, and send action links that point to the frontend origin configured by `APP_URL`.
 
 ## Main Data Domains
 
 - `User`, `Session`, `VerificationToken`, `PasswordResetToken`, `EmailChangeToken`
-- `Tournament`, `TeamRegistration`, `RegistrationMember`
+- `Tournament`, `TournamentBracket`, `TeamRegistration`, `RegistrationMember`
 - `SavedTeam`, `SavedTeamMember`
 - `ContactSubmission`
 - `ImageAsset`, `Poster`
@@ -250,6 +256,7 @@ The backend exposes these main route groups:
 - Contact: `/api/contact`
 - Media: `/api/posters`, `/api/images`, `/api/uploads/...`
 - Admin: `/api/admin/...`
+- Admin native brackets: `/api/admin/tournaments/:tournamentId/bracket`, `/generate`, `/matches/:matchId`, and `/publish`
 
 See [API Documentation](./docs/api-documentation.md) for the complete reference.
 
@@ -375,14 +382,15 @@ Default local URLs:
 - The backend creates upload directories automatically at startup.
 - There is no root workspace runner; start `backend` and `frontend` in separate terminals.
 - Team registration requires a logged-in user with a verified email address.
-- Admin tournament management supports spreadsheet uploads for schedules and showcase-image uploads for completed events.
-- Public tournament responses now include `displayPriority`, `scheduleData`, `isCompleted`, `showcase`, and per-tournament `registeredTeams` on detail pages.
+- Admin tournament management supports spreadsheet uploads for schedules, showcase-image uploads for completed events, and native bracket generation from approved teams.
+- Public tournament responses now include `displayPriority`, `registrationOpenAt`, `scheduleData`, `isCompleted`, `showcase`, published bracket data, bracket summaries, and per-tournament `registeredTeams` on detail pages.
 - Direct imports that touch backend config now load `.env` automatically, so scripts and one-off Node entrypoints behave the same as `node src/server.js`.
-- Team logos are intentionally protected behind admin access.
-- Public tournament detail responses include approved team names and statuses, but omit team-logo URLs because logo files are served through admin-only media routes.
+- Public tournament detail responses include approved team names, public team-logo URLs, short codes, member counts, and statuses.
+- Native brackets remain hidden from public responses until an admin publishes the bracket.
 - The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
 - The backend includes a Node test suite under `backend/tests`.
-- Session/auth lifecycle behavior now has dedicated unit coverage for session rehydration, throttled `lastSeenAt` writes, expired-session handling, and active-session listing.
+- Session/auth lifecycle behavior has dedicated unit coverage for session rehydration, throttled `lastSeenAt` writes, expired-session handling, and active-session listing.
+- Native bracket generation and score advancement have backend unit coverage.
 - There is currently no admin seed/bootstrap script beyond creating a user and promoting it through Prisma Studio.
 - Background jobs and monitoring are placeholder integrations and should be wired to production services before scaling email/media workloads.
 

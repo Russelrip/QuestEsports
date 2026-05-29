@@ -253,6 +253,7 @@ model Tournament {
   shortDescription  String             @map("short_description")
   fullDescription   String             @map("full_description")
   rules             String?
+  registrationOpenAt DateTime?         @map("registration_open_at")
   startDate         DateTime           @map("start_date")
   endDate           DateTime           @map("end_date")
   registrationDeadline DateTime        @map("registration_deadline")
@@ -270,12 +271,29 @@ model Tournament {
   updatedAt         DateTime           @updatedAt @map("updated_at")
   teamRegistrations TeamRegistration[]
   posters           Poster[]
+  bracket           TournamentBracket?
 
   @@index([isActive])
   @@index([isPublished, status, startDate])
   @@index([isFeatured, isPublished])
   @@index([displayPriority, startDate])
   @@map("tournaments")
+}
+
+model TournamentBracket {
+  id            String     @id @default(uuid()) @db.Uuid
+  tournamentId  String     @unique @map("tournament_id") @db.Uuid
+  format        String     @default("double_elimination")
+  status        String     @default("draft")
+  seedData      Json       @map("seed_data")
+  bracketData   Json       @map("bracket_data")
+  generatedAt   DateTime   @default(now()) @map("generated_at")
+  publishedAt   DateTime?  @map("published_at")
+  lastUpdatedAt DateTime   @updatedAt @map("last_updated_at")
+  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("tournament_brackets")
 }
 
 model TeamRegistration {

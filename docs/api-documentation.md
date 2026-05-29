@@ -399,6 +399,7 @@ Returns published tournaments only.
 Important response fields:
 
 - `displayPriority`
+- `registrationOpenAt`
 - `registrationState`
 - `isRegistrationOpen`
 - `isSlotsFull`
@@ -415,11 +416,15 @@ Returns a single published tournament by slug.
 Additional response fields:
 
 - `registeredTeams`
+- `bracketSummary`
+- `bracketData`
 - `scheduleData`
 - `showcase`
 - `isCompleted`
 
-`registeredTeams` includes approved team names and statuses. Team-logo URLs are intentionally omitted from this public response because `/api/uploads/team-logos/:filename` is admin-only.
+`registeredTeams` includes approved team names, public team-logo URLs, derived short codes, member counts, and statuses.
+
+`bracketSummary` and `bracketData` are returned only when a native bracket exists and has been published by an admin. Draft brackets are hidden from public tournament responses.
 
 ## Tournament Registration Endpoints
 
@@ -520,6 +525,7 @@ Accepted values:
 - `GET /api/posters/:posterId/image`
 - `GET /api/uploads/tournament-banners/:filename`
 - `GET /api/uploads/poster-images/:filename`
+- `GET /api/uploads/team-logos/:filename`
 
 ### Admin-only media
 
@@ -529,7 +535,6 @@ Accepted values:
 - `POST /api/images`
 - `POST /api/posters`
 - `DELETE /api/posters/:posterId`
-- `GET /api/uploads/team-logos/:filename`
 
 ### `POST /api/images`
 
@@ -651,6 +656,7 @@ Main fields:
 - `rules`
 - `startDate`
 - `endDate`
+- `registrationOpenAt`
 - `registrationDeadline`
 - `format`
 - `teamSize`
@@ -676,6 +682,46 @@ Optional remove flags during update:
 - `removeFirstPlaceImage`
 - `removeSecondPlaceImage`
 - `removeThirdPlaceImage`
+
+### Native tournament brackets
+
+- `GET /api/admin/tournaments/:tournamentId/bracket`
+- `POST /api/admin/tournaments/:tournamentId/bracket/generate`
+- `PATCH /api/admin/tournaments/:tournamentId/bracket/matches/:matchId`
+- `PATCH /api/admin/tournaments/:tournamentId/bracket/publish`
+
+Native brackets are admin-only to create and edit. Generation uses approved team registrations only and creates a double-elimination bracket with BYEs as needed.
+
+`GET /api/admin/tournaments/:tournamentId/bracket` returns the current bracket or `null`.
+
+`POST /api/admin/tournaments/:tournamentId/bracket/generate` regenerates the draft bracket from approved teams. At least two approved teams are required. Regeneration resets publication state to draft.
+
+`PATCH /api/admin/tournaments/:tournamentId/bracket/matches/:matchId` updates a match result and advances bracket state.
+
+Body:
+
+```json
+{
+  "opponent1Score": 13,
+  "opponent2Score": 7,
+  "winner": "opponent1"
+}
+```
+
+Allowed `winner` values:
+
+- `opponent1`
+- `opponent2`
+
+`PATCH /api/admin/tournaments/:tournamentId/bracket/publish` toggles public visibility.
+
+Body:
+
+```json
+{
+  "isPublished": true
+}
+```
 
 ### Admin media jobs
 
@@ -703,4 +749,5 @@ Paginated admin/media endpoints return:
 
 - `/api/openapi.json` is useful for quick inspection but does not fully describe every route and payload in the codebase.
 - The backend is source-of-truth for registration availability and duplicate checks.
-- Team logos are private to admins by design.
+- Approved tournament team logos are exposed on public tournament detail responses and served through upload URLs.
+- Native brackets are public only after admin publication.

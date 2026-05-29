@@ -1,6 +1,10 @@
 import { parseApiResponse } from "@/lib/api";
 import { apiFetch } from "@/lib/auth";
 import { Tournament } from "@/lib/tournaments";
+import type {
+  TournamentBracketData,
+  TournamentBracketSummary,
+} from "@/lib/tournaments";
 
 export const adminNavigationLinks = [
   { href: "/admin", label: "Overview" },
@@ -94,6 +98,26 @@ export type TeamRegistration = {
   members: RegistrationMember[];
 };
 
+export type AdminTournamentBracket = {
+  id: string;
+  tournamentId: string;
+  format: string;
+  status: "draft" | "published";
+  seedData: {
+    id: string;
+    seed: number;
+    name: string;
+    shortCode: string;
+    logoUrl: string | null;
+    memberCount: number;
+  }[];
+  bracketData: TournamentBracketData;
+  summary: TournamentBracketSummary;
+  generatedAt: string;
+  publishedAt: string | null;
+  lastUpdatedAt: string;
+};
+
 export const emptyPagination: Pagination = {
   page: 1,
   pageSize: 10,
@@ -143,6 +167,7 @@ export type TournamentFormValues = {
   shortDescription: string;
   fullDescription: string;
   rules: string;
+  registrationOpenAt: string;
   startDate: string;
   endDate: string;
   registrationDeadline: string;
@@ -201,6 +226,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   shortDescription: "",
   fullDescription: "",
   rules: "",
+  registrationOpenAt: "",
   startDate: "",
   endDate: "",
   registrationDeadline: "",

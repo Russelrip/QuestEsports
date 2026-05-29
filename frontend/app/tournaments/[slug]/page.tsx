@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import PageLayout from "@/components/PageLayout";
 import StructuredData from "@/components/StructuredData";
 import TournamentDetailsContent from "@/components/tournaments/TournamentDetailsContent";
+import { PageTransition } from "@/components/ui/page-transition";
 import {
   buildTournamentMetadata,
   buildTournamentStructuredData,
@@ -44,15 +44,9 @@ export default async function TournamentDetailsPage({
   }
 
   return (
-    <PageLayout
-      title={tournament.title}
-      description={
-        tournament.shortDescription ||
-        "View tournament status, details, and registration availability"
-      }
-    >
+    <PageTransition>
       <StructuredData data={buildTournamentStructuredData(tournament)} />
       <TournamentDetailsContent tournament={tournament} />
-    </PageLayout>
+    </PageTransition>
   );
 }

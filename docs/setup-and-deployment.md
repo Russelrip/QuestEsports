@@ -401,10 +401,14 @@ Check all of the following:
 - team invite emails contain the correct frontend URL
 - Google and Discord login redirect back to the expected frontend route when enabled
 - tournament banners render
-- tournament detail pages render registered teams, schedules, and completed showcase sections correctly
+- tournament listing cards show prize pool, registration deadline, and tournament start
+- tournament detail pages render registered teams only when approved teams exist
+- tournament detail pages render native brackets only after an admin publishes bracket data
+- completed showcase sections render correctly
 - poster images render
-- admin can access team logos
-- public cannot access admin-only media endpoints
+- approved public team logos render on tournament detail pages
+- public upload routes for tournament banners, poster images, and team logos render expected files
+- public cannot access admin-only media management endpoints
 
 ## Media Migration Utility
 

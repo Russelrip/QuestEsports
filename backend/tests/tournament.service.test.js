@@ -9,7 +9,7 @@ const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
 const teamServiceModulePath = path.join(__dirname, "../src/modules/teams/team.service.js");
 
-test("getPublicTournamentBySlug omits protected team logo URLs", async () => {
+test("getPublicTournamentBySlug exposes approved public team card data", async () => {
   const prismaMock = {
     prisma: {
       tournament: {
@@ -51,6 +51,7 @@ test("getPublicTournamentBySlug omits protected team logo URLs", async () => {
               teamName: "Quest Five",
               teamLogoName: "private-logo.png",
               status: "approved",
+              members: [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
             },
           ],
         }),
@@ -78,10 +79,14 @@ test("getPublicTournamentBySlug omits protected team logo URLs", async () => {
       {
         id: "registration-1",
         teamName: "Quest Five",
-        logoUrl: null,
+        logoUrl: "/api/uploads/team-logos/private-logo.png",
+        shortCode: "QF",
+        memberCount: 3,
         status: "approved",
       },
     ]);
+    assert.equal(tournament.bracketSummary, null);
+    assert.equal(tournament.bracketData, null);
   } finally {
     restore();
   }
