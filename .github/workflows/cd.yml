@@ -26,6 +26,11 @@ jobs:
     name: Deploy backend
     runs-on: ubuntu-latest
     if: ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && vars.BACKEND_DEPLOY_ENABLED == 'true' }}
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci
+      SESSION_COOKIE_NAME: quest_session
     defaults:
       run:
         working-directory: backend
