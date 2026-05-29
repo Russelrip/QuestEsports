@@ -43,31 +43,31 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
           Back to Tournaments
         </Link>
 
-        <Card className="overflow-hidden border-white/10 bg-[linear-gradient(180deg,rgba(18,18,27,0.94),rgba(8,8,15,0.96))] p-4 sm:p-6 xl:p-8">
-          <div className="grid gap-8 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#100817]">
+        <Card className="w-full max-w-[calc(100vw-2rem)] overflow-hidden border-white/10 bg-[linear-gradient(180deg,rgba(18,18,27,0.94),rgba(8,8,15,0.96))] p-4 sm:max-w-full sm:p-6 xl:p-8">
+          <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)] xl:gap-8">
+            <div className="min-w-0 max-w-[calc(100vw-4rem)] overflow-hidden rounded-[28px] border border-white/10 bg-[#100817] sm:max-w-full">
               <TournamentBannerImage
                 bannerUrl={tournament.bannerUrl}
                 title={tournament.title}
-                className="h-full min-h-[340px] w-full object-cover sm:min-h-[520px]"
+                className="h-full min-h-[260px] w-full object-cover sm:min-h-[420px] xl:min-h-[520px]"
               />
             </div>
 
-            <div className="flex min-w-0 flex-col justify-between gap-6">
+            <div className="flex min-w-0 max-w-[calc(100vw-4rem)] flex-col justify-between gap-6 sm:max-w-full">
               <div className="space-y-6">
-                <header>
+                <header className="min-w-0">
                   <div className="flex flex-wrap items-center gap-3">
                     <p className="text-xs uppercase tracking-[0.32em] text-fuchsia-200/80">
                       {toTitleCase(tournament.game)}
                     </p>
                   </div>
-                  <h2 className="mt-4 text-4xl leading-tight text-white sm:text-5xl">
+                  <h2 className="mt-4 max-w-[calc(100vw-4rem)] text-[2rem] leading-tight text-white [overflow-wrap:anywhere] sm:max-w-full sm:text-5xl">
                     {tournament.title}
                   </h2>
                   <p className="mt-4 text-sm text-slate-400">
                     Tournament status: {toTitleCase(tournament.status.replace(/_/g, " "))}
                   </p>
-                  <p className="mt-6 max-w-4xl text-base leading-8 text-slate-300">
+                  <p className="mt-6 max-w-[calc(100vw-4rem)] text-sm leading-7 text-slate-300 [overflow-wrap:anywhere] sm:max-w-4xl sm:text-base sm:leading-8">
                     {tournament.fullDescription || tournament.shortDescription || "Tournament information will be updated soon."}
                   </p>
                 </header>
@@ -75,17 +75,17 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
                 <StatsGrid tournament={tournament} />
               </div>
 
-              <footer className="flex flex-wrap gap-3 border-t border-white/10 pt-6">
+              <footer className="flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:flex-wrap">
                   <Link
                     href="/rulebook"
                     className={buttonClassName({
                       variant: "secondary",
-                      className: "border-white/14 bg-transparent hover:border-white/20 hover:bg-white/6",
+                      className: "w-full border-white/14 bg-transparent hover:border-white/20 hover:bg-white/6 sm:w-auto",
                     })}
                   >
                     Rulebook
                   </Link>
-                  <RegisterTournamentButton tournament={tournament} closedAsButton />
+                  <RegisterTournamentButton tournament={tournament} closedAsButton className="w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto" />
               </footer>
             </div>
           </div>
@@ -116,11 +116,11 @@ function StatsGrid({ tournament }: { tournament: Tournament }) {
   const stats = getTournamentDetailStats(tournament);
 
   return (
-    <div className="grid gap-x-10 gap-y-7 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid min-w-0 gap-x-10 gap-y-7 sm:grid-cols-2 xl:grid-cols-3">
       {stats.map((stat) => (
-        <div key={stat.label}>
+        <div key={stat.label} className="min-w-0">
           <p className="text-[11px] tracking-[0.14em] text-slate-400">{stat.label}</p>
-          <p className="mt-3 text-lg font-semibold text-white">{stat.value}</p>
+          <p className="mt-3 break-words text-lg font-semibold text-white [overflow-wrap:anywhere]">{stat.value}</p>
         </div>
       ))}
     </div>
@@ -185,11 +185,11 @@ function TeamsPanel({
         <span>
           Showing {(page - 1) * TEAMS_PER_PAGE + 1}-{Math.min(page * TEAMS_PER_PAGE, totalTeams)} of {totalTeams} teams
         </span>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex">
           <button className="rounded-lg border border-white/10 px-4 py-2 disabled:opacity-40" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
             Previous
           </button>
-          <span className="font-semibold text-white">Page {page} / {pageCount}</span>
+          <span className="whitespace-nowrap text-center font-semibold text-white">Page {page} / {pageCount}</span>
           <button className="rounded-lg border border-white/10 px-4 py-2 disabled:opacity-40" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)}>
             Next
           </button>
@@ -227,7 +227,8 @@ function LiveBracketView({
 
   return (
     <div className="overflow-hidden rounded-sm border border-[#454545] bg-[#303030] text-white shadow-[0_20px_70px_rgba(0,0,0,0.35)] tournament-print-bracket">
-      <div className="flex items-center justify-between border-y border-[#454545] bg-[#383838] text-[11px] font-bold text-slate-200">
+      <div className="overflow-x-auto border-y border-[#454545] bg-[#383838] text-[11px] font-bold text-slate-200">
+        <div className="flex min-w-max items-center justify-between">
         <div className="flex min-w-0 flex-1">
           {groupedRounds[0]?.rounds.slice(0, 6).map((round) => (
             <div key={round.id} className="w-[210px] shrink-0 border-r border-[#444] px-3 py-2 text-center">
@@ -239,9 +240,10 @@ function LiveBracketView({
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> LIVE</span>
           <span>FULL BRACKET</span>
         </div>
+        </div>
       </div>
 
-      <div className="max-h-[820px] overflow-auto bg-[#303030] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.075)_1px,transparent_0)] p-5 [background-size:6px_6px]">
+      <div className="max-h-[70vh] touch-pan-x overflow-auto bg-[#303030] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.075)_1px,transparent_0)] p-4 [background-size:6px_6px] sm:max-h-[820px] sm:p-5">
         <div
           className="grid origin-top-left gap-12"
           style={{
