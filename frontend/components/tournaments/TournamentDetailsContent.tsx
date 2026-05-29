@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
@@ -29,13 +29,12 @@ const MATCH_STATUS_LABELS: Record<number, string> = {
 
 export default function TournamentDetailsContent({ tournament }: { tournament: Tournament }) {
   const [teamPage, setTeamPage] = useState(1);
-  const teamPageCount = Math.max(1, Math.ceil((tournament.registeredTeams?.length || 0) / TEAMS_PER_PAGE));
-  const visibleTeams = (tournament.registeredTeams || []).slice(
+  const registeredTeams = tournament.registeredTeams || [];
+  const teamPageCount = Math.max(1, Math.ceil(registeredTeams.length / TEAMS_PER_PAGE));
+  const visibleTeams = registeredTeams.slice(
     (teamPage - 1) * TEAMS_PER_PAGE,
     teamPage * TEAMS_PER_PAGE
   );
-
-  const bracketData = useMemo(() => tournament.bracketData, [tournament.bracketData]);
 
   return (
     <Section className="pt-6">
@@ -92,20 +91,20 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
           </div>
         </Card>
 
-        {(tournament.registeredTeams?.length || 0) > 0 ? (
+        {registeredTeams.length > 0 ? (
           <TeamsPanel
             teams={visibleTeams}
-            totalTeams={tournament.registeredTeams?.length || 0}
+            totalTeams={registeredTeams.length}
             page={teamPage}
             pageCount={teamPageCount}
             onPageChange={setTeamPage}
           />
         ) : null}
 
-        {bracketData ? (
+        {tournament.bracketData ? (
           <section className="space-y-5">
             <h3 className="text-3xl text-white">Brackets</h3>
-            <LiveBracketView bracketData={bracketData} />
+            <LiveBracketView bracketData={tournament.bracketData} />
           </section>
         ) : null}
       </div>
@@ -114,20 +113,7 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
 }
 
 function StatsGrid({ tournament }: { tournament: Tournament }) {
-  const stats = [
-    { label: "Prize Pool", value: tournament.prizePool },
-    { label: "Format", value: tournament.format },
-    { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
-    {
-      label: "Registration Deadline",
-      value: formatDateTime(tournament.registrationDeadline),
-    },
-    {
-      label: "Bracket Release",
-      value: tournament.bracketSummary?.lastUpdatedAt ? formatDateTime(tournament.bracketSummary.lastUpdatedAt) : "To be announced",
-    },
-    { label: "Tournament Start", value: formatDateTime(tournament.startDate) },
-  ];
+  const stats = getTournamentDetailStats(tournament);
 
   return (
     <div className="grid gap-x-10 gap-y-7 sm:grid-cols-2 xl:grid-cols-3">
@@ -139,6 +125,22 @@ function StatsGrid({ tournament }: { tournament: Tournament }) {
       ))}
     </div>
   );
+}
+
+function getTournamentDetailStats(tournament: Tournament) {
+  return [
+    { label: "Prize Pool", value: tournament.prizePool },
+    { label: "Format", value: tournament.format },
+    { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
+    { label: "Registration Deadline", value: formatDateTime(tournament.registrationDeadline) },
+    {
+      label: "Bracket Release",
+      value: tournament.bracketSummary?.lastUpdatedAt
+        ? formatDateTime(tournament.bracketSummary.lastUpdatedAt)
+        : "To be announced",
+    },
+    { label: "Tournament Start", value: formatDateTime(tournament.startDate) },
+  ];
 }
 
 function TeamsPanel({
@@ -200,21 +202,8 @@ function TeamsPanel({
 function LiveBracketView({
   bracketData,
 }: {
-  bracketData: TournamentBracketData | null;
+  bracketData: TournamentBracketData;
 }) {
-  if (!bracketData) {
-    return (
-      <div className="overflow-hidden rounded-sm border border-[#454545] bg-[#2f2f2f] text-white tournament-print-bracket">
-        <div className="flex min-h-[260px] items-center justify-center border-t border-[#454545] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] [background-size:6px_6px]">
-          <div className="text-center">
-            <h4 className="text-xl text-white">Bracket not published yet.</h4>
-            <p className="mt-2 text-sm text-slate-300">Once admins generate and publish the native bracket, it will appear here.</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const participants = new Map(bracketData.participant.map((participant) => [participant.id, participant]));
   const groupedRounds = bracketData.group.map((group) => {
     const groupRounds = bracketData.round

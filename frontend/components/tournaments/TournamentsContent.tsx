@@ -101,9 +101,9 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
                   </div>
 
                   <div className="grid gap-6 sm:grid-cols-3">
-                    <InfoChip label="Prize Pool" value={tournament.prizePool} />
-                    <InfoChip label="Registration Deadline" value={formatDisplayDate(tournament.registrationDeadline)} />
-                    <InfoChip label="Tournament Start" value={formatDisplayDate(tournament.startDate)} />
+                    {getActiveTournamentStats(tournament).map((stat) => (
+                      <InfoChip key={stat.label} label={stat.label} value={stat.value} />
+                    ))}
                   </div>
                 </div>
 
@@ -190,6 +190,14 @@ function InfoChip({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-semibold text-white">{value}</p>
     </div>
   );
+}
+
+function getActiveTournamentStats(tournament: Tournament) {
+  return [
+    { label: "Prize Pool", value: tournament.prizePool },
+    { label: "Registration Deadline", value: formatDisplayDate(tournament.registrationDeadline) },
+    { label: "Tournament Start", value: formatDisplayDate(tournament.startDate) },
+  ];
 }
 
 function toTitleCase(value: string) {
