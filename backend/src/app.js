@@ -9,7 +9,11 @@ const {
   attachRequestContext,
   logRequestLifecycle,
 } = require("./middleware/observability");
-const { setSecurityHeaders, protectAgainstCsrf } = require("./middleware/security");
+const {
+  protectAgainstCsrf,
+  requireAllowedApiOrigin,
+  setSecurityHeaders,
+} = require("./middleware/security");
 
 const app = express();
 
@@ -31,6 +35,7 @@ app.use(
     credentials: true,
   })
 );
+app.use(requireAllowedApiOrigin);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(protectAgainstCsrf);

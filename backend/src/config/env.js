@@ -94,6 +94,7 @@ const env = {
   MFA_ISSUER: optional("MFA_ISSUER", "Quest Esports"),
   AUTH_ENCRYPTION_KEY: optional("AUTH_ENCRYPTION_KEY"),
   TRUST_PROXY: normalizeTrustProxy(process.env.TRUST_PROXY),
+  REQUIRE_API_ORIGIN: normalizeBoolean(process.env.REQUIRE_API_ORIGIN, false),
   JOB_WORKER_ENABLED: normalizeBoolean(process.env.JOB_WORKER_ENABLED, true),
   JOB_WORKER_POLL_MS: normalizePositiveInteger(process.env.JOB_WORKER_POLL_MS, 5000),
   JOB_WORKER_MAX_ATTEMPTS: normalizePositiveInteger(

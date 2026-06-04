@@ -43,6 +43,7 @@ REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
+REQUIRE_API_ORIGIN=false
 JOB_WORKER_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
@@ -265,6 +266,7 @@ REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=replace_with_a_long_random_secret
 TRUST_PROXY=1
+REQUIRE_API_ORIGIN=true
 JOB_WORKER_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
@@ -291,6 +293,7 @@ Notes:
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
+- `REQUIRE_API_ORIGIN=true` blocks API requests without an allowed `Origin` or `Referer`; use `CORS_ORIGIN=https://questesports.lk` for the public site domain.
 
 ### Frontend
 

@@ -27,6 +27,7 @@ REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
+REQUIRE_API_ORIGIN=false
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
@@ -278,6 +279,7 @@ REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
+REQUIRE_API_ORIGIN=false
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
 SMTP_USER=resend
@@ -296,6 +298,7 @@ Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `CORS_ORIGIN` supports a comma-separated allowlist.
+- Set `REQUIRE_API_ORIGIN=true` in production to reject API requests unless the request `Origin` or `Referer` matches `CORS_ORIGIN`.
 - `APP_URL` must point at the frontend origin used in verification, password reset, email-change, and invite emails when SMTP is enabled.
 - SMTP values are optional for local development. When SMTP is not configured, mail-triggering actions log and skip delivery instead of crashing startup.
 - If OAuth is enabled locally, register these redirect URIs with the providers:

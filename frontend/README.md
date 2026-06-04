@@ -28,7 +28,7 @@ NEXT_PUBLIC_SITE_URL=https://questesports.lk
 Notes:
 
 - `NEXT_PUBLIC_API_URL` must match the backend origin.
-- `NEXT_PUBLIC_SITE_URL` is used for metadata, sitemap generation, canonical URLs, and structured data.
+- `NEXT_PUBLIC_SITE_URL` is used for metadata, sitemap generation, canonical URLs, structured data, and server-rendered API requests when backend origin enforcement is enabled.
 - If the backend sends verification, reset, invite, or email-change emails, its `APP_URL` must point to this frontend origin.
 
 ## Install And Run

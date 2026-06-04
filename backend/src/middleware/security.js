@@ -3,6 +3,10 @@ const { env } = require("../config/env");
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const allowedOrigins = new Set(env.CORS_ORIGINS);
+const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
+  "/api/auth/google/callback",
+  "/api/auth/discord/callback",
+]);
 
 const extractOrigin = (value) => {
   if (!value) {
@@ -24,6 +28,9 @@ const hasSessionCookie = (req) => {
     return name === env.SESSION_COOKIE_NAME;
   });
 };
+
+const getRequestOrigin = (req) =>
+  extractOrigin(req.headers.origin) || extractOrigin(req.headers.referer);
 
 const setSecurityHeaders = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -51,14 +58,43 @@ const setSecurityHeaders = (req, res, next) => {
   next();
 };
 
+const requireAllowedApiOrigin = (req, res, next) => {
+  if (
+    !req.path.startsWith("/api") ||
+    req.method === "OPTIONS" ||
+    ORIGIN_CHECK_EXEMPT_PATHS.has(req.path)
+  ) {
+    next();
+    return;
+  }
+
+  const requestOrigin = getRequestOrigin(req);
+
+  if (requestOrigin) {
+    if (!allowedOrigins.has(requestOrigin)) {
+      next(new HttpError(403, "Requests from this origin are not allowed."));
+      return;
+    }
+
+    next();
+    return;
+  }
+
+  if (env.REQUIRE_API_ORIGIN) {
+    next(new HttpError(403, "Requests must come from an allowed origin."));
+    return;
+  }
+
+  next();
+};
+
 const protectAgainstCsrf = (req, res, next) => {
   if (SAFE_METHODS.has(req.method)) {
     next();
     return;
   }
 
-  const requestOrigin =
-    extractOrigin(req.headers.origin) || extractOrigin(req.headers.referer);
+  const requestOrigin = getRequestOrigin(req);
 
   if (!requestOrigin) {
     if (hasSessionCookie(req)) {
@@ -80,5 +116,6 @@ const protectAgainstCsrf = (req, res, next) => {
 
 module.exports = {
   protectAgainstCsrf,
+  requireAllowedApiOrigin,
   setSecurityHeaders,
 };

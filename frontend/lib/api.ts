@@ -17,6 +17,34 @@ export const buildApiUrl = (path: string) => {
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
 };
 
+const getServerSiteOrigin = () => {
+  if (typeof window !== "undefined") {
+    return "";
+  }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!siteUrl) {
+    return "";
+  }
+
+  try {
+    return new URL(siteUrl).origin;
+  } catch {
+    return "";
+  }
+};
+
+export const withServerOriginHeader = (headers?: HeadersInit) => {
+  const nextHeaders = new Headers(headers);
+  const serverOrigin = getServerSiteOrigin();
+
+  if (serverOrigin && !nextHeaders.has("Origin")) {
+    nextHeaders.set("Origin", serverOrigin);
+  }
+
+  return nextHeaders;
+};
+
 export async function readApiResponse<T>(
   response: Response,
   fallbackMessage = "Request failed."
@@ -59,6 +87,9 @@ export async function fetchApiJson<T>(
   options: RequestInit = {},
   fallbackMessage = "Request failed."
 ) {
-  const response = await fetch(buildApiUrl(path), options);
+  const response = await fetch(buildApiUrl(path), {
+    ...options,
+    headers: withServerOriginHeader(options.headers),
+  });
   return parseApiResponse<T>(response, fallbackMessage);
 }

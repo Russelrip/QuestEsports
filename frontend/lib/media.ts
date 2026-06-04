@@ -1,4 +1,4 @@
-import { buildApiUrl, parseApiResponse } from "@/lib/api";
+import { buildApiUrl, parseApiResponse, withServerOriginHeader } from "@/lib/api";
 
 export type VideoItem = {
   title: string;
@@ -330,6 +330,7 @@ export const fetchImages = async (searchParams?: URLSearchParams) => {
   const response = await fetch(`${resolveMediaUrl("/api/images")}${suffix}`, {
     cache: "no-store",
     credentials: "include",
+    headers: withServerOriginHeader(),
   });
 
   return parseApiResponse<{ images: ImageAsset[] }>(response, "Media request failed.");
@@ -340,6 +341,7 @@ export const fetchPosters = async (searchParams?: URLSearchParams) => {
   const response = await fetch(`${resolveMediaUrl("/api/posters")}${suffix}`, {
     cache: "no-store",
     credentials: "include",
+    headers: withServerOriginHeader(),
   });
 
   return parseApiResponse<{ posters: Poster[] }>(response, "Media request failed.");
@@ -349,6 +351,7 @@ export const fetchPublicPosters = async (searchParams?: URLSearchParams) => {
   const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
   const response = await fetch(`${resolveMediaUrl("/api/posters")}${suffix}`, {
     next: { revalidate: 300 },
+    headers: withServerOriginHeader(),
   });
 
   return parseApiResponse<{ posters: Poster[] }>(response, "Media request failed.");
