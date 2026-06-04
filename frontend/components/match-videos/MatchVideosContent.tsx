@@ -20,6 +20,7 @@ function VideoSection({ title, videos }: { title: string; videos: VideoItem[] })
                   src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`}
                   alt={video.alt}
                   fill
+                  sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
                   className="object-cover"
                 />
               </div>

@@ -17,7 +17,13 @@ export default function TeamSection() {
         {teamMembers.map((member) => (
           <Card key={member.name} className="overflow-hidden">
             <div className="relative aspect-[4/5]">
-              <Image src={member.image} alt={member.name} fill className="object-cover" />
+              <Image
+                src={member.image}
+                alt={member.name}
+                fill
+                sizes="(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw"
+                className="object-cover"
+              />
             </div>
             <div className="space-y-2 p-5">
               <h3 className="text-xl text-white">{member.name}</h3>

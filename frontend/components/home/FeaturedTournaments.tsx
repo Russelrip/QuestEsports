@@ -46,25 +46,27 @@ export default async function FeaturedTournaments() {
                   {tournament.shortDescription || "Tournament schedule, roster requirements, and registration details."}
                 </p>
 
-                <div className="mt-5 grid grid-cols-2 gap-3 text-left text-sm text-slate-400">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Prize pool</p>
-                    <p className="mt-1 text-white">{tournament.prizePool}</p>
+                <div className="mt-auto pt-5">
+                  <div className="grid min-h-[3.75rem] grid-cols-2 gap-3 text-left text-sm text-slate-400">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Prize pool</p>
+                      <p className="mt-1 text-white">{tournament.prizePool}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Event dates</p>
+                      <p className="mt-1 text-white">
+                        {formatDisplayDate(tournament.startDate)} - {formatDisplayDate(tournament.endDate)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Event dates</p>
-                    <p className="mt-1 text-white">
-                      {formatDisplayDate(tournament.startDate)} - {formatDisplayDate(tournament.endDate)}
-                    </p>
-                  </div>
-                </div>
 
-                <Link
-                  href={`/tournaments/${tournament.slug}`}
-                  className={buttonClassName({ className: "mt-6 w-full justify-center" })}
-                >
-                  View tournament
-                </Link>
+                  <Link
+                    href={`/tournaments/${tournament.slug}`}
+                    className={buttonClassName({ className: "mt-6 w-full justify-center" })}
+                  >
+                    View tournament
+                  </Link>
+                </div>
               </div>
             </Card>
           ))
