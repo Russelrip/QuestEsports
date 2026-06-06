@@ -334,6 +334,13 @@ const findOrCreateOAuthUser = async ({ provider, profile }) => {
   });
 
   if (existingUser) {
+    if (!profile.emailVerified) {
+      throw new HttpError(
+        403,
+        "This provider account cannot be used to sign in until its email address is verified."
+      );
+    }
+
     await prisma.oAuthAccount.create({
       data: {
         id: crypto.randomUUID(),
