@@ -19,6 +19,7 @@ npm ci
 npm run prisma:generate
 npm run prisma:migrate:deploy
 npm run prisma:migrate:status
+npx prisma migrate diff --exit-code --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma
 npm test
 ```
 
