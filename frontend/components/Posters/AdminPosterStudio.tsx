@@ -54,9 +54,9 @@ export default function AdminPosterStudio({
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-6">
           <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Media Studio</p>
-          <h2 className="mt-3 text-3xl text-white">Upload images and build posters</h2>
+          <h2 className="mt-3 text-3xl text-white">Manage gallery photos and artwork</h2>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
-            Upload poster artwork to the backend media library, then save it to the public poster gallery.
+            Upload event photos or promotional artwork, then add them to the public gallery.
           </p>
         </div>
 
@@ -65,7 +65,7 @@ export default function AdminPosterStudio({
             <form className="grid gap-5" onSubmit={onUploadSubmit}>
               <div>
                 <h3 className="text-2xl text-white">Upload Images</h3>
-                <p className="mt-2 text-sm text-slate-400">Choose one or more PNG or JPG files and add them to the poster media library.</p>
+                <p className="mt-2 text-sm text-slate-400">Choose one or more PNG or JPG files and add them to the gallery media library.</p>
               </div>
               <FormField label="Optional title" htmlFor="uploadTitle">
                 <Input id="uploadTitle" value={uploadTitle} onChange={(event) => onUploadTitleChange(event.target.value)} placeholder="Leave blank to use the file name" />
@@ -96,11 +96,11 @@ export default function AdminPosterStudio({
           <Card className="p-6 sm:p-8">
             <form className="grid gap-5" onSubmit={onPosterSubmit}>
               <div>
-                <h3 className="text-2xl text-white">Create Poster</h3>
-                <p className="mt-2 text-sm text-slate-400">Select an uploaded image, name the poster, preview it, and save.</p>
+                <h3 className="text-2xl text-white">Create Gallery Entry</h3>
+                <p className="mt-2 text-sm text-slate-400">Select an uploaded image, add a title, preview it, and publish it to the gallery.</p>
               </div>
-              <FormField label="Poster title" htmlFor="posterTitle">
-                <Input id="posterTitle" value={posterDraft.title} onChange={(event) => onPosterDraftChange({ title: event.target.value })} placeholder="Open Finals poster" required />
+              <FormField label="Gallery title" htmlFor="posterTitle">
+                <Input id="posterTitle" value={posterDraft.title} onChange={(event) => onPosterDraftChange({ title: event.target.value })} placeholder="Open Finals highlights" required />
               </FormField>
               <FormField label="Source image" htmlFor="posterImage">
                 <Select id="posterImage" value={posterDraft.imageAssetId} onChange={(event) => onPosterDraftChange({ imageAssetId: event.target.value })} required>
@@ -116,12 +116,12 @@ export default function AdminPosterStudio({
                   <img src={resolveMediaUrl(selectedDraftAsset.imageUrl)} alt={selectedDraftAsset.title} className="w-full rounded-[18px] object-cover" />
                 </div>
               ) : (
-                <EmptyState description="Upload or select an image to preview the poster." />
+                <EmptyState description="Upload or select an image to preview the gallery entry." />
               )}
 
               {error ? <p className="text-sm text-rose-300">{error}</p> : null}
               {posterSuccess ? <p className="text-sm text-emerald-300">{posterSuccess}</p> : null}
-              <Button type="submit" disabled={posterSaving}>{posterSaving ? "Saving..." : "Save poster entry"}</Button>
+              <Button type="submit" disabled={posterSaving}>{posterSaving ? "Saving..." : "Publish gallery entry"}</Button>
             </form>
           </Card>
         </div>

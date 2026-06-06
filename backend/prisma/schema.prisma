@@ -66,6 +66,13 @@ enum BackgroundJobStatus {
   failed
 }
 
+enum RecruitmentApplicationStatus {
+  pending
+  reviewed
+  accepted
+  rejected
+}
+
 model User {
   id                     String            @id @default(uuid()) @db.Uuid
   firstName              String            @map("first_name")
@@ -98,11 +105,38 @@ model User {
   loginChallenges        LoginChallenge[]
   oauthAccounts          OAuthAccount[]
   savedTeams             SavedTeam[]
+  recruitmentApplications RecruitmentApplication[]
 
   @@index([role])
   @@index([createdAt])
   @@index([lockedUntil])
   @@map("users")
+}
+
+model RecruitmentApplication {
+  id                          String                       @id @default(uuid()) @db.Uuid
+  userId                      String                       @map("user_id") @db.Uuid
+  applicationType             String                       @map("application_type")
+  fullName                    String                       @map("full_name")
+  email                       String
+  phone                       String
+  discord                     String
+  game                        String
+  playerId                    String                       @map("player_id")
+  applicantIdNumberCiphertext String                       @map("applicant_id_number_ciphertext")
+  teamName                    String?                      @map("team_name")
+  currentRosterSize           Int?                         @map("current_roster_size")
+  members                     Json
+  notes                       String?
+  womensLeagueInterest        Boolean                      @default(false) @map("womens_league_interest")
+  status                      RecruitmentApplicationStatus @default(pending)
+  createdAt                   DateTime                     @default(now()) @map("created_at")
+  updatedAt                   DateTime                     @updatedAt @map("updated_at")
+  user                        User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("recruitment_applications")
 }
 
 model VerificationToken {

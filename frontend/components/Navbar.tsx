@@ -11,7 +11,7 @@ import { Container } from "@/components/ui/container";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useUiStore } from "@/hooks/useUiStore";
 import { cn } from "@/lib/utils";
-import { authNavItems, primaryNavItems } from "@/lib/site";
+import { authNavItems, primaryNavItems, secondaryNavItems } from "@/lib/site";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -27,7 +27,7 @@ export default function Navbar() {
       <Container className="py-2 sm:py-3">
         <div className="px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex min-h-12 items-center lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-8">
-            <div className="hidden items-center gap-8 lg:flex lg:justify-self-start xl:gap-10">
+            <div className="hidden items-center gap-7 lg:flex lg:justify-self-start xl:gap-10">
               {primaryNavItems.map((item) => (
                 <Link
                   key={item.href}
@@ -43,23 +43,38 @@ export default function Navbar() {
             </div>
 
             <div className="flex min-w-0 items-center justify-start lg:justify-self-center">
-              <Link href="/" className="flex items-center gap-3 sm:gap-4">
+              <Link
+                href="/"
+                className="flex flex-col items-center gap-1"
+                aria-label="Quest home"
+              >
                 <Image
                   src="/images/logo.png"
-                  alt="Quest Esports"
+                  alt=""
                   width={48}
                   height={48}
                   priority
-                  className="h-11 w-11 sm:h-12 sm:w-12"
+                  className="h-10 w-10 sm:h-11 sm:w-11"
                 />
-                <div className="hidden min-w-0 sm:block">
-                  <p className="font-display text-base tracking-[0.24em] text-white">QUEST</p>
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Esports Platform</p>
-                </div>
+                <span className="pl-[0.22em] font-display text-[10px] leading-none tracking-[0.22em] text-white sm:text-xs">
+                  QUEST
+                </span>
               </Link>
             </div>
 
-            <div className="hidden items-center justify-end gap-4 lg:flex lg:justify-self-end">
+            <div className="hidden items-center justify-end gap-6 lg:flex lg:justify-self-end xl:gap-8">
+              {secondaryNavItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
+                    pathname === item.href && "text-white"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
               {!isLoading && isAuthenticated && user ? (
                 <UserMenu user={user} logout={logout} isAdmin={user.role === "admin"} />
               ) : !isLoading ? (
@@ -106,7 +121,7 @@ export default function Navbar() {
               className="mt-3 rounded-[28px] border border-white/10 bg-[rgba(12,12,20,0.92)] p-3 shadow-[0_24px_60px_rgba(0,0,0,0.35)] lg:hidden"
             >
               <nav className="grid gap-2">
-                {primaryNavItems.map((item) => (
+                {[...primaryNavItems, ...secondaryNavItems].map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}

@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Quest Esports LK",
     short_name: "Quest Esports",
     description:
-      "Sri Lankan esports tournaments, livestreams, posters, and competitive gaming events from Quest Esports.",
+      "Sri Lankan esports tournaments, livestreams, event photos, and competitive gaming events from Quest Esports.",
     start_url: "/",
     scope: "/",
     display: "standalone",

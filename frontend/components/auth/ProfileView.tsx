@@ -188,7 +188,7 @@ export default function ProfileView() {
         <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
           <Card className="p-6 sm:p-8">
             <div className="flex items-start gap-4">
-              <div className="flex size-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,rgba(139,92,246,0.95),rgba(34,211,238,0.72))] text-lg font-bold text-white">
+              <div className="flex size-16 items-center justify-center rounded-[24px] bg-violet-700 text-lg font-bold text-white">
                 {initials}
               </div>
               <div>

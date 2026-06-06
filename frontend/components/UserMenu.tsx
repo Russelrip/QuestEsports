@@ -50,7 +50,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
         onClick={() => setIsOpen((current) => !current)}
         aria-expanded={isOpen}
       >
-        <span className="flex size-9 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(139,92,246,0.95),rgba(34,211,238,0.72))] text-xs font-bold text-white">
+        <span className="flex size-9 items-center justify-center rounded-2xl bg-violet-700 text-xs font-bold text-white">
           {initials}
         </span>
         <span>

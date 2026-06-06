@@ -45,7 +45,7 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
 
   return (
     <Section className="pt-6">
-      <div className="mb-8 flex flex-col gap-4 rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,27,0.9),rgba(9,9,18,0.96))] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.2)] sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-8 flex flex-col gap-4 rounded-[28px] border border-white/8 bg-[#0d0c13] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.2)] sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Tournament Board</p>
           <h2 className="mt-2 text-2xl text-white">Track live events, registrations, and completed campaigns.</h2>
@@ -69,7 +69,7 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
           {filteredTournaments.active.map((tournament) => (
             <article
               key={tournament.id}
-              className="group grid gap-7 overflow-hidden rounded-[36px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,18,30,0.94),rgba(7,7,14,0.98))] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.3)] transition duration-300 hover:border-fuchsia-300/20 hover:shadow-[0_34px_90px_rgba(27,15,69,0.55)] lg:grid-cols-[380px_1fr] lg:p-6"
+              className="group grid gap-7 overflow-hidden rounded-[36px] border border-white/10 bg-[#0d0c13] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.3)] transition duration-300 hover:border-fuchsia-300/20 hover:shadow-[0_34px_90px_rgba(27,15,69,0.55)] lg:grid-cols-[380px_1fr] lg:p-6"
             >
               <Link href={`/tournaments/${tournament.slug}`} className="relative block overflow-hidden rounded-[28px]">
                 <TournamentBannerImage

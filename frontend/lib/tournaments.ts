@@ -185,7 +185,13 @@ export const getTournamentCapacityPercentage = (tournament: Tournament) =>
 export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => {
   const featured = tournaments.filter((tournament) => tournament.isFeatured);
   const source = featured.length > 0 ? featured : tournaments;
-  return source.slice(0, limit);
+  return [...source]
+    .sort((left, right) => {
+      const leftDate = new Date(left.createdAt || left.startDate).getTime();
+      const rightDate = new Date(right.createdAt || right.startDate).getTime();
+      return rightDate - leftDate;
+    })
+    .slice(0, limit);
 };
 
 export const fetchPublicTournaments = async (game?: string) => {

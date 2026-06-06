@@ -29,11 +29,11 @@ export default async function FeaturedTournaments() {
         {featuredTournaments.length > 0 ? (
           featuredTournaments.map((tournament) => (
             <Card key={tournament.id} className="group mx-auto flex h-full w-full max-w-[25rem] flex-col overflow-hidden">
-              <div className="relative">
+              <div className="relative aspect-[4/5] overflow-hidden bg-[#09080e] p-3">
                 <TournamentBannerImage
                   bannerUrl={tournament.bannerUrl}
                   title={tournament.title}
-                  className="h-64 w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                  className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.01]"
                 />
               </div>
               <div className="flex flex-1 flex-col p-5">
@@ -41,10 +41,6 @@ export default async function FeaturedTournaments() {
                   <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/80">{tournament.game}</p>
                   <h3 className="mt-2 text-2xl text-white">{tournament.title}</h3>
                 </div>
-
-                <p className="mt-4 min-h-[3.5rem] text-sm leading-6 text-slate-400">
-                  {tournament.shortDescription || "Tournament schedule, roster requirements, and registration details."}
-                </p>
 
                 <div className="mt-auto pt-5">
                   <div className="grid min-h-[3.75rem] grid-cols-2 gap-3 text-left text-sm text-slate-400">

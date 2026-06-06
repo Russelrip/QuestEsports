@@ -84,10 +84,10 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
         }));
       }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to load posters.");
+      setError(nextError instanceof Error ? nextError.message : "Unable to load gallery.");
       showToast({
         tone: "error",
-        title: "Unable to load posters",
+        title: "Unable to load gallery",
         description: nextError instanceof Error ? nextError.message : "Request failed.",
       });
     } finally {
@@ -133,7 +133,7 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
         title:
           uploadTitle.trim() ||
           uploadPreviews[0]?.file.name.replace(/\.[^.]+$/, "") ||
-          "Poster image",
+          "Gallery image",
         previews: uploadPreviews,
       });
 
@@ -174,17 +174,17 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
       const createdPoster = await savePoster(posterDraft);
       setPosters((current) => [createdPoster, ...current]);
       setSelectedPoster(createdPoster);
-      setPosterSuccess("Poster entry saved.");
-      showToast({ tone: "success", title: "Poster saved" });
+      setPosterSuccess("Gallery entry published.");
+      showToast({ tone: "success", title: "Gallery entry published" });
       setPosterDraft((current) => ({
         ...current,
         title: "",
       }));
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to create poster.");
+      setError(nextError instanceof Error ? nextError.message : "Unable to create gallery entry.");
       showToast({
         tone: "error",
-        title: "Unable to save poster",
+        title: "Unable to publish gallery entry",
         description: nextError instanceof Error ? nextError.message : "Request failed.",
       });
     } finally {
@@ -217,7 +217,7 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
       await deletePoster(poster.id);
       setPosters((current) => current.filter((item) => item.id !== poster.id));
       setSelectedPoster((current) => (current?.id === poster.id ? null : current));
-      showToast({ tone: "success", title: "Poster deleted" });
+      showToast({ tone: "success", title: "Gallery entry deleted" });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to delete poster.");
       showToast({
@@ -296,7 +296,7 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
                   onClick={() => void handleDeletePoster(selectedPoster)}
                   disabled={deletingPosterId === selectedPoster.id}
                 >
-                  {deletingPosterId === selectedPoster.id ? "Deleting..." : "Delete Poster"}
+                  {deletingPosterId === selectedPoster.id ? "Deleting..." : "Delete Gallery Entry"}
                 </Button>
               ) : null}
             </div>

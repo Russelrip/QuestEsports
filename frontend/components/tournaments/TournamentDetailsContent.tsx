@@ -43,7 +43,7 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
           Back to Tournaments
         </Link>
 
-        <Card className="w-full max-w-[calc(100vw-2rem)] overflow-hidden border-white/10 bg-[linear-gradient(180deg,rgba(18,18,27,0.94),rgba(8,8,15,0.96))] p-4 sm:max-w-full sm:p-6 xl:p-8">
+        <Card className="w-full max-w-[calc(100vw-2rem)] overflow-hidden border-white/10 bg-[#0d0c13] p-4 sm:max-w-full sm:p-6 xl:p-8">
           <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)] xl:gap-8">
             <div className="min-w-0 max-w-[calc(100vw-4rem)] overflow-hidden rounded-[28px] border border-white/10 bg-[#100817] sm:max-w-full">
               <TournamentBannerImage
@@ -243,7 +243,7 @@ function LiveBracketView({
         </div>
       </div>
 
-      <div className="max-h-[70vh] touch-pan-x overflow-auto bg-[#303030] bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.075)_1px,transparent_0)] p-4 [background-size:6px_6px] sm:max-h-[820px] sm:p-5">
+      <div className="max-h-[70vh] touch-pan-x overflow-auto bg-[#303030] p-4 sm:max-h-[820px] sm:p-5">
         <div
           className="grid origin-top-left gap-12"
           style={{

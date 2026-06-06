@@ -193,7 +193,7 @@ export function ShieldIcon() {
 
 export function DiscordBadgeIcon() {
   return (
-    <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-[linear-gradient(180deg,#ff4d4d,#da1f1f)] shadow-[0_16px_32px_rgba(255,59,59,0.28)]">
+    <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-red-600 shadow-[0_16px_32px_rgba(255,59,59,0.28)]">
       <UserPlusIcon />
     </div>
   );

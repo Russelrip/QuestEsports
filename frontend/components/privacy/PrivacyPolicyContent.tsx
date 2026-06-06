@@ -15,7 +15,7 @@ const policySections = [
     bullets: [
       "Account information such as first name, last name, email address, username, password hash, and optional profile details like phone number or Discord tag.",
       "Authentication and security data such as session records, sign-in history, IP address, user agent, verification tokens, password reset tokens, and multi-factor authentication data if you enable it.",
-      "Tournament and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, saved team information, and tournament registration status.",
+      "Tournament, recruitment, and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, identification numbers submitted for recruitment review, saved team information, and application or registration status.",
       "Contact information and messages that you submit through the contact form or support channels.",
       "Uploaded content such as team logos, tournament banners, posters, and related media submitted or managed through the platform.",
       "Technical and usage information collected through hosting, analytics, performance monitoring, and server logs.",
@@ -32,7 +32,7 @@ const policySections = [
     title: "4. How We Use Information",
     bullets: [
       "To create and manage user accounts and allow secure sign-in.",
-      "To organise tournaments, review registrations, contact captains, and manage rosters and invites.",
+      "To organise tournaments, review recruitment applications and registrations, contact applicants or captains, and manage rosters and invites.",
       "To respond to inquiries, support requests, and operational communications.",
       "To send account-related emails such as verification, password reset, security alerts, and invite notifications.",
       "To maintain platform security, prevent abuse, investigate suspicious activity, and enforce our rules.",
@@ -132,7 +132,7 @@ export default function PrivacyPolicyContent() {
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Last Updated</p>
-          <h2 className="mt-3 text-3xl text-white">May 26, 2026</h2>
+          <h2 className="mt-3 text-3xl text-white">June 6, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             This policy applies to the Quest Esports website at <span className="text-white">questesports.lk</span> and related
             tournament and account services.

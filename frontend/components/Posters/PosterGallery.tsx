@@ -21,8 +21,8 @@ export default function PosterGallery({
   return (
     <Section className="pt-6">
       <div className="mb-6">
-        <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Poster Library</p>
-        <h2 className="mt-3 text-3xl text-white">Promotional artwork and tournament visuals.</h2>
+        <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Event Gallery</p>
+        <h2 className="mt-3 text-3xl text-white">Event photos, tournament moments, and promotional artwork.</h2>
       </div>
 
       {loading ? (
@@ -34,7 +34,7 @@ export default function PosterGallery({
       ) : error ? (
         <EmptyState description={error} />
       ) : posters.length === 0 ? (
-        <EmptyState description="No posters have been created yet." />
+        <EmptyState description="No gallery photos have been added yet." />
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {posters.map((poster) => (

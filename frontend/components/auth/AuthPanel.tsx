@@ -16,8 +16,7 @@ export default function AuthPanel({
     <section className="py-8 sm:py-12">
       <Container>
         <div className="mx-auto max-w-xl">
-          <Card className="relative overflow-hidden border-slate-800/90 bg-[linear-gradient(180deg,rgba(9,14,29,0.98),rgba(5,8,18,0.99))] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)] sm:p-8">
-            <div className="pointer-events-none absolute inset-x-8 top-0 h-32 rounded-full bg-red-500/8 blur-3xl" />
+          <Card className="relative overflow-hidden border-slate-800/90 bg-[#080b12] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)] sm:p-8">
             <div className="relative">
               <div className="flex flex-col items-center text-center">
                 <h2 className="text-3xl text-white sm:text-4xl">{title}</h2>

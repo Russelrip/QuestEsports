@@ -4,7 +4,7 @@ import type { Tournament } from "@/lib/tournaments";
 const siteName = "Quest Esports";
 const siteTitle = "Quest Esports LK";
 const siteDescription =
-  "Quest Esports runs Sri Lankan esports tournaments, match broadcasts, posters, and community events built for competitive players and gaming fans.";
+  "Quest Esports runs Sri Lankan esports tournaments, match broadcasts, event galleries, and community events built for competitive players and gaming fans.";
 const fallbackSiteUrl =
   process.env.NODE_ENV === "production" ? "https://questesports.lk" : "http://localhost:3000";
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || fallbackSiteUrl;
@@ -22,7 +22,7 @@ const defaultKeywords = [
   "gaming community Sri Lanka",
   "competitive gaming",
   "match livestreams",
-  "esports posters",
+  "esports event gallery",
 ];
 
 const channelKeywords = {
@@ -335,6 +335,13 @@ export const buildTournamentStructuredData = (tournament: Tournament) => ({
 export const primaryNavItems = [
   { href: "/", label: "Home" },
   { href: "/tournaments", label: "Tournaments" },
+  { href: "/match-videos", label: "Match Videos" },
+  { href: "/gallery", label: "Gallery" },
+] as const;
+
+export const secondaryNavItems = [
+  { href: "/shop", label: "Shop" },
+  { href: "/members", label: "Members" },
 ] as const;
 
 export const footerNavItems = [
@@ -342,9 +349,12 @@ export const footerNavItems = [
   { href: "/terms-of-service", label: "Terms of Service" },
   { href: "/privacy-policy", label: "Privacy Policy" },
   { href: "/match-videos", label: "Match Videos" },
-  { href: "/posters", label: "Posters" },
+  { href: "/gallery", label: "Gallery" },
   { href: "/rulebook", label: "Rulebook" },
   { href: "/tournaments", label: "Tournaments" },
+  { href: "/shop", label: "Shop" },
+  { href: "/members", label: "Members" },
+  { href: "/join", label: "Join Quest" },
 ] as const;
 
 export const authNavItems = [
@@ -426,17 +436,17 @@ export const whatsappContacts = [
 export const teamMembers = [
   {
     name: "Sahan Jayasuriya",
-    role: "Owner",
+    role: "Co-Owner",
     image: "/images/sahan.jpg",
   },
   {
     name: "Senumi Ekanayake",
-    role: "Owner / Founder",
+    role: "Co-Owner / Founder",
     image: "/images/senumi.jpg",
   },
   {
     name: "Russel Perera",
-    role: "Director / Co-Owner",
+    role: "Co-Owner / Director",
     image: "/images/russel.jpg",
   },
   {
@@ -464,8 +474,14 @@ export const defaultPageDescriptions = {
   adminContactMessages: "Read and manage incoming contact messages from the website.",
   matchVideos:
     "Watch official Quest Esports tournament broadcasts, YouTube match replays, highlights, and livestream archives.",
-  posters:
-    "Browse Quest Esports tournament posters, promotional creatives, social visuals, and event announcement graphics.",
+  gallery:
+    "Browse Quest Esports event photos, tournament highlights, promotional artwork, and community moments.",
+  shop:
+    "Discover upcoming Quest Esports merchandise, apparel, and community drops.",
+  members:
+    "Meet the organizers, admins, and community builders behind Quest Esports.",
+  join:
+    "Apply to join Quest Esports as a solo player, existing team, or incomplete roster looking for teammates.",
   rulebook:
     "Read the official Quest Esports VALORANT tournament rules, eligibility guidelines, and match conduct standards.",
   contact:

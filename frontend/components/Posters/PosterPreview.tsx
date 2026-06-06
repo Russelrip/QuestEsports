@@ -37,7 +37,7 @@ export default function PosterPreview({
           <div
             className="max-w-xl rounded-[24px] p-5 shadow-[var(--shadow-md)]"
             style={{
-              background: `linear-gradient(135deg, ${draft.accentColor}f0, rgba(4, 1, 11, 0.88))`,
+              background: draft.accentColor,
               color: draft.textColor,
             }}
           >
