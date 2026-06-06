@@ -59,15 +59,61 @@ BACKEND_APP_DIR=/var/www/QuestEsports
 BACKEND_PM2_PROCESS=quest-backend
 ```
 
+`BACKEND_SSH_PRIVATE_KEY` authenticates the GitHub Actions runner **to the VPS**. It does not give the VPS permission to pull a private GitHub repository.
+
 The server must already have:
 
-- Git access to this repository
+- read-only GitHub deploy-key access to this repository
 - Node.js 20+
 - npm
 - PM2
 - backend production environment variables configured
 - PostgreSQL access from `DATABASE_URL` and `DIRECT_URL`
 - persistent storage mounted for `backend/uploads/`
+
+### Private repository access from the VPS
+
+Generate a separate SSH key while logged into the VPS as the deployment user:
+
+```bash
+ssh-keygen -t ed25519 -C "quest-backend-vps" -f ~/.ssh/quest_github_deploy -N ""
+cat ~/.ssh/quest_github_deploy.pub
+```
+
+In GitHub, open the repository and add the displayed public key under:
+
+```text
+Settings -> Deploy keys -> Add deploy key
+```
+
+Leave write access disabled. Then configure the VPS deployment user's SSH client:
+
+```bash
+cat >> ~/.ssh/config <<'EOF'
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/quest_github_deploy
+  IdentitiesOnly yes
+EOF
+
+chmod 600 ~/.ssh/config ~/.ssh/quest_github_deploy
+ssh-keyscan github.com >> ~/.ssh/known_hosts
+chmod 600 ~/.ssh/known_hosts
+```
+
+Change the repository remote from HTTPS to SSH and verify access:
+
+```bash
+cd /var/www/QuestEsports
+git remote set-url origin git@github.com:Russelrip/QuestEsports.git
+ssh -T git@github.com
+git fetch origin
+```
+
+GitHub's SSH test normally prints a successful-authentication message followed by a notice that shell access is unavailable. That is expected.
+
+The deployment workflow prints a targeted hint when the VPS cannot fetch the configured remote. Using a read-only deploy key avoids interactive username prompts and avoids storing a long-lived personal access token on the VPS.
 
 On deploy, the workflow runs:
 

@@ -80,7 +80,12 @@ jobs:
           ssh -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' bash -s" <<'SCRIPT'
           set -euo pipefail
           cd "$APP_DIR"
-          git fetch --prune origin
+          REMOTE_URL="$(git remote get-url origin)"
+          if ! git fetch --prune origin; then
+            echo "The VPS could not fetch origin: $REMOTE_URL" >&2
+            echo "For a private GitHub repository, configure a read-only deploy key on the VPS and use the repository SSH URL." >&2
+            exit 1
+          fi
           git checkout main
           git pull --ff-only origin main
           cd backend

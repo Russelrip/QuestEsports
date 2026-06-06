@@ -374,6 +374,8 @@ Production notes:
 
 This repository can be cloned in full on a VPS even when only the backend is served there.
 
+For a private repository, configure a read-only GitHub deploy key on the VPS and use an SSH origin such as `git@github.com:Russelrip/QuestEsports.git`. The SSH key used by GitHub Actions to log into the VPS is separate from the key the VPS uses to pull from GitHub. See [CI/CD Pipeline](./ci-cd.md#private-repository-access-from-the-vps).
+
 Typical Quest Esports backend deploy flow:
 
 ```bash
