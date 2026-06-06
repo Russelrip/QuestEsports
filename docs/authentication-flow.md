@@ -2,6 +2,8 @@
 
 This project uses cookie-based session authentication with server-side session storage in PostgreSQL. The browser never stores a bearer token for API access.
 
+For the complete email inventory, recipients, triggers, token rules, and delivery behavior, see [Email System](./email-system.md).
+
 ## Components
 
 - `User`
@@ -199,6 +201,8 @@ Recent backend unit tests cover the most performance-sensitive session behaviors
 - session listings only return active sessions
 
 The backend also uses the stored user-agent and IP fingerprint to send a security alert email on sign-in from a new device or location.
+
+Security alerts are also sent after MFA changes, backup-code regeneration, email-change confirmation, password reset, and authenticated password changes. See [Email System](./email-system.md) for the complete trigger list.
 
 ## Authorization Layers
 

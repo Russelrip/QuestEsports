@@ -2,6 +2,8 @@
 
 This project uses PostgreSQL through Prisma for relational data, plus local filesystem storage for uploaded image files.
 
+For how token records and `BackgroundJob` records are used to deliver transactional mail, see [Email System](./email-system.md).
+
 ## Primary Persistence Layers
 
 - PostgreSQL for application data and metadata

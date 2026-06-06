@@ -65,7 +65,7 @@ DISCORD_CLIENT_SECRET=
 DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
 ```
 
-For purely local development, SMTP values can be left blank. The backend will still run, but verification, password reset, invite, and email-change emails will be skipped instead of sent.
+For purely local development, SMTP values can be left blank. The backend will still run, but verification, password reset, invite, email-change, and security-alert emails will be skipped instead of sent.
 If OAuth is not being used locally, leave the OAuth client ID and secret values blank.
 
 Frontend `frontend/.env.local`:
@@ -130,7 +130,9 @@ After the first admin exists, additional users can be managed through the admin 
 
 ## Email Configuration
 
-The codebase supports running without SMTP, but verification, password reset, invite, and email-change emails will be skipped.
+The codebase supports running without SMTP, but verification, password reset, invite, email-change, and security-alert emails will be skipped.
+
+See [Email System](./email-system.md) for the complete email inventory, trigger rules, action links, token lifetimes, queue behavior, and operational checks.
 
 For production:
 
@@ -340,6 +342,7 @@ Current behavior:
 - auth, invite, and security emails are enqueued instead of sent inline during the request
 - the API process starts a polling worker automatically when `JOB_WORKER_ENABLED=true`
 - failed jobs are retried with backoff until `JOB_WORKER_MAX_ATTEMPTS` is reached
+- incomplete SMTP configuration causes delivery to be logged and skipped, after which the job is marked succeeded
 
 Production notes:
 

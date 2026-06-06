@@ -28,6 +28,9 @@ MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false
+JOB_WORKER_ENABLED=true
+JOB_WORKER_POLL_MS=5000
+JOB_WORKER_MAX_ATTEMPTS=5
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
@@ -55,7 +58,7 @@ Notes:
 - In hosted Postgres setups, `DATABASE_URL` can use a pooled connection string while `DIRECT_URL` should use the direct connection string for Prisma migrations.
 - `NEXT_PUBLIC_API_URL` must point at the backend origin.
 - `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
-- SMTP is optional for local development. If mail is not configured, signup, verification, password reset, team invites, and email-change requests still execute, but email delivery is skipped.
+- SMTP is optional for local development. If mail is not configured, signup, verification, password reset, team invites, email-change requests, and security events still execute, but email delivery is skipped.
 - OAuth is optional. If you enable Google or Discord login, use real client credentials and register the callback URLs shown above. Do not leave placeholder values like `your_google_client_id`.
 
 ### 2. Install dependencies
@@ -117,6 +120,7 @@ Recommended flow:
 - [Authentication Flow](./docs/authentication-flow.md)
 - [CI/CD Pipeline](./docs/ci-cd.md)
 - [Database and Storage](./docs/database-and-storage.md)
+- [Email System](./docs/email-system.md)
 - [Setup and Deployment Guide](./docs/setup-and-deployment.md)
 
 ## Stack
@@ -168,6 +172,7 @@ QuestEsports/
 |   |-- api-documentation.md
 |   |-- authentication-flow.md
 |   |-- database-and-storage.md
+|   |-- email-system.md
 |   `-- setup-and-deployment.md
 |-- backend/
 |   |-- .env.example
@@ -201,7 +206,8 @@ QuestEsports/
 - Tournament banners, completed-showcase images, team logos, poster image files, and uploaded tournament schedules are written to `backend/uploads/`.
 - Native bracket data is generated with `brackets-manager`, exported as JSON, and persisted in PostgreSQL through the `tournament_brackets` table.
 - Poster/image metadata is stored in PostgreSQL. Poster assets support filesystem-backed storage with a database binary fallback for older records.
-- Email flows generate signed random tokens, store only token hashes in the database, and send action links that point to the frontend origin configured by `APP_URL`.
+- Transactional emails are persisted as `email.send` background jobs and delivered through Nodemailer with SMTP.
+- Email action flows generate cryptographically random tokens, store only token hashes in the database, and send links that point to the frontend origin configured by `APP_URL`.
 
 ## Main Data Domains
 
@@ -280,6 +286,9 @@ MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false
+JOB_WORKER_ENABLED=true
+JOB_WORKER_POLL_MS=5000
+JOB_WORKER_MAX_ATTEMPTS=5
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=465
 SMTP_USER=resend
@@ -299,8 +308,10 @@ Notes:
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `CORS_ORIGIN` supports a comma-separated allowlist.
 - Set `REQUIRE_API_ORIGIN=true` in production to reject API requests unless the request `Origin` or `Referer` matches `CORS_ORIGIN`.
-- `APP_URL` must point at the frontend origin used in verification, password reset, email-change, and invite emails when SMTP is enabled.
+- `APP_URL` must point at the frontend origin used in verification, password reset, email-change, invite, and security-alert emails when SMTP is enabled.
 - SMTP values are optional for local development. When SMTP is not configured, mail-triggering actions log and skip delivery instead of crashing startup.
+- `JOB_WORKER_ENABLED` must be enabled on at least one backend instance for queued email delivery.
+- See [Email System](./docs/email-system.md) for every recipient, trigger, subject, link, token lifetime, and retry rule.
 - If OAuth is enabled locally, register these redirect URIs with the providers:
   - Google: `http://localhost:5001/api/auth/google/callback`
   - Discord: `http://localhost:5001/api/auth/discord/callback`
@@ -396,7 +407,7 @@ Default local URLs:
 - Session/auth lifecycle behavior has dedicated unit coverage for session rehydration, throttled `lastSeenAt` writes, expired-session handling, and active-session listing.
 - Native bracket generation and score advancement have backend unit coverage.
 - There is currently no admin seed/bootstrap script beyond creating a user and promoting it through Prisma Studio.
-- Background jobs and monitoring are placeholder integrations and should be wired to production services before scaling email/media workloads.
+- The built-in database-backed email worker is suitable for low-volume transactional mail; use a dedicated worker or external queue before scaling email workloads substantially.
 
 ## Verification Commands
 
@@ -433,5 +444,6 @@ For frontend verification, the current baseline remains:
 ## Recommended Next Steps
 
 - Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
-- Read [Authentication Flow](./docs/authentication-flow.md) before changing session or email logic.
+- Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
+- Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, SMTP settings, or queue behavior.
 - Read [Database and Storage](./docs/database-and-storage.md) before touching uploads, Prisma schema, or media migration scripts.

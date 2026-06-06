@@ -1,5 +1,7 @@
 # API Documentation
 
+Email-producing endpoints are summarized here as part of their API behavior. For the complete recipient, trigger, subject, token, queue, and delivery reference, see [Email System](./email-system.md).
+
 This document describes the implemented HTTP API in `backend/src`. All routes are served from the backend under the `/api` prefix.
 
 ## Base URL
