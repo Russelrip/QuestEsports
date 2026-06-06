@@ -117,15 +117,30 @@ test("logger redacts sensitive fields before writing log payloads", async () => 
   try {
     loggerModule.logger.info("Sensitive log", {
       password: "secret-password",
+      code: "oauth-code",
+      state: "oauth-state",
+      callbackPath:
+        "/api/auth/google/callback?oauthCode=oauth-code&state=oauth-state&invite-token=invite-token",
       nested: {
         authToken: "abc123",
       },
+      error: new Error(
+        "Request failed at /verify-email?token=verification-token"
+      ),
     });
 
     assert.equal(consoleMessages.length, 1);
     const payload = JSON.parse(consoleMessages[0]);
     assert.equal(payload.password, "[REDACTED]");
+    assert.equal(payload.code, "[REDACTED]");
+    assert.equal(payload.state, "[REDACTED]");
+    assert.equal(
+      payload.callbackPath,
+      "/api/auth/google/callback?oauthCode=[REDACTED]&state=[REDACTED]&invite-token=[REDACTED]"
+    );
     assert.equal(payload.nested.authToken, "[REDACTED]");
+    assert.doesNotMatch(payload.error.message, /verification-token/);
+    assert.doesNotMatch(payload.error.stack, /verification-token/);
   } finally {
     console.log = originalConsoleLog;
     console.error = originalConsoleError;

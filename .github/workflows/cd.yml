@@ -31,6 +31,7 @@ jobs:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci
       DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci
       SESSION_COOKIE_NAME: quest_session
+      DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
     defaults:
       run:
         working-directory: backend
@@ -39,7 +40,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -76,18 +77,19 @@ jobs:
           SSH_USER: ${{ secrets.BACKEND_SSH_USER }}
           APP_DIR: ${{ secrets.BACKEND_APP_DIR }}
           PM2_PROCESS: ${{ secrets.BACKEND_PM2_PROCESS }}
+          DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         run: |
-          ssh -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' bash -s" <<'SCRIPT'
+          ssh -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           cd "$APP_DIR"
           REMOTE_URL="$(git remote get-url origin)"
-          if ! git fetch --prune origin; then
+          if ! git fetch --prune origin "$DEPLOY_SHA"; then
             echo "The VPS could not fetch origin: $REMOTE_URL" >&2
             echo "For a private GitHub repository, configure a read-only deploy key on the VPS and use the repository SSH URL." >&2
             exit 1
           fi
-          git checkout main
-          git pull --ff-only origin main
+          git checkout --detach "$DEPLOY_SHA"
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
           cd backend
           npm ci
           npm run prisma:generate

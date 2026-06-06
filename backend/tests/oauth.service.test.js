@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
@@ -30,6 +31,7 @@ const buildService = ({ emailVerified }) => {
       return existingUser;
     },
   };
+  const tokenRequestBodies = [];
 
   const { module, restore } = loadModuleWithMocks(
     require.resolve("../src/modules/auth/oauth.service"),
@@ -69,8 +71,9 @@ const buildService = ({ emailVerified }) => {
   );
 
   const originalFetch = global.fetch;
-  global.fetch = async (url) => {
+  global.fetch = async (url, options = {}) => {
     if (String(url).includes("oauth2.googleapis.com/token")) {
+      tokenRequestBodies.push(new URLSearchParams(options.body));
       return {
         ok: true,
         status: 200,
@@ -95,6 +98,7 @@ const buildService = ({ emailVerified }) => {
     existingUser,
     oAuthAccountModel,
     service: module,
+    tokenRequestBodies,
     restore: () => {
       global.fetch = originalFetch;
       restore();
@@ -103,12 +107,19 @@ const buildService = ({ emailVerified }) => {
 };
 
 const getState = (service) => {
-  const authorizationUrl = service.buildAuthorizationUrl({
+  const authorization = service.createOAuthAuthorization({
     provider: "google",
     redirectTo: "/profile",
   });
 
-  return new URL(authorizationUrl).searchParams.get("state");
+  return {
+    authorizationUrl: authorization.authorizationUrl,
+    flowToken: service.getOAuthFlowToken({
+      provider: "google",
+      cookieHeader: authorization.flowCookie,
+    }),
+    state: new URL(authorization.authorizationUrl).searchParams.get("state"),
+  };
 };
 
 test("OAuth callback does not auto-link an unverified provider email", async () => {
@@ -117,11 +128,13 @@ test("OAuth callback does not auto-link an unverified provider email", async () 
   });
 
   try {
+    const { flowToken, state } = getState(service);
     await assert.rejects(
       service.handleOAuthCallback({
         provider: "google",
         code: "oauth-code",
-        state: getState(service),
+        state,
+        flowToken,
       }),
       (error) => {
         assert.equal(error.statusCode, 403);
@@ -142,10 +155,12 @@ test("OAuth callback auto-links a verified provider email", async () => {
   });
 
   try {
+    const { flowToken, state } = getState(service);
     const result = await service.handleOAuthCallback({
       provider: "google",
       code: "oauth-code",
-      state: getState(service),
+      state,
+      flowToken,
     });
 
     assert.deepEqual(result, {
@@ -160,6 +175,66 @@ test("OAuth callback auto-links a verified provider email", async () => {
       providerUserId: "google-user-1",
       email: "player@example.com",
     });
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth authorization uses S256 PKCE and binds callback state to its flow cookie", async () => {
+  const { service, tokenRequestBodies, restore } = buildService({
+    emailVerified: true,
+  });
+
+  try {
+    const { authorizationUrl, flowToken, state } = getState(service);
+    const parsedAuthorizationUrl = new URL(authorizationUrl);
+
+    assert.equal(
+      parsedAuthorizationUrl.searchParams.get("code_challenge_method"),
+      "S256"
+    );
+    assert.ok(parsedAuthorizationUrl.searchParams.get("code_challenge"));
+
+    await assert.rejects(
+      service.handleOAuthCallback({
+        provider: "google",
+        code: "oauth-code",
+        state,
+        flowToken: "",
+      }),
+      (error) => error.statusCode === 400 && error.message === "Invalid OAuth state."
+    );
+
+    const otherFlow = getState(service);
+    await assert.rejects(
+      service.handleOAuthCallback({
+        provider: "google",
+        code: "oauth-code",
+        state,
+        flowToken: otherFlow.flowToken,
+      }),
+      (error) => error.statusCode === 400 && error.message === "Invalid OAuth state."
+    );
+
+    assert.ok(flowToken);
+
+    await service.handleOAuthCallback({
+      provider: "google",
+      code: "oauth-code",
+      state,
+      flowToken,
+    });
+
+    assert.equal(tokenRequestBodies.length, 1);
+    const codeVerifier = tokenRequestBodies[0].get("code_verifier");
+    const expectedChallenge = crypto
+      .createHash("sha256")
+      .update(codeVerifier)
+      .digest("base64url");
+    assert.equal(
+      parsedAuthorizationUrl.searchParams.get("code_challenge"),
+      expectedChallenge
+    );
   } finally {
     restore();
   }

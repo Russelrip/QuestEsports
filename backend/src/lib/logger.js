@@ -8,18 +8,31 @@ const LOG_LEVEL_ORDER = {
   error: 40,
 };
 
+const REDACTED_VALUE = "[REDACTED]";
+const SENSITIVE_QUERY_PARAMETER_PATTERN =
+  /([?&][^?&#=\s]*(?:token|code|state)[^?&#=\s]*=)[^&#\s]*/gi;
+
+const redactString = (value) =>
+  String(value)
+    .replace(SENSITIVE_QUERY_PARAMETER_PATTERN, `$1${REDACTED_VALUE}`)
+    .replace(/(bearer\s+)[^\s,;]+/gi, `$1${REDACTED_VALUE}`);
+
 const redact = (value) => {
   if (value instanceof Error) {
     return {
       name: value.name,
-      message: value.message,
-      stack: value.stack,
+      message: redactString(value.message),
+      stack: redactString(value.stack),
       ...(value.code ? { code: value.code } : {}),
     };
   }
 
   if (Array.isArray(value)) {
     return value.map(redact);
+  }
+
+  if (typeof value === "string") {
+    return redactString(value);
   }
 
   if (!value || typeof value !== "object") {
@@ -34,9 +47,11 @@ const redact = (value) => {
       normalizedKey.includes("secret") ||
       normalizedKey.includes("token") ||
       normalizedKey.includes("authorization") ||
-      normalizedKey.includes("cookie")
+      normalizedKey.includes("cookie") ||
+      normalizedKey === "state" ||
+      (normalizedKey.includes("code") && typeof nestedValue === "string")
     ) {
-      result[key] = "[REDACTED]";
+      result[key] = REDACTED_VALUE;
       return result;
     }
 

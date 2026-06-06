@@ -14,6 +14,20 @@ const mailDefinitionsPath = path.join(
   __dirname,
   "../src/lib/mail/mail-job-definitions.js"
 );
+const loggerMock = {
+  logger: { info: () => {}, warn: () => {}, error: () => {} },
+  redact: (value) => {
+    const redactTokens = (text) =>
+      String(text).replace(/([?&]token=)[^&#\s]*/gi, "$1[REDACTED]");
+
+    return value instanceof Error
+      ? {
+          name: value.name,
+          message: redactTokens(value.message),
+        }
+      : redactTokens(value);
+  },
+};
 
 const createJobsPrismaMock = () => {
   const jobs = [];
@@ -95,6 +109,10 @@ const createJobsPrismaMock = () => {
           job.lastError = data.lastError;
         }
 
+        if (Object.prototype.hasOwnProperty.call(data, "payload")) {
+          job.payload = JSON.parse(JSON.stringify(data.payload));
+        }
+
         if (data.attempts?.increment) {
           job.attempts += data.attempts.increment;
         }
@@ -129,7 +147,7 @@ const createJobsPrismaMock = () => {
   };
 };
 
-test("enqueueJob persists a queued background job", async () => {
+test("enqueueJob persists a queued background job without raw sensitive tokens", async () => {
   const prismaMock = createJobsPrismaMock();
   const { module: jobsModule, restore } = loadModuleWithMocks(jobsPath, {
     [prismaModulePath]: { prisma: prismaMock.prisma },
@@ -144,9 +162,10 @@ test("enqueueJob persists a queued background job", async () => {
         JOB_WORKER_ENABLED: true,
         JOB_WORKER_POLL_MS: 5000,
         JOB_WORKER_MAX_ATTEMPTS: 5,
+        AUTH_ENCRYPTION_KEY: "jobs-test-encryption-key",
       },
     },
-    [loggerPath]: { logger: { info: () => {}, warn: () => {}, error: () => {} } },
+    [loggerPath]: loggerMock,
     [monitoringPath]: { captureException: () => {} },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
@@ -155,18 +174,28 @@ test("enqueueJob persists a queued background job", async () => {
   });
 
   try {
-    const result = await jobsModule.enqueueJob("email.send", { type: "verification" });
+    const rawToken = "raw-verification-token";
+    const result = await jobsModule.enqueueJob("email.send", {
+      type: "verification",
+      rawToken,
+    });
 
     assert.equal(result.accepted, true);
     assert.equal(prismaMock.jobs.length, 1);
     assert.equal(prismaMock.jobs[0].status, "queued");
     assert.equal(prismaMock.jobs[0].attempts, 0);
+    assert.equal(prismaMock.jobs[0].payload.rawToken, undefined);
+    assert.ok(prismaMock.jobs[0].payload.tokenCiphertext);
+    assert.doesNotMatch(
+      JSON.stringify(prismaMock.jobs[0].payload),
+      new RegExp(rawToken)
+    );
   } finally {
     restore();
   }
 });
 
-test("runJobWorkerTick processes queued jobs and marks them succeeded", async () => {
+test("runJobWorkerTick protects legacy raw tokens before processing queued jobs", async () => {
   const prismaMock = createJobsPrismaMock();
   const processedPayloads = [];
   const { module: jobsModule, restore } = loadModuleWithMocks(jobsPath, {
@@ -184,7 +213,7 @@ test("runJobWorkerTick processes queued jobs and marks them succeeded", async ()
         JOB_WORKER_MAX_ATTEMPTS: 5,
       },
     },
-    [loggerPath]: { logger: { info: () => {}, warn: () => {}, error: () => {} } },
+    [loggerPath]: loggerMock,
     [monitoringPath]: { captureException: () => {} },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
@@ -197,10 +226,15 @@ test("runJobWorkerTick processes queued jobs and marks them succeeded", async ()
 
   try {
     await jobsModule.enqueueJob("email.send", { type: "verification", email: "a@example.com" });
+    prismaMock.jobs[0].payload.rawToken = "legacy-raw-token";
     const processedCount = await jobsModule.runJobWorkerTick();
 
     assert.equal(processedCount, 1);
     assert.equal(processedPayloads.length, 1);
+    assert.equal(processedPayloads[0].rawToken, undefined);
+    assert.ok(processedPayloads[0].tokenCiphertext);
+    assert.equal(prismaMock.jobs[0].payload.rawToken, undefined);
+    assert.equal(prismaMock.jobs[0].payload.tokenCiphertext, undefined);
     assert.equal(prismaMock.jobs[0].status, "succeeded");
     assert.ok(prismaMock.jobs[0].completedAt instanceof Date);
   } finally {
@@ -253,7 +287,7 @@ test("runJobWorkerTick retries transient job claim transaction timeouts", async 
         JOB_WORKER_MAX_ATTEMPTS: 5,
       },
     },
-    [loggerPath]: { logger: { info: () => {}, warn: () => {}, error: () => {} } },
+    [loggerPath]: loggerMock,
     [monitoringPath]: { captureException: () => {} },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
@@ -295,12 +329,12 @@ test("runJobWorkerTick retries failed jobs until the max attempt threshold", asy
         JOB_WORKER_MAX_ATTEMPTS: 2,
       },
     },
-    [loggerPath]: { logger: { info: () => {}, warn: () => {}, error: () => {} } },
+    [loggerPath]: loggerMock,
     [monitoringPath]: { captureException: (error) => capturedExceptions.push(error) },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
       processQueuedMailJob: async () => {
-        throw new Error("SMTP down");
+        throw new Error("SMTP down for /verify-email?token=raw-verification-token");
       },
     },
   });
@@ -308,7 +342,11 @@ test("runJobWorkerTick retries failed jobs until the max attempt threshold", asy
   try {
     await jobsModule.enqueueJob(
       "email.send",
-      { type: "verification", email: "a@example.com" },
+      {
+        type: "verification",
+        email: "a@example.com",
+        rawToken: "raw-verification-token",
+      },
       { maxAttempts: 2 }
     );
 
@@ -317,6 +355,8 @@ test("runJobWorkerTick retries failed jobs until the max attempt threshold", asy
     assert.equal(prismaMock.jobs[0].status, "queued");
     assert.equal(prismaMock.jobs[0].attempts, 1);
     assert.match(prismaMock.jobs[0].lastError, /SMTP down/);
+    assert.doesNotMatch(prismaMock.jobs[0].lastError, /raw-verification-token/);
+    assert.ok(prismaMock.jobs[0].payload.tokenCiphertext);
 
     prismaMock.jobs[0].availableAt = new Date(Date.now() - 1000);
 
@@ -325,6 +365,7 @@ test("runJobWorkerTick retries failed jobs until the max attempt threshold", asy
     assert.equal(prismaMock.jobs[0].status, "failed");
     assert.equal(prismaMock.jobs[0].attempts, 2);
     assert.ok(prismaMock.jobs[0].failedAt instanceof Date);
+    assert.equal(prismaMock.jobs[0].payload.tokenCiphertext, undefined);
     assert.equal(capturedExceptions.length, 2);
   } finally {
     restore();

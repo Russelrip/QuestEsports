@@ -17,6 +17,8 @@ Backend:
 cd backend
 npm ci
 npm run prisma:generate
+npm run prisma:migrate:deploy
+npm run prisma:migrate:status
 npm test
 ```
 
@@ -115,10 +117,11 @@ GitHub's SSH test normally prints a successful-authentication message followed b
 
 The deployment workflow prints a targeted hint when the VPS cannot fetch the configured remote. Using a read-only deploy key avoids interactive username prompts and avoids storing a long-lived personal access token on the VPS.
 
-On deploy, the workflow runs:
+After a successful CI run, deployment checks out and deploys that run's exact commit SHA. On deploy, the workflow runs:
 
 ```bash
-git pull --ff-only origin main
+git fetch origin "$DEPLOY_SHA"
+git checkout --detach "$DEPLOY_SHA"
 cd backend
 npm ci
 npm run prisma:generate

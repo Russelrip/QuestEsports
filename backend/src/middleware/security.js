@@ -7,6 +7,16 @@ const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
   "/api/auth/google/callback",
   "/api/auth/discord/callback",
 ]);
+const SAFE_PUBLIC_API_PATHS = [
+  /^\/api\/health$/,
+  /^\/api\/openapi\.json$/,
+  /^\/api\/auth\/(?:google|discord)\/start$/,
+  /^\/api\/tournaments(?:\/[^/]+)?$/,
+  /^\/api\/posters(?:\/[^/]+(?:\/image)?)?$/,
+  /^\/api\/rulebooks(?:\/[^/]+)?$/,
+  /^\/api\/uploads\/(?:tournament-banners|poster-images|team-logos)\/[^/]+$/,
+  /^\/api\/team-invite$/,
+];
 
 const extractOrigin = (value) => {
   if (!value) {
@@ -31,6 +41,10 @@ const hasSessionCookie = (req) => {
 
 const getRequestOrigin = (req) =>
   extractOrigin(req.headers.origin) || extractOrigin(req.headers.referer);
+
+const isSafePublicApiRequest = (req) =>
+  SAFE_METHODS.has(req.method) &&
+  SAFE_PUBLIC_API_PATHS.some((pattern) => pattern.test(req.path));
 
 const setSecurityHeaders = (req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -62,7 +76,8 @@ const requireAllowedApiOrigin = (req, res, next) => {
   if (
     !req.path.startsWith("/api") ||
     req.method === "OPTIONS" ||
-    ORIGIN_CHECK_EXEMPT_PATHS.has(req.path)
+    ORIGIN_CHECK_EXEMPT_PATHS.has(req.path) ||
+    isSafePublicApiRequest(req)
   ) {
     next();
     return;

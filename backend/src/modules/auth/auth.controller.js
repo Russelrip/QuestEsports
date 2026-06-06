@@ -3,7 +3,12 @@ const { env } = require("../../config/env");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { sendSecurityEventEmail } = require("../../lib/mail/sendSecurityEventEmail");
-const { buildAuthorizationUrl, handleOAuthCallback } = require("./oauth.service");
+const {
+  buildExpiredOAuthFlowCookie,
+  createOAuthAuthorization,
+  getOAuthFlowToken,
+  handleOAuthCallback,
+} = require("./oauth.service");
 const {
   createSession,
   deleteSessionByToken,
@@ -117,18 +122,22 @@ const signup = asyncHandler(async (req, res) => {
   });
 });
 
-const startGoogleAuth = asyncHandler(async (req, res) => {
-  res.redirect(buildAuthorizationUrl({
-    provider: "google",
+const startOAuth = ({ provider, req, res }) => {
+  const { authorizationUrl, flowCookie } = createOAuthAuthorization({
+    provider,
     redirectTo: req.query.redirect,
-  }));
+  });
+
+  res.setHeader("Set-Cookie", flowCookie);
+  res.redirect(authorizationUrl);
+};
+
+const startGoogleAuth = asyncHandler(async (req, res) => {
+  startOAuth({ provider: "google", req, res });
 });
 
 const startDiscordAuth = asyncHandler(async (req, res) => {
-  res.redirect(buildAuthorizationUrl({
-    provider: "discord",
-    redirectTo: req.query.redirect,
-  }));
+  startOAuth({ provider: "discord", req, res });
 });
 
 const login = asyncHandler(async (req, res) => {
@@ -191,6 +200,10 @@ const completeOAuthLogin = async ({ provider, req, res }) => {
     provider,
     code: String(req.query.code || ""),
     state: String(req.query.state || ""),
+    flowToken: getOAuthFlowToken({
+      provider,
+      cookieHeader: req.headers.cookie,
+    }),
   });
 
   const refreshedUser = await completeAuthenticatedLogin({
@@ -203,6 +216,11 @@ const completeOAuthLogin = async ({ provider, req, res }) => {
 
   const destination = redirectTo || (refreshedUser.role === "admin" ? "/admin" : "/profile");
   const appRedirectUrl = getAppRedirectUrl(destination);
+  const sessionCookie = res.getHeader("Set-Cookie");
+  res.setHeader("Set-Cookie", [
+    ...(Array.isArray(sessionCookie) ? sessionCookie : [sessionCookie].filter(Boolean)),
+    buildExpiredOAuthFlowCookie(provider),
+  ]);
   res.redirect(appRedirectUrl);
 };
 

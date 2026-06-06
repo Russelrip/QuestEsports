@@ -6,6 +6,7 @@ const {
   buildSecurityAlertEmail,
 } = require("./templates");
 const { buildActionUrl, sendMail } = require("./sendMail");
+const { decryptSecret } = require("../secret-box");
 
 const EMAIL_JOB_NAME = "email.send";
 const EMAIL_TEMPLATE_TYPES = {
@@ -15,6 +16,9 @@ const EMAIL_TEMPLATE_TYPES = {
   teamInvite: "teamInvite",
   securityAlert: "securityAlert",
 };
+
+const getRawToken = (payload) =>
+  payload.tokenCiphertext ? decryptSecret(payload.tokenCiphertext) : payload.rawToken;
 
 const processQueuedMailJob = async (payload = {}) => {
   const type = String(payload.type || "").trim();
@@ -28,7 +32,7 @@ const processQueuedMailJob = async (payload = {}) => {
         templateBuilder: () =>
           buildVerificationEmail({
             firstName: payload.firstName,
-            verificationUrl: buildActionUrl("/verify-email", payload.rawToken),
+            verificationUrl: buildActionUrl("/verify-email", getRawToken(payload)),
           }),
       });
     case EMAIL_TEMPLATE_TYPES.resetPassword:
@@ -40,7 +44,7 @@ const processQueuedMailJob = async (payload = {}) => {
         templateBuilder: () =>
           buildResetPasswordEmail({
             firstName: payload.firstName,
-            resetUrl: buildActionUrl("/reset-password", payload.rawToken),
+            resetUrl: buildActionUrl("/reset-password", getRawToken(payload)),
           }),
       });
     case EMAIL_TEMPLATE_TYPES.emailChange:
@@ -53,7 +57,7 @@ const processQueuedMailJob = async (payload = {}) => {
           buildEmailChangeEmail({
             firstName: payload.firstName,
             nextEmail: payload.nextEmail,
-            confirmUrl: buildActionUrl("/confirm-email-change", payload.rawToken),
+            confirmUrl: buildActionUrl("/confirm-email-change", getRawToken(payload)),
           }),
       });
     case EMAIL_TEMPLATE_TYPES.teamInvite:
@@ -68,7 +72,7 @@ const processQueuedMailJob = async (payload = {}) => {
             teamName: payload.teamName,
             captainName: payload.captainName,
             tournamentTitle: payload.tournamentTitle,
-            inviteUrl: buildActionUrl("/team-invite", payload.rawToken),
+            inviteUrl: buildActionUrl("/team-invite", getRawToken(payload)),
           }),
       });
     case EMAIL_TEMPLATE_TYPES.securityAlert:

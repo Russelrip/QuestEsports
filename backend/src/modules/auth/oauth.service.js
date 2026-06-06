@@ -9,6 +9,7 @@ const { PUBLIC_USER_SELECT, mapUserForResponse } = require("./auth.service");
 
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_RANDOM_PASSWORD_BYTES = 24;
+const OAUTH_FLOW_COOKIE_PREFIX = `${env.SESSION_COOKIE_NAME}_oauth_`;
 
 const OAUTH_PROVIDER_CONFIG = {
   google: {
@@ -79,6 +80,36 @@ const signState = (payload) =>
     .update(payload)
     .digest("hex");
 
+const parseSignedPayload = (value, invalidMessage) => {
+  const [payloadPart, signature] = String(value || "").split(".");
+  if (!payloadPart || !signature) {
+    throw new HttpError(400, invalidMessage);
+  }
+
+  const payload = fromBase64Url(payloadPart);
+  const expectedSignature = signState(payload);
+  const suppliedSignature = Buffer.from(signature);
+  const expectedSignatureBuffer = Buffer.from(expectedSignature);
+
+  if (
+    suppliedSignature.length !== expectedSignatureBuffer.length ||
+    !crypto.timingSafeEqual(suppliedSignature, expectedSignatureBuffer)
+  ) {
+    throw new HttpError(400, invalidMessage);
+  }
+
+  try {
+    return JSON.parse(payload);
+  } catch {
+    throw new HttpError(400, invalidMessage);
+  }
+};
+
+const createSignedPayload = (payload) => {
+  const serialized = JSON.stringify(payload);
+  return `${toBase64Url(serialized)}.${signState(serialized)}`;
+};
+
 const normalizeRedirectPath = (value) => {
   const redirect = normalizeText(value);
   if (!redirect) {
@@ -92,39 +123,49 @@ const normalizeRedirectPath = (value) => {
   return "/profile";
 };
 
-const createOAuthState = ({ provider, redirectTo }) => {
-  const payload = JSON.stringify({
+const createOAuthState = ({ provider, redirectTo, nonce }) =>
+  createSignedPayload({
     provider,
     redirectTo: normalizeRedirectPath(redirectTo),
-    nonce: crypto.randomBytes(12).toString("hex"),
+    nonce,
     timestamp: Date.now(),
   });
 
-  return `${toBase64Url(payload)}.${signState(payload)}`;
-};
+const createOAuthFlowToken = ({ provider, nonce, codeVerifier }) =>
+  createSignedPayload({
+    provider,
+    nonce,
+    codeVerifier,
+    timestamp: Date.now(),
+  });
 
-const verifyOAuthState = ({ state, provider }) => {
-  const [payloadPart, signature] = String(state || "").split(".");
-  if (!payloadPart || !signature) {
-    throw new HttpError(400, "Invalid OAuth state.");
-  }
+const isExpired = (timestamp) =>
+  !timestamp || Date.now() - timestamp > STATE_MAX_AGE_MS;
 
-  const payload = fromBase64Url(payloadPart);
-  if (signState(payload) !== signature) {
-    throw new HttpError(400, "Invalid OAuth state.");
-  }
+const verifyOAuthState = ({ state, provider, flowToken }) => {
+  const parsedState = parseSignedPayload(state, "Invalid OAuth state.");
+  const parsedFlow = parseSignedPayload(flowToken, "Invalid OAuth state.");
 
-  const parsed = JSON.parse(payload);
-  if (parsed.provider !== provider) {
+  if (parsedState.provider !== provider || parsedFlow.provider !== provider) {
     throw new HttpError(400, "OAuth provider mismatch.");
   }
 
-  if (!parsed.timestamp || Date.now() - parsed.timestamp > STATE_MAX_AGE_MS) {
+  if (isExpired(parsedState.timestamp) || isExpired(parsedFlow.timestamp)) {
     throw new HttpError(400, "OAuth state has expired.");
   }
 
+  if (
+    !parsedState.nonce ||
+    !parsedFlow.nonce ||
+    !parsedFlow.codeVerifier ||
+    parsedState.nonce !== parsedFlow.nonce
+  ) {
+    throw new HttpError(400, "Invalid OAuth state.");
+  }
+
   return {
-    redirectTo: normalizeRedirectPath(parsed.redirectTo),
+    redirectTo: normalizeRedirectPath(parsedState.redirectTo),
+    codeVerifier: parsedFlow.codeVerifier,
   };
 };
 
@@ -151,28 +192,88 @@ const getProviderConfig = (provider) => {
   };
 };
 
-const buildAuthorizationUrl = ({ provider, redirectTo }) => {
+const getOAuthFlowCookieName = (provider) =>
+  `${OAUTH_FLOW_COOKIE_PREFIX}${provider}`;
+
+const buildOAuthFlowCookie = ({ provider, flowToken, expiresAt }) => {
+  const segments = [
+    `${getOAuthFlowCookieName(provider)}=${encodeURIComponent(flowToken)}`,
+    "HttpOnly",
+    "Path=/api/auth",
+    "SameSite=Lax",
+    `Expires=${new Date(expiresAt).toUTCString()}`,
+  ];
+
+  if (env.NODE_ENV === "production") {
+    segments.push("Secure");
+  }
+
+  return segments.join("; ");
+};
+
+const buildExpiredOAuthFlowCookie = (provider) =>
+  buildOAuthFlowCookie({
+    provider,
+    flowToken: "",
+    expiresAt: new Date(0),
+  });
+
+const getOAuthFlowToken = ({ provider, cookieHeader }) => {
+  const cookieName = getOAuthFlowCookieName(provider);
+
+  for (const part of String(cookieHeader || "").split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (rawName === cookieName) {
+      try {
+        return decodeURIComponent(rawValue.join("=") || "");
+      } catch {
+        return "";
+      }
+    }
+  }
+
+  return "";
+};
+
+const createOAuthAuthorization = ({ provider, redirectTo }) => {
   const config = getProviderConfig(provider);
+  const nonce = crypto.randomBytes(18).toString("hex");
+  const codeVerifier = toBase64Url(crypto.randomBytes(32));
+  const codeChallenge = toBase64Url(
+    crypto.createHash("sha256").update(codeVerifier).digest()
+  );
+  const state = createOAuthState({ provider, redirectTo, nonce });
+  const flowToken = createOAuthFlowToken({ provider, nonce, codeVerifier });
   const url = new URL(config.authorizeUrl);
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("redirect_uri", config.callbackUrl);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", config.scope);
-  url.searchParams.set("state", createOAuthState({ provider, redirectTo }));
+  url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
 
   if (provider === "discord") {
     url.searchParams.set("prompt", "consent");
   }
 
-  return url.toString();
+  return {
+    authorizationUrl: url.toString(),
+    flowCookie: buildOAuthFlowCookie({
+      provider,
+      flowToken,
+      expiresAt: new Date(Date.now() + STATE_MAX_AGE_MS),
+    }),
+  };
 };
 
-const exchangeCodeForToken = async ({ provider, code }) => {
+const exchangeCodeForToken = async ({ provider, code, codeVerifier }) => {
   const config = getProviderConfig(provider);
   const body = new URLSearchParams({
     client_id: config.clientId,
     client_secret: config.clientSecret,
     code,
+    code_verifier: codeVerifier,
     grant_type: "authorization_code",
     redirect_uri: config.callbackUrl,
   });
@@ -403,13 +504,21 @@ const findOrCreateOAuthUser = async ({ provider, profile }) => {
   return user;
 };
 
-const handleOAuthCallback = async ({ provider, code, state }) => {
+const handleOAuthCallback = async ({ provider, code, state, flowToken }) => {
   if (!code) {
     throw new HttpError(400, "OAuth code is missing.");
   }
 
-  const { redirectTo } = verifyOAuthState({ state, provider });
-  const accessToken = await exchangeCodeForToken({ provider, code });
+  const { redirectTo, codeVerifier } = verifyOAuthState({
+    state,
+    provider,
+    flowToken,
+  });
+  const accessToken = await exchangeCodeForToken({
+    provider,
+    code,
+    codeVerifier,
+  });
   const profile = await fetchProviderProfile({ provider, accessToken });
   const user = await findOrCreateOAuthUser({ provider, profile });
 
@@ -420,6 +529,8 @@ const handleOAuthCallback = async ({ provider, code, state }) => {
 };
 
 module.exports = {
-  buildAuthorizationUrl,
+  buildExpiredOAuthFlowCookie,
+  createOAuthAuthorization,
+  getOAuthFlowToken,
   handleOAuthCallback,
 };

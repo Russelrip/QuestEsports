@@ -2,8 +2,9 @@ const crypto = require("crypto");
 const { Prisma } = require("../generated/prisma");
 const { env } = require("../config/env");
 const { prisma } = require("./prisma");
-const { logger } = require("./logger");
+const { logger, redact } = require("./logger");
 const { captureException } = require("./monitoring");
+const { encryptSecret } = require("./secret-box");
 const { processQueuedMailJob, EMAIL_JOB_NAME } = require("./mail/mail-job-definitions");
 
 const JOB_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
@@ -37,10 +38,11 @@ const summarizeJobError = (error) => {
   }
 
   if (error instanceof Error) {
-    return `${error.name}: ${error.message}`.slice(0, 4000);
+    const sanitizedError = redact(error);
+    return `${sanitizedError.name}: ${sanitizedError.message}`.slice(0, 4000);
   }
 
-  return String(error).slice(0, 4000);
+  return String(redact(String(error))).slice(0, 4000);
 };
 
 const computeRetryDelayMs = (attempts) =>
@@ -49,6 +51,33 @@ const computeRetryDelayMs = (attempts) =>
 const isRetryableClaimError = (error) =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
   (error.code === "P2028" || error.code === "P2034");
+
+const protectJobPayload = (payload) => {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload) ||
+    !Object.prototype.hasOwnProperty.call(payload, "rawToken")
+  ) {
+    return payload;
+  }
+
+  const { rawToken, ...safePayload } = payload;
+
+  return {
+    ...safePayload,
+    tokenCiphertext: encryptSecret(rawToken),
+  };
+};
+
+const scrubJobPayload = (payload) => {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+
+  const { rawToken, tokenCiphertext, ...safePayload } = payload;
+  return safePayload;
+};
 
 const enqueueJob = async (name, payload = {}, options = {}) => {
   const maxAttempts = Math.max(
@@ -62,7 +91,7 @@ const enqueueJob = async (name, payload = {}, options = {}) => {
     data: {
       id: crypto.randomUUID(),
       name,
-      payload,
+      payload: protectJobPayload(payload),
       status: "queued",
       attempts: 0,
       maxAttempts,
@@ -129,6 +158,7 @@ const claimNextJob = async () => {
             data: {
               status: "processing",
               lockedAt: now,
+              payload: protectJobPayload(candidate.payload),
               attempts: {
                 increment: 1,
               },
@@ -168,10 +198,11 @@ const claimNextJob = async () => {
   return null;
 };
 
-const markJobSucceeded = async (jobId) => {
+const markJobSucceeded = async (job) => {
   await prisma.backgroundJob.update({
-    where: { id: jobId },
+    where: { id: job.id },
     data: {
+      payload: scrubJobPayload(job.payload),
       status: "succeeded",
       lockedAt: null,
       completedAt: new Date(),
@@ -196,6 +227,9 @@ const markJobFailed = async (job) => {
         ? job.availableAt
         : new Date(now.getTime() + computeRetryDelayMs(attempts)),
       lastError: summarizeJobError(job.error),
+      ...(reachedMaxAttempts
+        ? { payload: scrubJobPayload(job.payload) }
+        : {}),
     },
   });
 };
@@ -220,7 +254,7 @@ const runJobWorkerTick = async () => {
 
     try {
       await processJobByName(job);
-      await markJobSucceeded(job.id);
+      await markJobSucceeded(job);
       logger.info("Background job completed", {
         jobId: job.id,
         jobName: job.name,

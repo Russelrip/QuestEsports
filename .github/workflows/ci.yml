@@ -23,10 +23,25 @@ jobs:
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: quest_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d quest_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci
-      DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci?schema=public
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci?schema=public
+      SHADOW_DATABASE_URL: postgresql://ci:ci@localhost:5432/postgres?schema=quest_migration_check
       SESSION_COOKIE_NAME: quest_session
     defaults:
       run:
@@ -48,6 +63,20 @@ jobs:
 
       - name: Generate Prisma client
         run: npm run prisma:generate
+
+      - name: Verify Prisma schema changes have migrations
+        run: >-
+          npx prisma migrate diff
+          --exit-code
+          --from-migrations prisma/migrations
+          --to-schema-datamodel prisma/schema.prisma
+          --shadow-database-url "$SHADOW_DATABASE_URL"
+
+      - name: Apply Prisma migrations
+        run: npm run prisma:migrate:deploy
+
+      - name: Verify no Prisma migrations are pending
+        run: npm run prisma:migrate:status
 
       - name: Run backend tests
         run: npm test

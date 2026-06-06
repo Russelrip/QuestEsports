@@ -76,6 +76,7 @@ const registrationAvailabilitySelect = {
   id: true,
   maxTeams: true,
   status: true,
+  registrationOpenAt: true,
   registrationDeadline: true,
   ...registrationCountInclude,
 };
@@ -247,6 +248,10 @@ const withRegistrationCount = (tournament) => ({
 const getRegistrationState = (tournament) => {
   const now = new Date();
   const registrationCount = tournament.registrationCount || 0;
+
+  if (tournament.registrationOpenAt && tournament.registrationOpenAt > now) {
+    return "registration_closed";
+  }
 
   if (registrationCount >= tournament.maxTeams) {
     return "slots_full";
