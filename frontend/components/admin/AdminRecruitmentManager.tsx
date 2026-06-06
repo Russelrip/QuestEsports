@@ -132,9 +132,15 @@ export default function AdminRecruitmentManager() {
                   <Detail label="Email" value={application.email} />
                   <Detail label="WhatsApp" value={application.phone} />
                   <Detail label="Discord" value={application.discord} />
-                  <Detail label="NIC" value={application.nic} />
+                  {application.nic ? <Detail label="NIC" value={application.nic} /> : null}
                   <Detail label="Primary Game" value={application.game} />
                   <Detail label="Player ID" value={application.playerId} />
+                  {application.details.ign ? <Detail label="IGN" value={application.details.ign} /> : null}
+                  {application.details.birthday ? <Detail label="Birthday" value={application.details.birthday} /> : null}
+                  {application.details.gender ? <Detail label="Gender" value={application.details.gender} /> : null}
+                  {application.details.peakAndCurrentRank ? <Detail label="Rank" value={application.details.peakAndCurrentRank} /> : null}
+                  {typeof application.details.canAttendLan === "boolean" ? <Detail label="LAN Events" value={application.details.canAttendLan ? "Yes" : "No"} /> : null}
+                  {typeof application.details.previouslyInOrganization === "boolean" ? <Detail label="Previous Org / Clan" value={application.details.previouslyInOrganization ? application.details.previousOrganization || "Yes" : "No"} /> : null}
                   {application.teamName ? <Detail label="Team Name" value={application.teamName} /> : null}
                   {application.currentRosterSize ? (
                     <Detail label="Roster Size" value={String(application.currentRosterSize)} />
@@ -148,6 +154,26 @@ export default function AdminRecruitmentManager() {
                   </div>
                 ) : null}
 
+                {application.details.tournamentExperience ? (
+                  <div className="mt-5 rounded-[20px] border border-white/8 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tournament Experience / Achievements</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-300">{application.details.tournamentExperience}</p>
+                  </div>
+                ) : null}
+
+                {application.details.teamLogoUrl ? (
+                  <p className="mt-5 text-sm text-slate-300">
+                    Team logo: <a className="text-cyan-200 hover:text-cyan-100" href={application.details.teamLogoUrl} target="_blank" rel="noreferrer">Open link</a>
+                  </p>
+                ) : null}
+
+                {application.details.additionalMembers ? (
+                  <div className="mt-5 rounded-[20px] border border-white/8 bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Additional Members</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-300">{application.details.additionalMembers}</p>
+                  </div>
+                ) : null}
+
                 {application.members.length > 0 ? (
                   <div className="mt-5">
                     <h4 className="text-lg text-white">Team Members</h4>
@@ -155,10 +181,13 @@ export default function AdminRecruitmentManager() {
                       {application.members.map((member, index) => (
                         <dl key={`${application.id}-${member.email}-${index}`} className="grid gap-3 rounded-[20px] border border-white/8 bg-black/20 p-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
                           <Detail label="Name" value={member.name} />
+                          {member.ign ? <Detail label="IGN" value={member.ign} /> : null}
                           <Detail label="Email" value={member.email} />
                           <Detail label="Discord" value={member.discord} />
                           <Detail label="Player ID" value={member.playerId} />
-                          <Detail label="NIC" value={member.nic} />
+                          {member.phone ? <Detail label="WhatsApp" value={member.phone} /> : null}
+                          {member.role ? <Detail label="Role" value={member.role} /> : null}
+                          {member.nic ? <Detail label="NIC" value={member.nic} /> : null}
                         </dl>
                       ))}
                     </div>

@@ -110,7 +110,7 @@ export type RecruitmentApplication = {
   discord: string;
   game: string;
   playerId: string;
-  nic: string;
+  nic?: string | null;
   teamName?: string | null;
   currentRosterSize?: number | null;
   members: {
@@ -118,8 +118,24 @@ export type RecruitmentApplication = {
     email: string;
     discord: string;
     playerId: string;
-    nic: string;
+    ign?: string | null;
+    phone?: string | null;
+    role?: string | null;
+    nic?: string | null;
   }[];
+  details: {
+    ign?: string;
+    birthday?: string;
+    gender?: string;
+    peakAndCurrentRank?: string;
+    tournamentExperience?: string | null;
+    previouslyInOrganization?: boolean;
+    previousOrganization?: string | null;
+    canAttendLan?: boolean;
+    teamLogoUrl?: string | null;
+    additionalMembers?: string | null;
+    declarationAccepted?: boolean;
+  };
   notes?: string | null;
   womensLeagueInterest: boolean;
   status: "pending" | "reviewed" | "accepted" | "rejected";

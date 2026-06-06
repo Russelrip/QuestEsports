@@ -128,10 +128,11 @@ model RecruitmentApplication {
   discord                     String
   game                        String
   playerId                    String                       @map("player_id")
-  applicantIdNumberCiphertext String                       @map("applicant_id_number_ciphertext")
+  applicantIdNumberCiphertext String?                      @map("applicant_id_number_ciphertext")
   teamName                    String?                      @map("team_name")
   currentRosterSize           Int?                         @map("current_roster_size")
   members                     Json
+  details                     Json                         @default("{}")
   notes                       String?
   womensLeagueInterest        Boolean                      @default(false) @map("womens_league_interest")
   status                      RecruitmentApplicationStatus @default(pending)

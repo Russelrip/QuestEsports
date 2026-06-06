@@ -1,7 +1,6 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { encryptSecret } = require("../../lib/secret-box");
 const {
   isValidEmail,
   normalizeEmail,
@@ -10,7 +9,9 @@ const {
 } = require("../../lib/validation");
 
 const APPLICATION_TYPES = new Set(["solo_player", "existing_team", "incomplete_team"]);
-const MAX_MEMBERS = 10;
+const MAX_MEMBERS = 20;
+const GENDERS = new Set(["male", "female", "other"]);
+const MEMBER_ROLES = new Set(["player", "substitute"]);
 
 const requiredText = (value, label, maxLength = 200) => {
   const normalized = normalizeText(value);
@@ -31,6 +32,28 @@ const optionalText = (value, maxLength = 2000) => {
   return normalized ? normalized.slice(0, maxLength) : null;
 };
 
+const requiredBoolean = (value, label) => {
+  if (value !== true) {
+    throw new HttpError(400, `${label} is required.`);
+  }
+  return true;
+};
+
+const optionalHttpUrl = (value, label) => {
+  const normalized = optionalText(value, 1000);
+  if (!normalized) return null;
+
+  try {
+    const url = new URL(normalized);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new Error("Unsupported protocol");
+    }
+    return url.toString();
+  } catch {
+    throw new HttpError(400, `${label} must be a valid HTTP or HTTPS link.`);
+  }
+};
+
 const normalizeMembers = (members, applicationType) => {
   if (applicationType === "solo_player") {
     return [];
@@ -40,20 +63,29 @@ const normalizeMembers = (members, applicationType) => {
     throw new HttpError(400, `Team applications can include up to ${MAX_MEMBERS} members.`);
   }
 
+  if (applicationType === "existing_team" && members.length < 4) {
+    throw new HttpError(400, "Complete team applications must include at least four additional players.");
+  }
+
+  if (applicationType === "incomplete_team" && (members.length < 1 || members.length > 3)) {
+    throw new HttpError(400, "Incomplete team applications must include between one and three additional players.");
+  }
+
   return members.map((member, index) => {
     const email = normalizeEmail(member.email);
     if (!isValidEmail(email)) {
       throw new HttpError(400, `Team member ${index + 1} needs a valid email address.`);
     }
 
+    const role = normalizeText(member.role).toLowerCase();
     return {
       name: requiredText(member.name, `Team member ${index + 1} name`),
-      email,
+      ign: requiredText(member.ign, `Team member ${index + 1} IGN`),
+      playerId: requiredText(member.playerId, `Team member ${index + 1} game ID`),
       discord: requiredText(member.discord, `Team member ${index + 1} Discord username`),
-      playerId: requiredText(member.playerId, `Team member ${index + 1} player ID`),
-      idNumberCiphertext: encryptSecret(
-        requiredText(member.idNumber, `Team member ${index + 1} NIC`)
-      ),
+      email,
+      phone: requiredText(member.phone, `Team member ${index + 1} WhatsApp number`, 50),
+      role: MEMBER_ROLES.has(role) ? role : "player",
     };
   });
 };
@@ -70,11 +102,56 @@ const createRecruitmentApplication = async ({ body, user }) => {
     ? normalizeInteger(body.currentRosterSize)
     : null;
 
-  if (teamApplication && (!currentRosterSize || currentRosterSize < 1 || currentRosterSize > 20)) {
-    throw new HttpError(400, "Current roster size must be between 1 and 20.");
+  if (
+    (applicationType === "existing_team" &&
+      (!currentRosterSize || currentRosterSize < 5 || currentRosterSize > 20)) ||
+    (applicationType === "incomplete_team" &&
+      (!currentRosterSize || currentRosterSize < 2 || currentRosterSize > 4))
+  ) {
+    throw new HttpError(
+      400,
+      applicationType === "existing_team"
+        ? "Complete team roster size must be between 5 and 20."
+        : "Incomplete team roster size must be between 2 and 4."
+    );
   }
 
   const members = normalizeMembers(body.members, applicationType);
+  const games = Array.isArray(body.games)
+    ? body.games.map((game) => normalizeText(game)).filter(Boolean).slice(0, 20)
+    : [];
+
+  if (games.length === 0) {
+    throw new HttpError(400, "Select at least one game.");
+  }
+
+  const gender = normalizeText(body.gender).toLowerCase();
+  if (!GENDERS.has(gender)) {
+    throw new HttpError(400, "Select a valid gender.");
+  }
+
+  const birthday = requiredText(body.birthday, "Birthday", 20);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday) || Number.isNaN(Date.parse(birthday))) {
+    throw new HttpError(400, "Birthday must be a valid date.");
+  }
+
+  const details = {
+    ign: requiredText(body.ign, "In-game name"),
+    birthday,
+    gender,
+    peakAndCurrentRank: requiredText(body.peakAndCurrentRank, "Peak rank, current rank and game"),
+    tournamentExperience: optionalText(body.tournamentExperience),
+    previouslyInOrganization: Boolean(body.previouslyInOrganization),
+    previousOrganization: optionalText(body.previousOrganization, 300),
+    canAttendLan: Boolean(body.canAttendLan),
+    teamLogoUrl: optionalHttpUrl(body.teamLogoUrl, "Team logo"),
+    additionalMembers: optionalText(body.additionalMembers),
+    declarationAccepted: requiredBoolean(body.declarationAccepted, "Rules declaration"),
+  };
+
+  if (details.previouslyInOrganization && !details.previousOrganization) {
+    throw new HttpError(400, "Previous organization or clan name is required.");
+  }
 
   return prisma.recruitmentApplication.create({
     data: {
@@ -85,16 +162,15 @@ const createRecruitmentApplication = async ({ body, user }) => {
       email: user.email,
       phone: requiredText(body.phone, "WhatsApp contact number"),
       discord: requiredText(body.discord, "Discord username"),
-      game: requiredText(body.game, "Primary game"),
+      game: games.join(", "),
       playerId: requiredText(body.playerId, "In-game player ID"),
-      applicantIdNumberCiphertext: encryptSecret(
-        requiredText(body.idNumber, "NIC")
-      ),
+      applicantIdNumberCiphertext: null,
       teamName: teamApplication ? requiredText(body.teamName, "Team name") : null,
       currentRosterSize,
       members,
+      details,
       notes: optionalText(body.notes),
-      womensLeagueInterest: Boolean(body.womensLeagueInterest),
+      womensLeagueInterest: false,
     },
     select: {
       id: true,

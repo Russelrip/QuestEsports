@@ -119,7 +119,9 @@ const mapRecruitmentApplication = (application) => ({
   discord: application.discord,
   game: application.game,
   playerId: application.playerId,
-  nic: decryptNic(application.applicantIdNumberCiphertext),
+  nic: application.applicantIdNumberCiphertext
+    ? decryptNic(application.applicantIdNumberCiphertext)
+    : null,
   teamName: application.teamName,
   currentRosterSize: application.currentRosterSize,
   members: Array.isArray(application.members)
@@ -128,9 +130,16 @@ const mapRecruitmentApplication = (application) => ({
         email: member.email,
         discord: member.discord,
         playerId: member.playerId,
-        nic: decryptNic(member.idNumberCiphertext),
+        ign: member.ign || null,
+        phone: member.phone || null,
+        role: member.role || "player",
+        nic: member.idNumberCiphertext ? decryptNic(member.idNumberCiphertext) : null,
       }))
     : [],
+  details:
+    application.details && typeof application.details === "object"
+      ? application.details
+      : {},
   notes: application.notes,
   womensLeagueInterest: application.womensLeagueInterest,
   status: application.status,
