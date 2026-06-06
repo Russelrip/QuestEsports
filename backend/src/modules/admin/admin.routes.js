@@ -13,6 +13,8 @@ const {
   getTeamRegistrations,
   getTournamentRegistrations,
   updateRegistrationStatus,
+  getRecruitmentApplications,
+  updateRecruitmentStatus,
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
 } = require("./admin.controller");
@@ -34,6 +36,8 @@ router.delete("/admin/contact-messages/:messageId", removeContactMessage);
 router.get("/admin/team-registrations", getTeamRegistrations);
 router.get("/admin/tournaments/:tournamentId/registrations", getTournamentRegistrations);
 router.patch("/admin/team-registrations/:registrationId/status", updateRegistrationStatus);
+router.get("/admin/recruitment-applications", getRecruitmentApplications);
+router.patch("/admin/recruitment-applications/:applicationId/status", updateRecruitmentStatus);
 router.post("/admin/media/import-legacy-posters", importLegacyPosterMedia);
 router.post("/admin/media/migrate-image-assets", migratePosterMediaToFilesystem);
 

@@ -13,6 +13,7 @@ const emptyStats: AdminDashboardStats = {
   totalTournaments: 0,
   openTournaments: 0,
   totalRegistrations: 0,
+  pendingRecruitmentApplications: 0,
   unreadContactMessages: 0,
 };
 
@@ -34,6 +35,12 @@ const statCards = (stats: AdminDashboardStats) => [
     value: stats.totalRegistrations,
     href: "/admin/registrations",
     action: "Review queue",
+  },
+  {
+    label: "Pending Recruitment",
+    value: stats.pendingRecruitmentApplications,
+    href: "/admin/recruitment",
+    action: "Review applications",
   },
   {
     label: "Unread Contact Messages",

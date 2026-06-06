@@ -101,6 +101,12 @@ export default function RecruitmentForm() {
     setError("");
     setSuccess("");
 
+    if (!event.currentTarget.checkValidity()) {
+      setError("Please complete all required fields and accept the Privacy Policy.");
+      event.currentTarget.reportValidity();
+      return;
+    }
+
     if (!user?.emailVerified) {
       setError("Verify your email before submitting a recruitment application.");
       return;
@@ -124,7 +130,9 @@ export default function RecruitmentForm() {
         return;
       }
 
-      setSuccess("Your recruitment application has been submitted successfully.");
+      setSuccess(
+        "Your recruitment application has been submitted successfully. The Quest team will review it and contact you using your verified email or WhatsApp number."
+      );
       setFields((current) => ({
         ...initialFields,
         fullName: current.fullName,
@@ -205,7 +213,7 @@ export default function RecruitmentForm() {
         </Card>
 
         <Card className="p-6 sm:p-8">
-          <form className="grid gap-6" onSubmit={handleSubmit}>
+          <form className="grid gap-6" onSubmit={handleSubmit} noValidate>
             <fieldset>
               <legend>Application Type</legend>
               <FormField label="How are you joining?" htmlFor="applicationType" required>
@@ -331,8 +339,8 @@ export default function RecruitmentForm() {
               </label>
             </fieldset>
 
-            {error ? <p className="text-sm text-rose-300">{error}</p> : null}
-            {success ? <p className="text-sm text-emerald-300">{success}</p> : null}
+            {error ? <p role="alert" className="text-sm text-rose-300">{error}</p> : null}
+            {success ? <p role="status" className="text-sm text-emerald-300">{success}</p> : null}
             <Button type="submit" disabled={submitting}>
               {submitting ? "Submitting..." : "Submit Recruitment Application"}
             </Button>

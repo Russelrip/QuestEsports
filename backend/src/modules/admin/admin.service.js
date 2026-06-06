@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { decryptSecret } = require("../../lib/secret-box");
 const {
   buildPagination,
   buildPagedResponse,
@@ -20,6 +21,7 @@ const { mapUserForResponse, validateUserBasics } = require("../auth/auth.service
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
 const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
+const RECRUITMENT_STATUSES = new Set(["pending", "reviewed", "accepted", "rejected"]);
 
 const USER_ROLES = new Set(["user", "admin"]);
 
@@ -100,6 +102,42 @@ const mapTeamRegistration = (registration) => ({
     .map(mapRegistrationMember),
 });
 
+const decryptNic = (ciphertext) => {
+  try {
+    return decryptSecret(ciphertext);
+  } catch {
+    return "Unable to decrypt";
+  }
+};
+
+const mapRecruitmentApplication = (application) => ({
+  id: application.id,
+  applicationType: application.applicationType,
+  fullName: application.fullName,
+  email: application.email,
+  phone: application.phone,
+  discord: application.discord,
+  game: application.game,
+  playerId: application.playerId,
+  nic: decryptNic(application.applicantIdNumberCiphertext),
+  teamName: application.teamName,
+  currentRosterSize: application.currentRosterSize,
+  members: Array.isArray(application.members)
+    ? application.members.map((member) => ({
+        name: member.name,
+        email: member.email,
+        discord: member.discord,
+        playerId: member.playerId,
+        nic: decryptNic(member.idNumberCiphertext),
+      }))
+    : [],
+  notes: application.notes,
+  womensLeagueInterest: application.womensLeagueInterest,
+  status: application.status,
+  createdAt: application.createdAt,
+  updatedAt: application.updatedAt,
+});
+
 const buildRegistrationWhere = ({
   search,
   tournamentId,
@@ -147,11 +185,12 @@ const buildRegistrationWhere = ({
 };
 
 const getAdminDashboardData = async () => {
-  const [totalTournaments, openTournaments, totalRegistrations, unreadContactMessages] =
+  const [totalTournaments, openTournaments, totalRegistrations, pendingRecruitmentApplications, unreadContactMessages] =
     await prisma.$transaction([
       prisma.tournament.count(),
       prisma.tournament.count({ where: { status: "registration_open" } }),
       prisma.teamRegistration.count(),
+      prisma.recruitmentApplication.count({ where: { status: "pending" } }),
       prisma.contactSubmission.count({ where: { isRead: false } }),
     ]);
 
@@ -159,6 +198,7 @@ const getAdminDashboardData = async () => {
     totalTournaments,
     openTournaments,
     totalRegistrations,
+    pendingRecruitmentApplications,
     unreadContactMessages,
   };
 };
@@ -513,6 +553,61 @@ const listTeamRegistrations = async (query = {}) => {
   };
 };
 
+const listRecruitmentApplications = async ({ page, pageSize, search, status, applicationType }) => {
+  const pagination = buildPagination({ page, pageSize });
+  const normalizedSearch = normalizeText(search);
+  const normalizedStatus = normalizeText(status).toLowerCase();
+  const normalizedApplicationType = normalizeText(applicationType).toLowerCase();
+  const where = {
+    ...(RECRUITMENT_STATUSES.has(normalizedStatus) ? { status: normalizedStatus } : {}),
+    ...(normalizedApplicationType ? { applicationType: normalizedApplicationType } : {}),
+    ...(normalizedSearch
+      ? {
+          OR: [
+            { fullName: { contains: normalizedSearch, mode: "insensitive" } },
+            { email: { contains: normalizedSearch, mode: "insensitive" } },
+            { phone: { contains: normalizedSearch, mode: "insensitive" } },
+            { discord: { contains: normalizedSearch, mode: "insensitive" } },
+            { game: { contains: normalizedSearch, mode: "insensitive" } },
+            { teamName: { contains: normalizedSearch, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+
+  const [total, applications] = await prisma.$transaction([
+    prisma.recruitmentApplication.count({ where }),
+    prisma.recruitmentApplication.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (pagination.page - 1) * pagination.pageSize,
+      take: pagination.pageSize,
+    }),
+  ]);
+
+  return buildPagedResponse({
+    items: applications.map(mapRecruitmentApplication),
+    total,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+  });
+};
+
+const updateRecruitmentApplicationStatus = async (applicationId, body) => {
+  const status = normalizeText(body.status).toLowerCase();
+
+  if (!RECRUITMENT_STATUSES.has(status)) {
+    throw new HttpError(400, "Invalid recruitment application status.");
+  }
+
+  const application = await prisma.recruitmentApplication.update({
+    where: { id: applicationId },
+    data: { status },
+  });
+
+  return mapRecruitmentApplication(application);
+};
+
 const getRegistrationsByTournament = async (tournamentId, query = {}) => {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
@@ -591,6 +686,8 @@ module.exports = {
   updateContactMessageReadStatus,
   deleteContactMessage,
   listTeamRegistrations,
+  listRecruitmentApplications,
+  updateRecruitmentApplicationStatus,
   getRegistrationsByTournament,
   updateTeamRegistrationStatus,
   runLegacyPosterImport,

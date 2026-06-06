@@ -5,6 +5,7 @@ import {
   type AdminUser,
   type ContactMessage,
   type Pagination,
+  type RecruitmentApplication,
   type TeamRegistration,
   type TournamentOption,
 } from "@/lib/admin";
@@ -66,6 +67,28 @@ export function useAdminMessages(search: string, isRead: string, page: number) {
       `/api/admin/contact-messages?${params.toString()}`
     );
   });
+}
+
+export function useAdminRecruitmentApplications(
+  search: string,
+  status: string,
+  applicationType: string,
+  page: number
+) {
+  return useApiQuery(
+    ["admin-recruitment", search, status, applicationType, page],
+    async () => {
+      const params = createAdminSearchParams(page, 10);
+      appendIfPresent(params, "search", search);
+      appendIfPresent(params, "status", status);
+      appendIfPresent(params, "applicationType", applicationType);
+
+      return adminRequest<{
+        applications: RecruitmentApplication[];
+        pagination: Pagination;
+      }>(`/api/admin/recruitment-applications?${params.toString()}`);
+    }
+  );
 }
 
 export function useAdminTournaments(search: string, status: string, visibility: string, page: number) {

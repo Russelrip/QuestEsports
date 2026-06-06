@@ -11,6 +11,7 @@ export const adminNavigationLinks = [
   { href: "/admin/users", label: "Users" },
   { href: "/admin/tournaments", label: "Tournaments" },
   { href: "/admin/registrations", label: "Registrations" },
+  { href: "/admin/recruitment", label: "Recruitment" },
   { href: "/admin/rulebooks", label: "Rulebooks" },
   { href: "/admin/contact-messages", label: "Contact Messages" },
 ] as const;
@@ -26,6 +27,7 @@ export type AdminDashboardStats = {
   totalTournaments: number;
   openTournaments: number;
   totalRegistrations: number;
+  pendingRecruitmentApplications: number;
   unreadContactMessages: number;
 };
 
@@ -97,6 +99,32 @@ export type TeamRegistration = {
     riotId: string;
   };
   members: RegistrationMember[];
+};
+
+export type RecruitmentApplication = {
+  id: string;
+  applicationType: "solo_player" | "existing_team" | "incomplete_team";
+  fullName: string;
+  email: string;
+  phone: string;
+  discord: string;
+  game: string;
+  playerId: string;
+  nic: string;
+  teamName?: string | null;
+  currentRosterSize?: number | null;
+  members: {
+    name: string;
+    email: string;
+    discord: string;
+    playerId: string;
+    nic: string;
+  }[];
+  notes?: string | null;
+  womensLeagueInterest: boolean;
+  status: "pending" | "reviewed" | "accepted" | "rejected";
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type AdminTournamentBracket = {

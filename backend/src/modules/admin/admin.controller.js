@@ -10,6 +10,8 @@ const {
   updateContactMessageReadStatus,
   deleteContactMessage,
   listTeamRegistrations,
+  listRecruitmentApplications,
+  updateRecruitmentApplicationStatus,
   getRegistrationsByTournament,
   updateTeamRegistrationStatus,
   runLegacyPosterImport,
@@ -151,6 +153,29 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
   });
 });
 
+const getRecruitmentApplications = asyncHandler(async (req, res) => {
+  const result = await listRecruitmentApplications(req.query);
+
+  res.status(200).json({
+    success: true,
+    applications: result.items,
+    pagination: result.pagination,
+  });
+});
+
+const updateRecruitmentStatus = asyncHandler(async (req, res) => {
+  const application = await updateRecruitmentApplicationStatus(
+    req.params.applicationId,
+    req.body
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Recruitment application updated successfully.",
+    application,
+  });
+});
+
 const importLegacyPosterMedia = asyncHandler(async (req, res) => {
   const summary = await runLegacyPosterImport();
 
@@ -184,6 +209,8 @@ module.exports = {
   getTeamRegistrations,
   getTournamentRegistrations,
   updateRegistrationStatus,
+  getRecruitmentApplications,
+  updateRecruitmentStatus,
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
 };
