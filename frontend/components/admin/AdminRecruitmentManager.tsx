@@ -15,6 +15,7 @@ import { useToastStore } from "@/hooks/useToastStore";
 import {
   adminRequest,
   getAdminPaginationSummary,
+  normalizeRecruitmentApplication,
   type RecruitmentApplication,
 } from "@/lib/admin";
 
@@ -37,7 +38,7 @@ export default function AdminRecruitmentManager() {
     page
   );
   const showToast = useToastStore((state) => state.showToast);
-  const applications = data?.applications || [];
+  const applications = (data?.applications || []).map(normalizeRecruitmentApplication);
   const pagination = data?.pagination;
 
   const updateStatus = async (

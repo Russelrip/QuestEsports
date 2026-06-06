@@ -101,6 +101,31 @@ export type TeamRegistration = {
   members: RegistrationMember[];
 };
 
+export type RecruitmentApplicationMember = {
+  name: string;
+  email: string;
+  discord: string;
+  playerId: string;
+  ign?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  nic?: string | null;
+};
+
+export type RecruitmentApplicationDetails = {
+  ign?: string;
+  birthday?: string;
+  gender?: string;
+  peakAndCurrentRank?: string;
+  tournamentExperience?: string | null;
+  previouslyInOrganization?: boolean;
+  previousOrganization?: string | null;
+  canAttendLan?: boolean;
+  teamLogoUrl?: string | null;
+  additionalMembers?: string | null;
+  declarationAccepted?: boolean;
+};
+
 export type RecruitmentApplication = {
   id: string;
   applicationType: "solo_player" | "existing_team" | "incomplete_team";
@@ -113,35 +138,40 @@ export type RecruitmentApplication = {
   nic?: string | null;
   teamName?: string | null;
   currentRosterSize?: number | null;
-  members: {
-    name: string;
-    email: string;
-    discord: string;
-    playerId: string;
-    ign?: string | null;
-    phone?: string | null;
-    role?: string | null;
-    nic?: string | null;
-  }[];
-  details: {
-    ign?: string;
-    birthday?: string;
-    gender?: string;
-    peakAndCurrentRank?: string;
-    tournamentExperience?: string | null;
-    previouslyInOrganization?: boolean;
-    previousOrganization?: string | null;
-    canAttendLan?: boolean;
-    teamLogoUrl?: string | null;
-    additionalMembers?: string | null;
-    declarationAccepted?: boolean;
-  };
+  members?: RecruitmentApplicationMember[] | null;
+  details?: RecruitmentApplicationDetails | null;
   notes?: string | null;
   womensLeagueInterest: boolean;
   status: "pending" | "reviewed" | "accepted" | "rejected";
   createdAt: string;
   updatedAt: string;
 };
+
+export type NormalizedRecruitmentApplication = Omit<
+  RecruitmentApplication,
+  "members" | "details"
+> & {
+  members: RecruitmentApplicationMember[];
+  details: RecruitmentApplicationDetails;
+};
+
+export const normalizeRecruitmentApplication = (
+  application: RecruitmentApplication
+): NormalizedRecruitmentApplication => ({
+  ...application,
+  members: Array.isArray(application.members)
+    ? application.members.filter(
+        (member): member is RecruitmentApplicationMember =>
+          Boolean(member) && typeof member === "object"
+      )
+    : [],
+  details:
+    application.details &&
+    typeof application.details === "object" &&
+    !Array.isArray(application.details)
+      ? application.details
+      : {},
+});
 
 export type AdminTournamentBracket = {
   id: string;
