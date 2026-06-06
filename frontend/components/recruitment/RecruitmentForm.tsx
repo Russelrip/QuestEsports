@@ -236,7 +236,7 @@ export default function RecruitmentForm() {
                 <FormField label="Verified Email" htmlFor="verifiedEmail" hint="Taken from your verified Quest account.">
                   <Input id="verifiedEmail" type="email" disabled value={user.email} />
                 </FormField>
-                <FormField label="ID Number" htmlFor="idNumber" required hint="Stored encrypted and used only for recruitment review.">
+                <FormField label="NIC" htmlFor="idNumber" required hint="Stored encrypted and used only for recruitment review.">
                   <Input id="idNumber" required value={fields.idNumber} onChange={(event) => updateField("idNumber", event.target.value)} />
                 </FormField>
                 <FormField label="WhatsApp Contact Number" htmlFor="phone" required>
@@ -270,7 +270,7 @@ export default function RecruitmentForm() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h3 className="text-xl text-white">Team Members</h3>
-                      <p className="mt-1 text-xs text-slate-400">Add each current roster member, including their ID number.</p>
+                      <p className="mt-1 text-xs text-slate-400">Add each current roster member, including their NIC.</p>
                     </div>
                     <Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])}>
                       Add Team Member
@@ -292,7 +292,7 @@ export default function RecruitmentForm() {
                         <FormField label="Email Address" required>
                           <Input type="email" required value={member.email} onChange={(event) => updateMember(index, "email", event.target.value)} />
                         </FormField>
-                        <FormField label="ID Number" required hint="Stored encrypted.">
+                        <FormField label="NIC" required hint="Stored encrypted.">
                           <Input required value={member.idNumber} onChange={(event) => updateMember(index, "idNumber", event.target.value)} />
                         </FormField>
                         <FormField label="Discord Username" required>

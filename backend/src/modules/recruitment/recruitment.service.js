@@ -52,7 +52,7 @@ const normalizeMembers = (members, applicationType) => {
       discord: requiredText(member.discord, `Team member ${index + 1} Discord username`),
       playerId: requiredText(member.playerId, `Team member ${index + 1} player ID`),
       idNumberCiphertext: encryptSecret(
-        requiredText(member.idNumber, `Team member ${index + 1} ID number`)
+        requiredText(member.idNumber, `Team member ${index + 1} NIC`)
       ),
     };
   });
@@ -88,7 +88,7 @@ const createRecruitmentApplication = async ({ body, user }) => {
       game: requiredText(body.game, "Primary game"),
       playerId: requiredText(body.playerId, "In-game player ID"),
       applicantIdNumberCiphertext: encryptSecret(
-        requiredText(body.idNumber, "ID number")
+        requiredText(body.idNumber, "NIC")
       ),
       teamName: teamApplication ? requiredText(body.teamName, "Team name") : null,
       currentRosterSize,

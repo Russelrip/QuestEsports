@@ -15,7 +15,7 @@ const policySections = [
     bullets: [
       "Account information such as first name, last name, email address, username, password hash, and optional profile details like phone number or Discord tag.",
       "Authentication and security data such as session records, sign-in history, IP address, user agent, verification tokens, password reset tokens, and multi-factor authentication data if you enable it.",
-      "Tournament, recruitment, and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, identification numbers submitted for recruitment review, saved team information, and application or registration status.",
+      "Tournament, recruitment, and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, NICs submitted for recruitment review, saved team information, and application or registration status.",
       "Contact information and messages that you submit through the contact form or support channels.",
       "Uploaded content such as team logos, tournament banners, posters, and related media submitted or managed through the platform.",
       "Technical and usage information collected through hosting, analytics, performance monitoring, and server logs.",
