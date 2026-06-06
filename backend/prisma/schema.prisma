@@ -35,6 +35,11 @@ enum TournamentStatus {
   cancelled
 }
 
+enum TournamentRegistrationMode {
+  open_entry
+  slot_based
+}
+
 enum TeamRegistrationStatus {
   pending
   approved
@@ -287,11 +292,13 @@ model Tournament {
   shortDescription  String             @map("short_description")
   fullDescription   String             @map("full_description")
   rules             String?
+  rulebookId        String?            @map("rulebook_id") @db.Uuid
   registrationOpenAt DateTime?         @map("registration_open_at")
   startDate         DateTime           @map("start_date")
   endDate           DateTime           @map("end_date")
   registrationDeadline DateTime        @map("registration_deadline")
   format            String
+  registrationMode  TournamentRegistrationMode @default(open_entry) @map("registration_mode")
   teamSize          Int                @map("team_size")
   maxTeams          Int                @map("max_teams")
   prizePool         String             @map("prize_pool")
@@ -306,12 +313,31 @@ model Tournament {
   teamRegistrations TeamRegistration[]
   posters           Poster[]
   bracket           TournamentBracket?
+  rulebook          Rulebook?          @relation(fields: [rulebookId], references: [id], onDelete: SetNull)
 
   @@index([isActive])
   @@index([isPublished, status, startDate])
   @@index([isFeatured, isPublished])
   @@index([displayPriority, startDate])
+  @@index([rulebookId])
   @@map("tournaments")
+}
+
+model Rulebook {
+  id        String       @id @default(uuid()) @db.Uuid
+  slug      String       @unique
+  title     String
+  game      String
+  variant   String       @default("Standard")
+  content   String
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  tournaments Tournament[]
+
+  @@index([game])
+  @@index([game, variant])
+  @@index([createdAt])
+  @@map("rulebooks")
 }
 
 model TournamentBracket {

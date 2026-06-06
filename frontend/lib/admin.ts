@@ -11,6 +11,7 @@ export const adminNavigationLinks = [
   { href: "/admin/users", label: "Users" },
   { href: "/admin/tournaments", label: "Tournaments" },
   { href: "/admin/registrations", label: "Registrations" },
+  { href: "/admin/rulebooks", label: "Rulebooks" },
   { href: "/admin/contact-messages", label: "Contact Messages" },
 ] as const;
 
@@ -167,11 +168,13 @@ export type TournamentFormValues = {
   shortDescription: string;
   fullDescription: string;
   rules: string;
+  rulebookId: string;
   registrationOpenAt: string;
   startDate: string;
   endDate: string;
   registrationDeadline: string;
   format: string;
+  registrationMode: Tournament["registrationMode"];
   teamSize: string;
   maxTeams: string;
   prizePool: string;
@@ -226,11 +229,13 @@ export const initialTournamentFormValues: TournamentFormValues = {
   shortDescription: "",
   fullDescription: "",
   rules: "",
+  rulebookId: "",
   registrationOpenAt: "",
   startDate: "",
   endDate: "",
   registrationDeadline: "",
   format: "",
+  registrationMode: "open_entry",
   teamSize: "5",
   maxTeams: "",
   prizePool: "",

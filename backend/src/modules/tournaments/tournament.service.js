@@ -38,12 +38,22 @@ const TOURNAMENT_STATUSES = new Set([
   "completed",
   "cancelled",
 ]);
+const REGISTRATION_MODES = new Set(["open_entry", "slot_based"]);
 
 const requiredPlayerIndexes = [2, 3, 4, 5];
 const registrationCountInclude = {
   _count: {
     select: {
       teamRegistrations: true,
+    },
+  },
+  rulebook: {
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      game: true,
+      variant: true,
     },
   },
 };
@@ -267,11 +277,13 @@ const mapTournament = (tournament) => {
     shortDescription: tournamentWithRegistrationCount.shortDescription,
     fullDescription: tournamentWithRegistrationCount.fullDescription,
     rules: tournamentWithRegistrationCount.rules,
+    rulebook: tournamentWithRegistrationCount.rulebook || null,
     registrationOpenAt: tournamentWithRegistrationCount.registrationOpenAt,
     startDate: tournamentWithRegistrationCount.startDate,
     endDate: tournamentWithRegistrationCount.endDate,
     registrationDeadline: tournamentWithRegistrationCount.registrationDeadline,
     format: tournamentWithRegistrationCount.format,
+    registrationMode: tournamentWithRegistrationCount.registrationMode,
     teamSize: tournamentWithRegistrationCount.teamSize,
     maxTeams: tournamentWithRegistrationCount.maxTeams,
     registrationCount: tournamentWithRegistrationCount.registrationCount,
@@ -478,7 +490,11 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
   const shortDescription = normalizeText(body.shortDescription);
   const fullDescription = normalizeText(body.fullDescription);
   const rules = normalizeText(body.rules);
+  const rulebookId = normalizeText(body.rulebookId) || null;
   const format = normalizeText(body.format);
+  const registrationMode = normalizeText(
+    body.registrationMode || existingTournament?.registrationMode || "open_entry"
+  ).toLowerCase();
   const prizePool = normalizeText(body.prizePool);
   const teamSize = normalizeInteger(body.teamSize);
   const maxTeams = normalizeInteger(body.maxTeams);
@@ -511,7 +527,6 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     !game ||
     !shortDescription ||
     !fullDescription ||
-    !rules ||
     !format ||
     !prizePool
   ) {
@@ -520,6 +535,10 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
 
   if (!teamSize || teamSize <= 0 || !maxTeams || maxTeams <= 0) {
     throw new HttpError(400, "Team size and max teams must be valid numbers.");
+  }
+
+  if (!REGISTRATION_MODES.has(registrationMode)) {
+    throw new HttpError(400, "Select a valid registration mode.");
   }
 
   if (registrationDeadline > startDate) {
@@ -549,11 +568,13 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     shortDescription,
     fullDescription,
     rules,
+    rulebookId,
     registrationOpenAt,
     startDate,
     endDate,
     registrationDeadline,
     format,
+    registrationMode,
     teamSize,
     maxTeams,
     prizePool,
@@ -564,6 +585,25 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     contactLink,
     isActive: status === "registration_open",
   };
+};
+
+const ensureRulebookMatchesTournamentGame = async ({ rulebookId, game }) => {
+  if (!rulebookId) {
+    return;
+  }
+
+  const rulebook = await prisma.rulebook.findUnique({
+    where: { id: rulebookId },
+    select: { game: true },
+  });
+
+  if (!rulebook) {
+    throw new HttpError(400, "Selected rulebook was not found.");
+  }
+
+  if (normalizeText(rulebook.game).toLowerCase() !== normalizeText(game).toLowerCase()) {
+    throw new HttpError(400, "The selected rulebook must match the tournament game.");
+  }
 };
 
 const listPublicTournaments = async ({ game } = {}) => {
@@ -725,6 +765,7 @@ const buildTournamentAssetUpdates = async ({ body, files }) => {
 const createAdminTournament = async ({ body, files }) => {
   const payload = parseTournamentPayload({ body });
   await ensureSlugAvailable(payload.slug);
+  await ensureRulebookMatchesTournamentGame(payload);
   const assetUpdates = await buildTournamentAssetUpdates({ body, files });
 
   const tournament = await prisma.tournament.create({
@@ -750,6 +791,7 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
 
   const payload = parseTournamentPayload({ body, existingTournament });
   await ensureSlugAvailable(payload.slug, tournamentId);
+  await ensureRulebookMatchesTournamentGame(payload);
   const assetUpdates = await buildTournamentAssetUpdates({
     body,
     files,

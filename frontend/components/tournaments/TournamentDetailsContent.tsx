@@ -14,6 +14,7 @@ import {
   BracketParticipant,
   Tournament,
   TournamentBracketData,
+  getTournamentRegistrationModeLabel,
 } from "@/lib/tournaments";
 
 const TEAMS_PER_PAGE = 10;
@@ -76,15 +77,17 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
               </div>
 
               <footer className="flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:flex-wrap">
-                  <Link
-                    href="/rulebook"
-                    className={buttonClassName({
-                      variant: "secondary",
-                      className: "w-full border-white/14 bg-transparent hover:border-white/20 hover:bg-white/6 sm:w-auto",
-                    })}
-                  >
-                    Rulebook
-                  </Link>
+                  {tournament.rulebook ? (
+                    <Link
+                      href={`/rulebooks/${tournament.rulebook.slug}`}
+                      className={buttonClassName({
+                        variant: "secondary",
+                        className: "w-full border-white/14 bg-transparent hover:border-white/20 hover:bg-white/6 sm:w-auto",
+                      })}
+                    >
+                      {tournament.rulebook.title}
+                    </Link>
+                  ) : null}
                   <RegisterTournamentButton tournament={tournament} closedAsButton className="w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto" />
               </footer>
             </div>
@@ -131,6 +134,7 @@ function getTournamentDetailStats(tournament: Tournament) {
   return [
     { label: "Prize Pool", value: tournament.prizePool },
     { label: "Format", value: tournament.format },
+    { label: "Entry", value: getTournamentRegistrationModeLabel(tournament) },
     { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
     { label: "Registration Deadline", value: formatDateTime(tournament.registrationDeadline) },
     {

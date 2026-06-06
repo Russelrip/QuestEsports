@@ -7,10 +7,18 @@ import { formatDisplayDate } from "@/lib/utils";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
+  type Tournament,
 } from "@/lib/tournaments";
 
 export default async function FeaturedTournaments() {
-  const tournaments = await fetchPublicTournaments();
+  let tournaments: Tournament[] = [];
+
+  try {
+    tournaments = await fetchPublicTournaments();
+  } catch (error) {
+    console.error("Unable to load featured tournaments:", error);
+  }
+
   const featuredTournaments = getFeaturedTournaments(tournaments);
 
   return (

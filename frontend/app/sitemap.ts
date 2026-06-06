@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { absoluteUrl } from "@/lib/site";
 import { fetchPublicTournaments } from "@/lib/tournaments";
+import { fetchRulebooks } from "@/lib/rulebooks";
 
 const staticRoutes = [
   "",
@@ -10,7 +11,6 @@ const staticRoutes = [
   "/shop",
   "/members",
   "/join",
-  "/rulebook",
   "/contact",
   "/registration",
   "/tournament-registration",
@@ -27,7 +27,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
 
   try {
-    const tournaments = await fetchPublicTournaments();
+    const [tournaments, rulebooks] = await Promise.all([
+      fetchPublicTournaments(),
+      fetchRulebooks(),
+    ]);
     const tournamentEntries: MetadataRoute.Sitemap = tournaments.map((tournament) => ({
       url: absoluteUrl(`/tournaments/${tournament.slug}`),
       lastModified: tournament.updatedAt ? new Date(tournament.updatedAt) : now,
@@ -38,7 +41,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: tournament.isFeatured ? 0.9 : 0.7,
     }));
 
-    return [...staticEntries, ...tournamentEntries];
+    const rulebookEntries: MetadataRoute.Sitemap = rulebooks.map((rulebook) => ({
+      url: absoluteUrl(`/rulebooks/${rulebook.slug}`),
+      lastModified: new Date(rulebook.updatedAt),
+      changeFrequency: "monthly",
+      priority: 0.6,
+    }));
+
+    return [...staticEntries, ...tournamentEntries, ...rulebookEntries];
   } catch {
     return staticEntries;
   }

@@ -3,6 +3,7 @@ import { formatDisplayDate } from "@/lib/utils";
 import {
   Tournament,
   getTournamentRegistrationLabel,
+  getTournamentRegistrationModeLabel,
   getTournamentStatusLabel,
 } from "@/lib/tournaments";
 
@@ -12,6 +13,7 @@ const infoItems = (tournament: Tournament) => [
   { label: "Game", value: tournament.game },
   { label: "Prize Pool", value: tournament.prizePool },
   { label: "Format", value: tournament.format },
+  { label: "Entry", value: getTournamentRegistrationModeLabel(tournament) },
   { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
   { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}` },
   { label: "Registration Deadline", value: formatDisplayDate(tournament.registrationDeadline) },
@@ -21,6 +23,7 @@ const infoItems = (tournament: Tournament) => [
 const compactItems = (tournament: Tournament) => [
   { label: "Prize Pool", value: tournament.prizePool, icon: TrophyIcon },
   { label: "Format", value: tournament.format, icon: GridIcon },
+  { label: "Entry", value: getTournamentRegistrationModeLabel(tournament), icon: SignalIcon },
   { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}`, icon: UsersIcon },
   {
     label: "Dates",
@@ -112,8 +115,10 @@ export default function TournamentInfoList({
             />
           </div>
           <p className="mt-3 text-sm text-slate-400">
-            {registrationLabel === "Registration Open"
-              ? "Registration is live for eligible teams."
+            {tournament.registrationMode === "slot_based" && registrationLabel === "Slots Available"
+              ? "Teams can reserve one of the available tournament slots."
+              : registrationLabel === "Registration Open"
+                ? "Registration is live for eligible teams."
               : "Registration is currently unavailable for this tournament."}
           </p>
         </div>

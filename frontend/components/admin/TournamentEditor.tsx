@@ -47,11 +47,13 @@ const mapTournamentToFormValues = (tournament: Tournament): TournamentFormValues
   shortDescription: tournament.shortDescription,
   fullDescription: tournament.fullDescription,
   rules: tournament.rules || "",
+  rulebookId: tournament.rulebook?.id || "",
   registrationOpenAt: toOptionalLocalDateTimeValue(tournament.registrationOpenAt),
   startDate: toLocalDateTimeValue(tournament.startDate),
   endDate: toLocalDateTimeValue(tournament.endDate),
   registrationDeadline: toLocalDateTimeValue(tournament.registrationDeadline),
   format: tournament.format,
+  registrationMode: tournament.registrationMode || "open_entry",
   teamSize: String(tournament.teamSize),
   maxTeams: String(tournament.maxTeams),
   prizePool: tournament.prizePool,
@@ -92,6 +94,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
   const [registrations, setRegistrations] = useState<TeamRegistration[]>([]);
   const [bracket, setBracket] = useState<AdminTournamentBracket | null>(null);
   const [bracketBusy, setBracketBusy] = useState(false);
+  const [rulebooks, setRulebooks] = useState<Array<{ id: string; title: string; game: string; variant: string }>>([]);
   const [assetPreview, setAssetPreview] = useState<{
     bannerUrl: string | null;
     completedPosterUrl: string | null;
@@ -111,6 +114,18 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
   const hydratedRef = useRef(false);
   const bannerImageInputRef = useRef<HTMLInputElement>(null);
   const showToast = useToastStore((state) => state.showToast);
+
+  useEffect(() => {
+    const loadRulebooks = async () => {
+      try {
+        const data = await adminRequest<{ rulebooks: Array<{ id: string; title: string; game: string; variant: string }> }>("/api/rulebooks");
+        setRulebooks(data.rulebooks);
+      } catch {
+        setRulebooks([]);
+      }
+    };
+    void loadRulebooks();
+  }, []);
 
   useEffect(() => {
     if (!tournamentId) {
@@ -263,6 +278,16 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Format" htmlFor="format" required>
                 <Input id="format" value={formValues.format} onChange={(event) => updateField("format", event.target.value)} required />
               </FormField>
+              <FormField label="Registration Mode" htmlFor="registrationMode" required>
+                <Select
+                  id="registrationMode"
+                  value={formValues.registrationMode}
+                  onChange={(event) => updateField("registrationMode", event.target.value as Tournament["registrationMode"])}
+                >
+                  <option value="open_entry">Open Entry</option>
+                  <option value="slot_based">Slot Based</option>
+                </Select>
+              </FormField>
               <FormField label="Team Size" htmlFor="teamSize" required>
                 <Input id="teamSize" type="number" min="1" value={formValues.teamSize} onChange={(event) => updateField("teamSize", event.target.value)} required />
               </FormField>
@@ -289,6 +314,18 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               </FormField>
               <FormField label="Discord / Contact Link" htmlFor="contactLink">
                 <Input id="contactLink" type="url" value={formValues.contactLink} onChange={(event) => updateField("contactLink", event.target.value)} />
+              </FormField>
+              <FormField label="Tournament Rulebook" htmlFor="rulebookId" hint="Select a reusable rulebook created in the Rulebooks admin page.">
+                <Select id="rulebookId" value={formValues.rulebookId} onChange={(event) => updateField("rulebookId", event.target.value)}>
+                  <option value="">No rulebook attached</option>
+                  {rulebooks
+                    .filter((rulebook) => rulebook.game.toLowerCase() === formValues.game.trim().toLowerCase())
+                    .map((rulebook) => (
+                    <option key={rulebook.id} value={rulebook.id}>
+                      {rulebook.variant} - {rulebook.title}
+                    </option>
+                  ))}
+                </Select>
               </FormField>
               <FormField label="Banner Image" htmlFor="bannerImage" hint="Upload a tournament banner (PNG, JPG, or WebP)">
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
@@ -469,9 +506,6 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               </FormField>
               <FormField label="Full Description" htmlFor="fullDescription" required className="md:col-span-2 xl:col-span-3">
                 <Textarea id="fullDescription" value={formValues.fullDescription} onChange={(event) => updateField("fullDescription", event.target.value)} required />
-              </FormField>
-              <FormField label="Rules" htmlFor="rules" required className="md:col-span-2 xl:col-span-3">
-                <Textarea id="rules" value={formValues.rules} onChange={(event) => updateField("rules", event.target.value)} required />
               </FormField>
               <div className="md:col-span-2 xl:col-span-3 flex flex-wrap gap-6 rounded-[24px] border border-white/8 bg-white/5 p-4 text-sm text-slate-300">
                 <label className="flex items-center gap-3">

@@ -10,6 +10,8 @@ import {
   websiteStructuredData,
 } from "@/lib/site";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = buildPageMetadata({
   title: "Home",
   description: defaultPageDescriptions.home,

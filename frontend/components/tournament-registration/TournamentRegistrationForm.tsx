@@ -329,17 +329,19 @@ export default function TournamentRegistrationForm({
         <Card className="p-6 sm:p-8">
           <h2 className="text-3xl text-white">Register Your Team</h2>
           <p className="mt-3 text-sm text-slate-400">Complete the full roster submission for the selected tournament.</p>
-          <div className="mt-5 rounded-[24px] border border-white/8 bg-white/5 p-5">
-            <h3 className="text-xl text-white">Quest Esports Official VALORANT Rulebook</h3>
-            <p className="mt-3 text-sm text-slate-400">
-              Please read the official Quest Esports VALORANT Tournament Rulebook before submitting your registration.
-            </p>
-            <div className="mt-4">
-              <Link href="/rulebook" className={buttonClassName({ variant: "secondary" })}>
-                Open Rulebook
-              </Link>
+          {selectedTournament?.rulebook ? (
+            <div className="mt-5 rounded-[24px] border border-white/8 bg-white/5 p-5">
+              <h3 className="text-xl text-white">{selectedTournament.rulebook.title}</h3>
+              <p className="mt-3 text-sm text-slate-400">
+                Read the rulebook attached to this tournament before submitting your registration.
+              </p>
+              <div className="mt-4">
+                <Link href={`/rulebooks/${selectedTournament.rulebook.slug}`} className={buttonClassName({ variant: "secondary" })}>
+                  Open Rulebook
+                </Link>
+              </div>
             </div>
-          </div>
+          ) : null}
         </Card>
 
         <Card className="p-6 sm:p-8">
@@ -523,7 +525,10 @@ export default function TournamentRegistrationForm({
             </FormField>
             <label className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
               <input type="checkbox" name="rulebook" required checked={formData.rulebook} onChange={handleFieldChange} />
-              <span>I confirm that I have read and agree to the Quest Esports VALORANT Tournament Rulebook.</span>
+              <span>
+                I confirm that I have read and agree to the selected tournament&apos;s
+                attached rulebook and competition rules.
+              </span>
             </label>
             <label className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
               <input type="checkbox" name="falsityWarning" required checked={formData.falsityWarning} onChange={handleFieldChange} />

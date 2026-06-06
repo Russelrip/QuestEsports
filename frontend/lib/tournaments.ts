@@ -13,6 +13,8 @@ export type TournamentRegistrationState =
   | "registration_closed"
   | "slots_full";
 
+export type TournamentRegistrationMode = "open_entry" | "slot_based";
+
 export type TournamentScheduleData = {
   sheetName: string;
   headers: string[];
@@ -111,11 +113,19 @@ export type Tournament = {
   shortDescription: string;
   fullDescription: string;
   rules: string | null;
+  rulebook: {
+    id: string;
+    slug: string;
+    title: string;
+    game: string;
+    variant: string;
+  } | null;
   registrationOpenAt: string | null;
   startDate: string;
   endDate: string;
   registrationDeadline: string;
   format: string;
+  registrationMode: TournamentRegistrationMode;
   teamSize: number;
   maxTeams: number;
   registrationCount: number;
@@ -161,7 +171,9 @@ export const getTournamentRegistrationLabel = (tournament: Tournament) => {
     return "Registration Closed";
   }
 
-  return "Registration Open";
+  return tournament.registrationMode === "slot_based"
+    ? "Slots Available"
+    : "Registration Open";
 };
 
 export const getTournamentRegistrationShortLabel = (tournament: Tournament) => {
@@ -173,8 +185,11 @@ export const getTournamentRegistrationShortLabel = (tournament: Tournament) => {
     return "Closed";
   }
 
-  return "Open";
+  return tournament.registrationMode === "slot_based" ? "Slots Open" : "Open";
 };
+
+export const getTournamentRegistrationModeLabel = (tournament: Tournament) =>
+  tournament.registrationMode === "slot_based" ? "Slot Based" : "Open Entry";
 
 export const getTournamentCapacityPercentage = (tournament: Tournament) =>
   Math.min(

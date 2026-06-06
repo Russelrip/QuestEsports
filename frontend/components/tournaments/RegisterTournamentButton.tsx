@@ -119,7 +119,13 @@ export default function RegisterTournamentButton({
           router.push(destination);
         }}
       >
-        {isRegistered ? "Registered" : isChecking ? "Checking..." : "Register Now"}
+        {isRegistered
+          ? "Registered"
+          : isChecking
+            ? "Checking..."
+            : tournament.registrationMode === "slot_based"
+              ? "Reserve Slot"
+              : "Register Now"}
       </Button>
       {error ? <p className="mt-2 text-xs text-rose-300">{error}</p> : null}
     </div>

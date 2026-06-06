@@ -342,6 +342,7 @@ export const primaryNavItems = [
 export const secondaryNavItems = [
   { href: "/shop", label: "Shop" },
   { href: "/members", label: "Members" },
+  { href: "/contact", label: "Contact" },
 ] as const;
 
 export const footerNavItems = [
@@ -350,7 +351,6 @@ export const footerNavItems = [
   { href: "/privacy-policy", label: "Privacy Policy" },
   { href: "/match-videos", label: "Match Videos" },
   { href: "/gallery", label: "Gallery" },
-  { href: "/rulebook", label: "Rulebook" },
   { href: "/tournaments", label: "Tournaments" },
   { href: "/shop", label: "Shop" },
   { href: "/members", label: "Members" },
