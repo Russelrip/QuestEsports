@@ -270,21 +270,6 @@ const deleteOtherSessions = async ({ userId, excludeSessionId }) => {
   });
 };
 
-const hasSessionFingerprint = async ({
-  userId,
-  userAgent = null,
-  ipAddress = null,
-}) => {
-  return prisma.session.findFirst({
-    where: {
-      userId,
-      userAgent,
-      ipAddress,
-    },
-    select: { id: true },
-  });
-};
-
 const setSessionCookie = (res, token, expiresAt) => {
   res.setHeader("Set-Cookie", buildCookieValue(token, expiresAt));
 };
@@ -302,5 +287,4 @@ module.exports = {
   listUserSessions,
   deleteSessionById,
   deleteOtherSessions,
-  hasSessionFingerprint,
 };

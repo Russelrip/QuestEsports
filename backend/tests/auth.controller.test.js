@@ -10,10 +10,6 @@ const controllerPath = path.join(
 );
 const envPath = path.join(__dirname, "../src/config/env.js");
 const loggerPath = path.join(__dirname, "../src/lib/logger.js");
-const mailPath = path.join(
-  __dirname,
-  "../src/lib/mail/sendSecurityEventEmail.js"
-);
 const oauthPath = path.join(
   __dirname,
   "../src/modules/auth/oauth.service.js"
@@ -67,9 +63,6 @@ test("OAuth controller binds callbacks to the browser flow cookie", async () => 
         error: () => {},
       },
     },
-    [mailPath]: {
-      sendSecurityEventEmail: async () => {},
-    },
     [oauthPath]: {
       buildExpiredOAuthFlowCookie: () => "oauth-flow=; Expires=expired",
       createOAuthAuthorization: ({ provider, redirectTo }) => ({
@@ -92,7 +85,6 @@ test("OAuth controller binds callbacks to the browser flow cookie", async () => 
       },
     },
     [sessionPath]: {
-      hasSessionFingerprint: async () => true,
       createSession: async () => ({
         token: "session-token",
         expiresAt: new Date(Date.now() + 60_000),

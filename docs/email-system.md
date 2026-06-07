@@ -107,7 +107,6 @@ Security alerts use one shared template with event-specific subjects and message
 
 | Event | Trigger | Subject |
 | --- | --- | --- |
-| New sign-in | A successful password, MFA, Google, or Discord login from an IP address and user-agent pair not found in active sessions | `Quest Esports new sign-in detected` |
 | MFA enabled | Successful MFA setup confirmation | `Quest Esports MFA enabled` |
 | MFA disabled | Successful MFA removal | `Quest Esports MFA disabled` |
 | Backup codes regenerated | Successful backup-code regeneration | `Quest Esports backup codes regenerated` |
@@ -116,6 +115,8 @@ Security alerts use one shared template with event-specific subjects and message
 | Password changed | Successful authenticated password change | `Quest Esports password changed` |
 
 Security alerts default to a `Review Account` button linking to `${APP_URL}/profile`. If `APP_URL` is blank, the helper omits the button and URL, but mail delivery is also considered unconfigured and will be skipped.
+
+Routine sign-ins do not send security-alert emails, including sign-ins from a new IP address or user-agent. This reduces transactional email volume but means users will not receive an immediate warning when an attacker successfully signs in with valid credentials.
 
 ## Actions That Do Not Send Email
 

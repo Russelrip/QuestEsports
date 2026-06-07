@@ -2,7 +2,6 @@ const { asyncHandler } = require("../../lib/async-handler");
 const { env } = require("../../config/env");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
-const { sendSecurityEventEmail } = require("../../lib/mail/sendSecurityEventEmail");
 const {
   buildExpiredOAuthFlowCookie,
   createOAuthAuthorization,
@@ -17,7 +16,6 @@ const {
   listUserSessions,
   deleteSessionById,
   deleteOtherSessions,
-  hasSessionFingerprint,
 } = require("./session.service");
 const {
   createSignup,
@@ -40,27 +38,6 @@ const {
   mapUserForResponse,
 } = require("./auth.service");
 
-const notifyNewSignIn = async (user) => {
-  try {
-    await sendSecurityEventEmail({
-      email: user.email,
-      firstName: user.firstName,
-      subject: "Quest Esports new sign-in detected",
-      title: "New sign-in detected",
-      message:
-        "we noticed a sign-in to your Quest Esports account from a new device or location.",
-      outro:
-        "If this was you, no action is needed. If not, reset your password immediately.",
-    });
-  } catch (error) {
-    logger.error("Failed to send new sign-in security email.", {
-      userId: user.id,
-      email: user.email,
-      error,
-    });
-  }
-};
-
 const getAppRedirectUrl = (destination) => {
   const appUrl = String(env.APP_URL || "").trim();
 
@@ -80,11 +57,6 @@ const completeAuthenticatedLogin = async ({
 }) => {
   const userAgent = req.headers["user-agent"] || null;
   const ipAddress = req.ip || null;
-  const knownDevice = await hasSessionFingerprint({
-    userId,
-    userAgent,
-    ipAddress,
-  });
   const { token, expiresAt } = await createSession({
     userId,
     rememberMe,
@@ -100,10 +72,6 @@ const completeAuthenticatedLogin = async ({
     rememberMe,
     ip: req.ip,
   });
-
-  if (!knownDevice) {
-    await notifyNewSignIn(refreshedUser);
-  }
 
   return responseUser
     ? {
