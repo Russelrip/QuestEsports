@@ -107,8 +107,9 @@ const initialFields: RecruitmentFields = {
 };
 
 const checkboxClassName = "mt-1 size-4 shrink-0 accent-cyan-300";
-const choiceClassName =
-  "flex items-start gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300";
+const choiceClassName = "flex items-start gap-3 py-2 text-sm text-slate-300";
+const gameChoiceClassName = "flex items-start gap-3 py-2 text-sm text-slate-300";
+const yesNoChoiceClassName = "flex items-center gap-2 py-2 text-sm leading-none text-slate-300";
 
 export default function RecruitmentForm() {
   const { user, isLoading: authLoading } = useAuth();
@@ -296,7 +297,7 @@ export default function RecruitmentForm() {
               <FormField label="Games You Play" required>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {games.map((game) => (
-                    <label key={game} className={choiceClassName}>
+                    <label key={game} className={gameChoiceClassName}>
                       <input type="checkbox" className={checkboxClassName} checked={fields.games.includes(game)} onChange={() => toggleGame(game)} />
                       <span>{game}</span>
                     </label>
@@ -373,9 +374,9 @@ export default function RecruitmentForm() {
             <fieldset>
               <legend>3. Declaration &amp; Rules</legend>
               <ul className="grid gap-2 text-sm leading-7 text-slate-300">
-                {rules.map((rule) => <li key={rule} className="rounded-xl bg-white/4 px-4 py-2">{rule}</li>)}
+                {rules.map((rule) => <li key={rule}>{rule}</li>)}
               </ul>
-              <div className="rounded-2xl border border-cyan-300/15 bg-cyan-300/5 p-4 text-sm leading-7 text-slate-300">
+              <div className="text-sm leading-7 text-slate-300">
                 <h3 className="text-lg text-white">Membership Commitment</h3>
                 <p className="mt-2">Members are expected to remain with Quest Esports for a minimum of two years and should not represent another esports organization without prior management approval. Early departures must be discussed with management in advance.</p>
               </div>
@@ -406,8 +407,8 @@ function YesNo({ label, value, onChange }: { label: string; value: boolean; onCh
     <div className="grid gap-2">
       <p className="text-sm font-medium text-slate-200">{label}<span className="ml-1 text-cyan-300">*</span></p>
       <div className="flex gap-3">
-        <label className={choiceClassName}><input type="radio" checked={value} onChange={() => onChange(true)} /><span>Yes</span></label>
-        <label className={choiceClassName}><input type="radio" checked={!value} onChange={() => onChange(false)} /><span>No</span></label>
+        <label className={yesNoChoiceClassName}><input className="m-0 shrink-0" type="radio" checked={value} onChange={() => onChange(true)} /><span>Yes</span></label>
+        <label className={yesNoChoiceClassName}><input className="m-0 shrink-0" type="radio" checked={!value} onChange={() => onChange(false)} /><span>No</span></label>
       </div>
     </div>
   );
