@@ -31,6 +31,7 @@ const respondTeamInvite = asyncHandler(async (req, res) => {
   const invite = await respondToTeamInvite({
     token: req.body.token,
     decision: req.body.decision,
+    user: req.user,
   });
 
   res.status(200).json({

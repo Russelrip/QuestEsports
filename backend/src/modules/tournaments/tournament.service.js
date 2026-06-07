@@ -994,6 +994,7 @@ const createTournamentRegistration = async ({ body, file, user }) => {
 
         inviteDispatches = await syncSavedTeamFromRegistration({
           tx,
+          registrationId,
           user,
           teamName,
           logoName: persistedLogo ? persistedLogo.filename : null,

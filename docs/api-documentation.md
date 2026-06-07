@@ -485,6 +485,7 @@ Behavior:
 - Registration fails if member emails are invalid or duplicated.
 - Team registrations are serialized in a Prisma transaction.
 - Successful registration also synchronizes a `SavedTeam` roster and sends invite emails to non-captain members.
+- The captain is linked and accepted automatically. Other members remain pending until they respond using a verified account with the invited email address.
 
 ## Team Endpoints
 
@@ -492,17 +493,17 @@ Behavior:
 
 Protected route.
 
-Returns saved teams for the logged-in captain.
+Returns teams the logged-in user captains or has accepted an invitation to join.
 
 ### `GET /api/team-invite?token=...`
 
 Public route.
 
-Returns invite preview details for a saved-team invite token.
+Returns invite preview details for a tournament-registration member invite token.
 
 ### `POST /api/team-invite/respond`
 
-Public route.
+Protected route requiring a verified account. The account email must match the invited email address.
 
 Body:
 
@@ -517,6 +518,8 @@ Accepted values:
 
 - `accept`
 - `decline`
+
+Accepting links both the tournament-registration member and saved-team member to the account. The registration verification status becomes `verified` when every member has accepted, `flagged` when any member declines, and otherwise remains `pending`.
 
 ## Media Endpoints
 

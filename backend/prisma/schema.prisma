@@ -110,6 +110,8 @@ model User {
   loginChallenges        LoginChallenge[]
   oauthAccounts          OAuthAccount[]
   savedTeams             SavedTeam[]
+  savedTeamMemberships   SavedTeamMember[]
+  registrationMemberships RegistrationMember[]
   recruitmentApplications RecruitmentApplication[]
 
   @@index([role])
@@ -360,6 +362,7 @@ model TournamentBracket {
 model TeamRegistration {
   id                     String               @id @default(uuid()) @db.Uuid
   tournamentId           String               @map("tournament_id") @db.Uuid
+  savedTeamId            String?              @map("saved_team_id") @db.Uuid
   teamName               String               @map("team_name")
   captainName            String               @map("captain_name")
   captainEmail           String               @map("captain_email")
@@ -376,11 +379,13 @@ model TeamRegistration {
   createdAt              DateTime             @default(now()) @map("created_at")
   updatedAt              DateTime             @updatedAt @map("updated_at")
   tournament             Tournament           @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  savedTeam              SavedTeam?            @relation(fields: [savedTeamId], references: [id], onDelete: SetNull)
   members                RegistrationMember[]
 
   @@unique([tournamentId, teamName])
   @@unique([tournamentId, captainEmail])
   @@index([tournamentId])
+  @@index([savedTeamId])
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([paymentStatus, verificationStatus])
@@ -390,6 +395,7 @@ model TeamRegistration {
 model RegistrationMember {
   id             String                 @id @default(uuid()) @db.Uuid
   registrationId String                 @map("registration_id") @db.Uuid
+  userId         String?                @map("user_id") @db.Uuid
   role           RegistrationMemberRole
   memberOrder    Int                    @map("member_order")
   name           String
@@ -397,12 +403,21 @@ model RegistrationMember {
   emailNormalized String?               @map("email_normalized")
   discord        String?
   riotId         String?                @map("riot_id")
+  inviteStatus      TeamMemberInviteStatus @default(pending) @map("invite_status")
+  inviteTokenHash   String?              @unique @map("invite_token_hash")
+  inviteSentAt      DateTime?            @map("invite_sent_at")
+  inviteExpiresAt   DateTime?            @map("invite_expires_at")
+  inviteRespondedAt DateTime?            @map("invite_responded_at")
   createdAt      DateTime               @default(now()) @map("created_at")
   registration   TeamRegistration       @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  user           User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([registrationId, role, memberOrder])
   @@index([registrationId])
+  @@index([userId])
   @@index([emailNormalized])
+  @@index([inviteStatus])
+  @@index([inviteExpiresAt])
   @@map("registration_members")
 }
 
@@ -415,6 +430,7 @@ model SavedTeam {
   updatedAt     DateTime          @updatedAt @map("updated_at")
   captainUser   User              @relation(fields: [captainUserId], references: [id], onDelete: Cascade)
   members       SavedTeamMember[]
+  registrations TeamRegistration[]
 
   @@unique([captainUserId, name])
   @@index([captainUserId])
@@ -425,6 +441,7 @@ model SavedTeam {
 model SavedTeamMember {
   id                String               @id @default(uuid()) @db.Uuid
   teamId            String               @map("team_id") @db.Uuid
+  userId            String?              @map("user_id") @db.Uuid
   role              RegistrationMemberRole
   memberOrder       Int                  @map("member_order")
   name              String
@@ -440,10 +457,12 @@ model SavedTeamMember {
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
   team              SavedTeam            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user              User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([teamId, role, memberOrder])
   @@unique([teamId, emailNormalized])
   @@index([teamId])
+  @@index([userId])
   @@index([emailNormalized])
   @@index([inviteStatus])
   @@map("saved_team_members")

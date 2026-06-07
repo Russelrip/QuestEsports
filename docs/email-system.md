@@ -85,7 +85,7 @@ The current implementation does not send a separate email-change warning to the 
 
 Team invitations are created as part of a successful tournament registration. The registration synchronizes the captain's saved team roster and queues invitations for non-captain members who are not already accepted.
 
-The captain is recorded as accepted and does not receive an invite. Existing accepted roster members also do not receive another invite. Pending invite links expire after 72 hours.
+The captain is linked to their account, recorded as accepted, and does not receive an invite. Existing accepted roster members with linked accounts also do not receive another invite. Pending invite links expire after 72 hours.
 
 The invite page previews the invitation through:
 
@@ -98,6 +98,8 @@ The recipient accepts or declines through:
 ```text
 POST /api/team-invite/respond
 ```
+
+Responding requires a logged-in, verified account whose email matches the invited address. Acceptance links the account to both the actual tournament-registration member and the reusable saved-team member. Registration verification becomes `verified` when every member accepts, `flagged` if anyone declines, and remains `pending` while responses are outstanding.
 
 ### Security alerts
 
@@ -130,7 +132,7 @@ The following areas collect or display email addresses but do not currently send
 
 Action tokens are cryptographically random 32-byte values represented as hexadecimal strings. The raw token is placed in the email link, while only its SHA-256 hash is stored in PostgreSQL.
 
-Verification, password-reset, and email-change tokens are single-use. Issuing a replacement marks older unused tokens of the same type as used. Team invite token hashes are stored directly on pending saved-team member records.
+Verification, password-reset, and email-change tokens are single-use. Issuing a replacement marks older unused tokens of the same type as used. Team invite token hashes are stored on pending tournament-registration member records and mirrored on the current saved-team member record.
 
 `APP_URL` must be the public frontend origin because email links land on frontend pages. For example:
 

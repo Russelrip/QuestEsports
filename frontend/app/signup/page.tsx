@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import PageLayout from "@/components/PageLayout";
 import SignupForm from "@/components/auth/SignupForm";
 import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
@@ -11,7 +12,9 @@ export const metadata = buildNoIndexMetadata(
 export default function SignupPage() {
   return (
     <PageLayout title="Create Account" description={defaultPageDescriptions.signup} showEyebrow={false}>
-      <SignupForm />
+      <Suspense fallback={null}>
+        <SignupForm />
+      </Suspense>
     </PageLayout>
   );
 }

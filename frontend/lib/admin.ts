@@ -77,8 +77,16 @@ export type RegistrationMember = {
   role: string;
   order: number;
   name: string;
+  email?: string | null;
   discord?: string | null;
   riotId?: string | null;
+  inviteStatus: "pending" | "accepted" | "declined";
+  inviteRespondedAt?: string | null;
+  account?: {
+    id: string;
+    username: string;
+    email: string;
+  } | null;
 };
 
 export type TeamRegistration = {

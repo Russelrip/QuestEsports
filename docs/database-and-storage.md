@@ -93,6 +93,12 @@ Also tracks:
 
 Stores roster members linked to a team registration.
 
+Also stores:
+
+- the linked player account after acceptance
+- invite status and response time
+- the single-use invite token hash and expiry
+
 Roles:
 
 - `CAPTAIN`
@@ -104,11 +110,11 @@ Roles:
 
 ### `SavedTeam`
 
-Represents a reusable team roster owned by a captain user.
+Represents a reusable team roster owned by a captain user. Tournament registrations link back to the saved team they synchronized.
 
 ### `SavedTeamMember`
 
-Stores the current saved roster and invite state for each member.
+Stores the current saved roster, linked player account, and invite state for each member.
 
 Invite states:
 
@@ -116,7 +122,9 @@ Invite states:
 - `accepted`
 - `declined`
 
-This layer is synchronized from tournament registration submissions so captains can reuse rosters and teammates can confirm membership by email invite.
+This layer is synchronized from tournament registration submissions so captains can reuse rosters and teammates can confirm membership through verified site accounts. Accepted members can view the team on their own profiles.
+
+The actual `RegistrationMember` records remain the source of truth for each tournament invitation. Registration verification is `verified` when all members accept, `flagged` when any member declines, and `pending` otherwise.
 
 ## Contact
 
@@ -242,8 +250,9 @@ Key protections implemented in the schema and services:
 
 - A `User` has many `Session`, `VerificationToken`, `PasswordResetToken`, and `EmailChangeToken` records.
 - A `Tournament` has many `TeamRegistration` and `Poster` records, and at most one `TournamentBracket`.
-- A `TeamRegistration` has many `RegistrationMember` records.
-- A `SavedTeam` belongs to a captain `User` and has many `SavedTeamMember` records.
+- A `TeamRegistration` has many `RegistrationMember` records and may link to its synchronized `SavedTeam`.
+- A `SavedTeam` belongs to a captain `User`, has many `SavedTeamMember` records, and can appear on accepted members' profiles.
+- `RegistrationMember` and `SavedTeamMember` records may link to the accepting `User`.
 - A `Poster` belongs to an `ImageAsset` and may belong to a `Tournament`.
 
 ## Migration History Highlights
@@ -257,6 +266,7 @@ From the migration names, the schema evolved through:
 - email verification and password reset
 - email change flow
 - saved teams and invites
+- account-linked tournament invite acceptance
 - file-backed poster assets
 - background jobs
 - tournament schedule and completed-showcase asset support

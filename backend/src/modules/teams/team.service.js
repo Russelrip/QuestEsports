@@ -8,18 +8,21 @@ const { normalizeEmail, normalizeText } = require("../../lib/validation");
 
 const invitePreviewSelect = {
   id: true,
+  role: true,
+  memberOrder: true,
   name: true,
   email: true,
+  emailNormalized: true,
   inviteStatus: true,
-  team: {
+  registration: {
     select: {
       id: true,
-      name: true,
-      captainUser: {
+      teamName: true,
+      captainName: true,
+      savedTeamId: true,
+      tournament: {
         select: {
-          firstName: true,
-          lastName: true,
-          username: true,
+          title: true,
         },
       },
     },
@@ -47,17 +50,23 @@ const mapSavedTeamMember = (member) => ({
   inviteRespondedAt: member.inviteRespondedAt,
 });
 
-const mapSavedTeam = (team) => ({
+const mapSavedTeam = (team, userId) => ({
   id: team.id,
   name: team.name,
   logoName: team.logoName,
+  isCaptain: team.captainUserId === userId,
+  captainName:
+    [team.captainUser.firstName, team.captainUser.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || team.captainUser.username,
   createdAt: team.createdAt,
   updatedAt: team.updatedAt,
   members: (team.members || [])
     .slice()
     .sort((left, right) => {
       if (left.role !== right.role) {
-        return (ROLE_SORT_ORDER[left.role] || 99) - (ROLE_SORT_ORDER[right.role] || 99);
+        return (ROLE_SORT_ORDER[left.role] ?? 99) - (ROLE_SORT_ORDER[right.role] ?? 99);
       }
 
       return left.memberOrder - right.memberOrder;
@@ -66,19 +75,16 @@ const mapSavedTeam = (team) => ({
 });
 
 const mapInvitePreview = (member) => {
-  const captainName = [member.team.captainUser.firstName, member.team.captainUser.lastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-
   return {
     memberName: member.name,
     email: member.email,
     inviteStatus: member.inviteStatus,
+    registrationId: member.registration.id,
     team: {
-      id: member.team.id,
-      name: member.team.name,
-      captainName: captainName || member.team.captainUser.username,
+      id: member.registration.savedTeamId || member.registration.id,
+      name: member.registration.teamName,
+      captainName: member.registration.captainName,
+      tournamentTitle: member.registration.tournament.title,
     },
   };
 };
@@ -86,17 +92,53 @@ const mapInvitePreview = (member) => {
 const listProfileTeams = async ({ user }) => {
   const teams = await prisma.savedTeam.findMany({
     where: {
-      captainUserId: user.id,
+      OR: [
+        { captainUserId: user.id },
+        {
+          members: {
+            some: {
+              userId: user.id,
+              inviteStatus: "accepted",
+            },
+          },
+        },
+      ],
     },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
     include: {
+      captainUser: {
+        select: {
+          firstName: true,
+          lastName: true,
+          username: true,
+        },
+      },
       members: {
         orderBy: [{ role: "asc" }, { memberOrder: "asc" }],
       },
     },
   });
 
-  return teams.map(mapSavedTeam);
+  return teams.map((team) => mapSavedTeam(team, user.id));
+};
+
+const refreshRegistrationVerificationStatus = async ({ tx, registrationId }) => {
+  const members = await tx.registrationMember.findMany({
+    where: { registrationId },
+    select: { inviteStatus: true },
+  });
+  const verificationStatus = members.some((member) => member.inviteStatus === "declined")
+    ? "flagged"
+    : members.length > 0 && members.every((member) => member.inviteStatus === "accepted")
+      ? "verified"
+      : "pending";
+
+  await tx.teamRegistration.update({
+    where: { id: registrationId },
+    data: { verificationStatus },
+  });
+
+  return verificationStatus;
 };
 
 const getTeamInvitePreview = async ({ token }) => {
@@ -107,7 +149,7 @@ const getTeamInvitePreview = async ({ token }) => {
     throw new HttpError(400, "Team invite token is required.");
   }
 
-  const member = await prisma.savedTeamMember.findFirst({
+  const member = await prisma.registrationMember.findFirst({
     where: {
       inviteTokenHash: hashToken(normalizedToken),
       inviteStatus: "pending",
@@ -125,8 +167,9 @@ const getTeamInvitePreview = async ({ token }) => {
   return mapInvitePreview(member);
 };
 
-const respondToTeamInvite = async ({ token, decision }) => {
+const respondToTeamInvite = async ({ token, decision, user }) => {
   const normalizedToken = normalizeText(token);
+  const tokenHash = normalizedToken ? hashToken(normalizedToken) : "";
   const normalizedDecision = normalizeText(decision).toLowerCase();
   const now = new Date();
 
@@ -138,9 +181,17 @@ const respondToTeamInvite = async ({ token, decision }) => {
     throw new HttpError(400, "A valid invite decision is required.");
   }
 
-  const member = await prisma.savedTeamMember.findFirst({
+  if (!user) {
+    throw new HttpError(401, "Create an account or sign in before responding to this invite.");
+  }
+
+  if (!user.emailVerified) {
+    throw new HttpError(403, "Verify your account email before responding to this invite.");
+  }
+
+  const member = await prisma.registrationMember.findFirst({
     where: {
-      inviteTokenHash: hashToken(normalizedToken),
+      inviteTokenHash: tokenHash,
       inviteStatus: "pending",
       inviteExpiresAt: {
         gt: now,
@@ -153,18 +204,72 @@ const respondToTeamInvite = async ({ token, decision }) => {
     throw new HttpError(400, "This team invite link is invalid or has expired.");
   }
 
+  if (normalizeEmail(user.email) !== member.emailNormalized) {
+    throw new HttpError(
+      403,
+      `Sign in with the invited email address (${member.email}) to respond to this invite.`
+    );
+  }
+
   const inviteStatus = normalizedDecision === "accept" ? "accepted" : "declined";
   const inviteRespondedAt = new Date();
+  const linkedUserId = inviteStatus === "accepted" ? user.id : null;
+  const updatedMember = await prisma.$transaction(async (tx) => {
+    const consumedInvite = await tx.registrationMember.updateMany({
+      where: {
+        id: member.id,
+        inviteTokenHash: tokenHash,
+        inviteStatus: "pending",
+        inviteExpiresAt: {
+          gt: new Date(),
+        },
+      },
+      data: {
+        userId: linkedUserId,
+        inviteStatus,
+        inviteRespondedAt,
+        inviteTokenHash: null,
+        inviteExpiresAt: null,
+      },
+    });
 
-  const updatedMember = await prisma.savedTeamMember.update({
-    where: { id: member.id },
-    data: {
-      inviteStatus,
-      inviteRespondedAt,
-      inviteTokenHash: null,
-      inviteExpiresAt: null,
-    },
-    select: invitePreviewSelect,
+    if (consumedInvite.count === 0) {
+      throw new HttpError(400, "This team invite link is invalid or has expired.");
+    }
+
+    if (member.registration.savedTeamId) {
+      await tx.savedTeamMember.updateMany({
+        where: {
+          teamId: member.registration.savedTeamId,
+          role: member.role,
+          memberOrder: member.memberOrder,
+          emailNormalized: member.emailNormalized,
+        },
+        data: {
+          userId: linkedUserId,
+          inviteStatus,
+          inviteRespondedAt,
+          inviteTokenHash: null,
+          inviteExpiresAt: null,
+        },
+      });
+    }
+
+    await refreshRegistrationVerificationStatus({
+      tx,
+      registrationId: member.registration.id,
+    });
+
+    const updatedRegistrationMember = await tx.registrationMember.findUnique({
+      where: { id: member.id },
+      select: invitePreviewSelect,
+    });
+
+    if (!updatedRegistrationMember) {
+      throw new HttpError(400, "This team invite link is invalid or has expired.");
+    }
+
+    return updatedRegistrationMember;
   });
 
   return {
@@ -175,6 +280,7 @@ const respondToTeamInvite = async ({ token, decision }) => {
 
 const syncSavedTeamFromRegistration = async ({
   tx,
+  registrationId,
   user,
   teamName,
   logoName,
@@ -220,7 +326,7 @@ const syncSavedTeamFromRegistration = async ({
 
   const existingAcceptedMembers = new Map(
     (existingTeam?.members || [])
-      .filter((member) => member.inviteStatus === "accepted")
+      .filter((member) => member.inviteStatus === "accepted" && member.userId)
       .map((member) => [
         `${member.role}:${member.memberOrder}:${member.emailNormalized}`,
         member,
@@ -234,6 +340,7 @@ const syncSavedTeamFromRegistration = async ({
   });
 
   const inviteDispatches = [];
+  const registrationMemberUpdates = [];
   const inviteSentAt = new Date();
   const inviteExpiresAt = new Date(
     inviteSentAt.getTime() + TEAM_INVITE_TTL_HOURS * 60 * 60 * 1000
@@ -249,9 +356,25 @@ const syncSavedTeamFromRegistration = async ({
       );
 
       if (member.role === "CAPTAIN" || acceptedMember) {
+        const linkedUserId = member.role === "CAPTAIN" ? user.id : acceptedMember.userId;
+        const inviteRespondedAt = acceptedMember?.inviteRespondedAt || new Date();
+        registrationMemberUpdates.push({
+          role: member.role,
+          memberOrder: member.order,
+          data: {
+            userId: linkedUserId,
+            inviteStatus: "accepted",
+            inviteTokenHash: null,
+            inviteSentAt: acceptedMember?.inviteSentAt || null,
+            inviteExpiresAt: null,
+            inviteRespondedAt,
+          },
+        });
+
         return {
           id: crypto.randomUUID(),
           teamId: team.id,
+          userId: linkedUserId,
           role: member.role,
           memberOrder: member.order,
           name: member.name,
@@ -262,11 +385,23 @@ const syncSavedTeamFromRegistration = async ({
           inviteStatus: "accepted",
           inviteSentAt: acceptedMember?.inviteSentAt || null,
           inviteExpiresAt: null,
-          inviteRespondedAt: acceptedMember?.inviteRespondedAt || new Date(),
+          inviteRespondedAt,
         };
       }
 
       const token = createTokenPair({ hours: 72 });
+      registrationMemberUpdates.push({
+        role: member.role,
+        memberOrder: member.order,
+        data: {
+          userId: null,
+          inviteStatus: "pending",
+          inviteTokenHash: token.tokenHash,
+          inviteSentAt,
+          inviteExpiresAt,
+          inviteRespondedAt: null,
+        },
+      });
       inviteDispatches.push({
         email,
         recipientName: member.name,
@@ -294,6 +429,26 @@ const syncSavedTeamFromRegistration = async ({
     }),
   });
 
+  await tx.teamRegistration.update({
+    where: { id: registrationId },
+    data: { savedTeamId: team.id },
+  });
+
+  for (const member of registrationMemberUpdates) {
+    await tx.registrationMember.update({
+      where: {
+        registrationId_role_memberOrder: {
+          registrationId,
+          role: member.role,
+          memberOrder: member.memberOrder,
+        },
+      },
+      data: member.data,
+    });
+  }
+
+  await refreshRegistrationVerificationStatus({ tx, registrationId });
+
   return inviteDispatches;
 };
 
@@ -319,4 +474,5 @@ module.exports = {
   respondToTeamInvite,
   syncSavedTeamFromRegistration,
   sendTeamInvites,
+  refreshRegistrationVerificationStatus,
 };

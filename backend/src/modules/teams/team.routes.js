@@ -1,6 +1,10 @@
 const express = require("express");
 const { createRateLimiter } = require("../../middleware/rate-limit");
-const { attachSession, requireAuth } = require("../auth/auth.middleware");
+const {
+  attachSession,
+  requireAuth,
+  requireVerifiedEmail,
+} = require("../auth/auth.middleware");
 const {
   getProfileTeams,
   previewTeamInvite,
@@ -19,6 +23,12 @@ router.use(attachSession);
 
 router.get("/teams/profile", requireAuth, getProfileTeams);
 router.get("/team-invite", previewTeamInvite);
-router.post("/team-invite/respond", teamInviteRateLimiter, respondTeamInvite);
+router.post(
+  "/team-invite/respond",
+  requireAuth,
+  requireVerifiedEmail,
+  teamInviteRateLimiter,
+  respondTeamInvite
+);
 
 module.exports = router;

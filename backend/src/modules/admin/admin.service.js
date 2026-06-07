@@ -51,6 +51,15 @@ const TOURNAMENT_SUMMARY_SELECT = {
 const TEAM_REGISTRATION_INCLUDE = {
   members: {
     orderBy: [{ role: "asc" }, { memberOrder: "asc" }],
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+        },
+      },
+    },
   },
   tournament: {
     select: TOURNAMENT_SUMMARY_SELECT,
@@ -73,8 +82,18 @@ const mapRegistrationMember = (member) => ({
   role: member.role,
   order: member.memberOrder,
   name: member.name,
+  email: member.email,
   discord: member.discord,
   riotId: member.riotId,
+  inviteStatus: member.inviteStatus,
+  inviteRespondedAt: member.inviteRespondedAt,
+  account: member.user
+    ? {
+        id: member.user.id,
+        username: member.user.username,
+        email: member.user.email,
+      }
+    : null,
 });
 
 const mapTeamRegistration = (registration) => ({

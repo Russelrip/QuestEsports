@@ -338,9 +338,9 @@ export default function ProfileView() {
               </div>
             ) : (
               <div>
-                <h3 className="text-2xl text-white">Saved Teams</h3>
+                <h3 className="text-2xl text-white">My Teams</h3>
                 <p className="mt-2 text-sm text-slate-400">
-                  Teams created during tournament registration appear here for reuse in future events.
+                  Teams you captain or have accepted an invitation to join appear here.
                 </p>
 
                 {teamsError ? <p className="mt-5 text-sm text-rose-300">{teamsError}</p> : null}
@@ -367,15 +367,22 @@ export default function ProfileView() {
                           <div>
                             <h4 className="text-xl font-semibold text-white">{team.name}</h4>
                             <p className="text-sm text-slate-400">
+                              Captain: {team.captainName} · {team.isCaptain ? "You are the captain" : "You are a member"}
+                            </p>
+                            <p className="text-sm text-slate-400">
                               Updated {new Date(team.updatedAt).toLocaleDateString()}
                             </p>
                           </div>
-                          <Link
-                            href={`/tournament-registration?savedTeam=${team.id}`}
-                            className={buttonClassName({ variant: "secondary" })}
-                          >
-                            Reuse Team
-                          </Link>
+                          {team.isCaptain ? (
+                            <Link
+                              href={`/tournament-registration?savedTeam=${team.id}`}
+                              className={buttonClassName({ variant: "secondary" })}
+                            >
+                              Reuse Team
+                            </Link>
+                          ) : (
+                            <Badge>Member</Badge>
+                          )}
                         </div>
                         <div className="mt-5 grid gap-3">
                           {team.members.map((member) => (

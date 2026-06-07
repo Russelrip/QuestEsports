@@ -397,6 +397,7 @@ Default local URLs:
 - The backend creates upload directories automatically at startup.
 - There is no root workspace runner; start `backend` and `frontend` in separate terminals.
 - Team registration requires a logged-in user with a verified email address.
+- Team invite responses require a logged-in, verified account whose email matches the invitation. Accepted teams appear on both the captain's and accepted members' profiles.
 - Admin tournament management supports spreadsheet uploads for schedules, showcase-image uploads for completed events, and native bracket generation from approved teams.
 - Public tournament responses now include `displayPriority`, `registrationOpenAt`, `scheduleData`, `isCompleted`, `showcase`, published bracket data, bracket summaries, and per-tournament `registeredTeams` on detail pages.
 - Direct imports that touch backend config now load `.env` automatically, so scripts and one-off Node entrypoints behave the same as `node src/server.js`.

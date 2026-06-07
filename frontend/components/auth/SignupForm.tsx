@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -51,13 +52,23 @@ type SignupApiResponse = {
 };
 
 export default function SignupForm() {
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect");
+  const nextPath =
+    redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//")
+      ? redirectTo
+      : null;
+  const invitedEmail = searchParams.get("email") || "";
+  const loginPath = nextPath
+    ? `/login?redirect=${encodeURIComponent(nextPath)}`
+    : "/login";
   const [submittedEmail, setSubmittedEmail] = useState("");
   const form = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
     defaultValues: {
       firstName: "",
       lastName: "",
-      email: "",
+      email: invitedEmail,
       username: "",
       password: "",
       confirmPassword: "",
@@ -90,7 +101,7 @@ export default function SignupForm() {
       form.reset({
         firstName: "",
         lastName: "",
-        email: "",
+        email: invitedEmail,
         username: "",
         password: "",
         confirmPassword: "",
@@ -182,11 +193,11 @@ export default function SignupForm() {
           {form.formState.isSubmitting ? "Creating account..." : "Create Account"}
         </Button>
 
-        <SocialAuthButtons mode="signup" />
+        <SocialAuthButtons mode="signup" redirectTo={nextPath} />
 
         <p className="text-center text-sm text-slate-400">
           Already have an account?{" "}
-          <Link href="/login" className="text-red-300 transition hover:text-red-200">
+          <Link href={loginPath} className="text-red-300 transition hover:text-red-200">
             Sign in
           </Link>
         </p>
@@ -200,6 +211,13 @@ export default function SignupForm() {
             <div className="mt-4">
               <ResendVerificationButton email={submittedEmail} />
             </div>
+            {nextPath ? (
+              <div className="mt-4">
+                <Link href={loginPath} className="text-sm text-red-300 transition hover:text-red-200">
+                  Sign in after verifying to return to the team invitation
+                </Link>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </form>

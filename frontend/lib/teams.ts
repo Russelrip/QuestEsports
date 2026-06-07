@@ -18,6 +18,8 @@ export type SavedTeam = {
   id: string;
   name: string;
   logoName?: string | null;
+  isCaptain: boolean;
+  captainName: string;
   createdAt: string;
   updatedAt: string;
   members: SavedTeamMember[];
@@ -27,10 +29,12 @@ export type TeamInvitePreview = {
   memberName: string;
   email: string;
   inviteStatus: "pending" | "accepted" | "declined";
+  registrationId: string;
   team: {
     id: string;
     name: string;
     captainName: string;
+    tournamentTitle: string;
   };
 };
 

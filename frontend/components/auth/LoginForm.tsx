@@ -152,7 +152,10 @@ export default function LoginForm() {
           <Link href="/forgot-password" className="transition hover:text-white">Forgot password?</Link>
           <span>
             Don&apos;t have an account?{" "}
-            <Link href="/signup" className="text-red-300 transition hover:text-red-200">
+            <Link
+              href={nextPath ? `/signup?redirect=${encodeURIComponent(nextPath)}` : "/signup"}
+              className="text-red-300 transition hover:text-red-200"
+            >
               Sign up
             </Link>
           </span>

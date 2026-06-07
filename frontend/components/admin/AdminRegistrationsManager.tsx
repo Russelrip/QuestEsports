@@ -148,6 +148,21 @@ export default function AdminRegistrationsManager() {
                   <div className="rounded-[20px] border border-white/8 bg-black/20 p-3 text-sm text-slate-400">
                     <p>Players: {registration.members.length}</p>
                     <p>Contact: {registration.contactEmail}</p>
+                    <p>
+                      Confirmed:{" "}
+                      {registration.members.filter((member) => member.inviteStatus === "accepted").length}
+                      /{registration.members.length}
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    {registration.members.map((member) => (
+                      <div key={member.id} className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                        <span>{member.name}</span>
+                        <span className={member.inviteStatus === "accepted" ? "text-emerald-300" : member.inviteStatus === "declined" ? "text-rose-300" : "text-amber-300"}>
+                          {member.inviteStatus}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
