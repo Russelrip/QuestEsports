@@ -135,7 +135,7 @@ export default function AdminRecruitmentManager() {
                   <Detail label="Discord" value={application.discord} />
                   {application.nic ? <Detail label="NIC" value={application.nic} /> : null}
                   <Detail label="Primary Game" value={application.game} />
-                  <Detail label="Player ID" value={application.playerId} />
+                  {application.playerId ? <Detail label="Player ID" value={application.playerId} /> : null}
                   {application.details.ign ? <Detail label="IGN" value={application.details.ign} /> : null}
                   {application.details.birthday ? <Detail label="Birthday" value={application.details.birthday} /> : null}
                   {application.details.gender ? <Detail label="Gender" value={application.details.gender} /> : null}
@@ -185,7 +185,7 @@ export default function AdminRecruitmentManager() {
                           {member.ign ? <Detail label="IGN" value={member.ign} /> : null}
                           <Detail label="Email" value={member.email} />
                           <Detail label="Discord" value={member.discord} />
-                          <Detail label="Player ID" value={member.playerId} />
+                          {member.playerId ? <Detail label="Player ID" value={member.playerId} /> : null}
                           {member.phone ? <Detail label="WhatsApp" value={member.phone} /> : null}
                           {member.role ? <Detail label="Role" value={member.role} /> : null}
                           {member.nic ? <Detail label="NIC" value={member.nic} /> : null}

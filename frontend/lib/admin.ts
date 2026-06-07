@@ -113,7 +113,7 @@ export type RecruitmentApplicationMember = {
   name: string;
   email: string;
   discord: string;
-  playerId: string;
+  playerId?: string | null;
   ign?: string | null;
   phone?: string | null;
   role?: string | null;
@@ -142,7 +142,7 @@ export type RecruitmentApplication = {
   phone: string;
   discord: string;
   game: string;
-  playerId: string;
+  playerId?: string | null;
   nic?: string | null;
   teamName?: string | null;
   currentRosterSize?: number | null;

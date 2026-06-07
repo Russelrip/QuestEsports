@@ -19,7 +19,7 @@ type ApplicationType = "solo_player" | "existing_team" | "incomplete_team";
 type RecruitmentMember = {
   name: string;
   ign: string;
-  playerId: string;
+  nic: string;
   discord: string;
   email: string;
   phone: string;
@@ -37,7 +37,7 @@ type RecruitmentFields = {
   games: string[];
   otherGame: string;
   peakAndCurrentRank: string;
-  playerId: string;
+  nic: string;
   tournamentExperience: string;
   previouslyInOrganization: boolean;
   previousOrganization: string;
@@ -75,7 +75,7 @@ const rules = [
 const emptyMember = (): RecruitmentMember => ({
   name: "",
   ign: "",
-  playerId: "",
+  nic: "",
   discord: "",
   email: "",
   phone: "",
@@ -93,7 +93,7 @@ const initialFields: RecruitmentFields = {
   games: [],
   otherGame: "",
   peakAndCurrentRank: "",
-  playerId: "",
+  nic: "",
   tournamentExperience: "",
   previouslyInOrganization: false,
   previousOrganization: "",
@@ -288,8 +288,8 @@ export default function RecruitmentForm() {
                 <FormField label="Verified Email" htmlFor="verifiedEmail" hint="Taken from your verified Quest account.">
                   <Input id="verifiedEmail" type="email" disabled value={user.email} />
                 </FormField>
-                <FormField label="Game ID" htmlFor="playerId" required hint="Make sure this is the correct ID.">
-                  <Input id="playerId" required value={fields.playerId} onChange={(event) => updateField("playerId", event.target.value)} />
+                <FormField label="NIC" htmlFor="nic" required hint="Stored encrypted and used only for recruitment review.">
+                  <Input id="nic" required value={fields.nic} onChange={(event) => updateField("nic", event.target.value)} />
                 </FormField>
               </div>
 
@@ -423,7 +423,7 @@ function MemberFields({ member, number, canRemove, onUpdate, onRemove }: { membe
       <div className="grid gap-5 sm:grid-cols-2">
         <FormField label="Full Name" required><Input required value={member.name} onChange={(event) => onUpdate("name", event.target.value)} /></FormField>
         <FormField label="In-Game Name (IGN)" required><Input required value={member.ign} onChange={(event) => onUpdate("ign", event.target.value)} /></FormField>
-        <FormField label="Game ID" required><Input required value={member.playerId} onChange={(event) => onUpdate("playerId", event.target.value)} /></FormField>
+        <FormField label="NIC" required hint="Stored encrypted."><Input required value={member.nic} onChange={(event) => onUpdate("nic", event.target.value)} /></FormField>
         <FormField label="Discord Username" required><Input required value={member.discord} onChange={(event) => onUpdate("discord", event.target.value)} /></FormField>
         <FormField label="Email Address" required><Input required type="email" value={member.email} onChange={(event) => onUpdate("email", event.target.value)} /></FormField>
         <FormField label="WhatsApp Number" required><Input required type="tel" value={member.phone} onChange={(event) => onUpdate("phone", event.target.value)} /></FormField>

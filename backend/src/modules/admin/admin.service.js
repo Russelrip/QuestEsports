@@ -148,7 +148,7 @@ const mapRecruitmentApplication = (application) => ({
         name: member.name,
         email: member.email,
         discord: member.discord,
-        playerId: member.playerId,
+        playerId: member.playerId || null,
         ign: member.ign || null,
         phone: member.phone || null,
         role: member.role || "player",

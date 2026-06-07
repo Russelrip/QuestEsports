@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { encryptSecret } = require("../../lib/secret-box");
 const {
   isValidEmail,
   normalizeEmail,
@@ -81,7 +82,7 @@ const normalizeMembers = (members, applicationType) => {
     return {
       name: requiredText(member.name, `Team member ${index + 1} name`),
       ign: requiredText(member.ign, `Team member ${index + 1} IGN`),
-      playerId: requiredText(member.playerId, `Team member ${index + 1} game ID`),
+      idNumberCiphertext: encryptSecret(requiredText(member.nic, `Team member ${index + 1} NIC`)),
       discord: requiredText(member.discord, `Team member ${index + 1} Discord username`),
       email,
       phone: requiredText(member.phone, `Team member ${index + 1} WhatsApp number`, 50),
@@ -163,8 +164,8 @@ const createRecruitmentApplication = async ({ body, user }) => {
       phone: requiredText(body.phone, "WhatsApp contact number"),
       discord: requiredText(body.discord, "Discord username"),
       game: games.join(", "),
-      playerId: requiredText(body.playerId, "In-game player ID"),
-      applicantIdNumberCiphertext: null,
+      playerId: null,
+      applicantIdNumberCiphertext: encryptSecret(requiredText(body.nic, "NIC")),
       teamName: teamApplication ? requiredText(body.teamName, "Team name") : null,
       currentRosterSize,
       members,

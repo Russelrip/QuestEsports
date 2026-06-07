@@ -129,7 +129,7 @@ model RecruitmentApplication {
   phone                       String
   discord                     String
   game                        String
-  playerId                    String                       @map("player_id")
+  playerId                    String?                      @map("player_id")
   applicantIdNumberCiphertext String?                      @map("applicant_id_number_ciphertext")
   teamName                    String?                      @map("team_name")
   currentRosterSize           Int?                         @map("current_roster_size")

@@ -6,6 +6,7 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const servicePath = path.join(__dirname, "../src/modules/recruitment/recruitment.service.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
+const secretBoxModulePath = path.join(__dirname, "../src/lib/secret-box.js");
 
 const validSoloBody = {
   applicationType: "solo_player",
@@ -17,7 +18,7 @@ const validSoloBody = {
   discord: "questplayer",
   games: ["VALORANT", "Dota 2"],
   peakAndCurrentRank: "VALORANT: Diamond / Platinum",
-  playerId: "Quest#LK",
+  nic: "200212345678",
   tournamentExperience: "Community cup finalist",
   previouslyInOrganization: false,
   canAttendLan: true,
@@ -37,6 +38,9 @@ test("createRecruitmentApplication stores the expanded recruitment details", asy
         },
       },
     },
+    [secretBoxModulePath]: {
+      encryptSecret: (value) => `encrypted:${value}`,
+    },
   });
 
   try {
@@ -48,9 +52,58 @@ test("createRecruitmentApplication stores the expanded recruitment details", asy
     const data = createCalls[0].data;
     assert.equal(data.email, "player@example.com");
     assert.equal(data.game, "VALORANT, Dota 2");
-    assert.equal(data.applicantIdNumberCiphertext, null);
+    assert.equal(data.playerId, null);
+    assert.equal(data.applicantIdNumberCiphertext, "encrypted:200212345678");
     assert.equal(data.details.ign, "QuestIGN");
     assert.equal(data.details.declarationAccepted, true);
+  } finally {
+    restore();
+  }
+});
+
+test("createRecruitmentApplication encrypts team member NICs", async () => {
+  const createCalls = [];
+  const { module: recruitmentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        recruitmentApplication: {
+          create: async (args) => {
+            createCalls.push(args);
+            return { id: "application-1", status: "pending" };
+          },
+        },
+      },
+    },
+    [secretBoxModulePath]: {
+      encryptSecret: (value) => `encrypted:${value}`,
+    },
+  });
+
+  try {
+    await recruitmentService.createRecruitmentApplication({
+      user: { id: "user-1", email: "captain@example.com" },
+      body: {
+        ...validSoloBody,
+        applicationType: "incomplete_team",
+        teamName: "Quest Duo",
+        currentRosterSize: 2,
+        members: [
+          {
+            name: "Player Two",
+            ign: "QuestTwo",
+            nic: "200298765432",
+            discord: "questtwo",
+            email: "player2@example.com",
+            phone: "0770000000",
+            role: "player",
+          },
+        ],
+      },
+    });
+
+    const member = createCalls[0].data.members[0];
+    assert.equal(member.idNumberCiphertext, "encrypted:200298765432");
+    assert.equal("nic" in member, false);
   } finally {
     restore();
   }
