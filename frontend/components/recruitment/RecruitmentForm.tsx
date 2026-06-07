@@ -107,8 +107,9 @@ const initialFields: RecruitmentFields = {
 };
 
 const checkboxClassName = "mt-1 size-4 shrink-0 accent-cyan-300";
-const choiceClassName = "flex items-start gap-3 py-2 text-sm text-slate-300";
-const gameChoiceClassName = "flex items-start gap-3 py-2 text-sm text-slate-300";
+const choiceClassName = "flex w-fit items-start gap-3 py-2 text-sm leading-6 text-slate-300";
+const gameCheckboxClassName = "m-0 size-4 shrink-0 accent-cyan-300";
+const gameChoiceClassName = "flex w-fit items-center gap-3 py-2 text-sm leading-none text-slate-300";
 const yesNoChoiceClassName = "flex items-center gap-2 py-2 text-sm leading-none text-slate-300";
 
 export default function RecruitmentForm() {
@@ -295,16 +296,16 @@ export default function RecruitmentForm() {
               </div>
 
               <FormField label="Games You Play" required>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-x-8 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3">
                   {games.map((game) => (
                     <label key={game} className={gameChoiceClassName}>
-                      <input type="checkbox" className={checkboxClassName} checked={fields.games.includes(game)} onChange={() => toggleGame(game)} />
+                      <input type="checkbox" className={gameCheckboxClassName} checked={fields.games.includes(game)} onChange={() => toggleGame(game)} />
                       <span>{game}</span>
                     </label>
                   ))}
                 </div>
               </FormField>
-              <FormField label="Other Game" htmlFor="otherGame">
+              <FormField label="Other Game" htmlFor="otherGame" className="pt-3">
                 <Input id="otherGame" value={fields.otherGame} onChange={(event) => updateField("otherGame", event.target.value)} />
               </FormField>
               <FormField label="Peak Rank, Current Rank and Game Name" htmlFor="rank" required>
@@ -371,26 +372,28 @@ export default function RecruitmentForm() {
               </fieldset>
             ) : null}
 
-            <fieldset>
+            <fieldset className="gap-6">
               <legend>3. Declaration &amp; Rules</legend>
-              <ul className="grid gap-2 text-sm leading-7 text-slate-300">
+              <ul className="grid gap-4 text-sm leading-7 text-slate-300">
                 {rules.map((rule) => <li key={rule}>{rule}</li>)}
               </ul>
-              <div className="text-sm leading-7 text-slate-300">
+              <div className="grid gap-3 pt-2 text-sm leading-7 text-slate-300">
                 <h3 className="text-lg text-white">Membership Commitment</h3>
-                <p className="mt-2">Members are expected to remain with Quest Esports for a minimum of two years and should not represent another esports organization without prior management approval. Early departures must be discussed with management in advance.</p>
+                <p>Members are expected to remain with Quest Esports for a minimum of two years and should not represent another esports organization without prior management approval. Early departures must be discussed with management in advance.</p>
               </div>
               <FormField label="Anything Else You Would Like Us to Know?" htmlFor="notes">
                 <Textarea id="notes" rows={4} value={fields.notes} onChange={(event) => updateField("notes", event.target.value)} />
               </FormField>
-              <label className={choiceClassName}>
-                <input type="checkbox" required className={checkboxClassName} checked={fields.declarationAccepted} onChange={(event) => updateField("declarationAccepted", event.target.checked)} />
-                <span>I confirm that I have read, understood, and agree to abide by the Quest Esports rules, regulations, and membership requirements.</span>
-              </label>
-              <label className={choiceClassName}>
-                <input type="checkbox" required className={checkboxClassName} />
-                <span>I confirm these details are accurate and agree to the <Link href="/privacy-policy" className="text-cyan-200 hover:text-cyan-100">Privacy Policy</Link>.</span>
-              </label>
+              <div className="grid gap-5 pt-2">
+                <label className={choiceClassName}>
+                  <input type="checkbox" required className={checkboxClassName} checked={fields.declarationAccepted} onChange={(event) => updateField("declarationAccepted", event.target.checked)} />
+                  <span>I confirm that I have read, understood, and agree to abide by the Quest Esports rules, regulations, and membership requirements.</span>
+                </label>
+                <label className={choiceClassName}>
+                  <input type="checkbox" required className={checkboxClassName} />
+                  <span>I confirm these details are accurate and agree to the <Link href="/privacy-policy" className="text-cyan-200 hover:text-cyan-100">Privacy Policy</Link>.</span>
+                </label>
+              </div>
             </fieldset>
 
             {error ? <p role="alert" className="text-sm text-rose-300">{error}</p> : null}
