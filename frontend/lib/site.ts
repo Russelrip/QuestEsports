@@ -441,7 +441,7 @@ export const teamMembers = [
   },
   {
     name: "Senumi Ekanayake",
-    role: "Co-Owner / Founder",
+    role: "Founder / Co-Owner ",
     image: "/images/senumi.jpg",
   },
   {
