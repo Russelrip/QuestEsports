@@ -51,11 +51,11 @@ LOG_DRAIN_URL=
 LOG_DRAIN_TOKEN=
 MONITORING_WEBHOOK_URL=
 MONITORING_WEBHOOK_TOKEN=
-SMTP_HOST=smtp.resend.com
-SMTP_PORT=465
-SMTP_USER=resend
-SMTP_PASS=re_your_resend_api_key
-MAIL_FROM="Quest Esports <no-reply@example.com>"
+SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_PORT=587
+SMTP_USER=your_ses_smtp_username
+SMTP_PASS=your_ses_smtp_password
+MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 APP_URL=http://localhost:3000
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -143,6 +143,32 @@ For production:
 - set `MAIL_FROM`
 - set `APP_URL` to the public frontend origin
 
+For Amazon SES in Singapore (`ap-southeast-1`):
+
+1. Create and verify a SES domain identity for `questesports.lk`.
+2. Publish the SES Easy DKIM CNAME records in DNS and wait for SES to show the identity as verified.
+3. Create SES SMTP credentials in `ap-southeast-1`; they are region-specific and separate from normal AWS access keys.
+4. Request production access for `ap-southeast-1` before launch. While still in the SES sandbox, you can only send to verified recipients.
+5. Optional: configure a custom SES MAIL FROM domain such as `bounce.questesports.lk` and publish the MX/SPF records SES provides. Keep this separate from the visible `MAIL_FROM` sender address domain.
+6. Use this backend SMTP configuration:
+
+```env
+SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_PORT=587
+SMTP_USER=your_ses_smtp_username
+SMTP_PASS=your_ses_smtp_password
+MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
+APP_URL=https://questesports.lk
+JOB_WORKER_ENABLED=true
+```
+
+After deploying the values, verify SMTP connection/auth without sending a message:
+
+```bash
+cd backend
+npm run mail:verify
+```
+
 Security-related optional variables:
 
 - `MFA_ISSUER` to customize authenticator app labeling
@@ -171,13 +197,6 @@ Notes:
 - The provider dashboard redirect must match your backend callback URL exactly.
 - `APP_URL` must point to the frontend origin, not the API origin, because the backend redirects the browser back to the frontend after OAuth completes.
 - Do not use placeholder strings such as `your_google_client_id` or `your_discord_client_id`; leave values blank until real credentials are available.
-
-If you use Resend SMTP:
-
-- host: `smtp.resend.com`
-- port: `465`
-- username: `resend`
-- password: your Resend API key
 
 ## Upload Storage
 
@@ -276,10 +295,10 @@ LOG_DRAIN_URL=https://logs.example.com/ingest
 LOG_DRAIN_TOKEN=replace_with_log_ingest_token
 MONITORING_WEBHOOK_URL=https://monitoring.example.com/events
 MONITORING_WEBHOOK_TOKEN=replace_with_monitoring_token
-SMTP_HOST=smtp.resend.com
-SMTP_PORT=465
-SMTP_USER=resend
-SMTP_PASS=re_your_resend_api_key
+SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_PORT=587
+SMTP_USER=your_ses_smtp_username
+SMTP_PASS=your_ses_smtp_password
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 APP_URL=https://questesports.lk
 GOOGLE_CLIENT_ID=your_real_google_client_id

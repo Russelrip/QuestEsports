@@ -148,10 +148,10 @@ Do not set `APP_URL` to the backend API origin.
 Required for real delivery:
 
 ```env
-SMTP_HOST=smtp.resend.com
-SMTP_PORT=465
-SMTP_USER=resend
-SMTP_PASS=re_your_resend_api_key
+SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_PORT=587
+SMTP_USER=your_ses_smtp_username
+SMTP_PASS=your_ses_smtp_password
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 APP_URL=https://questesports.lk
 JOB_WORKER_ENABLED=true
@@ -166,6 +166,24 @@ Mail is considered configured only when `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `
 - `MAIL_FROM` controls the sender shown to recipients.
 - `JOB_WORKER_POLL_MS` controls how often the built-in worker polls.
 - `JOB_WORKER_MAX_ATTEMPTS` controls the maximum delivery attempts for newly queued jobs.
+
+### Amazon SES setup
+
+For Amazon SES in `ap-southeast-1`:
+
+1. In the SES console, create and verify a domain identity for `questesports.lk`. A verified domain identity covers sender addresses and subdomains under that domain, including `no-reply@mail.questesports.lk`.
+2. Keep Easy DKIM enabled and publish the three SES CNAME records in DNS. Wait until SES shows the identity and DKIM status as verified/successful.
+3. Create SES SMTP credentials in the same AWS Region. SES SMTP usernames and passwords are region-specific and are not the same as normal AWS access keys.
+4. If the SES account is still in the sandbox for `ap-southeast-1`, request production access before sending to normal users. Sandbox accounts can only send to verified recipients and have low sending limits.
+5. Optional: configure a custom SES MAIL FROM domain such as `bounce.questesports.lk`, then publish the MX and SPF TXT records SES gives you. Keep this separate from the visible `MAIL_FROM` sender address domain.
+6. Set the backend SMTP env values, deploy/restart the worker-enabled backend, and run:
+
+```bash
+cd backend
+npm run mail:verify
+```
+
+`mail:verify` checks SMTP connection/auth from `backend/.env`; it does not send a message. After it passes, trigger a real account verification or password reset email to confirm end-to-end delivery.
 
 If SMTP is incomplete, the worker logs a warning, skips delivery, and marks the job as succeeded. This supports local development, but it also means misconfigured production SMTP will not leave failed jobs for retry.
 
@@ -193,6 +211,7 @@ After deploying email-related changes:
 5. Confirm the SMTP provider accepts `MAIL_FROM` for the configured sending domain.
 6. Confirm replacement verification, reset, and email-change links invalidate older links.
 7. Confirm expired team invitations can no longer be accepted or declined.
+8. In SES, monitor bounces, complaints, reputation, and sending quotas for the active Region.
 
 ## Current Limitations
 

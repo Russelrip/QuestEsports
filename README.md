@@ -289,11 +289,11 @@ REQUIRE_API_ORIGIN=false
 JOB_WORKER_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
-SMTP_HOST=smtp.resend.com
-SMTP_PORT=465
-SMTP_USER=resend
-SMTP_PASS=re_your_resend_api_key
-MAIL_FROM="Quest Esports <no-reply@example.com>"
+SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_PORT=587
+SMTP_USER=your_ses_smtp_username
+SMTP_PASS=your_ses_smtp_password
+MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 APP_URL=http://localhost:3000
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -311,6 +311,7 @@ Notes:
 - `APP_URL` must point at the frontend origin used in verification, password reset, email-change, invite, and security-alert emails when SMTP is enabled.
 - SMTP values are optional for local development. When SMTP is not configured, mail-triggering actions log and skip delivery instead of crashing startup.
 - `JOB_WORKER_ENABLED` must be enabled on at least one backend instance for queued email delivery.
+- For Amazon SES in Singapore, use `email-smtp.ap-southeast-1.amazonaws.com` with region-specific SES SMTP credentials. `npm run mail:verify` checks SMTP connection/auth from `backend/.env` without sending an email.
 - See [Email System](./docs/email-system.md) for every recipient, trigger, subject, link, token lifetime, and retry rule.
 - If OAuth is enabled locally, register these redirect URIs with the providers:
   - Google: `http://localhost:5001/api/auth/google/callback`
