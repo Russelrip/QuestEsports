@@ -193,3 +193,70 @@ test("createRateLimiter resets counts after the window expires", async () => {
     restore();
   }
 });
+
+test("createRateLimiter retries transaction startup timeouts", async () => {
+  class PrismaClientKnownRequestError extends Error {
+    constructor(message, code) {
+      super(message);
+      this.code = code;
+    }
+  }
+
+  const prismaMock = createPrismaMock();
+  const baseTransaction = prismaMock.prisma.$transaction;
+  let transactionCalls = 0;
+
+  prismaMock.prisma.$transaction = async (callback, options) => {
+    transactionCalls += 1;
+    assert.equal(options.isolationLevel, "Serializable");
+    assert.equal(options.maxWait, 10_000);
+    assert.equal(options.timeout, 15_000);
+
+    if (transactionCalls === 1) {
+      throw new PrismaClientKnownRequestError(
+        "Unable to start a transaction in the given time.",
+        "P2028"
+      );
+    }
+
+    return baseTransaction(callback, options);
+  };
+
+  const { module: rateLimit, restore } = loadModuleWithMocks(rateLimitPath, {
+    [prismaModulePath]: { prisma: prismaMock.prisma },
+    [generatedPrismaPath]: {
+      Prisma: {
+        TransactionIsolationLevel: {
+          Serializable: "Serializable",
+        },
+        PrismaClientKnownRequestError,
+      },
+    },
+    [loggerModulePath]: {
+      logger: {
+        warn: () => {},
+        info: () => {},
+        error: () => {},
+      },
+    },
+  });
+
+  try {
+    const middleware = rateLimit.createRateLimiter({
+      name: "tournament-registration-submit",
+      windowMs: 60_000,
+      maxRequests: 10,
+      message: "Too many registrations.",
+    });
+
+    const { req, res, next } = createReqResNext("192.0.2.9");
+    await middleware(req, res, next);
+
+    assert.equal(req._nextError, null);
+    assert.equal(transactionCalls, 2);
+    assert.equal(res.getHeader("RateLimit-Limit"), "10");
+    assert.equal(prismaMock.buckets.size, 1);
+  } finally {
+    restore();
+  }
+});

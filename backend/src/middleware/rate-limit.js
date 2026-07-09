@@ -6,6 +6,9 @@ const { logger } = require("../lib/logger");
 
 const MAX_TRANSACTION_RETRIES = 3;
 const BUCKET_RETENTION_MULTIPLIER = 4;
+const RATE_LIMIT_TRANSACTION_MAX_WAIT_MS = 10 * 1000;
+const RATE_LIMIT_TRANSACTION_TIMEOUT_MS = 15 * 1000;
+const RETRYABLE_TRANSACTION_ERROR_CODES = new Set(["P2002", "P2028", "P2034"]);
 
 const hashRateLimitKey = (value) =>
   crypto.createHash("sha256").update(String(value || "unknown")).digest("hex");
@@ -88,12 +91,14 @@ const consumeRateLimit = async ({
         },
         {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          maxWait: RATE_LIMIT_TRANSACTION_MAX_WAIT_MS,
+          timeout: RATE_LIMIT_TRANSACTION_TIMEOUT_MS,
         }
       );
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
-        (error.code === "P2002" || error.code === "P2034") &&
+        RETRYABLE_TRANSACTION_ERROR_CODES.has(error.code) &&
         attempt < MAX_TRANSACTION_RETRIES
       ) {
         continue;

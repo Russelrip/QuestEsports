@@ -12,6 +12,8 @@ const isTransientConnectionError = (error) => {
   );
 };
 
+const busyDatabaseErrorCodes = new Set(["P2024", "P2028", "P2037"]);
+
 const mapPrismaError = (error) => {
   if (error instanceof HttpError) {
     return error;
@@ -24,6 +26,17 @@ const mapPrismaError = (error) => {
 
     if (error.code === "P2025") {
       return new HttpError(404, "Requested record was not found.");
+    }
+
+    if (error.code === "P2034") {
+      return new HttpError(
+        409,
+        "The request conflicted with another update. Please try again."
+      );
+    }
+
+    if (busyDatabaseErrorCodes.has(error.code)) {
+      return new HttpError(503, "Database is busy. Please try again.");
     }
 
     return new HttpError(500, "Database request failed.");

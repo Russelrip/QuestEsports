@@ -39,6 +39,10 @@ const TOURNAMENT_STATUSES = new Set([
   "cancelled",
 ]);
 const REGISTRATION_MODES = new Set(["open_entry", "slot_based"]);
+const REGISTRATION_TRANSACTION_MAX_RETRIES = 3;
+const REGISTRATION_TRANSACTION_MAX_WAIT_MS = 10 * 1000;
+const REGISTRATION_TRANSACTION_TIMEOUT_MS = 20 * 1000;
+const RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES = new Set(["P2028", "P2034"]);
 
 const requiredPlayerIndexes = [2, 3, 4, 5];
 const registrationCountInclude = {
@@ -480,6 +484,10 @@ const hasDuplicateMemberEmails = (members) => {
 
   return false;
 };
+
+const isRetryableRegistrationTransactionError = (error) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES.has(error.code);
 
 const parseTournamentPayload = ({ body, existingTournament }) => {
   const title = normalizeText(body.title);
@@ -934,93 +942,113 @@ const createTournamentRegistration = async ({ body, file, user }) => {
   const registrationId = crypto.randomUUID();
   let inviteDispatches = [];
 
-  try {
-    await prisma.$transaction(
-      async (tx) => {
-        const [currentTournament, existingRegistration] = await Promise.all([
-          tx.tournament.findUnique({
-            where: { id: tournament.id },
-            select: registrationAvailabilitySelect,
-          }),
-          tx.teamRegistration.findFirst({
-            where: {
+  for (let attempt = 1; attempt <= REGISTRATION_TRANSACTION_MAX_RETRIES; attempt += 1) {
+    try {
+      inviteDispatches = [];
+      await prisma.$transaction(
+        async (tx) => {
+          const [currentTournament, existingRegistration] = await Promise.all([
+            tx.tournament.findUnique({
+              where: { id: tournament.id },
+              select: registrationAvailabilitySelect,
+            }),
+            tx.teamRegistration.findFirst({
+              where: {
+                tournamentId: tournament.id,
+                OR: [{ teamName }, { captainEmail }],
+              },
+              select: { id: true },
+            }),
+          ]);
+
+          if (!currentTournament) {
+            throw new HttpError(404, "Selected tournament was not found.");
+          }
+
+          ensureRegistrationOpen(getRegistrationState(withRegistrationCount(currentTournament)));
+
+          if (existingRegistration) {
+            throw new HttpError(400, DUPLICATE_REGISTRATION_MESSAGE);
+          }
+
+          await tx.teamRegistration.create({
+            data: {
+              id: registrationId,
               tournamentId: tournament.id,
-              OR: [{ teamName }, { captainEmail }],
+              teamName,
+              captainName,
+              captainEmail,
+              captainPhone,
+              captainDiscord,
+              captainRiotId,
+              contactEmail,
+              teamLogoName: persistedLogo ? persistedLogo.filename : null,
+              rulebookAccepted,
+              falsityWarningAccepted,
             },
-            select: { id: true },
-          }),
-        ]);
+          });
 
-        if (!currentTournament) {
-          throw new HttpError(404, "Selected tournament was not found.");
+          await tx.registrationMember.createMany({
+            data: members.map((member) => ({
+              id: crypto.randomUUID(),
+              registrationId,
+              role: member.role,
+              memberOrder: member.order,
+              name: member.name,
+              email: member.email,
+              emailNormalized: normalizeEmail(member.email),
+              discord: member.discord,
+              riotId: member.riotId,
+            })),
+          });
+
+          inviteDispatches = await syncSavedTeamFromRegistration({
+            tx,
+            registrationId,
+            user,
+            teamName,
+            logoName: persistedLogo ? persistedLogo.filename : null,
+            members,
+            tournamentTitle: tournament.title,
+          });
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          maxWait: REGISTRATION_TRANSACTION_MAX_WAIT_MS,
+          timeout: REGISTRATION_TRANSACTION_TIMEOUT_MS,
         }
+      );
+      break;
+    } catch (error) {
+      if (
+        isRetryableRegistrationTransactionError(error) &&
+        attempt < REGISTRATION_TRANSACTION_MAX_RETRIES
+      ) {
+        continue;
+      }
 
-        ensureRegistrationOpen(getRegistrationState(withRegistrationCount(currentTournament)));
-
-        if (existingRegistration) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === "P2002") {
           throw new HttpError(400, DUPLICATE_REGISTRATION_MESSAGE);
         }
 
-        await tx.teamRegistration.create({
-          data: {
-            id: registrationId,
-            tournamentId: tournament.id,
-            teamName,
-            captainName,
-            captainEmail,
-            captainPhone,
-            captainDiscord,
-            captainRiotId,
-            contactEmail,
-            teamLogoName: persistedLogo ? persistedLogo.filename : null,
-            rulebookAccepted,
-            falsityWarningAccepted,
-          },
-        });
+        if (error.code === "P2034") {
+          throw new HttpError(
+            409,
+            "Registration changed while your request was being processed. Please try again."
+          );
+        }
 
-        await tx.registrationMember.createMany({
-          data: members.map((member) => ({
-            id: crypto.randomUUID(),
-            registrationId,
-            role: member.role,
-            memberOrder: member.order,
-            name: member.name,
-            email: member.email,
-            emailNormalized: normalizeEmail(member.email),
-            discord: member.discord,
-            riotId: member.riotId,
-          })),
-        });
-
-        inviteDispatches = await syncSavedTeamFromRegistration({
-          tx,
-          registrationId,
-          user,
-          teamName,
-          logoName: persistedLogo ? persistedLogo.filename : null,
-          members,
-          tournamentTitle: tournament.title,
-        });
-      },
-      {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      }
-    );
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === "P2002") {
-        throw new HttpError(400, DUPLICATE_REGISTRATION_MESSAGE);
+        if (error.code === "P2028") {
+          throw new HttpError(
+            503,
+            "Registration could not be saved because the database was busy. Please try again."
+          );
+        }
       }
 
-      if (error.code === "P2034") {
-        throw new HttpError(
-          409,
-          "Registration changed while your request was being processed. Please try again."
-        );
-      }
+      throw error;
     }
-
-    throw error;
   }
 
   await sendTeamInvites(inviteDispatches);
