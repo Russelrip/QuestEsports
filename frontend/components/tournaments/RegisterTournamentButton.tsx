@@ -11,7 +11,7 @@ import {
   canRegisterForTournament,
   getTournamentRegistrationLabel,
 } from "@/lib/tournaments";
-import { isTournamentRegisteredLocally } from "@/lib/registered-tournaments";
+import { unmarkTournamentRegistered } from "@/lib/registered-tournaments";
 
 type RegistrationStatus = "loading" | "ready" | "registered";
 
@@ -39,13 +39,6 @@ export default function RegisterTournamentButton({
     const syncRegistrationState = async () => {
       setError("");
 
-      if (isTournamentRegisteredLocally(tournament.slug)) {
-        if (!cancelled) {
-          setStatus("registered");
-        }
-        return;
-      }
-
       if (authLoading) {
         setStatus("loading");
         return;
@@ -66,7 +59,13 @@ export default function RegisterTournamentButton({
         }
 
         if (!cancelled) {
-          setStatus(data.isRegistered ? "registered" : "ready");
+          const registered = Boolean(data.isRegistered);
+
+          if (!registered) {
+            unmarkTournamentRegistered(tournament.slug);
+          }
+
+          setStatus(registered ? "registered" : "ready");
         }
       } catch (nextError) {
         if (!cancelled) {

@@ -22,9 +22,6 @@ export const getRegisteredTournamentSlugs = () => {
   }
 };
 
-export const isTournamentRegisteredLocally = (slug: string) =>
-  getRegisteredTournamentSlugs().includes(slug);
-
 export const markTournamentRegistered = (slug: string) => {
   if (!isBrowser()) {
     return;
@@ -42,4 +39,21 @@ export const markTournamentRegistered = (slug: string) => {
       detail: { slug },
     })
   );
+};
+
+export const unmarkTournamentRegistered = (slug: string) => {
+  if (!isBrowser()) {
+    return;
+  }
+
+  const registeredSlugs = getRegisteredTournamentSlugs().filter(
+    (registeredSlug) => registeredSlug !== slug
+  );
+
+  if (registeredSlugs.length === 0) {
+    window.localStorage.removeItem(STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(registeredSlugs));
 };

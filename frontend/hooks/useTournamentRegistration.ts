@@ -7,8 +7,8 @@ import {
   type TournamentRegistrationFormData,
 } from "@/lib/tournament-registration";
 import {
-  isTournamentRegisteredLocally,
   markTournamentRegistered,
+  unmarkTournamentRegistered,
 } from "@/lib/registered-tournaments";
 
 const parseApiResponse = async <T>(
@@ -53,13 +53,6 @@ export function useTournamentRegistrationStatus({
         return;
       }
 
-      if (isTournamentRegisteredLocally(tournamentSlug)) {
-        setIsAlreadyRegistered(true);
-        setRegistrationCheckLoading(false);
-        setStatusMessage("You are already registered for this tournament.");
-        return;
-      }
-
       if (authLoading) {
         setRegistrationCheckLoading(true);
         return;
@@ -90,6 +83,10 @@ export function useTournamentRegistrationStatus({
 
         if (cancelled) {
           return;
+        }
+
+        if (!registered) {
+          unmarkTournamentRegistered(tournamentSlug);
         }
 
         setIsAlreadyRegistered(registered);
