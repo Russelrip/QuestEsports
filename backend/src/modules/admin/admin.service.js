@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const ExcelJS = require("exceljs");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
@@ -22,6 +23,8 @@ const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
 const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
 const RECRUITMENT_STATUSES = new Set(["pending", "reviewed", "accepted", "rejected"]);
+const EXCEL_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 const USER_ROLES = new Set(["user", "admin"]);
 
@@ -166,6 +169,50 @@ const mapRecruitmentApplication = (application) => ({
   updatedAt: application.updatedAt,
 });
 
+const formatExportTimestamp = (value) => (value ? new Date(value).toISOString() : "");
+
+const formatExportBoolean = (value) =>
+  typeof value === "boolean" ? (value ? "Yes" : "No") : "";
+
+const buildExportFilename = (prefix) => {
+  const date = new Date().toISOString().slice(0, 10);
+  return `${prefix}-${date}.xlsx`;
+};
+
+const addExportWorksheet = (workbook, name, columns, rows) => {
+  const worksheet = workbook.addWorksheet(name);
+  worksheet.columns = columns;
+  worksheet.addRows(rows);
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: columns.length },
+  };
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).alignment = { vertical: "middle", wrapText: true };
+
+  columns.forEach((column, index) => {
+    const excelColumn = worksheet.getColumn(index + 1);
+    excelColumn.width = column.width || 18;
+    excelColumn.alignment = { vertical: "top", wrapText: true };
+  });
+
+  return worksheet;
+};
+
+const buildExcelWorkbookBuffer = async ({ sheets }) => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Quest Esports";
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  sheets.forEach((sheet) => {
+    addExportWorksheet(workbook, sheet.name, sheet.columns, sheet.rows);
+  });
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+};
+
 const buildRegistrationWhere = ({
   search,
   tournamentId,
@@ -206,6 +253,29 @@ const buildRegistrationWhere = ({
             { teamName: { contains: normalizedSearch, mode: "insensitive" } },
             { captainName: { contains: normalizedSearch, mode: "insensitive" } },
             { captainEmail: { contains: normalizedSearch, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+};
+
+const buildRecruitmentWhere = ({ search, status, applicationType }) => {
+  const normalizedSearch = normalizeText(search);
+  const normalizedStatus = normalizeText(status).toLowerCase();
+  const normalizedApplicationType = normalizeText(applicationType).toLowerCase();
+
+  return {
+    ...(RECRUITMENT_STATUSES.has(normalizedStatus) ? { status: normalizedStatus } : {}),
+    ...(normalizedApplicationType ? { applicationType: normalizedApplicationType } : {}),
+    ...(normalizedSearch
+      ? {
+          OR: [
+            { fullName: { contains: normalizedSearch, mode: "insensitive" } },
+            { email: { contains: normalizedSearch, mode: "insensitive" } },
+            { phone: { contains: normalizedSearch, mode: "insensitive" } },
+            { discord: { contains: normalizedSearch, mode: "insensitive" } },
+            { game: { contains: normalizedSearch, mode: "insensitive" } },
+            { teamName: { contains: normalizedSearch, mode: "insensitive" } },
           ],
         }
       : {}),
@@ -581,27 +651,108 @@ const listTeamRegistrations = async (query = {}) => {
   };
 };
 
+const exportTeamRegistrations = async (query = {}) => {
+  const where = buildRegistrationWhere(query);
+  const registrations = await prisma.teamRegistration.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    include: TEAM_REGISTRATION_INCLUDE,
+  });
+  const mappedRegistrations = registrations.map(mapTeamRegistration);
+  const registrationRows = mappedRegistrations.map((registration) => ({
+    tournamentTitle: registration.tournament?.title || "",
+    tournamentSlug: registration.tournament?.slug || "",
+    teamName: registration.teamName,
+    approvalStatus: registration.status,
+    paymentStatus: registration.paymentStatus,
+    verificationStatus: registration.verificationStatus,
+    captainName: registration.captain.name,
+    captainEmail: registration.captain.email,
+    captainPhone: registration.captain.phone,
+    captainDiscord: registration.captain.discord,
+    captainRiotId: registration.captain.riotId,
+    contactEmail: registration.contactEmail,
+    rosterCount: registration.members.length,
+    acceptedMembers: registration.members.filter((member) => member.inviteStatus === "accepted").length,
+    submittedAt: formatExportTimestamp(registration.createdAt),
+    logoUrl: registration.logoUrl || "",
+  }));
+  const memberRows = mappedRegistrations.flatMap((registration) =>
+    registration.members.map((member) => ({
+      tournamentTitle: registration.tournament?.title || "",
+      tournamentSlug: registration.tournament?.slug || "",
+      teamName: registration.teamName,
+      registrationId: registration.id,
+      role: member.role,
+      order: member.order,
+      name: member.name,
+      email: member.email || "",
+      discord: member.discord || "",
+      riotId: member.riotId || "",
+      inviteStatus: member.inviteStatus,
+      inviteRespondedAt: formatExportTimestamp(member.inviteRespondedAt),
+      accountUsername: member.account?.username || "",
+      accountEmail: member.account?.email || "",
+    }))
+  );
+
+  const buffer = await buildExcelWorkbookBuffer({
+    sheets: [
+      {
+        name: "Registrations",
+        columns: [
+          { header: "Tournament", key: "tournamentTitle", width: 28 },
+          { header: "Tournament Slug", key: "tournamentSlug", width: 24 },
+          { header: "Team Name", key: "teamName", width: 24 },
+          { header: "Approval", key: "approvalStatus", width: 16 },
+          { header: "Payment", key: "paymentStatus", width: 16 },
+          { header: "Verification", key: "verificationStatus", width: 16 },
+          { header: "Captain Name", key: "captainName", width: 24 },
+          { header: "Captain Email", key: "captainEmail", width: 28 },
+          { header: "Captain Phone", key: "captainPhone", width: 18 },
+          { header: "Captain Discord", key: "captainDiscord", width: 22 },
+          { header: "Captain Riot ID", key: "captainRiotId", width: 22 },
+          { header: "Contact Email", key: "contactEmail", width: 28 },
+          { header: "Roster Count", key: "rosterCount", width: 14 },
+          { header: "Accepted Members", key: "acceptedMembers", width: 18 },
+          { header: "Submitted At", key: "submittedAt", width: 26 },
+          { header: "Logo URL", key: "logoUrl", width: 32 },
+        ],
+        rows: registrationRows,
+      },
+      {
+        name: "Roster Members",
+        columns: [
+          { header: "Tournament", key: "tournamentTitle", width: 28 },
+          { header: "Tournament Slug", key: "tournamentSlug", width: 24 },
+          { header: "Team Name", key: "teamName", width: 24 },
+          { header: "Registration ID", key: "registrationId", width: 38 },
+          { header: "Role", key: "role", width: 16 },
+          { header: "Order", key: "order", width: 10 },
+          { header: "Name", key: "name", width: 24 },
+          { header: "Email", key: "email", width: 28 },
+          { header: "Discord", key: "discord", width: 22 },
+          { header: "Riot ID", key: "riotId", width: 22 },
+          { header: "Invite Status", key: "inviteStatus", width: 16 },
+          { header: "Invite Responded At", key: "inviteRespondedAt", width: 26 },
+          { header: "Account Username", key: "accountUsername", width: 22 },
+          { header: "Account Email", key: "accountEmail", width: 28 },
+        ],
+        rows: memberRows,
+      },
+    ],
+  });
+
+  return {
+    buffer,
+    contentType: EXCEL_CONTENT_TYPE,
+    filename: buildExportFilename("team-registrations"),
+  };
+};
+
 const listRecruitmentApplications = async ({ page, pageSize, search, status, applicationType }) => {
   const pagination = buildPagination({ page, pageSize });
-  const normalizedSearch = normalizeText(search);
-  const normalizedStatus = normalizeText(status).toLowerCase();
-  const normalizedApplicationType = normalizeText(applicationType).toLowerCase();
-  const where = {
-    ...(RECRUITMENT_STATUSES.has(normalizedStatus) ? { status: normalizedStatus } : {}),
-    ...(normalizedApplicationType ? { applicationType: normalizedApplicationType } : {}),
-    ...(normalizedSearch
-      ? {
-          OR: [
-            { fullName: { contains: normalizedSearch, mode: "insensitive" } },
-            { email: { contains: normalizedSearch, mode: "insensitive" } },
-            { phone: { contains: normalizedSearch, mode: "insensitive" } },
-            { discord: { contains: normalizedSearch, mode: "insensitive" } },
-            { game: { contains: normalizedSearch, mode: "insensitive" } },
-            { teamName: { contains: normalizedSearch, mode: "insensitive" } },
-          ],
-        }
-      : {}),
-  };
+  const where = buildRecruitmentWhere({ search, status, applicationType });
 
   const [total, applications] = await prisma.$transaction([
     prisma.recruitmentApplication.count({ where }),
@@ -619,6 +770,126 @@ const listRecruitmentApplications = async ({ page, pageSize, search, status, app
     page: pagination.page,
     pageSize: pagination.pageSize,
   });
+};
+
+const exportRecruitmentApplications = async (query = {}) => {
+  const where = buildRecruitmentWhere(query);
+  const applications = await prisma.recruitmentApplication.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+  });
+  const mappedApplications = applications.map(mapRecruitmentApplication);
+  const applicationRows = mappedApplications.map((application) => {
+    const details = application.details || {};
+
+    return {
+      applicationId: application.id,
+      applicationType: application.applicationType,
+      status: application.status,
+      fullName: application.fullName,
+      email: application.email,
+      phone: application.phone,
+      discord: application.discord,
+      game: application.game,
+      playerId: application.playerId || "",
+      nic: application.nic || "",
+      teamName: application.teamName || "",
+      currentRosterSize: application.currentRosterSize || "",
+      womensLeagueInterest: formatExportBoolean(application.womensLeagueInterest),
+      ign: details.ign || "",
+      birthday: details.birthday || "",
+      gender: details.gender || "",
+      rank: details.peakAndCurrentRank || "",
+      tournamentExperience: details.tournamentExperience || "",
+      previouslyInOrganization: formatExportBoolean(details.previouslyInOrganization),
+      previousOrganization: details.previousOrganization || "",
+      canAttendLan: formatExportBoolean(details.canAttendLan),
+      teamLogoUrl: details.teamLogoUrl || "",
+      additionalMembers: details.additionalMembers || "",
+      declarationAccepted: formatExportBoolean(details.declarationAccepted),
+      notes: application.notes || "",
+      submittedAt: formatExportTimestamp(application.createdAt),
+      updatedAt: formatExportTimestamp(application.updatedAt),
+    };
+  });
+  const memberRows = mappedApplications.flatMap((application) =>
+    application.members.map((member) => ({
+      applicationId: application.id,
+      applicationType: application.applicationType,
+      applicantName: application.fullName,
+      teamName: application.teamName || "",
+      memberName: member.name,
+      ign: member.ign || "",
+      email: member.email,
+      discord: member.discord,
+      playerId: member.playerId || "",
+      phone: member.phone || "",
+      role: member.role || "",
+      nic: member.nic || "",
+    }))
+  );
+
+  const buffer = await buildExcelWorkbookBuffer({
+    sheets: [
+      {
+        name: "Applications",
+        columns: [
+          { header: "Application ID", key: "applicationId", width: 38 },
+          { header: "Application Type", key: "applicationType", width: 20 },
+          { header: "Status", key: "status", width: 14 },
+          { header: "Full Name", key: "fullName", width: 24 },
+          { header: "Email", key: "email", width: 28 },
+          { header: "Phone", key: "phone", width: 18 },
+          { header: "Discord", key: "discord", width: 22 },
+          { header: "Game", key: "game", width: 18 },
+          { header: "Player ID", key: "playerId", width: 22 },
+          { header: "NIC", key: "nic", width: 18 },
+          { header: "Team Name", key: "teamName", width: 24 },
+          { header: "Current Roster Size", key: "currentRosterSize", width: 18 },
+          { header: "Women's League Interest", key: "womensLeagueInterest", width: 22 },
+          { header: "IGN", key: "ign", width: 22 },
+          { header: "Birthday", key: "birthday", width: 16 },
+          { header: "Gender", key: "gender", width: 16 },
+          { header: "Rank", key: "rank", width: 24 },
+          { header: "Tournament Experience", key: "tournamentExperience", width: 36 },
+          { header: "Previously In Organization", key: "previouslyInOrganization", width: 24 },
+          { header: "Previous Organization", key: "previousOrganization", width: 26 },
+          { header: "Can Attend LAN", key: "canAttendLan", width: 18 },
+          { header: "Team Logo URL", key: "teamLogoUrl", width: 32 },
+          { header: "Additional Members", key: "additionalMembers", width: 36 },
+          { header: "Declaration Accepted", key: "declarationAccepted", width: 22 },
+          { header: "Notes", key: "notes", width: 36 },
+          { header: "Submitted At", key: "submittedAt", width: 26 },
+          { header: "Updated At", key: "updatedAt", width: 26 },
+        ],
+        rows: applicationRows,
+      },
+      {
+        name: "Team Members",
+        columns: [
+          { header: "Application ID", key: "applicationId", width: 38 },
+          { header: "Application Type", key: "applicationType", width: 20 },
+          { header: "Applicant Name", key: "applicantName", width: 24 },
+          { header: "Team Name", key: "teamName", width: 24 },
+          { header: "Member Name", key: "memberName", width: 24 },
+          { header: "IGN", key: "ign", width: 22 },
+          { header: "Email", key: "email", width: 28 },
+          { header: "Discord", key: "discord", width: 22 },
+          { header: "Player ID", key: "playerId", width: 22 },
+          { header: "Phone", key: "phone", width: 18 },
+          { header: "Role", key: "role", width: 16 },
+          { header: "NIC", key: "nic", width: 18 },
+        ],
+        rows: memberRows,
+      },
+    ],
+  });
+
+  return {
+    buffer,
+    contentType: EXCEL_CONTENT_TYPE,
+    filename: buildExportFilename("recruitment-applications"),
+  };
 };
 
 const updateRecruitmentApplicationStatus = async (applicationId, body) => {
@@ -734,7 +1005,9 @@ module.exports = {
   updateContactMessageReadStatus,
   deleteContactMessage,
   listTeamRegistrations,
+  exportTeamRegistrations,
   listRecruitmentApplications,
+  exportRecruitmentApplications,
   updateRecruitmentApplicationStatus,
   deleteRecruitmentApplication,
   getRegistrationsByTournament,

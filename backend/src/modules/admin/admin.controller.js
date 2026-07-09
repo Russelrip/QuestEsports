@@ -10,7 +10,9 @@ const {
   updateContactMessageReadStatus,
   deleteContactMessage,
   listTeamRegistrations,
+  exportTeamRegistrations,
   listRecruitmentApplications,
+  exportRecruitmentApplications,
   updateRecruitmentApplicationStatus,
   deleteRecruitmentApplication,
   getRegistrationsByTournament,
@@ -19,6 +21,15 @@ const {
   runLegacyPosterImport,
   runPosterImageAssetMigration,
 } = require("./admin.service");
+
+const sendExcelExport = (res, exportFile) => {
+  res.setHeader("Content-Type", exportFile.contentType);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${exportFile.filename}"`
+  );
+  res.status(200).send(exportFile.buffer);
+};
 
 const getDashboard = asyncHandler(async (req, res) => {
   const stats = await getAdminDashboardData();
@@ -142,6 +153,11 @@ const getTournamentRegistrations = asyncHandler(async (req, res) => {
   });
 });
 
+const downloadTeamRegistrations = asyncHandler(async (req, res) => {
+  const exportFile = await exportTeamRegistrations(req.query);
+  sendExcelExport(res, exportFile);
+});
+
 const updateRegistrationStatus = asyncHandler(async (req, res) => {
   const registration = await updateTeamRegistrationStatus(
     req.params.registrationId,
@@ -172,6 +188,11 @@ const getRecruitmentApplications = asyncHandler(async (req, res) => {
     applications: result.items,
     pagination: result.pagination,
   });
+});
+
+const downloadRecruitmentApplications = asyncHandler(async (req, res) => {
+  const exportFile = await exportRecruitmentApplications(req.query);
+  sendExcelExport(res, exportFile);
 });
 
 const updateRecruitmentStatus = asyncHandler(async (req, res) => {
@@ -228,9 +249,11 @@ module.exports = {
   removeContactMessage,
   getTeamRegistrations,
   getTournamentRegistrations,
+  downloadTeamRegistrations,
   updateRegistrationStatus,
   removeRegistration,
   getRecruitmentApplications,
+  downloadRecruitmentApplications,
   updateRecruitmentStatus,
   removeRecruitmentApplication,
   importLegacyPosterMedia,

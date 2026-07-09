@@ -1,4 +1,4 @@
-import { parseApiResponse } from "@/lib/api";
+import { parseApiResponse, readApiResponse } from "@/lib/api";
 import { apiFetch } from "@/lib/auth";
 import { Tournament } from "@/lib/tournaments";
 import type {
@@ -240,6 +240,53 @@ export const adminRequest = async <T>(
 ) => {
   const response = await apiFetch(path, options);
   return parseApiResponse<T>(response);
+};
+
+const getDownloadFilename = (
+  contentDisposition: string | null,
+  fallbackFilename: string
+) => {
+  if (!contentDisposition) {
+    return fallbackFilename;
+  }
+
+  const encodedMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    return decodeURIComponent(encodedMatch[1].replace(/^"|"$/g, ""));
+  }
+
+  const quotedMatch = contentDisposition.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+
+  const plainMatch = contentDisposition.match(/filename=([^;]+)/i);
+  return plainMatch?.[1]?.trim() || fallbackFilename;
+};
+
+export const downloadAdminFile = async (
+  path: string,
+  fallbackFilename: string
+) => {
+  const response = await apiFetch(path);
+
+  if (!response.ok) {
+    const data = await readApiResponse<unknown>(response);
+    throw new Error(data.message || "Download failed.");
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = getDownloadFilename(
+    response.headers.get("content-disposition"),
+    fallbackFilename
+  );
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 };
 
 export type TournamentFormValues = {

@@ -12,9 +12,11 @@ const {
   removeContactMessage,
   getTeamRegistrations,
   getTournamentRegistrations,
+  downloadTeamRegistrations,
   updateRegistrationStatus,
   removeRegistration,
   getRecruitmentApplications,
+  downloadRecruitmentApplications,
   updateRecruitmentStatus,
   removeRecruitmentApplication,
   importLegacyPosterMedia,
@@ -36,10 +38,12 @@ router.get("/admin/contact-messages", getContactMessages);
 router.patch("/admin/contact-messages/:messageId", updateContactMessageStatus);
 router.delete("/admin/contact-messages/:messageId", removeContactMessage);
 router.get("/admin/team-registrations", getTeamRegistrations);
+router.get("/admin/team-registrations/export", downloadTeamRegistrations);
 router.get("/admin/tournaments/:tournamentId/registrations", getTournamentRegistrations);
 router.patch("/admin/team-registrations/:registrationId/status", updateRegistrationStatus);
 router.delete("/admin/team-registrations/:registrationId", removeRegistration);
 router.get("/admin/recruitment-applications", getRecruitmentApplications);
+router.get("/admin/recruitment-applications/export", downloadRecruitmentApplications);
 router.patch("/admin/recruitment-applications/:applicationId/status", updateRecruitmentStatus);
 router.delete("/admin/recruitment-applications/:applicationId", removeRecruitmentApplication);
 router.post("/admin/media/import-legacy-posters", importLegacyPosterMedia);

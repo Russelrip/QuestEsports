@@ -11,13 +11,19 @@ import { AdminTableSkeleton } from "@/components/ui/skeleton";
 import { useAdminRegistrations } from "@/hooks/api/useAdmin";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
-import { adminRequest, getAdminPaginationSummary, type TeamRegistration } from "@/lib/admin";
+import {
+  adminRequest,
+  downloadAdminFile,
+  getAdminPaginationSummary,
+  type TeamRegistration,
+} from "@/lib/admin";
 
 export default function AdminRegistrationsManager() {
   const [search, setSearch] = useState("");
   const [tournament, setTournament] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
+  const [downloading, setDownloading] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
   const debouncedTournament = useDebouncedValue(tournament);
   const debouncedStatus = useDebouncedValue(status);
@@ -32,6 +38,23 @@ export default function AdminRegistrationsManager() {
   const registrations = data?.registrations || [];
   const tournaments = data?.tournaments || [];
   const pagination = data?.pagination;
+
+  const buildExportPath = () => {
+    const params = new URLSearchParams();
+    const appendIfPresent = (key: string, value: string) => {
+      const normalizedValue = value.trim();
+      if (normalizedValue) {
+        params.set(key, normalizedValue);
+      }
+    };
+
+    appendIfPresent("search", search);
+    appendIfPresent("tournament", tournament);
+    appendIfPresent("status", status);
+
+    const query = params.toString();
+    return `/api/admin/team-registrations/export${query ? `?${query}` : ""}`;
+  };
 
   const updateRegistration = async (
     registrationId: string,
@@ -73,6 +96,23 @@ export default function AdminRegistrationsManager() {
     }
   };
 
+  const downloadRegistrations = async () => {
+    setDownloading(true);
+
+    try {
+      await downloadAdminFile(buildExportPath(), "team-registrations.xlsx");
+      showToast({ tone: "success", title: "Excel download started" });
+    } catch (nextError) {
+      showToast({
+        tone: "error",
+        title: "Unable to download registrations",
+        description: nextError instanceof Error ? nextError.message : "Download failed.",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <AdminShell
       title="Registrations"
@@ -84,7 +124,7 @@ export default function AdminRegistrationsManager() {
             <h3 className="text-2xl text-white">Team Registrations</h3>
             <p className="text-sm text-slate-400">Each registration is attached to one tournament and one captain account.</p>
           </div>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-4">
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search teams or captains..." />
             <Select value={tournament} onChange={(event) => setTournament(event.target.value)}>
               <option value="">All tournaments</option>
@@ -98,6 +138,14 @@ export default function AdminRegistrationsManager() {
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
             </Select>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={downloading}
+              onClick={downloadRegistrations}
+            >
+              {downloading ? "Downloading..." : "Download Excel"}
+            </Button>
           </div>
         </div>
 

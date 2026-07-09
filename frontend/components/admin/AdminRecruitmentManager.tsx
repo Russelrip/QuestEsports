@@ -14,6 +14,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
 import {
   adminRequest,
+  downloadAdminFile,
   getAdminPaginationSummary,
   normalizeRecruitmentApplication,
   type RecruitmentApplication,
@@ -30,6 +31,7 @@ export default function AdminRecruitmentManager() {
   const [status, setStatus] = useState("");
   const [applicationType, setApplicationType] = useState("");
   const [page, setPage] = useState(1);
+  const [downloading, setDownloading] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
   const { data, error, loading, refetch } = useAdminRecruitmentApplications(
     debouncedSearch,
@@ -40,6 +42,23 @@ export default function AdminRecruitmentManager() {
   const showToast = useToastStore((state) => state.showToast);
   const applications = (data?.applications || []).map(normalizeRecruitmentApplication);
   const pagination = data?.pagination;
+
+  const buildExportPath = () => {
+    const params = new URLSearchParams();
+    const appendIfPresent = (key: string, value: string) => {
+      const normalizedValue = value.trim();
+      if (normalizedValue) {
+        params.set(key, normalizedValue);
+      }
+    };
+
+    appendIfPresent("search", search);
+    appendIfPresent("status", status);
+    appendIfPresent("applicationType", applicationType);
+
+    const query = params.toString();
+    return `/api/admin/recruitment-applications/export${query ? `?${query}` : ""}`;
+  };
 
   const updateStatus = async (
     applicationId: string,
@@ -81,13 +100,30 @@ export default function AdminRecruitmentManager() {
     }
   };
 
+  const downloadApplications = async () => {
+    setDownloading(true);
+
+    try {
+      await downloadAdminFile(buildExportPath(), "recruitment-applications.xlsx");
+      showToast({ tone: "success", title: "Excel download started" });
+    } catch (nextError) {
+      showToast({
+        tone: "error",
+        title: "Unable to download applications",
+        description: nextError instanceof Error ? nextError.message : "Download failed.",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <AdminShell
       title="Recruitment Applications"
       description="Review solo-player, team, and incomplete-roster applications submitted through Join Quest."
     >
       <Card className="p-6 sm:p-8">
-        <div className="mb-6 grid gap-3 lg:grid-cols-3">
+        <div className="mb-6 grid gap-3 lg:grid-cols-4">
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -106,6 +142,14 @@ export default function AdminRecruitmentManager() {
             <option value="accepted">Accepted</option>
             <option value="rejected">Rejected</option>
           </Select>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={downloading}
+            onClick={downloadApplications}
+          >
+            {downloading ? "Downloading..." : "Download Excel"}
+          </Button>
         </div>
 
         {loading ? (
