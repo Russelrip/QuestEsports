@@ -220,7 +220,7 @@ Routine sign-ins do not send security-alert emails, including sign-ins from a ne
 ### `requireVerifiedEmail`
 
 - Rejects logged-in users whose email is not verified.
-- Currently used on tournament registration submission.
+- Currently used on tournament registration submission and recruitment application submission.
 
 ## Frontend Protection
 
@@ -229,6 +229,7 @@ Routine sign-ins do not send security-alert emails, including sign-ins from a ne
   - unauthenticated users to `/login`
   - non-admin users to `/`
 - Profile and admin experiences rely on the session returned by `/api/me`.
+- Registration and recruitment admin screens use admin-only APIs for status changes, deletion, and Excel downloads.
 
 ## CSRF And Cookie Safety
 

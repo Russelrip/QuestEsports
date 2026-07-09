@@ -106,6 +106,10 @@ Roles:
 - `SUBSTITUTE`
 - `COACH`
 
+### Registration deletion
+
+Admin deletion removes a `TeamRegistration`. Its `RegistrationMember` records are deleted by cascade. The linked `SavedTeam` is not deleted because it is a reusable profile roster.
+
 ## Saved Teams And Invites
 
 ### `SavedTeam`
@@ -125,6 +129,44 @@ Invite states:
 This layer is synchronized from tournament registration submissions so captains can reuse rosters and teammates can confirm membership through verified site accounts. Accepted members can view the team on their own profiles.
 
 The actual `RegistrationMember` records remain the source of truth for each tournament invitation. Registration verification is `verified` when all members accept, `flagged` when any member declines, and `pending` otherwise.
+
+## Recruitment
+
+### `RecruitmentApplication`
+
+Stores Join Quest applications submitted by verified users.
+
+Fields of note:
+
+- `applicationType`
+- `fullName`
+- `email`
+- `phone`
+- `discord`
+- `game`
+- `applicantIdNumberCiphertext`
+- `teamName`
+- `currentRosterSize`
+- `members`
+- `details`
+- `notes`
+- `womensLeagueInterest`
+- `status`
+
+Application types:
+
+- `solo_player`
+- `existing_team`
+- `incomplete_team`
+
+Statuses:
+
+- `pending`
+- `reviewed`
+- `accepted`
+- `rejected`
+
+NIC values are encrypted at write time and decrypted only for admin review/export responses.
 
 ## Contact
 
@@ -192,6 +234,14 @@ Upload directories are created under `backend/uploads/`:
 - Generation/update logic: `brackets-manager`
 - Access: admin APIs can create, update, and publish brackets; public tournament details receive bracket data only after publication
 
+### Admin Excel exports
+
+- Generated from PostgreSQL records on demand
+- Returned directly as `.xlsx` responses
+- Not written to `backend/uploads/`
+- Registration exports include `Registrations` and `Roster Members` sheets
+- Recruitment exports include `Applications` and `Team Members` sheets
+
 ### Completed tournament showcase images
 
 - File bytes: filesystem
@@ -245,6 +295,7 @@ Key protections implemented in the schema and services:
 - unique member email per saved team
 - unique team name and captain email per tournament registration
 - transaction-level protection for tournament registration creation
+- encrypted NIC storage for recruitment applicants and team members
 
 ## Important Relationships
 
@@ -252,6 +303,7 @@ Key protections implemented in the schema and services:
 - A `Tournament` has many `TeamRegistration` and `Poster` records, and at most one `TournamentBracket`.
 - A `TeamRegistration` has many `RegistrationMember` records and may link to its synchronized `SavedTeam`.
 - A `SavedTeam` belongs to a captain `User`, has many `SavedTeamMember` records, and can appear on accepted members' profiles.
+- A `RecruitmentApplication` belongs to a submitting `User`.
 - `RegistrationMember` and `SavedTeamMember` records may link to the accepting `User`.
 - A `Poster` belongs to an `ImageAsset` and may belong to a `Tournament`.
 
@@ -271,6 +323,8 @@ From the migration names, the schema evolved through:
 - background jobs
 - tournament schedule and completed-showcase asset support
 - native tournament bracket persistence and optional registration opening time
+- recruitment applications and admin review state
+- admin Excel export support for registration and recruitment records
 
 ## Backup And Operations Guidance
 
@@ -278,6 +332,7 @@ From the migration names, the schema evolved through:
 - Restoring the database without the uploads directory will break tournament banner, logo, and poster file references.
 - Restoring the database without the uploads directory will also break tournament schedule file references and completed-showcase images.
 - Restoring uploads without the database will orphan files because metadata and filenames live in PostgreSQL.
+- Admin Excel exports are not backup artifacts; they can be regenerated from database state.
 - Treat `backend/uploads/` as persistent application data in production.
 
 ## Production Improvement Opportunities

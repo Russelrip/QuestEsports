@@ -487,6 +487,49 @@ Behavior:
 - Successful registration also synchronizes a `SavedTeam` roster and sends invite emails to non-captain members.
 - The captain is linked and accepted automatically. Other members remain pending until they respond using a verified account with the invited email address.
 
+## Recruitment Application Endpoints
+
+### `POST /api/recruitment-applications`
+
+Protected route requiring a verified account.
+
+Supported application types:
+
+- `solo_player`
+- `existing_team`
+- `incomplete_team`
+
+Body is JSON. Primary fields:
+
+- `applicationType`
+- `fullName`
+- `phone`
+- `discord`
+- `games`
+- `ign`
+- `birthday`
+- `gender`
+- `peakAndCurrentRank`
+- `tournamentExperience`
+- `previouslyInOrganization`
+- `previousOrganization`
+- `canAttendLan`
+- `teamLogoUrl`
+- `additionalMembers`
+- `declarationAccepted`
+- `nic`
+- `notes`
+- Team applications only: `teamName`, `currentRosterSize`, `members`
+
+Behavior:
+
+- The applicant email is taken from the authenticated user session.
+- `games` must contain at least one selected game.
+- `gender` must be `male`, `female`, or `other`.
+- NIC values are encrypted before storage.
+- Existing-team applications require a roster size from 5 to 20 and at least four additional members.
+- Incomplete-team applications require a roster size from 2 to 4 and between one and three additional members.
+
 ## Team Endpoints
 
 ### `GET /api/teams/profile`
@@ -520,6 +563,16 @@ Accepted values:
 - `decline`
 
 Accepting links both the tournament-registration member and saved-team member to the account. The registration verification status becomes `verified` when every member has accepted, `flagged` when any member declines, and otherwise remains `pending`.
+
+## Rulebook Endpoints
+
+### `GET /api/rulebooks`
+
+Returns published rulebooks for public display and tournament form choices.
+
+### `GET /api/rulebooks/:slug`
+
+Returns one public rulebook by slug.
 
 ## Media Endpoints
 
@@ -582,6 +635,7 @@ Returns:
 - `totalTournaments`
 - `openTournaments`
 - `totalRegistrations`
+- `pendingRecruitmentApplications`
 - `unreadContactMessages`
 
 ### Users
@@ -621,8 +675,10 @@ Supported filters on list:
 ### Tournament registrations
 
 - `GET /api/admin/team-registrations`
+- `GET /api/admin/team-registrations/export`
 - `GET /api/admin/tournaments/:tournamentId/registrations`
 - `PATCH /api/admin/team-registrations/:registrationId/status`
+- `DELETE /api/admin/team-registrations/:registrationId`
 
 Supported list filters:
 
@@ -639,6 +695,53 @@ Allowed status values:
 - Registration status: `pending`, `approved`, `rejected`
 - Payment status: `unpaid`, `pending`, `paid`
 - Verification status: `pending`, `verified`, `flagged`
+
+Excel export:
+
+- Accepts the same filters as the list endpoint.
+- Returns an `.xlsx` attachment with `Registrations` and `Roster Members` sheets.
+- Filenames follow `team-registrations-YYYY-MM-DD.xlsx`.
+
+Deletion removes the registration and cascades its registration-member rows. It does not delete the reusable saved team roster.
+
+See [Admin Operations](./admin-operations.md) for export columns and deletion behavior.
+
+### Recruitment applications
+
+- `GET /api/admin/recruitment-applications`
+- `GET /api/admin/recruitment-applications/export`
+- `PATCH /api/admin/recruitment-applications/:applicationId/status`
+- `DELETE /api/admin/recruitment-applications/:applicationId`
+
+Supported list/export filters:
+
+- `page`
+- `pageSize`
+- `search`
+- `status`
+- `applicationType`
+
+Allowed status values:
+
+- `pending`
+- `reviewed`
+- `accepted`
+- `rejected`
+
+Allowed application types:
+
+- `solo_player`
+- `existing_team`
+- `incomplete_team`
+
+Excel export:
+
+- Accepts the same filters as the list endpoint.
+- Returns an `.xlsx` attachment with `Applications` and `Team Members` sheets.
+- Filenames follow `recruitment-applications-YYYY-MM-DD.xlsx`.
+- Includes sensitive applicant data such as NIC values for admin review.
+
+Deletion removes the recruitment application record and does not send email.
 
 ### Tournaments
 
@@ -687,6 +790,14 @@ Optional remove flags during update:
 - `removeFirstPlaceImage`
 - `removeSecondPlaceImage`
 - `removeThirdPlaceImage`
+
+### Rulebooks
+
+- `POST /api/admin/rulebooks`
+- `PATCH /api/admin/rulebooks/:rulebookId`
+- `DELETE /api/admin/rulebooks/:rulebookId`
+
+Admin rulebook writes accept JSON fields used by the rulebook editor: `title`, `slug`, `game`, `variant`, and `content`.
 
 ### Native tournament brackets
 
@@ -754,5 +865,6 @@ Paginated admin/media endpoints return:
 
 - `/api/openapi.json` is useful for quick inspection but does not fully describe every route and payload in the codebase.
 - The backend is source-of-truth for registration availability and duplicate checks.
+- Admin Excel exports are generated on demand and are not written to `backend/uploads/`.
 - Approved tournament team logos are exposed on public tournament detail responses and served through upload URLs.
 - Native brackets are public only after admin publication.

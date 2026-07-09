@@ -42,10 +42,10 @@ The app runs at `http://localhost:3000` by default.
 
 ## Main Route Groups
 
-- Public: `/`, `/tournaments`, `/posters`, `/match-videos`, `/rulebook`, `/contact`
+- Public: `/`, `/tournaments`, `/tournament-registration`, `/registration`, `/join`, `/posters`, `/match-videos`, `/rulebook`, `/contact`
 - Auth: `/signup`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/confirm-email-change`, `/team-invite`
 - User: `/profile`
-- Admin: `/admin`, `/admin/users`, `/admin/tournaments`, `/admin/registrations`, `/admin/contact-messages`
+- Admin: `/admin`, `/admin/users`, `/admin/tournaments`, `/admin/registrations`, `/admin/recruitment`, `/admin/rulebooks`, `/admin/contact-messages`
 
 ## Related Backend Endpoints
 
@@ -53,7 +53,9 @@ The frontend expects the backend to expose:
 
 - auth routes under `/api`
 - tournament routes under `/api/tournaments` and `/api/tournament-registration`
+- recruitment submission routes under `/api/recruitment-applications`
 - native bracket admin routes under `/api/admin/tournaments/:tournamentId/bracket`
+- admin registration/recruitment list, delete, status, and export routes under `/api/admin`
 - team routes under `/api/teams/profile` and `/api/team-invite`
 - media routes under `/api/posters`, `/api/images`, and `/api/uploads/...`
 
@@ -71,5 +73,7 @@ npm run start
 - Auth is session-cookie based, so frontend requests include `credentials: "include"` when needed.
 - Login supports password auth, MFA challenges, and Google/Discord OAuth hand-offs via the backend.
 - Admin screens depend on a logged-in user whose backend role is `admin`.
+- Admin registration and recruitment pages can delete rows and download the currently filtered results as Excel files.
+- Registration status in the tournament registration UI is rechecked against the backend; stale local browser markers are cleared when the backend says the user is not registered.
 - The public tournament board currently shows prize pool, registration deadline, and tournament start on active tournament cards.
 - Tournament detail pages hide empty registered-team and bracket sections; published native brackets render in a compact Challonge-style board.

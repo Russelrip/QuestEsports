@@ -117,11 +117,14 @@ Recommended flow:
 ## Documentation
 
 - [API Documentation](./docs/api-documentation.md)
+- [Admin Operations](./docs/admin-operations.md)
 - [Authentication Flow](./docs/authentication-flow.md)
 - [CI/CD Pipeline](./docs/ci-cd.md)
 - [Database and Storage](./docs/database-and-storage.md)
 - [Email System](./docs/email-system.md)
 - [Setup and Deployment Guide](./docs/setup-and-deployment.md)
+- [Backend README](./backend/README.md)
+- [Frontend README](./frontend/README.md)
 
 ## Stack
 
@@ -129,6 +132,7 @@ Recommended flow:
 - Backend: Express 5, Prisma ORM, PostgreSQL
 - Auth: Cookie-based sessions with server-side session storage
 - Brackets: `brackets-manager` with Prisma-persisted native bracket data
+- Admin exports: ExcelJS-generated `.xlsx` downloads
 - Uploads: Multer, filesystem-backed image storage
 - Email: Nodemailer with SMTP
 
@@ -145,6 +149,7 @@ Recommended flow:
 - Public tournament team lists with approved registered teams, team logos, short codes, and member counts
 - Native double-elimination bracket viewing when an admin publishes bracket data
 - Team tournament registration flow
+- Join Quest recruitment application flow for solo players, complete teams, and incomplete teams
 - Email verification, login, logout, password reset, and email change flows
 - MFA setup, MFA login challenge, backup codes, session management, and Google/Discord OAuth sign-in
 - Posters gallery and match-video archive
@@ -158,7 +163,8 @@ Recommended flow:
 - Tournament creation and editing
 - Tournament asset management for banners, schedules, and completed-event showcase images
 - Native bracket generation from approved teams, match-result updates, and publish/unpublish controls
-- Registration review and status management
+- Registration review, status management, deletion, and filtered Excel export
+- Recruitment application review, status management, deletion, and filtered Excel export
 - Contact inbox moderation
 - Poster/image asset management
 - Legacy poster import and image migration utilities
@@ -169,12 +175,15 @@ Recommended flow:
 QuestEsports/
 |-- README.md
 |-- docs/
+|   |-- admin-operations.md
 |   |-- api-documentation.md
 |   |-- authentication-flow.md
+|   |-- ci-cd.md
 |   |-- database-and-storage.md
 |   |-- email-system.md
 |   `-- setup-and-deployment.md
 |-- backend/
+|   |-- README.md
 |   |-- .env.example
 |   |-- package.json
 |   |-- prisma/
@@ -227,6 +236,7 @@ QuestEsports/
 - `/tournaments/[slug]`
 - `/tournament-registration`
 - `/registration`
+- `/join`
 - `/match-videos`
 - `/posters`
 - `/rulebook`
@@ -251,6 +261,8 @@ QuestEsports/
 - `/admin/tournaments/new`
 - `/admin/tournaments/[id]/edit`
 - `/admin/registrations`
+- `/admin/recruitment`
+- `/admin/rulebooks`
 - `/admin/contact-messages`
 
 ## API Surface
@@ -260,10 +272,12 @@ The backend exposes these main route groups:
 - Auth: `/api/signup`, `/api/login`, `/api/login/mfa`, OAuth start/callback routes, `/api/logout`, `/api/me`, verification, email-change, password-reset, MFA, and session endpoints
 - Public tournaments: `/api/tournaments`, `/api/tournaments/:slug`
 - Tournament registration: `/api/tournament-registration`, `/api/tournament-registration/status/:slug`
+- Recruitment applications: `/api/recruitment-applications`
 - Teams: `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
 - Contact: `/api/contact`
 - Media: `/api/posters`, `/api/images`, `/api/uploads/...`
 - Admin: `/api/admin/...`
+- Admin registration/recruitment exports: `/api/admin/team-registrations/export`, `/api/admin/recruitment-applications/export`
 - Admin native brackets: `/api/admin/tournaments/:tournamentId/bracket`, `/generate`, `/matches/:matchId`, and `/publish`
 
 See [API Documentation](./docs/api-documentation.md) for the complete reference.
@@ -398,8 +412,11 @@ Default local URLs:
 - The backend creates upload directories automatically at startup.
 - There is no root workspace runner; start `backend` and `frontend` in separate terminals.
 - Team registration requires a logged-in user with a verified email address.
+- Recruitment applications require a logged-in user with a verified email address.
 - Team invite responses require a logged-in, verified account whose email matches the invitation. Accepted teams appear on both the captain's and accepted members' profiles.
 - Admin tournament management supports spreadsheet uploads for schedules, showcase-image uploads for completed events, and native bracket generation from approved teams.
+- Admin registration deletion removes the tournament registration source-of-truth row; saved reusable team rosters can remain for profile reuse.
+- Admin registration and recruitment pages can download filtered `.xlsx` exports generated on demand by the backend.
 - Public tournament responses now include `displayPriority`, `registrationOpenAt`, `scheduleData`, `isCompleted`, `showcase`, published bracket data, bracket summaries, and per-tournament `registeredTeams` on detail pages.
 - Direct imports that touch backend config now load `.env` automatically, so scripts and one-off Node entrypoints behave the same as `node src/server.js`.
 - Public tournament detail responses include approved team names, public team-logo URLs, short codes, member counts, and statuses.
@@ -436,7 +453,7 @@ Backend tests use Node's built-in test runner and live in `backend/tests`.
 
 - Run all backend unit tests: `cd backend && npm test`
 - Run one file: `cd backend && node --test tests/session.service.test.js`
-- Existing coverage focuses on backend behavior that benefits from deterministic unit testing, including jobs, observability, rate limiting, team helpers, and session/auth lifecycle logic.
+- Existing coverage focuses on backend behavior that benefits from deterministic unit testing, including jobs, observability, rate limiting, team helpers, tournament registration, recruitment validation, admin Excel exports, admin deletion workflows, and session/auth lifecycle logic.
 
 For frontend verification, the current baseline remains:
 
@@ -447,5 +464,6 @@ For frontend verification, the current baseline remains:
 
 - Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
 - Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
+- Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
 - Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, SMTP settings, or queue behavior.
 - Read [Database and Storage](./docs/database-and-storage.md) before touching uploads, Prisma schema, or media migration scripts.

@@ -126,6 +126,9 @@ The following areas collect or display email addresses but do not currently send
 - recruitment applications are stored for admin review
 - tournament registration does not send a captain confirmation email
 - tournament registration status changes do not notify the captain
+- tournament registration deletion does not notify the captain or roster members
+- recruitment status changes and recruitment deletion do not notify the applicant
+- admin Excel exports do not send email
 - admin user, tournament, registration, contact, and media actions do not send email
 - the platform does not send marketing or newsletter email
 

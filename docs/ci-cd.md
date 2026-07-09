@@ -23,6 +23,8 @@ npx prisma migrate diff --exit-code --from-schema-datasource prisma/schema.prism
 npm test
 ```
 
+The backend unit suite includes coverage for admin registration/recruitment Excel export generation, admin deletion workflows, tournament registration duplicate handling, and recruitment validation.
+
 Frontend:
 
 ```bash
@@ -31,6 +33,8 @@ npm ci
 npm run lint
 npm run build
 ```
+
+The frontend lint/build checks cover the admin download helper and registration status UI at compile time. There is no browser E2E workflow in CI yet.
 
 The frontend CI build uses these non-production values:
 

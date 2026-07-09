@@ -241,7 +241,7 @@ npm test
 npm run prisma:generate
 ```
 
-The backend unit suite uses Node's built-in test runner and covers core behavior such as rate limiting, background jobs, observability helpers, team helpers, and session/auth lifecycle logic.
+The backend unit suite uses Node's built-in test runner and covers core behavior such as rate limiting, background jobs, observability helpers, team helpers, tournament registration duplicate handling, recruitment validation, admin Excel exports, admin deletion workflows, and session/auth lifecycle logic.
 
 For frontend changes, run:
 
@@ -431,11 +431,16 @@ Check all of the following:
 - tournament listing cards show prize pool, registration deadline, and tournament start
 - tournament detail pages render registered teams only when approved teams exist
 - tournament detail pages render native brackets only after an admin publishes bracket data
+- deleting a tournament registration in admin lets the same captain register for that tournament again
+- admin registration Excel downloads include registration and roster-member sheets for the active filters
+- recruitment submission works for verified users
+- admin recruitment Excel downloads include application and team-member sheets for the active filters
 - completed showcase sections render correctly
 - poster images render
 - approved public team logos render on tournament detail pages
 - public upload routes for tournament banners, poster images, and team logos render expected files
 - public cannot access admin-only media management endpoints
+- non-admin users cannot access admin registration, recruitment, export, or delete endpoints
 
 ## Media Migration Utility
 
