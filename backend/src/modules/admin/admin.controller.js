@@ -12,8 +12,10 @@ const {
   listTeamRegistrations,
   listRecruitmentApplications,
   updateRecruitmentApplicationStatus,
+  deleteRecruitmentApplication,
   getRegistrationsByTournament,
   updateTeamRegistrationStatus,
+  deleteTeamRegistration,
   runLegacyPosterImport,
   runPosterImageAssetMigration,
 } = require("./admin.service");
@@ -153,6 +155,15 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
   });
 });
 
+const removeRegistration = asyncHandler(async (req, res) => {
+  await deleteTeamRegistration(req.params.registrationId);
+
+  res.status(200).json({
+    success: true,
+    message: "Team registration deleted successfully.",
+  });
+});
+
 const getRecruitmentApplications = asyncHandler(async (req, res) => {
   const result = await listRecruitmentApplications(req.query);
 
@@ -173,6 +184,15 @@ const updateRecruitmentStatus = asyncHandler(async (req, res) => {
     success: true,
     message: "Recruitment application updated successfully.",
     application,
+  });
+});
+
+const removeRecruitmentApplication = asyncHandler(async (req, res) => {
+  await deleteRecruitmentApplication(req.params.applicationId);
+
+  res.status(200).json({
+    success: true,
+    message: "Recruitment application deleted successfully.",
   });
 });
 
@@ -209,8 +229,10 @@ module.exports = {
   getTeamRegistrations,
   getTournamentRegistrations,
   updateRegistrationStatus,
+  removeRegistration,
   getRecruitmentApplications,
   updateRecruitmentStatus,
+  removeRecruitmentApplication,
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
 };

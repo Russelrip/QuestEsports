@@ -61,6 +61,26 @@ export default function AdminRecruitmentManager() {
     }
   };
 
+  const deleteApplication = async (application: RecruitmentApplication) => {
+    if (!window.confirm(`Delete the ${applicationTypeLabels[application.applicationType]} application for ${application.fullName}?`)) {
+      return;
+    }
+
+    try {
+      await adminRequest(`/api/admin/recruitment-applications/${application.id}`, {
+        method: "DELETE",
+      });
+      showToast({ tone: "success", title: "Recruitment application deleted" });
+      await refetch();
+    } catch (nextError) {
+      showToast({
+        tone: "error",
+        title: "Unable to delete application",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
+    }
+  };
+
   return (
     <AdminShell
       title="Recruitment Applications"
@@ -110,23 +130,33 @@ export default function AdminRecruitmentManager() {
                       Submitted {new Date(application.createdAt).toLocaleString()}
                     </p>
                   </div>
-                  <label className="grid gap-2 text-sm text-slate-300">
-                    Review Status
-                    <Select
-                      value={application.status}
-                      onChange={(event) =>
-                        updateStatus(
-                          application.id,
-                          event.target.value as RecruitmentApplication["status"]
-                        )
-                      }
+                  <div className="grid gap-3 sm:grid-cols-[minmax(180px,240px)_auto] sm:items-end">
+                    <label className="grid gap-2 text-sm text-slate-300">
+                      Review Status
+                      <Select
+                        value={application.status}
+                        onChange={(event) =>
+                          updateStatus(
+                            application.id,
+                            event.target.value as RecruitmentApplication["status"]
+                          )
+                        }
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="reviewed">Reviewed</option>
+                        <option value="accepted">Accepted</option>
+                        <option value="rejected">Rejected</option>
+                      </Select>
+                    </label>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      onClick={() => deleteApplication(application)}
                     >
-                      <option value="pending">Pending</option>
-                      <option value="reviewed">Reviewed</option>
-                      <option value="accepted">Accepted</option>
-                      <option value="rejected">Rejected</option>
-                    </Select>
-                  </label>
+                      Delete Application
+                    </Button>
+                  </div>
                 </div>
 
                 <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">

@@ -636,6 +636,16 @@ const updateRecruitmentApplicationStatus = async (applicationId, body) => {
   return mapRecruitmentApplication(application);
 };
 
+const deleteRecruitmentApplication = async (applicationId) => {
+  const deleted = await prisma.recruitmentApplication.deleteMany({
+    where: { id: applicationId },
+  });
+
+  if (deleted.count === 0) {
+    throw new HttpError(404, "Recruitment application not found.");
+  }
+};
+
 const getRegistrationsByTournament = async (tournamentId, query = {}) => {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
@@ -700,6 +710,16 @@ const updateTeamRegistrationStatus = async (registrationId, body) => {
   return mapTeamRegistration(registration);
 };
 
+const deleteTeamRegistration = async (registrationId) => {
+  const deleted = await prisma.teamRegistration.deleteMany({
+    where: { id: registrationId },
+  });
+
+  if (deleted.count === 0) {
+    throw new HttpError(404, "Team registration not found.");
+  }
+};
+
 const runLegacyPosterImport = async () => importLegacyPosters();
 const runPosterImageAssetMigration = async () => migrateImageAssetsToFilesystem();
 
@@ -716,8 +736,10 @@ module.exports = {
   listTeamRegistrations,
   listRecruitmentApplications,
   updateRecruitmentApplicationStatus,
+  deleteRecruitmentApplication,
   getRegistrationsByTournament,
   updateTeamRegistrationStatus,
+  deleteTeamRegistration,
   runLegacyPosterImport,
   runPosterImageAssetMigration,
 };

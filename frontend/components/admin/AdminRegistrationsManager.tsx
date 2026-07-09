@@ -53,6 +53,26 @@ export default function AdminRegistrationsManager() {
     }
   };
 
+  const deleteRegistration = async (registration: TeamRegistration) => {
+    if (!window.confirm(`Delete the registration for ${registration.teamName}?`)) {
+      return;
+    }
+
+    try {
+      await adminRequest(`/api/admin/team-registrations/${registration.id}`, {
+        method: "DELETE",
+      });
+      showToast({ tone: "success", title: "Registration deleted" });
+      await refetch();
+    } catch (nextError) {
+      showToast({
+        tone: "error",
+        title: "Unable to delete registration",
+        description: nextError instanceof Error ? nextError.message : "Request failed.",
+      });
+    }
+  };
+
   return (
     <AdminShell
       title="Registrations"
@@ -154,6 +174,14 @@ export default function AdminRegistrationsManager() {
                       /{registration.members.length}
                     </p>
                   </div>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={() => deleteRegistration(registration)}
+                  >
+                    Delete Registration
+                  </Button>
                   <div className="grid gap-2">
                     {registration.members.map((member) => (
                       <div key={member.id} className="flex items-center justify-between gap-3 text-xs text-slate-400">
