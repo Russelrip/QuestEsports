@@ -60,6 +60,9 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
 
+      - name: Audit backend production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
       - name: Generate Prisma client
         run: npm run prisma:generate
 
@@ -103,8 +106,17 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Audit frontend production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
       - name: Run frontend lint
         run: npm run lint
 
       - name: Build frontend
         run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run frontend E2E tests
+        run: npm run test:e2e

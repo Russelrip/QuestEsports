@@ -3,9 +3,11 @@ const path = require("path");
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { logger } = require("../../lib/logger");
 const {
   detectImageType,
   persistPosterImageUpload,
+  removeUploadFiles,
   posterImageDirectory,
 } = require("../../middleware/upload");
 const { normalizeText } = require("../../lib/validation");
@@ -183,6 +185,17 @@ const readStoredImageAsset = async (asset) => {
   }
 };
 
+const cleanupUploadsQuietly = async (uploads, context = {}) => {
+  try {
+    await removeUploadFiles(uploads);
+  } catch (error) {
+    logger.warn("Failed to remove stale upload file.", {
+      ...context,
+      error,
+    });
+  }
+};
+
 const getBinaryImageAsset = async (asset) => {
   const storedImage = await readStoredImageAsset(asset);
 
@@ -229,22 +242,37 @@ const createImageAssets = async ({ body, files }) => {
     })
   );
 
-  const createdAssets = await prisma.$transaction(
-    persistedFiles.map(({ file, persistedImage, title: assetTitle }) =>
-      prisma.imageAsset.create({
-        data: {
-          id: crypto.randomUUID(),
-          title: assetTitle,
-          description,
-          category,
-          originalName: file.originalname || null,
-          storedFilename: persistedImage.filename,
-          contentType: persistedImage.contentType,
-          byteSize: file.buffer.length,
-        },
-      })
-    )
-  );
+  let createdAssets;
+
+  try {
+    createdAssets = await prisma.$transaction(
+      persistedFiles.map(({ file, persistedImage, title: assetTitle }) =>
+        prisma.imageAsset.create({
+          data: {
+            id: crypto.randomUUID(),
+            title: assetTitle,
+            description,
+            category,
+            originalName: file.originalname || null,
+            storedFilename: persistedImage.filename,
+            contentType: persistedImage.contentType,
+            byteSize: file.buffer.length,
+          },
+        })
+      )
+    );
+  } catch (error) {
+    await cleanupUploadsQuietly(
+      persistedFiles.map(({ persistedImage }) => ({
+        directory: posterImageDirectory,
+        filename: persistedImage.filename,
+      })),
+      {
+        operation: "createImageAssets",
+      }
+    );
+    throw error;
+  }
 
   return createdAssets.map(mapImageAsset);
 };

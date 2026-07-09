@@ -3,6 +3,17 @@ const { logger } = require("../lib/logger");
 const { captureException } = require("../lib/monitoring");
 const { mapPrismaError } = require("../lib/prisma-errors");
 
+const MULTER_ERROR_MESSAGES = {
+  LIMIT_FILE_SIZE: "Uploaded file is too large.",
+  LIMIT_FILE_COUNT: "Too many files were uploaded.",
+  LIMIT_FIELD_KEY: "Upload field names are too long.",
+  LIMIT_FIELD_VALUE: "Upload fields are too large.",
+  LIMIT_FIELD_COUNT: "Too many upload fields were submitted.",
+  LIMIT_FIELD_NESTING: "Upload field names are nested too deeply.",
+  LIMIT_PART_COUNT: "Too many upload parts were submitted.",
+  LIMIT_UNEXPECTED_FILE: "Unexpected upload field.",
+};
+
 const notFoundHandler = (req, res) => {
   res.status(404).json({
     success: false,
@@ -45,10 +56,10 @@ const errorHandler = (error, req, res, next) => {
     return;
   }
 
-  if (normalizedError && normalizedError.code === "LIMIT_FILE_SIZE") {
+  if (normalizedError && MULTER_ERROR_MESSAGES[normalizedError.code]) {
     res.status(400).json({
       success: false,
-      message: "Uploaded image must be 5MB or smaller.",
+      message: MULTER_ERROR_MESSAGES[normalizedError.code],
       requestId: req.requestId,
     });
     return;

@@ -4,7 +4,12 @@ const ExcelJS = require("exceljs");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { logger } = require("../../lib/logger");
 const { decryptSecret } = require("../../lib/secret-box");
+const {
+  removeUploadFiles,
+  teamLogoDirectory,
+} = require("../../middleware/upload");
 const {
   buildPagination,
   buildPagedResponse,
@@ -25,6 +30,7 @@ const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
 const RECRUITMENT_STATUSES = new Set(["pending", "reviewed", "accepted", "rejected"]);
 const EXCEL_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const MAX_EXCEL_EXPORT_RECORDS = 5000;
 
 const USER_ROLES = new Set(["user", "admin"]);
 
@@ -211,6 +217,28 @@ const buildExcelWorkbookBuffer = async ({ sheets }) => {
   });
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
+};
+
+const assertExportRecordLimit = ({ records, label }) => {
+  if (records.length <= MAX_EXCEL_EXPORT_RECORDS) {
+    return;
+  }
+
+  throw new HttpError(
+    413,
+    `${label} export is limited to ${MAX_EXCEL_EXPORT_RECORDS} records. Narrow the filters and try again.`
+  );
+};
+
+const cleanupUploadsQuietly = async (uploads, context = {}) => {
+  try {
+    await removeUploadFiles(uploads);
+  } catch (error) {
+    logger.warn("Failed to remove stale upload file.", {
+      ...context,
+      error,
+    });
+  }
 };
 
 const buildRegistrationWhere = ({
@@ -656,7 +684,12 @@ const exportTeamRegistrations = async (query = {}) => {
   const registrations = await prisma.teamRegistration.findMany({
     where,
     orderBy: { createdAt: "desc" },
+    take: MAX_EXCEL_EXPORT_RECORDS + 1,
     include: TEAM_REGISTRATION_INCLUDE,
+  });
+  assertExportRecordLimit({
+    records: registrations,
+    label: "Team registration",
   });
   const mappedRegistrations = registrations.map(mapTeamRegistration);
   const registrationRows = mappedRegistrations.map((registration) => ({
@@ -777,6 +810,11 @@ const exportRecruitmentApplications = async (query = {}) => {
   const applications = await prisma.recruitmentApplication.findMany({
     where,
     orderBy: { createdAt: "desc" },
+    take: MAX_EXCEL_EXPORT_RECORDS + 1,
+  });
+  assertExportRecordLimit({
+    records: applications,
+    label: "Recruitment application",
   });
   const mappedApplications = applications.map(mapRecruitmentApplication);
   const applicationRows = mappedApplications.map((application) => {
@@ -982,6 +1020,17 @@ const updateTeamRegistrationStatus = async (registrationId, body) => {
 };
 
 const deleteTeamRegistration = async (registrationId) => {
+  const registration = await prisma.teamRegistration.findUnique({
+    where: { id: registrationId },
+    select: {
+      teamLogoName: true,
+    },
+  });
+
+  if (!registration) {
+    throw new HttpError(404, "Team registration not found.");
+  }
+
   const deleted = await prisma.teamRegistration.deleteMany({
     where: { id: registrationId },
   });
@@ -989,6 +1038,21 @@ const deleteTeamRegistration = async (registrationId) => {
   if (deleted.count === 0) {
     throw new HttpError(404, "Team registration not found.");
   }
+
+  await cleanupUploadsQuietly(
+    registration.teamLogoName
+      ? [
+          {
+            directory: teamLogoDirectory,
+            filename: registration.teamLogoName,
+          },
+        ]
+      : [],
+    {
+      operation: "deleteTeamRegistration",
+      registrationId,
+    }
+  );
 };
 
 const runLegacyPosterImport = async () => importLegacyPosters();

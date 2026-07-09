@@ -160,8 +160,8 @@ const createChallengeRecord = async ({ userId, rememberMe }) => {
   return challengeToken;
 };
 
-const getLoginChallenge = async ({ token }) => {
-  const challenge = await prisma.loginChallenge.findFirst({
+const getLoginChallenge = async ({ token, tx = prisma }) => {
+  const challenge = await tx.loginChallenge.findFirst({
     where: {
       tokenHash: hashToken(token),
       usedAt: null,
@@ -188,11 +188,21 @@ const getLoginChallenge = async ({ token }) => {
   return challenge;
 };
 
-const markLoginChallengeUsed = async ({ challengeId }) => {
-  await prisma.loginChallenge.update({
-    where: { id: challengeId },
-    data: { usedAt: new Date() },
+const markLoginChallengeUsed = async ({ tx, challengeId, usedAt }) => {
+  const result = await tx.loginChallenge.updateMany({
+    where: {
+      id: challengeId,
+      usedAt: null,
+      expiresAt: {
+        gt: usedAt,
+      },
+    },
+    data: { usedAt },
   });
+
+  if (result.count !== 1) {
+    throw new HttpError(400, "This verification challenge is invalid or has expired.");
+  }
 };
 
 const buildLoginChallengeResponse = (user, challengeToken) => ({
@@ -221,6 +231,27 @@ const normalizeBackupCode = (code) =>
     .toUpperCase();
 
 const hashBackupCode = (code) => hashToken(normalizeBackupCode(code));
+
+const consumeBackupCode = async ({
+  tx,
+  userId,
+  backupCode,
+  usedAt,
+  invalidMessage = "Invalid backup code.",
+}) => {
+  const result = await tx.backupCode.updateMany({
+    where: {
+      userId,
+      codeHash: hashBackupCode(backupCode),
+      usedAt: null,
+    },
+    data: { usedAt },
+  });
+
+  if (result.count !== 1) {
+    throw new HttpError(400, invalidMessage);
+  }
+};
 
 const issueBackupCodes = async ({ tx, userId }) => {
   const codes = generateBackupCodeValues();
@@ -602,25 +633,6 @@ const completeMfaLogin = async ({ body }) => {
   let usedRecoveryCode = false;
 
   if (backupCode) {
-    const backupCodeRecord = await prisma.backupCode.findFirst({
-      where: {
-        userId: challenge.userId,
-        codeHash: hashBackupCode(backupCode),
-        usedAt: null,
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    if (!backupCodeRecord) {
-      throw new HttpError(400, "Invalid recovery code.");
-    }
-
-    await prisma.backupCode.update({
-      where: { id: backupCodeRecord.id },
-      data: { usedAt: new Date() },
-    });
     usedRecoveryCode = true;
   } else {
     const secret = decryptSecret(credential.secretCiphertext);
@@ -629,7 +641,25 @@ const completeMfaLogin = async ({ body }) => {
     }
   }
 
-  await markLoginChallengeUsed({ challengeId: challenge.id });
+  const usedAt = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    await markLoginChallengeUsed({
+      tx,
+      challengeId: challenge.id,
+      usedAt,
+    });
+
+    if (backupCode) {
+      await consumeBackupCode({
+        tx,
+        userId: challenge.userId,
+        backupCode,
+        usedAt,
+        invalidMessage: "Invalid recovery code.",
+      });
+    }
+  });
 
   return {
     userId: challenge.userId,
@@ -780,22 +810,13 @@ const verifyUserSecurityCheck = async ({
     }
 
     if (backupCode) {
-      const backupCodeRecord = await prisma.backupCode.findFirst({
-        where: {
+      await prisma.$transaction(async (tx) => {
+        await consumeBackupCode({
+          tx,
           userId: currentUser.id,
-          codeHash: hashBackupCode(backupCode),
-          usedAt: null,
-        },
-        select: { id: true },
-      });
-
-      if (!backupCodeRecord) {
-        throw new HttpError(400, "Invalid backup code.");
-      }
-
-      await prisma.backupCode.update({
-        where: { id: backupCodeRecord.id },
-        data: { usedAt: new Date() },
+          backupCode,
+          usedAt: new Date(),
+        });
       });
     } else {
       const secret = decryptSecret(user.mfaCredential?.secretCiphertext || "");

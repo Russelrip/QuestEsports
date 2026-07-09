@@ -9,6 +9,12 @@ const teamLogoDirectory = path.join(uploadRoot, "team-logos");
 const tournamentBannerDirectory = path.join(uploadRoot, "tournament-banners");
 const posterImageDirectory = path.join(uploadRoot, "poster-images");
 const tournamentScheduleDirectory = path.join(uploadRoot, "tournament-schedules");
+const DEFAULT_FIELD_LIMITS = {
+  fieldNameSize: 80,
+  fieldSize: 64 * 1024,
+  fieldNestingDepth: 3,
+  headerPairs: 100,
+};
 const ALLOWED_UPLOAD_TYPES = {
   jpeg: {
     extensions: new Set([".jpg", ".jpeg"]),
@@ -103,6 +109,56 @@ const validateImageUpload = ({ file, invalidMessage }) => {
 const buildSafeUploadFilename = (extension) =>
   `${Date.now()}-${crypto.randomUUID()}${extension}`;
 
+const isPathInsideDirectory = (directory, targetPath) => {
+  const relativePath = path.relative(path.resolve(directory), path.resolve(targetPath));
+  return (
+    relativePath &&
+    !relativePath.startsWith("..") &&
+    !path.isAbsolute(relativePath)
+  );
+};
+
+const removeUploadFile = async ({ directory, filename }) => {
+  if (!directory || !filename) {
+    return;
+  }
+
+  const filePath = path.join(directory, filename);
+
+  if (!isPathInsideDirectory(directory, filePath)) {
+    return;
+  }
+
+  try {
+    await fs.unlink(filePath);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+  }
+};
+
+const removeUploadFiles = async (uploads) => {
+  const results = await Promise.allSettled(
+    uploads
+      .filter((upload) => upload?.directory && upload?.filename)
+      .map((upload) => removeUploadFile(upload))
+  );
+  const rejected = results.find((result) => result.status === "rejected");
+
+  if (rejected) {
+    throw rejected.reason;
+  }
+};
+
+const buildUploadLimits = ({ fileSize, files = 1, fields = 40, parts } = {}) => ({
+  ...DEFAULT_FIELD_LIMITS,
+  fileSize,
+  files,
+  fields,
+  parts: parts || files + fields,
+});
+
 const isAllowedImageMimeType = (mimetype) =>
   mimetype === "image/jpeg" ||
   mimetype === "image/png" ||
@@ -111,9 +167,10 @@ const isAllowedImageMimeType = (mimetype) =>
 const createImageUpload = (invalidMessage) =>
   multer({
     storage: multer.memoryStorage(),
-    limits: {
+    limits: buildUploadLimits({
       fileSize: 5 * 1024 * 1024,
-    },
+      fields: 60,
+    }),
     fileFilter: (req, file, callback) => {
       if (isAllowedImageMimeType(file.mimetype)) {
         callback(null, true);
@@ -132,10 +189,11 @@ const tournamentBannerUpload = createImageUpload(
 
 const dbImageUpload = multer({
   storage: multer.memoryStorage(),
-  limits: {
+  limits: buildUploadLimits({
     fileSize: 5 * 1024 * 1024,
     files: 10,
-  },
+    fields: 20,
+  }),
   fileFilter: (req, file, callback) => {
     if (isAllowedImageMimeType(file.mimetype)) {
       callback(null, true);
@@ -148,10 +206,11 @@ const dbImageUpload = multer({
 
 const adminTournamentAssetsUpload = multer({
   storage: multer.memoryStorage(),
-  limits: {
+  limits: buildUploadLimits({
     fileSize: 8 * 1024 * 1024,
     files: 6,
-  },
+    fields: 60,
+  }),
   fileFilter: (req, file, callback) => {
     if (
       file.fieldname === "scheduleFile" &&
@@ -249,6 +308,8 @@ module.exports = {
   persistTournamentBannerUpload,
   persistPosterImageUpload,
   persistTournamentScheduleUpload,
+  removeUploadFile,
+  removeUploadFiles,
   teamLogoDirectory,
   tournamentBannerDirectory,
   posterImageDirectory,

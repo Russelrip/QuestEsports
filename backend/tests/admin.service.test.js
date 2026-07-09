@@ -10,8 +10,10 @@ const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const authServiceModulePath = path.join(__dirname, "../src/modules/auth/auth.service.js");
 const legacyImportModulePath = path.join(__dirname, "../src/modules/media/legacy-import.service.js");
 const mediaServiceModulePath = path.join(__dirname, "../src/modules/media/media.service.js");
+const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
+const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
 
-const loadAdminService = (prisma) =>
+const loadAdminService = (prisma, uploadMock = {}) =>
   loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
     [authServiceModulePath]: {
@@ -23,6 +25,16 @@ const loadAdminService = (prisma) =>
     },
     [mediaServiceModulePath]: {
       migrateImageAssetsToFilesystem: async () => ({}),
+    },
+    [uploadModulePath]: {
+      removeUploadFiles: async () => undefined,
+      teamLogoDirectory: "uploads/team-logos",
+      ...uploadMock,
+    },
+    [loggerModulePath]: {
+      logger: {
+        warn: () => {},
+      },
     },
   });
 
@@ -108,6 +120,7 @@ test("exportTeamRegistrations creates an Excel workbook with registration and ro
     assert.equal(exportFile.contentType.includes("spreadsheetml.sheet"), true);
     assert.match(exportFile.filename, /^team-registrations-\d{4}-\d{2}-\d{2}\.xlsx$/);
     assert.equal(findManyCalls[0].where.status, "approved");
+    assert.equal(findManyCalls[0].take, 5001);
     assert.equal(registrationsSheet.getRow(2).getCell(1).value, "Quest Cup");
     assert.equal(registrationsSheet.getRow(2).getCell(3).value, "Quest Five");
     assert.equal(registrationsSheet.getRow(2).getCell(14).value, 1);
@@ -195,6 +208,7 @@ test("exportRecruitmentApplications creates an Excel workbook with solo and team
     assert.equal(exportFile.contentType.includes("spreadsheetml.sheet"), true);
     assert.match(exportFile.filename, /^recruitment-applications-\d{4}-\d{2}-\d{2}\.xlsx$/);
     assert.equal(findManyCalls[0].where.applicationType, "solo_player");
+    assert.equal(findManyCalls[0].take, 5001);
     assert.equal(applicationsSheet.getRow(2).getCell(2).value, "solo_player");
     assert.equal(applicationsSheet.getRow(2).getCell(4).value, "Solo Player");
     assert.equal(applicationsSheet.getRow(3).getCell(11).value, "Quest Academy");
@@ -206,12 +220,24 @@ test("exportRecruitmentApplications creates an Excel workbook with solo and team
 
 test("deleteTeamRegistration removes a tournament registration by id", async () => {
   const deleteCalls = [];
+  const removedUploads = [];
   const { module: adminService, restore } = loadAdminService({
     teamRegistration: {
+      findUnique: async (args) => {
+        assert.deepEqual(args, {
+          where: { id: "registration-1" },
+          select: { teamLogoName: true },
+        });
+        return { teamLogoName: "quest-five.png" };
+      },
       deleteMany: async (args) => {
         deleteCalls.push(args);
         return { count: 1 };
       },
+    },
+  }, {
+    removeUploadFiles: async (uploads) => {
+      removedUploads.push(...uploads);
     },
   });
 
@@ -219,6 +245,12 @@ test("deleteTeamRegistration removes a tournament registration by id", async () 
     await adminService.deleteTeamRegistration("registration-1");
 
     assert.deepEqual(deleteCalls, [{ where: { id: "registration-1" } }]);
+    assert.deepEqual(removedUploads, [
+      {
+        directory: "uploads/team-logos",
+        filename: "quest-five.png",
+      },
+    ]);
   } finally {
     restore();
   }
@@ -227,6 +259,7 @@ test("deleteTeamRegistration removes a tournament registration by id", async () 
 test("deleteTeamRegistration reports missing registrations", async () => {
   const { module: adminService, restore } = loadAdminService({
     teamRegistration: {
+      findUnique: async () => null,
       deleteMany: async () => ({ count: 0 }),
     },
   });
@@ -237,6 +270,44 @@ test("deleteTeamRegistration reports missing registrations", async () => {
       (error) =>
         error.statusCode === 404 &&
         error.message === "Team registration not found."
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("exportTeamRegistrations rejects oversized exports before building workbooks", async () => {
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: {
+      findMany: async () => Array.from({ length: 5001 }, () => ({})),
+    },
+  });
+
+  try {
+    await assert.rejects(
+      adminService.exportTeamRegistrations(),
+      (error) =>
+        error.statusCode === 413 &&
+        error.message.includes("Team registration export is limited")
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("exportRecruitmentApplications rejects oversized exports before building workbooks", async () => {
+  const { module: adminService, restore } = loadAdminService({
+    recruitmentApplication: {
+      findMany: async () => Array.from({ length: 5001 }, () => ({})),
+    },
+  });
+
+  try {
+    await assert.rejects(
+      adminService.exportRecruitmentApplications(),
+      (error) =>
+        error.statusCode === 413 &&
+        error.message.includes("Recruitment application export is limited")
     );
   } finally {
     restore();

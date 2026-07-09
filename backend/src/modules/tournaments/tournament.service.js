@@ -4,10 +4,15 @@ const readXlsxFile = require("read-excel-file/node");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { logger } = require("../../lib/logger");
 const {
   persistTeamLogoUpload,
   persistTournamentBannerUpload,
   persistTournamentScheduleUpload,
+  removeUploadFiles,
+  teamLogoDirectory,
+  tournamentBannerDirectory,
+  tournamentScheduleDirectory,
 } = require("../../middleware/upload");
 const {
   syncSavedTeamFromRegistration,
@@ -84,6 +89,43 @@ const registrationAvailabilitySelect = {
   registrationDeadline: true,
   ...registrationCountInclude,
 };
+const tournamentAssetFields = [
+  {
+    field: "bannerImageName",
+    uploadKey: "bannerImage",
+    removeFlag: "removeBannerImage",
+    directory: tournamentBannerDirectory,
+    persist: persistTournamentBannerUpload,
+  },
+  {
+    field: "completedPosterImageName",
+    uploadKey: "completedPosterImage",
+    removeFlag: "removeCompletedPosterImage",
+    directory: tournamentBannerDirectory,
+    persist: persistTournamentBannerUpload,
+  },
+  {
+    field: "firstPlaceImageName",
+    uploadKey: "firstPlaceImage",
+    removeFlag: "removeFirstPlaceImage",
+    directory: tournamentBannerDirectory,
+    persist: persistTournamentBannerUpload,
+  },
+  {
+    field: "secondPlaceImageName",
+    uploadKey: "secondPlaceImage",
+    removeFlag: "removeSecondPlaceImage",
+    directory: tournamentBannerDirectory,
+    persist: persistTournamentBannerUpload,
+  },
+  {
+    field: "thirdPlaceImageName",
+    uploadKey: "thirdPlaceImage",
+    removeFlag: "removeThirdPlaceImage",
+    directory: tournamentBannerDirectory,
+    persist: persistTournamentBannerUpload,
+  },
+];
 const DUPLICATE_REGISTRATION_MESSAGE =
   "This team or captain email is already registered for the selected tournament.";
 const CLOSED_REGISTRATION_MESSAGE =
@@ -734,45 +776,94 @@ const getAdminTournamentById = async (tournamentId) => {
   return mapTournamentWithRegistrations(tournament);
 };
 
-const buildTournamentAssetUpdates = async ({ body, files }) => {
-  const bannerUpload = await persistTournamentBannerUpload(getUploadedFile(files, "bannerImage"));
-  const completedPosterUpload = await persistTournamentBannerUpload(getUploadedFile(files, "completedPosterImage"));
-  const firstPlaceUpload = await persistTournamentBannerUpload(getUploadedFile(files, "firstPlaceImage"));
-  const secondPlaceUpload = await persistTournamentBannerUpload(getUploadedFile(files, "secondPlaceImage"));
-  const thirdPlaceUpload = await persistTournamentBannerUpload(getUploadedFile(files, "thirdPlaceImage"));
-  const scheduleFile = getUploadedFile(files, "scheduleFile");
-  const persistedSchedule = await persistTournamentScheduleUpload(scheduleFile);
-  const scheduleData = await buildScheduleData(scheduleFile);
+const cleanupUploadsQuietly = async (uploads, context = {}) => {
+  try {
+    await removeUploadFiles(uploads);
+  } catch (error) {
+    logger.warn("Failed to remove stale upload file.", {
+      ...context,
+      error,
+    });
+  }
+};
 
-  return {
-    ...(bannerUpload ? { bannerImageName: bannerUpload.filename } : {}),
-    ...(completedPosterUpload ? { completedPosterImageName: completedPosterUpload.filename } : {}),
-    ...(firstPlaceUpload ? { firstPlaceImageName: firstPlaceUpload.filename } : {}),
-    ...(secondPlaceUpload ? { secondPlaceImageName: secondPlaceUpload.filename } : {}),
-    ...(thirdPlaceUpload ? { thirdPlaceImageName: thirdPlaceUpload.filename } : {}),
-    ...(persistedSchedule
-      ? {
-          scheduleFileName: persistedSchedule.filename,
-          scheduleData,
-        }
-      : {}),
-    ...(normalizeBooleanFlag(body.removeBannerImage) ? { bannerImageName: null } : {}),
-    ...(normalizeBooleanFlag(body.removeScheduleFile)
-      ? { scheduleFileName: null, scheduleData: Prisma.JsonNull }
-      : {}),
-    ...(normalizeBooleanFlag(body.removeCompletedPosterImage)
-      ? { completedPosterImageName: null }
-      : {}),
-    ...(normalizeBooleanFlag(body.removeFirstPlaceImage)
-      ? { firstPlaceImageName: null }
-      : {}),
-    ...(normalizeBooleanFlag(body.removeSecondPlaceImage)
-      ? { secondPlaceImageName: null }
-      : {}),
-    ...(normalizeBooleanFlag(body.removeThirdPlaceImage)
-      ? { thirdPlaceImageName: null }
-      : {}),
+const getReplacedTournamentUploads = ({ existingTournament, assetUpdates }) => {
+  const uploads = [];
+  const collect = ({ field, directory }) => {
+    if (!Object.prototype.hasOwnProperty.call(assetUpdates, field)) {
+      return;
+    }
+
+    const previousFilename = existingTournament[field];
+    const nextFilename = assetUpdates[field];
+
+    if (previousFilename && previousFilename !== nextFilename) {
+      uploads.push({
+        directory,
+        filename: previousFilename,
+      });
+    }
   };
+
+  tournamentAssetFields.forEach(collect);
+  collect({
+    field: "scheduleFileName",
+    directory: tournamentScheduleDirectory,
+  });
+
+  return uploads;
+};
+
+const buildTournamentAssetUpdates = async ({ body, files }) => {
+  const data = {};
+  const uploadedFiles = [];
+
+  try {
+    for (const assetField of tournamentAssetFields) {
+      const upload = await assetField.persist(
+        getUploadedFile(files, assetField.uploadKey)
+      );
+
+      if (upload) {
+        data[assetField.field] = upload.filename;
+        uploadedFiles.push({
+          directory: assetField.directory,
+          filename: upload.filename,
+        });
+        continue;
+      }
+
+      if (normalizeBooleanFlag(body[assetField.removeFlag])) {
+        data[assetField.field] = null;
+      }
+    }
+
+    const scheduleFile = getUploadedFile(files, "scheduleFile");
+    const persistedSchedule = await persistTournamentScheduleUpload(scheduleFile);
+
+    if (persistedSchedule) {
+      const scheduleData = await buildScheduleData(scheduleFile);
+      data.scheduleFileName = persistedSchedule.filename;
+      data.scheduleData = scheduleData;
+      uploadedFiles.push({
+        directory: tournamentScheduleDirectory,
+        filename: persistedSchedule.filename,
+      });
+    } else if (normalizeBooleanFlag(body.removeScheduleFile)) {
+      data.scheduleFileName = null;
+      data.scheduleData = Prisma.JsonNull;
+    }
+
+    return {
+      data,
+      uploadedFiles,
+    };
+  } catch (error) {
+    await cleanupUploadsQuietly(uploadedFiles, {
+      operation: "buildTournamentAssetUpdates",
+    });
+    throw error;
+  }
 };
 
 const createAdminTournament = async ({ body, files }) => {
@@ -781,14 +872,23 @@ const createAdminTournament = async ({ body, files }) => {
   await ensureRulebookMatchesTournamentGame(payload);
   const assetUpdates = await buildTournamentAssetUpdates({ body, files });
 
-  const tournament = await prisma.tournament.create({
-    data: {
-      id: crypto.randomUUID(),
-      ...payload,
-      ...assetUpdates,
-    },
-    include: registrationCountInclude,
-  });
+  let tournament;
+
+  try {
+    tournament = await prisma.tournament.create({
+      data: {
+        id: crypto.randomUUID(),
+        ...payload,
+        ...assetUpdates.data,
+      },
+      include: registrationCountInclude,
+    });
+  } catch (error) {
+    await cleanupUploadsQuietly(assetUpdates.uploadedFiles, {
+      operation: "createAdminTournament",
+    });
+    throw error;
+  }
 
   return mapTournament(tournament);
 };
@@ -810,19 +910,48 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
     files,
   });
 
-  const tournament = await prisma.tournament.update({
-    where: { id: tournamentId },
-    data: {
-      ...payload,
-      ...assetUpdates,
-    },
-    include: registrationCountInclude,
-  });
+  let tournament;
+
+  try {
+    tournament = await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: {
+        ...payload,
+        ...assetUpdates.data,
+      },
+      include: registrationCountInclude,
+    });
+  } catch (error) {
+    await cleanupUploadsQuietly(assetUpdates.uploadedFiles, {
+      operation: "updateAdminTournament",
+      tournamentId,
+    });
+    throw error;
+  }
+
+  await cleanupUploadsQuietly(
+    getReplacedTournamentUploads({
+      existingTournament,
+      assetUpdates: assetUpdates.data,
+    }),
+    {
+      operation: "updateAdminTournament",
+      tournamentId,
+    }
+  );
 
   return mapTournament(tournament);
 };
 
 const deleteAdminTournament = async (tournamentId) => {
+  const existingTournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+  });
+
+  if (!existingTournament) {
+    throw new HttpError(404, "Tournament not found.");
+  }
+
   const deleted = await prisma.tournament.deleteMany({
     where: { id: tournamentId },
   });
@@ -830,6 +959,24 @@ const deleteAdminTournament = async (tournamentId) => {
   if (deleted.count === 0) {
     throw new HttpError(404, "Tournament not found.");
   }
+
+  await cleanupUploadsQuietly(
+    getReplacedTournamentUploads({
+      existingTournament,
+      assetUpdates: {
+        bannerImageName: null,
+        completedPosterImageName: null,
+        firstPlaceImageName: null,
+        secondPlaceImageName: null,
+        thirdPlaceImageName: null,
+        scheduleFileName: null,
+      },
+    }),
+    {
+      operation: "deleteAdminTournament",
+      tournamentId,
+    }
+  );
 };
 
 const getTournamentRegistrationStatus = async ({ slug, user }) => {
@@ -908,8 +1055,6 @@ const createTournamentRegistration = async ({ body, file, user }) => {
   const mappedTournament = mapTournament(tournament);
   ensureRegistrationOpen(mappedTournament.registrationState);
 
-  const persistedLogo = await persistTeamLogoUpload(file);
-
   const members = buildTournamentRegistrationMembers({
     captainName,
     captainEmail,
@@ -939,116 +1084,135 @@ const createTournamentRegistration = async ({ body, file, user }) => {
     );
   }
 
+  const persistedLogo = await persistTeamLogoUpload(file);
   const registrationId = crypto.randomUUID();
   let inviteDispatches = [];
 
-  for (let attempt = 1; attempt <= REGISTRATION_TRANSACTION_MAX_RETRIES; attempt += 1) {
-    try {
-      inviteDispatches = [];
-      await prisma.$transaction(
-        async (tx) => {
-          const [currentTournament, existingRegistration] = await Promise.all([
-            tx.tournament.findUnique({
-              where: { id: tournament.id },
-              select: registrationAvailabilitySelect,
-            }),
-            tx.teamRegistration.findFirst({
-              where: {
+  try {
+    for (let attempt = 1; attempt <= REGISTRATION_TRANSACTION_MAX_RETRIES; attempt += 1) {
+      try {
+        inviteDispatches = [];
+        await prisma.$transaction(
+          async (tx) => {
+            const [currentTournament, existingRegistration] = await Promise.all([
+              tx.tournament.findUnique({
+                where: { id: tournament.id },
+                select: registrationAvailabilitySelect,
+              }),
+              tx.teamRegistration.findFirst({
+                where: {
+                  tournamentId: tournament.id,
+                  OR: [{ teamName }, { captainEmail }],
+                },
+                select: { id: true },
+              }),
+            ]);
+
+            if (!currentTournament) {
+              throw new HttpError(404, "Selected tournament was not found.");
+            }
+
+            ensureRegistrationOpen(getRegistrationState(withRegistrationCount(currentTournament)));
+
+            if (existingRegistration) {
+              throw new HttpError(400, DUPLICATE_REGISTRATION_MESSAGE);
+            }
+
+            await tx.teamRegistration.create({
+              data: {
+                id: registrationId,
                 tournamentId: tournament.id,
-                OR: [{ teamName }, { captainEmail }],
+                teamName,
+                captainName,
+                captainEmail,
+                captainPhone,
+                captainDiscord,
+                captainRiotId,
+                contactEmail,
+                teamLogoName: persistedLogo ? persistedLogo.filename : null,
+                rulebookAccepted,
+                falsityWarningAccepted,
               },
-              select: { id: true },
-            }),
-          ]);
+            });
 
-          if (!currentTournament) {
-            throw new HttpError(404, "Selected tournament was not found.");
+            await tx.registrationMember.createMany({
+              data: members.map((member) => ({
+                id: crypto.randomUUID(),
+                registrationId,
+                role: member.role,
+                memberOrder: member.order,
+                name: member.name,
+                email: member.email,
+                emailNormalized: normalizeEmail(member.email),
+                discord: member.discord,
+                riotId: member.riotId,
+              })),
+            });
+
+            inviteDispatches = await syncSavedTeamFromRegistration({
+              tx,
+              registrationId,
+              user,
+              teamName,
+              logoName: persistedLogo ? persistedLogo.filename : null,
+              members,
+              tournamentTitle: tournament.title,
+            });
+          },
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            maxWait: REGISTRATION_TRANSACTION_MAX_WAIT_MS,
+            timeout: REGISTRATION_TRANSACTION_TIMEOUT_MS,
           }
+        );
+        break;
+      } catch (error) {
+        if (
+          isRetryableRegistrationTransactionError(error) &&
+          attempt < REGISTRATION_TRANSACTION_MAX_RETRIES
+        ) {
+          continue;
+        }
 
-          ensureRegistrationOpen(getRegistrationState(withRegistrationCount(currentTournament)));
-
-          if (existingRegistration) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError) {
+          if (error.code === "P2002") {
             throw new HttpError(400, DUPLICATE_REGISTRATION_MESSAGE);
           }
 
-          await tx.teamRegistration.create({
-            data: {
-              id: registrationId,
-              tournamentId: tournament.id,
-              teamName,
-              captainName,
-              captainEmail,
-              captainPhone,
-              captainDiscord,
-              captainRiotId,
-              contactEmail,
-              teamLogoName: persistedLogo ? persistedLogo.filename : null,
-              rulebookAccepted,
-              falsityWarningAccepted,
-            },
-          });
+          if (error.code === "P2034") {
+            throw new HttpError(
+              409,
+              "Registration changed while your request was being processed. Please try again."
+            );
+          }
 
-          await tx.registrationMember.createMany({
-            data: members.map((member) => ({
-              id: crypto.randomUUID(),
-              registrationId,
-              role: member.role,
-              memberOrder: member.order,
-              name: member.name,
-              email: member.email,
-              emailNormalized: normalizeEmail(member.email),
-              discord: member.discord,
-              riotId: member.riotId,
-            })),
-          });
-
-          inviteDispatches = await syncSavedTeamFromRegistration({
-            tx,
-            registrationId,
-            user,
-            teamName,
-            logoName: persistedLogo ? persistedLogo.filename : null,
-            members,
-            tournamentTitle: tournament.title,
-          });
-        },
-        {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-          maxWait: REGISTRATION_TRANSACTION_MAX_WAIT_MS,
-          timeout: REGISTRATION_TRANSACTION_TIMEOUT_MS,
+          if (error.code === "P2028") {
+            throw new HttpError(
+              503,
+              "Registration could not be saved because the database was busy. Please try again."
+            );
+          }
         }
-      );
-      break;
-    } catch (error) {
-      if (
-        isRetryableRegistrationTransactionError(error) &&
-        attempt < REGISTRATION_TRANSACTION_MAX_RETRIES
-      ) {
-        continue;
+
+        throw error;
       }
-
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === "P2002") {
-          throw new HttpError(400, DUPLICATE_REGISTRATION_MESSAGE);
-        }
-
-        if (error.code === "P2034") {
-          throw new HttpError(
-            409,
-            "Registration changed while your request was being processed. Please try again."
-          );
-        }
-
-        if (error.code === "P2028") {
-          throw new HttpError(
-            503,
-            "Registration could not be saved because the database was busy. Please try again."
-          );
-        }
-      }
-
-      throw error;
     }
+  } catch (error) {
+    await cleanupUploadsQuietly(
+      persistedLogo
+        ? [
+            {
+              directory: teamLogoDirectory,
+              filename: persistedLogo.filename,
+            },
+          ]
+        : [],
+      {
+        operation: "createTournamentRegistration",
+        tournamentId: tournament.id,
+      }
+    );
+    throw error;
   }
 
   await sendTeamInvites(inviteDispatches);
