@@ -327,7 +327,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   ))}
                 </Select>
               </FormField>
-              <FormField label="Banner Image" htmlFor="bannerImage" hint="Upload a tournament banner (PNG, JPG, or WebP)">
+              <FormField label="Banner Image" htmlFor="bannerImage" hint="Upload a PNG, JPG, or WebP tournament banner up to 10 MB.">
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
                   <input
                     ref={bannerImageInputRef}
@@ -379,7 +379,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   </div>
                 </div>
               </FormField>
-              <FormField label="Schedule File" htmlFor="scheduleFile" hint="Upload XLSX or CSV to render the schedule automatically.">
+              <FormField label="Schedule File" htmlFor="scheduleFile" hint="Upload XLSX or CSV up to 10 MB to render the schedule automatically.">
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
                   <Input
                     id="scheduleFile"
@@ -401,7 +401,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   </p>
                 </div>
               </FormField>
-              <FormField label="Completed Poster" htmlFor="completedPosterImage" hint="Official poster shown first in completed showcase.">
+              <FormField label="Completed Poster" htmlFor="completedPosterImage" hint="Official poster shown first in completed showcase (max 10 MB).">
                 <FileUploadField
                   id="completedPosterImage"
                   accept="image/png,image/jpeg,image/webp"
@@ -415,7 +415,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   }}
                 />
               </FormField>
-              <FormField label="1st Place Image" htmlFor="firstPlaceImage">
+              <FormField label="1st Place Image" htmlFor="firstPlaceImage" hint="Maximum file size: 10 MB.">
                 <FileUploadField
                   id="firstPlaceImage"
                   accept="image/png,image/jpeg,image/webp"
@@ -429,7 +429,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   }}
                 />
               </FormField>
-              <FormField label="2nd Place Image" htmlFor="secondPlaceImage">
+              <FormField label="2nd Place Image" htmlFor="secondPlaceImage" hint="Maximum file size: 10 MB.">
                 <FileUploadField
                   id="secondPlaceImage"
                   accept="image/png,image/jpeg,image/webp"
@@ -443,7 +443,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   }}
                 />
               </FormField>
-              <FormField label="3rd Place Image" htmlFor="thirdPlaceImage">
+              <FormField label="3rd Place Image" htmlFor="thirdPlaceImage" hint="Maximum file size: 10 MB.">
                 <FileUploadField
                   id="thirdPlaceImage"
                   accept="image/png,image/jpeg,image/webp"

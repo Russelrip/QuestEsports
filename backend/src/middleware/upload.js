@@ -9,6 +9,8 @@ const teamLogoDirectory = path.join(uploadRoot, "team-logos");
 const tournamentBannerDirectory = path.join(uploadRoot, "tournament-banners");
 const posterImageDirectory = path.join(uploadRoot, "poster-images");
 const tournamentScheduleDirectory = path.join(uploadRoot, "tournament-schedules");
+const TEAM_LOGO_MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ADMIN_UPLOAD_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const DEFAULT_FIELD_LIMITS = {
   fieldNameSize: 80,
   fieldSize: 64 * 1024,
@@ -164,11 +166,11 @@ const isAllowedImageMimeType = (mimetype) =>
   mimetype === "image/png" ||
   mimetype === "image/webp";
 
-const createImageUpload = (invalidMessage) =>
+const createImageUpload = (invalidMessage, fileSize) =>
   multer({
     storage: multer.memoryStorage(),
     limits: buildUploadLimits({
-      fileSize: 5 * 1024 * 1024,
+      fileSize,
       fields: 60,
     }),
     fileFilter: (req, file, callback) => {
@@ -181,16 +183,20 @@ const createImageUpload = (invalidMessage) =>
     },
   });
 
-const imageUpload = createImageUpload("Only image files are allowed for team logos.");
+const imageUpload = createImageUpload(
+  "Only image files are allowed for team logos.",
+  TEAM_LOGO_MAX_FILE_SIZE
+);
 
 const tournamentBannerUpload = createImageUpload(
-  "Only image files are allowed for tournament banners."
+  "Only image files are allowed for tournament banners.",
+  ADMIN_UPLOAD_MAX_FILE_SIZE
 );
 
 const dbImageUpload = multer({
   storage: multer.memoryStorage(),
   limits: buildUploadLimits({
-    fileSize: 5 * 1024 * 1024,
+    fileSize: ADMIN_UPLOAD_MAX_FILE_SIZE,
     files: 10,
     fields: 20,
   }),
@@ -207,7 +213,7 @@ const dbImageUpload = multer({
 const adminTournamentAssetsUpload = multer({
   storage: multer.memoryStorage(),
   limits: buildUploadLimits({
-    fileSize: 8 * 1024 * 1024,
+    fileSize: ADMIN_UPLOAD_MAX_FILE_SIZE,
     files: 6,
     fields: 60,
   }),
@@ -297,7 +303,9 @@ const persistTournamentScheduleUpload = async (file) => {
 };
 
 module.exports = {
+  ADMIN_UPLOAD_MAX_FILE_SIZE,
   ALLOWED_UPLOAD_TYPES,
+  TEAM_LOGO_MAX_FILE_SIZE,
   detectImageType,
   ensureUploadDirectories,
   imageUpload,

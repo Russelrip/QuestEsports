@@ -1,6 +1,10 @@
 import { parseApiResponse } from "@/lib/api";
 import { apiFetch } from "@/lib/auth";
 import { ImageAsset, Poster, resolveMediaUrl } from "@/lib/media";
+import {
+  ADMIN_UPLOAD_MAX_FILE_SIZE,
+  assertFileWithinUploadLimit,
+} from "@/lib/upload-limits";
 
 export type UploadPreview = {
   file: File;
@@ -40,6 +44,14 @@ export const uploadImages = async (input: {
   title: string;
   previews: UploadPreview[];
 }) => {
+  input.previews.forEach((item) =>
+    assertFileWithinUploadLimit(
+      item.file,
+      ADMIN_UPLOAD_MAX_FILE_SIZE,
+      `Poster image "${item.file.name}"`
+    )
+  );
+
   const formData = new FormData();
   formData.append("title", input.title);
   formData.append("category", "poster");

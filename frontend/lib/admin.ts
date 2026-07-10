@@ -1,6 +1,10 @@
 import { parseApiResponse, readApiResponse } from "@/lib/api";
 import { apiFetch } from "@/lib/auth";
 import { Tournament } from "@/lib/tournaments";
+import {
+  ADMIN_UPLOAD_MAX_FILE_SIZE,
+  assertFileWithinUploadLimit,
+} from "@/lib/upload-limits";
 import type {
   TournamentBracketData,
   TournamentBracketSummary,
@@ -388,6 +392,19 @@ export const initialTournamentFormValues: TournamentFormValues = {
 };
 
 export const buildTournamentFormData = (values: TournamentFormValues) => {
+  const uploadFields: Array<[string, File | null]> = [
+    ["Banner image", values.bannerImage],
+    ["Schedule file", values.scheduleFile],
+    ["Completed poster", values.completedPosterImage],
+    ["First-place image", values.firstPlaceImage],
+    ["Second-place image", values.secondPlaceImage],
+    ["Third-place image", values.thirdPlaceImage],
+  ];
+
+  uploadFields.forEach(([label, file]) =>
+    assertFileWithinUploadLimit(file, ADMIN_UPLOAD_MAX_FILE_SIZE, label)
+  );
+
   const formData = new FormData();
 
   Object.entries(values).forEach(([key, value]) => {

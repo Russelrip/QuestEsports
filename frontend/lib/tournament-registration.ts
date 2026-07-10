@@ -1,3 +1,8 @@
+import {
+  TEAM_LOGO_MAX_FILE_SIZE,
+  assertFileWithinUploadLimit,
+} from "@/lib/upload-limits";
+
 export type TournamentRegistrationFormData = {
   tournament: string;
   teamName: string;
@@ -103,6 +108,12 @@ export const substitutePlayerGroups: MemberFieldGroup[] = [
 export const appendTournamentRegistrationFormData = (
   formData: TournamentRegistrationFormData
 ) => {
+  assertFileWithinUploadLimit(
+    formData.teamLogo,
+    TEAM_LOGO_MAX_FILE_SIZE,
+    "Team logo"
+  );
+
   const submitData = new FormData();
 
   Object.entries(formData).forEach(([key, value]) => {

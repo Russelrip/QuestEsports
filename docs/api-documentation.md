@@ -52,8 +52,8 @@ Field-level validation errors are returned in `details.fieldErrors` on validatio
 - CSRF protection checks `Origin` or `Referer` on non-safe methods.
 - Allowed origins come from `CORS_ORIGIN`.
 - Rate limiting is applied to login, signup, contact, password reset, invite response, and tournament registration endpoints.
-- Uploads accept JPEG, PNG, and WebP only, with a 5 MB file limit.
-- Admin tournament asset uploads also accept `.xlsx` and `.csv` schedule files.
+- Team-logo uploads accept JPEG, PNG, and WebP with a 5 MB per-file limit.
+- Admin poster and tournament asset uploads have a 10 MB per-file limit. Tournament assets also accept `.xlsx` and `.csv` schedule files.
 
 ## System Endpoints
 

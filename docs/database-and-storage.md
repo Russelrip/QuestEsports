@@ -283,7 +283,8 @@ Allowed types:
 
 Maximum file size:
 
-- 5 MB per file
+- 5 MB per team logo
+- 10 MB per admin poster, tournament image, or schedule file
 
 ## Data Integrity Rules
 
