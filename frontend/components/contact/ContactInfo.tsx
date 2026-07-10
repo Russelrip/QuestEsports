@@ -1,6 +1,10 @@
 import Image from "next/image";
 import { Card } from "@/components/ui/card";
-import { contactLinks, whatsappContacts } from "@/lib/site";
+import {
+  contactLinks,
+  whatsappCommunityLink,
+  whatsappContacts,
+} from "@/lib/site";
 
 export default function ContactInfo() {
   return (
@@ -29,6 +33,15 @@ export default function ContactInfo() {
 
         <div className="grid gap-3">
           <h3 className="text-lg font-semibold text-white">WhatsApp</h3>
+          <a
+            href={whatsappCommunityLink.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 rounded-2xl border border-emerald-300/20 bg-emerald-400/8 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/14"
+          >
+            <Image src="/images/whatsapp.png" alt="" width={18} height={18} />
+            <span>{whatsappCommunityLink.label}</span>
+          </a>
           {whatsappContacts.map((contact) => (
             <a
               key={contact.label}

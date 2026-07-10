@@ -10,6 +10,25 @@ test("privacy policy page renders the app shell and policy content", async ({ pa
   await expect(page.getByRole("heading", { name: "16. Contact Us" })).toBeVisible();
 });
 
+test("contact page includes both TikTok accounts, Gmail, and the WhatsApp community", async ({ page }) => {
+  await page.goto("/contact");
+
+  await expect(page.getByRole("link", { name: "@senumii" })).toHaveAttribute(
+    "href",
+    "https://www.tiktok.com/@senumii"
+  );
+  await expect(
+    page.getByRole("link", { name: "Quest Esports TikTok (@questesportslk)" })
+  ).toHaveAttribute("href", "https://www.tiktok.com/@questesportslk");
+  await expect(page.getByRole("link", { name: "questesports.lk@gmail.com" })).toHaveAttribute(
+    "href",
+    "mailto:questesports.lk@gmail.com"
+  );
+  await expect(
+    page.getByRole("link", { name: "Join the Quest Esports WhatsApp Community" })
+  ).toHaveAttribute("href", "https://chat.whatsapp.com/G8XZXgYC4Ep1VYw1Zg5PIf");
+});
+
 test("mobile layout stays within the viewport and opens navigation without page shift", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/privacy-policy");
@@ -53,6 +72,27 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
         success: true,
         posters: [
           {
+            id: "poster-appreciation",
+            title: "VALORANT SHOWDOWN APPRECIATION POST",
+            description: "",
+            category: "poster",
+            headline: "VALORANT SHOWDOWN APPRECIATION POST",
+            subheadline: "",
+            accentColor: "#7c3aed",
+            textColor: "#ffffff",
+            overlayAlign: "bottom-left",
+            createdAt: "2026-07-10T00:00:00.000Z",
+            updatedAt: "2026-07-10T00:00:00.000Z",
+            imageAsset: {
+              id: "image-appreciation",
+              title: "VALORANT SHOWDOWN APPRECIATION POST",
+              category: "poster",
+              contentType: "image/png",
+              createdAt: "2026-07-10T00:00:00.000Z",
+              imageUrl: "/images/mainbg.png",
+            },
+          },
+          {
             id: "poster-mobile-fit",
             title: "Mobile Fit Poster",
             description: "Full poster preview test",
@@ -79,6 +119,12 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
   });
 
   await page.goto("/gallery");
+  await expect(
+    page.getByRole("link", { name: /VALORANT SHOWDOWN APPRECIATION POST/ }).first()
+  ).toHaveAttribute(
+    "href",
+    "https://www.facebook.com/share/p/14gNLGrBLWF/?mibextid=wwXIfr"
+  );
   await page.locator("main section button").first().click();
 
   const dialog = page.getByRole("dialog", { name: "Poster preview" });

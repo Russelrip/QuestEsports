@@ -7,6 +7,14 @@ import { Section } from "@/components/ui/section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Poster, resolveMediaUrl } from "@/lib/media";
 
+const posterExternalLinks: Record<string, string> = {
+  "VALORANT SHOWDOWN APPRECIATION POST":
+    "https://www.facebook.com/share/p/14gNLGrBLWF/?mibextid=wwXIfr",
+};
+
+const getPosterExternalLink = (poster: Poster) =>
+  posterExternalLinks[poster.title.trim().toUpperCase()] || null;
+
 export default function PosterGallery({
   loading,
   error,
@@ -37,8 +45,9 @@ export default function PosterGallery({
         <EmptyState description="No gallery photos have been added yet." />
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {posters.map((poster) => (
-            <button key={poster.id} type="button" className="text-left" onClick={() => onSelectPoster(poster)}>
+          {posters.map((poster) => {
+            const externalLink = getPosterExternalLink(poster);
+            const card = (
               <Card className="group overflow-hidden">
                 <div className="relative aspect-[4/5] overflow-hidden">
                   <Image
@@ -54,8 +63,29 @@ export default function PosterGallery({
                   {poster.description ? <p className="mt-2 text-sm text-slate-400">{poster.description}</p> : null}
                 </div>
               </Card>
-            </button>
-          ))}
+            );
+
+            return externalLink ? (
+              <a
+                key={poster.id}
+                href={externalLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-left"
+              >
+                {card}
+              </a>
+            ) : (
+              <button
+                key={poster.id}
+                type="button"
+                className="text-left"
+                onClick={() => onSelectPoster(poster)}
+              >
+                {card}
+              </button>
+            );
+          })}
         </div>
       )}
     </Section>

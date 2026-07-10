@@ -262,6 +262,7 @@ export const organizationStructuredData = {
     "https://www.facebook.com/share/1HNNM3e9ub/?mibextid=wwXIfr",
     "https://www.instagram.com/questesportslk/",
     "https://www.tiktok.com/@senumii",
+    "https://www.tiktok.com/@questesportslk",
     "https://www.youtube.com/",
     "https://www.linkedin.com/",
   ],
@@ -405,6 +406,11 @@ export const contactLinks = [
         icon: "/images/gmail.png",
       },
       {
+        label: "questesports.lk@gmail.com",
+        href: "mailto:questesports.lk@gmail.com",
+        icon: "/images/gmail.png",
+      },
+      {
         label: "Quest Esports Discord",
         href: "https://discord.gg/cxkM7dk9CM",
         icon: "/images/discord.png",
@@ -424,6 +430,11 @@ export const contactLinks = [
         href: "https://www.tiktok.com/@senumii",
         icon: "/images/tiktok.png",
       },
+      {
+        label: "Quest Esports TikTok (@questesportslk)",
+        href: "https://www.tiktok.com/@questesportslk",
+        icon: "/images/tiktok.png",
+      },
     ],
   },
 ] as const;
@@ -432,6 +443,11 @@ export const whatsappContacts = [
   { label: "076 119 5666", href: "https://wa.me/94761195666" },
   { label: "076 718 6060", href: "https://wa.me/94767186060" },
 ] as const;
+
+export const whatsappCommunityLink = {
+  label: "Join the Quest Esports WhatsApp Community",
+  href: "https://chat.whatsapp.com/G8XZXgYC4Ep1VYw1Zg5PIf",
+} as const;
 
 export const teamMembers = [
   {
