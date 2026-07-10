@@ -494,8 +494,7 @@ export const defaultPageDescriptions = {
     "Browse Quest Esports event photos, tournament highlights, promotional artwork, and community moments.",
   shop:
     "Discover upcoming Quest Esports merchandise, apparel, and community drops.",
-  members:
-    "Meet the organizers, admins, and community builders behind Quest Esports.",
+  members: "Quest Esports members and community leadership.",
   join:
     "Apply to join Quest Esports as a solo player, existing team, or incomplete roster looking for teammates.",
   rulebook:

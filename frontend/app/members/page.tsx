@@ -18,8 +18,8 @@ export default function MembersPage() {
   return (
     <PageLayout
       title="Meet the Members"
-      description={defaultPageDescriptions.members}
-      eyebrow="The Quest Team"
+      description=""
+      showEyebrow={false}
     >
       <MembersContent />
       <JoinQuestSection />

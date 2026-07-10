@@ -11,19 +11,11 @@ type PageLayoutProps = {
 
 export default function PageLayout({
   title,
-  description,
   children,
-  eyebrow,
-  showEyebrow = true,
 }: PageLayoutProps) {
   return (
     <PageTransition>
-      <PageHeader
-        title={title}
-        description={description}
-        eyebrow={eyebrow}
-        showEyebrow={showEyebrow}
-      />
+      <PageHeader title={title} />
       {children}
     </PageTransition>
   );
