@@ -256,7 +256,7 @@ export const organizationStructuredData = {
   logo: absoluteUrl("/images/logo.png"),
   image: absoluteUrl(defaultSocialImage),
   description: siteDescription,
-  email: "contact@mail.questesports.lk",
+  email: "questesports.lk@gmail.com",
   sameAs: [
     "https://discord.gg/cxkM7dk9CM",
     "https://www.facebook.com/share/1HNNM3e9ub/?mibextid=wwXIfr",
@@ -365,8 +365,8 @@ export const authNavItems = [
 
 export const socialLinks = [
   {
-    href: "https://api.whatsapp.com/send?phone=94761195666",
-    label: "WhatsApp",
+    href: "https://chat.whatsapp.com/G8XZXgYC4Ep1VYw1Zg5PIf",
+    label: "Quest Esports WhatsApp Community",
     icon: "/images/whatsapp.png",
   },
   {
@@ -375,8 +375,8 @@ export const socialLinks = [
     icon: "/images/discord.png",
   },
   {
-    href: "https://accounts.google.com/",
-    label: "Gmail",
+    href: "mailto:questesports.lk@gmail.com",
+    label: "Email Quest Esports",
     icon: "/images/gmail.png",
   },
   {
@@ -391,20 +391,20 @@ export const socialLinks = [
   },
   {
     href: "https://www.tiktok.com/@senumii",
-    label: "TikTok",
+    label: "Senumi on TikTok",
+    icon: "/images/tiktok.png",
+  },
+  {
+    href: "https://www.tiktok.com/@questesportslk",
+    label: "Quest Esports on TikTok",
     icon: "/images/tiktok.png",
   },
 ] as const;
 
 export const contactLinks = [
   {
-    title: "Social Media",
+    title: "Email & Social Media",
     items: [
-      {
-        label: "contact@mail.questesports.lk",
-        href: "mailto:contact@mail.questesports.lk",
-        icon: "/images/gmail.png",
-      },
       {
         label: "questesports.lk@gmail.com",
         href: "mailto:questesports.lk@gmail.com",

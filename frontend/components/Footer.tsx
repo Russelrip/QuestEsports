@@ -82,10 +82,10 @@ export default function Footer() {
             </h2>
             <div className="mt-5 grid gap-3 text-sm text-slate-400">
               <a
-                href="mailto:contact@mail.questesports.lk"
+                href="mailto:questesports.lk@gmail.com"
                 className="border-b border-white/8 pb-3 transition hover:text-white"
               >
-                contact@mail.questesports.lk
+                questesports.lk@gmail.com
               </a>
               {whatsappContacts.map((contact) => (
                 <a
@@ -107,6 +107,7 @@ export default function Footer() {
                   rel="noopener noreferrer"
                   key={label}
                   aria-label={label}
+                  title={label}
                   className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 transition hover:border-white/25 hover:bg-white/10"
                 >
                   <Image src={icon} alt="" width={16} height={16} />

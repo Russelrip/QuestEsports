@@ -115,7 +115,7 @@ const policySections = [
     title: "14. Requests and Appeals",
     paragraphs: [
       "You can contact Quest Esports through the contact form or by email to make privacy-related requests. We may need to verify your identity before acting on a request.",
-      "If applicable law gives you a right to appeal a privacy-request decision, you may contact us at contact@mail.questesports.lk and clearly state that your message is an appeal.",
+      "If applicable law gives you a right to appeal a privacy-request decision, you may contact us at questesports.lk@gmail.com and clearly state that your message is an appeal.",
     ],
   },
   {
@@ -164,8 +164,8 @@ export default function PrivacyPolicyContent() {
           <h3 className="text-2xl text-white">16. Contact Us</h3>
           <p className="mt-4 text-sm leading-7 text-slate-300">
             If you have questions about this Privacy Policy or want to request help with your data, contact us at{" "}
-            <a href="mailto:contact@mail.questesports.lk" className="text-cyan-200 transition hover:text-cyan-100">
-              contact@mail.questesports.lk
+            <a href="mailto:questesports.lk@gmail.com" className="text-cyan-200 transition hover:text-cyan-100">
+              questesports.lk@gmail.com
             </a>{" "}
             or use the{" "}
             <Link href="/contact" className="text-cyan-200 transition hover:text-cyan-100">
