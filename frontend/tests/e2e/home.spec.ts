@@ -19,8 +19,15 @@ test("mobile layout stays within the viewport and opens navigation without page 
   );
   expect(hasHorizontalOverflow).toBe(false);
 
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  const mobileNavigation = page.getByRole("navigation").first();
+  const menuButton = page.getByRole("banner").getByRole("button", { name: /navigation/ });
+  await expect(async () => {
+    if ((await menuButton.getAttribute("aria-expanded")) !== "true") {
+      await menuButton.click();
+    }
+    await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+  }).toPass();
+
+  const mobileNavigation = page.getByRole("banner").getByRole("navigation");
   await expect(mobileNavigation).toBeVisible();
   await expect(page.getByRole("button", { name: "Close navigation" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("hidden");
@@ -29,6 +36,61 @@ test("mobile layout stays within the viewport and opens navigation without page 
   expect(navigationBox).not.toBeNull();
   expect((navigationBox?.x || 0) + (navigationBox?.width || 0)).toBeLessThanOrEqual(390);
 
-  await page.getByRole("button", { name: "Close navigation" }).click();
+  await menuButton.click();
   await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("");
+});
+
+test("gallery poster preview fits the full image inside a mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/posters*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      headers: {
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Origin": "http://127.0.0.1:3000",
+      },
+      body: JSON.stringify({
+        success: true,
+        posters: [
+          {
+            id: "poster-mobile-fit",
+            title: "Mobile Fit Poster",
+            description: "Full poster preview test",
+            category: "poster",
+            headline: "Mobile Fit Poster",
+            subheadline: "",
+            accentColor: "#7c3aed",
+            textColor: "#ffffff",
+            overlayAlign: "bottom-left",
+            createdAt: "2026-07-10T00:00:00.000Z",
+            updatedAt: "2026-07-10T00:00:00.000Z",
+            imageAsset: {
+              id: "image-mobile-fit",
+              title: "Mobile Fit Poster",
+              category: "poster",
+              contentType: "image/png",
+              createdAt: "2026-07-10T00:00:00.000Z",
+              imageUrl: "/images/mainbg.png",
+            },
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/gallery");
+  await page.locator("main section button").first().click();
+
+  const dialog = page.getByRole("dialog", { name: "Poster preview" });
+  const previewImage = dialog.locator("img");
+  await expect(dialog).toBeVisible();
+  await expect(previewImage).toBeVisible();
+  await expect(previewImage).toHaveCSS("object-fit", "contain");
+
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox).not.toBeNull();
+  expect((dialogBox?.y || 0) + (dialogBox?.height || 0)).toBeLessThanOrEqual(844);
+  expect(await dialog.evaluate((element) => element.scrollHeight)).toBe(
+    await dialog.evaluate((element) => element.clientHeight)
+  );
 });

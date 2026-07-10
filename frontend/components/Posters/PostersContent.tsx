@@ -276,7 +276,7 @@ export default function PostersContent({ initialPosters = [] }: { initialPosters
             draft={selectedPoster}
             showOverlay={false}
           />
-          <div className="mt-5 grid gap-4">
+          <div className="mt-3 grid max-h-[30svh] shrink-0 gap-3 overflow-y-auto overscroll-contain pr-1 sm:mt-5 sm:gap-4">
             <div>
               <p className="text-xl font-semibold text-white">{selectedPoster.title}</p>
               {selectedPoster.description ? <p className="mt-2 text-sm text-slate-400">{selectedPoster.description}</p> : null}

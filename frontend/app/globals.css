@@ -134,7 +134,7 @@ main {
 .toast-enter,
 .modal-backdrop-enter,
 .modal-panel-enter {
-  animation: ui-fade-in 0.24s ease-out both;
+  animation: ui-fade-in 0.24s ease-out;
 }
 
 .page-enter {

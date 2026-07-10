@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 const apiOrigin = apiUrl ? new URL(apiUrl).origin : null;
 const isProduction = process.env.NODE_ENV === "production";
+const apiUsesLocalNetwork = apiUrl
+  ? ["localhost", "127.0.0.1", "::1"].includes(new URL(apiUrl).hostname)
+  : false;
 const apiRemotePattern = apiUrl
   ? (() => {
       const parsed = new URL(apiUrl);
@@ -42,7 +45,7 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   images: {
-    dangerouslyAllowLocalIP: !isProduction,
+    dangerouslyAllowLocalIP: !isProduction || apiUsesLocalNetwork,
     minimumCacheTTL: 3600,
     remotePatterns: [
       {

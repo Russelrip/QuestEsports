@@ -1,5 +1,4 @@
-/* eslint-disable @next/next/no-img-element */
-
+import Image from "next/image";
 import { ImageAsset, Poster, resolveMediaUrl } from "@/lib/media";
 
 type PosterPreviewDraft = Pick<
@@ -30,8 +29,14 @@ export default function PosterPreview({
   const supportingCopy = draft.subheadline || fallbackSubheadline;
 
   return (
-    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/30">
-      <img src={resolveMediaUrl(asset.imageUrl)} alt={asset.title} className="max-h-[70vh] w-full object-cover" />
+    <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-white/10 bg-black/40 sm:rounded-[24px]">
+      <Image
+        src={resolveMediaUrl(asset.imageUrl)}
+        alt={asset.title}
+        fill
+        sizes="(min-width: 1024px) 960px, calc(100vw - 2rem)"
+        className="object-contain"
+      />
       {showOverlay ? (
         <div className={`absolute inset-0 flex p-6 sm:p-8 ${alignmentClassName[draft.overlayAlign]}`}>
           <div
