@@ -30,13 +30,10 @@ export default function HomeHero() {
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-100 drop-shadow-[0_2px_10px_rgba(0,0,0,0.75)]">
             Sri Lanka Esports Community
           </p>
-          <h1 className="mt-5 max-w-3xl text-5xl leading-[0.95] text-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.85)] sm:text-6xl lg:text-8xl">
-            Welcome to Quest E-Sports LK
+          <h1 className="mt-8 max-w-full leading-[0.95] text-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.85)]">
+            <span className="block text-3xl sm:text-4xl lg:text-5xl">Welcome to</span>
+            <span className="mt-6 block whitespace-nowrap text-[clamp(1.75rem,8.1vw,7rem)] tracking-[-0.02em]">QUEST E-SPORTS</span>
           </h1>
-          <p className="mt-6 max-w-2xl text-base leading-8 text-white drop-shadow-[0_3px_12px_rgba(0,0,0,0.85)] sm:text-lg">
-            Follow tournaments, match moments, player stories, and the community behind
-            every Quest event.
-          </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link href="/tournaments" className={buttonClassName({ size: "lg" })}>
               Explore Tournaments
