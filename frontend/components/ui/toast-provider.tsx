@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { useToastStore } from "@/hooks/useToastStore";
 import { cn } from "@/lib/utils";
 
@@ -29,25 +28,20 @@ export function ToastProvider() {
   }, [dismissToast, toasts]);
 
   return (
-    <div className="pointer-events-none fixed right-4 top-20 z-[70] flex w-full max-w-sm flex-col gap-3">
-      <AnimatePresence>
+    <div className="pointer-events-none fixed inset-x-3 top-20 z-[70] flex flex-col gap-3 sm:left-auto sm:right-4 sm:w-full sm:max-w-sm">
         {toasts.map((toast) => (
-          <motion.button
+          <button
             key={toast.id}
-            initial={{ opacity: 0, y: -12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -12, scale: 0.98 }}
             onClick={() => dismissToast(toast.id)}
             className={cn(
-              "pointer-events-auto rounded-[24px] border p-4 text-left shadow-[var(--shadow-md)] backdrop-blur",
+              "toast-enter pointer-events-auto rounded-[20px] border p-4 text-left shadow-[var(--shadow-md)] sm:rounded-[24px] sm:backdrop-blur",
               toneClassName[toast.tone]
             )}
           >
             <p className="text-sm font-semibold">{toast.title}</p>
             {toast.description ? <p className="mt-1 text-xs opacity-90">{toast.description}</p> : null}
-          </motion.button>
+          </button>
         ))}
-      </AnimatePresence>
     </div>
   );
 }

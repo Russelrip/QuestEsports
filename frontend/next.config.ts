@@ -42,14 +42,16 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   images: {
+    dangerouslyAllowLocalIP: !isProduction,
+    minimumCacheTTL: 3600,
     remotePatterns: [
       {
         protocol: "https",
         hostname: "img.youtube.com",
       },
       ...(apiRemotePattern ? [apiRemotePattern] : []),
-      ],
-    },
+    ],
+  },
   async headers() {
     const securityHeaders = [
       {

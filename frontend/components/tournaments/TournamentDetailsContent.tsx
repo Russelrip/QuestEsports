@@ -1,6 +1,6 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
+import Image from "next/image";
 import { useState } from "react";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
@@ -169,7 +169,14 @@ function TeamsPanel({
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-white text-sm font-bold text-black">
                 {team.logoUrl ? (
-                  <img src={resolveMediaUrl(team.logoUrl)} alt={team.teamName} className="h-full w-full object-cover" />
+                  <Image
+                    src={resolveMediaUrl(team.logoUrl)}
+                    alt={team.teamName}
+                    width={48}
+                    height={48}
+                    sizes="48px"
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   team.shortCode
                 )}

@@ -40,7 +40,7 @@ function FooterLinkList({
 
 export default function Footer() {
   return (
-    <footer className="mt-10 border-t border-white/10 bg-[#0a0a10]">
+    <footer className="mobile-content-auto mt-10 border-t border-white/10 bg-[#0a0a10]">
       <Container className="py-10 sm:py-12">
         <div className="grid gap-10 lg:grid-cols-[1.35fr_0.8fr_0.8fr_1fr] lg:gap-12">
           <div>

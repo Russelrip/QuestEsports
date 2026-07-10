@@ -5,6 +5,7 @@
   src: url("/fonts/Foundry Gridnik W03 Bold.ttf") format("truetype");
   font-weight: 700;
   font-style: normal;
+  font-display: swap;
 }
 
 :root {
@@ -32,16 +33,16 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   color: var(--foreground);
-  background:
-    linear-gradient(180deg, rgba(7, 6, 11, 0.38), rgba(7, 6, 11, 0.64)),
-    url("/images/otherbg.png") center top / cover fixed no-repeat,
-    #07060b;
+  background: #07060b;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   line-height: 1.6;
 }
@@ -56,6 +57,11 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+button,
+a {
+  touch-action: manipulation;
 }
 
 input[type="checkbox"] {
@@ -118,6 +124,32 @@ img {
 
 main {
   display: block;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.page-enter,
+.menu-enter,
+.popover-enter,
+.toast-enter,
+.modal-backdrop-enter,
+.modal-panel-enter {
+  animation: ui-fade-in 0.24s ease-out both;
+}
+
+.page-enter {
+  animation-name: page-fade-in;
+  animation-duration: 0.3s;
+}
+
+.menu-enter,
+.toast-enter {
+  animation-name: menu-fade-in;
+}
+
+.popover-enter,
+.modal-panel-enter {
+  animation-name: panel-fade-in;
 }
 
 .font-display,
@@ -368,16 +400,52 @@ legend {
   }
 }
 
+@keyframes ui-fade-in {
+  from { opacity: 0; }
+}
+
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+}
+
+@keyframes menu-fade-in {
+  from { opacity: 0; transform: translate3d(0, -8px, 0); }
+}
+
+@keyframes panel-fade-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.985); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  input[type="checkbox"] {
-    animation: none;
-    transition: none;
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
 @media (max-width: 768px) {
+  .page-shell::before {
+    position: absolute;
+    background:
+      radial-gradient(circle at 15% 8%, rgba(91, 33, 182, 0.14), transparent 28rem),
+      linear-gradient(180deg, #090711, #07060b 55%, #090711);
+  }
+
+  .mobile-content-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 640px;
+  }
+
   .page-header {
-    padding-top: 5rem;
+    padding: 1rem 0 1.5rem;
   }
 
   .page-header::before {
@@ -387,6 +455,18 @@ legend {
   .form-row {
     grid-template-columns: 1fr;
   }
+
+  .btn:hover {
+    transform: none;
+  }
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 @media (min-width: 768px) {

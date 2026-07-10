@@ -1,6 +1,6 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
+import Image from "next/image";
 import { useState } from "react";
 import { resolveMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -35,9 +35,12 @@ export default function TournamentBannerImage({
   }
 
   return (
-    <img
+    <Image
       src={resolveMediaUrl(bannerUrl)}
       alt={title}
+      width={1200}
+      height={800}
+      sizes="(min-width: 1280px) 420px, (min-width: 1024px) 380px, 100vw"
       className={cn("rounded-[24px]", className)}
       onError={() => setHasError(true)}
     />

@@ -16,7 +16,7 @@ export default function PageHeader({
   return (
     <section className="page-header">
       <Container className="relative z-10">
-        <div className="mx-auto max-w-4xl px-4 py-12 text-center sm:px-8 sm:py-16">
+        <div className="mx-auto max-w-4xl px-2 py-8 text-center sm:px-8 sm:py-16">
           {showEyebrow ? (
             <p className="text-xs font-medium uppercase tracking-[0.3em] text-cyan-100/70">
               {eyebrow}

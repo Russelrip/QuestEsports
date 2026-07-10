@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 const slides = [
@@ -30,8 +29,14 @@ export default function HomeMediaSlideshow() {
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
     const timer = window.setInterval(() => {
-      setActiveIndex((current) => (current + 1) % slides.length);
+      if (!document.hidden) {
+        setActiveIndex((current) => (current + 1) % slides.length);
+      }
     }, 5000);
 
     return () => window.clearInterval(timer);
@@ -42,15 +47,7 @@ export default function HomeMediaSlideshow() {
   return (
     <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-black/30 shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
       <div className="relative aspect-video min-h-72">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeSlide.src}
-            initial={{ opacity: 0, scale: 1.03 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.55, ease: "easeOut" }}
-            className="absolute inset-0"
-          >
+          <div key={activeSlide.src} className="modal-backdrop-enter absolute inset-0">
             <Image
               src={activeSlide.src}
               alt={activeSlide.alt}
@@ -59,26 +56,17 @@ export default function HomeMediaSlideshow() {
               sizes="(min-width: 1024px) 48vw, 100vw"
               className="object-cover"
             />
-          </motion.div>
-        </AnimatePresence>
+          </div>
 
         <div className="absolute inset-x-0 bottom-0 bg-black/80 p-5 sm:p-7">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeSlide.title}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3 }}
-            >
+            <div key={activeSlide.title} className="popover-enter">
               <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-100/80">
                 {activeSlide.label}
               </p>
               <p className="mt-2 max-w-md font-display text-xl leading-tight text-white sm:text-2xl">
                 {activeSlide.title}
               </p>
-            </motion.div>
-          </AnimatePresence>
+            </div>
 
           <div className="mt-5 flex gap-2">
             {slides.map((slide, index) => (

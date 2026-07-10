@@ -1,6 +1,6 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
+import Image from "next/image";
 import EmptyState from "@/components/ui/EmptyState";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
@@ -41,11 +41,11 @@ export default function PosterGallery({
             <button key={poster.id} type="button" className="text-left" onClick={() => onSelectPoster(poster)}>
               <Card className="group overflow-hidden">
                 <div className="relative aspect-[4/5] overflow-hidden">
-                  <img
+                  <Image
                     src={resolveMediaUrl(poster.imageAsset.imageUrl)}
                     alt={poster.title}
-                    loading="lazy"
-                    decoding="async"
+                    fill
+                    sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
                     className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
                   />
                 </div>

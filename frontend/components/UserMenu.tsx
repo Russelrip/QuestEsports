@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AuthUser } from "@/lib/auth";
@@ -61,14 +60,8 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
         </span>
       </button>
 
-      <AnimatePresence>
-        {isOpen ? (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="absolute right-0 top-[calc(100%+0.75rem)] z-20 w-72 rounded-[28px] border border-white/10 bg-[rgba(12,12,20,0.98)] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.45)]"
-          >
+      {isOpen ? (
+          <div className="popover-enter absolute right-0 top-[calc(100%+0.75rem)] z-20 w-72 rounded-[28px] border border-white/10 bg-[rgba(12,12,20,0.98)] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
             <div className="mb-4 space-y-2 border-b border-white/8 pb-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -103,9 +96,8 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
                 Logout
               </Button>
             </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+          </div>
+      ) : null}
     </div>
   );
 }
