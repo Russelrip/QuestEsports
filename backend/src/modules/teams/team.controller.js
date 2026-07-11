@@ -1,6 +1,7 @@
 const { asyncHandler } = require("../../lib/async-handler");
 const {
   listProfileTeams,
+  createSavedTeam,
   getTeamInvitePreview,
   respondToTeamInvite,
 } = require("./team.service");
@@ -13,6 +14,20 @@ const getProfileTeams = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     teams,
+  });
+});
+
+const createProfileTeam = asyncHandler(async (req, res) => {
+  const team = await createSavedTeam({
+    user: req.user,
+    body: req.body,
+    file: req.file,
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Team created successfully. Invitations have been sent to your members.",
+    team,
   });
 });
 
@@ -46,6 +61,7 @@ const respondTeamInvite = asyncHandler(async (req, res) => {
 
 module.exports = {
   getProfileTeams,
+  createProfileTeam,
   previewTeamInvite,
   respondTeamInvite,
 };

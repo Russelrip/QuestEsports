@@ -338,10 +338,17 @@ export default function ProfileView() {
               </div>
             ) : (
               <div>
-                <h3 className="text-2xl text-white">My Teams</h3>
-                <p className="mt-2 text-sm text-slate-400">
-                  Teams you captain or have accepted an invitation to join appear here.
-                </p>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="text-2xl text-white">My Teams</h3>
+                    <p className="mt-2 text-sm text-slate-400">
+                      Teams you captain or have accepted an invitation to join appear here.
+                    </p>
+                  </div>
+                  <Link href="/registration" className={buttonClassName({})}>
+                    Create Team
+                  </Link>
+                </div>
 
                 {teamsError ? <p className="mt-5 text-sm text-rose-300">{teamsError}</p> : null}
                 {teamsLoading ? (
@@ -351,11 +358,11 @@ export default function ProfileView() {
                 ) : teams.length === 0 ? (
                   <div className="mt-6 rounded-[24px] border border-white/8 bg-white/5 p-5">
                     <p className="text-sm text-slate-300">
-                      No saved teams yet. Register a tournament team to save it here for future use.
+                      No saved teams yet. Create one here, then reuse it for future tournament registrations.
                     </p>
                     <div className="mt-4">
-                      <Link href="/tournament-registration" className={buttonClassName({})}>
-                        Register a Team
+                      <Link href="/registration" className={buttonClassName({})}>
+                        Create a Team
                       </Link>
                     </div>
                   </div>

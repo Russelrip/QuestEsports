@@ -1,5 +1,9 @@
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 import type { TournamentRegistrationFormData } from "@/lib/tournament-registration";
+import {
+  TEAM_LOGO_MAX_FILE_SIZE,
+  assertFileWithinUploadLimit,
+} from "@/lib/upload-limits";
 
 export type SavedTeamMember = {
   id: string;
@@ -32,12 +36,12 @@ export type TeamInvitePreview = {
   memberName: string;
   email: string;
   inviteStatus: "pending" | "accepted" | "declined";
-  registrationId: string;
+  registrationId: string | null;
   team: {
     id: string;
     name: string;
     captainName: string;
-    tournamentTitle: string;
+    tournamentTitle: string | null;
   };
 };
 
@@ -59,6 +63,56 @@ export async function fetchProfileTeams() {
   }
 
   return data.teams || [];
+}
+
+export type CreateTeamMemberInput = {
+  name: string;
+  email: string;
+};
+
+export async function createSavedTeam(input: {
+  name: string;
+  country: string;
+  teamTag: string;
+  organizationRequested: boolean;
+  teamLogo: File | null;
+  members: CreateTeamMemberInput[];
+}) {
+  assertFileWithinUploadLimit(
+    input.teamLogo,
+    TEAM_LOGO_MAX_FILE_SIZE,
+    "Team logo"
+  );
+
+  const body = new FormData();
+  body.append("name", input.name);
+  body.append("country", input.country);
+  body.append("teamTag", input.teamTag);
+  body.append("organizationRequested", String(input.organizationRequested));
+  body.append("members", JSON.stringify(input.members));
+  if (input.teamLogo) {
+    body.append("teamLogo", input.teamLogo);
+  }
+
+  const { response, data } = await apiFetchJson<{
+    success?: boolean;
+    message?: string;
+    team?: SavedTeam;
+  }>("/api/teams", { method: "POST", body });
+  const errorMessage = getApiErrorMessage(
+    response,
+    data,
+    "Could not create this team."
+  );
+
+  if (errorMessage || !data.team) {
+    throw new Error(errorMessage || "Could not create this team.");
+  }
+
+  return {
+    team: data.team,
+    message: data.message || "Team created successfully.",
+  };
 }
 
 export async function fetchTeamInvitePreview(token: string) {

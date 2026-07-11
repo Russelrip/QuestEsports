@@ -3,21 +3,20 @@ import RegistrationForm from "@/components/registration/RegistrationForm";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 
 export const metadata = buildPageMetadata({
-  title: "Team Registration",
+  title: "Create Team",
   description: defaultPageDescriptions.registration,
   path: "/registration",
   keywords: [
-    "e-sports team registration",
-    "register gaming team",
-    "competitive roster signup",
-    "tournament entry form",
+    "create e-sports team",
+    "gaming team roster",
+    "invite team members",
   ],
 });
 
 export default function RegistrationPage() {
   return (
     <PageLayout
-      title="Team Registration"
+      title="Teams"
       description={defaultPageDescriptions.registration}
     >
       <RegistrationForm />

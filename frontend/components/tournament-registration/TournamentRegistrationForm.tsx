@@ -23,7 +23,6 @@ import {
   initialTournamentRegistrationFormData,
   requiredPlayerGroups,
   substitutePlayerGroups,
-  teamCountries,
   type TournamentRegistrationFormData,
 } from "@/lib/tournament-registration";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
@@ -328,9 +327,9 @@ export default function TournamentRegistrationForm({
     <Section className="pt-6">
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
-          <h2 className="text-3xl text-white">Create Team</h2>
-          <p className="mt-3 text-sm uppercase tracking-[0.12em] text-slate-400">
-            All fields are required unless specified optional
+          <h2 className="text-3xl text-white">Register Your Team</h2>
+          <p className="mt-3 text-sm text-slate-400">
+            Complete the full roster submission for the selected tournament.
           </p>
           {selectedTournament?.rulebook ? (
             <div className="mt-5 rounded-[24px] border border-white/8 bg-white/5 p-5">
@@ -423,53 +422,6 @@ export default function TournamentRegistrationForm({
             <div className="grid gap-5 sm:grid-cols-2">
               <FormField label="Team Name" htmlFor="teamName" required>
                 <Input type="text" id="teamName" name="teamName" required value={formData.teamName} onChange={handleFieldChange} />
-              </FormField>
-              <FormField label="Country" htmlFor="country" required>
-                <Select
-                  id="country"
-                  name="country"
-                  required
-                  value={formData.country}
-                  onChange={handleFieldChange}
-                >
-                  <option value="">Select Country</option>
-                  {teamCountries.map((country) => (
-                    <option key={country} value={country}>
-                      {country}
-                    </option>
-                  ))}
-                </Select>
-              </FormField>
-              <FormField
-                label="Team Tag"
-                htmlFor="teamTag"
-                required
-                hint="Up to 12 characters"
-              >
-                <Input
-                  type="text"
-                  id="teamTag"
-                  name="teamTag"
-                  maxLength={12}
-                  placeholder="Enter Team Tag"
-                  required
-                  value={formData.teamTag}
-                  onChange={handleFieldChange}
-                />
-              </FormField>
-              <FormField
-                label="Request to Join Organization"
-                hint="Optional"
-              >
-                <label className="flex min-h-12 items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    name="organizationRequested"
-                    checked={formData.organizationRequested}
-                    onChange={handleFieldChange}
-                  />
-                  Request to join Quest E-sports
-                </label>
               </FormField>
               <FormField label="Team Logo" htmlFor="teamLogo" hint="Upload team logo (PNG, JPG, max 5MB)">
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-3">

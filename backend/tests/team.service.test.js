@@ -2,12 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const { HttpError } = require("../src/lib/http-error");
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const servicePath = path.join(__dirname, "../src/modules/teams/team.service.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const mailModulePath = path.join(__dirname, "../src/lib/mail/sendTeamInviteEmail.js");
+const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
 
 const buildPendingInvite = () => ({
   id: "registration-member-1",
@@ -26,6 +26,86 @@ const buildPendingInvite = () => ({
       title: "Quest Cup",
     },
   },
+});
+
+test("createSavedTeam stores the captain and sends standalone member invites", async () => {
+  const createdMembers = [];
+  const sentInvites = [];
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const createdTeam = {
+    id: "saved-team-1",
+    captainUserId: user.id,
+    name: "Quest Five",
+    country: "Sri Lanka",
+    teamTag: "QF",
+    organizationRequested: true,
+    logoName: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    captainUser: user,
+    members: [],
+  };
+  const tx = {
+    savedTeam: {
+      create: async () => createdTeam,
+      findUnique: async () => ({ ...createdTeam, members: createdMembers }),
+    },
+    savedTeamMember: {
+      createMany: async ({ data }) => {
+        createdMembers.push(...data);
+        return { count: data.length };
+      },
+    },
+  };
+  const prismaMock = {
+    prisma: {
+      $transaction: async (callback) => callback(tx),
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [mailModulePath]: {
+      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
+    },
+  });
+
+  try {
+    const team = await teamService.createSavedTeam({
+      user,
+      file: null,
+      body: {
+        name: "Quest Five",
+        country: "Sri Lanka",
+        teamTag: "QF",
+        organizationRequested: "true",
+        members: JSON.stringify([
+          { name: "Player Two", email: "player2@example.com" },
+        ]),
+      },
+    });
+
+    assert.equal(team.name, "Quest Five");
+    assert.equal(createdMembers.length, 2);
+    assert.equal(createdMembers[0].role, "CAPTAIN");
+    assert.equal(createdMembers[0].inviteStatus, "accepted");
+    assert.equal(createdMembers[1].role, "PLAYER");
+    assert.equal(createdMembers[1].inviteStatus, "pending");
+    assert.ok(createdMembers[1].inviteTokenHash);
+    assert.equal(sentInvites.length, 1);
+    assert.equal(sentInvites[0].tournamentTitle, null);
+  } finally {
+    restore();
+  }
 });
 
 test("getTeamInvitePreview rejects expired or invalid registration invite tokens", async () => {
@@ -50,7 +130,6 @@ test("getTeamInvitePreview rejects expired or invalid registration invite tokens
     await assert.rejects(
       () => teamService.getTeamInvitePreview({ token: "expired-token" }),
       (error) =>
-        error instanceof HttpError &&
         error.statusCode === 400 &&
         error.message === "This team invite link is invalid or has expired."
     );

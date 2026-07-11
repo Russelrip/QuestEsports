@@ -1,125 +1,345 @@
 "use client";
 
 import Link from "next/link";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import { FormEvent, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
+import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Section } from "@/components/ui/section";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { ProfileSkeleton } from "@/components/ui/skeleton";
+import { useToastStore } from "@/hooks/useToastStore";
+import { teamCountries } from "@/lib/tournament-registration";
+import {
+  type CreateTeamMemberInput,
+  createSavedTeam,
+} from "@/lib/teams";
 
-const registrationSchema = z.object({
-  teamName: z.string().min(1, "Team name is required."),
-  captainName: z.string().min(1, "Captain name is required."),
-  captainEmail: z.string().email("Enter a valid email address."),
-  captainPhone: z.string().min(1, "Captain phone is required."),
-  teamSize: z.string().min(1, "Select a team size."),
-  tournament: z.string().min(1, "Select a tournament."),
-  teamBio: z.string().optional(),
-  terms: z.boolean().refine((value) => value, { message: "You must agree to continue." }),
-});
+const emptyMember = (): CreateTeamMemberInput => ({ name: "", email: "" });
 
-type RegistrationFormValues = z.infer<typeof registrationSchema>;
+const formatFileSize = (bytes: number) =>
+  bytes < 1024 * 1024
+    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 export default function RegistrationForm() {
-  const form = useForm<RegistrationFormValues>({
-    resolver: zodResolver(registrationSchema),
-    defaultValues: {
-      teamName: "",
-      captainName: "",
-      captainEmail: "",
-      captainPhone: "",
-      teamSize: "",
-      tournament: "",
-      teamBio: "",
-      terms: false,
-    },
-  });
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
+  const showToast = useToastStore((state) => state.showToast);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState("");
+  const [country, setCountry] = useState("");
+  const [teamTag, setTeamTag] = useState("");
+  const [organizationRequested, setOrganizationRequested] = useState(false);
+  const [teamLogo, setTeamLogo] = useState<File | null>(null);
+  const [members, setMembers] = useState<CreateTeamMemberInput[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const captainName = useMemo(
+    () =>
+      [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
+      user?.username ||
+      "Team Captain",
+    [user]
+  );
 
-  const onSubmit = form.handleSubmit(async () => {
-    form.setValue("teamName", "");
-    form.setError("root", {
-      message: "This legacy registration page has been replaced. Continue with the full tournament registration flow instead.",
-    });
-  });
+  const updateMember = (
+    index: number,
+    key: keyof CreateTeamMemberInput,
+    value: string
+  ) => {
+    setMembers((current) =>
+      current.map((member, memberIndex) =>
+        memberIndex === index ? { ...member, [key]: value } : member
+      )
+    );
+  };
 
-  return (
-    <Section className="pt-6">
-      <div className="grid gap-6 lg:grid-cols-[0.82fr_1.18fr]">
-        <Card className="p-6 sm:p-8">
-          <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Registration Flow</p>
-          <h2 className="mt-3 text-3xl text-white">This page now guides teams into the real tournament registration workflow.</h2>
-          <p className="mt-4 text-sm leading-7 text-slate-300">
-            The simple legacy form no longer matches the production team registration system. Use the tournament registration flow for roster members, saved teams, and invite confirmations.
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const result = await createSavedTeam({
+        name,
+        country,
+        teamTag,
+        organizationRequested,
+        teamLogo,
+        members,
+      });
+      showToast({
+        tone: "success",
+        title: "Team created",
+        description: result.message,
+      });
+      router.push("/profile");
+    } catch (nextError) {
+      const message =
+        nextError instanceof Error
+          ? nextError.message
+          : "Could not create this team.";
+      setError(message);
+      showToast({
+        tone: "error",
+        title: "Unable to create team",
+        description: message,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <Section className="pt-6">
+        <ProfileSkeleton />
+      </Section>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Section className="pt-6">
+        <Card className="mx-auto max-w-3xl p-6 sm:p-8">
+          <h2 className="text-3xl text-white">Create Team</h2>
+          <p className="mt-3 text-sm text-slate-400">
+            Sign in before creating and managing a team.
           </p>
           <div className="mt-6">
-            <Link href="/tournament-registration" className={buttonClassName({})}>
-              Open Tournament Registration
+            <Link
+              href="/login?redirect=%2Fregistration"
+              className={buttonClassName({})}
+            >
+              Go to Login
             </Link>
           </div>
         </Card>
+      </Section>
+    );
+  }
 
-        <Card className="p-6 sm:p-8">
-          <form className="grid gap-5" onSubmit={onSubmit}>
-            <FormField label="Team Name" htmlFor="teamName" error={form.formState.errors.teamName?.message} required>
-              <Input id="teamName" {...form.register("teamName")} />
-            </FormField>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <FormField label="Captain Name" htmlFor="captainName" error={form.formState.errors.captainName?.message} required>
-                <Input id="captainName" {...form.register("captainName")} />
-              </FormField>
-              <FormField label="Captain Email" htmlFor="captainEmail" error={form.formState.errors.captainEmail?.message} required>
-                <Input id="captainEmail" type="email" {...form.register("captainEmail")} />
-              </FormField>
+  if (!user.emailVerified) {
+    return (
+      <Section className="pt-6">
+        <Card className="mx-auto max-w-3xl p-6 sm:p-8">
+          <h2 className="text-3xl text-white">Verify your email first</h2>
+          <p className="mt-3 text-sm text-slate-300">
+            Team creation is available to verified accounts.
+          </p>
+          <div className="mt-5">
+            <ResendVerificationButton email={user.email} />
+          </div>
+        </Card>
+      </Section>
+    );
+  }
+
+  return (
+    <Section className="pt-6">
+      <Card className="mx-auto max-w-5xl overflow-hidden p-0">
+        <form onSubmit={handleSubmit}>
+          <div className="flex items-start justify-between border-b border-white/10 px-5 py-6 sm:px-8">
+            <div>
+              <h2 className="text-3xl text-cyan-200">Create Team</h2>
+              <p className="mt-2 text-xs uppercase tracking-[0.1em] text-slate-500">
+                All fields are required unless specified optional
+              </p>
             </div>
+            <Link
+              href="/profile"
+              aria-label="Close team creation"
+              className="text-3xl leading-none text-slate-500 transition hover:text-white"
+            >
+              ×
+            </Link>
+          </div>
+
+          <div className="grid gap-6 px-5 py-6 sm:px-8">
+            <FormField label="Name" htmlFor="teamName" required>
+              <Input
+                id="teamName"
+                required
+                placeholder="Enter Team Name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </FormField>
+
+            <FormField label="Country" htmlFor="country" required>
+              <Select
+                id="country"
+                required
+                value={country}
+                onChange={(event) => setCountry(event.target.value)}
+              >
+                <option value="">Select Country</option>
+                {teamCountries.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
             <div className="grid gap-5 sm:grid-cols-2">
-              <FormField label="Captain Phone" htmlFor="captainPhone" error={form.formState.errors.captainPhone?.message} required>
-                <Input id="captainPhone" {...form.register("captainPhone")} />
+              <FormField label="Tag" htmlFor="teamTag" required>
+                <Input
+                  id="teamTag"
+                  required
+                  maxLength={12}
+                  placeholder="Enter Team Tag"
+                  value={teamTag}
+                  onChange={(event) => setTeamTag(event.target.value)}
+                />
               </FormField>
-              <FormField label="Team Size" htmlFor="teamSize" error={form.formState.errors.teamSize?.message} required>
-                <Select id="teamSize" {...form.register("teamSize")}>
-                  <option value="">Select team size</option>
-                  <option value="5">5 Players</option>
-                  <option value="6">6 Players</option>
-                  <option value="7">7 Players</option>
+              <FormField
+                label="Request to Join Organization"
+                htmlFor="organization"
+                hint="Optional"
+              >
+                <Select
+                  id="organization"
+                  value={organizationRequested ? "quest" : ""}
+                  onChange={(event) =>
+                    setOrganizationRequested(event.target.value === "quest")
+                  }
+                >
+                  <option value="">No Organization Selected</option>
+                  <option value="quest">Quest E-sports</option>
                 </Select>
               </FormField>
             </div>
-            <FormField label="Tournament" htmlFor="tournament" error={form.formState.errors.tournament?.message} required>
-              <Select id="tournament" {...form.register("tournament")}>
-                <option value="">Select a tournament</option>
-                <option value="valorant">Valorant Open Series</option>
-                <option value="valorant-women">Valorant Women&apos;s Championship</option>
-                <option value="showdown">Valorant Showdown</option>
-              </Select>
+
+            <FormField
+              label="Team Logo"
+              htmlFor="teamLogo"
+              hint="Please upload a square image, ideally 300×300 (optional)"
+            >
+              <input
+                ref={logoInputRef}
+                id="teamLogo"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="sr-only"
+                onChange={(event) =>
+                  setTeamLogo(event.target.files?.[0] || null)
+                }
+              />
+              <div className="flex min-h-12 items-center justify-between rounded-xl border border-white/15 bg-black/20 pl-4">
+                <span className="min-w-0 truncate pr-3 text-sm text-slate-300">
+                  {teamLogo
+                    ? `${teamLogo.name} (${formatFileSize(teamLogo.size)})`
+                    : "Choose file to upload"}
+                </span>
+                <label
+                  htmlFor="teamLogo"
+                  className="cursor-pointer self-stretch rounded-r-xl bg-cyan-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-cyan-400"
+                >
+                  Browse
+                </label>
+              </div>
             </FormField>
-            <FormField label="Team Bio" htmlFor="teamBio">
-              <Textarea id="teamBio" rows={4} placeholder="Tell us about your team..." {...form.register("teamBio")} />
-            </FormField>
-            <label className="flex items-start gap-3 rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300">
-              <input type="checkbox" className="mt-1 size-4 accent-cyan-300" {...form.register("terms")} />
-              <span>
-                I agree to the{" "}
-                <Link href="/terms-of-service" className="text-cyan-200 transition hover:text-cyan-100">
-                  Terms of Service
-                </Link>{" "}
-                and the{" "}
-                <Link href="/privacy-policy" className="text-cyan-200 transition hover:text-cyan-100">
-                  Privacy Policy
-                </Link>
-                .
-              </span>
-            </label>
-            {form.formState.errors.terms?.message ? <p className="text-sm text-rose-300">{form.formState.errors.terms.message}</p> : null}
-            {form.formState.errors.root?.message ? <p className="text-sm text-slate-300">{form.formState.errors.root.message}</p> : null}
-            <Button type="submit">Continue</Button>
-          </form>
-        </Card>
-      </div>
+
+            <section className="grid gap-4 pt-2">
+              <div>
+                <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  Members
+                </h3>
+                <p className="mt-1 text-xs uppercase tracking-[0.08em] text-slate-500">
+                  An invitation email will be sent to each team member.
+                </p>
+              </div>
+
+              <div className="grid gap-4 rounded-xl border border-white/10 p-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField label="Name">
+                    <Input value={captainName} readOnly disabled />
+                  </FormField>
+                  <FormField label="Email">
+                    <Input value={user.email} readOnly disabled />
+                  </FormField>
+                </div>
+              </div>
+
+              {members.map((member, index) => (
+                <div
+                  key={index}
+                  className="grid gap-4 rounded-xl border border-white/10 p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-white">
+                      Member {index + 2}
+                    </p>
+                    <button
+                      type="button"
+                      className="text-sm text-rose-300 transition hover:text-rose-200"
+                      onClick={() =>
+                        setMembers((current) =>
+                          current.filter((_, memberIndex) => memberIndex !== index)
+                        )
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField label="Name" required>
+                      <Input
+                        required
+                        placeholder="Member name"
+                        value={member.name}
+                        onChange={(event) =>
+                          updateMember(index, "name", event.target.value)
+                        }
+                      />
+                    </FormField>
+                    <FormField label="Email" required>
+                      <Input
+                        required
+                        type="email"
+                        placeholder="member@example.com"
+                        value={member.email}
+                        onChange={(event) =>
+                          updateMember(index, "email", event.target.value)
+                        }
+                      />
+                    </FormField>
+                  </div>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                className="mx-auto flex items-center gap-3 px-5 py-2 text-sm font-semibold uppercase text-cyan-300 transition hover:text-cyan-100"
+                onClick={() => setMembers((current) => [...current, emptyMember()])}
+                disabled={members.length >= 20}
+              >
+                <span className="text-2xl font-light">+</span> Add
+              </button>
+            </section>
+
+            {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+          </div>
+
+          <div className="flex justify-end gap-4 border-t border-white/10 bg-black/20 px-5 py-5 sm:px-8">
+            <Link
+              href="/profile"
+              className={buttonClassName({ variant: "secondary" })}
+            >
+              Cancel
+            </Link>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </form>
+      </Card>
     </Section>
   );
 }

@@ -95,9 +95,11 @@ export default function TeamInviteContent() {
             <p>
               <span className="text-slate-500">Team:</span> {invite.team.name}
             </p>
-            <p>
-              <span className="text-slate-500">Tournament:</span> {invite.team.tournamentTitle}
-            </p>
+            {invite.team.tournamentTitle ? (
+              <p>
+                <span className="text-slate-500">Tournament:</span> {invite.team.tournamentTitle}
+              </p>
+            ) : null}
             <p>
               <span className="text-slate-500">Captain:</span> {invite.team.captainName}
             </p>

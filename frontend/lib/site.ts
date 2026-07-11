@@ -478,7 +478,7 @@ export const defaultPageDescriptions = {
   tournamentRegistration:
     "Register your team for Quest E-sports events with player details, roster info, and tournament-ready submissions.",
   registration:
-    "Join the Quest E-sports community and submit your team for competitive gaming events and upcoming tournaments.",
+    "Create and save your E-sports team, upload a logo, and invite members before entering tournaments.",
   login: "Access your Quest E-sports account to manage registrations, profiles, and tournament participation.",
   signup:
     "Create a Quest E-sports account to join tournaments, follow events, and stay ready for upcoming competitions.",

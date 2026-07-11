@@ -1,10 +1,20 @@
 const crypto = require("crypto");
+const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { createTokenPair, hashToken } = require("../../lib/tokens");
 const { sendTeamInviteEmail } = require("../../lib/mail/sendTeamInviteEmail");
-const { normalizeEmail, normalizeText } = require("../../lib/validation");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
+const {
+  persistTeamLogoUpload,
+  teamLogoDirectory,
+} = require("../../middleware/upload");
+const {
+  isValidEmail,
+  normalizeEmail,
+  normalizeText,
+} = require("../../lib/validation");
 
 const invitePreviewSelect = {
   id: true,
@@ -23,6 +33,27 @@ const invitePreviewSelect = {
       tournament: {
         select: {
           title: true,
+        },
+      },
+    },
+  },
+};
+
+const savedTeamInviteSelect = {
+  id: true,
+  name: true,
+  email: true,
+  emailNormalized: true,
+  inviteStatus: true,
+  team: {
+    select: {
+      id: true,
+      name: true,
+      captainUser: {
+        select: {
+          firstName: true,
+          lastName: true,
+          username: true,
         },
       },
     },
@@ -92,6 +123,23 @@ const mapInvitePreview = (member) => {
   };
 };
 
+const mapSavedTeamInvitePreview = (member) => ({
+  memberName: member.name,
+  email: member.email,
+  inviteStatus: member.inviteStatus,
+  registrationId: null,
+  team: {
+    id: member.team.id,
+    name: member.team.name,
+    captainName:
+      [member.team.captainUser.firstName, member.team.captainUser.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || member.team.captainUser.username,
+    tournamentTitle: null,
+  },
+});
+
 const listProfileTeams = async ({ user }) => {
   const teams = await prisma.savedTeam.findMany({
     where: {
@@ -123,6 +171,156 @@ const listProfileTeams = async ({ user }) => {
   });
 
   return teams.map((team) => mapSavedTeam(team, user.id));
+};
+
+const parseStandaloneMembers = (value) => {
+  let members;
+
+  try {
+    members = JSON.parse(String(value || "[]"));
+  } catch {
+    throw new HttpError(400, "Team members must be valid JSON.");
+  }
+
+  if (!Array.isArray(members) || members.length > 20) {
+    throw new HttpError(400, "A team can include up to 20 invited members.");
+  }
+
+  const normalizedMembers = members.map((member) => ({
+    name: normalizeText(member?.name),
+    email: normalizeEmail(member?.email),
+  }));
+
+  if (
+    normalizedMembers.some(
+      (member) => !member.name || !isValidEmail(member.email)
+    )
+  ) {
+    throw new HttpError(400, "Each team member needs a name and valid email address.");
+  }
+
+  const uniqueEmails = new Set(normalizedMembers.map((member) => member.email));
+  if (uniqueEmails.size !== normalizedMembers.length) {
+    throw new HttpError(400, "Each team member must use a unique email address.");
+  }
+
+  return normalizedMembers;
+};
+
+const createSavedTeam = async ({ user, body, file }) => {
+  const name = normalizeText(body.name);
+  const country = normalizeText(body.country);
+  const teamTag = normalizeText(body.teamTag);
+  const organizationRequested = ["true", "1", "on"].includes(
+    normalizeText(body.organizationRequested).toLowerCase()
+  );
+  const members = parseStandaloneMembers(body.members);
+  const captainEmail = normalizeEmail(user.email);
+
+  if (!name || !country || !teamTag || teamTag.length > 12) {
+    throw new HttpError(400, "Team name, country, and a tag of up to 12 characters are required.");
+  }
+
+  if (members.some((member) => member.email === captainEmail)) {
+    throw new HttpError(400, "The captain is already included in the member list.");
+  }
+
+  const persistedLogo = await persistTeamLogoUpload(file);
+  const inviteSentAt = new Date();
+  const inviteExpiresAt = new Date(
+    inviteSentAt.getTime() + TEAM_INVITE_TTL_HOURS * 60 * 60 * 1000
+  );
+  const captainName =
+    [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+    user.username;
+  const inviteDispatches = [];
+
+  try {
+    const team = await prisma.$transaction(async (tx) => {
+      const createdTeam = await tx.savedTeam.create({
+        data: {
+          id: crypto.randomUUID(),
+          captainUserId: user.id,
+          name,
+          country,
+          teamTag,
+          organizationRequested,
+          logoName: persistedLogo?.filename || null,
+        },
+      });
+
+      const memberRecords = [
+        {
+          id: crypto.randomUUID(),
+          teamId: createdTeam.id,
+          userId: user.id,
+          role: "CAPTAIN",
+          memberOrder: 0,
+          name: captainName,
+          email: captainEmail,
+          emailNormalized: captainEmail,
+          inviteStatus: "accepted",
+          inviteRespondedAt: inviteSentAt,
+        },
+        ...members.map((member, index) => {
+          const token = createTokenPair({ hours: TEAM_INVITE_TTL_HOURS });
+          inviteDispatches.push({
+            email: member.email,
+            recipientName: member.name,
+            teamName: name,
+            captainName,
+            tournamentTitle: null,
+            rawToken: token.rawToken,
+          });
+
+          return {
+            id: crypto.randomUUID(),
+            teamId: createdTeam.id,
+            role: "PLAYER",
+            memberOrder: index + 1,
+            name: member.name,
+            email: member.email,
+            emailNormalized: member.email,
+            inviteStatus: "pending",
+            inviteTokenHash: token.tokenHash,
+            inviteSentAt,
+            inviteExpiresAt,
+          };
+        }),
+      ];
+
+      await tx.savedTeamMember.createMany({ data: memberRecords });
+
+      return tx.savedTeam.findUnique({
+        where: { id: createdTeam.id },
+        include: {
+          captainUser: {
+            select: { firstName: true, lastName: true, username: true },
+          },
+          members: true,
+        },
+      });
+    });
+
+    await sendTeamInvites(inviteDispatches);
+    return mapSavedTeam(team, user.id);
+  } catch (error) {
+    await removeUploadsQuietly(
+      persistedLogo
+        ? [{ directory: teamLogoDirectory, filename: persistedLogo.filename }]
+        : [],
+      { operation: "createSavedTeam", userId: user.id }
+    );
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new HttpError(400, "You already have a saved team with this name.");
+    }
+
+    throw error;
+  }
 };
 
 const refreshRegistrationVerificationStatus = async ({ tx, registrationId }) => {
@@ -163,11 +361,26 @@ const getTeamInvitePreview = async ({ token }) => {
     select: invitePreviewSelect,
   });
 
-  if (!member) {
+  if (member) {
+    return mapInvitePreview(member);
+  }
+
+  const savedTeamMember = prisma.savedTeamMember?.findFirst
+    ? await prisma.savedTeamMember.findFirst({
+        where: {
+          inviteTokenHash: hashToken(normalizedToken),
+          inviteStatus: "pending",
+          inviteExpiresAt: { gt: now },
+        },
+        select: savedTeamInviteSelect,
+      })
+    : null;
+
+  if (!savedTeamMember) {
     throw new HttpError(400, "This team invite link is invalid or has expired.");
   }
 
-  return mapInvitePreview(member);
+  return mapSavedTeamInvitePreview(savedTeamMember);
 };
 
 const respondToTeamInvite = async ({ token, decision, user }) => {
@@ -204,7 +417,62 @@ const respondToTeamInvite = async ({ token, decision, user }) => {
   });
 
   if (!member) {
-    throw new HttpError(400, "This team invite link is invalid or has expired.");
+    const savedTeamMember = prisma.savedTeamMember?.findFirst
+      ? await prisma.savedTeamMember.findFirst({
+          where: {
+            inviteTokenHash: tokenHash,
+            inviteStatus: "pending",
+            inviteExpiresAt: { gt: now },
+          },
+          select: savedTeamInviteSelect,
+        })
+      : null;
+
+    if (!savedTeamMember) {
+      throw new HttpError(400, "This team invite link is invalid or has expired.");
+    }
+
+    if (normalizeEmail(user.email) !== savedTeamMember.emailNormalized) {
+      throw new HttpError(
+        403,
+        `Sign in with the invited email address (${savedTeamMember.email}) to respond to this invite.`
+      );
+    }
+
+    const inviteStatus = normalizedDecision === "accept" ? "accepted" : "declined";
+    const inviteRespondedAt = new Date();
+    const linkedUserId = inviteStatus === "accepted" ? user.id : null;
+    const updatedMember = await prisma.$transaction(async (tx) => {
+      const consumedInvite = await tx.savedTeamMember.updateMany({
+        where: {
+          id: savedTeamMember.id,
+          inviteTokenHash: tokenHash,
+          inviteStatus: "pending",
+          inviteExpiresAt: { gt: new Date() },
+        },
+        data: {
+          userId: linkedUserId,
+          inviteStatus,
+          inviteRespondedAt,
+          inviteTokenHash: null,
+          inviteExpiresAt: null,
+        },
+      });
+
+      if (consumedInvite.count === 0) {
+        throw new HttpError(400, "This team invite link is invalid or has expired.");
+      }
+
+      return tx.savedTeamMember.findUnique({
+        where: { id: savedTeamMember.id },
+        select: savedTeamInviteSelect,
+      });
+    });
+
+    return {
+      ...mapSavedTeamInvitePreview(updatedMember),
+      inviteStatus,
+    };
   }
 
   if (normalizeEmail(user.email) !== member.emailNormalized) {
@@ -482,6 +750,7 @@ const sendTeamInvites = async (inviteDispatches) => {
 
 module.exports = {
   listProfileTeams,
+  createSavedTeam,
   getTeamInvitePreview,
   respondToTeamInvite,
   syncSavedTeamFromRegistration,
