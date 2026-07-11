@@ -6,6 +6,9 @@ import {
 export type TournamentRegistrationFormData = {
   tournament: string;
   teamName: string;
+  country: string;
+  teamTag: string;
+  organizationRequested: boolean;
   teamLogo: File | null;
   captainName: string;
   captainEmail: string;
@@ -48,6 +51,9 @@ export type TournamentRegistrationFormData = {
 export const initialTournamentRegistrationFormData: TournamentRegistrationFormData = {
   tournament: "",
   teamName: "",
+  country: "Sri Lanka",
+  teamTag: "",
+  organizationRequested: false,
   teamLogo: null,
   captainName: "",
   captainEmail: "",
@@ -86,6 +92,18 @@ export const initialTournamentRegistrationFormData: TournamentRegistrationFormDa
   rulebook: false,
   falsityWarning: false,
 };
+
+export const teamCountries = [
+  "Sri Lanka",
+  "India",
+  "Bangladesh",
+  "Pakistan",
+  "Nepal",
+  "Maldives",
+  "Bhutan",
+  "Afghanistan",
+  "Other",
+] as const;
 
 export type MemberFieldGroup = {
   key: "player2" | "player3" | "player4" | "player5" | "sub1" | "sub2";

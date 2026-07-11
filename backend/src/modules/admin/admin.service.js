@@ -111,6 +111,9 @@ const mapRegistrationMember = (member) => ({
 const mapTeamRegistration = (registration) => ({
   id: registration.id,
   teamName: registration.teamName,
+  country: registration.country,
+  teamTag: registration.teamTag,
+  organizationRequested: registration.organizationRequested,
   status: registration.status,
   paymentStatus: registration.paymentStatus,
   verificationStatus: registration.verificationStatus,
@@ -633,6 +636,11 @@ const exportTeamRegistrations = async (query = {}) => {
     tournamentTitle: registration.tournament?.title || "",
     tournamentSlug: registration.tournament?.slug || "",
     teamName: registration.teamName,
+    country: registration.country || "",
+    teamTag: registration.teamTag || "",
+    organizationRequested: formatExportBoolean(
+      registration.organizationRequested
+    ),
     approvalStatus: registration.status,
     paymentStatus: registration.paymentStatus,
     verificationStatus: registration.verificationStatus,
@@ -674,6 +682,13 @@ const exportTeamRegistrations = async (query = {}) => {
           { header: "Tournament", key: "tournamentTitle", width: 28 },
           { header: "Tournament Slug", key: "tournamentSlug", width: 24 },
           { header: "Team Name", key: "teamName", width: 24 },
+          { header: "Country", key: "country", width: 18 },
+          { header: "Team Tag", key: "teamTag", width: 14 },
+          {
+            header: "Organization Requested",
+            key: "organizationRequested",
+            width: 22,
+          },
           { header: "Approval", key: "approvalStatus", width: 16 },
           { header: "Payment", key: "paymentStatus", width: 16 },
           { header: "Verification", key: "verificationStatus", width: 16 },

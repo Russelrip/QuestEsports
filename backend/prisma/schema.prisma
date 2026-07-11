@@ -364,6 +364,9 @@ model TeamRegistration {
   tournamentId           String               @map("tournament_id") @db.Uuid
   savedTeamId            String?              @map("saved_team_id") @db.Uuid
   teamName               String               @map("team_name")
+  country                String?
+  teamTag                String?              @map("team_tag")
+  organizationRequested  Boolean              @default(false) @map("organization_requested")
   captainName            String               @map("captain_name")
   captainEmail           String               @map("captain_email")
   captainPhone           String               @map("captain_phone")
@@ -425,6 +428,9 @@ model SavedTeam {
   id            String            @id @default(uuid()) @db.Uuid
   captainUserId String            @map("captain_user_id") @db.Uuid
   name          String
+  country       String?
+  teamTag       String?           @map("team_tag")
+  organizationRequested Boolean   @default(false) @map("organization_requested")
   logoName      String?           @map("logo_name")
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")

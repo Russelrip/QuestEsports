@@ -366,12 +366,22 @@ export default function ProfileView() {
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <h4 className="text-xl font-semibold text-white">{team.name}</h4>
+                            {team.teamTag || team.country ? (
+                              <p className="text-sm text-cyan-200">
+                                {[team.teamTag, team.country].filter(Boolean).join(" · ")}
+                              </p>
+                            ) : null}
                             <p className="text-sm text-slate-400">
                               Captain: {team.captainName} · {team.isCaptain ? "You are the captain" : "You are a member"}
                             </p>
                             <p className="text-sm text-slate-400">
                               Updated {new Date(team.updatedAt).toLocaleDateString()}
                             </p>
+                            {team.organizationRequested ? (
+                              <p className="text-sm text-amber-200">
+                                Quest E-sports membership requested
+                              </p>
+                            ) : null}
                           </div>
                           {team.isCaptain ? (
                             <Link

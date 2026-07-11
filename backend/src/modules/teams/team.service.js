@@ -53,6 +53,9 @@ const mapSavedTeamMember = (member) => ({
 const mapSavedTeam = (team, userId) => ({
   id: team.id,
   name: team.name,
+  country: team.country,
+  teamTag: team.teamTag,
+  organizationRequested: team.organizationRequested,
   logoName: team.logoName,
   isCaptain: team.captainUserId === userId,
   captainName:
@@ -283,6 +286,9 @@ const syncSavedTeamFromRegistration = async ({
   registrationId,
   user,
   teamName,
+  country,
+  teamTag,
+  organizationRequested,
   logoName,
   members,
   tournamentTitle,
@@ -308,6 +314,9 @@ const syncSavedTeamFromRegistration = async ({
         id: crypto.randomUUID(),
         captainUserId: user.id,
         name: normalizedTeamName,
+        country: country || null,
+        teamTag: teamTag || null,
+        organizationRequested: Boolean(organizationRequested),
         logoName: logoName || null,
       },
       include: {
@@ -319,6 +328,9 @@ const syncSavedTeamFromRegistration = async ({
     await tx.savedTeam.update({
       where: { id: existingTeam.id },
       data: {
+        country: country || null,
+        teamTag: teamTag || null,
+        organizationRequested: Boolean(organizationRequested),
         ...(logoName ? { logoName } : {}),
       },
     });

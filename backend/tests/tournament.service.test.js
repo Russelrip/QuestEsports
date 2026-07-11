@@ -14,6 +14,9 @@ const buildRegistrationBody = (overrides = {}) => {
   const body = {
     tournamentSlug: "quest-cup",
     teamName: "Quest Five",
+    country: "Sri Lanka",
+    teamTag: "QF",
+    organizationRequested: true,
     captainName: "Captain",
     captainPhone: "123456789",
     captainDiscord: "captain",
@@ -363,6 +366,9 @@ test("createTournamentRegistration retries transient transaction startup errors"
     assert.equal(transactionCalls, 2);
     assert.equal(uploadCalls, 1);
     assert.equal(createdRegistrations.length, 1);
+    assert.equal(createdRegistrations[0].country, "Sri Lanka");
+    assert.equal(createdRegistrations[0].teamTag, "QF");
+    assert.equal(createdRegistrations[0].organizationRequested, true);
     assert.equal(createdMembers.length, 5);
     assert.equal(syncCalls, 1);
     assert.equal(sendCalls, 1);

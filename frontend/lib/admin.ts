@@ -96,6 +96,9 @@ export type RegistrationMember = {
 export type TeamRegistration = {
   id: string;
   teamName: string;
+  country?: string | null;
+  teamTag?: string | null;
+  organizationRequested?: boolean;
   status: "pending" | "approved" | "rejected";
   paymentStatus: "unpaid" | "pending" | "paid";
   verificationStatus: "pending" | "verified" | "flagged";

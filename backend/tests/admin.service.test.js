@@ -123,7 +123,7 @@ test("exportTeamRegistrations creates an Excel workbook with registration and ro
     assert.equal(findManyCalls[0].take, 5001);
     assert.equal(registrationsSheet.getRow(2).getCell(1).value, "Quest Cup");
     assert.equal(registrationsSheet.getRow(2).getCell(3).value, "Quest Five");
-    assert.equal(registrationsSheet.getRow(2).getCell(14).value, 1);
+    assert.equal(registrationsSheet.getRow(2).getCell(17).value, 1);
     assert.equal(rosterSheet.getRow(2).getCell(7).value, "Team Captain");
     assert.equal(rosterSheet.getRow(3).getCell(11).value, "pending");
   } finally {

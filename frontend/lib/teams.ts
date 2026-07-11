@@ -17,6 +17,9 @@ export type SavedTeamMember = {
 export type SavedTeam = {
   id: string;
   name: string;
+  country?: string | null;
+  teamTag?: string | null;
+  organizationRequested?: boolean;
   logoName?: string | null;
   isCaptain: boolean;
   captainName: string;
@@ -123,6 +126,9 @@ export const applySavedTeamToRegistrationForm = (
   const next = {
     ...current,
     teamName: team.name,
+    country: team.country || current.country,
+    teamTag: team.teamTag || "",
+    organizationRequested: Boolean(team.organizationRequested),
   };
 
   const player2 = getMemberByRole(team, "PLAYER", 1);

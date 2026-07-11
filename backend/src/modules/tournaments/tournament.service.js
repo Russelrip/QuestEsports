@@ -1001,6 +1001,9 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
 const createTournamentRegistration = async ({ body, file, user }) => {
   const { tournamentId, tournamentSlug } = getTournamentLookup(body);
   const teamName = normalizeText(body.teamName);
+  const country = normalizeText(body.country) || "Sri Lanka";
+  const teamTag = normalizeText(body.teamTag) || buildShortCode(teamName);
+  const organizationRequested = normalizeBooleanFlag(body.organizationRequested);
   const captainName = normalizeText(body.captainName);
   const captainEmail = normalizeEmail(user?.email);
   const captainPhone = normalizeText(body.captainPhone);
@@ -1015,6 +1018,9 @@ const createTournamentRegistration = async ({ body, file, user }) => {
   if (
     !captainEmail ||
     !teamName ||
+    !country ||
+    !teamTag ||
+    teamTag.length > 12 ||
     !captainName ||
     !captainPhone ||
     !captainDiscord ||
@@ -1111,6 +1117,9 @@ const createTournamentRegistration = async ({ body, file, user }) => {
                 id: registrationId,
                 tournamentId: tournament.id,
                 teamName,
+                country,
+                teamTag,
+                organizationRequested,
                 captainName,
                 captainEmail,
                 captainPhone,
@@ -1142,6 +1151,9 @@ const createTournamentRegistration = async ({ body, file, user }) => {
               registrationId,
               user,
               teamName,
+              country,
+              teamTag,
+              organizationRequested,
               logoName: persistedLogo ? persistedLogo.filename : null,
               members,
               tournamentTitle: tournament.title,

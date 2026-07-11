@@ -38,12 +38,6 @@ export default function HomeHero() {
             <Link href="/tournaments" className={buttonClassName({ size: "lg" })}>
               Explore Tournaments
             </Link>
-            <Link
-              href="/tournament-registration"
-              className={buttonClassName({ variant: "secondary", size: "lg" })}
-            >
-              Register Your Team
-            </Link>
           </div>
         </div>
       </Container>
