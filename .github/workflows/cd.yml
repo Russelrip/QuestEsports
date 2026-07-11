@@ -88,6 +88,10 @@ jobs:
             echo "For a private GitHub repository, configure a read-only deploy key on the VPS and use the repository SSH URL." >&2
             exit 1
           fi
+          if [ -n "$(git status --porcelain -- backend/node_modules)" ]; then
+            echo "Resetting generated backend dependencies left by the previous deployment."
+            git checkout HEAD -- backend/node_modules
+          fi
           git checkout --detach "$DEPLOY_SHA"
           test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
           cd backend
