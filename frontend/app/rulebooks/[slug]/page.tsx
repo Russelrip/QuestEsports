@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: RulebookPageProps) {
     const rulebook = await fetchRulebookBySlug(slug);
     return buildPageMetadata({
       title: rulebook.title,
-      description: `${rulebook.game} tournament rules for Quest Esports events.`,
+      description: `${rulebook.game} tournament rules for Quest E-sports events.`,
       path: `/rulebooks/${rulebook.slug}`,
     });
   } catch {

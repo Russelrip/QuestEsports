@@ -13,98 +13,15 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/auth";
 import { readApiResponse } from "@/lib/api";
-
-type ApplicationType = "solo_player" | "existing_team" | "incomplete_team";
-
-type RecruitmentMember = {
-  name: string;
-  ign: string;
-  nic: string;
-  discord: string;
-  email: string;
-  phone: string;
-  role: "player" | "substitute";
-};
-
-type RecruitmentFields = {
-  applicationType: ApplicationType;
-  fullName: string;
-  ign: string;
-  birthday: string;
-  gender: string;
-  phone: string;
-  discord: string;
-  games: string[];
-  otherGame: string;
-  peakAndCurrentRank: string;
-  nic: string;
-  tournamentExperience: string;
-  previouslyInOrganization: boolean;
-  previousOrganization: string;
-  canAttendLan: boolean;
-  teamName: string;
-  teamLogoUrl: string;
-  currentRosterSize: string;
-  additionalMembers: string;
-  notes: string;
-  declarationAccepted: boolean;
-};
-
-const games = [
-  "VALORANT",
-  "Mobile Legends: Bang Bang",
-  "PUBG Mobile",
-  "League of Legends",
-  "Counter-Strike 2",
-  "Dota 2",
-  "Apex Legends",
-  "Call of Duty Mobile",
-  "Free Fire",
-];
-
-const rules = [
-  "Respect all players, staff members, and community members.",
-  "Toxic behavior, harassment, discrimination, or hate speech will not be tolerated.",
-  "Maintain good sportsmanship during tournaments and community activities.",
-  "Cheating, exploiting bugs, account sharing, and unauthorized software are prohibited.",
-  "Follow tournament rules and team management decisions.",
-  "Represent Quest Esports professionally online and offline.",
-  "Attend scheduled practices, meetings, and official events whenever possible.",
-];
-
-const emptyMember = (): RecruitmentMember => ({
-  name: "",
-  ign: "",
-  nic: "",
-  discord: "",
-  email: "",
-  phone: "",
-  role: "player",
-});
-
-const initialFields: RecruitmentFields = {
-  applicationType: "solo_player",
-  fullName: "",
-  ign: "",
-  birthday: "",
-  gender: "",
-  phone: "",
-  discord: "",
-  games: [],
-  otherGame: "",
-  peakAndCurrentRank: "",
-  nic: "",
-  tournamentExperience: "",
-  previouslyInOrganization: false,
-  previousOrganization: "",
-  canAttendLan: false,
-  teamName: "",
-  teamLogoUrl: "",
-  currentRosterSize: "",
-  additionalMembers: "",
-  notes: "",
-  declarationAccepted: false,
-};
+import {
+  type ApplicationType,
+  type RecruitmentFields,
+  type RecruitmentMember,
+  createEmptyRecruitmentMember,
+  initialRecruitmentFields,
+  recruitmentGames,
+  recruitmentRules,
+} from "@/components/recruitment/recruitment-model";
 
 const checkboxClassName = "mt-1 size-4 shrink-0 accent-cyan-300";
 const choiceClassName = "flex w-fit items-start gap-3 py-2 text-sm leading-6 text-slate-300";
@@ -114,7 +31,7 @@ const yesNoChoiceClassName = "flex items-center gap-2 py-2 text-sm leading-none 
 
 export default function RecruitmentForm() {
   const { user, isLoading: authLoading } = useAuth();
-  const [fields, setFields] = useState(initialFields);
+  const [fields, setFields] = useState(initialRecruitmentFields);
   const [members, setMembers] = useState<RecruitmentMember[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -147,9 +64,9 @@ export default function RecruitmentForm() {
     updateField("applicationType", applicationType);
     setMembers(
       applicationType === "existing_team"
-        ? Array.from({ length: 4 }, emptyMember)
+        ? Array.from({ length: 4 }, createEmptyRecruitmentMember)
         : applicationType === "incomplete_team"
-          ? [emptyMember()]
+          ? [createEmptyRecruitmentMember()]
           : []
     );
   };
@@ -247,9 +164,9 @@ export default function RecruitmentForm() {
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Recruitment Open</p>
-          <h2 className="mt-3 text-3xl text-white">Quest Esports Recruitment Form</h2>
+          <h2 className="mt-3 text-3xl text-white">Quest E-sports Recruitment Form</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
-            We are recruiting individual players and existing teams across multiple esports titles.
+            We are recruiting individual players and existing teams across multiple e-sports titles.
             Applications are reviewed by management, and shortlisted applicants will be contacted.
           </p>
           <div className="mt-5 flex flex-wrap gap-3 text-sm">
@@ -297,7 +214,7 @@ export default function RecruitmentForm() {
 
               <FormField label="Games You Play" required>
                 <div className="grid gap-x-8 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {games.map((game) => (
+                  {recruitmentGames.map((game) => (
                     <label key={game} className={gameChoiceClassName}>
                       <input type="checkbox" className={gameCheckboxClassName} checked={fields.games.includes(game)} onChange={() => toggleGame(game)} />
                       <span>{game}</span>
@@ -315,7 +232,7 @@ export default function RecruitmentForm() {
                 <Textarea id="experience" rows={4} value={fields.tournamentExperience} onChange={(event) => updateField("tournamentExperience", event.target.value)} />
               </FormField>
 
-              <YesNo label="Have you previously played for an esports organization or clan?" value={fields.previouslyInOrganization} onChange={(value) => updateField("previouslyInOrganization", value)} />
+              <YesNo label="Have you previously played for an e-sports organization or clan?" value={fields.previouslyInOrganization} onChange={(value) => updateField("previouslyInOrganization", value)} />
               {fields.previouslyInOrganization ? (
                 <FormField label="Organization / Clan Name" htmlFor="previousOrganization" required>
                   <Input id="previousOrganization" required value={fields.previousOrganization} onChange={(event) => updateField("previousOrganization", event.target.value)} />
@@ -338,7 +255,7 @@ export default function RecruitmentForm() {
                 <p className="text-sm leading-7 text-slate-400">
                   {fields.applicationType === "existing_team"
                     ? "Register your complete roster with at least five active players, including the team leader above."
-                    : "Tell us about your current roster so Quest Esports can help connect you with suitable players."}
+                    : "Tell us about your current roster so Quest E-sports can help connect you with suitable players."}
                 </p>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <FormField label="Team Name" htmlFor="teamName" required>
@@ -358,7 +275,7 @@ export default function RecruitmentForm() {
                       <h3 className="text-xl text-white">Current Members</h3>
                       <p className="mt-1 text-xs text-slate-400">The team leader is already included from section 1.</p>
                     </div>
-                    <Button type="button" variant="secondary" disabled={fields.applicationType === "incomplete_team" && members.length >= 3} onClick={() => setMembers((current) => [...current, emptyMember()])}>Add Member</Button>
+                    <Button type="button" variant="secondary" disabled={fields.applicationType === "incomplete_team" && members.length >= 3} onClick={() => setMembers((current) => [...current, createEmptyRecruitmentMember()])}>Add Member</Button>
                   </div>
                   {members.map((member, index) => (
                     <MemberFields key={index} member={member} number={index + 2} canRemove={members.length > (fields.applicationType === "existing_team" ? 4 : 1)} onUpdate={(key, value) => updateMember(index, key, value)} onRemove={() => setMembers((current) => current.filter((_, memberIndex) => memberIndex !== index))} />
@@ -375,11 +292,11 @@ export default function RecruitmentForm() {
             <fieldset className="gap-6">
               <legend>3. Declaration &amp; Rules</legend>
               <ul className="grid gap-4 text-sm leading-7 text-slate-300">
-                {rules.map((rule) => <li key={rule}>{rule}</li>)}
+                {recruitmentRules.map((rule) => <li key={rule}>{rule}</li>)}
               </ul>
               <div className="grid gap-3 pt-2 text-sm leading-7 text-slate-300">
                 <h3 className="text-lg text-white">Membership Commitment</h3>
-                <p>Members are expected to remain with Quest Esports for a minimum of two years and should not represent another esports organization without prior management approval. Early departures must be discussed with management in advance.</p>
+                <p>Members are expected to remain with Quest E-sports for a minimum of two years and should not represent another e-sports organization without prior management approval. Early departures must be discussed with management in advance.</p>
               </div>
               <FormField label="Anything Else You Would Like Us to Know?" htmlFor="notes">
                 <Textarea id="notes" rows={4} value={fields.notes} onChange={(event) => updateField("notes", event.target.value)} />
@@ -387,7 +304,7 @@ export default function RecruitmentForm() {
               <div className="grid gap-5 pt-2">
                 <label className={choiceClassName}>
                   <input type="checkbox" required className={checkboxClassName} checked={fields.declarationAccepted} onChange={(event) => updateField("declarationAccepted", event.target.checked)} />
-                  <span>I confirm that I have read, understood, and agree to abide by the Quest Esports rules, regulations, and membership requirements.</span>
+                  <span>I confirm that I have read, understood, and agree to abide by the Quest E-sports rules, regulations, and membership requirements.</span>
                 </label>
                 <label className={choiceClassName}>
                   <input type="checkbox" required className={checkboxClassName} />
@@ -446,7 +363,7 @@ function WelcomeCard() {
     <Section className="pt-6">
       <Card className="p-6 sm:p-8">
         <p className="text-xs uppercase tracking-[0.28em] text-emerald-300/80">Application Submitted</p>
-        <h2 className="mt-3 text-3xl text-white">Welcome to Quest Esports LK</h2>
+        <h2 className="mt-3 text-3xl text-white">Welcome to Quest E-sports LK</h2>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300">Thank you for your application. We look forward to growing, competing, and achieving great things together. Management will contact shortlisted applicants.</p>
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <a className={buttonClassName({ variant: "secondary" })} href="https://discord.gg/pYAeWjKQn3" target="_blank" rel="noreferrer">Join Discord</a>

@@ -7,7 +7,7 @@ export const metadata = buildPageMetadata({
   description: defaultPageDescriptions.matchVideos,
   path: "/match-videos",
   keywords: [
-    "YouTube esports videos",
+    "YouTube e-sports videos",
     "tournament highlights",
     "match replays",
     "live stream archives",

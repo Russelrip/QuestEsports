@@ -7,7 +7,7 @@ export const metadata = buildPageMetadata({
   description: defaultPageDescriptions.registration,
   path: "/registration",
   keywords: [
-    "esports team registration",
+    "e-sports team registration",
     "register gaming team",
     "competitive roster signup",
     "tournament entry form",

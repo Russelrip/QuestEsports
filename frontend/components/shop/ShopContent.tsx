@@ -15,7 +15,7 @@ export default function ShopContent() {
               Quest merch is on the way.
             </h2>
             <p className="mt-5 max-w-xl text-sm leading-7 text-slate-300 sm:text-base">
-              Our first Quest Esports T-shirt drop is being prepared. Product artwork,
+              Our first Quest E-sports T-shirt drop is being prepared. Product artwork,
               sizes, pricing, and ordering details will appear here once the official
               poster is ready.
             </p>

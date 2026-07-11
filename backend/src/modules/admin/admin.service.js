@@ -1,13 +1,20 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const ExcelJS = require("exceljs");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { logger } = require("../../lib/logger");
 const { decryptSecret } = require("../../lib/secret-box");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const {
-  removeUploadFiles,
+  EXCEL_CONTENT_TYPE,
+  MAX_EXCEL_EXPORT_RECORDS,
+  assertExportRecordLimit,
+  buildExcelWorkbookBuffer,
+  buildExportFilename,
+  formatExportBoolean,
+  formatExportTimestamp,
+} = require("../../lib/excel-export");
+const {
   teamLogoDirectory,
 } = require("../../middleware/upload");
 const {
@@ -28,10 +35,6 @@ const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
 const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
 const RECRUITMENT_STATUSES = new Set(["pending", "reviewed", "accepted", "rejected"]);
-const EXCEL_CONTENT_TYPE =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const MAX_EXCEL_EXPORT_RECORDS = 5000;
-
 const USER_ROLES = new Set(["user", "admin"]);
 
 const ADMIN_USER_SELECT = {
@@ -174,72 +177,6 @@ const mapRecruitmentApplication = (application) => ({
   createdAt: application.createdAt,
   updatedAt: application.updatedAt,
 });
-
-const formatExportTimestamp = (value) => (value ? new Date(value).toISOString() : "");
-
-const formatExportBoolean = (value) =>
-  typeof value === "boolean" ? (value ? "Yes" : "No") : "";
-
-const buildExportFilename = (prefix) => {
-  const date = new Date().toISOString().slice(0, 10);
-  return `${prefix}-${date}.xlsx`;
-};
-
-const addExportWorksheet = (workbook, name, columns, rows) => {
-  const worksheet = workbook.addWorksheet(name);
-  worksheet.columns = columns;
-  worksheet.addRows(rows);
-  worksheet.views = [{ state: "frozen", ySplit: 1 }];
-  worksheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: columns.length },
-  };
-  worksheet.getRow(1).font = { bold: true };
-  worksheet.getRow(1).alignment = { vertical: "middle", wrapText: true };
-
-  columns.forEach((column, index) => {
-    const excelColumn = worksheet.getColumn(index + 1);
-    excelColumn.width = column.width || 18;
-    excelColumn.alignment = { vertical: "top", wrapText: true };
-  });
-
-  return worksheet;
-};
-
-const buildExcelWorkbookBuffer = async ({ sheets }) => {
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Quest Esports";
-  workbook.created = new Date();
-  workbook.modified = new Date();
-
-  sheets.forEach((sheet) => {
-    addExportWorksheet(workbook, sheet.name, sheet.columns, sheet.rows);
-  });
-
-  return Buffer.from(await workbook.xlsx.writeBuffer());
-};
-
-const assertExportRecordLimit = ({ records, label }) => {
-  if (records.length <= MAX_EXCEL_EXPORT_RECORDS) {
-    return;
-  }
-
-  throw new HttpError(
-    413,
-    `${label} export is limited to ${MAX_EXCEL_EXPORT_RECORDS} records. Narrow the filters and try again.`
-  );
-};
-
-const cleanupUploadsQuietly = async (uploads, context = {}) => {
-  try {
-    await removeUploadFiles(uploads);
-  } catch (error) {
-    logger.warn("Failed to remove stale upload file.", {
-      ...context,
-      error,
-    });
-  }
-};
 
 const buildRegistrationWhere = ({
   search,
@@ -1039,7 +976,7 @@ const deleteTeamRegistration = async (registrationId) => {
     throw new HttpError(404, "Team registration not found.");
   }
 
-  await cleanupUploadsQuietly(
+  await removeUploadsQuietly(
     registration.teamLogoName
       ? [
           {

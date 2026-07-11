@@ -107,7 +107,7 @@ const loadAuthService = ({ challengeUpdateCount = 1, backupUpdateCount = 1 } = {
     },
     [envModulePath]: {
       env: {
-        MFA_ISSUER: "Quest Esports",
+        MFA_ISSUER: "Quest E-sports",
       },
     },
     [verificationEmailModulePath]: {

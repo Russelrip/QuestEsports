@@ -27,7 +27,7 @@ const processQueuedMailJob = async (payload = {}) => {
     case EMAIL_TEMPLATE_TYPES.verification:
       return sendMail({
         email: payload.email,
-        subject: "Verify your Quest Esports account",
+        subject: "Verify your Quest E-sports account",
         skippedLogMessage: "Verification email skipped because SMTP is not configured.",
         templateBuilder: () =>
           buildVerificationEmail({
@@ -38,7 +38,7 @@ const processQueuedMailJob = async (payload = {}) => {
     case EMAIL_TEMPLATE_TYPES.resetPassword:
       return sendMail({
         email: payload.email,
-        subject: "Reset your Quest Esports password",
+        subject: "Reset your Quest E-sports password",
         skippedLogMessage:
           "Password reset email skipped because SMTP is not configured.",
         templateBuilder: () =>
@@ -50,7 +50,7 @@ const processQueuedMailJob = async (payload = {}) => {
     case EMAIL_TEMPLATE_TYPES.emailChange:
       return sendMail({
         email: payload.email,
-        subject: "Confirm your new Quest Esports email",
+        subject: "Confirm your new Quest E-sports email",
         skippedLogMessage:
           "Email change confirmation skipped because SMTP is not configured.",
         templateBuilder: () =>
@@ -63,7 +63,7 @@ const processQueuedMailJob = async (payload = {}) => {
     case EMAIL_TEMPLATE_TYPES.teamInvite:
       return sendMail({
         email: payload.email,
-        subject: "Quest Esports team invitation",
+        subject: "Quest E-sports team invitation",
         skippedLogMessage:
           "Team invitation email skipped because SMTP is not configured.",
         templateBuilder: () =>

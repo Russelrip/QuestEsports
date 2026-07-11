@@ -19,7 +19,7 @@ const registerProcessDiagnostics = () => {
   });
 
   process.on("uncaughtException", (error) => {
-    logger.error("Uncaught exception crashed Quest Esports API", { error });
+    logger.error("Uncaught exception crashed Quest E-sports API", { error });
     process.exit(1);
   });
 
@@ -34,7 +34,7 @@ const shutdown = async (signal) => {
   }
 
   isShuttingDown = true;
-  logger.info("Shutting down Quest Esports API", { signal });
+  logger.info("Shutting down Quest E-sports API", { signal });
 
   if (!server || !isServerListening || !server.listening) {
     await stopJobWorker();
@@ -69,7 +69,7 @@ const start = async () => {
 
   server.on("listening", () => {
     isServerListening = true;
-    logger.info("Quest Esports API started", {
+    logger.info("Quest E-sports API started", {
       port: env.PORT,
       nodeEnv: env.NODE_ENV,
     });
@@ -97,7 +97,7 @@ const start = async () => {
 };
 
 start().catch(async (error) => {
-  logger.error("Failed to start Quest Esports API", { error });
+  logger.error("Failed to start Quest E-sports API", { error });
   await closeDatabase();
   process.exit(1);
 });

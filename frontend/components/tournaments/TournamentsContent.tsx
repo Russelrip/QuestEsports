@@ -176,7 +176,7 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
             ))}
           </div>
         ) : (
-          <EmptyState description="Completed tournaments will appear here once Quest Esports publishes the showcase assets." />
+          <EmptyState description="Completed tournaments will appear here once Quest E-sports publishes the showcase assets." />
         )}
       </div>
     </Section>

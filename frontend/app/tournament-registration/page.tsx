@@ -13,7 +13,7 @@ export const metadata = buildPageMetadata({
   keywords: [
     "tournament registration form",
     "register team valorant",
-    "esports sign up",
+    "e-sports sign up",
     "team roster submission",
   ],
 });

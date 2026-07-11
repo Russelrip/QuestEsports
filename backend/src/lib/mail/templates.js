@@ -10,7 +10,7 @@ const renderEmailLayout = ({ title, intro, actionLabel, actionUrl, outro }) => (
   html: `
     <div style="background:#090313;padding:32px 16px;font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#f5f3ff;">
       <div style="max-width:640px;margin:0 auto;background:linear-gradient(180deg,#140a27,#0e061c);border:1px solid rgba(192,132,252,0.25);border-radius:20px;padding:32px;box-shadow:0 18px 40px rgba(0,0,0,0.28);">
-        <p style="margin:0 0 12px;font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#c4b5fd;">Quest Esports</p>
+        <p style="margin:0 0 12px;font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#c4b5fd;">Quest E-sports</p>
         <h1 style="margin:0 0 16px;font-size:28px;line-height:1.2;color:#ffffff;">${escapeHtml(title)}</h1>
         <p style="margin:0 0 24px;font-size:16px;line-height:1.7;color:#ddd6fe;">${escapeHtml(intro)}</p>
         ${
@@ -37,10 +37,10 @@ const buildGreeting = (firstName, message) =>
 
 const buildVerificationEmail = ({ firstName, verificationUrl }) =>
   renderEmailLayout({
-    title: "Verify your Quest Esports account",
+    title: "Verify your Quest E-sports account",
     intro: buildGreeting(
       firstName,
-      "confirm your email address to finish setting up your Quest Esports account."
+      "confirm your email address to finish setting up your Quest E-sports account."
     ),
     actionLabel: "Verify Email",
     actionUrl: verificationUrl,
@@ -50,7 +50,7 @@ const buildVerificationEmail = ({ firstName, verificationUrl }) =>
 
 const buildResetPasswordEmail = ({ firstName, resetUrl }) =>
   renderEmailLayout({
-    title: "Reset your Quest Esports password",
+    title: "Reset your Quest E-sports password",
     intro: buildGreeting(
       firstName,
       "we received a request to reset your password."
@@ -63,10 +63,10 @@ const buildResetPasswordEmail = ({ firstName, resetUrl }) =>
 
 const buildEmailChangeEmail = ({ firstName, nextEmail, confirmUrl }) =>
   renderEmailLayout({
-    title: "Confirm your new Quest Esports email",
+    title: "Confirm your new Quest E-sports email",
     intro: buildGreeting(
       firstName,
-      `confirm ${nextEmail} as the new email address for your Quest Esports account.`
+      `confirm ${nextEmail} as the new email address for your Quest E-sports account.`
     ),
     actionLabel: "Confirm New Email",
     actionUrl: confirmUrl,
@@ -82,7 +82,7 @@ const buildTeamInviteEmail = ({
   inviteUrl,
 }) =>
   renderEmailLayout({
-    title: "Confirm your Quest Esports team invite",
+    title: "Confirm your Quest E-sports team invite",
     intro: buildGreeting(
       recipientName,
       `you have been invited by ${captainName} to join ${teamName}${

@@ -7,7 +7,7 @@ const sections = [
   {
     title: "1. Introduction",
     content: [
-      "Quest Esports reserves the right to amend rules, schedules, or formats whenever necessary in order to preserve fair competition, tournament integrity, and player safety.",
+      "Quest E-sports reserves the right to amend rules, schedules, or formats whenever necessary in order to preserve fair competition, tournament integrity, and player safety.",
     ],
   },
   {
@@ -18,10 +18,10 @@ const sections = [
         items: [
           "All players must register and compete using their own valid Riot ID.",
           "Using another player's account, fake information, or false identity is strictly prohibited.",
-          "Quest Esports may request identity verification using NIC, passport, student ID, or equivalent documents.",
+          "Quest E-sports may request identity verification using NIC, passport, student ID, or equivalent documents.",
           "Failure or refusal to provide verification may result in immediate disqualification.",
           "Team rosters become locked once the team has played its first official match.",
-          "No roster changes are allowed after the first official match unless Quest Esports approves an exceptional case.",
+          "No roster changes are allowed after the first official match unless Quest E-sports approves an exceptional case.",
           "Team names, player names, logos, and profile images must not contain offensive, obscene, or discriminatory content.",
         ],
       },
@@ -176,7 +176,7 @@ export default function RulebookContent() {
                   "All players must be Sri Lankan citizens or residents.",
                   "Minimum age is 10 years, and parental consent is required for players under 16.",
                   "Riot ID must match the registration details.",
-                  "Quest Esports may request official ID for verification.",
+                  "Quest E-sports may request official ID for verification.",
                 ],
               },
               {

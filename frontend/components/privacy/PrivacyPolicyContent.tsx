@@ -6,7 +6,7 @@ const policySections = [
   {
     title: "1. Scope",
     paragraphs: [
-      "This Privacy Policy explains how Quest Esports collects, uses, stores, and shares personal information when you use questesports.lk, create an account, contact us, register for tournaments, or interact with our services.",
+      "This Privacy Policy explains how Quest E-sports collects, uses, stores, and shares personal information when you use questesports.lk, create an account, contact us, register for tournaments, or interact with our services.",
       "By using the website, you agree to the handling of information described here. If you do not agree, please do not use the services.",
     ],
   },
@@ -24,7 +24,7 @@ const policySections = [
   {
     title: "3. Information From Social Login Providers",
     paragraphs: [
-      "If you choose Google or Discord sign-in, we receive limited account information from that provider, such as your email address, provider user ID, display name details, and in some cases Discord identity details. We use that information only to authenticate you and create or connect your Quest Esports account.",
+      "If you choose Google or Discord sign-in, we receive limited account information from that provider, such as your email address, provider user ID, display name details, and in some cases Discord identity details. We use that information only to authenticate you and create or connect your Quest E-sports account.",
       "We do not control how Google or Discord use your information on their own platforms. Please review their privacy policies for more information.",
     ],
   },
@@ -37,20 +37,20 @@ const policySections = [
       "To send account-related emails such as verification, password reset, security alerts, and invite notifications.",
       "To maintain platform security, prevent abuse, investigate suspicious activity, and enforce our rules.",
       "To understand website performance and improve the user experience.",
-      "To comply with legal obligations and protect Quest Esports, participants, and the community.",
+      "To comply with legal obligations and protect Quest E-sports, participants, and the community.",
     ],
   },
   {
     title: "5. Legal Bases",
     paragraphs: [
-      "Where applicable law requires a legal basis for processing, Quest Esports relies on grounds such as consent, performance of a contract, legitimate interests, legal obligations, and protection of vital interests.",
+      "Where applicable law requires a legal basis for processing, Quest E-sports relies on grounds such as consent, performance of a contract, legitimate interests, legal obligations, and protection of vital interests.",
       "Our legitimate interests include operating tournaments fairly, securing the platform, preventing fraud or misuse, and improving reliability and user experience.",
     ],
   },
   {
     title: "6. Cookies and Tracking Technologies",
     paragraphs: [
-      "Quest Esports uses cookies or similar technologies that are necessary to keep you signed in, remember sessions, protect account security, and support basic site functionality.",
+      "Quest E-sports uses cookies or similar technologies that are necessary to keep you signed in, remember sessions, protect account security, and support basic site functionality.",
       "We may also use analytics and performance tools to understand traffic, reliability, and usage trends. We do not state in this policy that we sell personal information or run third-party behavioural advertising.",
     ],
   },
@@ -70,14 +70,14 @@ const policySections = [
   {
     title: "8. Public and Community-Facing Content",
     paragraphs: [
-      "Some tournament-related information may be displayed publicly or shared within the Quest Esports community when needed for event operations or promotion. This can include team names, tournament placements, posters, brackets, and other event-related content that you submit or participate in.",
+      "Some tournament-related information may be displayed publicly or shared within the Quest E-sports community when needed for event operations or promotion. This can include team names, tournament placements, posters, brackets, and other event-related content that you submit or participate in.",
       "This policy does not state that all users can freely browse broad public profile data or social-network activity feeds, because that would overstate how the current platform works.",
     ],
   },
   {
     title: "9. International Transfers",
     paragraphs: [
-      "Quest Esports may store or process information in countries other than your own because our service providers, hosting providers, analytics providers, email delivery providers, and authentication providers may operate internationally.",
+      "Quest E-sports may store or process information in countries other than your own because our service providers, hosting providers, analytics providers, email delivery providers, and authentication providers may operate internationally.",
       "Where required, we take reasonable steps to protect personal information when international transfers occur.",
     ],
   },
@@ -98,7 +98,7 @@ const policySections = [
   {
     title: "12. Children and Young Players",
     paragraphs: [
-      "Quest Esports may host tournaments involving younger players. If you are under the age required to consent under applicable law, please use the service with the involvement of a parent or guardian.",
+      "Quest E-sports may host tournaments involving younger players. If you are under the age required to consent under applicable law, please use the service with the involvement of a parent or guardian.",
       "Where tournament rules require parental consent or age-related verification, those requirements still apply.",
     ],
   },
@@ -114,7 +114,7 @@ const policySections = [
   {
     title: "14. Requests and Appeals",
     paragraphs: [
-      "You can contact Quest Esports through the contact form or by email to make privacy-related requests. We may need to verify your identity before acting on a request.",
+      "You can contact Quest E-sports through the contact form or by email to make privacy-related requests. We may need to verify your identity before acting on a request.",
       "If applicable law gives you a right to appeal a privacy-request decision, you may contact us at questesports.lk@gmail.com and clearly state that your message is an appeal.",
     ],
   },
@@ -134,7 +134,7 @@ export default function PrivacyPolicyContent() {
           <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Last Updated</p>
           <h2 className="mt-3 text-3xl text-white">June 6, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
-            This policy applies to the Quest Esports website at <span className="text-white">questesports.lk</span> and related
+            This policy applies to the Quest E-sports website at <span className="text-white">questesports.lk</span> and related
             tournament and account services.
           </p>
         </Card>

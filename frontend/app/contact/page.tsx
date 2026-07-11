@@ -5,11 +5,11 @@ import { Section } from "@/components/ui/section";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 
 export const metadata = buildPageMetadata({
-  title: "Contact Quest Esports",
+  title: "Contact Quest E-sports",
   description: defaultPageDescriptions.contact,
   path: "/contact",
   keywords: [
-    "contact esports organizer",
+    "contact e-sports organizer",
     "gaming sponsorship inquiry",
     "tournament support",
     "creator collaboration",

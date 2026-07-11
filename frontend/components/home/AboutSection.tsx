@@ -10,7 +10,7 @@ export default function AboutSection() {
           <h2 className="mt-4 text-3xl text-white sm:text-4xl">A tournament brand, not just a bracket page.</h2>
         </div>
         <p className="text-sm leading-7 text-slate-300 sm:text-base">
-          Quest Esports is focused on competitive gaming experiences that feel organized, credible, and exciting from the first announcement through the final highlight reel. The platform supports real tournament operations, community growth, and the media layer that keeps players engaged between events.
+          Quest E-sports is focused on competitive gaming experiences that feel organized, credible, and exciting from the first announcement through the final highlight reel. The platform supports real tournament operations, community growth, and the media layer that keeps players engaged between events.
         </p>
       </Card>
     </Section>

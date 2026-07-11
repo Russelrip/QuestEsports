@@ -3,10 +3,10 @@ import { absoluteUrl } from "@/lib/site";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Quest Esports LK",
-    short_name: "Quest Esports",
+    name: "Quest E-sports LK",
+    short_name: "Quest E-sports",
     description:
-      "Sri Lankan esports tournaments, livestreams, event photos, and competitive gaming events from Quest Esports.",
+      "Sri Lankan e-sports tournaments, livestreams, event photos, and competitive gaming events from Quest E-sports.",
     start_url: "/",
     scope: "/",
     display: "standalone",

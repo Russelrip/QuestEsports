@@ -28,7 +28,7 @@ export default function HomeHero() {
       <Container className="relative z-10 flex flex-1 items-end pb-14 pt-20 sm:pb-16 sm:pt-24 lg:items-center lg:pb-20">
         <div className="max-w-3xl">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-100 drop-shadow-[0_2px_10px_rgba(0,0,0,0.75)]">
-            Sri Lanka Esports Community
+            Sri Lanka E-sports Community
           </p>
           <h1 className="mt-8 max-w-full leading-[0.95] text-white drop-shadow-[0_8px_24px_rgba(0,0,0,0.85)]">
             <span className="block text-3xl sm:text-4xl lg:text-5xl">Welcome to</span>

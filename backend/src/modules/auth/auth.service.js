@@ -766,10 +766,10 @@ const confirmMfaSetup = async ({ currentUser, body }) => {
 
   await sendSecurityAlert({
     user: result.user,
-    subject: "Quest Esports MFA enabled",
+    subject: "Quest E-sports MFA enabled",
     title: "Multi-factor authentication enabled",
     message:
-      "multi-factor authentication has been enabled on your Quest Esports account.",
+      "multi-factor authentication has been enabled on your Quest E-sports account.",
     outro:
       "If you did not enable MFA, change your password immediately and contact support.",
   });
@@ -864,10 +864,10 @@ const disableMfa = async ({ currentUser, body }) => {
 
   await sendSecurityAlert({
     user: updatedUser,
-    subject: "Quest Esports MFA disabled",
+    subject: "Quest E-sports MFA disabled",
     title: "Multi-factor authentication disabled",
     message:
-      "multi-factor authentication has been removed from your Quest Esports account.",
+      "multi-factor authentication has been removed from your Quest E-sports account.",
   });
 
   return mapUserForResponse(updatedUser);
@@ -897,10 +897,10 @@ const regenerateBackupCodes = async ({ currentUser, body }) => {
 
   await sendSecurityAlert({
     user,
-    subject: "Quest Esports backup codes regenerated",
+    subject: "Quest E-sports backup codes regenerated",
     title: "Backup codes regenerated",
     message:
-      "your Quest Esports backup codes were regenerated. Your previous backup codes no longer work.",
+      "your Quest E-sports backup codes were regenerated. Your previous backup codes no longer work.",
   });
 
   return backupCodes;
@@ -1222,10 +1222,10 @@ const confirmEmailChange = async ({ token }) => {
 
     await sendSecurityAlert({
       user,
-      subject: "Quest Esports email address changed",
+      subject: "Quest E-sports email address changed",
       title: "Email address changed",
       message:
-        "the email address on your Quest Esports account was updated successfully.",
+        "the email address on your Quest E-sports account was updated successfully.",
     });
 
     return mapUserForResponse(user);
@@ -1306,10 +1306,10 @@ const resetPassword = async ({ body }) => {
   if (user) {
     await sendSecurityAlert({
       user,
-      subject: "Quest Esports password reset completed",
+      subject: "Quest E-sports password reset completed",
       title: "Password reset completed",
       message:
-        "your Quest Esports password was reset and all active sessions were signed out.",
+        "your Quest E-sports password was reset and all active sessions were signed out.",
     });
   }
 };
@@ -1364,10 +1364,10 @@ const changePassword = async ({ currentUser, body, currentSessionId }) => {
 
   await sendSecurityAlert({
     user: updatedUser,
-    subject: "Quest Esports password changed",
+    subject: "Quest E-sports password changed",
     title: "Password changed",
     message:
-      "your Quest Esports password was changed and other active sessions were signed out.",
+      "your Quest E-sports password was changed and other active sessions were signed out.",
   });
 
   return mapUserForResponse(updatedUser);

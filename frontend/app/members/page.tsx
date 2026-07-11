@@ -8,9 +8,9 @@ export const metadata = buildPageMetadata({
   description: defaultPageDescriptions.members,
   path: "/members",
   keywords: [
-    "Quest Esports team",
-    "Quest Esports members",
-    "Sri Lanka esports organizers",
+    "Quest E-sports team",
+    "Quest E-sports members",
+    "Sri Lanka e-sports organizers",
   ],
 });
 

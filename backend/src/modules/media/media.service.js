@@ -3,11 +3,10 @@ const path = require("path");
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { logger } = require("../../lib/logger");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const {
   detectImageType,
   persistPosterImageUpload,
-  removeUploadFiles,
   posterImageDirectory,
 } = require("../../middleware/upload");
 const { normalizeText } = require("../../lib/validation");
@@ -185,17 +184,6 @@ const readStoredImageAsset = async (asset) => {
   }
 };
 
-const cleanupUploadsQuietly = async (uploads, context = {}) => {
-  try {
-    await removeUploadFiles(uploads);
-  } catch (error) {
-    logger.warn("Failed to remove stale upload file.", {
-      ...context,
-      error,
-    });
-  }
-};
-
 const getBinaryImageAsset = async (asset) => {
   const storedImage = await readStoredImageAsset(asset);
 
@@ -262,7 +250,7 @@ const createImageAssets = async ({ body, files }) => {
       )
     );
   } catch (error) {
-    await cleanupUploadsQuietly(
+    await removeUploadsQuietly(
       persistedFiles.map(({ persistedImage }) => ({
         directory: posterImageDirectory,
         filename: persistedImage.filename,

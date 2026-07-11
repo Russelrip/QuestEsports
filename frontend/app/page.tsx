@@ -17,9 +17,9 @@ export const metadata = buildPageMetadata({
   description: defaultPageDescriptions.home,
   path: "/",
   keywords: [
-    "esports Sri Lanka home",
+    "e-sports Sri Lanka home",
     "gaming tournaments Sri Lanka",
-    "Quest Esports community",
+    "Quest E-sports community",
     "VALORANT events",
   ],
 });

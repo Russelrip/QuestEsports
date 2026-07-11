@@ -10,7 +10,7 @@ export const metadata = buildPageMetadata({
   description: defaultPageDescriptions.tournaments,
   path: "/tournaments",
   keywords: [
-    "upcoming esports tournaments",
+    "upcoming e-sports tournaments",
     "VALORANT events Sri Lanka",
     "gaming brackets",
     "register team tournament",

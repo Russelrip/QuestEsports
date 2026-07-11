@@ -78,7 +78,7 @@ export default async function FeaturedTournaments() {
           <Card className="p-8 lg:col-span-3">
             <h3 className="text-2xl text-white">More events are on the way.</h3>
             <p className="mt-3 max-w-2xl text-sm text-slate-400">
-              Quest Esports is preparing the next tournament cycle. Check the full listing for announcements and registration windows.
+              Quest E-sports is preparing the next tournament cycle. Check the full listing for announcements and registration windows.
             </p>
             <div className="mt-6">
               <Link href="/tournaments" className={buttonClassName({})}>

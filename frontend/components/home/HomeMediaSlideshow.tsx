@@ -7,13 +7,13 @@ import { cn } from "@/lib/utils";
 const slides = [
   {
     src: "/images/hero-bg.jpg",
-    alt: "Quest Esports event atmosphere",
+    alt: "Quest E-sports event atmosphere",
     label: "Match Moments",
     title: "Spectra matches and face-cam highlights",
   },
   {
     src: "/images/banner.jpg",
-    alt: "Quest Esports banner",
+    alt: "Quest E-sports banner",
     label: "Quest Events",
     title: "Competition, community, and tournament stories",
   },

@@ -7,8 +7,8 @@ export const metadata = buildPageMetadata({
   description: defaultPageDescriptions.join,
   path: "/join",
   keywords: [
-    "join Quest Esports",
-    "esports recruitment Sri Lanka",
+    "join Quest E-sports",
+    "e-sports recruitment Sri Lanka",
     "find Valorant teammates Sri Lanka",
   ],
 });

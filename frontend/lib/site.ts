@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import type { Tournament } from "@/lib/tournaments";
 
-const siteName = "Quest Esports";
-const siteTitle = "Quest Esports LK";
+const siteName = "Quest E-sports";
+const siteTitle = "Quest E-sports LK";
 const siteDescription =
-  "Quest Esports runs Sri Lankan esports tournaments, match broadcasts, event galleries, and community events built for competitive players and gaming fans.";
+  "Quest E-sports runs Sri Lankan e-sports tournaments, match broadcasts, event galleries, and community events built for competitive players and gaming fans.";
 const fallbackSiteUrl =
   process.env.NODE_ENV === "production" ? "https://questesports.lk" : "http://localhost:3000";
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || fallbackSiteUrl;
@@ -13,45 +13,45 @@ const defaultLocale = "en_US";
 const defaultSocialImage = "/images/banner.jpg";
 
 const defaultKeywords = [
-  "Quest Esports",
-  "Quest Esports LK",
-  "Sri Lanka esports",
+  "Quest E-sports",
+  "Quest E-sports LK",
+  "Sri Lanka e-sports",
   "Sri Lankan gaming tournaments",
-  "esports tournaments",
+  "e-sports tournaments",
   "VALORANT tournament",
   "gaming community Sri Lanka",
   "competitive gaming",
   "match livestreams",
-  "esports event gallery",
+  "e-sports event gallery",
 ];
 
 const channelKeywords = {
   youtube: [
     "YouTube gaming",
-    "esports highlights",
+    "e-sports highlights",
     "match replays",
     "live stream tournament",
   ],
   instagram: [
     "Instagram gaming content",
-    "esports reels",
+    "e-sports reels",
     "gaming highlights",
     "community updates",
   ],
   tiktok: [
     "TikTok gaming",
-    "short-form esports clips",
+    "short-form e-sports clips",
     "gaming edits",
-    "viral esports moments",
+    "viral e-sports moments",
   ],
   linkedin: [
-    "esports brand",
+    "e-sports brand",
     "gaming events",
     "community partnerships",
     "creator collaborations",
   ],
   appStores: [
-    "mobile esports",
+    "mobile e-sports",
     "tournament registration",
     "gaming event updates",
     "player community",
@@ -68,7 +68,7 @@ const defaultOpenGraphImage = {
 export const siteMetadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: `${siteTitle} | Sri Lanka Esports Tournaments & Match Highlights`,
+    default: `${siteTitle} | Sri Lanka E-sports Tournaments & Match Highlights`,
     template: `%s | ${siteTitle}`,
   },
   description: siteDescription,
@@ -85,12 +85,12 @@ export const siteMetadata: Metadata = {
     canonical: "/",
   },
   category: "gaming",
-  classification: "Esports and gaming community",
+  classification: "E-sports and gaming community",
   openGraph: {
     type: "website",
     locale: defaultLocale,
     url: siteUrl,
-    title: `${siteTitle} | Sri Lanka Esports Tournaments & Match Highlights`,
+    title: `${siteTitle} | Sri Lanka E-sports Tournaments & Match Highlights`,
     description: siteDescription,
     siteName: siteName,
     images: [defaultOpenGraphImage],
@@ -98,7 +98,7 @@ export const siteMetadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     creator: creatorHandle,
-    title: `${siteTitle} | Sri Lanka Esports Tournaments & Match Highlights`,
+    title: `${siteTitle} | Sri Lanka E-sports Tournaments & Match Highlights`,
     description: siteDescription,
     images: [defaultSocialImage],
   },
@@ -219,8 +219,8 @@ export const buildTournamentMetadata = (tournament: Tournament): Metadata => {
     tournament.title,
     tournament.game,
     `${tournament.game} tournament`,
-    `${tournament.game} esports`,
-    "esports event",
+    `${tournament.game} e-sports`,
+    "e-sports event",
     "team registration",
     tournament.status.replace(/_/g, " "),
     tournament.format,
@@ -268,7 +268,7 @@ export const organizationStructuredData = {
   ],
   areaServed: "LK",
   knowsAbout: [
-    "Esports tournaments",
+    "E-sports tournaments",
     "VALORANT competitions",
     "YouTube livestreams",
     "Gaming community events",
@@ -299,7 +299,7 @@ export const buildTournamentStructuredData = (tournament: Tournament) => ({
   description:
     tournament.shortDescription ||
     tournament.fullDescription ||
-    "Quest Esports tournament event page.",
+    "Quest E-sports tournament event page.",
   image: absoluteUrl(tournament.bannerUrl || defaultSocialImage),
   url: absoluteUrl(`/tournaments/${tournament.slug}`),
   eventStatus: `https://schema.org/${
@@ -366,7 +366,7 @@ export const authNavItems = [
 export const socialLinks = [
   {
     href: "https://chat.whatsapp.com/G8XZXgYC4Ep1VYw1Zg5PIf",
-    label: "Quest Esports WhatsApp Community",
+    label: "Quest E-sports WhatsApp Community",
     icon: "/images/whatsapp.png",
   },
   {
@@ -376,7 +376,7 @@ export const socialLinks = [
   },
   {
     href: "mailto:questesports.lk@gmail.com",
-    label: "Email Quest Esports",
+    label: "Email Quest E-sports",
     icon: "/images/gmail.png",
   },
   {
@@ -396,7 +396,7 @@ export const socialLinks = [
   },
   {
     href: "https://www.tiktok.com/@questesportslk",
-    label: "Quest Esports on TikTok",
+    label: "Quest E-sports on TikTok",
     icon: "/images/tiktok.png",
   },
 ] as const;
@@ -411,7 +411,7 @@ export const contactLinks = [
         icon: "/images/gmail.png",
       },
       {
-        label: "Quest Esports Discord",
+        label: "Quest E-sports Discord",
         href: "https://discord.gg/cxkM7dk9CM",
         icon: "/images/discord.png",
       },
@@ -431,7 +431,7 @@ export const contactLinks = [
         icon: "/images/tiktok.png",
       },
       {
-        label: "Quest Esports TikTok (@questesportslk)",
+        label: "Quest E-sports TikTok (@questesportslk)",
         href: "https://www.tiktok.com/@questesportslk",
         icon: "/images/tiktok.png",
       },
@@ -445,7 +445,7 @@ export const whatsappContacts = [
 ] as const;
 
 export const whatsappCommunityLink = {
-  label: "Join the Quest Esports WhatsApp Community",
+  label: "Join the Quest E-sports WhatsApp Community",
   href: "https://chat.whatsapp.com/G8XZXgYC4Ep1VYw1Zg5PIf",
 } as const;
 
@@ -474,35 +474,35 @@ export const teamMembers = [
 
 export const defaultPageDescriptions = {
   home: siteDescription,
-  tournaments: "Discover upcoming Quest Esports tournaments, prize pools, registration windows, and featured competitive gaming events.",
+  tournaments: "Discover upcoming Quest E-sports tournaments, prize pools, registration windows, and featured competitive gaming events.",
   tournamentRegistration:
-    "Register your team for Quest Esports events with player details, roster info, and tournament-ready submissions.",
+    "Register your team for Quest E-sports events with player details, roster info, and tournament-ready submissions.",
   registration:
-    "Join the Quest Esports community and submit your team for competitive gaming events and upcoming tournaments.",
-  login: "Access your Quest Esports account to manage registrations, profiles, and tournament participation.",
+    "Join the Quest E-sports community and submit your team for competitive gaming events and upcoming tournaments.",
+  login: "Access your Quest E-sports account to manage registrations, profiles, and tournament participation.",
   signup:
-    "Create a Quest Esports account to join tournaments, follow events, and stay ready for upcoming competitions.",
+    "Create a Quest E-sports account to join tournaments, follow events, and stay ready for upcoming competitions.",
   profile: "View your account details and update your player profile.",
-  admin: "Review user activity and monitor Quest Esports account data.",
-  adminUsers: "Create, update, and manage Quest Esports user accounts and admin access.",
-  adminTournaments: "Create, publish, edit, and manage Quest Esports tournaments.",
+  admin: "Review user activity and monitor Quest E-sports account data.",
+  adminUsers: "Create, update, and manage Quest E-sports user accounts and admin access.",
+  adminTournaments: "Create, publish, edit, and manage Quest E-sports tournaments.",
   adminRegistrations: "Review registrations, approvals, payments, and verification states.",
   adminContactMessages: "Read and manage incoming contact messages from the website.",
   matchVideos:
-    "Watch official Quest Esports tournament broadcasts, YouTube match replays, highlights, and livestream archives.",
+    "Watch official Quest E-sports tournament broadcasts, YouTube match replays, highlights, and livestream archives.",
   gallery:
-    "Browse Quest Esports event photos, tournament highlights, promotional artwork, and community moments.",
+    "Browse Quest E-sports event photos, tournament highlights, promotional artwork, and community moments.",
   shop:
-    "Discover upcoming Quest Esports merchandise, apparel, and community drops.",
-  members: "Quest Esports members and community leadership.",
+    "Discover upcoming Quest E-sports merchandise, apparel, and community drops.",
+  members: "Quest E-sports members and community leadership.",
   join:
-    "Apply to join Quest Esports as a solo player, existing team, or incomplete roster looking for teammates.",
+    "Apply to join Quest E-sports as a solo player, existing team, or incomplete roster looking for teammates.",
   rulebook:
-    "Read the official Quest Esports VALORANT tournament rules, eligibility guidelines, and match conduct standards.",
+    "Read the official Quest E-sports VALORANT tournament rules, eligibility guidelines, and match conduct standards.",
   contact:
-    "Contact Quest Esports for tournament inquiries, sponsorship conversations, community support, and collaboration requests.",
+    "Contact Quest E-sports for tournament inquiries, sponsorship conversations, community support, and collaboration requests.",
   termsOfService:
-    "Read the terms that govern use of Quest Esports accounts, tournaments, content submissions, and platform services.",
+    "Read the terms that govern use of Quest E-sports accounts, tournaments, content submissions, and platform services.",
   privacyPolicy:
-    "Read how Quest Esports collects, uses, stores, and protects personal information across accounts, tournament registration, and support flows.",
+    "Read how Quest E-sports collects, uses, stores, and protects personal information across accounts, tournament registration, and support flows.",
 } as const;

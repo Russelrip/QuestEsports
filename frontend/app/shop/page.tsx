@@ -7,8 +7,8 @@ export const metadata = buildPageMetadata({
   description: defaultPageDescriptions.shop,
   path: "/shop",
   keywords: [
-    "Quest Esports merch",
-    "esports T-shirts Sri Lanka",
+    "Quest E-sports merch",
+    "e-sports T-shirts Sri Lanka",
     "gaming apparel Sri Lanka",
   ],
 });

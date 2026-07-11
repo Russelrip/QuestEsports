@@ -80,7 +80,7 @@ const registrationRequestBody = {
 const openApiDocument = {
   openapi: "3.1.0",
   info: {
-    title: "Quest Esports API",
+    title: "Quest E-sports API",
     version: "1.0.0",
     description:
       "Core contracts for auth, tournaments, registrations, and admin workflows.",

@@ -202,7 +202,7 @@ export default function MfaSettingsPanel() {
                       bgColor="#ffffff"
                       fgColor="#111827"
                       includeMargin
-                      title="Quest Esports MFA setup QR code"
+                      title="Quest E-sports MFA setup QR code"
                     />
                   </div>
                 </div>

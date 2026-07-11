@@ -91,7 +91,7 @@ const env = {
     process.env.REMEMBER_ME_SESSION_TTL_DAYS,
     30
   ),
-  MFA_ISSUER: optional("MFA_ISSUER", "Quest Esports"),
+  MFA_ISSUER: optional("MFA_ISSUER", "Quest E-sports"),
   AUTH_ENCRYPTION_KEY: optional("AUTH_ENCRYPTION_KEY"),
   TRUST_PROXY: normalizeTrustProxy(process.env.TRUST_PROXY),
   REQUIRE_API_ORIGIN: normalizeBoolean(process.env.REQUIRE_API_ORIGIN, false),

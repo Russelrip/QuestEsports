@@ -76,7 +76,7 @@ export default function ResetPasswordForm() {
   return (
     <AuthPanel
       title="Reset Password"
-      description="Choose a new password to regain access to your Quest Esports account."
+      description="Choose a new password to regain access to your Quest E-sports account."
     >
       {!token ? (
         <div className="rounded-[24px] border border-amber-300/20 bg-amber-400/8 p-5">

@@ -117,7 +117,7 @@ export default function SignupForm() {
 
   return (
     <AuthPanel
-      title="Join Quest Esports"
+      title="Join Quest E-sports"
       description="Create your gaming account to register teams, manage invites, and stay ready for upcoming events."
     >
       <form className="grid gap-5" onSubmit={onSubmit}>

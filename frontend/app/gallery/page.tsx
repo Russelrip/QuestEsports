@@ -8,8 +8,8 @@ export const metadata = buildPageMetadata({
   description: defaultPageDescriptions.gallery,
   path: "/gallery",
   keywords: [
-    "Quest Esports event photos",
-    "Sri Lanka esports gallery",
+    "Quest E-sports event photos",
+    "Sri Lanka e-sports gallery",
     "tournament highlights",
     "gaming event photography",
   ],

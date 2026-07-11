@@ -19,7 +19,7 @@ const app = express();
 
 const buildHealthPayload = () => ({
   success: true,
-  message: "Quest Esports API is healthy.",
+  message: "Quest E-sports API is healthy.",
   timestamp: new Date().toISOString(),
   monitoring: monitoringStatus(),
 });

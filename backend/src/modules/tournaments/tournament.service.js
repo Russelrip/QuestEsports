@@ -4,12 +4,11 @@ const readXlsxFile = require("read-excel-file/node");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { logger } = require("../../lib/logger");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const {
   persistTeamLogoUpload,
   persistTournamentBannerUpload,
   persistTournamentScheduleUpload,
-  removeUploadFiles,
   teamLogoDirectory,
   tournamentBannerDirectory,
   tournamentScheduleDirectory,
@@ -776,17 +775,6 @@ const getAdminTournamentById = async (tournamentId) => {
   return mapTournamentWithRegistrations(tournament);
 };
 
-const cleanupUploadsQuietly = async (uploads, context = {}) => {
-  try {
-    await removeUploadFiles(uploads);
-  } catch (error) {
-    logger.warn("Failed to remove stale upload file.", {
-      ...context,
-      error,
-    });
-  }
-};
-
 const getReplacedTournamentUploads = ({ existingTournament, assetUpdates }) => {
   const uploads = [];
   const collect = ({ field, directory }) => {
@@ -859,7 +847,7 @@ const buildTournamentAssetUpdates = async ({ body, files }) => {
       uploadedFiles,
     };
   } catch (error) {
-    await cleanupUploadsQuietly(uploadedFiles, {
+    await removeUploadsQuietly(uploadedFiles, {
       operation: "buildTournamentAssetUpdates",
     });
     throw error;
@@ -884,7 +872,7 @@ const createAdminTournament = async ({ body, files }) => {
       include: registrationCountInclude,
     });
   } catch (error) {
-    await cleanupUploadsQuietly(assetUpdates.uploadedFiles, {
+    await removeUploadsQuietly(assetUpdates.uploadedFiles, {
       operation: "createAdminTournament",
     });
     throw error;
@@ -922,14 +910,14 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
       include: registrationCountInclude,
     });
   } catch (error) {
-    await cleanupUploadsQuietly(assetUpdates.uploadedFiles, {
+    await removeUploadsQuietly(assetUpdates.uploadedFiles, {
       operation: "updateAdminTournament",
       tournamentId,
     });
     throw error;
   }
 
-  await cleanupUploadsQuietly(
+  await removeUploadsQuietly(
     getReplacedTournamentUploads({
       existingTournament,
       assetUpdates: assetUpdates.data,
@@ -960,7 +948,7 @@ const deleteAdminTournament = async (tournamentId) => {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  await cleanupUploadsQuietly(
+  await removeUploadsQuietly(
     getReplacedTournamentUploads({
       existingTournament,
       assetUpdates: {
@@ -1198,7 +1186,7 @@ const createTournamentRegistration = async ({ body, file, user }) => {
       }
     }
   } catch (error) {
-    await cleanupUploadsQuietly(
+    await removeUploadsQuietly(
       persistedLogo
         ? [
             {

@@ -17,7 +17,7 @@ export default function JoinQuestSection() {
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Join Quest</p>
             <h2 className="mt-3 text-3xl text-white sm:text-4xl">
-              Quest Esports Recruitment is Now Open!
+              Quest E-sports Recruitment is Now Open!
             </h2>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
               Whether you are a solo player, an existing team, or an incomplete roster

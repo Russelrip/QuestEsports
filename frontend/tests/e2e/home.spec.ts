@@ -18,29 +18,29 @@ test("contact page includes both TikTok accounts, Gmail, and the WhatsApp commun
     "https://www.tiktok.com/@senumii"
   );
   await expect(
-    page.getByRole("link", { name: "Quest Esports TikTok (@questesportslk)" })
+    page.getByRole("link", { name: "Quest E-sports TikTok (@questesportslk)" })
   ).toHaveAttribute("href", "https://www.tiktok.com/@questesportslk");
   await expect(page.getByRole("link", { name: "questesports.lk@gmail.com" }).first()).toHaveAttribute(
     "href",
     "mailto:questesports.lk@gmail.com"
   );
   await expect(
-    page.getByRole("link", { name: "Join the Quest Esports WhatsApp Community" })
+    page.getByRole("link", { name: "Join the Quest E-sports WhatsApp Community" })
   ).toHaveAttribute("href", "https://chat.whatsapp.com/G8XZXgYC4Ep1VYw1Zg5PIf");
 
   const footer = page.getByRole("contentinfo");
-  await expect(footer.getByRole("link", { name: "Email Quest Esports" })).toHaveAttribute(
+  await expect(footer.getByRole("link", { name: "Email Quest E-sports" })).toHaveAttribute(
     "href",
     "mailto:questesports.lk@gmail.com"
   );
   await expect(
-    footer.getByRole("link", { name: "Quest Esports WhatsApp Community" })
+    footer.getByRole("link", { name: "Quest E-sports WhatsApp Community" })
   ).toHaveAttribute("href", "https://chat.whatsapp.com/G8XZXgYC4Ep1VYw1Zg5PIf");
   await expect(footer.getByRole("link", { name: "Senumi on TikTok" })).toHaveAttribute(
     "href",
     "https://www.tiktok.com/@senumii"
   );
-  await expect(footer.getByRole("link", { name: "Quest Esports on TikTok" })).toHaveAttribute(
+  await expect(footer.getByRole("link", { name: "Quest E-sports on TikTok" })).toHaveAttribute(
     "href",
     "https://www.tiktok.com/@questesportslk"
   );

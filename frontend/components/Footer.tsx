@@ -57,7 +57,7 @@ export default function Footer() {
               </span>
             </Link>
             <p className="mt-6 max-w-sm text-sm leading-7 text-slate-400">
-              Quest Esports brings together competitive players, teams, organizers, and
+              Quest E-sports brings together competitive players, teams, organizers, and
               gaming communities across Sri Lanka through tournaments, media, and events.
             </p>
           </div>
@@ -118,7 +118,7 @@ export default function Footer() {
         </div>
 
         <div className="mt-10 flex flex-col gap-2 border-t border-white/8 pt-5 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>&copy; 2026 Quest Esports. All rights reserved.</p>
+          <p>&copy; 2026 Quest E-sports. All rights reserved.</p>
           <p>Competitive gaming, community, and events.</p>
         </div>
       </Container>
