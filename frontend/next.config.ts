@@ -1,8 +1,14 @@
 import type { NextConfig } from "next";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 const apiOrigin = apiUrl ? new URL(apiUrl).origin : null;
 const isProduction = process.env.NODE_ENV === "production";
+if (isProduction && (!apiUrl || !siteUrl)) {
+  throw new Error(
+    "NEXT_PUBLIC_API_URL and NEXT_PUBLIC_SITE_URL are required for production builds."
+  );
+}
 const apiUsesLocalNetwork = apiUrl
   ? ["localhost", "127.0.0.1", "::1"].includes(new URL(apiUrl).hostname)
   : false;
@@ -22,7 +28,7 @@ if (apiUrl) {
   connectSources.push(apiOrigin || apiUrl);
 }
 
-const imageSources = ["'self'", "data:", "blob:", "https:"];
+const imageSources = ["'self'", "data:", "blob:", "https://img.youtube.com"];
 if (apiOrigin) {
   imageSources.push(apiOrigin);
 }
@@ -39,7 +45,7 @@ const contentSecurityPolicy = [
   isProduction
     ? "script-src 'self' 'unsafe-inline'"
     : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "form-action 'self'",
+  "form-action 'self' https://sandbox.payhere.lk https://www.payhere.lk",
   ...(isProduction ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 

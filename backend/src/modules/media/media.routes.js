@@ -11,6 +11,7 @@ const {
   getPoster,
   streamPosterImage,
   deletePoster,
+  deleteImage,
 } = require("./media.controller");
 
 const router = express.Router();
@@ -24,6 +25,7 @@ router.get("/images", requireAdmin, getImages);
 router.get("/images/:imageId", requireAdmin, getImage);
 router.get("/images/:imageId/binary", requireAdmin, streamImage);
 router.post("/images", requireAdmin, dbImageUpload.array("images", 10), uploadImages);
+router.delete("/images/:imageId", requireAdmin, deleteImage);
 router.post("/posters", requireAdmin, createPosterEntry);
 router.delete("/posters/:posterId", requireAdmin, deletePoster);
 

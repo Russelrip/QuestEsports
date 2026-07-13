@@ -4,6 +4,7 @@ const { Status } = require("brackets-model");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { normalizeText } = require("../../lib/validation");
+const { buildActiveRegistrationWhere } = require("./registration-eligibility");
 
 const BRACKET_TABLES = ["participant", "stage", "group", "round", "match", "match_game"];
 const MATCH_STATUSES = new Map([
@@ -210,7 +211,7 @@ const listApprovedBracketSeeds = async (tournamentId) => {
   const registrations = await prisma.teamRegistration.findMany({
     where: {
       tournamentId,
-      status: "approved",
+      ...buildActiveRegistrationWhere({ approvedOnly: true }),
     },
     orderBy: [{ createdAt: "asc" }],
     include: {

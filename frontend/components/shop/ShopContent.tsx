@@ -1,42 +1,36 @@
+import Link from "next/link";
+import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import EmptyState from "@/components/ui/EmptyState";
 import { Section } from "@/components/ui/section";
+import { buttonClassName } from "@/components/ui/button";
+import { resolveMediaUrl } from "@/lib/media";
+import type { Product } from "@/lib/shop";
 
-export default function ShopContent() {
+export default function ShopContent({ products }: { products: Product[] }) {
   return (
     <Section className="pt-4 sm:pt-6">
-      <Card className="relative overflow-hidden p-6 sm:p-10 lg:p-14">
-        <div className="relative grid gap-10 lg:grid-cols-[1fr_0.9fr] lg:items-center">
-          <div className="max-w-2xl">
-            <Badge className="border-violet-300/20 bg-violet-400/10 text-violet-100">
-              Coming Soon
-            </Badge>
-            <h2 className="mt-6 text-3xl leading-tight text-white sm:text-4xl lg:text-5xl">
-              Quest merch is on the way.
-            </h2>
-            <p className="mt-5 max-w-xl text-sm leading-7 text-slate-300 sm:text-base">
-              Our first Quest E-sports T-shirt drop is being prepared. Product artwork,
-              sizes, pricing, and ordering details will appear here once the official
-              poster is ready.
-            </p>
-            <p className="mt-6 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-100/60">
-              Wear the quest. Represent the community.
-            </p>
-          </div>
-
-          <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center rounded-[32px] border border-white/10 bg-black/20">
-            <div className="absolute inset-5 rounded-[26px] border border-dashed border-white/10" />
-            <div className="relative flex h-44 w-44 items-center justify-center rounded-[36px] border border-violet-300/20 bg-[#11101a] shadow-[0_24px_70px_rgba(0,0,0,0.45)] sm:h-52 sm:w-52">
-              <span className="font-display text-6xl tracking-[0.12em] text-white sm:text-7xl">
-                Q
-              </span>
-            </div>
-            <p className="absolute bottom-8 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-              Poster reveal pending
-            </p>
-          </div>
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div><p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Official Merchandise</p><h2 className="mt-3 text-4xl text-white">Made for the Quest community.</h2><p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">Browse official customized products. Online ordering becomes available when secure payment setup is active.</p></div>
+        <Link href="/shop/cart" className={buttonClassName({ variant: "secondary" })}>View cart</Link>
+      </div>
+      {products.length === 0 ? <EmptyState title="Merchandise is being prepared" description="Products will appear here as soon as official variants, prices, and artwork are published." /> : (
+        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          {products.map((product) => {
+            const startingPrice = Math.min(...product.variants.filter((variant) => variant.isActive).map((variant) => variant.price));
+            return <Card key={product.id} className="group overflow-hidden">
+              <Link href={`/shop/${product.slug}`} className="block">
+                <div className="relative aspect-square overflow-hidden bg-[#09080e]">
+                  {product.images[0] ? <Image src={resolveMediaUrl(product.images[0].imageUrl)} alt={product.images[0].altText || product.name} fill sizes="(min-width:1280px) 33vw,(min-width:640px) 50vw,100vw" className="object-contain p-4 transition duration-500 group-hover:scale-[1.03]" /> : <div className="flex h-full items-center justify-center text-7xl text-white/80">Q</div>}
+                  {product.madeToOrder ? <Badge className="absolute left-4 top-4">Made to order</Badge> : null}
+                </div>
+                <div className="p-5"><h3 className="text-2xl text-white">{product.name}</h3><p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-400">{product.description}</p><p className="mt-5 font-semibold text-cyan-100">From {product.currency} {Number.isFinite(startingPrice) ? startingPrice.toFixed(2) : "—"}</p></div>
+              </Link>
+            </Card>;
+          })}
         </div>
-      </Card>
+      )}
     </Section>
   );
 }

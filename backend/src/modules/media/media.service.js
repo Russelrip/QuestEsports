@@ -8,6 +8,7 @@ const {
   detectImageType,
   persistPosterImageUpload,
   posterImageDirectory,
+  removeUploadFile,
 } = require("../../middleware/upload");
 const { normalizeText } = require("../../lib/validation");
 
@@ -244,7 +245,7 @@ const createImageAssets = async ({ body, files }) => {
             originalName: file.originalname || null,
             storedFilename: persistedImage.filename,
             contentType: persistedImage.contentType,
-            byteSize: file.buffer.length,
+            byteSize: persistedImage.byteSize,
           },
         })
       )
@@ -263,6 +264,24 @@ const createImageAssets = async ({ body, files }) => {
   }
 
   return createdAssets.map(mapImageAsset);
+};
+
+const deleteUnusedImageAsset = async (imageId) => {
+  const asset = await prisma.imageAsset.findUnique({
+    where: { id: imageId },
+    include: { _count: { select: { posters: true, productImages: true } } },
+  });
+  if (!asset) throw new HttpError(404, "Image was not found.");
+  if (asset._count.posters || asset._count.productImages) {
+    throw new HttpError(409, "This image is still in use and cannot be removed.");
+  }
+  await prisma.imageAsset.delete({ where: { id: imageId } });
+  if (asset.storedFilename) {
+    await removeUploadFile({
+      directory: posterImageDirectory,
+      filename: asset.storedFilename,
+    }).catch(() => undefined);
+  }
 };
 
 const listImageAssets = async (query = {}) => {
@@ -519,6 +538,7 @@ const migrateImageAssetsToFilesystem = async () => {
 
 module.exports = {
   createImageAssets,
+  deleteUnusedImageAsset,
   listImageAssets,
   getImageAssetById,
   getImageAssetMetadata,

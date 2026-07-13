@@ -2,13 +2,18 @@ const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
 const multer = require("multer");
+const sharp = require("sharp");
 const { HttpError } = require("../lib/http-error");
+const { env } = require("../config/env");
 
-const uploadRoot = path.join(__dirname, "../../uploads");
+const uploadRoot = env.UPLOAD_ROOT
+  ? path.resolve(env.UPLOAD_ROOT)
+  : path.join(__dirname, "../../uploads");
 const teamLogoDirectory = path.join(uploadRoot, "team-logos");
 const tournamentBannerDirectory = path.join(uploadRoot, "tournament-banners");
 const posterImageDirectory = path.join(uploadRoot, "poster-images");
 const tournamentScheduleDirectory = path.join(uploadRoot, "tournament-schedules");
+const avatarDirectory = path.join(uploadRoot, "avatars");
 const TEAM_LOGO_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ADMIN_UPLOAD_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const DEFAULT_FIELD_LIMITS = {
@@ -37,6 +42,7 @@ const ensureUploadDirectories = async () => {
   await fs.mkdir(tournamentBannerDirectory, { recursive: true });
   await fs.mkdir(posterImageDirectory, { recursive: true });
   await fs.mkdir(tournamentScheduleDirectory, { recursive: true });
+  await fs.mkdir(avatarDirectory, { recursive: true });
 };
 
 const detectImageType = (buffer) => {
@@ -106,6 +112,38 @@ const validateImageUpload = ({ file, invalidMessage }) => {
     contentType: allowedType.contentType,
     extension: getExtensionForImageType(detectedType),
   };
+};
+
+const normalizeImageUpload = async ({
+  file,
+  invalidMessage,
+  maxDimension = 4096,
+}) => {
+  const validated = validateImageUpload({ file, invalidMessage });
+  try {
+    const pipeline = sharp(file.buffer, {
+      failOn: "warning",
+      limitInputPixels: maxDimension * maxDimension * 4,
+    })
+      .rotate()
+      .resize({
+        width: maxDimension,
+        height: maxDimension,
+        fit: "inside",
+        withoutEnlargement: true,
+      });
+    let buffer;
+    if (validated.detectedType === "jpeg") {
+      buffer = await pipeline.jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    } else if (validated.detectedType === "png") {
+      buffer = await pipeline.png({ compressionLevel: 9 }).toBuffer();
+    } else {
+      buffer = await pipeline.webp({ quality: 88 }).toBuffer();
+    }
+    return { ...validated, buffer };
+  } catch {
+    throw new HttpError(400, invalidMessage);
+  }
 };
 
 const buildSafeUploadFilename = (extension) =>
@@ -188,6 +226,11 @@ const imageUpload = createImageUpload(
   TEAM_LOGO_MAX_FILE_SIZE
 );
 
+const avatarUpload = createImageUpload(
+  "Only JPEG, PNG, and WebP profile pictures are allowed.",
+  TEAM_LOGO_MAX_FILE_SIZE
+);
+
 const tournamentBannerUpload = createImageUpload(
   "Only image files are allowed for tournament banners.",
   ADMIN_UPLOAD_MAX_FILE_SIZE
@@ -240,23 +283,25 @@ const adminTournamentAssetsUpload = multer({
   },
 });
 
-const persistValidatedUpload = async ({ file, directory, invalidMessage }) => {
+const persistValidatedUpload = async ({ file, directory, invalidMessage, maxDimension }) => {
   if (!file?.buffer) {
     return null;
   }
 
-  const { contentType, extension } = validateImageUpload({
+  const { contentType, extension, buffer } = await normalizeImageUpload({
     file,
     invalidMessage,
+    maxDimension,
   });
   const filename = buildSafeUploadFilename(extension);
   const filePath = path.join(directory, filename);
 
-  await fs.writeFile(filePath, file.buffer);
+  await fs.writeFile(filePath, buffer);
 
   return {
     filename,
     contentType,
+    byteSize: buffer.length,
   };
 };
 
@@ -265,6 +310,15 @@ const persistTeamLogoUpload = (file) =>
     file,
     directory: teamLogoDirectory,
     invalidMessage: "Only JPEG, PNG, and WebP team logos are allowed.",
+    maxDimension: 2048,
+  });
+
+const persistAvatarUpload = (file) =>
+  persistValidatedUpload({
+    file,
+    directory: avatarDirectory,
+    invalidMessage: "Only JPEG, PNG, and WebP profile pictures are allowed.",
+    maxDimension: 2048,
   });
 
 const persistTournamentBannerUpload = (file) =>
@@ -307,12 +361,15 @@ module.exports = {
   ALLOWED_UPLOAD_TYPES,
   TEAM_LOGO_MAX_FILE_SIZE,
   detectImageType,
+  normalizeImageUpload,
   ensureUploadDirectories,
   imageUpload,
+  avatarUpload,
   tournamentBannerUpload,
   adminTournamentAssetsUpload,
   dbImageUpload,
   persistTeamLogoUpload,
+  persistAvatarUpload,
   persistTournamentBannerUpload,
   persistPosterImageUpload,
   persistTournamentScheduleUpload,
@@ -322,4 +379,5 @@ module.exports = {
   tournamentBannerDirectory,
   posterImageDirectory,
   tournamentScheduleDirectory,
+  avatarDirectory,
 };

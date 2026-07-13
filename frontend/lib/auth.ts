@@ -17,6 +17,7 @@ export type AuthUser = {
   mfaEnabled?: boolean;
   lastLoginAt?: string | null;
   createdAt?: string | null;
+  avatarUrl?: string | null;
 };
 
 export type PendingMfaUser = Pick<

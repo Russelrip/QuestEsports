@@ -26,7 +26,7 @@ export default async function FeaturedTournaments() {
       <div className="mb-8 flex flex-col items-center gap-4 text-center sm:flex-row sm:items-end sm:justify-between sm:text-left">
         <div className="max-w-3xl">
           <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Featured Events</p>
-          <h2 className="mt-3 text-3xl text-white sm:text-4xl">Active campaigns and upcoming competition drops.</h2>
+          <h2 className="mt-3 text-3xl text-white sm:text-4xl">Upcoming tournaments and active competition.</h2>
         </div>
         <Link href="/tournaments" className={`${buttonClassName({ variant: "secondary" })} hidden sm:inline-flex`}>
           View all
@@ -37,17 +37,19 @@ export default async function FeaturedTournaments() {
         {featuredTournaments.length > 0 ? (
           featuredTournaments.map((tournament) => (
             <Card key={tournament.id} className="group mx-auto flex h-full w-full max-w-[25rem] flex-col overflow-hidden">
-              <div className="relative aspect-[4/5] overflow-hidden bg-[#09080e] p-3">
-                <TournamentBannerImage
-                  bannerUrl={tournament.bannerUrl}
-                  title={tournament.title}
-                  className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.01]"
-                />
-              </div>
+              <Link href={`/tournaments/${tournament.slug}`} className="relative block aspect-[4/5] overflow-hidden bg-[#09080e] p-3">
+                  <TournamentBannerImage
+                    bannerUrl={tournament.bannerUrl}
+                    title={tournament.title}
+                    className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.01]"
+                  />
+              </Link>
               <div className="flex flex-1 flex-col p-5">
                 <div>
                   <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/80">{tournament.game}</p>
-                  <h3 className="mt-2 text-2xl text-white">{tournament.title}</h3>
+                  <Link href={`/tournaments/${tournament.slug}`} className="block">
+                    <h3 className="mt-2 text-2xl text-white transition hover:text-cyan-100">{tournament.title}</h3>
+                  </Link>
                 </div>
 
                 <div className="mt-auto pt-5">

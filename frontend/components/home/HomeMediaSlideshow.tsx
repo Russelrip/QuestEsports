@@ -21,7 +21,7 @@ const slides = [
     src: "/images/face-camera-angle-examples.jpg",
     alt: "Face camera setup examples",
     label: "Behind The Scenes",
-    title: "Player face cams and interviews coming soon",
+    title: "Player interviews and event coverage",
   },
 ] as const;
 

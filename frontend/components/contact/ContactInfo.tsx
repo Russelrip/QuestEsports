@@ -48,8 +48,9 @@ export default function ContactInfo() {
               href={contact.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-2xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-slate-300 transition hover:bg-white/8 hover:text-white"
+              className="flex cursor-pointer items-center gap-3 rounded-2xl border border-emerald-300/15 bg-white/4 px-4 py-3 text-sm text-slate-300 transition hover:border-emerald-300/35 hover:bg-emerald-400/10 hover:text-emerald-100"
             >
+              <Image src="/images/whatsapp.png" alt="" width={18} height={18} />
               {contact.label}
             </a>
           ))}

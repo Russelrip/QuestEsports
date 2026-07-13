@@ -58,7 +58,7 @@ export default function AdminRegistrationsManager() {
 
   const updateRegistration = async (
     registrationId: string,
-    updates: Partial<Pick<TeamRegistration, "status" | "paymentStatus" | "verificationStatus">>
+    updates: Partial<Pick<TeamRegistration, "status" | "verificationStatus">>
   ) => {
     try {
       await adminRequest(`/api/admin/team-registrations/${registrationId}/status`, {
@@ -181,21 +181,7 @@ export default function AdminRegistrationsManager() {
                       <option value="rejected">Rejected</option>
                     </Select>
                   </label>
-                  <label className="grid gap-2 text-sm text-slate-300">
-                    Payment
-                    <Select
-                      value={registration.paymentStatus}
-                      onChange={(event) =>
-                        updateRegistration(registration.id, {
-                          paymentStatus: event.target.value as TeamRegistration["paymentStatus"],
-                        })
-                      }
-                    >
-                      <option value="unpaid">Unpaid</option>
-                      <option value="pending">Pending</option>
-                      <option value="paid">Paid</option>
-                    </Select>
-                  </label>
+                  <p className="text-sm text-slate-300">Payment: <span className="text-white">{registration.paymentStatus}</span></p>
                 </div>
                 <div className="grid gap-3">
                   <label className="grid gap-2 text-sm text-slate-300">

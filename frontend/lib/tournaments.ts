@@ -14,6 +14,16 @@ export type TournamentRegistrationState =
   | "slots_full";
 
 export type TournamentRegistrationMode = "open_entry" | "slot_based";
+export type TournamentEntryType = "team" | "solo";
+
+export type TournamentRegistrationField = {
+  key: string;
+  label: string;
+  type: "text" | "number" | "select";
+  scope: "entry" | "member";
+  required: boolean;
+  options: string[];
+};
 
 export type TournamentScheduleData = {
   sheetName: string;
@@ -35,6 +45,26 @@ export type RegisteredTournamentTeam = {
   shortCode: string;
   memberCount: number;
   status: string;
+};
+
+export type RegisteredTournamentParticipant = {
+  id: string;
+  entryType: TournamentEntryType;
+  displayName: string;
+  logoUrl: string | null;
+  shortCode: string;
+  memberCount: number;
+};
+
+export type EventSeries = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  heroUrl: string | null;
+  displayOrder: number;
+  isPublished: boolean;
+  tournaments: Tournament[];
 };
 
 export type BracketParticipant = {
@@ -108,6 +138,8 @@ export type Tournament = {
   slug: string;
   title: string;
   game: string;
+  series: { id: string; slug: string; title: string } | null;
+  seriesOrder: number;
   displayPriority: number;
   bannerUrl: string | null;
   shortDescription: string;
@@ -126,7 +158,15 @@ export type Tournament = {
   registrationDeadline: string;
   format: string;
   registrationMode: TournamentRegistrationMode;
+  entryType: TournamentEntryType;
   teamSize: number;
+  minRosterSize: number;
+  maxRosterSize: number;
+  maxSubstitutes: number;
+  registrationFields: TournamentRegistrationField[];
+  registrationFee: { amount: number; currency: string };
+  registrationPaymentAvailable: boolean;
+  reservationMinutes: number;
   maxTeams: number;
   registrationCount: number;
   prizePool: string;
@@ -140,6 +180,7 @@ export type Tournament = {
   bracketData: TournamentBracketData | null;
   showcase: TournamentShowcase;
   registeredTeams?: RegisteredTournamentTeam[];
+  registeredParticipants?: RegisteredTournamentParticipant[];
   isCompleted: boolean;
   registrationState: TournamentRegistrationState;
   isRegistrationOpen: boolean;
@@ -218,6 +259,18 @@ export const fetchPublicTournaments = async (game?: string) => {
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const data = await fetchJson<{ tournaments: Tournament[] }>(`/api/tournaments${suffix}`);
   return data.tournaments;
+};
+
+export const fetchPublicEventSeries = async () => {
+  const data = await fetchJson<{ series: EventSeries[] }>("/api/event-series");
+  return data.series;
+};
+
+export const fetchPublicEventSeriesBySlug = async (slug: string) => {
+  const data = await fetchJson<{ series: EventSeries }>(
+    `/api/event-series/${encodeURIComponent(slug)}`
+  );
+  return data.series;
 };
 
 export const fetchPublicTournamentBySlug = async (slug: string) => {

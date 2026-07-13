@@ -7,6 +7,7 @@
     "dev": "nodemon src/server.js",
     "postinstall": "prisma generate",
     "start": "node src/server.js",
+    "lint": "eslint src tests scripts",
     "test": "node --test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -22,7 +23,7 @@
   "license": "ISC",
   "type": "commonjs",
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -36,9 +37,12 @@
     "express": "^5.2.1",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
-    "read-excel-file": "^9.0.10"
+    "read-excel-file": "^9.0.10",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
+    "eslint": "^9.39.5",
+    "globals": "^17.7.0",
     "nodemon": "^3.1.14",
     "prisma": "^6.19.3"
   },

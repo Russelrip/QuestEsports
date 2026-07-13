@@ -1,5 +1,6 @@
 import PageLayout from "@/components/PageLayout";
 import ShopContent from "@/components/shop/ShopContent";
+import { fetchProducts } from "@/lib/shop";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 
 export const metadata = buildPageMetadata({
@@ -13,14 +14,17 @@ export const metadata = buildPageMetadata({
   ],
 });
 
-export default function ShopPage() {
+export const dynamic = "force-dynamic";
+
+export default async function ShopPage() {
+  const products = await fetchProducts();
   return (
     <PageLayout
       title="Quest Shop"
       description={defaultPageDescriptions.shop}
       eyebrow="Official Merchandise"
     >
-      <ShopContent />
+      <ShopContent products={products} />
     </PageLayout>
   );
 }

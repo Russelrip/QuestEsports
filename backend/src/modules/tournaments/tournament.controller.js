@@ -8,7 +8,6 @@ const {
   updateAdminTournament,
   deleteAdminTournament,
   getTournamentRegistrationStatus,
-  createTournamentRegistration,
 } = require("./tournament.service");
 const {
   generateTournamentBracket,
@@ -16,6 +15,28 @@ const {
   updateTournamentBracketMatch,
   publishTournamentBracket,
 } = require("./bracket.service");
+const { createConfiguredRegistration } = require("./registration.service");
+
+const mapLegacyMembers = (body) => [
+  ...["player2", "player3", "player4", "player5"].map((prefix) => ({
+    role: "PLAYER",
+    name: body[`${prefix}Name`],
+    email: body[`${prefix}Email`],
+    discord: body[`${prefix}Discord`],
+    gameId: body[`${prefix}RiotId`],
+    additionalData: {},
+  })),
+  ...["sub1", "sub2"]
+    .filter((prefix) => body[`${prefix}Name`] || body[`${prefix}Email`])
+    .map((prefix) => ({
+      role: "SUBSTITUTE",
+      name: body[`${prefix}Name`],
+      email: body[`${prefix}Email`],
+      discord: body[`${prefix}Discord`],
+      gameId: body[`${prefix}RiotId`],
+      additionalData: {},
+    })),
+];
 
 const getPublicTournaments = asyncHandler(async (req, res) => {
   const tournaments = await listPublicTournaments(req.query);
@@ -103,16 +124,40 @@ const getTournamentRegistrationStatusController = asyncHandler(async (req, res) 
 });
 
 const submitTournamentRegistration = asyncHandler(async (req, res) => {
-  await createTournamentRegistration({
-    body: req.body,
+  const slug = String(req.body.tournamentSlug || req.body.tournament || "").trim();
+  const body = {
+    ...req.body,
+    members: req.body.members || JSON.stringify(mapLegacyMembers(req.body)),
+  };
+  const result = await createConfiguredRegistration({
+    slug,
+    body,
     file: req.file,
     user: req.user,
   });
 
   res.status(201).json({
     success: true,
-    message:
-      "Tournament registration submitted successfully. Team invites have been sent to your roster members.",
+    message: result.checkout
+      ? "Registration reserved. Complete payment to confirm your entry."
+      : "Tournament registration submitted successfully.",
+    ...result,
+  });
+});
+
+const submitConfiguredTournamentRegistration = asyncHandler(async (req, res) => {
+  const result = await createConfiguredRegistration({
+    slug: req.params.slug,
+    body: req.body,
+    file: req.file,
+    user: req.user,
+  });
+  res.status(201).json({
+    success: true,
+    message: result.checkout
+      ? "Registration reserved. Complete payment to confirm your entry."
+      : "Tournament registration submitted successfully.",
+    ...result,
   });
 });
 
@@ -169,6 +214,7 @@ module.exports = {
   deleteTournament,
   getTournamentRegistrationStatus: getTournamentRegistrationStatusController,
   submitTournamentRegistration,
+  submitConfiguredTournamentRegistration,
   getTournamentBracket,
   generateBracket,
   updateBracketMatch,

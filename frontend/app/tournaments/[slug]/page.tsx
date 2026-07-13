@@ -8,6 +8,7 @@ import {
   buildTournamentStructuredData,
 } from "@/lib/site";
 import { Tournament, fetchPublicTournamentBySlug } from "@/lib/tournaments";
+import { ApiRequestError } from "@/lib/api";
 
 export async function generateMetadata({
   params,
@@ -39,7 +40,8 @@ export default async function TournamentDetailsPage({
   let tournament: Tournament;
   try {
     tournament = await fetchPublicTournamentBySlug(slug);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof ApiRequestError) || error.status !== 404) throw error;
     notFound();
   }
 

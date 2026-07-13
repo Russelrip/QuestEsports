@@ -9,27 +9,34 @@ import EmptyState from "@/components/ui/EmptyState";
 import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
-import { Select } from "@/components/ui/select";
 import {
+  EventSeries,
   Tournament,
   getTournamentRegistrationShortLabel,
   getTournamentStatusLabel,
 } from "@/lib/tournaments";
 import { formatDisplayDate } from "@/lib/utils";
 
-const gameOptions = [
-  { value: "all", label: "All Games" },
-  { value: "valorant", label: "Valorant" },
-  { value: "pubg-mobile", label: "PUBG Mobile" },
-  { value: "cod-mobile", label: "Call of Duty: Mobile" },
-  { value: "free-fire", label: "Free Fire" },
-  { value: "dota-2", label: "Dota 2" },
-  { value: "mobile-legends", label: "Mobile Legends" },
-  { value: "ea-fc", label: "EA FC" },
-];
-
-export default function TournamentsContent({ tournaments }: { tournaments: Tournament[] }) {
+export default function TournamentsContent({
+  tournaments,
+  series = [],
+}: {
+  tournaments: Tournament[];
+  series?: EventSeries[];
+}) {
   const [gameFilter, setGameFilter] = useState("all");
+
+  const gameOptions = useMemo(() => {
+    const games = [...new Set(tournaments.map((tournament) => tournament.game))];
+    return [
+      { value: "all", label: "All Games", image: tournaments[0]?.bannerUrl || null },
+      ...games.map((game) => ({
+        value: game,
+        label: toTitleCase(game.replace(/-/g, " ")),
+        image: tournaments.find((tournament) => tournament.game === game)?.bannerUrl || null,
+      })),
+    ];
+  }, [tournaments]);
 
   const filteredTournaments = useMemo(() => {
     const base =
@@ -38,31 +45,83 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
         : tournaments.filter((tournament) => tournament.game === gameFilter);
 
     return {
-      active: base.filter((tournament) => !tournament.isCompleted),
+      active: base.filter((tournament) => !tournament.isCompleted && !tournament.series),
       completed: base.filter((tournament) => tournament.isCompleted),
     };
   }, [gameFilter, tournaments]);
 
+  const filteredSeries = useMemo(
+    () =>
+      series.filter((eventSeries) =>
+        gameFilter === "all"
+          ? eventSeries.tournaments.length > 0
+          : eventSeries.tournaments.some((tournament) => tournament.game === gameFilter)
+      ),
+    [gameFilter, series]
+  );
+
   return (
     <Section className="pt-6">
+      <div className="mb-8 overflow-x-auto pb-2">
+        <div className="flex min-w-max gap-3">
+          {gameOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setGameFilter(option.value)}
+              className={`group relative h-32 w-36 overflow-hidden rounded-[22px] border text-left transition sm:h-40 sm:w-44 ${
+                gameFilter === option.value
+                  ? "border-cyan-300/70 shadow-[0_16px_45px_rgba(34,211,238,0.2)]"
+                  : "border-white/10 hover:-translate-y-1 hover:border-white/30"
+              }`}
+            >
+              <TournamentBannerImage
+                bannerUrl={option.image}
+                title={option.label}
+                className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+              />
+              <span className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+              <span className="absolute inset-x-3 bottom-3 text-sm font-bold uppercase tracking-[0.1em] text-white">
+                {option.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mb-8 flex flex-col gap-4 rounded-[28px] border border-white/8 bg-[#0d0c13] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.2)] sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Tournament Board</p>
-          <h2 className="mt-2 text-2xl text-white">Track live events, registrations, and completed campaigns.</h2>
-        </div>
-        <div className="w-full max-w-xs">
-          <label htmlFor="gameFilter" className="mb-2 block text-sm font-medium text-slate-300">
-            Filter by game
-          </label>
-          <Select id="gameFilter" value={gameFilter} onChange={(event) => setGameFilter(event.target.value)}>
-            {gameOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
+          <h2 className="mt-2 text-2xl text-white">Explore current events, registration windows, and completed tournaments.</h2>
         </div>
       </div>
+
+      {filteredSeries.length > 0 ? (
+        <div className="mb-10 grid gap-6 lg:grid-cols-2">
+          {filteredSeries.map((eventSeries) => (
+            <Link
+              key={eventSeries.id}
+              href={`/tournaments/series/${eventSeries.slug}`}
+              className="group relative min-h-[320px] overflow-hidden rounded-[34px] border border-white/10 bg-[#0d0c13] transition hover:-translate-y-1 hover:border-fuchsia-300/30"
+            >
+              <TournamentBannerImage
+                bannerUrl={eventSeries.heroUrl || eventSeries.tournaments[0]?.bannerUrl}
+                title={eventSeries.title}
+                className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-[1.025]"
+              />
+              <span className="absolute inset-0 bg-gradient-to-t from-[#09070f] via-[#09070f]/55 to-transparent" />
+              <span className="absolute inset-x-6 bottom-6">
+                <span className="text-xs uppercase tracking-[0.26em] text-cyan-200">Event Series</span>
+                <span className="mt-2 block text-3xl text-white">{eventSeries.title}</span>
+                <span className="mt-3 line-clamp-2 block text-sm leading-6 text-slate-300">{eventSeries.description}</span>
+                <span className="mt-4 block text-sm font-semibold text-fuchsia-200">
+                  {eventSeries.tournaments.length} title{eventSeries.tournaments.length === 1 ? "" : "s"} — View event
+                </span>
+              </span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
 
       {filteredTournaments.active.length > 0 ? (
         <div className="grid gap-6">
@@ -125,12 +184,12 @@ export default function TournamentsContent({ tournaments }: { tournaments: Tourn
             </article>
           ))}
         </div>
-      ) : (
+      ) : filteredSeries.length === 0 ? (
         <EmptyState
           title="No active tournaments match this filter"
           description="Try another game selection or check the completed showcase below."
         />
-      )}
+      ) : null}
 
       <div className="mt-12">
         <div className="mb-5">

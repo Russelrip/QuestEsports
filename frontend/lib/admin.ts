@@ -14,7 +14,11 @@ export const adminNavigationLinks = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/tournaments", label: "Tournaments" },
+  { href: "/admin/event-series", label: "Event Series" },
   { href: "/admin/registrations", label: "Registrations" },
+  { href: "/admin/products", label: "Products" },
+  { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/payments", label: "Payments" },
   { href: "/admin/recruitment", label: "Recruitment" },
   { href: "/admin/rulebooks", label: "Rulebooks" },
   { href: "/admin/contact-messages", label: "Contact Messages" },
@@ -84,6 +88,7 @@ export type RegistrationMember = {
   email?: string | null;
   discord?: string | null;
   riotId?: string | null;
+  additionalData?: Record<string, string>;
   inviteStatus: "pending" | "accepted" | "declined";
   inviteRespondedAt?: string | null;
   account?: {
@@ -95,7 +100,10 @@ export type RegistrationMember = {
 
 export type TeamRegistration = {
   id: string;
+  entryType?: "team" | "solo";
   teamName: string;
+  additionalData?: Record<string, string>;
+  reservedUntil?: string | null;
   country?: string | null;
   teamTag?: string | null;
   organizationRequested?: boolean;
@@ -311,7 +319,17 @@ export type TournamentFormValues = {
   registrationDeadline: string;
   format: string;
   registrationMode: Tournament["registrationMode"];
+  entryType: Tournament["entryType"];
+  seriesId: string;
+  seriesOrder: string;
   teamSize: string;
+  minRosterSize: string;
+  maxRosterSize: string;
+  maxSubstitutes: string;
+  registrationFields: string;
+  registrationFeeAmount: string;
+  registrationFeeCurrency: string;
+  reservationMinutes: string;
   maxTeams: string;
   prizePool: string;
   status: Tournament["status"];
@@ -372,7 +390,17 @@ export const initialTournamentFormValues: TournamentFormValues = {
   registrationDeadline: "",
   format: "",
   registrationMode: "open_entry",
+  entryType: "team",
+  seriesId: "",
+  seriesOrder: "100",
   teamSize: "5",
+  minRosterSize: "5",
+  maxRosterSize: "5",
+  maxSubstitutes: "2",
+  registrationFields: "[]",
+  registrationFeeAmount: "0",
+  registrationFeeCurrency: "LKR",
+  reservationMinutes: "15",
   maxTeams: "",
   prizePool: "",
   status: "draft",

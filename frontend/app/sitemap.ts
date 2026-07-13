@@ -14,6 +14,7 @@ const staticRoutes = [
   "/contact",
   "/registration",
   "/tournament-registration",
+  "/refund-policy",
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

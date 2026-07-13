@@ -75,7 +75,9 @@ const scrubJobPayload = (payload) => {
     return payload;
   }
 
-  const { rawToken, tokenCiphertext, ...safePayload } = payload;
+  const safePayload = { ...payload };
+  delete safePayload.rawToken;
+  delete safePayload.tokenCiphertext;
   return safePayload;
 };
 

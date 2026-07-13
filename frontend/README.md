@@ -4,7 +4,7 @@ This is the public and admin-facing Next.js application for Quest Esports. It re
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 24 LTS
 - A running backend API
 
 ## Environment Variables

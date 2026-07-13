@@ -4,7 +4,7 @@ This guide covers local setup, environment configuration, and a practical produc
 
 ## Requirements
 
-- Node.js 20+ recommended
+- Node.js 24 LTS
 - npm 10+
 - PostgreSQL 15+ recommended
 - SMTP credentials for real email delivery

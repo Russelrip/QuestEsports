@@ -103,6 +103,19 @@ export default function RegisterTournamentButton({
     return <Badge className={className}>{getTournamentRegistrationLabel(tournament)}</Badge>;
   }
 
+  if (!tournament.registrationPaymentAvailable) {
+    return (
+      <div className={className}>
+        <Button type="button" variant="secondary" disabled>
+          Online payment unavailable
+        </Button>
+        <p className="mt-2 text-xs text-slate-400">
+          Quest will open paid registration after payment setup is complete.
+        </p>
+      </div>
+    );
+  }
+
   const isRegistered = status === "registered";
   const isChecking = status === "loading";
 
@@ -113,7 +126,7 @@ export default function RegisterTournamentButton({
         variant={isRegistered ? "secondary" : "primary"}
         disabled={isRegistered || isChecking}
         onClick={() => {
-          const registrationPath = `/tournament-registration?tournament=${tournament.slug}`;
+          const registrationPath = `/tournaments/${tournament.slug}/register`;
           const destination = user ? registrationPath : `/login?redirect=${encodeURIComponent(registrationPath)}`;
           router.push(destination);
         }}

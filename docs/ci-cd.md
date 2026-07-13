@@ -71,7 +71,7 @@ BACKEND_PM2_PROCESS=quest-backend
 The server must already have:
 
 - read-only GitHub deploy-key access to this repository
-- Node.js 20+
+- Node.js 24 LTS
 - npm
 - PM2
 - backend production environment variables configured

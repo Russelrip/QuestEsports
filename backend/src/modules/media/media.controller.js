@@ -9,6 +9,7 @@ const {
   listPosters,
   getPosterById,
   deletePosterById,
+  deleteUnusedImageAsset,
 } = require("./media.service");
 
 const sendImageBuffer = (res, image, cacheControl) => {
@@ -100,6 +101,11 @@ const deletePoster = asyncHandler(async (req, res) => {
   });
 });
 
+const deleteImage = asyncHandler(async (req, res) => {
+  await deleteUnusedImageAsset(req.params.imageId);
+  res.status(200).json({ success: true, message: "Unused image removed." });
+});
+
 module.exports = {
   uploadImages,
   getImages,
@@ -110,4 +116,5 @@ module.exports = {
   getPosters,
   getPoster,
   deletePoster,
+  deleteImage,
 };

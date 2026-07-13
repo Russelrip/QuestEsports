@@ -30,6 +30,7 @@ const MATCH_STATUS_LABELS: Record<number, string> = {
 
 export default function TournamentDetailsContent({ tournament }: { tournament: Tournament }) {
   const [teamPage, setTeamPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<"overview" | "rules" | "schedule" | "bracket" | "participants">("overview");
   const registeredTeams = tournament.registeredTeams || [];
   const teamPageCount = Math.max(1, Math.ceil(registeredTeams.length / TEAMS_PER_PAGE));
   const visibleTeams = registeredTeams.slice(
@@ -44,7 +45,20 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
           Back to Tournaments
         </Link>
 
-        <Card className="w-full max-w-[calc(100vw-2rem)] overflow-hidden border-white/10 bg-[#0d0c13] p-4 sm:max-w-full sm:p-6 xl:p-8">
+        <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-[#0d0c13] p-2" aria-label="Tournament sections">
+          {(["overview", "rules", "schedule", "bracket", "participants"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold capitalize transition ${activeTab === tab ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/8 hover:text-white"}`}
+            >
+              {tab}
+            </button>
+          ))}
+        </nav>
+
+        {activeTab === "overview" ? <Card className="w-full max-w-[calc(100vw-2rem)] overflow-hidden border-white/10 bg-[#0d0c13] p-4 sm:max-w-full sm:p-6 xl:p-8">
           <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)] xl:gap-8">
             <div className="min-w-0 max-w-[calc(100vw-4rem)] overflow-hidden rounded-[28px] border border-white/10 bg-[#100817] sm:max-w-full">
               <TournamentBannerImage
@@ -92,24 +106,33 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
               </footer>
             </div>
           </div>
-        </Card>
+        </Card> : null}
 
-        {registeredTeams.length > 0 ? (
+        {activeTab === "participants" && registeredTeams.length > 0 ? (
           <TeamsPanel
             teams={visibleTeams}
             totalTeams={registeredTeams.length}
+            title={tournament.entryType === "solo" ? "Registered Players" : "Registered Teams"}
+            isSolo={tournament.entryType === "solo"}
             page={teamPage}
             pageCount={teamPageCount}
             onPageChange={setTeamPage}
           />
+        ) : activeTab === "participants" ? (
+          <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Participants</h3><p className="mt-3 text-sm text-slate-400">Approved participants will appear here.</p></Card>
         ) : null}
 
-        {tournament.bracketData ? (
+        {activeTab === "bracket" && tournament.bracketData ? (
           <section className="space-y-5">
             <h3 className="text-3xl text-white">Brackets</h3>
             <LiveBracketView bracketData={tournament.bracketData} />
           </section>
+        ) : activeTab === "bracket" ? (
+          <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Bracket</h3><p className="mt-3 text-sm text-slate-400">The bracket will appear after it is published.</p></Card>
         ) : null}
+
+        {activeTab === "schedule" ? <SchedulePanel tournament={tournament} /> : null}
+        {activeTab === "rules" ? <RulesPanel tournament={tournament} /> : null}
       </div>
     </Section>
   );
@@ -135,7 +158,20 @@ function getTournamentDetailStats(tournament: Tournament) {
     { label: "Prize Pool", value: tournament.prizePool },
     { label: "Format", value: tournament.format },
     { label: "Entry", value: getTournamentRegistrationModeLabel(tournament) },
-    { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
+    {
+      label: tournament.entryType === "solo" ? "Entry Type" : "Roster",
+      value:
+        tournament.entryType === "solo"
+          ? "Solo player"
+          : `${tournament.minRosterSize || tournament.teamSize}-${(tournament.maxRosterSize || tournament.teamSize) + (tournament.maxSubstitutes || 0)} players`,
+    },
+    {
+      label: "Registration Fee",
+      value:
+        tournament.registrationFee?.amount > 0
+          ? `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`
+          : "Free",
+    },
     { label: "Registration Deadline", value: formatDateTime(tournament.registrationDeadline) },
     {
       label: "Bracket Release",
@@ -150,19 +186,23 @@ function getTournamentDetailStats(tournament: Tournament) {
 function TeamsPanel({
   teams,
   totalTeams,
+  title,
   page,
   pageCount,
   onPageChange,
+  isSolo,
 }: {
   teams: Tournament["registeredTeams"];
   totalTeams: number;
+  title: string;
   page: number;
   pageCount: number;
   onPageChange: (page: number) => void;
+  isSolo: boolean;
 }) {
   return (
     <section className="space-y-4">
-      <h3 className="text-3xl text-white">Registered Teams</h3>
+      <h3 className="text-3xl text-white">{title}</h3>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {teams?.map((team) => (
           <div key={team.id} className="rounded-xl border border-blue-300/20 bg-[#0d1626] p-4">
@@ -175,7 +215,7 @@ function TeamsPanel({
                     width={48}
                     height={48}
                     sizes="48px"
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-contain"
                   />
                 ) : (
                   team.shortCode
@@ -184,7 +224,7 @@ function TeamsPanel({
               <div className="min-w-0">
                 <p className="truncate font-semibold text-white">{team.teamName}</p>
                 <p className="text-xs text-slate-400">
-                  {team.shortCode} - {team.memberCount} members
+                  {isSolo ? "Solo player" : `${team.shortCode} - ${team.memberCount} members`}
                 </p>
               </div>
               <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400" />
@@ -194,7 +234,7 @@ function TeamsPanel({
       </div>
       <div className="flex flex-col gap-3 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
         <span>
-          Showing {(page - 1) * TEAMS_PER_PAGE + 1}-{Math.min(page * TEAMS_PER_PAGE, totalTeams)} of {totalTeams} teams
+          Showing {(page - 1) * TEAMS_PER_PAGE + 1}-{Math.min(page * TEAMS_PER_PAGE, totalTeams)} of {totalTeams} {isSolo ? "players" : "teams"}
         </span>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex">
           <button className="rounded-lg border border-white/10 px-4 py-2 disabled:opacity-40" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
@@ -207,6 +247,58 @@ function TeamsPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function SchedulePanel({ tournament }: { tournament: Tournament }) {
+  const schedule = tournament.scheduleData;
+  if (!schedule || schedule.headers.length === 0 || schedule.rows.length === 0) {
+    return (
+      <Card className="p-6 sm:p-8">
+        <h3 className="text-3xl text-white">Schedule</h3>
+        <p className="mt-3 text-sm text-slate-400">The match schedule will be published here when it is ready.</p>
+      </Card>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h3 className="text-3xl text-white">Schedule</h3>
+        <p className="mt-2 text-sm text-slate-400">{schedule.sheetName}</p>
+      </div>
+      <div className="overflow-x-auto rounded-[24px] border border-white/10 bg-[#111827]">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-[#263451] text-xs uppercase tracking-[0.12em] text-white">
+            <tr>{schedule.headers.map((header) => <th key={header} className="whitespace-nowrap px-4 py-4">{header}</th>)}</tr>
+          </thead>
+          <tbody>
+            {schedule.rows.map((row, index) => (
+              <tr key={index} className="border-t border-white/8 odd:bg-white/[0.025]">
+                {schedule.headers.map((header) => <td key={header} className="whitespace-nowrap px-4 py-3 text-slate-300">{row[header] || "—"}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function RulesPanel({ tournament }: { tournament: Tournament }) {
+  return (
+    <Card className="p-6 sm:p-8">
+      <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Competition Rules</p>
+      <h3 className="mt-3 text-3xl text-white">{tournament.rulebook?.title || `${tournament.title} rules`}</h3>
+      <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-300">
+        {tournament.rules || "Use the official tournament rulebook for eligibility, match procedure, conduct, and dispute rules."}
+      </p>
+      {tournament.rulebook ? (
+        <Link href={`/rulebooks/${tournament.rulebook.slug}`} className={buttonClassName({ variant: "secondary", className: "mt-6" })}>
+          Open full rulebook
+        </Link>
+      ) : null}
+    </Card>
   );
 }
 

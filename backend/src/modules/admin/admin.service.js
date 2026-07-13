@@ -1,6 +1,5 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { decryptSecret } = require("../../lib/secret-box");
@@ -97,6 +96,7 @@ const mapRegistrationMember = (member) => ({
   email: member.email,
   discord: member.discord,
   riotId: member.riotId,
+  additionalData: member.additionalData || {},
   inviteStatus: member.inviteStatus,
   inviteRespondedAt: member.inviteRespondedAt,
   account: member.user
@@ -110,7 +110,10 @@ const mapRegistrationMember = (member) => ({
 
 const mapTeamRegistration = (registration) => ({
   id: registration.id,
+  entryType: registration.entryType || "team",
   teamName: registration.teamName,
+  additionalData: registration.additionalData || {},
+  reservedUntil: registration.reservedUntil,
   country: registration.country,
   teamTag: registration.teamTag,
   organizationRequested: registration.organizationRequested,
@@ -934,18 +937,34 @@ const updateTeamRegistrationStatus = async (registrationId, body) => {
   const nextVerificationStatus = normalizeText(body.verificationStatus).toLowerCase();
   const updateData = {};
 
+  const currentRegistration = await prisma.teamRegistration.findUnique({
+    where: { id: registrationId },
+    select: {
+      paymentStatus: true,
+      tournament: { select: { registrationFeeAmount: true } },
+    },
+  });
+  if (!currentRegistration) throw new HttpError(404, "Registration not found.");
+
   if (nextStatus) {
     if (!REGISTRATION_STATUSES.has(nextStatus)) {
       throw new HttpError(400, "Invalid registration status.");
+    }
+    if (
+      nextStatus === "approved" &&
+      Number(currentRegistration.tournament.registrationFeeAmount || 0) > 0 &&
+      currentRegistration.paymentStatus !== "paid"
+    ) {
+      throw new HttpError(409, "Paid registrations must be provider-confirmed before approval.");
     }
     updateData.status = nextStatus;
   }
 
   if (nextPaymentStatus) {
-    if (!PAYMENT_STATUSES.has(nextPaymentStatus)) {
-      throw new HttpError(400, "Invalid payment status.");
-    }
-    updateData.paymentStatus = nextPaymentStatus;
+    throw new HttpError(
+      400,
+      "Payment status is provider-controlled and cannot be changed manually."
+    );
   }
 
   if (nextVerificationStatus) {
@@ -958,7 +977,7 @@ const updateTeamRegistrationStatus = async (registrationId, body) => {
   if (Object.keys(updateData).length === 0) {
     throw new HttpError(
       400,
-      "Provide at least one of status, paymentStatus, or verificationStatus."
+      "Provide at least one of status or verificationStatus."
     );
   }
 

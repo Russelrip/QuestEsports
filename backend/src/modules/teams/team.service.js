@@ -88,6 +88,7 @@ const mapSavedTeam = (team, userId) => ({
   teamTag: team.teamTag,
   organizationRequested: team.organizationRequested,
   logoName: team.logoName,
+  logoUrl: team.logoName ? `/api/uploads/team-logos/${team.logoName}` : null,
   isCaptain: team.captainUserId === userId,
   captainName:
     [team.captainUser.firstName, team.captainUser.lastName]
@@ -748,6 +749,55 @@ const sendTeamInvites = async (inviteDispatches) => {
   );
 };
 
+const activatePaidTeamRegistration = async (registrationId) => {
+  const registration = await prisma.teamRegistration.findUnique({
+    where: { id: registrationId },
+    include: {
+      user: true,
+      tournament: { select: { title: true } },
+      members: { orderBy: { memberOrder: "asc" } },
+    },
+  });
+  if (
+    !registration ||
+    registration.entryType !== "team" ||
+    registration.paymentStatus !== "paid" ||
+    registration.savedTeamId ||
+    !registration.user
+  ) {
+    return;
+  }
+
+  const members = registration.members.map((member) => ({
+    role: member.role,
+    order: member.memberOrder,
+    name: member.name,
+    email: member.email,
+    discord: member.discord,
+    riotId: member.riotId,
+  }));
+  const inviteDispatches = await prisma.$transaction(async (tx) => {
+    const current = await tx.teamRegistration.findUnique({
+      where: { id: registrationId },
+      select: { savedTeamId: true, paymentStatus: true },
+    });
+    if (!current || current.savedTeamId || current.paymentStatus !== "paid") return [];
+    return syncSavedTeamFromRegistration({
+      tx,
+      registrationId,
+      user: registration.user,
+      teamName: registration.teamName,
+      country: registration.country,
+      teamTag: registration.teamTag,
+      organizationRequested: registration.organizationRequested,
+      logoName: registration.teamLogoName,
+      members,
+      tournamentTitle: registration.tournament.title,
+    });
+  });
+  await sendTeamInvites(inviteDispatches);
+};
+
 module.exports = {
   listProfileTeams,
   createSavedTeam,
@@ -755,5 +805,6 @@ module.exports = {
   respondToTeamInvite,
   syncSavedTeamFromRegistration,
   sendTeamInvites,
+  activatePaidTeamRegistration,
   refreshRegistrationVerificationStatus,
 };

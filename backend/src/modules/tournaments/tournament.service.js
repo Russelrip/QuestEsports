@@ -33,6 +33,8 @@ const {
   buildShortCode,
   mapPublicBracket,
 } = require("./bracket.service");
+const { buildActiveRegistrationWhere } = require("./registration-eligibility");
+const { isPayHereConfigured } = require("../payments/payment.service");
 
 const TOURNAMENT_STATUSES = new Set([
   "draft",
@@ -43,16 +45,21 @@ const TOURNAMENT_STATUSES = new Set([
   "cancelled",
 ]);
 const REGISTRATION_MODES = new Set(["open_entry", "slot_based"]);
+const ENTRY_TYPES = new Set(["team", "solo"]);
+const REGISTRATION_FIELD_TYPES = new Set(["text", "number", "select"]);
+const REGISTRATION_FIELD_SCOPES = new Set(["entry", "member"]);
 const REGISTRATION_TRANSACTION_MAX_RETRIES = 3;
 const REGISTRATION_TRANSACTION_MAX_WAIT_MS = 10 * 1000;
 const REGISTRATION_TRANSACTION_TIMEOUT_MS = 20 * 1000;
 const RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES = new Set(["P2028", "P2034"]);
 
 const requiredPlayerIndexes = [2, 3, 4, 5];
-const registrationCountInclude = {
+const buildRegistrationCountInclude = (now = new Date()) => ({
   _count: {
     select: {
-      teamRegistrations: true,
+      teamRegistrations: {
+        where: buildActiveRegistrationWhere({ now }),
+      },
     },
   },
   rulebook: {
@@ -64,7 +71,14 @@ const registrationCountInclude = {
       variant: true,
     },
   },
-};
+  series: {
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+    },
+  },
+});
 const adminRegistrationSummarySelect = {
   id: true,
   teamName: true,
@@ -80,14 +94,15 @@ const adminRegistrationSummarySelect = {
   verificationStatus: true,
   createdAt: true,
 };
-const registrationAvailabilitySelect = {
+const buildRegistrationAvailabilitySelect = () => ({
   id: true,
+  registrationFeeAmount: true,
   maxTeams: true,
   status: true,
   registrationOpenAt: true,
   registrationDeadline: true,
-  ...registrationCountInclude,
-};
+  ...buildRegistrationCountInclude(),
+});
 const tournamentAssetFields = [
   {
     field: "bannerImageName",
@@ -322,6 +337,8 @@ const mapTournament = (tournament) => {
     slug: tournamentWithRegistrationCount.slug,
     title: tournamentWithRegistrationCount.title,
     game: tournamentWithRegistrationCount.game,
+    series: tournamentWithRegistrationCount.series || null,
+    seriesOrder: tournamentWithRegistrationCount.seriesOrder,
     displayPriority: tournamentWithRegistrationCount.displayPriority,
     bannerUrl: getTournamentBannerUrl(tournamentWithRegistrationCount.bannerImageName),
     shortDescription: tournamentWithRegistrationCount.shortDescription,
@@ -334,7 +351,20 @@ const mapTournament = (tournament) => {
     registrationDeadline: tournamentWithRegistrationCount.registrationDeadline,
     format: tournamentWithRegistrationCount.format,
     registrationMode: tournamentWithRegistrationCount.registrationMode,
+    entryType: tournamentWithRegistrationCount.entryType || "team",
     teamSize: tournamentWithRegistrationCount.teamSize,
+    minRosterSize: tournamentWithRegistrationCount.minRosterSize || tournamentWithRegistrationCount.teamSize,
+    maxRosterSize: tournamentWithRegistrationCount.maxRosterSize || tournamentWithRegistrationCount.teamSize,
+    maxSubstitutes: tournamentWithRegistrationCount.maxSubstitutes || 0,
+    registrationFields: tournamentWithRegistrationCount.registrationFields || [],
+    registrationFee: {
+      amount: Number(tournamentWithRegistrationCount.registrationFeeAmount || 0),
+      currency: tournamentWithRegistrationCount.registrationFeeCurrency || "LKR",
+    },
+    registrationPaymentAvailable:
+      Number(tournamentWithRegistrationCount.registrationFeeAmount || 0) === 0 ||
+      isPayHereConfigured(),
+    reservationMinutes: tournamentWithRegistrationCount.reservationMinutes || 15,
     maxTeams: tournamentWithRegistrationCount.maxTeams,
     registrationCount: tournamentWithRegistrationCount.registrationCount,
     prizePool: tournamentWithRegistrationCount.prizePool,
@@ -385,13 +415,26 @@ const mapTournamentWithRegistrations = (tournament) => ({
 const mapTournamentWithPublicTeams = (tournament) => ({
   ...mapTournament(tournament),
   ...mapPublicBracket(tournament.bracket),
-  registeredTeams: (tournament.teamRegistrations || []).map((registration) => ({
+  registeredTeams: (tournament.teamRegistrations || [])
+    .filter((registration) => (registration.entryType || "team") === "team")
+    .map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
     logoUrl: getTeamLogoUrl(registration.teamLogoName),
     shortCode: buildShortCode(registration.teamName),
     memberCount: registration.members?.length || 0,
     status: registration.status,
+    })),
+  registeredParticipants: (tournament.teamRegistrations || []).map((registration) => ({
+    id: registration.id,
+    entryType: registration.entryType || "team",
+    displayName:
+      (registration.entryType || "team") === "solo"
+        ? registration.captainName
+        : registration.teamName,
+    logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    shortCode: buildShortCode(registration.teamName),
+    memberCount: registration.members?.length || 0,
   })),
 });
 
@@ -549,9 +592,58 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
   const registrationMode = normalizeText(
     body.registrationMode || existingTournament?.registrationMode || "open_entry"
   ).toLowerCase();
+  const entryType = normalizeText(
+    body.entryType || existingTournament?.entryType || "team"
+  ).toLowerCase();
+  const seriesId = normalizeText(body.seriesId) || null;
+  const seriesOrder =
+    normalizeInteger(body.seriesOrder) ?? existingTournament?.seriesOrder ?? 100;
   const prizePool = normalizeText(body.prizePool);
   const teamSize = normalizeInteger(body.teamSize);
   const maxTeams = normalizeInteger(body.maxTeams);
+  const minRosterSize =
+    normalizeInteger(body.minRosterSize) ??
+    existingTournament?.minRosterSize ??
+    teamSize ??
+    1;
+  const maxRosterSize =
+    normalizeInteger(body.maxRosterSize) ??
+    existingTournament?.maxRosterSize ??
+    teamSize ??
+    1;
+  const maxSubstitutes =
+    normalizeInteger(body.maxSubstitutes) ??
+    existingTournament?.maxSubstitutes ??
+    0;
+  const reservationMinutes =
+    normalizeInteger(body.reservationMinutes) ??
+    existingTournament?.reservationMinutes ??
+    15;
+  const registrationFeeAmount = Number.parseFloat(
+    String(
+      body.registrationFeeAmount ??
+        existingTournament?.registrationFeeAmount ??
+        0
+    )
+  );
+  const registrationFeeCurrency = normalizeText(
+    body.registrationFeeCurrency ||
+      existingTournament?.registrationFeeCurrency ||
+      "LKR"
+  ).toUpperCase();
+  let registrationFields;
+  try {
+    registrationFields = Array.isArray(body.registrationFields)
+      ? body.registrationFields
+      : JSON.parse(
+          String(
+            body.registrationFields ??
+              JSON.stringify(existingTournament?.registrationFields || [])
+          )
+        );
+  } catch {
+    throw new HttpError(400, "Registration fields must be valid JSON.");
+  }
   const status = parseTournamentStatus(body.status || existingTournament?.status);
   const startDate = parseDateValue(
     body.startDate || existingTournament?.startDate,
@@ -595,6 +687,62 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     throw new HttpError(400, "Select a valid registration mode.");
   }
 
+  if (!ENTRY_TYPES.has(entryType)) {
+    throw new HttpError(400, "Select a valid team or solo entry type.");
+  }
+
+  if (
+    !minRosterSize ||
+    !maxRosterSize ||
+    minRosterSize < 1 ||
+    maxRosterSize < minRosterSize ||
+    maxSubstitutes < 0 ||
+    reservationMinutes < 1
+  ) {
+    throw new HttpError(400, "Roster limits and reservation time must be valid.");
+  }
+
+  if (!Number.isFinite(registrationFeeAmount) || registrationFeeAmount < 0) {
+    throw new HttpError(400, "Registration fee must be zero or a positive amount.");
+  }
+
+  if (!/^[A-Z]{3}$/.test(registrationFeeCurrency)) {
+    throw new HttpError(400, "Registration fee currency must be a three-letter code.");
+  }
+
+  if (!Array.isArray(registrationFields) || registrationFields.length > 20) {
+    throw new HttpError(400, "A tournament can define up to 20 registration fields.");
+  }
+
+  const normalizedRegistrationFields = registrationFields.map((field, index) => {
+    const key = normalizeSlug(field?.key);
+    const label = normalizeText(field?.label);
+    const type = normalizeText(field?.type || "text").toLowerCase();
+    const scope = normalizeText(field?.scope || "entry").toLowerCase();
+    const options = Array.isArray(field?.options)
+      ? field.options.map(normalizeText).filter(Boolean).slice(0, 50)
+      : [];
+
+    if (
+      !key ||
+      !label ||
+      !REGISTRATION_FIELD_TYPES.has(type) ||
+      !REGISTRATION_FIELD_SCOPES.has(scope) ||
+      (type === "select" && options.length === 0)
+    ) {
+      throw new HttpError(400, `Registration field ${index + 1} is invalid.`);
+    }
+
+    return {
+      key,
+      label,
+      type,
+      scope,
+      required: Boolean(field?.required),
+      options,
+    };
+  });
+
   if (registrationDeadline > startDate) {
     throw new HttpError(
       400,
@@ -629,7 +777,17 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     registrationDeadline,
     format,
     registrationMode,
+    entryType,
+    seriesId,
+    seriesOrder,
     teamSize,
+    minRosterSize,
+    maxRosterSize,
+    maxSubstitutes,
+    registrationFields: normalizedRegistrationFields,
+    registrationFeeAmount,
+    registrationFeeCurrency,
+    reservationMinutes,
     maxTeams,
     prizePool,
     status,
@@ -668,7 +826,7 @@ const listPublicTournaments = async ({ game } = {}) => {
       ...(normalizedGame && normalizedGame !== "all" ? { game: normalizedGame } : {}),
     },
     orderBy: [{ displayPriority: "asc" }, { isFeatured: "desc" }, { startDate: "asc" }, { createdAt: "desc" }],
-    include: registrationCountInclude,
+    include: buildRegistrationCountInclude(),
   });
 
   return sortPublicTournaments(tournaments.map(mapTournament));
@@ -687,15 +845,17 @@ const getPublicTournamentBySlug = async (slug) => {
       isPublished: true,
     },
     include: {
-      ...registrationCountInclude,
+      ...buildRegistrationCountInclude(),
       teamRegistrations: {
         where: {
-          status: "approved",
+          ...buildActiveRegistrationWhere({ approvedOnly: true }),
         },
         orderBy: [{ teamName: "asc" }],
         select: {
           id: true,
           teamName: true,
+          captainName: true,
+          entryType: true,
           teamLogoName: true,
           status: true,
           members: {
@@ -743,7 +903,7 @@ const listAdminTournaments = async ({ page, pageSize, search, status, isPublishe
       orderBy: [{ displayPriority: "asc" }, { startDate: "desc" }, { createdAt: "desc" }],
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
-      include: registrationCountInclude,
+      include: buildRegistrationCountInclude(),
     }),
   ]);
 
@@ -764,7 +924,7 @@ const getAdminTournamentById = async (tournamentId) => {
         select: adminRegistrationSummarySelect,
       },
       bracket: true,
-      ...registrationCountInclude,
+      ...buildRegistrationCountInclude(),
     },
   });
 
@@ -869,7 +1029,7 @@ const createAdminTournament = async ({ body, files }) => {
         ...payload,
         ...assetUpdates.data,
       },
-      include: registrationCountInclude,
+      include: buildRegistrationCountInclude(),
     });
   } catch (error) {
     await removeUploadsQuietly(assetUpdates.uploadedFiles, {
@@ -907,7 +1067,7 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
         ...payload,
         ...assetUpdates.data,
       },
-      include: registrationCountInclude,
+      include: buildRegistrationCountInclude(),
     });
   } catch (error) {
     await removeUploadsQuietly(assetUpdates.uploadedFiles, {
@@ -978,6 +1138,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
     where: { slug: tournamentSlug },
     select: {
       id: true,
+      registrationFeeAmount: true,
     },
   });
 
@@ -988,9 +1149,17 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
   const existingRegistration = await prisma.teamRegistration.findFirst({
     where: {
       tournamentId: tournament.id,
-      captainEmail: normalizeEmail(user.email),
+      ...buildActiveRegistrationWhere(),
+      AND: [
+        {
+          OR: [
+            { userId: user.id },
+            { captainEmail: normalizeEmail(user.email) },
+          ],
+        },
+      ],
     },
-    select: { id: true },
+    select: { id: true, paymentStatus: true, reservedUntil: true },
   });
 
   return {
@@ -1039,7 +1208,7 @@ const createTournamentRegistration = async ({ body, file, user }) => {
 
   const tournament = await prisma.tournament.findUnique({
     where: tournamentId ? { id: tournamentId } : { slug: normalizeSlug(tournamentSlug) },
-    include: registrationCountInclude,
+    include: buildRegistrationCountInclude(),
   });
 
   if (!tournament) {
@@ -1091,7 +1260,7 @@ const createTournamentRegistration = async ({ body, file, user }) => {
             const [currentTournament, existingRegistration] = await Promise.all([
               tx.tournament.findUnique({
                 where: { id: tournament.id },
-                select: registrationAvailabilitySelect,
+                select: buildRegistrationAvailabilitySelect(),
               }),
               tx.teamRegistration.findFirst({
                 where: {
@@ -1116,6 +1285,8 @@ const createTournamentRegistration = async ({ body, file, user }) => {
               data: {
                 id: registrationId,
                 tournamentId: tournament.id,
+                userId: user.id,
+                entryType: tournament.entryType || "team",
                 teamName,
                 country,
                 teamTag,
@@ -1129,6 +1300,10 @@ const createTournamentRegistration = async ({ body, file, user }) => {
                 teamLogoName: persistedLogo ? persistedLogo.filename : null,
                 rulebookAccepted,
                 falsityWarningAccepted,
+                paymentStatus:
+                  Number(tournament.registrationFeeAmount || 0) > 0
+                    ? "pending"
+                    : "paid",
               },
             });
 
@@ -1229,4 +1404,6 @@ module.exports = {
   getTournamentRegistrationStatus,
   createTournamentRegistration,
   parseOptionalDateValue,
+  mapTournament,
+  buildRegistrationCountInclude,
 };

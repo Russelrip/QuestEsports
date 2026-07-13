@@ -1,7 +1,12 @@
 import PageLayout from "@/components/PageLayout";
 import TournamentsContent from "@/components/tournaments/TournamentsContent";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
-import { fetchPublicTournaments, type Tournament } from "@/lib/tournaments";
+import {
+  fetchPublicEventSeries,
+  fetchPublicTournaments,
+  type EventSeries,
+  type Tournament,
+} from "@/lib/tournaments";
 
 export const dynamic = "force-dynamic";
 
@@ -18,17 +23,14 @@ export const metadata = buildPageMetadata({
 });
 
 export default async function TournamentsPage() {
-  let tournaments: Tournament[] = [];
-
-  try {
-    tournaments = await fetchPublicTournaments();
-  } catch (error) {
-    console.error("Unable to load tournaments:", error);
-  }
+  const [tournaments, series]: [Tournament[], EventSeries[]] = await Promise.all([
+    fetchPublicTournaments(),
+    fetchPublicEventSeries(),
+  ]);
 
   return (
     <PageLayout title="Tournaments" description={defaultPageDescriptions.tournaments}>
-      <TournamentsContent tournaments={tournaments} />
+      <TournamentsContent tournaments={tournaments} series={series} />
     </PageLayout>
   );
 }

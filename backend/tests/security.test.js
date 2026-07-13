@@ -83,3 +83,12 @@ test("strict API origin checks still block sensitive and authenticated requests 
     restore();
   }
 });
+
+test("PayHere notifications are exempt from browser origin and CSRF checks", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    const request = buildRequest({ path: "/api/payments/payhere/notify", method: "POST", headers: { origin: "https://www.payhere.lk" } });
+    assert.equal(await runMiddleware(security.requireAllowedApiOrigin, request), null);
+    assert.equal(await runMiddleware(security.protectAgainstCsrf, request), null);
+  } finally { restore(); }
+});

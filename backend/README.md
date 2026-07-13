@@ -4,7 +4,7 @@ This is the Express 5 API for Quest Esports. It owns authentication, sessions, t
 
 ## Requirements
 
-- Node.js 20.x
+- Node.js 24 LTS
 - npm 10+
 - PostgreSQL 15+ recommended
 

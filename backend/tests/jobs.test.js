@@ -52,7 +52,7 @@ const createJobsPrismaMock = () => {
         jobs.push(job);
         return cloneJob(job);
       },
-      findFirst: async ({ where, orderBy }) => {
+      findFirst: async ({ where, orderBy: _orderBy }) => {
         const now = where.OR[0]?.availableAt?.lte;
         const staleCutoff = where.OR[1]?.lockedAt?.lt;
         const filtered = jobs.filter((job) => {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -22,6 +23,8 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { useTeams } from "@/hooks/api/useTeams";
 import { useToastStore } from "@/hooks/useToastStore";
 import { getInitials } from "@/lib/utils";
+import { buildApiUrl } from "@/lib/api";
+import { AccountDashboard, DashboardRegistration, fetchAccountDashboard } from "@/lib/account";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required."),
@@ -50,10 +53,24 @@ const formatMemberRole = (role: string, memberOrder: number) => {
   return `${role === "PLAYER" ? "Player" : "Substitute"} ${memberOrder}`;
 };
 
+function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[]; empty: string }) {
+  if (entries.length === 0) return <p className="rounded-[22px] border border-white/8 bg-white/5 p-5 text-sm text-slate-400">{empty}</p>;
+  return <div className="grid gap-4 sm:grid-cols-2">{entries.map((entry) => (
+    <Link key={entry.id} href={`/tournaments/${entry.tournament.slug}`} className="group overflow-hidden rounded-[24px] border border-white/8 bg-white/5 transition hover:-translate-y-0.5 hover:border-cyan-300/25">
+      {entry.tournament.bannerUrl ? <div className="relative aspect-[16/7]"><Image src={buildApiUrl(entry.tournament.bannerUrl)} alt="" fill className="object-cover" sizes="(min-width: 640px) 40vw, 100vw" /></div> : null}
+      <div className="p-5"><p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">{entry.tournament.game}</p><h4 className="mt-2 text-lg text-white">{entry.tournament.title}</h4><p className="mt-2 text-sm text-slate-400">{entry.displayName}</p><div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.paymentStatus}</Badge></div></div>
+    </Link>
+  ))}</div>;
+}
+
 export default function ProfileView() {
   const router = useRouter();
   const { user, refreshUser, logout, isLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<"account" | "security" | "teams">("account");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "account" | "security" | "teams">("dashboard");
+  const [dashboard, setDashboard] = useState<AccountDashboard | null>(null);
+  const [dashboardError, setDashboardError] = useState("");
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [avatarSaving, setAvatarSaving] = useState(false);
   const { data: teamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
   const teams = teamsData ?? [];
@@ -96,6 +113,12 @@ export default function ProfileView() {
     }
   }, [isLoading, profileForm, router, user]);
 
+  useEffect(() => {
+    if (!user) return;
+    setDashboardLoading(true);
+    fetchAccountDashboard().then(setDashboard).catch((error) => setDashboardError(error instanceof Error ? error.message : "Could not load dashboard.")).finally(() => setDashboardLoading(false));
+  }, [user]);
+
   if (isLoading) {
     return (
       <section className="py-10">
@@ -111,6 +134,32 @@ export default function ProfileView() {
   }
 
   const initials = getInitials(user.firstName, user.lastName, user.username);
+
+  const updateAvatar = async (file?: File) => {
+    if (!file) return;
+    const body = new FormData();
+    body.append("avatar", file);
+    setAvatarSaving(true);
+    try {
+      const { response, data } = await apiFetchJson<{ success?: boolean; message?: string; user?: typeof user }>("/api/me/avatar", { method: "POST", body });
+      const message = getApiErrorMessage(response, data, "Could not update profile picture.");
+      if (message || !data.user) throw new Error(message || "Could not update profile picture.");
+      refreshUser(data.user);
+      showToast({ tone: "success", title: "Profile picture updated" });
+    } catch (error) { showToast({ tone: "error", title: error instanceof Error ? error.message : "Avatar upload failed" }); }
+    finally { setAvatarSaving(false); }
+  };
+
+  const removeAvatar = async () => {
+    setAvatarSaving(true);
+    try {
+      const { response, data } = await apiFetchJson<{ success?: boolean; message?: string; user?: typeof user }>("/api/me/avatar", { method: "DELETE" });
+      const message = getApiErrorMessage(response, data, "Could not remove profile picture.");
+      if (message || !data.user) throw new Error(message || "Could not remove profile picture.");
+      refreshUser(data.user);
+    } catch (error) { showToast({ tone: "error", title: error instanceof Error ? error.message : "Avatar removal failed" }); }
+    finally { setAvatarSaving(false); }
+  };
 
   const submitProfile = profileForm.handleSubmit(async (values) => {
     try {
@@ -188,8 +237,8 @@ export default function ProfileView() {
         <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
           <Card className="p-6 sm:p-8">
             <div className="flex items-start gap-4">
-              <div className="flex size-16 items-center justify-center rounded-[24px] bg-violet-700 text-lg font-bold text-white">
-                {initials}
+              <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-[24px] bg-violet-700 text-lg font-bold text-white">
+                {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt={`${user.firstName} ${user.lastName}`} fill className="object-cover" sizes="80px" /> : initials}
               </div>
               <div>
                 <Badge className="border-cyan-300/20 bg-cyan-400/10 text-cyan-100">
@@ -200,6 +249,11 @@ export default function ProfileView() {
                 </h2>
                 <p className="mt-2 text-sm text-slate-400">@{user.username}</p>
               </div>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <label className={buttonClassName({ variant: "secondary", className: "cursor-pointer" })}>{avatarSaving ? "Saving..." : "Upload photo"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarSaving} onChange={(event) => void updateAvatar(event.target.files?.[0])} /></label>
+              {user.avatarUrl ? <Button type="button" variant="ghost" disabled={avatarSaving} onClick={() => void removeAvatar()}>Remove</Button> : null}
             </div>
 
             <div className="mt-8 grid gap-4">
@@ -252,6 +306,13 @@ export default function ProfileView() {
             <div className="mb-6 flex flex-wrap gap-2">
               <button
                 type="button"
+                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "dashboard" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
+                onClick={() => setActiveTab("dashboard")}
+              >
+                Dashboard
+              </button>
+              <button
+                type="button"
                 className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "account" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
                 onClick={() => setActiveTab("account")}
               >
@@ -273,7 +334,15 @@ export default function ProfileView() {
               </button>
             </div>
 
-            {activeTab === "account" ? (
+            {activeTab === "dashboard" ? (
+              <div className="grid gap-8">
+                {dashboardLoading ? <LoadingState title="Loading dashboard" description="Fetching your registrations and orders." /> : dashboardError ? <p className="text-sm text-rose-300">{dashboardError}</p> : dashboard ? <>
+                  <div><h3 className="text-2xl text-white">Current registrations</h3><div className="mt-5"><RegistrationCards entries={dashboard.currentRegistrations} empty="You do not have an active tournament registration." /></div></div>
+                  <div className="border-t border-white/8 pt-8"><h3 className="text-2xl text-white">Past events</h3><div className="mt-5"><RegistrationCards entries={dashboard.pastRegistrations} empty="Your completed tournament history will appear here." /></div></div>
+                  <div className="border-t border-white/8 pt-8"><div className="flex items-center justify-between gap-3"><h3 className="text-2xl text-white">Merchandise orders</h3><Link href="/shop" className="text-sm text-cyan-200">Visit shop</Link></div>{dashboard.orders.length ? <div className="mt-5 grid gap-3">{dashboard.orders.map((order) => <Link key={order.id} href={`/shop/order/${order.publicToken}`} className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-white/8 bg-white/5 p-4 text-sm"><span className="text-white">{order.itemCount} item{order.itemCount === 1 ? "" : "s"} · {order.currency} {order.total.toFixed(2)}</span><span className="text-slate-400">{order.status} · {order.paymentStatus}</span></Link>)}</div> : <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>}</div>
+                </> : null}
+              </div>
+            ) : activeTab === "account" ? (
               <div className="grid gap-8">
                 <div>
                   <h3 className="text-2xl text-white">Edit Profile</h3>
@@ -371,7 +440,9 @@ export default function ProfileView() {
                     {teams.map((team) => (
                       <div key={team.id} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
+                          <div className="flex items-center gap-4">
+                            <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-black/30 text-sm font-bold text-white">{team.logoUrl ? <Image src={buildApiUrl(team.logoUrl)} alt={`${team.name} logo`} fill className="object-contain p-1" sizes="64px" /> : getInitials(team.name)}</div>
+                            <div>
                             <h4 className="text-xl font-semibold text-white">{team.name}</h4>
                             {team.teamTag || team.country ? (
                               <p className="text-sm text-cyan-200">
@@ -389,13 +460,14 @@ export default function ProfileView() {
                                 Quest E-sports membership requested
                               </p>
                             ) : null}
+                            </div>
                           </div>
                           {team.isCaptain ? (
                             <Link
-                              href={`/tournament-registration?savedTeam=${team.id}`}
+                              href="/tournaments"
                               className={buttonClassName({ variant: "secondary" })}
                             >
-                              Reuse Team
+                              Find a Tournament
                             </Link>
                           ) : (
                             <Badge>Member</Badge>

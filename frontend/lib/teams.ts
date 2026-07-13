@@ -25,6 +25,7 @@ export type SavedTeam = {
   teamTag?: string | null;
   organizationRequested?: boolean;
   logoName?: string | null;
+  logoUrl?: string | null;
   isCaptain: boolean;
   captainName: string;
   createdAt: string;

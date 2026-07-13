@@ -6,6 +6,7 @@ const allowedOrigins = new Set(env.CORS_ORIGINS);
 const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
   "/api/auth/google/callback",
   "/api/auth/discord/callback",
+  "/api/payments/payhere/notify",
 ]);
 const SAFE_PUBLIC_API_PATHS = [
   /^\/api\/health$/,
@@ -14,7 +15,12 @@ const SAFE_PUBLIC_API_PATHS = [
   /^\/api\/tournaments(?:\/[^/]+)?$/,
   /^\/api\/posters(?:\/[^/]+(?:\/image)?)?$/,
   /^\/api\/rulebooks(?:\/[^/]+)?$/,
-  /^\/api\/uploads\/(?:tournament-banners|poster-images|team-logos)\/[^/]+$/,
+  /^\/api\/event-series(?:\/[^/]+)?$/,
+  /^\/api\/products(?:\/[^/]+)?$/,
+  /^\/api\/commerce\/capabilities$/,
+  /^\/api\/products\/[^/]+\/images\/[^/]+$/,
+  /^\/api\/orders\/[^/]+$/,
+  /^\/api\/uploads\/(?:tournament-banners|poster-images|team-logos|avatars)\/[^/]+$/,
   /^\/api\/team-invite$/,
 ];
 
@@ -104,7 +110,7 @@ const requireAllowedApiOrigin = (req, res, next) => {
 };
 
 const protectAgainstCsrf = (req, res, next) => {
-  if (SAFE_METHODS.has(req.method)) {
+  if (SAFE_METHODS.has(req.method) || ORIGIN_CHECK_EXEMPT_PATHS.has(req.path)) {
     next();
     return;
   }

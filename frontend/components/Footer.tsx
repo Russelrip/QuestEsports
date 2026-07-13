@@ -16,6 +16,7 @@ const usefulLinks = [
   { href: "/shop", label: "Shop" },
   { href: "/terms-of-service", label: "Terms of Service" },
   { href: "/privacy-policy", label: "Privacy Policy" },
+  { href: "/refund-policy", label: "Refund Policy" },
 ] as const;
 
 function FooterLinkList({
@@ -93,8 +94,9 @@ export default function Footer() {
                   href={contact.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="border-b border-white/8 pb-3 transition hover:text-white"
+                  className="flex cursor-pointer items-center gap-2 border-b border-white/8 pb-3 transition hover:text-emerald-200"
                 >
+                  <Image src="/images/whatsapp.png" alt="" width={16} height={16} />
                   {contact.label}
                 </a>
               ))}

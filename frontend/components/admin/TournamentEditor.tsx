@@ -43,6 +43,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
   const [bracket, setBracket] = useState<AdminTournamentBracket | null>(null);
   const [bracketBusy, setBracketBusy] = useState(false);
   const [rulebooks, setRulebooks] = useState<Array<{ id: string; title: string; game: string; variant: string }>>([]);
+  const [eventSeries, setEventSeries] = useState<Array<{ id: string; title: string }>>([]);
   const [assetPreview, setAssetPreview] = useState<{
     bannerUrl: string | null;
     completedPosterUrl: string | null;
@@ -73,6 +74,12 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
       }
     };
     void loadRulebooks();
+  }, []);
+
+  useEffect(() => {
+    void adminRequest<{ series: Array<{ id: string; title: string }> }>("/api/admin/event-series")
+      .then((data) => setEventSeries(data.series))
+      .catch(() => setEventSeries([]));
   }, []);
 
   useEffect(() => {
@@ -236,14 +243,52 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   <option value="slot_based">Slot Based</option>
                 </Select>
               </FormField>
+              <FormField label="Entry Type" htmlFor="entryType" required>
+                <Select id="entryType" value={formValues.entryType} onChange={(event) => updateField("entryType", event.target.value as Tournament["entryType"])}>
+                  <option value="team">Team</option>
+                  <option value="solo">Solo player</option>
+                </Select>
+              </FormField>
+              <FormField label="Event Series" htmlFor="seriesId" hint="Optional parent event such as Quest Ascension.">
+                <Select id="seriesId" value={formValues.seriesId} onChange={(event) => updateField("seriesId", event.target.value)}>
+                  <option value="">Standalone tournament</option>
+                  {eventSeries.map((series) => <option key={series.id} value={series.id}>{series.title}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Series Order" htmlFor="seriesOrder">
+                <Input id="seriesOrder" type="number" value={formValues.seriesOrder} onChange={(event) => updateField("seriesOrder", event.target.value)} />
+              </FormField>
               <FormField label="Team Size" htmlFor="teamSize" required>
                 <Input id="teamSize" type="number" min="1" value={formValues.teamSize} onChange={(event) => updateField("teamSize", event.target.value)} required />
+              </FormField>
+              <FormField label="Minimum Roster" htmlFor="minRosterSize" required>
+                <Input id="minRosterSize" type="number" min="1" value={formValues.minRosterSize} onChange={(event) => updateField("minRosterSize", event.target.value)} required />
+              </FormField>
+              <FormField label="Maximum Main Roster" htmlFor="maxRosterSize" required>
+                <Input id="maxRosterSize" type="number" min="1" value={formValues.maxRosterSize} onChange={(event) => updateField("maxRosterSize", event.target.value)} required />
+              </FormField>
+              <FormField label="Maximum Substitutes" htmlFor="maxSubstitutes" required>
+                <Input id="maxSubstitutes" type="number" min="0" value={formValues.maxSubstitutes} onChange={(event) => updateField("maxSubstitutes", event.target.value)} required />
               </FormField>
               <FormField label="Max Teams" htmlFor="maxTeams" required>
                 <Input id="maxTeams" type="number" min="1" value={formValues.maxTeams} onChange={(event) => updateField("maxTeams", event.target.value)} required />
               </FormField>
               <FormField label="Prize Pool" htmlFor="prizePool" required>
                 <Input id="prizePool" value={formValues.prizePool} onChange={(event) => updateField("prizePool", event.target.value)} required />
+              </FormField>
+              <FormField label="Registration Fee" htmlFor="registrationFeeAmount" hint="Use 0 for free registration.">
+                <Input id="registrationFeeAmount" type="number" min="0" step="0.01" value={formValues.registrationFeeAmount} onChange={(event) => updateField("registrationFeeAmount", event.target.value)} />
+              </FormField>
+              <FormField label="Fee Currency" htmlFor="registrationFeeCurrency">
+                <Select id="registrationFeeCurrency" value={formValues.registrationFeeCurrency} onChange={(event) => updateField("registrationFeeCurrency", event.target.value)}>
+                  <option value="LKR">LKR</option><option value="USD">USD</option>
+                </Select>
+              </FormField>
+              <FormField label="Payment Reservation (minutes)" htmlFor="reservationMinutes">
+                <Input id="reservationMinutes" type="number" min="1" value={formValues.reservationMinutes} onChange={(event) => updateField("reservationMinutes", event.target.value)} />
+              </FormField>
+              <FormField label="Configurable Registration Fields" htmlFor="registrationFields" hint='JSON list. Example: [{"key":"pubg-mobile-id","label":"PUBG Mobile ID","type":"text","scope":"entry","required":true,"options":[]}]' className="md:col-span-2 xl:col-span-3">
+                <Textarea id="registrationFields" rows={8} value={formValues.registrationFields} onChange={(event) => updateField("registrationFields", event.target.value)} />
               </FormField>
               <FormField label="Start Date" htmlFor="startDate" required>
                 <Input id="startDate" type="datetime-local" value={formValues.startDate} onChange={(event) => updateField("startDate", event.target.value)} required />

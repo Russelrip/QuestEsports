@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: 20
+  NODE_VERSION: 24
   CI: true
 
 jobs:
@@ -42,6 +42,7 @@ jobs:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci?schema=public
       DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci?schema=public
       SESSION_COOKIE_NAME: quest_session
+      RUN_DATABASE_INTEGRATION_TESTS: true
     defaults:
       run:
         working-directory: backend

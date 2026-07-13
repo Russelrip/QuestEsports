@@ -3,6 +3,16 @@ export type ApiEnvelope<T> = T & {
   message?: string;
 };
 
+export class ApiRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 export const buildApiUrl = (path: string) => {
   if (
     path.startsWith("http://") ||
@@ -76,7 +86,7 @@ export async function parseApiResponse<T>(
   const data = await readApiResponse<T>(response, fallbackMessage);
 
   if (!response.ok || data.success === false) {
-    throw new Error(data.message || fallbackMessage);
+    throw new ApiRequestError(data.message || fallbackMessage, response.status);
   }
 
   return data as ApiEnvelope<T> & { success: true };

@@ -38,6 +38,7 @@ const PUBLIC_USER_SELECT = {
   username: true,
   phone: true,
   discordTag: true,
+  avatarImageName: true,
   role: true,
   pendingEmail: true,
   emailVerified: true,
@@ -55,6 +56,9 @@ const mapUserForResponse = (user) => ({
   username: user.username,
   phone: user.phone,
   discordTag: user.discordTag,
+  avatarUrl: user.avatarImageName
+    ? `/api/uploads/avatars/${user.avatarImageName}`
+    : null,
   role: user.role,
   pendingEmail: user.pendingEmail || null,
   emailVerified: Boolean(user.emailVerified),

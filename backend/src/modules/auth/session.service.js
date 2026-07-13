@@ -20,6 +20,9 @@ const mapUserForSession = (record) => ({
   username: record.username,
   phone: record.phone,
   discordTag: record.discordTag,
+  avatarUrl: record.avatarImageName
+    ? `/api/uploads/avatars/${record.avatarImageName}`
+    : null,
   role: record.role,
   pendingEmail: record.pendingEmail || null,
   emailVerified: Boolean(record.emailVerified),

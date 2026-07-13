@@ -8,7 +8,7 @@ This repository does not have a single root `npm run dev` command. Run the backe
 
 ### Requirements
 
-- Node.js 20+
+- Node.js 24 LTS
 - npm 10+
 - PostgreSQL 15+ recommended
 
@@ -37,12 +37,20 @@ SMTP_USER=
 SMTP_PASS=
 MAIL_FROM=
 APP_URL=http://localhost:3000
+API_PUBLIC_URL=http://localhost:5001
+UPLOAD_ROOT=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
 DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
 DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
+PAYHERE_MODE=sandbox
+PAYHERE_MERCHANT_ID=
+PAYHERE_MERCHANT_SECRET=
+PAYHERE_NOTIFY_URL=https://your-public-api.example.com/api/payments/payhere/notify
+SHOP_DELIVERY_FEE_LKR=500
+SHOP_ORDER_RESERVATION_MINUTES=30
 ```
 
 Frontend: create `frontend/.env.local`
@@ -60,6 +68,9 @@ Notes:
 - `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
 - SMTP is optional for local development. If mail is not configured, signup, verification, password reset, team invites, email-change requests, and security events still execute, but email delivery is skipped.
 - OAuth is optional. If you enable Google or Discord login, use real client credentials and register the callback URLs shown above. Do not leave placeholder values like `your_google_client_id`.
+- Paid tournament registration and shop checkout require PayHere credentials plus a publicly reachable HTTPS notification URL. Browser return pages never mark an order paid.
+- When PayHere is not configured, free tournament registrations remain available while paid registration and shop checkout are explicitly disabled.
+- `UPLOAD_ROOT` is optional locally and required in production; point it at durable, backed-up storage outside disposable release directories.
 
 ### 2. Install dependencies
 
@@ -123,6 +134,7 @@ Recommended flow:
 - [Database and Storage](./docs/database-and-storage.md)
 - [Email System](./docs/email-system.md)
 - [Setup and Deployment Guide](./docs/setup-and-deployment.md)
+- [Commerce and Tournament Rollout](./docs/commerce-and-tournament-rollout.md)
 - [Backend README](./backend/README.md)
 - [Frontend README](./frontend/README.md)
 
@@ -142,19 +154,22 @@ Recommended flow:
 
 - Marketing homepage and brand sections
 - Tournament listing and tournament detail pages
+- Event-series pages, image-led game navigation, public schedules, participants, rules, and published brackets
 - Tournament listing cards with prize pool, registration deadline, and tournament start summaries
 - Tournament detail pages with native tournament metadata, rulebook link, registered-team cards, and published bracket boards
 - Tournament schedule data parsed from uploaded XLSX or CSV files for admin/event workflows
 - Completed-tournament showcase sections with official poster plus 1st, 2nd, and 3rd place visuals
 - Public tournament team lists with approved registered teams, team logos, short codes, and member counts
 - Native double-elimination bracket viewing when an admin publishes bracket data
-- Team tournament registration flow
+- Slug-bound configurable solo/team registration with roster reservations and PayHere fees
+- Merchandise catalogue, product variants, cart, guest/member checkout, delivery fee, and order status
 - Join Quest recruitment application flow for solo players, complete teams, and incomplete teams
 - Email verification, login, logout, password reset, and email change flows
 - MFA setup, MFA login challenge, backup codes, session management, and Google/Discord OAuth sign-in
 - Posters gallery and match-video archive
 - Rulebook and contact pages
-- Player profile page
+- Player dashboard with avatars, current/past registrations, visual teams, and order history
+- Privacy, terms, and refund/return policy pages
 
 ### Admin features
 
@@ -167,6 +182,7 @@ Recommended flow:
 - Recruitment application review, status management, deletion, and filtered Excel export
 - Contact inbox moderation
 - Poster/image asset management
+- Event-series, products, orders, and payment reconciliation management
 - Legacy poster import and image migration utilities
 
 ## Repository Structure
@@ -221,7 +237,8 @@ QuestEsports/
 ## Main Data Domains
 
 - `User`, `Session`, `VerificationToken`, `PasswordResetToken`, `EmailChangeToken`
-- `Tournament`, `TournamentBracket`, `TeamRegistration`, `RegistrationMember`
+- `EventSeries`, `Tournament`, `TournamentBracket`, `TeamRegistration`, `RegistrationMember`, `PaymentTransaction`
+- `Product`, `ProductVariant`, `ProductImage`, `MerchandiseOrder`, `MerchandiseOrderItem`
 - `SavedTeam`, `SavedTeamMember`
 - `ContactSubmission`
 - `ImageAsset`, `Poster`
@@ -234,6 +251,10 @@ QuestEsports/
 - `/`
 - `/tournaments`
 - `/tournaments/[slug]`
+- `/tournaments/[slug]/register`
+- `/tournaments/series/[slug]`
+- `/shop`, `/shop/[slug]`, `/shop/cart`, `/shop/order/[token]`
+- `/refund-policy`
 - `/tournament-registration`
 - `/registration`
 - `/join`
@@ -260,6 +281,10 @@ QuestEsports/
 - `/admin/tournaments`
 - `/admin/tournaments/new`
 - `/admin/tournaments/[id]/edit`
+- `/admin/event-series`
+- `/admin/products`
+- `/admin/orders`
+- `/admin/payments`
 - `/admin/registrations`
 - `/admin/recruitment`
 - `/admin/rulebooks`
@@ -271,7 +296,11 @@ The backend exposes these main route groups:
 
 - Auth: `/api/signup`, `/api/login`, `/api/login/mfa`, OAuth start/callback routes, `/api/logout`, `/api/me`, verification, email-change, password-reset, MFA, and session endpoints
 - Public tournaments: `/api/tournaments`, `/api/tournaments/:slug`
-- Tournament registration: `/api/tournament-registration`, `/api/tournament-registration/status/:slug`
+- Event series: `/api/event-series`, `/api/event-series/:slug`
+- Tournament registration: `/api/tournaments/:slug/registrations` (the legacy endpoint remains a compatibility alias)
+- Shop: `/api/products`, `/api/products/:slug`, `/api/orders`, `/api/orders/:publicToken`
+- Payments: `/api/payments/payhere/notify`, `/api/payments/:orderId`
+- Account: `/api/me/dashboard`, `/api/me/avatar`
 - Recruitment applications: `/api/recruitment-applications`
 - Teams: `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
 - Contact: `/api/contact`

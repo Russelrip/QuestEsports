@@ -3,6 +3,7 @@ import ContactInfo from "@/components/contact/ContactInfo";
 import PageLayout from "@/components/PageLayout";
 import { Section } from "@/components/ui/section";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
+import JoinQuestSection from "@/components/home/JoinQuestSection";
 
 export const metadata = buildPageMetadata({
   title: "Contact Quest E-sports",
@@ -25,6 +26,7 @@ export default function ContactPage() {
           <ContactForm />
         </div>
       </Section>
+      <JoinQuestSection />
     </PageLayout>
   );
 }

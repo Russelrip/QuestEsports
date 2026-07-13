@@ -44,7 +44,14 @@ const termsSections = [
     ],
   },
   {
-    title: "5. Acceptable Use",
+    title: "5. Merchandise Orders and Payments",
+    paragraphs: [
+      "Product availability, variants, prices, and delivery estimates are shown at checkout and may change before an order is placed. Payments are processed by PayHere, and an order is confirmed only after Quest E-sports receives and verifies the payment notification.",
+      "Customized products are governed by the Refund and Return Policy. Customers are responsible for selecting the correct size and providing an accurate Sri Lanka delivery address.",
+    ],
+  },
+  {
+    title: "6. Acceptable Use",
     bullets: [
       "Do not misuse the website, attempt unauthorised access, interfere with service operation, or bypass security controls.",
       "Do not impersonate another person, submit false information, or use another person's account without permission.",
@@ -53,55 +60,55 @@ const termsSections = [
     ],
   },
   {
-    title: "6. Social Login and Third-Party Services",
+    title: "7. Social Login and Third-Party Services",
     paragraphs: [
       "Quest E-sports may offer login or related features through third-party services such as Google or Discord. Your use of those third-party services remains subject to their own terms and privacy policies.",
       "Quest E-sports is not responsible for third-party services, websites, or external platforms that are not under its control.",
     ],
   },
   {
-    title: "7. Intellectual Property",
+    title: "8. Intellectual Property",
     paragraphs: [
       "Unless otherwise stated, Quest E-sports and its licensors retain rights in the website, branding, platform content, original media, design, text, graphics, and service materials.",
       "You may not copy, republish, distribute, modify, reverse engineer, or commercially exploit protected website materials except as allowed by law or with prior permission.",
     ],
   },
   {
-    title: "8. Service Availability and Changes",
+    title: "9. Service Availability and Changes",
     paragraphs: [
       "Quest E-sports may update, modify, suspend, or discontinue parts of the website or services at any time. We do not guarantee uninterrupted availability, continuous uptime, or error-free operation.",
       "We may make operational, design, security, or content changes whenever reasonably necessary.",
     ],
   },
   {
-    title: "9. Disclaimers",
+    title: "10. Disclaimers",
     paragraphs: [
       "The services are provided on an as-available and as-is basis to the extent permitted by applicable law. Quest E-sports does not guarantee that the platform will always be available, secure, or free from errors, delays, or interruptions.",
       "Tournament participation, external platform dependencies, email delivery, hosting, and third-party integrations may be affected by factors outside our direct control.",
     ],
   },
   {
-    title: "10. Limitation of Liability",
+    title: "11. Limitation of Liability",
     paragraphs: [
       "To the extent permitted by applicable law, Quest E-sports will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages arising from your use of the website, participation in events, inability to access services, or reliance on platform content.",
       "Nothing in these terms is intended to exclude liability that cannot be lawfully excluded under applicable law.",
     ],
   },
   {
-    title: "11. Privacy",
+    title: "12. Privacy",
     paragraphs: [
       "Your use of the services is also subject to the Quest E-sports Privacy Policy, which explains how personal information is collected, used, stored, and shared.",
     ],
   },
   {
-    title: "12. Termination",
+    title: "13. Termination",
     paragraphs: [
       "You may stop using the services at any time. Quest E-sports may suspend or terminate access where reasonably necessary for rule enforcement, security, legal compliance, abuse prevention, or operational reasons.",
       "Sections that by their nature should continue after termination, including provisions relating to content rights, liability, privacy, and dispute-related matters, will survive termination where applicable.",
     ],
   },
   {
-    title: "13. Changes to These Terms",
+    title: "14. Changes to These Terms",
     paragraphs: [
       "Quest E-sports may update these Terms of Service from time to time. When we make material changes, we will update the effective date on this page and may provide additional notice where appropriate.",
     ],
@@ -143,7 +150,7 @@ export default function TermsOfServiceContent() {
         ))}
 
         <Card className="p-6 sm:p-8">
-          <h3 className="text-2xl text-white">14. Contact Us</h3>
+          <h3 className="text-2xl text-white">15. Contact Us</h3>
           <p className="mt-4 text-sm leading-7 text-slate-300">
             If you have questions about these Terms of Service, contact us at{" "}
             <a href="mailto:questesports.lk@gmail.com" className="text-cyan-200 transition hover:text-cyan-100">

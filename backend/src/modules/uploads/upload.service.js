@@ -6,12 +6,14 @@ const {
   teamLogoDirectory,
   tournamentBannerDirectory,
   posterImageDirectory,
+  avatarDirectory,
 } = require("../../middleware/upload");
 
 const UPLOAD_DIRECTORIES = {
   "team-logos": teamLogoDirectory,
   "tournament-banners": tournamentBannerDirectory,
   "poster-images": posterImageDirectory,
+  avatars: avatarDirectory,
 };
 
 const CONTENT_TYPES = {

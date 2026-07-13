@@ -40,4 +40,16 @@ router.get(
   })
 );
 
+router.get(
+  "/uploads/avatars/:filename",
+  asyncHandler(async (req, res) => {
+    const file = await streamUpload("avatars", req.params.filename);
+
+    res.setHeader("Content-Type", file.contentType);
+    res.setHeader("Content-Length", file.size);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.status(200).send(file.data);
+  })
+);
+
 module.exports = router;

@@ -2,7 +2,7 @@ const { env } = require("../config/env");
 const { monitoringStatus } = require("./monitoring");
 const { suggestedJobBackends } = require("./jobs");
 
-const apiBaseUrl = env.CORS_ORIGINS[0] || "http://localhost:5001";
+const apiBaseUrl = env.API_PUBLIC_URL || `http://localhost:${env.PORT}`;
 
 const createQueryParameter = (name, schema) => ({
   name,
@@ -81,9 +81,9 @@ const openApiDocument = {
   openapi: "3.1.0",
   info: {
     title: "Quest E-sports API",
-    version: "1.0.0",
+    version: "2.0.0",
     description:
-      "Core contracts for auth, tournaments, registrations, and admin workflows.",
+      "Core contracts for auth, tournament series, configurable registrations, PayHere payments, merchandise, and admin workflows.",
   },
   servers: [{ url: apiBaseUrl }],
   tags: [
@@ -91,6 +91,10 @@ const openApiDocument = {
     { name: "Auth" },
     { name: "Tournaments" },
     { name: "Registrations" },
+    { name: "Series" },
+    { name: "Shop" },
+    { name: "Payments" },
+    { name: "Account" },
     { name: "Admin" },
   ],
   components: {
@@ -183,6 +187,43 @@ const openApiDocument = {
     "/api/tournaments": createListResponse("Tournaments", "List public tournaments", [
       createQueryParameter("game", { type: "string" }),
     ]),
+    "/api/tournaments/{slug}": {
+      get: { tags: ["Tournaments"], summary: "Get tournament detail, schedule, participants, and published bracket", parameters: [createPathParameter("slug", { type: "string" })], responses: { 200: createResponse("Tournament detail") } },
+    },
+    "/api/event-series": createListResponse("Series", "List published event series"),
+    "/api/event-series/{slug}": {
+      get: { tags: ["Series"], summary: "Get a published event series and child tournaments", parameters: [createPathParameter("slug", { type: "string" })], responses: { 200: createResponse("Event series detail") } },
+    },
+    "/api/products": createListResponse("Shop", "List active merchandise products"),
+    "/api/products/{slug}": {
+      get: { tags: ["Shop"], summary: "Get active product and variants", parameters: [createPathParameter("slug", { type: "string" })], responses: { 200: createResponse("Product detail") } },
+    },
+    "/api/commerce/capabilities": {
+      get: { tags: ["Shop"], summary: "Get payment and checkout availability", responses: { 200: createResponse("Commerce capabilities") } },
+    },
+    "/api/orders/quote": {
+      post: { tags: ["Shop"], summary: "Calculate an authoritative merchandise quote", responses: { 200: createResponse("Current cart quote") } },
+    },
+    "/api/orders": {
+      post: { tags: ["Shop"], summary: "Create a merchandise order and signed PayHere checkout", responses: { 201: createResponse("Order and checkout payload") } },
+    },
+    "/api/orders/{publicToken}": {
+      get: { tags: ["Shop"], summary: "Get guest or member order status", parameters: [createPathParameter("publicToken", { type: "string" })], responses: { 200: createResponse("Order status") } },
+    },
+    "/api/payments/payhere/notify": {
+      post: { tags: ["Payments"], summary: "Receive and verify an authoritative PayHere notification", responses: { 200: createResponse("Notification accepted") } },
+    },
+    "/api/payments/{orderId}": {
+      get: { tags: ["Payments"], summary: "Get locally verified payment status", parameters: [createPathParameter("orderId", { type: "string" }), createQueryParameter("token", { type: "string" })], responses: { 200: createResponse("Payment status") } },
+    },
+    "/api/me/dashboard": createListResponse("Account", "Get current and past registrations, teams, and orders"),
+    "/api/me/avatar": {
+      post: { tags: ["Account"], summary: "Upload or replace the authenticated user's avatar", responses: { 200: createResponse("Updated user") } },
+      delete: { tags: ["Account"], summary: "Remove the authenticated user's avatar", responses: { 200: createResponse("Updated user") } },
+    },
+    "/api/tournaments/{slug}/registrations": {
+      post: { tags: ["Registrations"], summary: "Submit a slug-bound configurable solo or team registration", parameters: [createPathParameter("slug", { type: "string" })], responses: { 201: createResponse("Registration and optional checkout payload") } },
+    },
     "/api/tournament-registration/status/{slug}": {
       get: {
         tags: ["Registrations"],
@@ -196,7 +237,7 @@ const openApiDocument = {
     "/api/tournament-registration": {
       post: {
         tags: ["Registrations"],
-        summary: "Submit a tournament registration",
+        summary: "Compatibility alias for slug-bound configurable registration",
         requestBody: registrationRequestBody,
         responses: {
           201: createResponse("Registration submitted"),
@@ -210,6 +251,10 @@ const openApiDocument = {
       createQueryParameter("status", { type: "string" }),
       createQueryParameter("isPublished", { type: "boolean" }),
     ]),
+    "/api/admin/event-series": createListResponse("Admin", "List and manage event series"),
+    "/api/admin/products": createListResponse("Admin", "List and manage merchandise products"),
+    "/api/admin/orders": createListResponse("Admin", "List and manage merchandise orders"),
+    "/api/admin/payments": createListResponse("Admin", "Reconcile payment transactions", [createQueryParameter("status", { type: "string" }), createQueryParameter("purpose", { type: "string" })]),
     "/api/admin/team-registrations": createListResponse(
       "Admin",
       "List team registrations for admins",

@@ -1,6 +1,10 @@
 const app = require("./app");
 const { initializeDatabase, closeDatabase } = require("./lib/database");
 const { startJobWorker, stopJobWorker } = require("./lib/jobs");
+const {
+  startCommerceMaintenance,
+  stopCommerceMaintenance,
+} = require("./lib/commerce-maintenance");
 const { logger } = require("./lib/logger");
 const { env } = require("./config/env");
 const { ensureUploadDirectories } = require("./middleware/upload");
@@ -38,6 +42,7 @@ const shutdown = async (signal) => {
 
   if (!server || !isServerListening || !server.listening) {
     await stopJobWorker();
+    stopCommerceMaintenance();
     await closeDatabase();
     process.exit(0);
     return;
@@ -47,6 +52,7 @@ const shutdown = async (signal) => {
     if (error) {
       logger.error("HTTP server closed with an error", { error, signal });
       await stopJobWorker();
+      stopCommerceMaintenance();
       await closeDatabase();
       process.exit(1);
       return;
@@ -54,6 +60,7 @@ const shutdown = async (signal) => {
 
     logger.info("HTTP server closed", { signal });
     await stopJobWorker();
+    stopCommerceMaintenance();
     await closeDatabase();
     process.exit(0);
   });
@@ -64,6 +71,7 @@ const start = async () => {
   await ensureUploadDirectories();
   await initializeDatabase();
   startJobWorker();
+  startCommerceMaintenance();
 
   server = app.listen(env.PORT);
 

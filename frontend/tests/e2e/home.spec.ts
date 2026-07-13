@@ -142,6 +142,7 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
     "href",
     "https://www.facebook.com/share/p/14gNLGrBLWF/?mibextid=wwXIfr"
   );
+  await expect(page.getByRole("button", { name: /Mobile Fit Poster/ }).locator("img")).toHaveCSS("object-fit", "contain");
   await page.locator("main section button").first().click();
 
   const dialog = page.getByRole("dialog", { name: "Poster preview" });
@@ -156,4 +157,59 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
   expect(await dialog.evaluate((element) => element.scrollHeight)).toBe(
     await dialog.evaluate((element) => element.clientHeight)
   );
+});
+
+test("members page lists the named CODM leader without placeholder groups", async ({ page }) => {
+  await page.goto("/members");
+  await expect(page.getByRole("heading", { name: "Ayodhya “LIEBE” Janz" })).toBeVisible();
+  await expect(page.getByText("CODM Wing Leader")).toBeVisible();
+  await expect(page.getByText("To Be Determined")).toHaveCount(0);
+});
+
+test("refund policy publishes customized product and tournament fee terms", async ({ page }) => {
+  await page.goto("/refund-policy");
+  await expect(page.getByRole("heading", { name: "Refund & Return Policy" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customized merchandise" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tournament registration fees" })).toBeVisible();
+  await expect(page.getByRole("contentinfo").getByRole("link", { name: "Refund Policy" })).toHaveAttribute("href", "/refund-policy");
+});
+
+test("production security policy permits only the configured PayHere form endpoints", async ({ page }) => {
+  const response = await page.goto("/privacy-policy");
+  const policy = response?.headers()["content-security-policy"] || "";
+  expect(policy).toContain("form-action 'self' https://sandbox.payhere.lk https://www.payhere.lk");
+  expect(policy).not.toContain("form-action *");
+});
+
+test("cart uses a server quote and clearly disables checkout without PayHere", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("quest-merch-cart", JSON.stringify({
+      state: {
+        items: [{
+          variantId: "variant-1",
+          productId: "product-1",
+          productSlug: "quest-shirt",
+          productName: "Quest Shirt",
+          variantName: "Small",
+          currency: "LKR",
+          unitPrice: 1,
+          imageUrl: null,
+          quantity: 2,
+        }],
+      },
+      version: 0,
+    }));
+  });
+  await page.route("**/api/commerce/capabilities", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, capabilities: { paymentsAvailable: false, provider: null, shopCheckoutAvailable: false } }),
+  }));
+  await page.route("**/api/orders/quote", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, quote: { currency: "LKR", subtotal: 7000, deliveryFee: 500, total: 7500, items: [] } }),
+  }));
+  await page.goto("/shop/cart");
+  await expect(page.getByText("Total LKR 7500.00")).toBeVisible();
+  await expect(page.getByText(/no order or stock reservation has been created/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Online payment unavailable" })).toBeDisabled();
 });

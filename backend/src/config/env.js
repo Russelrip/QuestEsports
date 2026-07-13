@@ -5,6 +5,11 @@ const normalizePositiveInteger = (value, fallback) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const normalizeNonNegativeInteger = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
 const normalizeCsv = (value) =>
   String(value || "")
     .split(",")
@@ -94,7 +99,10 @@ const env = {
   MFA_ISSUER: optional("MFA_ISSUER", "Quest E-sports"),
   AUTH_ENCRYPTION_KEY: optional("AUTH_ENCRYPTION_KEY"),
   TRUST_PROXY: normalizeTrustProxy(process.env.TRUST_PROXY),
-  REQUIRE_API_ORIGIN: normalizeBoolean(process.env.REQUIRE_API_ORIGIN, false),
+  REQUIRE_API_ORIGIN: normalizeBoolean(
+    process.env.REQUIRE_API_ORIGIN,
+    normalizeNodeEnv(process.env.NODE_ENV) === "production"
+  ),
   JOB_WORKER_ENABLED: normalizeBoolean(process.env.JOB_WORKER_ENABLED, true),
   JOB_WORKER_POLL_MS: normalizePositiveInteger(process.env.JOB_WORKER_POLL_MS, 5000),
   JOB_WORKER_MAX_ATTEMPTS: normalizePositiveInteger(
@@ -107,6 +115,8 @@ const env = {
   SMTP_PASS: optional("SMTP_PASS"),
   MAIL_FROM: optional("MAIL_FROM"),
   APP_URL: optional("APP_URL"),
+  API_PUBLIC_URL: optional("API_PUBLIC_URL"),
+  UPLOAD_ROOT: optional("UPLOAD_ROOT"),
   LOG_DRAIN_URL: optional("LOG_DRAIN_URL"),
   LOG_DRAIN_TOKEN: optional("LOG_DRAIN_TOKEN"),
   MONITORING_WEBHOOK_URL: optional("MONITORING_WEBHOOK_URL"),
@@ -117,6 +127,18 @@ const env = {
   DISCORD_CLIENT_ID: optional("DISCORD_CLIENT_ID"),
   DISCORD_CLIENT_SECRET: optional("DISCORD_CLIENT_SECRET"),
   DISCORD_CALLBACK_URL: optional("DISCORD_CALLBACK_URL"),
+  PAYHERE_MODE: optional("PAYHERE_MODE", "sandbox").toLowerCase(),
+  PAYHERE_MERCHANT_ID: optional("PAYHERE_MERCHANT_ID"),
+  PAYHERE_MERCHANT_SECRET: optional("PAYHERE_MERCHANT_SECRET"),
+  PAYHERE_NOTIFY_URL: optional("PAYHERE_NOTIFY_URL"),
+  SHOP_DELIVERY_FEE_LKR: normalizeNonNegativeInteger(
+    process.env.SHOP_DELIVERY_FEE_LKR,
+    500
+  ),
+  SHOP_ORDER_RESERVATION_MINUTES: normalizePositiveInteger(
+    process.env.SHOP_ORDER_RESERVATION_MINUTES,
+    30
+  ),
 };
 
 if (env.CORS_ORIGINS.length === 0) {
@@ -127,9 +149,19 @@ if (!["debug", "info", "warn", "error"].includes(env.LOG_LEVEL)) {
   throw new Error('LOG_LEVEL must be one of: debug, info, warn, error.');
 }
 
+if (!["sandbox", "live"].includes(env.PAYHERE_MODE)) {
+  throw new Error('PAYHERE_MODE must be either "sandbox" or "live".');
+}
+
 if (env.NODE_ENV === "production" && !env.AUTH_ENCRYPTION_KEY) {
   throw new Error(
     "AUTH_ENCRYPTION_KEY is required in production for MFA secret encryption and OAuth state signing."
+  );
+}
+
+if (env.NODE_ENV === "production" && !env.UPLOAD_ROOT) {
+  throw new Error(
+    "UPLOAD_ROOT is required in production and must point to durable, backed-up storage shared by the API process."
   );
 }
 

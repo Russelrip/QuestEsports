@@ -8,10 +8,18 @@ const rulebookRoutes = require("../modules/rulebooks/rulebook.routes");
 const teamRoutes = require("../modules/teams/team.routes");
 const tournamentRoutes = require("../modules/tournaments/tournament.routes");
 const uploadRoutes = require("../modules/uploads/upload.routes");
+const accountRoutes = require("../modules/account/account.routes");
+const seriesRoutes = require("../modules/series/series.routes");
+const paymentRoutes = require("../modules/payments/payment.routes");
+const shopRoutes = require("../modules/shop/shop.routes");
 
 const router = express.Router();
 
 router.use(authRoutes);
+router.use(accountRoutes);
+router.use(seriesRoutes);
+router.use(paymentRoutes);
+router.use(shopRoutes);
 router.use(adminRoutes);
 router.use(contactRoutes);
 router.use(mediaRoutes);
