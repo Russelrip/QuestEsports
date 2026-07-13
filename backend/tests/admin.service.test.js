@@ -28,6 +28,7 @@ const loadAdminService = (prisma, uploadMock = {}) =>
     },
     [uploadModulePath]: {
       removeUploadFiles: async () => undefined,
+      bankTransferProofDirectory: "private/bank-transfer-proofs",
       teamLogoDirectory: "uploads/team-logos",
       ...uploadMock,
     },
@@ -226,9 +227,23 @@ test("deleteTeamRegistration removes a tournament registration by id", async () 
       findUnique: async (args) => {
         assert.deepEqual(args, {
           where: { id: "registration-1" },
-          select: { teamLogoName: true },
+          select: {
+            teamLogoName: true,
+            payments: {
+              select: {
+                bankTransferProof: {
+                  select: { storedFilename: true },
+                },
+              },
+            },
+          },
         });
-        return { teamLogoName: "quest-five.png" };
+        return {
+          teamLogoName: "quest-five.png",
+          payments: [
+            { bankTransferProof: { storedFilename: "receipt.webp" } },
+          ],
+        };
       },
       deleteMany: async (args) => {
         deleteCalls.push(args);
@@ -246,6 +261,10 @@ test("deleteTeamRegistration removes a tournament registration by id", async () 
 
     assert.deepEqual(deleteCalls, [{ where: { id: "registration-1" } }]);
     assert.deepEqual(removedUploads, [
+      {
+        directory: "private/bank-transfer-proofs",
+        filename: "receipt.webp",
+      },
       {
         directory: "uploads/team-logos",
         filename: "quest-five.png",

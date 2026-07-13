@@ -11,6 +11,8 @@ const normalizeSlug = (value) =>
 
 const isNonEmptyString = (value) => normalizeText(value).length > 0;
 const isValidEmail = (value) => EMAIL_REGEX.test(normalizeEmail(value));
+const isPasswordWithinBcryptLimit = (value) =>
+  Buffer.byteLength(String(value || ""), "utf8") <= 72;
 const normalizeInteger = (value) => {
   const parsed = Number.parseInt(String(value || "").trim(), 10);
   return Number.isInteger(parsed) ? parsed : null;
@@ -47,24 +49,32 @@ const getSignupFieldErrors = ({
 
   if (!isNonEmptyString(firstName)) {
     fieldErrors.firstName = "First name is required.";
+  } else if (normalizeText(firstName).length > 100) {
+    fieldErrors.firstName = "First name must be 100 characters or fewer.";
   }
 
   if (!isNonEmptyString(lastName)) {
     fieldErrors.lastName = "Last name is required.";
+  } else if (normalizeText(lastName).length > 100) {
+    fieldErrors.lastName = "Last name must be 100 characters or fewer.";
   }
 
-  if (!isValidEmail(email)) {
+  if (!isValidEmail(email) || normalizeEmail(email).length > 254) {
     fieldErrors.email = "Please enter a valid email address.";
   }
 
   if (!isNonEmptyString(username)) {
     fieldErrors.username = "Username is required.";
+  } else if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(normalizeText(username))) {
+    fieldErrors.username = "Username must be 3-32 characters using letters, numbers, dots, dashes, or underscores.";
   }
 
   if (!isNonEmptyString(password)) {
     fieldErrors.password = "Password is required.";
   } else if (String(password).length < 8) {
     fieldErrors.password = "Password must be at least 8 characters long.";
+  } else if (!isPasswordWithinBcryptLimit(password)) {
+    fieldErrors.password = "Password must be no more than 72 UTF-8 bytes.";
   }
 
   if (!isNonEmptyString(confirmPassword)) {
@@ -89,5 +99,6 @@ module.exports = {
   normalizeOptionalUrl,
   isNonEmptyString,
   isValidEmail,
+  isPasswordWithinBcryptLimit,
   getSignupFieldErrors,
 };

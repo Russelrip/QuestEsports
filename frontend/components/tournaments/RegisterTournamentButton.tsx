@@ -51,7 +51,7 @@ export default function RegisterTournamentButton({
 
       try {
         setStatus("loading");
-        const response = await apiFetch(`/api/tournament-registration/status/${tournament.slug}`);
+        const response = await apiFetch(`/api/tournaments/${tournament.slug}/registration-status`);
         const data = await response.json();
 
         if (!response.ok || !data.success) {

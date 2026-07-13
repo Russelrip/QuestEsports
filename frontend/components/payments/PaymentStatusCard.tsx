@@ -10,7 +10,7 @@ import { useCartStore } from "@/hooks/useCartStore";
 
 type PaymentStatus = {
   orderId: string;
-  status: "created" | "pending" | "paid" | "cancelled" | "failed" | "charged_back" | "expired" | "review_required";
+  status: "created" | "pending" | "paid" | "cancelled" | "failed" | "charged_back" | "expired" | "review_required" | "refunded";
   amount: number;
   currency: string;
   statusMessage?: string | null;

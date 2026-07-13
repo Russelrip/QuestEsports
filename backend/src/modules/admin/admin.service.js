@@ -14,6 +14,7 @@ const {
   formatExportTimestamp,
 } = require("../../lib/excel-export");
 const {
+  bankTransferProofDirectory,
   teamLogoDirectory,
 } = require("../../middleware/upload");
 const {
@@ -27,6 +28,7 @@ const {
   normalizeText,
   normalizeUsername,
   isValidEmail,
+  isPasswordWithinBcryptLimit,
 } = require("../../lib/validation");
 const { mapUserForResponse, validateUserBasics } = require("../auth/auth.service");
 
@@ -355,6 +357,8 @@ const createAdminUser = async ({ body }) => {
     email,
     username,
   });
+  if (phone && phone.length > 50) fieldErrors.phone = "Phone must be 50 characters or fewer.";
+  if (discordTag && discordTag.length > 100) fieldErrors.discordTag = "Discord username must be 100 characters or fewer.";
 
   if (!isValidEmail(email)) {
     fieldErrors.email = "Please enter a valid email address.";
@@ -364,6 +368,8 @@ const createAdminUser = async ({ body }) => {
     fieldErrors.password = "Password is required.";
   } else if (password.length < 8) {
     fieldErrors.password = "Password must be at least 8 characters long.";
+  } else if (!isPasswordWithinBcryptLimit(password)) {
+    fieldErrors.password = "Password must be no more than 72 UTF-8 bytes.";
   }
 
   if (!confirmPassword) {
@@ -446,6 +452,8 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
     email,
     username,
   });
+  if (phone && phone.length > 50) fieldErrors.phone = "Phone must be 50 characters or fewer.";
+  if (discordTag && discordTag.length > 100) fieldErrors.discordTag = "Discord username must be 100 characters or fewer.";
 
   if (!isValidEmail(email)) {
     fieldErrors.email = "Please enter a valid email address.";
@@ -454,6 +462,8 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
   if (password) {
     if (password.length < 8) {
       fieldErrors.password = "Password must be at least 8 characters long.";
+    } else if (!isPasswordWithinBcryptLimit(password)) {
+      fieldErrors.password = "Password must be no more than 72 UTF-8 bytes.";
     }
 
     if (password !== confirmPassword) {
@@ -995,6 +1005,13 @@ const deleteTeamRegistration = async (registrationId) => {
     where: { id: registrationId },
     select: {
       teamLogoName: true,
+      payments: {
+        select: {
+          bankTransferProof: {
+            select: { storedFilename: true },
+          },
+        },
+      },
     },
   });
 
@@ -1010,15 +1027,20 @@ const deleteTeamRegistration = async (registrationId) => {
     throw new HttpError(404, "Team registration not found.");
   }
 
-  await removeUploadsQuietly(
-    registration.teamLogoName
-      ? [
+  const uploads = registration.payments
+    .map((payment) => payment.bankTransferProof?.storedFilename)
+    .filter(Boolean)
+    .map((filename) => ({ directory: bankTransferProofDirectory, filename }));
+  if (registration.teamLogoName) {
+    uploads.push(
           {
             directory: teamLogoDirectory,
             filename: registration.teamLogoName,
-          },
-        ]
-      : [],
+          }
+    );
+  }
+  await removeUploadsQuietly(
+    uploads,
     {
       operation: "deleteTeamRegistration",
       registrationId,

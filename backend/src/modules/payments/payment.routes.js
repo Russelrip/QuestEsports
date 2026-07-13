@@ -13,6 +13,7 @@ const {
   uploadBankTransferProof,
   downloadBankTransferProof,
   reviewBankTransferPayment,
+  reconcilePayHerePayment,
 } = require("./payment.controller");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 
@@ -51,6 +52,12 @@ router.patch(
   requireAdmin,
   express.json(),
   reviewBankTransferPayment
+);
+router.patch(
+  "/admin/payments/:transactionId/payhere-reconciliation",
+  requireAdmin,
+  express.json(),
+  reconcilePayHerePayment
 );
 
 module.exports = router;

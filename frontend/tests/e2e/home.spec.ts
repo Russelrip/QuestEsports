@@ -180,6 +180,15 @@ test("production security policy permits only the configured PayHere form endpoi
   const policy = response?.headers()["content-security-policy"] || "";
   expect(policy).toContain("form-action 'self' https://sandbox.payhere.lk https://www.payhere.lk");
   expect(policy).not.toContain("form-action *");
+  expect(policy).toContain("'strict-dynamic'");
+  expect(policy).toMatch(/script-src 'self' 'nonce-[^']+'/);
+  expect(policy).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+});
+
+test("legacy generic tournament registration page is removed", async ({ page }) => {
+  const response = await page.goto("/tournament-registration");
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole("combobox", { name: /tournament/i })).toHaveCount(0);
 });
 
 test("cart uses a server quote and clearly disables checkout without PayHere", async ({ page }) => {

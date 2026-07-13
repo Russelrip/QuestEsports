@@ -1,5 +1,4 @@
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
-import type { TournamentRegistrationFormData } from "@/lib/tournament-registration";
 import {
   TEAM_LOGO_MAX_FILE_SIZE,
   assertFileWithinUploadLimit,
@@ -164,65 +163,3 @@ export async function respondToTeamInvite(token: string, decision: "accept" | "d
     message: data.message || "",
   };
 }
-
-const getMemberByRole = (
-  team: SavedTeam,
-  role: SavedTeamMember["role"],
-  memberOrder: number
-) =>
-  team.members.find(
-    (member) => member.role === role && member.memberOrder === memberOrder
-  );
-
-export const applySavedTeamToRegistrationForm = (
-  team: SavedTeam,
-  current: TournamentRegistrationFormData
-): TournamentRegistrationFormData => {
-  const next = {
-    ...current,
-    teamName: team.name,
-    country: team.country || current.country,
-    teamTag: team.teamTag || "",
-    organizationRequested: Boolean(team.organizationRequested),
-  };
-
-  const player2 = getMemberByRole(team, "PLAYER", 1);
-  const player3 = getMemberByRole(team, "PLAYER", 2);
-  const player4 = getMemberByRole(team, "PLAYER", 3);
-  const player5 = getMemberByRole(team, "PLAYER", 4);
-  const sub1 = getMemberByRole(team, "SUBSTITUTE", 1);
-  const sub2 = getMemberByRole(team, "SUBSTITUTE", 2);
-  const coach = getMemberByRole(team, "COACH", 1);
-
-  return {
-    ...next,
-    player2Name: player2?.name || "",
-    player2Email: player2?.email || "",
-    player2Discord: player2?.discord || "",
-    player2RiotId: player2?.riotId || "",
-    player3Name: player3?.name || "",
-    player3Email: player3?.email || "",
-    player3Discord: player3?.discord || "",
-    player3RiotId: player3?.riotId || "",
-    player4Name: player4?.name || "",
-    player4Email: player4?.email || "",
-    player4Discord: player4?.discord || "",
-    player4RiotId: player4?.riotId || "",
-    player5Name: player5?.name || "",
-    player5Email: player5?.email || "",
-    player5Discord: player5?.discord || "",
-    player5RiotId: player5?.riotId || "",
-    sub1Name: sub1?.name || "",
-    sub1Email: sub1?.email || "",
-    sub1Discord: sub1?.discord || "",
-    sub1RiotId: sub1?.riotId || "",
-    sub2Name: sub2?.name || "",
-    sub2Email: sub2?.email || "",
-    sub2Discord: sub2?.discord || "",
-    sub2RiotId: sub2?.riotId || "",
-    coachName: coach?.name || "",
-    coachEmail: coach?.email || "",
-    coachDiscord: coach?.discord || "",
-    coachRiotId: coach?.riotId || "",
-  };
-};

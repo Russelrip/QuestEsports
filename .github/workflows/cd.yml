@@ -25,6 +25,7 @@ jobs:
   backend-deploy:
     name: Deploy backend
     runs-on: ubuntu-latest
+    environment: production
     if: ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && vars.BACKEND_DEPLOY_ENABLED == 'true' }}
     env:
       NODE_ENV: test
@@ -63,12 +64,17 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
           SSH_HOST: ${{ secrets.BACKEND_SSH_HOST }}
           SSH_PORT: ${{ secrets.BACKEND_SSH_PORT }}
+          SSH_HOST_KEY: ${{ secrets.BACKEND_SSH_HOST_KEY }}
         run: |
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_HOST"
+          test -n "$SSH_HOST_KEY"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/backend_deploy_key
           chmod 600 ~/.ssh/backend_deploy_key
-          ssh-keyscan -p "${SSH_PORT:-22}" "$SSH_HOST" >> ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Deploy backend over SSH
         env:
@@ -77,27 +83,69 @@ jobs:
           SSH_USER: ${{ secrets.BACKEND_SSH_USER }}
           APP_DIR: ${{ secrets.BACKEND_APP_DIR }}
           PM2_PROCESS: ${{ secrets.BACKEND_PM2_PROCESS }}
+          HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
           DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         run: |
-          ssh -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
+          if [ "$(id -u)" -eq 0 ]; then
+            echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
+            exit 1
+          fi
           cd "$APP_DIR"
+          test -f backend/.env
+          ENV_MODE="$(stat -c '%a' backend/.env)"
+          if [ "$ENV_MODE" != "600" ] && [ "$ENV_MODE" != "640" ]; then
+            echo "backend/.env must have mode 600 or 640 (currently $ENV_MODE)." >&2
+            exit 1
+          fi
+          PREVIOUS_SHA="$(git rev-parse HEAD)"
           REMOTE_URL="$(git remote get-url origin)"
           if ! git fetch --prune origin "$DEPLOY_SHA"; then
             echo "The VPS could not fetch origin: $REMOTE_URL" >&2
             echo "For a private GitHub repository, configure a read-only deploy key on the VPS and use the repository SSH URL." >&2
             exit 1
           fi
-          if [ -n "$(git status --porcelain -- backend/node_modules)" ]; then
-            echo "Resetting generated backend dependencies left by the previous deployment."
-            git checkout HEAD -- backend/node_modules
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "The VPS checkout has tracked changes. Refusing to overwrite them." >&2
+            git status --short >&2
+            exit 1
           fi
+
+          rollback() {
+            trap - ERR
+            echo "Deployment failed; restoring application code at $PREVIOUS_SHA." >&2
+            cd "$APP_DIR"
+            git checkout --detach "$PREVIOUS_SHA"
+            cd backend
+            npm ci
+            npm run prisma:generate
+            pm2 restart "$PM2_PROCESS" --update-env
+            for attempt in 1 2 3 4 5; do
+              curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" >/dev/null && break
+              sleep 2
+            done
+            exit 1
+          }
+          trap rollback ERR
+
           git checkout --detach "$DEPLOY_SHA"
           test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
           cd backend
           npm ci
           npm run prisma:generate
+          npm run lint
           npm run prisma:migrate:deploy
           pm2 restart "$PM2_PROCESS" --update-env
+          HEALTHY=false
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" >/dev/null; then
+              HEALTHY=true
+              break
+            fi
+            sleep 2
+          done
+          test "$HEALTHY" = true
           pm2 save
+          trap - ERR
           SCRIPT

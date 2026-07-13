@@ -28,6 +28,18 @@ const required = (name) => {
 
 const optional = (name, fallback = "") => String(process.env[name] || fallback).trim();
 
+const assertHttpsUrl = (name, value) => {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must be a valid absolute URL.`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`${name} must use HTTPS in production.`);
+  }
+};
+
 const normalizeNodeEnv = (value) => {
   const normalized = String(value || "development").trim().toLowerCase();
   const allowed = new Set(["development", "test", "production"]);
@@ -104,6 +116,10 @@ const env = {
     normalizeNodeEnv(process.env.NODE_ENV) === "production"
   ),
   JOB_WORKER_ENABLED: normalizeBoolean(process.env.JOB_WORKER_ENABLED, true),
+  COMMERCE_MAINTENANCE_ENABLED: normalizeBoolean(
+    process.env.COMMERCE_MAINTENANCE_ENABLED,
+    true
+  ),
   JOB_WORKER_POLL_MS: normalizePositiveInteger(process.env.JOB_WORKER_POLL_MS, 5000),
   JOB_WORKER_MAX_ATTEMPTS: normalizePositiveInteger(
     process.env.JOB_WORKER_MAX_ATTEMPTS,
@@ -114,10 +130,22 @@ const env = {
   SMTP_USER: optional("SMTP_USER"),
   SMTP_PASS: optional("SMTP_PASS"),
   MAIL_FROM: optional("MAIL_FROM"),
+  MAIL_DELIVERY_REQUIRED: normalizeBoolean(
+    process.env.MAIL_DELIVERY_REQUIRED,
+    normalizeNodeEnv(process.env.NODE_ENV) === "production"
+  ),
   APP_URL: optional("APP_URL"),
   API_PUBLIC_URL: optional("API_PUBLIC_URL"),
   UPLOAD_ROOT: optional("UPLOAD_ROOT"),
   PRIVATE_UPLOAD_ROOT: optional("PRIVATE_UPLOAD_ROOT"),
+  PAYMENT_PROOF_PDF_ENABLED: normalizeBoolean(
+    process.env.PAYMENT_PROOF_PDF_ENABLED,
+    false
+  ),
+  BANK_TRANSFER_PROOF_RETENTION_DAYS: normalizePositiveInteger(
+    process.env.BANK_TRANSFER_PROOF_RETENTION_DAYS,
+    365
+  ),
   LOG_DRAIN_URL: optional("LOG_DRAIN_URL"),
   LOG_DRAIN_TOKEN: optional("LOG_DRAIN_TOKEN"),
   MONITORING_WEBHOOK_URL: optional("MONITORING_WEBHOOK_URL"),
@@ -160,10 +188,61 @@ if (env.NODE_ENV === "production" && !env.AUTH_ENCRYPTION_KEY) {
   );
 }
 
+if (
+  env.NODE_ENV === "production" &&
+  !/^[a-f0-9]{64}$/i.test(env.AUTH_ENCRYPTION_KEY)
+) {
+  throw new Error("AUTH_ENCRYPTION_KEY must be a 64-character hexadecimal secret in production.");
+}
+
 if (env.NODE_ENV === "production" && !env.UPLOAD_ROOT) {
   throw new Error(
     "UPLOAD_ROOT is required in production and must point to durable, backed-up storage shared by the API process."
   );
+}
+
+
+if (env.NODE_ENV === "production") {
+  if (!env.PRIVATE_UPLOAD_ROOT) {
+    throw new Error("PRIVATE_UPLOAD_ROOT is required in production for private payment evidence.");
+  }
+  if (!env.APP_URL || !env.API_PUBLIC_URL) {
+    throw new Error("APP_URL and API_PUBLIC_URL are required in production.");
+  }
+  assertHttpsUrl("APP_URL", env.APP_URL);
+  assertHttpsUrl("API_PUBLIC_URL", env.API_PUBLIC_URL);
+  env.CORS_ORIGINS.forEach((origin) => assertHttpsUrl("CORS_ORIGIN", origin));
+  if (env.TRUST_PROXY === false) {
+    throw new Error("TRUST_PROXY must be configured in production when the API is behind Nginx.");
+  }
+  if (!env.REQUIRE_API_ORIGIN) {
+    throw new Error("REQUIRE_API_ORIGIN must be enabled in production.");
+  }
+  if (!env.MAIL_DELIVERY_REQUIRED) {
+    throw new Error("MAIL_DELIVERY_REQUIRED must be enabled in production while password authentication is available.");
+  }
+}
+
+const smtpValues = [env.SMTP_HOST, env.SMTP_USER, env.SMTP_PASS, env.MAIL_FROM];
+const hasAnySmtpValue = smtpValues.some(Boolean);
+const hasCompleteSmtpConfiguration = smtpValues.every(Boolean);
+if (hasAnySmtpValue && !hasCompleteSmtpConfiguration) {
+  throw new Error("SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM must be configured together.");
+}
+if (env.MAIL_DELIVERY_REQUIRED && !hasCompleteSmtpConfiguration) {
+  throw new Error("SMTP configuration is required when MAIL_DELIVERY_REQUIRED is enabled.");
+}
+
+const payHereValues = [
+  env.PAYHERE_MERCHANT_ID,
+  env.PAYHERE_MERCHANT_SECRET,
+  env.PAYHERE_NOTIFY_URL,
+];
+if (payHereValues.some(Boolean) && !payHereValues.every(Boolean)) {
+  throw new Error("PAYHERE_MERCHANT_ID, PAYHERE_MERCHANT_SECRET, and PAYHERE_NOTIFY_URL must be configured together.");
+}
+if (env.NODE_ENV === "production" && env.PAYHERE_NOTIFY_URL) {
+  assertHttpsUrl("PAYHERE_NOTIFY_URL", env.PAYHERE_NOTIFY_URL);
 }
 
 module.exports = { env };

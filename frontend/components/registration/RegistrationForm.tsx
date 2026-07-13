@@ -13,7 +13,7 @@ import { Section } from "@/components/ui/section";
 import { Select } from "@/components/ui/select";
 import { ProfileSkeleton } from "@/components/ui/skeleton";
 import { useToastStore } from "@/hooks/useToastStore";
-import { teamCountries } from "@/lib/tournament-registration";
+import { teamCountries } from "@/lib/countries";
 import {
   type CreateTeamMemberInput,
   createSavedTeam,

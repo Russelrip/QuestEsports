@@ -80,8 +80,11 @@ jobs:
           --from-schema-datasource prisma/schema.prisma
           --to-schema-datamodel prisma/schema.prisma
 
-      - name: Run backend tests
-        run: npm test
+      - name: Run backend tests with coverage thresholds
+        run: npm run test:coverage
+
+      - name: Run backend lint
+        run: npm run lint
 
   frontend:
     name: Frontend lint and build

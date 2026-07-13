@@ -11,10 +11,11 @@ import { Button, buttonClassName } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
+import { passwordByteLimitMessage, passwordFitsBcrypt } from "@/lib/password";
 
 const resetPasswordSchema = z
   .object({
-    newPassword: z.string().min(8, "Password must be at least 8 characters long."),
+    newPassword: z.string().min(8, "Password must be at least 8 characters long.").refine(passwordFitsBcrypt, passwordByteLimitMessage),
     confirmPassword: z.string().min(1, "Please confirm your password."),
   })
   .refine((value) => value.newPassword === value.confirmPassword, {

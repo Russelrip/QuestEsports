@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
+import { passwordByteLimitMessage, passwordFitsBcrypt } from "@/lib/password";
 
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, "Current password is required."),
-    newPassword: z.string().min(8, "Password must be at least 8 characters long."),
+    newPassword: z.string().min(8, "Password must be at least 8 characters long.").refine(passwordFitsBcrypt, passwordByteLimitMessage),
     confirmNewPassword: z.string().min(1, "Please confirm your new password."),
     code: z.string().optional(),
     backupCode: z.string().optional(),

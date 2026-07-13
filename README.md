@@ -29,6 +29,7 @@ AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false
 JOB_WORKER_ENABLED=true
+COMMERCE_MAINTENANCE_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
 SMTP_HOST=
@@ -36,9 +37,13 @@ SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
 MAIL_FROM=
+MAIL_DELIVERY_REQUIRED=false
 APP_URL=http://localhost:3000
 API_PUBLIC_URL=http://localhost:5001
 UPLOAD_ROOT=
+PRIVATE_UPLOAD_ROOT=
+PAYMENT_PROOF_PDF_ENABLED=false
+BANK_TRANSFER_PROOF_RETENTION_DAYS=365
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
@@ -70,7 +75,7 @@ Notes:
 - OAuth is optional. If you enable Google or Discord login, use real client credentials and register the callback URLs shown above. Do not leave placeholder values like `your_google_client_id`.
 - Paid tournament registration and shop checkout require PayHere credentials plus a publicly reachable HTTPS notification URL. Browser return pages never mark an order paid.
 - When PayHere is not configured, free tournament registrations remain available while paid registration and shop checkout are explicitly disabled.
-- `UPLOAD_ROOT` is optional locally and required in production; point it at durable, backed-up storage outside disposable release directories.
+- `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` are optional locally and required in production; point both at durable, backed-up storage outside disposable release directories. Private payment proofs must never be exposed by Nginx.
 
 ### 2. Install dependencies
 
@@ -255,7 +260,7 @@ QuestEsports/
 - `/tournaments/series/[slug]`
 - `/shop`, `/shop/[slug]`, `/shop/cart`, `/shop/order/[token]`
 - `/refund-policy`
-- `/tournament-registration`
+- `/tournaments/[slug]/register`
 - `/registration`
 - `/join`
 - `/match-videos`

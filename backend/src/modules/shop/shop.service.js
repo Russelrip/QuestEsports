@@ -126,6 +126,9 @@ const parseProduct = (body, existing) => {
   if (!name || !slug || !description || !/^[A-Z]{3}$/.test(currency)) {
     throw new HttpError(400, "Product name, description, slug, and currency are required.");
   }
+  if (name.length > 200 || slug.length > 200 || description.length > 10_000) {
+    throw new HttpError(400, "Product text exceeds the allowed length.");
+  }
   if (!PRODUCT_STATUSES.has(status)) throw new HttpError(400, "Product status is invalid.");
   if (variants.length === 0 || variants.length > 100) {
     throw new HttpError(400, "Add between 1 and 100 product variants.");
@@ -138,7 +141,16 @@ const parseProduct = (body, existing) => {
     const stock = variant?.stock === null || variant?.stock === "" || variant?.stock === undefined
       ? null
       : normalizeInteger(variant.stock);
-    if (!sku || !variantName || !Number.isFinite(price) || price < 0 || (stock !== null && stock < 0)) {
+    if (
+      !sku ||
+      !variantName ||
+      sku.length > 100 ||
+      variantName.length > 200 ||
+      !Number.isFinite(price) ||
+      price < 0 ||
+      price > 9_999_999_999.99 ||
+      (stock !== null && (stock < 0 || stock > 1_000_000))
+    ) {
       throw new HttpError(400, `Product variant ${index + 1} is invalid.`);
     }
     return {
@@ -342,6 +354,16 @@ const createMerchandiseOrder = async ({ body, user }) => {
   const city = normalizeText(body.city);
   if (!isValidEmail(email) || !firstName || !lastName || !phone || !address || !city) {
     throw new HttpError(400, "Complete all customer and delivery fields.");
+  }
+  if (
+    email.length > 254 ||
+    firstName.length > 100 ||
+    lastName.length > 100 ||
+    phone.length > 50 ||
+    address.length > 500 ||
+    city.length > 100
+  ) {
+    throw new HttpError(400, "One or more customer or delivery fields exceed the allowed length.");
   }
   const { variants, quantityById, currency, subtotal, deliveryFee, total } =
     await resolveMerchandiseQuote(body.items);

@@ -40,6 +40,18 @@ const requiredBoolean = (value, label) => {
   return true;
 };
 
+const optionalBoolean = (value, label) => {
+  if (value === true || value === false) return value;
+  throw new HttpError(400, `${label} must be true or false.`);
+};
+
+const isExactCalendarDate = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+};
+
 const optionalHttpUrl = (value, label) => {
   const normalized = optionalText(value, 1000);
   if (!normalized) return null;
@@ -132,7 +144,7 @@ const createRecruitmentApplication = async ({ body, user }) => {
   }
 
   const birthday = requiredText(body.birthday, "Birthday", 20);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday) || Number.isNaN(Date.parse(birthday))) {
+  if (!isExactCalendarDate(birthday)) {
     throw new HttpError(400, "Birthday must be a valid date.");
   }
 
@@ -142,9 +154,9 @@ const createRecruitmentApplication = async ({ body, user }) => {
     gender,
     peakAndCurrentRank: requiredText(body.peakAndCurrentRank, "Peak rank, current rank and game"),
     tournamentExperience: optionalText(body.tournamentExperience),
-    previouslyInOrganization: Boolean(body.previouslyInOrganization),
+    previouslyInOrganization: optionalBoolean(body.previouslyInOrganization, "Previous organization selection"),
     previousOrganization: optionalText(body.previousOrganization, 300),
-    canAttendLan: Boolean(body.canAttendLan),
+    canAttendLan: optionalBoolean(body.canAttendLan, "LAN availability"),
     teamLogoUrl: optionalHttpUrl(body.teamLogoUrl, "Team logo"),
     additionalMembers: optionalText(body.additionalMembers),
     declarationAccepted: requiredBoolean(body.declarationAccepted, "Rules declaration"),
@@ -161,8 +173,8 @@ const createRecruitmentApplication = async ({ body, user }) => {
       applicationType,
       fullName: requiredText(body.fullName, "Full name"),
       email: user.email,
-      phone: requiredText(body.phone, "WhatsApp contact number"),
-      discord: requiredText(body.discord, "Discord username"),
+      phone: requiredText(body.phone, "WhatsApp contact number", 50),
+      discord: requiredText(body.discord, "Discord username", 100),
       game: games.join(", "),
       playerId: null,
       applicantIdNumberCiphertext: encryptSecret(requiredText(body.nic, "NIC")),

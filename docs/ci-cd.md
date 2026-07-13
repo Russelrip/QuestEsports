@@ -62,8 +62,10 @@ BACKEND_SSH_HOST=your.server.host
 BACKEND_SSH_PORT=22
 BACKEND_SSH_USER=deploy
 BACKEND_SSH_PRIVATE_KEY=private SSH key for the deploy user
+BACKEND_SSH_HOST_KEY=the complete pinned known_hosts line for the VPS
 BACKEND_APP_DIR=/var/www/QuestEsports
 BACKEND_PM2_PROCESS=quest-backend
+BACKEND_HEALTHCHECK_URL=http://127.0.0.1:5001/api/health
 ```
 
 `BACKEND_SSH_PRIVATE_KEY` authenticates the GitHub Actions runner **to the VPS**. It does not give the VPS permission to pull a private GitHub repository.
@@ -77,6 +79,15 @@ The server must already have:
 - backend production environment variables configured
 - PostgreSQL access from `DATABASE_URL` and `DIRECT_URL`
 - persistent storage mounted for `backend/uploads/`
+- a non-root `deploy` user that owns the checkout and can manage only the Quest PM2 process
+- `backend/.env` owned by the deploy user with mode `600` (or group-readable mode `640`)
+
+Capture the VPS SSH host key from a trusted administrative session and compare its fingerprint before storing it. The deployment never runs `ssh-keyscan` on an untrusted Actions runner:
+
+```bash
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+printf '%s ' 'api.questesports.lk'; cat /etc/ssh/ssh_host_ed25519_key.pub
+```
 
 ### Private repository access from the VPS
 
@@ -105,7 +116,7 @@ Host github.com
 EOF
 
 chmod 600 ~/.ssh/config ~/.ssh/quest_github_deploy
-ssh-keyscan github.com >> ~/.ssh/known_hosts
+# Pin GitHub's published SSH host keys from https://docs.github.com/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
 chmod 600 ~/.ssh/known_hosts
 ```
 
@@ -134,6 +145,8 @@ npm run prisma:migrate:deploy
 pm2 restart "$BACKEND_PM2_PROCESS" --update-env
 pm2 save
 ```
+
+The workflow refuses root deployments and dirty checkouts, validates `.env` permissions, runs lint and migrations, then performs a local health check. If installation, restart, or health validation fails, it restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release). Protect the GitHub `production` environment with required reviewers and keep a current Supabase backup before approving a migration deployment.
 
 ## Manual Deployment
 

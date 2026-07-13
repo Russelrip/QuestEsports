@@ -85,3 +85,117 @@ test("late successful notifications are routed to manual review", async () => {
     assert.equal(appliedStatus, "review_required");
   } finally { restore(); }
 });
+
+test("expired registration maintenance releases review-required bank transfers", async () => {
+  const transactionUpdates = [];
+  const registrationUpdates = [];
+  const now = new Date("2026-07-14T12:00:00.000Z");
+  const prisma = {
+    merchandiseOrder: { findMany: async () => [] },
+    teamRegistration: {
+      findMany: async () => [{ id: "registration-expired" }],
+    },
+    $transaction: async (callback) => callback({
+      teamRegistration: {
+        updateMany: async (args) => {
+          registrationUpdates.push(args);
+          return { count: 1 };
+        },
+      },
+      paymentTransaction: {
+        updateMany: async (args) => {
+          transactionUpdates.push(args);
+          return { count: 1 };
+        },
+      },
+    }),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    const result = await service.expireStaleCommerceReservations({ now });
+    assert.equal(result.expiredRegistrations, 1);
+    assert.deepEqual(transactionUpdates[0].where.status.in, [
+      "created",
+      "pending",
+      "review_required",
+    ]);
+    assert.equal(transactionUpdates[0].data.status, "expired");
+    assert.equal(registrationUpdates[0].data.assignedSlotNumber, null);
+  } finally {
+    restore();
+  }
+});
+
+test("manual PayHere reconciliation records an externally completed refund", async () => {
+  const current = {
+    id: "tx-review",
+    provider: "payhere",
+    status: "review_required",
+    registrationId: null,
+    merchandiseOrderId: "order-review",
+    merchandiseOrder: {
+      id: "order-review",
+      inventoryReleasedAt: new Date("2026-07-14T10:00:00.000Z"),
+    },
+  };
+  let paymentUpdate = null;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        paymentUpdate = data;
+        return { ...current, ...data };
+      },
+    },
+    merchandiseOrder: {
+      findUnique: async () => ({ status: "cancelled" }),
+      updateMany: async () => ({ count: 0 }),
+    },
+  };
+  const prisma = { $transaction: async (callback) => callback(tx) };
+  const { module: service, restore } = load(prisma);
+  try {
+    const result = await service.reconcilePayHerePayment({
+      transactionId: current.id,
+      decision: "mark_refunded",
+      note: "Refund completed in PayHere after the order expired.",
+      providerRefundId: "refund-123",
+      admin: { id: "admin-1" },
+    });
+    assert.equal(result.status, "refunded");
+    assert.equal(paymentUpdate.providerRefundId, "refund-123");
+    assert.equal(paymentUpdate.reconciledById, "admin-1");
+  } finally {
+    restore();
+  }
+});
+
+test("manual PayHere acceptance refuses orders whose inventory was released", async () => {
+  const current = {
+    id: "tx-no-stock",
+    provider: "payhere",
+    status: "review_required",
+    registrationId: null,
+    merchandiseOrderId: "order-no-stock",
+    merchandiseOrder: { inventoryReleasedAt: new Date() },
+  };
+  const prisma = {
+    $transaction: async (callback) => callback({
+      paymentTransaction: { findUnique: async () => current },
+    }),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.reconcilePayHerePayment({
+        transactionId: current.id,
+        decision: "accept",
+        note: "Verified in PayHere.",
+        admin: { id: "admin-1" },
+      }),
+      (error) => error.statusCode === 409 && /inventory was released/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});

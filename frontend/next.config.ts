@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-const apiOrigin = apiUrl ? new URL(apiUrl).origin : null;
 const isProduction = process.env.NODE_ENV === "production";
 if (isProduction && (!apiUrl || !siteUrl)) {
   throw new Error(
@@ -23,32 +22,6 @@ const apiRemotePattern = apiUrl
     })()
   : null;
 
-const connectSources = ["'self'"];
-if (apiUrl) {
-  connectSources.push(apiOrigin || apiUrl);
-}
-
-const imageSources = ["'self'", "data:", "blob:", "https://img.youtube.com"];
-if (apiOrigin) {
-  imageSources.push(apiOrigin);
-}
-
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  `img-src ${imageSources.join(" ")}`,
-  "font-src 'self' data:",
-  "style-src 'self' 'unsafe-inline'",
-  `connect-src ${connectSources.join(" ")}`,
-  isProduction
-    ? "script-src 'self' 'unsafe-inline'"
-    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "form-action 'self' https://sandbox.payhere.lk https://www.payhere.lk",
-  ...(isProduction ? ["upgrade-insecure-requests"] : []),
-].join("; ");
-
 const nextConfig: NextConfig = {
   images: {
     dangerouslyAllowLocalIP: !isProduction || apiUsesLocalNetwork,
@@ -63,10 +36,6 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     const securityHeaders = [
-      {
-        key: "Content-Security-Policy",
-        value: contentSecurityPolicy,
-      },
       {
         key: "X-Frame-Options",
         value: "DENY",

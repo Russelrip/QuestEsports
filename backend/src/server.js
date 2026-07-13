@@ -24,15 +24,16 @@ const registerProcessDiagnostics = () => {
 
   process.on("uncaughtException", (error) => {
     logger.error("Uncaught exception crashed Quest E-sports API", { error });
-    process.exit(1);
+    void shutdown("UNCAUGHT_EXCEPTION", 1);
   });
 
   process.on("unhandledRejection", (reason) => {
     logger.error("Unhandled promise rejection detected", { reason });
+    void shutdown("UNHANDLED_REJECTION", 1);
   });
 };
 
-const shutdown = async (signal) => {
+const shutdown = async (signal, exitCode = 0) => {
   if (isShuttingDown) {
     return;
   }
@@ -44,7 +45,7 @@ const shutdown = async (signal) => {
     await stopJobWorker();
     stopCommerceMaintenance();
     await closeDatabase();
-    process.exit(0);
+    process.exit(exitCode);
     return;
   }
 
@@ -62,7 +63,7 @@ const shutdown = async (signal) => {
     await stopJobWorker();
     stopCommerceMaintenance();
     await closeDatabase();
-    process.exit(0);
+    process.exit(exitCode);
   });
 };
 

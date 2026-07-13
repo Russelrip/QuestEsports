@@ -10,6 +10,8 @@ import { designTokenCssVariables } from "@/lib/design-tokens";
 import { siteMetadata } from "@/lib/site";
 
 export const metadata = siteMetadata;
+// A per-request CSP nonce is generated in proxy.ts, so pages must render per request.
+export const dynamic = "force-dynamic";
 export const viewport: Viewport = {
   themeColor: "#0b1020",
   colorScheme: "dark",

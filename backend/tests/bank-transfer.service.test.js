@@ -9,13 +9,18 @@ const uploadPath = path.join(__dirname, "../src/middleware/upload.js");
 const teamPath = path.join(__dirname, "../src/modules/teams/team.service.js");
 const generatedPath = path.join(__dirname, "../src/generated/prisma/index.js");
 
-const load = ({ prisma = {}, activatePaidTeamRegistration = async () => undefined } = {}) =>
+const load = ({
+  prisma = {},
+  activatePaidTeamRegistration = async () => undefined,
+  persistBankTransferProofUpload = async () => undefined,
+  removeUploadFile = async () => undefined,
+} = {}) =>
   loadModuleWithMocks(servicePath, {
     [prismaPath]: { prisma },
     [uploadPath]: {
       bankTransferProofDirectory: "private-proofs",
-      persistBankTransferProofUpload: async () => undefined,
-      removeUploadFile: async () => undefined,
+      persistBankTransferProofUpload,
+      removeUploadFile,
     },
     [teamPath]: { activatePaidTeamRegistration },
     [generatedPath]: {
@@ -134,6 +139,97 @@ test("admin rejection records a reason and releases the assigned slot", async ()
       assignedSlotNumber: null,
     });
     assert.equal(proofUpdate.rejectionReason, "Reference was not found in the bank account.");
+  } finally {
+    restore();
+  }
+});
+
+test("proof upload cannot revert a payment approved during file persistence", async () => {
+  const removed = [];
+  const initial = {
+    id: "payment-race",
+    provider: "bank_transfer",
+    status: "review_required",
+    registrationId: "registration-race",
+    registration: {
+      id: "registration-race",
+      userId: "user-1",
+      reservedUntil: new Date(Date.now() + 60_000),
+      tournament: { bankTransferReviewMinutes: 30 },
+    },
+    bankTransferProof: null,
+  };
+  const approved = { ...initial, status: "paid" };
+  const prisma = {
+    paymentTransaction: { findUnique: async () => initial },
+    $transaction: async (callback) => callback({
+      paymentTransaction: { findUnique: async () => approved },
+    }),
+  };
+  const { module: service, restore } = load({
+    prisma,
+    persistBankTransferProofUpload: async () => ({
+      filename: "new.webp",
+      originalFilename: "receipt.png",
+      contentType: "image/webp",
+      byteSize: 10,
+      sha256: "proof-hash",
+    }),
+    removeUploadFile: async (upload) => removed.push(upload),
+  });
+  try {
+    await assert.rejects(
+      service.submitBankTransferProof({
+        providerOrderId: "BANK-race",
+        user: { id: "user-1" },
+        file: { buffer: Buffer.from("receipt") },
+      }),
+      (error) => error.statusCode === 409 && /already been approved/.test(error.message)
+    );
+    assert.deepEqual(removed, [{ directory: "private-proofs", filename: "new.webp" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("database duplicate-proof conflicts return a safe conflict and remove the new file", async () => {
+  const initial = {
+    id: "payment-duplicate",
+    provider: "bank_transfer",
+    status: "pending",
+    registrationId: "registration-duplicate",
+    registration: {
+      id: "registration-duplicate",
+      userId: "user-1",
+      reservedUntil: new Date(Date.now() + 60_000),
+      tournament: { bankTransferReviewMinutes: 30 },
+    },
+    bankTransferProof: null,
+  };
+  let removed = false;
+  const prisma = {
+    paymentTransaction: { findUnique: async () => initial },
+    $transaction: async () => {
+      const error = new Error("unique constraint");
+      error.code = "P2002";
+      throw error;
+    },
+  };
+  const { module: service, restore } = load({
+    prisma,
+    persistBankTransferProofUpload: async () => ({ filename: "duplicate.webp" }),
+    removeUploadFile: async () => { removed = true; },
+  });
+  try {
+    await assert.rejects(
+      service.submitBankTransferProof({
+        providerOrderId: "BANK-duplicate",
+        user: { id: "user-1" },
+        file: { buffer: Buffer.from("receipt") },
+      }),
+      (error) => error.statusCode === 409 && /already been used/.test(error.message)
+    );
+    assert.equal(removed, true);
   } finally {
     restore();
   }

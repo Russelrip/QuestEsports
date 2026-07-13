@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
 const { Prisma } = require("../../generated/prisma");
+const { env } = require("../../config/env");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const {
@@ -97,26 +98,52 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
 
   const persisted = await persistBankTransferProofUpload(file);
   try {
-    const duplicate = await prisma.bankTransferProof.findFirst({
-      where: {
-        sha256: persisted.sha256,
-        transactionId: { not: transaction.id },
-      },
-      select: { id: true },
-    });
-    if (duplicate) {
-      throw new HttpError(409, "This payment proof has already been used for another registration.");
-    }
+    const saved = await runSerializable(async (tx) => {
+      // Re-read inside the serializable transaction. An administrator may have
+      // reviewed the proof between the initial authorization check and file persistence.
+      const current = await tx.paymentTransaction.findUnique({
+        where: { id: transaction.id },
+        include: {
+          bankTransferProof: true,
+          registration: { include: { tournament: true } },
+        },
+      });
+      if (!current || current.provider !== "bank_transfer" || !current.registration) {
+        throw new HttpError(404, "Bank-transfer payment was not found.");
+      }
+      if (current.registration.userId !== user.id) {
+        throw new HttpError(403, "Payment access denied.");
+      }
+      if (current.status === "paid") {
+        throw new HttpError(409, "This payment has already been approved.");
+      }
+      if (!["created", "pending", "review_required"].includes(current.status)) {
+        throw new HttpError(409, "This payment is no longer accepting proof uploads.");
+      }
+      const now = new Date();
+      if (!current.registration.reservedUntil || current.registration.reservedUntil <= now) {
+        throw new HttpError(409, "This slot reservation expired. Start the registration again.");
+      }
 
-    const reviewUntil = new Date(
-      Date.now() + transaction.registration.tournament.bankTransferReviewMinutes * 60 * 1000
-    );
-    const proof = await prisma.$transaction(async (tx) => {
+      const duplicate = await tx.bankTransferProof.findFirst({
+        where: {
+          sha256: persisted.sha256,
+          transactionId: { not: current.id },
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new HttpError(409, "This payment proof has already been used for another registration.");
+      }
+
+      const reviewUntil = new Date(
+        now.getTime() + current.registration.tournament.bankTransferReviewMinutes * 60 * 1000
+      );
       const savedProof = await tx.bankTransferProof.upsert({
-        where: { transactionId: transaction.id },
+        where: { transactionId: current.id },
         create: {
           id: crypto.randomUUID(),
-          transactionId: transaction.id,
+          transactionId: current.id,
           storedFilename: persisted.filename,
           originalFilename: persisted.originalFilename,
           contentType: persisted.contentType,
@@ -136,7 +163,7 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
         },
       });
       await tx.paymentTransaction.update({
-        where: { id: transaction.id },
+        where: { id: current.id },
         data: {
           status: "review_required",
           method: "bank_transfer",
@@ -144,27 +171,34 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
         },
       });
       await tx.teamRegistration.update({
-        where: { id: transaction.registrationId },
+        where: { id: current.registrationId },
         data: { paymentStatus: "pending", reservedUntil: reviewUntil },
       });
-      return savedProof;
+      return {
+        proof: savedProof,
+        reviewUntil,
+        previousFilename: current.bankTransferProof?.storedFilename || null,
+      };
     });
 
     if (
-      transaction.bankTransferProof?.storedFilename &&
-      transaction.bankTransferProof.storedFilename !== persisted.filename
+      saved.previousFilename &&
+      saved.previousFilename !== persisted.filename
     ) {
       await removeUploadFile({
         directory: bankTransferProofDirectory,
-        filename: transaction.bankTransferProof.storedFilename,
+        filename: saved.previousFilename,
       }).catch(() => undefined);
     }
-    return { proof, reviewUntil };
+    return { proof: saved.proof, reviewUntil: saved.reviewUntil };
   } catch (error) {
     await removeUploadFile({
       directory: bankTransferProofDirectory,
       filename: persisted.filename,
     }).catch(() => undefined);
+    if (error?.code === "P2002") {
+      throw new HttpError(409, "This payment proof has already been used for another registration.");
+    }
     throw error;
   }
 };
@@ -282,6 +316,36 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
   return result;
 };
 
+const cleanupRetainedBankTransferProofs = async ({ now = new Date(), batchSize = 50 } = {}) => {
+  const cutoff = new Date(
+    now.getTime() - env.BANK_TRANSFER_PROOF_RETENTION_DAYS * 24 * 60 * 60 * 1000
+  );
+  const proofs = await prisma.bankTransferProof.findMany({
+    where: {
+      transaction: { status: { in: ["paid", "failed", "charged_back", "expired"] } },
+      OR: [
+        { reviewedAt: { lte: cutoff } },
+        { reviewedAt: null, submittedAt: { lte: cutoff } },
+      ],
+    },
+    orderBy: { reviewedAt: "asc" },
+    take: batchSize,
+    select: { id: true, storedFilename: true },
+  });
+
+  let deleted = 0;
+  for (const proof of proofs) {
+    const result = await prisma.bankTransferProof.deleteMany({ where: { id: proof.id } });
+    if (!result.count) continue;
+    deleted += 1;
+    await removeUploadFile({
+      directory: bankTransferProofDirectory,
+      filename: proof.storedFilename,
+    }).catch(() => undefined);
+  }
+  return deleted;
+};
+
 module.exports = {
   assertBankTransferConfigured,
   buildBankTransferInstructions,
@@ -290,4 +354,5 @@ module.exports = {
   submitBankTransferProof,
   getBankTransferProofFile,
   reviewBankTransfer,
+  cleanupRetainedBankTransferProofs,
 };

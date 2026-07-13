@@ -45,38 +45,6 @@ const pageSizeParameter = createQueryParameter("pageSize", {
 
 const searchParameter = createQueryParameter("search", { type: "string" });
 
-const registrationRequestBody = {
-  required: true,
-  content: {
-    "multipart/form-data": {
-      schema: {
-        type: "object",
-        required: [
-          "teamName",
-          "captainName",
-          "captainEmail",
-          "captainPhone",
-          "captainDiscord",
-          "captainRiotId",
-          "contactEmail",
-          "tournamentSlug",
-        ],
-        properties: {
-          tournamentSlug: { type: "string" },
-          teamName: { type: "string" },
-          teamLogo: { type: "string", format: "binary" },
-          captainName: { type: "string" },
-          captainEmail: { type: "string" },
-          captainPhone: { type: "string" },
-          captainDiscord: { type: "string" },
-          captainRiotId: { type: "string" },
-          contactEmail: { type: "string" },
-        },
-      },
-    },
-  },
-};
-
 const openApiDocument = {
   openapi: "3.1.0",
   info: {
@@ -230,23 +198,13 @@ const openApiDocument = {
     "/api/tournaments/{slug}/registrations": {
       post: { tags: ["Registrations"], summary: "Submit a slug-bound configurable solo or team registration", parameters: [createPathParameter("slug", { type: "string" })], responses: { 201: createResponse("Registration and optional checkout payload") } },
     },
-    "/api/tournament-registration/status/{slug}": {
+    "/api/tournaments/{slug}/registration-status": {
       get: {
         tags: ["Registrations"],
         summary: "Check whether the current user already registered",
         parameters: [createPathParameter("slug", { type: "string" })],
         responses: {
           200: createResponse("Registration status result"),
-        },
-      },
-    },
-    "/api/tournament-registration": {
-      post: {
-        tags: ["Registrations"],
-        summary: "Compatibility alias for slug-bound configurable registration",
-        requestBody: registrationRequestBody,
-        responses: {
-          201: createResponse("Registration submitted"),
         },
       },
     },
@@ -261,6 +219,9 @@ const openApiDocument = {
     "/api/admin/products": createListResponse("Admin", "List and manage merchandise products"),
     "/api/admin/orders": createListResponse("Admin", "List and manage merchandise orders"),
     "/api/admin/payments": createListResponse("Admin", "Reconcile payment transactions", [createQueryParameter("status", { type: "string" }), createQueryParameter("purpose", { type: "string" })]),
+    "/api/admin/payments/{transactionId}/payhere-reconciliation": {
+      patch: { tags: ["Admin"], summary: "Resolve a late PayHere payment after external verification", responses: { 200: createResponse("Payment reconciled") } },
+    },
     "/api/admin/team-registrations": createListResponse(
       "Admin",
       "List team registrations for admins",

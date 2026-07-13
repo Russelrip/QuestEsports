@@ -13,7 +13,6 @@ const staticRoutes = [
   "/join",
   "/contact",
   "/registration",
-  "/tournament-registration",
   "/refund-policy",
 ];
 

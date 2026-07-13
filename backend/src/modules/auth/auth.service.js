@@ -22,11 +22,10 @@ const {
   normalizeUsername,
   isNonEmptyString,
   isValidEmail,
+  isPasswordWithinBcryptLimit,
   getSignupFieldErrors,
 } = require("../../lib/validation");
 
-const LOGIN_LOCKOUT_THRESHOLD = 5;
-const LOGIN_LOCKOUT_MINUTES = 15;
 const LOGIN_CHALLENGE_MINUTES = 10;
 const BACKUP_CODE_COUNT = 8;
 
@@ -315,18 +314,26 @@ const validateUserBasics = ({
 
   if (!isNonEmptyString(firstName)) {
     fieldErrors.firstName = "First name is required.";
+  } else if (normalizeText(firstName).length > 100) {
+    fieldErrors.firstName = "First name must be 100 characters or fewer.";
   }
 
   if (!isNonEmptyString(lastName)) {
     fieldErrors.lastName = "Last name is required.";
+  } else if (normalizeText(lastName).length > 100) {
+    fieldErrors.lastName = "Last name must be 100 characters or fewer.";
   }
 
   if (!isNonEmptyString(username)) {
     fieldErrors.username = "Username is required.";
+  } else if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(normalizeText(username))) {
+    fieldErrors.username = "Username must be 3-32 characters using letters, numbers, dots, dashes, or underscores.";
   }
 
   if (!normalizeEmail(email)) {
     fieldErrors.email = "Email is required.";
+  } else if (normalizeEmail(email).length > 254 || !isValidEmail(email)) {
+    fieldErrors.email = "Please enter a valid email address up to 254 characters.";
   }
 
   return fieldErrors;
@@ -353,6 +360,8 @@ const createSignup = async ({ body }) => {
     confirmPassword,
     terms,
   });
+  if (phone && phone.length > 50) fieldErrors.phone = "Phone must be 50 characters or fewer.";
+  if (discordTag && discordTag.length > 100) fieldErrors.discordTag = "Discord username must be 100 characters or fewer.";
 
   if (Object.keys(fieldErrors).length > 0) {
     throw new HttpError(400, "Please correct the highlighted fields.", {
@@ -461,32 +470,18 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
     throw new HttpError(401, "Invalid credentials.");
   }
 
-  if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
-    logger.warn("Blocked login for locked account", {
-      ...requestMeta,
-      emailOrUsername,
-      userId: user.id,
-      lockedUntil: user.lockedUntil,
-    });
-    throw new HttpError(
-      429,
-      "Too many failed login attempts. Please try again later."
-    );
-  }
-
   const isMatch = await bcrypt.compare(password, user.passwordHash);
   if (!isMatch) {
-    const failedLoginCount = (user.failedLoginCount || 0) + 1;
-    const lockAccount = failedLoginCount >= LOGIN_LOCKOUT_THRESHOLD;
+    // IP-aware route limiting remains authoritative. Do not hard-lock an account
+    // solely from its identifier, because an attacker could deny service to it.
+    const failedLoginCount = Math.min((user.failedLoginCount || 0) + 1, 1_000_000);
 
     await prisma.user.update({
       where: { id: user.id },
       data: {
         failedLoginCount,
         lastFailedLoginAt: new Date(),
-        lockedUntil: lockAccount
-          ? new Date(Date.now() + LOGIN_LOCKOUT_MINUTES * 60 * 1000)
-          : null,
+        lockedUntil: null,
       },
     });
 
@@ -572,6 +567,17 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
     !isNonEmptyString(username)
   ) {
     throw new HttpError(400, "First name, last name, and username are required.");
+  }
+  const profileErrors = validateUserBasics({
+    firstName,
+    lastName,
+    email: currentUser.email,
+    username,
+  });
+  if (phone && phone.length > 50) profileErrors.phone = "Phone must be 50 characters or fewer.";
+  if (discordTag && discordTag.length > 100) profileErrors.discordTag = "Discord username must be 100 characters or fewer.";
+  if (Object.keys(profileErrors).length) {
+    throw new HttpError(400, "Please correct the highlighted fields.", { fieldErrors: profileErrors });
   }
 
   const conflictingUser = await prisma.user.findFirst({
@@ -1259,6 +1265,9 @@ const resetPassword = async ({ body }) => {
   if (newPassword.length < 8) {
     throw new HttpError(400, "Password must be at least 8 characters long.");
   }
+  if (!isPasswordWithinBcryptLimit(newPassword)) {
+    throw new HttpError(400, "Password must be no more than 72 UTF-8 bytes.");
+  }
 
   const resetRecord = await prisma.passwordResetToken.findFirst({
     where: {
@@ -1331,6 +1340,9 @@ const changePassword = async ({ currentUser, body, currentSessionId }) => {
 
   if (newPassword.length < 8) {
     throw new HttpError(400, "Password must be at least 8 characters long.");
+  }
+  if (!isPasswordWithinBcryptLimit(newPassword)) {
+    throw new HttpError(400, "Password must be no more than 72 UTF-8 bytes.");
   }
 
   if (newPassword !== confirmNewPassword) {

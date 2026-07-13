@@ -45,6 +45,7 @@ AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false
 JOB_WORKER_ENABLED=true
+COMMERCE_MAINTENANCE_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
 LOG_DRAIN_URL=
@@ -56,7 +57,13 @@ SMTP_PORT=587
 SMTP_USER=your_ses_smtp_username
 SMTP_PASS=your_ses_smtp_password
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
+MAIL_DELIVERY_REQUIRED=false
 APP_URL=http://localhost:3000
+API_PUBLIC_URL=http://localhost:5001
+UPLOAD_ROOT=
+PRIVATE_UPLOAD_ROOT=
+PAYMENT_PROOF_PDF_ENABLED=false
+BANK_TRANSFER_PROOF_RETENTION_DAYS=365
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
@@ -285,10 +292,11 @@ SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
 MFA_ISSUER=Quest Esports
-AUTH_ENCRYPTION_KEY=replace_with_a_long_random_secret
+AUTH_ENCRYPTION_KEY=replace_with_exactly_64_hexadecimal_characters
 TRUST_PROXY=1
 REQUIRE_API_ORIGIN=true
 JOB_WORKER_ENABLED=true
+COMMERCE_MAINTENANCE_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
 LOG_DRAIN_URL=https://logs.example.com/ingest
@@ -300,7 +308,13 @@ SMTP_PORT=587
 SMTP_USER=your_ses_smtp_username
 SMTP_PASS=your_ses_smtp_password
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
+MAIL_DELIVERY_REQUIRED=true
 APP_URL=https://questesports.lk
+API_PUBLIC_URL=https://api.questesports.lk
+UPLOAD_ROOT=/srv/quest-esports/uploads
+PRIVATE_UPLOAD_ROOT=/srv/quest-esports/private
+PAYMENT_PROOF_PDF_ENABLED=false
+BANK_TRANSFER_PROOF_RETENTION_DAYS=365
 GOOGLE_CLIENT_ID=your_real_google_client_id
 GOOGLE_CLIENT_SECRET=your_real_google_client_secret
 GOOGLE_CALLBACK_URL=https://api.questesports.lk/api/auth/google/callback
@@ -313,6 +327,7 @@ Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
+- Keep `PAYMENT_PROOF_PDF_ENABLED=false` unless uploaded PDFs pass through a maintained malware-scanning/sanitization pipeline. Image receipts are decoded and re-encoded before storage.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
 - `REQUIRE_API_ORIGIN=true` blocks API requests without an allowed `Origin` or `Referer`; use `CORS_ORIGIN=https://questesports.lk` for the public site domain.
 
@@ -361,7 +376,7 @@ Current behavior:
 - auth, invite, and security emails are enqueued instead of sent inline during the request
 - the API process starts a polling worker automatically when `JOB_WORKER_ENABLED=true`
 - failed jobs are retried with backoff until `JOB_WORKER_MAX_ATTEMPTS` is reached
-- incomplete SMTP configuration causes delivery to be logged and skipped, after which the job is marked succeeded
+- production startup requires complete SMTP configuration by default; a delivery failure keeps the job retryable and is never marked succeeded
 
 Production notes:
 
@@ -374,7 +389,7 @@ Production notes:
 ### Backend
 
 1. Provision PostgreSQL.
-2. Provision persistent storage for `backend/uploads/`.
+2. Provision persistent public and private storage outside the Git checkout (`UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT`).
 3. Set environment variables.
 4. Install dependencies with `npm install`.
 5. Run `npm run prisma:generate`.

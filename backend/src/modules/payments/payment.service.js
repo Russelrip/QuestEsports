@@ -21,6 +21,7 @@ const TERMINAL_FAILURE_STATUSES = new Set([
   "charged_back",
   "expired",
   "review_required",
+  "refunded",
 ]);
 
 const md5 = (value) => crypto.createHash("md5").update(String(value)).digest("hex");
@@ -145,7 +146,7 @@ const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) =>
         where: { id: transaction.registrationId },
         data: { paymentStatus: "paid", reservedUntil: null },
       });
-    } else if (["cancelled", "failed", "charged_back"].includes(status)) {
+    } else if (["cancelled", "failed", "charged_back", "refunded"].includes(status)) {
       await tx.teamRegistration.update({
         where: { id: transaction.registrationId },
         data: { paymentStatus: "unpaid", reservedUntil: null },
@@ -165,8 +166,8 @@ const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) =>
         data: { status: "paid" },
       });
     } else if (
-      ["cancelled", "failed", "charged_back"].includes(status) &&
-      !["cancelled", "failed", "charged_back"].includes(previousStatus)
+      ["cancelled", "failed", "charged_back", "refunded"].includes(status) &&
+      !["cancelled", "failed", "charged_back", "refunded"].includes(previousStatus)
     ) {
       const order = await tx.merchandiseOrder.findUnique({
         where: { id: transaction.merchandiseOrderId },
@@ -175,7 +176,7 @@ const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) =>
       await releaseOrderStock(
         tx,
         transaction.merchandiseOrderId,
-        status === "charged_back" ? "refunded" : "cancelled",
+        ["charged_back", "refunded"].includes(status) ? "refunded" : "cancelled",
         { restoreInventory: order?.status !== "fulfilled" }
       );
     }
@@ -386,9 +387,12 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
       await tx.paymentTransaction.updateMany({
         where: {
           registrationId: registration.id,
-          status: { in: ["created", "pending"] },
+          status: { in: ["created", "pending", "review_required"] },
         },
-        data: { status: "expired" },
+        data: {
+          status: "expired",
+          statusMessage: "The slot reservation expired before payment verification was completed.",
+        },
       });
     });
   }
@@ -452,7 +456,7 @@ const listPaymentTransactions = async (query = {}) => {
   const status = String(query.status || "").trim().toLowerCase();
   const purpose = String(query.purpose || "").trim().toLowerCase();
   const where = {};
-  if (["created", "pending", "paid", "failed", "cancelled", "charged_back", "expired", "review_required"].includes(status)) where.status = status;
+  if (["created", "pending", "paid", "failed", "cancelled", "charged_back", "expired", "review_required", "refunded"].includes(status)) where.status = status;
   if (["tournament_registration", "merchandise_order"].includes(purpose)) where.purpose = purpose;
   const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
   const pageSize = Math.min(Math.max(Number.parseInt(query.pageSize, 10) || 50, 1), 100);
@@ -499,6 +503,9 @@ const listPaymentTransactions = async (query = {}) => {
     status: item.status,
     method: item.method,
     statusMessage: item.statusMessage,
+    reconciledAt: item.reconciledAt,
+    reconciliationNote: item.reconciliationNote,
+    providerRefundId: item.providerRefundId,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     registration: item.registration,
@@ -514,6 +521,94 @@ const listPaymentTransactions = async (query = {}) => {
   };
 };
 
+const reconcilePayHerePayment = async ({ transactionId, decision, note, providerRefundId, admin }) => {
+  const normalizedDecision = String(decision || "").trim().toLowerCase();
+  const normalizedNote = String(note || "").trim().slice(0, 1000);
+  const normalizedRefundId = String(providerRefundId || "").trim().slice(0, 200);
+  if (!["accept", "mark_refunded"].includes(normalizedDecision)) {
+    throw new HttpError(400, "Choose accept or mark_refunded.");
+  }
+  if (!normalizedNote) throw new HttpError(400, "A reconciliation note is required.");
+  if (normalizedDecision === "mark_refunded" && !normalizedRefundId) {
+    throw new HttpError(400, "The PayHere refund reference is required.");
+  }
+
+  const result = await runSerializable(async (tx) => {
+    const current = await tx.paymentTransaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        registration: { include: { tournament: { select: { maxTeams: true } } } },
+        merchandiseOrder: true,
+      },
+    });
+    if (!current || current.provider !== "payhere") {
+      throw new HttpError(404, "PayHere payment was not found.");
+    }
+    if (current.status !== "review_required") {
+      throw new HttpError(409, "This payment is not awaiting manual reconciliation.");
+    }
+    const now = new Date();
+    if (normalizedDecision === "accept") {
+      if (current.registrationId) {
+        if (!current.registration || current.registration.status === "rejected") {
+          throw new HttpError(409, "This registration can no longer be confirmed; refund the payment.");
+        }
+        const otherActiveCount = await tx.teamRegistration.count({
+          where: {
+            id: { not: current.registrationId },
+            tournamentId: current.registration.tournamentId,
+            ...buildActiveRegistrationWhere({ now }),
+          },
+        });
+        if (otherActiveCount >= current.registration.tournament.maxTeams) {
+          throw new HttpError(409, "No registration slot remains; refund the payment.");
+        }
+      }
+      if (current.merchandiseOrderId && current.merchandiseOrder?.inventoryReleasedAt) {
+        throw new HttpError(409, "Reserved inventory was released; refund the payment.");
+      }
+      const updated = await tx.paymentTransaction.update({
+        where: { id: current.id },
+        data: {
+          status: "paid",
+          paidAt: current.paidAt || now,
+          statusMessage: "Payment accepted after manual PayHere reconciliation.",
+          reconciledAt: now,
+          reconciledById: admin.id,
+          reconciliationNote: normalizedNote,
+          providerRefundId: null,
+        },
+      });
+      await applyTargetStatus({ tx, transaction: updated, previousStatus: current.status, status: "paid" });
+      return updated;
+    }
+
+    const updated = await tx.paymentTransaction.update({
+      where: { id: current.id },
+      data: {
+        status: "refunded",
+        statusMessage: "Payment refunded after manual PayHere reconciliation.",
+        reconciledAt: now,
+        reconciledById: admin.id,
+        reconciliationNote: normalizedNote,
+        providerRefundId: normalizedRefundId,
+      },
+    });
+    await applyTargetStatus({ tx, transaction: updated, previousStatus: current.status, status: "refunded" });
+    return updated;
+  });
+
+  if (result.status === "paid" && result.registrationId) {
+    await activatePaidTeamRegistration(result.registrationId);
+  }
+  logger.info("PayHere payment manually reconciled", {
+    transactionId: result.id,
+    status: result.status,
+    adminId: admin.id,
+  });
+  return result;
+};
+
 module.exports = {
   assertPayHereConfigured,
   isPayHereConfigured,
@@ -525,4 +620,5 @@ module.exports = {
   listPaymentTransactions,
   releaseOrderStock,
   expireStaleCommerceReservations,
+  reconcilePayHerePayment,
 };

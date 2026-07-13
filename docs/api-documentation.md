@@ -430,7 +430,7 @@ Additional response fields:
 
 ## Tournament Registration Endpoints
 
-### `GET /api/tournament-registration/status/:slug`
+### `GET /api/tournaments/:slug/registration-status`
 
 Protected route.
 
@@ -443,9 +443,9 @@ Returns:
 }
 ```
 
-The check is based on the logged-in user's email against the captain email of registrations for that tournament.
+The check is based on the authenticated user ID or matching legacy captain email.
 
-### `POST /api/tournament-registration`
+### `POST /api/tournaments/:slug/registrations`
 
 Protected route.
 
@@ -462,7 +462,7 @@ Content type:
 
 Primary fields:
 
-- `tournamentSlug` or `tournamentId`
+- The tournament slug is taken only from the URL; request-body tournament identifiers are ignored.
 - `teamName`
 - `teamLogo`
 - `captainName`
@@ -470,12 +470,8 @@ Primary fields:
 - `captainDiscord`
 - `captainRiotId`
 - `contactEmail`
-- `player2Name`, `player2Email`, `player2Discord`, `player2RiotId`
-- `player3Name`, `player3Email`, `player3Discord`, `player3RiotId`
-- `player4Name`, `player4Email`, `player4Discord`, `player4RiotId`
-- `player5Name`, `player5Email`, `player5Discord`, `player5RiotId`
-- Optional substitutes: `sub1*`, `sub2*`
-- Optional coach: `coach*`
+- `members` JSON generated from the tournament's roster configuration
+- `additionalData` and member-level additional data generated from configured fields
 - `rulebook`
 - `falsityWarning`
 
@@ -483,7 +479,7 @@ Behavior:
 
 - The captain email is taken from the authenticated user session, not the form.
 - Registration fails if member emails are invalid or duplicated.
-- Team registrations are serialized in a Prisma transaction.
+- Registration and slot allocation are serialized in a Prisma transaction.
 - Successful registration also synchronizes a `SavedTeam` roster and sends invite emails to non-captain members.
 - The captain is linked and accepted automatically. Other members remain pending until they respond using a verified account with the invited email address.
 

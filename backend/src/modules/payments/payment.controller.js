@@ -1,6 +1,10 @@
 const { asyncHandler } = require("../../lib/async-handler");
-const { processPayHereNotification, getPaymentStatus } = require("./payment.service");
-const { listPaymentTransactions } = require("./payment.service");
+const {
+  processPayHereNotification,
+  getPaymentStatus,
+  listPaymentTransactions,
+  reconcilePayHerePayment,
+} = require("./payment.service");
 const {
   submitBankTransferProof,
   getBankTransferProofFile,
@@ -71,6 +75,23 @@ const reviewBankTransferPayment = asyncHandler(async (req, res) => {
   });
 });
 
+const reconcilePayHerePaymentController = asyncHandler(async (req, res) => {
+  const payment = await reconcilePayHerePayment({
+    transactionId: req.params.transactionId,
+    decision: req.body.decision,
+    note: req.body.note,
+    providerRefundId: req.body.providerRefundId,
+    admin: req.user,
+  });
+  res.status(200).json({
+    success: true,
+    message: payment.status === "paid"
+      ? "PayHere payment accepted and the purchase confirmed."
+      : "External PayHere refund recorded.",
+    payment: { id: payment.id, status: payment.status },
+  });
+});
+
 module.exports = {
   notifyPayHere,
   readPaymentStatus,
@@ -78,4 +99,5 @@ module.exports = {
   uploadBankTransferProof,
   downloadBankTransferProof,
   reviewBankTransferPayment,
+  reconcilePayHerePayment: reconcilePayHerePaymentController,
 };

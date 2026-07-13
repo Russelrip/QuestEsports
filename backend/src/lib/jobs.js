@@ -255,7 +255,10 @@ const runJobWorkerTick = async () => {
     }
 
     try {
-      await processJobByName(job);
+      const processed = await processJobByName(job);
+      if (processed === false) {
+        throw new Error(`Background job ${job.name} did not complete.`);
+      }
       await markJobSucceeded(job);
       logger.info("Background job completed", {
         jobId: job.id,

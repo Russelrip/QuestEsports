@@ -39,6 +39,7 @@ const validateConfiguredFields = ({ definitions, entryData, members }) => {
   const validateValue = (field, value) => {
     const normalized = value === undefined || value === null ? "" : String(value).trim();
     if (field.required && !normalized) throw new HttpError(400, `${field.label} is required.`);
+    if (normalized.length > 500) throw new HttpError(400, `${field.label} is too long.`);
     if (normalized && field.type === "number" && !Number.isFinite(Number(normalized))) {
       throw new HttpError(400, `${field.label} must be a number.`);
     }
@@ -177,7 +178,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     if (
       paymentMethod === "bank_transfer" &&
       latestPayment?.provider === "bank_transfer" &&
-      ["created", "pending", "review_required"].includes(latestPayment.status)
+      ["created", "pending", "review_required"].includes(latestPayment.status) &&
+      existing.paymentStatus === "pending" &&
+      existing.reservedUntil &&
+      existing.reservedUntil > now
     ) {
       return {
         registration: mapRegistrationResult(existing),
@@ -226,9 +230,12 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       await tx.paymentTransaction.updateMany({
         where: {
           registrationId: existing.id,
-          status: { in: ["created", "pending"] },
+          status: { in: ["created", "pending", "review_required"] },
         },
-        data: { status: "expired" },
+        data: {
+          status: "expired",
+          statusMessage: "Superseded by a new payment reservation.",
+        },
       });
       const payment = await tx.paymentTransaction.create({
         data: {
@@ -286,6 +293,17 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   if (!displayName || !fullName || !phone || !isValidEmail(contactEmail) || !rulebookAccepted || !falsityWarningAccepted) {
     throw new HttpError(400, "Complete the required registration details and agreements.");
   }
+  if (
+    displayName.length > 100 ||
+    fullName.length > 100 ||
+    phone.length > 50 ||
+    discord.length > 100 ||
+    contactEmail.length > 254 ||
+    (teamTag && teamTag.length > 12) ||
+    country.length > 100
+  ) {
+    throw new HttpError(400, "One or more registration fields exceed the allowed length.");
+  }
 
   if (tournament.entryType === "solo") requestedMembers = [];
   const normalizedMembers = requestedMembers.map((member, index) => ({
@@ -299,6 +317,14 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   }));
   if (normalizedMembers.some((member) => !member.name || !isValidEmail(member.email))) {
     throw new HttpError(400, "Every roster member needs a name and valid email.");
+  }
+  if (normalizedMembers.some((member) =>
+    member.name.length > 100 ||
+    member.email.length > 254 ||
+    (member.discord && member.discord.length > 100) ||
+    (member.riotId && member.riotId.length > 100)
+  )) {
+    throw new HttpError(400, "One or more roster fields exceed the allowed length.");
   }
   const playerCount = 1 + normalizedMembers.filter((member) => member.role === "PLAYER").length;
   const substituteCount = normalizedMembers.filter((member) => member.role === "SUBSTITUTE").length;

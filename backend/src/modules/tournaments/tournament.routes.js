@@ -16,7 +16,6 @@ const {
   updateTournament,
   deleteTournament,
   getTournamentRegistrationStatus,
-  submitTournamentRegistration,
   submitConfiguredTournamentRegistration,
   getTournamentBracket,
   generateBracket,
@@ -37,17 +36,9 @@ router.use(attachSession);
 router.get("/tournaments", getPublicTournaments);
 router.get("/tournaments/:slug", getPublicTournament);
 router.get(
-  "/tournament-registration/status/:slug",
+  "/tournaments/:slug/registration-status",
   requireAuth,
   getTournamentRegistrationStatus
-);
-router.post(
-  "/tournament-registration",
-  requireAuth,
-  requireVerifiedEmail,
-  tournamentRegistrationRateLimiter,
-  imageUpload.single("teamLogo"),
-  submitTournamentRegistration
 );
 router.post(
   "/tournaments/:slug/registrations",

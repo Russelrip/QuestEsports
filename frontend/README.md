@@ -42,7 +42,7 @@ The app runs at `http://localhost:3000` by default.
 
 ## Main Route Groups
 
-- Public: `/`, `/tournaments`, `/tournament-registration`, `/registration`, `/join`, `/posters`, `/match-videos`, `/rulebook`, `/contact`
+- Public: `/`, `/tournaments`, `/tournaments/[slug]/register`, `/registration`, `/join`, `/posters`, `/match-videos`, `/rulebook`, `/contact`
 - Auth: `/signup`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/confirm-email-change`, `/team-invite`
 - User: `/profile`
 - Admin: `/admin`, `/admin/users`, `/admin/tournaments`, `/admin/registrations`, `/admin/recruitment`, `/admin/rulebooks`, `/admin/contact-messages`
@@ -52,7 +52,7 @@ The app runs at `http://localhost:3000` by default.
 The frontend expects the backend to expose:
 
 - auth routes under `/api`
-- tournament routes under `/api/tournaments` and `/api/tournament-registration`
+- tournament routes under `/api/tournaments`, including slug-bound registration
 - recruitment submission routes under `/api/recruitment-applications`
 - native bracket admin routes under `/api/admin/tournaments/:tournamentId/bracket`
 - admin registration/recruitment list, delete, status, and export routes under `/api/admin`

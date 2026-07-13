@@ -299,14 +299,19 @@ const paymentProofUpload = multer({
   fileFilter: (req, file, callback) => {
     if (
       isAllowedImageMimeType(file.mimetype) ||
-      file.mimetype === "application/pdf"
+      (env.PAYMENT_PROOF_PDF_ENABLED && file.mimetype === "application/pdf")
     ) {
       callback(null, true);
       return;
     }
 
     callback(
-      new HttpError(400, "Only JPEG, PNG, WebP, or PDF payment proofs are allowed.")
+      new HttpError(
+        400,
+        env.PAYMENT_PROOF_PDF_ENABLED
+          ? "Only JPEG, PNG, WebP, or PDF payment proofs are allowed."
+          : "Only JPEG, PNG, or WebP payment proofs are allowed."
+      )
     );
   },
 });
@@ -393,6 +398,9 @@ const persistBankTransferProofUpload = async (file) => {
   let contentType;
   let extension;
   if (file.mimetype === "application/pdf") {
+    if (!env.PAYMENT_PROOF_PDF_ENABLED) {
+      throw new HttpError(400, "PDF payment proofs are not enabled.");
+    }
     const submittedExtension = path.extname(file.originalname || "").toLowerCase();
     if (
       submittedExtension !== ".pdf" ||

@@ -83,6 +83,7 @@ enum PaymentTransactionStatus {
   charged_back
   expired
   review_required
+  refunded
 }
 
 enum ProductStatus {
@@ -165,6 +166,7 @@ model User {
   tournamentRegistrations TeamRegistration[]
   merchandiseOrders       MerchandiseOrder[]
   reviewedPaymentProofs   BankTransferProof[]      @relation("PaymentProofReviewer")
+  reconciledPayments      PaymentTransaction[]     @relation("PaymentReconciler")
 
   @@index([role])
   @@index([createdAt])
@@ -613,14 +615,20 @@ model PaymentTransaction {
   paidAt             DateTime?                  @map("paid_at")
   createdAt          DateTime                   @default(now()) @map("created_at")
   updatedAt          DateTime                   @updatedAt @map("updated_at")
+  reconciledAt       DateTime?                  @map("reconciled_at")
+  reconciledById     String?                    @map("reconciled_by_id") @db.Uuid
+  reconciliationNote String?                    @map("reconciliation_note")
+  providerRefundId   String?                    @map("provider_refund_id")
   registration       TeamRegistration?          @relation(fields: [registrationId], references: [id], onDelete: Cascade)
   merchandiseOrder   MerchandiseOrder?          @relation(fields: [merchandiseOrderId], references: [id], onDelete: Cascade)
   notifications      PaymentNotificationAudit[]
   bankTransferProof  BankTransferProof?
+  reconciledBy       User?                      @relation("PaymentReconciler", fields: [reconciledById], references: [id], onDelete: SetNull)
 
   @@index([registrationId])
   @@index([merchandiseOrderId])
   @@index([status, createdAt])
+  @@index([reconciledById])
   @@map("payment_transactions")
 }
 
@@ -631,7 +639,7 @@ model BankTransferProof {
   originalFilename String             @map("original_filename")
   contentType      String             @map("content_type")
   byteSize         Int                @map("byte_size")
-  sha256           String
+  sha256           String             @unique
   submittedAt      DateTime           @default(now()) @map("submitted_at")
   reviewedAt       DateTime?          @map("reviewed_at")
   reviewedById     String?            @map("reviewed_by_id") @db.Uuid
@@ -639,7 +647,6 @@ model BankTransferProof {
   transaction      PaymentTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   reviewedBy       User?              @relation("PaymentProofReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 
-  @@index([sha256])
   @@index([reviewedById])
   @@index([submittedAt])
   @@map("bank_transfer_proofs")

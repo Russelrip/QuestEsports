@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/auth";
@@ -49,6 +50,7 @@ export default function AdminPaymentsManager() {
   const [message, setMessage] = useState("");
   const [busyId, setBusyId] = useState("");
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [refundReferences, setRefundReferences] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -97,12 +99,33 @@ export default function AdminPaymentsManager() {
     }
   };
 
+  const reconcilePayHere = async (payment: Payment, decision: "accept" | "mark_refunded") => {
+    setBusyId(payment.id);
+    try {
+      await adminRequest(`/api/admin/payments/${payment.id}/payhere-reconciliation`, {
+        method: "PATCH",
+        json: {
+          decision,
+          note: reasons[payment.id] || "",
+          providerRefundId: refundReferences[payment.id] || "",
+        },
+      });
+      setReasons((current) => ({ ...current, [payment.id]: "" }));
+      setRefundReferences((current) => ({ ...current, [payment.id]: "" }));
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Payment reconciliation could not be saved.");
+    } finally {
+      setBusyId("");
+    }
+  };
+
   return (
     <AdminShell title="Payment Reconciliation" description="Verify manual transfers against the actual bank credit before approving them. An uploaded receipt alone is not proof of settlement.">
       <Card className="grid gap-4 p-5 sm:grid-cols-2">
         <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
           <option value="">All statuses</option>
-          {["created", "pending", "paid", "failed", "cancelled", "charged_back", "expired", "review_required"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}
+          {["created", "pending", "paid", "failed", "cancelled", "charged_back", "expired", "review_required", "refunded"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}
         </Select>
         <Select value={purpose} onChange={(event) => { setPurpose(event.target.value); setPage(1); }}>
           <option value="">All purposes</option>
@@ -137,6 +160,17 @@ export default function AdminPaymentsManager() {
                     </div>
                   </>
                 ) : null}
+              </div>
+            ) : null}
+            {payment.provider === "payhere" && payment.status === "review_required" ? (
+              <div className="mt-5 grid gap-3 rounded-[20px] border border-amber-300/20 p-4">
+                <p className="text-sm text-amber-100">Verify the payment in the PayHere merchant portal. Accept only if capacity or stock is still available. Otherwise issue the refund externally first, then record its reference here.</p>
+                <Textarea value={reasons[payment.id] || ""} onChange={(event) => setReasons((current) => ({ ...current, [payment.id]: event.target.value }))} placeholder="Required reconciliation note" rows={3} />
+                <Input value={refundReferences[payment.id] || ""} onChange={(event) => setRefundReferences((current) => ({ ...current, [payment.id]: event.target.value }))} placeholder="PayHere refund reference (required for refund)" />
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" disabled={busyId === payment.id || !(reasons[payment.id] || "").trim()} onClick={() => void reconcilePayHere(payment, "accept")}>Accept verified payment</Button>
+                  <Button type="button" variant="secondary" disabled={busyId === payment.id || !(reasons[payment.id] || "").trim() || !(refundReferences[payment.id] || "").trim()} onClick={() => void reconcilePayHere(payment, "mark_refunded")}>Record completed refund</Button>
+                </div>
               </div>
             ) : null}
           </Card>
