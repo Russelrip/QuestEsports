@@ -16,8 +16,10 @@ export type DashboardRegistration = {
     title: string;
     game: string;
     status: string;
-    startDate: string;
-    endDate: string;
+    startDate: string | null;
+    startDateStatus: "scheduled" | "tba" | "tbd";
+    endDate: string | null;
+    endDateStatus: "scheduled" | "tba" | "tbd";
     bannerUrl?: string | null;
   };
   payment?: {

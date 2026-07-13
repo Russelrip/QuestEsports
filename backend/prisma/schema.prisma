@@ -35,6 +35,12 @@ enum TournamentStatus {
   cancelled
 }
 
+enum TournamentDateStatus {
+  scheduled
+  tba
+  tbd
+}
+
 enum TournamentRegistrationMode {
   open_entry
   slot_based
@@ -335,54 +341,57 @@ model ContactSubmission {
 }
 
 model Tournament {
-  id                       String                     @id @default(uuid()) @db.Uuid
-  slug                     String                     @unique
-  title                    String
-  game                     String
-  seriesId                 String?                    @map("series_id") @db.Uuid
-  seriesOrder              Int                        @default(100) @map("series_order")
-  displayPriority          Int                        @default(100) @map("display_priority")
-  bannerImageName          String?                    @map("banner_image_name")
-  scheduleFileName         String?                    @map("schedule_file_name")
-  scheduleData             Json?                      @map("schedule_data")
-  completedPosterImageName String?                    @map("completed_poster_image_name")
-  firstPlaceImageName      String?                    @map("first_place_image_name")
-  secondPlaceImageName     String?                    @map("second_place_image_name")
-  thirdPlaceImageName      String?                    @map("third_place_image_name")
-  shortDescription         String                     @map("short_description")
-  fullDescription          String                     @map("full_description")
-  rules                    String?
-  rulebookId               String?                    @map("rulebook_id") @db.Uuid
-  registrationOpenAt       DateTime?                  @map("registration_open_at")
-  startDate                DateTime                   @map("start_date")
-  endDate                  DateTime                   @map("end_date")
-  registrationDeadline     DateTime                   @map("registration_deadline")
-  format                   String
-  registrationMode         TournamentRegistrationMode @default(open_entry) @map("registration_mode")
-  entryType                TournamentEntryType        @default(team) @map("entry_type")
-  teamSize                 Int                        @map("team_size")
-  minRosterSize            Int                        @default(1) @map("min_roster_size")
-  maxRosterSize            Int                        @default(5) @map("max_roster_size")
-  maxSubstitutes           Int                        @default(0) @map("max_substitutes")
-  registrationFields       Json                       @default("[]") @map("registration_fields")
-  registrationFeeAmount    Decimal                    @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)
-  registrationFeeCurrency  String                     @default("LKR") @map("registration_fee_currency")
-  reservationMinutes       Int                        @default(15) @map("reservation_minutes")
-  maxTeams                 Int                        @map("max_teams")
-  prizePool                String                     @map("prize_pool")
-  status                   TournamentStatus           @default(draft)
-  isPublished              Boolean                    @default(false) @map("is_published")
-  bracketLink              String?                    @map("bracket_link")
-  contactLink              String?                    @map("contact_link")
-  isFeatured               Boolean                    @default(false) @map("is_featured")
-  isActive                 Boolean                    @default(true) @map("is_active")
-  createdAt                DateTime                   @default(now()) @map("created_at")
-  updatedAt                DateTime                   @updatedAt @map("updated_at")
-  teamRegistrations        TeamRegistration[]
-  posters                  Poster[]
-  bracket                  TournamentBracket?
-  rulebook                 Rulebook?                  @relation(fields: [rulebookId], references: [id], onDelete: SetNull)
-  series                   EventSeries?               @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  id                         String                     @id @default(uuid()) @db.Uuid
+  slug                       String                     @unique
+  title                      String
+  game                       String
+  seriesId                   String?                    @map("series_id") @db.Uuid
+  seriesOrder                Int                        @default(100) @map("series_order")
+  displayPriority            Int                        @default(100) @map("display_priority")
+  bannerImageName            String?                    @map("banner_image_name")
+  scheduleFileName           String?                    @map("schedule_file_name")
+  scheduleData               Json?                      @map("schedule_data")
+  completedPosterImageName   String?                    @map("completed_poster_image_name")
+  firstPlaceImageName        String?                    @map("first_place_image_name")
+  secondPlaceImageName       String?                    @map("second_place_image_name")
+  thirdPlaceImageName        String?                    @map("third_place_image_name")
+  shortDescription           String                     @map("short_description")
+  fullDescription            String                     @map("full_description")
+  rules                      String?
+  rulebookId                 String?                    @map("rulebook_id") @db.Uuid
+  registrationOpenAt         DateTime?                  @map("registration_open_at")
+  startDate                  DateTime?                  @map("start_date")
+  startDateStatus            TournamentDateStatus       @default(scheduled) @map("start_date_status")
+  endDate                    DateTime?                  @map("end_date")
+  endDateStatus              TournamentDateStatus       @default(scheduled) @map("end_date_status")
+  registrationDeadline       DateTime?                  @map("registration_deadline")
+  registrationDeadlineStatus TournamentDateStatus       @default(scheduled) @map("registration_deadline_status")
+  format                     String
+  registrationMode           TournamentRegistrationMode @default(open_entry) @map("registration_mode")
+  entryType                  TournamentEntryType        @default(team) @map("entry_type")
+  teamSize                   Int                        @map("team_size")
+  minRosterSize              Int                        @default(1) @map("min_roster_size")
+  maxRosterSize              Int                        @default(5) @map("max_roster_size")
+  maxSubstitutes             Int                        @default(0) @map("max_substitutes")
+  registrationFields         Json                       @default("[]") @map("registration_fields")
+  registrationFeeAmount      Decimal                    @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)
+  registrationFeeCurrency    String                     @default("LKR") @map("registration_fee_currency")
+  reservationMinutes         Int                        @default(15) @map("reservation_minutes")
+  maxTeams                   Int                        @map("max_teams")
+  prizePool                  String                     @map("prize_pool")
+  status                     TournamentStatus           @default(draft)
+  isPublished                Boolean                    @default(false) @map("is_published")
+  bracketLink                String?                    @map("bracket_link")
+  contactLink                String?                    @map("contact_link")
+  isFeatured                 Boolean                    @default(false) @map("is_featured")
+  isActive                   Boolean                    @default(true) @map("is_active")
+  createdAt                  DateTime                   @default(now()) @map("created_at")
+  updatedAt                  DateTime                   @updatedAt @map("updated_at")
+  teamRegistrations          TeamRegistration[]
+  posters                    Poster[]
+  bracket                    TournamentBracket?
+  rulebook                   Rulebook?                  @relation(fields: [rulebookId], references: [id], onDelete: SetNull)
+  series                     EventSeries?               @relation(fields: [seriesId], references: [id], onDelete: SetNull)
 
   @@index([isActive])
   @@index([isPublished, status, startDate])

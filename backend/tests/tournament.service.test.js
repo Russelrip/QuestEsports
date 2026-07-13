@@ -37,6 +37,107 @@ const buildRegistrationBody = (overrides = {}) => {
   return body;
 };
 
+const buildAdminTournamentBody = (overrides = {}) => ({
+  title: "Quest Date Cup",
+  slug: "quest-date-cup",
+  game: "valorant",
+  shortDescription: "Short description",
+  fullDescription: "Full description",
+  format: "Single elimination",
+  teamSize: "5",
+  maxTeams: "16",
+  prizePool: "LKR 50,000",
+  status: "draft",
+  startDate: "2026-08-01T10:00:00.000Z",
+  endDate: "2026-08-02T10:00:00.000Z",
+  registrationDeadline: "2026-07-30T10:00:00.000Z",
+  ...overrides,
+});
+
+test("admin tournaments can store TBA and TBD without placeholder dates", async () => {
+  let savedData;
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findFirst: async () => null,
+        create: async ({ data }) => {
+          savedData = data;
+          return {
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+          };
+        },
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+    },
+    [teamServiceModulePath]: {
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
+    },
+  });
+
+  try {
+    const tournament = await tournamentService.createAdminTournament({
+      body: buildAdminTournamentBody({
+        startDateStatus: "tba",
+        endDateStatus: "tbd",
+        registrationDeadlineStatus: "tba",
+      }),
+      files: {},
+    });
+
+    assert.equal(savedData.startDate, null);
+    assert.equal(savedData.endDate, null);
+    assert.equal(savedData.registrationDeadline, null);
+    assert.equal(tournament.startDateStatus, "tba");
+    assert.equal(tournament.endDateStatus, "tbd");
+    assert.equal(tournament.registrationDeadlineStatus, "tba");
+  } finally {
+    restore();
+  }
+});
+
+test("scheduled tournament dates still require valid values", async () => {
+  const prismaMock = {
+    prisma: {
+      tournament: { findFirst: async () => null },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+    },
+    [teamServiceModulePath]: {
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
+    },
+  });
+
+  try {
+    await assert.rejects(
+      tournamentService.createAdminTournament({
+        body: buildAdminTournamentBody({ startDate: "" }),
+        files: {},
+      }),
+      /Start date is required/
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("getPublicTournamentBySlug exposes approved public team card data", async () => {
   const prismaMock = {
     prisma: {
@@ -176,6 +277,66 @@ test("future registrationOpenAt keeps an otherwise open tournament closed", asyn
     assert.equal(tournament.registrationState, "registration_closed");
     assert.equal(tournament.isRegistrationOpen, false);
     assert.equal(tournament.isRegistrationClosed, true);
+  } finally {
+    restore();
+  }
+});
+
+test("a TBA registration deadline does not close an otherwise open tournament", async () => {
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findMany: async () => [
+          {
+            id: "tournament-tba",
+            slug: "tba-cup",
+            title: "TBA Cup",
+            game: "valorant",
+            displayPriority: 100,
+            shortDescription: "Short",
+            fullDescription: "Full",
+            rules: null,
+            registrationOpenAt: null,
+            startDate: null,
+            startDateStatus: "tba",
+            endDate: null,
+            endDateStatus: "tbd",
+            registrationDeadline: null,
+            registrationDeadlineStatus: "tba",
+            format: "Single elimination",
+            registrationMode: "open_entry",
+            teamSize: 5,
+            maxTeams: 16,
+            prizePool: "TBA",
+            status: "registration_open",
+            isPublished: true,
+            isFeatured: false,
+            _count: { teamRegistrations: 0 },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+    },
+    [teamServiceModulePath]: {
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
+    },
+  });
+
+  try {
+    const [tournament] = await tournamentService.listPublicTournaments();
+    assert.equal(tournament.registrationState, "registration_open");
+    assert.equal(tournament.startDate, null);
+    assert.equal(tournament.startDateStatus, "tba");
   } finally {
     restore();
   }

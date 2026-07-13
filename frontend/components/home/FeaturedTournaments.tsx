@@ -3,7 +3,7 @@ import TournamentBannerImage from "@/components/tournaments/TournamentBannerImag
 import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
-import { formatDisplayDate } from "@/lib/utils";
+import { formatTournamentDateRange } from "@/lib/utils";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
@@ -61,7 +61,7 @@ export default async function FeaturedTournaments() {
                     <div>
                       <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Event dates</p>
                       <p className="mt-1 text-white">
-                        {formatDisplayDate(tournament.startDate)} - {formatDisplayDate(tournament.endDate)}
+                        {formatTournamentDateRange(tournament)}
                       </p>
                     </div>
                   </div>

@@ -142,8 +142,9 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
     "href",
     "https://www.facebook.com/share/p/14gNLGrBLWF/?mibextid=wwXIfr"
   );
-  await expect(page.getByRole("button", { name: /Mobile Fit Poster/ }).locator("img")).toHaveCSS("object-fit", "contain");
-  await page.locator("main section button").first().click();
+  const posterButton = page.locator("main section button").filter({ has: page.locator("img") }).first();
+  await expect(posterButton.locator("img")).toHaveCSS("object-fit", "contain");
+  await posterButton.click();
 
   const dialog = page.getByRole("dialog", { name: "Poster preview" });
   const previewImage = dialog.locator("img");

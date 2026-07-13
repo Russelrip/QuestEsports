@@ -6,7 +6,7 @@ import { buttonClassName } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { PageTransition } from "@/components/ui/page-transition";
 import { fetchPublicEventSeriesBySlug } from "@/lib/tournaments";
-import { formatDisplayDate } from "@/lib/utils";
+import { formatTournamentDate } from "@/lib/utils";
 import { ApiRequestError } from "@/lib/api";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -62,7 +62,7 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
                     <h3 className="mt-2 text-2xl text-white">{tournament.title}</h3>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-400">
                       <span><strong className="block text-white">{tournament.prizePool}</strong>Prize pool</span>
-                      <span><strong className="block text-white">{formatDisplayDate(tournament.startDate)}</strong>Starts</span>
+                      <span><strong className="block text-white">{formatTournamentDate(tournament.startDate, tournament.startDateStatus)}</strong>Starts</span>
                     </div>
                   </div>
                 </Link>

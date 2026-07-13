@@ -64,9 +64,14 @@ export default function AdminTournamentsManager() {
       body.append("shortDescription", tournament.shortDescription);
       body.append("fullDescription", tournament.fullDescription);
       body.append("rules", tournament.rules || "");
-      body.append("startDate", tournament.startDate);
-      body.append("endDate", tournament.endDate);
-      body.append("registrationDeadline", tournament.registrationDeadline);
+      body.append("startDateStatus", tournament.startDateStatus);
+      body.append("endDateStatus", tournament.endDateStatus);
+      body.append("registrationDeadlineStatus", tournament.registrationDeadlineStatus);
+      if (tournament.startDate) body.append("startDate", tournament.startDate);
+      if (tournament.endDate) body.append("endDate", tournament.endDate);
+      if (tournament.registrationDeadline) {
+        body.append("registrationDeadline", tournament.registrationDeadline);
+      }
       body.append("format", tournament.format);
       body.append("teamSize", String(tournament.teamSize));
       body.append("maxTeams", String(tournament.maxTeams));

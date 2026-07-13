@@ -606,7 +606,7 @@ const listTeamRegistrations = async (query = {}) => {
       include: TEAM_REGISTRATION_INCLUDE,
     }),
     prisma.tournament.findMany({
-      orderBy: { startDate: "desc" },
+      orderBy: { startDate: { sort: "desc", nulls: "last" } },
       select: TOURNAMENT_SUMMARY_SELECT,
     }),
   ]);

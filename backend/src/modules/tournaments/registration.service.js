@@ -102,7 +102,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   if (
     tournament.status !== "registration_open" ||
     (tournament.registrationOpenAt && tournament.registrationOpenAt > now) ||
-    tournament.registrationDeadline < now
+    (tournament.registrationDeadline && tournament.registrationDeadline < now)
   ) {
     throw new HttpError(400, "Registration is closed for this tournament.");
   }

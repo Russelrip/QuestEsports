@@ -46,6 +46,7 @@ const TOURNAMENT_STATUSES = new Set([
 ]);
 const REGISTRATION_MODES = new Set(["open_entry", "slot_based"]);
 const ENTRY_TYPES = new Set(["team", "solo"]);
+const TOURNAMENT_DATE_STATUSES = new Set(["scheduled", "tba", "tbd"]);
 const REGISTRATION_FIELD_TYPES = new Set(["text", "number", "select"]);
 const REGISTRATION_FIELD_SCOPES = new Set(["entry", "member"]);
 const REGISTRATION_TRANSACTION_MAX_RETRIES = 3;
@@ -175,6 +176,35 @@ const parseOptionalDateValue = (value) => {
 
   const parsed = new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const parseTournamentDateValue = ({
+  body,
+  existingTournament,
+  valueKey,
+  statusKey,
+  fieldLabel,
+}) => {
+  const status = normalizeText(
+    body[statusKey] ?? existingTournament?.[statusKey] ?? "scheduled"
+  ).toLowerCase();
+
+  if (!TOURNAMENT_DATE_STATUSES.has(status)) {
+    throw new HttpError(400, `${fieldLabel} status must be Scheduled, TBA, or TBD.`);
+  }
+
+  if (status !== "scheduled") {
+    return { status, value: null };
+  }
+
+  const rawValue = Object.prototype.hasOwnProperty.call(body, valueKey)
+    ? body[valueKey]
+    : existingTournament?.[valueKey];
+
+  return {
+    status,
+    value: parseDateValue(rawValue, fieldLabel),
+  };
 };
 
 const parseTournamentStatus = (value) => {
@@ -347,8 +377,12 @@ const mapTournament = (tournament) => {
     rulebook: tournamentWithRegistrationCount.rulebook || null,
     registrationOpenAt: tournamentWithRegistrationCount.registrationOpenAt,
     startDate: tournamentWithRegistrationCount.startDate,
+    startDateStatus: tournamentWithRegistrationCount.startDateStatus || "scheduled",
     endDate: tournamentWithRegistrationCount.endDate,
+    endDateStatus: tournamentWithRegistrationCount.endDateStatus || "scheduled",
     registrationDeadline: tournamentWithRegistrationCount.registrationDeadline,
+    registrationDeadlineStatus:
+      tournamentWithRegistrationCount.registrationDeadlineStatus || "scheduled",
     format: tournamentWithRegistrationCount.format,
     registrationMode: tournamentWithRegistrationCount.registrationMode,
     entryType: tournamentWithRegistrationCount.entryType || "team",
@@ -454,8 +488,14 @@ const sortPublicTournaments = (tournaments) =>
       return left.isFeatured ? -1 : 1;
     }
 
+    const leftStartDate = left.startDate
+      ? new Date(left.startDate).getTime()
+      : Number.POSITIVE_INFINITY;
+    const rightStartDate = right.startDate
+      ? new Date(right.startDate).getTime()
+      : Number.POSITIVE_INFINITY;
     const startDateDifference =
-      new Date(left.startDate).getTime() - new Date(right.startDate).getTime();
+      leftStartDate === rightStartDate ? 0 : leftStartDate - rightStartDate;
 
     if (startDateDifference !== 0) {
       return startDateDifference;
@@ -645,21 +685,33 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     throw new HttpError(400, "Registration fields must be valid JSON.");
   }
   const status = parseTournamentStatus(body.status || existingTournament?.status);
-  const startDate = parseDateValue(
-    body.startDate || existingTournament?.startDate,
-    "Start date"
-  );
+  const startDateInput = parseTournamentDateValue({
+    body,
+    existingTournament,
+    valueKey: "startDate",
+    statusKey: "startDateStatus",
+    fieldLabel: "Start date",
+  });
   const registrationOpenAt = parseOptionalDateValue(
     body.registrationOpenAt || existingTournament?.registrationOpenAt
   );
-  const endDate = parseDateValue(
-    body.endDate || existingTournament?.endDate,
-    "End date"
-  );
-  const registrationDeadline = parseDateValue(
-    body.registrationDeadline || existingTournament?.registrationDeadline,
-    "Registration deadline"
-  );
+  const endDateInput = parseTournamentDateValue({
+    body,
+    existingTournament,
+    valueKey: "endDate",
+    statusKey: "endDateStatus",
+    fieldLabel: "End date",
+  });
+  const registrationDeadlineInput = parseTournamentDateValue({
+    body,
+    existingTournament,
+    valueKey: "registrationDeadline",
+    statusKey: "registrationDeadlineStatus",
+    fieldLabel: "Registration deadline",
+  });
+  const startDate = startDateInput.value;
+  const endDate = endDateInput.value;
+  const registrationDeadline = registrationDeadlineInput.value;
   const bracketLink = normalizeText(body.bracketLink)
     ? normalizeOptionalUrl(body.bracketLink)
     : null;
@@ -743,14 +795,14 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     };
   });
 
-  if (registrationDeadline > startDate) {
+  if (registrationDeadline && startDate && registrationDeadline > startDate) {
     throw new HttpError(
       400,
       "Registration deadline must be before or on the tournament start date."
     );
   }
 
-  if (endDate < startDate) {
+  if (endDate && startDate && endDate < startDate) {
     throw new HttpError(400, "End date must be after the start date.");
   }
 
@@ -773,8 +825,11 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     rulebookId,
     registrationOpenAt,
     startDate,
+    startDateStatus: startDateInput.status,
     endDate,
+    endDateStatus: endDateInput.status,
     registrationDeadline,
+    registrationDeadlineStatus: registrationDeadlineInput.status,
     format,
     registrationMode,
     entryType,
@@ -825,7 +880,12 @@ const listPublicTournaments = async ({ game } = {}) => {
       isPublished: true,
       ...(normalizedGame && normalizedGame !== "all" ? { game: normalizedGame } : {}),
     },
-    orderBy: [{ displayPriority: "asc" }, { isFeatured: "desc" }, { startDate: "asc" }, { createdAt: "desc" }],
+    orderBy: [
+      { displayPriority: "asc" },
+      { isFeatured: "desc" },
+      { startDate: { sort: "asc", nulls: "last" } },
+      { createdAt: "desc" },
+    ],
     include: buildRegistrationCountInclude(),
   });
 
@@ -900,7 +960,11 @@ const listAdminTournaments = async ({ page, pageSize, search, status, isPublishe
     prisma.tournament.count({ where }),
     prisma.tournament.findMany({
       where,
-      orderBy: [{ displayPriority: "asc" }, { startDate: "desc" }, { createdAt: "desc" }],
+      orderBy: [
+        { displayPriority: "asc" },
+        { startDate: { sort: "desc", nulls: "last" } },
+        { createdAt: "desc" },
+      ],
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
       include: buildRegistrationCountInclude(),

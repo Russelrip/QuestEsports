@@ -290,14 +290,41 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Configurable Registration Fields" htmlFor="registrationFields" hint='JSON list. Example: [{"key":"pubg-mobile-id","label":"PUBG Mobile ID","type":"text","scope":"entry","required":true,"options":[]}]' className="md:col-span-2 xl:col-span-3">
                 <Textarea id="registrationFields" rows={8} value={formValues.registrationFields} onChange={(event) => updateField("registrationFields", event.target.value)} />
               </FormField>
-              <FormField label="Start Date" htmlFor="startDate" required>
-                <Input id="startDate" type="datetime-local" value={formValues.startDate} onChange={(event) => updateField("startDate", event.target.value)} required />
+              <FormField label="Start Date" htmlFor="startDateStatus" required>
+                <div className="grid gap-2">
+                  <Select id="startDateStatus" value={formValues.startDateStatus} onChange={(event) => updateField("startDateStatus", event.target.value as TournamentFormValues["startDateStatus"])}>
+                    <option value="scheduled">Scheduled date</option>
+                    <option value="tba">TBA</option>
+                    <option value="tbd">TBD</option>
+                  </Select>
+                  {formValues.startDateStatus === "scheduled" ? (
+                    <Input id="startDate" type="datetime-local" value={formValues.startDate} onChange={(event) => updateField("startDate", event.target.value)} required />
+                  ) : null}
+                </div>
               </FormField>
-              <FormField label="End Date" htmlFor="endDate" required>
-                <Input id="endDate" type="datetime-local" value={formValues.endDate} onChange={(event) => updateField("endDate", event.target.value)} required />
+              <FormField label="End Date" htmlFor="endDateStatus" required>
+                <div className="grid gap-2">
+                  <Select id="endDateStatus" value={formValues.endDateStatus} onChange={(event) => updateField("endDateStatus", event.target.value as TournamentFormValues["endDateStatus"])}>
+                    <option value="scheduled">Scheduled date</option>
+                    <option value="tba">TBA</option>
+                    <option value="tbd">TBD</option>
+                  </Select>
+                  {formValues.endDateStatus === "scheduled" ? (
+                    <Input id="endDate" type="datetime-local" value={formValues.endDate} onChange={(event) => updateField("endDate", event.target.value)} required />
+                  ) : null}
+                </div>
               </FormField>
-              <FormField label="Registration Deadline" htmlFor="registrationDeadline" required>
-                <Input id="registrationDeadline" type="datetime-local" value={formValues.registrationDeadline} onChange={(event) => updateField("registrationDeadline", event.target.value)} required />
+              <FormField label="Registration Deadline" htmlFor="registrationDeadlineStatus" required>
+                <div className="grid gap-2">
+                  <Select id="registrationDeadlineStatus" value={formValues.registrationDeadlineStatus} onChange={(event) => updateField("registrationDeadlineStatus", event.target.value as TournamentFormValues["registrationDeadlineStatus"])}>
+                    <option value="scheduled">Scheduled date</option>
+                    <option value="tba">TBA</option>
+                    <option value="tbd">TBD</option>
+                  </Select>
+                  {formValues.registrationDeadlineStatus === "scheduled" ? (
+                    <Input id="registrationDeadline" type="datetime-local" value={formValues.registrationDeadline} onChange={(event) => updateField("registrationDeadline", event.target.value)} required />
+                  ) : null}
+                </div>
               </FormField>
               <FormField label="Registration Opens" htmlFor="registrationOpenAt" hint="Optional public schedule start.">
                 <Input id="registrationOpenAt" type="datetime-local" value={formValues.registrationOpenAt} onChange={(event) => updateField("registrationOpenAt", event.target.value)} />

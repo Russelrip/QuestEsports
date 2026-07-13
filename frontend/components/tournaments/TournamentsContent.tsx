@@ -15,7 +15,7 @@ import {
   getTournamentRegistrationShortLabel,
   getTournamentStatusLabel,
 } from "@/lib/tournaments";
-import { formatDisplayDate } from "@/lib/utils";
+import { formatTournamentDate } from "@/lib/utils";
 
 export default function TournamentsContent({
   tournaments,
@@ -214,7 +214,7 @@ export default function TournamentsContent({
                       <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/80">{tournament.game}</p>
                       <h4 className="mt-2 text-2xl text-white">{tournament.title}</h4>
                       <p className="mt-2 text-sm text-slate-400">
-                        Completed on {formatDisplayDate(tournament.endDate)}
+                        Completed on {formatTournamentDate(tournament.endDate, tournament.endDateStatus)}
                       </p>
                       <p className="mt-4 text-sm leading-7 text-slate-300">{tournament.shortDescription}</p>
                     </div>
@@ -254,8 +254,8 @@ function InfoChip({ label, value }: { label: string; value: string }) {
 function getActiveTournamentStats(tournament: Tournament) {
   return [
     { label: "Prize Pool", value: tournament.prizePool },
-    { label: "Registration Deadline", value: formatDisplayDate(tournament.registrationDeadline) },
-    { label: "Tournament Start", value: formatDisplayDate(tournament.startDate) },
+    { label: "Registration Deadline", value: formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus) },
+    { label: "Tournament Start", value: formatTournamentDate(tournament.startDate, tournament.startDateStatus) },
   ];
 }
 

@@ -15,6 +15,7 @@ export type TournamentRegistrationState =
 
 export type TournamentRegistrationMode = "open_entry" | "slot_based";
 export type TournamentEntryType = "team" | "solo";
+export type TournamentDateStatus = "scheduled" | "tba" | "tbd";
 
 export type TournamentRegistrationField = {
   key: string;
@@ -153,9 +154,12 @@ export type Tournament = {
     variant: string;
   } | null;
   registrationOpenAt: string | null;
-  startDate: string;
-  endDate: string;
-  registrationDeadline: string;
+  startDate: string | null;
+  startDateStatus: TournamentDateStatus;
+  endDate: string | null;
+  endDateStatus: TournamentDateStatus;
+  registrationDeadline: string | null;
+  registrationDeadlineStatus: TournamentDateStatus;
   format: string;
   registrationMode: TournamentRegistrationMode;
   entryType: TournamentEntryType;
@@ -243,8 +247,8 @@ export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => 
   const source = featured.length > 0 ? featured : tournaments;
   return [...source]
     .sort((left, right) => {
-      const leftDate = new Date(left.createdAt || left.startDate).getTime();
-      const rightDate = new Date(right.createdAt || right.startDate).getTime();
+      const leftDate = new Date(left.startDate || left.createdAt || 0).getTime();
+      const rightDate = new Date(right.startDate || right.createdAt || 0).getTime();
       return rightDate - leftDate;
     })
     .slice(0, limit);

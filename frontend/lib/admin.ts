@@ -315,8 +315,11 @@ export type TournamentFormValues = {
   rulebookId: string;
   registrationOpenAt: string;
   startDate: string;
+  startDateStatus: Tournament["startDateStatus"];
   endDate: string;
+  endDateStatus: Tournament["endDateStatus"];
   registrationDeadline: string;
+  registrationDeadlineStatus: Tournament["registrationDeadlineStatus"];
   format: string;
   registrationMode: Tournament["registrationMode"];
   entryType: Tournament["entryType"];
@@ -386,8 +389,11 @@ export const initialTournamentFormValues: TournamentFormValues = {
   rulebookId: "",
   registrationOpenAt: "",
   startDate: "",
+  startDateStatus: "scheduled",
   endDate: "",
+  endDateStatus: "scheduled",
   registrationDeadline: "",
+  registrationDeadlineStatus: "scheduled",
   format: "",
   registrationMode: "open_entry",
   entryType: "team",

@@ -172,14 +172,14 @@ function getTournamentDetailStats(tournament: Tournament) {
           ? `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`
           : "Free",
     },
-    { label: "Registration Deadline", value: formatDateTime(tournament.registrationDeadline) },
+    { label: "Registration Deadline", value: formatDateTime(tournament.registrationDeadline, tournament.registrationDeadlineStatus) },
     {
       label: "Bracket Release",
       value: tournament.bracketSummary?.lastUpdatedAt
         ? formatDateTime(tournament.bracketSummary.lastUpdatedAt)
         : "To be announced",
     },
-    { label: "Tournament Start", value: formatDateTime(tournament.startDate) },
+    { label: "Tournament Start", value: formatDateTime(tournament.startDate, tournament.startDateStatus) },
   ];
 }
 
@@ -453,10 +453,10 @@ function getRoundLabel(groupNumber: number, roundNumber: number) {
   return `Round ${roundNumber}`;
 }
 
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "To be announced";
-  }
+function formatDateTime(value?: string | null, status: Tournament["startDateStatus"] = "scheduled") {
+  if (status === "tba") return "TBA";
+  if (status === "tbd") return "TBD";
+  if (!value) return "TBD";
 
   return new Date(value).toLocaleString(undefined, {
     month: "short",

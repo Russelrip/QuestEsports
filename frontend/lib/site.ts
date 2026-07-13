@@ -309,8 +309,8 @@ export const buildTournamentStructuredData = (tournament: Tournament) => ({
         ? "EventCompleted"
         : "EventScheduled"
   }`,
-  startDate: tournament.startDate,
-  endDate: tournament.endDate,
+  ...(tournament.startDate ? { startDate: tournament.startDate } : {}),
+  ...(tournament.endDate ? { endDate: tournament.endDate } : {}),
   organizer: {
     "@type": "SportsOrganization",
     name: siteTitle,

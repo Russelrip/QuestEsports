@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { formatDisplayDate } from "@/lib/utils";
+import { formatTournamentDate, formatTournamentDateRange } from "@/lib/utils";
 import {
   Tournament,
   getTournamentRegistrationLabel,
@@ -16,8 +16,8 @@ const infoItems = (tournament: Tournament) => [
   { label: "Entry", value: getTournamentRegistrationModeLabel(tournament) },
   { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
   { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}` },
-  { label: "Registration Deadline", value: formatDisplayDate(tournament.registrationDeadline) },
-  { label: "Event Dates", value: `${formatDisplayDate(tournament.startDate)} - ${formatDisplayDate(tournament.endDate)}` },
+  { label: "Registration Deadline", value: formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus) },
+  { label: "Event Dates", value: formatTournamentDateRange(tournament) },
 ];
 
 const compactItems = (tournament: Tournament) => [
@@ -27,10 +27,10 @@ const compactItems = (tournament: Tournament) => [
   { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}`, icon: UsersIcon },
   {
     label: "Dates",
-    value: `${formatDisplayDate(tournament.startDate)} - ${formatDisplayDate(tournament.endDate)}`,
+    value: formatTournamentDateRange(tournament),
     icon: CalendarIcon,
   },
-  { label: "Deadline", value: formatDisplayDate(tournament.registrationDeadline), icon: ClockIcon },
+  { label: "Deadline", value: formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus), icon: ClockIcon },
   { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}`, icon: UsersIcon },
   { label: "Tournament", value: toTitleCase(getTournamentStatusLabel(tournament.status)), icon: SignalIcon },
 ];

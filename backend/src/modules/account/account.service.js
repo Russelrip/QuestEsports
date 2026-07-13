@@ -24,7 +24,9 @@ const mapRegistration = (registration) => ({
     game: registration.tournament.game,
     status: registration.tournament.status,
     startDate: registration.tournament.startDate,
+    startDateStatus: registration.tournament.startDateStatus || "scheduled",
     endDate: registration.tournament.endDate,
+    endDateStatus: registration.tournament.endDateStatus || "scheduled",
     bannerUrl: registration.tournament.bannerImageName
       ? `/api/uploads/tournament-banners/${registration.tournament.bannerImageName}`
       : null,
@@ -63,7 +65,9 @@ const getAccountDashboard = async ({ user }) => {
             game: true,
             status: true,
             startDate: true,
+            startDateStatus: true,
             endDate: true,
+            endDateStatus: true,
             bannerImageName: true,
           },
         },
@@ -90,7 +94,8 @@ const getAccountDashboard = async ({ user }) => {
   const mappedRegistrations = registrations.slice(0, 100).map(mapRegistration);
   const isPast = (entry) =>
     ["completed", "cancelled"].includes(entry.tournament.status) ||
-    new Date(entry.tournament.endDate).getTime() < now;
+    (entry.tournament.endDate &&
+      new Date(entry.tournament.endDate).getTime() < now);
 
   return {
     currentRegistrations: mappedRegistrations.filter((entry) => !isPast(entry)),

@@ -26,7 +26,10 @@ const mapSeries = (series) => ({
 
 const buildSeriesTournamentInclude = () => ({
   where: { isPublished: true },
-  orderBy: [{ seriesOrder: "asc" }, { startDate: "asc" }],
+  orderBy: [
+    { seriesOrder: "asc" },
+    { startDate: { sort: "asc", nulls: "last" } },
+  ],
   include: buildRegistrationCountInclude(),
 });
 
@@ -54,7 +57,10 @@ const listAdminSeries = async () => {
     orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }],
     include: {
       tournaments: {
-        orderBy: [{ seriesOrder: "asc" }, { startDate: "asc" }],
+        orderBy: [
+          { seriesOrder: "asc" },
+          { startDate: { sort: "asc", nulls: "last" } },
+        ],
         include: buildRegistrationCountInclude(),
       },
     },

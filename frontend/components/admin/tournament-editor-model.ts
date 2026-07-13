@@ -32,9 +32,12 @@ export const mapTournamentToFormValues = (
   registrationOpenAt: toOptionalLocalDateTimeValue(
     tournament.registrationOpenAt
   ),
-  startDate: toLocalDateTimeValue(tournament.startDate),
-  endDate: toLocalDateTimeValue(tournament.endDate),
-  registrationDeadline: toLocalDateTimeValue(tournament.registrationDeadline),
+  startDate: toOptionalLocalDateTimeValue(tournament.startDate),
+  startDateStatus: tournament.startDateStatus || "scheduled",
+  endDate: toOptionalLocalDateTimeValue(tournament.endDate),
+  endDateStatus: tournament.endDateStatus || "scheduled",
+  registrationDeadline: toOptionalLocalDateTimeValue(tournament.registrationDeadline),
+  registrationDeadlineStatus: tournament.registrationDeadlineStatus || "scheduled",
   format: tournament.format,
   registrationMode: tournament.registrationMode || "open_entry",
   entryType: tournament.entryType || "team",
