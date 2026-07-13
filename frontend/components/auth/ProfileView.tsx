@@ -56,9 +56,9 @@ const formatMemberRole = (role: string, memberOrder: number) => {
 function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[]; empty: string }) {
   if (entries.length === 0) return <p className="rounded-[22px] border border-white/8 bg-white/5 p-5 text-sm text-slate-400">{empty}</p>;
   return <div className="grid gap-4 sm:grid-cols-2">{entries.map((entry) => (
-    <Link key={entry.id} href={`/tournaments/${entry.tournament.slug}`} className="group overflow-hidden rounded-[24px] border border-white/8 bg-white/5 transition hover:-translate-y-0.5 hover:border-cyan-300/25">
+    <Link key={entry.id} href={entry.payment?.provider === "bank_transfer" && entry.payment.status !== "paid" ? `/tournaments/${entry.tournament.slug}/payment?order=${encodeURIComponent(entry.payment.orderId)}` : `/tournaments/${entry.tournament.slug}`} className="group overflow-hidden rounded-[24px] border border-white/8 bg-white/5 transition hover:-translate-y-0.5 hover:border-cyan-300/25">
       {entry.tournament.bannerUrl ? <div className="relative aspect-[16/7]"><Image src={buildApiUrl(entry.tournament.bannerUrl)} alt="" fill className="object-cover" sizes="(min-width: 640px) 40vw, 100vw" /></div> : null}
-      <div className="p-5"><p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">{entry.tournament.game}</p><h4 className="mt-2 text-lg text-white">{entry.tournament.title}</h4><p className="mt-2 text-sm text-slate-400">{entry.displayName}</p><div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.paymentStatus}</Badge></div></div>
+      <div className="p-5"><p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">{entry.tournament.game}</p><h4 className="mt-2 text-lg text-white">{entry.tournament.title}</h4><p className="mt-2 text-sm text-slate-400">{entry.displayName}</p><div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.payment?.status || entry.paymentStatus}</Badge></div>{entry.payment?.provider === "bank_transfer" && entry.payment.status !== "paid" ? <p className="mt-3 text-xs text-cyan-200">Open bank-transfer instructions →</p> : null}</div>
     </Link>
   ))}</div>;
 }

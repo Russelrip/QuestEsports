@@ -330,9 +330,16 @@ export type TournamentFormValues = {
   maxRosterSize: string;
   maxSubstitutes: string;
   registrationFields: string;
+  paymentMethod: Tournament["paymentMethod"];
   registrationFeeAmount: string;
   registrationFeeCurrency: string;
+  registrationFeeTiers: string;
   reservationMinutes: string;
+  bankTransferReviewMinutes: string;
+  bankName: string;
+  bankBranch: string;
+  bankAccountName: string;
+  bankAccountNumber: string;
   maxTeams: string;
   prizePool: string;
   status: Tournament["status"];
@@ -404,9 +411,16 @@ export const initialTournamentFormValues: TournamentFormValues = {
   maxRosterSize: "5",
   maxSubstitutes: "2",
   registrationFields: "[]",
+  paymentMethod: "free",
   registrationFeeAmount: "0",
   registrationFeeCurrency: "LKR",
+  registrationFeeTiers: "[]",
   reservationMinutes: "15",
+  bankTransferReviewMinutes: "1440",
+  bankName: "",
+  bankBranch: "",
+  bankAccountName: "",
+  bankAccountNumber: "",
   maxTeams: "",
   prizePool: "",
   status: "draft",

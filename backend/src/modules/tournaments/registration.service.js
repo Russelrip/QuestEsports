@@ -6,6 +6,11 @@ const { isValidEmail, normalizeEmail, normalizeText } = require("../../lib/valid
 const { persistTeamLogoUpload, removeUploadFile, teamLogoDirectory } = require("../../middleware/upload");
 const { syncSavedTeamFromRegistration, sendTeamInvites } = require("../teams/team.service");
 const { assertPayHereConfigured, createPayHereCheckout } = require("../payments/payment.service");
+const {
+  assertBankTransferConfigured,
+  buildBankTransferInstructions,
+  getBankTransferAmountForSlot,
+} = require("../payments/bank-transfer.service");
 const { buildActiveRegistrationWhere } = require("./registration-eligibility");
 
 const normalizeBoolean = (value) => [true, "true", "1", "on"].includes(value);
@@ -66,6 +71,11 @@ const mapRegistrationResult = (registration) => ({
       : registration.teamName,
   status: registration.status,
   paymentStatus: registration.paymentStatus,
+  assignedSlotNumber: registration.assignedSlotNumber,
+  quotedFeeAmount: registration.quotedFeeAmount
+    ? Number(registration.quotedFeeAmount)
+    : null,
+  quotedFeeCurrency: registration.quotedFeeCurrency,
   reservedUntil: registration.reservedUntil,
 });
 
@@ -85,6 +95,34 @@ const buildCheckout = ({ payment, tournament, user, body }) =>
     returnPath: `/tournaments/${tournament.slug}/payment?order=${encodeURIComponent(payment.providerOrderId)}`,
     cancelPath: `/tournaments/${tournament.slug}?payment=cancelled`,
   });
+
+const buildPaymentOrderId = (paymentMethod, slug) => {
+  if (paymentMethod === "bank_transfer") {
+    const prefix = String(slug || "EVENT")
+      .replace(/[^a-z0-9]/gi, "")
+      .slice(0, 8)
+      .toUpperCase() || "EVENT";
+    return `QST-${prefix}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+  }
+  return `TOUR-${crypto.randomUUID()}`;
+};
+
+const allocateLowestAvailableSlot = async ({ tx, tournamentId, maxTeams, excludeId }) => {
+  const activeRegistrations = await tx.teamRegistration.findMany({
+    where: {
+      tournamentId,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+      assignedSlotNumber: { not: null },
+      ...buildActiveRegistrationWhere(),
+    },
+    select: { assignedSlotNumber: true },
+  });
+  const usedSlots = new Set(activeRegistrations.map((entry) => entry.assignedSlotNumber));
+  for (let slotNumber = 1; slotNumber <= maxTeams; slotNumber += 1) {
+    if (!usedSlots.has(slotNumber)) return slotNumber;
+  }
+  throw new HttpError(409, "Registration slots are full.");
+};
 
 const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   const submittedSlug = normalizeText(body.tournamentSlug || body.tournament);
@@ -108,7 +146,12 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   }
 
   const feeAmount = Number(tournament.registrationFeeAmount || 0);
-  if (feeAmount > 0) assertPayHereConfigured();
+  const paymentMethod = feeAmount > 0 ? tournament.paymentMethod || "payhere" : "free";
+  if (paymentMethod === "payhere") assertPayHereConfigured();
+  if (paymentMethod === "bank_transfer") assertBankTransferConfigured(tournament);
+  if (feeAmount > 0 && !["payhere", "bank_transfer"].includes(paymentMethod)) {
+    throw new HttpError(503, "This paid tournament does not have a payment method configured.");
+  }
 
   const existing = await prisma.teamRegistration.findFirst({
     where: {
@@ -118,15 +161,38 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         { captainEmail: normalizeEmail(user.email) },
       ],
     },
-    include: { payments: { orderBy: { createdAt: "desc" }, take: 1 } },
+    include: {
+      payments: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: { bankTransferProof: true },
+      },
+    },
   });
   if (existing) {
     if (existing.paymentStatus === "paid" || feeAmount === 0) {
       throw new HttpError(409, "You are already registered for this tournament.");
     }
-    const providerOrderId = `TOUR-${crypto.randomUUID()}`;
+    const latestPayment = existing.payments[0];
+    if (
+      paymentMethod === "bank_transfer" &&
+      latestPayment?.provider === "bank_transfer" &&
+      ["created", "pending", "review_required"].includes(latestPayment.status)
+    ) {
+      return {
+        registration: mapRegistrationResult(existing),
+        paymentOrderId: latestPayment.providerOrderId,
+        checkout: null,
+        bankTransfer: buildBankTransferInstructions({
+          transaction: latestPayment,
+          registration: existing,
+          tournament,
+        }),
+      };
+    }
+    const providerOrderId = buildPaymentOrderId(paymentMethod, tournament.slug);
     const reservedUntil = new Date(Date.now() + tournament.reservationMinutes * 60 * 1000);
-    const payment = await runSerializable(async (tx) => {
+    const retried = await runSerializable(async (tx) => {
       const activeCount = await tx.teamRegistration.count({
         where: {
           id: { not: existing.id },
@@ -135,9 +201,27 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         },
       });
       if (activeCount >= tournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
-      await tx.teamRegistration.update({
+      const assignedSlotNumber = paymentMethod === "bank_transfer"
+        ? await allocateLowestAvailableSlot({
+            tx,
+            tournamentId: tournament.id,
+            maxTeams: tournament.maxTeams,
+            excludeId: existing.id,
+          })
+        : null;
+      const quotedFeeAmount = paymentMethod === "bank_transfer"
+        ? getBankTransferAmountForSlot(tournament, assignedSlotNumber)
+        : feeAmount;
+      const registration = await tx.teamRegistration.update({
         where: { id: existing.id },
-        data: { userId: user.id, paymentStatus: "pending", reservedUntil },
+        data: {
+          userId: user.id,
+          paymentStatus: "pending",
+          reservedUntil,
+          assignedSlotNumber,
+          quotedFeeAmount,
+          quotedFeeCurrency: tournament.registrationFeeCurrency,
+        },
       });
       await tx.paymentTransaction.updateMany({
         where: {
@@ -146,21 +230,33 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         },
         data: { status: "expired" },
       });
-      return tx.paymentTransaction.create({
+      const payment = await tx.paymentTransaction.create({
         data: {
           id: crypto.randomUUID(),
           purpose: "tournament_registration",
+          provider: paymentMethod,
           providerOrderId,
           registrationId: existing.id,
-          amount: tournament.registrationFeeAmount,
+          amount: quotedFeeAmount,
           currency: tournament.registrationFeeCurrency,
+          method: paymentMethod === "bank_transfer" ? "bank_transfer" : null,
         },
       });
+      return { payment, registration };
     });
     return {
-      registration: mapRegistrationResult({ ...existing, paymentStatus: "pending", reservedUntil }),
+      registration: mapRegistrationResult(retried.registration),
       paymentOrderId: providerOrderId,
-      checkout: buildCheckout({ payment, tournament, user, body }),
+      checkout: paymentMethod === "payhere"
+        ? buildCheckout({ payment: retried.payment, tournament, user, body })
+        : null,
+      bankTransfer: paymentMethod === "bank_transfer"
+        ? buildBankTransferInstructions({
+            transaction: retried.payment,
+            registration: retried.registration,
+            tournament,
+          })
+        : null,
     };
   }
 
@@ -243,7 +339,9 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   const reservedUntil = feeAmount > 0
     ? new Date(Date.now() + tournament.reservationMinutes * 60 * 1000)
     : null;
-  const providerOrderId = feeAmount > 0 ? `TOUR-${crypto.randomUUID()}` : null;
+  const providerOrderId = feeAmount > 0
+    ? buildPaymentOrderId(paymentMethod, tournament.slug)
+    : null;
   let inviteDispatches = [];
 
   try {
@@ -255,6 +353,17 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         },
       });
       if (activeCount >= tournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
+
+      const assignedSlotNumber = paymentMethod === "bank_transfer"
+        ? await allocateLowestAvailableSlot({
+            tx,
+            tournamentId: tournament.id,
+            maxTeams: tournament.maxTeams,
+          })
+        : null;
+      const quotedFeeAmount = paymentMethod === "bank_transfer"
+        ? getBankTransferAmountForSlot(tournament, assignedSlotNumber)
+        : feeAmount;
 
       if (tournament.entryType === "team") {
         const duplicateTeam = await tx.teamRegistration.findFirst({
@@ -292,6 +401,9 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           rulebookAccepted,
           falsityWarningAccepted,
           additionalData: configured.entryData,
+          assignedSlotNumber,
+          quotedFeeAmount: feeAmount > 0 ? quotedFeeAmount : null,
+          quotedFeeCurrency: feeAmount > 0 ? tournament.registrationFeeCurrency : null,
           reservedUntil,
         },
       });
@@ -333,10 +445,12 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             data: {
               id: crypto.randomUUID(),
               purpose: "tournament_registration",
+              provider: paymentMethod,
               providerOrderId,
               registrationId,
-              amount: tournament.registrationFeeAmount,
+              amount: quotedFeeAmount,
               currency: tournament.registrationFeeCurrency,
+              method: paymentMethod === "bank_transfer" ? "bank_transfer" : null,
             },
           })
         : null;
@@ -347,7 +461,16 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     return {
       registration: mapRegistrationResult(result.registration),
       paymentOrderId: providerOrderId,
-      checkout: result.payment ? buildCheckout({ payment: result.payment, tournament, user, body }) : null,
+      checkout: result.payment && paymentMethod === "payhere"
+        ? buildCheckout({ payment: result.payment, tournament, user, body })
+        : null,
+      bankTransfer: result.payment && paymentMethod === "bank_transfer"
+        ? buildBankTransferInstructions({
+            transaction: result.payment,
+            registration: result.registration,
+            tournament,
+          })
+        : null,
     };
   } catch (error) {
     if (persistedLogo) {

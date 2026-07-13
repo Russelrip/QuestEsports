@@ -17,7 +17,7 @@ const policySections = [
       "Authentication and security data such as session records, sign-in history, IP address, user agent, verification tokens, password reset tokens, and multi-factor authentication data if you enable it.",
       "Tournament, recruitment, and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, NICs submitted for recruitment review, saved team information, and application or registration status.",
       "Contact information and messages that you submit through the contact form or support channels.",
-      "Uploaded content such as team logos, tournament banners, posters, and related media submitted or managed through the platform.",
+      "Uploaded content such as team logos, tournament banners, posters, and private bank-transfer receipts submitted for payment verification.",
       "Commerce information such as merchandise selections, delivery address, order totals, payment status, and payment-provider references. Quest E-sports does not store full card numbers or security codes.",
       "Technical and usage information collected through hosting, analytics, performance monitoring, and server logs.",
     ],
@@ -38,7 +38,7 @@ const policySections = [
       "To send account-related emails such as verification, password reset, security alerts, and invite notifications.",
       "To maintain platform security, prevent abuse, investigate suspicious activity, and enforce our rules.",
       "To understand website performance and improve the user experience.",
-      "To process merchandise orders, arrange delivery, reconcile PayHere payments, and provide order support.",
+      "To process merchandise orders, arrange delivery, reconcile PayHere payments, verify tournament bank transfers, detect duplicate receipts, and provide payment support.",
       "To comply with legal obligations and protect Quest E-sports, participants, and the community.",
     ],
   },
@@ -87,7 +87,7 @@ const policySections = [
     title: "10. Data Retention",
     paragraphs: [
       "We keep personal information for as long as reasonably necessary for account management, tournament administration, security, dispute handling, recordkeeping, and legal compliance.",
-      "In general, account-related information may be kept while you maintain an account with us, and some records may be retained longer where reasonably necessary for security, fraud prevention, or legal obligations.",
+      "In general, account-related information may be kept while you maintain an account with us. Payment receipts and related records are retained only for as long as reasonably necessary for verification, disputes, fraud prevention, accounting, or legal obligations, after which they are deleted or de-identified where appropriate.",
     ],
   },
   {
@@ -134,7 +134,7 @@ export default function PrivacyPolicyContent() {
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Last Updated</p>
-          <h2 className="mt-3 text-3xl text-white">June 6, 2026</h2>
+          <h2 className="mt-3 text-3xl text-white">July 14, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             This policy applies to the Quest E-sports website at <span className="text-white">questesports.lk</span> and related
             tournament and account services.

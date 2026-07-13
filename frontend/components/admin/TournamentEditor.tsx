@@ -276,7 +276,22 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Prize Pool" htmlFor="prizePool" required>
                 <Input id="prizePool" value={formValues.prizePool} onChange={(event) => updateField("prizePool", event.target.value)} required />
               </FormField>
-              <FormField label="Registration Fee" htmlFor="registrationFeeAmount" hint="Use 0 for free registration.">
+              <FormField label="Payment Method" htmlFor="paymentMethod" required>
+                <Select
+                  id="paymentMethod"
+                  value={formValues.paymentMethod}
+                  onChange={(event) => {
+                    const paymentMethod = event.target.value as Tournament["paymentMethod"];
+                    updateField("paymentMethod", paymentMethod);
+                    if (paymentMethod === "free") updateField("registrationFeeAmount", "0");
+                  }}
+                >
+                  <option value="free">Free registration</option>
+                  <option value="bank_transfer">Manual bank transfer</option>
+                  <option value="payhere">PayHere checkout</option>
+                </Select>
+              </FormField>
+              <FormField label="Registration Fee" htmlFor="registrationFeeAmount" hint="Use the first-tier or fixed fee. Free registration must use 0.">
                 <Input id="registrationFeeAmount" type="number" min="0" step="0.01" value={formValues.registrationFeeAmount} onChange={(event) => updateField("registrationFeeAmount", event.target.value)} />
               </FormField>
               <FormField label="Fee Currency" htmlFor="registrationFeeCurrency">
@@ -287,6 +302,43 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Payment Reservation (minutes)" htmlFor="reservationMinutes">
                 <Input id="reservationMinutes" type="number" min="1" value={formValues.reservationMinutes} onChange={(event) => updateField("reservationMinutes", event.target.value)} />
               </FormField>
+              {formValues.paymentMethod === "bank_transfer" ? (
+                <>
+                  <FormField label="Bank Name" htmlFor="bankName" required>
+                    <Input id="bankName" value={formValues.bankName} onChange={(event) => updateField("bankName", event.target.value)} required />
+                  </FormField>
+                  <FormField label="Bank Branch" htmlFor="bankBranch" hint="Optional.">
+                    <Input id="bankBranch" value={formValues.bankBranch} onChange={(event) => updateField("bankBranch", event.target.value)} />
+                  </FormField>
+                  <FormField label="Account Name" htmlFor="bankAccountName" required>
+                    <Input id="bankAccountName" value={formValues.bankAccountName} onChange={(event) => updateField("bankAccountName", event.target.value)} required />
+                  </FormField>
+                  <FormField label="Account Number" htmlFor="bankAccountNumber" required>
+                    <Input id="bankAccountNumber" value={formValues.bankAccountNumber} onChange={(event) => updateField("bankAccountNumber", event.target.value)} required />
+                  </FormField>
+                  <FormField label="Review Hold (minutes)" htmlFor="bankTransferReviewMinutes" hint="How long a submitted receipt keeps its slot while an admin verifies it.">
+                    <Input id="bankTransferReviewMinutes" type="number" min="1" value={formValues.bankTransferReviewMinutes} onChange={(event) => updateField("bankTransferReviewMinutes", event.target.value)} />
+                  </FormField>
+                  <FormField label="Slot Fee Tiers" htmlFor="registrationFeeTiers" hint='JSON covering every slot, for example: [{"startSlot":1,"endSlot":3,"amount":2000}]' className="md:col-span-2 xl:col-span-3">
+                    <div className="grid gap-3">
+                      <Textarea id="registrationFeeTiers" rows={8} value={formValues.registrationFeeTiers} onChange={(event) => updateField("registrationFeeTiers", event.target.value)} />
+                      <Button type="button" variant="secondary" onClick={() => {
+                        updateField("maxTeams", "10");
+                        updateField("registrationFeeAmount", "2000");
+                        updateField("registrationFeeCurrency", "LKR");
+                        updateField("reservationMinutes", "120");
+                        updateField("bankTransferReviewMinutes", "1440");
+                        updateField("registrationFeeTiers", JSON.stringify([
+                          { startSlot: 1, endSlot: 3, amount: 2000 },
+                          { startSlot: 4, endSlot: 6, amount: 2500 },
+                          { startSlot: 7, endSlot: 9, amount: 3000 },
+                          { startSlot: 10, endSlot: 10, amount: 3500 },
+                        ], null, 2));
+                      }}>Apply 10-slot fee preset</Button>
+                    </div>
+                  </FormField>
+                </>
+              ) : null}
               <FormField label="Configurable Registration Fields" htmlFor="registrationFields" hint='JSON list. Example: [{"key":"pubg-mobile-id","label":"PUBG Mobile ID","type":"text","scope":"entry","required":true,"options":[]}]' className="md:col-span-2 xl:col-span-3">
                 <Textarea id="registrationFields" rows={8} value={formValues.registrationFields} onChange={(event) => updateField("registrationFields", event.target.value)} />
               </FormField>

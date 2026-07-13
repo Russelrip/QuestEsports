@@ -24,6 +24,8 @@ export type DashboardRegistration = {
   };
   payment?: {
     id: string;
+    orderId: string;
+    provider: string;
     status: string;
     amount: number;
     currency: string;

@@ -14,7 +14,12 @@ const tournamentBannerDirectory = path.join(uploadRoot, "tournament-banners");
 const posterImageDirectory = path.join(uploadRoot, "poster-images");
 const tournamentScheduleDirectory = path.join(uploadRoot, "tournament-schedules");
 const avatarDirectory = path.join(uploadRoot, "avatars");
+const privateUploadRoot = env.PRIVATE_UPLOAD_ROOT
+  ? path.resolve(env.PRIVATE_UPLOAD_ROOT)
+  : path.resolve(uploadRoot, "../private");
+const bankTransferProofDirectory = path.join(privateUploadRoot, "bank-transfer-proofs");
 const TEAM_LOGO_MAX_FILE_SIZE = 5 * 1024 * 1024;
+const PAYMENT_PROOF_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ADMIN_UPLOAD_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const DEFAULT_FIELD_LIMITS = {
   fieldNameSize: 80,
@@ -43,6 +48,7 @@ const ensureUploadDirectories = async () => {
   await fs.mkdir(posterImageDirectory, { recursive: true });
   await fs.mkdir(tournamentScheduleDirectory, { recursive: true });
   await fs.mkdir(avatarDirectory, { recursive: true });
+  await fs.mkdir(bankTransferProofDirectory, { recursive: true, mode: 0o700 });
 };
 
 const detectImageType = (buffer) => {
@@ -283,6 +289,28 @@ const adminTournamentAssetsUpload = multer({
   },
 });
 
+const paymentProofUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: buildUploadLimits({
+    fileSize: PAYMENT_PROOF_MAX_FILE_SIZE,
+    files: 1,
+    fields: 5,
+  }),
+  fileFilter: (req, file, callback) => {
+    if (
+      isAllowedImageMimeType(file.mimetype) ||
+      file.mimetype === "application/pdf"
+    ) {
+      callback(null, true);
+      return;
+    }
+
+    callback(
+      new HttpError(400, "Only JPEG, PNG, WebP, or PDF payment proofs are allowed.")
+    );
+  },
+});
+
 const persistValidatedUpload = async ({ file, directory, invalidMessage, maxDimension }) => {
   if (!file?.buffer) {
     return null;
@@ -356,10 +384,56 @@ const persistTournamentScheduleUpload = async (file) => {
   };
 };
 
+const persistBankTransferProofUpload = async (file) => {
+  if (!file?.buffer) {
+    throw new HttpError(400, "Choose a payment receipt to upload.");
+  }
+
+  let buffer;
+  let contentType;
+  let extension;
+  if (file.mimetype === "application/pdf") {
+    const submittedExtension = path.extname(file.originalname || "").toLowerCase();
+    if (
+      submittedExtension !== ".pdf" ||
+      file.buffer.length < 5 ||
+      file.buffer.subarray(0, 5).toString("ascii") !== "%PDF-"
+    ) {
+      throw new HttpError(400, "The uploaded payment proof is not a valid PDF.");
+    }
+    buffer = file.buffer;
+    contentType = "application/pdf";
+    extension = ".pdf";
+  } else {
+    const normalized = await normalizeImageUpload({
+      file,
+      invalidMessage: "The uploaded payment proof is not a valid JPEG, PNG, or WebP image.",
+      maxDimension: 4096,
+    });
+    buffer = normalized.buffer;
+    contentType = normalized.contentType;
+    extension = normalized.extension;
+  }
+
+  const filename = buildSafeUploadFilename(extension);
+  await fs.writeFile(path.join(bankTransferProofDirectory, filename), buffer, {
+    mode: 0o600,
+  });
+
+  return {
+    filename,
+    originalFilename: path.basename(file.originalname || `receipt${extension}`).slice(0, 180),
+    contentType,
+    byteSize: buffer.length,
+    sha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+  };
+};
+
 module.exports = {
   ADMIN_UPLOAD_MAX_FILE_SIZE,
   ALLOWED_UPLOAD_TYPES,
   TEAM_LOGO_MAX_FILE_SIZE,
+  PAYMENT_PROOF_MAX_FILE_SIZE,
   detectImageType,
   normalizeImageUpload,
   ensureUploadDirectories,
@@ -368,11 +442,13 @@ module.exports = {
   tournamentBannerUpload,
   adminTournamentAssetsUpload,
   dbImageUpload,
+  paymentProofUpload,
   persistTeamLogoUpload,
   persistAvatarUpload,
   persistTournamentBannerUpload,
   persistPosterImageUpload,
   persistTournamentScheduleUpload,
+  persistBankTransferProofUpload,
   removeUploadFile,
   removeUploadFiles,
   teamLogoDirectory,
@@ -380,4 +456,5 @@ module.exports = {
   posterImageDirectory,
   tournamentScheduleDirectory,
   avatarDirectory,
+  bankTransferProofDirectory,
 };

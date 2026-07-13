@@ -51,6 +51,12 @@ enum TournamentEntryType {
   solo
 }
 
+enum TournamentPaymentMethod {
+  free
+  payhere
+  bank_transfer
+}
+
 enum TeamRegistrationStatus {
   pending
   approved
@@ -158,6 +164,7 @@ model User {
   recruitmentApplications RecruitmentApplication[]
   tournamentRegistrations TeamRegistration[]
   merchandiseOrders       MerchandiseOrder[]
+  reviewedPaymentProofs   BankTransferProof[]      @relation("PaymentProofReviewer")
 
   @@index([role])
   @@index([createdAt])
@@ -374,9 +381,16 @@ model Tournament {
   maxRosterSize              Int                        @default(5) @map("max_roster_size")
   maxSubstitutes             Int                        @default(0) @map("max_substitutes")
   registrationFields         Json                       @default("[]") @map("registration_fields")
+  paymentMethod              TournamentPaymentMethod    @default(free) @map("payment_method")
   registrationFeeAmount      Decimal                    @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)
   registrationFeeCurrency    String                     @default("LKR") @map("registration_fee_currency")
+  registrationFeeTiers       Json                       @default("[]") @map("registration_fee_tiers")
   reservationMinutes         Int                        @default(15) @map("reservation_minutes")
+  bankTransferReviewMinutes  Int                        @default(1440) @map("bank_transfer_review_minutes")
+  bankName                   String?                    @map("bank_name")
+  bankBranch                 String?                    @map("bank_branch")
+  bankAccountName            String?                    @map("bank_account_name")
+  bankAccountNumber          String?                    @map("bank_account_number")
   maxTeams                   Int                        @map("max_teams")
   prizePool                  String                     @map("prize_pool")
   status                     TournamentStatus           @default(draft)
@@ -458,6 +472,9 @@ model TeamRegistration {
   rulebookAccepted       Boolean                        @default(false) @map("rulebook_accepted")
   falsityWarningAccepted Boolean                        @default(false) @map("falsity_warning_accepted")
   additionalData         Json                           @default("{}") @map("additional_data")
+  assignedSlotNumber     Int?                           @map("assigned_slot_number")
+  quotedFeeAmount        Decimal?                       @map("quoted_fee_amount") @db.Decimal(12, 2)
+  quotedFeeCurrency      String?                        @map("quoted_fee_currency")
   reservedUntil          DateTime?                      @map("reserved_until")
   createdAt              DateTime                       @default(now()) @map("created_at")
   updatedAt              DateTime                       @updatedAt @map("updated_at")
@@ -473,6 +490,7 @@ model TeamRegistration {
   @@index([savedTeamId])
   @@index([userId, createdAt])
   @@index([reservedUntil])
+  @@index([tournamentId, assignedSlotNumber])
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([paymentStatus, verificationStatus])
@@ -598,11 +616,33 @@ model PaymentTransaction {
   registration       TeamRegistration?          @relation(fields: [registrationId], references: [id], onDelete: Cascade)
   merchandiseOrder   MerchandiseOrder?          @relation(fields: [merchandiseOrderId], references: [id], onDelete: Cascade)
   notifications      PaymentNotificationAudit[]
+  bankTransferProof  BankTransferProof?
 
   @@index([registrationId])
   @@index([merchandiseOrderId])
   @@index([status, createdAt])
   @@map("payment_transactions")
+}
+
+model BankTransferProof {
+  id               String             @id @default(uuid()) @db.Uuid
+  transactionId    String             @unique @map("transaction_id") @db.Uuid
+  storedFilename   String             @map("stored_filename")
+  originalFilename String             @map("original_filename")
+  contentType      String             @map("content_type")
+  byteSize         Int                @map("byte_size")
+  sha256           String
+  submittedAt      DateTime           @default(now()) @map("submitted_at")
+  reviewedAt       DateTime?          @map("reviewed_at")
+  reviewedById     String?            @map("reviewed_by_id") @db.Uuid
+  rejectionReason  String?            @map("rejection_reason")
+  transaction      PaymentTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  reviewedBy       User?              @relation("PaymentProofReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([sha256])
+  @@index([reviewedById])
+  @@index([submittedAt])
+  @@map("bank_transfer_proofs")
 }
 
 model PaymentNotificationAudit {

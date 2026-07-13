@@ -15,6 +15,7 @@ export type TournamentRegistrationState =
 
 export type TournamentRegistrationMode = "open_entry" | "slot_based";
 export type TournamentEntryType = "team" | "solo";
+export type TournamentPaymentMethod = "free" | "payhere" | "bank_transfer";
 export type TournamentDateStatus = "scheduled" | "tba" | "tbd";
 
 export type TournamentRegistrationField = {
@@ -168,9 +169,16 @@ export type Tournament = {
   maxRosterSize: number;
   maxSubstitutes: number;
   registrationFields: TournamentRegistrationField[];
+  paymentMethod: TournamentPaymentMethod;
   registrationFee: { amount: number; currency: string };
+  registrationFeeTiers: Array<{ startSlot: number; endSlot: number; amount: number }>;
   registrationPaymentAvailable: boolean;
   reservationMinutes: number;
+  bankTransferReviewMinutes: number;
+  bankName?: string | null;
+  bankBranch?: string | null;
+  bankAccountName?: string | null;
+  bankAccountNumber?: string | null;
   maxTeams: number;
   registrationCount: number;
   prizePool: string;

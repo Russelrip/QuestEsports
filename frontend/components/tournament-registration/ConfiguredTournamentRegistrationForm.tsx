@@ -24,6 +24,14 @@ type MemberDraft = {
   additionalData: Record<string, string>;
 };
 
+type BankTransferReservation = {
+  orderId: string;
+  assignedSlotNumber: number;
+  amount: number;
+  currency: string;
+  expiresAt: string;
+};
+
 const emptyMember = (): MemberDraft => ({ name: "", email: "", discord: "", gameId: "", role: "PLAYER", additionalData: {} });
 
 export default function ConfiguredTournamentRegistrationForm({ tournament }: { tournament: Tournament }) {
@@ -92,10 +100,21 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
 
     try {
       const response = await apiFetch(`/api/tournaments/${tournament.slug}/registrations`, { method: "POST", body });
-      const data = (await response.json()) as { success?: boolean; message?: string; checkout?: PayHereCheckout | null };
+      const data = (await response.json()) as {
+        success?: boolean;
+        message?: string;
+        checkout?: PayHereCheckout | null;
+        bankTransfer?: BankTransferReservation | null;
+      };
       if (!response.ok || !data.success) throw new Error(data.message || "Registration could not be submitted.");
       if (data.checkout) {
         submitPayHereCheckout(data.checkout);
+        return;
+      }
+      if (data.bankTransfer) {
+        router.push(
+          `/tournaments/${tournament.slug}/payment?order=${encodeURIComponent(data.bankTransfer.orderId)}`
+        );
         return;
       }
       setSuccess(data.message || "Registration submitted successfully.");
@@ -122,7 +141,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         <p className="mt-3 text-sm text-slate-400">Your entry will be submitted directly to this tournament.</p>
         <div className="mt-5 flex flex-wrap gap-3 text-sm">
           <span className="rounded-full border border-white/10 px-3 py-2 text-slate-300">{tournament.registrationMode === "slot_based" ? "Slot based" : "Open entry"}</span>
-          <span className="rounded-full border border-white/10 px-3 py-2 text-slate-300">{tournament.registrationFee?.amount > 0 ? `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}` : "Free registration"}</span>
+          <span className="rounded-full border border-white/10 px-3 py-2 text-slate-300">{getRegistrationFeeLabel(tournament)}</span>
         </div>
         {tournament.rulebook ? <Link href={`/rulebooks/${tournament.rulebook.slug}`} className={buttonClassName({ variant: "secondary", className: "mt-5" })}>Read {tournament.rulebook.title}</Link> : null}
       </Card>
@@ -189,10 +208,27 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         <label className="flex gap-3 text-sm text-slate-300"><input type="checkbox" required checked={form.falsityWarningAccepted} onChange={(event) => setForm((current) => ({ ...current, falsityWarningAccepted: event.target.checked }))} /><span>I confirm that the registration information is accurate.</span></label>
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         {success ? <p className="text-sm text-emerald-300">{success} <Link className="underline" href="/profile">Open dashboard</Link></p> : null}
-        <Button type="submit" disabled={loading}>{loading ? "Submitting…" : tournament.registrationFee?.amount > 0 ? `Pay ${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}` : "Submit registration"}</Button>
+        <Button type="submit" disabled={loading}>
+          {loading
+            ? "Submitting…"
+            : tournament.paymentMethod === "bank_transfer"
+              ? "Reserve slot and get bank details"
+              : tournament.registrationFee?.amount > 0
+                ? `Pay ${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`
+                : "Submit registration"}
+        </Button>
       </Card>
     </form>
   );
+}
+
+function getRegistrationFeeLabel(tournament: Tournament) {
+  if (!tournament.registrationFee?.amount) return "Free registration";
+  const amounts = (tournament.registrationFeeTiers || []).map((tier) => tier.amount);
+  if (amounts.length > 0) {
+    return `${tournament.registrationFee.currency} ${Math.min(...amounts).toFixed(2)}–${Math.max(...amounts).toFixed(2)} by slot`;
+  }
+  return `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`;
 }
 
 function ConfiguredField({ field, value, onChange }: { field: TournamentRegistrationField; value: string; onChange: (value: string) => void }) {

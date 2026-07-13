@@ -32,8 +32,10 @@ const mapRegistration = (registration) => ({
       : null,
   },
   payment: registration.payments[0]
-    ? {
+      ? {
         id: registration.payments[0].id,
+        orderId: registration.payments[0].providerOrderId,
+        provider: registration.payments[0].provider,
         status: registration.payments[0].status,
         amount: Number(registration.payments[0].amount),
         currency: registration.payments[0].currency,

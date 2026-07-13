@@ -169,7 +169,9 @@ function getTournamentDetailStats(tournament: Tournament) {
       label: "Registration Fee",
       value:
         tournament.registrationFee?.amount > 0
-          ? `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`
+          ? tournament.registrationFeeTiers?.length
+            ? `${tournament.registrationFee.currency} ${Math.min(...tournament.registrationFeeTiers.map((tier) => tier.amount)).toFixed(2)}–${Math.max(...tournament.registrationFeeTiers.map((tier) => tier.amount)).toFixed(2)} by slot`
+            : `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`
           : "Free",
     },
     { label: "Registration Deadline", value: formatDateTime(tournament.registrationDeadline, tournament.registrationDeadlineStatus) },

@@ -46,6 +46,7 @@ const TOURNAMENT_STATUSES = new Set([
 ]);
 const REGISTRATION_MODES = new Set(["open_entry", "slot_based"]);
 const ENTRY_TYPES = new Set(["team", "solo"]);
+const PAYMENT_METHODS = new Set(["free", "payhere", "bank_transfer"]);
 const TOURNAMENT_DATE_STATUSES = new Set(["scheduled", "tba", "tbd"]);
 const REGISTRATION_FIELD_TYPES = new Set(["text", "number", "select"]);
 const REGISTRATION_FIELD_SCOPES = new Set(["entry", "member"]);
@@ -391,14 +392,24 @@ const mapTournament = (tournament) => {
     maxRosterSize: tournamentWithRegistrationCount.maxRosterSize || tournamentWithRegistrationCount.teamSize,
     maxSubstitutes: tournamentWithRegistrationCount.maxSubstitutes || 0,
     registrationFields: tournamentWithRegistrationCount.registrationFields || [],
+    paymentMethod: tournamentWithRegistrationCount.paymentMethod ||
+      (Number(tournamentWithRegistrationCount.registrationFeeAmount || 0) > 0
+        ? "payhere"
+        : "free"),
     registrationFee: {
       amount: Number(tournamentWithRegistrationCount.registrationFeeAmount || 0),
       currency: tournamentWithRegistrationCount.registrationFeeCurrency || "LKR",
     },
+    registrationFeeTiers: Array.isArray(tournamentWithRegistrationCount.registrationFeeTiers)
+      ? tournamentWithRegistrationCount.registrationFeeTiers
+      : [],
     registrationPaymentAvailable:
       Number(tournamentWithRegistrationCount.registrationFeeAmount || 0) === 0 ||
-      isPayHereConfigured(),
+      tournamentWithRegistrationCount.paymentMethod === "bank_transfer" ||
+      (tournamentWithRegistrationCount.paymentMethod === "payhere" && isPayHereConfigured()),
     reservationMinutes: tournamentWithRegistrationCount.reservationMinutes || 15,
+    bankTransferReviewMinutes:
+      tournamentWithRegistrationCount.bankTransferReviewMinutes || 1440,
     maxTeams: tournamentWithRegistrationCount.maxTeams,
     registrationCount: tournamentWithRegistrationCount.registrationCount,
     prizePool: tournamentWithRegistrationCount.prizePool,
@@ -426,6 +437,10 @@ const mapTournament = (tournament) => {
 
 const mapTournamentWithRegistrations = (tournament) => ({
   ...mapTournament(tournament),
+  bankName: tournament.bankName,
+  bankBranch: tournament.bankBranch,
+  bankAccountName: tournament.bankAccountName,
+  bankAccountNumber: tournament.bankAccountNumber,
   bracket: tournament.bracket || null,
   registrations: (tournament.teamRegistrations || []).map((registration) => ({
     id: registration.id,
@@ -659,6 +674,10 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     normalizeInteger(body.reservationMinutes) ??
     existingTournament?.reservationMinutes ??
     15;
+  const bankTransferReviewMinutes =
+    normalizeInteger(body.bankTransferReviewMinutes) ??
+    existingTournament?.bankTransferReviewMinutes ??
+    1440;
   const registrationFeeAmount = Number.parseFloat(
     String(
       body.registrationFeeAmount ??
@@ -671,6 +690,30 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
       existingTournament?.registrationFeeCurrency ||
       "LKR"
   ).toUpperCase();
+  const paymentMethod = normalizeText(
+    body.paymentMethod ||
+      existingTournament?.paymentMethod ||
+      (registrationFeeAmount > 0 ? "payhere" : "free")
+  ).toLowerCase();
+  const bankName = normalizeText(body.bankName ?? existingTournament?.bankName) || null;
+  const bankBranch = normalizeText(body.bankBranch ?? existingTournament?.bankBranch) || null;
+  const bankAccountName =
+    normalizeText(body.bankAccountName ?? existingTournament?.bankAccountName) || null;
+  const bankAccountNumber =
+    normalizeText(body.bankAccountNumber ?? existingTournament?.bankAccountNumber) || null;
+  let registrationFeeTiers;
+  try {
+    registrationFeeTiers = Array.isArray(body.registrationFeeTiers)
+      ? body.registrationFeeTiers
+      : JSON.parse(
+          String(
+            body.registrationFeeTiers ??
+              JSON.stringify(existingTournament?.registrationFeeTiers || [])
+          )
+        );
+  } catch {
+    throw new HttpError(400, "Registration fee tiers must be valid JSON.");
+  }
   let registrationFields;
   try {
     registrationFields = Array.isArray(body.registrationFields)
@@ -749,7 +792,8 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     minRosterSize < 1 ||
     maxRosterSize < minRosterSize ||
     maxSubstitutes < 0 ||
-    reservationMinutes < 1
+    reservationMinutes < 1 ||
+    bankTransferReviewMinutes < 1
   ) {
     throw new HttpError(400, "Roster limits and reservation time must be valid.");
   }
@@ -760,6 +804,59 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
 
   if (!/^[A-Z]{3}$/.test(registrationFeeCurrency)) {
     throw new HttpError(400, "Registration fee currency must be a three-letter code.");
+  }
+
+  if (!PAYMENT_METHODS.has(paymentMethod)) {
+    throw new HttpError(400, "Select a valid tournament payment method.");
+  }
+  if (registrationFeeAmount === 0 && paymentMethod !== "free") {
+    throw new HttpError(400, "Free tournaments must use the free payment method.");
+  }
+  if (registrationFeeAmount > 0 && paymentMethod === "free") {
+    throw new HttpError(400, "Paid tournaments must use PayHere or bank transfer.");
+  }
+  if (paymentMethod === "bank_transfer" && registrationFeeCurrency !== "LKR") {
+    throw new HttpError(400, "Manual bank-transfer tournaments currently require LKR.");
+  }
+  if (
+    paymentMethod === "bank_transfer" &&
+    (!bankName || !bankAccountName || !bankAccountNumber)
+  ) {
+    throw new HttpError(400, "Complete the bank name, account name, and account number.");
+  }
+
+  if (!Array.isArray(registrationFeeTiers) || registrationFeeTiers.length > 20) {
+    throw new HttpError(400, "A tournament can define up to 20 registration fee tiers.");
+  }
+  const normalizedFeeTiers = registrationFeeTiers.map((tier, index) => {
+    const startSlot = normalizeInteger(tier?.startSlot);
+    const endSlot = normalizeInteger(tier?.endSlot);
+    const amount = Number.parseFloat(String(tier?.amount ?? ""));
+    if (
+      !startSlot ||
+      !endSlot ||
+      endSlot < startSlot ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      throw new HttpError(400, `Registration fee tier ${index + 1} is invalid.`);
+    }
+    return { startSlot, endSlot, amount };
+  }).sort((left, right) => left.startSlot - right.startSlot);
+  if (paymentMethod === "bank_transfer" && normalizedFeeTiers.length > 0) {
+    let expectedStart = 1;
+    for (const tier of normalizedFeeTiers) {
+      if (tier.startSlot !== expectedStart || tier.endSlot > maxTeams) {
+        throw new HttpError(
+          400,
+          "Bank-transfer fee tiers must cover slots consecutively without overlaps or gaps."
+        );
+      }
+      expectedStart = tier.endSlot + 1;
+    }
+    if (expectedStart !== maxTeams + 1) {
+      throw new HttpError(400, "Bank-transfer fee tiers must cover every tournament slot.");
+    }
   }
 
   if (!Array.isArray(registrationFields) || registrationFields.length > 20) {
@@ -840,9 +937,16 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     maxRosterSize,
     maxSubstitutes,
     registrationFields: normalizedRegistrationFields,
+    paymentMethod,
     registrationFeeAmount,
     registrationFeeCurrency,
+    registrationFeeTiers: normalizedFeeTiers,
     reservationMinutes,
+    bankTransferReviewMinutes,
+    bankName,
+    bankBranch,
+    bankAccountName,
+    bankAccountNumber,
     maxTeams,
     prizePool,
     status,

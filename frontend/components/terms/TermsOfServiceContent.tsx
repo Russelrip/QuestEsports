@@ -47,6 +47,7 @@ const termsSections = [
     title: "5. Merchandise Orders and Payments",
     paragraphs: [
       "Product availability, variants, prices, and delivery estimates are shown at checkout and may change before an order is placed. Payments are processed by PayHere, and an order is confirmed only after Quest E-sports receives and verifies the payment notification.",
+      "A tournament may instead offer manual bank transfer. A slot and fee are quoted when the registration is reserved. Uploading a receipt does not confirm payment; registration is confirmed only after Quest E-sports verifies the matching credit in its bank account. Unpaid, expired, duplicate, altered, or unverifiable submissions may be rejected and the slot released.",
       "Customized products are governed by the Refund and Return Policy. Customers are responsible for selecting the correct size and providing an accurate Sri Lanka delivery address.",
     ],
   },
@@ -121,7 +122,7 @@ export default function TermsOfServiceContent() {
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Last Updated</p>
-          <h2 className="mt-3 text-3xl text-white">May 26, 2026</h2>
+          <h2 className="mt-3 text-3xl text-white">July 14, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             These terms apply to the Quest E-sports website at <span className="text-white">questesports.lk</span> and related
             tournament and account services.

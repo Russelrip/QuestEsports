@@ -138,7 +138,7 @@ const submitTournamentRegistration = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: result.checkout
+    message: result.checkout || result.bankTransfer
       ? "Registration reserved. Complete payment to confirm your entry."
       : "Tournament registration submitted successfully.",
     ...result,
@@ -154,7 +154,7 @@ const submitConfiguredTournamentRegistration = asyncHandler(async (req, res) => 
   });
   res.status(201).json({
     success: true,
-    message: result.checkout
+    message: result.checkout || result.bankTransfer
       ? "Registration reserved. Complete payment to confirm your entry."
       : "Tournament registration submitted successfully.",
     ...result,

@@ -6,6 +6,7 @@ const { logger } = require("../../lib/logger");
 const { Prisma } = require("../../generated/prisma");
 const { buildActiveRegistrationWhere } = require("../tournaments/registration-eligibility");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
+const { buildBankTransferInstructions } = require("./bank-transfer.service");
 
 const PAYHERE_STATUS = {
   "2": "paid",
@@ -376,7 +377,11 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
           paymentStatus: "pending",
           reservedUntil: { lte: now },
         },
-        data: { paymentStatus: "unpaid", reservedUntil: null },
+        data: {
+          paymentStatus: "unpaid",
+          reservedUntil: null,
+          assignedSlotNumber: null,
+        },
       });
       await tx.paymentTransaction.updateMany({
         where: {
@@ -398,7 +403,19 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
   const transaction = await prisma.paymentTransaction.findUnique({
     where: { providerOrderId },
     include: {
-      registration: { select: { userId: true } },
+      bankTransferProof: true,
+      registration: {
+        include: {
+          tournament: {
+            select: {
+              bankName: true,
+              bankBranch: true,
+              bankAccountName: true,
+              bankAccountNumber: true,
+            },
+          },
+        },
+      },
       merchandiseOrder: { select: { userId: true, publicToken: true } },
     },
   });
@@ -413,12 +430,21 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
 
   return {
     orderId: transaction.providerOrderId,
+    provider: transaction.provider,
     status: transaction.status,
     amount: Number(transaction.amount),
     currency: transaction.currency,
     purpose: transaction.purpose,
     statusMessage: transaction.statusMessage,
     updatedAt: transaction.updatedAt,
+    bankTransfer:
+      transaction.provider === "bank_transfer" && transaction.registration
+        ? buildBankTransferInstructions({
+            transaction,
+            registration: transaction.registration,
+            tournament: transaction.registration.tournament,
+          })
+        : null,
   };
 };
 
@@ -438,7 +464,25 @@ const listPaymentTransactions = async (query = {}) => {
     skip: (page - 1) * pageSize,
     take: pageSize,
     include: {
-      registration: { select: { id: true, teamName: true, contactEmail: true } },
+      bankTransferProof: {
+        select: {
+          originalFilename: true,
+          contentType: true,
+          byteSize: true,
+          submittedAt: true,
+          reviewedAt: true,
+          rejectionReason: true,
+        },
+      },
+      registration: {
+        select: {
+          id: true,
+          teamName: true,
+          contactEmail: true,
+          assignedSlotNumber: true,
+          reservedUntil: true,
+        },
+      },
       merchandiseOrder: { select: { id: true, publicToken: true, email: true } },
     },
     }),
@@ -449,6 +493,7 @@ const listPaymentTransactions = async (query = {}) => {
     orderId: item.providerOrderId,
     paymentId: item.providerPaymentId,
     purpose: item.purpose,
+    provider: item.provider,
     amount: Number(item.amount),
     currency: item.currency,
     status: item.status,
@@ -457,6 +502,7 @@ const listPaymentTransactions = async (query = {}) => {
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     registration: item.registration,
+    bankTransferProof: item.bankTransferProof,
     merchandiseOrder: item.merchandiseOrder,
     })),
     pagination: {
