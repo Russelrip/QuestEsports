@@ -252,6 +252,7 @@ This is especially important because authentication is cookie-based.
 - Set `TRUST_PROXY` correctly when the backend runs behind Nginx, a load balancer, or a platform proxy.
 - Keep frontend and backend origins aligned with `CORS_ORIGIN`, `APP_URL`, and `NEXT_PUBLIC_API_URL`.
 - `SESSION_COOKIE_NAME` is required at boot because the backend does not fall back to a default cookie name.
-- Set `AUTH_ENCRYPTION_KEY` in production so MFA secrets and OAuth state signing do not depend on fallback material.
+- Set `AUTH_ENCRYPTION_KEY` to exactly 64 hexadecimal characters in production so MFA/NIC/token encryption and OAuth state signing do not depend on fallback material.
+- Do not rotate an existing encryption key without re-encrypting stored ciphertext. Older arbitrary-string keys can be normalized without changing the derived AES key by following the [Production Operations Runbook](./production-runbook.md#preserving-existing-encrypted-data-when-normalizing-the-auth-key).
 - OAuth providers require their client IDs, secrets, callback URLs, and a valid `APP_URL`.
 - Replace the placeholder monitoring adapter if you need auth/security observability in production.

@@ -390,6 +390,14 @@ Body:
 
 ## Public Tournament Endpoints
 
+### `GET /api/event-series`
+
+Returns published event series ordered for public tournament navigation.
+
+### `GET /api/event-series/:slug`
+
+Returns one published series with its ordered published child tournaments.
+
 ### `GET /api/tournaments`
 
 Query params:
@@ -410,6 +418,8 @@ Important response fields:
 - `scheduleData`
 - `isCompleted`
 - `showcase`
+- `startDateStatus`, `endDateStatus`, `registrationDeadlineStatus`
+- `entryType`, roster limits, configured registration fields, and payment capability/instructions safe for public display
 
 ### `GET /api/tournaments/:slug`
 
@@ -423,6 +433,7 @@ Additional response fields:
 - `scheduleData`
 - `showcase`
 - `isCompleted`
+- approved team or solo participant cards
 
 `registeredTeams` includes approved team names, public team-logo URLs, derived short codes, member counts, and statuses.
 
@@ -482,6 +493,25 @@ Behavior:
 - Registration and slot allocation are serialized in a Prisma transaction.
 - Successful registration also synchronizes a `SavedTeam` roster and sends invite emails to non-captain members.
 - The captain is linked and accepted automatically. Other members remain pending until they respond using a verified account with the invited email address.
+- Solo events omit team roster requirements and render player entries publicly after approval.
+- Free registration confirms immediately.
+- PayHere registration returns a signed checkout only when all provider values are configured.
+- Bank-transfer registration assigns a slot and quoted fee tier, returns bank instructions, and waits for a private receipt plus admin approval.
+- Capacity counts paid/confirmed registrations and unexpired reservations; expired reservations release their slot.
+
+## Account Endpoints
+
+### `GET /api/me/dashboard`
+
+Protected route returning current/past tournament registrations, latest payment state, captain/member teams, recent account-linked merchandise orders, and a truncation flag when registration history exceeds the response limit.
+
+### `POST /api/me/avatar`
+
+Protected `multipart/form-data` upload using field `avatar`. Accepts validated JPEG, PNG, or WebP up to 5 MB, normalizes the image, replaces the previous file, and returns the updated user.
+
+### `DELETE /api/me/avatar`
+
+Protected route clearing the avatar reference and removing the previous file when possible.
 
 ## Recruitment Application Endpoints
 
@@ -534,6 +564,10 @@ Protected route.
 
 Returns teams the logged-in user captains or has accepted an invitation to join.
 
+### `POST /api/teams`
+
+Protected route requiring a verified account. Creates a reusable profile team from multipart team/roster fields and an optional `teamLogo`; it does not register the team for a tournament.
+
 ### `GET /api/team-invite?token=...`
 
 Public route.
@@ -580,6 +614,7 @@ Returns one public rulebook by slug.
 - `GET /api/uploads/tournament-banners/:filename`
 - `GET /api/uploads/poster-images/:filename`
 - `GET /api/uploads/team-logos/:filename`
+- `GET /api/uploads/avatars/:filename`
 
 ### Admin-only media
 
@@ -617,6 +652,37 @@ Fields:
 - `textColor`
 - `overlayAlign`
 - `tournamentId`
+
+## Shop And Payment Endpoints
+
+### Public products and capabilities
+
+- `GET /api/products`
+- `GET /api/products/:slug`
+- `GET /api/products/:productId/images/:imageId`
+- `GET /api/commerce/capabilities`
+
+Only active products/variants are public. Capabilities report whether PayHere and merchandise checkout are currently available.
+
+### Order quote and checkout
+
+- `POST /api/orders/quote`
+- `POST /api/orders`
+- `GET /api/orders/:publicToken`
+
+Quotes recompute prices, stock, currency, delivery fee, and total on the server. Orders accept guest or signed-in customer/delivery details, reserve tracked inventory for `SHOP_ORDER_RESERVATION_MINUTES`, reject mixed currencies/non-LKR products, and require the client's expected total/currency to match the server quote. Creating an order requires PayHere configuration.
+
+The public token is an order-access credential and must not be logged or shared. Browser return pages read local order/payment status; only the verified provider callback can mark PayHere paid.
+
+### Payment status and callbacks
+
+- `GET /api/payments/:orderId`
+- `POST /api/payments/payhere/notify`
+- `POST /api/payments/:orderId/bank-transfer-proof`
+
+Payment status requires ownership of the registration/order or the matching merchandise public token. The PayHere notification is form-encoded, rate limited, signature/merchant/order/amount/currency validated, idempotent, and authoritative.
+
+Bank-transfer proof upload requires a verified account that owns the registration. It accepts one normalized image by default; PDF is accepted only when explicitly enabled. Proof files are private and are never available through `/api/uploads`.
 
 ## Admin Endpoints
 
@@ -762,8 +828,17 @@ Main fields:
 - `endDate`
 - `registrationOpenAt`
 - `registrationDeadline`
+- `startDateStatus`, `endDateStatus`, `registrationDeadlineStatus` (`scheduled`, `tba`, or `tbd`)
 - `format`
 - `teamSize`
+- `entryType`
+- `minRosterSize`, `maxRosterSize`, `maxSubstitutes`
+- `registrationFields`
+- `paymentMethod` (`free`, `payhere`, or `bank_transfer`)
+- `registrationFeeAmount`, `registrationFeeCurrency`, `registrationFeeTiers`
+- `reservationMinutes`, `bankTransferReviewMinutes`
+- bank name/branch/account fields for bank-transfer events
+- `seriesId`, `seriesOrder`, `rulebookId`
 - `maxTeams`
 - `prizePool`
 - `status`
@@ -786,6 +861,33 @@ Optional remove flags during update:
 - `removeFirstPlaceImage`
 - `removeSecondPlaceImage`
 - `removeThirdPlaceImage`
+
+### Event series
+
+- `GET /api/admin/event-series`
+- `POST /api/admin/event-series`
+- `PATCH /api/admin/event-series/:seriesId`
+- `DELETE /api/admin/event-series/:seriesId`
+
+### Products and orders
+
+- `GET /api/admin/products`
+- `POST /api/admin/products`
+- `PATCH /api/admin/products/:productId`
+- `DELETE /api/admin/products/:productId`
+- `GET /api/admin/orders`
+- `PATCH /api/admin/orders/:orderId`
+
+Product writes include variants and references to existing uploaded image assets. Product delete archives rather than erasing order history. Only paid orders can progress through processing/fulfilment.
+
+### Payment operations
+
+- `GET /api/admin/payments`
+- `GET /api/admin/payments/:transactionId/bank-transfer-proof`
+- `PATCH /api/admin/payments/:transactionId/bank-transfer-review`
+- `PATCH /api/admin/payments/:transactionId/payhere-reconciliation`
+
+Private bank evidence is returned with `Cache-Control: private, no-store` and attachment headers. PayHere reconciliation records an externally verified late payment or completed refund; it does not call a PayHere refund API.
 
 ### Rulebooks
 

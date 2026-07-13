@@ -1,6 +1,6 @@
 # Admin Operations
 
-This document covers the admin UI and admin API workflows that operators use most often: tournament registrations, recruitment applications, Excel downloads, deletion, and related bracket effects.
+This document covers the admin UI and API workflows for tournament/event configuration, registrations, payments, merchandise, recruitment, exports, deletion, and bracket effects.
 
 All admin routes require a valid session and `user.role === "admin"`.
 
@@ -11,7 +11,11 @@ All admin routes require a valid session and `user.role === "admin"`.
 - `/admin/tournaments` for tournament setup and asset management
 - `/admin/tournaments/new` for creating tournaments
 - `/admin/tournaments/[id]/edit` for tournament editing and bracket management
+- `/admin/event-series` for published event groupings and hero images
 - `/admin/registrations` for tournament registration review
+- `/admin/payments` for bank-transfer review and PayHere reconciliation
+- `/admin/products` for products, variants, images, prices, and stock
+- `/admin/orders` for paid-order fulfilment
 - `/admin/recruitment` for Join Quest recruitment review
 - `/admin/rulebooks` for rulebook management
 - `/admin/contact-messages` for the contact inbox
@@ -47,6 +51,8 @@ PATCH /api/admin/team-registrations/:registrationId/status
 ```
 
 Only approved registrations appear in public tournament team lists and are used when generating native brackets.
+
+Registration rows may also expose entry type, assigned slot, quoted tier fee/currency, payment provider/order state, and reservation expiry. Payment state should normally be driven by verified PayHere callbacks or bank-transfer review rather than manually changed in the general registration table.
 
 ## Registration Deletion
 
@@ -86,6 +92,69 @@ Workbook sheets:
 - `Roster Members`: tournament, team, registration ID, member role/order, member contact fields, Riot ID, invite status, invite response time, and linked account fields
 
 The export is generated in memory and is not stored by the backend.
+
+## Payment Review And Reconciliation
+
+The payments page reads:
+
+```text
+GET /api/admin/payments
+```
+
+Filters include `page`, `pageSize`, `status`, and `purpose`. Payment statuses include `created`, `pending`, `paid`, `failed`, `cancelled`, `charged_back`, `expired`, `review_required`, and `refunded`. Purposes are `tournament_registration` and `merchandise_order`.
+
+### Bank transfers
+
+- Download private evidence: `GET /api/admin/payments/:transactionId/bank-transfer-proof`
+- Review: `PATCH /api/admin/payments/:transactionId/bank-transfer-review`
+
+Review body:
+
+```json
+{
+  "decision": "approve",
+  "reason": "Bank reference verified"
+}
+```
+
+Use the UI's allowed decision values. Approval marks the payment paid and confirms the registration. Rejection records the reason and releases the reserved slot. Verify the receipt against the bank account before approving; the uploaded image alone is not proof that funds settled.
+
+### PayHere late-payment reconciliation
+
+```text
+PATCH /api/admin/payments/:transactionId/payhere-reconciliation
+```
+
+This endpoint applies only to `review_required` PayHere transactions. `accept` requires capacity/inventory to remain available. `mark_refunded` requires an operator note and the external PayHere refund reference. Complete refunds in PayHere first; this endpoint records the already-completed external action.
+
+## Event Series
+
+Admin event-series endpoints:
+
+- `GET /api/admin/event-series`
+- `POST /api/admin/event-series`
+- `PATCH /api/admin/event-series/:seriesId`
+- `DELETE /api/admin/event-series/:seriesId`
+
+Create/update supports a hero image plus slug, title, description, display order, and publication state. Tournaments link to a series and use `seriesOrder`. Deleting a series detaches child tournaments rather than deleting them.
+
+## Products And Orders
+
+Product endpoints:
+
+- `GET /api/admin/products`
+- `POST /api/admin/products`
+- `PATCH /api/admin/products/:productId`
+- `DELETE /api/admin/products/:productId`
+
+Products contain one to 100 variants with unique SKUs, prices, optional size/color, optional inventory, and active state. Product deletion archives the product and deactivates its variants; it does not erase historical order-item snapshots.
+
+Order endpoints:
+
+- `GET /api/admin/orders`
+- `PATCH /api/admin/orders/:orderId`
+
+Only provider-confirmed paid orders can move to `processing` or `fulfilled`. A pending-payment order may be cancelled and its reserved stock released. Paid-order cancellation requires the verified refund/reconciliation workflow rather than a direct status edit.
 
 ## Recruitment Application Review
 
@@ -174,4 +243,5 @@ Current email-producing workflows are documented in [Email System](./email-syste
 - Excel exports are generated on demand and not persisted in `backend/uploads/`.
 - Admin export files can contain player contact data, account links, Discord handles, Riot IDs, and NIC values.
 - Store exported files only where trusted operators can access them.
-- Back up PostgreSQL and `backend/uploads/` together; admin exports are recreated from database and upload metadata when needed.
+- Back up PostgreSQL, `UPLOAD_ROOT`, and `PRIVATE_UPLOAD_ROOT` together; admin exports are recreated from database and upload metadata when needed.
+- Bank-transfer downloads and recruitment exports contain sensitive personal/payment evidence; do not keep them in shared download folders.

@@ -156,6 +156,7 @@ SMTP_PORT=587
 SMTP_USER=your_ses_smtp_username
 SMTP_PASS=your_ses_smtp_password
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
+MAIL_DELIVERY_REQUIRED=true
 APP_URL=https://questesports.lk
 JOB_WORKER_ENABLED=true
 JOB_WORKER_POLL_MS=5000
@@ -163,6 +164,8 @@ JOB_WORKER_MAX_ATTEMPTS=5
 ```
 
 Mail is considered configured only when `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, and `APP_URL` all have values.
+
+`MAIL_DELIVERY_REQUIRED` may remain blank/false for local development. In production it must be true and the SMTP group must be complete; the backend refuses startup otherwise. This prevents password signup/reset from launching with silently unavailable delivery.
 
 - Port `465` enables a secure SMTP connection.
 - Other ports, including `587`, use `secure: false`; STARTTLS behavior then depends on the SMTP server.
@@ -177,7 +180,7 @@ For Amazon SES in `ap-southeast-1`:
 1. In the SES console, create and verify a domain identity for `questesports.lk`. A verified domain identity covers sender addresses and subdomains under that domain, including `no-reply@mail.questesports.lk`.
 2. Keep Easy DKIM enabled and publish the three SES CNAME records in DNS. Wait until SES shows the identity and DKIM status as verified/successful.
 3. Create SES SMTP credentials in the same AWS Region. SES SMTP usernames and passwords are region-specific and are not the same as normal AWS access keys.
-4. If the SES account is still in the sandbox for `ap-southeast-1`, request production access before sending to normal users. Sandbox accounts can only send to verified recipients and have low sending limits.
+4. If the SES account is still in the sandbox for `ap-southeast-1`, request production access before sending to normal users. Sandbox accounts can only send to verified recipients and have low sending limits. Valid sandbox SMTP credentials still pass transport verification, but real unverified recipients will be rejected and the queued jobs will retry/fail.
 5. Optional: configure a custom SES MAIL FROM domain such as `bounce.questesports.lk`, then publish the MX and SPF TXT records SES gives you. Keep this separate from the visible `MAIL_FROM` sender address domain.
 6. Set the backend SMTP env values, deploy/restart the worker-enabled backend, and run:
 
@@ -188,7 +191,7 @@ npm run mail:verify
 
 `mail:verify` checks SMTP connection/auth from `backend/.env`; it does not send a message. After it passes, trigger a real account verification or password reset email to confirm end-to-end delivery.
 
-If SMTP is incomplete, the worker logs a warning, skips delivery, and marks the job as succeeded. This supports local development, but it also means misconfigured production SMTP will not leave failed jobs for retry.
+If SMTP is incomplete in local development, the worker logs a warning, skips delivery, and marks the job as succeeded. Production configuration validation prevents that state when `MAIL_DELIVERY_REQUIRED=true`.
 
 If `JOB_WORKER_ENABLED=false`, email jobs remain queued until a worker-enabled API instance processes them.
 
@@ -219,7 +222,7 @@ After deploying email-related changes:
 ## Current Limitations
 
 - There is no admin UI for inspecting or replaying email jobs.
-- Missing SMTP configuration is treated as a successful skipped job.
+- Missing SMTP configuration is treated as a successful skipped job only in environments allowed to boot without required delivery; production validation blocks it.
 - There is no separate warning sent to the old address after an email change.
 - Email delivery has queue unit coverage, but the repository does not include an end-to-end SMTP delivery test.
 - The built-in database worker is intended for low-volume transactional email. Move delivery to a dedicated worker or external queue if volume grows substantially.

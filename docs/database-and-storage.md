@@ -1,16 +1,17 @@
 # Database And Storage
 
-This project uses PostgreSQL through Prisma for relational data, plus local filesystem storage for uploaded image files.
+This project uses PostgreSQL through Prisma for relational data, plus public and private filesystem storage for uploaded files.
 
 For how token records and `BackgroundJob` records are used to deliver transactional mail, see [Email System](./email-system.md).
 
 ## Primary Persistence Layers
 
 - PostgreSQL for application data and metadata
-- Filesystem for uploaded images
+- Public filesystem root (`UPLOAD_ROOT`) for images and schedule files
+- Private filesystem root (`PRIVATE_UPLOAD_ROOT`) for payment evidence
 - SMTP provider for transactional email delivery
 
-The backend starts by ensuring its upload directories exist, so a missing `backend/uploads/` folder is created automatically on boot.
+The backend ensures required child directories exist at boot. Locally, public files default to `backend/uploads/`; production must point both roots at durable paths outside the Git checkout.
 
 ## Prisma Models
 
@@ -26,6 +27,7 @@ Stores:
 - verification state
 - pending email change state
 - last login timestamp
+- avatar filename
 
 ### `Session`
 
@@ -45,9 +47,13 @@ Single-use email change confirmation tokens.
 
 ## Tournaments And Registration
 
+### `EventSeries`
+
+Stores published event groupings with a slug, description, hero image, display order, and ordered child tournaments.
+
 ### `Tournament`
 
-Stores tournament metadata, publication state, dates, optional registration opening time, manual display ordering, banner reference, parsed schedule data, and completed-showcase image references.
+Stores tournament metadata, publication state, scheduled/TBA/TBD date states, event-series ordering, configurable entry/roster fields, free/PayHere/bank-transfer payment configuration, fee tiers, bank instructions, display ordering, assets, parsed schedule data, and completed-showcase references.
 
 Fields of note:
 
@@ -59,6 +65,11 @@ Fields of note:
 - `firstPlaceImageName`
 - `secondPlaceImageName`
 - `thirdPlaceImageName`
+- `entryType`, `minRosterSize`, `maxRosterSize`, `maxSubstitutes`
+- `registrationFields`
+- `paymentMethod`, `registrationFeeAmount`, `registrationFeeCurrency`
+- `registrationFeeTiers`, `reservationMinutes`, `bankTransferReviewMinutes`
+- `startDateStatus`, `endDateStatus`, `registrationDeadlineStatus`
 
 ### `TournamentBracket`
 
@@ -88,6 +99,10 @@ Also tracks:
 - verification status
 - agreement acceptance flags
 - optional team logo filename
+- authenticated account and saved-team links
+- solo/team entry type and configurable field values
+- assigned slot, quoted tier fee/currency, and reservation expiry
+- linked payment transactions
 
 ### `RegistrationMember`
 
@@ -174,6 +189,28 @@ NIC values are encrypted at write time and decrypted only for admin review/expor
 
 Stores contact form messages and read/unread state for the admin inbox.
 
+## Commerce And Payments
+
+### `Product`, `ProductVariant`, and `ProductImage`
+
+Store product publication state, currency, made-to-order behavior, ordered image references, SKU/size/color variants, prices, optional inventory, and active state.
+
+### `MerchandiseOrder` and `MerchandiseOrderItem`
+
+Store guest or account-linked delivery details, immutable line-item snapshots, totals, reservation expiry, inventory release state, and fulfilment status. Checkout currently accepts one currency per cart and requires LKR products.
+
+### `PaymentTransaction`
+
+Links a provider order to either a tournament registration or merchandise order. It stores purpose, provider, verified status, amount/currency, provider references, reconciliation metadata, and timestamps without card data.
+
+### `PaymentNotificationAudit`
+
+Stores idempotent PayHere callback audit information after merchant, signature, order, amount, currency, and status validation.
+
+### `BankTransferProof`
+
+Stores private receipt metadata, a unique SHA-256 digest, review state, reviewer, and rejection reason. The file bytes remain in `PRIVATE_UPLOAD_ROOT`; this table never stores card credentials or online-banking secrets.
+
 ## Media
 
 ### `ImageAsset`
@@ -200,12 +237,17 @@ Fields of note:
 
 ## Filesystem Storage
 
-Upload directories are created under `backend/uploads/`:
+Public upload directories are created under `UPLOAD_ROOT` (locally `backend/uploads/`):
 
 - `team-logos/`
 - `tournament-banners/`
 - `poster-images/`
 - `tournament-schedules/`
+- `avatars/`
+
+Private storage is created under `PRIVATE_UPLOAD_ROOT`:
+
+- `bank-transfer-proofs/`
 
 ## What Lives Where
 
@@ -227,6 +269,19 @@ Upload directories are created under `backend/uploads/`:
 - DB reference: `Tournament.scheduleFileName`
 - Parsed display data: `Tournament.scheduleData`
 - Access: the stored file supports admin workflow, while the public site renders the parsed JSON data returned by the API
+
+### Avatars
+
+- File bytes: public filesystem `avatars/`
+- DB reference: `User.avatarImageName`
+- Access: public immutable upload route; upload/replacement/removal requires the authenticated owner
+
+### Bank-transfer proofs
+
+- File bytes: private filesystem with file mode `600`
+- DB reference: `BankTransferProof.storedFilename`
+- Access: authenticated admin download endpoint only; never a public static route
+- Images are signature-checked and normalized; PDF is disabled by default
 
 ### Native brackets
 
@@ -285,6 +340,7 @@ Maximum file size:
 
 - 5 MB per team logo
 - 10 MB per admin poster, tournament image, or schedule file
+- 5 MB per avatar or bank-transfer receipt
 
 ## Data Integrity Rules
 
@@ -297,16 +353,24 @@ Key protections implemented in the schema and services:
 - unique team name and captain email per tournament registration
 - transaction-level protection for tournament registration creation
 - encrypted NIC storage for recruitment applicants and team members
+- one account registration per tournament captain email
+- transaction-serialized slot allocation with indexed slot numbers
+- unique bank-transfer receipt digest across payment transactions
+- one proof per payment transaction
+- unique provider order/payment identifiers and notification digests for reconciliation
 
 ## Important Relationships
 
 - A `User` has many `Session`, `VerificationToken`, `PasswordResetToken`, and `EmailChangeToken` records.
 - A `Tournament` has many `TeamRegistration` and `Poster` records, and at most one `TournamentBracket`.
+- An `EventSeries` has ordered child `Tournament` records.
 - A `TeamRegistration` has many `RegistrationMember` records and may link to its synchronized `SavedTeam`.
 - A `SavedTeam` belongs to a captain `User`, has many `SavedTeamMember` records, and can appear on accepted members' profiles.
 - A `RecruitmentApplication` belongs to a submitting `User`.
 - `RegistrationMember` and `SavedTeamMember` records may link to the accepting `User`.
 - A `Poster` belongs to an `ImageAsset` and may belong to a `Tournament`.
+- A `Product` has variants and image references; merchandise orders preserve item snapshots even if products change.
+- A `PaymentTransaction` belongs to exactly one registration or merchandise order by purpose and may have PayHere audit rows or one bank-transfer proof.
 
 ## Migration History Highlights
 
@@ -326,15 +390,19 @@ From the migration names, the schema evolved through:
 - native tournament bracket persistence and optional registration opening time
 - recruitment applications and admin review state
 - admin Excel export support for registration and recruitment records
+- event series, configurable solo/team registration, profiles, products, orders, and generic payments
+- scheduled/TBA/TBD tournament date states
+- tiered bank-transfer registration and private proof metadata
+- duplicate proof prevention and payment reconciliation/refund state
 
 ## Backup And Operations Guidance
 
-- Back up PostgreSQL and `backend/uploads/` together.
-- Restoring the database without the uploads directory will break tournament banner, logo, and poster file references.
-- Restoring the database without the uploads directory will also break tournament schedule file references and completed-showcase images.
+- Back up PostgreSQL, `UPLOAD_ROOT`, and `PRIVATE_UPLOAD_ROOT` together.
+- Restoring the database without public uploads will break banners, logos, avatars, posters, schedules, product images, and completed-showcase references.
+- Restoring the database without private uploads will leave bank-transfer audit metadata without reviewable receipts.
 - Restoring uploads without the database will orphan files because metadata and filenames live in PostgreSQL.
 - Admin Excel exports are not backup artifacts; they can be regenerated from database state.
-- Treat `backend/uploads/` as persistent application data in production.
+- Treat both configured roots as persistent production data; private backups require stricter access and retention controls.
 
 ## Production Improvement Opportunities
 

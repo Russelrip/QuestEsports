@@ -52,12 +52,12 @@ LOG_DRAIN_URL=
 LOG_DRAIN_TOKEN=
 MONITORING_WEBHOOK_URL=
 MONITORING_WEBHOOK_TOKEN=
-SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_HOST=
 SMTP_PORT=587
-SMTP_USER=your_ses_smtp_username
-SMTP_PASS=your_ses_smtp_password
-MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
-MAIL_DELIVERY_REQUIRED=false
+SMTP_USER=
+SMTP_PASS=
+MAIL_FROM=
+MAIL_DELIVERY_REQUIRED=
 APP_URL=http://localhost:3000
 API_PUBLIC_URL=http://localhost:5001
 UPLOAD_ROOT=
@@ -70,9 +70,15 @@ GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
 DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
 DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
+PAYHERE_MODE=sandbox
+PAYHERE_MERCHANT_ID=
+PAYHERE_MERCHANT_SECRET=
+PAYHERE_NOTIFY_URL=
+SHOP_DELIVERY_FEE_LKR=500
+SHOP_ORDER_RESERVATION_MINUTES=30
 ```
 
-For purely local development, SMTP values can be left blank. The backend will still run, but verification, password reset, invite, email-change, and security-alert emails will be skipped instead of sent.
+For purely local development, SMTP values can be left blank and `MAIL_DELIVERY_REQUIRED` can remain blank. The backend will still run, but verification, password reset, invite, email-change, and security-alert emails will be skipped instead of sent. Production defaults this flag to true and rejects false or incomplete SMTP configuration.
 If OAuth is not being used locally, leave the OAuth client ID and secret values blank.
 
 Frontend `frontend/.env.local`:
@@ -137,7 +143,7 @@ After the first admin exists, additional users can be managed through the admin 
 
 ## Email Configuration
 
-The codebase supports running without SMTP, but verification, password reset, invite, email-change, and security-alert emails will be skipped.
+The codebase supports local development without SMTP. Production requires SMTP while password authentication is enabled; verification, reset, invite, and security workflows must not silently launch without delivery.
 
 See [Email System](./email-system.md) for the complete email inventory, trigger rules, action links, token lifetimes, queue behavior, and operational checks.
 
@@ -148,6 +154,7 @@ For production:
 - set `SMTP_USER`
 - set `SMTP_PASS`
 - set `MAIL_FROM`
+- set `MAIL_DELIVERY_REQUIRED=true`
 - set `APP_URL` to the public frontend origin
 
 For Amazon SES in Singapore (`ap-southeast-1`):
@@ -165,6 +172,7 @@ SMTP_PORT=587
 SMTP_USER=your_ses_smtp_username
 SMTP_PASS=your_ses_smtp_password
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
+MAIL_DELIVERY_REQUIRED=true
 APP_URL=https://questesports.lk
 JOB_WORKER_ENABLED=true
 ```
@@ -176,10 +184,10 @@ cd backend
 npm run mail:verify
 ```
 
-Security-related optional variables:
+Security-related variables:
 
 - `MFA_ISSUER` to customize authenticator app labeling
-- `AUTH_ENCRYPTION_KEY` for encrypting MFA secrets and signing OAuth state
+- `AUTH_ENCRYPTION_KEY` for encrypting MFA/NIC/token data and signing OAuth state; production requires exactly 64 hexadecimal characters. If an older deployment used an arbitrary string, follow the compatibility conversion in the [Production Operations Runbook](./production-runbook.md#preserving-existing-encrypted-data-when-normalizing-the-auth-key) instead of rotating it blindly.
 - `JOB_WORKER_ENABLED`, `JOB_WORKER_POLL_MS`, and `JOB_WORKER_MAX_ATTEMPTS` for persistent background job processing
 - `LOG_LEVEL` to control backend log verbosity
 - `LOG_DRAIN_URL` and `LOG_DRAIN_TOKEN` for centralized structured log shipping
@@ -207,16 +215,23 @@ Notes:
 
 ## Upload Storage
 
-The backend writes persistent files to:
+Locally, the backend writes public files below `backend/uploads/`:
 
 - `backend/uploads/team-logos`
 - `backend/uploads/tournament-banners`
 - `backend/uploads/poster-images`
 - `backend/uploads/tournament-schedules`
+- `backend/uploads/avatars`
+
+Bank-transfer receipts are stored separately under the local private fallback and are never exposed through `/api/uploads`.
 
 Production requirement:
 
-- mount this path on persistent storage
+- set `UPLOAD_ROOT=/srv/quest-esports/uploads`
+- set `PRIVATE_UPLOAD_ROOT=/srv/quest-esports/private`
+- make both paths writable by the `deploy` service user
+- keep private storage mode `700` and exclude it from Nginx/static routes
+- back up PostgreSQL and both storage roots as one consistency set
 
 Do not deploy this backend on fully ephemeral disk unless you replace the upload strategy with object storage.
 
@@ -248,7 +263,7 @@ npm test
 npm run prisma:generate
 ```
 
-The backend unit suite uses Node's built-in test runner and covers core behavior such as rate limiting, background jobs, observability helpers, team helpers, tournament registration duplicate handling, recruitment validation, admin Excel exports, admin deletion workflows, and session/auth lifecycle logic.
+The backend suite uses Node's built-in test runner and covers rate limiting, background jobs, observability, teams, configurable registration, payments, shop behavior, recruitment, admin workflows, and session/auth lifecycle logic. CI uses `npm run test:coverage` and `npm run lint` in addition to migration verification.
 
 For frontend changes, run:
 
@@ -256,9 +271,10 @@ For frontend changes, run:
 cd frontend
 npm run lint
 npm run build
+npm run test:e2e
 ```
 
-This project does not currently include a dedicated end-to-end suite, so production-facing validation still depends on the manual checks listed later in this document.
+Playwright critical journeys run in CI. Manual production checks remain necessary for provider callbacks, SMTP delivery, private uploads, DNS, cookies, and live payment behavior.
 
 ## Recommended Production Topology
 
@@ -315,6 +331,12 @@ UPLOAD_ROOT=/srv/quest-esports/uploads
 PRIVATE_UPLOAD_ROOT=/srv/quest-esports/private
 PAYMENT_PROOF_PDF_ENABLED=false
 BANK_TRANSFER_PROOF_RETENTION_DAYS=365
+PAYHERE_MODE=sandbox
+PAYHERE_MERCHANT_ID=
+PAYHERE_MERCHANT_SECRET=
+PAYHERE_NOTIFY_URL=
+SHOP_DELIVERY_FEE_LKR=500
+SHOP_ORDER_RESERVATION_MINUTES=30
 GOOGLE_CLIENT_ID=your_real_google_client_id
 GOOGLE_CLIENT_SECRET=your_real_google_client_secret
 GOOGLE_CALLBACK_URL=https://api.questesports.lk/api/auth/google/callback
@@ -327,6 +349,9 @@ Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
+- `AUTH_ENCRYPTION_KEY` must be exactly 64 hexadecimal characters; do not rotate an existing key without a data migration plan.
+- Production requires `MAIL_DELIVERY_REQUIRED=true` and a complete SMTP group. SES sandbox restrictions affect recipients but do not justify disabling the requirement.
+- PayHere merchant values must be all configured or all blank. When blank, free and bank-transfer tournament registration remain available, but PayHere registration and merchandise checkout are disabled.
 - Keep `PAYMENT_PROOF_PDF_ENABLED=false` unless uploaded PDFs pass through a maintained malware-scanning/sanitization pipeline. Image receipts are decoded and re-encoded before storage.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
 - `REQUIRE_API_ORIGIN=true` blocks API requests without an allowed `Origin` or `Referer`; use `CORS_ORIGIN=https://questesports.lk` for the public site domain.
@@ -410,21 +435,27 @@ This repository can be cloned in full on a VPS even when only the backend is ser
 
 For a private repository, configure a read-only GitHub deploy key on the VPS and use an SSH origin such as `git@github.com:Russelrip/QuestEsports.git`. The SSH key used by GitHub Actions to log into the VPS is separate from the key the VPS uses to pull from GitHub. See [CI/CD Pipeline](./ci-cd.md#private-repository-access-from-the-vps).
 
-Typical Quest Esports backend deploy flow:
+GitHub Actions is the preferred deployment path. A manual recovery deploy must run as `deploy`, preserve `.env`, use the exact intended commit, and follow the same checks:
 
 ```bash
+sudo -u deploy -H bash -lc '
 cd /var/www/QuestEsports
-git pull
-
+git fetch origin
+git checkout --detach <approved-commit-sha>
 cd backend
-npm install
+npm ci
 npm run prisma:generate
+npm run lint
 npm run prisma:migrate:deploy
 pm2 restart quest-backend --update-env
 pm2 save
+'
+curl --fail http://127.0.0.1:5001/api/health
 ```
 
 If your frontend is hosted somewhere else, such as Vercel, you do not need to build or restart `frontend/` on this VPS.
+
+For initial provisioning, Actions secrets, host-key pinning, PM2 systemd setup, rollback behavior, troubleshooting, updates, and reboot validation, use the [Production Operations Runbook](./production-runbook.md).
 
 ## Post-Deployment Validation
 
@@ -479,7 +510,7 @@ Run these in a controlled environment and back up the database plus uploads firs
 
 Before calling the system fully production-hardened, consider adding:
 
-- broader automated test coverage, including end-to-end flows
+- broader Playwright coverage beyond the current critical journeys
 - production-grade log retention, alerting, and monitoring dashboards
 - object storage for uploads
 - an admin bootstrap script

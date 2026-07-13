@@ -20,10 +20,11 @@ npm run prisma:generate
 npm run prisma:migrate:deploy
 npm run prisma:migrate:status
 npx prisma migrate diff --exit-code --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma
-npm test
+npm run test:coverage
+npm run lint
 ```
 
-The backend unit suite includes coverage for admin registration/recruitment Excel export generation, admin deletion workflows, tournament registration duplicate handling, and recruitment validation.
+CI also runs `npm audit --omit=dev --audit-level=moderate`. The backend suite enforces line, branch, and function coverage thresholds and includes database integration tests against PostgreSQL 16.
 
 Frontend:
 
@@ -32,9 +33,10 @@ cd frontend
 npm ci
 npm run lint
 npm run build
+npm run test:e2e
 ```
 
-The frontend lint/build checks cover the admin download helper and registration status UI at compile time. There is no browser E2E workflow in CI yet.
+CI audits frontend production dependencies, builds Next.js, installs Chromium, and runs the Playwright critical journeys under `frontend/tests/e2e`.
 
 The frontend CI build uses these non-production values:
 
@@ -53,7 +55,7 @@ BACKEND_DEPLOY_ENABLED=true
 
 ## Backend Deployment Secrets
 
-The backend job deploys to a VPS over SSH and follows the production flow from the setup guide.
+The backend job deploys to the `production` environment over SSH and follows the production flow from the setup guide. Secrets may be repository secrets or environment secrets; environment secrets are preferred when the repository plan supports them.
 
 Required GitHub secrets:
 
@@ -78,16 +80,20 @@ The server must already have:
 - PM2
 - backend production environment variables configured
 - PostgreSQL access from `DATABASE_URL` and `DIRECT_URL`
-- persistent storage mounted for `backend/uploads/`
-- a non-root `deploy` user that owns the checkout and can manage only the Quest PM2 process
+- persistent public and private storage configured through `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT`
+- a non-root `deploy` user that owns the checkout and its Quest PM2 process
+- `pm2-deploy.service` enabled for automatic boot recovery
 - `backend/.env` owned by the deploy user with mode `600` (or group-readable mode `640`)
 
 Capture the VPS SSH host key from a trusted administrative session and compare its fingerprint before storing it. The deployment never runs `ssh-keyscan` on an untrusted Actions runner:
 
 ```bash
 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
-printf '%s ' 'api.questesports.lk'; cat /etc/ssh/ssh_host_ed25519_key.pub
+KEY="$(awk '{print $1 " " $2}' /etc/ssh/ssh_host_ed25519_key.pub)"
+printf 'api.questesports.lk %s\n' "$KEY"
 ```
+
+The known-hosts name must exactly match `BACKEND_SSH_HOST`. Port 22 uses the bare hostname. Nonstandard ports use `[hostname]:port`.
 
 ### Private repository access from the VPS
 
@@ -133,6 +139,22 @@ GitHub's SSH test normally prints a successful-authentication message followed b
 
 The deployment workflow prints a targeted hint when the VPS cannot fetch the configured remote. Using a read-only deploy key avoids interactive username prompts and avoids storing a long-lived personal access token on the VPS.
 
+### PM2 systemd ownership
+
+PM2 must run as `deploy`, not root:
+
+```bash
+sudo -u deploy -H bash -lc '
+  cd /var/www/QuestEsports/backend
+  pm2 start src/server.js --name quest-backend --time
+  pm2 save
+'
+pm2 startup systemd -u deploy --hp /home/deploy
+systemctl enable pm2-deploy
+```
+
+Verify `systemctl is-active pm2-deploy` and `sudo -u deploy -H pm2 list`. See the [Production Operations Runbook](./production-runbook.md#pm2-and-automatic-boot) for migrating an existing root-owned PM2 process and recovering from `Result: protocol`.
+
 After a successful CI run, deployment checks out and deploys that run's exact commit SHA. On deploy, the workflow runs:
 
 ```bash
@@ -141,12 +163,15 @@ git checkout --detach "$DEPLOY_SHA"
 cd backend
 npm ci
 npm run prisma:generate
+npm run lint
 npm run prisma:migrate:deploy
 pm2 restart "$BACKEND_PM2_PROCESS" --update-env
 pm2 save
 ```
 
 The workflow refuses root deployments and dirty checkouts, validates `.env` permissions, runs lint and migrations, then performs a local health check. If installation, restart, or health validation fails, it restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release). Protect the GitHub `production` environment with required reviewers and keep a current Supabase backup before approving a migration deployment.
+
+Initial health retries may log connection failures while Node starts. A successful job means a later retry returned `200` and PM2 saved the process list.
 
 ## Manual Deployment
 
@@ -157,3 +182,14 @@ To redeploy the current `main` branch without pushing a new commit:
 3. Choose `Run workflow`.
 
 The same deploy enablement variables still apply.
+
+## Troubleshooting And Verification
+
+Use the [Production Operations Runbook](./production-runbook.md) for:
+
+- missing or mismatched Actions secrets
+- pinned host-key failures
+- non-root checkout and deploy-key setup
+- production `.env` validation failures
+- PM2/systemd ownership and reboot recovery
+- post-deployment health checks and rollback semantics

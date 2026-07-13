@@ -12,7 +12,7 @@ This is the Express 5 API for Quest Esports. It owns authentication, sessions, t
 
 Create `backend/.env` from `.env.example`.
 
-Required for boot:
+Required in every environment:
 
 - `DATABASE_URL`
 - `DIRECT_URL`
@@ -24,6 +24,8 @@ Important optional groups:
 - Google and Discord OAuth credentials for social login
 - `TRUST_PROXY` and `REQUIRE_API_ORIGIN` for production proxy and origin enforcement
 - `LOG_DRAIN_URL` and `MONITORING_WEBHOOK_URL` for external observability hooks
+
+Production additionally requires HTTPS `APP_URL`/`API_PUBLIC_URL`, a 64-character hexadecimal `AUTH_ENCRYPTION_KEY`, durable `UPLOAD_ROOT`/`PRIVATE_UPLOAD_ROOT`, trusted-proxy/origin enforcement, `MAIL_DELIVERY_REQUIRED=true`, and complete SMTP values. PayHere remains optional, but its merchant ID, secret, and notify URL must be configured together.
 
 See [Setup And Deployment Guide](../docs/setup-and-deployment.md) for complete local and production examples.
 
@@ -64,9 +66,13 @@ npm run media:migrate-image-assets
 
 - Auth, sessions, MFA, OAuth, verification, password reset, and email change under `/api`
 - Public tournaments under `/api/tournaments`
-- Tournament registration under `/api/tournament-registration`
+- Slug-bound tournament registration under `/api/tournaments/:slug/registrations`
+- Event series under `/api/event-series`
+- Account dashboard and avatar management under `/api/me/dashboard` and `/api/me/avatar`
+- Products, quotes, orders, and commerce capabilities under `/api/products`, `/api/orders`, and `/api/commerce/capabilities`
+- PayHere status/notifications and bank-transfer proofs under `/api/payments`
 - Recruitment applications under `/api/recruitment-applications`
-- Team profile and invite responses under `/api/teams/profile` and `/api/team-invite`
+- Team creation, profiles, and invite responses under `/api/teams`, `/api/teams/profile`, and `/api/team-invite`
 - Contact messages under `/api/contact`
 - Media and uploads under `/api/posters`, `/api/images`, and `/api/uploads/...`
 - Admin workflows under `/api/admin/...`
@@ -93,14 +99,15 @@ See [Admin Operations](../docs/admin-operations.md) for UI workflows, export con
 
 ## Storage
 
-Application data lives in PostgreSQL through Prisma. Uploaded files are stored under `backend/uploads/`:
+Application data lives in PostgreSQL through Prisma. Locally, public uploads default to `backend/uploads/`; production uses `UPLOAD_ROOT` outside the Git checkout:
 
 - `team-logos/`
 - `tournament-banners/`
 - `poster-images/`
 - `tournament-schedules/`
+- `avatars/`
 
-Treat `backend/uploads/` as persistent production data and back it up with the database.
+Bank-transfer evidence is written below `PRIVATE_UPLOAD_ROOT/bank-transfer-proofs/` with private permissions and is never served by `/api/uploads`. Treat the database plus both configured upload roots as one backup set.
 
 ## Tests
 
@@ -108,6 +115,8 @@ Backend tests use Node's built-in test runner:
 
 ```bash
 npm test
+npm run test:coverage
+npm run lint
 ```
 
-The current unit suite covers auth/session behavior, email jobs, observability helpers, rate limiting, team helpers, recruitment validation, tournament registration behavior, bracket behavior, and admin registration/recruitment export and delete workflows.
+The current suite covers auth/session behavior, email jobs, observability helpers, rate limiting, teams, configurable registration, slot pricing, bank-transfer and PayHere payment handling, shop behavior, bracket behavior, and admin workflows. CI enforces coverage thresholds and runs lint against `src`, `tests`, and `scripts`.

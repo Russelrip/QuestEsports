@@ -37,7 +37,7 @@ SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
 MAIL_FROM=
-MAIL_DELIVERY_REQUIRED=false
+MAIL_DELIVERY_REQUIRED=
 APP_URL=http://localhost:3000
 API_PUBLIC_URL=http://localhost:5001
 UPLOAD_ROOT=
@@ -53,7 +53,7 @@ DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
 PAYHERE_MODE=sandbox
 PAYHERE_MERCHANT_ID=
 PAYHERE_MERCHANT_SECRET=
-PAYHERE_NOTIFY_URL=https://your-public-api.example.com/api/payments/payhere/notify
+PAYHERE_NOTIFY_URL=
 SHOP_DELIVERY_FEE_LKR=500
 SHOP_ORDER_RESERVATION_MINUTES=30
 ```
@@ -71,10 +71,10 @@ Notes:
 - In hosted Postgres setups, `DATABASE_URL` can use a pooled connection string while `DIRECT_URL` should use the direct connection string for Prisma migrations.
 - `NEXT_PUBLIC_API_URL` must point at the backend origin.
 - `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
-- SMTP is optional for local development. If mail is not configured, signup, verification, password reset, team invites, email-change requests, and security events still execute, but email delivery is skipped.
+- SMTP is optional for local development. Leave `MAIL_DELIVERY_REQUIRED` blank or false locally when SMTP is absent. Production requires it to resolve to true and requires complete SMTP settings.
 - OAuth is optional. If you enable Google or Discord login, use real client credentials and register the callback URLs shown above. Do not leave placeholder values like `your_google_client_id`.
 - Paid tournament registration and shop checkout require PayHere credentials plus a publicly reachable HTTPS notification URL. Browser return pages never mark an order paid.
-- When PayHere is not configured, free tournament registrations remain available while paid registration and shop checkout are explicitly disabled.
+- When PayHere is not configured, free and bank-transfer tournament registrations remain available; PayHere registration and merchandise checkout are disabled.
 - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` are optional locally and required in production; point both at durable, backed-up storage outside disposable release directories. Private payment proofs must never be exposed by Nginx.
 
 ### 2. Install dependencies
@@ -139,6 +139,7 @@ Recommended flow:
 - [Database and Storage](./docs/database-and-storage.md)
 - [Email System](./docs/email-system.md)
 - [Setup and Deployment Guide](./docs/setup-and-deployment.md)
+- [Production Operations Runbook](./docs/production-runbook.md)
 - [Commerce and Tournament Rollout](./docs/commerce-and-tournament-rollout.md)
 - [Backend README](./backend/README.md)
 - [Frontend README](./frontend/README.md)
@@ -150,7 +151,7 @@ Recommended flow:
 - Auth: Cookie-based sessions with server-side session storage
 - Brackets: `brackets-manager` with Prisma-persisted native bracket data
 - Admin exports: ExcelJS-generated `.xlsx` downloads
-- Uploads: Multer, filesystem-backed image storage
+- Uploads: Multer, durable public storage, and isolated private payment evidence
 - Email: Nodemailer with SMTP
 
 ## What The Platform Includes
@@ -166,7 +167,7 @@ Recommended flow:
 - Completed-tournament showcase sections with official poster plus 1st, 2nd, and 3rd place visuals
 - Public tournament team lists with approved registered teams, team logos, short codes, and member counts
 - Native double-elimination bracket viewing when an admin publishes bracket data
-- Slug-bound configurable solo/team registration with roster reservations and PayHere fees
+- Slug-bound configurable solo/team registration with free, PayHere, or tiered bank-transfer fees
 - Merchandise catalogue, product variants, cart, guest/member checkout, delivery fee, and order status
 - Join Quest recruitment application flow for solo players, complete teams, and incomplete teams
 - Email verification, login, logout, password reset, and email change flows
@@ -200,8 +201,10 @@ QuestEsports/
 |   |-- api-documentation.md
 |   |-- authentication-flow.md
 |   |-- ci-cd.md
+|   |-- commerce-and-tournament-rollout.md
 |   |-- database-and-storage.md
 |   |-- email-system.md
+|   |-- production-runbook.md
 |   `-- setup-and-deployment.md
 |-- backend/
 |   |-- README.md
@@ -233,7 +236,7 @@ QuestEsports/
 
 - The frontend runs on Next.js App Router and calls the backend with `credentials: "include"` so browser cookies are sent on authenticated requests.
 - The backend exposes JSON APIs under `/api`, stores business data in PostgreSQL through Prisma, and persists session state in the `sessions` table.
-- Tournament banners, completed-showcase images, team logos, poster image files, and uploaded tournament schedules are written to `backend/uploads/`.
+- Public uploads are written below `UPLOAD_ROOT` (locally `backend/uploads/`); bank-transfer evidence is isolated below `PRIVATE_UPLOAD_ROOT` and never publicly served.
 - Native bracket data is generated with `brackets-manager`, exported as JSON, and persisted in PostgreSQL through the `tournament_brackets` table.
 - Poster/image metadata is stored in PostgreSQL. Poster assets support filesystem-backed storage with a database binary fallback for older records.
 - Transactional emails are persisted as `email.send` background jobs and delivered through Nodemailer with SMTP.
@@ -242,7 +245,7 @@ QuestEsports/
 ## Main Data Domains
 
 - `User`, `Session`, `VerificationToken`, `PasswordResetToken`, `EmailChangeToken`
-- `EventSeries`, `Tournament`, `TournamentBracket`, `TeamRegistration`, `RegistrationMember`, `PaymentTransaction`
+- `EventSeries`, `Tournament`, `TournamentBracket`, `TeamRegistration`, `RegistrationMember`, `PaymentTransaction`, `BankTransferProof`, `PaymentNotificationAudit`
 - `Product`, `ProductVariant`, `ProductImage`, `MerchandiseOrder`, `MerchandiseOrderItem`
 - `SavedTeam`, `SavedTeamMember`
 - `ContactSubmission`
@@ -258,9 +261,10 @@ QuestEsports/
 - `/tournaments/[slug]`
 - `/tournaments/[slug]/register`
 - `/tournaments/series/[slug]`
+- `/tournaments/[slug]/register`
 - `/shop`, `/shop/[slug]`, `/shop/cart`, `/shop/order/[token]`
 - `/refund-policy`
-- `/tournaments/[slug]/register`
+- `/privacy-policy`, `/terms-of-service`
 - `/registration`
 - `/join`
 - `/match-videos`
@@ -302,12 +306,12 @@ The backend exposes these main route groups:
 - Auth: `/api/signup`, `/api/login`, `/api/login/mfa`, OAuth start/callback routes, `/api/logout`, `/api/me`, verification, email-change, password-reset, MFA, and session endpoints
 - Public tournaments: `/api/tournaments`, `/api/tournaments/:slug`
 - Event series: `/api/event-series`, `/api/event-series/:slug`
-- Tournament registration: `/api/tournaments/:slug/registrations` (the legacy endpoint remains a compatibility alias)
+- Tournament registration: `/api/tournaments/:slug/registration-status`, `/api/tournaments/:slug/registrations`
 - Shop: `/api/products`, `/api/products/:slug`, `/api/orders`, `/api/orders/:publicToken`
-- Payments: `/api/payments/payhere/notify`, `/api/payments/:orderId`
+- Payments: `/api/payments/payhere/notify`, `/api/payments/:orderId`, `/api/payments/:orderId/bank-transfer-proof`
 - Account: `/api/me/dashboard`, `/api/me/avatar`
 - Recruitment applications: `/api/recruitment-applications`
-- Teams: `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
+- Teams: `/api/teams`, `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
 - Contact: `/api/contact`
 - Media: `/api/posters`, `/api/images`, `/api/uploads/...`
 - Admin: `/api/admin/...`
@@ -337,11 +341,12 @@ REQUIRE_API_ORIGIN=false
 JOB_WORKER_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
-SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+MAIL_DELIVERY_REQUIRED=
+SMTP_HOST=
 SMTP_PORT=587
-SMTP_USER=your_ses_smtp_username
-SMTP_PASS=your_ses_smtp_password
-MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
+SMTP_USER=
+SMTP_PASS=
+MAIL_FROM=
 APP_URL=http://localhost:3000
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -357,7 +362,7 @@ Notes:
 - `CORS_ORIGIN` supports a comma-separated allowlist.
 - Set `REQUIRE_API_ORIGIN=true` in production to reject API requests unless the request `Origin` or `Referer` matches `CORS_ORIGIN`.
 - `APP_URL` must point at the frontend origin used in verification, password reset, email-change, invite, and security-alert emails when SMTP is enabled.
-- SMTP values are optional for local development. When SMTP is not configured, mail-triggering actions log and skip delivery instead of crashing startup.
+- SMTP values are optional for local development. Production refuses to start unless `MAIL_DELIVERY_REQUIRED=true` and the SMTP group is complete.
 - `JOB_WORKER_ENABLED` must be enabled on at least one backend instance for queued email delivery.
 - For Amazon SES in Singapore, use `email-smtp.ap-southeast-1.amazonaws.com` with region-specific SES SMTP credentials. `npm run mail:verify` checks SMTP connection/auth from `backend/.env` without sending an email.
 - See [Email System](./docs/email-system.md) for every recipient, trigger, subject, link, token lifetime, and retry rule.
@@ -470,6 +475,7 @@ Frontend:
 cd frontend
 npm run lint
 npm run build
+npm run test:e2e
 ```
 
 Backend:
@@ -489,14 +495,16 @@ Backend tests use Node's built-in test runner and live in `backend/tests`.
 - Run one file: `cd backend && node --test tests/session.service.test.js`
 - Existing coverage focuses on backend behavior that benefits from deterministic unit testing, including jobs, observability, rate limiting, team helpers, tournament registration, recruitment validation, admin Excel exports, admin deletion workflows, and session/auth lifecycle logic.
 
-For frontend verification, the current baseline remains:
+Frontend verification includes lint, a production build, and Playwright critical journeys:
 
 - `cd frontend && npm run lint`
 - `cd frontend && npm run build`
+- `cd frontend && npm run test:e2e`
 
 ## Recommended Next Steps
 
 - Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
+- Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
 - Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
 - Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
 - Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, SMTP settings, or queue behavior.
