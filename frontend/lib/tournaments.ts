@@ -54,8 +54,29 @@ export type RegisteredTournamentParticipant = {
   entryType: TournamentEntryType;
   displayName: string;
   logoUrl: string | null;
+  avatarUrl: string | null;
+  captainName: string;
   shortCode: string;
   memberCount: number;
+};
+
+export type GameCategory = {
+  id: string;
+  slug: string;
+  displayName: string;
+  artworkUrl: string | null;
+  logoUrl: string | null;
+  displayOrder?: number;
+  isPublished?: boolean;
+  tournamentCount?: number;
+};
+
+export type TournamentSponsor = {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl: string | null;
+  displayOrder: number;
 };
 
 export type EventSeries = {
@@ -140,10 +161,15 @@ export type Tournament = {
   slug: string;
   title: string;
   game: string;
+  gameCategory: GameCategory | null;
+  organizer: string;
+  country: string;
+  location: string;
   series: { id: string; slug: string; title: string } | null;
   seriesOrder: number;
   displayPriority: number;
   bannerUrl: string | null;
+  heroUrl: string | null;
   shortDescription: string;
   fullDescription: string;
   rules: string | null;
@@ -185,6 +211,8 @@ export type Tournament = {
   status: TournamentStatus;
   isPublished: boolean;
   bracketLink: string | null;
+  challongeEmbedUrl: string | null;
+  sponsors: TournamentSponsor[];
   contactLink: string | null;
   isFeatured: boolean;
   scheduleData: TournamentScheduleData | null;
@@ -276,6 +304,11 @@ export const fetchPublicTournaments = async (game?: string) => {
 export const fetchPublicEventSeries = async () => {
   const data = await fetchJson<{ series: EventSeries[] }>("/api/event-series");
   return data.series;
+};
+
+export const fetchPublicGameCategories = async () => {
+  const data = await fetchJson<{ categories: GameCategory[] }>("/api/game-categories");
+  return data.categories;
 };
 
 export const fetchPublicEventSeriesBySlug = async (slug: string) => {

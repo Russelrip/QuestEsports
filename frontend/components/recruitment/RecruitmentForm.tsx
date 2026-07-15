@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button, buttonClassName } from "@/components/ui/button";
@@ -30,6 +31,7 @@ const gameChoiceClassName = "flex w-fit items-center gap-3 py-2 text-sm leading-
 const yesNoChoiceClassName = "flex items-center gap-2 py-2 text-sm leading-none text-slate-300";
 
 export default function RecruitmentForm() {
+  const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = useAuth();
   const [fields, setFields] = useState(initialRecruitmentFields);
   const [members, setMembers] = useState<RecruitmentMember[]>([]);
@@ -70,6 +72,15 @@ export default function RecruitmentForm() {
           : []
     );
   };
+
+  useEffect(() => {
+    const requested = searchParams.get("type");
+    if (requested === "solo_player" || requested === "existing_team" || requested === "incomplete_team") {
+      setApplicationType(requested);
+    }
+  // Initialize once from the Contact recruitment deep link.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const toggleGame = (game: string) => {
     updateField(

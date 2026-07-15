@@ -1,5 +1,6 @@
 const express = require("express");
 const { imageUpload, adminTournamentAssetsUpload } = require("../../middleware/upload");
+const sponsorController = require("./sponsor.controller");
 const {
   attachSession,
   requireAuth,
@@ -51,6 +52,10 @@ router.post(
 
 router.get("/admin/tournaments", requireAdmin, getAdminTournaments);
 router.get("/admin/tournaments/:tournamentId", requireAdmin, getAdminTournament);
+router.get("/admin/tournaments/:tournamentId/sponsors", requireAdmin, sponsorController.listSponsors);
+router.post("/admin/tournaments/:tournamentId/sponsors", requireAdmin, imageUpload.single("logo"), sponsorController.createSponsor);
+router.patch("/admin/tournaments/:tournamentId/sponsors/:sponsorId", requireAdmin, imageUpload.single("logo"), sponsorController.updateSponsor);
+router.delete("/admin/tournaments/:tournamentId/sponsors/:sponsorId", requireAdmin, sponsorController.deleteSponsor);
 router.get("/admin/tournaments/:tournamentId/bracket", requireAdmin, getTournamentBracket);
 router.post("/admin/tournaments/:tournamentId/bracket/generate", requireAdmin, generateBracket);
 router.patch(
@@ -70,6 +75,7 @@ router.post(
   requireAdmin,
   adminTournamentAssetsUpload.fields([
     { name: "bannerImage", maxCount: 1 },
+    { name: "heroImage", maxCount: 1 },
     { name: "scheduleFile", maxCount: 1 },
     { name: "completedPosterImage", maxCount: 1 },
     { name: "firstPlaceImage", maxCount: 1 },
@@ -83,6 +89,7 @@ router.patch(
   requireAdmin,
   adminTournamentAssetsUpload.fields([
     { name: "bannerImage", maxCount: 1 },
+    { name: "heroImage", maxCount: 1 },
     { name: "scheduleFile", maxCount: 1 },
     { name: "completedPosterImage", maxCount: 1 },
     { name: "firstPlaceImage", maxCount: 1 },

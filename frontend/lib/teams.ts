@@ -23,6 +23,7 @@ export type SavedTeam = {
   country?: string | null;
   teamTag?: string | null;
   organizationRequested?: boolean;
+  organizationName: string;
   logoName?: string | null;
   logoUrl?: string | null;
   isCaptain: boolean;

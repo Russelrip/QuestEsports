@@ -12,6 +12,7 @@ const {
   teamLogoDirectory,
   tournamentBannerDirectory,
   tournamentScheduleDirectory,
+  sponsorLogoDirectory,
 } = require("../../middleware/upload");
 const {
   syncSavedTeamFromRegistration,
@@ -80,6 +81,10 @@ const buildRegistrationCountInclude = (now = new Date()) => ({
       title: true,
     },
   },
+  gameCategory: true,
+  sponsors: {
+    orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
+  },
 });
 const adminRegistrationSummarySelect = {
   id: true,
@@ -110,6 +115,13 @@ const tournamentAssetFields = [
     field: "bannerImageName",
     uploadKey: "bannerImage",
     removeFlag: "removeBannerImage",
+    directory: tournamentBannerDirectory,
+    persist: persistTournamentBannerUpload,
+  },
+  {
+    field: "heroImageName",
+    uploadKey: "heroImage",
+    removeFlag: "removeHeroImage",
     directory: tournamentBannerDirectory,
     persist: persistTournamentBannerUpload,
   },
@@ -241,6 +253,51 @@ const getTeamLogoUrl = (teamLogoName) =>
 const getShowcaseImageUrl = (imageName) =>
   imageName ? `/api/uploads/tournament-banners/${imageName}` : null;
 
+const mapGameCategory = (category) => category ? ({
+  id: category.id,
+  slug: category.slug,
+  displayName: category.displayName,
+  artworkUrl: category.artworkName ? `/api/uploads/game-assets/${category.artworkName}` : null,
+  logoUrl: category.logoName ? `/api/uploads/game-assets/${category.logoName}` : null,
+}) : null;
+
+const mapSponsor = (sponsor) => ({
+  id: sponsor.id,
+  name: sponsor.name,
+  logoUrl: sponsor.logoImageName
+    ? `/api/uploads/sponsor-logos/${sponsor.logoImageName}`
+    : null,
+  websiteUrl: sponsor.websiteUrl,
+  displayOrder: sponsor.displayOrder,
+});
+
+const normalizeChallongeUrl = (value) => {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    if (
+      url.protocol !== "https:" ||
+      (host !== "challonge.com" && !host.endsWith(".challonge.com"))
+    ) return null;
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (segments.at(-1)?.toLowerCase() === "module") segments.pop();
+    if (segments.length === 0) return null;
+    url.pathname = `/${segments.join("/")}`;
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+};
+
+const buildChallongeEmbedUrl = (value) => {
+  const normalized = normalizeChallongeUrl(value);
+  return normalized ? `${normalized}/module` : null;
+};
+
 const getUploadedFile = (files, key) =>
   Array.isArray(files?.[key]) ? files[key][0] : null;
 
@@ -368,10 +425,17 @@ const mapTournament = (tournament) => {
     slug: tournamentWithRegistrationCount.slug,
     title: tournamentWithRegistrationCount.title,
     game: tournamentWithRegistrationCount.game,
+    gameCategory: mapGameCategory(tournamentWithRegistrationCount.gameCategory),
+    organizer: tournamentWithRegistrationCount.organizer || "Quest E-sports",
+    country: tournamentWithRegistrationCount.country || "Sri Lanka",
+    location: tournamentWithRegistrationCount.location || "TBA",
     series: tournamentWithRegistrationCount.series || null,
     seriesOrder: tournamentWithRegistrationCount.seriesOrder,
     displayPriority: tournamentWithRegistrationCount.displayPriority,
     bannerUrl: getTournamentBannerUrl(tournamentWithRegistrationCount.bannerImageName),
+    heroUrl: getTournamentBannerUrl(
+      tournamentWithRegistrationCount.heroImageName || tournamentWithRegistrationCount.bannerImageName
+    ),
     shortDescription: tournamentWithRegistrationCount.shortDescription,
     fullDescription: tournamentWithRegistrationCount.fullDescription,
     rules: tournamentWithRegistrationCount.rules,
@@ -416,6 +480,8 @@ const mapTournament = (tournament) => {
     status: tournamentWithRegistrationCount.status,
     isPublished: tournamentWithRegistrationCount.isPublished,
     bracketLink: tournamentWithRegistrationCount.bracketLink,
+    challongeEmbedUrl: buildChallongeEmbedUrl(tournamentWithRegistrationCount.bracketLink),
+    sponsors: (tournamentWithRegistrationCount.sponsors || []).map(mapSponsor),
     contactLink: tournamentWithRegistrationCount.contactLink,
     isFeatured: tournamentWithRegistrationCount.isFeatured,
     scheduleData: tournamentWithRegistrationCount.scheduleData || null,
@@ -473,6 +539,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
     shortCode: buildShortCode(registration.teamName),
     memberCount: registration.members?.length || 0,
     status: registration.status,
+    captainName: registration.captainName,
     })),
   registeredParticipants: (tournament.teamRegistrations || []).map((registration) => ({
     id: registration.id,
@@ -482,6 +549,11 @@ const mapTournamentWithPublicTeams = (tournament) => ({
         ? registration.captainName
         : registration.teamName,
     logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    avatarUrl:
+      (registration.entryType || "team") === "solo" && registration.user?.avatarImageName
+        ? `/api/uploads/avatars/${registration.user.avatarImageName}`
+        : null,
+    captainName: registration.captainName,
     shortCode: buildShortCode(registration.teamName),
     memberCount: registration.members?.length || 0,
   })),
@@ -636,6 +708,10 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     normalizeSlug(title) ||
     normalizeSlug(titleFallback);
   const game = normalizeText(body.game).toLowerCase();
+  const gameCategoryId = normalizeText(body.gameCategoryId) || null;
+  const organizer = normalizeText(body.organizer ?? existingTournament?.organizer) || "Quest E-sports";
+  const country = normalizeText(body.country ?? existingTournament?.country) || "Sri Lanka";
+  const location = normalizeText(body.location ?? existingTournament?.location) || "TBA";
   const normalizedDisplayPriority = normalizeInteger(body.displayPriority);
   const displayPriority =
     normalizedDisplayPriority ?? existingTournament?.displayPriority ?? 100;
@@ -756,7 +832,7 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
   const endDate = endDateInput.value;
   const registrationDeadline = registrationDeadlineInput.value;
   const bracketLink = normalizeText(body.bracketLink)
-    ? normalizeOptionalUrl(body.bracketLink)
+    ? normalizeChallongeUrl(body.bracketLink)
     : null;
   const contactLink = normalizeText(body.contactLink)
     ? normalizeOptionalUrl(body.contactLink)
@@ -904,7 +980,7 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
   }
 
   if (normalizeText(body.bracketLink) && !bracketLink) {
-    throw new HttpError(400, "Bracket link must be a valid URL.");
+    throw new HttpError(400, "Bracket link must be an HTTPS Challonge tournament URL.");
   }
 
   if (normalizeText(body.contactLink) && !contactLink) {
@@ -915,6 +991,10 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     title,
     slug,
     game,
+    gameCategoryId,
+    organizer,
+    country,
+    location,
     displayPriority,
     shortDescription,
     fullDescription,
@@ -982,7 +1062,14 @@ const listPublicTournaments = async ({ game } = {}) => {
   const tournaments = await prisma.tournament.findMany({
     where: {
       isPublished: true,
-      ...(normalizedGame && normalizedGame !== "all" ? { game: normalizedGame } : {}),
+      ...(normalizedGame && normalizedGame !== "all"
+        ? {
+            OR: [
+              { gameCategory: { slug: normalizedGame, isPublished: true } },
+              { game: normalizedGame },
+            ],
+          }
+        : {}),
     },
     orderBy: [
       { displayPriority: "asc" },
@@ -1022,6 +1109,7 @@ const getPublicTournamentBySlug = async (slug) => {
           entryType: true,
           teamLogoName: true,
           status: true,
+          user: { select: { avatarImageName: true } },
           members: {
             select: { id: true },
           },
@@ -1262,6 +1350,7 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
 const deleteAdminTournament = async (tournamentId) => {
   const existingTournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
+    include: { sponsors: { select: { logoImageName: true } } },
   });
 
   if (!existingTournament) {
@@ -1281,13 +1370,14 @@ const deleteAdminTournament = async (tournamentId) => {
       existingTournament,
       assetUpdates: {
         bannerImageName: null,
+        heroImageName: null,
         completedPosterImageName: null,
         firstPlaceImageName: null,
         secondPlaceImageName: null,
         thirdPlaceImageName: null,
         scheduleFileName: null,
       },
-    }),
+    }).concat((existingTournament.sponsors || []).filter((sponsor) => sponsor.logoImageName).map((sponsor) => ({ directory: sponsorLogoDirectory, filename: sponsor.logoImageName }))),
     {
       operation: "deleteAdminTournament",
       tournamentId,
@@ -1574,4 +1664,6 @@ module.exports = {
   parseOptionalDateValue,
   mapTournament,
   buildRegistrationCountInclude,
+  normalizeChallongeUrl,
+  buildChallongeEmbedUrl,
 };

@@ -14,6 +14,8 @@ const tournamentBannerDirectory = path.join(uploadRoot, "tournament-banners");
 const posterImageDirectory = path.join(uploadRoot, "poster-images");
 const tournamentScheduleDirectory = path.join(uploadRoot, "tournament-schedules");
 const avatarDirectory = path.join(uploadRoot, "avatars");
+const gameAssetDirectory = path.join(uploadRoot, "game-assets");
+const sponsorLogoDirectory = path.join(uploadRoot, "sponsor-logos");
 const privateUploadRoot = env.PRIVATE_UPLOAD_ROOT
   ? path.resolve(env.PRIVATE_UPLOAD_ROOT)
   : path.resolve(uploadRoot, "../private");
@@ -48,6 +50,8 @@ const ensureUploadDirectories = async () => {
   await fs.mkdir(posterImageDirectory, { recursive: true });
   await fs.mkdir(tournamentScheduleDirectory, { recursive: true });
   await fs.mkdir(avatarDirectory, { recursive: true });
+  await fs.mkdir(gameAssetDirectory, { recursive: true });
+  await fs.mkdir(sponsorLogoDirectory, { recursive: true });
   await fs.mkdir(bankTransferProofDirectory, { recursive: true, mode: 0o700 });
 };
 
@@ -263,7 +267,7 @@ const adminTournamentAssetsUpload = multer({
   storage: multer.memoryStorage(),
   limits: buildUploadLimits({
     fileSize: ADMIN_UPLOAD_MAX_FILE_SIZE,
-    files: 6,
+    files: 7,
     fields: 60,
   }),
   fileFilter: (req, file, callback) => {
@@ -368,6 +372,22 @@ const persistPosterImageUpload = (file) =>
     invalidMessage: "Only JPEG, PNG, and WebP poster images are allowed.",
   });
 
+const persistGameAssetUpload = (file) =>
+  persistValidatedUpload({
+    file,
+    directory: gameAssetDirectory,
+    invalidMessage: "Only JPEG, PNG, and WebP game artwork is allowed.",
+    maxDimension: 2400,
+  });
+
+const persistSponsorLogoUpload = (file) =>
+  persistValidatedUpload({
+    file,
+    directory: sponsorLogoDirectory,
+    invalidMessage: "Only JPEG, PNG, and WebP sponsor logos are allowed.",
+    maxDimension: 2048,
+  });
+
 const persistTournamentScheduleUpload = async (file) => {
   if (!file?.buffer) {
     return null;
@@ -455,6 +475,8 @@ module.exports = {
   persistAvatarUpload,
   persistTournamentBannerUpload,
   persistPosterImageUpload,
+  persistGameAssetUpload,
+  persistSponsorLogoUpload,
   persistTournamentScheduleUpload,
   persistBankTransferProofUpload,
   removeUploadFile,
@@ -464,5 +486,7 @@ module.exports = {
   posterImageDirectory,
   tournamentScheduleDirectory,
   avatarDirectory,
+  gameAssetDirectory,
+  sponsorLogoDirectory,
   bankTransferProofDirectory,
 };

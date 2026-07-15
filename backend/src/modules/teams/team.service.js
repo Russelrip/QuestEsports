@@ -87,6 +87,7 @@ const mapSavedTeam = (team, userId) => ({
   country: team.country,
   teamTag: team.teamTag,
   organizationRequested: team.organizationRequested,
+  organizationName: team.organizationName || "Independent",
   logoName: team.logoName,
   logoUrl: team.logoName ? `/api/uploads/team-logos/${team.logoName}` : null,
   isCaptain: team.captainUserId === userId,

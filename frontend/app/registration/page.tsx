@@ -16,7 +16,7 @@ export const metadata = buildPageMetadata({
 export default function RegistrationPage() {
   return (
     <PageLayout
-      title="Teams"
+      title="Create a Saved Team"
       description={defaultPageDescriptions.registration}
     >
       <RegistrationForm />

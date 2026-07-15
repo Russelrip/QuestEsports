@@ -16,11 +16,12 @@ const SAFE_PUBLIC_API_PATHS = [
   /^\/api\/posters(?:\/[^/]+(?:\/image)?)?$/,
   /^\/api\/rulebooks(?:\/[^/]+)?$/,
   /^\/api\/event-series(?:\/[^/]+)?$/,
+  /^\/api\/game-categories(?:\/[^/]+)?$/,
   /^\/api\/products(?:\/[^/]+)?$/,
   /^\/api\/commerce\/capabilities$/,
   /^\/api\/products\/[^/]+\/images\/[^/]+$/,
   /^\/api\/orders\/[^/]+$/,
-  /^\/api\/uploads\/(?:tournament-banners|poster-images|team-logos|avatars)\/[^/]+$/,
+  /^\/api\/uploads\/(?:tournament-banners|poster-images|team-logos|avatars|game-assets|sponsor-logos)\/[^/]+$/,
   /^\/api\/team-invite$/,
 ];
 

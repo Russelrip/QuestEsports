@@ -20,6 +20,8 @@ const {
   deleteTeamRegistration,
   runLegacyPosterImport,
   runPosterImageAssetMigration,
+  listAdminSavedTeams,
+  updateAdminSavedTeamOrganization,
 } = require("./admin.service");
 
 const sendExcelExport = (res, exportFile) => {
@@ -237,6 +239,15 @@ const migratePosterMediaToFilesystem = asyncHandler(async (req, res) => {
   });
 });
 
+const getSavedTeams = asyncHandler(async (req, res) => {
+  res.status(200).json({ success: true, teams: await listAdminSavedTeams(req.query) });
+});
+
+const updateSavedTeamOrganization = asyncHandler(async (req, res) => {
+  const team = await updateAdminSavedTeamOrganization(req.params.teamId, req.body);
+  res.status(200).json({ success: true, message: "Team organization updated.", team });
+});
+
 module.exports = {
   getDashboard,
   getUsers,
@@ -258,4 +269,6 @@ module.exports = {
   removeRecruitmentApplication,
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
+  getSavedTeams,
+  updateSavedTeamOrganization,
 };

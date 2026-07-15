@@ -4,8 +4,7 @@ import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 import {
   fetchPublicEventSeries,
   fetchPublicTournaments,
-  type EventSeries,
-  type Tournament,
+  fetchPublicGameCategories,
 } from "@/lib/tournaments";
 
 export const dynamic = "force-dynamic";
@@ -23,14 +22,15 @@ export const metadata = buildPageMetadata({
 });
 
 export default async function TournamentsPage() {
-  const [tournaments, series]: [Tournament[], EventSeries[]] = await Promise.all([
+  const [tournaments, series, categories] = await Promise.all([
     fetchPublicTournaments(),
     fetchPublicEventSeries(),
+    fetchPublicGameCategories(),
   ]);
 
   return (
     <PageLayout title="Tournaments" description={defaultPageDescriptions.tournaments}>
-      <TournamentsContent tournaments={tournaments} series={series} />
+      <TournamentsContent tournaments={tournaments} series={series} categories={categories} />
     </PageLayout>
   );
 }

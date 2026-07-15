@@ -21,6 +21,8 @@ const {
   removeRecruitmentApplication,
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
+  getSavedTeams,
+  updateSavedTeamOrganization,
 } = require("./admin.controller");
 
 const router = express.Router();
@@ -48,5 +50,7 @@ router.patch("/admin/recruitment-applications/:applicationId/status", updateRecr
 router.delete("/admin/recruitment-applications/:applicationId", removeRecruitmentApplication);
 router.post("/admin/media/import-legacy-posters", importLegacyPosterMedia);
 router.post("/admin/media/migrate-image-assets", migratePosterMediaToFilesystem);
+router.get("/admin/teams", getSavedTeams);
+router.patch("/admin/teams/:teamId/organization", updateSavedTeamOrganization);
 
 module.exports = router;

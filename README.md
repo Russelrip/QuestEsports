@@ -515,3 +515,7 @@ Frontend verification includes lint, a production build, and Playwright critical
 - Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
 - Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, provider settings, or queue behavior.
 - Read [Database and Storage](./docs/database-and-storage.md) before touching uploads, Prisma schema, or media migration scripts.
+
+## Website Change Upgrade
+
+The tournament experience now uses admin-managed game categories, 4:3 whole-card listings, event metadata, hero artwork, ordered sponsors, verified team organizations, and privacy-safe team/solo participants. Tournament brackets prefer a validated HTTPS Challonge module and fall back to the published native bracket. Admin content is managed from `/admin/games`, `/admin/teams`, and the tournament editor. Persistent upload backups must include `game-assets/` and `sponsor-logos/`.

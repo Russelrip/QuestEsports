@@ -29,11 +29,12 @@ const MATCH_STATUS_LABELS: Record<number, string> = {
 };
 
 export default function TournamentDetailsContent({ tournament }: { tournament: Tournament }) {
-  const [teamPage, setTeamPage] = useState(1);
+  const [teamPagination, setTeamPagination] = useState({ tournamentId: tournament.id, page: 1 });
+  const teamPage = teamPagination.tournamentId === tournament.id ? teamPagination.page : 1;
   const [activeTab, setActiveTab] = useState<"overview" | "rules" | "schedule" | "bracket" | "participants">("overview");
-  const registeredTeams = tournament.registeredTeams || [];
-  const teamPageCount = Math.max(1, Math.ceil(registeredTeams.length / TEAMS_PER_PAGE));
-  const visibleTeams = registeredTeams.slice(
+  const participants = tournament.registeredParticipants || [];
+  const teamPageCount = Math.max(1, Math.ceil(participants.length / TEAMS_PER_PAGE));
+  const visibleParticipants = participants.slice(
     (teamPage - 1) * TEAMS_PER_PAGE,
     teamPage * TEAMS_PER_PAGE
   );
@@ -58,71 +59,37 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
           ))}
         </nav>
 
-        {activeTab === "overview" ? <Card className="w-full max-w-[calc(100vw-2rem)] overflow-hidden border-white/10 bg-[#0d0c13] p-4 sm:max-w-full sm:p-6 xl:p-8">
-          <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)] xl:gap-8">
-            <div className="min-w-0 max-w-[calc(100vw-4rem)] overflow-hidden rounded-[28px] border border-white/10 bg-[#100817] sm:max-w-full">
-              <TournamentBannerImage
-                bannerUrl={tournament.bannerUrl}
-                title={tournament.title}
-                className="h-full min-h-[260px] w-full object-cover sm:min-h-[420px] xl:min-h-[520px]"
-              />
-            </div>
-
-            <div className="flex min-w-0 max-w-[calc(100vw-4rem)] flex-col justify-between gap-6 sm:max-w-full">
-              <div className="space-y-6">
-                <header className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-xs uppercase tracking-[0.32em] text-fuchsia-200/80">
-                      {toTitleCase(tournament.game)}
-                    </p>
-                  </div>
-                  <h2 className="mt-4 max-w-[calc(100vw-4rem)] text-[2rem] leading-tight text-white [overflow-wrap:anywhere] sm:max-w-full sm:text-5xl">
-                    {tournament.title}
-                  </h2>
-                  <p className="mt-4 text-sm text-slate-400">
-                    Tournament status: {toTitleCase(tournament.status.replace(/_/g, " "))}
-                  </p>
-                  <p className="mt-6 max-w-[calc(100vw-4rem)] text-sm leading-7 text-slate-300 [overflow-wrap:anywhere] sm:max-w-4xl sm:text-base sm:leading-8">
-                    {tournament.fullDescription || tournament.shortDescription || "Tournament information will be updated soon."}
-                  </p>
-                </header>
-
-                <StatsGrid tournament={tournament} />
-              </div>
-
-              <footer className="flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row sm:flex-wrap">
-                  {tournament.rulebook ? (
-                    <Link
-                      href={`/rulebooks/${tournament.rulebook.slug}`}
-                      className={buttonClassName({
-                        variant: "secondary",
-                        className: "w-full border-white/14 bg-transparent hover:border-white/20 hover:bg-white/6 sm:w-auto",
-                      })}
-                    >
-                      {tournament.rulebook.title}
-                    </Link>
-                  ) : null}
-                  <RegisterTournamentButton tournament={tournament} closedAsButton className="w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto" />
-              </footer>
-            </div>
+        {activeTab === "overview" ? <div className="space-y-6"><section className={`relative min-h-[520px] overflow-hidden rounded-[34px] border bg-black ${tournament.isRegistrationOpen ? "border-white/10" : "border-rose-500/45"}`}>
+          <TournamentBannerImage bannerUrl={tournament.heroUrl || tournament.bannerUrl} title={tournament.title} className="absolute inset-0 h-full w-full object-cover opacity-80" />
+          <span className="absolute inset-0 bg-gradient-to-r from-black via-black/75 to-black/20" />
+          <div className="relative z-10 flex min-h-[520px] max-w-3xl flex-col justify-end p-6 sm:p-10">
+            <div className="flex items-center gap-4">{tournament.gameCategory?.logoUrl ? <Image src={resolveMediaUrl(tournament.gameCategory.logoUrl)} alt={`${tournament.gameCategory.displayName} logo`} width={96} height={64} className="h-14 w-24 object-contain" /> : null}<p className="text-xs uppercase tracking-[0.3em] text-cyan-200">{tournament.gameCategory?.displayName || toTitleCase(tournament.game)}</p></div>
+            <h2 className="mt-4 text-4xl leading-tight text-white sm:text-6xl">{tournament.title}</h2>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200">{tournament.shortDescription}</p>
+            <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300"><b className="text-white">{tournament.prizePool}</b><span>{tournament.organizer}</span><span>{tournament.country} · {tournament.location}</span><span className={tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}>{toTitleCase(tournament.registrationState.replace(/_/g, " "))}</span></div>
+            <div className="mt-6"><RegisterTournamentButton tournament={tournament} closedAsButton /></div>
           </div>
-        </Card> : null}
+        </section>
+        {tournament.sponsors?.length ? <Card className="p-5"><p className="text-xs uppercase tracking-[0.24em] text-slate-500">Official sponsors</p><div className="mt-4 flex flex-wrap items-center gap-6">{tournament.sponsors.map((sponsor) => { const logo = sponsor.logoUrl ? <Image src={resolveMediaUrl(sponsor.logoUrl)} alt={sponsor.name} width={140} height={64} className="h-14 w-32 object-contain" /> : <span className="font-semibold text-white">{sponsor.name}</span>; return sponsor.websiteUrl ? <a key={sponsor.id} href={sponsor.websiteUrl} target="_blank" rel="noreferrer" aria-label={`Visit ${sponsor.name}`}>{logo}</a> : <div key={sponsor.id}>{logo}</div>; })}</div></Card> : null}
+        <Card className="p-6 sm:p-8"><p className="whitespace-pre-line text-sm leading-8 text-slate-300 sm:text-base">{tournament.fullDescription || tournament.shortDescription}</p><div className="mt-8"><StatsGrid tournament={tournament} /></div></Card></div> : null}
 
-        {activeTab === "participants" && registeredTeams.length > 0 ? (
+        {activeTab === "participants" && participants.length > 0 ? (
           <TeamsPanel
-            teams={visibleTeams}
-            totalTeams={registeredTeams.length}
+            teams={visibleParticipants}
+            totalTeams={participants.length}
             title={tournament.entryType === "solo" ? "Registered Players" : "Registered Teams"}
             isSolo={tournament.entryType === "solo"}
             page={teamPage}
             pageCount={teamPageCount}
-            onPageChange={setTeamPage}
+            onPageChange={(page) => setTeamPagination({ tournamentId: tournament.id, page })}
           />
         ) : activeTab === "participants" ? (
           <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Participants</h3><p className="mt-3 text-sm text-slate-400">Approved participants will appear here.</p></Card>
         ) : null}
 
-        {activeTab === "bracket" && tournament.bracketData ? (
+        {activeTab === "bracket" && tournament.challongeEmbedUrl ? (
+          <section className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-3xl text-white">Brackets</h3>{tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}</div><div className="overflow-hidden rounded-2xl border border-white/10 bg-white"><iframe src={tournament.challongeEmbedUrl} title={`${tournament.title} Challonge bracket`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" className="h-[760px] w-full" /></div></section>
+        ) : activeTab === "bracket" && tournament.bracketData ? (
           <section className="space-y-5">
             <h3 className="text-3xl text-white">Brackets</h3>
             <LiveBracketView bracketData={tournament.bracketData} />
@@ -194,7 +161,7 @@ function TeamsPanel({
   onPageChange,
   isSolo,
 }: {
-  teams: Tournament["registeredTeams"];
+  teams: Tournament["registeredParticipants"];
   totalTeams: number;
   title: string;
   page: number;
@@ -210,10 +177,10 @@ function TeamsPanel({
           <div key={team.id} className="rounded-xl border border-blue-300/20 bg-[#0d1626] p-4">
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-white text-sm font-bold text-black">
-                {team.logoUrl ? (
+                {team.avatarUrl || team.logoUrl ? (
                   <Image
-                    src={resolveMediaUrl(team.logoUrl)}
-                    alt={team.teamName}
+                    src={resolveMediaUrl(team.avatarUrl || team.logoUrl || "")}
+                    alt={team.displayName}
                     width={48}
                     height={48}
                     sizes="48px"
@@ -224,9 +191,9 @@ function TeamsPanel({
                 )}
               </div>
               <div className="min-w-0">
-                <p className="truncate font-semibold text-white">{team.teamName}</p>
+                <p className="truncate font-semibold text-white">{team.displayName}</p>
                 <p className="text-xs text-slate-400">
-                  {isSolo ? "Solo player" : `${team.shortCode} - ${team.memberCount} members`}
+                  {isSolo ? "Solo player" : `Captain ${team.captainName} · ${team.memberCount} members`}
                 </p>
               </div>
               <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400" />

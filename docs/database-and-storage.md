@@ -1,5 +1,9 @@
 # Database And Storage
 
+## Game and Sponsor Assets
+
+Category artwork and game logos are stored below `UPLOAD_ROOT/game-assets/`; sponsor logos are stored below `UPLOAD_ROOT/sponsor-logos/`. Both routes accept only signature-validated JPEG, PNG, or WebP data, generate safe filenames, normalize images while preserving aspect ratio, and serve immutable public files. Back up and restore these directories with PostgreSQL and the other upload roots.
+
 This project uses PostgreSQL through Prisma for relational data, plus public and private filesystem storage for uploaded files.
 
 For how token records and `BackgroundJob` records are used to deliver transactional mail, see [Email System](./email-system.md).

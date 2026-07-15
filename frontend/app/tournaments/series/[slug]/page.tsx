@@ -52,14 +52,15 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
           </div>
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
             {series.tournaments.map((tournament) => (
-              <article key={tournament.id} className="group overflow-hidden rounded-[30px] border border-white/10 bg-[#0d0c13] transition hover:-translate-y-1 hover:border-fuchsia-300/25">
+              <article key={tournament.id} className={`group overflow-hidden rounded-[30px] border bg-[#0d0c13] transition hover:-translate-y-1 ${tournament.isRegistrationOpen ? "border-white/10 hover:border-fuchsia-300/25" : "border-rose-500/45 hover:border-rose-400/70"}`}>
                 <Link href={`/tournaments/${tournament.slug}`} className="block">
                   <div className="aspect-[4/3] overflow-hidden bg-black/30">
-                    <TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]" />
+                    <TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} className="h-full w-full object-contain transition duration-500 group-hover:scale-[1.025]" />
                   </div>
                   <div className="p-5">
                     <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/80">{tournament.game}</p>
                     <h3 className="mt-2 text-2xl text-white">{tournament.title}</h3>
+                    <p className={`mt-2 text-sm font-semibold ${tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}`}>{tournament.isRegistrationOpen ? "Registration Open" : tournament.isSlotsFull ? "Slots Full" : "Registration Closed"}</p>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-400">
                       <span><strong className="block text-white">{tournament.prizePool}</strong>Prize pool</span>
                       <span><strong className="block text-white">{formatTournamentDate(tournament.startDate, tournament.startDateStatus)}</strong>Starts</span>
@@ -67,7 +68,7 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
                   </div>
                 </Link>
                 <div className="px-5 pb-5">
-                  <Link href={`/tournaments/${tournament.slug}`} className={buttonClassName({ className: "w-full justify-center" })}>View tournament</Link>
+                  <Link href={tournament.isRegistrationOpen ? `/tournaments/${tournament.slug}/register` : `/tournaments/${tournament.slug}`} className={buttonClassName({ className: "w-full justify-center" })}>{tournament.isRegistrationOpen ? "Register" : "View Details"}</Link>
                 </div>
               </article>
             ))}

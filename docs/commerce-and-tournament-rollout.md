@@ -1,5 +1,15 @@
 # Commerce and Tournament Rollout
 
+## Website Change Rollout
+
+1. Deploy the backend and run `npm run prisma:migrate:deploy`; the migration is backward compatible and seeds the initial categories.
+2. Confirm durable storage and backups include `game-assets/` and `sponsor-logos/`.
+3. Populate game artwork, tournament metadata, hero artwork, and a sponsor in admin.
+4. Deploy the frontend and verify filtering, red closed states, participants, gallery interaction, recruitment links, and the Challonge CSP/module fallback.
+5. Complete the editorial audit of live poster descriptions.
+
+LankaPay, PayPal, and separate card integrations remain deferred. Free registration, PayHere, and bank transfer are unchanged.
+
 ## Database deployment
 
 Apply the complete migration history before deploying either application. `20260713220000_complete_platform_foundations` adds event series, configurable solo/team registration, account history, products, orders, and generic payments. Later migrations add date statuses, tiered bank-transfer registration, duplicate-proof prevention, and payment reconciliation.

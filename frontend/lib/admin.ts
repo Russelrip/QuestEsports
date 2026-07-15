@@ -14,6 +14,8 @@ export const adminNavigationLinks = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/tournaments", label: "Tournaments" },
+  { href: "/admin/games", label: "Games" },
+  { href: "/admin/teams", label: "Teams" },
   { href: "/admin/event-series", label: "Event Series" },
   { href: "/admin/registrations", label: "Registrations" },
   { href: "/admin/products", label: "Products" },
@@ -308,6 +310,10 @@ export type TournamentFormValues = {
   title: string;
   slug: string;
   game: string;
+  gameCategoryId: string;
+  organizer: string;
+  country: string;
+  location: string;
   displayPriority: string;
   shortDescription: string;
   fullDescription: string;
@@ -348,12 +354,14 @@ export type TournamentFormValues = {
   contactLink: string;
   isFeatured: boolean;
   bannerImage: File | null;
+  heroImage: File | null;
   scheduleFile: File | null;
   completedPosterImage: File | null;
   firstPlaceImage: File | null;
   secondPlaceImage: File | null;
   thirdPlaceImage: File | null;
   removeBannerImage: boolean;
+  removeHeroImage: boolean;
   removeScheduleFile: boolean;
   removeCompletedPosterImage: boolean;
   removeFirstPlaceImage: boolean;
@@ -389,6 +397,10 @@ export const initialTournamentFormValues: TournamentFormValues = {
   title: "",
   slug: "",
   game: "valorant",
+  gameCategoryId: "",
+  organizer: "Quest E-sports",
+  country: "Sri Lanka",
+  location: "TBA",
   displayPriority: "100",
   shortDescription: "",
   fullDescription: "",
@@ -429,12 +441,14 @@ export const initialTournamentFormValues: TournamentFormValues = {
   contactLink: "",
   isFeatured: false,
   bannerImage: null,
+  heroImage: null,
   scheduleFile: null,
   completedPosterImage: null,
   firstPlaceImage: null,
   secondPlaceImage: null,
   thirdPlaceImage: null,
   removeBannerImage: false,
+  removeHeroImage: false,
   removeScheduleFile: false,
   removeCompletedPosterImage: false,
   removeFirstPlaceImage: false,
@@ -445,6 +459,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
 export const buildTournamentFormData = (values: TournamentFormValues) => {
   const uploadFields: Array<[string, File | null]> = [
     ["Banner image", values.bannerImage],
+    ["Hero image", values.heroImage],
     ["Schedule file", values.scheduleFile],
     ["Completed poster", values.completedPosterImage],
     ["First-place image", values.firstPlaceImage],

@@ -1051,6 +1051,48 @@ const deleteTeamRegistration = async (registrationId) => {
 const runLegacyPosterImport = async () => importLegacyPosters();
 const runPosterImageAssetMigration = async () => migrateImageAssetsToFilesystem();
 
+const listAdminSavedTeams = async ({ search } = {}) => {
+  const normalizedSearch = normalizeText(search);
+  const teams = await prisma.savedTeam.findMany({
+    where: normalizedSearch
+      ? {
+          OR: [
+            { name: { contains: normalizedSearch, mode: "insensitive" } },
+            { organizationName: { contains: normalizedSearch, mode: "insensitive" } },
+          ],
+        }
+      : {},
+    orderBy: { updatedAt: "desc" },
+    take: 200,
+    include: {
+      captainUser: { select: { firstName: true, lastName: true, username: true } },
+      _count: { select: { members: true } },
+    },
+  });
+  return teams.map((team) => ({
+    id: team.id,
+    name: team.name,
+    logoUrl: team.logoName ? `/api/uploads/team-logos/${team.logoName}` : null,
+    country: team.country,
+    organizationName: team.organizationName || "Independent",
+    captainName:
+      [team.captainUser.firstName, team.captainUser.lastName].filter(Boolean).join(" ").trim() ||
+      team.captainUser.username,
+    memberCount: team._count.members,
+  }));
+};
+
+const updateAdminSavedTeamOrganization = async (teamId, body) => {
+  const requested = normalizeText(body.organizationName);
+  if (requested.length > 120) throw new HttpError(400, "Organization name is too long.");
+  const updated = await prisma.savedTeam.updateMany({
+    where: { id: teamId },
+    data: { organizationName: requested && requested.toLowerCase() !== "independent" ? requested : null },
+  });
+  if (!updated.count) throw new HttpError(404, "Team not found.");
+  return { organizationName: requested && requested.toLowerCase() !== "independent" ? requested : "Independent" };
+};
+
 module.exports = {
   getAdminDashboardData,
   listAdminUsers,
@@ -1072,4 +1114,6 @@ module.exports = {
   deleteTeamRegistration,
   runLegacyPosterImport,
   runPosterImageAssetMigration,
+  listAdminSavedTeams,
+  updateAdminSavedTeamOrganization,
 };

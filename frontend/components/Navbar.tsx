@@ -9,7 +9,8 @@ import { Button, buttonClassName } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useUiStore } from "@/hooks/useUiStore";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
+import { buildApiUrl } from "@/lib/api";
 import { authNavItems, primaryNavItems, secondaryNavItems } from "@/lib/site";
 
 export default function Navbar() {
@@ -142,8 +143,8 @@ export default function Navbar() {
               <div className="mt-3 grid gap-2 border-t border-white/8 pt-3">
                 {!isLoading && isAuthenticated && user ? (
                   <div className="grid gap-2">
-                    <Link href="/profile" className="rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
-                      {user.username}
+                    <Link href="/profile" className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
+                      <span className="flex size-9 items-center justify-center overflow-hidden rounded-xl bg-violet-700 text-xs font-bold">{user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt="" width={36} height={36} className="h-full w-full object-cover" /> : getInitials(user.firstName, user.lastName, user.username)}</span>{user.username}
                     </Link>
                     {user.role === "admin" ? (
                       <Link href="/admin" className="rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">

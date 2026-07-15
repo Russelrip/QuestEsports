@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AuthUser } from "@/lib/auth";
 import { getInitials } from "@/lib/utils";
+import { buildApiUrl } from "@/lib/api";
 
 type UserMenuProps = {
   user: AuthUser;
@@ -49,8 +51,8 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
         onClick={() => setIsOpen((current) => !current)}
         aria-expanded={isOpen}
       >
-        <span className="flex size-9 items-center justify-center rounded-2xl bg-violet-700 text-xs font-bold text-white">
-          {initials}
+        <span className="flex size-9 items-center justify-center overflow-hidden rounded-2xl bg-violet-700 text-xs font-bold text-white">
+          {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt="" width={36} height={36} className="h-full w-full object-cover" /> : initials}
         </span>
         <span>
           <span className="block text-sm font-semibold text-white">{user.username}</span>

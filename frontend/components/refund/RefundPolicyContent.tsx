@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 
 const sections = [
-  { title: "Customized merchandise", text: "Quest E-sports shirts and other personalized products are made to order. They cannot be returned or refunded for change of mind, an incorrect size selected by the customer, or approved customization choices." },
+  { title: "Customized merchandise", text: "Quest E-sports shirts and other personalized products become non-refundable and non-exchangeable once production has begun. This does not limit the remedies available when an item is supplied incorrectly or arrives damaged or defective." },
   { title: "Wrong, damaged, or defective items", text: "Contact us promptly after delivery with your order number and clear photographs if the wrong item was supplied or an item arrived damaged or defective. After review, Quest E-sports will arrange an appropriate replacement or refund where required." },
   { title: "Tournament registration fees", text: "A successfully paid tournament fee is non-refundable after registration is confirmed, including when a participant withdraws, misses a match, or is disqualified. If Quest E-sports cancels the event without a replacement date, affected paid entries will receive instructions about the applicable refund process." },
   { title: "Payment processing", text: "Approved refunds are returned through the original payment method where supported. Bank and payment-provider processing times are outside Quest E-sports' control." },

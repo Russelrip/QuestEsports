@@ -54,6 +54,30 @@ const buildAdminTournamentBody = (overrides = {}) => ({
   ...overrides,
 });
 
+test("Challonge URLs are restricted and normalized for safe module embeds", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    assert.equal(
+      tournamentService.normalizeChallongeUrl("https://challonge.com/quest-cup?ref=site#matches"),
+      "https://challonge.com/quest-cup"
+    );
+    assert.equal(
+      tournamentService.buildChallongeEmbedUrl("https://quest.challonge.com/finals/module"),
+      "https://quest.challonge.com/finals/module"
+    );
+    assert.equal(tournamentService.normalizeChallongeUrl("http://challonge.com/quest-cup"), null);
+    assert.equal(tournamentService.normalizeChallongeUrl("https://challonge.com.evil.test/quest-cup"), null);
+    assert.equal(tournamentService.normalizeChallongeUrl("https://challonge.com"), null);
+  } finally {
+    restore();
+  }
+});
+
 test("admin tournaments can store TBA and TBD without placeholder dates", async () => {
   let savedData;
   const prismaMock = {
@@ -178,6 +202,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
             {
               id: "registration-1",
               teamName: "Quest Five",
+              captainName: "Captain Quest",
               teamLogoName: "private-logo.png",
               status: "approved",
               members: [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
@@ -212,6 +237,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
         shortCode: "QF",
         memberCount: 3,
         status: "approved",
+        captainName: "Captain Quest",
       },
     ]);
     assert.equal(tournament.bracketSummary, null);

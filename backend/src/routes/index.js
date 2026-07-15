@@ -12,12 +12,14 @@ const accountRoutes = require("../modules/account/account.routes");
 const seriesRoutes = require("../modules/series/series.routes");
 const paymentRoutes = require("../modules/payments/payment.routes");
 const shopRoutes = require("../modules/shop/shop.routes");
+const gameCategoryRoutes = require("../modules/games/game-category.routes");
 
 const router = express.Router();
 
 router.use(authRoutes);
 router.use(accountRoutes);
 router.use(seriesRoutes);
+router.use(gameCategoryRoutes);
 router.use(paymentRoutes);
 router.use(shopRoutes);
 router.use(adminRoutes);

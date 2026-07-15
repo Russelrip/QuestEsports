@@ -44,6 +44,9 @@ test("contact page includes both TikTok accounts, Gmail, and the WhatsApp commun
     "href",
     "https://www.tiktok.com/@questesportslk"
   );
+  await expect(page.getByRole("link", { name: /Solo Player/ })).toHaveAttribute("href", "/join?type=solo_player");
+  await expect(page.getByRole("link", { name: /Existing Team/ })).toHaveAttribute("href", "/join?type=existing_team");
+  await expect(page.getByRole("link", { name: /Incomplete Team/ })).toHaveAttribute("href", "/join?type=incomplete_team");
 });
 
 test("mobile layout stays within the viewport and opens navigation without page shift", async ({ page }) => {
@@ -172,6 +175,7 @@ test("refund policy publishes customized product and tournament fee terms", asyn
   await expect(page.getByRole("heading", { name: "Refund & Return Policy" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customized merchandise" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Tournament registration fees" })).toBeVisible();
+  await expect(page.getByText(/non-refundable and non-exchangeable once production has begun/i)).toBeVisible();
   await expect(page.getByRole("contentinfo").getByRole("link", { name: "Refund Policy" })).toHaveAttribute("href", "/refund-policy");
 });
 
@@ -183,6 +187,18 @@ test("production security policy permits only the configured PayHere form endpoi
   expect(policy).toContain("'strict-dynamic'");
   expect(policy).toMatch(/script-src 'self' 'nonce-[^']+'/);
   expect(policy).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+  expect(policy).toContain("frame-src https://challonge.com https://*.challonge.com");
+});
+
+test("recruitment deep links initialize all supported application types", async ({ page }) => {
+  await page.route("**/api/me", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, user: { id: "user-1", firstName: "Quest", lastName: "Player", email: "player@example.com", username: "questplayer", role: "user", emailVerified: true } }),
+  }));
+  for (const type of ["solo_player", "existing_team", "incomplete_team"]) {
+    await page.goto(`/join?type=${type}`);
+    await expect(page.getByLabel("Application Type")).toHaveValue(type);
+  }
 });
 
 test("legacy generic tournament registration page is removed", async ({ page }) => {

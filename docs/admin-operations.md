@@ -1,5 +1,13 @@
 # Admin Operations
 
+## Game, Sponsor, and Organization Content
+
+- Populate `/admin/games` with approved 4:3 category artwork and transparent game logos. The migration creates published artwork-free records for Valorant, PUBG Mobile, MLBB, and CODM.
+- Set organizer, country, location, category, hero, and an HTTPS Challonge tournament link in the tournament editor. Use 1600×1200 card artwork.
+- Add ordered sponsor logos after saving the tournament. Sponsor websites must use HTTPS.
+- Use `/admin/teams` to verify organization labels. Captains cannot self-assign them; blank labels display as `Independent`.
+- Review every live gallery description after deployment because production poster descriptions are not stored in this repository.
+
 This document covers the admin UI and API workflows for tournament/event configuration, registrations, payments, merchandise, recruitment, exports, deletion, and bracket effects.
 
 All admin routes require a valid session and `user.role === "admin"`.

@@ -20,6 +20,7 @@ export function proxy(request: NextRequest) {
     "base-uri 'self'",
     "frame-ancestors 'none'",
     "object-src 'none'",
+    "frame-src https://challonge.com https://*.challonge.com",
     `img-src ${imageSources.join(" ")}`,
     "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",

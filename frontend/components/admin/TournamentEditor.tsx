@@ -31,6 +31,8 @@ import {
   initialTournamentFormValues,
 } from "@/lib/admin";
 import { type Tournament } from "@/lib/tournaments";
+import type { GameCategory } from "@/lib/tournaments";
+import TournamentSponsorsManager from "@/components/admin/TournamentSponsorsManager";
 
 export default function TournamentEditor({ tournamentId }: { tournamentId?: string }) {
   const router = useRouter();
@@ -44,8 +46,10 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
   const [bracketBusy, setBracketBusy] = useState(false);
   const [rulebooks, setRulebooks] = useState<Array<{ id: string; title: string; game: string; variant: string }>>([]);
   const [eventSeries, setEventSeries] = useState<Array<{ id: string; title: string }>>([]);
+  const [gameCategories, setGameCategories] = useState<GameCategory[]>([]);
   const [assetPreview, setAssetPreview] = useState<{
     bannerUrl: string | null;
+    heroUrl: string | null;
     completedPosterUrl: string | null;
     firstPlaceUrl: string | null;
     secondPlaceUrl: string | null;
@@ -53,6 +57,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
     scheduleRows: number;
   }>({
     bannerUrl: null,
+    heroUrl: null,
     completedPosterUrl: null,
     firstPlaceUrl: null,
     secondPlaceUrl: null,
@@ -77,6 +82,12 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
   }, []);
 
   useEffect(() => {
+    void adminRequest<{ categories: GameCategory[] }>("/api/admin/game-categories")
+      .then((data) => setGameCategories(data.categories))
+      .catch(() => setGameCategories([]));
+  }, []);
+
+  useEffect(() => {
     void adminRequest<{ series: Array<{ id: string; title: string }> }>("/api/admin/event-series")
       .then((data) => setEventSeries(data.series))
       .catch(() => setEventSeries([]));
@@ -96,6 +107,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
         setRegistrations(data.tournament.registrations || []);
         setAssetPreview({
           bannerUrl: data.tournament.bannerUrl,
+          heroUrl: data.tournament.heroUrl,
           completedPosterUrl: data.tournament.showcase?.posterUrl || null,
           firstPlaceUrl: data.tournament.showcase?.firstPlaceUrl || null,
           secondPlaceUrl: data.tournament.showcase?.secondPlaceUrl || null,
@@ -160,6 +172,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
       setFormValues(mapTournamentToFormValues(response.tournament));
       setAssetPreview({
         bannerUrl: response.tournament.bannerUrl,
+        heroUrl: response.tournament.heroUrl,
         completedPosterUrl: response.tournament.showcase?.posterUrl || null,
         firstPlaceUrl: response.tournament.showcase?.firstPlaceUrl || null,
         secondPlaceUrl: response.tournament.showcase?.secondPlaceUrl || null,
@@ -210,6 +223,15 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Game" htmlFor="game" required>
                 <Input id="game" value={formValues.game} onChange={(event) => updateField("game", event.target.value)} required />
               </FormField>
+              <FormField label="Game Category" htmlFor="gameCategoryId" hint="Controls public filtering and game artwork.">
+                <Select id="gameCategoryId" value={formValues.gameCategoryId} onChange={(event) => updateField("gameCategoryId", event.target.value)}>
+                  <option value="">Text-only fallback</option>
+                  {gameCategories.map((category) => <option key={category.id} value={category.id}>{category.displayName}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Organizer" htmlFor="organizer" required><Input id="organizer" value={formValues.organizer} onChange={(event) => updateField("organizer", event.target.value)} required /></FormField>
+              <FormField label="Country" htmlFor="country" required><Input id="country" value={formValues.country} onChange={(event) => updateField("country", event.target.value)} required /></FormField>
+              <FormField label="Location" htmlFor="location" required><Input id="location" value={formValues.location} onChange={(event) => updateField("location", event.target.value)} required /></FormField>
               <FormField label="Display Priority" htmlFor="displayPriority" hint="Lower numbers appear first." required>
                 <Input
                   id="displayPriority"
@@ -340,7 +362,8 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                 </>
               ) : null}
               <FormField label="Configurable Registration Fields" htmlFor="registrationFields" hint='JSON list. Example: [{"key":"pubg-mobile-id","label":"PUBG Mobile ID","type":"text","scope":"entry","required":true,"options":[]}]' className="md:col-span-2 xl:col-span-3">
-                <Textarea id="registrationFields" rows={8} value={formValues.registrationFields} onChange={(event) => updateField("registrationFields", event.target.value)} />
+                <div className="grid gap-3"><Textarea id="registrationFields" rows={8} value={formValues.registrationFields} onChange={(event) => updateField("registrationFields", event.target.value)} />
+                <Button type="button" variant="secondary" onClick={() => setFormValues((current) => ({ ...current, game: "pubg mobile", entryType: "team", teamSize: "4", minRosterSize: "4", maxRosterSize: "4", maxSubstitutes: "2", registrationFields: JSON.stringify([{ key: "pubg-mobile-id", label: "PUBG Mobile ID", type: "text", scope: "member", required: true, options: [] }, { key: "player-role", label: "Player Role", type: "select", scope: "member", required: true, options: ["Player", "Substitute"] }], null, 2) }))}>Apply PUBG Mobile team preset</Button></div>
               </FormField>
               <FormField label="Start Date" htmlFor="startDateStatus" required>
                 <div className="grid gap-2">
@@ -381,7 +404,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Registration Opens" htmlFor="registrationOpenAt" hint="Optional public schedule start.">
                 <Input id="registrationOpenAt" type="datetime-local" value={formValues.registrationOpenAt} onChange={(event) => updateField("registrationOpenAt", event.target.value)} />
               </FormField>
-              <FormField label="Bracket Link" htmlFor="bracketLink">
+              <FormField label="Challonge Tournament Link" htmlFor="bracketLink" hint="HTTPS challonge.com tournament URLs only.">
                 <Input id="bracketLink" type="url" value={formValues.bracketLink} onChange={(event) => updateField("bracketLink", event.target.value)} />
               </FormField>
               <FormField label="Discord / Contact Link" htmlFor="contactLink">
@@ -450,6 +473,9 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                     </div>
                   </div>
                 </div>
+              </FormField>
+              <FormField label="Hero Artwork" htmlFor="heroImage" hint="Full-width detail hero; falls back to the card artwork.">
+                <FileUploadField id="heroImage" accept="image/png,image/jpeg,image/webp" file={formValues.heroImage} existingUrl={assetPreview.heroUrl} onChange={(file) => { updateField("heroImage", file); if (file) updateField("removeHeroImage", false); }} />
               </FormField>
               <FormField label="Schedule File" htmlFor="scheduleFile" hint="Upload XLSX or CSV up to 10 MB to render the schedule automatically.">
                 <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
@@ -545,6 +571,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                         }
                       }}
                     />
+                    <AssetRemovalCheckbox label="Remove hero artwork" checked={formValues.removeHeroImage} onChange={(checked) => { updateField("removeHeroImage", checked); if (checked) updateField("heroImage", null); }} />
                     <AssetRemovalCheckbox
                       label="Remove schedule file"
                       checked={formValues.removeScheduleFile}
@@ -596,6 +623,10 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               </div>
             </form>
           </Card>
+
+          {isEdit ? (
+            <TournamentSponsorsManager tournamentId={tournamentId || ""} />
+          ) : null}
 
           {isEdit ? (
             <BracketAdminPanel

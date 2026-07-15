@@ -121,3 +121,7 @@ npm run lint
 ```
 
 The current suite covers auth/session behavior, email jobs, observability helpers, rate limiting, teams, configurable registration, slot pricing, bank-transfer and PayHere payment handling, shop behavior, bracket behavior, and admin workflows. CI enforces coverage thresholds and runs lint against `src`, `tests`, and `scripts`.
+
+## Tournament Content Upgrade
+
+`GET /api/game-categories` supplies the public artwork strip. Admins manage categories through `/api/admin/game-categories`, sponsors through `/api/admin/tournaments/:tournamentId/sponsors`, and verified organization labels through `/api/admin/teams`. Tournament responses retain legacy fields while adding category, organizer, country, location, hero, sponsors, captain/avatar participant data, and a server-derived `challongeEmbedUrl`. Public uploads also use `game-assets/` and `sponsor-logos/` below `UPLOAD_ROOT`.
