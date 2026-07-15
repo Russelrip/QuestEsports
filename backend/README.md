@@ -73,7 +73,7 @@ npm run media:migrate-image-assets
 - Products, quotes, orders, and commerce capabilities under `/api/products`, `/api/orders`, and `/api/commerce/capabilities`
 - PayHere status/notifications and bank-transfer proofs under `/api/payments`
 - Recruitment applications under `/api/recruitment-applications`
-- Team creation, profiles, and invite responses under `/api/teams`, `/api/teams/profile`, and `/api/team-invite`
+- Team creation, captain-managed roster updates/deletion, profiles, and invite responses under `/api/teams`, `/api/teams/:teamId`, `/api/teams/profile`, and `/api/team-invite`
 - Contact messages under `/api/contact`
 - Media and uploads under `/api/posters`, `/api/images`, and `/api/uploads/...`
 - Admin workflows under `/api/admin/...`

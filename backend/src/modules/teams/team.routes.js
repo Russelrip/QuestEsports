@@ -8,6 +8,8 @@ const {
 const {
   getProfileTeams,
   createProfileTeam,
+  updateProfileTeam,
+  deleteProfileTeam,
   previewTeamInvite,
   respondTeamInvite,
 } = require("./team.controller");
@@ -26,6 +28,12 @@ const createTeamRateLimiter = createRateLimiter({
   maxRequests: 10,
   message: "Too many teams created. Please try again later.",
 });
+const manageTeamRateLimiter = createRateLimiter({
+  name: "manage-team",
+  windowMs: 60 * 60 * 1000,
+  maxRequests: 60,
+  message: "Too many team changes. Please try again later.",
+});
 
 router.use(attachSession);
 
@@ -37,6 +45,21 @@ router.post(
   createTeamRateLimiter,
   imageUpload.single("teamLogo"),
   createProfileTeam
+);
+router.patch(
+  "/teams/:teamId",
+  requireAuth,
+  requireVerifiedEmail,
+  manageTeamRateLimiter,
+  imageUpload.single("teamLogo"),
+  updateProfileTeam
+);
+router.delete(
+  "/teams/:teamId",
+  requireAuth,
+  requireVerifiedEmail,
+  manageTeamRateLimiter,
+  deleteProfileTeam
 );
 router.get("/team-invite", previewTeamInvite);
 router.post(

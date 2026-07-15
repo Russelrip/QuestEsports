@@ -59,7 +59,7 @@ The frontend expects the backend to expose:
 - recruitment submission routes under `/api/recruitment-applications`
 - native bracket admin routes under `/api/admin/tournaments/:tournamentId/bracket`
 - admin registration/recruitment list, delete, status, and export routes under `/api/admin`
-- team routes under `/api/teams/profile` and `/api/team-invite`
+- team list, captain management, and invite routes under `/api/teams`, `/api/teams/profile`, and `/api/team-invite`
 - media routes under `/api/posters`, `/api/images`, and `/api/uploads/...`
 
 ## Build For Production

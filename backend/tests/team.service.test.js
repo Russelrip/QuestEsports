@@ -108,6 +108,141 @@ test("createSavedTeam stores the captain and sends standalone member invites", a
   }
 });
 
+test("updateSavedTeam lets the captain replace roster details and preserves accepted members", async () => {
+  const sentInvites = [];
+  const createdMembers = [];
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: user.id,
+    name: "Quest Five",
+    logoName: null,
+    members: [
+      { id: "captain-member", role: "CAPTAIN", emailNormalized: user.email },
+      {
+        id: "accepted-member",
+        userId: "user-2",
+        role: "PLAYER",
+        memberOrder: 1,
+        emailNormalized: "accepted@example.com",
+        inviteStatus: "accepted",
+        inviteSentAt: new Date("2026-01-01"),
+        inviteRespondedAt: new Date("2026-01-02"),
+      },
+    ],
+  };
+  const tx = {
+    savedTeam: {
+      update: async () => existingTeam,
+      findUnique: async () => ({
+        ...existingTeam,
+        name: "Quest Six",
+        country: "Sri Lanka",
+        teamTag: "Q6",
+        organizationRequested: false,
+        organizationName: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        captainUser: user,
+        members: [
+          {
+            id: "captain-member",
+            role: "CAPTAIN",
+            memberOrder: 0,
+            name: "Quest Captain",
+            email: user.email,
+            inviteStatus: "accepted",
+          },
+          ...createdMembers,
+        ],
+      }),
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 1 }),
+      createMany: async ({ data }) => {
+        createdMembers.push(...data);
+        return { count: data.length };
+      },
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: { findFirst: async () => existingTeam },
+        $transaction: async (callback) => callback(tx),
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [mailModulePath]: {
+      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
+    },
+  });
+
+  try {
+    const team = await teamService.updateSavedTeam({
+      teamId: existingTeam.id,
+      user,
+      file: null,
+      body: {
+        name: "Quest Six",
+        country: "Sri Lanka",
+        teamTag: "Q6",
+        organizationRequested: "false",
+        members: JSON.stringify([
+          { role: "PLAYER", name: "Accepted Player", email: "accepted@example.com" },
+          { role: "COACH", name: "New Coach", email: "coach@example.com" },
+        ]),
+      },
+    });
+
+    assert.equal(team.name, "Quest Six");
+    assert.equal(createdMembers.length, 2);
+    assert.equal(createdMembers[0].userId, "user-2");
+    assert.equal(createdMembers[0].inviteStatus, "accepted");
+    assert.equal(createdMembers[1].role, "COACH");
+    assert.equal(createdMembers[1].inviteStatus, "pending");
+    assert.ok(createdMembers[1].inviteTokenHash);
+    assert.equal(sentInvites.length, 1);
+    assert.equal(sentInvites[0].email, "coach@example.com");
+  } finally {
+    restore();
+  }
+});
+
+test("deleteSavedTeam refuses members who are not the captain", async () => {
+  let deleteCalls = 0;
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: {
+          findFirst: async () => null,
+          delete: async () => { deleteCalls += 1; },
+        },
+      },
+    },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  });
+
+  try {
+    await assert.rejects(
+      () => teamService.deleteSavedTeam({ teamId: "saved-team-1", user: { id: "member-user" } }),
+      (error) => error.statusCode === 404 && error.message.includes("permission")
+    );
+    assert.equal(deleteCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("getTeamInvitePreview rejects expired or invalid registration invite tokens", async () => {
   const findFirstCalls = [];
   const prismaMock = {

@@ -568,6 +568,14 @@ Returns teams the logged-in user captains or has accepted an invitation to join.
 
 Protected route requiring a verified account. Creates a reusable profile team from multipart team/roster fields and an optional `teamLogo`; it does not register the team for a tournament.
 
+### `PATCH /api/teams/:teamId`
+
+Protected multipart route requiring a verified account and team captain ownership. Updates the reusable team's name, country, tag, organization request, logo, and roster. Accepted members with unchanged email addresses remain linked; new or changed members receive fresh invitations. Tournament-registration history is not rewritten.
+
+### `DELETE /api/teams/:teamId`
+
+Protected route requiring a verified account and team captain ownership. Deletes the reusable team and roster while retaining historical tournament registrations.
+
 ### `GET /api/team-invite?token=...`
 
 Public route.

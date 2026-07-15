@@ -325,6 +325,212 @@ const createSavedTeam = async ({ user, body, file }) => {
   }
 };
 
+const MANAGEABLE_TEAM_MEMBER_ROLES = new Set(["PLAYER", "SUBSTITUTE", "COACH"]);
+
+const parseManagedMembers = (value) => {
+  let members;
+
+  try {
+    members = JSON.parse(String(value || "[]"));
+  } catch {
+    throw new HttpError(400, "Team members must be valid JSON.");
+  }
+
+  if (!Array.isArray(members) || members.length > 20) {
+    throw new HttpError(400, "A team can include up to 20 invited members.");
+  }
+
+  const roleCounts = { PLAYER: 0, SUBSTITUTE: 0, COACH: 0 };
+  const normalizedMembers = members.map((member) => {
+    const role = normalizeText(member?.role).toUpperCase() || "PLAYER";
+    if (!MANAGEABLE_TEAM_MEMBER_ROLES.has(role)) {
+      throw new HttpError(400, "Team members must be players, substitutes, or coaches.");
+    }
+
+    roleCounts[role] += 1;
+    return {
+      role,
+      memberOrder: roleCounts[role],
+      name: normalizeText(member?.name),
+      email: normalizeEmail(member?.email),
+      discord: normalizeText(member?.discord) || null,
+      riotId: normalizeText(member?.riotId) || null,
+    };
+  });
+
+  if (
+    normalizedMembers.some(
+      (member) =>
+        !member.name ||
+        !isValidEmail(member.email) ||
+        member.name.length > 100 ||
+        member.email.length > 254 ||
+        (member.discord && member.discord.length > 100) ||
+        (member.riotId && member.riotId.length > 100)
+    )
+  ) {
+    throw new HttpError(400, "Each team member needs valid roster details.");
+  }
+
+  const uniqueEmails = new Set(normalizedMembers.map((member) => member.email));
+  if (uniqueEmails.size !== normalizedMembers.length) {
+    throw new HttpError(400, "Each team member must use a unique email address.");
+  }
+
+  return normalizedMembers;
+};
+
+const updateSavedTeam = async ({ teamId, user, body, file }) => {
+  const name = normalizeText(body.name);
+  const country = normalizeText(body.country);
+  const teamTag = normalizeText(body.teamTag);
+  const organizationRequested = ["true", "1", "on"].includes(
+    normalizeText(body.organizationRequested).toLowerCase()
+  );
+  const removeLogo = ["true", "1", "on"].includes(
+    normalizeText(body.removeLogo).toLowerCase()
+  );
+  const members = parseManagedMembers(body.members);
+  const captainEmail = normalizeEmail(user.email);
+
+  if (!name || !country || !teamTag || teamTag.length > 12) {
+    throw new HttpError(400, "Team name, country, and a tag of up to 12 characters are required.");
+  }
+  if (members.some((member) => member.email === captainEmail)) {
+    throw new HttpError(400, "The captain is already included in the member list.");
+  }
+
+  const existingTeam = await prisma.savedTeam.findFirst({
+    where: { id: teamId, captainUserId: user.id },
+    include: {
+      members: true,
+    },
+  });
+  if (!existingTeam) {
+    throw new HttpError(404, "Team not found or you do not have permission to manage it.");
+  }
+
+  const persistedLogo = file ? await persistTeamLogoUpload(file) : null;
+  const nextLogoName = persistedLogo?.filename || (removeLogo ? null : existingTeam.logoName);
+  const existingMembersByEmail = new Map(
+    existingTeam.members.map((member) => [member.emailNormalized, member])
+  );
+  const captainName =
+    [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.username;
+  const inviteSentAt = new Date();
+  const inviteExpiresAt = new Date(
+    inviteSentAt.getTime() + TEAM_INVITE_TTL_HOURS * 60 * 60 * 1000
+  );
+  const inviteDispatches = [];
+
+  const memberRecords = members.map((member) => {
+    const existingMember = existingMembersByEmail.get(member.email);
+    if (existingMember?.inviteStatus === "accepted" && existingMember.userId) {
+      return {
+        id: crypto.randomUUID(),
+        teamId,
+        userId: existingMember.userId,
+        ...member,
+        emailNormalized: member.email,
+        inviteStatus: "accepted",
+        inviteSentAt: existingMember.inviteSentAt,
+        inviteRespondedAt: existingMember.inviteRespondedAt || inviteSentAt,
+      };
+    }
+
+    const token = createTokenPair({ hours: TEAM_INVITE_TTL_HOURS });
+    inviteDispatches.push({
+      email: member.email,
+      recipientName: member.name,
+      teamName: name,
+      captainName,
+      tournamentTitle: null,
+      rawToken: token.rawToken,
+    });
+    return {
+      id: crypto.randomUUID(),
+      teamId,
+      ...member,
+      emailNormalized: member.email,
+      inviteStatus: "pending",
+      inviteTokenHash: token.tokenHash,
+      inviteSentAt,
+      inviteExpiresAt,
+    };
+  });
+
+  try {
+    const team = await prisma.$transaction(async (tx) => {
+      await tx.savedTeam.update({
+        where: { id: teamId },
+        data: {
+          name,
+          country,
+          teamTag,
+          organizationRequested,
+          logoName: nextLogoName,
+        },
+      });
+      await tx.savedTeamMember.deleteMany({
+        where: { teamId, role: { not: "CAPTAIN" } },
+      });
+      if (memberRecords.length > 0) {
+        await tx.savedTeamMember.createMany({ data: memberRecords });
+      }
+      return tx.savedTeam.findUnique({
+        where: { id: teamId },
+        include: {
+          captainUser: {
+            select: { firstName: true, lastName: true, username: true },
+          },
+          members: true,
+        },
+      });
+    });
+
+    if (existingTeam.logoName && existingTeam.logoName !== nextLogoName) {
+      await removeUploadsQuietly(
+        [{ directory: teamLogoDirectory, filename: existingTeam.logoName }],
+        { operation: "updateSavedTeam", teamId, userId: user.id }
+      );
+    }
+    await sendTeamInvites(inviteDispatches);
+    return mapSavedTeam(team, user.id);
+  } catch (error) {
+    if (persistedLogo) {
+      await removeUploadsQuietly(
+        [{ directory: teamLogoDirectory, filename: persistedLogo.filename }],
+        { operation: "updateSavedTeamRollback", teamId, userId: user.id }
+      );
+    }
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new HttpError(409, "A team or member already uses these details.");
+    }
+    throw error;
+  }
+};
+
+const deleteSavedTeam = async ({ teamId, user }) => {
+  const team = await prisma.savedTeam.findFirst({
+    where: { id: teamId, captainUserId: user.id },
+    select: { id: true, logoName: true },
+  });
+  if (!team) {
+    throw new HttpError(404, "Team not found or you do not have permission to delete it.");
+  }
+
+  await prisma.savedTeam.delete({ where: { id: team.id } });
+  if (team.logoName) {
+    await removeUploadsQuietly(
+      [{ directory: teamLogoDirectory, filename: team.logoName }],
+      { operation: "deleteSavedTeam", teamId, userId: user.id }
+    );
+  }
+};
+
 const refreshRegistrationVerificationStatus = async ({ tx, registrationId }) => {
   const members = await tx.registrationMember.findMany({
     where: { registrationId },
@@ -802,6 +1008,8 @@ const activatePaidTeamRegistration = async (registrationId) => {
 module.exports = {
   listProfileTeams,
   createSavedTeam,
+  updateSavedTeam,
+  deleteSavedTeam,
   getTeamInvitePreview,
   respondToTeamInvite,
   syncSavedTeamFromRegistration,

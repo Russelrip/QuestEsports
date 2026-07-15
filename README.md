@@ -314,7 +314,7 @@ The backend exposes these main route groups:
 - Payments: `/api/payments/payhere/notify`, `/api/payments/:orderId`, `/api/payments/:orderId/bank-transfer-proof`
 - Account: `/api/me/dashboard`, `/api/me/avatar`
 - Recruitment applications: `/api/recruitment-applications`
-- Teams: `/api/teams`, `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
+- Teams: `/api/teams`, `/api/teams/:teamId`, `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
 - Contact: `/api/contact`
 - Media: `/api/posters`, `/api/images`, `/api/uploads/...`
 - Admin: `/api/admin/...`

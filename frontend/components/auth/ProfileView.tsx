@@ -13,6 +13,7 @@ import ChangePasswordForm from "@/components/auth/ChangePasswordForm";
 import MfaSettingsPanel from "@/components/auth/MfaSettingsPanel";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import SessionList from "@/components/auth/SessionList";
+import TeamManagementPanel, { TeamSummaryGrid } from "@/components/auth/TeamManagementPanel";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
@@ -43,16 +44,6 @@ const emailChangeSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>;
 type EmailChangeValues = z.infer<typeof emailChangeSchema>;
 
-const formatMemberRole = (role: string, memberOrder: number) => {
-  if (role === "CAPTAIN") {
-    return "Captain";
-  }
-  if (role === "COACH") {
-    return "Coach";
-  }
-  return `${role === "PLAYER" ? "Player" : "Substitute"} ${memberOrder}`;
-};
-
 function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[]; empty: string }) {
   if (entries.length === 0) return <p className="rounded-[22px] border border-white/8 bg-white/5 p-5 text-sm text-slate-400">{empty}</p>;
   return <div className="grid gap-4 sm:grid-cols-2">{entries.map((entry) => (
@@ -72,7 +63,8 @@ export default function ProfileView() {
   const [dashboardError, setDashboardError] = useState("");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [avatarSaving, setAvatarSaving] = useState(false);
-  const { data: teamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
   const teams = teamsData ?? [];
 
@@ -135,6 +127,16 @@ export default function ProfileView() {
   }
 
   const initials = getInitials(user.firstName, user.lastName, user.username);
+
+  const handleTeamUpdated = (updatedTeam: (typeof teams)[number]) => {
+    setTeamsData((current) => (current || []).map((team) => team.id === updatedTeam.id ? updatedTeam : team));
+    setDashboard((current) => current ? { ...current, teams: current.teams.map((team) => team.id === updatedTeam.id ? updatedTeam : team) } : current);
+  };
+
+  const handleTeamDeleted = (teamId: string) => {
+    setTeamsData((current) => (current || []).filter((team) => team.id !== teamId));
+    setDashboard((current) => current ? { ...current, teams: current.teams.filter((team) => team.id !== teamId) } : current);
+  };
 
   const updateAvatar = async (file?: File) => {
     if (!file) return;
@@ -341,6 +343,7 @@ export default function ProfileView() {
                   <div className="grid gap-3 sm:grid-cols-3">{[["Active registrations", dashboard.currentRegistrations.length], ["Completed tournaments", dashboard.pastRegistrations.length], ["Saved teams", dashboard.teams.length]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/8 bg-white/5 p-5"><p className="text-3xl font-semibold text-white">{value}</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p></div>)}</div>
                   <div><h3 className="text-2xl text-white">Active Registrations</h3><div className="mt-5"><RegistrationCards entries={dashboard.currentRegistrations} empty="You do not have an active tournament registration." /></div></div>
                   <div className="border-t border-white/8 pt-8"><h3 className="text-2xl text-white">Completed Tournaments</h3><div className="mt-5"><RegistrationCards entries={dashboard.pastRegistrations} empty="Your completed tournament history will appear here." /></div></div>
+                  <div className="border-t border-white/8 pt-8"><div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">Player Hub</p><h3 className="mt-2 text-2xl text-white">Teams You Are In</h3></div><button type="button" className="text-sm font-semibold text-cyan-200 hover:text-white" onClick={() => setActiveTab("teams")}>Manage teams →</button></div>{dashboard.teams.length ? <TeamSummaryGrid teams={dashboard.teams} onSelect={(teamId) => { setSelectedTeamId(teamId); setActiveTab("teams"); }} /> : <p className="border border-white/8 bg-white/[0.03] p-5 text-sm text-slate-400">You are not part of a saved team yet.</p>}</div>
                   <div className="border-t border-white/8 pt-8"><div className="flex items-center justify-between gap-3"><h3 className="text-2xl text-white">Merchandise orders</h3><Link href="/shop" className="text-sm text-cyan-200">Visit shop</Link></div>{dashboard.orders.length ? <div className="mt-5 grid gap-3">{dashboard.orders.map((order) => <Link key={order.id} href={`/shop/order/${order.publicToken}`} className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-white/8 bg-white/5 p-4 text-sm"><span className="text-white">{order.itemCount} item{order.itemCount === 1 ? "" : "s"} · {order.currency} {order.total.toFixed(2)}</span><span className="text-slate-400">{order.status} · {order.paymentStatus}</span></Link>)}</div> : <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>}</div>
                 </> : null}
               </div>
@@ -438,52 +441,14 @@ export default function ProfileView() {
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-6 grid gap-4 md:grid-cols-2">
-                    {teams.map((team) => (
-                      <div key={team.id} className="rounded-[24px] border border-white/8 bg-white/5 p-5">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-black/30 text-sm font-bold text-white">{team.logoUrl ? <Image src={buildApiUrl(team.logoUrl)} alt={`${team.name} logo`} fill className="object-contain p-1" sizes="64px" /> : getInitials(team.name)}</div>
-                            <div>
-                            <h4 className="text-xl font-semibold text-white">{team.name}</h4>
-                            <p className="text-sm font-medium text-cyan-200">{team.organizationName || "Independent"}</p>
-                            {team.teamTag || team.country ? (
-                              <p className="text-sm text-cyan-200">
-                                {[team.teamTag, team.country].filter(Boolean).join(" · ")}
-                              </p>
-                            ) : null}
-                            <p className="text-sm text-slate-400">
-                              Captain: {team.captainName} · {team.isCaptain ? "You are the captain" : "You are a member"}
-                            </p>
-                            <p className="text-sm text-slate-400">
-                              Updated {new Date(team.updatedAt).toLocaleDateString()}
-                            </p>
-                            {team.organizationRequested ? (
-                              <p className="text-sm text-amber-200">
-                                Quest E-sports membership requested
-                              </p>
-                            ) : null}
-                            </div>
-                          </div>
-                          <Badge>{team.isCaptain ? "Captain" : "Member"}</Badge>
-                        </div>
-                        <details className="mt-5">
-                          <summary className="cursor-pointer text-sm font-semibold text-cyan-200">Roster details</summary>
-                          <div className="mt-3 grid gap-3">
-                          {team.members.map((member) => (
-                            <div key={member.id} className="flex flex-col gap-3 rounded-[20px] border border-white/8 bg-black/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-                              <div>
-                                <p className="font-medium text-white">{member.name}</p>
-                                <p className="text-sm text-slate-400">{formatMemberRole(member.role, member.memberOrder)}</p>
-                                <p className="text-sm text-slate-500">{member.email}</p>
-                              </div>
-                              <Badge>{member.inviteStatus}</Badge>
-                            </div>
-                          ))}
-                          </div>
-                        </details>
-                      </div>
-                    ))}
+                  <div className="mt-6">
+                    <TeamManagementPanel
+                      teams={teams}
+                      selectedTeamId={selectedTeamId}
+                      onSelect={setSelectedTeamId}
+                      onTeamUpdated={handleTeamUpdated}
+                      onTeamDeleted={handleTeamDeleted}
+                    />
                   </div>
                 )}
               </div>

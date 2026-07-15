@@ -2,6 +2,8 @@ const { asyncHandler } = require("../../lib/async-handler");
 const {
   listProfileTeams,
   createSavedTeam,
+  updateSavedTeam,
+  deleteSavedTeam,
   getTeamInvitePreview,
   respondToTeamInvite,
 } = require("./team.service");
@@ -29,6 +31,25 @@ const createProfileTeam = asyncHandler(async (req, res) => {
     message: "Team created successfully. Invitations have been sent to your members.",
     team,
   });
+});
+
+const updateProfileTeam = asyncHandler(async (req, res) => {
+  const team = await updateSavedTeam({
+    teamId: req.params.teamId,
+    user: req.user,
+    body: req.body,
+    file: req.file,
+  });
+  res.status(200).json({
+    success: true,
+    message: "Team updated successfully. New invitations have been sent.",
+    team,
+  });
+});
+
+const deleteProfileTeam = asyncHandler(async (req, res) => {
+  await deleteSavedTeam({ teamId: req.params.teamId, user: req.user });
+  res.status(200).json({ success: true, message: "Team deleted successfully." });
 });
 
 const previewTeamInvite = asyncHandler(async (req, res) => {
@@ -62,6 +83,8 @@ const respondTeamInvite = asyncHandler(async (req, res) => {
 module.exports = {
   getProfileTeams,
   createProfileTeam,
+  updateProfileTeam,
+  deleteProfileTeam,
   previewTeamInvite,
   respondTeamInvite,
 };

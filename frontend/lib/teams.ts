@@ -71,6 +71,12 @@ export type CreateTeamMemberInput = {
   email: string;
 };
 
+export type ManageTeamMemberInput = CreateTeamMemberInput & {
+  role: "PLAYER" | "SUBSTITUTE" | "COACH";
+  discord?: string;
+  riotId?: string;
+};
+
 export async function createSavedTeam(input: {
   name: string;
   country: string;
@@ -114,6 +120,48 @@ export async function createSavedTeam(input: {
     team: data.team,
     message: data.message || "Team created successfully.",
   };
+}
+
+export async function updateSavedTeam(input: {
+  teamId: string;
+  name: string;
+  country: string;
+  teamTag: string;
+  organizationRequested: boolean;
+  teamLogo: File | null;
+  removeLogo: boolean;
+  members: ManageTeamMemberInput[];
+}) {
+  assertFileWithinUploadLimit(input.teamLogo, TEAM_LOGO_MAX_FILE_SIZE, "Team logo");
+  const body = new FormData();
+  body.append("name", input.name);
+  body.append("country", input.country);
+  body.append("teamTag", input.teamTag);
+  body.append("organizationRequested", String(input.organizationRequested));
+  body.append("removeLogo", String(input.removeLogo));
+  body.append("members", JSON.stringify(input.members));
+  if (input.teamLogo) body.append("teamLogo", input.teamLogo);
+
+  const { response, data } = await apiFetchJson<{
+    success?: boolean;
+    message?: string;
+    team?: SavedTeam;
+  }>(`/api/teams/${encodeURIComponent(input.teamId)}`, { method: "PATCH", body });
+  const errorMessage = getApiErrorMessage(response, data, "Could not update this team.");
+  if (errorMessage || !data.team) {
+    throw new Error(errorMessage || "Could not update this team.");
+  }
+  return { team: data.team, message: data.message || "Team updated successfully." };
+}
+
+export async function deleteSavedTeam(teamId: string) {
+  const { response, data } = await apiFetchJson<{
+    success?: boolean;
+    message?: string;
+  }>(`/api/teams/${encodeURIComponent(teamId)}`, { method: "DELETE" });
+  const errorMessage = getApiErrorMessage(response, data, "Could not delete this team.");
+  if (errorMessage) throw new Error(errorMessage);
+  return data.message || "Team deleted successfully.";
 }
 
 export async function fetchTeamInvitePreview(token: string) {
