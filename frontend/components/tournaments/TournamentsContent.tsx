@@ -8,7 +8,6 @@ import EmptyState from "@/components/ui/EmptyState";
 import { Section } from "@/components/ui/section";
 import { buildApiUrl } from "@/lib/api";
 import type { EventSeries, GameCategory, Tournament } from "@/lib/tournaments";
-import { getTournamentRegistrationShortLabel } from "@/lib/tournaments";
 import { formatTournamentDate } from "@/lib/utils";
 
 const gameIconBySlug: Record<string, string> = {
@@ -105,6 +104,14 @@ export default function TournamentsContent({ tournaments, series = [], categorie
   const gameFilters = [...localGameFilters, ...categories.filter((category) => !localGameSlugs.has(normalizeGameSlug(category.slug)))];
   const matches = (tournament: Tournament) => gameFilter === "all" || normalizeGameSlug(tournament.gameCategory?.slug || tournament.game) === gameFilter;
   const active = tournaments.filter((item) => !item.isCompleted && !item.series && matches(item));
+  const past = tournaments
+    .filter((item) => item.isCompleted && !item.series && matches(item))
+    .sort((left, right) => {
+      const leftDate = new Date(left.endDate || left.startDate || left.createdAt || 0).getTime();
+      const rightDate = new Date(right.endDate || right.startDate || right.createdAt || 0).getTime();
+      return rightDate - leftDate;
+    });
+  const standaloneTournaments = [...active, ...past];
   const filteredSeries = series.filter((item) => item.tournaments.some(matches));
 
   useEffect(() => {
@@ -163,18 +170,31 @@ export default function TournamentsContent({ tournaments, series = [], categorie
       </Link>;
     })}</div> : null}
 
-    {active.length ? <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{active.map((tournament) => <TournamentCard key={tournament.id} tournament={tournament} />)}</div> : filteredSeries.length === 0 ? <EmptyState title="No active tournaments match this game" description="Choose another game or view all current events." /> : null}
+    {standaloneTournaments.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{standaloneTournaments.map((tournament) => <TournamentCard key={tournament.id} tournament={tournament} />)}</div> : filteredSeries.length === 0 ? <EmptyState title="No tournaments match this game" description="Choose another game or view all events." /> : null}
   </Section>;
 }
 
 function TournamentCard({ tournament }: { tournament: Tournament }) {
-  const closed = !tournament.isRegistrationOpen;
-  const fee = tournament.registrationFee.amount > 0 ? `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toLocaleString()}` : "Free";
   const date = tournament.startDate ? new Date(tournament.startDate) : null;
-  return <Link href={`/tournaments/${tournament.slug}`} className={`group overflow-hidden rounded-[28px] border bg-[#0d0c13] transition hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(0,0,0,0.35)] ${closed ? "border-rose-500/45 hover:border-rose-400/70" : "border-white/10 hover:border-cyan-300/40"}`}>
-    <div className="relative aspect-[4/3] bg-black/40"><TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} className="h-full w-full object-contain transition duration-500 group-hover:scale-[1.02]" /><span className={`absolute right-3 top-3 rounded-full border px-3 py-1 text-xs font-bold uppercase ${closed ? "border-rose-400/50 bg-rose-950/90 text-rose-200" : "border-emerald-300/40 bg-emerald-950/90 text-emerald-200"}`}>{getTournamentRegistrationShortLabel(tournament)}</span></div>
-    <div className="p-5"><p className="text-xs uppercase tracking-[0.22em] text-cyan-200">{tournament.gameCategory?.displayName || tournament.game}</p><h3 className="mt-2 text-2xl leading-tight text-white">{tournament.title}</h3><dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm"><Meta label="Organizer" value={tournament.organizer} /><Meta label="Country" value={tournament.country} /><Meta label="Location" value={tournament.location} /><Meta label="Prize" value={tournament.prizePool} /><Meta label="Date" value={formatTournamentDate(tournament.startDate, tournament.startDateStatus)} /><Meta label="Time" value={date ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : tournament.startDateStatus.toUpperCase()} /><Meta label="Entry fee" value={fee} /><Meta label="Format" value={tournament.format} /></dl></div>
+  const statusLabel = tournament.isCompleted
+    ? "Completed"
+    : tournament.isRegistrationOpen
+      ? "Registration Open"
+      : tournament.isSlotsFull
+        ? "Slots Full"
+        : "Registration Closed";
+  const statusClassName = tournament.isCompleted
+    ? "text-rose-400"
+    : tournament.isRegistrationOpen
+      ? "text-emerald-300"
+      : "text-slate-300";
+
+  return <Link href={`/tournaments/${tournament.slug}`} className="group flex h-full flex-col overflow-hidden border border-white/10 bg-[#171822] transition hover:-translate-y-1 hover:border-white/25 hover:shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
+    <div className="relative aspect-[4/3] overflow-hidden bg-black/40"><TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} rounded={false} showFallbackTitle={false} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]" /></div>
+    <div className="border-t border-white/10 bg-[#20212c] px-4 py-3"><p className="text-[9px] uppercase tracking-[0.2em] text-cyan-200/80">{tournament.gameCategory?.displayName || tournament.game}</p><h3 className="mt-1 line-clamp-2 min-h-10 text-sm font-bold uppercase leading-5 text-white">{tournament.title}</h3></div>
+    <dl className="grid flex-1 grid-cols-2 border-t border-white/8 bg-[#292b39] text-xs"><Meta label="Country" value={tournament.country} /><Meta label="Location" value={tournament.location} /><Meta label="Date" value={formatTournamentDate(tournament.startDate, tournament.startDateStatus)} /><Meta label="Time" value={date ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : tournament.startDateStatus.toUpperCase()} /></dl>
+    <div className="flex items-center justify-between gap-3 border-t border-white/8 bg-[#1d1f29] px-4 py-2.5 text-[9px] font-bold uppercase tracking-[0.14em]"><span className="text-white/70">View Details</span><span className={`text-right ${statusClassName}`}>{statusLabel}</span></div>
   </Link>;
 }
 
-function Meta({ label, value }: { label: string; value: string }) { return <div><dt className="text-[10px] uppercase tracking-[0.16em] text-slate-500">{label}</dt><dd className="mt-1 line-clamp-1 font-medium text-slate-200">{value}</dd></div>; }
+function Meta({ label, value }: { label: string; value: string }) { return <div className="min-w-0 border-b border-r border-white/8 px-4 py-3 even:border-r-0"><dt className="text-[9px] uppercase tracking-[0.16em] text-slate-500">{label}</dt><dd className="mt-1 line-clamp-1 text-[11px] font-medium text-slate-200">{value}</dd></div>; }
