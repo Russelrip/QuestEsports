@@ -14,16 +14,40 @@ const {
 const { buildActiveRegistrationWhere } = require("./registration-eligibility");
 
 const normalizeBoolean = (value) => [true, "true", "1", "on"].includes(value);
+const REGISTRATION_TRANSACTION_MAX_RETRIES = 3;
+const REGISTRATION_TRANSACTION_MAX_WAIT_MS = 10 * 1000;
+const REGISTRATION_TRANSACTION_TIMEOUT_MS = 20 * 1000;
+const RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES = new Set([
+  "P2024",
+  "P2028",
+  "P2034",
+  "P2037",
+]);
+const waitBeforeTransactionRetry = (attempt) =>
+  new Promise((resolve) => setTimeout(resolve, attempt * 100));
+
 const runSerializable = async (work) => {
-  let attempt = 0;
-  while (attempt < 3) {
+  for (let attempt = 1; attempt <= REGISTRATION_TRANSACTION_MAX_RETRIES; attempt += 1) {
     try {
-      return await prisma.$transaction(work, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      return await prisma.$transaction(work, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: REGISTRATION_TRANSACTION_MAX_WAIT_MS,
+        timeout: REGISTRATION_TRANSACTION_TIMEOUT_MS,
+      });
     } catch (error) {
-      attempt += 1;
-      if (error?.code !== "P2034" || attempt >= 3) throw error;
+      const shouldRetry =
+        RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES.has(error?.code) &&
+        attempt < REGISTRATION_TRANSACTION_MAX_RETRIES;
+
+      if (!shouldRetry) {
+        throw error;
+      }
+
+      await waitBeforeTransactionRetry(attempt);
     }
   }
+
+  throw new Error("Registration transaction retry limit was exhausted.");
 };
 const parseJson = (value, fallback, label) => {
   if (value === undefined || value === null || value === "") return fallback;

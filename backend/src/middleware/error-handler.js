@@ -24,6 +24,8 @@ const notFoundHandler = (req, res) => {
 
 const errorHandler = (error, req, res, next) => {
   const normalizedError = mapPrismaError(error);
+  const sourceErrorCode =
+    typeof error?.code === "string" ? error.code : undefined;
 
   if (res.headersSent) {
     next(normalizedError);
@@ -37,6 +39,7 @@ const errorHandler = (error, req, res, next) => {
         method: req.method,
         path: req.originalUrl,
         statusCode: normalizedError.statusCode,
+        sourceErrorCode,
         error: normalizedError,
       });
       captureException(normalizedError, {
@@ -44,6 +47,7 @@ const errorHandler = (error, req, res, next) => {
         method: req.method,
         path: req.originalUrl,
         statusCode: normalizedError.statusCode,
+        sourceErrorCode,
       });
     }
 
