@@ -26,8 +26,7 @@ export default async function FeaturedTournaments() {
     <Section>
       <div className="mb-8 flex flex-col items-center gap-4 text-center sm:flex-row sm:items-end sm:justify-between sm:text-left">
         <div className="max-w-3xl">
-          <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Featured Events</p>
-          <h2 className="mt-3 text-3xl text-white sm:text-4xl">Upcoming tournaments and active competition.</h2>
+          <h2 className="text-3xl text-white sm:text-4xl">Featured Events</h2>
         </div>
         <Link href="/tournaments" className={`${buttonClassName({ variant: "secondary" })} hidden sm:inline-flex`}>
           View all

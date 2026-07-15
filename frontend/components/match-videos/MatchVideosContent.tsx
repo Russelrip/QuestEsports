@@ -13,7 +13,7 @@ function VideoSection({ title, videos }: { title: string; videos: VideoItem[] })
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {videos.map((video) => (
-          <Card key={video.href} className="overflow-hidden">
+          <Card key={video.href} className="overflow-hidden" style={{ borderRadius: 0 }}>
             <a href={video.href} target="_blank" rel="noopener noreferrer" className="block">
               <div className="relative aspect-video">
                 <Image
