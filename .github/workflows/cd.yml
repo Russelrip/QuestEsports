@@ -99,6 +99,21 @@ jobs:
             echo "backend/.env must have mode 600 or 640 (currently $ENV_MODE)." >&2
             exit 1
           fi
+          DEPLOY_USER="$(id -un)"
+          DEPLOY_GROUP="$(id -gn)"
+          if [ -d backend/node_modules ]; then
+            FOREIGN_NODE_MODULES_DIR="$(find backend/node_modules -type d ! -user "$DEPLOY_USER" -print -quit)"
+            UNWRITABLE_NODE_MODULES_DIR="$(find backend/node_modules -type d ! -writable -print -quit)"
+            if [ -n "$FOREIGN_NODE_MODULES_DIR" ] || [ -n "$UNWRITABLE_NODE_MODULES_DIR" ]; then
+              PROBLEM_DIR="${UNWRITABLE_NODE_MODULES_DIR:-$FOREIGN_NODE_MODULES_DIR}"
+              echo "The deploy user '$DEPLOY_USER' cannot safely replace backend/node_modules." >&2
+              echo "Problem directory: $PROBLEM_DIR" >&2
+              ls -ld "$PROBLEM_DIR" >&2 || true
+              echo "Repair ownership on the VPS, then rerun this deployment:" >&2
+              printf "  sudo chown -R %q:%q %q\n" "$DEPLOY_USER" "$DEPLOY_GROUP" "$APP_DIR/backend/node_modules" >&2
+              exit 1
+            fi
+          fi
           PREVIOUS_SHA="$(git rev-parse HEAD)"
           REMOTE_URL="$(git remote get-url origin)"
           if ! git fetch --prune origin "$DEPLOY_SHA"; then
@@ -113,27 +128,43 @@ jobs:
           fi
 
           rollback() {
+            EXIT_CODE="$1"
+            FAILED_COMMAND="$2"
             trap - ERR
-            echo "Deployment failed; restoring application code at $PREVIOUS_SHA." >&2
-            cd "$APP_DIR"
-            git checkout --detach "$PREVIOUS_SHA"
-            cd backend
-            npm ci
-            npm run prisma:generate
-            pm2 restart "$PM2_PROCESS" --update-env
+            set +e
+            echo "Deployment command failed with exit code $EXIT_CODE: $FAILED_COMMAND" >&2
+            echo "Restoring application code at $PREVIOUS_SHA." >&2
+            if ! cd "$APP_DIR" || ! git checkout --detach "$PREVIOUS_SHA"; then
+              echo "Rollback could not restore Git commit $PREVIOUS_SHA." >&2
+              exit "$EXIT_CODE"
+            fi
+            if ! cd backend || ! npm ci; then
+              echo "Rollback restored the previous code but could not restore its dependencies." >&2
+              exit "$EXIT_CODE"
+            fi
+            if ! pm2 restart "$PM2_PROCESS" --update-env; then
+              echo "Rollback restored the previous code and dependencies but could not restart $PM2_PROCESS." >&2
+              exit "$EXIT_CODE"
+            fi
+            HEALTHY=false
             for attempt in 1 2 3 4 5; do
-              curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" >/dev/null && break
+              if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" >/dev/null; then
+                HEALTHY=true
+                break
+              fi
               sleep 2
             done
-            exit 1
+            if [ "$HEALTHY" != true ]; then
+              echo "Rollback restarted $PM2_PROCESS, but its health check failed." >&2
+            fi
+            exit "$EXIT_CODE"
           }
-          trap rollback ERR
+          trap 'EXIT_CODE=$?; FAILED_COMMAND=$BASH_COMMAND; rollback "$EXIT_CODE" "$FAILED_COMMAND"' ERR
 
           git checkout --detach "$DEPLOY_SHA"
           test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
           cd backend
           npm ci
-          npm run prisma:generate
           npm run lint
           npm run prisma:migrate:deploy
           pm2 restart "$PM2_PROCESS" --update-env

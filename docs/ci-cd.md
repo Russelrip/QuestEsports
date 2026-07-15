@@ -162,14 +162,27 @@ git fetch origin "$DEPLOY_SHA"
 git checkout --detach "$DEPLOY_SHA"
 cd backend
 npm ci
-npm run prisma:generate
 npm run lint
 npm run prisma:migrate:deploy
 pm2 restart "$BACKEND_PM2_PROCESS" --update-env
 pm2 save
 ```
 
-The workflow refuses root deployments and dirty checkouts, validates `.env` permissions, runs lint and migrations, then performs a local health check. If installation, restart, or health validation fails, it restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release). Protect the GitHub `production` environment with required reviewers and keep a current Supabase backup before approving a migration deployment.
+`npm ci` runs the backend `postinstall` hook, which generates the Prisma client. The workflow refuses root deployments and dirty checkouts, validates `.env` permissions and `node_modules` ownership, runs lint and migrations, then performs a local health check. If installation, restart, or health validation fails, it restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release). Protect the GitHub `production` environment with required reviewers and keep a current Supabase backup before approving a migration deployment.
+
+### Repairing `node_modules` ownership
+
+If deployment fails with `EACCES` while removing `backend/node_modules/.prisma/client`, files were created by a different VPS user (commonly by running `sudo npm ci`). Repair the existing dependency directory once, using the GitHub environment values for `BACKEND_SSH_USER` and `BACKEND_APP_DIR`:
+
+```bash
+DEPLOY_USER=deploy
+APP_DIR=/var/www/QuestEsports
+DEPLOY_GROUP="$(id -gn "$DEPLOY_USER")"
+sudo chown -R "$DEPLOY_USER:$DEPLOY_GROUP" "$APP_DIR/backend/node_modules"
+sudo -u "$DEPLOY_USER" -H test -w "$APP_DIR/backend/node_modules/.prisma"
+```
+
+Rerun the failed workflow after the write check succeeds. Run future `npm` and Prisma commands as the deploy user, not through `sudo`; the workflow now stops before checking out a new commit if it finds foreign-owned or unwritable dependency directories.
 
 Initial health retries may log connection failures while Node starts. A successful job means a later retry returned `200` and PM2 saved the process list.
 
