@@ -10,18 +10,18 @@ Email is asynchronous and database-backed:
 2. The service creates any required token and updates the related business data.
 3. A mail helper enqueues an `email.send` record in the `background_jobs` table.
 4. The API process polls the queue when `JOB_WORKER_ENABLED=true`.
-5. The worker builds the HTML and plain-text email and sends it through Nodemailer using SMTP.
+5. The worker builds the HTML and plain-text email and sends it through Nodemailer using Resend SMTP or the selected generic SMTP service.
 6. The job is marked `succeeded`, retried after a failure, or marked `failed` after its maximum attempts.
 
-The API response does not wait for SMTP delivery. Email enqueueing is best effort and callers log enqueue failures without rolling back the completed account or registration action. This means a successful API response does not confirm that a job was queued or that the recipient received the email.
+The API response does not wait for provider delivery. Email enqueueing is best effort and callers log enqueue failures without rolling back the completed account or registration action. This means a successful API response does not confirm that a job was queued or that the recipient received the email.
 
 ### Main implementation files
 
 - Queue and retry behavior: `backend/src/lib/jobs.js`
 - Mail job types and subjects: `backend/src/lib/mail/mail-job-definitions.js`
 - Shared HTML and plain-text templates: `backend/src/lib/mail/templates.js`
-- SMTP sending and action URL generation: `backend/src/lib/mail/sendMail.js`
-- Nodemailer transport configuration: `backend/src/lib/mail/transporter.js`
+- Mail sending and action URL generation: `backend/src/lib/mail/sendMail.js`
+- Resend/generic SMTP transport configuration: `backend/src/lib/mail/transporter.js`
 - Individual enqueue helpers: `backend/src/lib/mail/send*Email.js`
 
 ## Email Inventory
@@ -146,15 +146,13 @@ APP_URL=https://questesports.lk
 
 Do not set `APP_URL` to the backend API origin.
 
-## SMTP And Worker Configuration
+## Mail Provider And Worker Configuration
 
 Required for real delivery:
 
 ```env
-SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
-SMTP_PORT=587
-SMTP_USER=your_ses_smtp_username
-SMTP_PASS=your_ses_smtp_password
+MAIL_PROVIDER=resend
+RESEND_API_KEY=re_your_resend_api_key
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 MAIL_DELIVERY_REQUIRED=true
 APP_URL=https://questesports.lk
@@ -163,17 +161,38 @@ JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
 ```
 
-Mail is considered configured only when `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, and `APP_URL` all have values.
+With `MAIL_PROVIDER=resend`, mail is configured when `RESEND_API_KEY`, `MAIL_FROM`, and `APP_URL` all have values. The transport uses Resend's `smtp.resend.com` endpoint on port `465`; the SMTP username is `resend` and the API key is used as the password.
 
-`MAIL_DELIVERY_REQUIRED` may remain blank/false for local development. In production it must be true and the SMTP group must be complete; the backend refuses startup otherwise. This prevents password signup/reset from launching with silently unavailable delivery.
+`MAIL_DELIVERY_REQUIRED` may remain blank/false for local development. In production it must be true and the selected provider configuration must be complete; the backend refuses startup otherwise. This prevents password signup/reset from launching with silently unavailable delivery.
 
-- Port `465` enables a secure SMTP connection.
-- Other ports, including `587`, use `secure: false`; STARTTLS behavior then depends on the SMTP server.
+- `MAIL_PROVIDER` accepts `resend` or `smtp` and defaults to `smtp` for backward compatibility.
 - `MAIL_FROM` controls the sender shown to recipients.
 - `JOB_WORKER_POLL_MS` controls how often the built-in worker polls.
 - `JOB_WORKER_MAX_ATTEMPTS` controls the maximum delivery attempts for newly queued jobs.
 
-### Amazon SES setup
+### Resend setup
+
+1. Add and verify the sending domain in Resend, including the DNS records Resend provides.
+2. Create a Resend API key with sending access.
+3. Set `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, `MAIL_FROM`, and `APP_URL` in `backend/.env` or the production environment.
+4. Deploy or restart the worker-enabled backend and run `npm run mail:verify` from `backend`.
+5. Trigger a real account verification or password reset email to confirm end-to-end delivery.
+
+The Resend test domain is restricted to testing with the account owner's address. Verify your own domain before sending to application users.
+
+### Switching back to Amazon SES
+
+No code change is required. Replace the provider configuration with:
+
+```env
+MAIL_PROVIDER=smtp
+SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_PORT=587
+SMTP_USER=your_ses_smtp_username
+SMTP_PASS=your_ses_smtp_password
+MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
+APP_URL=https://questesports.lk
+```
 
 For Amazon SES in `ap-southeast-1`:
 
@@ -189,16 +208,16 @@ cd backend
 npm run mail:verify
 ```
 
-`mail:verify` checks SMTP connection/auth from `backend/.env`; it does not send a message. After it passes, trigger a real account verification or password reset email to confirm end-to-end delivery.
+`mail:verify` checks the selected SMTP connection/auth from `backend/.env`; it does not send a message. After it passes, trigger a real account verification or password reset email to confirm end-to-end delivery.
 
-If SMTP is incomplete in local development, the worker logs a warning, skips delivery, and marks the job as succeeded. Production configuration validation prevents that state when `MAIL_DELIVERY_REQUIRED=true`.
+If mail configuration is incomplete in local development, the worker logs a warning, skips delivery, and marks the job as succeeded. Production configuration validation prevents that state when `MAIL_DELIVERY_REQUIRED=true`.
 
 If `JOB_WORKER_ENABLED=false`, email jobs remain queued until a worker-enabled API instance processes them.
 
 ## Retry And Queue Behavior
 
 - The worker processes up to 10 jobs per tick.
-- Failed SMTP sends are retried until `JOB_WORKER_MAX_ATTEMPTS` is reached.
+- Failed provider sends are retried until `JOB_WORKER_MAX_ATTEMPTS` is reached.
 - Retry delay is linear: 30 seconds multiplied by the completed attempt count.
 - Jobs locked in `processing` for more than five minutes can be reclaimed.
 - Multiple API instances can poll safely through serializable claim transactions.
@@ -214,7 +233,7 @@ After deploying email-related changes:
 2. Trigger each action email and confirm both HTML and plain-text content.
 3. Confirm security alerts reach the account's current primary email.
 4. Check `background_jobs` for queued or failed jobs and application logs for skipped deliveries.
-5. Confirm the SMTP provider accepts `MAIL_FROM` for the configured sending domain.
+5. Confirm the selected provider accepts `MAIL_FROM` for the configured sending domain.
 6. Confirm replacement verification, reset, and email-change links invalidate older links.
 7. Confirm expired team invitations can no longer be accepted or declined.
 8. In SES, monitor bounces, complaints, reputation, and sending quotas for the active Region.
@@ -222,7 +241,7 @@ After deploying email-related changes:
 ## Current Limitations
 
 - There is no admin UI for inspecting or replaying email jobs.
-- Missing SMTP configuration is treated as a successful skipped job only in environments allowed to boot without required delivery; production validation blocks it.
+- Missing mail-provider configuration is treated as a successful skipped job only in environments allowed to boot without required delivery; production validation blocks it.
 - There is no separate warning sent to the old address after an email change.
-- Email delivery has queue unit coverage, but the repository does not include an end-to-end SMTP delivery test.
+- Email delivery has queue unit coverage, but the repository does not include an end-to-end provider delivery test.
 - The built-in database worker is intended for low-volume transactional email. Move delivery to a dedicated worker or external queue if volume grows substantially.

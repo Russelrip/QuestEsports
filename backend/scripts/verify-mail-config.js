@@ -2,14 +2,14 @@ process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || "true";
 
 const { env } = require("../src/config/env");
 const {
-  MAIL_CONFIG_KEYS,
+  getMailConfigKeys,
   getMailTransporter,
   isMailConfigured,
 } = require("../src/lib/mail/transporter");
 
 const main = async () => {
   if (!isMailConfigured()) {
-    const missingKeys = MAIL_CONFIG_KEYS.filter((key) => {
+    const missingKeys = getMailConfigKeys().filter((key) => {
       const value = env[key];
       return value === "" || value === null || value === undefined;
     });
@@ -21,14 +21,17 @@ const main = async () => {
 
   await getMailTransporter().verify();
 
-  console.log("SMTP configuration verified.");
-  console.log(`SMTP_HOST=${env.SMTP_HOST}`);
-  console.log(`SMTP_PORT=${env.SMTP_PORT}`);
+  console.log(`${env.MAIL_PROVIDER} mail configuration verified.`);
+  console.log(`MAIL_PROVIDER=${env.MAIL_PROVIDER}`);
+  if (env.MAIL_PROVIDER === "smtp") {
+    console.log(`SMTP_HOST=${env.SMTP_HOST}`);
+    console.log(`SMTP_PORT=${env.SMTP_PORT}`);
+  }
   console.log(`MAIL_FROM=${env.MAIL_FROM}`);
 };
 
 main().catch((error) => {
-  console.error("SMTP verification failed.");
+  console.error("Mail provider verification failed.");
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });

@@ -92,7 +92,7 @@ Behavior:
 - Requires unique email and username.
 - Stores password as a bcrypt hash.
 - Creates a 24-hour email verification token.
-- If SMTP is not configured, the account is still created but the verification email is skipped.
+- If mail delivery is not configured, the account is still created but the verification email is skipped.
 
 ### `POST /api/login`
 
@@ -232,7 +232,7 @@ Behavior:
 
 - Quietly succeeds even if the account does not exist.
 - Sends a new verification email only for existing unverified accounts.
-- If SMTP is not configured, the request can still succeed without sending mail.
+- If mail delivery is not configured, the request can still succeed without sending mail.
 
 ### `POST /api/email-change/request`
 
@@ -252,7 +252,7 @@ Behavior:
 - Verifies the current password.
 - Reserves `pendingEmail` on the user record.
 - Creates a 24-hour email change token.
-- If SMTP is not configured, the request can still succeed without sending mail.
+- If mail delivery is not configured, the request can still succeed without sending mail.
 
 ### `GET /api/email-change/confirm?token=...`
 
@@ -272,7 +272,7 @@ Behavior:
 
 - Quietly succeeds even if the email does not exist.
 - Creates a 20-minute password reset token for existing accounts.
-- If SMTP is not configured, the request can still succeed without sending mail.
+- If mail delivery is not configured, the request can still succeed without sending mail.
 
 ### `POST /api/reset-password`
 

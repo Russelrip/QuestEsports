@@ -125,6 +125,8 @@ const env = {
     process.env.JOB_WORKER_MAX_ATTEMPTS,
     5
   ),
+  MAIL_PROVIDER: optional("MAIL_PROVIDER", "smtp").toLowerCase(),
+  RESEND_API_KEY: optional("RESEND_API_KEY"),
   SMTP_HOST: optional("SMTP_HOST"),
   SMTP_PORT: normalizePositiveInteger(process.env.SMTP_PORT, 587),
   SMTP_USER: optional("SMTP_USER"),
@@ -182,6 +184,10 @@ if (!["sandbox", "live"].includes(env.PAYHERE_MODE)) {
   throw new Error('PAYHERE_MODE must be either "sandbox" or "live".');
 }
 
+if (!["resend", "smtp"].includes(env.MAIL_PROVIDER)) {
+  throw new Error('MAIL_PROVIDER must be either "resend" or "smtp".');
+}
+
 if (env.NODE_ENV === "production" && !env.AUTH_ENCRYPTION_KEY) {
   throw new Error(
     "AUTH_ENCRYPTION_KEY is required in production for MFA secret encryption and OAuth state signing."
@@ -223,14 +229,24 @@ if (env.NODE_ENV === "production") {
   }
 }
 
-const smtpValues = [env.SMTP_HOST, env.SMTP_USER, env.SMTP_PASS, env.MAIL_FROM];
-const hasAnySmtpValue = smtpValues.some(Boolean);
-const hasCompleteSmtpConfiguration = smtpValues.every(Boolean);
-if (hasAnySmtpValue && !hasCompleteSmtpConfiguration) {
-  throw new Error("SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM must be configured together.");
+const mailProviderCredentialValues =
+  env.MAIL_PROVIDER === "resend"
+    ? [env.RESEND_API_KEY, env.MAIL_FROM]
+    : [env.SMTP_HOST, env.SMTP_USER, env.SMTP_PASS, env.MAIL_FROM];
+const hasAnyMailProviderValue = mailProviderCredentialValues.some(Boolean);
+const hasCompleteMailProviderConfiguration =
+  mailProviderCredentialValues.every(Boolean) && Boolean(env.APP_URL);
+if (hasAnyMailProviderValue && !hasCompleteMailProviderConfiguration) {
+  const requiredValues =
+    env.MAIL_PROVIDER === "resend"
+      ? "RESEND_API_KEY, MAIL_FROM, and APP_URL"
+      : "SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM, and APP_URL";
+  throw new Error(`${requiredValues} must be configured together for ${env.MAIL_PROVIDER}.`);
 }
-if (env.MAIL_DELIVERY_REQUIRED && !hasCompleteSmtpConfiguration) {
-  throw new Error("SMTP configuration is required when MAIL_DELIVERY_REQUIRED is enabled.");
+if (env.MAIL_DELIVERY_REQUIRED && !hasCompleteMailProviderConfiguration) {
+  throw new Error(
+    `Complete ${env.MAIL_PROVIDER} mail configuration is required when MAIL_DELIVERY_REQUIRED is enabled.`
+  );
 }
 
 const payHereValues = [

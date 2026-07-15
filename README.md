@@ -32,6 +32,8 @@ JOB_WORKER_ENABLED=true
 COMMERCE_MAINTENANCE_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
+MAIL_PROVIDER=resend
+RESEND_API_KEY=
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
@@ -71,7 +73,7 @@ Notes:
 - In hosted Postgres setups, `DATABASE_URL` can use a pooled connection string while `DIRECT_URL` should use the direct connection string for Prisma migrations.
 - `NEXT_PUBLIC_API_URL` must point at the backend origin.
 - `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
-- SMTP is optional for local development. Leave `MAIL_DELIVERY_REQUIRED` blank or false locally when SMTP is absent. Production requires it to resolve to true and requires complete SMTP settings.
+- Mail delivery is optional for local development. Use `MAIL_PROVIDER=resend` with a Resend API key, or leave `MAIL_DELIVERY_REQUIRED` blank/false when delivery is absent. Production requires complete settings for the selected provider.
 - OAuth is optional. If you enable Google or Discord login, use real client credentials and register the callback URLs shown above. Do not leave placeholder values like `your_google_client_id`.
 - Paid tournament registration and shop checkout require PayHere credentials plus a publicly reachable HTTPS notification URL. Browser return pages never mark an order paid.
 - When PayHere is not configured, free and bank-transfer tournament registrations remain available; PayHere registration and merchandise checkout are disabled.
@@ -152,7 +154,7 @@ Recommended flow:
 - Brackets: `brackets-manager` with Prisma-persisted native bracket data
 - Admin exports: ExcelJS-generated `.xlsx` downloads
 - Uploads: Multer, durable public storage, and isolated private payment evidence
-- Email: Nodemailer with SMTP
+- Email: Nodemailer with selectable Resend or generic SMTP delivery
 
 ## What The Platform Includes
 
@@ -239,7 +241,7 @@ QuestEsports/
 - Public uploads are written below `UPLOAD_ROOT` (locally `backend/uploads/`); bank-transfer evidence is isolated below `PRIVATE_UPLOAD_ROOT` and never publicly served.
 - Native bracket data is generated with `brackets-manager`, exported as JSON, and persisted in PostgreSQL through the `tournament_brackets` table.
 - Poster/image metadata is stored in PostgreSQL. Poster assets support filesystem-backed storage with a database binary fallback for older records.
-- Transactional emails are persisted as `email.send` background jobs and delivered through Nodemailer with SMTP.
+- Transactional emails are persisted as `email.send` background jobs and delivered through Nodemailer using the selected mail provider.
 - Email action flows generate cryptographically random tokens, store only token hashes in the database, and send links that point to the frontend origin configured by `APP_URL`.
 
 ## Main Data Domains
@@ -341,12 +343,15 @@ REQUIRE_API_ORIGIN=false
 JOB_WORKER_ENABLED=true
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
+MAIL_PROVIDER=resend
+RESEND_API_KEY=
 MAIL_DELIVERY_REQUIRED=
+MAIL_FROM=
+# Used only when MAIL_PROVIDER=smtp (for example, Amazon SES):
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
-MAIL_FROM=
 APP_URL=http://localhost:3000
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -361,10 +366,10 @@ Notes:
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `CORS_ORIGIN` supports a comma-separated allowlist.
 - Set `REQUIRE_API_ORIGIN=true` in production to reject API requests unless the request `Origin` or `Referer` matches `CORS_ORIGIN`.
-- `APP_URL` must point at the frontend origin used in verification, password reset, email-change, invite, and security-alert emails when SMTP is enabled.
-- SMTP values are optional for local development. Production refuses to start unless `MAIL_DELIVERY_REQUIRED=true` and the SMTP group is complete.
+- `APP_URL` must point at the frontend origin used in verification, password reset, email-change, invite, and security-alert emails when mail delivery is enabled.
+- Use `MAIL_PROVIDER=resend` with `RESEND_API_KEY` now. Production refuses to start unless `MAIL_DELIVERY_REQUIRED=true` and the selected provider configuration is complete.
 - `JOB_WORKER_ENABLED` must be enabled on at least one backend instance for queued email delivery.
-- For Amazon SES in Singapore, use `email-smtp.ap-southeast-1.amazonaws.com` with region-specific SES SMTP credentials. `npm run mail:verify` checks SMTP connection/auth from `backend/.env` without sending an email.
+- To return to Amazon SES later, set `MAIL_PROVIDER=smtp` and provide the SES `SMTP_*` values; no code change is needed. `npm run mail:verify` checks connection/auth from `backend/.env` without sending an email.
 - See [Email System](./docs/email-system.md) for every recipient, trigger, subject, link, token lifetime, and retry rule.
 - If OAuth is enabled locally, register these redirect URIs with the providers:
   - Google: `http://localhost:5001/api/auth/google/callback`
@@ -507,5 +512,5 @@ Frontend verification includes lint, a production build, and Playwright critical
 - Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
 - Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
 - Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
-- Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, SMTP settings, or queue behavior.
+- Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, provider settings, or queue behavior.
 - Read [Database and Storage](./docs/database-and-storage.md) before touching uploads, Prisma schema, or media migration scripts.

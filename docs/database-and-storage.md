@@ -9,7 +9,7 @@ For how token records and `BackgroundJob` records are used to deliver transactio
 - PostgreSQL for application data and metadata
 - Public filesystem root (`UPLOAD_ROOT`) for images and schedule files
 - Private filesystem root (`PRIVATE_UPLOAD_ROOT`) for payment evidence
-- SMTP provider for transactional email delivery
+- Resend or generic SMTP provider for transactional email delivery
 
 The backend ensures required child directories exist at boot. Locally, public files default to `backend/uploads/`; production must point both roots at durable paths outside the Git checkout.
 

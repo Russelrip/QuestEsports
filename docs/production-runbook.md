@@ -36,7 +36,7 @@ Production startup intentionally fails when any of these invariants is broken:
 - `TRUST_PROXY` is enabled for the Nginx hop.
 - `REQUIRE_API_ORIGIN=true`.
 - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` are configured.
-- `MAIL_DELIVERY_REQUIRED=true` and SMTP host/user/password/from values are complete.
+- `MAIL_DELIVERY_REQUIRED=true` and the selected provider credentials plus `MAIL_FROM` are complete.
 - PayHere values are either all blank or all configured; a configured notify URL must use HTTPS.
 
 Use [backend/.env.example](../backend/.env.example) for the full variable list and the [Setup and Deployment Guide](./setup-and-deployment.md) for production examples.
@@ -282,6 +282,6 @@ Do not treat admin Excel exports as backups. Payment-proof backups contain sensi
 
 ## External-Service Readiness
 
-- Amazon SES sandbox credentials can authenticate successfully, but sandbox delivery is restricted to verified recipients. Production startup still requires complete SMTP when password authentication is enabled.
+- Resend requires a verified sending domain for normal application recipients. If switching back, Amazon SES sandbox delivery remains restricted to verified recipients. Production startup always requires complete configuration for the selected provider while password authentication is enabled.
 - PayHere may remain completely unconfigured. Free registrations and bank-transfer tournaments continue to work; PayHere tournament checkout and merchandise checkout remain unavailable until all PayHere values are configured.
 - The frontend deploy is managed by Vercel's Git integration and is not restarted by the backend CD workflow.

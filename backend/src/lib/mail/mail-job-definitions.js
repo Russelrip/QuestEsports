@@ -28,7 +28,7 @@ const processQueuedMailJob = async (payload = {}) => {
       return sendMail({
         email: payload.email,
         subject: "Verify your Quest E-sports account",
-        skippedLogMessage: "Verification email skipped because SMTP is not configured.",
+        skippedLogMessage: "Verification email skipped because mail delivery is not configured.",
         templateBuilder: () =>
           buildVerificationEmail({
             firstName: payload.firstName,
@@ -40,7 +40,7 @@ const processQueuedMailJob = async (payload = {}) => {
         email: payload.email,
         subject: "Reset your Quest E-sports password",
         skippedLogMessage:
-          "Password reset email skipped because SMTP is not configured.",
+          "Password reset email skipped because mail delivery is not configured.",
         templateBuilder: () =>
           buildResetPasswordEmail({
             firstName: payload.firstName,
@@ -52,7 +52,7 @@ const processQueuedMailJob = async (payload = {}) => {
         email: payload.email,
         subject: "Confirm your new Quest E-sports email",
         skippedLogMessage:
-          "Email change confirmation skipped because SMTP is not configured.",
+          "Email change confirmation skipped because mail delivery is not configured.",
         templateBuilder: () =>
           buildEmailChangeEmail({
             firstName: payload.firstName,
@@ -65,7 +65,7 @@ const processQueuedMailJob = async (payload = {}) => {
         email: payload.email,
         subject: "Quest E-sports team invitation",
         skippedLogMessage:
-          "Team invitation email skipped because SMTP is not configured.",
+          "Team invitation email skipped because mail delivery is not configured.",
         templateBuilder: () =>
           buildTeamInviteEmail({
             recipientName: payload.recipientName,
@@ -80,7 +80,7 @@ const processQueuedMailJob = async (payload = {}) => {
         email: payload.email,
         subject: payload.subject,
         skippedLogMessage:
-          "Security alert email skipped because SMTP is not configured.",
+          "Security alert email skipped because mail delivery is not configured.",
         templateBuilder: () =>
           buildSecurityAlertEmail({
             firstName: payload.firstName,

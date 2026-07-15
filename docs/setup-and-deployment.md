@@ -7,7 +7,7 @@ This guide covers local setup, environment configuration, and a practical produc
 - Node.js 24 LTS
 - npm 10+
 - PostgreSQL 15+ recommended
-- SMTP credentials for real email delivery
+- Resend API credentials (or SMTP credentials) for real email delivery
 
 ## Local Setup
 
@@ -52,6 +52,8 @@ LOG_DRAIN_URL=
 LOG_DRAIN_TOKEN=
 MONITORING_WEBHOOK_URL=
 MONITORING_WEBHOOK_TOKEN=
+MAIL_PROVIDER=resend
+RESEND_API_KEY=
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
@@ -78,7 +80,7 @@ SHOP_DELIVERY_FEE_LKR=500
 SHOP_ORDER_RESERVATION_MINUTES=30
 ```
 
-For purely local development, SMTP values can be left blank and `MAIL_DELIVERY_REQUIRED` can remain blank. The backend will still run, but verification, password reset, invite, email-change, and security-alert emails will be skipped instead of sent. Production defaults this flag to true and rejects false or incomplete SMTP configuration.
+For purely local development, provider credentials can be left blank and `MAIL_DELIVERY_REQUIRED` can remain blank. The backend will still run, but verification, password reset, invite, email-change, and security-alert emails will be skipped instead of sent. Production defaults this flag to true and rejects false or incomplete mail configuration.
 If OAuth is not being used locally, leave the OAuth client ID and secret values blank.
 
 Frontend `frontend/.env.local`:
@@ -143,19 +145,21 @@ After the first admin exists, additional users can be managed through the admin 
 
 ## Email Configuration
 
-The codebase supports local development without SMTP. Production requires SMTP while password authentication is enabled; verification, reset, invite, and security workflows must not silently launch without delivery.
+The codebase supports local development without mail delivery. Production requires a configured provider while password authentication is enabled; verification, reset, invite, and security workflows must not silently launch without delivery.
 
 See [Email System](./email-system.md) for the complete email inventory, trigger rules, action links, token lifetimes, queue behavior, and operational checks.
 
 For production:
 
-- set `SMTP_HOST`
-- set `SMTP_PORT`
-- set `SMTP_USER`
-- set `SMTP_PASS`
+- set `MAIL_PROVIDER=resend`
+- set `RESEND_API_KEY`
 - set `MAIL_FROM`
 - set `MAIL_DELIVERY_REQUIRED=true`
 - set `APP_URL` to the public frontend origin
+
+Verify the sending domain in Resend before sending to application users. Resend's test domain is restricted to the account owner's address. Run `npm run mail:verify` after deploying the values, then trigger a real verification or password-reset email.
+
+To switch back to Amazon SES later, set `MAIL_PROVIDER=smtp` and replace the Resend key with the SES `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASS` values below. No code change is required.
 
 For Amazon SES in Singapore (`ap-southeast-1`):
 
@@ -167,6 +171,7 @@ For Amazon SES in Singapore (`ap-southeast-1`):
 6. Use this backend SMTP configuration:
 
 ```env
+MAIL_PROVIDER=smtp
 SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
 SMTP_PORT=587
 SMTP_USER=your_ses_smtp_username
@@ -177,7 +182,7 @@ APP_URL=https://questesports.lk
 JOB_WORKER_ENABLED=true
 ```
 
-After deploying the values, verify SMTP connection/auth without sending a message:
+After deploying the values, verify provider connection/auth without sending a message:
 
 ```bash
 cd backend
@@ -274,7 +279,7 @@ npm run build
 npm run test:e2e
 ```
 
-Playwright critical journeys run in CI. Manual production checks remain necessary for provider callbacks, SMTP delivery, private uploads, DNS, cookies, and live payment behavior.
+Playwright critical journeys run in CI. Manual production checks remain necessary for provider callbacks, email delivery, private uploads, DNS, cookies, and live payment behavior.
 
 ## Recommended Production Topology
 
@@ -319,10 +324,8 @@ LOG_DRAIN_URL=https://logs.example.com/ingest
 LOG_DRAIN_TOKEN=replace_with_log_ingest_token
 MONITORING_WEBHOOK_URL=https://monitoring.example.com/events
 MONITORING_WEBHOOK_TOKEN=replace_with_monitoring_token
-SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
-SMTP_PORT=587
-SMTP_USER=your_ses_smtp_username
-SMTP_PASS=your_ses_smtp_password
+MAIL_PROVIDER=resend
+RESEND_API_KEY=re_your_resend_api_key
 MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 MAIL_DELIVERY_REQUIRED=true
 APP_URL=https://questesports.lk
@@ -350,7 +353,7 @@ Notes:
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
 - `AUTH_ENCRYPTION_KEY` must be exactly 64 hexadecimal characters; do not rotate an existing key without a data migration plan.
-- Production requires `MAIL_DELIVERY_REQUIRED=true` and a complete SMTP group. SES sandbox restrictions affect recipients but do not justify disabling the requirement.
+- Production requires `MAIL_DELIVERY_REQUIRED=true` and complete settings for the selected provider.
 - PayHere merchant values must be all configured or all blank. When blank, free and bank-transfer tournament registration remain available, but PayHere registration and merchandise checkout are disabled.
 - Keep `PAYMENT_PROOF_PDF_ENABLED=false` unless uploaded PDFs pass through a maintained malware-scanning/sanitization pipeline. Image receipts are decoded and re-encoded before storage.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
@@ -401,7 +404,7 @@ Current behavior:
 - auth, invite, and security emails are enqueued instead of sent inline during the request
 - the API process starts a polling worker automatically when `JOB_WORKER_ENABLED=true`
 - failed jobs are retried with backoff until `JOB_WORKER_MAX_ATTEMPTS` is reached
-- production startup requires complete SMTP configuration by default; a delivery failure keeps the job retryable and is never marked succeeded
+- production startup requires complete mail-provider configuration by default; a delivery failure keeps the job retryable and is never marked succeeded
 
 Production notes:
 

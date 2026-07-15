@@ -90,7 +90,7 @@ Important notes:
 Important note:
 
 - Signup does not log the user in automatically.
-- If SMTP is not configured, account creation still succeeds but the verification email is skipped.
+- If mail delivery is not configured, account creation still succeeds but the verification email is skipped.
 
 ## Resend Verification
 
@@ -109,7 +109,7 @@ Important note:
 
 Important note:
 
-- If SMTP is not configured, forgot-password requests do not fail the API, but no email is delivered.
+- If mail delivery is not configured, forgot-password requests do not fail the API, but no email is delivered.
 
 ## Email Change Flow
 
@@ -126,7 +126,7 @@ Important note:
 Important note:
 
 - The old email stays active until the new email is confirmed.
-- If SMTP is not configured, the request can be accepted but the confirmation email is skipped.
+- If mail delivery is not configured, the request can be accepted but the confirmation email is skipped.
 
 ## OAuth Login Flow
 
