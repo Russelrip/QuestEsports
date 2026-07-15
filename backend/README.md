@@ -20,12 +20,13 @@ Required in every environment:
 
 Important optional groups:
 
-- SMTP and `APP_URL` for real verification, password reset, invite, email-change, and security-alert email delivery
+- `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, `MAIL_FROM`, and `APP_URL` for real verification, password reset, invite, email-change, and security-alert delivery
+- Generic `SMTP_*` credentials only when `MAIL_PROVIDER=smtp`, including a future Amazon SES switch
 - Google and Discord OAuth credentials for social login
 - `TRUST_PROXY` and `REQUIRE_API_ORIGIN` for production proxy and origin enforcement
 - `LOG_DRAIN_URL` and `MONITORING_WEBHOOK_URL` for external observability hooks
 
-Production additionally requires HTTPS `APP_URL`/`API_PUBLIC_URL`, a 64-character hexadecimal `AUTH_ENCRYPTION_KEY`, durable `UPLOAD_ROOT`/`PRIVATE_UPLOAD_ROOT`, trusted-proxy/origin enforcement, `MAIL_DELIVERY_REQUIRED=true`, and complete SMTP values. PayHere remains optional, but its merchant ID, secret, and notify URL must be configured together.
+Production additionally requires HTTPS `APP_URL`/`API_PUBLIC_URL`, a 64-character hexadecimal `AUTH_ENCRYPTION_KEY`, durable `UPLOAD_ROOT`/`PRIVATE_UPLOAD_ROOT`, trusted-proxy/origin enforcement, `MAIL_DELIVERY_REQUIRED=true`, and complete values for the selected mail provider. PayHere remains optional, but its merchant ID, secret, and notify URL must be configured together.
 
 See [Setup And Deployment Guide](../docs/setup-and-deployment.md) for complete local and production examples.
 

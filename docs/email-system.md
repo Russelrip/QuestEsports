@@ -236,7 +236,7 @@ After deploying email-related changes:
 5. Confirm the selected provider accepts `MAIL_FROM` for the configured sending domain.
 6. Confirm replacement verification, reset, and email-change links invalidate older links.
 7. Confirm expired team invitations can no longer be accepted or declined.
-8. In SES, monitor bounces, complaints, reputation, and sending quotas for the active Region.
+8. In the selected provider dashboard, monitor bounces, complaints, reputation, and sending limits. For SES, also monitor the active Region's quotas.
 
 ## Current Limitations
 
