@@ -1,6 +1,6 @@
 import { parseApiResponse } from "@/lib/api";
 import { apiFetch } from "@/lib/auth";
-import { ImageAsset, Poster, resolveMediaUrl } from "@/lib/media";
+import { ImageAsset, Poster, resolveImageAssetUrl } from "@/lib/media";
 import {
   ADMIN_UPLOAD_MAX_FILE_SIZE,
   assertFileWithinUploadLimit,
@@ -128,7 +128,7 @@ export const exportPosterPng = async (
     headline: string;
   }
 ) => {
-  const response = await fetch(resolveMediaUrl(asset.imageUrl), {
+  const response = await fetch(resolveImageAssetUrl(asset), {
     credentials: "include",
   });
 

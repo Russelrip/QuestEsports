@@ -325,6 +325,32 @@ export const resolveMediaUrl = (path: string) => {
   return buildApiUrl(path);
 };
 
+const legacyGalleryImageNames = new Set([
+  "appreciationpost.jpg",
+  "openwinners.jpg",
+  "open2place.jpg",
+  "open3place.jpg",
+  "openfinals.jpg",
+  "opensemis2.jpg",
+  "opensemis1.jpg",
+  "openbrackets.jpg",
+  "openposter.jpg",
+  "womenswinners.jpg",
+  "womens2place.jpg",
+]);
+
+export const resolveImageAssetUrl = (
+  asset: Pick<ImageAsset, "imageUrl" | "originalName">
+) => {
+  const originalName = asset.originalName?.trim().toLowerCase();
+
+  if (originalName && legacyGalleryImageNames.has(originalName)) {
+    return `/images/${originalName}`;
+  }
+
+  return resolveMediaUrl(asset.imageUrl);
+};
+
 export const fetchImages = async (searchParams?: URLSearchParams) => {
   const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
   const response = await fetch(`${resolveMediaUrl("/api/images")}${suffix}`, {

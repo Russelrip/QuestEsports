@@ -128,9 +128,10 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
               id: "image-mobile-fit",
               title: "Mobile Fit Poster",
               category: "poster",
+              originalName: "opensemis1.jpg",
               contentType: "image/png",
               createdAt: "2026-07-10T00:00:00.000Z",
-              imageUrl: "/images/mainbg.png",
+              imageUrl: "/api/uploads/poster-images/missing.jpg",
             },
           },
         ],
@@ -145,8 +146,11 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
     "href",
     "https://www.facebook.com/share/p/14gNLGrBLWF/?mibextid=wwXIfr"
   );
+  await expect(page.getByText("Selected capture")).toHaveCount(0);
   const posterButton = page.locator("main section button").filter({ has: page.locator("img") }).first();
-  await expect(posterButton.locator("img")).toHaveCSS("object-fit", "contain");
+  const posterImage = posterButton.locator("img");
+  await expect(posterImage).toHaveCSS("object-fit", "contain");
+  await expect.poll(() => posterImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await posterButton.click();
 
   const dialog = page.getByRole("dialog", { name: "Poster preview" });

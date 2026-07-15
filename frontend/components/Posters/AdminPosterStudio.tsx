@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { resolveMediaUrl, type ImageAsset } from "@/lib/media";
+import { resolveImageAssetUrl, type ImageAsset } from "@/lib/media";
 import { type UploadPreview } from "@/lib/poster-studio";
 
 type PosterDraftValues = {
@@ -113,7 +113,7 @@ export default function AdminPosterStudio({
 
               {selectedDraftAsset ? (
                 <div className="overflow-hidden rounded-[24px] border border-white/8 bg-white/5 p-3">
-                  <img src={resolveMediaUrl(selectedDraftAsset.imageUrl)} alt={selectedDraftAsset.title} className="w-full rounded-[18px] object-cover" />
+                  <img src={resolveImageAssetUrl(selectedDraftAsset)} alt={selectedDraftAsset.title} className="w-full rounded-[18px] object-cover" />
                 </div>
               ) : (
                 <EmptyState description="Upload or select an image to preview the gallery entry." />

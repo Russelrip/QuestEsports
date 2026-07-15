@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { ImageAsset, Poster, resolveMediaUrl } from "@/lib/media";
+import { ImageAsset, Poster, resolveImageAssetUrl } from "@/lib/media";
 
 type PosterPreviewDraft = Pick<
   Poster,
@@ -31,7 +31,7 @@ export default function PosterPreview({
   return (
     <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-white/10 bg-black/40 sm:rounded-[24px]">
       <Image
-        src={resolveMediaUrl(asset.imageUrl)}
+        src={resolveImageAssetUrl(asset)}
         alt={asset.title}
         fill
         sizes="(min-width: 1024px) 960px, calc(100vw - 2rem)"
