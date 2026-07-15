@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
 import EmptyState from "@/components/ui/EmptyState";
@@ -11,18 +11,146 @@ import type { EventSeries, GameCategory, Tournament } from "@/lib/tournaments";
 import { getTournamentRegistrationShortLabel } from "@/lib/tournaments";
 import { formatTournamentDate } from "@/lib/utils";
 
+const gameIconBySlug: Record<string, string> = {
+  "assetto-corsa": "/game-icon-images/assetto corsa.png",
+  "beat-saber": "/game-icon-images/beat saber.png",
+  "call-of-duty": "/game-icon-images/call of duty.png",
+  "call-of-duty-mobile": "/game-icon-images/COD Mobile.png",
+  "clash-royale": "/game-icon-images/clash royale.png",
+  codm: "/game-icon-images/COD Mobile.png",
+  "counter-strike-2": "/game-icon-images/counter strike 2.png",
+  cs2: "/game-icon-images/counter strike 2.png",
+  "dota-2": "/game-icon-images/DOTA 2.png",
+  chess: "/game-icon-images/e-chess.png",
+  "e-chess": "/game-icon-images/e-chess.png",
+  "ea-fc": "/game-icon-images/FC.png",
+  "ea-sports-fc": "/game-icon-images/FC.png",
+  fc: "/game-icon-images/FC.png",
+  "free-fire": "/game-icon-images/free fire.png",
+  "honor-of-kings": "/game-icon-images/honor of kings.png",
+  "league-of-legends": "/game-icon-images/league of legends.png",
+  mlbb: "/game-icon-images/Molbile Legends Bang bang.png",
+  "mobile-legends": "/game-icon-images/Molbile Legends Bang bang.png",
+  "mobile-legends-bang-bang": "/game-icon-images/Molbile Legends Bang bang.png",
+  "mortal-kombat-11": "/game-icon-images/mortal kombat 11.png",
+  mk11: "/game-icon-images/mortal kombat 11.png",
+  overwatch: "/game-icon-images/overwatch.png",
+  "pubg-mobile": "/game-icon-images/PUBG mobile.png",
+  tekken: "/game-icon-images/tekken.png",
+  valorant: "/game-icon-images/valorant.png",
+};
+
+const localGameFilters: GameCategory[] = [
+  ["valorant", "Valorant"],
+  ["pubg-mobile", "PUBG Mobile"],
+  ["mlbb", "Mobile Legends: Bang Bang"],
+  ["codm", "Call of Duty: Mobile"],
+  ["assetto-corsa", "Assetto Corsa"],
+  ["beat-saber", "Beat Saber"],
+  ["call-of-duty", "Call of Duty"],
+  ["clash-royale", "Clash Royale"],
+  ["counter-strike-2", "Counter-Strike 2"],
+  ["dota-2", "Dota 2"],
+  ["e-chess", "E-Chess"],
+  ["fc", "EA Sports FC"],
+  ["free-fire", "Free Fire"],
+  ["honor-of-kings", "Honor of Kings"],
+  ["league-of-legends", "League of Legends"],
+  ["mortal-kombat-11", "Mortal Kombat 11"],
+  ["overwatch", "Overwatch"],
+  ["tekken", "Tekken"],
+].map(([slug, displayName]) => ({
+  id: `local-${slug}`,
+  slug,
+  displayName,
+  artworkUrl: null,
+  logoUrl: null,
+}));
+
+const gameSlugAliases: Record<string, string> = {
+  chess: "e-chess",
+  "call-of-duty-mobile": "codm",
+  "cod-mobile": "codm",
+  "counter-strike": "counter-strike-2",
+  cs2: "counter-strike-2",
+  dota: "dota-2",
+  "ea-fc": "fc",
+  "ea-sports-fc": "fc",
+  "mobile-legends": "mlbb",
+  "mobile-legends-bang-bang": "mlbb",
+  mk11: "mortal-kombat-11",
+  "mortal-kombat": "mortal-kombat-11",
+};
+
+function normalizeGameSlug(value: string) {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return gameSlugAliases[slug] || slug;
+}
+
+function getGameIcon(category: GameCategory) {
+  const categorySlug = normalizeGameSlug(category.slug);
+  const displayNameSlug = normalizeGameSlug(category.displayName);
+  return gameIconBySlug[categorySlug] || gameIconBySlug[displayNameSlug] || (category.artworkUrl ? buildApiUrl(category.artworkUrl) : null);
+}
+
 export default function TournamentsContent({ tournaments, series = [], categories = [] }: { tournaments: Tournament[]; series?: EventSeries[]; categories?: GameCategory[] }) {
   const [gameFilter, setGameFilter] = useState("all");
-  const matches = (tournament: Tournament) => gameFilter === "all" || tournament.gameCategory?.slug === gameFilter || tournament.game === gameFilter;
+  const gameScrollerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const localGameSlugs = new Set(localGameFilters.map((category) => category.slug));
+  const gameFilters = [...localGameFilters, ...categories.filter((category) => !localGameSlugs.has(normalizeGameSlug(category.slug)))];
+  const matches = (tournament: Tournament) => gameFilter === "all" || normalizeGameSlug(tournament.gameCategory?.slug || tournament.game) === gameFilter;
   const active = tournaments.filter((item) => !item.isCompleted && !item.series && matches(item));
   const filteredSeries = series.filter((item) => item.tournaments.some(matches));
+
+  useEffect(() => {
+    const scroller = gameScrollerRef.current;
+    if (!scroller) return;
+
+    const updateScrollButtons = () => {
+      setCanScrollLeft(scroller.scrollLeft > 2);
+      setCanScrollRight(scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 2);
+    };
+
+    updateScrollButtons();
+    scroller.addEventListener("scroll", updateScrollButtons, { passive: true });
+    const resizeObserver = new ResizeObserver(updateScrollButtons);
+    resizeObserver.observe(scroller);
+
+    return () => {
+      scroller.removeEventListener("scroll", updateScrollButtons);
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  const scrollGames = (direction: -1 | 1) => {
+    const scroller = gameScrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollBy({ left: direction * Math.max(scroller.clientWidth * 0.75, 320), behavior: "smooth" });
+  };
+
   return <Section className="pt-6">
-    <div className="mb-8 flex gap-3 overflow-x-auto pb-3" role="group" aria-label="Filter tournaments by game">
-      <button type="button" onClick={() => setGameFilter("all")} className={`min-w-fit rounded-2xl border px-5 py-3 text-sm font-semibold transition ${gameFilter === "all" ? "border-cyan-300 bg-cyan-400/15 text-cyan-100" : "border-white/10 text-slate-300 hover:border-white/30"}`}>View All Games</button>
-      {categories.map((category) => <button key={category.id} type="button" onClick={() => setGameFilter(category.slug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-20 w-36 shrink-0 overflow-hidden rounded-2xl border bg-[#0d0c13] transition hover:-translate-y-0.5 ${gameFilter === category.slug ? "border-cyan-300 shadow-[0_10px_30px_rgba(34,211,238,0.2)]" : "border-white/10 hover:border-white/30"}`}>
-        {category.artworkUrl ? <Image src={buildApiUrl(category.artworkUrl)} alt="" fill className="object-contain" /> : <span className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{category.displayName}</span>}
-        <span className="sr-only">{category.displayName}</span>
-      </button>)}
+    <div className="relative mb-8">
+      <div ref={gameScrollerRef} className="flex max-w-full snap-x snap-proximity gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pb-1 select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filter tournaments by game">
+        <button type="button" onClick={() => setGameFilter("all")} className={`h-24 w-28 shrink-0 snap-start rounded-2xl border px-4 text-sm font-semibold transition ${gameFilter === "all" ? "border-cyan-300 bg-cyan-400/15 text-cyan-100" : "border-white/10 text-slate-300 hover:border-white/30"}`}>View All Games</button>
+        {gameFilters.map((category) => {
+          const icon = getGameIcon(category);
+          return <button key={category.id} type="button" onClick={() => setGameFilter(category.slug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-24 w-28 shrink-0 snap-start overflow-hidden rounded-2xl border bg-[#0d0c13] transition hover:-translate-y-0.5 ${gameFilter === category.slug ? "border-cyan-300 shadow-[0_10px_30px_rgba(34,211,238,0.2)]" : "border-white/10 hover:border-white/30"}`}>
+            {icon ? <Image src={icon} alt="" fill sizes="112px" draggable={false} className="object-cover" /> : <span className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{category.displayName}</span>}
+            <span className="sr-only">{category.displayName}</span>
+          </button>;
+        })}
+      </div>
+      <button type="button" onClick={() => scrollGames(-1)} aria-label="Scroll games left" className={`absolute left-2 top-1/2 z-10 hidden h-16 w-10 -translate-y-1/2 items-center justify-center rounded-xl border border-white/15 bg-black/80 text-3xl text-white shadow-xl backdrop-blur transition hover:border-cyan-300/60 hover:bg-black md:flex ${canScrollLeft ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+        <span aria-hidden="true">‹</span>
+      </button>
+      <button type="button" onClick={() => scrollGames(1)} aria-label="Scroll games right" className={`absolute right-2 top-1/2 z-10 hidden h-16 w-10 -translate-y-1/2 items-center justify-center rounded-xl border border-white/15 bg-black/80 text-3xl text-white shadow-xl backdrop-blur transition hover:border-cyan-300/60 hover:bg-black md:flex ${canScrollRight ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+        <span aria-hidden="true">›</span>
+      </button>
     </div>
 
     {filteredSeries.length ? <div className="mb-9 grid gap-5 md:grid-cols-2">{filteredSeries.map((item) => {
