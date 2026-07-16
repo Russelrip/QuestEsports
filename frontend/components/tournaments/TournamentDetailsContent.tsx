@@ -143,11 +143,11 @@ function SponsorsPanel({ tournament }: { tournament: Tournament }) {
 
           const content = (
             <>
-              <p className="self-start text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200/80">
+              <p className="w-full text-center font-display text-sm font-bold uppercase tracking-[0.12em] text-white">
                 {sponsor.partnershipLabel || "Official Sponsor"}
               </p>
               <div className="flex flex-1 items-center justify-center py-5">{logo}</div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white">{sponsor.name}</p>
+              <p className="w-full text-center font-display text-base font-bold uppercase tracking-[0.1em] text-white">{sponsor.name}</p>
             </>
           );
           const className = "flex min-h-48 flex-col border-r border-b border-white/8 p-4 text-center transition hover:bg-white/5";
