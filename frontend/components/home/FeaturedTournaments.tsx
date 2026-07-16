@@ -7,7 +7,6 @@ import { formatTournamentDateRange } from "@/lib/utils";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
-  getTournamentRegistrationShortLabel,
   type Tournament,
 } from "@/lib/tournaments";
 
@@ -44,12 +43,11 @@ export default async function FeaturedTournaments() {
                     rounded={false}
                     className="h-full w-full object-contain"
                   />
-                  {tournament.isRegistrationOpen ? <span className="absolute right-4 top-4 rounded-none border border-emerald-300/40 bg-emerald-950/90 px-3 py-1 text-xs font-bold uppercase text-emerald-200">{getTournamentRegistrationShortLabel(tournament)}</span> : null}
               </Link>
               <div className="flex flex-1 flex-col p-5">
                 <div>
                   <Link href={`/tournaments/${tournament.slug}`} className="block">
-                    <h3 className="text-2xl text-white transition-colors group-hover:text-cyan-200">{tournament.title}</h3>
+                    <h3 className="text-2xl text-white transition-colors group-hover:text-[#521f89]">{tournament.title}</h3>
                   </Link>
                 </div>
 

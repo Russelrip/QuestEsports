@@ -19,6 +19,7 @@
   --brand: var(--color-accent);
   --brand-2: var(--color-accentAlt);
   --brand-soft: rgba(139, 92, 246, 0.14);
+  --interactive-text: #a978dc;
 }
 
 @theme {
@@ -75,6 +76,12 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+a:hover,
+a:active,
+a:focus-visible {
+  color: var(--interactive-text);
 }
 
 button,

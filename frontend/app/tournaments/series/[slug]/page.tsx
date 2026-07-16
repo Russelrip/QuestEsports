@@ -59,7 +59,7 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
                   </div>
                   <div className="p-5">
                     <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/80">{tournament.game}</p>
-                    <h3 className="mt-2 text-2xl text-white transition-colors group-hover:text-cyan-200">{tournament.title}</h3>
+                    <h3 className="mt-2 text-2xl text-white transition-colors group-hover:text-[#521f89]">{tournament.title}</h3>
                     <p className={`mt-2 text-sm font-semibold ${tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}`}>{tournament.isRegistrationOpen ? "Registration Open" : tournament.isSlotsFull ? "Slots Full" : "Registration Closed"}</p>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-400">
                       <span><strong className="block text-white">{tournament.prizePool}</strong>Prize pool</span>

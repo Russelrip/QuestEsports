@@ -24,7 +24,7 @@ export const designTokens = {
     bgElevated: "#0d0a17",
     card: "rgba(12,12,20,0.78)",
     cardStrong: "rgba(17,17,28,0.94)",
-    accent: "#8b5cf6",
+    accent: "#521f89",
     accentAlt: "#22d3ee",
     foreground: "#f8fafc",
     muted: "#94a3b8",
