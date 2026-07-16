@@ -40,38 +40,54 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
   );
 
   return (
-    <Section className="pt-6">
-      <div className="space-y-8 tournament-print-root">
-        <Link href="/tournaments" className="inline-flex text-sm text-slate-400 transition hover:text-white">
+    <Section className="pt-5 sm:pt-7">
+      <div className="space-y-5 tournament-print-root">
+        <Link href="/tournaments" className="inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-cyan-200">
+          <span aria-hidden="true">&larr;</span>
           Back to Tournaments
         </Link>
 
-        <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-[#0d0c13] p-2" aria-label="Tournament sections">
+        <section className="relative h-52 overflow-hidden border border-white/10 bg-black sm:h-auto sm:aspect-[16/5]">
+          <h1 className="sr-only">{tournament.title}</h1>
+          <TournamentBannerImage
+            bannerUrl={tournament.heroUrl || tournament.bannerUrl}
+            title={tournament.title}
+            rounded={false}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        </section>
+
+        <nav className="flex gap-0 overflow-x-auto border border-white/10 bg-[#0d0c13]" aria-label="Tournament sections">
           {(["overview", "rules", "schedule", "bracket", "participants"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className={`whitespace-nowrap rounded-xl px-4 py-3 text-sm font-semibold capitalize transition ${activeTab === tab ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/8 hover:text-white"}`}
+              aria-current={activeTab === tab ? "page" : undefined}
+              className={`whitespace-nowrap border-r border-white/8 px-5 py-3 text-xs font-semibold capitalize transition sm:px-7 ${activeTab === tab ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/8 hover:text-white"}`}
             >
               {tab}
             </button>
           ))}
         </nav>
 
-        {activeTab === "overview" ? <div className="space-y-6"><section className={`relative min-h-[520px] overflow-hidden rounded-[34px] border bg-black ${tournament.isRegistrationOpen ? "border-white/10" : "border-rose-500/45"}`}>
-          <TournamentBannerImage bannerUrl={tournament.heroUrl || tournament.bannerUrl} title={tournament.title} className="absolute inset-0 h-full w-full object-cover opacity-80" />
-          <span className="absolute inset-0 bg-gradient-to-r from-black via-black/75 to-black/20" />
-          <div className="relative z-10 flex min-h-[520px] max-w-3xl flex-col justify-end p-6 sm:p-10">
-            <div className="flex items-center gap-4">{tournament.gameCategory?.logoUrl ? <Image src={resolveMediaUrl(tournament.gameCategory.logoUrl)} alt={`${tournament.gameCategory.displayName} logo`} width={96} height={64} className="h-14 w-24 object-contain" /> : null}<p className="text-xs uppercase tracking-[0.3em] text-cyan-200">{tournament.gameCategory?.displayName || toTitleCase(tournament.game)}</p></div>
-            <h2 className="mt-4 text-4xl leading-tight text-white sm:text-6xl">{tournament.title}</h2>
-            {tournament.shortDescription ? <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200">{tournament.shortDescription}</p> : null}
-            <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300"><b className="text-white">{tournament.prizePool}</b><span>{tournament.organizer}</span><span>{tournament.country} · {tournament.location}</span><span className={tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}>{toTitleCase(tournament.registrationState.replace(/_/g, " "))}</span></div>
-            <div className="mt-6"><RegisterTournamentButton tournament={tournament} closedAsButton /></div>
+        {activeTab === "overview" ? (
+          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-5">
+              <Card className="p-5 sm:p-7">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-200">Tournament overview</p>
+                <h2 className="mt-3 text-3xl leading-tight text-white sm:text-4xl">{tournament.title}</h2>
+                <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
+                  {tournament.fullDescription || tournament.shortDescription || "Tournament details will be announced soon."}
+                </p>
+              </Card>
+
+              {tournament.sponsors?.length ? <SponsorsPanel tournament={tournament} /> : null}
+            </div>
+
+            <TournamentOverviewSidebar tournament={tournament} />
           </div>
-        </section>
-        {tournament.sponsors?.length ? <Card className="p-5"><p className="text-xs uppercase tracking-[0.24em] text-slate-500">Official sponsors</p><div className="mt-4 flex flex-wrap items-center gap-6">{tournament.sponsors.map((sponsor) => { const logo = sponsor.logoUrl ? <Image src={resolveMediaUrl(sponsor.logoUrl)} alt={sponsor.name} width={140} height={64} className="h-14 w-32 object-contain" /> : <span className="font-semibold text-white">{sponsor.name}</span>; return sponsor.websiteUrl ? <a key={sponsor.id} href={sponsor.websiteUrl} target="_blank" rel="noreferrer" aria-label={`Visit ${sponsor.name}`}>{logo}</a> : <div key={sponsor.id}>{logo}</div>; })}</div></Card> : null}
-        <Card className="p-6 sm:p-8">{tournament.fullDescription || tournament.shortDescription ? <p className="whitespace-pre-line text-sm leading-8 text-slate-300 sm:text-base">{tournament.fullDescription || tournament.shortDescription}</p> : null}<div className={tournament.fullDescription || tournament.shortDescription ? "mt-8" : ""}><StatsGrid tournament={tournament} /></div></Card></div> : null}
+        ) : null}
 
         {activeTab === "participants" && participants.length > 0 ? (
           <TeamsPanel
@@ -105,51 +121,100 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
   );
 }
 
-function StatsGrid({ tournament }: { tournament: Tournament }) {
-  const stats = getTournamentDetailStats(tournament);
-
+function SponsorsPanel({ tournament }: { tournament: Tournament }) {
   return (
-    <div className="grid min-w-0 gap-x-10 gap-y-7 sm:grid-cols-2 xl:grid-cols-3">
-      {stats.map((stat) => (
-        <div key={stat.label} className="min-w-0">
-          <p className="text-[11px] tracking-[0.14em] text-slate-400">{stat.label}</p>
-          <p className="mt-3 break-words text-lg font-semibold text-white [overflow-wrap:anywhere]">{stat.value}</p>
-        </div>
-      ))}
-    </div>
+    <Card className="overflow-hidden">
+      <div className="border-b border-white/10 px-5 py-4 sm:px-7">
+        <SectionHeading>Event sponsors</SectionHeading>
+      </div>
+      <div className="grid min-h-32 grid-cols-2 bg-[#17223c] sm:min-h-40 sm:grid-cols-3">
+        {tournament.sponsors.map((sponsor) => {
+          const logo = sponsor.logoUrl ? (
+            <Image
+              src={resolveMediaUrl(sponsor.logoUrl)}
+              alt={sponsor.name}
+              width={160}
+              height={80}
+              className="h-16 w-36 object-contain"
+            />
+          ) : (
+            <span className="text-center font-semibold text-white">{sponsor.name}</span>
+          );
+
+          const className = "flex min-h-32 items-center justify-center border-r border-b border-white/8 p-5 transition hover:bg-white/5 sm:min-h-40";
+          return sponsor.websiteUrl ? (
+            <a key={sponsor.id} href={sponsor.websiteUrl} target="_blank" rel="noreferrer" aria-label={`Visit ${sponsor.name}`} className={className}>
+              {logo}
+            </a>
+          ) : (
+            <div key={sponsor.id} className={className}>{logo}</div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
-function getTournamentDetailStats(tournament: Tournament) {
-  return [
-    { label: "Prize Pool", value: tournament.prizePool },
-    { label: "Format", value: tournament.format },
+function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
+  const rows = [
+    { label: "Game", value: tournament.gameCategory?.displayName || toTitleCase(tournament.game) },
+    { label: "Play type", value: tournament.format },
+    { label: "Country", value: tournament.country || "TBD" },
+    { label: "Location", value: tournament.location || "TBD" },
+    { label: "Organizer", value: tournament.organizer },
+    { label: "Prize pool", value: tournament.prizePool },
     { label: "Entry", value: getTournamentRegistrationModeLabel(tournament) },
+    { label: "Registration fee", value: getRegistrationFee(tournament) },
+    { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}` },
+    { label: "Start date", value: formatDateTime(tournament.startDate, tournament.startDateStatus) },
+    { label: "End date", value: formatDateTime(tournament.endDate, tournament.endDateStatus) },
+    { label: "Registration opens", value: formatDateTime(tournament.registrationOpenAt) },
+    { label: "Registration closes", value: formatDateTime(tournament.registrationDeadline, tournament.registrationDeadlineStatus) },
     {
-      label: tournament.entryType === "solo" ? "Entry Type" : "Roster",
-      value:
-        tournament.entryType === "solo"
-          ? "Solo player"
-          : `${tournament.minRosterSize || tournament.teamSize}-${(tournament.maxRosterSize || tournament.teamSize) + (tournament.maxSubstitutes || 0)} players`,
+      label: "Bracket",
+      value: tournament.bracketData || tournament.challongeEmbedUrl || tournament.bracketLink ? "Published" : "To be announced",
     },
-    {
-      label: "Registration Fee",
-      value:
-        tournament.registrationFee?.amount > 0
-          ? tournament.registrationFeeTiers?.length
-            ? `${tournament.registrationFee.currency} ${Math.min(...tournament.registrationFeeTiers.map((tier) => tier.amount)).toFixed(2)}–${Math.max(...tournament.registrationFeeTiers.map((tier) => tier.amount)).toFixed(2)} by slot`
-            : `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`
-          : "Free",
-    },
-    { label: "Registration Deadline", value: formatDateTime(tournament.registrationDeadline, tournament.registrationDeadlineStatus) },
-    {
-      label: "Bracket Release",
-      value: tournament.bracketSummary?.lastUpdatedAt
-        ? formatDateTime(tournament.bracketSummary.lastUpdatedAt)
-        : "To be announced",
-    },
-    { label: "Tournament Start", value: formatDateTime(tournament.startDate, tournament.startDateStatus) },
   ];
+
+  return (
+    <aside className="border border-white/10 bg-[#11131d] lg:sticky lg:top-24">
+      <div className="border-b border-white/10 bg-[#0d0c13] px-5 py-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200">Tournament information</p>
+      </div>
+      <dl className="p-2">
+        {rows.map((row, index) => (
+          <div key={row.label} className={`grid grid-cols-[118px_minmax(0,1fr)] gap-3 px-3 py-2.5 text-[11px] ${index % 2 === 0 ? "bg-[#181b28]" : "bg-[#131621]"}`}>
+            <dt className="uppercase tracking-[0.08em] text-slate-500">{row.label}</dt>
+            <dd className="min-w-0 break-words font-semibold text-slate-200">{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="border-t border-white/10 p-4">
+        <p className={`mb-3 text-xs font-semibold ${tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}`}>
+          {toTitleCase(tournament.registrationState.replace(/_/g, " "))}
+        </p>
+        <RegisterTournamentButton tournament={tournament} closedAsButton className="w-full [&_button]:w-full" />
+      </div>
+    </aside>
+  );
+}
+
+function SectionHeading({ children }: { children: string }) {
+  return (
+    <h3 className="border-l-2 border-cyan-300 pl-3 text-xl uppercase tracking-[0.08em] text-white sm:text-2xl">
+      {children}
+    </h3>
+  );
+}
+
+function getRegistrationFee(tournament: Tournament) {
+  if (!tournament.registrationFee?.amount) return "Free";
+  if (!tournament.registrationFeeTiers?.length) {
+    return `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`;
+  }
+
+  const amounts = tournament.registrationFeeTiers.map((tier) => tier.amount);
+  return `${tournament.registrationFee.currency} ${Math.min(...amounts).toFixed(2)}-${Math.max(...amounts).toFixed(2)}`;
 }
 
 function TeamsPanel({
