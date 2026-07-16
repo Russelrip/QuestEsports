@@ -24,11 +24,11 @@ function VideoSection({ title, videos }: { title: string; videos: VideoItem[] })
                   className="object-cover"
                 />
               </div>
+              <div className="space-y-2 p-5">
+                <h3 className="text-xl text-white transition-colors hover:text-cyan-200">{video.title}</h3>
+                <p className="text-sm text-slate-400">{video.subtitle}</p>
+              </div>
             </a>
-            <div className="space-y-2 p-5">
-              <h3 className="text-xl text-white">{video.title}</h3>
-              <p className="text-sm text-slate-400">{video.subtitle}</p>
-            </div>
           </Card>
         ))}
       </div>
