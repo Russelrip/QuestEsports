@@ -1093,6 +1093,31 @@ const updateAdminSavedTeamOrganization = async (teamId, body) => {
   return { organizationName: requested && requested.toLowerCase() !== "independent" ? requested : "Independent" };
 };
 
+const deleteAdminSavedTeam = async (teamId) => {
+  const team = await prisma.savedTeam.findUnique({
+    where: { id: teamId },
+    select: { id: true, logoName: true },
+  });
+  if (!team) throw new HttpError(404, "Team not found.");
+
+  const deleted = await prisma.savedTeam.deleteMany({
+    where: { id: team.id },
+  });
+  if (!deleted.count) throw new HttpError(404, "Team not found.");
+
+  if (team.logoName) {
+    const registrationLogoReferences = await prisma.teamRegistration.count({
+      where: { teamLogoName: team.logoName },
+    });
+    if (!registrationLogoReferences) {
+      await removeUploadsQuietly(
+        [{ directory: teamLogoDirectory, filename: team.logoName }],
+        { operation: "deleteAdminSavedTeam", teamId }
+      );
+    }
+  }
+};
+
 module.exports = {
   getAdminDashboardData,
   listAdminUsers,
@@ -1116,4 +1141,5 @@ module.exports = {
   runPosterImageAssetMigration,
   listAdminSavedTeams,
   updateAdminSavedTeamOrganization,
+  deleteAdminSavedTeam,
 };

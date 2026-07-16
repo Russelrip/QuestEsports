@@ -22,6 +22,7 @@ const {
   runPosterImageAssetMigration,
   listAdminSavedTeams,
   updateAdminSavedTeamOrganization,
+  deleteAdminSavedTeam,
 } = require("./admin.service");
 
 const sendExcelExport = (res, exportFile) => {
@@ -248,6 +249,11 @@ const updateSavedTeamOrganization = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "Team organization updated.", team });
 });
 
+const removeSavedTeam = asyncHandler(async (req, res) => {
+  await deleteAdminSavedTeam(req.params.teamId);
+  res.status(200).json({ success: true, message: "Team deleted successfully." });
+});
+
 module.exports = {
   getDashboard,
   getUsers,
@@ -271,4 +277,5 @@ module.exports = {
   migratePosterMediaToFilesystem,
   getSavedTeams,
   updateSavedTeamOrganization,
+  removeSavedTeam,
 };

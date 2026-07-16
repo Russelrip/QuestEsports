@@ -23,6 +23,7 @@ const {
   migratePosterMediaToFilesystem,
   getSavedTeams,
   updateSavedTeamOrganization,
+  removeSavedTeam,
 } = require("./admin.controller");
 
 const router = express.Router();
@@ -52,5 +53,6 @@ router.post("/admin/media/import-legacy-posters", importLegacyPosterMedia);
 router.post("/admin/media/migrate-image-assets", migratePosterMediaToFilesystem);
 router.get("/admin/teams", getSavedTeams);
 router.patch("/admin/teams/:teamId/organization", updateSavedTeamOrganization);
+router.delete("/admin/teams/:teamId", removeSavedTeam);
 
 module.exports = router;

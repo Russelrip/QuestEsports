@@ -371,3 +371,79 @@ test("deleteRecruitmentApplication reports missing applications", async () => {
     restore();
   }
 });
+
+test("deleteAdminSavedTeam removes the saved team and an unreferenced logo", async () => {
+  const deleteCalls = [];
+  const removedUploads = [];
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({ id: "saved-team-1", logoName: "quest-five.png" }),
+      deleteMany: async (args) => {
+        deleteCalls.push(args);
+        return { count: 1 };
+      },
+    },
+    teamRegistration: {
+      count: async () => 0,
+    },
+  }, {
+    removeUploadFiles: async (uploads) => {
+      removedUploads.push(...uploads);
+    },
+  });
+
+  try {
+    await adminService.deleteAdminSavedTeam("saved-team-1");
+
+    assert.deepEqual(deleteCalls, [{ where: { id: "saved-team-1" } }]);
+    assert.deepEqual(removedUploads, [
+      { directory: "uploads/team-logos", filename: "quest-five.png" },
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("deleteAdminSavedTeam preserves logos used by tournament registrations", async () => {
+  const removedUploads = [];
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({ id: "saved-team-1", logoName: "quest-five.png" }),
+      deleteMany: async () => ({ count: 1 }),
+    },
+    teamRegistration: {
+      count: async (args) => {
+        assert.deepEqual(args, { where: { teamLogoName: "quest-five.png" } });
+        return 1;
+      },
+    },
+  }, {
+    removeUploadFiles: async (uploads) => {
+      removedUploads.push(...uploads);
+    },
+  });
+
+  try {
+    await adminService.deleteAdminSavedTeam("saved-team-1");
+    assert.deepEqual(removedUploads, []);
+  } finally {
+    restore();
+  }
+});
+
+test("deleteAdminSavedTeam reports missing saved teams", async () => {
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => null,
+    },
+  });
+
+  try {
+    await assert.rejects(
+      adminService.deleteAdminSavedTeam("missing-team"),
+      (error) => error.statusCode === 404 && error.message === "Team not found."
+    );
+  } finally {
+    restore();
+  }
+});
