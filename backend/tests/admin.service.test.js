@@ -447,3 +447,82 @@ test("deleteAdminSavedTeam reports missing saved teams", async () => {
     restore();
   }
 });
+
+test("listAdminSavedTeams maps saved teams for the admin team manager", async () => {
+  const findManyCalls = [];
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findMany: async (args) => {
+        findManyCalls.push(args);
+        return [
+          {
+            id: "saved-team-1",
+            name: "Quest Five",
+            logoName: "quest-five.png",
+            country: "Sri Lanka",
+            organizationName: null,
+            captainUser: {
+              firstName: "Team",
+              lastName: "Captain",
+              username: "captain",
+            },
+            _count: { members: 5 },
+          },
+        ];
+      },
+    },
+  });
+
+  try {
+    const teams = await adminService.listAdminSavedTeams({ search: "Quest" });
+
+    assert.deepEqual(findManyCalls[0].where, {
+      OR: [
+        { name: { contains: "Quest", mode: "insensitive" } },
+        { organizationName: { contains: "Quest", mode: "insensitive" } },
+      ],
+    });
+    assert.deepEqual(teams, [
+      {
+        id: "saved-team-1",
+        name: "Quest Five",
+        logoUrl: "/api/uploads/team-logos/quest-five.png",
+        country: "Sri Lanka",
+        organizationName: "Independent",
+        captainName: "Team Captain",
+        memberCount: 5,
+      },
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("updateAdminSavedTeamOrganization stores a verified organization label", async () => {
+  const updateCalls = [];
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      updateMany: async (args) => {
+        updateCalls.push(args);
+        return { count: 1 };
+      },
+    },
+  });
+
+  try {
+    const team = await adminService.updateAdminSavedTeamOrganization(
+      "saved-team-1",
+      { organizationName: "Quest Esports" }
+    );
+
+    assert.deepEqual(updateCalls, [
+      {
+        where: { id: "saved-team-1" },
+        data: { organizationName: "Quest Esports" },
+      },
+    ]);
+    assert.deepEqual(team, { organizationName: "Quest Esports" });
+  } finally {
+    restore();
+  }
+});
