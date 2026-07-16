@@ -74,6 +74,7 @@ export type GameCategory = {
 export type TournamentSponsor = {
   id: string;
   name: string;
+  partnershipLabel: string;
   logoUrl: string | null;
   websiteUrl: string | null;
   displayOrder: number;

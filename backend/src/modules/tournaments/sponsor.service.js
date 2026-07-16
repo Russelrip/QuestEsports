@@ -11,6 +11,7 @@ const {
 const mapSponsor = (sponsor) => ({
   id: sponsor.id,
   name: sponsor.name,
+  partnershipLabel: sponsor.partnershipLabel,
   logoUrl: sponsor.logoImageName ? `/api/uploads/sponsor-logos/${sponsor.logoImageName}` : null,
   websiteUrl: sponsor.websiteUrl,
   displayOrder: sponsor.displayOrder,
@@ -36,6 +37,8 @@ const saveTournamentSponsor = async ({ tournamentId, sponsorId, body, file }) =>
   if (sponsorId && !existing) throw new HttpError(404, "Sponsor not found.");
   const name = normalizeText(body.name || existing?.name);
   if (!name) throw new HttpError(400, "Sponsor name is required.");
+  const partnershipLabel = normalizeText(body.partnershipLabel || existing?.partnershipLabel || "Official Sponsor");
+  if (partnershipLabel.length > 80) throw new HttpError(400, "Partnership label must be 80 characters or fewer.");
   const rawWebsite = normalizeText(body.websiteUrl);
   const websiteUrl = rawWebsite ? normalizeOptionalUrl(rawWebsite) : null;
   if (rawWebsite && (!websiteUrl || !websiteUrl.startsWith("https://"))) {
@@ -45,6 +48,7 @@ const saveTournamentSponsor = async ({ tournamentId, sponsorId, body, file }) =>
   const removeLogo = [true, "true", "1", "on"].includes(body.removeLogo);
   const data = {
     name,
+    partnershipLabel,
     websiteUrl,
     displayOrder: normalizeInteger(body.displayOrder) ?? existing?.displayOrder ?? 100,
     ...(uploaded ? { logoImageName: uploaded.filename } : removeLogo ? { logoImageName: null } : {}),

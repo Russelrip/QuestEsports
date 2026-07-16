@@ -264,6 +264,7 @@ const mapGameCategory = (category) => category ? ({
 const mapSponsor = (sponsor) => ({
   id: sponsor.id,
   name: sponsor.name,
+  partnershipLabel: sponsor.partnershipLabel,
   logoUrl: sponsor.logoImageName
     ? `/api/uploads/sponsor-logos/${sponsor.logoImageName}`
     : null,

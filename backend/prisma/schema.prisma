@@ -443,15 +443,16 @@ model Tournament {
 }
 
 model TournamentSponsor {
-  id            String     @id @default(uuid()) @db.Uuid
-  tournamentId  String     @map("tournament_id") @db.Uuid
-  name          String
-  logoImageName String?    @map("logo_image_name")
-  websiteUrl    String?    @map("website_url")
-  displayOrder  Int        @default(100) @map("display_order")
-  createdAt     DateTime   @default(now()) @map("created_at")
-  updatedAt     DateTime   @updatedAt @map("updated_at")
-  tournament    Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  id               String     @id @default(uuid()) @db.Uuid
+  tournamentId     String     @map("tournament_id") @db.Uuid
+  name             String
+  partnershipLabel String     @default("Official Sponsor") @map("partnership_label")
+  logoImageName    String?    @map("logo_image_name")
+  websiteUrl       String?    @map("website_url")
+  displayOrder     Int        @default(100) @map("display_order")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+  tournament       Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
 
   @@index([tournamentId, displayOrder])
   @@map("tournament_sponsors")
