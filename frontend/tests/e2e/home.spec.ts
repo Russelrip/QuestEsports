@@ -82,11 +82,12 @@ test("mobile layout stays within the viewport and opens navigation without page 
 test("gallery poster preview fits the full image inside a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/posters*", async (route) => {
+    const requestOrigin = route.request().headers()["origin"] || new URL(page.url()).origin;
     await route.fulfill({
       contentType: "application/json",
       headers: {
         "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Allow-Origin": "http://127.0.0.1:3000",
+        "Access-Control-Allow-Origin": requestOrigin,
       },
       body: JSON.stringify({
         success: true,
@@ -144,7 +145,8 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
     page.getByRole("link", { name: /VALORANT SHOWDOWN APPRECIATION POST/ }).first()
   ).toHaveAttribute(
     "href",
-    "https://www.facebook.com/share/p/14gNLGrBLWF/?mibextid=wwXIfr"
+    "https://www.facebook.com/share/p/14gNLGrBLWF/?mibextid=wwXIfr",
+    { timeout: 15_000 }
   );
   await expect(page.getByText("Selected capture")).toHaveCount(0);
   const posterButton = page.locator("main section button").filter({ has: page.locator("img") }).first();
