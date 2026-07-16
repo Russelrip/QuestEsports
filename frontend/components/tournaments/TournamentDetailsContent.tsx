@@ -104,7 +104,7 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
         ) : null}
 
         {activeTab === "bracket" && tournament.challongeEmbedUrl ? (
-          <section className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-3xl text-white">Brackets</h3>{tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}</div><div className="overflow-hidden rounded-2xl border border-white/10 bg-white"><iframe src={tournament.challongeEmbedUrl} title={`${tournament.title} Challonge bracket`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" className="h-[760px] w-full" /></div></section>
+          <section className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-3xl text-white">Brackets</h3>{tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}</div><div className="overflow-hidden bg-[#242424]"><iframe src={tournament.challongeEmbedUrl} title={`${tournament.title} Challonge bracket`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" className="block h-[760px] w-full border-0" /></div></section>
         ) : activeTab === "bracket" && tournament.bracketData ? (
           <section className="space-y-5">
             <h3 className="text-3xl text-white">Brackets</h3>
