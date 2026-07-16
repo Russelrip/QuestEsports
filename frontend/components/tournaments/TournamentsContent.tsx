@@ -165,7 +165,7 @@ export default function TournamentsContent({ tournaments, series = [], categorie
         {gameFilters.map((category) => {
           const icon = getGameIcon(category);
           const categorySlug = normalizeGameSlug(category.slug);
-          return <button key={categorySlug} type="button" onClick={() => setGameFilter(categorySlug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-24 w-28 shrink-0 snap-start overflow-hidden rounded-none border bg-[#0d0c13] transition hover:-translate-y-0.5 ${gameFilter === categorySlug ? "border-cyan-300 shadow-[0_10px_30px_rgba(34,211,238,0.2)]" : "border-white/10 hover:border-white/30"}`}>
+          return <button key={categorySlug} type="button" onClick={() => setGameFilter(categorySlug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-24 w-28 shrink-0 snap-start overflow-hidden rounded-none border bg-[#0d0c13] transition ${gameFilter === categorySlug ? "border-cyan-300 shadow-[0_10px_30px_rgba(34,211,238,0.2)]" : "border-white/10 hover:border-white/30"}`}>
             {icon ? <Image src={icon} alt="" fill sizes="112px" draggable={false} className="object-cover" /> : <span className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{category.displayName}</span>}
             <span className="sr-only">{category.displayName}</span>
           </button>;
@@ -185,7 +185,7 @@ export default function TournamentsContent({ tournaments, series = [], categorie
       return <Link key={item.id} href={`/tournaments/series/${item.slug}`} className={`group relative aspect-[4/3] overflow-hidden rounded-[30px] border bg-[#0d0c13] ${preview && !preview.isRegistrationOpen ? "border-rose-500/45" : "border-white/10"}`}>
         <TournamentBannerImage bannerUrl={item.heroUrl || preview?.bannerUrl} title={item.title} className="absolute inset-0 h-full w-full object-contain" />
         <span className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent" />
-        <span className="absolute inset-x-5 bottom-5"><span className="text-xs uppercase tracking-[0.22em] text-cyan-200">Event Series · {preview?.game || "Multiple games"}</span><span className="mt-2 block text-2xl text-white transition-colors group-hover:text-[#521f89]">{item.title}</span><span className="mt-3 flex flex-wrap items-center gap-3 text-sm"><b className="text-white">{preview?.prizePool || "Prize TBA"}</b><b className={available ? "text-emerald-300" : "text-rose-300"}>{available ? "Registration Open · Register" : "View Details"}</b></span></span>
+        <span className="absolute inset-x-5 bottom-5"><span className="text-xs uppercase tracking-[0.22em] text-cyan-200">Event Series · {preview?.game || "Multiple games"}</span><span className="mt-2 block text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{item.title}</span><span className="mt-3 flex flex-wrap items-center gap-3 text-sm"><b className="text-white">{preview?.prizePool || "Prize TBA"}</b><b className={available ? "text-emerald-300" : "text-rose-300"}>{available ? "Registration Open · Register" : "View Details"}</b></span></span>
       </Link>;
     })}</div> : null}
 
@@ -209,9 +209,9 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
 
   return <Link href={`/tournaments/${tournament.slug}`} className="group relative flex h-full flex-col overflow-hidden border border-white/10 bg-[#0d0c13]">
     <div className="relative aspect-[4/3] overflow-hidden bg-[#09080e]"><TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} rounded={false} showFallbackTitle={false} className="h-full w-full object-cover" /></div>
-    <div className="bg-[#0d0c13] px-5 py-5"><h3 className="line-clamp-2 min-h-16 text-xl font-bold uppercase leading-8 text-white transition-colors group-hover:text-[#521f89]">{tournament.title}</h3></div>
+    <div className="bg-[#0d0c13] px-5 py-5"><h3 className="line-clamp-2 min-h-16 text-xl font-bold uppercase leading-8 text-white transition-colors group-hover:text-[var(--interactive-text)]">{tournament.title}</h3></div>
     <dl className="grid flex-1 grid-cols-2 bg-[#0d0c13] text-xs [&>div:nth-child(-n+2)]:bg-white/[0.025]"><Meta label="Organizer" value={tournament.organizer} /><Meta label="Location" value={tournament.location} /><Meta label="Registration Closing Date" value={formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus)} /><Meta label="Event Start Date" value={formatTournamentDate(tournament.startDate, tournament.startDateStatus)} /></dl>
-    <div className="flex items-center justify-between gap-3 bg-black/25 px-5 py-4 text-[13px] font-bold uppercase tracking-[0.1em]"><span className="text-slate-300 transition-colors group-hover:text-[#521f89]">View Tournament</span><span className={`text-right ${statusClassName}`}>{statusLabel}</span></div>
+    <div className="flex items-center justify-center bg-black/25 px-4 py-3 text-center text-[11px] font-bold uppercase tracking-[0.1em]"><span className={`whitespace-nowrap ${statusClassName}`}>{statusLabel}</span></div>
   </Link>;
 }
 

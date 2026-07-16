@@ -19,7 +19,7 @@
   --brand: var(--color-accent);
   --brand-2: var(--color-accentAlt);
   --brand-soft: rgba(139, 92, 246, 0.14);
-  --interactive-text: #a978dc;
+  --interactive-text: #9175bf;
 }
 
 @theme {

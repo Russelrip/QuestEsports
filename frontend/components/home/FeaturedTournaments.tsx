@@ -47,7 +47,7 @@ export default async function FeaturedTournaments() {
               <div className="flex flex-1 flex-col p-5">
                 <div>
                   <Link href={`/tournaments/${tournament.slug}`} className="block">
-                    <h3 className="text-2xl text-white transition-colors group-hover:text-[#521f89]">{tournament.title}</h3>
+                    <h3 className="text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{tournament.title}</h3>
                   </Link>
                 </div>
 
