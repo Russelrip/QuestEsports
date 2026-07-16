@@ -135,6 +135,7 @@ Recommended flow:
 
 ## Documentation
 
+- [Full Site Audit Checklist](./docs/full-site-audit-checklist.md)
 - [API Documentation](./docs/api-documentation.md)
 - [Admin Operations](./docs/admin-operations.md)
 - [Authentication Flow](./docs/authentication-flow.md)
