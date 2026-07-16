@@ -8,6 +8,21 @@ const { normalizeEmail, normalizeText, normalizeUsername } = require("../../lib/
 const { PUBLIC_USER_SELECT, mapUserForResponse } = require("./auth.service");
 
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
+const OAUTH_REQUEST_TIMEOUT_MS = 10 * 1000;
+
+const fetchOAuth = async (url, options = {}) => {
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(OAUTH_REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new HttpError(504, "The identity provider took too long to respond.");
+    }
+    throw new HttpError(502, "The identity provider could not be reached.");
+  }
+};
 const OAUTH_RANDOM_PASSWORD_BYTES = 24;
 const OAUTH_FLOW_COOKIE_PREFIX = `${env.SESSION_COOKIE_NAME}_oauth_`;
 
@@ -278,7 +293,7 @@ const exchangeCodeForToken = async ({ provider, code, codeVerifier }) => {
     redirect_uri: config.callbackUrl,
   });
 
-  const response = await fetch(config.tokenUrl, {
+  const response = await fetchOAuth(config.tokenUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -291,7 +306,6 @@ const exchangeCodeForToken = async ({ provider, code, codeVerifier }) => {
     logger.error("OAuth token exchange failed.", {
       provider,
       status: response.status,
-      data,
     });
     throw new HttpError(502, `Unable to complete ${provider} login.`);
   }
@@ -300,7 +314,7 @@ const exchangeCodeForToken = async ({ provider, code, codeVerifier }) => {
 };
 
 const fetchGoogleProfile = async (accessToken) => {
-  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+  const response = await fetchOAuth("https://openidconnect.googleapis.com/v1/userinfo", {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -321,7 +335,7 @@ const fetchGoogleProfile = async (accessToken) => {
 };
 
 const fetchDiscordProfile = async (accessToken) => {
-  const response = await fetch("https://discord.com/api/users/@me", {
+  const response = await fetchOAuth("https://discord.com/api/users/@me", {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },

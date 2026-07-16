@@ -1,6 +1,6 @@
 "use client";
 
-import { buildApiUrl, readApiResponse } from "@/lib/api";
+import { buildApiUrl, fetchWithTimeout, readApiResponse } from "@/lib/api";
 
 export type AuthUser = {
   id: string;
@@ -48,7 +48,7 @@ type ApiSuccessResponse = {
 export const apiFetch = async (path: string, options: ApiFetchOptions = {}) => {
   const { json, headers, ...rest } = options;
 
-  return fetch(buildApiUrl(path), {
+  return fetchWithTimeout(buildApiUrl(path), {
     ...rest,
     credentials: "include",
     headers: {

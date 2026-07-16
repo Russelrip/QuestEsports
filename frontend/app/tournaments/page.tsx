@@ -21,7 +21,12 @@ export const metadata = buildPageMetadata({
   ],
 });
 
-export default async function TournamentsPage() {
+export default async function TournamentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ game?: string }>;
+}) {
+  const { game = "all" } = await searchParams;
   const [tournaments, series, categories] = await Promise.all([
     fetchPublicTournaments(),
     fetchPublicEventSeries(),
@@ -30,7 +35,12 @@ export default async function TournamentsPage() {
 
   return (
     <PageLayout title="Tournaments" description={defaultPageDescriptions.tournaments}>
-      <TournamentsContent tournaments={tournaments} series={series} categories={categories} />
+      <TournamentsContent
+        tournaments={tournaments}
+        series={series}
+        categories={categories}
+        initialGameFilter={game}
+      />
     </PageLayout>
   );
 }

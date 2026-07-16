@@ -5,6 +5,7 @@ const { Prisma } = require("../../generated/prisma");
 const { env } = require("../../config/env");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { logger } = require("../../lib/logger");
 const {
   bankTransferProofDirectory,
   persistBankTransferProofUpload,
@@ -335,13 +336,19 @@ const cleanupRetainedBankTransferProofs = async ({ now = new Date(), batchSize =
 
   let deleted = 0;
   for (const proof of proofs) {
-    const result = await prisma.bankTransferProof.deleteMany({ where: { id: proof.id } });
-    if (!result.count) continue;
-    deleted += 1;
-    await removeUploadFile({
-      directory: bankTransferProofDirectory,
-      filename: proof.storedFilename,
-    }).catch(() => undefined);
+    try {
+      await removeUploadFile({
+        directory: bankTransferProofDirectory,
+        filename: proof.storedFilename,
+      });
+      const result = await prisma.bankTransferProof.deleteMany({ where: { id: proof.id } });
+      if (result.count) deleted += 1;
+    } catch (error) {
+      logger.error("Retained bank-transfer proof cleanup failed", {
+        proofId: proof.id,
+        error,
+      });
+    }
   }
   return deleted;
 };

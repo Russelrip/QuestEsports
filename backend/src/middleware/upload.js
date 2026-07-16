@@ -29,6 +29,15 @@ const DEFAULT_FIELD_LIMITS = {
   fieldNestingDepth: 3,
   headerPairs: 100,
 };
+
+const createUploadRequestSizeGuard = (maxBytes) => (req, res, next) => {
+  const contentLength = Number.parseInt(req.headers["content-length"], 10);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    next(new HttpError(413, "The combined upload is too large."));
+    return;
+  }
+  next();
+};
 const ALLOWED_UPLOAD_TYPES = {
   jpeg: {
     extensions: new Set([".jpg", ".jpeg"]),
@@ -462,6 +471,7 @@ module.exports = {
   ALLOWED_UPLOAD_TYPES,
   TEAM_LOGO_MAX_FILE_SIZE,
   PAYMENT_PROOF_MAX_FILE_SIZE,
+  createUploadRequestSizeGuard,
   detectImageType,
   normalizeImageUpload,
   ensureUploadDirectories,

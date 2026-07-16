@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import EmptyState from "@/components/ui/EmptyState";
+import EmptyState from "@/components/ui/empty-state";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { useCartStore } from "@/hooks/useCartStore";
@@ -25,6 +25,7 @@ export default function CartCheckout() {
   const [error, setError] = useState("");
   const [quote, setQuote] = useState<MerchandiseQuote | null>(null);
   const [capabilities, setCapabilities] = useState<CommerceCapabilities | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -41,12 +42,21 @@ export default function CartCheckout() {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const { response, data } = await apiFetchJson<{ capabilities?: CommerceCapabilities }>("/api/commerce/capabilities");
-      if (!cancelled && response.ok && data.capabilities) setCapabilities(data.capabilities);
+      try {
+        const { response, data } = await apiFetchJson<{ capabilities?: CommerceCapabilities; message?: string }>("/api/commerce/capabilities");
+        if (cancelled) return;
+        if (response.ok && data.capabilities) {
+          setCapabilities(data.capabilities);
+        } else {
+          setError(data.message || "Checkout availability could not be verified. Please retry.");
+        }
+      } catch {
+        if (!cancelled) setError("Checkout availability could not be verified. Please retry.");
+      }
     };
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [retryKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,23 +67,31 @@ export default function CartCheckout() {
         return;
       }
       setQuoteLoading(true);
-      const { response, data } = await apiFetchJson<{ quote?: MerchandiseQuote; message?: string }>("/api/orders/quote", {
-        method: "POST",
-        json: { items: cartPayload(items) },
-      });
-      if (!cancelled) {
-        if (response.ok && data.quote) {
-          setQuote(data.quote);
-          setError("");
-        } else {
-          setQuote(null);
-          setError(data.message || "The current cart total could not be verified.");
+      try {
+        const { response, data } = await apiFetchJson<{ quote?: MerchandiseQuote; message?: string }>("/api/orders/quote", {
+          method: "POST",
+          json: { items: cartPayload(items) },
+        });
+        if (!cancelled) {
+          if (response.ok && data.quote) {
+            setQuote(data.quote);
+            setError("");
+          } else {
+            setQuote(null);
+            setError(data.message || "The current cart total could not be verified.");
+          }
         }
-        setQuoteLoading(false);
+      } catch {
+        if (!cancelled) {
+          setQuote(null);
+          setError("The current cart total could not be verified. Check your connection and retry.");
+        }
+      } finally {
+        if (!cancelled) setQuoteLoading(false);
       }
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [items]);
+  }, [items, retryKey]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -127,7 +145,7 @@ export default function CartCheckout() {
           <FormField label="Phone" required><Input required value={customer.phone} onChange={(event) => setCustomer((current) => ({ ...current, phone: event.target.value }))} /></FormField>
           <FormField label="Delivery address" required><Input required value={customer.address} onChange={(event) => setCustomer((current) => ({ ...current, address: event.target.value }))} /></FormField>
           <FormField label="City" required><Input required value={customer.city} onChange={(event) => setCustomer((current) => ({ ...current, city: event.target.value }))} /></FormField>
-          {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+          {error ? <div className="grid gap-3"><p className="text-sm text-rose-300">{error}</p><Button type="button" onClick={() => setRetryKey((value) => value + 1)}>Retry verification</Button></div> : null}
           <Button type="submit" disabled={loading || quoteLoading || !quote || !capabilities?.shopCheckoutAvailable}>{loading ? "Starting checkout…" : checkoutUnavailable ? "Online payment unavailable" : "Proceed to secure payment"}</Button>
           <p className="text-xs leading-6 text-slate-500">Sri Lanka delivery only. No cash on delivery. By continuing you accept the Terms, Privacy Policy, and Refund Policy.</p>
         </form>

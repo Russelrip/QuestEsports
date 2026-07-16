@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3000";
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3010";
+const webServerPort = new URL(baseURL).port || "3010";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -15,9 +16,9 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined
     : {
-        command: "npm run start",
+        command: `npm run start -- -p ${webServerPort}`,
         url: `${baseURL}/privacy-policy`,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === "true",
         timeout: 120 * 1000,
       },
   projects: [

@@ -8,6 +8,7 @@ const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
 const uploadPath = path.join(__dirname, "../src/middleware/upload.js");
 const teamPath = path.join(__dirname, "../src/modules/teams/team.service.js");
 const generatedPath = path.join(__dirname, "../src/generated/prisma/index.js");
+const loggerPath = path.join(__dirname, "../src/lib/logger.js");
 
 const load = ({
   prisma = {},
@@ -26,6 +27,7 @@ const load = ({
     [generatedPath]: {
       Prisma: { TransactionIsolationLevel: { Serializable: "Serializable" } },
     },
+    [loggerPath]: { logger: { error: () => undefined } },
   });
 
 test("bank-transfer fee tiers quote the exact assigned slot price", () => {
@@ -230,6 +232,34 @@ test("database duplicate-proof conflicts return a safe conflict and remove the n
       (error) => error.statusCode === 409 && /already been used/.test(error.message)
     );
     assert.equal(removed, true);
+  } finally {
+    restore();
+  }
+});
+
+test("retained proof cleanup keeps the database record when file deletion fails", async () => {
+  let databaseDeletes = 0;
+  const prisma = {
+    bankTransferProof: {
+      findMany: async () => [{ id: "proof-1", storedFilename: "receipt.webp" }],
+      deleteMany: async () => {
+        databaseDeletes += 1;
+        return { count: 1 };
+      },
+    },
+  };
+  const { module: service, restore } = load({
+    prisma,
+    removeUploadFile: async () => {
+      throw new Error("storage unavailable");
+    },
+  });
+  try {
+    const deleted = await service.cleanupRetainedBankTransferProofs({
+      now: new Date("2026-07-16T00:00:00.000Z"),
+    });
+    assert.equal(deleted, 0);
+    assert.equal(databaseDeletes, 0);
   } finally {
     restore();
   }

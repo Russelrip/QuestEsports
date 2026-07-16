@@ -67,7 +67,26 @@ const closeDatabase = async () => {
   }
 };
 
+const checkDatabaseReadiness = async ({ timeoutMs = 3000 } = {}) => {
+  let timeout;
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Database readiness check timed out.")),
+          timeoutMs
+        );
+      }),
+    ]);
+    return true;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+};
+
 module.exports = {
   initializeDatabase,
   closeDatabase,
+  checkDatabaseReadiness,
 };

@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import EmptyState from "@/components/ui/EmptyState";
+import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
 import { buttonClassName } from "@/components/ui/button";
 import { resolveMediaUrl } from "@/lib/media";

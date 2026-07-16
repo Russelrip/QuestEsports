@@ -43,7 +43,7 @@ const shutdown = async (signal, exitCode = 0) => {
 
   if (!server || !isServerListening || !server.listening) {
     await stopJobWorker();
-    stopCommerceMaintenance();
+    await stopCommerceMaintenance();
     await closeDatabase();
     process.exit(exitCode);
     return;
@@ -53,7 +53,7 @@ const shutdown = async (signal, exitCode = 0) => {
     if (error) {
       logger.error("HTTP server closed with an error", { error, signal });
       await stopJobWorker();
-      stopCommerceMaintenance();
+      await stopCommerceMaintenance();
       await closeDatabase();
       process.exit(1);
       return;
@@ -61,7 +61,7 @@ const shutdown = async (signal, exitCode = 0) => {
 
     logger.info("HTTP server closed", { signal });
     await stopJobWorker();
-    stopCommerceMaintenance();
+    await stopCommerceMaintenance();
     await closeDatabase();
     process.exit(exitCode);
   });

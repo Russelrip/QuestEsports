@@ -55,6 +55,24 @@ export const withServerOriginHeader = (headers?: HeadersInit) => {
   return nextHeaders;
 };
 
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  options: RequestInit = {},
+  timeoutMs = 15_000
+) {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  const abort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abort();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  try {
+    return await fetch(input, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abort);
+  }
+}
+
 export async function readApiResponse<T>(
   response: Response,
   fallbackMessage = "Request failed."
@@ -97,7 +115,7 @@ export async function fetchApiJson<T>(
   options: RequestInit = {},
   fallbackMessage = "Request failed."
 ) {
-  const response = await fetch(buildApiUrl(path), {
+  const response = await fetchWithTimeout(buildApiUrl(path), {
     ...options,
     headers: withServerOriginHeader(options.headers),
   });

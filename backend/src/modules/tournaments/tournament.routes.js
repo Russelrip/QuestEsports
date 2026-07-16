@@ -1,5 +1,9 @@
 const express = require("express");
-const { imageUpload, adminTournamentAssetsUpload } = require("../../middleware/upload");
+const {
+  imageUpload,
+  adminTournamentAssetsUpload,
+  createUploadRequestSizeGuard,
+} = require("../../middleware/upload");
 const sponsorController = require("./sponsor.controller");
 const {
   attachSession,
@@ -31,6 +35,7 @@ const tournamentRegistrationRateLimiter = createRateLimiter({
   maxRequests: 10,
   message: "Too many tournament registrations. Please try again later.",
 });
+const tournamentAssetsSizeGuard = createUploadRequestSizeGuard(45 * 1024 * 1024);
 
 router.use(attachSession);
 
@@ -73,6 +78,7 @@ router.patch(
 router.post(
   "/admin/tournaments",
   requireAdmin,
+  tournamentAssetsSizeGuard,
   adminTournamentAssetsUpload.fields([
     { name: "bannerImage", maxCount: 1 },
     { name: "heroImage", maxCount: 1 },
@@ -87,6 +93,7 @@ router.post(
 router.patch(
   "/admin/tournaments/:tournamentId",
   requireAdmin,
+  tournamentAssetsSizeGuard,
   adminTournamentAssetsUpload.fields([
     { name: "bannerImage", maxCount: 1 },
     { name: "heroImage", maxCount: 1 },

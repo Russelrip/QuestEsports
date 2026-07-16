@@ -118,10 +118,10 @@ const releaseOrderStock = async (
   tx,
   orderId,
   orderStatus = "cancelled",
-  { restoreInventory = true } = {}
+  { restoreInventory = true, claimWhere = {} } = {}
 ) => {
   const claimed = await tx.merchandiseOrder.updateMany({
-    where: { id: orderId, inventoryReleasedAt: null },
+    where: { id: orderId, inventoryReleasedAt: null, ...claimWhere },
     data: { inventoryReleasedAt: new Date(), status: orderStatus },
   });
   if (!claimed.count) return false;
@@ -348,9 +348,16 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
     select: { id: true },
   });
 
+  let expiredOrderCount = 0;
   for (const order of expiredOrders) {
-    await prisma.$transaction(async (tx) => {
-      await releaseOrderStock(tx, order.id, "cancelled");
+    const expired = await prisma.$transaction(async (tx) => {
+      const released = await releaseOrderStock(tx, order.id, "cancelled", {
+        claimWhere: {
+          status: "pending_payment",
+          expiresAt: { lte: now },
+        },
+      });
+      if (!released) return false;
       await tx.paymentTransaction.updateMany({
         where: {
           merchandiseOrderId: order.id,
@@ -358,7 +365,9 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
         },
         data: { status: "expired" },
       });
+      return true;
     });
+    if (expired) expiredOrderCount += 1;
   }
 
   const expiredRegistrations = await prisma.teamRegistration.findMany({
@@ -370,9 +379,10 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
     take: batchSize,
     select: { id: true },
   });
+  let expiredRegistrationCount = 0;
   for (const registration of expiredRegistrations) {
-    await prisma.$transaction(async (tx) => {
-      await tx.teamRegistration.updateMany({
+    const expired = await prisma.$transaction(async (tx) => {
+      const released = await tx.teamRegistration.updateMany({
         where: {
           id: registration.id,
           paymentStatus: "pending",
@@ -384,6 +394,7 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
           assignedSlotNumber: null,
         },
       });
+      if (!released.count) return false;
       await tx.paymentTransaction.updateMany({
         where: {
           registrationId: registration.id,
@@ -394,12 +405,14 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
           statusMessage: "The slot reservation expired before payment verification was completed.",
         },
       });
+      return true;
     });
+    if (expired) expiredRegistrationCount += 1;
   }
 
   return {
-    expiredOrders: expiredOrders.length,
-    expiredRegistrations: expiredRegistrations.length,
+    expiredOrders: expiredOrderCount,
+    expiredRegistrations: expiredRegistrationCount,
   };
 };
 

@@ -13,7 +13,7 @@ import {
   mapTournamentToFormValues,
   slugify,
 } from "@/components/admin/tournament-editor-model";
-import EmptyState from "@/components/ui/EmptyState";
+import EmptyState from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";

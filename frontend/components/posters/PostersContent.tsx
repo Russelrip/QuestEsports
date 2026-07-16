@@ -1,12 +1,12 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
-import AdminPosterStudio from "@/components/Posters/AdminPosterStudio";
+import AdminPosterStudio from "@/components/posters/AdminPosterStudio";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
-import MediaModal from "@/components/Posters/MediaModal";
-import PosterGallery from "@/components/Posters/PosterGallery";
-import PosterPreview from "@/components/Posters/PosterPreview";
+import MediaModal from "@/components/posters/MediaModal";
+import PosterGallery from "@/components/posters/PosterGallery";
+import PosterPreview from "@/components/posters/PosterPreview";
 import { useToastStore } from "@/hooks/useToastStore";
 import { fetchImages, fetchPosters, ImageAsset, Poster } from "@/lib/media";
 import {

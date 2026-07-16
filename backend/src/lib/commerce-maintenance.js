@@ -10,38 +10,60 @@ const {
 const MAINTENANCE_INTERVAL_MS = 60 * 1000;
 let interval = null;
 let running = false;
+let activeRun = null;
+let stopping = false;
 
 const runCommerceMaintenance = async () => {
-  if (running) return;
+  if (running || stopping) return;
   running = true;
-  try {
-    const result = await expireStaleCommerceReservations();
-    const deletedBankTransferProofs = await cleanupRetainedBankTransferProofs();
-    if (result.expiredOrders || result.expiredRegistrations) {
-      logger.info("Expired commerce reservations released", result);
+  activeRun = (async () => {
+    try {
+      const result = await expireStaleCommerceReservations();
+      const deletedBankTransferProofs = await cleanupRetainedBankTransferProofs();
+      if (result.expiredOrders || result.expiredRegistrations) {
+        logger.info("Expired commerce reservations released", result);
+      }
+      if (deletedBankTransferProofs) {
+        logger.info("Expired bank-transfer proof files deleted", { deletedBankTransferProofs });
+      }
+    } catch (error) {
+      logger.error("Commerce reservation maintenance failed", { error });
+    } finally {
+      running = false;
+      activeRun = null;
     }
-    if (deletedBankTransferProofs) {
-      logger.info("Expired bank-transfer proof files deleted", { deletedBankTransferProofs });
-    }
-  } catch (error) {
-    logger.error("Commerce reservation maintenance failed", { error });
-  } finally {
-    running = false;
-  }
+  })();
+  await activeRun;
 };
 
 const startCommerceMaintenance = () => {
   if (!env.COMMERCE_MAINTENANCE_ENABLED || interval) return false;
+  stopping = false;
   interval = setInterval(() => void runCommerceMaintenance(), MAINTENANCE_INTERVAL_MS);
   interval.unref?.();
   void runCommerceMaintenance();
   return true;
 };
 
-const stopCommerceMaintenance = () => {
-  if (!interval) return;
-  clearInterval(interval);
-  interval = null;
+const stopCommerceMaintenance = async ({ timeoutMs = 15000 } = {}) => {
+  stopping = true;
+  if (interval) {
+    clearInterval(interval);
+    interval = null;
+  }
+  if (activeRun) {
+    let timeout;
+    await Promise.race([
+      activeRun,
+      new Promise((resolve) => {
+        timeout = setTimeout(() => {
+          logger.warn("Commerce maintenance drain timed out", { timeoutMs });
+          resolve();
+        }, timeoutMs);
+      }),
+    ]);
+    if (timeout) clearTimeout(timeout);
+  }
 };
 
 module.exports = {

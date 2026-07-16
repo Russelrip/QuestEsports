@@ -16,6 +16,8 @@ const CLAIM_TRANSACTION_TIMEOUT_MS = 15 * 1000;
 
 let workerInterval = null;
 let workerRunning = false;
+let activeWorkerTick = null;
+let workerStopping = false;
 
 const suggestedJobBackends = [
   {
@@ -291,28 +293,33 @@ const runJobWorkerTick = async () => {
 };
 
 const tickWorkerSafely = async () => {
-  if (workerRunning) {
+  if (workerRunning || workerStopping) {
     return;
   }
 
   workerRunning = true;
-
-  try {
-    await runJobWorkerTick();
-  } catch (error) {
-    logger.error("Background job worker tick failed", { error });
-    captureException(error, {
-      component: "background-job-worker",
-    });
-  } finally {
-    workerRunning = false;
-  }
+  activeWorkerTick = (async () => {
+    try {
+      await runJobWorkerTick();
+    } catch (error) {
+      logger.error("Background job worker tick failed", { error });
+      captureException(error, {
+        component: "background-job-worker",
+      });
+    } finally {
+      workerRunning = false;
+      activeWorkerTick = null;
+    }
+  })();
+  await activeWorkerTick;
 };
 
 const startJobWorker = () => {
   if (!env.JOB_WORKER_ENABLED || workerInterval) {
     return false;
   }
+
+  workerStopping = false;
 
   workerInterval = setInterval(() => {
     void tickWorkerSafely();
@@ -332,13 +339,25 @@ const startJobWorker = () => {
   return true;
 };
 
-const stopJobWorker = async () => {
-  if (!workerInterval) {
-    return;
+const stopJobWorker = async ({ timeoutMs = 15000 } = {}) => {
+  workerStopping = true;
+  if (workerInterval) {
+    clearInterval(workerInterval);
+    workerInterval = null;
   }
-
-  clearInterval(workerInterval);
-  workerInterval = null;
+  if (activeWorkerTick) {
+    let timeout;
+    await Promise.race([
+      activeWorkerTick,
+      new Promise((resolve) => {
+        timeout = setTimeout(() => {
+          logger.warn("Background job worker drain timed out", { timeoutMs });
+          resolve();
+        }, timeoutMs);
+      }),
+    ]);
+    if (timeout) clearTimeout(timeout);
+  }
   logger.info("Background job worker stopped");
 };
 

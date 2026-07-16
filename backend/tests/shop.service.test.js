@@ -72,6 +72,51 @@ test("checkout rejects a stale client total before reserving inventory", async (
   } finally { restore(); }
 });
 
+test("checkout revalidates prices inside the inventory transaction", async () => {
+  let reads = 0;
+  let inventoryUpdates = 0;
+  const changedVariants = [{ ...variants[0], price: 4000 }];
+  const tx = {
+    productVariant: {
+      findMany: async () => {
+        reads += 1;
+        return changedVariants;
+      },
+      updateMany: async () => {
+        inventoryUpdates += 1;
+        return { count: 1 };
+      },
+    },
+  };
+  const prisma = {
+    productVariant: { findMany: async () => variants },
+    $transaction: async (callback) => callback(tx),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.createMerchandiseOrder({
+        body: {
+          email: "player@example.com",
+          firstName: "Quest",
+          lastName: "Player",
+          phone: "0712345678",
+          address: "1 Main Street",
+          city: "Colombo",
+          expectedTotal: 7500,
+          expectedCurrency: "LKR",
+          items: [{ variantId: "variant-1", quantity: 2 }],
+        },
+      }),
+      (error) => error.statusCode === 409 && /price changed/i.test(error.message)
+    );
+    assert.equal(reads, 1);
+    assert.equal(inventoryUpdates, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("admins cannot manually mark orders paid or refunded", async () => {
   const { module: service, restore } = load({});
   try {

@@ -3,7 +3,9 @@ const { logger } = require("../lib/logger");
 
 const getRequestId = (req) => {
   const headerValue = String(req.headers["x-request-id"] || "").trim();
-  return headerValue || crypto.randomUUID();
+  return /^[A-Za-z0-9._:-]{1,128}$/.test(headerValue)
+    ? headerValue
+    : crypto.randomUUID();
 };
 
 const attachRequestContext = (req, res, next) => {

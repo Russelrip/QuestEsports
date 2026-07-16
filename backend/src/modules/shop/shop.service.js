@@ -275,7 +275,7 @@ const deleteAdminProduct = async (productId) => {
   ]);
 };
 
-const resolveMerchandiseQuote = async (rawItems) => {
+const resolveMerchandiseQuote = async (rawItems, db = prisma) => {
   const items = parseArray(rawItems, "Cart items").map((item) => ({
     variantId: normalizeText(item?.variantId),
     quantity: normalizeInteger(item?.quantity),
@@ -291,7 +291,7 @@ const resolveMerchandiseQuote = async (rawItems) => {
   if (variantIds.length !== items.length) {
     throw new HttpError(400, "Combine duplicate cart items before checkout.");
   }
-  const variants = await prisma.productVariant.findMany({
+  const variants = await db.productVariant.findMany({
     where: { id: { in: variantIds }, isActive: true, product: { status: "active" } },
     include: { product: true },
   });
@@ -306,10 +306,10 @@ const resolveMerchandiseQuote = async (rawItems) => {
   }
   const quantityById = new Map(items.map((item) => [item.variantId, item.quantity]));
   const subtotal = variants.reduce(
-    (sum, variant) => sum + Number(variant.price) * quantityById.get(variant.id),
-    0
+    (sum, variant) => sum.plus(new Prisma.Decimal(variant.price).mul(quantityById.get(variant.id))),
+    new Prisma.Decimal(0)
   );
-  const deliveryFee = env.SHOP_DELIVERY_FEE_LKR;
+  const deliveryFee = new Prisma.Decimal(env.SHOP_DELIVERY_FEE_LKR);
   return {
     items,
     variants,
@@ -317,7 +317,7 @@ const resolveMerchandiseQuote = async (rawItems) => {
     currency,
     subtotal,
     deliveryFee,
-    total: subtotal + deliveryFee,
+    total: subtotal.plus(deliveryFee),
   };
 };
 
@@ -325,9 +325,9 @@ const getMerchandiseQuote = async (rawItems) => {
   const quote = await resolveMerchandiseQuote(rawItems);
   return {
     currency: quote.currency,
-    subtotal: quote.subtotal,
-    deliveryFee: quote.deliveryFee,
-    total: quote.total,
+    subtotal: quote.subtotal.toNumber(),
+    deliveryFee: quote.deliveryFee.toNumber(),
+    total: quote.total.toNumber(),
     items: quote.variants.map((variant) => ({
       variantId: variant.id,
       productName: variant.product.name,
@@ -365,11 +365,16 @@ const createMerchandiseOrder = async ({ body, user }) => {
   ) {
     throw new HttpError(400, "One or more customer or delivery fields exceed the allowed length.");
   }
-  const { variants, quantityById, currency, subtotal, deliveryFee, total } =
-    await resolveMerchandiseQuote(body.items);
+  let expectedTotal;
+  try {
+    expectedTotal = new Prisma.Decimal(body.expectedTotal);
+  } catch {
+    throw new HttpError(400, "The expected cart total is invalid.");
+  }
+  const initialQuote = await resolveMerchandiseQuote(body.items);
   if (
-    Number(body.expectedTotal) !== total ||
-    normalizeText(body.expectedCurrency).toUpperCase() !== currency
+    !expectedTotal.equals(initialQuote.total) ||
+    normalizeText(body.expectedCurrency).toUpperCase() !== initialQuote.currency
   ) {
     throw new HttpError(
       409,
@@ -381,11 +386,28 @@ const createMerchandiseOrder = async ({ body, user }) => {
   const providerOrderId = `MERCH-${crypto.randomUUID()}`;
 
   const created = await runSerializable(async (tx) => {
+    const { variants, quantityById, currency, subtotal, deliveryFee, total } =
+      await resolveMerchandiseQuote(body.items, tx);
+    if (
+      !expectedTotal.equals(total) ||
+      normalizeText(body.expectedCurrency).toUpperCase() !== currency
+    ) {
+      throw new HttpError(
+        409,
+        "Your cart price changed. Review the updated total before continuing."
+      );
+    }
     for (const variant of variants) {
       const quantity = quantityById.get(variant.id);
       if (variant.stock !== null) {
         const reserved = await tx.productVariant.updateMany({
-          where: { id: variant.id, stock: { gte: quantity } },
+          where: {
+            id: variant.id,
+            isActive: true,
+            price: variant.price,
+            product: { status: "active", currency },
+            stock: { gte: quantity },
+          },
           data: { stock: { decrement: quantity } },
         });
         if (!reserved.count) throw new HttpError(409, `${variant.name} no longer has enough stock.`);
@@ -440,7 +462,7 @@ const createMerchandiseOrder = async ({ body, user }) => {
         currency,
       },
     });
-    return { order, payment };
+    return { order, payment, quote: { subtotal, deliveryFee, total, currency } };
   });
 
   const checkout = createPayHereCheckout({
@@ -451,7 +473,15 @@ const createMerchandiseOrder = async ({ body, user }) => {
     cancelPath: `/shop/order/${publicToken}?cancelled=1`,
   });
   return {
-    order: { id: orderId, publicToken, subtotal, deliveryFee, total, currency, status: "pending_payment" },
+    order: {
+      id: orderId,
+      publicToken,
+      subtotal: created.quote.subtotal.toNumber(),
+      deliveryFee: created.quote.deliveryFee.toNumber(),
+      total: created.quote.total.toNumber(),
+      currency: created.quote.currency,
+      status: "pending_payment",
+    },
     paymentOrderId: providerOrderId,
     checkout,
   };

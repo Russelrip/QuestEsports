@@ -126,6 +126,45 @@ test("expired registration maintenance releases review-required bank transfers",
   }
 });
 
+test("expired order maintenance cannot cancel an order that became paid", async () => {
+  let inventoryQueries = 0;
+  let paymentUpdates = 0;
+  const now = new Date("2026-07-14T12:00:00.000Z");
+  const prisma = {
+    merchandiseOrder: { findMany: async () => [{ id: "order-paid" }] },
+    teamRegistration: { findMany: async () => [] },
+    $transaction: async (callback) => callback({
+      merchandiseOrder: {
+        updateMany: async ({ where }) => {
+          assert.equal(where.status, "pending_payment");
+          assert.deepEqual(where.expiresAt, { lte: now });
+          return { count: 0 };
+        },
+      },
+      merchandiseOrderItem: {
+        findMany: async () => {
+          inventoryQueries += 1;
+          return [];
+        },
+      },
+      paymentTransaction: {
+        updateMany: async () => {
+          paymentUpdates += 1;
+          return { count: 1 };
+        },
+      },
+    }),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.expireStaleCommerceReservations({ now });
+    assert.equal(inventoryQueries, 0);
+    assert.equal(paymentUpdates, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("manual PayHere reconciliation records an externally completed refund", async () => {
   const current = {
     id: "tx-review",

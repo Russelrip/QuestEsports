@@ -45,6 +45,22 @@ test("request observability middleware assigns and returns a request id", async 
   }
 });
 
+test("request observability rejects unsafe caller-supplied request ids", async () => {
+  const { module: middleware, restore } = loadModuleWithMocks(
+    observabilityMiddlewarePath,
+    {}
+  );
+  try {
+    const req = { headers: { "x-request-id": "bad\r\nforged-header" } };
+    const res = { setHeader: () => undefined };
+    middleware.attachRequestContext(req, res, () => undefined);
+    assert.match(req.requestId, /^[0-9a-f-]{36}$/i);
+    assert.notEqual(req.requestId, req.headers["x-request-id"]);
+  } finally {
+    restore();
+  }
+});
+
 test("monitoring capture ships webhook events with request context", async () => {
   const shippedPayloads = [];
   const loggedErrors = [];

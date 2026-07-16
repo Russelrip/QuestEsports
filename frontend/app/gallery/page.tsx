@@ -1,5 +1,5 @@
 import PageLayout from "@/components/PageLayout";
-import PostersContent from "@/components/Posters/PostersContent";
+import PostersContent from "@/components/posters/PostersContent";
 import { fetchPublicPosters, type Poster } from "@/lib/media";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
-import EmptyState from "@/components/ui/EmptyState";
+import EmptyState from "@/components/ui/empty-state";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

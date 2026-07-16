@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
-import EmptyState from "@/components/ui/EmptyState";
+import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
 import { buildApiUrl } from "@/lib/api";
 import type { EventSeries, GameCategory, Tournament } from "@/lib/tournaments";
@@ -28,9 +28,9 @@ const gameIconBySlug: Record<string, string> = {
   "free-fire": "/game-icon-images/free fire.png",
   "honor-of-kings": "/game-icon-images/honor of kings.png",
   "league-of-legends": "/game-icon-images/league of legends.png",
-  mlbb: "/game-icon-images/Molbile Legends Bang bang.png",
-  "mobile-legends": "/game-icon-images/Molbile Legends Bang bang.png",
-  "mobile-legends-bang-bang": "/game-icon-images/Molbile Legends Bang bang.png",
+  mlbb: "/game-icon-images/mobile-legends-bang-bang.png",
+  "mobile-legends": "/game-icon-images/mobile-legends-bang-bang.png",
+  "mobile-legends-bang-bang": "/game-icon-images/mobile-legends-bang-bang.png",
   "mortal-kombat-11": "/game-icon-images/mortal kombat 11.png",
   mk11: "/game-icon-images/mortal kombat 11.png",
   overwatch: "/game-icon-images/overwatch.png",
@@ -95,8 +95,8 @@ function getGameIcon(category: GameCategory) {
   return gameIconBySlug[categorySlug] || gameIconBySlug[displayNameSlug] || (category.artworkUrl ? buildApiUrl(category.artworkUrl) : null);
 }
 
-export default function TournamentsContent({ tournaments, series = [], categories = [] }: { tournaments: Tournament[]; series?: EventSeries[]; categories?: GameCategory[] }) {
-  const [gameFilter, setGameFilter] = useState("all");
+export default function TournamentsContent({ tournaments, series = [], categories = [], initialGameFilter = "all" }: { tournaments: Tournament[]; series?: EventSeries[]; categories?: GameCategory[]; initialGameFilter?: string }) {
+  const [gameFilter, setGameFilter] = useState(() => normalizeGameSlug(initialGameFilter) || "all");
   const gameScrollerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);

@@ -18,6 +18,17 @@ const createPathParameter = (name, schema) => ({
 });
 
 const createResponse = (description) => ({ description });
+const createOperation = (tag, summary, { authenticated = false, parameters = [] } = {}) => ({
+  tags: [tag],
+  summary,
+  parameters,
+  ...(authenticated ? { security: [{ sessionCookie: [] }] } : {}),
+  responses: {
+    200: createResponse(summary),
+    ...(authenticated ? { 401: createResponse("Authentication required") } : {}),
+    400: createResponse("Invalid request"),
+  },
+});
 
 const createListResponse = (tag, summary, parameters = []) => ({
   get: {
@@ -63,9 +74,23 @@ const openApiDocument = {
     { name: "Shop" },
     { name: "Payments" },
     { name: "Account" },
+    { name: "Contact" },
+    { name: "Recruitment" },
+    { name: "Games" },
+    { name: "Rulebooks" },
+    { name: "Media" },
+    { name: "Teams" },
     { name: "Admin" },
   ],
   components: {
+    securitySchemes: {
+      sessionCookie: {
+        type: "apiKey",
+        in: "cookie",
+        name: env.SESSION_COOKIE_NAME,
+        description: "HttpOnly session cookie issued by the login or OAuth flow.",
+      },
+    },
     parameters: {
       Page: pageParameter,
       PageSize: pageSizeParameter,
@@ -149,6 +174,12 @@ const openApiDocument = {
         },
       },
     },
+    "/api/health/live": {
+      get: createOperation("System", "Process liveness check"),
+    },
+    "/api/health/ready": {
+      get: createOperation("System", "Database-backed readiness check"),
+    },
     "/api/openapi.json": {
       get: {
         tags: ["System"],
@@ -157,6 +188,44 @@ const openApiDocument = {
           200: createResponse("OpenAPI JSON"),
         },
       },
+    },
+    "/api/auth/google/start": { get: createOperation("Auth", "Start Google OAuth login") },
+    "/api/auth/google/callback": { get: createOperation("Auth", "Complete Google OAuth login") },
+    "/api/auth/discord/start": { get: createOperation("Auth", "Start Discord OAuth login") },
+    "/api/auth/discord/callback": { get: createOperation("Auth", "Complete Discord OAuth login") },
+    "/api/signup": { post: createOperation("Auth", "Create an account") },
+    "/api/login": { post: createOperation("Auth", "Create a password-authenticated session") },
+    "/api/login/mfa": { post: createOperation("Auth", "Complete an MFA login challenge") },
+    "/api/logout": { post: createOperation("Auth", "End the current session", { authenticated: true }) },
+    "/api/me": { get: createOperation("Account", "Get the current session", { authenticated: true }) },
+    "/api/email-verification/verify": { get: createOperation("Auth", "Verify an email token") },
+    "/api/email-verification/resend": { post: createOperation("Auth", "Resend email verification") },
+    "/api/email-change/request": { post: createOperation("Account", "Request an email address change", { authenticated: true }) },
+    "/api/email-change/confirm": { get: createOperation("Auth", "Confirm an email address change") },
+    "/api/forgot-password": { post: createOperation("Auth", "Request a password reset") },
+    "/api/reset-password": { post: createOperation("Auth", "Reset a password with a token") },
+    "/api/mfa/setup": { get: createOperation("Account", "Start MFA setup", { authenticated: true }) },
+    "/api/mfa/verify-setup": { post: createOperation("Account", "Verify and enable MFA", { authenticated: true }) },
+    "/api/mfa/disable": { post: createOperation("Account", "Disable MFA", { authenticated: true }) },
+    "/api/mfa/backup-codes/regenerate": { post: createOperation("Account", "Regenerate MFA backup codes", { authenticated: true }) },
+    "/api/sessions": { get: createOperation("Account", "List active sessions", { authenticated: true }) },
+    "/api/sessions/{sessionId}": {
+      delete: createOperation("Account", "Revoke a session", {
+        authenticated: true,
+        parameters: [createPathParameter("sessionId", { type: "string" })],
+      }),
+    },
+    "/api/sessions/revoke-others": { post: createOperation("Account", "Revoke other sessions", { authenticated: true }) },
+    "/api/change-password": { post: createOperation("Account", "Change the current password", { authenticated: true }) },
+    "/api/users/{userId}": {
+      get: createOperation("Account", "Get an authenticated user profile", {
+        authenticated: true,
+        parameters: [createPathParameter("userId", { type: "string" })],
+      }),
+      patch: createOperation("Account", "Update the current user profile", {
+        authenticated: true,
+        parameters: [createPathParameter("userId", { type: "string" })],
+      }),
     },
     "/api/tournaments": createListResponse("Tournaments", "List public tournaments", [
       createQueryParameter("game", { type: "string" }),
@@ -280,6 +349,121 @@ const openApiDocument = {
     suggestedBackgroundJobs: suggestedJobBackends,
   },
 };
+
+const idParameter = (name) => [createPathParameter(name, { type: "string" })];
+const additionalPaths = {
+  "/api/contact": { post: createOperation("Contact", "Submit a contact message") },
+  "/api/recruitment-applications": { post: createOperation("Recruitment", "Submit a recruitment application", { authenticated: true }) },
+  "/api/game-categories": { get: createOperation("Games", "List public game categories") },
+  "/api/rulebooks": { get: createOperation("Rulebooks", "List published rulebooks") },
+  "/api/rulebooks/{slug}": { get: createOperation("Rulebooks", "Get a published rulebook", { parameters: idParameter("slug") }) },
+  "/api/posters": { get: createOperation("Media", "List public posters"), post: createOperation("Media", "Create a poster", { authenticated: true }) },
+  "/api/posters/{posterId}": {
+    get: createOperation("Media", "Get a public poster", { parameters: idParameter("posterId") }),
+    delete: createOperation("Media", "Delete a poster", { authenticated: true, parameters: idParameter("posterId") }),
+  },
+  "/api/posters/{posterId}/image": { get: createOperation("Media", "Stream a poster image", { parameters: idParameter("posterId") }) },
+  "/api/images": {
+    get: createOperation("Media", "List managed images", { authenticated: true }),
+    post: createOperation("Media", "Upload managed images", { authenticated: true }),
+  },
+  "/api/images/{imageId}": {
+    get: createOperation("Media", "Get managed image metadata", { authenticated: true, parameters: idParameter("imageId") }),
+    delete: createOperation("Media", "Delete a managed image", { authenticated: true, parameters: idParameter("imageId") }),
+  },
+  "/api/images/{imageId}/binary": { get: createOperation("Media", "Stream a managed image", { authenticated: true, parameters: idParameter("imageId") }) },
+  "/api/teams/profile": { get: createOperation("Teams", "List the current user's teams", { authenticated: true }) },
+  "/api/teams": { post: createOperation("Teams", "Create a saved team", { authenticated: true }) },
+  "/api/teams/{teamId}": {
+    patch: createOperation("Teams", "Update a saved team", { authenticated: true, parameters: idParameter("teamId") }),
+    delete: createOperation("Teams", "Delete a saved team", { authenticated: true, parameters: idParameter("teamId") }),
+  },
+  "/api/team-invite": { get: createOperation("Teams", "Preview a team invitation") },
+  "/api/team-invite/respond": { post: createOperation("Teams", "Respond to a team invitation", { authenticated: true }) },
+  "/api/payments/{orderId}/bank-transfer-proof": { post: createOperation("Payments", "Upload bank-transfer evidence", { authenticated: true, parameters: idParameter("orderId") }) },
+  "/api/products/{productId}/images/{imageId}": { get: createOperation("Shop", "Stream a product image", { parameters: [...idParameter("productId"), ...idParameter("imageId")] }) },
+  "/api/admin/dashboard": { get: createOperation("Admin", "Get administration dashboard metrics", { authenticated: true }) },
+  "/api/admin/tournaments": { post: createOperation("Admin", "Create a tournament", { authenticated: true }) },
+  "/api/admin/event-series": { post: createOperation("Admin", "Create an event series", { authenticated: true }) },
+  "/api/admin/products": { post: createOperation("Admin", "Create a product", { authenticated: true }) },
+  "/api/admin/users": {
+    get: createOperation("Admin", "List users", { authenticated: true }),
+    post: createOperation("Admin", "Create a user", { authenticated: true }),
+  },
+  "/api/admin/users/{userId}": {
+    get: createOperation("Admin", "Get a user", { authenticated: true, parameters: idParameter("userId") }),
+    patch: createOperation("Admin", "Update a user", { authenticated: true, parameters: idParameter("userId") }),
+    delete: createOperation("Admin", "Delete a user", { authenticated: true, parameters: idParameter("userId") }),
+  },
+  "/api/admin/contact-messages": { get: createOperation("Admin", "List contact messages", { authenticated: true }) },
+  "/api/admin/contact-messages/{messageId}": {
+    patch: createOperation("Admin", "Update contact message status", { authenticated: true, parameters: idParameter("messageId") }),
+    delete: createOperation("Admin", "Delete a contact message", { authenticated: true, parameters: idParameter("messageId") }),
+  },
+  "/api/admin/team-registrations/export": { get: createOperation("Admin", "Export tournament registrations", { authenticated: true }) },
+  "/api/admin/tournaments/{tournamentId}/registrations": { get: createOperation("Admin", "List registrations for a tournament", { authenticated: true, parameters: idParameter("tournamentId") }) },
+  "/api/admin/team-registrations/{registrationId}/status": { patch: createOperation("Admin", "Update registration status", { authenticated: true, parameters: idParameter("registrationId") }) },
+  "/api/admin/team-registrations/{registrationId}": { delete: createOperation("Admin", "Delete a registration", { authenticated: true, parameters: idParameter("registrationId") }) },
+  "/api/admin/recruitment-applications": { get: createOperation("Admin", "List recruitment applications", { authenticated: true }) },
+  "/api/admin/recruitment-applications/export": { get: createOperation("Admin", "Export recruitment applications", { authenticated: true }) },
+  "/api/admin/recruitment-applications/{applicationId}/status": { patch: createOperation("Admin", "Update recruitment application status", { authenticated: true, parameters: idParameter("applicationId") }) },
+  "/api/admin/recruitment-applications/{applicationId}": { delete: createOperation("Admin", "Delete a recruitment application", { authenticated: true, parameters: idParameter("applicationId") }) },
+  "/api/admin/media/import-legacy-posters": { post: createOperation("Admin", "Import legacy poster media", { authenticated: true }) },
+  "/api/admin/media/migrate-image-assets": { post: createOperation("Admin", "Migrate poster image assets", { authenticated: true }) },
+  "/api/admin/teams": { get: createOperation("Admin", "List saved teams", { authenticated: true }) },
+  "/api/admin/teams/{teamId}/organization": { patch: createOperation("Admin", "Update team organization status", { authenticated: true, parameters: idParameter("teamId") }) },
+  "/api/admin/game-categories": {
+    get: createOperation("Admin", "List game categories", { authenticated: true }),
+    post: createOperation("Admin", "Create a game category", { authenticated: true }),
+  },
+  "/api/admin/game-categories/{categoryId}": {
+    patch: createOperation("Admin", "Update a game category", { authenticated: true, parameters: idParameter("categoryId") }),
+    delete: createOperation("Admin", "Delete a game category", { authenticated: true, parameters: idParameter("categoryId") }),
+  },
+  "/api/admin/rulebooks": { post: createOperation("Admin", "Create a rulebook", { authenticated: true }) },
+  "/api/admin/rulebooks/{rulebookId}": {
+    patch: createOperation("Admin", "Update a rulebook", { authenticated: true, parameters: idParameter("rulebookId") }),
+    delete: createOperation("Admin", "Delete a rulebook", { authenticated: true, parameters: idParameter("rulebookId") }),
+  },
+  "/api/admin/event-series/{seriesId}": {
+    patch: createOperation("Admin", "Update an event series", { authenticated: true, parameters: idParameter("seriesId") }),
+    delete: createOperation("Admin", "Delete an event series", { authenticated: true, parameters: idParameter("seriesId") }),
+  },
+  "/api/admin/products/{productId}": {
+    patch: createOperation("Admin", "Update a product", { authenticated: true, parameters: idParameter("productId") }),
+    delete: createOperation("Admin", "Archive a product", { authenticated: true, parameters: idParameter("productId") }),
+  },
+  "/api/admin/orders/{orderId}": { patch: createOperation("Admin", "Update order fulfillment status", { authenticated: true, parameters: idParameter("orderId") }) },
+  "/api/admin/payments/{transactionId}/bank-transfer-proof": { get: createOperation("Admin", "Download bank-transfer evidence", { authenticated: true, parameters: idParameter("transactionId") }) },
+  "/api/admin/payments/{transactionId}/bank-transfer-review": { patch: createOperation("Admin", "Review bank-transfer evidence", { authenticated: true, parameters: idParameter("transactionId") }) },
+  "/api/admin/payments/{transactionId}/payhere-reconciliation": { patch: createOperation("Admin", "Reconcile a PayHere payment", { authenticated: true, parameters: idParameter("transactionId") }) },
+  "/api/admin/tournaments/{tournamentId}": {
+    get: createOperation("Admin", "Get an admin tournament", { authenticated: true, parameters: idParameter("tournamentId") }),
+    patch: createOperation("Admin", "Update a tournament", { authenticated: true, parameters: idParameter("tournamentId") }),
+    delete: createOperation("Admin", "Delete a tournament", { authenticated: true, parameters: idParameter("tournamentId") }),
+  },
+  "/api/admin/tournaments/{tournamentId}/sponsors": {
+    get: createOperation("Admin", "List tournament sponsors", { authenticated: true, parameters: idParameter("tournamentId") }),
+    post: createOperation("Admin", "Create a tournament sponsor", { authenticated: true, parameters: idParameter("tournamentId") }),
+  },
+  "/api/admin/tournaments/{tournamentId}/sponsors/{sponsorId}": {
+    patch: createOperation("Admin", "Update a tournament sponsor", { authenticated: true, parameters: [...idParameter("tournamentId"), ...idParameter("sponsorId")] }),
+    delete: createOperation("Admin", "Delete a tournament sponsor", { authenticated: true, parameters: [...idParameter("tournamentId"), ...idParameter("sponsorId")] }),
+  },
+  "/api/uploads/tournament-banners/{filename}": { get: createOperation("Media", "Stream a tournament banner", { parameters: idParameter("filename") }) },
+  "/api/uploads/poster-images/{filename}": { get: createOperation("Media", "Stream a poster image file", { parameters: idParameter("filename") }) },
+  "/api/uploads/team-logos/{filename}": { get: createOperation("Media", "Stream a team logo", { parameters: idParameter("filename") }) },
+  "/api/uploads/avatars/{filename}": { get: createOperation("Media", "Stream an avatar", { parameters: idParameter("filename") }) },
+  "/api/uploads/game-assets/{filename}": { get: createOperation("Media", "Stream a game asset", { parameters: idParameter("filename") }) },
+  "/api/uploads/sponsor-logos/{filename}": { get: createOperation("Media", "Stream a sponsor logo", { parameters: idParameter("filename") }) },
+};
+
+for (const [path, operations] of Object.entries(additionalPaths)) {
+  openApiDocument.paths[path] = {
+    ...(openApiDocument.paths[path] || {}),
+    ...operations,
+  };
+}
 
 module.exports = {
   openApiDocument,

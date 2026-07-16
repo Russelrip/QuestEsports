@@ -3,23 +3,47 @@ import type { NextConfig } from "next";
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 const isProduction = process.env.NODE_ENV === "production";
+const allowInsecureLoopbackUrls = process.env.ALLOW_INSECURE_LOOPBACK_URLS === "true";
 if (isProduction && (!apiUrl || !siteUrl)) {
   throw new Error(
     "NEXT_PUBLIC_API_URL and NEXT_PUBLIC_SITE_URL are required for production builds."
   );
 }
-const apiUsesLocalNetwork = apiUrl
-  ? ["localhost", "127.0.0.1", "::1"].includes(new URL(apiUrl).hostname)
+const parsePublicOrigin = (name: string, value?: string) => {
+  if (!value) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must be a valid absolute URL.`);
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error(`${name} must use HTTP or HTTPS.`);
+  }
+  if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error(`${name} must be an origin without credentials, a path, a query, or a fragment.`);
+  }
+  const isLoopback = ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
+  if (
+    isProduction &&
+    parsed.protocol !== "https:" &&
+    !(isLoopback && allowInsecureLoopbackUrls)
+  ) {
+    throw new Error(`${name} must use HTTPS in production.`);
+  }
+  return parsed;
+};
+const parsedApiUrl = parsePublicOrigin("NEXT_PUBLIC_API_URL", apiUrl);
+parsePublicOrigin("NEXT_PUBLIC_SITE_URL", siteUrl);
+const apiUsesLocalNetwork = parsedApiUrl
+  ? ["localhost", "127.0.0.1", "::1"].includes(parsedApiUrl.hostname)
   : false;
-const apiRemotePattern = apiUrl
-  ? (() => {
-      const parsed = new URL(apiUrl);
-      return {
-        protocol: parsed.protocol.replace(":", "") as "http" | "https",
-        hostname: parsed.hostname,
-        port: parsed.port,
-      };
-    })()
+const apiRemotePattern = parsedApiUrl
+  ? {
+      protocol: parsedApiUrl.protocol.replace(":", "") as "http" | "https",
+      hostname: parsedApiUrl.hostname,
+      port: parsedApiUrl.port,
+    }
   : null;
 
 const nextConfig: NextConfig = {

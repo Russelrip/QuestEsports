@@ -188,17 +188,14 @@ if (!["resend", "smtp"].includes(env.MAIL_PROVIDER)) {
   throw new Error('MAIL_PROVIDER must be either "resend" or "smtp".');
 }
 
-if (env.NODE_ENV === "production" && !env.AUTH_ENCRYPTION_KEY) {
+if (env.NODE_ENV !== "test" && !env.AUTH_ENCRYPTION_KEY) {
   throw new Error(
-    "AUTH_ENCRYPTION_KEY is required in production for MFA secret encryption and OAuth state signing."
+    "AUTH_ENCRYPTION_KEY is required outside tests for MFA secret encryption and OAuth state signing."
   );
 }
 
-if (
-  env.NODE_ENV === "production" &&
-  !/^[a-f0-9]{64}$/i.test(env.AUTH_ENCRYPTION_KEY)
-) {
-  throw new Error("AUTH_ENCRYPTION_KEY must be a 64-character hexadecimal secret in production.");
+if (env.AUTH_ENCRYPTION_KEY && !/^[a-f0-9]{64}$/i.test(env.AUTH_ENCRYPTION_KEY)) {
+  throw new Error("AUTH_ENCRYPTION_KEY must be a 64-character hexadecimal secret.");
 }
 
 if (env.NODE_ENV === "production" && !env.UPLOAD_ROOT) {

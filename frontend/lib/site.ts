@@ -263,8 +263,6 @@ export const organizationStructuredData = {
     "https://www.instagram.com/questesportslk/",
     "https://www.tiktok.com/@senumii",
     "https://www.tiktok.com/@questesportslk",
-    "https://www.youtube.com/",
-    "https://www.linkedin.com/",
   ],
   areaServed: "LK",
   knowsAbout: [

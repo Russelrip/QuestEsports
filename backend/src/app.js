@@ -4,6 +4,8 @@ const { env } = require("./config/env");
 const apiRouter = require("./routes");
 const { openApiDocument } = require("./lib/openapi");
 const { monitoringStatus } = require("./lib/monitoring");
+const { checkDatabaseReadiness } = require("./lib/database");
+const { logger } = require("./lib/logger");
 const { notFoundHandler, errorHandler } = require("./middleware/error-handler");
 const {
   attachRequestContext,
@@ -40,7 +42,23 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(protectAgainstCsrf);
 
-app.get("/api/health", (req, res) => res.status(200).json(buildHealthPayload()));
+app.get("/api/health/live", (req, res) => res.status(200).json(buildHealthPayload()));
+const readinessHandler = async (req, res) => {
+  try {
+    await checkDatabaseReadiness();
+    res.status(200).json({ ...buildHealthPayload(), readiness: { database: "ready" } });
+  } catch (error) {
+    logger.warn("API readiness check failed", { error });
+    res.status(503).json({
+      success: false,
+      message: "Quest E-sports API is not ready.",
+      timestamp: new Date().toISOString(),
+      readiness: { database: "unavailable" },
+    });
+  }
+};
+app.get("/api/health", readinessHandler);
+app.get("/api/health/ready", readinessHandler);
 app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));
 
 app.use("/api", apiRouter);
