@@ -44,7 +44,7 @@ export default async function FeaturedTournaments() {
                     rounded={false}
                     className="h-full w-full object-contain"
                   />
-                  <span className={`absolute right-4 top-4 rounded-none border px-3 py-1 text-xs font-bold uppercase ${tournament.isRegistrationOpen ? "border-emerald-300/40 bg-emerald-950/90 text-emerald-200" : "border-rose-400/50 bg-rose-950/90 text-rose-200"}`}>{getTournamentRegistrationShortLabel(tournament)}</span>
+                  {tournament.isRegistrationOpen ? <span className="absolute right-4 top-4 rounded-none border border-emerald-300/40 bg-emerald-950/90 px-3 py-1 text-xs font-bold uppercase text-emerald-200">{getTournamentRegistrationShortLabel(tournament)}</span> : null}
               </Link>
               <div className="flex flex-1 flex-col p-5">
                 <div>
