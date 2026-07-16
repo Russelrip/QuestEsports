@@ -90,12 +90,12 @@ export default function Navbar() {
               {!isLoading && isAuthenticated && user ? (
                 <UserMenu user={user} logout={logout} isAdmin={user.role === "admin"} />
               ) : !isLoading ? (
-                authNavItems.map((item, index) => (
+                authNavItems.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}
                     className={buttonClassName({
-                      variant: index === 0 ? "ghost" : "primary",
+                      variant: "ghost",
                       size: "sm",
                       className: "auth-nav-action",
                     })}
@@ -163,12 +163,12 @@ export default function Navbar() {
                     </Button>
                   </div>
                 ) : !isLoading ? (
-                  authNavItems.map((item, index) => (
+                  authNavItems.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
                       className={buttonClassName({
-                        variant: index === 0 ? "ghost" : "primary",
+                        variant: "ghost",
                         className: "auth-nav-action w-full",
                       })}
                     >
