@@ -77,8 +77,8 @@ export default function AdminPosterStudio({
               {uploadPreviews.length > 0 ? (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {uploadPreviews.map((item) => (
-                    <div key={`${item.file.name}-${item.file.size}`} className="rounded-[20px] border border-white/8 bg-white/5 p-3">
-                      <img src={item.previewUrl} alt={item.file.name} className="aspect-square w-full rounded-[16px] object-cover" />
+                    <div key={`${item.file.name}-${item.file.size}`} className="rounded-none border border-white/8 bg-white/5 p-3">
+                      <img src={item.previewUrl} alt={item.file.name} className="aspect-square w-full rounded-none object-cover" />
                       <p className="mt-3 text-sm text-slate-300">{item.file.name}</p>
                     </div>
                   ))}
@@ -112,8 +112,8 @@ export default function AdminPosterStudio({
               </FormField>
 
               {selectedDraftAsset ? (
-                <div className="overflow-hidden rounded-[24px] border border-white/8 bg-white/5 p-3">
-                  <img src={resolveImageAssetUrl(selectedDraftAsset)} alt={selectedDraftAsset.title} className="w-full rounded-[18px] object-cover" />
+                <div className="overflow-hidden rounded-none border border-white/8 bg-white/5 p-3">
+                  <img src={resolveImageAssetUrl(selectedDraftAsset)} alt={selectedDraftAsset.title} className="w-full rounded-none object-cover" />
                 </div>
               ) : (
                 <EmptyState description="Upload or select an image to preview the gallery entry." />

@@ -35,10 +35,10 @@ export const designTokens = {
     info: "#67e8f9",
   },
   radius: {
-    sm: "1rem",
-    md: "1.5rem",
-    lg: "1.75rem",
-    xl: "2rem",
+    sm: "0",
+    md: "0",
+    lg: "0",
+    xl: "0",
   },
   shadows: {
     sm: "0 12px 32px rgba(0,0,0,0.22)",

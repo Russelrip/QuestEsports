@@ -36,14 +36,15 @@ export default async function FeaturedTournaments() {
       <div className="mx-auto grid max-w-[76rem] gap-5 lg:grid-cols-3">
         {featuredTournaments.length > 0 ? (
           featuredTournaments.map((tournament) => (
-            <Card key={tournament.id} className={`group mx-auto flex h-full w-full max-w-[25rem] flex-col overflow-hidden ${tournament.isRegistrationOpen ? "" : "border-rose-500/45"}`}>
+            <Card key={tournament.id} className={`group mx-auto flex h-full w-full max-w-[25rem] flex-col overflow-hidden rounded-none ${tournament.isRegistrationOpen ? "" : "border-rose-500/45"}`}>
               <Link href={`/tournaments/${tournament.slug}`} className="relative block aspect-[4/3] overflow-hidden bg-[#09080e] p-3">
                   <TournamentBannerImage
                     bannerUrl={tournament.bannerUrl}
                     title={tournament.title}
+                    rounded={false}
                     className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.01]"
                   />
-                  <span className={`absolute right-4 top-4 rounded-full border px-3 py-1 text-xs font-bold uppercase ${tournament.isRegistrationOpen ? "border-emerald-300/40 bg-emerald-950/90 text-emerald-200" : "border-rose-400/50 bg-rose-950/90 text-rose-200"}`}>{getTournamentRegistrationShortLabel(tournament)}</span>
+                  <span className={`absolute right-4 top-4 rounded-none border px-3 py-1 text-xs font-bold uppercase ${tournament.isRegistrationOpen ? "border-emerald-300/40 bg-emerald-950/90 text-emerald-200" : "border-rose-400/50 bg-rose-950/90 text-rose-200"}`}>{getTournamentRegistrationShortLabel(tournament)}</span>
               </Link>
               <div className="flex flex-1 flex-col p-5">
                 <div>

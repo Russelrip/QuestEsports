@@ -29,6 +29,12 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  border-radius: 0 !important;
+}
+
+/* Keep animated loading indicators circular so their motion stays legible. */
+.animate-spin {
+  border-radius: 9999px !important;
 }
 
 html {

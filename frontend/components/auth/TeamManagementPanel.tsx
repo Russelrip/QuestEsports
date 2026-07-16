@@ -46,14 +46,22 @@ export function TeamSummaryGrid({
             className="group overflow-hidden border border-white/10 bg-[#12141d] text-left transition hover:-translate-y-1 hover:border-white/25 hover:shadow-[0_22px_55px_rgba(0,0,0,0.38)] motion-reduce:hover:translate-y-0"
           >
             <span className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(34,211,238,0.16),transparent_34%),linear-gradient(135deg,#171126,#0a0d16)]">
-              <span className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:28px_28px]" />
-              <span className="relative flex size-24 items-center justify-center overflow-hidden border border-white/10 bg-black/30 text-2xl font-bold text-white shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
-                {team.logoUrl ? (
-                  <Image src={buildApiUrl(team.logoUrl)} alt={`${team.name} logo`} fill className="object-contain p-2" sizes="96px" />
-                ) : (
-                  getInitials(team.name)
-                )}
-              </span>
+              {team.logoUrl ? (
+                <Image
+                  src={buildApiUrl(team.logoUrl)}
+                  alt={`${team.name} logo`}
+                  fill
+                  className="object-cover"
+                  sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
+                />
+              ) : (
+                <>
+                  <span className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:28px_28px]" />
+                  <span className="relative flex size-24 items-center justify-center overflow-hidden border border-white/10 bg-black/30 text-2xl font-bold text-white shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
+                    {getInitials(team.name)}
+                  </span>
+                </>
+              )}
             </span>
             <span className="block border-t border-white/10 bg-[#20232f] px-4 py-3">
               <span className="block truncate text-center text-sm font-bold uppercase text-cyan-200">{team.name}</span>

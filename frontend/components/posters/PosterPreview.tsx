@@ -29,7 +29,7 @@ export default function PosterPreview({
   const supportingCopy = draft.subheadline || fallbackSubheadline;
 
   return (
-    <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-white/10 bg-black/40 sm:rounded-[24px]">
+    <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-none border border-white/10 bg-black/40">
       <Image
         src={resolveImageAssetUrl(asset)}
         alt={asset.title}
@@ -40,7 +40,7 @@ export default function PosterPreview({
       {showOverlay ? (
         <div className={`absolute inset-0 flex p-6 sm:p-8 ${alignmentClassName[draft.overlayAlign]}`}>
           <div
-            className="max-w-xl rounded-[24px] p-5 shadow-[var(--shadow-md)]"
+            className="max-w-xl rounded-none p-5 shadow-[var(--shadow-md)]"
             style={{
               background: draft.accentColor,
               color: draft.textColor,
