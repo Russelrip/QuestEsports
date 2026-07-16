@@ -298,7 +298,7 @@ export function FileUploadField({
   onChange: (file: File | null) => void;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+    <div>
       <Input
         id={id}
         type="file"

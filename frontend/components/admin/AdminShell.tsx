@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { cn } from "@/lib/utils";
-import { adminNavigationLinks } from "@/lib/admin";
+import { adminNavigationGroups } from "@/lib/admin";
 
 export default function AdminShell({
   title,
@@ -38,22 +38,30 @@ export default function AdminShell({
               </div>
             </Card>
 
-            <Card className="p-2 sm:p-3">
-              <nav className="scrollbar-none flex snap-x gap-2 overflow-x-auto overscroll-x-contain" aria-label="Admin navigation">
-                {adminNavigationLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={cn(
-                      "shrink-0 snap-start whitespace-nowrap rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/8 hover:text-white",
-                      pathname === link.href && "bg-white/10 text-white"
-                    )}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-              </nav>
-            </Card>
+            <nav className="grid gap-5 border-y border-white/10 bg-[#0d0c13]/80 px-5 py-5 md:grid-cols-2 xl:grid-cols-[0.65fr_1.6fr_1.35fr_1fr]" aria-label="Admin navigation">
+              {adminNavigationGroups.map((group) => (
+                <div key={group.label}>
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{group.label}</p>
+                  <div className="flex flex-wrap gap-x-1 gap-y-1">
+                    {group.links.map((link) => {
+                      const isActive = pathname === link.href || (link.href !== "/admin" && pathname.startsWith(`${link.href}/`));
+                      return (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          className={cn(
+                            "border-b-2 border-transparent px-2 py-1.5 text-sm font-medium text-slate-400 transition hover:text-white",
+                            isActive && "border-cyan-300 text-white"
+                          )}
+                        >
+                          {link.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
 
             {children}
           </div>

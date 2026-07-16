@@ -10,20 +10,38 @@ import type {
   TournamentBracketSummary,
 } from "@/lib/tournaments";
 
-export const adminNavigationLinks = [
-  { href: "/admin", label: "Overview" },
-  { href: "/admin/users", label: "Users" },
-  { href: "/admin/tournaments", label: "Tournaments" },
-  { href: "/admin/games", label: "Games" },
-  { href: "/admin/teams", label: "Teams" },
-  { href: "/admin/event-series", label: "Event Series" },
-  { href: "/admin/registrations", label: "Registrations" },
-  { href: "/admin/products", label: "Products" },
-  { href: "/admin/orders", label: "Orders" },
-  { href: "/admin/payments", label: "Payments" },
-  { href: "/admin/recruitment", label: "Recruitment" },
-  { href: "/admin/rulebooks", label: "Rulebooks" },
-  { href: "/admin/contact-messages", label: "Contact Messages" },
+export const adminNavigationGroups = [
+  {
+    label: "Workspace",
+    links: [{ href: "/admin", label: "Overview" }],
+  },
+  {
+    label: "Competition",
+    links: [
+      { href: "/admin/tournaments", label: "Tournaments" },
+      { href: "/admin/event-series", label: "Event Series" },
+      { href: "/admin/games", label: "Games" },
+      { href: "/admin/registrations", label: "Registrations" },
+      { href: "/admin/rulebooks", label: "Rulebooks" },
+    ],
+  },
+  {
+    label: "People & Support",
+    links: [
+      { href: "/admin/users", label: "Users" },
+      { href: "/admin/teams", label: "Teams" },
+      { href: "/admin/recruitment", label: "Recruitment" },
+      { href: "/admin/contact-messages", label: "Messages" },
+    ],
+  },
+  {
+    label: "Commerce",
+    links: [
+      { href: "/admin/products", label: "Products" },
+      { href: "/admin/orders", label: "Orders" },
+      { href: "/admin/payments", label: "Payments" },
+    ],
+  },
 ] as const;
 
 export type Pagination = {

@@ -34,6 +34,33 @@ import { type Tournament } from "@/lib/tournaments";
 import type { GameCategory } from "@/lib/tournaments";
 import TournamentSponsorsManager from "@/components/admin/TournamentSponsorsManager";
 
+function EditorSection({
+  number,
+  title,
+  description,
+  defaultOpen = false,
+  children,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details open={defaultOpen || undefined} className="group border-b border-white/10 last:border-b-0">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-5 py-5 [&::-webkit-details-marker]:hidden">
+        <span>
+          <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">{number} · {title}</span>
+          <span className="mt-1 block text-sm text-slate-400">{description}</span>
+        </span>
+        <span aria-hidden="true" className="text-2xl font-light text-slate-500 transition group-open:rotate-45 group-open:text-cyan-200">+</span>
+      </summary>
+      <div className="grid gap-5 pb-7 md:grid-cols-2 xl:grid-cols-3">{children}</div>
+    </details>
+  );
+}
+
 export default function TournamentEditor({ tournamentId }: { tournamentId?: string }) {
   const router = useRouter();
   const isEdit = Boolean(tournamentId);
@@ -204,8 +231,15 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
         <AdminTableSkeleton rows={6} />
       ) : (
         <>
-          <Card className="p-6 sm:p-8">
-            <form className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" onSubmit={handleSubmit}>
+          <Card className="px-6 sm:px-8">
+            <form
+              onSubmit={handleSubmit}
+              onInvalid={(event) => {
+                const section = (event.target as HTMLElement).closest("details");
+                if (section) section.open = true;
+              }}
+            >
+              <EditorSection number="01" title="Essentials" description="Name the event and define how it appears in listings." defaultOpen>
               <FormField label="Title" htmlFor="title" required className="xl:col-span-2">
                 <Input id="title" value={formValues.title} onChange={(event) => updateField("title", event.target.value)} required />
               </FormField>
@@ -280,6 +314,8 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Series Order" htmlFor="seriesOrder">
                 <Input id="seriesOrder" type="number" value={formValues.seriesOrder} onChange={(event) => updateField("seriesOrder", event.target.value)} />
               </FormField>
+              </EditorSection>
+              <EditorSection number="02" title="Registration & Payment" description="Set roster limits, entry rules, fees, and payment handling.">
               <FormField label="Team Size" htmlFor="teamSize" required>
                 <Input id="teamSize" type="number" min="1" value={formValues.teamSize} onChange={(event) => updateField("teamSize", event.target.value)} required />
               </FormField>
@@ -313,17 +349,21 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   <option value="payhere">PayHere checkout</option>
                 </Select>
               </FormField>
-              <FormField label="Registration Fee" htmlFor="registrationFeeAmount" hint="Use the first-tier or fixed fee. Free registration must use 0.">
-                <Input id="registrationFeeAmount" type="number" min="0" step="0.01" value={formValues.registrationFeeAmount} onChange={(event) => updateField("registrationFeeAmount", event.target.value)} />
-              </FormField>
-              <FormField label="Fee Currency" htmlFor="registrationFeeCurrency">
-                <Select id="registrationFeeCurrency" value={formValues.registrationFeeCurrency} onChange={(event) => updateField("registrationFeeCurrency", event.target.value)}>
-                  <option value="LKR">LKR</option><option value="USD">USD</option>
-                </Select>
-              </FormField>
-              <FormField label="Payment Reservation (minutes)" htmlFor="reservationMinutes">
-                <Input id="reservationMinutes" type="number" min="1" value={formValues.reservationMinutes} onChange={(event) => updateField("reservationMinutes", event.target.value)} />
-              </FormField>
+              {formValues.paymentMethod !== "free" ? (
+                <>
+                  <FormField label="Registration Fee" htmlFor="registrationFeeAmount" hint="Use the first-tier or fixed fee.">
+                    <Input id="registrationFeeAmount" type="number" min="0" step="0.01" value={formValues.registrationFeeAmount} onChange={(event) => updateField("registrationFeeAmount", event.target.value)} />
+                  </FormField>
+                  <FormField label="Fee Currency" htmlFor="registrationFeeCurrency">
+                    <Select id="registrationFeeCurrency" value={formValues.registrationFeeCurrency} onChange={(event) => updateField("registrationFeeCurrency", event.target.value)}>
+                      <option value="LKR">LKR</option><option value="USD">USD</option>
+                    </Select>
+                  </FormField>
+                  <FormField label="Payment Reservation (minutes)" htmlFor="reservationMinutes">
+                    <Input id="reservationMinutes" type="number" min="1" value={formValues.reservationMinutes} onChange={(event) => updateField("reservationMinutes", event.target.value)} />
+                  </FormField>
+                </>
+              ) : null}
               {formValues.paymentMethod === "bank_transfer" ? (
                 <>
                   <FormField label="Bank Name" htmlFor="bankName" required>
@@ -361,10 +401,15 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   </FormField>
                 </>
               ) : null}
-              <FormField label="Configurable Registration Fields" htmlFor="registrationFields" hint='JSON list. Example: [{"key":"pubg-mobile-id","label":"PUBG Mobile ID","type":"text","scope":"entry","required":true,"options":[]}]' className="md:col-span-2 xl:col-span-3">
-                <div className="grid gap-3"><Textarea id="registrationFields" rows={8} value={formValues.registrationFields} onChange={(event) => updateField("registrationFields", event.target.value)} />
-                <Button type="button" variant="secondary" onClick={() => setFormValues((current) => ({ ...current, game: "pubg mobile", entryType: "team", teamSize: "4", minRosterSize: "4", maxRosterSize: "4", maxSubstitutes: "2", registrationFields: JSON.stringify([{ key: "pubg-mobile-id", label: "PUBG Mobile ID", type: "text", scope: "member", required: true, options: [] }, { key: "player-role", label: "Player Role", type: "select", scope: "member", required: true, options: ["Player", "Substitute"] }], null, 2) }))}>Apply PUBG Mobile team preset</Button></div>
-              </FormField>
+              <details className="md:col-span-2 xl:col-span-3">
+                <summary className="cursor-pointer py-2 text-sm font-semibold text-slate-300">Advanced registration fields (optional)</summary>
+                <FormField label="Configurable Registration Fields" htmlFor="registrationFields" hint='JSON list. Example: [{"key":"pubg-mobile-id","label":"PUBG Mobile ID","type":"text","scope":"entry","required":true,"options":[]}]' className="mt-3">
+                  <div className="grid gap-3"><Textarea id="registrationFields" rows={8} value={formValues.registrationFields} onChange={(event) => updateField("registrationFields", event.target.value)} />
+                  <Button type="button" variant="secondary" onClick={() => setFormValues((current) => ({ ...current, game: "pubg mobile", entryType: "team", teamSize: "4", minRosterSize: "4", maxRosterSize: "4", maxSubstitutes: "2", registrationFields: JSON.stringify([{ key: "pubg-mobile-id", label: "PUBG Mobile ID", type: "text", scope: "member", required: true, options: [] }, { key: "player-role", label: "Player Role", type: "select", scope: "member", required: true, options: ["Player", "Substitute"] }], null, 2) }))}>Apply PUBG Mobile team preset</Button></div>
+                </FormField>
+              </details>
+              </EditorSection>
+              <EditorSection number="03" title="Schedule & Links" description="Choose the event timeline and connect supporting resources.">
               <FormField label="Start Date" htmlFor="startDateStatus" required>
                 <div className="grid gap-2">
                   <Select id="startDateStatus" value={formValues.startDateStatus} onChange={(event) => updateField("startDateStatus", event.target.value as TournamentFormValues["startDateStatus"])}>
@@ -422,8 +467,10 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   ))}
                 </Select>
               </FormField>
+              </EditorSection>
+              <EditorSection number="04" title="Media" description="Upload public artwork, schedules, and completed-event images.">
               <FormField label="Banner Image" htmlFor="bannerImage" hint="Upload a PNG, JPG, or WebP tournament banner up to 10 MB.">
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                <div>
                   <input
                     ref={bannerImageInputRef}
                     id="bannerImage"
@@ -478,7 +525,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                 <FileUploadField id="heroImage" accept="image/png,image/jpeg,image/webp" file={formValues.heroImage} existingUrl={assetPreview.heroUrl} onChange={(file) => { updateField("heroImage", file); if (file) updateField("removeHeroImage", false); }} />
               </FormField>
               <FormField label="Schedule File" htmlFor="scheduleFile" hint="Upload XLSX or CSV up to 10 MB to render the schedule automatically.">
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+                <div>
                   <Input
                     id="scheduleFile"
                     type="file"
@@ -600,6 +647,8 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   </div>
                 </div>
               ) : null}
+              </EditorSection>
+              <EditorSection number="05" title="Content & Publishing" description="Write the public description, then choose when the event becomes visible.">
               <FormField label="Short Description" htmlFor="shortDescription" required className="md:col-span-2 xl:col-span-3">
                 <Textarea id="shortDescription" value={formValues.shortDescription} onChange={(event) => updateField("shortDescription", event.target.value)} required />
               </FormField>
@@ -616,8 +665,9 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   Featured
                 </label>
               </div>
-              {error ? <p className="md:col-span-2 xl:col-span-3 text-sm text-rose-300">{error}</p> : null}
-              <div className="md:col-span-2 xl:col-span-3 flex flex-wrap gap-3">
+              </EditorSection>
+              {error ? <p className="py-4 text-sm text-rose-300">{error}</p> : null}
+              <div className="flex flex-wrap gap-3 py-6">
                 <Button type="submit" disabled={saving}>{saving ? "Saving..." : isEdit ? "Save Tournament" : "Create Tournament"}</Button>
                 <Button type="button" variant="secondary" onClick={() => router.push("/admin/tournaments")}>Back to Tournaments</Button>
               </div>

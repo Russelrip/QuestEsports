@@ -17,36 +17,23 @@ const emptyStats: AdminDashboardStats = {
   unreadContactMessages: 0,
 };
 
-const statCards = (stats: AdminDashboardStats) => [
+const dashboardGroups = (stats: AdminDashboardStats) => [
   {
-    label: "Total Tournaments",
-    value: stats.totalTournaments,
-    href: "/admin/tournaments",
-    action: "Manage events",
+    label: "Competition",
+    description: "Tournament publishing and entry activity.",
+    stats: [
+      { label: "All tournaments", value: stats.totalTournaments, href: "/admin/tournaments" },
+      { label: "Registration open", value: stats.openTournaments, href: "/admin/tournaments" },
+      { label: "Registrations", value: stats.totalRegistrations, href: "/admin/registrations" },
+    ],
   },
   {
-    label: "Open Tournaments",
-    value: stats.openTournaments,
-    href: "/admin/tournaments",
-    action: "Review status",
-  },
-  {
-    label: "Total Registrations",
-    value: stats.totalRegistrations,
-    href: "/admin/registrations",
-    action: "Review queue",
-  },
-  {
-    label: "Pending Recruitment",
-    value: stats.pendingRecruitmentApplications,
-    href: "/admin/recruitment",
-    action: "Review applications",
-  },
-  {
-    label: "Unread Contact Messages",
-    value: stats.unreadContactMessages,
-    href: "/admin/contact-messages",
-    action: "Open inbox",
+    label: "People & Support",
+    description: "Items that may need an admin response.",
+    stats: [
+      { label: "Recruitment pending", value: stats.pendingRecruitmentApplications, href: "/admin/recruitment" },
+      { label: "Unread messages", value: stats.unreadContactMessages, href: "/admin/contact-messages" },
+    ],
   },
 ];
 
@@ -85,15 +72,20 @@ export default function AdminOverview() {
       ) : error ? (
         <EmptyState description={error} />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
-          {statCards(stats).map((card) => (
-            <Card key={card.label} className="p-6">
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{card.label}</p>
-              <p className="mt-5 text-4xl font-semibold text-white">{card.value}</p>
-              <div className="mt-6">
-                <Link href={card.href} className={buttonClassName({ variant: "secondary", className: "w-full" })}>
-                  {card.action}
-                </Link>
+        <div className="grid gap-6 xl:grid-cols-[1.45fr_1fr]">
+          {dashboardGroups(stats).map((group) => (
+            <Card key={group.label} className="overflow-hidden">
+              <div className="border-b border-white/10 px-6 py-5">
+                <h3 className="text-xl text-white">{group.label}</h3>
+                <p className="mt-1 text-sm text-slate-400">{group.description}</p>
+              </div>
+              <div className="divide-y divide-white/10">
+                {group.stats.map((stat) => (
+                  <Link key={stat.label} href={stat.href} className="flex items-center justify-between gap-5 px-6 py-5 transition hover:bg-white/[0.04]">
+                    <span className="text-sm font-medium text-slate-300">{stat.label}</span>
+                    <span className="text-3xl font-semibold text-white">{stat.value}</span>
+                  </Link>
+                ))}
               </div>
             </Card>
           ))}
