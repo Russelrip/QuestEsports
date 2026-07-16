@@ -73,11 +73,11 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
 
         {activeTab === "overview" ? (
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="space-y-5">
+            <div className="min-w-0 space-y-5">
               <Card className="p-5 sm:p-7">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-200">Tournament overview</p>
-                <h2 className="mt-3 text-3xl leading-tight text-white sm:text-4xl">{tournament.title}</h2>
-                <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
+                <h2 className="mt-3 break-words text-3xl leading-tight text-white [overflow-wrap:anywhere] sm:text-4xl">{tournament.title}</h2>
+                <p className="mt-5 whitespace-pre-line break-words text-sm leading-7 text-slate-300 [overflow-wrap:anywhere] sm:text-base sm:leading-8">
                   {tournament.fullDescription || tournament.shortDescription || "Tournament details will be announced soon."}
                 </p>
               </Card>

@@ -209,10 +209,10 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
 
   return <Link href={`/tournaments/${tournament.slug}`} className="group relative flex h-full flex-col overflow-hidden border border-white/10 bg-[#0d0c13]">
     <div className="relative aspect-[4/3] overflow-hidden bg-[#09080e]"><TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} rounded={false} showFallbackTitle={false} className="h-full w-full object-cover" /></div>
-    <div className="bg-[#0d0c13] px-4 py-4"><h3 className="line-clamp-2 min-h-10 text-sm font-bold uppercase leading-5 text-white transition-colors group-hover:text-cyan-200">{tournament.title}</h3></div>
+    <div className="bg-[#0d0c13] px-5 py-5"><h3 className="line-clamp-2 min-h-16 text-xl font-bold uppercase leading-8 text-white transition-colors group-hover:text-cyan-200">{tournament.title}</h3></div>
     <dl className="grid flex-1 grid-cols-2 bg-[#0d0c13] text-xs [&>div:nth-child(-n+2)]:bg-white/[0.025]"><Meta label="Organizer" value={tournament.organizer} /><Meta label="Location" value={tournament.location} /><Meta label="Registration Closing Date" value={formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus)} /><Meta label="Event Start Date" value={formatTournamentDate(tournament.startDate, tournament.startDateStatus)} /></dl>
-    <div className="flex items-center justify-between gap-3 bg-black/25 px-4 py-3 text-[9px] font-bold uppercase tracking-[0.16em]"><span className="text-slate-300 transition-colors group-hover:text-cyan-200">View Tournament</span><span className={`text-right ${statusClassName}`}>{statusLabel}</span></div>
+    <div className="flex items-center justify-between gap-3 bg-black/25 px-5 py-4 text-[13px] font-bold uppercase tracking-[0.1em]"><span className="text-slate-300 transition-colors group-hover:text-cyan-200">View Tournament</span><span className={`text-right ${statusClassName}`}>{statusLabel}</span></div>
   </Link>;
 }
 
-function Meta({ label, value }: { label: string; value: string }) { return <div className="min-w-0 px-4 py-3.5"><dt className="text-[8px] font-semibold uppercase tracking-[0.2em] text-slate-500">{label}</dt><dd className="mt-1.5 line-clamp-1 text-[11px] font-semibold text-white">{value}</dd></div>; }
+function Meta({ label, value }: { label: string; value: string }) { return <div className="min-w-0 px-5 py-4"><dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</dt><dd className="mt-2 line-clamp-1 text-[15px] font-semibold text-white">{value}</dd></div>; }
