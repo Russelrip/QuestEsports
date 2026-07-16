@@ -97,6 +97,7 @@ export default function Navbar() {
                     className={buttonClassName({
                       variant: index === 0 ? "ghost" : "primary",
                       size: "sm",
+                      className: "auth-nav-action",
                     })}
                   >
                     {item.label}
@@ -168,7 +169,7 @@ export default function Navbar() {
                       href={item.href}
                       className={buttonClassName({
                         variant: index === 0 ? "ghost" : "primary",
-                        className: "w-full",
+                        className: "auth-nav-action w-full",
                       })}
                     >
                       {item.label}
