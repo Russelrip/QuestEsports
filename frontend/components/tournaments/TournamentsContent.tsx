@@ -68,17 +68,21 @@ const localGameFilters: GameCategory[] = [
 
 const gameSlugAliases: Record<string, string> = {
   chess: "e-chess",
+  cod: "call-of-duty",
   "call-of-duty-mobile": "codm",
   "cod-mobile": "codm",
   "counter-strike": "counter-strike-2",
   cs2: "counter-strike-2",
   dota: "dota-2",
+  dota2: "dota-2",
   "ea-fc": "fc",
   "ea-sports-fc": "fc",
+  lol: "league-of-legends",
   "mobile-legends": "mlbb",
   "mobile-legends-bang-bang": "mlbb",
   mk11: "mortal-kombat-11",
   "mortal-kombat": "mortal-kombat-11",
+  pubgm: "pubg-mobile",
 };
 
 function normalizeGameSlug(value: string) {
@@ -95,13 +99,27 @@ function getGameIcon(category: GameCategory) {
   return gameIconBySlug[categorySlug] || gameIconBySlug[displayNameSlug] || (category.artworkUrl ? buildApiUrl(category.artworkUrl) : null);
 }
 
+function getUniqueGameFilters(categories: GameCategory[]) {
+  const seenSlugs = new Set<string>();
+  const seenIcons = new Set<string>();
+
+  return [...localGameFilters, ...categories].filter((category) => {
+    const slug = normalizeGameSlug(category.slug || category.displayName);
+    const icon = getGameIcon(category);
+    if (seenSlugs.has(slug) || (icon && seenIcons.has(icon))) return false;
+
+    seenSlugs.add(slug);
+    if (icon) seenIcons.add(icon);
+    return true;
+  });
+}
+
 export default function TournamentsContent({ tournaments, series = [], categories = [], initialGameFilter = "all" }: { tournaments: Tournament[]; series?: EventSeries[]; categories?: GameCategory[]; initialGameFilter?: string }) {
   const [gameFilter, setGameFilter] = useState(() => normalizeGameSlug(initialGameFilter) || "all");
   const gameScrollerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
-  const localGameSlugs = new Set(localGameFilters.map((category) => category.slug));
-  const gameFilters = [...localGameFilters, ...categories.filter((category) => !localGameSlugs.has(normalizeGameSlug(category.slug)))];
+  const gameFilters = getUniqueGameFilters(categories);
   const matches = (tournament: Tournament) => gameFilter === "all" || normalizeGameSlug(tournament.gameCategory?.slug || tournament.game) === gameFilter;
   const active = tournaments.filter((item) => !item.isCompleted && !item.series && matches(item));
   const past = tournaments
@@ -146,7 +164,8 @@ export default function TournamentsContent({ tournaments, series = [], categorie
         <button type="button" onClick={() => setGameFilter("all")} className={`h-24 w-28 shrink-0 snap-start rounded-none border px-4 text-sm font-semibold transition ${gameFilter === "all" ? "border-cyan-300 bg-cyan-400/15 text-cyan-100" : "border-white/10 text-slate-300 hover:border-white/30"}`}>View All Games</button>
         {gameFilters.map((category) => {
           const icon = getGameIcon(category);
-          return <button key={category.id} type="button" onClick={() => setGameFilter(category.slug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-24 w-28 shrink-0 snap-start overflow-hidden rounded-none border bg-[#0d0c13] transition hover:-translate-y-0.5 ${gameFilter === category.slug ? "border-cyan-300 shadow-[0_10px_30px_rgba(34,211,238,0.2)]" : "border-white/10 hover:border-white/30"}`}>
+          const categorySlug = normalizeGameSlug(category.slug);
+          return <button key={categorySlug} type="button" onClick={() => setGameFilter(categorySlug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-24 w-28 shrink-0 snap-start overflow-hidden rounded-none border bg-[#0d0c13] transition hover:-translate-y-0.5 ${gameFilter === categorySlug ? "border-cyan-300 shadow-[0_10px_30px_rgba(34,211,238,0.2)]" : "border-white/10 hover:border-white/30"}`}>
             {icon ? <Image src={icon} alt="" fill sizes="112px" draggable={false} className="object-cover" /> : <span className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{category.displayName}</span>}
             <span className="sr-only">{category.displayName}</span>
           </button>;
