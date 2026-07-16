@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { teamMembers } from "@/lib/site";
 
-const wingLeadership = [{ name: "Ayodhya “LIEBE” Janz", role: "CODM Wing Leader", image: "/images/ayodhya-liebe.jpg" }] as const;
+const wingLeadership = [{ name: "Ayodhya “LIEBE” Janz", role: "CODM Wing Leader", image: "/images/ayodhya.png" }] as const;
 
 export default function MembersContent() {
   return (
