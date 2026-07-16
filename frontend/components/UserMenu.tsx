@@ -47,7 +47,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
     <div className="relative" ref={menuRef}>
       <button
         type="button"
-        className="account-menu-trigger flex items-center gap-3 border border-white/10 bg-white/6 px-3 py-2 text-left"
+        className={`account-menu-trigger flex items-center gap-3 border px-3 py-2 text-left transition ${isOpen ? "border-white/10 bg-white/6" : "border-transparent bg-transparent hover:border-white/10 hover:bg-white/6"}`}
         onClick={() => setIsOpen((current) => !current)}
         aria-expanded={isOpen}
       >
