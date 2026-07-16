@@ -48,9 +48,8 @@ export default async function FeaturedTournaments() {
               </Link>
               <div className="flex flex-1 flex-col p-5">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/80">{tournament.gameCategory?.displayName || tournament.game}</p>
                   <Link href={`/tournaments/${tournament.slug}`} className="block">
-                    <h3 className="mt-2 text-2xl text-white transition-colors group-hover:text-cyan-200">{tournament.title}</h3>
+                    <h3 className="text-2xl text-white transition-colors group-hover:text-cyan-200">{tournament.title}</h3>
                   </Link>
                 </div>
 
