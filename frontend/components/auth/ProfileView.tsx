@@ -261,7 +261,6 @@ export default function ProfileView() {
       <Container>
         <div className="grid gap-6">
           <Card className="relative overflow-hidden p-6 sm:p-8">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_20%,rgba(34,211,238,0.14),transparent_30%),radial-gradient(circle_at_10%_80%,rgba(124,58,237,0.18),transparent_34%)]" />
             <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-5">
                 <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-violet-700 text-lg font-bold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)]">

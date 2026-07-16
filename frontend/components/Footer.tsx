@@ -101,7 +101,7 @@ export default function Footer() {
                 </a>
               ))}
             </div>
-            <div className="mt-6 flex flex-wrap gap-2">
+            <div className="mt-6 flex flex-wrap items-center gap-4">
               {socialLinks.map(({ href, label, icon }) => (
                 <a
                   href={href}
@@ -110,9 +110,9 @@ export default function Footer() {
                   key={label}
                   aria-label={label}
                   title={label}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 transition hover:border-white/25 hover:bg-white/10"
+                  className="inline-flex items-center justify-center opacity-75 transition duration-200 hover:scale-110 hover:opacity-100"
                 >
-                  <Image src={icon} alt="" width={16} height={16} />
+                  <Image src={icon} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
                 </a>
               ))}
             </div>
