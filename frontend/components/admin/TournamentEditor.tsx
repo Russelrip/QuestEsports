@@ -648,12 +648,12 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                 </div>
               ) : null}
               </EditorSection>
-              <EditorSection number="05" title="Content & Publishing" description="Write the public description, then choose when the event becomes visible.">
-              <FormField label="Short Description" htmlFor="shortDescription" required className="md:col-span-2 xl:col-span-3">
-                <Textarea id="shortDescription" value={formValues.shortDescription} onChange={(event) => updateField("shortDescription", event.target.value)} required />
+              <EditorSection number="05" title="Content & Publishing" description="Optionally add public descriptions, then choose when the event becomes visible.">
+              <FormField label="Short Description" htmlFor="shortDescription" hint="Optional. Shown beneath the tournament title in the public hero." className="md:col-span-2 xl:col-span-3">
+                <Textarea id="shortDescription" value={formValues.shortDescription} onChange={(event) => updateField("shortDescription", event.target.value)} />
               </FormField>
-              <FormField label="Full Description" htmlFor="fullDescription" required className="md:col-span-2 xl:col-span-3">
-                <Textarea id="fullDescription" value={formValues.fullDescription} onChange={(event) => updateField("fullDescription", event.target.value)} required />
+              <FormField label="Full Description" htmlFor="fullDescription" hint="Optional. Shown in the Overview content area." className="md:col-span-2 xl:col-span-3">
+                <Textarea id="fullDescription" value={formValues.fullDescription} onChange={(event) => updateField("fullDescription", event.target.value)} />
               </FormField>
               <div className="md:col-span-2 xl:col-span-3 flex flex-wrap gap-6 rounded-[24px] border border-white/8 bg-white/5 p-4 text-sm text-slate-300">
                 <label className="flex items-center gap-3">

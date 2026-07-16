@@ -42,7 +42,7 @@ export default async function FeaturedTournaments() {
                     bannerUrl={tournament.bannerUrl}
                     title={tournament.title}
                     rounded={false}
-                    className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.01]"
+                    className="h-full w-full object-contain"
                   />
                   <span className={`absolute right-4 top-4 rounded-none border px-3 py-1 text-xs font-bold uppercase ${tournament.isRegistrationOpen ? "border-emerald-300/40 bg-emerald-950/90 text-emerald-200" : "border-rose-400/50 bg-rose-950/90 text-rose-200"}`}>{getTournamentRegistrationShortLabel(tournament)}</span>
               </Link>
@@ -50,7 +50,7 @@ export default async function FeaturedTournaments() {
                 <div>
                   <p className="text-xs uppercase tracking-[0.24em] text-cyan-200/80">{tournament.gameCategory?.displayName || tournament.game}</p>
                   <Link href={`/tournaments/${tournament.slug}`} className="block">
-                    <h3 className="mt-2 text-2xl text-white transition hover:text-cyan-100">{tournament.title}</h3>
+                    <h3 className="mt-2 text-2xl text-white transition-colors group-hover:text-cyan-200">{tournament.title}</h3>
                   </Link>
                 </div>
 

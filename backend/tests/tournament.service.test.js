@@ -78,7 +78,7 @@ test("Challonge URLs are restricted and normalized for safe module embeds", () =
   }
 });
 
-test("admin tournaments can store TBA and TBD without placeholder dates", async () => {
+test("admin tournaments can store optional descriptions and TBA/TBD dates", async () => {
   let savedData;
   const prismaMock = {
     prisma: {
@@ -112,6 +112,8 @@ test("admin tournaments can store TBA and TBD without placeholder dates", async 
   try {
     const tournament = await tournamentService.createAdminTournament({
       body: buildAdminTournamentBody({
+        shortDescription: "",
+        fullDescription: "",
         startDateStatus: "tba",
         endDateStatus: "tbd",
         registrationDeadlineStatus: "tba",
@@ -122,6 +124,8 @@ test("admin tournaments can store TBA and TBD without placeholder dates", async 
     assert.equal(savedData.startDate, null);
     assert.equal(savedData.endDate, null);
     assert.equal(savedData.registrationDeadline, null);
+    assert.equal(savedData.shortDescription, "");
+    assert.equal(savedData.fullDescription, "");
     assert.equal(tournament.startDateStatus, "tba");
     assert.equal(tournament.endDateStatus, "tbd");
     assert.equal(tournament.registrationDeadlineStatus, "tba");

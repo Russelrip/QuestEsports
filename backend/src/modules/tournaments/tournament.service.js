@@ -842,8 +842,6 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     !title ||
     !slug ||
     !game ||
-    !shortDescription ||
-    !fullDescription ||
     !format ||
     !prizePool
   ) {

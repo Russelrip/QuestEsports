@@ -65,13 +65,13 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
           <div className="relative z-10 flex min-h-[520px] max-w-3xl flex-col justify-end p-6 sm:p-10">
             <div className="flex items-center gap-4">{tournament.gameCategory?.logoUrl ? <Image src={resolveMediaUrl(tournament.gameCategory.logoUrl)} alt={`${tournament.gameCategory.displayName} logo`} width={96} height={64} className="h-14 w-24 object-contain" /> : null}<p className="text-xs uppercase tracking-[0.3em] text-cyan-200">{tournament.gameCategory?.displayName || toTitleCase(tournament.game)}</p></div>
             <h2 className="mt-4 text-4xl leading-tight text-white sm:text-6xl">{tournament.title}</h2>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200">{tournament.shortDescription}</p>
+            {tournament.shortDescription ? <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200">{tournament.shortDescription}</p> : null}
             <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300"><b className="text-white">{tournament.prizePool}</b><span>{tournament.organizer}</span><span>{tournament.country} · {tournament.location}</span><span className={tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}>{toTitleCase(tournament.registrationState.replace(/_/g, " "))}</span></div>
             <div className="mt-6"><RegisterTournamentButton tournament={tournament} closedAsButton /></div>
           </div>
         </section>
         {tournament.sponsors?.length ? <Card className="p-5"><p className="text-xs uppercase tracking-[0.24em] text-slate-500">Official sponsors</p><div className="mt-4 flex flex-wrap items-center gap-6">{tournament.sponsors.map((sponsor) => { const logo = sponsor.logoUrl ? <Image src={resolveMediaUrl(sponsor.logoUrl)} alt={sponsor.name} width={140} height={64} className="h-14 w-32 object-contain" /> : <span className="font-semibold text-white">{sponsor.name}</span>; return sponsor.websiteUrl ? <a key={sponsor.id} href={sponsor.websiteUrl} target="_blank" rel="noreferrer" aria-label={`Visit ${sponsor.name}`}>{logo}</a> : <div key={sponsor.id}>{logo}</div>; })}</div></Card> : null}
-        <Card className="p-6 sm:p-8"><p className="whitespace-pre-line text-sm leading-8 text-slate-300 sm:text-base">{tournament.fullDescription || tournament.shortDescription}</p><div className="mt-8"><StatsGrid tournament={tournament} /></div></Card></div> : null}
+        <Card className="p-6 sm:p-8">{tournament.fullDescription || tournament.shortDescription ? <p className="whitespace-pre-line text-sm leading-8 text-slate-300 sm:text-base">{tournament.fullDescription || tournament.shortDescription}</p> : null}<div className={tournament.fullDescription || tournament.shortDescription ? "mt-8" : ""}><StatsGrid tournament={tournament} /></div></Card></div> : null}
 
         {activeTab === "participants" && participants.length > 0 ? (
           <TeamsPanel
