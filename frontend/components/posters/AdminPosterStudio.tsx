@@ -70,7 +70,7 @@ export default function AdminPosterStudio({
               <FormField label="Optional title" htmlFor="uploadTitle">
                 <Input id="uploadTitle" value={uploadTitle} onChange={(event) => onUploadTitleChange(event.target.value)} placeholder="Leave blank to use the file name" />
               </FormField>
-              <FormField label="Images" htmlFor="uploadImages" hint="PNG or JPG, up to 10 MB per image.">
+              <FormField label="Images" htmlFor="uploadImages" hint="PNG or JPG · Max 10 MB each · Recommended 1600 × 1200 px (4:3) · Up to 10 images.">
                 <Input id="uploadImages" type="file" accept="image/png,image/jpeg" multiple onChange={onFileSelection} required />
               </FormField>
 

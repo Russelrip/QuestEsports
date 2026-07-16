@@ -469,7 +469,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               </FormField>
               </EditorSection>
               <EditorSection number="04" title="Media" description="Upload public artwork, schedules, and completed-event images.">
-              <FormField label="Banner Image" htmlFor="bannerImage" hint="Upload a PNG, JPG, or WebP tournament banner up to 10 MB.">
+              <FormField label="Banner Image" htmlFor="bannerImage" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1200 × 900 px (4:3).">
                 <div>
                   <input
                     ref={bannerImageInputRef}
@@ -521,10 +521,10 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   </div>
                 </div>
               </FormField>
-              <FormField label="Hero Artwork" htmlFor="heroImage" hint="Full-width detail hero; falls back to the card artwork.">
+              <FormField label="Hero Artwork" htmlFor="heroImage" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1600 × 500 px (16:5).">
                 <FileUploadField id="heroImage" accept="image/png,image/jpeg,image/webp" file={formValues.heroImage} existingUrl={assetPreview.heroUrl} onChange={(file) => { updateField("heroImage", file); if (file) updateField("removeHeroImage", false); }} />
               </FormField>
-              <FormField label="Schedule File" htmlFor="scheduleFile" hint="Upload XLSX or CSV up to 10 MB to render the schedule automatically.">
+              <FormField label="Schedule File" htmlFor="scheduleFile" hint="XLSX or CSV · Max 10 MB · Image dimensions do not apply.">
                 <div>
                   <Input
                     id="scheduleFile"
@@ -546,7 +546,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   </p>
                 </div>
               </FormField>
-              <FormField label="Completed Poster" htmlFor="completedPosterImage" hint="Official poster shown first in completed showcase (max 10 MB).">
+              <FormField label="Completed Poster" htmlFor="completedPosterImage" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1080 × 1350 px (4:5).">
                 <FileUploadField
                   id="completedPosterImage"
                   accept="image/png,image/jpeg,image/webp"
@@ -560,7 +560,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   }}
                 />
               </FormField>
-              <FormField label="1st Place Image" htmlFor="firstPlaceImage" hint="Maximum file size: 10 MB.">
+              <FormField label="1st Place Image" htmlFor="firstPlaceImage" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1080 × 1080 px (1:1).">
                 <FileUploadField
                   id="firstPlaceImage"
                   accept="image/png,image/jpeg,image/webp"
@@ -574,7 +574,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   }}
                 />
               </FormField>
-              <FormField label="2nd Place Image" htmlFor="secondPlaceImage" hint="Maximum file size: 10 MB.">
+              <FormField label="2nd Place Image" htmlFor="secondPlaceImage" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1080 × 1080 px (1:1).">
                 <FileUploadField
                   id="secondPlaceImage"
                   accept="image/png,image/jpeg,image/webp"
@@ -588,7 +588,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   }}
                 />
               </FormField>
-              <FormField label="3rd Place Image" htmlFor="thirdPlaceImage" hint="Maximum file size: 10 MB.">
+              <FormField label="3rd Place Image" htmlFor="thirdPlaceImage" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1080 × 1080 px (1:1).">
                 <FileUploadField
                   id="thirdPlaceImage"
                   accept="image/png,image/jpeg,image/webp"

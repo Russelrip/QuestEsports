@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { adminRequest } from "@/lib/admin";
@@ -34,7 +35,9 @@ export default function AdminEventSeriesManager() {
         <Input required placeholder="quest-ascension" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
         <Textarea required placeholder="Series description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         <Input type="number" value={form.displayOrder} onChange={(e) => setForm({ ...form, displayOrder: e.target.value })} />
-        <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setHero(e.target.files?.[0] || null)} />
+        <FormField label="Series hero artwork" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1600 × 600 px (8:3).">
+          <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setHero(e.target.files?.[0] || null)} />
+        </FormField>
         <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" checked={form.isPublished} onChange={(e) => setForm({ ...form, isPublished: e.target.checked })} /> Published</label>
         {message ? <p className="text-sm text-slate-300">{message}</p> : null}<div className="flex gap-2"><Button type="submit">Save series</Button>{editing ? <Button type="button" variant="ghost" onClick={() => { setEditing(null); setForm(empty); }}>Cancel</Button> : null}</div>
       </form></Card>

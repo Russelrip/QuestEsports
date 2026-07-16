@@ -37,7 +37,10 @@ export default function TournamentSponsorsManager({ tournamentId }: { tournament
       <Input required maxLength={80} placeholder="Official PC Partner" value={partnershipLabel} onChange={(event) => setPartnershipLabel(event.target.value)} />
       <Input type="url" placeholder="https://sponsor.example" value={websiteUrl} onChange={(event) => setWebsiteUrl(event.target.value)} />
       <Input type="number" min="0" value={displayOrder} onChange={(event) => setDisplayOrder(event.target.value)} />
-      <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setLogo(event.target.files?.[0] || null)} />
+      <div>
+        <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setLogo(event.target.files?.[0] || null)} />
+        <p className="mt-2 text-xs text-slate-400">PNG, JPG, or WebP · Max 5 MB · Recommended 800 × 400 px with a transparent background.</p>
+      </div>
       <Button type="submit">Add sponsor</Button>
     </form>
     {message ? <p className="mt-3 text-sm text-slate-300">{message}</p> : null}
