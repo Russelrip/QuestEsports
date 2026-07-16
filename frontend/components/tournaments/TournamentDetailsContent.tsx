@@ -174,29 +174,25 @@ function TeamsPanel({
       <h3 className="text-3xl text-white">{title}</h3>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {teams?.map((team) => (
-          <div key={team.id} className="rounded-xl border border-blue-300/20 bg-[#0d1626] p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-white text-sm font-bold text-black">
+          <div key={team.id} className="overflow-hidden border border-white/10 bg-[#12141d]">
+            <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(34,211,238,0.16),transparent_34%),linear-gradient(135deg,#171126,#0a0d16)]">
+              <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:28px_28px]" />
+              <div className="relative flex size-24 items-center justify-center overflow-hidden border border-white/10 bg-black/30 text-2xl font-bold text-white shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
                 {team.avatarUrl || team.logoUrl ? (
                   <Image
                     src={resolveMediaUrl(team.avatarUrl || team.logoUrl || "")}
                     alt={team.displayName}
-                    width={48}
-                    height={48}
-                    sizes="48px"
-                    className="h-full w-full object-contain"
+                    fill
+                    sizes="96px"
+                    className="object-contain p-2"
                   />
                 ) : (
                   team.shortCode
                 )}
               </div>
-              <div className="min-w-0">
-                <p className="truncate font-semibold text-white">{team.displayName}</p>
-                <p className="text-xs text-slate-400">
-                  {isSolo ? "Solo player" : `Captain ${team.captainName} · ${team.memberCount} members`}
-                </p>
-              </div>
-              <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400" />
+            </div>
+            <div className="border-t border-white/10 bg-[#20232f] px-4 py-3">
+              <p className="truncate text-center text-sm font-bold uppercase text-white">{team.displayName}</p>
             </div>
           </div>
         ))}
