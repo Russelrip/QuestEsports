@@ -45,14 +45,36 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 type EmailChangeValues = z.infer<typeof emailChangeSchema>;
 
 function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[]; empty: string }) {
-  if (entries.length === 0) return <p className="rounded-[22px] border border-white/8 bg-white/5 p-5 text-sm text-slate-400">{empty}</p>;
-  return <div className="grid gap-4 sm:grid-cols-2">{entries.map((entry) => (
-    <Link key={entry.id} href={entry.payment?.provider === "bank_transfer" && entry.payment.status !== "paid" ? `/tournaments/${entry.tournament.slug}/payment?order=${encodeURIComponent(entry.payment.orderId)}` : `/tournaments/${entry.tournament.slug}`} className="group overflow-hidden rounded-[24px] border border-white/8 bg-white/5 transition hover:-translate-y-0.5 hover:border-cyan-300/25">
-      {entry.tournament.bannerUrl ? <div className="relative aspect-[16/7]"><Image src={buildApiUrl(entry.tournament.bannerUrl)} alt="" fill className="object-cover" sizes="(min-width: 640px) 40vw, 100vw" /></div> : null}
-      <div className="px-5 pt-5 text-xs text-slate-400">Event: {entry.tournament.startDateStatus === "scheduled" && entry.tournament.startDate ? new Date(entry.tournament.startDate).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : entry.tournament.startDateStatus.toUpperCase()}</div>
-      <div className="p-5"><p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">{entry.tournament.game}</p><h4 className="mt-2 text-lg text-white">{entry.tournament.title}</h4><p className="mt-2 text-sm text-slate-400">{entry.displayName}</p><div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.payment?.status || entry.paymentStatus}</Badge></div>{entry.payment?.provider === "bank_transfer" && entry.payment.status !== "paid" ? <p className="mt-3 text-xs text-cyan-200">Open bank-transfer instructions →</p> : null}</div>
-    </Link>
-  ))}</div>;
+  if (entries.length === 0) return <p className="border border-dashed border-white/10 bg-[#11131c] p-6 text-sm text-slate-400">{empty}</p>;
+
+  return <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{entries.map((entry) => {
+    const needsPayment = entry.payment?.provider === "bank_transfer" && entry.payment.status !== "paid";
+    const href = needsPayment
+      ? `/tournaments/${entry.tournament.slug}/payment?order=${encodeURIComponent(entry.payment?.orderId || "")}`
+      : `/tournaments/${entry.tournament.slug}`;
+    const eventDate = entry.tournament.startDateStatus === "scheduled" && entry.tournament.startDate
+      ? new Date(entry.tournament.startDate).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+      : entry.tournament.startDateStatus.toUpperCase();
+
+    return <article key={entry.id} className="flex h-full flex-col overflow-hidden border border-white/10 bg-[#181a24] shadow-[0_18px_45px_rgba(0,0,0,0.2)]">
+      <div className="relative aspect-[16/8] overflow-hidden bg-[#090b12]">
+        {entry.tournament.bannerUrl ? <Image src={buildApiUrl(entry.tournament.bannerUrl)} alt={`${entry.tournament.title} poster`} fill className="object-cover" sizes="(min-width: 1280px) 30vw, (min-width: 768px) 45vw, 100vw" /> : <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(168,85,247,0.28),transparent_36%),linear-gradient(135deg,#111827,#090b12)]" />}
+        <span className="absolute left-4 top-4 bg-black/75 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200 backdrop-blur">{entry.tournament.game}</span>
+      </div>
+      <div className="flex flex-1 flex-col p-5">
+        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{entry.entryType === "solo" ? "Solo registration" : entry.displayName}</p>
+        <h4 className="mt-2 line-clamp-2 min-h-12 text-lg font-bold uppercase leading-6 text-white">{entry.tournament.title}</h4>
+        <dl className="mt-5 grid grid-cols-2 gap-4 border-y border-white/8 py-4">
+          <div><dt className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Event date</dt><dd className="mt-1.5 text-xs font-semibold text-white">{eventDate}</dd></div>
+          <div><dt className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Registration</dt><dd className="mt-1.5 text-xs font-semibold capitalize text-white">{entry.status}</dd></div>
+        </dl>
+        <div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.payment?.status || entry.paymentStatus}</Badge></div>
+        <Link href={href} className="mt-5 flex items-center justify-between bg-cyan-300 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-200">
+          <span>{needsPayment ? "Complete registration" : "View tournament"}</span><span aria-hidden="true">→</span>
+        </Link>
+      </div>
+    </article>;
+  })}</div>;
 }
 
 export default function ProfileView() {
@@ -237,100 +259,80 @@ export default function ProfileView() {
   return (
     <section className="py-8 sm:py-12">
       <Container>
-        <div className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
-          <Card className="p-6 sm:p-8">
-            <div className="flex items-start gap-4">
-              <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-[24px] bg-violet-700 text-lg font-bold text-white">
-                {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt={`${user.firstName} ${user.lastName}`} fill className="object-cover" sizes="80px" /> : initials}
+        <div className="grid gap-6">
+          <Card className="relative overflow-hidden p-6 sm:p-8">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_20%,rgba(34,211,238,0.14),transparent_30%),radial-gradient(circle_at_10%_80%,rgba(124,58,237,0.18),transparent_34%)]" />
+            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-5">
+                <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-violet-700 text-lg font-bold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)]">
+                  {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt={`${user.firstName} ${user.lastName}`} fill className="object-cover" sizes="80px" /> : initials}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-200/75">Player overview</p>
+                  <h2 className="mt-2 truncate text-3xl text-white">{user.firstName} {user.lastName}</h2>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400"><span>@{user.username}</span><span aria-hidden="true">•</span><span>{user.email}</span><Badge className={user.emailVerified ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-200" : "border-amber-300/20 bg-amber-400/10 text-amber-200"}>{user.emailVerified ? "Verified" : "Verification needed"}</Badge></div>
+                </div>
               </div>
-              <div>
-                <Badge className="border-cyan-300/20 bg-cyan-400/10 text-cyan-100">
-                  {user.role === "admin" ? "Admin Account" : "Player Account"}
-                </Badge>
-                <h2 className="mt-4 text-3xl text-white">
-                  {user.firstName} {user.lastName}
-                </h2>
-                <p className="mt-2 text-sm text-slate-400">@{user.username}</p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              <label className={buttonClassName({ variant: "secondary", className: "cursor-pointer" })}>{avatarSaving ? "Saving..." : "Upload photo"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarSaving} onChange={(event) => void updateAvatar(event.target.files?.[0])} /></label>
-              {user.avatarUrl ? <Button type="button" variant="ghost" disabled={avatarSaving} onClick={() => void removeAvatar()}>Remove</Button> : null}
-            </div>
-
-            <div className="mt-8 grid gap-4">
-              <div className="rounded-[24px] border border-white/8 bg-white/5 p-5">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Email</p>
-                <p className="mt-2 text-sm text-white">{user.email}</p>
-              </div>
-              <div className="rounded-[24px] border border-white/8 bg-white/5 p-5">
-                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Verification</p>
-                <p className="mt-2 text-sm text-white">{user.emailVerified ? "Verified" : "Not verified"}</p>
+              <div className="flex flex-wrap gap-2">
+                <label className={buttonClassName({ variant: "secondary", className: "cursor-pointer" })}>{avatarSaving ? "Saving..." : "Change photo"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarSaving} onChange={(event) => void updateAvatar(event.target.files?.[0])} /></label>
+                {user.avatarUrl ? <Button type="button" variant="ghost" disabled={avatarSaving} onClick={() => void removeAvatar()}>Remove photo</Button> : null}
+                {user.role === "admin" ? <Link href="/admin" className={buttonClassName({ variant: "secondary" })}>Admin</Link> : null}
+                <Button variant="ghost" onClick={async () => { await logout(); router.push("/"); }}>Logout</Button>
               </div>
             </div>
 
             {user.pendingEmail ? (
-              <div className="mt-6 rounded-[24px] border border-amber-300/20 bg-amber-400/8 p-5 text-sm text-slate-200">
+              <div className="relative mt-6 border border-amber-300/20 bg-amber-400/8 p-4 text-sm text-slate-200">
                 Email change pending for <strong>{user.pendingEmail}</strong>. Your current email stays active until the new address is confirmed.
               </div>
             ) : null}
 
             {!user.emailVerified ? (
-              <div className="mt-6 rounded-[24px] border border-amber-300/20 bg-amber-400/8 p-5">
+              <div className="relative mt-4 flex flex-col gap-4 border border-amber-300/20 bg-amber-400/8 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-200">
                   Verify your email before registering for tournaments. If you signed up with the wrong address, update it below first.
                 </p>
-                <div className="mt-4">
+                <div className="shrink-0">
                   <ResendVerificationButton email={user.email} />
                 </div>
               </div>
             ) : null}
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              {user.role === "admin" ? (
-                <Link href="/admin" className={buttonClassName({ variant: "secondary" })}>
-                  Open Admin Dashboard
-                </Link>
-              ) : null}
-              <Button
-                variant="ghost"
-                onClick={async () => {
-                  await logout();
-                  router.push("/");
-                }}
-              >
-                Logout
-              </Button>
-            </div>
           </Card>
 
-          <Card className="p-6 sm:p-8">
-            <div className="mb-6 flex flex-wrap gap-2">
+          <Card className="p-4 sm:p-6 lg:p-8">
+            <div className="mb-8 flex gap-1 overflow-x-auto border-b border-white/8" role="tablist" aria-label="Profile sections">
               <button
                 type="button"
-                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "dashboard" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
+                role="tab"
+                aria-selected={activeTab === "dashboard"}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "dashboard" ? "border-cyan-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("dashboard")}
               >
-                Dashboard
+                Overview
               </button>
               <button
                 type="button"
-                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "account" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
+                role="tab"
+                aria-selected={activeTab === "account"}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "account" ? "border-cyan-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("account")}
               >
                 Account
               </button>
               <button
                 type="button"
-                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "teams" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
+                role="tab"
+                aria-selected={activeTab === "teams"}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "teams" ? "border-cyan-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("teams")}
               >
                 Teams
               </button>
               <button
                 type="button"
-                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${activeTab === "security" ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/6 hover:text-white"}`}
+                role="tab"
+                aria-selected={activeTab === "security"}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "security" ? "border-cyan-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("security")}
               >
                 Security
@@ -338,13 +340,23 @@ export default function ProfileView() {
             </div>
 
             {activeTab === "dashboard" ? (
-              <div className="grid gap-8">
+              <div className="grid gap-10">
                 {dashboardLoading ? <LoadingState title="Loading dashboard" description="Fetching your registrations and orders." /> : dashboardError ? <p className="text-sm text-rose-300">{dashboardError}</p> : dashboard ? <>
-                  <div className="grid gap-3 sm:grid-cols-3">{[["Active registrations", dashboard.currentRegistrations.length], ["Completed tournaments", dashboard.pastRegistrations.length], ["Saved teams", dashboard.teams.length]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/8 bg-white/5 p-5"><p className="text-3xl font-semibold text-white">{value}</p><p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p></div>)}</div>
-                  <div><h3 className="text-2xl text-white">Active Registrations</h3><div className="mt-5"><RegistrationCards entries={dashboard.currentRegistrations} empty="You do not have an active tournament registration." /></div></div>
-                  <div className="border-t border-white/8 pt-8"><h3 className="text-2xl text-white">Completed Tournaments</h3><div className="mt-5"><RegistrationCards entries={dashboard.pastRegistrations} empty="Your completed tournament history will appear here." /></div></div>
-                  <div className="border-t border-white/8 pt-8"><div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">Player Hub</p><h3 className="mt-2 text-2xl text-white">Teams You Are In</h3></div><button type="button" className="text-sm font-semibold text-cyan-200 hover:text-white" onClick={() => setActiveTab("teams")}>Manage teams →</button></div>{dashboard.teams.length ? <TeamSummaryGrid teams={dashboard.teams} onSelect={(teamId) => { setSelectedTeamId(teamId); setActiveTab("teams"); }} /> : <p className="border border-white/8 bg-white/[0.03] p-5 text-sm text-slate-400">You are not part of a saved team yet.</p>}</div>
-                  <div className="border-t border-white/8 pt-8"><div className="flex items-center justify-between gap-3"><h3 className="text-2xl text-white">Merchandise orders</h3><Link href="/shop" className="text-sm text-cyan-200">Visit shop</Link></div>{dashboard.orders.length ? <div className="mt-5 grid gap-3">{dashboard.orders.map((order) => <Link key={order.id} href={`/shop/order/${order.publicToken}`} className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-white/8 bg-white/5 p-4 text-sm"><span className="text-white">{order.itemCount} item{order.itemCount === 1 ? "" : "s"} · {order.currency} {order.total.toFixed(2)}</span><span className="text-slate-400">{order.status} · {order.paymentStatus}</span></Link>)}</div> : <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>}</div>
+                  <div className="grid gap-3 sm:grid-cols-3">{[["Active registrations", dashboard.currentRegistrations.length], ["Completed tournaments", dashboard.pastRegistrations.length], ["Teams you are in", dashboard.teams.length]].map(([label, value], index) => <div key={String(label)} className="relative overflow-hidden border border-white/8 bg-[#171923] p-5"><span className={`absolute inset-y-0 left-0 w-1 ${index === 0 ? "bg-cyan-300" : index === 1 ? "bg-violet-400" : "bg-emerald-300"}`} /><p className="text-3xl font-semibold text-white">{value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">{label}</p></div>)}</div>
+
+                  <section>
+                    <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Your squads</p><h3 className="mt-2 border-l-2 border-cyan-300 pl-3 text-2xl text-white">Teams You Are In</h3></div><button type="button" className="text-sm font-semibold text-cyan-200 hover:text-white" onClick={() => setActiveTab("teams")}>Manage teams →</button></div>
+                    {dashboard.teams.length ? <TeamSummaryGrid teams={dashboard.teams} onSelect={(teamId) => { setSelectedTeamId(teamId); setActiveTab("teams"); }} /> : <div className="flex flex-wrap items-center justify-between gap-4 border border-dashed border-white/10 bg-[#11131c] p-6"><p className="text-sm text-slate-400">You are not part of a saved team yet.</p><Link href="/registration" className={buttonClassName({})}>Create team</Link></div>}
+                  </section>
+
+                  <section className="border-t border-white/8 pt-10">
+                    <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Competition record</p>
+                    <h3 className="mt-2 border-l-2 border-cyan-300 pl-3 text-2xl text-white">Tournament History</h3>
+                    <div className="mt-8"><div className="mb-4 flex items-center justify-between gap-3"><h4 className="text-lg font-semibold text-white">Active Registrations</h4><span className="text-xs text-slate-500">{dashboard.currentRegistrations.length} active</span></div><RegistrationCards entries={dashboard.currentRegistrations} empty="You do not have an active tournament registration." /></div>
+                    <div className="mt-10"><div className="mb-4 flex items-center justify-between gap-3"><h4 className="text-lg font-semibold text-white">Completed Tournaments</h4><span className="text-xs text-slate-500">{dashboard.pastRegistrations.length} completed</span></div><RegistrationCards entries={dashboard.pastRegistrations} empty="Your completed tournament history will appear here." /></div>
+                  </section>
+
+                  <section className="border-t border-white/8 pt-10"><div className="flex items-center justify-between gap-3"><h3 className="border-l-2 border-cyan-300 pl-3 text-2xl text-white">Merchandise Orders</h3><Link href="/shop" className="text-sm text-cyan-200">Visit shop</Link></div>{dashboard.orders.length ? <div className="mt-5 grid gap-3 md:grid-cols-2">{dashboard.orders.map((order) => <Link key={order.id} href={`/shop/order/${order.publicToken}`} className="flex flex-wrap items-center justify-between gap-3 border border-white/8 bg-[#171923] p-4 text-sm transition hover:border-cyan-300/25"><span className="text-white">{order.itemCount} item{order.itemCount === 1 ? "" : "s"} · {order.currency} {order.total.toFixed(2)}</span><span className="capitalize text-slate-400">{order.status} · {order.paymentStatus}</span></Link>)}</div> : <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>}</section>
                 </> : null}
               </div>
             ) : activeTab === "account" ? (

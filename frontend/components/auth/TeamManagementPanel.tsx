@@ -38,9 +38,7 @@ export function TeamSummaryGrid({
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {teams.map((team) => {
-        const acceptedMembers = team.members.filter((member) => member.inviteStatus === "accepted").length;
-        return (
+      {teams.map((team) => (
           <button
             key={team.id}
             type="button"
@@ -58,15 +56,11 @@ export function TeamSummaryGrid({
               </span>
             </span>
             <span className="block border-t border-white/10 bg-[#20232f] px-4 py-3">
-              <span className="block truncate text-sm font-bold uppercase text-white">{team.name}</span>
-              <span className="mt-2 flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.12em] text-slate-400">
-                <span className="truncate">{team.organizationName || "Independent"}</span>
-                <span className="shrink-0 text-cyan-200">{acceptedMembers}/{team.members.length} active</span>
-              </span>
+              <span className="block truncate text-center text-sm font-bold uppercase text-cyan-200">{team.name}</span>
+              <span className="mt-2 block truncate text-center text-[10px] uppercase tracking-[0.12em] text-slate-400">Organization · {team.organizationName || "Independent"}</span>
             </span>
           </button>
-        );
-      })}
+      ))}
     </div>
   );
 }
