@@ -310,22 +310,12 @@ const paymentProofUpload = multer({
     fields: 5,
   }),
   fileFilter: (req, file, callback) => {
-    if (
-      isAllowedImageMimeType(file.mimetype) ||
-      (env.PAYMENT_PROOF_PDF_ENABLED && file.mimetype === "application/pdf")
-    ) {
+    if (isAllowedImageMimeType(file.mimetype)) {
       callback(null, true);
       return;
     }
 
-    callback(
-      new HttpError(
-        400,
-        env.PAYMENT_PROOF_PDF_ENABLED
-          ? "Only JPEG, PNG, WebP, or PDF payment proofs are allowed."
-          : "Only JPEG, PNG, or WebP payment proofs are allowed."
-      )
-    );
+    callback(new HttpError(400, "Only JPEG, PNG, or WebP payment proof screenshots are allowed."));
   },
 });
 
@@ -423,34 +413,12 @@ const persistBankTransferProofUpload = async (file) => {
     throw new HttpError(400, "Choose a payment receipt to upload.");
   }
 
-  let buffer;
-  let contentType;
-  let extension;
-  if (file.mimetype === "application/pdf") {
-    if (!env.PAYMENT_PROOF_PDF_ENABLED) {
-      throw new HttpError(400, "PDF payment proofs are not enabled.");
-    }
-    const submittedExtension = path.extname(file.originalname || "").toLowerCase();
-    if (
-      submittedExtension !== ".pdf" ||
-      file.buffer.length < 5 ||
-      file.buffer.subarray(0, 5).toString("ascii") !== "%PDF-"
-    ) {
-      throw new HttpError(400, "The uploaded payment proof is not a valid PDF.");
-    }
-    buffer = file.buffer;
-    contentType = "application/pdf";
-    extension = ".pdf";
-  } else {
-    const normalized = await normalizeImageUpload({
-      file,
-      invalidMessage: "The uploaded payment proof is not a valid JPEG, PNG, or WebP image.",
-      maxDimension: 4096,
-    });
-    buffer = normalized.buffer;
-    contentType = normalized.contentType;
-    extension = normalized.extension;
-  }
+  const normalized = await normalizeImageUpload({
+    file,
+    invalidMessage: "The uploaded payment proof is not a valid JPEG, PNG, or WebP image.",
+    maxDimension: 4096,
+  });
+  const { buffer, contentType, extension } = normalized;
 
   const filename = buildSafeUploadFilename(extension);
   await fs.writeFile(path.join(bankTransferProofDirectory, filename), buffer, {

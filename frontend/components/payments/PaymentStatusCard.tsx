@@ -128,9 +128,9 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
             <div className="grid gap-3 rounded-[22px] border border-white/10 p-5">
               <div>
                 <h3 className="text-lg text-white">{isBankTransfer.proofSubmitted ? "Replace payment proof" : "Upload payment proof"}</h3>
-                <p className="mt-1 text-xs leading-6 text-slate-400">JPEG, PNG, WebP, or PDF up to 5 MB. Uploading proof does not automatically confirm payment.</p>
+                <p className="mt-1 text-xs leading-6 text-slate-400">Upload a screenshot of your bank slip as a JPEG, PNG, or WebP image up to 5 MB. Uploading proof does not automatically confirm payment.</p>
               </div>
-              <Input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setProof(event.target.files?.[0] || null)} />
+              <Input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProof(event.target.files?.[0] || null)} />
               <Button type="button" disabled={!proof || uploading} onClick={() => void uploadProof()}>{uploading ? "Uploading…" : isBankTransfer.proofSubmitted ? "Replace proof" : "Submit proof"}</Button>
             </div>
           ) : null}

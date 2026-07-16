@@ -140,10 +140,6 @@ const env = {
   API_PUBLIC_URL: optional("API_PUBLIC_URL"),
   UPLOAD_ROOT: optional("UPLOAD_ROOT"),
   PRIVATE_UPLOAD_ROOT: optional("PRIVATE_UPLOAD_ROOT"),
-  PAYMENT_PROOF_PDF_ENABLED: normalizeBoolean(
-    process.env.PAYMENT_PROOF_PDF_ENABLED,
-    false
-  ),
   BANK_TRANSFER_PROOF_RETENTION_DAYS: normalizePositiveInteger(
     process.env.BANK_TRANSFER_PROOF_RETENTION_DAYS,
     365
