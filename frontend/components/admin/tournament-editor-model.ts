@@ -73,6 +73,7 @@ export const mapTournamentToFormValues = (
   bannerImage: null,
   heroImage: null,
   scheduleFile: null,
+  scheduleData: tournament.scheduleData || null,
   completedPosterImage: null,
   firstPlaceImage: null,
   secondPlaceImage: null,

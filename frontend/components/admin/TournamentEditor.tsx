@@ -33,6 +33,7 @@ import {
 import { type Tournament } from "@/lib/tournaments";
 import type { GameCategory } from "@/lib/tournaments";
 import TournamentSponsorsManager from "@/components/admin/TournamentSponsorsManager";
+import TournamentScheduleEditor from "@/components/admin/TournamentScheduleEditor";
 
 function EditorSection({
   number,
@@ -81,7 +82,6 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
     firstPlaceUrl: string | null;
     secondPlaceUrl: string | null;
     thirdPlaceUrl: string | null;
-    scheduleRows: number;
   }>({
     bannerUrl: null,
     heroUrl: null,
@@ -89,7 +89,6 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
     firstPlaceUrl: null,
     secondPlaceUrl: null,
     thirdPlaceUrl: null,
-    scheduleRows: 0,
   });
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(isEdit);
   const hydratedRef = useRef(false);
@@ -139,7 +138,6 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
           firstPlaceUrl: data.tournament.showcase?.firstPlaceUrl || null,
           secondPlaceUrl: data.tournament.showcase?.secondPlaceUrl || null,
           thirdPlaceUrl: data.tournament.showcase?.thirdPlaceUrl || null,
-          scheduleRows: data.tournament.scheduleData?.rows?.length || 0,
         });
         setSlugManuallyEdited(true);
 
@@ -204,7 +202,6 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
         firstPlaceUrl: response.tournament.showcase?.firstPlaceUrl || null,
         secondPlaceUrl: response.tournament.showcase?.secondPlaceUrl || null,
         thirdPlaceUrl: response.tournament.showcase?.thirdPlaceUrl || null,
-        scheduleRows: response.tournament.scheduleData?.rows?.length || 0,
       });
       if (bannerImageInputRef.current) {
         bannerImageInputRef.current.value = "";
@@ -524,28 +521,25 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Hero Artwork" htmlFor="heroImage" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1600 × 500 px (16:5).">
                 <FileUploadField id="heroImage" accept="image/png,image/jpeg,image/webp" file={formValues.heroImage} existingUrl={assetPreview.heroUrl} onChange={(file) => { updateField("heroImage", file); if (file) updateField("removeHeroImage", false); }} />
               </FormField>
-              <FormField label="Schedule File" htmlFor="scheduleFile" hint="XLSX or CSV · Max 10 MB · Image dimensions do not apply.">
-                <div>
-                  <Input
-                    id="scheduleFile"
-                    type="file"
-                    accept=".xlsx,.csv"
-                    onChange={(event) => {
-                      updateField("scheduleFile", event.target.files?.[0] || null);
-                      if (event.target.files?.[0]) {
-                        updateField("removeScheduleFile", false);
-                      }
-                    }}
-                  />
-                  <p className="mt-2 text-xs text-slate-500">
-                    {formValues.scheduleFile
-                      ? `${formValues.scheduleFile.name} selected`
-                      : assetPreview.scheduleRows > 0
-                        ? `${assetPreview.scheduleRows} schedule rows currently available`
-                        : "No schedule uploaded yet"}
-                  </p>
-                </div>
-              </FormField>
+              <TournamentScheduleEditor
+                tournamentTitle={formValues.title}
+                schedule={formValues.scheduleData}
+                file={formValues.scheduleFile}
+                bracket={bracket}
+                onScheduleChange={(scheduleData) => {
+                  updateField("scheduleData", scheduleData);
+                  updateField("removeScheduleFile", false);
+                }}
+                onFileChange={(scheduleFile) => {
+                  updateField("scheduleFile", scheduleFile);
+                  if (scheduleFile) updateField("removeScheduleFile", false);
+                }}
+                onRemove={() => {
+                  updateField("scheduleData", null);
+                  updateField("scheduleFile", null);
+                  updateField("removeScheduleFile", true);
+                }}
+              />
               <FormField label="Completed Poster" htmlFor="completedPosterImage" hint="PNG, JPG, or WebP · Max 10 MB · Recommended 1080 × 1350 px (4:5).">
                 <FileUploadField
                   id="completedPosterImage"
@@ -619,11 +613,6 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                       }}
                     />
                     <AssetRemovalCheckbox label="Remove hero artwork" checked={formValues.removeHeroImage} onChange={(checked) => { updateField("removeHeroImage", checked); if (checked) updateField("heroImage", null); }} />
-                    <AssetRemovalCheckbox
-                      label="Remove schedule file"
-                      checked={formValues.removeScheduleFile}
-                      onChange={(checked) => updateField("removeScheduleFile", checked)}
-                    />
                     <AssetRemovalCheckbox
                       label="Remove completed poster"
                       checked={formValues.removeCompletedPosterImage}

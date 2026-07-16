@@ -210,8 +210,9 @@ const removeUploadFiles = async (uploads) => {
   }
 };
 
-const buildUploadLimits = ({ fileSize, files = 1, fields = 40, parts } = {}) => ({
+const buildUploadLimits = ({ fileSize, files = 1, fields = 40, parts, fieldSize } = {}) => ({
   ...DEFAULT_FIELD_LIMITS,
+  ...(fieldSize ? { fieldSize } : {}),
   fileSize,
   files,
   fields,
@@ -278,6 +279,7 @@ const adminTournamentAssetsUpload = multer({
     fileSize: ADMIN_UPLOAD_MAX_FILE_SIZE,
     files: 7,
     fields: 60,
+    fieldSize: 512 * 1024,
   }),
   fileFilter: (req, file, callback) => {
     if (

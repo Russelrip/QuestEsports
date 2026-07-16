@@ -102,6 +102,7 @@ test("admin tournaments can store optional descriptions and TBA/TBD dates", asyn
       persistTeamLogoUpload: async () => null,
       persistTournamentBannerUpload: async () => null,
       persistTournamentScheduleUpload: async () => null,
+      removeUploadFiles: async () => undefined,
     },
     [teamServiceModulePath]: {
       syncSavedTeamFromRegistration: async () => [],
@@ -129,6 +130,107 @@ test("admin tournaments can store optional descriptions and TBA/TBD dates", asyn
     assert.equal(tournament.startDateStatus, "tba");
     assert.equal(tournament.endDateStatus, "tbd");
     assert.equal(tournament.registrationDeadlineStatus, "tba");
+  } finally {
+    restore();
+  }
+});
+
+test("admin tournaments can save an editable schedule without a spreadsheet", async () => {
+  let savedData;
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findFirst: async () => null,
+        create: async ({ data }) => {
+          savedData = data;
+          return {
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+          };
+        },
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+    },
+    [teamServiceModulePath]: {
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
+    },
+  });
+
+  try {
+    await tournamentService.createAdminTournament({
+      body: buildAdminTournamentBody({
+        scheduleData: JSON.stringify({
+          sheetName: "Quest Cup Schedule",
+          headers: ["Date", "Match", "Team A", "Team B", "Time", "Format"],
+          rows: [
+            {
+              Date: "2026-08-01",
+              Match: "1",
+              "Team A": "Alpha",
+              "Team B": "Bravo",
+              Time: "09:00 AM",
+              Format: "Bo1",
+            },
+          ],
+        }),
+      }),
+      files: {},
+    });
+
+    assert.equal(savedData.scheduleData.sheetName, "Quest Cup Schedule");
+    assert.equal(savedData.scheduleData.rows[0]["Team A"], "Alpha");
+    assert.equal(savedData.scheduleData.headers.length, 6);
+  } finally {
+    restore();
+  }
+});
+
+test("editable schedule columns must be unique", async () => {
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findFirst: async () => null,
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+      removeUploadFiles: async () => undefined,
+    },
+    [teamServiceModulePath]: {
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
+    },
+  });
+
+  try {
+    await assert.rejects(
+      tournamentService.createAdminTournament({
+        body: buildAdminTournamentBody({
+          scheduleData: JSON.stringify({
+            sheetName: "Invalid",
+            headers: ["Team", "team"],
+            rows: [],
+          }),
+        }),
+        files: {},
+      }),
+      /column names must be unique/
+    );
   } finally {
     restore();
   }

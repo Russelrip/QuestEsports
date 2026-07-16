@@ -301,26 +301,29 @@ function SchedulePanel({ tournament }: { tournament: Tournament }) {
   }
 
   return (
-    <section className="space-y-4">
-      <div>
-        <h3 className="text-3xl text-white">Schedule</h3>
-        <p className="mt-2 text-sm text-slate-400">{schedule.sheetName}</p>
+    <details open className="group overflow-hidden border border-white/10 bg-[#111a31]">
+      <summary className="flex cursor-pointer list-none items-center justify-between bg-[#263451] px-4 py-3 text-sm font-bold uppercase tracking-[0.08em] text-white [&::-webkit-details-marker]:hidden">
+        Schedule
+        <span aria-hidden="true" className="text-lg transition group-open:rotate-180">⌄</span>
+      </summary>
+      <div className="border-t border-white/8 px-3 py-3 text-sm font-semibold text-white sm:px-4">
+        {schedule.sheetName}
       </div>
-      <div className="overflow-x-auto rounded-[24px] border border-white/10 bg-[#111827]">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-[#263451] text-xs uppercase tracking-[0.12em] text-white">
-            <tr>{schedule.headers.map((header) => <th key={header} className="whitespace-nowrap px-4 py-4">{header}</th>)}</tr>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-xs sm:text-sm">
+          <thead className="bg-[#202d4b] text-[11px] uppercase tracking-[0.08em] text-white sm:text-xs">
+            <tr>{schedule.headers.map((header) => <th key={header} className="whitespace-nowrap px-3 py-3 font-semibold sm:px-4">{header}</th>)}</tr>
           </thead>
           <tbody>
             {schedule.rows.map((row, index) => (
-              <tr key={index} className="border-t border-white/8 odd:bg-white/[0.025]">
-                {schedule.headers.map((header) => <td key={header} className="whitespace-nowrap px-4 py-3 text-slate-300">{row[header] || "—"}</td>)}
+              <tr key={index} className="odd:bg-[#33415f] even:bg-[#202d4b]">
+                {schedule.headers.map((header) => <td key={header} className="whitespace-nowrap px-3 py-2.5 text-slate-100 sm:px-4">{row[header] || "—"}</td>)}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </section>
+    </details>
   );
 }
 

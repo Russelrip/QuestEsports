@@ -8,6 +8,7 @@ import {
 import type {
   TournamentBracketData,
   TournamentBracketSummary,
+  TournamentScheduleData,
 } from "@/lib/tournaments";
 
 export const adminNavigationGroups = [
@@ -374,6 +375,7 @@ export type TournamentFormValues = {
   bannerImage: File | null;
   heroImage: File | null;
   scheduleFile: File | null;
+  scheduleData: TournamentScheduleData | null;
   completedPosterImage: File | null;
   firstPlaceImage: File | null;
   secondPlaceImage: File | null;
@@ -461,6 +463,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   bannerImage: null,
   heroImage: null,
   scheduleFile: null,
+  scheduleData: null,
   completedPosterImage: null,
   firstPlaceImage: null,
   secondPlaceImage: null,
@@ -498,6 +501,11 @@ export const buildTournamentFormData = (values: TournamentFormValues) => {
 
     if (value instanceof File) {
       formData.append(key, value);
+      return;
+    }
+
+    if (key === "scheduleData") {
+      formData.append(key, JSON.stringify(value));
       return;
     }
 
