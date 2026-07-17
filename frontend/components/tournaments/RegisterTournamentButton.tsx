@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/auth";
+import { readApiResponse } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import {
   Tournament,
@@ -68,12 +69,12 @@ export default function RegisterTournamentButton({
       try {
         setStatus("loading");
         const response = await apiFetch(`/api/tournaments/${tournament.slug}/registration-status`);
-        const data = (await response.json()) as {
+        const data = await readApiResponse<{
           success?: boolean;
           message?: string;
           isRegistered?: boolean;
           registration?: ExistingRegistration | null;
-        };
+        }>(response, "Failed to check registration status.");
 
         if (!response.ok || !data.success) {
           throw new Error(data.message || "Failed to check registration status.");

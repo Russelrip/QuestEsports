@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useTeams } from "@/hooks/api/useTeams";
 import { apiFetch } from "@/lib/auth";
-import { ApiRequestError } from "@/lib/api";
+import { ApiRequestError, readApiResponse } from "@/lib/api";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
 import { markTournamentRegistered } from "@/lib/registered-tournaments";
 import type { Tournament, TournamentRegistrationField } from "@/lib/tournaments";
@@ -106,12 +106,12 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         body,
         timeoutMs: 60_000,
       });
-      const data = (await response.json()) as {
+      const data = await readApiResponse<{
         success?: boolean;
         message?: string;
         checkout?: PayHereCheckout | null;
         bankTransfer?: BankTransferReservation | null;
-      };
+      }>(response, "Registration could not be submitted.");
       if (!response.ok || !data.success) throw new Error(data.message || "Registration could not be submitted.");
       markTournamentRegistered(tournament.slug);
       if (data.checkout) {

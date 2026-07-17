@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { apiFetch, apiFetchJson, getApiErrorMessage } from "@/lib/auth";
+import { readApiResponse } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ChangePasswordForm from "@/components/auth/ChangePasswordForm";
 import MfaSettingsPanel from "@/components/auth/MfaSettingsPanel";
@@ -212,12 +213,20 @@ export default function ProfileView() {
         },
       });
 
-      const data = await response.json();
+      const data = await readApiResponse<{
+        success?: boolean;
+        message?: string;
+        user?: typeof user;
+      }>(response, "Failed to update profile.");
       if (!response.ok || !data.success) {
         profileForm.setError("root", { message: data.message || "Failed to update profile." });
         return;
       }
 
+      if (!data.user) {
+        profileForm.setError("root", { message: "The updated profile was not returned. Please refresh and try again." });
+        return;
+      }
       refreshUser(data.user);
       profileForm.setError("root", { message: "Profile updated successfully." });
       showToast({ tone: "success", title: "Profile updated" });

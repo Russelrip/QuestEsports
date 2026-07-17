@@ -10,6 +10,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { useCartStore } from "@/hooks/useCartStore";
 import { apiFetch, apiFetchJson } from "@/lib/auth";
+import { readApiResponse } from "@/lib/api";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
 import type { CommerceCapabilities, MerchandiseQuote } from "@/lib/shop";
 
@@ -109,7 +110,11 @@ export default function CartCheckout() {
           items: cartPayload(items),
         },
       });
-      const data = (await response.json()) as { success?: boolean; message?: string; checkout?: PayHereCheckout };
+      const data = await readApiResponse<{
+        success?: boolean;
+        message?: string;
+        checkout?: PayHereCheckout;
+      }>(response, "Checkout could not be started.");
       if (!response.ok || !data.checkout) throw new Error(data.message || "Checkout could not be started.");
       submitPayHereCheckout(data.checkout);
     } catch (nextError) {

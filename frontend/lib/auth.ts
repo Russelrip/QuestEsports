@@ -48,6 +48,16 @@ type ApiSuccessResponse = {
 
 export const apiFetch = async (path: string, options: ApiFetchOptions = {}) => {
   const { json, headers, timeoutMs, ...rest } = options;
+  const method = (rest.method || "GET").toUpperCase();
+  const isMultipartUpload =
+    typeof FormData !== "undefined" && rest.body instanceof FormData;
+  const effectiveTimeoutMs = timeoutMs ?? (
+    isMultipartUpload
+      ? 60_000
+      : method === "GET" || method === "HEAD"
+        ? 15_000
+        : 30_000
+  );
 
   return fetchWithTimeout(buildApiUrl(path), {
     ...rest,
@@ -57,7 +67,7 @@ export const apiFetch = async (path: string, options: ApiFetchOptions = {}) => {
       ...headers,
     },
     ...(json ? { body: JSON.stringify(json) } : {}),
-  }, timeoutMs);
+  }, effectiveTimeoutMs);
 };
 
 export async function apiFetchJson<T = unknown>(

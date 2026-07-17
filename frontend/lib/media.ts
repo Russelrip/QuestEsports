@@ -1,4 +1,4 @@
-import { buildApiUrl, parseApiResponse, withServerOriginHeader } from "@/lib/api";
+import { buildApiUrl, fetchWithTimeout, parseApiResponse, withServerOriginHeader } from "@/lib/api";
 
 export type VideoItem = {
   title: string;
@@ -353,7 +353,7 @@ export const resolveImageAssetUrl = (
 
 export const fetchImages = async (searchParams?: URLSearchParams) => {
   const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
-  const response = await fetch(`${resolveMediaUrl("/api/images")}${suffix}`, {
+  const response = await fetchWithTimeout(`${resolveMediaUrl("/api/images")}${suffix}`, {
     cache: "no-store",
     credentials: "include",
     headers: withServerOriginHeader(),
@@ -364,7 +364,7 @@ export const fetchImages = async (searchParams?: URLSearchParams) => {
 
 export const fetchPosters = async (searchParams?: URLSearchParams) => {
   const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
-  const response = await fetch(`${resolveMediaUrl("/api/posters")}${suffix}`, {
+  const response = await fetchWithTimeout(`${resolveMediaUrl("/api/posters")}${suffix}`, {
     cache: "no-store",
     credentials: "include",
     headers: withServerOriginHeader(),
@@ -375,7 +375,7 @@ export const fetchPosters = async (searchParams?: URLSearchParams) => {
 
 export const fetchPublicPosters = async (searchParams?: URLSearchParams) => {
   const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
-  const response = await fetch(`${resolveMediaUrl("/api/posters")}${suffix}`, {
+  const response = await fetchWithTimeout(`${resolveMediaUrl("/api/posters")}${suffix}`, {
     next: { revalidate: 300 },
     headers: withServerOriginHeader(),
   });

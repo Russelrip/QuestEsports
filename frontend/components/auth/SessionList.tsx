@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch, apiFetchJson, UserSession, getApiErrorMessage } from "@/lib/auth";
+import { readApiResponse } from "@/lib/api";
 
 const formatSessionName = (session: UserSession) => {
   const agent = session.userAgent?.trim();
@@ -60,7 +61,10 @@ export default function SessionList() {
       const response = await apiFetch(`/api/sessions/${sessionId}`, {
         method: "DELETE",
       });
-      const data = await response.json();
+      const data = await readApiResponse<{ success?: boolean; message?: string }>(
+        response,
+        "Failed to revoke the session."
+      );
 
       if (!response.ok || !data.success) {
         setMessage(data.message || "Failed to revoke the session.");
@@ -80,7 +84,10 @@ export default function SessionList() {
       const response = await apiFetch("/api/sessions/revoke-others", {
         method: "POST",
       });
-      const data = await response.json();
+      const data = await readApiResponse<{ success?: boolean; message?: string }>(
+        response,
+        "Failed to revoke other sessions."
+      );
 
       if (!response.ok || !data.success) {
         setMessage(data.message || "Failed to revoke other sessions.");

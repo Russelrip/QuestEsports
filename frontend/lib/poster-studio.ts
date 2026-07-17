@@ -1,4 +1,4 @@
-import { parseApiResponse } from "@/lib/api";
+import { fetchWithTimeout, parseApiResponse } from "@/lib/api";
 import { apiFetch } from "@/lib/auth";
 import { ImageAsset, Poster, resolveImageAssetUrl } from "@/lib/media";
 import {
@@ -128,9 +128,9 @@ export const exportPosterPng = async (
     headline: string;
   }
 ) => {
-  const response = await fetch(resolveImageAssetUrl(asset), {
+  const response = await fetchWithTimeout(resolveImageAssetUrl(asset), {
     credentials: "include",
-  });
+  }, 30_000);
 
   if (!response.ok) {
     throw new Error("Unable to fetch poster image for export.");

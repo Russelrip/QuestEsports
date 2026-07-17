@@ -10,6 +10,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/auth";
+import { readApiResponse } from "@/lib/api";
 
 const contactSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -38,7 +39,10 @@ export default function ContactForm() {
         method: "POST",
         json: values,
       });
-      const data = await response.json();
+      const data = await readApiResponse<{ success?: boolean; message?: string }>(
+        response,
+        "Failed to send message."
+      );
 
       if (!response.ok || !data.success) {
         form.setError("root", { message: data.message || "Failed to send message." });

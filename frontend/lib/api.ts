@@ -112,9 +112,17 @@ export async function readApiResponse<T>(
   }
 
   const text = await response.text();
+  const trimmedText = text.trim();
+  const isSafePlainText =
+    contentType.includes("text/plain") &&
+    trimmedText.length > 0 &&
+    trimmedText.length <= 500 &&
+    !/<(?:!doctype|html|body|script)\b/i.test(trimmedText);
   return {
     success: false,
-    message: text || `Request failed with status ${response.status}.`,
+    message: isSafePlainText
+      ? trimmedText
+      : fallbackMessage || `Request failed with status ${response.status}.`,
   } as ApiEnvelope<T>;
 }
 
