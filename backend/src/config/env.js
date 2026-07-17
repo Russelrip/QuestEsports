@@ -164,6 +164,7 @@ const env = {
   LOG_DRAIN_TOKEN: optional("LOG_DRAIN_TOKEN"),
   MONITORING_WEBHOOK_URL: optional("MONITORING_WEBHOOK_URL"),
   MONITORING_WEBHOOK_TOKEN: optional("MONITORING_WEBHOOK_TOKEN"),
+  DISCORD_ALERT_WEBHOOK_URL: optional("DISCORD_ALERT_WEBHOOK_URL"),
   GOOGLE_CLIENT_ID: optional("GOOGLE_CLIENT_ID"),
   GOOGLE_CLIENT_SECRET: optional("GOOGLE_CLIENT_SECRET"),
   GOOGLE_CALLBACK_URL: optional("GOOGLE_CALLBACK_URL"),
@@ -210,6 +211,23 @@ if (!["sandbox", "live"].includes(env.PAYHERE_MODE)) {
 
 if (!["resend", "smtp"].includes(env.MAIL_PROVIDER)) {
   throw new Error('MAIL_PROVIDER must be either "resend" or "smtp".');
+}
+
+if (env.DISCORD_ALERT_WEBHOOK_URL) {
+  let discordWebhookUrl;
+  try {
+    discordWebhookUrl = new URL(env.DISCORD_ALERT_WEBHOOK_URL);
+  } catch {
+    throw new Error("DISCORD_ALERT_WEBHOOK_URL must be a valid absolute URL.");
+  }
+  const allowedDiscordHosts = new Set(["discord.com", "discordapp.com"]);
+  if (
+    discordWebhookUrl.protocol !== "https:" ||
+    !allowedDiscordHosts.has(discordWebhookUrl.hostname) ||
+    !/^\/api\/webhooks\/[^/]+\/[^/]+\/?$/.test(discordWebhookUrl.pathname)
+  ) {
+    throw new Error("DISCORD_ALERT_WEBHOOK_URL must be an HTTPS Discord webhook URL.");
+  }
 }
 
 if (env.NODE_ENV !== "test" && !env.AUTH_ENCRYPTION_KEY) {

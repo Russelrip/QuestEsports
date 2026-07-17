@@ -120,6 +120,7 @@ test("monitoring capture ships webhook events with request context", async () =>
         LOG_DRAIN_URL: "",
         MONITORING_WEBHOOK_URL: "https://monitoring.example.com/events",
         MONITORING_WEBHOOK_TOKEN: "secret",
+        DISCORD_ALERT_WEBHOOK_URL: "https://discord.com/api/webhooks/123/secret",
       },
     },
     [loggerPath]: {
@@ -145,11 +146,15 @@ test("monitoring capture ships webhook events with request context", async () =>
 
     assert.equal(loggedErrors.length, 1);
     assert.equal(loggedWarnings.length, 0);
-    assert.equal(shippedPayloads.length, 1);
+    assert.equal(shippedPayloads.length, 2);
     assert.equal(shippedPayloads[0].url, "https://monitoring.example.com/events");
     assert.equal(shippedPayloads[0].token, "secret");
     assert.equal(shippedPayloads[0].payload.context.requestId, "req-123");
     assert.equal(shippedPayloads[0].payload.type, "exception");
+    assert.equal(shippedPayloads[1].url, "https://discord.com/api/webhooks/123/secret");
+    assert.equal(shippedPayloads[1].payload.allowed_mentions.parse.length, 0);
+    assert.equal(shippedPayloads[1].payload.embeds[0].title, "Backend exception");
+    assert.match(shippedPayloads[1].payload.embeds[0].description, /boom/);
   } finally {
     restore();
   }

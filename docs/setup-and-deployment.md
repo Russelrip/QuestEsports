@@ -52,6 +52,7 @@ LOG_DRAIN_URL=
 LOG_DRAIN_TOKEN=
 MONITORING_WEBHOOK_URL=
 MONITORING_WEBHOOK_TOKEN=
+DISCORD_ALERT_WEBHOOK_URL=
 MAIL_PROVIDER=resend
 RESEND_API_KEY=
 MAIL_FROM=
@@ -198,6 +199,7 @@ Security-related variables:
 - `LOG_LEVEL` to control backend log verbosity
 - `LOG_DRAIN_URL` and `LOG_DRAIN_TOKEN` for centralized structured log shipping
 - `MONITORING_WEBHOOK_URL` and `MONITORING_WEBHOOK_TOKEN` for remote exception capture
+- `DISCORD_ALERT_WEBHOOK_URL` for direct redacted exception alerts to a private Discord channel
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` for Google login
 - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_CALLBACK_URL` for Discord login
 
