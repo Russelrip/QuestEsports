@@ -188,7 +188,7 @@ export default function TeamManagementPanel({
   };
 
   const removeTeam = async () => {
-    if (!selectedTeam?.isCaptain || !window.confirm(`Delete "${selectedTeam.name}"? Tournament registration history will remain, but this saved team and roster will be removed.`)) return;
+    if (!selectedTeam?.isCaptain || !selectedTeam.canDelete || !window.confirm(`Delete "${selectedTeam.name}" and its saved roster?`)) return;
     setDeleting(true);
     setError("");
     try {
@@ -315,7 +315,10 @@ export default function TeamManagementPanel({
           </section>
 
           {error ? <p className="text-sm text-rose-300">{error}</p> : null}
-          <div className="flex flex-wrap justify-between gap-3 border-t border-white/10 pt-5"><Button type="button" variant="danger" disabled={deleting || saving} onClick={() => void removeTeam()}>{deleting ? "Deleting..." : "Delete Team"}</Button><Button type="submit" disabled={saving || deleting}>{saving ? "Saving..." : "Save Team Changes"}</Button></div>
+          <div className="border-t border-white/10 pt-5">
+            {!selectedTeam.canDelete ? <p className="mb-3 text-sm text-amber-200">This team cannot be deleted because it has a tournament registration.</p> : null}
+            <div className="flex flex-wrap justify-between gap-3"><Button type="button" variant="danger" disabled={deleting || saving || !selectedTeam.canDelete} onClick={() => void removeTeam()}>{deleting ? "Deleting..." : "Delete Team"}</Button><Button type="submit" disabled={saving || deleting}>{saving ? "Saving..." : "Save Team Changes"}</Button></div>
+          </div>
         </form>
       )}
     </div>

@@ -574,7 +574,7 @@ Protected multipart route requiring a verified account and team captain ownershi
 
 ### `DELETE /api/teams/:teamId`
 
-Protected route requiring a verified account and team captain ownership. Deletes the reusable team and roster while retaining historical tournament registrations.
+Protected route requiring a verified account and team captain ownership. Deletes the reusable team and roster only when the team has no tournament registrations. Registered teams must be retained.
 
 ### `GET /api/team-invite?token=...`
 

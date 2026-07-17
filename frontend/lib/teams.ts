@@ -27,6 +27,8 @@ export type SavedTeam = {
   logoName?: string | null;
   logoUrl?: string | null;
   isCaptain: boolean;
+  registrationCount: number;
+  canDelete: boolean;
   captainName: string;
   createdAt: string;
   updatedAt: string;

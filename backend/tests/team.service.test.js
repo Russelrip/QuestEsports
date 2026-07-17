@@ -350,13 +350,49 @@ test("deleteSavedTeam refuses members who are not the captain", async () => {
   }
 });
 
-test("deleteSavedTeam preserves a logo referenced by a tournament registration", async () => {
+test("deleteSavedTeam refuses to delete a registered team", async () => {
+  let deleteCalls = 0;
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: {
+          findFirst: async () => ({
+            id: "saved-team-1",
+            logoName: "registered-logo.png",
+            _count: { registrations: 1 },
+          }),
+          delete: async () => { deleteCalls += 1; },
+        },
+      },
+    },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  });
+
+  try {
+    await assert.rejects(
+      () => teamService.deleteSavedTeam({
+        teamId: "saved-team-1",
+        user: { id: "captain-user" },
+      }),
+      (error) => error.statusCode === 409 && error.message.includes("tournament registration")
+    );
+    assert.equal(deleteCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("deleteSavedTeam preserves a logo referenced by an unrelated tournament registration", async () => {
   const removedUploads = [];
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
         savedTeam: {
-          findFirst: async () => ({ id: "saved-team-1", logoName: "shared-logo.png" }),
+          findFirst: async () => ({
+            id: "saved-team-1",
+            logoName: "shared-logo.png",
+            _count: { registrations: 0 },
+          }),
           delete: async () => ({ id: "saved-team-1" }),
           count: async () => 0,
         },

@@ -133,6 +133,8 @@ const mapSavedTeam = (team, userId) => ({
   logoName: team.logoName,
   logoUrl: team.logoName ? `/api/uploads/team-logos/${team.logoName}` : null,
   isCaptain: team.captainUserId === userId,
+  registrationCount: team._count?.registrations || 0,
+  canDelete: (team._count?.registrations || 0) === 0,
   captainName:
     [team.captainUser.firstName, team.captainUser.lastName]
       .filter(Boolean)
@@ -210,6 +212,9 @@ const listProfileTeams = async ({ user }) => {
       },
       members: {
         orderBy: [{ role: "asc" }, { memberOrder: "asc" }],
+      },
+      _count: {
+        select: { registrations: true },
       },
     },
   });
@@ -342,6 +347,9 @@ const createSavedTeam = async ({ user, body, file }) => {
             select: { firstName: true, lastName: true, username: true },
           },
           members: true,
+          _count: {
+            select: { registrations: true },
+          },
         },
       });
     });
@@ -528,6 +536,9 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
             select: { firstName: true, lastName: true, username: true },
           },
           members: true,
+          _count: {
+            select: { registrations: true },
+          },
         },
       });
     });
@@ -561,10 +572,20 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
 const deleteSavedTeam = async ({ teamId, user }) => {
   const team = await prisma.savedTeam.findFirst({
     where: { id: teamId, captainUserId: user.id },
-    select: { id: true, logoName: true },
+    select: {
+      id: true,
+      logoName: true,
+      _count: { select: { registrations: true } },
+    },
   });
   if (!team) {
     throw new HttpError(404, "Team not found or you do not have permission to delete it.");
+  }
+  if (team._count.registrations > 0) {
+    throw new HttpError(
+      409,
+      "This team cannot be deleted because it has a tournament registration."
+    );
   }
 
   await prisma.savedTeam.delete({ where: { id: team.id } });
