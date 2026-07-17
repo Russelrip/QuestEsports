@@ -11,6 +11,7 @@ const {
   requireVerifiedEmail,
 } = require("../auth/auth.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
+const { cachePublicData } = require("../../middleware/cache-control");
 const {
   getPublicTournaments,
   getPublicTournament,
@@ -35,9 +36,10 @@ const tournamentRegistrationRateLimiter = createRateLimiter({
   message: "Too many tournament registrations. Please try again later.",
 });
 const tournamentAssetsSizeGuard = createUploadRequestSizeGuard(45 * 1024 * 1024);
+const publicTournamentCache = cachePublicData();
 
-router.get("/tournaments", getPublicTournaments);
-router.get("/tournaments/:slug", getPublicTournament);
+router.get("/tournaments", publicTournamentCache, getPublicTournaments);
+router.get("/tournaments/:slug", publicTournamentCache, getPublicTournament);
 router.get(
   "/tournaments/:slug/registration-status",
   requireAuth,

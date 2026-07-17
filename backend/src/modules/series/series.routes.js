@@ -1,11 +1,13 @@
 const express = require("express");
 const { tournamentBannerUpload } = require("../../middleware/upload");
+const { cachePublicData } = require("../../middleware/cache-control");
 const { requireAdmin } = require("../auth/auth.middleware");
 const controller = require("./series.controller");
 
 const router = express.Router();
-router.get("/event-series", controller.getPublicSeries);
-router.get("/event-series/:slug", controller.getPublicSeriesDetail);
+const publicSeriesCache = cachePublicData({ browserSeconds: 30, sharedSeconds: 60 });
+router.get("/event-series", publicSeriesCache, controller.getPublicSeries);
+router.get("/event-series/:slug", publicSeriesCache, controller.getPublicSeriesDetail);
 router.get("/admin/event-series", requireAdmin, controller.getAdminSeries);
 router.post("/admin/event-series", requireAdmin, tournamentBannerUpload.single("heroImage"), controller.createSeries);
 router.patch("/admin/event-series/:seriesId", requireAdmin, tournamentBannerUpload.single("heroImage"), controller.updateSeries);

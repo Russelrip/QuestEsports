@@ -20,7 +20,7 @@ export default function ShopContent({ products }: { products: Product[] }) {
           {products.map((product) => {
             const startingPrice = Math.min(...product.variants.filter((variant) => variant.isActive).map((variant) => variant.price));
             return <Card key={product.id} className="group overflow-hidden">
-              <Link href={`/shop/${product.slug}`} className="block">
+              <Link href={`/shop/${product.slug}`} prefetch={false} className="block">
                 <div className="relative aspect-square overflow-hidden bg-[#09080e]">
                   {product.images[0] ? <Image src={resolveMediaUrl(product.images[0].imageUrl)} alt={product.images[0].altText || product.name} fill sizes="(min-width:1280px) 33vw,(min-width:640px) 50vw,100vw" className="object-contain p-4 transition duration-500 group-hover:scale-[1.03]" /> : <div className="flex h-full items-center justify-center text-7xl text-white/80">Q</div>}
                   {product.madeToOrder ? <Badge className="absolute left-4 top-4">Made to order</Badge> : null}

@@ -53,7 +53,7 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
             {series.tournaments.map((tournament) => (
               <article key={tournament.id} className={`group overflow-hidden rounded-[30px] border bg-[#0d0c13] ${tournament.isRegistrationOpen ? "border-white/10" : "border-rose-500/45"}`}>
-                <Link href={`/tournaments/${tournament.slug}`} className="block">
+                <Link href={`/tournaments/${tournament.slug}`} prefetch={false} className="block">
                   <div className="aspect-[4/3] overflow-hidden bg-black/30">
                     <TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} className="h-full w-full object-contain" />
                   </div>
@@ -68,7 +68,7 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
                   </div>
                 </Link>
                 <div className="px-5 pb-5">
-                  <Link href={tournament.isRegistrationOpen ? `/tournaments/${tournament.slug}/register` : `/tournaments/${tournament.slug}`} className={buttonClassName({ className: "w-full justify-center" })}>{tournament.isRegistrationOpen ? "Register" : "View Details"}</Link>
+                  <Link href={tournament.isRegistrationOpen ? `/tournaments/${tournament.slug}/register` : `/tournaments/${tournament.slug}`} prefetch={false} className={buttonClassName({ className: "w-full justify-center" })}>{tournament.isRegistrationOpen ? "Register" : "View Details"}</Link>
                 </div>
               </article>
             ))}

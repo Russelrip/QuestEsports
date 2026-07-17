@@ -36,7 +36,7 @@ export default async function FeaturedTournaments() {
         {featuredTournaments.length > 0 ? (
           featuredTournaments.map((tournament) => (
             <Card key={tournament.id} className={`group mx-auto flex h-full w-full max-w-[25rem] flex-col overflow-hidden rounded-none ${tournament.isRegistrationOpen ? "" : "border-rose-500/45"}`}>
-              <Link href={`/tournaments/${tournament.slug}`} className="relative block aspect-[4/3] overflow-hidden bg-[#09080e] p-3">
+              <Link href={`/tournaments/${tournament.slug}`} prefetch={false} className="relative block aspect-[4/3] overflow-hidden bg-[#09080e] p-3">
                   <TournamentBannerImage
                     bannerUrl={tournament.bannerUrl}
                     title={tournament.title}
@@ -46,7 +46,7 @@ export default async function FeaturedTournaments() {
               </Link>
               <div className="flex flex-1 flex-col p-5">
                 <div>
-                  <Link href={`/tournaments/${tournament.slug}`} className="block">
+                  <Link href={`/tournaments/${tournament.slug}`} prefetch={false} className="block">
                     <h3 className="text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{tournament.title}</h3>
                   </Link>
                 </div>
@@ -67,6 +67,7 @@ export default async function FeaturedTournaments() {
 
                   <Link
                     href={`/tournaments/${tournament.slug}`}
+                    prefetch={false}
                     className={buttonClassName({ className: "mt-6 w-full justify-center" })}
                   >
                     View tournament

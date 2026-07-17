@@ -61,6 +61,53 @@ test("request observability rejects unsafe caller-supplied request ids", async (
   }
 });
 
+test("request observability exposes application processing time", () => {
+  const loggedRequests = [];
+  const { module: middleware, restore } = loadModuleWithMocks(
+    observabilityMiddlewarePath,
+    {
+      [loggerPath]: {
+        logger: {
+          info: (message, metadata) => loggedRequests.push({ message, metadata }),
+          warn: () => {},
+          error: () => {},
+        },
+      },
+    }
+  );
+
+  try {
+    const headers = new Map();
+    const listeners = new Map();
+    const req = {
+      startedAt: Date.now() - 25,
+      headers: {},
+      method: "GET",
+      originalUrl: "/api/tournaments",
+    };
+    const res = {
+      headersSent: false,
+      statusCode: 200,
+      hasHeader: (name) => headers.has(name),
+      setHeader: (name, value) => headers.set(name, value),
+      on: (name, listener) => listeners.set(name, listener),
+      writeHead() {
+        this.headersSent = true;
+      },
+    };
+
+    middleware.logRequestLifecycle(req, res, () => {});
+    res.writeHead(200);
+    listeners.get("finish")();
+
+    assert.match(headers.get("Server-Timing"), /^app;dur=\d+$/);
+    assert.equal(loggedRequests.length, 1);
+    assert.ok(loggedRequests[0].metadata.durationMs >= 0);
+  } finally {
+    restore();
+  }
+});
+
 test("monitoring capture ships webhook events with request context", async () => {
   const shippedPayloads = [];
   const loggedErrors = [];

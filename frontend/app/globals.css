@@ -214,7 +214,7 @@ h6 {
   pointer-events: none;
   background:
     linear-gradient(180deg, rgba(7, 6, 11, 0.4), rgba(7, 6, 11, 0.7)),
-    url("/images/otherbg.png") center top / cover no-repeat;
+    url("/images/otherbg.webp") center top / cover no-repeat;
 }
 
 .page-header {

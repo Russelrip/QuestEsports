@@ -44,6 +44,7 @@ export default function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={false}
                   className={cn(
                     "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
                     pathname === item.href && "text-white"
@@ -57,6 +58,7 @@ export default function Navbar() {
             <div className="flex min-w-0 items-center justify-start lg:justify-self-center">
               <Link
                 href="/"
+                prefetch={false}
                 className="flex flex-col items-center gap-1"
                 aria-label="Quest home"
               >
@@ -79,6 +81,7 @@ export default function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={false}
                   className={cn(
                     "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
                     pathname === item.href && "text-white"
@@ -94,6 +97,7 @@ export default function Navbar() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={false}
                     className={buttonClassName({
                       variant: "ghost",
                       size: "sm",
@@ -132,6 +136,7 @@ export default function Navbar() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={false}
                     className={cn(
                       "rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/8 hover:text-white",
                       pathname === item.href && "bg-white/10 text-white"
@@ -144,11 +149,11 @@ export default function Navbar() {
               <div className="mt-3 grid gap-2 border-t border-white/8 pt-3">
                 {!isLoading && isAuthenticated && user ? (
                   <div className="grid gap-2">
-                    <Link href="/profile" className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
+                    <Link href="/profile" prefetch={false} className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
                       <span className="flex size-9 items-center justify-center overflow-hidden rounded-xl bg-violet-700 text-xs font-bold">{user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt="" width={36} height={36} className="h-full w-full object-cover" /> : getInitials(user.firstName, user.lastName, user.username)}</span>{user.username}
                     </Link>
                     {user.role === "admin" ? (
-                      <Link href="/admin" className="rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
+                      <Link href="/admin" prefetch={false} className="rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
                         Admin Panel
                       </Link>
                     ) : null}
@@ -166,6 +171,7 @@ export default function Navbar() {
                     <Link
                       key={item.href}
                       href={item.href}
+                      prefetch={false}
                       className={buttonClassName({
                         variant: "ghost",
                         className: "auth-nav-action w-full",

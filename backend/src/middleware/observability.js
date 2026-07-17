@@ -19,6 +19,17 @@ const attachRequestContext = (req, res, next) => {
 };
 
 const logRequestLifecycle = (req, res, next) => {
+  if (typeof res.writeHead === "function") {
+    const writeHead = res.writeHead;
+    res.writeHead = function writeHeadWithServerTiming(...args) {
+      if (!res.headersSent && !res.hasHeader("Server-Timing")) {
+        const durationMs = Math.max(Date.now() - (req.startedAt || Date.now()), 0);
+        res.setHeader("Server-Timing", `app;dur=${durationMs}`);
+      }
+      return writeHead.apply(this, args);
+    };
+  }
+
   res.on("finish", () => {
     const durationMs = Math.max(Date.now() - (req.startedAt || Date.now()), 0);
     const level =
