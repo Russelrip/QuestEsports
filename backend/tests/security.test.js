@@ -47,6 +47,20 @@ test("strict API origin checks allow health checks and safe public GET requests"
     assert.equal(
       await runMiddleware(
         security.requireAllowedApiOrigin,
+        buildRequest({ path: "/api/health/live" })
+      ),
+      null
+    );
+    assert.equal(
+      await runMiddleware(
+        security.requireAllowedApiOrigin,
+        buildRequest({ path: "/api/health/ready" })
+      ),
+      null
+    );
+    assert.equal(
+      await runMiddleware(
+        security.requireAllowedApiOrigin,
         buildRequest({ path: "/api/tournaments/quest-cup" })
       ),
       null

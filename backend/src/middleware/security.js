@@ -9,7 +9,7 @@ const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
   "/api/payments/payhere/notify",
 ]);
 const SAFE_PUBLIC_API_PATHS = [
-  /^\/api\/health$/,
+  /^\/api\/health(?:\/(?:live|ready))?$/,
   /^\/api\/openapi\.json$/,
   /^\/api\/auth\/(?:google|discord)\/start$/,
   /^\/api\/tournaments(?:\/[^/]+)?$/,
