@@ -713,3 +713,65 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     restore();
   }
 });
+
+test("syncSavedTeamFromRegistration preserves an active pending invite without emailing twice", async () => {
+  const inviteSentAt = new Date();
+  const inviteExpiresAt = new Date(inviteSentAt.getTime() + 60 * 60 * 1000);
+  const savedRows = [];
+  const registrationUpdates = [];
+  const tx = {
+    savedTeam: {
+      findUnique: async () => ({
+        id: "saved-team-1",
+        members: [{
+          role: "PLAYER",
+          memberOrder: 1,
+          emailNormalized: "player@example.com",
+          inviteStatus: "pending",
+          inviteTokenHash: "existing-token-hash",
+          inviteSentAt,
+          inviteExpiresAt,
+          userId: null,
+        }],
+      }),
+      update: async () => null,
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 1 }),
+      createMany: async ({ data }) => { savedRows.push(...data); return { count: data.length }; },
+    },
+    registrationMember: {
+      update: async ({ data }) => { registrationUpdates.push(data); return data; },
+      findMany: async () => registrationUpdates.map((data) => ({ inviteStatus: data.inviteStatus })),
+    },
+    teamRegistration: { update: async ({ data }) => data },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  });
+
+  try {
+    const dispatches = await teamService.syncSavedTeamFromRegistration({
+      tx,
+      registrationId: "registration-1",
+      user: { id: "captain-1", firstName: "Quest", lastName: "Captain" },
+      teamName: "Quest Five",
+      members: [{
+        role: "PLAYER",
+        order: 1,
+        name: "Player Two",
+        email: "player@example.com",
+        riotId: "PlayerTwo#456",
+      }],
+      tournamentTitle: "Quest Cup",
+    });
+
+    assert.deepEqual(dispatches, []);
+    assert.equal(savedRows[0].inviteTokenHash, "existing-token-hash");
+    assert.equal(registrationUpdates[0].inviteTokenHash, "existing-token-hash");
+    assert.equal(registrationUpdates[0].inviteExpiresAt, inviteExpiresAt);
+  } finally {
+    restore();
+  }
+});

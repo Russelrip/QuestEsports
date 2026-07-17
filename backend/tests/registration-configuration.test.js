@@ -42,3 +42,21 @@ test("configured registration fields reject missing, invalid select, and invalid
     assert.throws(() => service.validateConfiguredFields({ definitions: [{ key: "id", label: "Player ID", type: "number", scope: "member", required: true }], entryData: {}, members: [{ additionalData: { id: "abc" } }] }), /Player ID must be a number/);
   } finally { restore(); }
 });
+
+test("Valorant registrations require a complete Riot ID for every roster member", () => {
+  const { module: service, restore } = load();
+  try {
+    assert.doesNotThrow(() => service.validateGameIdentities({
+      game: "Valorant",
+      members: [{ riotId: "QuestCaptain#123" }, { riotId: "PlayerTwo#APAC" }],
+    }));
+    assert.throws(
+      () => service.validateGameIdentities({ game: "Valorant", members: [{ riotId: "QuestCaptain" }] }),
+      /PlayerName#123/
+    );
+    assert.throws(
+      () => service.validateGameIdentities({ game: "Valorant", members: [{ riotId: "" }] }),
+      /required for every roster member/
+    );
+  } finally { restore(); }
+});

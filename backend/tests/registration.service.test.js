@@ -75,6 +75,89 @@ test("bank-transfer references are short and banking-app friendly", () => {
   }
 });
 
+test("paid direct team registration saves the team and dispatches player invites immediately", async () => {
+  const syncedTeams = [];
+  const sentInviteBatches = [];
+  let createdRegistration;
+  let createdMembers;
+  const valorantTournament = { ...tournament, game: "Valorant" };
+  const tx = {
+    tournament: { findUnique: async () => valorantTournament },
+    teamRegistration: {
+      count: async () => 0,
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createdRegistration = data;
+        return { ...data, id: data.id };
+      },
+    },
+    registrationMember: {
+      createMany: async ({ data }) => {
+        createdMembers = data;
+        return { count: data.length };
+      },
+    },
+    paymentTransaction: {
+      create: async ({ data }) => ({ ...data, status: "created" }),
+    },
+  };
+  const prisma = {
+    tournament: { findFirst: async () => valorantTournament },
+    teamRegistration: { findFirst: async () => null },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
+      syncSavedTeamFromRegistration: async (input) => {
+        syncedTeams.push(input);
+        return [{ email: "player@example.com" }];
+      },
+      sendTeamInvites: async (dispatches) => sentInviteBatches.push(dispatches),
+    },
+    [paymentServicePath]: {
+      assertPayHereConfigured: () => undefined,
+      createPayHereCheckout: ({ transaction }) => ({ orderId: transaction.providerOrderId }),
+    },
+    [bankTransferServicePath]: {
+      assertBankTransferConfigured: () => undefined,
+      buildBankTransferInstructions: () => ({}),
+      getBankTransferAmountForSlot: () => 2500,
+    },
+  });
+
+  try {
+    await registrationService.createConfiguredRegistration({
+      slug: valorantTournament.slug,
+      body: {
+        ...body,
+        members: JSON.stringify([{
+          name: "Player Two",
+          email: "player@example.com",
+          gameId: "PlayerTwo#456",
+          role: "PLAYER",
+        }]),
+      },
+      user,
+    });
+
+    assert.equal(createdRegistration.paymentStatus, "pending");
+    assert.equal(createdRegistration.captainRiotId, "Captain#002");
+    assert.equal(createdMembers[1].riotId, "PlayerTwo#456");
+    assert.equal(syncedTeams.length, 1);
+    assert.equal(syncedTeams[0].registrationId, createdRegistration.id);
+    assert.equal(sentInviteBatches.length, 1);
+    assert.deepEqual(sentInviteBatches[0], [{ email: "player@example.com" }]);
+  } finally {
+    restore();
+  }
+});
+
 test("createConfiguredRegistration lets an active payment reservation retry after registration closes", async () => {
   const removedUploads = [];
   let registrationUpdate;
@@ -130,6 +213,7 @@ test("createConfiguredRegistration lets an active payment reservation retry afte
       teamLogoDirectory: "uploads/team-logos",
     },
     [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
       syncSavedTeamFromRegistration: async () => [],
       sendTeamInvites: async () => undefined,
     },
@@ -193,6 +277,7 @@ test("createConfiguredRegistration removes a newly persisted retry logo when the
       teamLogoDirectory: "uploads/team-logos",
     },
     [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
       syncSavedTeamFromRegistration: async () => [],
       sendTeamInvites: async () => undefined,
     },

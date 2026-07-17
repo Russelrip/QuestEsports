@@ -33,6 +33,7 @@ const {
 } = require("./bracket.service");
 const { buildActiveRegistrationWhere } = require("./registration-eligibility");
 const { isPayHereConfigured } = require("../payments/payment.service");
+const { ensureTeamRegistrationSaved } = require("../teams/team.service");
 
 const TOURNAMENT_STATUSES = new Set([
   "draft",
@@ -1392,6 +1393,10 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
       },
     },
   });
+
+  if (existingRegistration) {
+    await ensureTeamRegistrationSaved(existingRegistration.id);
+  }
 
   return {
     isRegistered: Boolean(existingRegistration),

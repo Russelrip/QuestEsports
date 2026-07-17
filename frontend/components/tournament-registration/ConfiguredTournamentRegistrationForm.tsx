@@ -34,6 +34,14 @@ type BankTransferReservation = {
   expiresAt: string;
 };
 
+type GameIdentityConfig = {
+  label: string;
+  placeholder: string;
+  hint: string;
+  pattern?: string;
+  title?: string;
+};
+
 const emptyMember = (): MemberDraft => ({ name: "", email: "", discord: "", gameId: "", role: "PLAYER", additionalData: {} });
 
 export default function ConfiguredTournamentRegistrationForm({ tournament }: { tournament: Tournament }) {
@@ -64,6 +72,11 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
 
   const entryFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "entry"), [tournament.registrationFields]);
   const memberFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "member"), [tournament.registrationFields]);
+  const visibleEntryFields = useMemo(() => entryFields.filter((field) => !isGameIdentityField(field, tournament.game)), [entryFields, tournament.game]);
+  const visibleMemberFields = useMemo(() => memberFields.filter((field) => !isGameIdentityField(field, tournament.game)), [memberFields, tournament.game]);
+  const identityEntryFields = useMemo(() => entryFields.filter((field) => isGameIdentityField(field, tournament.game)), [entryFields, tournament.game]);
+  const identityMemberFields = useMemo(() => memberFields.filter((field) => isGameIdentityField(field, tournament.game)), [memberFields, tournament.game]);
+  const gameIdentity = useMemo(() => getGameIdentityConfig(tournament.game), [tournament.game]);
   const maximumAdditionalPlayers = Math.max(0, (tournament.maxRosterSize || tournament.teamSize || 1) + (tournament.maxSubstitutes || 0) - 1);
 
   useEffect(() => {
@@ -95,9 +108,20 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
 
     const body = new FormData();
     Object.entries(form).forEach(([key, value]) => body.append(key, String(value)));
-    body.append("additionalData", JSON.stringify(entryData));
-    body.append("captainAdditionalData", JSON.stringify(captainAdditionalData));
-    body.append("members", JSON.stringify(members));
+    const submittedEntryData = { ...entryData };
+    const submittedCaptainData = { ...captainAdditionalData };
+    identityEntryFields.forEach((field) => { submittedEntryData[field.key] = form.gameId; });
+    identityMemberFields.forEach((field) => { submittedCaptainData[field.key] = form.gameId; });
+    const submittedMembers = members.map((member) => ({
+      ...member,
+      additionalData: {
+        ...member.additionalData,
+        ...Object.fromEntries(identityMemberFields.map((field) => [field.key, member.gameId])),
+      },
+    }));
+    body.append("additionalData", JSON.stringify(submittedEntryData));
+    body.append("captainAdditionalData", JSON.stringify(submittedCaptainData));
+    body.append("members", JSON.stringify(submittedMembers));
     if (teamLogo) body.append("teamLogo", teamLogo);
 
     try {
@@ -201,10 +225,11 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           <FormField label="Email"><Input disabled value={form.contactEmail} /></FormField>
           <FormField label="WhatsApp number" required><Input required value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
           <FormField label="Discord"><Input value={form.discord} onChange={(event) => setForm((current) => ({ ...current, discord: event.target.value }))} /></FormField>
-          {memberFields.map((field) => <ConfiguredField key={field.key} field={field} value={captainAdditionalData[field.key] || ""} onChange={(value) => setCaptainAdditionalData((current) => ({ ...current, [field.key]: value }))} />)}
+          <FormField label={gameIdentity.label} required hint={gameIdentity.hint}><Input required value={form.gameId} placeholder={gameIdentity.placeholder} pattern={gameIdentity.pattern} title={gameIdentity.title} autoCapitalize="none" spellCheck={false} onChange={(event) => setForm((current) => ({ ...current, gameId: event.target.value }))} /></FormField>
+          {visibleMemberFields.map((field) => <ConfiguredField key={field.key} field={field} value={captainAdditionalData[field.key] || ""} onChange={(value) => setCaptainAdditionalData((current) => ({ ...current, [field.key]: value }))} />)}
         </fieldset>
 
-        {entryFields.length > 0 ? <fieldset className="grid gap-5 sm:grid-cols-2"><legend className="mb-4 text-xl text-white sm:col-span-2">Game details</legend>{entryFields.map((field) => <ConfiguredField key={field.key} field={field} value={entryData[field.key] || ""} onChange={(value) => setEntryData((current) => ({ ...current, [field.key]: value }))} />)}</fieldset> : null}
+        {visibleEntryFields.length > 0 ? <fieldset className="grid gap-5 sm:grid-cols-2"><legend className="mb-4 text-xl text-white sm:col-span-2">Game details</legend>{visibleEntryFields.map((field) => <ConfiguredField key={field.key} field={field} value={entryData[field.key] || ""} onChange={(value) => setEntryData((current) => ({ ...current, [field.key]: value }))} />)}</fieldset> : null}
       </Card>
 
       {tournament.entryType === "team" ? (
@@ -218,8 +243,9 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
                   <FormField label="Name" required><Input required value={member.name} onChange={(event) => updateMember(index, { name: event.target.value })} /></FormField>
                   <FormField label="Email" required><Input type="email" required value={member.email} onChange={(event) => updateMember(index, { email: event.target.value })} /></FormField>
                   <FormField label="Discord"><Input value={member.discord} onChange={(event) => updateMember(index, { discord: event.target.value })} /></FormField>
+                  <FormField label={gameIdentity.label} required hint={gameIdentity.hint}><Input required value={member.gameId} placeholder={gameIdentity.placeholder} pattern={gameIdentity.pattern} title={gameIdentity.title} autoCapitalize="none" spellCheck={false} onChange={(event) => updateMember(index, { gameId: event.target.value })} /></FormField>
                   <FormField label="Role"><Select value={member.role} onChange={(event) => updateMember(index, { role: event.target.value as MemberDraft["role"] })}><option value="PLAYER">Player</option><option value="SUBSTITUTE">Substitute</option></Select></FormField>
-                  {memberFields.map((field) => <ConfiguredField key={field.key} field={field} value={member.additionalData[field.key] || ""} onChange={(value) => updateMember(index, { additionalData: { ...member.additionalData, [field.key]: value } })} />)}
+                  {visibleMemberFields.map((field) => <ConfiguredField key={field.key} field={field} value={member.additionalData[field.key] || ""} onChange={(value) => updateMember(index, { additionalData: { ...member.additionalData, [field.key]: value } })} />)}
                 </div>
               </div>
             ))}
@@ -253,6 +279,43 @@ function getRegistrationFeeLabel(tournament: Tournament) {
     return `${tournament.registrationFee.currency} ${Math.min(...amounts).toFixed(2)}–${Math.max(...amounts).toFixed(2)} by slot`;
   }
   return `${tournament.registrationFee.currency} ${tournament.registrationFee.amount.toFixed(2)}`;
+}
+
+function isGameIdentityField(field: TournamentRegistrationField, game: string) {
+  const fieldText = `${field.key} ${field.label}`.toLowerCase();
+  const gameWords = game.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 3);
+  return /(?:riot|ign|in[ -]?game|player[ -]?id|game[ -]?id|uid)/i.test(fieldText) ||
+    (/\bid\b/i.test(fieldText.replace(/[_-]/g, " ")) && gameWords.some((word) => fieldText.includes(word)));
+}
+
+function getGameIdentityConfig(game: string): GameIdentityConfig {
+  const normalizedGame = game.trim().toLowerCase();
+  if (normalizedGame.includes("valorant")) {
+    return {
+      label: "Valorant Riot ID",
+      placeholder: "PlayerName#123",
+      hint: "Enter the full Riot ID, including the # tagline.",
+      pattern: "[^#\\r\\n]{3,16}#[A-Za-z0-9]{3,5}",
+      title: "Use the format PlayerName#123, including the # tagline.",
+    };
+  }
+  if (/(?:call of duty|codm)/i.test(normalizedGame)) {
+    return { label: "CODM UID / IGN", placeholder: "Player UID or exact IGN", hint: "Use the identifier shown in your CODM profile." };
+  }
+  if (normalizedGame.includes("pubg")) {
+    return { label: "PUBG Player ID / IGN", placeholder: "Player ID or exact IGN", hint: "Use the identifier shown in your PUBG profile." };
+  }
+  if (normalizedGame.includes("mobile legends")) {
+    return { label: "MLBB Game ID / Server ID", placeholder: "123456789 (1234)", hint: "Enter the game ID and server ID shown in your profile." };
+  }
+  if (normalizedGame.includes("free fire")) {
+    return { label: "Free Fire UID / IGN", placeholder: "Player UID or exact IGN", hint: "Use the identifier shown in your Free Fire profile." };
+  }
+  return {
+    label: `${game || "Game"} IGN / Player ID`,
+    placeholder: "Exact in-game name or player ID",
+    hint: "Use the identifier shown in your game profile.",
+  };
 }
 
 function ConfiguredField({ field, value, onChange }: { field: TournamentRegistrationField; value: string; onChange: (value: string) => void }) {

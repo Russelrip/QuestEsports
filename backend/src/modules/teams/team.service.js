@@ -960,9 +960,8 @@ const syncSavedTeamFromRegistration = async ({
     });
   }
 
-  const existingAcceptedMembers = new Map(
+  const existingMembersByRosterPosition = new Map(
     (existingTeam?.members || [])
-      .filter((member) => member.inviteStatus === "accepted" && member.userId)
       .map((member) => [
         `${member.role}:${member.memberOrder}:${member.emailNormalized}`,
         member,
@@ -987,9 +986,20 @@ const syncSavedTeamFromRegistration = async ({
   await tx.savedTeamMember.createMany({
     data: members.map((member) => {
       const email = normalizeEmail(member.email);
-      const acceptedMember = existingAcceptedMembers.get(
+      const existingMember = existingMembersByRosterPosition.get(
         `${member.role}:${member.order}:${email}`
       );
+      const acceptedMember =
+        existingMember?.inviteStatus === "accepted" && existingMember.userId
+          ? existingMember
+          : null;
+      const activePendingMember =
+        existingMember?.inviteStatus === "pending" &&
+        existingMember.inviteTokenHash &&
+        existingMember.inviteExpiresAt &&
+        existingMember.inviteExpiresAt > inviteSentAt
+          ? existingMember
+          : null;
 
       if (member.role === "CAPTAIN" || acceptedMember) {
         const linkedUserId = member.role === "CAPTAIN" ? user.id : acceptedMember.userId;
@@ -1022,6 +1032,37 @@ const syncSavedTeamFromRegistration = async ({
           inviteSentAt: acceptedMember?.inviteSentAt || null,
           inviteExpiresAt: null,
           inviteRespondedAt,
+        };
+      }
+
+      if (activePendingMember) {
+        registrationMemberUpdates.push({
+          role: member.role,
+          memberOrder: member.order,
+          data: {
+            userId: null,
+            inviteStatus: "pending",
+            inviteTokenHash: activePendingMember.inviteTokenHash,
+            inviteSentAt: activePendingMember.inviteSentAt,
+            inviteExpiresAt: activePendingMember.inviteExpiresAt,
+            inviteRespondedAt: null,
+          },
+        });
+
+        return {
+          id: crypto.randomUUID(),
+          teamId: team.id,
+          role: member.role,
+          memberOrder: member.order,
+          name: member.name,
+          email,
+          emailNormalized: email,
+          discord: member.discord,
+          riotId: member.riotId,
+          inviteStatus: "pending",
+          inviteTokenHash: activePendingMember.inviteTokenHash,
+          inviteSentAt: activePendingMember.inviteSentAt,
+          inviteExpiresAt: activePendingMember.inviteExpiresAt,
         };
       }
 
@@ -1104,7 +1145,7 @@ const sendTeamInvites = async (inviteDispatches) => {
   );
 };
 
-const activatePaidTeamRegistration = async (registrationId) => {
+const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) => {
   const registration = await prisma.teamRegistration.findUnique({
     where: { id: registrationId },
     include: {
@@ -1116,7 +1157,7 @@ const activatePaidTeamRegistration = async (registrationId) => {
   if (
     !registration ||
     registration.entryType !== "team" ||
-    registration.paymentStatus !== "paid" ||
+    (requirePaid && registration.paymentStatus !== "paid") ||
     registration.savedTeamId ||
     !registration.user
   ) {
@@ -1136,7 +1177,11 @@ const activatePaidTeamRegistration = async (registrationId) => {
       where: { id: registrationId },
       select: { savedTeamId: true, paymentStatus: true },
     });
-    if (!current || current.savedTeamId || current.paymentStatus !== "paid") return [];
+    if (
+      !current ||
+      current.savedTeamId ||
+      (requirePaid && current.paymentStatus !== "paid")
+    ) return [];
     return syncSavedTeamFromRegistration({
       tx,
       registrationId,
@@ -1153,6 +1198,12 @@ const activatePaidTeamRegistration = async (registrationId) => {
   await sendTeamInvites(inviteDispatches);
 };
 
+const ensureTeamRegistrationSaved = async (registrationId) =>
+  syncTeamRegistrationToProfile({ registrationId, requirePaid: false });
+
+const activatePaidTeamRegistration = async (registrationId) =>
+  syncTeamRegistrationToProfile({ registrationId, requirePaid: true });
+
 module.exports = {
   listProfileTeams,
   createSavedTeam,
@@ -1163,6 +1214,7 @@ module.exports = {
   respondToTeamInvite,
   syncSavedTeamFromRegistration,
   sendTeamInvites,
+  ensureTeamRegistrationSaved,
   activatePaidTeamRegistration,
   refreshRegistrationVerificationStatus,
 };

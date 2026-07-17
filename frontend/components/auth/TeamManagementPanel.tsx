@@ -307,7 +307,7 @@ export default function TeamManagementPanel({
                     <FormField label="Name" required><Input required value={member.name} onChange={(event) => updateMember(member.key, { name: event.target.value })} /></FormField>
                     <FormField label="Email" required><Input required type="email" value={member.email} onChange={(event) => updateMember(member.key, { email: event.target.value })} /></FormField>
                     <FormField label="Discord"><Input value={member.discord} onChange={(event) => updateMember(member.key, { discord: event.target.value })} /></FormField>
-                    <FormField label="Game ID"><Input value={member.riotId} onChange={(event) => updateMember(member.key, { riotId: event.target.value })} /></FormField>
+                    <FormField label="IGN / Game ID"><Input value={member.riotId} placeholder="Exact in-game name or player ID" onChange={(event) => updateMember(member.key, { riotId: event.target.value })} /></FormField>
                   </div>
                 </div>
               );

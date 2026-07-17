@@ -4,7 +4,11 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { isValidEmail, normalizeEmail, normalizeText } = require("../../lib/validation");
 const { persistTeamLogoUpload, teamLogoDirectory } = require("../../middleware/upload");
-const { syncSavedTeamFromRegistration, sendTeamInvites } = require("../teams/team.service");
+const {
+  ensureTeamRegistrationSaved,
+  syncSavedTeamFromRegistration,
+  sendTeamInvites,
+} = require("../teams/team.service");
 const { assertPayHereConfigured, createPayHereCheckout } = require("../payments/payment.service");
 const {
   assertBankTransferConfigured,
@@ -18,6 +22,7 @@ const {
 } = require("../../lib/upload-cleanup");
 
 const normalizeBoolean = (value) => [true, "true", "1", "on"].includes(value);
+const VALORANT_RIOT_ID_PATTERN = /^[^#\r\n]{3,16}#[A-Za-z0-9]{3,5}$/;
 const REGISTRATION_TRANSACTION_MAX_RETRIES = 3;
 const REGISTRATION_TRANSACTION_MAX_WAIT_MS = 10 * 1000;
 const REGISTRATION_TRANSACTION_TIMEOUT_MS = 20 * 1000;
@@ -89,6 +94,33 @@ const validateConfiguredFields = ({ definitions, entryData, members }) => {
     return { ...member, additionalData: data };
   });
   return { entryData: normalizedEntry, members: normalizedMembers };
+};
+
+const isGameIdentityField = (field, game) => {
+  const fieldText = `${field?.key || ""} ${field?.label || ""}`.toLowerCase();
+  const gameWords = normalizeText(game)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 3);
+  return /(?:riot|ign|in[ -]?game|player[ -]?id|game[ -]?id|uid)/i.test(fieldText) ||
+    (/\bid\b/i.test(fieldText.replace(/[_-]/g, " ")) && gameWords.some((word) => fieldText.includes(word)));
+};
+
+const validateGameIdentities = ({ game, members }) => {
+  const gameName = normalizeText(game) || "Game";
+  const missingIdentity = members.some((member) => !normalizeText(member.riotId));
+  if (missingIdentity) {
+    throw new HttpError(400, `${gameName} IGN or player ID is required for every roster member.`);
+  }
+  if (
+    gameName.toLowerCase().includes("valorant") &&
+    members.some((member) => !VALORANT_RIOT_ID_PATTERN.test(normalizeText(member.riotId)))
+  ) {
+    throw new HttpError(
+      400,
+      "Every Valorant Riot ID must include the game name and # tagline, for example PlayerName#123."
+    );
+  }
 };
 
 const mapRegistrationResult = (registration) => ({
@@ -228,6 +260,20 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
   }
 
   if (tournament.entryType === "solo") requestedMembers = [];
+  const captainGameId = normalizeText(body.gameId || body.captainRiotId) || null;
+  const registrationFields = Array.isArray(tournament.registrationFields)
+    ? tournament.registrationFields
+    : [];
+  for (const field of registrationFields.filter(
+    (field) => field.scope === "entry" && isGameIdentityField(field, tournament.game)
+  )) {
+    additionalData[field.key] = captainGameId;
+  }
+  for (const field of registrationFields.filter(
+    (field) => field.scope === "member" && isGameIdentityField(field, tournament.game)
+  )) {
+    captainAdditionalData[field.key] = captainGameId;
+  }
   const normalizedMembers = requestedMembers.map((member, index) => ({
     role: normalizeText(member.role).toUpperCase() === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
     order: index + 1,
@@ -235,7 +281,14 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     email: normalizeEmail(member.email),
     discord: normalizeText(member.discord) || null,
     riotId: normalizeText(member.gameId || member.riotId) || null,
-    additionalData: member.additionalData || {},
+    additionalData: {
+      ...(member.additionalData || {}),
+      ...Object.fromEntries(
+        registrationFields
+          .filter((field) => field.scope === "member" && isGameIdentityField(field, tournament.game))
+          .map((field) => [field.key, normalizeText(member.gameId || member.riotId) || null])
+      ),
+    },
   }));
   if (normalizedMembers.some((member) => !member.name || !isValidEmail(member.email))) {
     throw new HttpError(400, "Every roster member needs a name and valid email.");
@@ -257,7 +310,7 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
   if (new Set(emails).size !== emails.length) throw new HttpError(400, "Roster emails must be unique.");
 
   const configured = validateConfiguredFields({
-    definitions: Array.isArray(tournament.registrationFields) ? tournament.registrationFields : [],
+    definitions: registrationFields,
     entryData: additionalData,
     members: [
       {
@@ -266,15 +319,19 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
         name: fullName,
         email: normalizeEmail(user.email),
         discord,
-        riotId: normalizeText(body.gameId || body.captainRiotId) || null,
+        riotId: captainGameId,
         additionalData: captainAdditionalData,
       },
       ...normalizedMembers,
     ],
   });
   const [configuredCaptain, ...configuredRosterMembers] = configured.members;
-  const primaryGameId = normalizeText(body.gameId || body.captainRiotId) ||
-    Object.values(configured.entryData).find(Boolean) || "N/A";
+  const primaryGameId = captainGameId;
+  const registrationMembers = [
+    { ...configuredCaptain, riotId: primaryGameId },
+    ...configuredRosterMembers,
+  ];
+  validateGameIdentities({ game: tournament.game, members: registrationMembers });
 
   return {
     fullName,
@@ -288,10 +345,7 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     falsityWarningAccepted,
     configuredEntryData: configured.entryData,
     primaryGameId,
-    members: [
-      { ...configuredCaptain, riotId: primaryGameId },
-      ...configuredRosterMembers,
-    ],
+    members: registrationMembers,
   };
 };
 
@@ -345,6 +399,9 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       existing.reservedUntil &&
       existing.reservedUntil > now
     ) {
+      if (tournament.entryType === "team") {
+        await ensureTeamRegistrationSaved(existing.id);
+      }
       return {
         registration: mapRegistrationResult(existing),
         paymentOrderId: latestPayment.providerOrderId,
@@ -389,6 +446,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       ? await persistTeamLogoUpload(file)
       : null;
     let retried;
+    let retryInviteDispatches = [];
     try {
       retried = await runSerializable(async (tx) => {
         const currentRegistration = await tx.teamRegistration.findUnique({
@@ -485,6 +543,20 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             inviteRespondedAt: member.role === "CAPTAIN" ? new Date() : null,
           })),
         });
+        if (tournament.entryType === "team") {
+          retryInviteDispatches = await syncSavedTeamFromRegistration({
+            tx,
+            registrationId: existing.id,
+            user,
+            teamName: displayName,
+            country,
+            teamTag,
+            organizationRequested: normalizeBoolean(body.organizationRequested),
+            logoName: persistedRetryLogo?.filename || existing.teamLogoName || null,
+            members,
+            tournamentTitle: currentTournament.title,
+          });
+        }
         await tx.paymentTransaction.updateMany({
           where: {
             registrationId: existing.id,
@@ -525,6 +597,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         context: { operation: "retryConfiguredRegistration", registrationId: existing.id },
       });
     }
+    await sendTeamInvites(retryInviteDispatches);
     return {
       registration: mapRegistrationResult(retried.registration),
       paymentOrderId: providerOrderId,
@@ -637,7 +710,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         })),
       });
 
-      if (tournament.entryType === "team" && feeAmount === 0) {
+      if (tournament.entryType === "team") {
         inviteDispatches = await syncSavedTeamFromRegistration({
           tx,
           registrationId,
@@ -698,5 +771,6 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
 module.exports = {
   createConfiguredRegistration,
   validateConfiguredFields,
+  validateGameIdentities,
   buildPaymentOrderId,
 };

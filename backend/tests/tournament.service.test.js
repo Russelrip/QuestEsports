@@ -51,6 +51,7 @@ test("Challonge URLs are restricted and normalized for safe module embeds", () =
 });
 
 test("registration status includes the payment route needed to resume a bank transfer", async () => {
+  let repairedRegistrationId = null;
   const prisma = {
     tournament: {
       findUnique: async () => ({ id: "tournament-1", registrationFeeAmount: 2500 }),
@@ -73,7 +74,11 @@ test("registration status includes the payment route needed to resume a bank tra
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
     [uploadModulePath]: {},
-    [teamServiceModulePath]: {},
+    [teamServiceModulePath]: {
+      ensureTeamRegistrationSaved: async (registrationId) => {
+        repairedRegistrationId = registrationId;
+      },
+    },
   });
 
   try {
@@ -83,6 +88,7 @@ test("registration status includes the payment route needed to resume a bank tra
     });
     assert.equal(result.isRegistered, true);
     assert.equal(result.registration.assignedSlotNumber, 7);
+    assert.equal(repairedRegistrationId, "registration-1");
     assert.deepEqual(result.registration.payment, {
       orderId: "QST-0123456789",
       provider: "bank_transfer",
