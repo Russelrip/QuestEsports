@@ -786,3 +786,68 @@ test("syncSavedTeamFromRegistration preserves an active pending invite without e
     restore();
   }
 });
+
+test("ensureTeamRegistrationSaved retries a transient database-pool timeout", async () => {
+  let registrationLookupAttempts = 0;
+  let transactionAttempts = 0;
+  let transactionOptions;
+  const registration = {
+    id: "registration-1",
+    entryType: "team",
+    paymentStatus: "unpaid",
+    savedTeamId: null,
+    teamName: "Quest Five",
+    country: "Sri Lanka",
+    teamTag: "Q5",
+    organizationRequested: false,
+    teamLogoName: null,
+    user: { id: "captain-1" },
+    tournament: { title: "Quest Cup" },
+    members: [],
+  };
+  const prisma = {
+    teamRegistration: {
+      findUnique: async () => {
+        registrationLookupAttempts += 1;
+        if (registrationLookupAttempts === 1) {
+          const error = new Error("Timed out while acquiring a connection.");
+          error.code = "P2024";
+          throw error;
+        }
+        return registration;
+      },
+    },
+    $transaction: async (work, options) => {
+      transactionAttempts += 1;
+      transactionOptions = options;
+      if (transactionAttempts === 1) {
+        const error = new Error("Timed out while acquiring a connection.");
+        error.code = "P2024";
+        throw error;
+      }
+      return work({
+        teamRegistration: {
+          findUnique: async () => ({
+            savedTeamId: "saved-team-created-by-another-attempt",
+            paymentStatus: "unpaid",
+          }),
+        },
+      });
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  });
+
+  try {
+    await teamService.ensureTeamRegistrationSaved(registration.id);
+
+    assert.equal(registrationLookupAttempts, 2);
+    assert.equal(transactionAttempts, 2);
+    assert.equal(transactionOptions.maxWait, 15_000);
+    assert.equal(transactionOptions.timeout, 30_000);
+  } finally {
+    restore();
+  }
+});

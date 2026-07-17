@@ -35,6 +35,23 @@ const RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES = new Set([
 const waitBeforeTransactionRetry = (attempt) =>
   new Promise((resolve) => setTimeout(resolve, attempt * 100));
 
+const runRetryableRegistrationQuery = async (work) => {
+  for (let attempt = 1; attempt <= REGISTRATION_TRANSACTION_MAX_RETRIES; attempt += 1) {
+    try {
+      return await work();
+    } catch (error) {
+      const shouldRetry =
+        RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES.has(error?.code) &&
+        attempt < REGISTRATION_TRANSACTION_MAX_RETRIES;
+      if (!shouldRetry) throw error;
+
+      await waitBeforeTransactionRetry(attempt);
+    }
+  }
+
+  throw new Error("Registration query retry limit was exhausted.");
+};
+
 const runSerializable = async (work) => {
   for (let attempt = 1; attempt <= REGISTRATION_TRANSACTION_MAX_RETRIES; attempt += 1) {
     try {
@@ -490,12 +507,14 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   if (submittedSlug && submittedSlug !== slug) {
     throw new HttpError(400, "Tournament registration route and payload do not match.");
   }
-  const tournament = await prisma.tournament.findFirst({
-    where: { slug, isPublished: true },
-    include: {
-      _count: { select: { teamRegistrations: true } },
-    },
-  });
+  const tournament = await runRetryableRegistrationQuery(() =>
+    prisma.tournament.findFirst({
+      where: { slug, isPublished: true },
+      include: {
+        _count: { select: { teamRegistrations: true } },
+      },
+    })
+  );
   if (!tournament) throw new HttpError(404, "Tournament not found.");
   const now = new Date();
 
@@ -507,25 +526,27 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   if (feeAmount > 0 && !["payhere", "bank_transfer"].includes(paymentMethod)) {
     throw new HttpError(503, "This paid tournament does not have a payment method configured.");
   }
-  const existing = await prisma.teamRegistration.findFirst({
-    where: {
-      tournamentId: tournament.id,
-      OR: [
-        { userId: user.id },
-        { captainEmail: normalizeEmail(user.email) },
-      ],
-    },
-    include: {
-      members: {
-        select: { inviteStatus: true },
+  const existing = await runRetryableRegistrationQuery(() =>
+    prisma.teamRegistration.findFirst({
+      where: {
+        tournamentId: tournament.id,
+        OR: [
+          { userId: user.id },
+          { captainEmail: normalizeEmail(user.email) },
+        ],
       },
-      payments: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        include: { bankTransferProof: true },
+      include: {
+        members: {
+          select: { inviteStatus: true },
+        },
+        payments: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: { bankTransferProof: true },
+        },
       },
-    },
-  });
+    })
+  );
   if (existing) {
     if (existing.paymentStatus === "paid" || feeAmount === 0) {
       throw new HttpError(409, "You are already registered for this tournament.");
@@ -844,10 +865,9 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   const providerOrderId = feeAmount > 0 && !requiresTeamVerification
     ? buildPaymentOrderId(paymentMethod)
     : null;
-  let inviteDispatches = [];
-
+  let result;
   try {
-    const result = await runSerializable(async (tx) => {
+    result = await runSerializable(async (tx) => {
       const currentTournament = await getCurrentTournamentForRegistration({
         tx,
         tournament,
@@ -936,21 +956,6 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         })),
       });
 
-      if (tournament.entryType === "team") {
-        inviteDispatches = await syncSavedTeamFromRegistration({
-          tx,
-          registrationId,
-          user,
-          teamName: displayName,
-          country,
-          teamTag,
-          organizationRequested: normalizeBoolean(body.organizationRequested),
-          logoName: persistedLogo?.filename || null,
-          members,
-          tournamentTitle: currentTournament.title,
-        });
-      }
-
       const payment = feeAmount > 0 && !requiresTeamVerification
         ? await tx.paymentTransaction.create({
             data: {
@@ -967,31 +972,6 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         : null;
       return { registration, payment, tournament: currentTournament };
     });
-
-    await sendTeamInvites(inviteDispatches);
-    return {
-      registration: mapRegistrationResult(result.registration),
-      paymentOrderId: providerOrderId,
-      checkout: result.payment && paymentMethod === "payhere"
-        ? buildCheckout({ payment: result.payment, tournament: result.tournament, user, body })
-        : null,
-      bankTransfer: result.payment && paymentMethod === "bank_transfer"
-        ? buildBankTransferInstructions({
-            transaction: result.payment,
-            registration: result.registration,
-            tournament: result.tournament,
-          })
-        : null,
-      awaitingTeamVerification: requiresTeamVerification && members.some(
-        (member) => member.role !== "CAPTAIN"
-      ),
-      readyForPayment: requiresTeamVerification && members.every(
-        (member) => member.role === "CAPTAIN"
-      ),
-      pendingInviteCount: requiresTeamVerification
-        ? members.filter((member) => member.role !== "CAPTAIN").length
-        : 0,
-    };
   } catch (error) {
     if (persistedLogo) {
       await removeUploadsQuietly(
@@ -1001,6 +981,36 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     }
     throw error;
   }
+
+  // Keep the slot-reservation transaction short. Saved-team synchronization has
+  // its own retryable transaction and can be safely resumed for an existing draft.
+  if (tournament.entryType === "team") {
+    await ensureTeamRegistrationSaved(registrationId);
+  }
+
+  return {
+    registration: mapRegistrationResult(result.registration),
+    paymentOrderId: providerOrderId,
+    checkout: result.payment && paymentMethod === "payhere"
+      ? buildCheckout({ payment: result.payment, tournament: result.tournament, user, body })
+      : null,
+    bankTransfer: result.payment && paymentMethod === "bank_transfer"
+      ? buildBankTransferInstructions({
+          transaction: result.payment,
+          registration: result.registration,
+          tournament: result.tournament,
+        })
+      : null,
+    awaitingTeamVerification: requiresTeamVerification && members.some(
+      (member) => member.role !== "CAPTAIN"
+    ),
+    readyForPayment: requiresTeamVerification && members.every(
+      (member) => member.role === "CAPTAIN"
+    ),
+    pendingInviteCount: requiresTeamVerification
+      ? members.filter((member) => member.role !== "CAPTAIN").length
+      : 0,
+  };
 };
 
 module.exports = {

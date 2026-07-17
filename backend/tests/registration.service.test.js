@@ -77,9 +77,10 @@ test("bank-transfer references are short and banking-app friendly", () => {
 
 test("paid direct team registration saves the team and dispatches player invites immediately", async () => {
   const syncedTeams = [];
-  const sentInviteBatches = [];
   let createdRegistration;
   let createdMembers;
+  let registrationTransactionActive = false;
+  let tournamentLookupAttempts = 0;
   const valorantTournament = { ...tournament, game: "Valorant" };
   const tx = {
     tournament: { findUnique: async () => valorantTournament },
@@ -102,9 +103,26 @@ test("paid direct team registration saves the team and dispatches player invites
     },
   };
   const prisma = {
-    tournament: { findFirst: async () => valorantTournament },
+    tournament: {
+      findFirst: async () => {
+        tournamentLookupAttempts += 1;
+        if (tournamentLookupAttempts === 1) {
+          const error = new Error("Timed out while acquiring a connection.");
+          error.code = "P2024";
+          throw error;
+        }
+        return valorantTournament;
+      },
+    },
     teamRegistration: { findFirst: async () => null },
-    $transaction: async (work) => work(tx),
+    $transaction: async (work) => {
+      registrationTransactionActive = true;
+      try {
+        return await work(tx);
+      } finally {
+        registrationTransactionActive = false;
+      }
+    },
   };
   const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
@@ -113,12 +131,12 @@ test("paid direct team registration saves the team and dispatches player invites
       teamLogoDirectory: "uploads/team-logos",
     },
     [teamServicePath]: {
-      ensureTeamRegistrationSaved: async () => undefined,
-      syncSavedTeamFromRegistration: async (input) => {
-        syncedTeams.push(input);
-        return [{ email: "player@example.com" }];
+      ensureTeamRegistrationSaved: async (registrationId) => {
+        assert.equal(registrationTransactionActive, false);
+        syncedTeams.push(registrationId);
       },
-      sendTeamInvites: async (dispatches) => sentInviteBatches.push(dispatches),
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
     },
     [paymentServicePath]: {
       assertPayHereConfigured: () => undefined,
@@ -153,9 +171,8 @@ test("paid direct team registration saves the team and dispatches player invites
     assert.equal(createdRegistration.captainRiotId, "Captain#002");
     assert.equal(createdMembers[1].riotId, "PlayerTwo#456");
     assert.equal(syncedTeams.length, 1);
-    assert.equal(syncedTeams[0].registrationId, createdRegistration.id);
-    assert.equal(sentInviteBatches.length, 1);
-    assert.deepEqual(sentInviteBatches[0], [{ email: "player@example.com" }]);
+    assert.equal(syncedTeams[0], createdRegistration.id);
+    assert.equal(tournamentLookupAttempts, 2);
   } finally {
     restore();
   }

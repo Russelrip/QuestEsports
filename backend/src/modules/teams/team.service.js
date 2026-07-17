@@ -71,6 +71,41 @@ const ROLE_SORT_ORDER = {
 };
 const TEAM_INVITE_TTL_HOURS = 72;
 const TEAM_INVITE_RESEND_COOLDOWN_SECONDS = 60;
+const TEAM_SYNC_TRANSACTION_MAX_RETRIES = 4;
+const TEAM_SYNC_TRANSACTION_MAX_WAIT_MS = 15 * 1000;
+const TEAM_SYNC_TRANSACTION_TIMEOUT_MS = 30 * 1000;
+const RETRYABLE_TEAM_SYNC_ERROR_CODES = new Set([
+  "P2024",
+  "P2028",
+  "P2034",
+  "P2037",
+]);
+
+const runRetryableTeamSyncOperation = async (work) => {
+  for (let attempt = 1; attempt <= TEAM_SYNC_TRANSACTION_MAX_RETRIES; attempt += 1) {
+    try {
+      return await work();
+    } catch (error) {
+      const shouldRetry =
+        RETRYABLE_TEAM_SYNC_ERROR_CODES.has(error?.code) &&
+        attempt < TEAM_SYNC_TRANSACTION_MAX_RETRIES;
+      if (!shouldRetry) throw error;
+
+      await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+    }
+  }
+
+  throw new Error("Team synchronization transaction retry limit was exhausted.");
+};
+
+const runTeamSyncTransaction = async (work) =>
+  runRetryableTeamSyncOperation(() =>
+    prisma.$transaction(work, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      maxWait: TEAM_SYNC_TRANSACTION_MAX_WAIT_MS,
+      timeout: TEAM_SYNC_TRANSACTION_TIMEOUT_MS,
+    })
+  );
 
 const mapSavedTeamMember = (member) => ({
   id: member.id,
@@ -1162,14 +1197,16 @@ const sendTeamInvites = async (inviteDispatches) => {
 };
 
 const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) => {
-  const registration = await prisma.teamRegistration.findUnique({
-    where: { id: registrationId },
-    include: {
-      user: true,
-      tournament: { select: { title: true } },
-      members: { orderBy: { memberOrder: "asc" } },
-    },
-  });
+  const registration = await runRetryableTeamSyncOperation(() =>
+    prisma.teamRegistration.findUnique({
+      where: { id: registrationId },
+      include: {
+        user: true,
+        tournament: { select: { title: true } },
+        members: { orderBy: { memberOrder: "asc" } },
+      },
+    })
+  );
   if (
     !registration ||
     registration.entryType !== "team" ||
@@ -1188,7 +1225,7 @@ const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) =>
     discord: member.discord,
     riotId: member.riotId,
   }));
-  const inviteDispatches = await prisma.$transaction(async (tx) => {
+  const inviteDispatches = await runTeamSyncTransaction(async (tx) => {
     const current = await tx.teamRegistration.findUnique({
       where: { id: registrationId },
       select: { savedTeamId: true, paymentStatus: true },
