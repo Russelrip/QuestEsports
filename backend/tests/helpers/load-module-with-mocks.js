@@ -13,6 +13,9 @@ const clearModule = (modulePath, visited = new Set()) => {
   }
 
   for (const child of cachedModule.children) {
+    if (child.id.includes(`${path.sep}node_modules${path.sep}`)) {
+      continue;
+    }
     clearModule(child.id, visited);
   }
 

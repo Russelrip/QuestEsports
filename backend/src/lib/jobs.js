@@ -6,6 +6,12 @@ const { logger, redact } = require("./logger");
 const { captureException } = require("./monitoring");
 const { encryptSecret } = require("./secret-box");
 const { processQueuedMailJob, EMAIL_JOB_NAME } = require("./mail/mail-job-definitions");
+const {
+  FILE_CLEANUP_JOB_NAME,
+  TEAM_LOGO_CLEANUP_JOB_NAME,
+  processFileCleanupJob,
+  processTeamLogoCleanupJob,
+} = require("./upload-cleanup-job");
 
 const JOB_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 const JOB_RETRY_BASE_DELAY_MS = 30 * 1000;
@@ -242,6 +248,10 @@ const processJobByName = async (job) => {
   switch (job.name) {
     case EMAIL_JOB_NAME:
       return processQueuedMailJob(job.payload);
+    case FILE_CLEANUP_JOB_NAME:
+      return processFileCleanupJob(job.payload);
+    case TEAM_LOGO_CLEANUP_JOB_NAME:
+      return processTeamLogoCleanupJob(job.payload, prisma);
     default:
       throw new Error(`Unsupported background job: ${job.name}`);
   }

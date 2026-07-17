@@ -155,8 +155,7 @@ export default function Navbar() {
                     <Button
                       variant="secondary"
                       onClick={async () => {
-                        await logout();
-                        setMobileNavOpen(false);
+                        if (await logout()) setMobileNavOpen(false);
                       }}
                     >
                       Logout

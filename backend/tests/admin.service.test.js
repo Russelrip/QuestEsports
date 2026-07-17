@@ -249,6 +249,10 @@ test("deleteTeamRegistration removes a tournament registration by id", async () 
         deleteCalls.push(args);
         return { count: 1 };
       },
+      count: async () => 0,
+    },
+    savedTeam: {
+      count: async () => 0,
     },
   }, {
     removeUploadFiles: async (uploads) => {
@@ -290,6 +294,37 @@ test("deleteTeamRegistration reports missing registrations", async () => {
         error.statusCode === 404 &&
         error.message === "Team registration not found."
     );
+  } finally {
+    restore();
+  }
+});
+
+test("deleteTeamRegistration preserves a logo referenced by a saved team", async () => {
+  const removedUploads = [];
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: {
+      findUnique: async () => ({
+        teamLogoName: "shared-logo.png",
+        payments: [{ bankTransferProof: { storedFilename: "receipt.webp" } }],
+      }),
+      deleteMany: async () => ({ count: 1 }),
+      count: async () => 0,
+    },
+    savedTeam: {
+      count: async ({ where }) => {
+        assert.deepEqual(where, { logoName: "shared-logo.png" });
+        return 1;
+      },
+    },
+  }, {
+    removeUploadFiles: async (uploads) => removedUploads.push(...uploads),
+  });
+
+  try {
+    await adminService.deleteTeamRegistration("registration-1");
+    assert.deepEqual(removedUploads, [
+      { directory: "private/bank-transfer-proofs", filename: "receipt.webp" },
+    ]);
   } finally {
     restore();
   }
@@ -382,6 +417,7 @@ test("deleteAdminSavedTeam removes the saved team and an unreferenced logo", asy
         deleteCalls.push(args);
         return { count: 1 };
       },
+      count: async () => 0,
     },
     teamRegistration: {
       count: async () => 0,
@@ -410,6 +446,7 @@ test("deleteAdminSavedTeam preserves logos used by tournament registrations", as
     savedTeam: {
       findUnique: async () => ({ id: "saved-team-1", logoName: "quest-five.png" }),
       deleteMany: async () => ({ count: 1 }),
+      count: async () => 0,
     },
     teamRegistration: {
       count: async (args) => {

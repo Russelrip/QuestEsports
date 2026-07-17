@@ -245,3 +245,46 @@ test("cart uses a server quote and clearly disables checkout without PayHere", a
   await expect(page.getByText(/no order or stock reservation has been created/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Online payment unavailable" })).toBeDisabled();
 });
+
+test("failed logout keeps the authenticated UI and warns that the server session may remain active", async ({ page }) => {
+  await page.route("**/api/me", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      user: {
+        id: "user-1",
+        firstName: "Quest",
+        lastName: "Player",
+        email: "player@example.com",
+        username: "questplayer",
+        role: "user",
+        emailVerified: true,
+      },
+    }),
+  }));
+  await page.route("**/api/logout", (route) => route.fulfill({
+    status: 500,
+    contentType: "application/json",
+    body: JSON.stringify({ success: false, message: "Logout failed." }),
+  }));
+
+  await page.goto("/privacy-policy");
+  await page.getByRole("button", { name: /questplayer/i }).click();
+  await page.getByRole("button", { name: "Logout" }).click();
+
+  await expect(page.getByText("Logout did not complete")).toBeVisible();
+  await expect(page.getByRole("button", { name: /questplayer/i })).toBeVisible();
+});
+
+test("admin guard shows a retry state instead of redirecting when session lookup fails", async ({ page }) => {
+  await page.route("**/api/me", (route) => route.fulfill({
+    status: 503,
+    contentType: "application/json",
+    body: JSON.stringify({ success: false, message: "Session service unavailable." }),
+  }));
+
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Admin access could not be checked" })).toBeVisible();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+});

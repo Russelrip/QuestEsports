@@ -276,7 +276,7 @@ export default function ProfileView() {
                 <label className={buttonClassName({ variant: "secondary", className: "cursor-pointer" })}>{avatarSaving ? "Saving..." : "Change photo"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarSaving} onChange={(event) => void updateAvatar(event.target.files?.[0])} /></label>
                 {user.avatarUrl ? <Button type="button" variant="ghost" disabled={avatarSaving} onClick={() => void removeAvatar()}>Remove photo</Button> : null}
                 {user.role === "admin" ? <Link href="/admin" className={buttonClassName({ variant: "secondary" })}>Admin</Link> : null}
-                <Button variant="ghost" onClick={async () => { await logout(); router.push("/"); }}>Logout</Button>
+                <Button variant="ghost" onClick={async () => { if (await logout()) router.push("/"); }}>Logout</Button>
               </div>
             </div>
 

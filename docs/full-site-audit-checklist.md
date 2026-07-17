@@ -15,15 +15,15 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 
 | Field | Value |
 | --- | --- |
-| Environment / URL | |
-| Build / commit | |
-| Test start and end | |
-| Tester | |
-| Device(s) | |
-| Browser(s) and versions | |
-| API environment | |
-| Payment mode | Disabled / Sandbox / Live |
-| Overall result | Pass / Fail / Blocked |
+| Environment / URL | Local automated remediation verification |
+| Build / commit | Working tree based on `be4c5a4` with audit fixes |
+| Test start and end | 2026-07-17 |
+| Tester | Codex automated checks |
+| Device(s) | Windows development workstation |
+| Browser(s) and versions | Playwright Chromium |
+| API environment | Unit/integration mocks; local database integration not enabled |
+| Payment mode | Disabled / mocked |
+| Overall result | Blocked — automated checks pass; staging UAT and operational sign-off remain |
 
 ### Severity guide
 
@@ -647,12 +647,12 @@ Perform intrusive tests only with authorization and in staging.
 
 ## 25. Automated checks and release sign-off
 
-- [ ] REL-001 Backend `npm run lint` passes.
-- [ ] REL-002 Backend `npm run test:coverage` passes its line, branch, and function thresholds.
-- [ ] REL-003 Frontend `npm run lint` passes.
-- [ ] REL-004 Frontend production `npm run build` passes.
-- [ ] REL-005 Frontend `npm run test:e2e` passes against the intended test build/environment.
-- [ ] REL-006 New/fixed critical journeys have regression coverage or a documented reason why manual testing is sufficient.
+- [x] REL-001 Backend `npm run lint` passes.
+- [x] REL-002 Backend `npm run test:coverage` passes its line, branch, and function thresholds.
+- [x] REL-003 Frontend `npm run lint` passes.
+- [x] REL-004 Frontend production `npm run build` passes.
+- [x] REL-005 Frontend `npm run test:e2e` passes against the intended test build/environment.
+- [x] REL-006 New/fixed critical journeys have regression coverage or a documented reason why manual testing is sufficient.
 - [ ] REL-007 Production database migration has been rehearsed on a recent backup or production-like dataset.
 - [ ] REL-008 Backup restore has been tested for database, public uploads, and private proofs.
 - [ ] REL-009 Rollback procedure is understood and remains compatible with forward-only database migrations.
@@ -692,13 +692,13 @@ Retest result and build:
 
 | Result | Count |
 | --- | ---: |
-| Passed | |
-| Failed | |
-| Blocked / not tested | |
-| S1 open | |
-| S2 open | |
-| S3 open | |
-| S4 open | |
+| Passed | 6 automated release checks |
+| Failed | 0 known |
+| Blocked / not tested | 456 staging/manual checks |
+| S1 open | 0 known |
+| S2 open | 0 known |
+| S3 open | 0 known |
+| S4 open | 0 known |
 
 ### Sign-off
 

@@ -52,20 +52,22 @@ const saveAdminGameCategory = async ({ categoryId, body, files = {} }) => {
   });
   if (duplicate) throw new HttpError(400, "A game category already uses this slug.");
 
-  const artwork = await persistGameAssetUpload(files.artwork?.[0]);
-  const logo = await persistGameAssetUpload(files.logo?.[0]);
-  const removeArtwork = asBoolean(body.removeArtwork);
-  const removeLogo = asBoolean(body.removeLogo);
-  const data = {
-    displayName,
-    slug,
-    displayOrder: normalizeInteger(body.displayOrder) ?? existing?.displayOrder ?? 100,
-    isPublished: asBoolean(body.isPublished, existing?.isPublished ?? false),
-    ...(artwork ? { artworkName: artwork.filename } : removeArtwork ? { artworkName: null } : {}),
-    ...(logo ? { logoName: logo.filename } : removeLogo ? { logoName: null } : {}),
-  };
+  let artwork;
+  let logo;
 
   try {
+    artwork = await persistGameAssetUpload(files.artwork?.[0]);
+    logo = await persistGameAssetUpload(files.logo?.[0]);
+    const removeArtwork = asBoolean(body.removeArtwork);
+    const removeLogo = asBoolean(body.removeLogo);
+    const data = {
+      displayName,
+      slug,
+      displayOrder: normalizeInteger(body.displayOrder) ?? existing?.displayOrder ?? 100,
+      isPublished: asBoolean(body.isPublished, existing?.isPublished ?? false),
+      ...(artwork ? { artworkName: artwork.filename } : removeArtwork ? { artworkName: null } : {}),
+      ...(logo ? { logoName: logo.filename } : removeLogo ? { logoName: null } : {}),
+    };
     const saved = categoryId
       ? await prisma.gameCategory.update({ where: { id: categoryId }, data })
       : await prisma.gameCategory.create({ data: { id: crypto.randomUUID(), ...data } });

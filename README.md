@@ -243,7 +243,7 @@ QuestEsports/
 - Public uploads are written below `UPLOAD_ROOT` (locally `backend/uploads/`); bank-transfer evidence is isolated below `PRIVATE_UPLOAD_ROOT` and never publicly served.
 - Native bracket data is generated with `brackets-manager`, exported as JSON, and persisted in PostgreSQL through the `tournament_brackets` table.
 - Poster/image metadata is stored in PostgreSQL. Poster assets support filesystem-backed storage with a database binary fallback for older records.
-- Transactional emails are persisted as `email.send` background jobs and delivered through Nodemailer using the selected mail provider.
+- Transactional emails and failed upload cleanup operations are persisted as background jobs. At least one worker-enabled backend instance must remain active so mail and privacy-sensitive file cleanup retries are processed.
 - Email action flows generate cryptographically random tokens, store only token hashes in the database, and send links that point to the frontend origin configured by `APP_URL`.
 
 ## Main Data Domains

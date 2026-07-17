@@ -12,6 +12,7 @@ const { ensureUploadDirectories } = require("./middleware/upload");
 let isShuttingDown = false;
 let server = null;
 let isServerListening = false;
+const SHUTDOWN_DEADLINE_MS = 30 * 1000;
 
 const registerProcessDiagnostics = () => {
   process.on("beforeExit", (code) => {
@@ -40,31 +41,68 @@ const shutdown = async (signal, exitCode = 0) => {
 
   isShuttingDown = true;
   logger.info("Shutting down Quest E-sports API", { signal });
+  const deadline = setTimeout(() => {
+    logger.error("Graceful shutdown deadline exceeded", {
+      signal,
+      timeoutMs: SHUTDOWN_DEADLINE_MS,
+    });
+    server?.closeAllConnections?.();
+    process.exit(1);
+  }, SHUTDOWN_DEADLINE_MS);
+  deadline.unref();
 
-  if (!server || !isServerListening || !server.listening) {
-    await stopJobWorker();
-    await stopCommerceMaintenance();
-    await closeDatabase();
-    process.exit(exitCode);
-    return;
-  }
+  let httpCloseError = null;
+  let shutdownFailed = false;
+  try {
+    const closeHttp = !server || !isServerListening || !server.listening
+      ? Promise.resolve()
+      : new Promise((resolve) => {
+          server.close((error) => {
+            httpCloseError = error || null;
+            resolve();
+          });
+          server.closeIdleConnections?.();
+        });
 
-  server.close(async (error) => {
-    if (error) {
-      logger.error("HTTP server closed with an error", { error, signal });
-      await stopJobWorker();
-      await stopCommerceMaintenance();
-      await closeDatabase();
-      process.exit(1);
-      return;
+    const drainResults = await Promise.allSettled([
+      closeHttp,
+      stopJobWorker(),
+      stopCommerceMaintenance(),
+    ]);
+
+    for (const [index, result] of drainResults.entries()) {
+      if (result.status === "rejected") {
+        shutdownFailed = true;
+        logger.error("Shutdown drain task failed", {
+          task: ["http", "job_worker", "commerce_maintenance"][index],
+          error: result.reason,
+          signal,
+        });
+      }
     }
 
-    logger.info("HTTP server closed", { signal });
-    await stopJobWorker();
-    await stopCommerceMaintenance();
-    await closeDatabase();
-    process.exit(exitCode);
-  });
+    try {
+      await closeDatabase();
+    } catch (error) {
+      shutdownFailed = true;
+      logger.error("Database shutdown failed", { error, signal });
+    }
+
+    if (httpCloseError) {
+      shutdownFailed = true;
+      logger.error("HTTP server closed with an error", {
+        error: httpCloseError,
+        signal,
+      });
+    }
+
+    if (!shutdownFailed) {
+      logger.info("Graceful shutdown completed", { signal });
+    }
+    process.exit(shutdownFailed ? 1 : exitCode);
+  } finally {
+    clearTimeout(deadline);
+  }
 };
 
 const start = async () => {
@@ -98,7 +136,7 @@ const start = async () => {
       return;
     }
 
-    await shutdown("SERVER_ERROR");
+    await shutdown("SERVER_ERROR", 1);
   });
 
   process.on("SIGINT", () => shutdown("SIGINT"));

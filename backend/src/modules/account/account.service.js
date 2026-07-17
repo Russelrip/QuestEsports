@@ -123,13 +123,14 @@ const updateAccountAvatar = async ({ user, file }) => {
   }
 
   const persisted = await persistAvatarUpload(file);
-  const existing = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { avatarImageName: true },
-  });
+  let existing;
   let updated;
 
   try {
+    existing = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { avatarImageName: true },
+    });
     updated = await prisma.user.update({
       where: { id: user.id },
       data: { avatarImageName: persisted.filename },

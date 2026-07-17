@@ -20,8 +20,12 @@ const parsePublicOrigin = (name: string, value?: string) => {
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error(`${name} must use HTTP or HTTPS.`);
   }
-  if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
-    throw new Error(`${name} must be an origin without credentials, a path, a query, or a fragment.`);
+  if (
+    parsed.username ||
+    parsed.password ||
+    value !== parsed.origin
+  ) {
+    throw new Error(`${name} must be an origin without credentials, a path, a query, a fragment, or a trailing slash.`);
   }
   const isLoopback = ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
   if (

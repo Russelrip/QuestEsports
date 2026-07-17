@@ -55,7 +55,12 @@ const challenge = {
   user,
 };
 
-const loadAuthService = ({ challengeUpdateCount = 1, backupUpdateCount = 1 } = {}) => {
+const loadAuthService = ({
+  challengeUpdateCount = 1,
+  backupUpdateCount = 1,
+  prismaOverride,
+  additionalMocks = {},
+} = {}) => {
   const calls = [];
   const tx = {
     loginChallenge: {
@@ -71,7 +76,7 @@ const loadAuthService = ({ challengeUpdateCount = 1, backupUpdateCount = 1 } = {
       },
     },
   };
-  const prisma = {
+  const prisma = prismaOverride || {
     loginChallenge: {
       findFirst: async (args) => {
         calls.push(["findChallenge", args]);
@@ -122,6 +127,7 @@ const loadAuthService = ({ challengeUpdateCount = 1, backupUpdateCount = 1 } = {
     [securityEventModulePath]: {
       sendSecurityEventEmail: async () => undefined,
     },
+    ...additionalMocks,
   });
 
   return {
@@ -151,6 +157,46 @@ test("completeMfaLogin consumes the challenge and recovery code in one transacti
     assert.equal(calls[1][1].where.id, "challenge-1");
     assert.equal(calls[1][1].where.usedAt, null);
     assert.equal(calls[2][1].where.codeHash, "hash:ABCD1234");
+  } finally {
+    restore();
+  }
+});
+
+test("authenticateUser performs a dummy password comparison for unknown accounts", async () => {
+  const comparisons = [];
+  const warnings = [];
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: { findFirst: async () => null },
+    },
+    additionalMocks: {
+      [require.resolve("bcryptjs")]: {
+        compare: async (password, hash) => {
+          comparisons.push({ password, hash });
+          return false;
+        },
+      },
+      [loggerModulePath]: {
+        logger: {
+          error: () => {},
+          warn: (_message, metadata) => warnings.push(metadata),
+        },
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      authService.authenticateUser({
+        body: { emailOrUsername: "missing@example.com", password: "password" },
+      }),
+      (error) => error.statusCode === 401 && error.message === "Invalid credentials."
+    );
+    assert.equal(comparisons.length, 1);
+    assert.equal(comparisons[0].password, "password");
+    assert.match(comparisons[0].hash, /^\$2b\$10\$/);
+    assert.equal(warnings[0].emailOrUsername, undefined);
+    assert.match(warnings[0].identifierFingerprint, /^[a-f0-9]{16}$/);
   } finally {
     restore();
   }

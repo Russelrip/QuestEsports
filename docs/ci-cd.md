@@ -194,7 +194,7 @@ To redeploy the current `main` branch without pushing a new commit:
 2. Select `CD`.
 3. Choose `Run workflow`.
 
-The same deploy enablement variables still apply.
+The workflow deploys the current `main` commit only after confirming that the same commit has a successful `CI` run. The production environment approval and deploy enablement variables still apply.
 
 ## Troubleshooting And Verification
 

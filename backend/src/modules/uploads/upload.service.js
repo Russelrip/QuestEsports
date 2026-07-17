@@ -51,23 +51,29 @@ const streamUpload = async (directoryKey, filename) => {
     throw new HttpError(404, "File not found.");
   }
 
-  let data;
+  let handle;
   try {
-    data = await fs.readFile(path.resolve(filePath));
+    handle = await fs.open(path.resolve(filePath), "r");
+    const header = Buffer.alloc(12);
+    const [{ bytesRead }, stats] = await Promise.all([
+      handle.read(header, 0, header.length, 0),
+      handle.stat(),
+    ]);
+    const detectedType = detectImageType(header.subarray(0, bytesRead));
+    if (!detectedType || !CONTENT_TYPES[detectedType] || !stats.isFile()) {
+      throw new HttpError(404, "File not found.");
+    }
+
+    return {
+      path: path.resolve(filePath),
+      size: stats.size,
+      contentType: CONTENT_TYPES[detectedType],
+    };
   } catch {
     throw new HttpError(404, "File not found.");
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
-
-  const detectedType = detectImageType(data);
-  if (!detectedType || !CONTENT_TYPES[detectedType]) {
-    throw new HttpError(404, "File not found.");
-  }
-
-  return {
-    data,
-    size: data.length,
-    contentType: CONTENT_TYPES[detectedType],
-  };
 };
 
 module.exports = {

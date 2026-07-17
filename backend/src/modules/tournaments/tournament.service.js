@@ -4,20 +4,18 @@ const { readSheet: readXlsxFile } = require("read-excel-file/node");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
-const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const {
-  persistTeamLogoUpload,
+  removeUploadsQuietly,
+  removeTeamLogoIfUnreferenced,
+} = require("../../lib/upload-cleanup");
+const {
   persistTournamentBannerUpload,
   persistTournamentScheduleUpload,
-  teamLogoDirectory,
+  bankTransferProofDirectory,
   tournamentBannerDirectory,
   tournamentScheduleDirectory,
   sponsorLogoDirectory,
 } = require("../../middleware/upload");
-const {
-  syncSavedTeamFromRegistration,
-  sendTeamInvites,
-} = require("../teams/team.service");
 const {
   buildPagination,
   buildPagedResponse,
@@ -28,7 +26,6 @@ const {
   normalizeSlug,
   normalizeInteger,
   normalizeOptionalUrl,
-  isValidEmail,
 } = require("../../lib/validation");
 const {
   buildShortCode,
@@ -51,12 +48,6 @@ const PAYMENT_METHODS = new Set(["free", "payhere", "bank_transfer"]);
 const TOURNAMENT_DATE_STATUSES = new Set(["scheduled", "tba", "tbd"]);
 const REGISTRATION_FIELD_TYPES = new Set(["text", "number", "select"]);
 const REGISTRATION_FIELD_SCOPES = new Set(["entry", "member"]);
-const REGISTRATION_TRANSACTION_MAX_RETRIES = 3;
-const REGISTRATION_TRANSACTION_MAX_WAIT_MS = 10 * 1000;
-const REGISTRATION_TRANSACTION_TIMEOUT_MS = 20 * 1000;
-const RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES = new Set(["P2028", "P2034"]);
-
-const requiredPlayerIndexes = [2, 3, 4, 5];
 const buildRegistrationCountInclude = (now = new Date()) => ({
   _count: {
     select: {
@@ -101,15 +92,6 @@ const adminRegistrationSummarySelect = {
   verificationStatus: true,
   createdAt: true,
 };
-const buildRegistrationAvailabilitySelect = () => ({
-  id: true,
-  registrationFeeAmount: true,
-  maxTeams: true,
-  status: true,
-  registrationOpenAt: true,
-  registrationDeadline: true,
-  ...buildRegistrationCountInclude(),
-});
 const tournamentAssetFields = [
   {
     field: "bannerImageName",
@@ -154,13 +136,6 @@ const tournamentAssetFields = [
     persist: persistTournamentBannerUpload,
   },
 ];
-const DUPLICATE_REGISTRATION_MESSAGE =
-  "This team or captain email is already registered for the selected tournament.";
-const CLOSED_REGISTRATION_MESSAGE =
-  "Registration is closed for the selected tournament.";
-const FULL_REGISTRATION_MESSAGE =
-  "Registration is full for the selected tournament.";
-
 const normalizeBooleanFlag = (value) =>
   value === true || value === "true" || value === "on" || value === 1 || value === "1";
 
@@ -644,115 +619,6 @@ const sortPublicTournaments = (tournaments) =>
 
     return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
   });
-
-const getTournamentLookup = (body) => {
-  const tournamentId = normalizeText(body.tournamentId);
-  const tournamentSlug =
-    normalizeText(body.tournamentSlug) || normalizeText(body.tournament);
-
-  if (!tournamentId && !tournamentSlug) {
-    throw new HttpError(400, "Tournament ID or slug is required.");
-  }
-
-  return { tournamentId, tournamentSlug };
-};
-
-const buildRequiredPlayers = (body) =>
-  requiredPlayerIndexes.map((index) => ({
-    order: index - 1,
-    name: normalizeText(body[`player${index}Name`]),
-    email: normalizeEmail(body[`player${index}Email`]),
-    discord: normalizeText(body[`player${index}Discord`]),
-    riotId: normalizeText(body[`player${index}RiotId`]),
-  }));
-
-const buildOptionalMembers = (body) => {
-  const substitutes = [1, 2]
-    .map((index) => ({
-      role: "SUBSTITUTE",
-      order: index,
-      name: normalizeText(body[`sub${index}Name`]),
-      email: normalizeEmail(body[`sub${index}Email`]),
-      discord: normalizeText(body[`sub${index}Discord`]) || null,
-      riotId: normalizeText(body[`sub${index}RiotId`]) || null,
-    }))
-    .filter((member) => member.name);
-
-  const coachName = normalizeText(body.coachName);
-  const coach = coachName
-    ? [
-        {
-          role: "COACH",
-          order: 1,
-          name: coachName,
-          email: normalizeEmail(body.coachEmail),
-          discord: normalizeText(body.coachDiscord) || null,
-          riotId: normalizeText(body.coachRiotId) || null,
-        },
-      ]
-    : [];
-
-  return [...substitutes, ...coach];
-};
-
-const ensureRegistrationOpen = (registrationState) => {
-  if (registrationState === "registration_open") {
-    return;
-  }
-
-  if (registrationState === "slots_full") {
-    throw new HttpError(400, FULL_REGISTRATION_MESSAGE);
-  }
-
-  throw new HttpError(400, CLOSED_REGISTRATION_MESSAGE);
-};
-
-const buildTournamentRegistrationMembers = ({
-  captainName,
-  captainEmail,
-  captainDiscord,
-  captainRiotId,
-  requiredPlayers,
-  optionalMembers,
-}) => [
-  {
-    role: "CAPTAIN",
-    order: 1,
-    name: captainName,
-    email: captainEmail,
-    discord: captainDiscord,
-    riotId: captainRiotId,
-  },
-  ...requiredPlayers.map((player) => ({
-    role: "PLAYER",
-    ...player,
-  })),
-  ...optionalMembers,
-];
-
-const hasDuplicateMemberEmails = (members) => {
-  const seenEmails = new Set();
-
-  for (const member of members) {
-    const email = normalizeEmail(member.email);
-
-    if (!email) {
-      continue;
-    }
-
-    if (seenEmails.has(email)) {
-      return true;
-    }
-
-    seenEmails.add(email);
-  }
-
-  return false;
-};
-
-const isRetryableRegistrationTransactionError = (error) =>
-  error instanceof Prisma.PrismaClientKnownRequestError &&
-  RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES.has(error.code);
 
 const parseTournamentPayload = ({ body, existingTournament }) => {
   const title = normalizeText(body.title);
@@ -1407,7 +1273,19 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
 const deleteAdminTournament = async (tournamentId) => {
   const existingTournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
-    include: { sponsors: { select: { logoImageName: true } } },
+    include: {
+      sponsors: { select: { logoImageName: true } },
+      teamRegistrations: {
+        select: {
+          teamLogoName: true,
+          payments: {
+            select: {
+              bankTransferProof: { select: { storedFilename: true } },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!existingTournament) {
@@ -1440,6 +1318,29 @@ const deleteAdminTournament = async (tournamentId) => {
       tournamentId,
     }
   );
+
+  const bankProofUploads = existingTournament.teamRegistrations
+    .flatMap((registration) => registration.payments)
+    .map((payment) => payment.bankTransferProof?.storedFilename)
+    .filter(Boolean)
+    .map((filename) => ({ directory: bankTransferProofDirectory, filename }));
+  await removeUploadsQuietly(bankProofUploads, {
+    operation: "deleteAdminTournamentBankProofs",
+    tournamentId,
+  });
+
+  const teamLogoNames = new Set(
+    existingTournament.teamRegistrations
+      .map((registration) => registration.teamLogoName)
+      .filter(Boolean)
+  );
+  for (const filename of teamLogoNames) {
+    await removeTeamLogoIfUnreferenced({
+      prisma,
+      filename,
+      context: { operation: "deleteAdminTournamentTeamLogo", tournamentId },
+    });
+  }
 };
 
 const getTournamentRegistrationStatus = async ({ slug, user }) => {
@@ -1482,232 +1383,6 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
   };
 };
 
-const createTournamentRegistration = async ({ body, file, user }) => {
-  const { tournamentId, tournamentSlug } = getTournamentLookup(body);
-  const teamName = normalizeText(body.teamName);
-  const country = normalizeText(body.country) || "Sri Lanka";
-  const teamTag = normalizeText(body.teamTag) || buildShortCode(teamName);
-  const organizationRequested = normalizeBooleanFlag(body.organizationRequested);
-  const captainName = normalizeText(body.captainName);
-  const captainEmail = normalizeEmail(user?.email);
-  const captainPhone = normalizeText(body.captainPhone);
-  const captainDiscord = normalizeText(body.captainDiscord);
-  const captainRiotId = normalizeText(body.captainRiotId);
-  const contactEmail = normalizeEmail(body.contactEmail);
-  const rulebookAccepted = normalizeBooleanFlag(body.rulebook);
-  const falsityWarningAccepted = normalizeBooleanFlag(body.falsityWarning);
-  const requiredPlayers = buildRequiredPlayers(body);
-  const optionalMembers = buildOptionalMembers(body);
-
-  if (
-    !captainEmail ||
-    !teamName ||
-    !country ||
-    !teamTag ||
-    teamTag.length > 12 ||
-    !captainName ||
-    !captainPhone ||
-    !captainDiscord ||
-    !captainRiotId ||
-    !isValidEmail(captainEmail) ||
-    !isValidEmail(contactEmail) ||
-    !rulebookAccepted ||
-    !falsityWarningAccepted ||
-    requiredPlayers.some((player) => !player.name || !player.discord || !player.riotId)
-  ) {
-    throw new HttpError(
-      400,
-      "Please fill all required fields and accept the agreements."
-    );
-  }
-
-  const tournament = await prisma.tournament.findUnique({
-    where: tournamentId ? { id: tournamentId } : { slug: normalizeSlug(tournamentSlug) },
-    include: buildRegistrationCountInclude(),
-  });
-
-  if (!tournament) {
-    throw new HttpError(404, "Selected tournament was not found.");
-  }
-
-  const mappedTournament = mapTournament(tournament);
-  ensureRegistrationOpen(mappedTournament.registrationState);
-
-  const members = buildTournamentRegistrationMembers({
-    captainName,
-    captainEmail,
-    captainDiscord,
-    captainRiotId,
-    requiredPlayers,
-    optionalMembers,
-  });
-
-  if (
-    requiredPlayers.some(
-      (player) => !player.name || !player.email || !player.discord || !player.riotId
-    ) ||
-    optionalMembers.some(
-      (member) =>
-        !member.name ||
-        !member.email ||
-        (member.role !== "COACH" && !member.discord) ||
-        (member.role !== "COACH" && !member.riotId)
-    ) ||
-    members.some((member) => !isValidEmail(member.email)) ||
-    hasDuplicateMemberEmails(members)
-  ) {
-    throw new HttpError(
-      400,
-      "Each roster member needs a unique valid email address before you can register."
-    );
-  }
-
-  const persistedLogo = await persistTeamLogoUpload(file);
-  const registrationId = crypto.randomUUID();
-  let inviteDispatches = [];
-
-  try {
-    for (let attempt = 1; attempt <= REGISTRATION_TRANSACTION_MAX_RETRIES; attempt += 1) {
-      try {
-        inviteDispatches = [];
-        await prisma.$transaction(
-          async (tx) => {
-            const [currentTournament, existingRegistration] = await Promise.all([
-              tx.tournament.findUnique({
-                where: { id: tournament.id },
-                select: buildRegistrationAvailabilitySelect(),
-              }),
-              tx.teamRegistration.findFirst({
-                where: {
-                  tournamentId: tournament.id,
-                  OR: [{ teamName }, { captainEmail }],
-                },
-                select: { id: true },
-              }),
-            ]);
-
-            if (!currentTournament) {
-              throw new HttpError(404, "Selected tournament was not found.");
-            }
-
-            ensureRegistrationOpen(getRegistrationState(withRegistrationCount(currentTournament)));
-
-            if (existingRegistration) {
-              throw new HttpError(400, DUPLICATE_REGISTRATION_MESSAGE);
-            }
-
-            await tx.teamRegistration.create({
-              data: {
-                id: registrationId,
-                tournamentId: tournament.id,
-                userId: user.id,
-                entryType: tournament.entryType || "team",
-                teamName,
-                country,
-                teamTag,
-                organizationRequested,
-                captainName,
-                captainEmail,
-                captainPhone,
-                captainDiscord,
-                captainRiotId,
-                contactEmail,
-                teamLogoName: persistedLogo ? persistedLogo.filename : null,
-                rulebookAccepted,
-                falsityWarningAccepted,
-                paymentStatus:
-                  Number(tournament.registrationFeeAmount || 0) > 0
-                    ? "pending"
-                    : "paid",
-              },
-            });
-
-            await tx.registrationMember.createMany({
-              data: members.map((member) => ({
-                id: crypto.randomUUID(),
-                registrationId,
-                role: member.role,
-                memberOrder: member.order,
-                name: member.name,
-                email: member.email,
-                emailNormalized: normalizeEmail(member.email),
-                discord: member.discord,
-                riotId: member.riotId,
-              })),
-            });
-
-            inviteDispatches = await syncSavedTeamFromRegistration({
-              tx,
-              registrationId,
-              user,
-              teamName,
-              country,
-              teamTag,
-              organizationRequested,
-              logoName: persistedLogo ? persistedLogo.filename : null,
-              members,
-              tournamentTitle: tournament.title,
-            });
-          },
-          {
-            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-            maxWait: REGISTRATION_TRANSACTION_MAX_WAIT_MS,
-            timeout: REGISTRATION_TRANSACTION_TIMEOUT_MS,
-          }
-        );
-        break;
-      } catch (error) {
-        if (
-          isRetryableRegistrationTransactionError(error) &&
-          attempt < REGISTRATION_TRANSACTION_MAX_RETRIES
-        ) {
-          continue;
-        }
-
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-          if (error.code === "P2002") {
-            throw new HttpError(400, DUPLICATE_REGISTRATION_MESSAGE);
-          }
-
-          if (error.code === "P2034") {
-            throw new HttpError(
-              409,
-              "Registration changed while your request was being processed. Please try again."
-            );
-          }
-
-          if (error.code === "P2028") {
-            throw new HttpError(
-              503,
-              "Registration could not be saved because the database was busy. Please try again."
-            );
-          }
-        }
-
-        throw error;
-      }
-    }
-  } catch (error) {
-    await removeUploadsQuietly(
-      persistedLogo
-        ? [
-            {
-              directory: teamLogoDirectory,
-              filename: persistedLogo.filename,
-            },
-          ]
-        : [],
-      {
-        operation: "createTournamentRegistration",
-        tournamentId: tournament.id,
-      }
-    );
-    throw error;
-  }
-
-  await sendTeamInvites(inviteDispatches);
-};
-
 module.exports = {
   listPublicTournaments,
   getPublicTournamentBySlug,
@@ -1717,7 +1392,6 @@ module.exports = {
   updateAdminTournament,
   deleteAdminTournament,
   getTournamentRegistrationStatus,
-  createTournamentRegistration,
   parseOptionalDateValue,
   mapTournament,
   buildRegistrationCountInclude,

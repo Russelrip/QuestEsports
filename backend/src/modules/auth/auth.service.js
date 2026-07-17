@@ -16,6 +16,8 @@ const { sendVerificationEmail } = require("../../lib/mail/sendVerificationEmail"
 const { sendEmailChangeEmail } = require("../../lib/mail/sendEmailChangeEmail");
 const { sendResetPasswordEmail } = require("../../lib/mail/sendResetPasswordEmail");
 const { sendSecurityEventEmail } = require("../../lib/mail/sendSecurityEventEmail");
+const DUMMY_PASSWORD_HASH =
+  "$2b$10$T8a2MpXV30Ow685H6n07eOudIZlgyPxCQaa8g/QFoGZwypf.J/plK";
 const {
   normalizeEmail,
   normalizeText,
@@ -445,6 +447,11 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
 
   const normalizedLookup = normalizeUsername(emailOrUsername);
   const normalizedEmail = normalizeEmail(emailOrUsername);
+  const identifierFingerprint = crypto
+    .createHash("sha256")
+    .update(normalizedEmail || normalizedLookup)
+    .digest("hex")
+    .slice(0, 16);
 
   const user = await prisma.user.findFirst({
     where: {
@@ -462,9 +469,10 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
   });
 
   if (!user) {
+    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
     logger.warn("Failed login attempt", {
       ...requestMeta,
-      emailOrUsername,
+      identifierFingerprint,
       reason: "user_not_found",
     });
     throw new HttpError(401, "Invalid credentials.");
@@ -487,7 +495,7 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
 
     logger.warn("Failed login attempt", {
       ...requestMeta,
-      emailOrUsername,
+      identifierFingerprint,
       userId: user.id,
       reason: "invalid_password",
       failedLoginCount,

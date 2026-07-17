@@ -5,7 +5,10 @@ const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { createTokenPair, hashToken } = require("../../lib/tokens");
 const { sendTeamInviteEmail } = require("../../lib/mail/sendTeamInviteEmail");
-const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
+const {
+  removeUploadsQuietly,
+  removeTeamLogoIfUnreferenced,
+} = require("../../lib/upload-cleanup");
 const {
   persistTeamLogoUpload,
   teamLogoDirectory,
@@ -489,10 +492,11 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
     });
 
     if (existingTeam.logoName && existingTeam.logoName !== nextLogoName) {
-      await removeUploadsQuietly(
-        [{ directory: teamLogoDirectory, filename: existingTeam.logoName }],
-        { operation: "updateSavedTeam", teamId, userId: user.id }
-      );
+      await removeTeamLogoIfUnreferenced({
+        prisma,
+        filename: existingTeam.logoName,
+        context: { operation: "updateSavedTeam", teamId, userId: user.id },
+      });
     }
     await sendTeamInvites(inviteDispatches);
     return mapSavedTeam(team, user.id);
@@ -524,10 +528,11 @@ const deleteSavedTeam = async ({ teamId, user }) => {
 
   await prisma.savedTeam.delete({ where: { id: team.id } });
   if (team.logoName) {
-    await removeUploadsQuietly(
-      [{ directory: teamLogoDirectory, filename: team.logoName }],
-      { operation: "deleteSavedTeam", teamId, userId: user.id }
-    );
+    await removeTeamLogoIfUnreferenced({
+      prisma,
+      filename: team.logoName,
+      context: { operation: "deleteSavedTeam", teamId, userId: user.id },
+    });
   }
 };
 

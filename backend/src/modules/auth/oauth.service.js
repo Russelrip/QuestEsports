@@ -62,11 +62,16 @@ const ensureAbsoluteUrl = (value, label) => {
     throw new HttpError(503, `${label} is not configured.`);
   }
 
+  let parsed;
   try {
-    return new URL(normalized).toString();
+    parsed = new URL(normalized);
   } catch {
     throw new HttpError(503, `${label} must be a valid absolute URL.`);
   }
+  if (env.NODE_ENV === "production" && parsed.protocol !== "https:") {
+    throw new HttpError(503, `${label} must use HTTPS in production.`);
+  }
+  return parsed.toString();
 };
 
 const getStateSigningKey = () => {

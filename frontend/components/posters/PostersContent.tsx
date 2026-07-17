@@ -20,14 +20,20 @@ import {
   UploadPreview,
 } from "@/lib/poster-studio";
 
-export default function PostersContent({ initialPosters = [] }: { initialPosters?: Poster[] }) {
+export default function PostersContent({
+  initialPosters = [],
+  initialLoadError = "",
+}: {
+  initialPosters?: Poster[];
+  initialLoadError?: string;
+}) {
   const { user, isLoading: authLoading } = useAuth();
   const isAdmin = user?.role === "admin";
   const showToast = useToastStore((state) => state.showToast);
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [posters, setPosters] = useState<Poster[]>(initialPosters);
   const [loading, setLoading] = useState(initialPosters.length === 0);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialLoadError);
   const [selectedPoster, setSelectedPoster] = useState<Poster | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadPreviews, setUploadPreviews] = useState<UploadPreview[]>([]);

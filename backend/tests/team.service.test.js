@@ -243,6 +243,38 @@ test("deleteSavedTeam refuses members who are not the captain", async () => {
   }
 });
 
+test("deleteSavedTeam preserves a logo referenced by a tournament registration", async () => {
+  const removedUploads = [];
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: {
+          findFirst: async () => ({ id: "saved-team-1", logoName: "shared-logo.png" }),
+          delete: async () => ({ id: "saved-team-1" }),
+          count: async () => 0,
+        },
+        teamRegistration: { count: async () => 1 },
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      removeUploadFiles: async (uploads) => removedUploads.push(...uploads),
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  });
+
+  try {
+    await teamService.deleteSavedTeam({
+      teamId: "saved-team-1",
+      user: { id: "captain-user" },
+    });
+    assert.deepEqual(removedUploads, []);
+  } finally {
+    restore();
+  }
+});
+
 test("getTeamInvitePreview rejects expired or invalid registration invite tokens", async () => {
   const findFirstCalls = [];
   const prismaMock = {

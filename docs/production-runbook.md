@@ -187,7 +187,7 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 3. After CI succeeds, CD deploys the exact CI commit SHA.
 4. CD installs backend dependencies, generates Prisma, lints, applies production migrations, restarts PM2, verifies local health, and saves the process list.
 
-Manual redeploy: GitHub `Actions -> CD -> Run workflow`.
+Manual redeploy: GitHub `Actions -> CD -> Run workflow`. The manual job redeploys the current `main` commit and refuses to continue unless that exact commit has a successful `CI` run.
 
 The deployment refuses root SSH users, dirty tracked worktrees, insecure `.env` permissions, and unpinned SSH hosts.
 

@@ -1,0 +1,75 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const path = require("node:path");
+
+const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
+
+const servicePath = path.join(__dirname, "../src/lib/upload-cleanup-job.js");
+const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
+
+test("file cleanup jobs serialize only configured directories and process them", async () => {
+  const removed = [];
+  const { module: cleanupJob, restore } = loadModuleWithMocks(servicePath, {
+    [uploadModulePath]: {
+      removeUploadFiles: async (uploads) => removed.push(...uploads),
+      avatarDirectory: "C:/uploads/avatars",
+      bankTransferProofDirectory: "C:/private/proofs",
+      gameAssetDirectory: "C:/uploads/games",
+      posterImageDirectory: "C:/uploads/posters",
+      sponsorLogoDirectory: "C:/uploads/sponsors",
+      teamLogoDirectory: "C:/uploads/teams",
+      tournamentBannerDirectory: "C:/uploads/tournaments",
+      tournamentScheduleDirectory: "C:/uploads/schedules",
+    },
+  });
+
+  try {
+    const uploads = cleanupJob.serializeCleanupUploads([
+      { directory: "C:/private/proofs", filename: "proof.webp" },
+      { directory: "C:/untrusted", filename: "secret.txt" },
+    ]);
+    assert.deepEqual(uploads, [
+      { directoryKey: "bank_transfer_proofs", filename: "proof.webp" },
+    ]);
+    await cleanupJob.processFileCleanupJob({ uploads });
+    assert.deepEqual(removed, [
+      { directory: "C:/private/proofs", filename: "proof.webp" },
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("team logo cleanup jobs preserve referenced files and delete unreferenced files", async () => {
+  const removed = [];
+  const { module: cleanupJob, restore } = loadModuleWithMocks(servicePath, {
+    [uploadModulePath]: {
+      removeUploadFiles: async (uploads) => removed.push(...uploads),
+      teamLogoDirectory: "C:/uploads/teams",
+    },
+  });
+
+  try {
+    await cleanupJob.processTeamLogoCleanupJob(
+      { filename: "shared.webp" },
+      {
+        teamRegistration: { count: async () => 1 },
+        savedTeam: { count: async () => 0 },
+      }
+    );
+    assert.deepEqual(removed, []);
+
+    await cleanupJob.processTeamLogoCleanupJob(
+      { filename: "unused.webp" },
+      {
+        teamRegistration: { count: async () => 0 },
+        savedTeam: { count: async () => 0 },
+      }
+    );
+    assert.deepEqual(removed, [
+      { directory: "C:/uploads/teams", filename: "unused.webp" },
+    ]);
+  } finally {
+    restore();
+  }
+});

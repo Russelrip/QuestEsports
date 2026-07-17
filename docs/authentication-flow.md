@@ -255,4 +255,4 @@ This is especially important because authentication is cookie-based.
 - Set `AUTH_ENCRYPTION_KEY` to exactly 64 hexadecimal characters in production so MFA/NIC/token encryption and OAuth state signing do not depend on fallback material.
 - Do not rotate an existing encryption key without re-encrypting stored ciphertext. Older arbitrary-string keys can be normalized without changing the derived AES key by following the [Production Operations Runbook](./production-runbook.md#preserving-existing-encrypted-data-when-normalizing-the-auth-key).
 - OAuth providers require their client IDs, secrets, callback URLs, and a valid `APP_URL`.
-- Replace the placeholder monitoring adapter if you need auth/security observability in production.
+- Configure `MONITORING_WEBHOOK_URL` (and `MONITORING_WEBHOOK_TOKEN` when required) or the structured log drain for production alerts. Delivery failures are logged without interrupting authentication requests; alert ownership and webhook health must be verified during release sign-off.

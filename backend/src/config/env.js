@@ -28,7 +28,7 @@ const required = (name) => {
 
 const optional = (name, fallback = "") => String(process.env[name] || fallback).trim();
 
-const assertHttpsUrl = (name, value) => {
+const assertHttpsUrl = (name, value, { originOnly = false } = {}) => {
   let parsed;
   try {
     parsed = new URL(value);
@@ -37,6 +37,12 @@ const assertHttpsUrl = (name, value) => {
   }
   if (parsed.protocol !== "https:") {
     throw new Error(`${name} must use HTTPS in production.`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`${name} must not contain URL credentials.`);
+  }
+  if (originOnly && value !== parsed.origin) {
+    throw new Error(`${name} must be an origin without a path, query, fragment, or trailing slash.`);
   }
 };
 
@@ -208,9 +214,21 @@ if (env.NODE_ENV === "production") {
   if (!env.APP_URL || !env.API_PUBLIC_URL) {
     throw new Error("APP_URL and API_PUBLIC_URL are required in production.");
   }
-  assertHttpsUrl("APP_URL", env.APP_URL);
-  assertHttpsUrl("API_PUBLIC_URL", env.API_PUBLIC_URL);
-  env.CORS_ORIGINS.forEach((origin) => assertHttpsUrl("CORS_ORIGIN", origin));
+  assertHttpsUrl("APP_URL", env.APP_URL, { originOnly: true });
+  assertHttpsUrl("API_PUBLIC_URL", env.API_PUBLIC_URL, { originOnly: true });
+  env.CORS_ORIGINS.forEach((origin) =>
+    assertHttpsUrl("CORS_ORIGIN", origin, { originOnly: true })
+  );
+  for (const [name, callbackUrl] of [
+    ["GOOGLE_CALLBACK_URL", env.GOOGLE_CALLBACK_URL],
+    ["DISCORD_CALLBACK_URL", env.DISCORD_CALLBACK_URL],
+  ]) {
+    if (!callbackUrl) continue;
+    assertHttpsUrl(name, callbackUrl);
+    if (new URL(callbackUrl).origin !== new URL(env.API_PUBLIC_URL).origin) {
+      throw new Error(`${name} must use the API_PUBLIC_URL origin.`);
+    }
+  }
   if (env.TRUST_PROXY === false) {
     throw new Error("TRUST_PROXY must be configured in production when the API is behind Nginx.");
   }
@@ -254,4 +272,15 @@ if (env.NODE_ENV === "production" && env.PAYHERE_NOTIFY_URL) {
   assertHttpsUrl("PAYHERE_NOTIFY_URL", env.PAYHERE_NOTIFY_URL);
 }
 
-module.exports = { env };
+module.exports = {
+  env,
+  environmentValidation: {
+    assertHttpsUrl,
+    normalizeBoolean,
+    normalizeCsv,
+    normalizeNodeEnv,
+    normalizeNonNegativeInteger,
+    normalizePositiveInteger,
+    normalizeTrustProxy,
+  },
+};

@@ -3,6 +3,7 @@ import DynamicRulebookContent from "@/components/rulebook/DynamicRulebookContent
 import PageLayout from "@/components/PageLayout";
 import { fetchRulebookBySlug, type Rulebook } from "@/lib/rulebooks";
 import { buildPageMetadata } from "@/lib/site";
+import { ApiRequestError } from "@/lib/api";
 
 type RulebookPageProps = { params: Promise<{ slug: string }> };
 
@@ -26,8 +27,9 @@ export default async function RulebookPage({ params }: RulebookPageProps) {
   try {
     const { slug } = await params;
     rulebook = await fetchRulebookBySlug(slug);
-  } catch {
-    notFound();
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) notFound();
+    throw error;
   }
 
   return (

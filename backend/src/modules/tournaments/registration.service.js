@@ -3,7 +3,7 @@ const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { isValidEmail, normalizeEmail, normalizeText } = require("../../lib/validation");
-const { persistTeamLogoUpload, removeUploadFile, teamLogoDirectory } = require("../../middleware/upload");
+const { persistTeamLogoUpload, teamLogoDirectory } = require("../../middleware/upload");
 const { syncSavedTeamFromRegistration, sendTeamInvites } = require("../teams/team.service");
 const { assertPayHereConfigured, createPayHereCheckout } = require("../payments/payment.service");
 const {
@@ -12,6 +12,10 @@ const {
   getBankTransferAmountForSlot,
 } = require("../payments/bank-transfer.service");
 const { buildActiveRegistrationWhere } = require("./registration-eligibility");
+const {
+  removeTeamLogoIfUnreferenced,
+  removeUploadsQuietly,
+} = require("../../lib/upload-cleanup");
 
 const normalizeBoolean = (value) => [true, "true", "1", "on"].includes(value);
 const REGISTRATION_TRANSACTION_MAX_RETRIES = 3;
@@ -176,153 +180,7 @@ const getCurrentTournamentForRegistration = async ({ tx, tournament, now }) => {
   return current;
 };
 
-const createConfiguredRegistration = async ({ slug, body, file, user }) => {
-  const submittedSlug = normalizeText(body.tournamentSlug || body.tournament);
-  if (submittedSlug && submittedSlug !== slug) {
-    throw new HttpError(400, "Tournament registration route and payload do not match.");
-  }
-  const tournament = await prisma.tournament.findFirst({
-    where: { slug, isPublished: true },
-    include: {
-      _count: { select: { teamRegistrations: true } },
-    },
-  });
-  if (!tournament) throw new HttpError(404, "Tournament not found.");
-  const now = new Date();
-  assertRegistrationStillOpen(tournament, now);
-
-  const feeAmount = Number(tournament.registrationFeeAmount || 0);
-  const paymentMethod = feeAmount > 0 ? tournament.paymentMethod || "payhere" : "free";
-  if (paymentMethod === "payhere") assertPayHereConfigured();
-  if (paymentMethod === "bank_transfer") assertBankTransferConfigured(tournament);
-  if (feeAmount > 0 && !["payhere", "bank_transfer"].includes(paymentMethod)) {
-    throw new HttpError(503, "This paid tournament does not have a payment method configured.");
-  }
-
-  const existing = await prisma.teamRegistration.findFirst({
-    where: {
-      tournamentId: tournament.id,
-      OR: [
-        { userId: user.id },
-        { captainEmail: normalizeEmail(user.email) },
-      ],
-    },
-    include: {
-      payments: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        include: { bankTransferProof: true },
-      },
-    },
-  });
-  if (existing) {
-    if (existing.paymentStatus === "paid" || feeAmount === 0) {
-      throw new HttpError(409, "You are already registered for this tournament.");
-    }
-    const latestPayment = existing.payments[0];
-    if (
-      paymentMethod === "bank_transfer" &&
-      latestPayment?.provider === "bank_transfer" &&
-      ["created", "pending", "review_required"].includes(latestPayment.status) &&
-      existing.paymentStatus === "pending" &&
-      existing.reservedUntil &&
-      existing.reservedUntil > now
-    ) {
-      return {
-        registration: mapRegistrationResult(existing),
-        paymentOrderId: latestPayment.providerOrderId,
-        checkout: null,
-        bankTransfer: buildBankTransferInstructions({
-          transaction: latestPayment,
-          registration: existing,
-          tournament,
-        }),
-      };
-    }
-    const providerOrderId = buildPaymentOrderId(paymentMethod, tournament.slug);
-    const reservedUntil = new Date(Date.now() + tournament.reservationMinutes * 60 * 1000);
-    const retried = await runSerializable(async (tx) => {
-      const currentTournament = await getCurrentTournamentForRegistration({
-        tx,
-        tournament,
-        now: new Date(),
-      });
-      const currentRegistration = await tx.teamRegistration.findUnique({
-        where: { id: existing.id },
-      });
-      if (!currentRegistration || currentRegistration.paymentStatus === "paid") {
-        throw new HttpError(409, "You are already registered for this tournament.");
-      }
-      const activeCount = await tx.teamRegistration.count({
-        where: {
-          id: { not: existing.id },
-          tournamentId: currentTournament.id,
-          ...buildActiveRegistrationWhere(),
-        },
-      });
-      if (activeCount >= currentTournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
-      const assignedSlotNumber = paymentMethod === "bank_transfer"
-        ? await allocateLowestAvailableSlot({
-            tx,
-            tournamentId: currentTournament.id,
-            maxTeams: currentTournament.maxTeams,
-            excludeId: existing.id,
-          })
-        : null;
-      const quotedFeeAmount = paymentMethod === "bank_transfer"
-        ? getBankTransferAmountForSlot(currentTournament, assignedSlotNumber)
-        : feeAmount;
-      const registration = await tx.teamRegistration.update({
-        where: { id: existing.id },
-        data: {
-          userId: user.id,
-          paymentStatus: "pending",
-          reservedUntil,
-          assignedSlotNumber,
-          quotedFeeAmount,
-          quotedFeeCurrency: currentTournament.registrationFeeCurrency,
-        },
-      });
-      await tx.paymentTransaction.updateMany({
-        where: {
-          registrationId: existing.id,
-          status: { in: ["created", "pending", "review_required"] },
-        },
-        data: {
-          status: "expired",
-          statusMessage: "Superseded by a new payment reservation.",
-        },
-      });
-      const payment = await tx.paymentTransaction.create({
-        data: {
-          id: crypto.randomUUID(),
-          purpose: "tournament_registration",
-          provider: paymentMethod,
-          providerOrderId,
-          registrationId: existing.id,
-          amount: quotedFeeAmount,
-          currency: currentTournament.registrationFeeCurrency,
-          method: paymentMethod === "bank_transfer" ? "bank_transfer" : null,
-        },
-      });
-      return { payment, registration, tournament: currentTournament };
-    });
-    return {
-      registration: mapRegistrationResult(retried.registration),
-      paymentOrderId: providerOrderId,
-      checkout: paymentMethod === "payhere"
-        ? buildCheckout({ payment: retried.payment, tournament: retried.tournament, user, body })
-        : null,
-      bankTransfer: paymentMethod === "bank_transfer"
-        ? buildBankTransferInstructions({
-            transaction: retried.payment,
-            registration: retried.registration,
-            tournament: retried.tournament,
-          })
-        : null,
-    };
-  }
-
+const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
   const fullName = normalizeText(body.fullName || body.captainName) ||
     [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
   const displayName = tournament.entryType === "solo"
@@ -409,13 +267,259 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   const [configuredCaptain, ...configuredRosterMembers] = configured.members;
   const primaryGameId = normalizeText(body.gameId || body.captainRiotId) ||
     Object.values(configured.entryData).find(Boolean) || "N/A";
-  const members = [
-    {
-      ...configuredCaptain,
-      riotId: primaryGameId,
+
+  return {
+    fullName,
+    displayName,
+    phone,
+    discord,
+    contactEmail,
+    country,
+    teamTag,
+    rulebookAccepted,
+    falsityWarningAccepted,
+    configuredEntryData: configured.entryData,
+    primaryGameId,
+    members: [
+      { ...configuredCaptain, riotId: primaryGameId },
+      ...configuredRosterMembers,
+    ],
+  };
+};
+
+const createConfiguredRegistration = async ({ slug, body, file, user }) => {
+  const submittedSlug = normalizeText(body.tournamentSlug || body.tournament);
+  if (submittedSlug && submittedSlug !== slug) {
+    throw new HttpError(400, "Tournament registration route and payload do not match.");
+  }
+  const tournament = await prisma.tournament.findFirst({
+    where: { slug, isPublished: true },
+    include: {
+      _count: { select: { teamRegistrations: true } },
     },
-    ...configuredRosterMembers,
-  ];
+  });
+  if (!tournament) throw new HttpError(404, "Tournament not found.");
+  const now = new Date();
+  assertRegistrationStillOpen(tournament, now);
+
+  const feeAmount = Number(tournament.registrationFeeAmount || 0);
+  const paymentMethod = feeAmount > 0 ? tournament.paymentMethod || "payhere" : "free";
+  if (paymentMethod === "payhere") assertPayHereConfigured();
+  if (paymentMethod === "bank_transfer") assertBankTransferConfigured(tournament);
+  if (feeAmount > 0 && !["payhere", "bank_transfer"].includes(paymentMethod)) {
+    throw new HttpError(503, "This paid tournament does not have a payment method configured.");
+  }
+  const existing = await prisma.teamRegistration.findFirst({
+    where: {
+      tournamentId: tournament.id,
+      OR: [
+        { userId: user.id },
+        { captainEmail: normalizeEmail(user.email) },
+      ],
+    },
+    include: {
+      payments: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: { bankTransferProof: true },
+      },
+    },
+  });
+  if (existing) {
+    if (existing.paymentStatus === "paid" || feeAmount === 0) {
+      throw new HttpError(409, "You are already registered for this tournament.");
+    }
+    const latestPayment = existing.payments[0];
+    if (
+      paymentMethod === "bank_transfer" &&
+      latestPayment?.provider === "bank_transfer" &&
+      ["created", "pending", "review_required"].includes(latestPayment.status) &&
+      existing.paymentStatus === "pending" &&
+      existing.reservedUntil &&
+      existing.reservedUntil > now
+    ) {
+      return {
+        registration: mapRegistrationResult(existing),
+        paymentOrderId: latestPayment.providerOrderId,
+        checkout: null,
+        bankTransfer: buildBankTransferInstructions({
+          transaction: latestPayment,
+          registration: existing,
+          tournament,
+        }),
+      };
+    }
+  }
+
+  const submission = normalizeRegistrationSubmission({ tournament, body, user });
+  const {
+    fullName,
+    displayName,
+    phone,
+    discord,
+    contactEmail,
+    country,
+    teamTag,
+    rulebookAccepted,
+    falsityWarningAccepted,
+    configuredEntryData,
+    primaryGameId,
+    members,
+  } = submission;
+
+  if (existing) {
+    const providerOrderId = buildPaymentOrderId(paymentMethod, tournament.slug);
+    const reservedUntil = new Date(Date.now() + tournament.reservationMinutes * 60 * 1000);
+    const persistedRetryLogo = tournament.entryType === "team"
+      ? await persistTeamLogoUpload(file)
+      : null;
+    let retried;
+    try {
+      retried = await runSerializable(async (tx) => {
+        const currentTournament = await getCurrentTournamentForRegistration({
+          tx,
+          tournament,
+          now: new Date(),
+        });
+        const currentRegistration = await tx.teamRegistration.findUnique({
+          where: { id: existing.id },
+        });
+        if (!currentRegistration || currentRegistration.paymentStatus === "paid") {
+          throw new HttpError(409, "You are already registered for this tournament.");
+        }
+        const activeCount = await tx.teamRegistration.count({
+          where: {
+            id: { not: existing.id },
+            tournamentId: currentTournament.id,
+            ...buildActiveRegistrationWhere(),
+          },
+        });
+        if (activeCount >= currentTournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
+        const assignedSlotNumber = paymentMethod === "bank_transfer"
+          ? await allocateLowestAvailableSlot({
+              tx,
+              tournamentId: currentTournament.id,
+              maxTeams: currentTournament.maxTeams,
+              excludeId: existing.id,
+            })
+          : null;
+        const quotedFeeAmount = paymentMethod === "bank_transfer"
+          ? getBankTransferAmountForSlot(currentTournament, assignedSlotNumber)
+          : feeAmount;
+        if (tournament.entryType === "team") {
+          const duplicateTeam = await tx.teamRegistration.findFirst({
+            where: {
+              id: { not: existing.id },
+              tournamentId: currentTournament.id,
+              entryType: "team",
+              teamName: displayName,
+              ...buildActiveRegistrationWhere(),
+            },
+            select: { id: true },
+          });
+          if (duplicateTeam) throw new HttpError(409, "A team with this name is already registered.");
+        }
+        const registration = await tx.teamRegistration.update({
+          where: { id: existing.id },
+          data: {
+            userId: user.id,
+            teamName: displayName,
+            country,
+            teamTag,
+            organizationRequested: normalizeBoolean(body.organizationRequested),
+            captainName: fullName,
+            captainEmail: normalizeEmail(user.email),
+            captainPhone: phone,
+            captainDiscord: discord,
+            captainRiotId: primaryGameId,
+            contactEmail,
+            ...(persistedRetryLogo ? { teamLogoName: persistedRetryLogo.filename } : {}),
+            status: "pending",
+            paymentStatus: "pending",
+            verificationStatus: "pending",
+            rulebookAccepted,
+            falsityWarningAccepted,
+            additionalData: configuredEntryData,
+            reservedUntil,
+            assignedSlotNumber,
+            quotedFeeAmount,
+            quotedFeeCurrency: currentTournament.registrationFeeCurrency,
+          },
+        });
+        await tx.registrationMember.deleteMany({ where: { registrationId: existing.id } });
+        await tx.registrationMember.createMany({
+          data: members.map((member) => ({
+            id: crypto.randomUUID(),
+            registrationId: existing.id,
+            userId: member.role === "CAPTAIN" ? user.id : null,
+            role: member.role,
+            memberOrder: member.order,
+            name: member.name,
+            email: member.email,
+            emailNormalized: member.email,
+            discord: member.discord,
+            riotId: member.riotId,
+            additionalData: member.additionalData || {},
+            inviteStatus: member.role === "CAPTAIN" ? "accepted" : "pending",
+            inviteRespondedAt: member.role === "CAPTAIN" ? new Date() : null,
+          })),
+        });
+        await tx.paymentTransaction.updateMany({
+          where: {
+            registrationId: existing.id,
+            status: { in: ["created", "pending", "review_required"] },
+          },
+          data: {
+            status: "expired",
+            statusMessage: "Superseded by a new payment reservation.",
+          },
+        });
+        const payment = await tx.paymentTransaction.create({
+          data: {
+            id: crypto.randomUUID(),
+            purpose: "tournament_registration",
+            provider: paymentMethod,
+            providerOrderId,
+            registrationId: existing.id,
+            amount: quotedFeeAmount,
+            currency: currentTournament.registrationFeeCurrency,
+            method: paymentMethod === "bank_transfer" ? "bank_transfer" : null,
+          },
+        });
+        return { payment, registration, tournament: currentTournament };
+      });
+    } catch (error) {
+      if (persistedRetryLogo) {
+        await removeUploadsQuietly(
+          [{ directory: teamLogoDirectory, filename: persistedRetryLogo.filename }],
+          { operation: "retryConfiguredRegistrationRollback", registrationId: existing.id }
+        );
+      }
+      throw error;
+    }
+    if (persistedRetryLogo && existing.teamLogoName && existing.teamLogoName !== persistedRetryLogo.filename) {
+      await removeTeamLogoIfUnreferenced({
+        prisma,
+        filename: existing.teamLogoName,
+        context: { operation: "retryConfiguredRegistration", registrationId: existing.id },
+      });
+    }
+    return {
+      registration: mapRegistrationResult(retried.registration),
+      paymentOrderId: providerOrderId,
+      checkout: paymentMethod === "payhere"
+        ? buildCheckout({ payment: retried.payment, tournament: retried.tournament, user, body })
+        : null,
+      bankTransfer: paymentMethod === "bank_transfer"
+        ? buildBankTransferInstructions({
+            transaction: retried.payment,
+            registration: retried.registration,
+            tournament: retried.tournament,
+          })
+        : null,
+    };
+  }
+
   const persistedLogo = tournament.entryType === "team" ? await persistTeamLogoUpload(file) : null;
   const registrationId = crypto.randomUUID();
   const reservedUntil = feeAmount > 0
@@ -487,7 +591,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           paymentStatus: feeAmount > 0 ? "pending" : "paid",
           rulebookAccepted,
           falsityWarningAccepted,
-          additionalData: configured.entryData,
+          additionalData: configuredEntryData,
           assignedSlotNumber,
           quotedFeeAmount: feeAmount > 0 ? quotedFeeAmount : null,
           quotedFeeCurrency: feeAmount > 0 ? currentTournament.registrationFeeCurrency : null,
@@ -561,7 +665,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     };
   } catch (error) {
     if (persistedLogo) {
-      await removeUploadFile({ directory: teamLogoDirectory, filename: persistedLogo.filename }).catch(() => undefined);
+      await removeUploadsQuietly(
+        [{ directory: teamLogoDirectory, filename: persistedLogo.filename }],
+        { operation: "createConfiguredRegistrationRollback", registrationId }
+      );
     }
     throw error;
   }

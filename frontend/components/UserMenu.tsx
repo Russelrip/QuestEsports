@@ -12,7 +12,7 @@ import { buildApiUrl } from "@/lib/api";
 
 type UserMenuProps = {
   user: AuthUser;
-  logout: () => Promise<void>;
+  logout: () => Promise<boolean>;
   isAdmin?: boolean;
 };
 
@@ -91,8 +91,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
                 variant="secondary"
                 className="account-menu-action w-full"
                 onClick={async () => {
-                  await logout();
-                  router.push("/");
+                  if (await logout()) router.push("/");
                 }}
               >
                 Logout

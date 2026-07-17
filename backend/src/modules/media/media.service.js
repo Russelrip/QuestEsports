@@ -161,16 +161,27 @@ const readStoredImageAsset = async (asset) => {
   }
 
   try {
-    const data = await fs.readFile(path.resolve(filePath));
-    const detectedType = detectImageType(data);
+    const handle = await fs.open(path.resolve(filePath), "r");
+    let header;
+    let stats;
+    try {
+      header = Buffer.alloc(12);
+      const readResult = await handle.read(header, 0, header.length, 0);
+      header = header.subarray(0, readResult.bytesRead);
+      stats = await handle.stat();
+    } finally {
+      await handle.close();
+    }
+    const detectedType = detectImageType(header);
 
-    if (!detectedType) {
+    if (!detectedType || !stats.isFile()) {
       throw new HttpError(404, "Image not found.");
     }
 
     return {
       contentType: CONTENT_TYPE_BY_IMAGE_TYPE[detectedType] || asset.contentType,
-      data,
+      path: path.resolve(filePath),
+      size: stats.size,
     };
   } catch (error) {
     if (error instanceof HttpError) {
@@ -215,7 +226,7 @@ const createImageAssets = async ({ body, files }) => {
     throw new HttpError(400, "Upload at least one image.");
   }
 
-  const persistedFiles = await Promise.all(
+  const persistenceResults = await Promise.allSettled(
     files.map(async (file, index) => {
       const persistedImage = await persistPosterImageUpload(file);
 
@@ -230,6 +241,23 @@ const createImageAssets = async ({ body, files }) => {
       };
     })
   );
+  const persistedFiles = persistenceResults
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value);
+  const persistenceFailure = persistenceResults.find(
+    (result) => result.status === "rejected"
+  );
+
+  if (persistenceFailure) {
+    await removeUploadsQuietly(
+      persistedFiles.map(({ persistedImage }) => ({
+        directory: posterImageDirectory,
+        filename: persistedImage.filename,
+      })),
+      { operation: "createImageAssetsPersistenceRollback" }
+    );
+    throw persistenceFailure.reason;
+  }
 
   let createdAssets;
 

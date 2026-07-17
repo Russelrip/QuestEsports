@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import { apiFetch, apiFetchJson, AuthUser } from "@/lib/auth";
+import { readApiResponse } from "@/lib/api";
+import { useToastStore } from "@/hooks/useToastStore";
 
 const SESSION_CACHE_TTL_MS = 30 * 1000;
 let cachedSessionUser: AuthUser | null = null;
@@ -18,8 +20,9 @@ type AuthContextValue = {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  sessionError: string | null;
   login: (user: AuthUser) => void;
-  logout: () => Promise<void>;
+  logout: () => Promise<boolean>;
   refreshUser: (user: AuthUser) => void;
   refreshSession: () => Promise<void>;
 };
@@ -29,6 +32,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const showToast = useToastStore((state) => state.showToast);
 
   const setLoggedInUser = (nextUser: AuthUser | null) => {
     cachedSessionUser = nextUser;
@@ -48,11 +53,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { data } = await apiFetchJson<{ user?: AuthUser | null }>("/api/me");
+      const { response, data } = await apiFetchJson<{ user?: AuthUser | null }>("/api/me");
+      if (!response.ok || data.success === false) {
+        if (response.status === 401) {
+          setLoggedInUser(null);
+          setSessionError(null);
+          return;
+        }
+        throw new Error(data.message || "The session service is unavailable.");
+      }
       setLoggedInUser(data?.user || null);
+      setSessionError(null);
     } catch (error) {
       console.error("Failed to refresh session:", error);
-      setLoggedInUser(null);
+      setSessionError(
+        error instanceof Error ? error.message : "The session service is unavailable."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -71,19 +87,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     isAuthenticated: Boolean(user),
     isLoading,
+    sessionError,
     login: setLoggedInUser,
     logout: async () => {
       try {
-        await apiFetch("/api/logout", {
+        const response = await apiFetch("/api/logout", {
           method: "POST",
         });
+        const data = await readApiResponse<{ message?: string }>(response);
+        if (!response.ok || data.success === false) {
+          throw new Error(data.message || "The server could not end your session.");
+        }
       } catch (error) {
         console.error("Failed to logout session:", error);
+        showToast({
+          title: "Logout did not complete",
+          description: "Your server session may still be active. Please try again.",
+          tone: "error",
+        });
+        return false;
       }
 
       cachedSessionUser = null;
       cachedSessionFetchedAt = 0;
       setLoggedInUser(null);
+      setSessionError(null);
+      return true;
     },
     refreshUser: setLoggedInUser,
     refreshSession,

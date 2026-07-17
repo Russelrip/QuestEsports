@@ -1,4 +1,6 @@
 const express = require("express");
+const { createReadStream } = require("fs");
+const { pipeline } = require("stream/promises");
 const { asyncHandler } = require("../../lib/async-handler");
 const { streamUpload } = require("./upload.service");
 
@@ -10,7 +12,8 @@ const sendPublicUpload = (directoryKey) =>
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Length", file.size);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200).send(file.data);
+    res.status(200);
+    await pipeline(createReadStream(file.path), res);
   });
 
 router.get(
@@ -21,7 +24,8 @@ router.get(
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Length", file.size);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200).send(file.data);
+    res.status(200);
+    await pipeline(createReadStream(file.path), res);
   })
 );
 
@@ -33,7 +37,8 @@ router.get(
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Length", file.size);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200).send(file.data);
+    res.status(200);
+    await pipeline(createReadStream(file.path), res);
   })
 );
 
@@ -45,7 +50,8 @@ router.get(
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Length", file.size);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200).send(file.data);
+    res.status(200);
+    await pipeline(createReadStream(file.path), res);
   })
 );
 
@@ -57,7 +63,8 @@ router.get(
     res.setHeader("Content-Type", file.contentType);
     res.setHeader("Content-Length", file.size);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200).send(file.data);
+    res.status(200);
+    await pipeline(createReadStream(file.path), res);
   })
 );
 

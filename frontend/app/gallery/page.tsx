@@ -17,17 +17,20 @@ export const metadata = buildPageMetadata({
 
 export default async function GalleryPage() {
   let initialPosters: Poster[] = [];
-
+  let initialLoadError = "";
   try {
     const postersData = await fetchPublicPosters();
     initialPosters = postersData.posters;
   } catch {
-    initialPosters = [];
+    initialLoadError = "The gallery is temporarily unavailable. Retrying from your browser.";
   }
 
   return (
     <PageLayout title="Gallery" description={defaultPageDescriptions.gallery}>
-      <PostersContent initialPosters={initialPosters} />
+      <PostersContent
+        initialPosters={initialPosters}
+        initialLoadError={initialLoadError}
+      />
     </PageLayout>
   );
 }

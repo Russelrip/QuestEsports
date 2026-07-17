@@ -1,4 +1,6 @@
 const { asyncHandler } = require("../../lib/async-handler");
+const { createReadStream } = require("fs");
+const { pipeline } = require("stream/promises");
 const {
   createImageAssets,
   listImageAssets,
@@ -12,11 +14,16 @@ const {
   deleteUnusedImageAsset,
 } = require("./media.service");
 
-const sendImageBuffer = (res, image, cacheControl) => {
+const sendImage = async (res, image, cacheControl) => {
   res.setHeader("Content-Type", image.contentType);
-  res.setHeader("Content-Length", image.data.length);
+  res.setHeader("Content-Length", image.size ?? image.data.length);
   res.setHeader("Cache-Control", cacheControl);
-  res.status(200).send(image.data);
+  res.status(200);
+  if (image.path) {
+    await pipeline(createReadStream(image.path), res);
+    return;
+  }
+  res.send(image.data);
 };
 
 const uploadImages = asyncHandler(async (req, res) => {
@@ -54,13 +61,13 @@ const getImage = asyncHandler(async (req, res) => {
 const streamImage = asyncHandler(async (req, res) => {
   const image = await getImageAssetById(req.params.imageId);
 
-  sendImageBuffer(res, image, "private, no-store");
+  await sendImage(res, image, "private, no-store");
 });
 
 const streamPosterImage = asyncHandler(async (req, res) => {
   const image = await getPosterImageAssetByPosterId(req.params.posterId);
 
-  sendImageBuffer(res, image, "public, max-age=31536000, immutable");
+  await sendImage(res, image, "public, max-age=31536000, immutable");
 });
 
 const createPosterEntry = asyncHandler(async (req, res) => {

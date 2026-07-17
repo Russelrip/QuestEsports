@@ -3,7 +3,10 @@ const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { decryptSecret } = require("../../lib/secret-box");
-const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
+const {
+  removeUploadsQuietly,
+  removeTeamLogoIfUnreferenced,
+} = require("../../lib/upload-cleanup");
 const {
   EXCEL_CONTENT_TYPE,
   MAX_EXCEL_EXPORT_RECORDS,
@@ -15,7 +18,6 @@ const {
 } = require("../../lib/excel-export");
 const {
   bankTransferProofDirectory,
-  teamLogoDirectory,
 } = require("../../middleware/upload");
 const {
   buildPagination,
@@ -1031,14 +1033,6 @@ const deleteTeamRegistration = async (registrationId) => {
     .map((payment) => payment.bankTransferProof?.storedFilename)
     .filter(Boolean)
     .map((filename) => ({ directory: bankTransferProofDirectory, filename }));
-  if (registration.teamLogoName) {
-    uploads.push(
-          {
-            directory: teamLogoDirectory,
-            filename: registration.teamLogoName,
-          }
-    );
-  }
   await removeUploadsQuietly(
     uploads,
     {
@@ -1046,6 +1040,13 @@ const deleteTeamRegistration = async (registrationId) => {
       registrationId,
     }
   );
+  if (registration.teamLogoName) {
+    await removeTeamLogoIfUnreferenced({
+      prisma,
+      filename: registration.teamLogoName,
+      context: { operation: "deleteTeamRegistration", registrationId },
+    });
+  }
 };
 
 const runLegacyPosterImport = async () => importLegacyPosters();
@@ -1106,15 +1107,11 @@ const deleteAdminSavedTeam = async (teamId) => {
   if (!deleted.count) throw new HttpError(404, "Team not found.");
 
   if (team.logoName) {
-    const registrationLogoReferences = await prisma.teamRegistration.count({
-      where: { teamLogoName: team.logoName },
+    await removeTeamLogoIfUnreferenced({
+      prisma,
+      filename: team.logoName,
+      context: { operation: "deleteAdminSavedTeam", teamId },
     });
-    if (!registrationLogoReferences) {
-      await removeUploadsQuietly(
-        [{ directory: teamLogoDirectory, filename: team.logoName }],
-        { operation: "deleteAdminSavedTeam", teamId }
-      );
-    }
   }
 };
 
