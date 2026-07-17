@@ -75,18 +75,20 @@ test("bank-transfer references are short and banking-app friendly", () => {
   }
 });
 
-test("createConfiguredRegistration updates registration details and roster on payment retry", async () => {
+test("createConfiguredRegistration lets an active payment reservation retry after registration closes", async () => {
   const removedUploads = [];
   let registrationUpdate;
   let memberRows;
+  const retryTournament = { ...tournament, status: "upcoming" };
   const existing = {
     id: "registration-1",
     teamLogoName: "old-logo.png",
     paymentStatus: "pending",
+    reservedUntil: new Date(Date.now() + 5 * 60 * 1000),
     payments: [{ provider: "payhere", status: "failed", providerOrderId: "old-order" }],
   };
   const tx = {
-    tournament: { findUnique: async () => tournament },
+    tournament: { findUnique: async () => retryTournament },
     teamRegistration: {
       findUnique: async () => existing,
       count: async () => 0,
@@ -109,7 +111,7 @@ test("createConfiguredRegistration updates registration details and roster on pa
     },
   };
   const prisma = {
-    tournament: { findFirst: async () => tournament },
+    tournament: { findFirst: async () => retryTournament },
     teamRegistration: {
       findFirst: async () => existing,
       count: async () => 0,
@@ -144,7 +146,7 @@ test("createConfiguredRegistration updates registration details and roster on pa
 
   try {
     const result = await registrationService.createConfiguredRegistration({
-      slug: tournament.slug,
+      slug: retryTournament.slug,
       body,
       file: { originalname: "new-logo.png" },
       user,

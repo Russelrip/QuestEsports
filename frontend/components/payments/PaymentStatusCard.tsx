@@ -32,7 +32,7 @@ type PaymentStatus = {
   } | null;
 };
 
-export default function PaymentStatusCard({ orderId, returnHref = "/profile", publicToken, clearCartOnPaid = false }: { orderId: string; returnHref?: string; publicToken?: string; clearCartOnPaid?: boolean }) {
+export default function PaymentStatusCard({ orderId, returnHref = "/profile", publicToken, clearCartOnPaid = false, checkoutCancelled = false }: { orderId: string; returnHref?: string; publicToken?: string; clearCartOnPaid?: boolean; checkoutCancelled?: boolean }) {
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -86,6 +86,8 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
     : null;
   const statusTitle = terminalSuccess
     ? "Payment confirmed"
+    : checkoutCancelled
+      ? "Payment cancelled"
     : isBankTransfer?.proofSubmitted
       ? "Receipt submitted"
       : isBankTransfer
@@ -167,6 +169,8 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
           ? isBankTransfer
             ? "Quest E-sports verified the transfer against the bank account and confirmed your registration."
             : "The verified PayHere notification has been saved and your record is confirmed."
+          : checkoutCancelled
+            ? "You returned before payment was confirmed. Review the order status before starting another checkout."
           : isBankTransfer
             ? payment?.statusMessage || "Complete the bank transfer and upload your receipt before the reservation expires."
             : payment?.status === "created" || payment?.status === "pending"

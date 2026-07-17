@@ -33,10 +33,13 @@ export async function generateMetadata({
 
 export default async function TournamentDetailsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ payment?: string }>;
 }) {
   const { slug } = await params;
+  const { payment } = await searchParams;
   let tournament: Tournament;
   try {
     tournament = await fetchPublicTournamentBySlug(slug);
@@ -48,7 +51,7 @@ export default async function TournamentDetailsPage({
   return (
     <PageTransition>
       <StructuredData data={buildTournamentStructuredData(tournament)} />
-      <TournamentDetailsContent tournament={tournament} />
+      <TournamentDetailsContent tournament={tournament} paymentCancelled={payment === "cancelled"} />
     </PageTransition>
   );
 }

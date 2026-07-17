@@ -116,6 +116,28 @@ export default function SignupForm() {
     }
   });
 
+  if (submittedEmail) {
+    return (
+      <AuthPanel
+        title="Account created"
+        description="One final step is required before your Quest account can be used."
+      >
+        <div className="rounded-[20px] border border-emerald-300/20 bg-emerald-400/8 p-5">
+          <h3 className="text-lg font-semibold text-white">Check {submittedEmail}</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            Open the verification link in your email, then sign in to continue. Check spam or promotions if it does not arrive.
+          </p>
+          <div className="mt-5"><ResendVerificationButton email={submittedEmail} /></div>
+          <p className="mt-5 text-sm text-slate-400">
+            <Link href={loginPath} className="text-red-300 transition hover:text-red-200">
+              Sign in after verifying{nextPath ? " and continue where you left off" : ""}
+            </Link>
+          </p>
+        </div>
+      </AuthPanel>
+    );
+  }
+
   return (
     <AuthPanel
       title="Join Quest E-sports"
@@ -202,25 +224,6 @@ export default function SignupForm() {
             Sign in
           </Link>
         </p>
-
-        {submittedEmail ? (
-          <div className="rounded-[20px] border border-emerald-300/20 bg-emerald-400/8 p-5">
-            <h3 className="text-lg font-semibold text-white">Account created successfully</h3>
-            <p className="mt-2 text-sm text-slate-300">
-              Check your inbox to verify your email before joining a tournament.
-            </p>
-            <div className="mt-4">
-              <ResendVerificationButton email={submittedEmail} />
-            </div>
-            {nextPath ? (
-              <div className="mt-4">
-                <Link href={loginPath} className="text-sm text-red-300 transition hover:text-red-200">
-                  Sign in after verifying to return to the team invitation
-                </Link>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
       </form>
     </AuthPanel>
   );

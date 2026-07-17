@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,6 +21,7 @@ const contactSchema = z.object({
 type ContactFormValues = z.infer<typeof contactSchema>;
 
 export default function ContactForm() {
+  const [sent, setSent] = useState(false);
   const form = useForm<ContactFormValues>({
     resolver: zodResolver(contactSchema),
     defaultValues: {
@@ -44,12 +46,23 @@ export default function ContactForm() {
       }
 
       form.reset();
-      form.setError("root", { message: "Message sent successfully. We’ll get back to you soon." });
+      setSent(true);
     } catch (error) {
       console.error("Error submitting contact form:", error);
       form.setError("root", { message: "Something went wrong. Please try again." });
     }
   });
+
+  if (sent) {
+    return (
+      <Card className="p-6 sm:p-8">
+        <p className="text-xs uppercase tracking-[0.28em] text-emerald-200">Message received</p>
+        <h2 className="mt-3 text-3xl text-white">Thanks for contacting Quest</h2>
+        <p className="mt-4 text-sm leading-7 text-slate-300">Your message was submitted successfully. We’ll reply using the email address you provided.</p>
+        <Button type="button" variant="secondary" className="mt-6" onClick={() => setSent(false)}>Send another message</Button>
+      </Card>
+    );
+  }
 
   return (
     <Card className="p-6 sm:p-8">

@@ -44,7 +44,7 @@ const mapRegistration = (registration) => ({
 });
 
 const getAccountDashboard = async ({ user }) => {
-  const [registrations, teams, orders] = await Promise.all([
+  const [registrations, teams, orders, recruitmentApplications] = await Promise.all([
     prisma.teamRegistration.findMany({
       where: {
         OR: [
@@ -89,6 +89,20 @@ const getAccountDashboard = async ({ user }) => {
         payments: { orderBy: { createdAt: "desc" }, take: 1 },
       },
     }),
+    prisma.recruitmentApplication.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 25,
+      select: {
+        id: true,
+        applicationType: true,
+        game: true,
+        teamName: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    }),
   ]);
 
   const now = Date.now();
@@ -103,6 +117,7 @@ const getAccountDashboard = async ({ user }) => {
     currentRegistrations: mappedRegistrations.filter((entry) => !isPast(entry)),
     pastRegistrations: mappedRegistrations.filter(isPast),
     teams,
+    recruitmentApplications,
     orders: orders.map((order) => ({
       id: order.id,
       publicToken: order.publicToken,

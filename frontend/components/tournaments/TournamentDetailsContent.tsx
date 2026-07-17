@@ -28,7 +28,7 @@ const MATCH_STATUS_LABELS: Record<number, string> = {
   6: "Paused",
 };
 
-export default function TournamentDetailsContent({ tournament }: { tournament: Tournament }) {
+export default function TournamentDetailsContent({ tournament, paymentCancelled = false }: { tournament: Tournament; paymentCancelled?: boolean }) {
   const [teamPagination, setTeamPagination] = useState({ tournamentId: tournament.id, page: 1 });
   const teamPage = teamPagination.tournamentId === tournament.id ? teamPagination.page : 1;
   const [activeTab, setActiveTab] = useState<"overview" | "rules" | "schedule" | "bracket" | "participants">("overview");
@@ -46,6 +46,13 @@ export default function TournamentDetailsContent({ tournament }: { tournament: T
           <span aria-hidden="true">&larr;</span>
           Back to Tournaments
         </Link>
+
+        {paymentCancelled ? (
+          <Card className="border-amber-300/25 bg-amber-400/8 p-5">
+            <p className="font-semibold text-amber-100">Online payment was cancelled.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Your tournament entry is not confirmed yet. Use the payment button below to retry while your reservation is still active.</p>
+          </Card>
+        ) : null}
 
         <section className="relative h-52 overflow-hidden border border-white/10 bg-black sm:h-auto sm:aspect-[16/5]">
           <h1 className="sr-only">{tournament.title}</h1>

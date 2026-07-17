@@ -161,9 +161,20 @@ const assertRegistrationStillOpen = (tournament, now, statusCode = 400) => {
   }
 };
 
-const getCurrentTournamentForRegistration = async ({ tx, tournament, now }) => {
+const getCurrentTournamentForRegistration = async ({
+  tx,
+  tournament,
+  now,
+  allowActivePaymentReservation = false,
+}) => {
   const current = await tx.tournament.findUnique({ where: { id: tournament.id } });
-  assertRegistrationStillOpen(current, now, 409);
+  const canFinishExistingReservation =
+    allowActivePaymentReservation &&
+    current?.isPublished &&
+    ["registration_open", "upcoming"].includes(current.status);
+  if (!canFinishExistingReservation) {
+    assertRegistrationStillOpen(current, now, 409);
+  }
   if (
     tournament.updatedAt &&
     current.updatedAt &&
@@ -297,7 +308,6 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   });
   if (!tournament) throw new HttpError(404, "Tournament not found.");
   const now = new Date();
-  assertRegistrationStillOpen(tournament, now);
 
   const feeAmount = Number(tournament.registrationFeeAmount || 0);
   const paymentMethod = feeAmount > 0 ? tournament.paymentMethod || "payhere" : "free";
@@ -348,6 +358,14 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     }
   }
 
+  const hasActivePaymentReservation =
+    existing?.paymentStatus === "pending" &&
+    existing.reservedUntil &&
+    existing.reservedUntil > now;
+  if (!hasActivePaymentReservation) {
+    assertRegistrationStillOpen(tournament, now);
+  }
+
   const submission = normalizeRegistrationSubmission({ tournament, body, user });
   const {
     fullName,
@@ -373,17 +391,23 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     let retried;
     try {
       retried = await runSerializable(async (tx) => {
-        const currentTournament = await getCurrentTournamentForRegistration({
-          tx,
-          tournament,
-          now: new Date(),
-        });
         const currentRegistration = await tx.teamRegistration.findUnique({
           where: { id: existing.id },
         });
         if (!currentRegistration || currentRegistration.paymentStatus === "paid") {
           throw new HttpError(409, "You are already registered for this tournament.");
         }
+        const retryNow = new Date();
+        const hasActiveReservation =
+          currentRegistration.paymentStatus === "pending" &&
+          currentRegistration.reservedUntil &&
+          currentRegistration.reservedUntil > retryNow;
+        const currentTournament = await getCurrentTournamentForRegistration({
+          tx,
+          tournament,
+          now: retryNow,
+          allowActivePaymentReservation: Boolean(hasActiveReservation),
+        });
         const activeCount = await tx.teamRegistration.count({
           where: {
             id: { not: existing.id },

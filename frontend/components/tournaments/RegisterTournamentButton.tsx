@@ -43,7 +43,10 @@ export default function RegisterTournamentButton({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!canRegisterForTournament(tournament) && tournament.paymentMethod !== "bank_transfer") {
+    if (
+      !canRegisterForTournament(tournament) &&
+      !["bank_transfer", "payhere"].includes(tournament.paymentMethod)
+    ) {
       return;
     }
 
@@ -116,11 +119,15 @@ export default function RegisterTournamentButton({
     registration?.payment?.provider === "bank_transfer" &&
     registration.payment.status !== "paid" &&
     Boolean(registration.payment.orderId);
+  const pendingPayHere = isRegistered &&
+    registration?.payment?.provider === "payhere" &&
+    registration.payment.status !== "paid";
+  const hasPaymentAction = pendingBankTransfer || pendingPayHere;
   const slotLabel = registration?.assignedSlotNumber
     ? `Slot #${registration.assignedSlotNumber}`
     : null;
 
-  if (!canRegisterForTournament(tournament) && !pendingBankTransfer) {
+  if (!canRegisterForTournament(tournament) && !hasPaymentAction) {
     if (closedAsButton) {
       return (
         <Button type="button" variant="secondary" disabled className={className}>
@@ -149,8 +156,8 @@ export default function RegisterTournamentButton({
     <div className={className}>
       <Button
         type="button"
-        variant={isRegistered && !pendingBankTransfer ? "secondary" : "primary"}
-        disabled={(isRegistered && !pendingBankTransfer) || isChecking}
+        variant={isRegistered && !hasPaymentAction ? "secondary" : "primary"}
+        disabled={(isRegistered && !hasPaymentAction) || isChecking}
         onClick={() => {
           if (pendingBankTransfer && registration?.payment?.orderId) {
             router.push(`/tournaments/${tournament.slug}/payment?order=${encodeURIComponent(registration.payment.orderId)}`);
@@ -163,6 +170,8 @@ export default function RegisterTournamentButton({
       >
         {pendingBankTransfer
           ? "Open Bank Transfer Details"
+          : pendingPayHere
+            ? "Retry Online Payment"
           : isRegistered
           ? slotLabel ? `Registered · ${slotLabel}` : "Registered"
           : isChecking
@@ -176,6 +185,10 @@ export default function RegisterTournamentButton({
           {slotLabel ? `${slotLabel} is reserved. ` : "Your slot is reserved. "}
           Complete the transfer and upload your receipt
           {registration?.reservedUntil ? ` before ${new Date(registration.reservedUntil).toLocaleString()}.` : "."}
+        </p>
+      ) : pendingPayHere ? (
+        <p className="mt-2 max-w-sm text-xs leading-5 text-amber-100">
+          Your registration is saved, but payment is not confirmed. Retry payment to complete your entry.
         </p>
       ) : isRegistered ? (
         <p className="mt-2 text-xs text-emerald-200">Your registration was received. You can track it from your profile.</p>

@@ -48,10 +48,13 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
   if (entries.length === 0) return <p className="border border-dashed border-white/10 bg-[#11131c] p-6 text-sm text-slate-400">{empty}</p>;
 
   return <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{entries.map((entry) => {
-    const needsPayment = entry.payment?.provider === "bank_transfer" && entry.payment.status !== "paid";
-    const href = needsPayment
+    const needsBankPayment = entry.payment?.provider === "bank_transfer" && entry.payment.status !== "paid";
+    const needsOnlinePayment = entry.payment?.provider === "payhere" && entry.payment.status !== "paid";
+    const href = needsBankPayment
       ? `/tournaments/${entry.tournament.slug}/payment?order=${encodeURIComponent(entry.payment?.orderId || "")}`
-      : `/tournaments/${entry.tournament.slug}`;
+      : needsOnlinePayment
+        ? `/tournaments/${entry.tournament.slug}/register`
+        : `/tournaments/${entry.tournament.slug}`;
     const eventDate = entry.tournament.startDateStatus === "scheduled" && entry.tournament.startDate
       ? new Date(entry.tournament.startDate).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
       : entry.tournament.startDateStatus.toUpperCase();
@@ -70,7 +73,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
         </dl>
         <div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.payment?.status || entry.paymentStatus}</Badge></div>
         <Link href={href} className="mt-5 flex items-center justify-between bg-cyan-300 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-200">
-          <span>{needsPayment ? "Complete registration" : "View tournament"}</span><span aria-hidden="true">→</span>
+          <span>{needsBankPayment ? "Complete bank transfer" : needsOnlinePayment ? "Retry online payment" : "View tournament"}</span><span aria-hidden="true">→</span>
         </Link>
       </div>
     </article>;
@@ -363,6 +366,20 @@ export default function ProfileView() {
                     <h3 className="mt-2 border-l-2 border-cyan-300 pl-3 text-2xl text-white">Tournament History</h3>
                     <div className="mt-8"><div className="mb-4 flex items-center justify-between gap-3"><h4 className="text-lg font-semibold text-white">Active Registrations</h4><span className="text-xs text-slate-500">{dashboard.currentRegistrations.length} active</span></div><RegistrationCards entries={dashboard.currentRegistrations} empty="You do not have an active tournament registration." /></div>
                     <div className="mt-10"><div className="mb-4 flex items-center justify-between gap-3"><h4 className="text-lg font-semibold text-white">Completed Tournaments</h4><span className="text-xs text-slate-500">{dashboard.pastRegistrations.length} completed</span></div><RegistrationCards entries={dashboard.pastRegistrations} empty="Your completed tournament history will appear here." /></div>
+                  </section>
+
+                  <section className="border-t border-white/8 pt-10">
+                    <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="border-l-2 border-cyan-300 pl-3 text-2xl text-white">Recruitment Applications</h3><Link href="/join" className="text-sm text-cyan-200">Submit application</Link></div>
+                    {dashboard.recruitmentApplications.length ? (
+                      <div className="mt-5 grid gap-3 md:grid-cols-2">
+                        {dashboard.recruitmentApplications.map((application) => (
+                          <div key={application.id} className="border border-white/8 bg-[#171923] p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold capitalize text-white">{application.teamName || application.applicationType.replaceAll("_", " ")}</p><p className="mt-1 text-xs text-slate-400">{application.game} · submitted {new Date(application.createdAt).toLocaleDateString()}</p></div><Badge>{application.status}</Badge></div>
+                            <p className="mt-3 text-xs leading-5 text-slate-400">{application.status === "pending" ? "Your application is waiting for management review." : `Application status: ${application.status}.`}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : <p className="mt-5 text-sm text-slate-400">No recruitment applications submitted yet.</p>}
                   </section>
 
                   <section className="border-t border-white/8 pt-10"><div className="flex items-center justify-between gap-3"><h3 className="border-l-2 border-cyan-300 pl-3 text-2xl text-white">Merchandise Orders</h3><Link href="/shop" className="text-sm text-cyan-200">Visit shop</Link></div>{dashboard.orders.length ? <div className="mt-5 grid gap-3 md:grid-cols-2">{dashboard.orders.map((order) => <Link key={order.id} href={`/shop/order/${order.publicToken}`} className="flex flex-wrap items-center justify-between gap-3 border border-white/8 bg-[#171923] p-4 text-sm transition hover:border-cyan-300/25"><span className="text-white">{order.itemCount} item{order.itemCount === 1 ? "" : "s"} · {order.currency} {order.total.toFixed(2)}</span><span className="capitalize text-slate-400">{order.status} · {order.paymentStatus}</span></Link>)}</div> : <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>}</section>

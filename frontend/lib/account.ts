@@ -43,10 +43,21 @@ export type DashboardOrder = {
   paymentStatus: string;
 };
 
+export type DashboardRecruitmentApplication = {
+  id: string;
+  applicationType: "solo_player" | "existing_team" | "incomplete_team";
+  game: string;
+  teamName?: string | null;
+  status: "pending" | "reviewed" | "accepted" | "rejected";
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AccountDashboard = {
   currentRegistrations: DashboardRegistration[];
   pastRegistrations: DashboardRegistration[];
   teams: SavedTeam[];
+  recruitmentApplications: DashboardRecruitmentApplication[];
   orders: DashboardOrder[];
 };
 
