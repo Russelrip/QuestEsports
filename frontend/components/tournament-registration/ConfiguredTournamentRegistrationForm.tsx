@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useTeams } from "@/hooks/api/useTeams";
 import { apiFetch } from "@/lib/auth";
+import { ApiRequestError } from "@/lib/api";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
 import { markTournamentRegistered } from "@/lib/registered-tournaments";
 import type { Tournament, TournamentRegistrationField } from "@/lib/tournaments";
@@ -100,7 +101,11 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
     if (teamLogo) body.append("teamLogo", teamLogo);
 
     try {
-      const response = await apiFetch(`/api/tournaments/${tournament.slug}/registrations`, { method: "POST", body });
+      const response = await apiFetch(`/api/tournaments/${tournament.slug}/registrations`, {
+        method: "POST",
+        body,
+        timeoutMs: 60_000,
+      });
       const data = (await response.json()) as {
         success?: boolean;
         message?: string;
@@ -121,7 +126,11 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       }
       setSuccess(data.message || "Registration submitted successfully.");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Registration could not be submitted.");
+      const message = nextError instanceof Error ? nextError.message : "Registration could not be submitted.";
+      const submissionMayHaveCompleted = nextError instanceof ApiRequestError && (nextError.status === 0 || nextError.status === 408);
+      setError(submissionMayHaveCompleted
+        ? `${message} Check My registrations in your profile before submitting again.`
+        : message);
     } finally {
       setLoading(false);
     }

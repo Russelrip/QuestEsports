@@ -61,12 +61,33 @@ export async function fetchWithTimeout(
   timeoutMs = 15_000
 ) {
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
-  const abort = () => controller.abort(options.signal?.reason);
+  let timedOut = false;
+  const timeout = globalThis.setTimeout(() => {
+    timedOut = true;
+    controller.abort(new DOMException("The request took too long. Please try again.", "TimeoutError"));
+  }, timeoutMs);
+  const abort = () => controller.abort(
+    options.signal?.reason || new DOMException("The request was interrupted. Please try again.", "AbortError")
+  );
   if (options.signal?.aborted) abort();
   options.signal?.addEventListener("abort", abort, { once: true });
   try {
     return await fetch(input, { ...options, signal: controller.signal });
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    const message = error instanceof Error ? error.message : "";
+
+    if (timedOut || name === "TimeoutError") {
+      throw new ApiRequestError("The request took too long. Please try again.", 408);
+    }
+    if (controller.signal.aborted || name === "AbortError" || /signal is aborted|aborted without reason/i.test(message)) {
+      throw new ApiRequestError("The request was interrupted. Please try again.", 0);
+    }
+    if (name === "TypeError" && /failed to fetch|networkerror|load failed/i.test(message)) {
+      throw new ApiRequestError("Could not reach the server. Check your connection and try again.", 0);
+    }
+
+    throw error;
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener("abort", abort);

@@ -38,6 +38,7 @@ export type UserSession = {
 
 type ApiFetchOptions = RequestInit & {
   json?: unknown;
+  timeoutMs?: number;
 };
 
 type ApiSuccessResponse = {
@@ -46,7 +47,7 @@ type ApiSuccessResponse = {
 };
 
 export const apiFetch = async (path: string, options: ApiFetchOptions = {}) => {
-  const { json, headers, ...rest } = options;
+  const { json, headers, timeoutMs, ...rest } = options;
 
   return fetchWithTimeout(buildApiUrl(path), {
     ...rest,
@@ -56,7 +57,7 @@ export const apiFetch = async (path: string, options: ApiFetchOptions = {}) => {
       ...headers,
     },
     ...(json ? { body: JSON.stringify(json) } : {}),
-  });
+  }, timeoutMs);
 };
 
 export async function apiFetchJson<T = unknown>(
