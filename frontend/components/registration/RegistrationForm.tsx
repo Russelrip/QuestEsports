@@ -78,7 +78,7 @@ export default function RegistrationForm() {
         title: "Team created",
         description: result.message,
       });
-      router.push("/profile");
+      router.push(`/profile?tab=teams&team=${encodeURIComponent(result.team.id)}&created=1`);
     } catch (nextError) {
       const message =
         nextError instanceof Error

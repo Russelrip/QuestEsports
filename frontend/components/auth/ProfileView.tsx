@@ -86,6 +86,7 @@ export default function ProfileView() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [showCreatedTeamNotice, setShowCreatedTeamNotice] = useState(false);
   const { data: teamsData, setData: setTeamsData, loading: teamsLoading, error: teamsError } = useTeams(Boolean(user));
   const showToast = useToastStore((state) => state.showToast);
   const teams = teamsData ?? [];
@@ -109,6 +110,15 @@ export default function ProfileView() {
       currentPassword: "",
     },
   });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === "teams") {
+      setActiveTab("teams");
+      setSelectedTeamId(params.get("team"));
+      setShowCreatedTeamNotice(params.get("created") === "1");
+    }
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -434,6 +444,13 @@ export default function ProfileView() {
                     Create Team
                   </Link>
                 </div>
+
+                {showCreatedTeamNotice ? (
+                  <div className="mt-6 border border-emerald-300/20 bg-emerald-400/8 p-4 text-sm leading-6 text-slate-200">
+                    <p className="font-semibold text-emerald-200">Team created successfully.</p>
+                    <p className="mt-1">Invited roster members are marked as pending below until they accept their email invitation. You can resend an invitation after its countdown ends.</p>
+                  </div>
+                ) : null}
 
                 {teamsError ? <p className="mt-5 text-sm text-rose-300">{teamsError}</p> : null}
                 {teamsLoading ? (
