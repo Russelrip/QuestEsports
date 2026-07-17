@@ -6,7 +6,6 @@ const {
 } = require("../../middleware/upload");
 const sponsorController = require("./sponsor.controller");
 const {
-  attachSession,
   requireAuth,
   requireAdmin,
   requireVerifiedEmail,
@@ -36,8 +35,6 @@ const tournamentRegistrationRateLimiter = createRateLimiter({
   message: "Too many tournament registrations. Please try again later.",
 });
 const tournamentAssetsSizeGuard = createUploadRequestSizeGuard(45 * 1024 * 1024);
-
-router.use(attachSession);
 
 router.get("/tournaments", getPublicTournaments);
 router.get("/tournaments/:slug", getPublicTournament);

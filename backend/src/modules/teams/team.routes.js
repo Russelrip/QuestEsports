@@ -1,7 +1,6 @@
 const express = require("express");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 const {
-  attachSession,
   requireAuth,
   requireVerifiedEmail,
 } = require("../auth/auth.middleware");
@@ -41,8 +40,6 @@ const resendTeamInviteRateLimiter = createRateLimiter({
   maxRequests: 30,
   message: "Too many team invitation emails. Please try again later.",
 });
-
-router.use(attachSession);
 
 router.get("/teams/profile", requireAuth, getProfileTeams);
 router.post(

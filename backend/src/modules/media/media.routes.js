@@ -1,5 +1,5 @@
 const express = require("express");
-const { attachSession, requireAdmin } = require("../auth/auth.middleware");
+const { requireAdmin } = require("../auth/auth.middleware");
 const { dbImageUpload, createUploadRequestSizeGuard } = require("../../middleware/upload");
 const {
   uploadImages,
@@ -20,7 +20,6 @@ router.get("/posters", getPosters);
 router.get("/posters/:posterId", getPoster);
 router.get("/posters/:posterId/image", streamPosterImage);
 
-router.use(attachSession);
 router.get("/images", requireAdmin, getImages);
 router.get("/images/:imageId", requireAdmin, getImage);
 router.get("/images/:imageId/binary", requireAdmin, streamImage);

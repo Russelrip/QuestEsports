@@ -231,8 +231,14 @@ export type Tournament = {
   updatedAt?: string;
 };
 
+const PUBLIC_TOURNAMENT_REVALIDATE_SECONDS = 15;
+
 const fetchJson = async <T>(path: string): Promise<T> => {
-  return fetchApiJson<T>(path, { cache: "no-store" }, "Tournament request failed.");
+  return fetchApiJson<T>(
+    path,
+    { next: { revalidate: PUBLIC_TOURNAMENT_REVALIDATE_SECONDS } },
+    "Tournament request failed."
+  );
 };
 
 export const getTournamentStatusLabel = (status: TournamentStatus) =>

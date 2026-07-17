@@ -1,5 +1,5 @@
 const express = require("express");
-const { attachSession, requireAdmin } = require("../auth/auth.middleware");
+const { requireAdmin } = require("../auth/auth.middleware");
 const { dbImageUpload, createUploadRequestSizeGuard } = require("../../middleware/upload");
 const controller = require("./game-category.controller");
 
@@ -9,7 +9,6 @@ const categoryUpload = dbImageUpload.fields([
   { name: "logo", maxCount: 1 },
 ]);
 const categoryUploadSizeGuard = createUploadRequestSizeGuard(22 * 1024 * 1024);
-router.use(attachSession);
 router.get("/game-categories", controller.getPublicCategories);
 router.get("/admin/game-categories", requireAdmin, controller.getAdminCategories);
 router.post("/admin/game-categories", requireAdmin, categoryUploadSizeGuard, categoryUpload, controller.createCategory);

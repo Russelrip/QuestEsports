@@ -1,6 +1,5 @@
 const express = require("express");
 const {
-  attachSession,
   requireAuth,
   requireAdmin,
   requireVerifiedEmail,
@@ -30,7 +29,6 @@ const proofUploadLimiter = createRateLimiter({
   maxRequests: 10,
   message: "Too many payment proof uploads. Please try again later.",
 });
-router.use(attachSession);
 router.post("/payments/payhere/notify", notificationLimiter, notifyPayHere);
 router.get("/payments/:orderId", readPaymentStatus);
 router.post(

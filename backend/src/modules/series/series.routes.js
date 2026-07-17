@@ -1,10 +1,9 @@
 const express = require("express");
 const { tournamentBannerUpload } = require("../../middleware/upload");
-const { attachSession, requireAdmin } = require("../auth/auth.middleware");
+const { requireAdmin } = require("../auth/auth.middleware");
 const controller = require("./series.controller");
 
 const router = express.Router();
-router.use(attachSession);
 router.get("/event-series", controller.getPublicSeries);
 router.get("/event-series/:slug", controller.getPublicSeriesDetail);
 router.get("/admin/event-series", requireAdmin, controller.getAdminSeries);

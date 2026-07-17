@@ -7,7 +7,7 @@ import {
   fetchPublicGameCategories,
 } from "@/lib/tournaments";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 15;
 
 export const metadata = buildPageMetadata({
   title: "Tournaments",

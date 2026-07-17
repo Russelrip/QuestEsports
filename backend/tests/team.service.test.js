@@ -614,6 +614,36 @@ test("listProfileTeams returns accepted memberships as non-captain teams", async
   }
 });
 
+test("sendTeamInvites queues the roster in one batch", async () => {
+  const batches = [];
+  let singleInviteCalls = 0;
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: {
+      sendTeamInviteEmail: async () => {
+        singleInviteCalls += 1;
+      },
+      sendTeamInviteEmails: async (invites) => {
+        batches.push(invites);
+      },
+    },
+  });
+
+  try {
+    const invites = [
+      { email: "player1@example.com", rawToken: "token-one" },
+      { email: "player2@example.com", rawToken: "token-two" },
+    ];
+    await teamService.sendTeamInvites(invites);
+
+    assert.equal(singleInviteCalls, 0);
+    assert.equal(batches.length, 1);
+    assert.deepEqual(batches[0], invites);
+  } finally {
+    restore();
+  }
+});
+
 test("syncSavedTeamFromRegistration links the registration and creates account-bound invites", async () => {
   const savedMemberCreateCalls = [];
   const registrationMemberUpdateCalls = [];

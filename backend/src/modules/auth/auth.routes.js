@@ -26,7 +26,7 @@ const {
   revokeSession,
   revokeOtherSessions,
 } = require("./auth.controller");
-const { attachSession, requireAuth } = require("./auth.middleware");
+const { requireAuth } = require("./auth.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 
 const router = express.Router();
@@ -67,7 +67,6 @@ const resetPasswordRateLimiter = createRateLimiter({
   message: "Too many password reset attempts. Please try again later.",
 });
 
-router.use(attachSession);
 router.get("/auth/google/start", startGoogleAuth);
 router.get("/auth/google/callback", googleCallback);
 router.get("/auth/discord/start", startDiscordAuth);

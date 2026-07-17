@@ -4,11 +4,9 @@ const { prisma } = require("../lib/prisma");
 const { HttpError } = require("../lib/http-error");
 const { logger } = require("../lib/logger");
 
-const MAX_TRANSACTION_RETRIES = 3;
+const MAX_OPERATION_RETRIES = 3;
 const BUCKET_RETENTION_MULTIPLIER = 4;
-const RATE_LIMIT_TRANSACTION_MAX_WAIT_MS = 10 * 1000;
-const RATE_LIMIT_TRANSACTION_TIMEOUT_MS = 15 * 1000;
-const RETRYABLE_TRANSACTION_ERROR_CODES = new Set(["P2002", "P2028", "P2034"]);
+const RETRYABLE_OPERATION_ERROR_CODES = new Set(["P2024", "P2028", "P2034", "P2037"]);
 
 const hashRateLimitKey = (value) =>
   crypto.createHash("sha256").update(String(value || "unknown")).digest("hex");
@@ -45,62 +43,39 @@ const consumeRateLimit = async ({
   const now = new Date();
   const nextResetAt = new Date(now.getTime() + windowMs);
 
-  for (let attempt = 1; attempt <= MAX_TRANSACTION_RETRIES; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_OPERATION_RETRIES; attempt += 1) {
     try {
-      return await prisma.$transaction(
-        async (tx) => {
-          const existing = await tx.rateLimitBucket.findUnique({
-            where: {
-              name_key: {
-                name,
-                key,
-              },
-            },
-          });
+      const [bucket] = await prisma.$queryRaw`
+        INSERT INTO "rate_limit_buckets"
+          ("id", "name", "key", "count", "reset_at", "created_at", "updated_at")
+        VALUES
+          (${crypto.randomUUID()}::uuid, ${name}, ${key}, 1, ${nextResetAt}, ${now}, ${now})
+        ON CONFLICT ("name", "key") DO UPDATE SET
+          "count" = CASE
+            WHEN "rate_limit_buckets"."reset_at" <= ${now} THEN 1
+            ELSE "rate_limit_buckets"."count" + 1
+          END,
+          "reset_at" = CASE
+            WHEN "rate_limit_buckets"."reset_at" <= ${now} THEN ${nextResetAt}
+            ELSE "rate_limit_buckets"."reset_at"
+          END,
+          "updated_at" = ${now}
+        RETURNING
+          "id", "name", "key", "count", "reset_at" AS "resetAt"
+      `;
 
-          if (!existing) {
-            return tx.rateLimitBucket.create({
-              data: {
-                id: crypto.randomUUID(),
-                name,
-                key,
-                count: 1,
-                resetAt: nextResetAt,
-              },
-            });
-          }
+      if (!bucket) {
+        throw new Error("The rate-limit bucket could not be updated.");
+      }
 
-          if (existing.resetAt.getTime() <= now.getTime()) {
-            return tx.rateLimitBucket.update({
-              where: { id: existing.id },
-              data: {
-                count: 1,
-                resetAt: nextResetAt,
-              },
-            });
-          }
-
-          return tx.rateLimitBucket.update({
-            where: { id: existing.id },
-            data: {
-              count: {
-                increment: 1,
-              },
-            },
-          });
-        },
-        {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-          maxWait: RATE_LIMIT_TRANSACTION_MAX_WAIT_MS,
-          timeout: RATE_LIMIT_TRANSACTION_TIMEOUT_MS,
-        }
-      );
+      return bucket;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
-        RETRYABLE_TRANSACTION_ERROR_CODES.has(error.code) &&
-        attempt < MAX_TRANSACTION_RETRIES
+        RETRYABLE_OPERATION_ERROR_CODES.has(error.code) &&
+        attempt < MAX_OPERATION_RETRIES
       ) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 50));
         continue;
       }
 
@@ -108,7 +83,7 @@ const consumeRateLimit = async ({
     }
   }
 
-  throw new Error("Unable to apply rate limit after retries.");
+  throw new Error("Unable to apply the rate limit after retries.");
 };
 
 const createRateLimiter = ({

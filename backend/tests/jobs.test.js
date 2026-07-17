@@ -31,6 +31,7 @@ const loggerMock = {
 
 const createJobsPrismaMock = () => {
   const jobs = [];
+  let createManyCalls = 0;
 
   const cloneJob = (job) => ({
     ...job,
@@ -51,6 +52,13 @@ const createJobsPrismaMock = () => {
         };
         jobs.push(job);
         return cloneJob(job);
+      },
+      createMany: async ({ data }) => {
+        createManyCalls += 1;
+        for (const entry of data) {
+          await tx.backgroundJob.create({ data: entry });
+        }
+        return { count: data.length };
       },
       findFirst: async ({ where, orderBy: _orderBy }) => {
         const now = where.OR[0]?.availableAt?.lte;
@@ -144,6 +152,7 @@ const createJobsPrismaMock = () => {
         callback(tx),
     },
     jobs,
+    getCreateManyCalls: () => createManyCalls,
   };
 };
 
@@ -190,6 +199,48 @@ test("enqueueJob persists a queued background job without raw sensitive tokens",
       JSON.stringify(prismaMock.jobs[0].payload),
       new RegExp(rawToken)
     );
+  } finally {
+    restore();
+  }
+});
+
+test("enqueueJobs persists invitation jobs in one batch without raw tokens", async () => {
+  const prismaMock = createJobsPrismaMock();
+  const { module: jobsModule, restore } = loadModuleWithMocks(jobsPath, {
+    [prismaModulePath]: { prisma: prismaMock.prisma },
+    [generatedPrismaPath]: {
+      Prisma: {
+        TransactionIsolationLevel: { Serializable: "Serializable" },
+        PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {},
+      },
+    },
+    [envPath]: {
+      env: {
+        JOB_WORKER_ENABLED: true,
+        JOB_WORKER_POLL_MS: 5000,
+        JOB_WORKER_MAX_ATTEMPTS: 5,
+        AUTH_ENCRYPTION_KEY: "jobs-test-encryption-key",
+      },
+    },
+    [loggerPath]: loggerMock,
+    [monitoringPath]: { captureException: () => {} },
+    [mailDefinitionsPath]: {
+      EMAIL_JOB_NAME: "email.send",
+      processQueuedMailJob: async () => true,
+    },
+  });
+
+  try {
+    const results = await jobsModule.enqueueJobs([
+      { name: "email.send", payload: { type: "teamInvite", rawToken: "token-one" } },
+      { name: "email.send", payload: { type: "teamInvite", rawToken: "token-two" } },
+    ]);
+
+    assert.equal(results.length, 2);
+    assert.equal(prismaMock.getCreateManyCalls(), 1);
+    assert.equal(prismaMock.jobs.length, 2);
+    assert.ok(prismaMock.jobs.every((job) => !job.payload.rawToken));
+    assert.ok(prismaMock.jobs.every((job) => job.payload.tokenCiphertext));
   } finally {
     restore();
   }

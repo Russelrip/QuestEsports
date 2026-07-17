@@ -4,6 +4,11 @@ const { getSessionFromRequest } = require("./session.service");
 const { logger } = require("../../lib/logger");
 
 const attachSession = asyncHandler(async (req, res, next) => {
+  if (Object.prototype.hasOwnProperty.call(req, "session")) {
+    next();
+    return;
+  }
+
   const session = await getSessionFromRequest(req);
   req.session = session;
   req.user = session ? session.user : null;

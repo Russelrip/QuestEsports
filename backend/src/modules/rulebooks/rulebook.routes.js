@@ -1,5 +1,5 @@
 const express = require("express");
-const { attachSession, requireAdmin } = require("../auth/auth.middleware");
+const { requireAdmin } = require("../auth/auth.middleware");
 const {
   getRulebooks,
   getRulebook,
@@ -9,7 +9,6 @@ const {
 } = require("./rulebook.controller");
 
 const router = express.Router();
-router.use(attachSession);
 router.get("/rulebooks", getRulebooks);
 router.get("/rulebooks/:slug", getRulebook);
 router.post("/admin/rulebooks", requireAdmin, createAdminRulebook);

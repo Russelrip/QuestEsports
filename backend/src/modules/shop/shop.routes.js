@@ -1,11 +1,10 @@
 const express = require("express");
-const { attachSession, requireAdmin } = require("../auth/auth.middleware");
+const { requireAdmin } = require("../auth/auth.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 const controller = require("./shop.controller");
 
 const router = express.Router();
 const orderLimiter = createRateLimiter({ name: "shop-order", windowMs: 60 * 60 * 1000, maxRequests: 20, message: "Too many checkout attempts. Please try again later." });
-router.use(attachSession);
 router.get("/products", controller.getProducts);
 router.get("/commerce/capabilities", controller.getCapabilities);
 router.get("/products/:slug", controller.getProduct);

@@ -1,5 +1,5 @@
 const express = require("express");
-const { attachSession, requireAdmin } = require("../auth/auth.middleware");
+const { requireAdmin } = require("../auth/auth.middleware");
 const {
   getDashboard,
   getUsers,
@@ -28,7 +28,6 @@ const {
 
 const router = express.Router();
 
-router.use(attachSession);
 router.use("/admin", requireAdmin);
 
 router.get("/admin/dashboard", getDashboard);

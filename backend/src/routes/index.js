@@ -1,4 +1,5 @@
 const express = require("express");
+const { attachSession } = require("../modules/auth/auth.middleware");
 const adminRoutes = require("../modules/admin/admin.routes");
 const authRoutes = require("../modules/auth/auth.routes");
 const contactRoutes = require("../modules/contact/contact.routes");
@@ -16,6 +17,7 @@ const gameCategoryRoutes = require("../modules/games/game-category.routes");
 
 const router = express.Router();
 
+router.use(attachSession);
 router.use(authRoutes);
 router.use(accountRoutes);
 router.use(seriesRoutes);

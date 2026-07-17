@@ -4,7 +4,10 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { createTokenPair, hashToken } = require("../../lib/tokens");
-const { sendTeamInviteEmail } = require("../../lib/mail/sendTeamInviteEmail");
+const {
+  sendTeamInviteEmail,
+  sendTeamInviteEmails,
+} = require("../../lib/mail/sendTeamInviteEmail");
 const {
   removeUploadsQuietly,
   removeTeamLogoIfUnreferenced,
@@ -1181,6 +1184,20 @@ const syncSavedTeamFromRegistration = async ({
 };
 
 const sendTeamInvites = async (inviteDispatches) => {
+  if (inviteDispatches.length === 0) return;
+
+  if (typeof sendTeamInviteEmails === "function") {
+    try {
+      await sendTeamInviteEmails(inviteDispatches);
+    } catch (error) {
+      logger.error("Failed to queue team invite emails.", {
+        inviteCount: inviteDispatches.length,
+        error,
+      });
+    }
+    return;
+  }
+
   await Promise.allSettled(
     inviteDispatches.map(async (invite) => {
       try {

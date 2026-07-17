@@ -89,7 +89,7 @@ const scrubJobPayload = (payload) => {
   return safePayload;
 };
 
-const enqueueJob = async (name, payload = {}, options = {}) => {
+const buildQueuedJobData = (name, payload = {}, options = {}) => {
   const maxAttempts = Math.max(
     Number.parseInt(options.maxAttempts, 10) || env.JOB_WORKER_MAX_ATTEMPTS,
     1
@@ -97,16 +97,21 @@ const enqueueJob = async (name, payload = {}, options = {}) => {
   const availableAt =
     options.availableAt instanceof Date ? options.availableAt : new Date();
 
+  return {
+    id: crypto.randomUUID(),
+    name,
+    payload: protectJobPayload(payload),
+    status: "queued",
+    attempts: 0,
+    maxAttempts,
+    availableAt,
+  };
+};
+
+const enqueueJob = async (name, payload = {}, options = {}) => {
+  const data = buildQueuedJobData(name, payload, options);
   const job = await prisma.backgroundJob.create({
-    data: {
-      id: crypto.randomUUID(),
-      name,
-      payload: protectJobPayload(payload),
-      status: "queued",
-      attempts: 0,
-      maxAttempts,
-      availableAt,
-    },
+    data,
   });
 
   logger.info("Background job enqueued", {
@@ -123,6 +128,28 @@ const enqueueJob = async (name, payload = {}, options = {}) => {
     availableAt: job.availableAt,
     maxAttempts: job.maxAttempts,
   };
+};
+
+const enqueueJobs = async (requests = []) => {
+  if (!Array.isArray(requests) || requests.length === 0) return [];
+
+  const jobs = requests.map(({ name, payload = {}, options = {} }) =>
+    buildQueuedJobData(name, payload, options)
+  );
+  await prisma.backgroundJob.createMany({ data: jobs });
+
+  logger.info("Background jobs enqueued", {
+    count: jobs.length,
+    jobNames: [...new Set(jobs.map((job) => job.name))],
+  });
+
+  return jobs.map((job) => ({
+    accepted: true,
+    jobId: job.id,
+    name: job.name,
+    availableAt: job.availableAt,
+    maxAttempts: job.maxAttempts,
+  }));
 };
 
 const claimNextJob = async () => {
@@ -373,6 +400,7 @@ const stopJobWorker = async ({ timeoutMs = 15000 } = {}) => {
 
 module.exports = {
   enqueueJob,
+  enqueueJobs,
   runJobWorkerTick,
   startJobWorker,
   stopJobWorker,

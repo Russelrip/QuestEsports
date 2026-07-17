@@ -16,39 +16,8 @@ const createPrismaMock = () => {
 
   const getCompositeKey = (name, key) => `${name}:${key}`;
 
-  const tx = {
-    rateLimitBucket: {
-      findUnique: async ({ where }) =>
-        buckets.get(getCompositeKey(where.name_key.name, where.name_key.key)) || null,
-      create: async ({ data }) => {
-        const record = {
-          ...data,
-          createdAt: data.createdAt || new Date(),
-          updatedAt: data.updatedAt || new Date(),
-        };
-        buckets.set(getCompositeKey(data.name, data.key), record);
-        return record;
-      },
-      update: async ({ where, data }) => {
-        const existing = Array.from(buckets.values()).find((bucket) => bucket.id === where.id);
-        if (!existing) {
-          throw new Error("Missing rate-limit bucket.");
-        }
-
-        const nextRecord = {
-          ...existing,
-          ...(data.resetAt ? { resetAt: data.resetAt } : {}),
-          ...(typeof data.count === "number" ? { count: data.count } : {}),
-          ...(data.count && data.count.increment
-            ? { count: existing.count + data.count.increment }
-            : {}),
-          updatedAt: new Date(),
-        };
-
-        buckets.set(getCompositeKey(nextRecord.name, nextRecord.key), nextRecord);
-        return nextRecord;
-      },
-      deleteMany: async ({ where }) => {
+  const rateLimitBucket = {
+    deleteMany: async ({ where }) => {
         let count = 0;
         for (const [key, bucket] of buckets.entries()) {
           if (bucket.resetAt < where.resetAt.lt) {
@@ -57,14 +26,39 @@ const createPrismaMock = () => {
           }
         }
         return { count };
-      },
     },
   };
 
   return {
     prisma: {
-      rateLimitBucket: tx.rateLimitBucket,
-      $transaction: async (callback) => callback(tx),
+      rateLimitBucket,
+      $queryRaw: async (_queryParts, ...values) => {
+        const id = values[0];
+        const name = values[1];
+        const key = values[2];
+        const nextResetAt = values[3];
+        const now = values[6];
+        const compositeKey = getCompositeKey(name, key);
+        const existing = buckets.get(compositeKey);
+        const record = existing
+          ? {
+              ...existing,
+              count: existing.resetAt <= now ? 1 : existing.count + 1,
+              resetAt: existing.resetAt <= now ? nextResetAt : existing.resetAt,
+              updatedAt: now,
+            }
+          : {
+              id,
+              name,
+              key,
+              count: 1,
+              resetAt: nextResetAt,
+              createdAt: now,
+              updatedAt: now,
+            };
+        buckets.set(compositeKey, record);
+        return [record];
+      },
     },
     buckets,
   };
@@ -194,7 +188,7 @@ test("createRateLimiter resets counts after the window expires", async () => {
   }
 });
 
-test("createRateLimiter retries transaction startup timeouts", async () => {
+test("createRateLimiter retries transient atomic-operation timeouts", async () => {
   class PrismaClientKnownRequestError extends Error {
     constructor(message, code) {
       super(message);
@@ -203,23 +197,19 @@ test("createRateLimiter retries transaction startup timeouts", async () => {
   }
 
   const prismaMock = createPrismaMock();
-  const baseTransaction = prismaMock.prisma.$transaction;
-  let transactionCalls = 0;
+  const baseQueryRaw = prismaMock.prisma.$queryRaw;
+  let queryCalls = 0;
 
-  prismaMock.prisma.$transaction = async (callback, options) => {
-    transactionCalls += 1;
-    assert.equal(options.isolationLevel, "Serializable");
-    assert.equal(options.maxWait, 10_000);
-    assert.equal(options.timeout, 15_000);
-
-    if (transactionCalls === 1) {
+  prismaMock.prisma.$queryRaw = async (...args) => {
+    queryCalls += 1;
+    if (queryCalls === 1) {
       throw new PrismaClientKnownRequestError(
-        "Unable to start a transaction in the given time.",
-        "P2028"
+        "Unable to acquire a database connection in time.",
+        "P2024"
       );
     }
 
-    return baseTransaction(callback, options);
+    return baseQueryRaw(...args);
   };
 
   const { module: rateLimit, restore } = loadModuleWithMocks(rateLimitPath, {
@@ -253,7 +243,7 @@ test("createRateLimiter retries transaction startup timeouts", async () => {
     await middleware(req, res, next);
 
     assert.equal(req._nextError, null);
-    assert.equal(transactionCalls, 2);
+    assert.equal(queryCalls, 2);
     assert.equal(res.getHeader("RateLimit-Limit"), "10");
     assert.equal(prismaMock.buckets.size, 1);
   } finally {

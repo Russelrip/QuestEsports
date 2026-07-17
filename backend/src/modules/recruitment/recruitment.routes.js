@@ -1,5 +1,5 @@
 const express = require("express");
-const { attachSession, requireVerifiedEmail } = require("../auth/auth.middleware");
+const { requireVerifiedEmail } = require("../auth/auth.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 const { submitRecruitmentApplication } = require("./recruitment.controller");
 
@@ -10,8 +10,6 @@ const recruitmentRateLimiter = createRateLimiter({
   maxRequests: 5,
   message: "Too many recruitment applications. Please try again later.",
 });
-
-router.use(attachSession);
 
 router.post(
   "/recruitment-applications",
