@@ -165,3 +165,12 @@ The profile ramps through 10 and 50 virtual users and enforces an error rate bel
 500 ms, and p99 below 1 second. Adjust the stages and thresholds in `performance/k6-api.js` for
 stress, spike, or soak runs. Monitor the database pool, API CPU/memory, and health cache counters
 alongside the k6 output.
+
+To deliberately bypass the response cache and stress database reads up to 200 virtual users, run:
+
+```powershell
+$env:BASE_URL="http://localhost:5001"
+npm run load:stress:db
+```
+
+This profile is intended for a local or dedicated test environment, not a shared production database.

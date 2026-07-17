@@ -18,7 +18,8 @@
     "mail:verify": "node scripts/verify-mail-config.js",
     "media:import-legacy-posters": "node scripts/import-legacy-posters.js",
     "media:migrate-image-assets": "node scripts/migrate-image-assets.js",
-    "load:test": "k6 run performance/k6-api.js"
+    "load:test": "k6 run performance/k6-api.js",
+    "load:stress:db": "k6 run performance/k6-db-stress.js"
   },
   "keywords": [],
   "author": "",
