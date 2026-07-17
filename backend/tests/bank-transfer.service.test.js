@@ -156,6 +156,7 @@ test("proof upload cannot revert a payment approved during file persistence", as
     registration: {
       id: "registration-race",
       userId: "user-1",
+      verificationStatus: "verified",
       reservedUntil: new Date(Date.now() + 60_000),
       tournament: { bankTransferReviewMinutes: 30 },
     },
@@ -203,6 +204,7 @@ test("database duplicate-proof conflicts return a safe conflict and remove the n
     registration: {
       id: "registration-duplicate",
       userId: "user-1",
+      verificationStatus: "verified",
       reservedUntil: new Date(Date.now() + 60_000),
       tournament: { bankTransferReviewMinutes: 30 },
     },

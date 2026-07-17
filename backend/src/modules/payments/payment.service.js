@@ -444,6 +444,13 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
     (transaction.merchandiseOrder.userId === userId ||
       transaction.merchandiseOrder.publicToken === publicToken);
   if (!ownsRegistration && !ownsOrder) throw new HttpError(403, "Payment access denied.");
+  if (
+    transaction.registration &&
+    transaction.registration.verificationStatus !== "verified" &&
+    transaction.status !== "paid"
+  ) {
+    throw new HttpError(409, "Every roster member must accept the team invitation before payment.");
+  }
 
   return {
     orderId: transaction.providerOrderId,

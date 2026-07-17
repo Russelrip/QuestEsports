@@ -25,6 +25,31 @@ test("PayHere checkout hashes are generated only from the configured merchant va
   } finally { restore(); }
 });
 
+test("tournament payment details stay locked while roster invitations are pending", async () => {
+  const prisma = {
+    paymentTransaction: {
+      findUnique: async () => ({
+        providerOrderId: "TOUR-locked",
+        provider: "payhere",
+        status: "created",
+        registration: {
+          userId: "captain-1",
+          verificationStatus: "pending",
+          tournament: {},
+        },
+        merchandiseOrder: null,
+      }),
+    },
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.getPaymentStatus({ providerOrderId: "TOUR-locked", userId: "captain-1" }),
+      (error) => error.statusCode === 409 && /Every roster member/.test(error.message)
+    );
+  } finally { restore(); }
+});
+
 test("PayHere notification signatures reject tampering", () => {
   const { module: service, restore } = load();
   try {

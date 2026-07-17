@@ -84,6 +84,9 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
   if (transaction.registration.userId !== user.id) {
     throw new HttpError(403, "Payment access denied.");
   }
+  if (transaction.registration.verificationStatus !== "verified") {
+    throw new HttpError(409, "Every roster member must accept the team invitation before payment.");
+  }
   if (transaction.status === "paid") {
     throw new HttpError(409, "This payment has already been approved.");
   }
@@ -114,6 +117,9 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
       }
       if (current.registration.userId !== user.id) {
         throw new HttpError(403, "Payment access denied.");
+      }
+      if (current.registration.verificationStatus !== "verified") {
+        throw new HttpError(409, "Every roster member must accept the team invitation before payment.");
       }
       if (current.status === "paid") {
         throw new HttpError(409, "This payment has already been approved.");

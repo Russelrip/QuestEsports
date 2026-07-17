@@ -561,8 +561,8 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
   if (!member) {
     throw new HttpError(404, "Team member not found or you do not have permission to manage this invite.");
   }
-  if (member.role === "CAPTAIN" || member.inviteStatus !== "pending") {
-    throw new HttpError(409, "Only pending team invitations can be resent.");
+  if (member.role === "CAPTAIN" || !["pending", "declined"].includes(member.inviteStatus)) {
+    throw new HttpError(409, "Only pending or declined team invitations can be sent again.");
   }
 
   const nextAllowedAt = member.inviteSentAt
@@ -583,7 +583,7 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
     ? await prisma.registrationMember.findFirst({
         where: {
           emailNormalized: member.emailNormalized,
-          inviteStatus: "pending",
+          inviteStatus: { in: ["pending", "declined"] },
           registration: { savedTeamId: teamId },
         },
         orderBy: { createdAt: "desc" },
@@ -595,6 +595,8 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
     const updated = await tx.savedTeamMember.update({
       where: { id: member.id },
       data: {
+        userId: null,
+        inviteStatus: "pending",
         inviteTokenHash: token.tokenHash,
         inviteSentAt: now,
         inviteExpiresAt,
@@ -603,13 +605,19 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
     });
     if (relatedRegistrationMember) {
       await tx.registrationMember.updateMany({
-        where: { id: relatedRegistrationMember.id, inviteStatus: "pending" },
+        where: { id: relatedRegistrationMember.id, inviteStatus: { in: ["pending", "declined"] } },
         data: {
+          userId: null,
+          inviteStatus: "pending",
           inviteTokenHash: token.tokenHash,
           inviteSentAt: now,
           inviteExpiresAt,
           inviteRespondedAt: null,
         },
+      });
+      await refreshRegistrationVerificationStatus({
+        tx,
+        registrationId: relatedRegistrationMember.registration.id,
       });
     }
     return updated;
@@ -640,6 +648,8 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
         await tx.savedTeamMember.updateMany({
           where: { id: member.id, inviteTokenHash: token.tokenHash },
           data: {
+            userId: member.userId,
+            inviteStatus: member.inviteStatus,
             inviteTokenHash: member.inviteTokenHash,
             inviteSentAt: member.inviteSentAt,
             inviteExpiresAt: member.inviteExpiresAt,
@@ -653,11 +663,17 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
               inviteTokenHash: token.tokenHash,
             },
             data: {
+              userId: relatedRegistrationMember.userId,
+              inviteStatus: relatedRegistrationMember.inviteStatus,
               inviteTokenHash: relatedRegistrationMember.inviteTokenHash,
               inviteSentAt: relatedRegistrationMember.inviteSentAt,
               inviteExpiresAt: relatedRegistrationMember.inviteExpiresAt,
               inviteRespondedAt: relatedRegistrationMember.inviteRespondedAt,
             },
+          });
+          await refreshRegistrationVerificationStatus({
+            tx,
+            registrationId: relatedRegistrationMember.registration.id,
           });
         }
       });

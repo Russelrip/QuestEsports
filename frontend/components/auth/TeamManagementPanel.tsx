@@ -272,7 +272,7 @@ export default function TeamManagementPanel({
                 Math.ceil((resendAvailableAt - inviteClock) / 1000),
                 0
               );
-              const canResend = member.inviteStatus === "pending" && resendWaitSeconds === 0;
+              const canResend = ["pending", "declined"].includes(member.inviteStatus || "") && resendWaitSeconds === 0;
               const emailChanged = Boolean(
                 member.originalEmail &&
                 member.email.trim().toLowerCase() !== member.originalEmail.trim().toLowerCase()
@@ -295,9 +295,9 @@ export default function TeamManagementPanel({
                             ? "Invitation accepted"
                             : "Invitation declined"}
                       </span>
-                      {member.inviteStatus === "pending" ? (
+                      {["pending", "declined"].includes(member.inviteStatus) ? (
                         <Button type="button" variant="secondary" disabled={!canResend || emailChanged || Boolean(resendingMemberId) || saving} onClick={() => void resendInvite(member)}>
-                          {resendingMemberId === member.key ? "Sending..." : emailChanged ? "Save email change first" : resendWaitSeconds > 0 ? `Resend in ${resendWaitSeconds}s` : "Resend invite"}
+                          {resendingMemberId === member.key ? "Sending..." : emailChanged ? "Save email change first" : resendWaitSeconds > 0 ? `Send again in ${resendWaitSeconds}s` : member.inviteStatus === "declined" ? "Send invitation again" : "Resend invite"}
                         </Button>
                       ) : null}
                     </div>

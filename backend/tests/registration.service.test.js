@@ -132,7 +132,7 @@ test("paid direct team registration saves the team and dispatches player invites
   });
 
   try {
-    await registrationService.createConfiguredRegistration({
+    const result = await registrationService.createConfiguredRegistration({
       slug: valorantTournament.slug,
       body: {
         ...body,
@@ -146,13 +146,87 @@ test("paid direct team registration saves the team and dispatches player invites
       user,
     });
 
-    assert.equal(createdRegistration.paymentStatus, "pending");
+    assert.equal(createdRegistration.paymentStatus, "unpaid");
+    assert.equal(result.awaitingTeamVerification, true);
+    assert.equal(result.checkout, null);
+    assert.equal(result.paymentOrderId, null);
     assert.equal(createdRegistration.captainRiotId, "Captain#002");
     assert.equal(createdMembers[1].riotId, "PlayerTwo#456");
     assert.equal(syncedTeams.length, 1);
     assert.equal(syncedTeams[0].registrationId, createdRegistration.id);
     assert.equal(sentInviteBatches.length, 1);
     assert.deepEqual(sentInviteBatches[0], [{ email: "player@example.com" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("verified direct-registration roster can start payment without re-entering the team", async () => {
+  let registrationPaymentUpdate;
+  const verifiedRegistration = {
+    id: "registration-verified",
+    entryType: "team",
+    teamName: "Updated Quest",
+    status: "pending",
+    paymentStatus: "unpaid",
+    verificationStatus: "verified",
+    captainPhone: "0771111111",
+    country: "Sri Lanka",
+    reservedUntil: null,
+    members: [{ inviteStatus: "accepted" }, { inviteStatus: "accepted" }],
+    payments: [],
+  };
+  const tx = {
+    tournament: { findUnique: async () => tournament },
+    teamRegistration: {
+      findUnique: async () => verifiedRegistration,
+      count: async () => 0,
+      findFirst: async () => null,
+      update: async ({ data }) => {
+        registrationPaymentUpdate = data;
+        return { ...verifiedRegistration, ...data };
+      },
+    },
+    paymentTransaction: {
+      updateMany: async () => ({ count: 0 }),
+      create: async ({ data }) => ({ ...data, status: "created" }),
+    },
+  };
+  const prisma = {
+    tournament: { findFirst: async () => tournament },
+    teamRegistration: { findFirst: async () => verifiedRegistration },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
+    },
+    [paymentServicePath]: {
+      assertPayHereConfigured: () => undefined,
+      createPayHereCheckout: ({ transaction }) => ({ orderId: transaction.providerOrderId }),
+    },
+    [bankTransferServicePath]: {
+      assertBankTransferConfigured: () => undefined,
+      buildBankTransferInstructions: () => ({}),
+      getBankTransferAmountForSlot: () => 2500,
+    },
+  });
+
+  try {
+    const result = await registrationService.createConfiguredRegistration({
+      slug: tournament.slug,
+      body: { resumePayment: true },
+      user,
+    });
+
+    assert.equal(registrationPaymentUpdate.paymentStatus, "pending");
+    assert.ok(registrationPaymentUpdate.reservedUntil instanceof Date);
+    assert.match(result.paymentOrderId, /^TOUR-/);
+    assert.equal(result.checkout.orderId, result.paymentOrderId);
   } finally {
     restore();
   }
@@ -167,6 +241,8 @@ test("createConfiguredRegistration lets an active payment reservation retry afte
     id: "registration-1",
     teamLogoName: "old-logo.png",
     paymentStatus: "pending",
+    verificationStatus: "verified",
+    members: [{ inviteStatus: "accepted" }],
     reservedUntil: new Date(Date.now() + 5 * 60 * 1000),
     payments: [{ provider: "payhere", status: "failed", providerOrderId: "old-order" }],
   };
@@ -257,6 +333,8 @@ test("createConfiguredRegistration removes a newly persisted retry logo when the
     id: "registration-1",
     teamLogoName: "old-logo.png",
     paymentStatus: "pending",
+    verificationStatus: "verified",
+    members: [{ inviteStatus: "accepted" }],
     payments: [{ provider: "payhere", status: "failed", providerOrderId: "old-order" }],
   };
   const prisma = {

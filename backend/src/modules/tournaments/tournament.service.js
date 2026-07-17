@@ -1366,7 +1366,6 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
   const existingRegistration = await prisma.teamRegistration.findFirst({
     where: {
       tournamentId: tournament.id,
-      ...buildActiveRegistrationWhere(),
       AND: [
         {
           OR: [
@@ -1380,8 +1379,12 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
       id: true,
       status: true,
       paymentStatus: true,
+      verificationStatus: true,
       reservedUntil: true,
       assignedSlotNumber: true,
+      members: {
+        select: { inviteStatus: true },
+      },
       payments: {
         orderBy: { createdAt: "desc" },
         take: 1,
@@ -1405,6 +1408,10 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
           id: existingRegistration.id,
           status: existingRegistration.status,
           paymentStatus: existingRegistration.paymentStatus,
+          verificationStatus: existingRegistration.verificationStatus,
+          pendingInviteCount: (existingRegistration.members || []).filter(
+            (member) => member.inviteStatus === "pending"
+          ).length,
           reservedUntil: existingRegistration.reservedUntil,
           assignedSlotNumber: existingRegistration.assignedSlotNumber,
           payment: existingRegistration.payments[0]

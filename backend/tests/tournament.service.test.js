@@ -61,6 +61,8 @@ test("registration status includes the payment route needed to resume a bank tra
         id: "registration-1",
         status: "pending",
         paymentStatus: "pending",
+        verificationStatus: "verified",
+        members: [{ inviteStatus: "accepted" }],
         reservedUntil: new Date("2026-08-01T10:00:00.000Z"),
         assignedSlotNumber: 7,
         payments: [{

@@ -112,9 +112,13 @@ const submitConfiguredTournamentRegistration = asyncHandler(async (req, res) => 
   });
   res.status(201).json({
     success: true,
-    message: result.checkout || result.bankTransfer
-      ? "Registration reserved. Complete payment to confirm your entry."
-      : "Tournament registration submitted successfully.",
+    message: result.awaitingTeamVerification
+      ? "Team saved. Every invited player must accept before payment is unlocked."
+      : result.readyForPayment
+        ? "Your roster is verified and ready for payment."
+        : result.checkout || result.bankTransfer
+          ? "Registration reserved. Complete payment to confirm your entry."
+          : "Tournament registration submitted successfully.",
     ...result,
   });
 });

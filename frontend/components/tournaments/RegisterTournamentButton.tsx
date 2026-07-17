@@ -19,6 +19,8 @@ type RegistrationStatus = "loading" | "ready" | "registered";
 type ExistingRegistration = {
   status: "pending" | "approved" | "rejected";
   paymentStatus: "unpaid" | "pending" | "paid";
+  verificationStatus: "pending" | "verified" | "flagged";
+  pendingInviteCount: number;
   reservedUntil?: string | null;
   assignedSlotNumber?: number | null;
   payment?: {
@@ -117,18 +119,28 @@ export default function RegisterTournamentButton({
   const isRegistered = status === "registered";
   const isChecking = status === "loading";
   const pendingBankTransfer = isRegistered &&
+    registration?.verificationStatus === "verified" &&
     registration?.payment?.provider === "bank_transfer" &&
     registration.payment.status !== "paid" &&
     Boolean(registration.payment.orderId);
   const pendingPayHere = isRegistered &&
+    registration?.verificationStatus === "verified" &&
     registration?.payment?.provider === "payhere" &&
     registration.payment.status !== "paid";
-  const hasPaymentAction = pendingBankTransfer || pendingPayHere;
+  const awaitingRoster = isRegistered &&
+    tournament.entryType === "team" &&
+    registration?.verificationStatus !== "verified";
+  const readyForPayment = isRegistered &&
+    tournament.entryType === "team" &&
+    registration?.verificationStatus === "verified" &&
+    registration.paymentStatus === "unpaid";
+  const hasPaymentAction = pendingBankTransfer || pendingPayHere || readyForPayment;
+  const hasRegistrationAction = hasPaymentAction || awaitingRoster;
   const slotLabel = registration?.assignedSlotNumber
     ? `Slot #${registration.assignedSlotNumber}`
     : null;
 
-  if (!canRegisterForTournament(tournament) && !hasPaymentAction) {
+  if (!canRegisterForTournament(tournament) && !hasRegistrationAction) {
     if (closedAsButton) {
       return (
         <Button type="button" variant="secondary" disabled className={className}>
@@ -157,9 +169,13 @@ export default function RegisterTournamentButton({
     <div className={className}>
       <Button
         type="button"
-        variant={isRegistered && !hasPaymentAction ? "secondary" : "primary"}
-        disabled={(isRegistered && !hasPaymentAction) || isChecking}
+        variant={isRegistered && !hasRegistrationAction ? "secondary" : "primary"}
+        disabled={(isRegistered && !hasRegistrationAction) || isChecking}
         onClick={() => {
+          if (awaitingRoster) {
+            router.push("/profile?tab=teams");
+            return;
+          }
           if (pendingBankTransfer && registration?.payment?.orderId) {
             router.push(`/tournaments/${tournament.slug}/payment?order=${encodeURIComponent(registration.payment.orderId)}`);
             return;
@@ -173,6 +189,10 @@ export default function RegisterTournamentButton({
           ? "Open Bank Transfer Details"
           : pendingPayHere
             ? "Retry Online Payment"
+          : awaitingRoster
+            ? `Confirm Roster${registration?.pendingInviteCount ? ` · ${registration.pendingInviteCount} Pending` : ""}`
+          : readyForPayment
+            ? "Continue to Payment"
           : isRegistered
           ? slotLabel ? `Registered · ${slotLabel}` : "Registered"
           : isChecking
@@ -191,6 +211,10 @@ export default function RegisterTournamentButton({
         <p className="mt-2 max-w-sm text-xs leading-5 text-amber-100">
           Your registration is saved, but payment is not confirmed. Retry payment to complete your entry.
         </p>
+      ) : awaitingRoster ? (
+        <p className="mt-2 max-w-sm text-xs leading-5 text-amber-100">Every invited player must accept before payment and slot reservation are unlocked.</p>
+      ) : readyForPayment ? (
+        <p className="mt-2 max-w-sm text-xs leading-5 text-emerald-200">Your full roster is confirmed. Continue to reserve the slot and pay.</p>
       ) : isRegistered ? (
         <p className="mt-2 text-xs text-emerald-200">Your registration was received. You can track it from your profile.</p>
       ) : null}

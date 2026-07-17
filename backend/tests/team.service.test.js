@@ -233,7 +233,7 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
   }
 });
 
-test("resendSavedTeamInvite renews a pending invite and enforces its cooldown", async () => {
+test("resendSavedTeamInvite renews pending or declined invites and enforces its cooldown", async () => {
   const now = new Date("2026-07-17T10:00:00.000Z");
   const sentInvites = [];
   const member = {
@@ -299,6 +299,17 @@ test("resendSavedTeamInvite renews a pending invite and enforces its cooldown", 
       now.getTime() + 60 * 1000
     );
 
+    member.inviteStatus = "declined";
+    member.inviteSentAt = new Date(now.getTime() - 2 * 60 * 1000);
+    const renewedDecline = await teamService.resendSavedTeamInvite({
+      teamId: "saved-team-1",
+      memberId: member.id,
+      user: { id: "user-1" },
+      now,
+    });
+    assert.equal(renewedDecline.member.inviteStatus, "pending");
+
+    member.inviteStatus = "pending";
     member.inviteSentAt = new Date(now.getTime() - 30 * 1000);
     await assert.rejects(
       teamService.resendSavedTeamInvite({

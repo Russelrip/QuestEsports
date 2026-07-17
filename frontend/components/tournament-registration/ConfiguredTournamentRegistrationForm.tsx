@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import { Button, buttonClassName } from "@/components/ui/button";
@@ -42,6 +42,28 @@ type GameIdentityConfig = {
   title?: string;
 };
 
+type ExistingRegistrationState = {
+  paymentStatus: "unpaid" | "pending" | "paid";
+  verificationStatus: "pending" | "verified" | "flagged";
+  pendingInviteCount: number;
+  payment?: {
+    orderId: string;
+    provider: string;
+    status: string;
+  } | null;
+};
+
+type RegistrationSubmissionResponse = {
+  success?: boolean;
+  message?: string;
+  checkout?: PayHereCheckout | null;
+  bankTransfer?: BankTransferReservation | null;
+  awaitingTeamVerification?: boolean;
+  readyForPayment?: boolean;
+  pendingInviteCount?: number;
+  registration?: ExistingRegistrationState | null;
+};
+
 const emptyMember = (): MemberDraft => ({ name: "", email: "", discord: "", gameId: "", role: "PLAYER", additionalData: {} });
 
 export default function ConfiguredTournamentRegistrationForm({ tournament }: { tournament: Tournament }) {
@@ -69,6 +91,8 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [existingRegistration, setExistingRegistration] = useState<ExistingRegistrationState | null>(null);
+  const [checkingRegistration, setCheckingRegistration] = useState(true);
 
   const entryFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "entry"), [tournament.registrationFields]);
   const memberFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "member"), [tournament.registrationFields]);
@@ -94,6 +118,33 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       }));
     }
   }, [isLoading, router, tournament.slug, user]);
+
+  const loadRegistrationStatus = useCallback(async () => {
+    if (!user) return;
+    setCheckingRegistration(true);
+    try {
+      const response = await apiFetch(`/api/tournaments/${tournament.slug}/registration-status`);
+      const data = await readApiResponse<{
+        success?: boolean;
+        isRegistered?: boolean;
+        registration?: ExistingRegistrationState | null;
+      }>(response, "Could not check your registration status.");
+      if (response.ok && data.isRegistered && data.registration) {
+        setExistingRegistration(data.registration);
+      } else if (response.ok) {
+        setExistingRegistration(null);
+      }
+    } catch {
+      // The form remains usable when the optional status check is unavailable.
+    } finally {
+      setCheckingRegistration(false);
+    }
+  }, [tournament.slug, user]);
+
+  useEffect(() => {
+    if (user?.emailVerified) void loadRegistrationStatus();
+    else setCheckingRegistration(false);
+  }, [loadRegistrationStatus, user?.emailVerified]);
 
   const updateMember = (index: number, updates: Partial<MemberDraft>) => {
     setMembers((current) => current.map((member, memberIndex) => memberIndex === index ? { ...member, ...updates } : member));
@@ -130,14 +181,18 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         body,
         timeoutMs: 60_000,
       });
-      const data = await readApiResponse<{
-        success?: boolean;
-        message?: string;
-        checkout?: PayHereCheckout | null;
-        bankTransfer?: BankTransferReservation | null;
-      }>(response, "Registration could not be submitted.");
+      const data = await readApiResponse<RegistrationSubmissionResponse>(response, "Registration could not be submitted.");
       if (!response.ok || !data.success) throw new Error(data.message || "Registration could not be submitted.");
       markTournamentRegistered(tournament.slug);
+      if (data.awaitingTeamVerification || data.readyForPayment) {
+        setExistingRegistration({
+          paymentStatus: "unpaid",
+          verificationStatus: data.readyForPayment ? "verified" : "pending",
+          pendingInviteCount: data.pendingInviteCount || 0,
+          payment: null,
+        });
+        return;
+      }
       if (data.checkout) {
         submitPayHereCheckout(data.checkout);
         return;
@@ -160,12 +215,82 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
     }
   };
 
+  const continueToPayment = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await apiFetch(`/api/tournaments/${tournament.slug}/registrations`, {
+        method: "POST",
+        json: { resumePayment: true },
+        timeoutMs: 60_000,
+      });
+      const data = await readApiResponse<RegistrationSubmissionResponse>(response, "Payment could not be started.");
+      if (!response.ok || !data.success) throw new Error(data.message || "Payment could not be started.");
+      if (data.checkout) {
+        submitPayHereCheckout(data.checkout);
+        return;
+      }
+      if (data.bankTransfer) {
+        router.push(`/tournaments/${tournament.slug}/payment?order=${encodeURIComponent(data.bankTransfer.orderId)}`);
+        return;
+      }
+      await loadRegistrationStatus();
+      setError(data.message || "Payment is not available yet.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Payment could not be started.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (isLoading || !user) return <Card className="p-8"><p className="text-slate-300">Loading your account…</p></Card>;
   if (!user.emailVerified) {
     return <Card className="p-8"><h2 className="text-3xl text-white">Verify your email first</h2><p className="mt-3 text-sm text-slate-300">A verified account is required before registering.</p><div className="mt-5"><ResendVerificationButton email={user.email} /></div></Card>;
   }
   if (!tournament.registrationPaymentAvailable) {
     return <Card className="p-8"><h2 className="text-3xl text-white">Paid registration is not available yet</h2><p className="mt-3 text-sm leading-7 text-slate-300">Quest has not connected an online payment provider. No payment or registration draft has been created.</p><Link href={`/tournaments/${tournament.slug}`} className={buttonClassName({ variant: "secondary", className: "mt-5" })}>Return to tournament</Link></Card>;
+  }
+  if (checkingRegistration) {
+    return <Card className="p-8"><p className="text-slate-300">Checking your registration status…</p></Card>;
+  }
+  if (existingRegistration && tournament.entryType === "team" && (tournament.registrationFee?.amount || 0) > 0) {
+    const rosterPending = existingRegistration.verificationStatus !== "verified";
+    const bankPayment = existingRegistration.payment?.provider === "bank_transfer"
+      ? existingRegistration.payment
+      : null;
+    return (
+      <Card className="mx-auto max-w-2xl p-8 text-center sm:p-10">
+        <p className={`text-xs uppercase tracking-[0.25em] ${rosterPending ? "text-amber-200" : "text-emerald-200"}`}>
+          {rosterPending ? "Roster confirmation required" : "Roster confirmed"}
+        </p>
+        <h2 className="mt-4 text-3xl text-white">
+          {rosterPending ? "Payment is locked until every player accepts" : `Your team is ready for ${tournament.title}`}
+        </h2>
+        <p className="mt-4 text-sm leading-7 text-slate-300">
+          {existingRegistration.verificationStatus === "flagged"
+            ? "A player declined the invitation. Open the saved team and send that player’s invitation again before continuing."
+            : rosterPending
+              ? `${existingRegistration.pendingInviteCount} player invitation${existingRegistration.pendingInviteCount === 1 ? " is" : "s are"} still pending. No payment or slot reservation will be created until the full roster is confirmed.`
+              : "Every roster member has accepted. You can now reserve the slot and continue to payment."}
+        </p>
+        {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          {rosterPending ? (
+            <>
+              <Link href="/profile?tab=teams" className={buttonClassName({})}>Manage invitations</Link>
+              <Button type="button" variant="secondary" disabled={loading} onClick={() => void loadRegistrationStatus()}>{loading ? "Checking…" : "Check again"}</Button>
+            </>
+          ) : bankPayment?.orderId ? (
+            <Link href={`/tournaments/${tournament.slug}/payment?order=${encodeURIComponent(bankPayment.orderId)}`} className={buttonClassName({})}>Open bank transfer details</Link>
+          ) : existingRegistration.paymentStatus === "paid" ? (
+            <Link href={`/tournaments/${tournament.slug}`} className={buttonClassName({})}>View tournament</Link>
+          ) : (
+            <Button type="button" disabled={loading} onClick={() => void continueToPayment()}>{loading ? "Starting payment…" : "Reserve slot and continue to payment"}</Button>
+          )}
+          <Link href="/profile" className={buttonClassName({ variant: "secondary" })}>Open profile</Link>
+        </div>
+      </Card>
+    );
   }
   if (success) {
     return (
