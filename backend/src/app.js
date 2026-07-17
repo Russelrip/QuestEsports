@@ -4,6 +4,7 @@ const { env } = require("./config/env");
 const apiRouter = require("./routes");
 const { openApiDocument } = require("./lib/openapi");
 const { monitoringStatus } = require("./lib/monitoring");
+const { cacheStatus } = require("./lib/cache");
 const { checkDatabaseReadiness } = require("./lib/database");
 const { logger } = require("./lib/logger");
 const { notFoundHandler, errorHandler } = require("./middleware/error-handler");
@@ -24,6 +25,7 @@ const buildHealthPayload = () => ({
   message: "Quest E-sports API is healthy.",
   timestamp: new Date().toISOString(),
   monitoring: monitoringStatus(),
+  cache: cacheStatus(),
 });
 
 app.set("trust proxy", env.TRUST_PROXY);

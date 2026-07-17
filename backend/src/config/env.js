@@ -106,6 +106,16 @@ const env = {
   PORT: normalizePositiveInteger(process.env.PORT, 5001),
   CORS_ORIGINS: normalizeCsv(process.env.CORS_ORIGIN || "http://localhost:3000"),
   DATABASE_URL: required("DATABASE_URL"),
+  CACHE_DRIVER: optional("CACHE_DRIVER", "memory").toLowerCase(),
+  CACHE_TTL_SECONDS: normalizePositiveInteger(process.env.CACHE_TTL_SECONDS, 300),
+  CACHE_MAX_ENTRIES: normalizePositiveInteger(process.env.CACHE_MAX_ENTRIES, 1000),
+  CACHE_CONNECTION_TIMEOUT_MS: normalizePositiveInteger(
+    process.env.CACHE_CONNECTION_TIMEOUT_MS,
+    2000
+  ),
+  CACHE_KEY_PREFIX: optional("CACHE_KEY_PREFIX", "quest-esports"),
+  UPSTASH_REDIS_REST_URL: optional("UPSTASH_REDIS_REST_URL"),
+  UPSTASH_REDIS_REST_TOKEN: optional("UPSTASH_REDIS_REST_TOKEN"),
   NODE_ENV: normalizeNodeEnv(process.env.NODE_ENV),
   LOG_LEVEL: optional("LOG_LEVEL", "info").toLowerCase(),
   SESSION_COOKIE_NAME: required("SESSION_COOKIE_NAME"),
@@ -180,6 +190,18 @@ if (env.CORS_ORIGINS.length === 0) {
 
 if (!["debug", "info", "warn", "error"].includes(env.LOG_LEVEL)) {
   throw new Error('LOG_LEVEL must be one of: debug, info, warn, error.');
+}
+
+if (!["memory", "upstash"].includes(env.CACHE_DRIVER)) {
+  throw new Error('CACHE_DRIVER must be either "memory" or "upstash".');
+}
+if (
+  env.CACHE_DRIVER === "upstash" &&
+  (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN)
+) {
+  throw new Error(
+    "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for the Upstash cache."
+  );
 }
 
 if (!["sandbox", "live"].includes(env.PAYHERE_MODE)) {

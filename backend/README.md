@@ -125,3 +125,43 @@ The current suite covers auth/session behavior, email jobs, observability helper
 ## Tournament Content Upgrade
 
 `GET /api/game-categories` supplies the public artwork strip. Admins manage categories through `/api/admin/game-categories`, sponsors through `/api/admin/tournaments/:tournamentId/sponsors`, and verified organization labels through `/api/admin/teams`. Tournament responses retain legacy fields while adding category, organizer, country, location, hero, sponsors, captain/avatar participant data, and a server-derived `challongeEmbedUrl`. Public uploads also use `game-assets/` and `sponsor-logos/` below `UPLOAD_ROOT`.
+# Performance and scalability
+
+The API creates one process-wide Prisma client in `src/lib/prisma.js`. Prisma's PostgreSQL
+connector manages the underlying connection pool; do not construct a client per request.
+Configure the pool in `DATABASE_URL`, for example:
+
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?connection_limit=10&pool_timeout=10&connect_timeout=10
+```
+
+Choose `connection_limit` per API instance so the sum across all instances, workers, migrations,
+and administrative tools remains below the database connection limit. `pool_timeout` controls how
+long a request waits for a pooled connection and `connect_timeout` limits initial connection setup.
+Configure idle-client lifetime at the managed PostgreSQL provider or external pooler when required.
+
+Public tournaments, game categories, and products use cache-aside response caching. Local development
+defaults to a bounded in-memory cache. Shared/serverless deployments should use Upstash:
+
+```env
+CACHE_DRIVER=upstash
+CACHE_TTL_SECONDS=300
+UPSTASH_REDIS_REST_URL=https://example.upstash.io
+UPSTASH_REDIS_REST_TOKEN=secret
+```
+
+Successful admin writes advance a resource generation, immediately making old entries unreachable.
+Cache failures degrade to database reads instead of failing API requests. `GET /api/health` reports
+the cache driver, hits, misses, writes, errors, and hit rate.
+
+Run the included API load profile after installing k6:
+
+```powershell
+$env:BASE_URL="http://localhost:5001"
+npm run load:test
+```
+
+The profile ramps through 10 and 50 virtual users and enforces an error rate below 1%, p95 below
+500 ms, and p99 below 1 second. Adjust the stages and thresholds in `performance/k6-api.js` for
+stress, spike, or soak runs. Monitor the database pool, API CPU/memory, and health cache counters
+alongside the k6 output.

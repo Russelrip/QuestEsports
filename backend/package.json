@@ -17,7 +17,8 @@
     "prisma:studio": "prisma studio",
     "mail:verify": "node scripts/verify-mail-config.js",
     "media:import-legacy-posters": "node scripts/import-legacy-posters.js",
-    "media:migrate-image-assets": "node scripts/migrate-image-assets.js"
+    "media:migrate-image-assets": "node scripts/migrate-image-assets.js",
+    "load:test": "k6 run performance/k6-api.js"
   },
   "keywords": [],
   "author": "",
