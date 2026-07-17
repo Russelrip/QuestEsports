@@ -13,6 +13,7 @@ type PaymentStatus = {
   status: "created" | "pending" | "paid" | "cancelled" | "failed" | "charged_back" | "expired" | "review_required" | "refunded";
   amount: number;
   currency: string;
+  purpose: "tournament_registration" | "merchandise_order";
   statusMessage?: string | null;
   provider: string;
   bankTransfer?: {
@@ -37,6 +38,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
   const [refreshing, setRefreshing] = useState(false);
   const [proof, setProof] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [copied, setCopied] = useState<"account" | "reference" | null>(null);
   const attempts = useRef(0);
   const clearCart = useCartStore((state) => state.clear);
 
@@ -79,7 +81,31 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
   }, [loadStatus]);
 
   const terminalSuccess = payment?.status === "paid";
-  const isBankTransfer = payment?.provider === "bank_transfer" && payment.bankTransfer;
+  const isBankTransfer = payment?.provider === "bank_transfer"
+    ? payment.bankTransfer || null
+    : null;
+  const statusTitle = terminalSuccess
+    ? "Payment confirmed"
+    : isBankTransfer?.proofSubmitted
+      ? "Receipt submitted"
+      : isBankTransfer
+        ? "Slot reserved"
+        : payment
+          ? payment.status.replace(/_/g, " ")
+          : "Checking payment…";
+
+  const copyValue = async (kind: "account" | "reference", value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(kind);
+      window.setTimeout(
+        () => setCopied((current) => current === kind ? null : current),
+        1800
+      );
+    } catch {
+      setError("Copy was unavailable. Press and hold the value to copy it.");
+    }
+  };
 
   const uploadProof = async () => {
     if (!proof || !payment) return;
@@ -107,7 +133,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
   return (
     <Card className="mx-auto max-w-2xl p-8 text-center sm:p-10">
       <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Payment Status</p>
-      <h2 className="mt-4 text-4xl text-white">{terminalSuccess ? "Payment confirmed" : payment ? payment.status.replace(/_/g, " ") : "Checking payment…"}</h2>
+      <h2 className="mt-4 text-4xl capitalize text-white">{statusTitle}</h2>
       {payment ? <p className="mt-4 text-slate-300">{payment.currency} {payment.amount.toFixed(2)} · Order {payment.orderId}</p> : null}
       {isBankTransfer && !terminalSuccess ? (
         <div className="mt-7 grid gap-5 text-left">
@@ -117,14 +143,14 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
               <div><dt className="text-slate-500">Bank</dt><dd>{isBankTransfer.bankAccount.bankName}</dd></div>
               <div><dt className="text-slate-500">Branch</dt><dd>{isBankTransfer.bankAccount.branch || "—"}</dd></div>
               <div><dt className="text-slate-500">Account name</dt><dd>{isBankTransfer.bankAccount.accountName}</dd></div>
-              <div><dt className="text-slate-500">Account number</dt><dd className="break-all">{isBankTransfer.bankAccount.accountNumber}</dd></div>
+              <div><dt className="text-slate-500">Account number</dt><dd className="break-all font-semibold text-white">{isBankTransfer.bankAccount.accountNumber}</dd><button type="button" className="mt-1 text-xs text-cyan-200 underline" onClick={() => void copyValue("account", isBankTransfer.bankAccount.accountNumber)}>{copied === "account" ? "Copied" : "Copy account number"}</button></div>
               <div><dt className="text-slate-500">Exact amount</dt><dd>{isBankTransfer.currency} {isBankTransfer.amount.toFixed(2)}</dd></div>
-              <div><dt className="text-slate-500">Transfer reference</dt><dd className="break-all font-semibold text-white">{isBankTransfer.reference}</dd></div>
+              <div><dt className="text-slate-500">Transfer reference</dt><dd className="break-all text-lg font-semibold tracking-wider text-white">{isBankTransfer.reference}</dd><button type="button" className="mt-1 text-xs text-cyan-200 underline" onClick={() => void copyValue("reference", isBankTransfer.reference)}>{copied === "reference" ? "Copied" : "Copy reference"}</button></div>
             </dl>
             <p className="mt-4 text-xs leading-6 text-amber-100">Transfer the exact amount and include the reference. Never upload or share a password, PIN, OTP, card number, or banking login.</p>
             <p className="mt-2 text-xs text-slate-400">Upload deadline: {new Date(isBankTransfer.expiresAt).toLocaleString()}</p>
           </div>
-          {["created", "pending", "review_required"].includes(payment.status) ? (
+          {payment && ["created", "pending", "review_required"].includes(payment.status) ? (
             <div className="grid gap-3 rounded-[22px] border border-white/10 p-5">
               <div>
                 <h3 className="text-lg text-white">{isBankTransfer.proofSubmitted ? "Replace payment proof" : "Upload payment proof"}</h3>
@@ -148,7 +174,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
               : payment?.statusMessage || "Do not retry until the final status appears."}
       </p>
       {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
-      <div className="mt-7 flex flex-wrap justify-center gap-3"><Link href={returnHref} className={buttonClassName({ variant: "secondary" })}>{terminalSuccess ? "Continue" : "Return"}</Link>{!terminalSuccess ? <button type="button" disabled={refreshing} onClick={() => void loadStatus()} className={buttonClassName({ variant: "ghost" })}>{refreshing ? "Refreshing…" : "Refresh status"}</button> : null}</div>
+      <div className="mt-7 flex flex-wrap justify-center gap-3"><Link href={returnHref} className={buttonClassName({ variant: "secondary" })}>{terminalSuccess ? "Continue" : "Return"}</Link>{payment?.purpose === "tournament_registration" ? <Link href="/profile" className={buttonClassName({ variant: "ghost" })}>My registrations</Link> : null}{!terminalSuccess ? <button type="button" disabled={refreshing} onClick={() => void loadStatus()} className={buttonClassName({ variant: "ghost" })}>{refreshing ? "Refreshing…" : "Refresh status"}</button> : null}</div>
     </Card>
   );
 }

@@ -10,6 +10,7 @@ const {
   createProfileTeam,
   updateProfileTeam,
   deleteProfileTeam,
+  resendProfileTeamInvite,
   previewTeamInvite,
   respondTeamInvite,
 } = require("./team.controller");
@@ -33,6 +34,12 @@ const manageTeamRateLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   maxRequests: 60,
   message: "Too many team changes. Please try again later.",
+});
+const resendTeamInviteRateLimiter = createRateLimiter({
+  name: "resend-team-invite",
+  windowMs: 60 * 60 * 1000,
+  maxRequests: 30,
+  message: "Too many team invitation emails. Please try again later.",
 });
 
 router.use(attachSession);
@@ -60,6 +67,13 @@ router.delete(
   requireVerifiedEmail,
   manageTeamRateLimiter,
   deleteProfileTeam
+);
+router.post(
+  "/teams/:teamId/members/:memberId/resend-invite",
+  requireAuth,
+  requireVerifiedEmail,
+  resendTeamInviteRateLimiter,
+  resendProfileTeamInvite
 );
 router.get("/team-invite", previewTeamInvite);
 router.post(

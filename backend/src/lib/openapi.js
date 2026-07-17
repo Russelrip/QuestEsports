@@ -378,6 +378,12 @@ const additionalPaths = {
     patch: createOperation("Teams", "Update a saved team", { authenticated: true, parameters: idParameter("teamId") }),
     delete: createOperation("Teams", "Delete a saved team", { authenticated: true, parameters: idParameter("teamId") }),
   },
+  "/api/teams/{teamId}/members/{memberId}/resend-invite": {
+    post: createOperation("Teams", "Resend a pending team invitation", {
+      authenticated: true,
+      parameters: [...idParameter("teamId"), ...idParameter("memberId")],
+    }),
+  },
   "/api/team-invite": { get: createOperation("Teams", "Preview a team invitation") },
   "/api/team-invite/respond": { post: createOperation("Teams", "Respond to a team invitation", { authenticated: true }) },
   "/api/payments/{orderId}/bank-transfer-proof": { post: createOperation("Payments", "Upload bank-transfer evidence", { authenticated: true, parameters: idParameter("orderId") }) },

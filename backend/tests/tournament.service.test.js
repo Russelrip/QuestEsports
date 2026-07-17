@@ -50,6 +50,49 @@ test("Challonge URLs are restricted and normalized for safe module embeds", () =
   }
 });
 
+test("registration status includes the payment route needed to resume a bank transfer", async () => {
+  const prisma = {
+    tournament: {
+      findUnique: async () => ({ id: "tournament-1", registrationFeeAmount: 2500 }),
+    },
+    teamRegistration: {
+      findFirst: async () => ({
+        id: "registration-1",
+        status: "pending",
+        paymentStatus: "pending",
+        reservedUntil: new Date("2026-08-01T10:00:00.000Z"),
+        assignedSlotNumber: 7,
+        payments: [{
+          providerOrderId: "QST-0123456789",
+          provider: "bank_transfer",
+          status: "pending",
+        }],
+      }),
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    const result = await tournamentService.getTournamentRegistrationStatus({
+      slug: "quest-cup",
+      user: { id: "user-1", email: "captain@example.com" },
+    });
+    assert.equal(result.isRegistered, true);
+    assert.equal(result.registration.assignedSlotNumber, 7);
+    assert.deepEqual(result.registration.payment, {
+      orderId: "QST-0123456789",
+      provider: "bank_transfer",
+      status: "pending",
+    });
+  } finally {
+    restore();
+  }
+});
+
 test("admin tournaments can store optional descriptions and TBA/TBD dates", async () => {
   let savedData;
   const prismaMock = {

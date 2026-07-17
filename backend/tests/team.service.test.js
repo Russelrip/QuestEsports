@@ -135,6 +135,18 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
         inviteSentAt: new Date("2026-01-01"),
         inviteRespondedAt: new Date("2026-01-02"),
       },
+      {
+        id: "pending-member",
+        userId: null,
+        role: "SUBSTITUTE",
+        memberOrder: 1,
+        emailNormalized: "pending@example.com",
+        inviteStatus: "pending",
+        inviteTokenHash: "existing-pending-token",
+        inviteSentAt: new Date("2026-01-03"),
+        inviteExpiresAt: new Date("2026-01-06"),
+        inviteRespondedAt: null,
+      },
     ],
   };
   const tx = {
@@ -199,20 +211,104 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
         organizationRequested: "false",
         members: JSON.stringify([
           { role: "PLAYER", name: "Accepted Player", email: "accepted@example.com" },
+          { role: "SUBSTITUTE", name: "Pending Player", email: "pending@example.com" },
           { role: "COACH", name: "New Coach", email: "coach@example.com" },
         ]),
       },
     });
 
     assert.equal(team.name, "Quest Six");
-    assert.equal(createdMembers.length, 2);
+    assert.equal(createdMembers.length, 3);
     assert.equal(createdMembers[0].userId, "user-2");
     assert.equal(createdMembers[0].inviteStatus, "accepted");
-    assert.equal(createdMembers[1].role, "COACH");
     assert.equal(createdMembers[1].inviteStatus, "pending");
-    assert.ok(createdMembers[1].inviteTokenHash);
+    assert.equal(createdMembers[1].inviteTokenHash, "existing-pending-token");
+    assert.equal(createdMembers[2].role, "COACH");
+    assert.equal(createdMembers[2].inviteStatus, "pending");
+    assert.ok(createdMembers[2].inviteTokenHash);
     assert.equal(sentInvites.length, 1);
     assert.equal(sentInvites[0].email, "coach@example.com");
+  } finally {
+    restore();
+  }
+});
+
+test("resendSavedTeamInvite renews a pending invite and enforces its cooldown", async () => {
+  const now = new Date("2026-07-17T10:00:00.000Z");
+  const sentInvites = [];
+  const member = {
+    id: "pending-member",
+    teamId: "saved-team-1",
+    userId: null,
+    role: "PLAYER",
+    memberOrder: 1,
+    name: "Pending Player",
+    email: "pending@example.com",
+    emailNormalized: "pending@example.com",
+    discord: null,
+    riotId: null,
+    inviteStatus: "pending",
+    inviteTokenHash: "old-token",
+    inviteSentAt: new Date("2026-07-17T09:58:00.000Z"),
+    inviteExpiresAt: new Date("2026-07-20T09:58:00.000Z"),
+    inviteRespondedAt: null,
+    team: {
+      name: "Quest Five",
+      captainUser: {
+        firstName: "Quest",
+        lastName: "Captain",
+        username: "captain",
+      },
+    },
+  };
+  let updatedMember;
+  const tx = {
+    savedTeamMember: {
+      update: async ({ data }) => {
+        updatedMember = { ...member, ...data };
+        return updatedMember;
+      },
+    },
+  };
+  const prisma = {
+    savedTeamMember: { findFirst: async () => member },
+    registrationMember: { findFirst: async () => null },
+    $transaction: async (callback) => callback(tx),
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [mailModulePath]: {
+      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
+    },
+  });
+
+  try {
+    const result = await teamService.resendSavedTeamInvite({
+      teamId: "saved-team-1",
+      memberId: member.id,
+      user: { id: "user-1" },
+      now,
+    });
+    assert.equal(sentInvites.length, 1);
+    assert.equal(sentInvites[0].email, member.email);
+    assert.notEqual(updatedMember.inviteTokenHash, "old-token");
+    assert.equal(result.member.inviteSentAt.getTime(), now.getTime());
+    assert.equal(
+      result.resendAvailableAt.getTime(),
+      now.getTime() + 60 * 1000
+    );
+
+    member.inviteSentAt = new Date(now.getTime() - 30 * 1000);
+    await assert.rejects(
+      teamService.resendSavedTeamInvite({
+        teamId: "saved-team-1",
+        memberId: member.id,
+        user: { id: "user-1" },
+        now,
+      }),
+      (error) => error.statusCode === 429 && error.details.retryAfterSeconds === 30
+    );
   } finally {
     restore();
   }

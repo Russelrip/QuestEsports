@@ -70,6 +70,7 @@ const ROLE_SORT_ORDER = {
   COACH: 3,
 };
 const TEAM_INVITE_TTL_HOURS = 72;
+const TEAM_INVITE_RESEND_COOLDOWN_SECONDS = 60;
 
 const mapSavedTeamMember = (member) => ({
   id: member.id,
@@ -428,16 +429,18 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
 
   const memberRecords = members.map((member) => {
     const existingMember = existingMembersByEmail.get(member.email);
-    if (existingMember?.inviteStatus === "accepted" && existingMember.userId) {
+    if (existingMember) {
       return {
-        id: crypto.randomUUID(),
+        id: existingMember.id,
         teamId,
         userId: existingMember.userId,
         ...member,
         emailNormalized: member.email,
-        inviteStatus: "accepted",
+        inviteStatus: existingMember.inviteStatus,
+        inviteTokenHash: existingMember.inviteTokenHash,
         inviteSentAt: existingMember.inviteSentAt,
-        inviteRespondedAt: existingMember.inviteRespondedAt || inviteSentAt,
+        inviteExpiresAt: existingMember.inviteExpiresAt,
+        inviteRespondedAt: existingMember.inviteRespondedAt,
       };
     }
 
@@ -534,6 +537,146 @@ const deleteSavedTeam = async ({ teamId, user }) => {
       context: { operation: "deleteSavedTeam", teamId, userId: user.id },
     });
   }
+};
+
+const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() }) => {
+  const member = await prisma.savedTeamMember.findFirst({
+    where: {
+      id: memberId,
+      teamId,
+      team: { captainUserId: user.id },
+    },
+    include: {
+      team: {
+        select: {
+          name: true,
+          captainUser: {
+            select: { firstName: true, lastName: true, username: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!member) {
+    throw new HttpError(404, "Team member not found or you do not have permission to manage this invite.");
+  }
+  if (member.role === "CAPTAIN" || member.inviteStatus !== "pending") {
+    throw new HttpError(409, "Only pending team invitations can be resent.");
+  }
+
+  const nextAllowedAt = member.inviteSentAt
+    ? new Date(member.inviteSentAt).getTime() + TEAM_INVITE_RESEND_COOLDOWN_SECONDS * 1000
+    : 0;
+  if (nextAllowedAt > now.getTime()) {
+    const retryAfterSeconds = Math.max(Math.ceil((nextAllowedAt - now.getTime()) / 1000), 1);
+    throw new HttpError(429, `Wait ${retryAfterSeconds} seconds before resending this invitation.`, {
+      retryAfterSeconds,
+    });
+  }
+
+  const token = createTokenPair({ hours: TEAM_INVITE_TTL_HOURS });
+  const inviteExpiresAt = new Date(
+    now.getTime() + TEAM_INVITE_TTL_HOURS * 60 * 60 * 1000
+  );
+  const relatedRegistrationMember = prisma.registrationMember?.findFirst
+    ? await prisma.registrationMember.findFirst({
+        where: {
+          emailNormalized: member.emailNormalized,
+          inviteStatus: "pending",
+          registration: { savedTeamId: teamId },
+        },
+        orderBy: { createdAt: "desc" },
+        include: { registration: { include: { tournament: { select: { title: true } } } } },
+      })
+    : null;
+
+  const updatedMember = await prisma.$transaction(async (tx) => {
+    const updated = await tx.savedTeamMember.update({
+      where: { id: member.id },
+      data: {
+        inviteTokenHash: token.tokenHash,
+        inviteSentAt: now,
+        inviteExpiresAt,
+        inviteRespondedAt: null,
+      },
+    });
+    if (relatedRegistrationMember) {
+      await tx.registrationMember.updateMany({
+        where: { id: relatedRegistrationMember.id, inviteStatus: "pending" },
+        data: {
+          inviteTokenHash: token.tokenHash,
+          inviteSentAt: now,
+          inviteExpiresAt,
+          inviteRespondedAt: null,
+        },
+      });
+    }
+    return updated;
+  });
+
+  const captainName = [
+    member.team.captainUser.firstName,
+    member.team.captainUser.lastName,
+  ].filter(Boolean).join(" ").trim() || member.team.captainUser.username;
+
+  try {
+    await sendTeamInviteEmail({
+      email: member.email,
+      recipientName: member.name,
+      teamName: member.team.name,
+      captainName,
+      tournamentTitle: relatedRegistrationMember?.registration?.tournament?.title || null,
+      rawToken: token.rawToken,
+    });
+  } catch (error) {
+    logger.error("Failed to resend team invite email.", {
+      teamId,
+      memberId,
+      error,
+    });
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.savedTeamMember.updateMany({
+          where: { id: member.id, inviteTokenHash: token.tokenHash },
+          data: {
+            inviteTokenHash: member.inviteTokenHash,
+            inviteSentAt: member.inviteSentAt,
+            inviteExpiresAt: member.inviteExpiresAt,
+            inviteRespondedAt: member.inviteRespondedAt,
+          },
+        });
+        if (relatedRegistrationMember) {
+          await tx.registrationMember.updateMany({
+            where: {
+              id: relatedRegistrationMember.id,
+              inviteTokenHash: token.tokenHash,
+            },
+            data: {
+              inviteTokenHash: relatedRegistrationMember.inviteTokenHash,
+              inviteSentAt: relatedRegistrationMember.inviteSentAt,
+              inviteExpiresAt: relatedRegistrationMember.inviteExpiresAt,
+              inviteRespondedAt: relatedRegistrationMember.inviteRespondedAt,
+            },
+          });
+        }
+      });
+    } catch (rollbackError) {
+      logger.error("Failed to restore a team invite after email dispatch failed.", {
+        teamId,
+        memberId,
+        rollbackError,
+      });
+    }
+    throw new HttpError(503, "The invitation could not be sent right now. Please try again later.");
+  }
+
+  return {
+    member: mapSavedTeamMember(updatedMember),
+    resendAvailableAt: new Date(
+      now.getTime() + TEAM_INVITE_RESEND_COOLDOWN_SECONDS * 1000
+    ),
+  };
 };
 
 const refreshRegistrationVerificationStatus = async ({ tx, registrationId }) => {
@@ -1015,6 +1158,7 @@ module.exports = {
   createSavedTeam,
   updateSavedTeam,
   deleteSavedTeam,
+  resendSavedTeamInvite,
   getTeamInvitePreview,
   respondToTeamInvite,
   syncSavedTeamFromRegistration,

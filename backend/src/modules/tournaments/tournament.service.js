@@ -1375,11 +1375,42 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
         },
       ],
     },
-    select: { id: true, paymentStatus: true, reservedUntil: true },
+    select: {
+      id: true,
+      status: true,
+      paymentStatus: true,
+      reservedUntil: true,
+      assignedSlotNumber: true,
+      payments: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          providerOrderId: true,
+          provider: true,
+          status: true,
+        },
+      },
+    },
   });
 
   return {
     isRegistered: Boolean(existingRegistration),
+    registration: existingRegistration
+      ? {
+          id: existingRegistration.id,
+          status: existingRegistration.status,
+          paymentStatus: existingRegistration.paymentStatus,
+          reservedUntil: existingRegistration.reservedUntil,
+          assignedSlotNumber: existingRegistration.assignedSlotNumber,
+          payment: existingRegistration.payments[0]
+            ? {
+                orderId: existingRegistration.payments[0].providerOrderId,
+                provider: existingRegistration.payments[0].provider,
+                status: existingRegistration.payments[0].status,
+              }
+            : null,
+        }
+      : null,
   };
 };
 

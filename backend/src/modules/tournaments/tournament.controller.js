@@ -99,6 +99,7 @@ const getTournamentRegistrationStatusController = asyncHandler(async (req, res) 
   res.status(200).json({
     success: true,
     isRegistered: result.isRegistered,
+    registration: result.registration,
   });
 });
 

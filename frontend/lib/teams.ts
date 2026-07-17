@@ -164,6 +164,31 @@ export async function deleteSavedTeam(teamId: string) {
   return data.message || "Team deleted successfully.";
 }
 
+export async function resendSavedTeamInvite(teamId: string, memberId: string) {
+  const { response, data } = await apiFetchJson<{
+    success?: boolean;
+    message?: string;
+    details?: { retryAfterSeconds?: number };
+    member?: SavedTeamMember;
+    resendAvailableAt?: string;
+  }>(`/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(memberId)}/resend-invite`, {
+    method: "POST",
+  });
+  const errorMessage = getApiErrorMessage(response, data, "Could not resend this invitation.");
+  if (errorMessage || !data.member) {
+    const error = new Error(errorMessage || "Could not resend this invitation.") as Error & {
+      retryAfterSeconds?: number;
+    };
+    error.retryAfterSeconds = data.details?.retryAfterSeconds;
+    throw error;
+  }
+  return {
+    member: data.member,
+    resendAvailableAt: data.resendAvailableAt || null,
+    message: data.message || "A new team invitation has been sent.",
+  };
+}
+
 export async function fetchTeamInvitePreview(token: string) {
   const { response, data } = await apiFetchJson<{
     success?: boolean;

@@ -125,13 +125,10 @@ const buildCheckout = ({ payment, tournament, user, body }) =>
     cancelPath: `/tournaments/${tournament.slug}?payment=cancelled`,
   });
 
-const buildPaymentOrderId = (paymentMethod, slug) => {
+const buildPaymentOrderId = (paymentMethod) => {
   if (paymentMethod === "bank_transfer") {
-    const prefix = String(slug || "EVENT")
-      .replace(/[^a-z0-9]/gi, "")
-      .slice(0, 8)
-      .toUpperCase() || "EVENT";
-    return `QST-${prefix}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+    // Short enough to type into a banking app, with 40 bits of randomness.
+    return `QST-${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
   }
   return `TOUR-${crypto.randomUUID()}`;
 };
@@ -368,7 +365,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   } = submission;
 
   if (existing) {
-    const providerOrderId = buildPaymentOrderId(paymentMethod, tournament.slug);
+    const providerOrderId = buildPaymentOrderId(paymentMethod);
     const reservedUntil = new Date(Date.now() + tournament.reservationMinutes * 60 * 1000);
     const persistedRetryLogo = tournament.entryType === "team"
       ? await persistTeamLogoUpload(file)
@@ -526,7 +523,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     ? new Date(Date.now() + tournament.reservationMinutes * 60 * 1000)
     : null;
   const providerOrderId = feeAmount > 0
-    ? buildPaymentOrderId(paymentMethod, tournament.slug)
+    ? buildPaymentOrderId(paymentMethod)
     : null;
   let inviteDispatches = [];
 
@@ -674,4 +671,8 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   }
 };
 
-module.exports = { createConfiguredRegistration, validateConfiguredFields };
+module.exports = {
+  createConfiguredRegistration,
+  validateConfiguredFields,
+  buildPaymentOrderId,
+};

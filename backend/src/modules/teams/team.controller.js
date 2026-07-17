@@ -4,6 +4,7 @@ const {
   createSavedTeam,
   updateSavedTeam,
   deleteSavedTeam,
+  resendSavedTeamInvite,
   getTeamInvitePreview,
   respondToTeamInvite,
 } = require("./team.service");
@@ -42,7 +43,7 @@ const updateProfileTeam = asyncHandler(async (req, res) => {
   });
   res.status(200).json({
     success: true,
-    message: "Team updated successfully. New invitations have been sent.",
+    message: "Team updated successfully. New member invitations were sent when needed.",
     team,
   });
 });
@@ -50,6 +51,19 @@ const updateProfileTeam = asyncHandler(async (req, res) => {
 const deleteProfileTeam = asyncHandler(async (req, res) => {
   await deleteSavedTeam({ teamId: req.params.teamId, user: req.user });
   res.status(200).json({ success: true, message: "Team deleted successfully." });
+});
+
+const resendProfileTeamInvite = asyncHandler(async (req, res) => {
+  const result = await resendSavedTeamInvite({
+    teamId: req.params.teamId,
+    memberId: req.params.memberId,
+    user: req.user,
+  });
+  res.status(200).json({
+    success: true,
+    message: "A new team invitation has been sent.",
+    ...result,
+  });
 });
 
 const previewTeamInvite = asyncHandler(async (req, res) => {
@@ -85,6 +99,7 @@ module.exports = {
   createProfileTeam,
   updateProfileTeam,
   deleteProfileTeam,
+  resendProfileTeamInvite,
   previewTeamInvite,
   respondTeamInvite,
 };

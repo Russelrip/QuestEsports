@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { useTeams } from "@/hooks/api/useTeams";
 import { apiFetch } from "@/lib/auth";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
+import { markTournamentRegistered } from "@/lib/registered-tournaments";
 import type { Tournament, TournamentRegistrationField } from "@/lib/tournaments";
 
 type MemberDraft = {
@@ -107,6 +108,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         bankTransfer?: BankTransferReservation | null;
       };
       if (!response.ok || !data.success) throw new Error(data.message || "Registration could not be submitted.");
+      markTournamentRegistered(tournament.slug);
       if (data.checkout) {
         submitPayHereCheckout(data.checkout);
         return;
@@ -131,6 +133,19 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   }
   if (!tournament.registrationPaymentAvailable) {
     return <Card className="p-8"><h2 className="text-3xl text-white">Paid registration is not available yet</h2><p className="mt-3 text-sm leading-7 text-slate-300">Quest has not connected an online payment provider. No payment or registration draft has been created.</p><Link href={`/tournaments/${tournament.slug}`} className={buttonClassName({ variant: "secondary", className: "mt-5" })}>Return to tournament</Link></Card>;
+  }
+  if (success) {
+    return (
+      <Card className="mx-auto max-w-2xl p-8 text-center sm:p-10">
+        <p className="text-xs uppercase tracking-[0.25em] text-emerald-200">Registration received</p>
+        <h2 className="mt-4 text-3xl text-white">You are registered for {tournament.title}</h2>
+        <p className="mt-4 text-sm leading-7 text-slate-300">{success} Your registration and review status are available in your profile.</p>
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          <Link href="/profile" className={buttonClassName({})}>View my registrations</Link>
+          <Link href={`/tournaments/${tournament.slug}`} className={buttonClassName({ variant: "secondary" })}>Return to tournament</Link>
+        </div>
+      </Card>
+    );
   }
 
   return (

@@ -57,6 +57,24 @@ const body = {
   members: JSON.stringify([]),
 };
 
+test("bank-transfer references are short and banking-app friendly", () => {
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServicePath]: {},
+    [paymentServicePath]: {},
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    const reference = service.buildPaymentOrderId("bank_transfer");
+    assert.match(reference, /^QST-[A-F0-9]{10}$/);
+    assert.equal(reference.length, 14);
+  } finally {
+    restore();
+  }
+});
+
 test("createConfiguredRegistration updates registration details and roster on payment retry", async () => {
   const removedUploads = [];
   let registrationUpdate;

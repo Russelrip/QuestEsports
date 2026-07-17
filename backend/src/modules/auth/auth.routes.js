@@ -50,9 +50,9 @@ const forgotPasswordRateLimiter = createRateLimiter({
 });
 const resendVerificationRateLimiter = createRateLimiter({
   name: "auth-resend-verification",
-  windowMs: 15 * 60 * 1000,
-  maxRequests: 5,
-  message: "Too many verification email requests. Please try again later.",
+  windowMs: 60 * 1000,
+  maxRequests: 1,
+  message: "Please wait before requesting another verification email.",
 });
 const emailChangeRateLimiter = createRateLimiter({
   name: "auth-email-change",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 
@@ -15,9 +15,42 @@ export default function ResendVerificationButton({
   className = "",
   onSent,
 }: ResendVerificationButtonProps) {
+  const storageKey = useMemo(
+    () => `quest-verification-resend:${email.trim().toLowerCase()}`,
+    [email]
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const remainingSeconds = Math.max(Math.ceil((cooldownUntil - now) / 1000), 0);
+
+  useEffect(() => {
+    try {
+      const stored = Number(window.localStorage.getItem(storageKey) || 0);
+      if (stored > Date.now()) setCooldownUntil(stored);
+    } catch {
+      // Storage is optional; the server still enforces the cooldown.
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (remainingSeconds <= 0) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [remainingSeconds]);
+
+  const startCooldown = (seconds: number) => {
+    const until = Date.now() + Math.max(seconds, 1) * 1000;
+    setNow(Date.now());
+    setCooldownUntil(until);
+    try {
+      window.localStorage.setItem(storageKey, String(until));
+    } catch {
+      // Storage is optional; keep the in-memory timer.
+    }
+  };
 
   const handleResend = async () => {
     setIsSubmitting(true);
@@ -39,6 +72,9 @@ export default function ResendVerificationButton({
         "Could not resend verification email."
       );
       if (errorMessage) {
+        if (response.status === 429) {
+          startCooldown(Number(response.headers.get("Retry-After") || 60));
+        }
         setError(errorMessage);
         return;
       }
@@ -47,6 +83,7 @@ export default function ResendVerificationButton({
         data.message ||
         "If that account exists and is not yet verified, a new verification email has been sent.";
       setMessage(nextMessage);
+      startCooldown(Number(response.headers.get("RateLimit-Reset") || 60));
       onSent?.(nextMessage);
     } catch (requestError) {
       console.error("Failed to resend verification email:", requestError);
@@ -58,8 +95,8 @@ export default function ResendVerificationButton({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Button type="button" variant="secondary" className={className} disabled={isSubmitting || !email} onClick={handleResend}>
-        {isSubmitting ? "Sending..." : "Resend Verification Email"}
+      <Button type="button" variant="secondary" className={className} disabled={isSubmitting || !email || remainingSeconds > 0} onClick={handleResend}>
+        {isSubmitting ? "Sending..." : remainingSeconds > 0 ? `Resend in ${remainingSeconds}s` : "Resend Verification Email"}
       </Button>
       {message ? <p className="text-sm text-emerald-300">{message}</p> : null}
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}

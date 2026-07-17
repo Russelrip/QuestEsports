@@ -13,12 +13,21 @@ import { teamCountries } from "@/lib/countries";
 import {
   deleteSavedTeam,
   type ManageTeamMemberInput,
+  resendSavedTeamInvite,
   type SavedTeam,
   updateSavedTeam,
 } from "@/lib/teams";
 import { getInitials } from "@/lib/utils";
 
-type EditableMember = ManageTeamMemberInput & { key: string };
+type EditableMember = ManageTeamMemberInput & {
+  key: string;
+  inviteStatus?: "pending" | "accepted" | "declined";
+  originalEmail?: string;
+  inviteSentAt?: string | null;
+  inviteRespondedAt?: string | null;
+};
+
+const INVITE_RESEND_COOLDOWN_MS = 60 * 1000;
 
 const emptyMember = (): EditableMember => ({
   key: `${Date.now()}-${Math.random()}`,
@@ -38,7 +47,11 @@ export function TeamSummaryGrid({
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {teams.map((team) => (
+      {teams.map((team) => {
+        const pendingInviteCount = team.members.filter(
+          (member) => member.inviteStatus === "pending"
+        ).length;
+        return (
           <button
             key={team.id}
             type="button"
@@ -65,10 +78,12 @@ export function TeamSummaryGrid({
             </span>
             <span className="block border-t border-white/10 bg-[#20232f] px-4 py-3">
               <span className="block truncate text-center text-sm font-bold uppercase text-cyan-200">{team.name}</span>
+              {pendingInviteCount > 0 ? <span className="mt-2 block text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-200">{pendingInviteCount} pending invite{pendingInviteCount === 1 ? "" : "s"}</span> : null}
               <span className="mt-2 block truncate text-center text-[10px] uppercase tracking-[0.12em] text-slate-400">Organization · {team.organizationName || "Independent"}</span>
             </span>
           </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -97,6 +112,8 @@ export default function TeamManagementPanel({
   const [members, setMembers] = useState<EditableMember[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resendingMemberId, setResendingMemberId] = useState<string | null>(null);
+  const [inviteClock, setInviteClock] = useState(() => Date.now());
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -118,9 +135,20 @@ export default function TeamManagementPanel({
           email: member.email,
           discord: member.discord || "",
           riotId: member.riotId || "",
+          inviteStatus: member.inviteStatus,
+          originalEmail: member.email,
+          inviteSentAt: member.inviteSentAt,
+          inviteRespondedAt: member.inviteRespondedAt,
         }))
     );
   }, [selectedTeam]);
+
+  const hasPendingInvites = members.some((member) => member.inviteStatus === "pending");
+  useEffect(() => {
+    if (!hasPendingInvites) return;
+    const timer = window.setInterval(() => setInviteClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasPendingInvites]);
 
   const updateMember = (key: string, updates: Partial<EditableMember>) => {
     setMembers((current) => current.map((member) => member.key === key ? { ...member, ...updates } : member));
@@ -177,6 +205,31 @@ export default function TeamManagementPanel({
     }
   };
 
+  const resendInvite = async (member: EditableMember) => {
+    if (!selectedTeam?.isCaptain || !member.inviteStatus || member.inviteStatus !== "pending") return;
+    setResendingMemberId(member.key);
+    setError("");
+    try {
+      const result = await resendSavedTeamInvite(selectedTeam.id, member.key);
+      setMembers((current) => current.map((candidate) => candidate.key === member.key
+        ? {
+            ...candidate,
+            inviteStatus: result.member.inviteStatus,
+            inviteSentAt: result.member.inviteSentAt,
+            inviteRespondedAt: result.member.inviteRespondedAt,
+          }
+        : candidate));
+      setInviteClock(Date.now());
+      showToast({ tone: "success", title: "Invitation resent", description: result.message });
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : "Could not resend this invitation.";
+      setError(message);
+      showToast({ tone: "error", title: "Invite not sent", description: message });
+    } finally {
+      setResendingMemberId(null);
+    }
+  };
+
   if (!selectedTeam) {
     return <TeamSummaryGrid teams={teams} onSelect={(teamId) => onSelect(teamId)} />;
   }
@@ -211,7 +264,54 @@ export default function TeamManagementPanel({
           <section className="grid gap-4">
             <div className="flex flex-wrap items-end justify-between gap-3"><div><h4 className="text-xl text-white">Roster</h4><p className="mt-1 text-sm text-slate-400">Changing an email sends a new invitation. Accepted members with unchanged emails remain linked.</p></div><Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])} disabled={members.length >= 20}>Add player</Button></div>
             <div className="grid gap-3 border border-cyan-300/15 bg-cyan-400/[0.03] p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-white">{captain?.name || selectedTeam.captainName}</p><p className="text-sm text-slate-400">{captain?.email || "Captain account"}</p></div><Badge>Captain</Badge></div></div>
-            {members.map((member, index) => <div key={member.key} className="grid gap-4 border border-white/8 bg-white/[0.025] p-4"><div className="flex items-center justify-between"><p className="text-sm font-semibold text-white">Roster member {index + 1}</p><button type="button" className="text-sm text-rose-300 hover:text-rose-200" onClick={() => setMembers((current) => current.filter((item) => item.key !== member.key))}>Remove</button></div><div className="grid gap-4 sm:grid-cols-2"><FormField label="Role"><Select value={member.role} onChange={(event) => updateMember(member.key, { role: event.target.value as EditableMember["role"] })}><option value="PLAYER">Player</option><option value="SUBSTITUTE">Substitute</option><option value="COACH">Coach</option></Select></FormField><FormField label="Name" required><Input required value={member.name} onChange={(event) => updateMember(member.key, { name: event.target.value })} /></FormField><FormField label="Email" required><Input required type="email" value={member.email} onChange={(event) => updateMember(member.key, { email: event.target.value })} /></FormField><FormField label="Discord"><Input value={member.discord} onChange={(event) => updateMember(member.key, { discord: event.target.value })} /></FormField><FormField label="Game ID"><Input value={member.riotId} onChange={(event) => updateMember(member.key, { riotId: event.target.value })} /></FormField></div></div>)}
+            {members.map((member, index) => {
+              const resendAvailableAt = member.inviteSentAt
+                ? new Date(member.inviteSentAt).getTime() + INVITE_RESEND_COOLDOWN_MS
+                : 0;
+              const resendWaitSeconds = Math.max(
+                Math.ceil((resendAvailableAt - inviteClock) / 1000),
+                0
+              );
+              const canResend = member.inviteStatus === "pending" && resendWaitSeconds === 0;
+              const emailChanged = Boolean(
+                member.originalEmail &&
+                member.email.trim().toLowerCase() !== member.originalEmail.trim().toLowerCase()
+              );
+              return (
+                <div key={member.key} className="grid gap-4 border border-white/8 bg-white/[0.025] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <p className="text-sm font-semibold text-white">Roster member {index + 1}</p>
+                      {member.inviteStatus ? <Badge>{member.inviteStatus}</Badge> : <Badge>Not invited yet</Badge>}
+                    </div>
+                    <button type="button" className="text-sm text-rose-300 hover:text-rose-200" onClick={() => setMembers((current) => current.filter((item) => item.key !== member.key))}>Remove</button>
+                  </div>
+                  {member.inviteStatus ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border border-white/8 bg-black/15 px-3 py-2 text-xs text-slate-400">
+                      <span>
+                        {member.inviteStatus === "pending"
+                          ? `Invitation pending${member.inviteSentAt ? ` · sent ${new Date(member.inviteSentAt).toLocaleString()}` : ""}`
+                          : member.inviteStatus === "accepted"
+                            ? "Invitation accepted"
+                            : "Invitation declined"}
+                      </span>
+                      {member.inviteStatus === "pending" ? (
+                        <Button type="button" variant="secondary" disabled={!canResend || emailChanged || Boolean(resendingMemberId) || saving} onClick={() => void resendInvite(member)}>
+                          {resendingMemberId === member.key ? "Sending..." : emailChanged ? "Save email change first" : resendWaitSeconds > 0 ? `Resend in ${resendWaitSeconds}s` : "Resend invite"}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField label="Role"><Select value={member.role} onChange={(event) => updateMember(member.key, { role: event.target.value as EditableMember["role"] })}><option value="PLAYER">Player</option><option value="SUBSTITUTE">Substitute</option><option value="COACH">Coach</option></Select></FormField>
+                    <FormField label="Name" required><Input required value={member.name} onChange={(event) => updateMember(member.key, { name: event.target.value })} /></FormField>
+                    <FormField label="Email" required><Input required type="email" value={member.email} onChange={(event) => updateMember(member.key, { email: event.target.value })} /></FormField>
+                    <FormField label="Discord"><Input value={member.discord} onChange={(event) => updateMember(member.key, { discord: event.target.value })} /></FormField>
+                    <FormField label="Game ID"><Input value={member.riotId} onChange={(event) => updateMember(member.key, { riotId: event.target.value })} /></FormField>
+                  </div>
+                </div>
+              );
+            })}
           </section>
 
           {error ? <p className="text-sm text-rose-300">{error}</p> : null}
