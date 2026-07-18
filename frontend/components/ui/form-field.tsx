@@ -21,7 +21,7 @@ export function FormField({
     <div className={cn("grid gap-2", className)}>
       <label htmlFor={htmlFor} className="text-sm font-medium text-slate-200">
         {label}
-        {required ? <span className="ml-1 text-cyan-300">*</span> : null}
+        {required ? <span className="ml-1 text-purple-300">*</span> : null}
       </label>
       {children}
       {hint ? <p className="text-xs text-slate-400">{hint}</p> : null}

@@ -238,7 +238,7 @@ export default function AdminRecruitmentManager() {
 
                 {application.details.teamLogoUrl ? (
                   <p className="mt-5 text-sm text-slate-300">
-                    Team logo: <a className="text-cyan-200 hover:text-cyan-100" href={application.details.teamLogoUrl} target="_blank" rel="noreferrer">Open link</a>
+                    Team logo: <a className="text-purple-200 hover:text-purple-100" href={application.details.teamLogoUrl} target="_blank" rel="noreferrer">Open link</a>
                   </p>
                 ) : null}
 

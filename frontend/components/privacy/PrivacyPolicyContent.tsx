@@ -133,7 +133,7 @@ export default function PrivacyPolicyContent() {
     <Section className="pt-6">
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
-          <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Last Updated</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Last Updated</p>
           <h2 className="mt-3 text-3xl text-white">July 14, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             This policy applies to the Quest E-sports website at <span className="text-white">questesports.lk</span> and related
@@ -153,7 +153,7 @@ export default function PrivacyPolicyContent() {
               <ul className="mt-5 grid gap-2 text-sm leading-7 text-slate-300">
                 {section.bullets.map((item) => (
                   <li key={item} className="flex gap-3">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-purple-300" />
                     <span>{item}</span>
                   </li>
                 ))}
@@ -166,11 +166,11 @@ export default function PrivacyPolicyContent() {
           <h3 className="text-2xl text-white">16. Contact Us</h3>
           <p className="mt-4 text-sm leading-7 text-slate-300">
             If you have questions about this Privacy Policy or want to request help with your data, contact us at{" "}
-            <a href="mailto:questesports.lk@gmail.com" className="text-cyan-200 transition hover:text-cyan-100">
+            <a href="mailto:questesports.lk@gmail.com" className="text-purple-200 transition hover:text-purple-100">
               questesports.lk@gmail.com
             </a>{" "}
             or use the{" "}
-            <Link href="/contact" className="text-cyan-200 transition hover:text-cyan-100">
+            <Link href="/contact" className="text-purple-200 transition hover:text-purple-100">
               contact page
             </Link>
             .

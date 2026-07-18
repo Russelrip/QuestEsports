@@ -52,10 +52,10 @@ function EditorSection({
     <details open={defaultOpen || undefined} className="group border-b border-white/10 last:border-b-0">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-5 py-5 [&::-webkit-details-marker]:hidden">
         <span>
-          <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">{number} · {title}</span>
+          <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-purple-200">{number} · {title}</span>
           <span className="mt-1 block text-sm text-slate-400">{description}</span>
         </span>
-        <span aria-hidden="true" className="text-2xl font-light text-slate-500 transition group-open:rotate-45 group-open:text-cyan-200">+</span>
+        <span aria-hidden="true" className="text-2xl font-light text-slate-500 transition group-open:rotate-45 group-open:text-purple-200">+</span>
       </summary>
       <div className="grid gap-5 pb-7 md:grid-cols-2 xl:grid-cols-3">{children}</div>
     </details>
@@ -510,7 +510,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                       ) : null}
                       <label
                         htmlFor="bannerImage"
-                        className="cursor-pointer rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:border-cyan-200/40 hover:bg-cyan-400/15"
+                        className="cursor-pointer rounded-xl border border-purple-300/25 bg-purple-400/10 px-4 py-2 text-sm font-semibold text-purple-100 transition hover:border-purple-200/40 hover:bg-purple-400/15"
                       >
                         Choose Banner
                       </label>

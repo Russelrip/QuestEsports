@@ -145,7 +145,7 @@ export default function RegistrationForm() {
         <form onSubmit={handleSubmit}>
           <div className="flex items-start justify-between border-b border-white/10 px-5 py-6 sm:px-8">
             <div>
-              <h2 className="text-3xl text-cyan-200">Create Team</h2>
+              <h2 className="text-3xl text-purple-200">Create Team</h2>
               <p className="mt-2 text-xs uppercase tracking-[0.1em] text-slate-500">
                 All fields are required unless specified optional
               </p>
@@ -220,7 +220,7 @@ export default function RegistrationForm() {
                 </span>
                 <label
                   htmlFor="teamLogo"
-                  className="cursor-pointer self-stretch rounded-r-xl bg-cyan-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-cyan-400"
+                  className="cursor-pointer self-stretch rounded-r-xl bg-purple-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-purple-400"
                 >
                   Browse
                 </label>
@@ -297,7 +297,7 @@ export default function RegistrationForm() {
 
               <button
                 type="button"
-                className="mx-auto flex items-center gap-3 px-5 py-2 text-sm font-semibold uppercase text-cyan-300 transition hover:text-cyan-100"
+                className="mx-auto flex items-center gap-3 px-5 py-2 text-sm font-semibold uppercase text-purple-300 transition hover:text-purple-100"
                 onClick={() => setMembers((current) => [...current, emptyMember()])}
                 disabled={members.length >= 20}
               >

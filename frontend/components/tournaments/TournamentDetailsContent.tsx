@@ -43,7 +43,7 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
   return (
     <Section className="pt-5 sm:pt-7">
       <div className="space-y-5 tournament-print-root">
-        <Link href="/tournaments" className="inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-cyan-200">
+        <Link href="/tournaments" className="inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-purple-200">
           <span aria-hidden="true">&larr;</span>
           Back to Tournaments
         </Link>
@@ -72,7 +72,7 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
               type="button"
               onClick={() => setActiveTab(tab)}
               aria-current={activeTab === tab ? "page" : undefined}
-              className={`whitespace-nowrap border-r border-white/8 px-5 py-3 text-xs font-semibold capitalize transition sm:px-7 ${activeTab === tab ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:bg-white/8 hover:text-white"}`}
+              className={`whitespace-nowrap border-r border-white/8 px-5 py-3 text-xs font-semibold capitalize transition sm:px-7 ${activeTab === tab ? "bg-purple-300 text-slate-950" : "text-slate-300 hover:bg-purple-300/10 hover:text-purple-100"}`}
             >
               {tab}
             </button>
@@ -83,7 +83,7 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="min-w-0 space-y-5">
               <Card className="p-5 sm:p-7">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-200">Tournament overview</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-purple-200">Tournament overview</p>
                 <h2 className="mt-3 break-words text-3xl leading-tight text-white [overflow-wrap:anywhere] sm:text-4xl">{tournament.title}</h2>
                 <p className="mt-5 whitespace-pre-line break-words text-sm leading-7 text-slate-300 [overflow-wrap:anywhere] sm:text-base sm:leading-8">
                   {tournament.fullDescription || tournament.shortDescription || "Tournament details will be announced soon."}
@@ -196,7 +196,7 @@ function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
   return (
     <aside className="border border-white/10 bg-[#11131d] lg:sticky lg:top-24">
       <div className="border-b border-white/10 bg-[#0d0c13] px-5 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200">Tournament information</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-purple-200">Tournament information</p>
       </div>
       <dl className="p-2">
         {rows.map((row, index) => (
@@ -218,7 +218,7 @@ function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
 
 function SectionHeading({ children }: { children: string }) {
   return (
-    <h3 className="border-l-2 border-cyan-300 pl-3 text-xl uppercase tracking-[0.08em] text-white sm:text-2xl">
+    <h3 className="border-l-2 border-purple-300 pl-3 text-xl uppercase tracking-[0.08em] text-white sm:text-2xl">
       {children}
     </h3>
   );
@@ -257,7 +257,7 @@ function TeamsPanel({
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {teams?.map((team) => (
           <div key={team.id} className="overflow-hidden border border-white/10 bg-[#12141d]">
-            <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(34,211,238,0.16),transparent_34%),linear-gradient(135deg,#171126,#0a0d16)]">
+            <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(192,132,252,0.16),transparent_34%),linear-gradient(135deg,#171126,#0a0d16)]">
               <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:28px_28px]" />
               {team.avatarUrl || team.logoUrl ? (
                 <Image
@@ -338,7 +338,7 @@ function SchedulePanel({ tournament }: { tournament: Tournament }) {
 function RulesPanel({ tournament }: { tournament: Tournament }) {
   return (
     <Card className="p-6 sm:p-8">
-      <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Competition Rules</p>
+      <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Competition Rules</p>
       <h3 className="mt-3 text-3xl text-white">{tournament.rulebook?.title || `${tournament.title} rules`}</h3>
       <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-300">
         {tournament.rules || "Use the official tournament rulebook for eligibility, match procedure, conduct, and dispute rules."}

@@ -47,7 +47,7 @@ export default function TournamentSponsorsManager({ tournamentId }: { tournament
     <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {items.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
         {item.logoUrl ? <Image src={buildApiUrl(item.logoUrl)} alt="" width={64} height={48} className="h-12 w-16 object-contain" /> : <div className="h-12 w-16 rounded-lg bg-white/5" />}
-        <div className="min-w-0 flex-1"><p className="truncate text-white">{item.name}</p><p className="truncate text-xs text-cyan-200/75">{item.partnershipLabel || "Official Sponsor"}</p><p className="text-xs text-slate-500">Order {item.displayOrder}</p></div>
+        <div className="min-w-0 flex-1"><p className="truncate text-white">{item.name}</p><p className="truncate text-xs text-purple-200/75">{item.partnershipLabel || "Official Sponsor"}</p><p className="text-xs text-slate-500">Order {item.displayOrder}</p></div>
         <Button variant="danger" onClick={async () => { if (!confirm(`Remove ${item.name}?`)) return; await adminRequest(`/api/admin/tournaments/${tournamentId}/sponsors/${item.id}`, { method: "DELETE" }); await load(); }}>Remove</Button>
       </div>)}
     </div>

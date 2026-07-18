@@ -309,7 +309,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   return (
     <form className="grid gap-6" onSubmit={submit}>
       <Card className="p-6 sm:p-8">
-        <p className="text-xs uppercase tracking-[0.25em] text-cyan-200/80">{tournament.entryType === "solo" ? "Solo Entry" : "Team Entry"}</p>
+        <p className="text-xs uppercase tracking-[0.25em] text-purple-200/80">{tournament.entryType === "solo" ? "Solo Entry" : "Team Entry"}</p>
         <h2 className="mt-3 text-3xl text-white">Register for {tournament.title}</h2>
         <p className="mt-3 text-sm text-slate-400">Your entry will be submitted directly to this tournament.</p>
         <div className="mt-5 flex flex-wrap gap-3 text-sm">

@@ -37,7 +37,7 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
         <Container className="relative flex min-h-[52svh] items-end py-12 sm:py-16">
           <div className="max-w-4xl">
             <Link href="/tournaments" className="text-sm text-slate-300 transition hover:text-white">Back to tournaments</Link>
-            <p className="mt-8 text-xs uppercase tracking-[0.32em] text-cyan-200">Quest E-sports Event</p>
+            <p className="mt-8 text-xs uppercase tracking-[0.32em] text-purple-200">Quest E-sports Event</p>
             <h1 className="mt-4 text-5xl leading-none text-white sm:text-7xl">{series.title}</h1>
             <p className="mt-5 max-w-3xl text-sm leading-7 text-slate-200 sm:text-base">{series.description}</p>
           </div>
@@ -47,7 +47,7 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
       <section className="py-10 sm:py-14">
         <Container>
           <div className="mb-7">
-            <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Tournament Titles</p>
+            <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Tournament Titles</p>
             <h2 className="mt-3 text-3xl text-white">Choose a game and view its registration page.</h2>
           </div>
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -58,7 +58,7 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
                     <TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} className="h-full w-full object-contain" />
                   </div>
                   <div className="p-5">
-                    <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/80">{tournament.game}</p>
+                    <p className="text-xs uppercase tracking-[0.22em] text-purple-200/80">{tournament.game}</p>
                     <h3 className="mt-2 text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{tournament.title}</h3>
                     <p className={`mt-2 text-sm font-semibold ${tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}`}>{tournament.isRegistrationOpen ? "Registration Open" : tournament.isSlotsFull ? "Slots Full" : "Registration Closed"}</p>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-400">

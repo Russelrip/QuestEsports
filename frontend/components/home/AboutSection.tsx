@@ -6,7 +6,7 @@ export default function AboutSection() {
     <Section className="pt-4">
       <Card className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">About Quest</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-purple-200/80">About Quest</p>
           <h2 className="mt-4 text-3xl text-white sm:text-4xl">A tournament brand, not just a bracket page.</h2>
         </div>
         <p className="text-sm leading-7 text-slate-300 sm:text-base">

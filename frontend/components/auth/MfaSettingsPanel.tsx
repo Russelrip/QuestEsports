@@ -191,7 +191,7 @@ export default function MfaSettingsPanel() {
             </Button>
           ) : (
             <div className="grid gap-5">
-              <div className="rounded-[20px] border border-cyan-300/20 bg-cyan-400/8 p-4 text-sm text-slate-200">
+              <div className="rounded-[20px] border border-purple-300/20 bg-purple-400/8 p-4 text-sm text-slate-200">
                 <p>Scan this QR code with your authenticator app, then enter the 6-digit code it generates.</p>
 
                 <div className="mt-5 flex justify-center">
@@ -209,7 +209,7 @@ export default function MfaSettingsPanel() {
 
                 <div className="mt-5 rounded-[16px] border border-white/10 bg-black/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Manual Setup Key</p>
-                  <p className="mt-3 break-all font-mono text-cyan-100">{setup.secret}</p>
+                  <p className="mt-3 break-all font-mono text-purple-100">{setup.secret}</p>
                 </div>
 
                 <details className="mt-4 rounded-[16px] border border-white/10 bg-black/15 p-4">

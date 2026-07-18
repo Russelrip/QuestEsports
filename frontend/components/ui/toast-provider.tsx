@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 const toneClassName = {
   success: "border-emerald-300/25 bg-emerald-400/12 text-emerald-50",
   error: "border-rose-300/25 bg-rose-400/12 text-rose-50",
-  info: "border-cyan-300/25 bg-cyan-400/12 text-cyan-50",
+  info: "border-purple-300/25 bg-purple-400/12 text-purple-50",
 } as const;
 
 export function ToastProvider() {

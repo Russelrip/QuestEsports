@@ -24,7 +24,7 @@ export function AssetRemovalCheckbox({
     <label className="flex items-center gap-3">
       <input
         type="checkbox"
-        className="h-4 w-4 rounded border-white/20 bg-black/30 accent-cyan-300"
+        className="h-4 w-4 rounded border-white/20 bg-black/30 accent-purple-300"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
       />

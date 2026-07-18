@@ -29,9 +29,9 @@ export default function TournamentBannerImage({
           className
         )}
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(168,85,247,0.2),transparent_38%),linear-gradient(135deg,rgba(34,211,238,0.08),transparent_48%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(168,85,247,0.2),transparent_38%),linear-gradient(135deg,rgba(192,132,252,0.08),transparent_48%)]" />
         <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:32px_32px]" />
-        <div className="absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rotate-45 border border-cyan-300/15 shadow-[0_0_50px_rgba(168,85,247,0.14)]" />
+        <div className="absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rotate-45 border border-purple-300/15 shadow-[0_0_50px_rgba(168,85,247,0.14)]" />
         <div className="absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rotate-45 border border-fuchsia-300/20 bg-white/[0.02]" />
         {showFallbackTitle ? <div className="relative min-w-0">
           <p className="text-xs uppercase tracking-[0.3em] text-fuchsia-100/80">Quest Series</p>

@@ -72,7 +72,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
                   </p>
                   <p className="text-xs text-slate-400">{user.email}</p>
                 </div>
-                <Badge className="account-menu-badge border-cyan-300/20 bg-cyan-400/10 text-cyan-100">
+                <Badge className="account-menu-badge border-purple-300/20 bg-purple-400/10 text-purple-100">
                   {user.role}
                 </Badge>
               </div>

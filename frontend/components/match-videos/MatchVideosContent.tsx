@@ -7,7 +7,7 @@ function VideoSection({ title, videos }: { title: string; videos: VideoItem[] })
   return (
     <Section className="pt-6">
       <div className="mb-6">
-        <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Video Library</p>
+        <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Video Library</p>
         <h2 className="mt-3 text-3xl text-white">{title}</h2>
       </div>
 

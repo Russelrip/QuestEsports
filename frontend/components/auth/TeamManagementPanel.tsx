@@ -58,7 +58,7 @@ export function TeamSummaryGrid({
             onClick={() => onSelect(team.id)}
             className="group overflow-hidden border border-white/10 bg-[#12141d] text-left transition hover:-translate-y-1 hover:border-white/25 hover:shadow-[0_22px_55px_rgba(0,0,0,0.38)] motion-reduce:hover:translate-y-0"
           >
-            <span className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(34,211,238,0.16),transparent_34%),linear-gradient(135deg,#171126,#0a0d16)]">
+            <span className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(192,132,252,0.16),transparent_34%),linear-gradient(135deg,#171126,#0a0d16)]">
               {team.logoUrl ? (
                 <Image
                   src={buildApiUrl(team.logoUrl)}
@@ -77,7 +77,7 @@ export function TeamSummaryGrid({
               )}
             </span>
             <span className="block border-t border-white/10 bg-[#20232f] px-4 py-3">
-              <span className="block truncate text-center text-sm font-bold uppercase text-cyan-200">{team.name}</span>
+              <span className="block truncate text-center text-sm font-bold uppercase text-purple-200">{team.name}</span>
               {pendingInviteCount > 0 ? <span className="mt-2 block text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-200">{pendingInviteCount} pending invite{pendingInviteCount === 1 ? "" : "s"}</span> : null}
               <span className="mt-2 block truncate text-center text-[10px] uppercase tracking-[0.12em] text-slate-400">Organization · {team.organizationName || "Independent"}</span>
             </span>
@@ -235,9 +235,9 @@ export default function TeamManagementPanel({
   const captain = selectedTeam.members.find((member) => member.role === "CAPTAIN");
   return (
     <div className="grid gap-6">
-      <button type="button" className="w-fit text-sm font-semibold text-cyan-200 hover:text-white" onClick={() => onSelect(null)}>← Back to teams</button>
+      <button type="button" className="w-fit text-sm font-semibold text-purple-200 hover:text-white" onClick={() => onSelect(null)}>← Back to teams</button>
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-        <div><p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">Team Management</p><h3 className="mt-2 text-3xl text-white">{selectedTeam.name}</h3></div>
+        <div><p className="text-xs uppercase tracking-[0.2em] text-purple-200/70">Team Management</p><h3 className="mt-2 text-3xl text-white">{selectedTeam.name}</h3></div>
         <Badge>{selectedTeam.isCaptain ? "Captain controls" : "Member view"}</Badge>
       </div>
 
@@ -260,7 +260,7 @@ export default function TeamManagementPanel({
 
           <section className="grid gap-4">
             <div className="flex flex-wrap items-end justify-between gap-3"><div><h4 className="text-xl text-white">Roster</h4><p className="mt-1 text-sm text-slate-400">Changing an email sends a new invitation. Accepted members with unchanged emails remain linked.</p></div><Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])} disabled={members.length >= 20}>Add player</Button></div>
-            <div className="grid gap-3 border border-cyan-300/15 bg-cyan-400/[0.03] p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-white">{captain?.name || selectedTeam.captainName}</p><p className="text-sm text-slate-400">{captain?.email || "Captain account"}</p></div><Badge>Captain</Badge></div></div>
+            <div className="grid gap-3 border border-purple-300/15 bg-purple-400/[0.03] p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-white">{captain?.name || selectedTeam.captainName}</p><p className="text-sm text-slate-400">{captain?.email || "Captain account"}</p></div><Badge>Captain</Badge></div></div>
             {members.map((member, index) => {
               const resendAvailableAt = member.inviteSentAt
                 ? new Date(member.inviteSentAt).getTime() + INVITE_RESEND_COOLDOWN_MS

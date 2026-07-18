@@ -71,7 +71,7 @@ export default function ContactForm() {
   return (
     <Card className="p-6 sm:p-8">
       <div className="mb-6">
-        <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Contact Form</p>
+        <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Contact Form</p>
         <h2 className="mt-3 text-3xl text-white">Send us a message</h2>
       </div>
 

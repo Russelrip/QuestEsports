@@ -102,7 +102,7 @@ export default function RulebookContent() {
                     <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
                       {subsection.items.map((item) => (
                         <li key={item} className="flex gap-3">
-                          <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                          <span className="mt-2 h-1.5 w-1.5 rounded-full bg-purple-300" />
                           <span>{item}</span>
                         </li>
                       ))}
@@ -123,7 +123,7 @@ export default function RulebookContent() {
                 <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
                   {items.map((item) => (
                     <li key={item} className="flex gap-3">
-                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-purple-300" />
                       <span>{item}</span>
                     </li>
                   ))}
@@ -145,7 +145,7 @@ export default function RulebookContent() {
               "Failure to comply may result in delays, penalties, or match forfeiture.",
             ].map((item) => (
               <li key={item} className="flex gap-3">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-purple-300" />
                 <span>{item}</span>
               </li>
             ))}
@@ -201,7 +201,7 @@ export default function RulebookContent() {
                 <ul className="mt-4 grid gap-2 text-sm leading-7 text-slate-300">
                   {subsection.items.map((item) => (
                     <li key={item} className="flex gap-3">
-                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-purple-300" />
                       <span>{item}</span>
                     </li>
                   ))}

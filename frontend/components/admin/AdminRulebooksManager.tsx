@@ -87,7 +87,7 @@ export default function AdminRulebooksManager() {
           <div className="mt-6 grid gap-4">
             {rulebooks.length === 0 ? <EmptyState description="No rulebooks created yet." /> : rulebooks.map((rulebook) => (
               <div key={rulebook.id} className="rounded-[22px] border border-white/8 bg-white/5 p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">{rulebook.game} / {rulebook.variant}</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-purple-200/80">{rulebook.game} / {rulebook.variant}</p>
                 <h4 className="mt-2 text-xl text-white">{rulebook.title}</h4>
                 <p className="mt-2 text-sm text-slate-400">{rulebook.tournamentCount || 0} attached tournaments</p>
                 <div className="mt-4 flex gap-3">

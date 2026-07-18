@@ -29,7 +29,7 @@ export default function ProductDetailContent({ product }: { product: Product }) 
       </div>
       <div>
         <Link href="/shop" className="text-sm text-slate-400 transition hover:text-white">Back to shop</Link>
-        <p className="mt-8 text-xs uppercase tracking-[0.28em] text-cyan-200/80">Official Quest Merchandise</p>
+        <p className="mt-8 text-xs uppercase tracking-[0.28em] text-purple-200/80">Official Quest Merchandise</p>
         <h1 className="mt-4 text-5xl text-white">{product.name}</h1>
         <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-300">{product.description}</p>
         <div className="mt-8 grid gap-5 rounded-[28px] border border-white/10 bg-[#0d0c13] p-6">

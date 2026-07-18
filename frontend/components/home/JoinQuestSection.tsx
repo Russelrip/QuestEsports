@@ -15,7 +15,7 @@ export default function JoinQuestSection() {
       <Card className="relative overflow-hidden p-6 sm:p-8 lg:p-10">
         <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Join Quest</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-purple-200/80">Join Quest</p>
             <h2 className="mt-3 text-3xl text-white sm:text-4xl">
               Quest E-sports Recruitment is Now Open!
             </h2>

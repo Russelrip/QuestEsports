@@ -10,7 +10,7 @@ export default function MembersContent() {
     <>
       <Section className="pt-4 sm:pt-6">
         <div className="mb-7">
-          <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Leadership</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-purple-200/80">Leadership</p>
           <h2 className="mt-3 text-3xl text-white sm:text-4xl">People Behind Quest</h2>
         </div>
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
@@ -27,7 +27,7 @@ export default function MembersContent() {
               </div>
               <div className="space-y-2 p-5">
                 <h3 className="text-xl text-white">{member.name}</h3>
-                <p className="text-xs uppercase tracking-[0.2em] text-cyan-100/70">
+                <p className="text-xs uppercase tracking-[0.2em] text-purple-100/70">
                   {member.role}
                 </p>
               </div>
@@ -38,7 +38,7 @@ export default function MembersContent() {
 
       <Section className="pt-2">
         <div className="mb-7">
-          <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">Wing Leadership</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-purple-200/80">Wing Leadership</p>
           <h2 className="mt-3 text-3xl text-white sm:text-4xl">Community Wing Admins</h2>
         </div>
         <div className="grid gap-5 md:grid-cols-3">
@@ -49,7 +49,7 @@ export default function MembersContent() {
               </div>
               <div className="p-5">
                 <h3 className="text-xl text-white">{member.name}</h3>
-                <p className="mt-2 text-xs uppercase tracking-[0.2em] text-cyan-100/60">
+                <p className="mt-2 text-xs uppercase tracking-[0.2em] text-purple-100/60">
                   {member.role}
                 </p>
               </div>

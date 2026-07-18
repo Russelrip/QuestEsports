@@ -30,7 +30,7 @@ export default function AdminShell({
             <Card className="p-5 sm:p-8">
               <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <Badge className="border-cyan-300/20 bg-cyan-400/10 text-cyan-100">Admin Dashboard</Badge>
+                  <Badge className="border-purple-300/20 bg-purple-400/10 text-purple-100">Admin Dashboard</Badge>
                   <h2 className="mt-4 text-3xl text-white sm:text-4xl">{title}</h2>
                   <p className="mt-3 max-w-3xl text-sm text-slate-400">{description}</p>
                 </div>
@@ -51,7 +51,7 @@ export default function AdminShell({
                           href={link.href}
                           className={cn(
                             "border-b-2 border-transparent px-2 py-1.5 text-sm font-medium text-slate-400 transition hover:text-white",
-                            isActive && "border-cyan-300 text-white"
+                            isActive && "border-purple-300 text-white"
                           )}
                         >
                           {link.label}

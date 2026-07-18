@@ -60,7 +60,7 @@ export default function HomeMediaSlideshow() {
 
         <div className="absolute inset-x-0 bottom-0 bg-black/80 p-5 sm:p-7">
             <div key={activeSlide.title} className="popover-enter">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-100/80">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-purple-100/80">
                 {activeSlide.label}
               </p>
               <p className="mt-2 max-w-md font-display text-xl leading-tight text-white sm:text-2xl">

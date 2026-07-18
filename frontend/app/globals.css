@@ -97,7 +97,7 @@ a {
 }
 
 input[type="checkbox"] {
-  --checkbox-accent: #07f;
+  --checkbox-accent: #a855f7;
   appearance: none;
   flex: 0 0 auto;
   width: 1.125rem;
@@ -316,8 +316,8 @@ h6 {
 .status-registration_open,
 .status-ongoing,
 .status-chip-pending {
-  color: #a5f3fc;
-  background: rgba(6, 182, 212, 0.1);
+  color: #e9d5ff;
+  background: rgba(168, 85, 247, 0.1);
 }
 
 .status-upcoming,

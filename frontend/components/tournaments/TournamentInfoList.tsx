@@ -59,7 +59,7 @@ export default function TournamentInfoList({
               return (
                 <div key={item.label} className="border-b border-white/8 p-5 md:border-b-0 md:border-r md:border-white/8">
                   <div className="flex items-center gap-2 text-slate-400">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/6 text-cyan-200/90">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/6 text-purple-200/90">
                       <Icon />
                     </span>
                     <p className="text-[11px] tracking-[0.08em] text-slate-400">{item.label}</p>
@@ -143,7 +143,7 @@ export default function TournamentInfoList({
       <div>
         <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Registration</p>
         <div className="mt-2">
-          <Badge className="border-cyan-300/20 bg-cyan-400/10 text-cyan-100">
+          <Badge className="border-purple-300/20 bg-purple-400/10 text-purple-100">
             {getTournamentRegistrationLabel(tournament)}
           </Badge>
         </div>

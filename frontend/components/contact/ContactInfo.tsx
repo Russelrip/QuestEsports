@@ -9,7 +9,7 @@ import {
 export default function ContactInfo() {
   return (
     <Card className="p-6 sm:p-8">
-      <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Direct Channels</p>
+      <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Direct Channels</p>
       <h2 className="mt-3 text-3xl text-white">Contact information</h2>
 
       <div className="mt-8 grid gap-6">

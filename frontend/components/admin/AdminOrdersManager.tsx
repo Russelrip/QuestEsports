@@ -49,7 +49,7 @@ export default function AdminOrdersManager() {
       {orders.map((order) => <Card key={order.id} className="p-5">
         <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">{order.paymentStatus} payment · {order.status.replaceAll("_", " ")}</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-purple-200">{order.paymentStatus} payment · {order.status.replaceAll("_", " ")}</p>
             <h3 className="mt-2 text-xl text-white">{order.currency} {order.total.toFixed(2)} · {order.items.reduce((sum, item) => sum + item.quantity, 0)} items</h3>
             <p className="mt-2 text-sm text-slate-300">{order.firstName} {order.lastName} · {order.email} · {order.phone}</p>
             <p className="mt-1 text-sm text-slate-400">{order.address}, {order.city}, {order.country}</p>

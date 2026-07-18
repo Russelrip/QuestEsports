@@ -64,21 +64,21 @@ export default function Footer() {
           </div>
 
           <div>
-            <h2 className="border-l-2 border-cyan-300 pl-3 text-xs font-semibold uppercase tracking-[0.16em] text-white">
+            <h2 className="border-l-2 border-purple-300 pl-3 text-xs font-semibold uppercase tracking-[0.16em] text-white">
               Main Menu
             </h2>
             <FooterLinkList links={mainMenuLinks} />
           </div>
 
           <div>
-            <h2 className="border-l-2 border-cyan-300 pl-3 text-xs font-semibold uppercase tracking-[0.16em] text-white">
+            <h2 className="border-l-2 border-purple-300 pl-3 text-xs font-semibold uppercase tracking-[0.16em] text-white">
               Useful Links
             </h2>
             <FooterLinkList links={usefulLinks} />
           </div>
 
           <div>
-            <h2 className="border-l-2 border-cyan-300 pl-3 text-xs font-semibold uppercase tracking-[0.16em] text-white">
+            <h2 className="border-l-2 border-purple-300 pl-3 text-xs font-semibold uppercase tracking-[0.16em] text-white">
               Contact
             </h2>
             <div className="mt-5 grid gap-3 text-sm text-slate-400">

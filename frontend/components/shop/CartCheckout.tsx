@@ -124,7 +124,7 @@ export default function CartCheckout() {
   };
 
   if (items.length === 0) {
-    return <EmptyState title="Your cart is empty" description="Choose a merchandise variant before checkout."><div className="mb-5"><Link href="/shop" className="text-cyan-200 underline">Browse products</Link></div></EmptyState>;
+    return <EmptyState title="Your cart is empty" description="Choose a merchandise variant before checkout."><div className="mb-5"><Link href="/shop" className="text-purple-200 underline">Browse products</Link></div></EmptyState>;
   }
 
   const checkoutUnavailable = capabilities && !capabilities.shopCheckoutAvailable;
@@ -134,7 +134,7 @@ export default function CartCheckout() {
       <Card className="p-6 sm:p-8">
         <h2 className="text-3xl text-white">Your cart</h2>
         <div className="mt-6 grid gap-4">
-          {items.map((item) => <div key={item.variantId} className="grid gap-4 rounded-[22px] border border-white/10 p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><Link href={`/shop/${item.productSlug}`} className="font-semibold text-white hover:text-cyan-100">{item.productName}</Link><p className="text-sm text-slate-400">{item.variantName}</p></div><div className="flex items-center gap-3"><input aria-label={`Quantity for ${item.productName}`} type="number" min="1" max="20" value={item.quantity} onChange={(event) => updateQuantity(item.variantId, Number(event.target.value))} className="w-20 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white" /><button type="button" onClick={() => removeItem(item.variantId)} className="text-sm text-rose-300">Remove</button></div></div>)}
+          {items.map((item) => <div key={item.variantId} className="grid gap-4 rounded-[22px] border border-white/10 p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><Link href={`/shop/${item.productSlug}`} className="font-semibold text-white hover:text-purple-100">{item.productName}</Link><p className="text-sm text-slate-400">{item.variantName}</p></div><div className="flex items-center gap-3"><input aria-label={`Quantity for ${item.productName}`} type="number" min="1" max="20" value={item.quantity} onChange={(event) => updateQuantity(item.variantId, Number(event.target.value))} className="w-20 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white" /><button type="button" onClick={() => removeItem(item.variantId)} className="text-sm text-rose-300">Remove</button></div></div>)}
         </div>
         <div className="mt-6 grid gap-2 border-t border-white/10 pt-5 text-right">
           {quoteLoading ? <p className="text-sm text-slate-400">Verifying current prices…</p> : quote ? <><p className="text-sm text-slate-400">Subtotal: {quote.currency} {quote.subtotal.toFixed(2)}</p><p className="text-sm text-slate-400">Delivery: {quote.currency} {quote.deliveryFee.toFixed(2)}</p><p className="mt-1 text-3xl text-white">Total {quote.currency} {quote.total.toFixed(2)}</p></> : <p className="text-sm text-rose-300">Total unavailable</p>}

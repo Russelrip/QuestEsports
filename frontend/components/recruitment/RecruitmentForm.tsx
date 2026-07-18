@@ -24,9 +24,9 @@ import {
   recruitmentRules,
 } from "@/components/recruitment/recruitment-model";
 
-const checkboxClassName = "mt-1 size-4 shrink-0 accent-cyan-300";
+const checkboxClassName = "mt-1 size-4 shrink-0 accent-purple-300";
 const choiceClassName = "flex w-fit items-start gap-3 py-2 text-sm leading-6 text-slate-300";
-const gameCheckboxClassName = "m-0 size-4 shrink-0 accent-cyan-300";
+const gameCheckboxClassName = "m-0 size-4 shrink-0 accent-purple-300";
 const gameChoiceClassName = "flex w-fit items-center gap-3 py-2 text-sm leading-none text-slate-300";
 const yesNoChoiceClassName = "flex items-center gap-2 py-2 text-sm leading-none text-slate-300";
 
@@ -174,7 +174,7 @@ export default function RecruitmentForm() {
     <Section className="pt-6">
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
-          <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Recruitment Open</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Recruitment Open</p>
           <h2 className="mt-3 text-3xl text-white">Quest E-sports Recruitment Form</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             We are recruiting individual players and existing teams across multiple e-sports titles.
@@ -319,7 +319,7 @@ export default function RecruitmentForm() {
                 </label>
                 <label className={choiceClassName}>
                   <input type="checkbox" required className={checkboxClassName} />
-                  <span>I confirm these details are accurate and agree to the <Link href="/privacy-policy" className="text-cyan-200 hover:text-cyan-100">Privacy Policy</Link>.</span>
+                  <span>I confirm these details are accurate and agree to the <Link href="/privacy-policy" className="text-purple-200 hover:text-purple-100">Privacy Policy</Link>.</span>
                 </label>
               </div>
             </fieldset>
@@ -336,7 +336,7 @@ export default function RecruitmentForm() {
 function YesNo({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) {
   return (
     <div className="grid gap-2">
-      <p className="text-sm font-medium text-slate-200">{label}<span className="ml-1 text-cyan-300">*</span></p>
+      <p className="text-sm font-medium text-slate-200">{label}<span className="ml-1 text-purple-300">*</span></p>
       <div className="flex gap-3">
         <label className={yesNoChoiceClassName}><input className="m-0 shrink-0" type="radio" checked={value} onChange={() => onChange(true)} /><span>Yes</span></label>
         <label className={yesNoChoiceClassName}><input className="m-0 shrink-0" type="radio" checked={!value} onChange={() => onChange(false)} /><span>No</span></label>

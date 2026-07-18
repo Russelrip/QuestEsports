@@ -139,7 +139,7 @@ export default function AdminPaymentsManager() {
           <Card key={payment.id} className={`p-5 ${payment.status === "review_required" ? "border-amber-300/30" : ""}`}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">{payment.purpose.replaceAll("_", " ")} · {payment.provider}</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-purple-200">{payment.purpose.replaceAll("_", " ")} · {payment.provider}</p>
                 <h3 className="mt-2 text-xl text-white">{payment.currency} {payment.amount.toFixed(2)} · {payment.status.replaceAll("_", " ")}</h3>
                 <p className="mt-2 break-all text-sm text-slate-400">Reference {payment.orderId}{payment.paymentId ? ` · PayHere ${payment.paymentId}` : ""}</p>
                 <p className="mt-1 text-sm text-slate-400">{payment.registration?.contactEmail || payment.merchandiseOrder?.email || "No customer email"}{payment.registration?.assignedSlotNumber ? ` · Slot #${payment.registration.assignedSlotNumber}` : ""}</p>

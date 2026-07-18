@@ -67,7 +67,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
     return <article key={entry.id} className="flex h-full flex-col overflow-hidden border border-white/10 bg-[#181a24] shadow-[0_18px_45px_rgba(0,0,0,0.2)]">
       <div className="relative aspect-[16/8] overflow-hidden bg-[#090b12]">
         {entry.tournament.bannerUrl ? <Image src={buildApiUrl(entry.tournament.bannerUrl)} alt={`${entry.tournament.title} poster`} fill className="object-cover" sizes="(min-width: 1280px) 30vw, (min-width: 768px) 45vw, 100vw" /> : <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(168,85,247,0.28),transparent_36%),linear-gradient(135deg,#111827,#090b12)]" />}
-        <span className="absolute left-4 top-4 bg-black/75 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200 backdrop-blur">{entry.tournament.game}</span>
+        <span className="absolute left-4 top-4 bg-black/75 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-purple-200 backdrop-blur">{entry.tournament.game}</span>
       </div>
       <div className="flex flex-1 flex-col p-5">
         <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{entry.entryType === "solo" ? "Solo registration" : entry.displayName}</p>
@@ -77,7 +77,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
           <div><dt className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Registration</dt><dd className="mt-1.5 text-xs font-semibold capitalize text-white">{entry.status}</dd></div>
         </dl>
         <div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.verificationStatus}</Badge><Badge>{entry.payment?.status || entry.paymentStatus}</Badge></div>
-        <Link href={href} className="mt-5 flex items-center justify-between bg-cyan-300 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-200">
+        <Link href={href} className="mt-5 flex items-center justify-between bg-purple-300 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-purple-200">
           <span>{awaitingRoster ? "Confirm full roster" : needsBankPayment ? "Complete bank transfer" : needsOnlinePayment ? "Retry online payment" : readyForPayment ? "Continue to payment" : "View tournament"}</span><span aria-hidden="true">→</span>
         </Link>
       </div>
@@ -293,7 +293,7 @@ export default function ProfileView() {
                   {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt={`${user.firstName} ${user.lastName}`} fill className="object-cover" sizes="80px" /> : initials}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-200/75">Player overview</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-purple-200/75">Player overview</p>
                   <h2 className="mt-2 truncate text-3xl text-white">{user.firstName} {user.lastName}</h2>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400"><span>@{user.username}</span><span aria-hidden="true">•</span><span>{user.email}</span><Badge className={user.emailVerified ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-200" : "border-amber-300/20 bg-amber-400/10 text-amber-200"}>{user.emailVerified ? "Verified" : "Verification needed"}</Badge></div>
                 </div>
@@ -330,7 +330,7 @@ export default function ProfileView() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "dashboard"}
-                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "dashboard" ? "border-cyan-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "dashboard" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("dashboard")}
               >
                 Overview
@@ -339,7 +339,7 @@ export default function ProfileView() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "account"}
-                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "account" ? "border-cyan-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "account" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("account")}
               >
                 Account
@@ -348,7 +348,7 @@ export default function ProfileView() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "teams"}
-                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "teams" ? "border-cyan-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "teams" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("teams")}
               >
                 Teams
@@ -357,7 +357,7 @@ export default function ProfileView() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "security"}
-                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "security" ? "border-cyan-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "security" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("security")}
               >
                 Security
@@ -367,22 +367,22 @@ export default function ProfileView() {
             {activeTab === "dashboard" ? (
               <div className="grid gap-10">
                 {dashboardLoading ? <LoadingState title="Loading dashboard" description="Fetching your registrations and orders." /> : dashboardError ? <p className="text-sm text-rose-300">{dashboardError}</p> : dashboard ? <>
-                  <div className="grid gap-3 sm:grid-cols-3">{[["Active registrations", dashboard.currentRegistrations.length], ["Completed tournaments", dashboard.pastRegistrations.length], ["Teams you are in", dashboard.teams.length]].map(([label, value], index) => <div key={String(label)} className="relative overflow-hidden border border-white/8 bg-[#171923] p-5"><span className={`absolute inset-y-0 left-0 w-1 ${index === 0 ? "bg-cyan-300" : index === 1 ? "bg-violet-400" : "bg-emerald-300"}`} /><p className="text-3xl font-semibold text-white">{value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">{label}</p></div>)}</div>
+                  <div className="grid gap-3 sm:grid-cols-3">{[["Active registrations", dashboard.currentRegistrations.length], ["Completed tournaments", dashboard.pastRegistrations.length], ["Teams you are in", dashboard.teams.length]].map(([label, value], index) => <div key={String(label)} className="relative overflow-hidden border border-white/8 bg-[#171923] p-5"><span className={`absolute inset-y-0 left-0 w-1 ${index === 0 ? "bg-purple-300" : index === 1 ? "bg-violet-400" : "bg-emerald-300"}`} /><p className="text-3xl font-semibold text-white">{value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">{label}</p></div>)}</div>
 
                   <section>
-                    <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Your squads</p><h3 className="mt-2 border-l-2 border-cyan-300 pl-3 text-2xl text-white">Teams You Are In</h3></div><button type="button" className="text-sm font-semibold text-cyan-200 hover:text-white" onClick={() => setActiveTab("teams")}>Manage teams →</button></div>
+                    <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.22em] text-purple-200/70">Your squads</p><h3 className="mt-2 border-l-2 border-purple-300 pl-3 text-2xl text-white">Teams You Are In</h3></div><button type="button" className="text-sm font-semibold text-purple-200 hover:text-white" onClick={() => setActiveTab("teams")}>Manage teams →</button></div>
                     {dashboard.teams.length ? <TeamSummaryGrid teams={dashboard.teams} onSelect={(teamId) => { setSelectedTeamId(teamId); setActiveTab("teams"); }} /> : <div className="flex flex-wrap items-center justify-between gap-4 border border-dashed border-white/10 bg-[#11131c] p-6"><p className="text-sm text-slate-400">You are not part of a saved team yet.</p><Link href="/registration" className={buttonClassName({})}>Create team</Link></div>}
                   </section>
 
                   <section className="border-t border-white/8 pt-10">
-                    <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Competition record</p>
-                    <h3 className="mt-2 border-l-2 border-cyan-300 pl-3 text-2xl text-white">Tournament History</h3>
+                    <p className="text-[10px] uppercase tracking-[0.22em] text-purple-200/70">Competition record</p>
+                    <h3 className="mt-2 border-l-2 border-purple-300 pl-3 text-2xl text-white">Tournament History</h3>
                     <div className="mt-8"><div className="mb-4 flex items-center justify-between gap-3"><h4 className="text-lg font-semibold text-white">Active Registrations</h4><span className="text-xs text-slate-500">{dashboard.currentRegistrations.length} active</span></div><RegistrationCards entries={dashboard.currentRegistrations} empty="You do not have an active tournament registration." /></div>
                     <div className="mt-10"><div className="mb-4 flex items-center justify-between gap-3"><h4 className="text-lg font-semibold text-white">Completed Tournaments</h4><span className="text-xs text-slate-500">{dashboard.pastRegistrations.length} completed</span></div><RegistrationCards entries={dashboard.pastRegistrations} empty="Your completed tournament history will appear here." /></div>
                   </section>
 
                   <section className="border-t border-white/8 pt-10">
-                    <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="border-l-2 border-cyan-300 pl-3 text-2xl text-white">Recruitment Applications</h3><Link href="/join" className="text-sm text-cyan-200">Submit application</Link></div>
+                    <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="border-l-2 border-purple-300 pl-3 text-2xl text-white">Recruitment Applications</h3><Link href="/join" className="text-sm text-purple-200">Submit application</Link></div>
                     {dashboard.recruitmentApplications.length ? (
                       <div className="mt-5 grid gap-3 md:grid-cols-2">
                         {dashboard.recruitmentApplications.map((application) => (
@@ -395,7 +395,7 @@ export default function ProfileView() {
                     ) : <p className="mt-5 text-sm text-slate-400">No recruitment applications submitted yet.</p>}
                   </section>
 
-                  <section className="border-t border-white/8 pt-10"><div className="flex items-center justify-between gap-3"><h3 className="border-l-2 border-cyan-300 pl-3 text-2xl text-white">Merchandise Orders</h3><Link href="/shop" className="text-sm text-cyan-200">Visit shop</Link></div>{dashboard.orders.length ? <div className="mt-5 grid gap-3 md:grid-cols-2">{dashboard.orders.map((order) => <Link key={order.id} href={`/shop/order/${order.publicToken}`} className="flex flex-wrap items-center justify-between gap-3 border border-white/8 bg-[#171923] p-4 text-sm transition hover:border-cyan-300/25"><span className="text-white">{order.itemCount} item{order.itemCount === 1 ? "" : "s"} · {order.currency} {order.total.toFixed(2)}</span><span className="capitalize text-slate-400">{order.status} · {order.paymentStatus}</span></Link>)}</div> : <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>}</section>
+                  <section className="border-t border-white/8 pt-10"><div className="flex items-center justify-between gap-3"><h3 className="border-l-2 border-purple-300 pl-3 text-2xl text-white">Merchandise Orders</h3><Link href="/shop" className="text-sm text-purple-200">Visit shop</Link></div>{dashboard.orders.length ? <div className="mt-5 grid gap-3 md:grid-cols-2">{dashboard.orders.map((order) => <Link key={order.id} href={`/shop/order/${order.publicToken}`} className="flex flex-wrap items-center justify-between gap-3 border border-white/8 bg-[#171923] p-4 text-sm transition hover:border-purple-300/25"><span className="text-white">{order.itemCount} item{order.itemCount === 1 ? "" : "s"} · {order.currency} {order.total.toFixed(2)}</span><span className="capitalize text-slate-400">{order.status} · {order.paymentStatus}</span></Link>)}</div> : <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>}</section>
                 </> : null}
               </div>
             ) : activeTab === "account" ? (

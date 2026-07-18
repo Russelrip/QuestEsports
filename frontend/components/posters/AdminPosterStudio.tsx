@@ -53,7 +53,7 @@ export default function AdminPosterStudio({
     <section className="pt-6">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-6">
-          <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/80">Media Studio</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Media Studio</p>
           <h2 className="mt-3 text-3xl text-white">Manage gallery photos and artwork</h2>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
             Upload event photos or promotional artwork, then add them to the public gallery.
