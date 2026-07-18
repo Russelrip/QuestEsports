@@ -208,7 +208,10 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
       : "text-slate-300";
 
   return <Link href={`/tournaments/${tournament.slug}`} prefetch={false} className="group relative flex h-full flex-col overflow-hidden border border-white/10 bg-[#0d0c13]">
-    <div className="relative aspect-[4/3] overflow-hidden bg-[#09080e]"><TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} rounded={false} showFallbackTitle={false} className="h-full w-full object-cover" /></div>
+    <div className="relative aspect-[4/3] overflow-hidden bg-[#09080e]">
+      <TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} rounded={false} showFallbackTitle={false} className="h-full w-full object-cover transition-opacity duration-300 group-hover:opacity-85 motion-reduce:transition-none" />
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity duration-300 group-hover:opacity-100 motion-reduce:transition-none" />
+    </div>
     <div className="bg-[#0d0c13] px-5 py-5"><h3 className="line-clamp-2 min-h-16 text-xl font-bold uppercase leading-8 text-white transition-colors group-hover:text-[var(--interactive-text)]">{tournament.title}</h3></div>
     <dl className="grid flex-1 grid-cols-2 bg-[#0d0c13] text-xs [&>div:nth-child(-n+2)]:bg-white/[0.025]"><Meta label="Organizer" value={tournament.organizer} /><Meta label="Location" value={tournament.location} /><Meta label="Registration Closing Date" value={formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus)} /><Meta label="Event Start Date" value={formatTournamentDate(tournament.startDate, tournament.startDateStatus)} /></dl>
     <div className="flex items-center justify-center bg-black/25 px-4 py-3 text-center text-[11px] font-bold uppercase tracking-[0.1em]"><span className={`whitespace-nowrap ${statusClassName}`}>{statusLabel}</span></div>
