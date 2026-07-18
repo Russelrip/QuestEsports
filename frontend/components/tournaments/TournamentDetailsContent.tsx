@@ -9,6 +9,7 @@ import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { resolveMediaUrl } from "@/lib/media";
+import { formatSriLankaDateTime } from "@/lib/date-time";
 import {
   BracketMatch,
   BracketParticipant,
@@ -507,7 +508,7 @@ function formatDateTime(value?: string | null, status: Tournament["startDateStat
   if (status === "tbd") return "TBD";
   if (!value) return "TBD";
 
-  return new Date(value).toLocaleString(undefined, {
+  return formatSriLankaDateTime(value, {
     month: "short",
     day: "numeric",
     year: "numeric",

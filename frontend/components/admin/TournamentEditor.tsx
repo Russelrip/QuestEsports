@@ -407,7 +407,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               </details>
               </EditorSection>
               <EditorSection number="03" title="Schedule & Links" description="Choose the event timeline and connect supporting resources.">
-              <FormField label="Start Date" htmlFor="startDateStatus" required>
+              <FormField label="Start Date (Sri Lanka time)" htmlFor="startDateStatus" required>
                 <div className="grid gap-2">
                   <Select id="startDateStatus" value={formValues.startDateStatus} onChange={(event) => updateField("startDateStatus", event.target.value as TournamentFormValues["startDateStatus"])}>
                     <option value="scheduled">Scheduled date</option>
@@ -419,7 +419,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   ) : null}
                 </div>
               </FormField>
-              <FormField label="End Date" htmlFor="endDateStatus" required>
+              <FormField label="End Date (Sri Lanka time)" htmlFor="endDateStatus" required>
                 <div className="grid gap-2">
                   <Select id="endDateStatus" value={formValues.endDateStatus} onChange={(event) => updateField("endDateStatus", event.target.value as TournamentFormValues["endDateStatus"])}>
                     <option value="scheduled">Scheduled date</option>
@@ -431,7 +431,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   ) : null}
                 </div>
               </FormField>
-              <FormField label="Registration Deadline" htmlFor="registrationDeadlineStatus" required>
+              <FormField label="Registration Deadline (Sri Lanka time)" htmlFor="registrationDeadlineStatus" required>
                 <div className="grid gap-2">
                   <Select id="registrationDeadlineStatus" value={formValues.registrationDeadlineStatus} onChange={(event) => updateField("registrationDeadlineStatus", event.target.value as TournamentFormValues["registrationDeadlineStatus"])}>
                     <option value="scheduled">Scheduled date</option>
@@ -443,7 +443,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   ) : null}
                 </div>
               </FormField>
-              <FormField label="Registration Opens" htmlFor="registrationOpenAt" hint="Optional public schedule start.">
+              <FormField label="Registration Opens (Sri Lanka time)" htmlFor="registrationOpenAt" hint="Optional public schedule start.">
                 <Input id="registrationOpenAt" type="datetime-local" value={formValues.registrationOpenAt} onChange={(event) => updateField("registrationOpenAt", event.target.value)} />
               </FormField>
               <FormField label="Challonge Tournament Link" htmlFor="bracketLink" hint="HTTPS challonge.com tournament URLs only.">

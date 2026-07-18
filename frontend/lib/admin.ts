@@ -10,6 +10,7 @@ import type {
   TournamentBracketSummary,
   TournamentScheduleData,
 } from "@/lib/tournaments";
+import { formatSriLankaDateTime, sriLankaDateTimeLocalToIso } from "@/lib/date-time";
 
 export const adminNavigationGroups = [
   {
@@ -249,7 +250,7 @@ export const formatAdminDateTime = (
   options?: Intl.DateTimeFormatOptions
 ) =>
   value
-    ? new Date(value).toLocaleString(undefined, options)
+    ? formatSriLankaDateTime(value, options)
     : "N/A";
 
 export const formatAdminCompactDateTime = (value?: string | null) =>
@@ -494,6 +495,13 @@ export const buildTournamentFormData = (values: TournamentFormValues) => {
 
   const formData = new FormData();
 
+  const sriLankaDateFields = new Set([
+    "registrationOpenAt",
+    "startDate",
+    "endDate",
+    "registrationDeadline",
+  ]);
+
   Object.entries(values).forEach(([key, value]) => {
     if (value === null || value === "") {
       return;
@@ -509,7 +517,12 @@ export const buildTournamentFormData = (values: TournamentFormValues) => {
       return;
     }
 
-    formData.append(key, String(value));
+    formData.append(
+      key,
+      sriLankaDateFields.has(key)
+        ? sriLankaDateTimeLocalToIso(String(value))
+        : String(value)
+    );
   });
 
   return formData;

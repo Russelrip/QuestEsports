@@ -1,5 +1,6 @@
 import { type TournamentFormValues } from "@/lib/admin";
 import { type Tournament } from "@/lib/tournaments";
+import { isoToSriLankaDateTimeLocal } from "@/lib/date-time";
 
 export const slugify = (value: string) =>
   value
@@ -9,10 +10,7 @@ export const slugify = (value: string) =>
     .replace(/^-+|-+$/g, "");
 
 const toLocalDateTimeValue = (value: string) => {
-  const date = new Date(value);
-  const offset = date.getTimezoneOffset();
-  const localDate = new Date(date.getTime() - offset * 60 * 1000);
-  return localDate.toISOString().slice(0, 16);
+  return isoToSriLankaDateTimeLocal(value);
 };
 
 const toOptionalLocalDateTimeValue = (value?: string | null) =>
