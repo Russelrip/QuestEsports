@@ -24,6 +24,7 @@ export default function AdminRegistrationsManager() {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [downloading, setDownloading] = useState(false);
+  const [slotBusyId, setSlotBusyId] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(search);
   const debouncedTournament = useDebouncedValue(tournament);
   const debouncedStatus = useDebouncedValue(status);
@@ -113,6 +114,21 @@ export default function AdminRegistrationsManager() {
     }
   };
 
+  const togglePrivateSlot = async (registration: TeamRegistration) => {
+    const releasing = Boolean(registration.adminSlotReservation);
+    const note = releasing ? "" : window.prompt("Optional private admin note (not visible to the team):", "");
+    if (!releasing && note === null) return;
+    if (releasing && !window.confirm(`Release the private slot held for ${registration.teamName}?`)) return;
+    setSlotBusyId(registration.id);
+    try {
+      await adminRequest(`/api/admin/team-registrations/${registration.id}/slot-reservation`, { method: releasing ? "DELETE" : "POST", json: releasing ? undefined : { note } });
+      showToast({ tone: "success", title: releasing ? "Private slot released" : "Private slot reserved" });
+      await refetch();
+    } catch (nextError) {
+      showToast({ tone: "error", title: "Unable to update slot hold", description: nextError instanceof Error ? nextError.message : "Request failed." });
+    } finally { setSlotBusyId(null); }
+  };
+
   return (
     <AdminShell
       title="Registrations"
@@ -182,6 +198,17 @@ export default function AdminRegistrationsManager() {
                     </Select>
                   </label>
                   <p className="text-sm text-slate-300">Payment: <span className="text-white">{registration.paymentStatus}</span></p>
+                  {registration.adminSlotReservation ? (
+                    <div className="rounded-xl border border-purple-300/20 bg-purple-400/10 p-3 text-xs text-purple-100">
+                      <p className="font-semibold">Private admin slot held</p>
+                      {registration.adminSlotReservation.note ? <p className="mt-1 text-purple-200/70">{registration.adminSlotReservation.note}</p> : null}
+                    </div>
+                  ) : null}
+                  {registration.paymentStatus !== "paid" && registration.status !== "rejected" && (registration.adminSlotReservation || registration.members.some((member) => member.inviteStatus === "pending")) ? (
+                    <Button type="button" variant="secondary" size="sm" disabled={slotBusyId === registration.id} onClick={() => void togglePrivateSlot(registration)}>
+                      {slotBusyId === registration.id ? "Updating..." : registration.adminSlotReservation ? "Release private slot" : "Reserve slot privately"}
+                    </Button>
+                  ) : null}
                 </div>
                 <div className="grid gap-3">
                   <label className="grid gap-2 text-sm text-slate-300">

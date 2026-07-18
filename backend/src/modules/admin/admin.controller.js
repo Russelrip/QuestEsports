@@ -24,6 +24,8 @@ const {
   updateAdminSavedTeam,
   updateAdminSavedTeamOrganization,
   deleteAdminSavedTeam,
+  reserveAdminRegistrationSlot,
+  releaseAdminRegistrationSlot,
 } = require("./admin.service");
 
 const sendExcelExport = (res, exportFile) => {
@@ -184,6 +186,16 @@ const removeRegistration = asyncHandler(async (req, res) => {
   });
 });
 
+const reserveRegistrationSlot = asyncHandler(async (req, res) => {
+  const reservation = await reserveAdminRegistrationSlot({ registrationId: req.params.registrationId, adminUserId: req.user.id, body: req.body });
+  res.status(201).json({ success: true, message: "Slot reserved privately for this team.", reservation });
+});
+
+const releaseRegistrationSlot = asyncHandler(async (req, res) => {
+  await releaseAdminRegistrationSlot(req.params.registrationId);
+  res.status(200).json({ success: true, message: "Private slot reservation released." });
+});
+
 const getRecruitmentApplications = asyncHandler(async (req, res) => {
   const result = await listRecruitmentApplications(req.query);
 
@@ -275,6 +287,8 @@ module.exports = {
   downloadTeamRegistrations,
   updateRegistrationStatus,
   removeRegistration,
+  reserveRegistrationSlot,
+  releaseRegistrationSlot,
   getRecruitmentApplications,
   downloadRecruitmentApplications,
   updateRecruitmentStatus,

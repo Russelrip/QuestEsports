@@ -55,6 +55,7 @@ const buildRegistrationCountInclude = (now = new Date()) => ({
       teamRegistrations: {
         where: buildActiveRegistrationWhere({ now }),
       },
+      adminSlotReservations: true,
     },
   },
   rulebook: {
@@ -421,11 +422,14 @@ const withRegistrationCount = (tournament) => ({
   ...tournament,
   registrationCount:
     tournament.registrationCount || tournament._count?.teamRegistrations || 0,
+  capacityUsed:
+    (tournament.registrationCount || tournament._count?.teamRegistrations || 0) +
+    (tournament._count?.adminSlotReservations || 0),
 });
 
 const getRegistrationState = (tournament) => {
   const now = new Date();
-  const registrationCount = tournament.registrationCount || 0;
+  const registrationCount = tournament.capacityUsed ?? tournament.registrationCount ?? 0;
 
   if (tournament.registrationOpenAt && tournament.registrationOpenAt > now) {
     return "registration_closed";

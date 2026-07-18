@@ -410,6 +410,10 @@ const additionalPaths = {
   "/api/admin/tournaments/{tournamentId}/registrations": { get: createOperation("Admin", "List registrations for a tournament", { authenticated: true, parameters: idParameter("tournamentId") }) },
   "/api/admin/team-registrations/{registrationId}/status": { patch: createOperation("Admin", "Update registration status", { authenticated: true, parameters: idParameter("registrationId") }) },
   "/api/admin/team-registrations/{registrationId}": { delete: createOperation("Admin", "Delete a registration", { authenticated: true, parameters: idParameter("registrationId") }) },
+  "/api/admin/team-registrations/{registrationId}/slot-reservation": {
+    post: createOperation("Admin", "Privately reserve a slot for a pending team", { authenticated: true, parameters: idParameter("registrationId") }),
+    delete: createOperation("Admin", "Release a private team slot reservation", { authenticated: true, parameters: idParameter("registrationId") }),
+  },
   "/api/admin/recruitment-applications": { get: createOperation("Admin", "List recruitment applications", { authenticated: true }) },
   "/api/admin/recruitment-applications/export": { get: createOperation("Admin", "Export recruitment applications", { authenticated: true }) },
   "/api/admin/recruitment-applications/{applicationId}/status": { patch: createOperation("Admin", "Update recruitment application status", { authenticated: true, parameters: idParameter("applicationId") }) },

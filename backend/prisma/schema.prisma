@@ -167,6 +167,7 @@ model User {
   merchandiseOrders       MerchandiseOrder[]
   reviewedPaymentProofs   BankTransferProof[]      @relation("PaymentProofReviewer")
   reconciledPayments      PaymentTransaction[]     @relation("PaymentReconciler")
+  adminSlotReservations   AdminSlotReservation[]
 
   @@index([role])
   @@index([createdAt])
@@ -431,6 +432,7 @@ model Tournament {
   series                     EventSeries?               @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   gameCategory               GameCategory?              @relation(fields: [gameCategoryId], references: [id], onDelete: SetNull)
   sponsors                   TournamentSponsor[]
+  adminSlotReservations      AdminSlotReservation[]
 
   @@index([isActive])
   @@index([isPublished, status, startDate])
@@ -525,6 +527,7 @@ model TeamRegistration {
   user                   User?                          @relation(fields: [userId], references: [id], onDelete: SetNull)
   members                RegistrationMember[]
   payments               PaymentTransaction[]
+  adminSlotReservation   AdminSlotReservation?
 
   @@unique([tournamentId, captainEmail])
   @@index([tournamentId])
@@ -537,6 +540,22 @@ model TeamRegistration {
   @@index([status, createdAt])
   @@index([paymentStatus, verificationStatus])
   @@map("team_registrations")
+}
+
+model AdminSlotReservation {
+  id             String           @id @default(uuid()) @db.Uuid
+  tournamentId   String           @map("tournament_id") @db.Uuid
+  registrationId String           @unique @map("registration_id") @db.Uuid
+  createdById    String           @map("created_by_id") @db.Uuid
+  note           String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  tournament     Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  registration   TeamRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  createdBy      User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([tournamentId])
+  @@index([createdById])
+  @@map("admin_slot_reservations")
 }
 
 model Product {

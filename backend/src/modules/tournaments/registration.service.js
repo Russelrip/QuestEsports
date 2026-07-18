@@ -15,7 +15,7 @@ const {
   buildBankTransferInstructions,
   getBankTransferAmountForSlot,
 } = require("../payments/bank-transfer.service");
-const { buildActiveRegistrationWhere } = require("./registration-eligibility");
+const { buildActiveRegistrationWhere, countTournamentCapacityUsage } = require("./registration-eligibility");
 const {
   removeTeamLogoIfUnreferenced,
   removeUploadsQuietly,
@@ -238,13 +238,7 @@ const startExistingRegistrationPayment = async ({
         currentRegistration.paymentStatus === "unpaid" &&
         currentRegistration.verificationStatus === "verified",
     });
-    const activeCount = await tx.teamRegistration.count({
-      where: {
-        id: { not: existing.id },
-        tournamentId: currentTournament.id,
-        ...buildActiveRegistrationWhere(),
-      },
-    });
+    const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id, excludeRegistrationId: existing.id });
     if (activeCount >= currentTournament.maxTeams) {
       throw new HttpError(409, "Registration slots are full.");
     }
@@ -709,13 +703,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           now: retryNow,
           allowActivePaymentReservation: Boolean(hasActiveReservation),
         });
-        const activeCount = await tx.teamRegistration.count({
-          where: {
-            id: { not: existing.id },
-            tournamentId: currentTournament.id,
-            ...buildActiveRegistrationWhere(),
-          },
-        });
+        const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id, excludeRegistrationId: existing.id });
         if (activeCount >= currentTournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
         const assignedSlotNumber = paymentMethod === "bank_transfer"
           ? await allocateLowestAvailableSlot({
@@ -873,12 +861,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         tournament,
         now: new Date(),
       });
-      const activeCount = await tx.teamRegistration.count({
-        where: {
-          tournamentId: currentTournament.id,
-          ...buildActiveRegistrationWhere(),
-        },
-      });
+      const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id });
       if (activeCount >= currentTournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
 
       const assignedSlotNumber = paymentMethod === "bank_transfer" && !requiresTeamVerification

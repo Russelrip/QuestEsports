@@ -4,7 +4,7 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { Prisma } = require("../../generated/prisma");
-const { buildActiveRegistrationWhere } = require("../tournaments/registration-eligibility");
+const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { buildBankTransferInstructions } = require("./bank-transfer.service");
 
@@ -207,13 +207,7 @@ const resolvePaidStatus = async ({ tx, current, now }) => {
     ) {
       return "review_required";
     }
-    const activeCount = await tx.teamRegistration.count({
-      where: {
-        tournamentId: registration.tournamentId,
-        id: { not: registration.id },
-        ...buildActiveRegistrationWhere({ now }),
-      },
-    });
+    const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: registration.tournamentId, excludeRegistrationId: registration.id, now });
     if (activeCount >= registration.tournament.maxTeams) {
       return "review_required";
     }
@@ -573,13 +567,7 @@ const reconcilePayHerePayment = async ({ transactionId, decision, note, provider
         if (!current.registration || current.registration.status === "rejected") {
           throw new HttpError(409, "This registration can no longer be confirmed; refund the payment.");
         }
-        const otherActiveCount = await tx.teamRegistration.count({
-          where: {
-            id: { not: current.registrationId },
-            tournamentId: current.registration.tournamentId,
-            ...buildActiveRegistrationWhere({ now }),
-          },
-        });
+        const otherActiveCount = await countTournamentCapacityUsage({ tx, tournamentId: current.registration.tournamentId, excludeRegistrationId: current.registrationId, now });
         if (otherActiveCount >= current.registration.tournament.maxTeams) {
           throw new HttpError(409, "No registration slot remains; refund the payment.");
         }

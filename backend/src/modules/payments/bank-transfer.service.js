@@ -11,7 +11,7 @@ const {
   persistBankTransferProofUpload,
   removeUploadFile,
 } = require("../../middleware/upload");
-const { buildActiveRegistrationWhere } = require("../tournaments/registration-eligibility");
+const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 
 const runSerializable = async (work) => {
@@ -263,13 +263,7 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
       if (!current.registration.reservedUntil || current.registration.reservedUntil <= now) {
         throw new HttpError(409, "The reservation expired. Reject it and ask the team to register again.");
       }
-      const otherActiveCount = await tx.teamRegistration.count({
-        where: {
-          id: { not: current.registration.id },
-          tournamentId: current.registration.tournamentId,
-          ...buildActiveRegistrationWhere({ now }),
-        },
-      });
+      const otherActiveCount = await countTournamentCapacityUsage({ tx, tournamentId: current.registration.tournamentId, excludeRegistrationId: current.registration.id, now });
       if (otherActiveCount >= current.registration.tournament.maxTeams) {
         throw new HttpError(409, "The tournament no longer has an available slot.");
       }

@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { decryptSecret } = require("../../lib/secret-box");
@@ -33,6 +34,7 @@ const {
   isPasswordWithinBcryptLimit,
 } = require("../../lib/validation");
 const { mapUserForResponse, validateUserBasics } = require("../auth/auth.service");
+const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
 
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
@@ -79,6 +81,7 @@ const TEAM_REGISTRATION_INCLUDE = {
   tournament: {
     select: TOURNAMENT_SUMMARY_SELECT,
   },
+  adminSlotReservation: { select: { id: true, note: true, createdAt: true } },
 };
 
 const mapContactMessage = (message) => ({
@@ -124,6 +127,7 @@ const mapTeamRegistration = (registration) => ({
   status: registration.status,
   paymentStatus: registration.paymentStatus,
   verificationStatus: registration.verificationStatus,
+  adminSlotReservation: registration.adminSlotReservation || null,
   createdAt: registration.createdAt,
   contactEmail: registration.contactEmail,
   logoUrl: registration.teamLogoName
@@ -1173,6 +1177,29 @@ const deleteAdminSavedTeam = async (teamId) => {
   }
 };
 
+const reserveAdminRegistrationSlot = async ({ registrationId, adminUserId, body }) => {
+  const note = normalizeText(body?.note) || null;
+  if (note && note.length > 300) throw new HttpError(400, "Reservation note must be 300 characters or fewer.");
+  return prisma.$transaction(async (tx) => {
+    const registration = await tx.teamRegistration.findUnique({
+      where: { id: registrationId },
+      include: { tournament: { select: { id: true, maxTeams: true } }, members: { select: { inviteStatus: true } }, adminSlotReservation: true },
+    });
+    if (!registration) throw new HttpError(404, "Team registration not found.");
+    if (registration.paymentStatus === "paid" || registration.status === "rejected") throw new HttpError(409, "This registration does not need a reserved slot.");
+    if (!registration.members.some((member) => member.inviteStatus === "pending")) throw new HttpError(409, "Only teams with pending member invitations can receive an admin hold.");
+    if (registration.adminSlotReservation) throw new HttpError(409, "This team already has an admin-reserved slot.");
+    const used = await countTournamentCapacityUsage({ tx, tournamentId: registration.tournamentId, excludeRegistrationId: registration.id });
+    if (used >= registration.tournament.maxTeams) throw new HttpError(409, "The tournament has no slot available to reserve.");
+    return tx.adminSlotReservation.create({ data: { tournamentId: registration.tournamentId, registrationId, createdById: adminUserId, note } });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+};
+
+const releaseAdminRegistrationSlot = async (registrationId) => {
+  const removed = await prisma.adminSlotReservation.deleteMany({ where: { registrationId } });
+  if (!removed.count) throw new HttpError(404, "Admin slot reservation not found.");
+};
+
 module.exports = {
   getAdminDashboardData,
   listAdminUsers,
@@ -1198,4 +1225,6 @@ module.exports = {
   updateAdminSavedTeam,
   updateAdminSavedTeamOrganization,
   deleteAdminSavedTeam,
+  reserveAdminRegistrationSlot,
+  releaseAdminRegistrationSlot,
 };
