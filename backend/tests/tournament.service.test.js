@@ -294,6 +294,12 @@ test("scheduled tournament dates still require valid values", async () => {
 test("getPublicTournamentBySlug exposes approved public team card data", async () => {
   const prismaMock = {
     prisma: {
+      teamRegistration: {
+        count: async ({ where }) => where.adminSlotReservation ? 0 : 1,
+      },
+      adminSlotReservation: {
+        count: async () => 0,
+      },
       tournament: {
         findFirst: async () => ({
           id: "tournament-1",
@@ -437,7 +443,7 @@ test("future registrationOpenAt keeps an otherwise open tournament closed", asyn
   }
 });
 
-test("public slot count does not count an active registration and its admin hold twice", () => {
+test("public slot count shows confirmed teams and does not count pending holds", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
     [uploadModulePath]: {},
@@ -452,7 +458,12 @@ test("public slot count does not count an active registration and its admin hold
       status: "registration_open",
       maxTeams: 10,
       isPublished: true,
-      _count: { teamRegistrations: 2, adminSlotReservations: 1 },
+      _count: { adminSlotReservations: 1 },
+      teamRegistrations: [
+        { status: "approved", paymentStatus: "paid", reservedUntil: null },
+        { status: "approved", paymentStatus: "paid", reservedUntil: null },
+        { status: "pending", paymentStatus: "pending", reservedUntil: new Date(Date.now() + 60_000) },
+      ],
       adminSlotReservations: [{
         registration: {
           status: "pending",
@@ -468,7 +479,7 @@ test("public slot count does not count an active registration and its admin hold
   }
 });
 
-test("public slot count includes an admin hold for a registration without an active payment hold", () => {
+test("public slot count does not present a private admin hold as a confirmed team", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
     [uploadModulePath]: {},
@@ -483,7 +494,11 @@ test("public slot count includes an admin hold for a registration without an act
       status: "registration_open",
       maxTeams: 10,
       isPublished: true,
-      _count: { teamRegistrations: 1, adminSlotReservations: 1 },
+      _count: { adminSlotReservations: 1 },
+      teamRegistrations: [
+        { status: "approved", paymentStatus: "paid", reservedUntil: null },
+        { status: "pending", paymentStatus: "unpaid", reservedUntil: null },
+      ],
       adminSlotReservations: [{
         registration: {
           status: "pending",
@@ -493,7 +508,7 @@ test("public slot count includes an admin hold for a registration without an act
       }],
     });
 
-    assert.equal(tournament.registrationCount, 2);
+    assert.equal(tournament.registrationCount, 1);
   } finally {
     restore();
   }

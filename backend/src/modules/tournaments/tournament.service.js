@@ -33,6 +33,7 @@ const {
 } = require("./bracket.service");
 const {
   buildActiveRegistrationWhere,
+  countTournamentCapacityUsage,
   isRegistrationActive,
 } = require("./registration-eligibility");
 const { isPayHereConfigured } = require("../payments/payment.service");
@@ -55,14 +56,21 @@ const REGISTRATION_FIELD_SCOPES = new Set(["entry", "member"]);
 const buildRegistrationCountInclude = (now = new Date()) => ({
   _count: {
     select: {
-      teamRegistrations: {
-        where: buildActiveRegistrationWhere({ now }),
-      },
       adminSlotReservations: true,
+    },
+  },
+  teamRegistrations: {
+    where: buildActiveRegistrationWhere({ now }),
+    select: {
+      id: true,
+      status: true,
+      paymentStatus: true,
+      reservedUntil: true,
     },
   },
   adminSlotReservations: {
     select: {
+      registrationId: true,
       registration: {
         select: {
           status: true,
@@ -440,7 +448,13 @@ const withRegistrationCount = (tournament) => {
     };
   }
 
-  const activeRegistrationCount = tournament._count?.teamRegistrations || 0;
+  const registrations = tournament.teamRegistrations || [];
+  const confirmedRegistrationCount = registrations
+    .filter(({ status }) => status === "approved")
+    .length;
+  const activeRegistrationCount = registrations
+    .filter((registration) => isRegistrationActive(registration))
+    .length;
   const adminHoldCount = tournament._count?.adminSlotReservations || 0;
   const activeHeldRegistrationCount = (tournament.adminSlotReservations || [])
     .filter(({ registration }) => isRegistrationActive(registration))
@@ -449,8 +463,8 @@ const withRegistrationCount = (tournament) => {
 
   return {
     ...tournament,
-    registrationCount: capacityUsed,
-    capacityUsed,
+    registrationCount: confirmedRegistrationCount,
+    capacityUsed: tournament.capacityUsed ?? capacityUsed,
   };
 };
 
@@ -1072,6 +1086,11 @@ const getPublicTournamentBySlug = async (slug) => {
   if (!tournament) {
     throw new HttpError(404, "Tournament not found.");
   }
+
+  tournament.capacityUsed = await countTournamentCapacityUsage({
+    tx: prisma,
+    tournamentId: tournament.id,
+  });
 
   return mapTournamentWithPublicTeams(tournament);
 };
