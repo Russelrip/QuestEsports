@@ -200,7 +200,9 @@ export default function AdminRegistrationsManager() {
                   <p className="text-sm text-slate-300">Payment: <span className="text-white">{registration.paymentStatus}</span></p>
                   {registration.adminSlotReservation ? (
                     <div className="rounded-xl border border-purple-300/20 bg-purple-400/10 p-3 text-xs text-purple-100">
-                      <p className="font-semibold">Private admin slot held</p>
+                      <p className="font-semibold">
+                        Slot #{registration.adminSlotReservation.assignedSlotNumber} held · {registration.adminSlotReservation.quotedFeeCurrency} {registration.adminSlotReservation.quotedFeeAmount.toFixed(2)}
+                      </p>
                       {registration.adminSlotReservation.note ? <p className="mt-1 text-purple-200/70">{registration.adminSlotReservation.note}</p> : null}
                     </div>
                   ) : null}

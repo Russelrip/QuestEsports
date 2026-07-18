@@ -19,3 +19,21 @@ test("website change migration preserves compatible tournament defaults and seed
   }
   assert.match(migration, /ON DELETE SET NULL/);
 });
+
+test("admin hold migration backfills and uniquely locks slot pricing", () => {
+  const slotMigration = fs.readFileSync(
+    path.join(
+      __dirname,
+      "../prisma/migrations/20260718190000_lock_admin_reservation_slot_and_fee/migration.sql"
+    ),
+    "utf8"
+  );
+  assert.match(slotMigration, /ADD COLUMN "assigned_slot_number" INTEGER/);
+  assert.match(slotMigration, /ADD COLUMN "quoted_fee_amount" DECIMAL\(12,2\)/);
+  assert.match(slotMigration, /generate_series\(1, hold\.max_teams\)/);
+  assert.match(slotMigration, /SET NOT NULL/);
+  assert.match(
+    slotMigration,
+    /admin_slot_reservations_tournament_id_assigned_slot_number_key/
+  );
+});

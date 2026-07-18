@@ -15,7 +15,11 @@ const {
   buildBankTransferInstructions,
   getBankTransferAmountForSlot,
 } = require("../payments/bank-transfer.service");
-const { buildActiveRegistrationWhere, countTournamentCapacityUsage } = require("./registration-eligibility");
+const {
+  allocateLowestAvailableSlot,
+  buildActiveRegistrationWhere,
+  countTournamentCapacityUsage,
+} = require("./registration-eligibility");
 const {
   removeTeamLogoIfUnreferenced,
   removeUploadsQuietly,
@@ -183,21 +187,40 @@ const buildPaymentOrderId = (paymentMethod) => {
   return `TOUR-${crypto.randomUUID()}`;
 };
 
-const allocateLowestAvailableSlot = async ({ tx, tournamentId, maxTeams, excludeId }) => {
-  const activeRegistrations = await tx.teamRegistration.findMany({
-    where: {
-      tournamentId,
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-      assignedSlotNumber: { not: null },
-      ...buildActiveRegistrationWhere(),
-    },
-    select: { assignedSlotNumber: true },
-  });
-  const usedSlots = new Set(activeRegistrations.map((entry) => entry.assignedSlotNumber));
-  for (let slotNumber = 1; slotNumber <= maxTeams; slotNumber += 1) {
-    if (!usedSlots.has(slotNumber)) return slotNumber;
+const consumeAdminHoldOrQuoteSlot = async ({
+  tx,
+  registrationId,
+  tournament,
+  paymentMethod,
+  feeAmount,
+}) => {
+  const adminHold = tx.adminSlotReservation?.findUnique
+    ? await tx.adminSlotReservation.findUnique({ where: { registrationId } })
+    : null;
+  if (adminHold) {
+    await tx.adminSlotReservation.delete({ where: { id: adminHold.id } });
+    return {
+      assignedSlotNumber: adminHold.assignedSlotNumber,
+      quotedFeeAmount: Number(adminHold.quotedFeeAmount),
+      quotedFeeCurrency: adminHold.quotedFeeCurrency,
+    };
   }
-  throw new HttpError(409, "Registration slots are full.");
+
+  const assignedSlotNumber = paymentMethod === "bank_transfer"
+    ? await allocateLowestAvailableSlot({
+        tx,
+        tournamentId: tournament.id,
+        maxTeams: tournament.maxTeams,
+        excludeRegistrationId: registrationId,
+      })
+    : null;
+  return {
+    assignedSlotNumber,
+    quotedFeeAmount: paymentMethod === "bank_transfer"
+      ? getBankTransferAmountForSlot(tournament, assignedSlotNumber)
+      : feeAmount,
+    quotedFeeCurrency: tournament.registrationFeeCurrency,
+  };
 };
 
 const startExistingRegistrationPayment = async ({
@@ -257,17 +280,17 @@ const startExistingRegistrationPayment = async ({
         throw new HttpError(409, "A team with this name is already registered.");
       }
     }
-    const assignedSlotNumber = paymentMethod === "bank_transfer"
-      ? await allocateLowestAvailableSlot({
-          tx,
-          tournamentId: currentTournament.id,
-          maxTeams: currentTournament.maxTeams,
-          excludeId: existing.id,
-        })
-      : null;
-    const quotedFeeAmount = paymentMethod === "bank_transfer"
-      ? getBankTransferAmountForSlot(currentTournament, assignedSlotNumber)
-      : feeAmount;
+    const {
+      assignedSlotNumber,
+      quotedFeeAmount,
+      quotedFeeCurrency,
+    } = await consumeAdminHoldOrQuoteSlot({
+      tx,
+      registrationId: existing.id,
+      tournament: currentTournament,
+      paymentMethod,
+      feeAmount,
+    });
     const reservedUntil = new Date(
       Date.now() + currentTournament.reservationMinutes * 60 * 1000
     );
@@ -289,7 +312,7 @@ const startExistingRegistrationPayment = async ({
         reservedUntil,
         assignedSlotNumber,
         quotedFeeAmount,
-        quotedFeeCurrency: currentTournament.registrationFeeCurrency,
+        quotedFeeCurrency,
       },
     });
     const payment = await tx.paymentTransaction.create({
@@ -300,7 +323,7 @@ const startExistingRegistrationPayment = async ({
         providerOrderId,
         registrationId: existing.id,
         amount: quotedFeeAmount,
-        currency: currentTournament.registrationFeeCurrency,
+        currency: quotedFeeCurrency,
         method: paymentMethod === "bank_transfer" ? "bank_transfer" : null,
       },
     });
@@ -705,17 +728,17 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         });
         const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id, excludeRegistrationId: existing.id });
         if (activeCount >= currentTournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
-        const assignedSlotNumber = paymentMethod === "bank_transfer"
-          ? await allocateLowestAvailableSlot({
-              tx,
-              tournamentId: currentTournament.id,
-              maxTeams: currentTournament.maxTeams,
-              excludeId: existing.id,
-            })
-          : null;
-        const quotedFeeAmount = paymentMethod === "bank_transfer"
-          ? getBankTransferAmountForSlot(currentTournament, assignedSlotNumber)
-          : feeAmount;
+        const {
+          assignedSlotNumber,
+          quotedFeeAmount,
+          quotedFeeCurrency,
+        } = await consumeAdminHoldOrQuoteSlot({
+          tx,
+          registrationId: existing.id,
+          tournament: currentTournament,
+          paymentMethod,
+          feeAmount,
+        });
         if (tournament.entryType === "team") {
           const duplicateTeam = await tx.teamRegistration.findFirst({
             where: {
@@ -753,7 +776,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             reservedUntil,
             assignedSlotNumber,
             quotedFeeAmount,
-            quotedFeeCurrency: currentTournament.registrationFeeCurrency,
+            quotedFeeCurrency,
           },
         });
         await tx.registrationMember.deleteMany({ where: { registrationId: existing.id } });
@@ -806,7 +829,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             providerOrderId,
             registrationId: existing.id,
             amount: quotedFeeAmount,
-            currency: currentTournament.registrationFeeCurrency,
+            currency: quotedFeeCurrency,
             method: paymentMethod === "bank_transfer" ? "bank_transfer" : null,
           },
         });

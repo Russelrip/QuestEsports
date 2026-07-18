@@ -34,7 +34,11 @@ const {
   isPasswordWithinBcryptLimit,
 } = require("../../lib/validation");
 const { mapUserForResponse, validateUserBasics } = require("../auth/auth.service");
-const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
+const {
+  allocateLowestAvailableSlot,
+  countTournamentCapacityUsage,
+} = require("../tournaments/registration-eligibility");
+const { getBankTransferAmountForSlot } = require("../payments/bank-transfer.service");
 
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
@@ -81,7 +85,16 @@ const TEAM_REGISTRATION_INCLUDE = {
   tournament: {
     select: TOURNAMENT_SUMMARY_SELECT,
   },
-  adminSlotReservation: { select: { id: true, note: true, createdAt: true } },
+  adminSlotReservation: {
+    select: {
+      id: true,
+      assignedSlotNumber: true,
+      quotedFeeAmount: true,
+      quotedFeeCurrency: true,
+      note: true,
+      createdAt: true,
+    },
+  },
 };
 
 const mapContactMessage = (message) => ({
@@ -127,7 +140,12 @@ const mapTeamRegistration = (registration) => ({
   status: registration.status,
   paymentStatus: registration.paymentStatus,
   verificationStatus: registration.verificationStatus,
-  adminSlotReservation: registration.adminSlotReservation || null,
+  adminSlotReservation: registration.adminSlotReservation
+    ? {
+        ...registration.adminSlotReservation,
+        quotedFeeAmount: Number(registration.adminSlotReservation.quotedFeeAmount),
+      }
+    : null,
   createdAt: registration.createdAt,
   contactEmail: registration.contactEmail,
   logoUrl: registration.teamLogoName
@@ -1183,7 +1201,20 @@ const reserveAdminRegistrationSlot = async ({ registrationId, adminUserId, body 
   return prisma.$transaction(async (tx) => {
     const registration = await tx.teamRegistration.findUnique({
       where: { id: registrationId },
-      include: { tournament: { select: { id: true, maxTeams: true } }, members: { select: { inviteStatus: true } }, adminSlotReservation: true },
+      include: {
+        tournament: {
+          select: {
+            id: true,
+            maxTeams: true,
+            paymentMethod: true,
+            registrationFeeAmount: true,
+            registrationFeeCurrency: true,
+            registrationFeeTiers: true,
+          },
+        },
+        members: { select: { inviteStatus: true } },
+        adminSlotReservation: true,
+      },
     });
     if (!registration) throw new HttpError(404, "Team registration not found.");
     if (registration.paymentStatus === "paid" || registration.status === "rejected") throw new HttpError(409, "This registration does not need a reserved slot.");
@@ -1191,7 +1222,26 @@ const reserveAdminRegistrationSlot = async ({ registrationId, adminUserId, body 
     if (registration.adminSlotReservation) throw new HttpError(409, "This team already has an admin-reserved slot.");
     const used = await countTournamentCapacityUsage({ tx, tournamentId: registration.tournamentId, excludeRegistrationId: registration.id });
     if (used >= registration.tournament.maxTeams) throw new HttpError(409, "The tournament has no slot available to reserve.");
-    return tx.adminSlotReservation.create({ data: { tournamentId: registration.tournamentId, registrationId, createdById: adminUserId, note } });
+    const assignedSlotNumber = await allocateLowestAvailableSlot({
+      tx,
+      tournamentId: registration.tournamentId,
+      maxTeams: registration.tournament.maxTeams,
+      excludeRegistrationId: registration.id,
+    });
+    const quotedFeeAmount = registration.tournament.paymentMethod === "bank_transfer"
+      ? getBankTransferAmountForSlot(registration.tournament, assignedSlotNumber)
+      : Number(registration.tournament.registrationFeeAmount);
+    return tx.adminSlotReservation.create({
+      data: {
+        tournamentId: registration.tournamentId,
+        registrationId,
+        createdById: adminUserId,
+        assignedSlotNumber,
+        quotedFeeAmount,
+        quotedFeeCurrency: registration.tournament.registrationFeeCurrency,
+        note,
+      },
+    });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 };
 

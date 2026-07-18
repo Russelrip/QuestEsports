@@ -36,6 +36,10 @@ Never mark a migration as applied manually unless its SQL has actually completed
 
 Bank transfer is independent of PayHere. Configure a tournament with `paymentMethod=bank_transfer`, currency, fee tiers, bank details, and review window. Fee tiers are assigned by reserved slot number, allowing schedules such as the first three slots at one price and later slots at higher prices.
 
+Private admin holds also lock a concrete slot and its current fee/currency. A
+later tournament price edit does not change that held quote. When the team starts
+payment, the hold is consumed and its locked values become the payment values.
+
 The registration response creates a local payment transaction and returns the quoted slot/fee plus bank instructions. A verified user uploads one receipt through:
 
 ```text

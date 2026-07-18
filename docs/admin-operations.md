@@ -73,6 +73,13 @@ Only approved registrations appear in public tournament team lists and are used 
 
 Registration rows may also expose entry type, assigned slot, quoted tier fee/currency, payment provider/order state, and reservation expiry. Payment state should normally be driven by verified PayHere callbacks or bank-transfer review rather than manually changed in the general registration table.
 
+A private admin hold assigns the lowest available numbered tournament slot and
+snapshots its fee and currency immediately. The admin registration card displays
+that locked slot and price. When the roster becomes eligible and starts payment,
+the hold is consumed atomically and the same slot, amount, and currency are copied
+to the registration and payment transaction. Releasing the hold makes that slot
+available again.
+
 ## Registration Deletion
 
 Admins can delete a tournament registration from `/admin/registrations`.

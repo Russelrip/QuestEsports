@@ -141,6 +141,11 @@ const releaseOrderStock = async (
 
 const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) => {
   if (transaction.registrationId) {
+    if (tx.adminSlotReservation?.deleteMany) {
+      await tx.adminSlotReservation.deleteMany({
+        where: { registrationId: transaction.registrationId },
+      });
+    }
     if (status === "paid") {
       await tx.teamRegistration.update({
         where: { id: transaction.registrationId },

@@ -132,7 +132,14 @@ export type TeamRegistration = {
   status: "pending" | "approved" | "rejected";
   paymentStatus: "unpaid" | "pending" | "paid";
   verificationStatus: "pending" | "verified" | "flagged";
-  adminSlotReservation?: { id: string; note?: string | null; createdAt: string } | null;
+  adminSlotReservation?: {
+    id: string;
+    assignedSlotNumber: number;
+    quotedFeeAmount: number;
+    quotedFeeCurrency: string;
+    note?: string | null;
+    createdAt: string;
+  } | null;
   createdAt: string;
   contactEmail: string;
   logoUrl?: string | null;

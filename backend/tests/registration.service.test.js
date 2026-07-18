@@ -180,6 +180,8 @@ test("paid direct team registration saves the team and dispatches player invites
 
 test("verified direct-registration roster can start payment without re-entering the team", async () => {
   let registrationPaymentUpdate;
+  let createdPayment;
+  let consumedHoldId;
   const verifiedRegistration = {
     id: "registration-verified",
     entryType: "team",
@@ -206,7 +208,21 @@ test("verified direct-registration roster can start payment without re-entering 
     },
     paymentTransaction: {
       updateMany: async () => ({ count: 0 }),
-      create: async ({ data }) => ({ ...data, status: "created" }),
+      create: async ({ data }) => {
+        createdPayment = data;
+        return { ...data, status: "created" };
+      },
+    },
+    adminSlotReservation: {
+      findUnique: async () => ({
+        id: "hold-1",
+        assignedSlotNumber: 4,
+        quotedFeeAmount: 1750,
+        quotedFeeCurrency: "LKR",
+      }),
+      delete: async ({ where }) => {
+        consumedHoldId = where.id;
+      },
     },
   };
   const prisma = {
@@ -241,6 +257,10 @@ test("verified direct-registration roster can start payment without re-entering 
     });
 
     assert.equal(registrationPaymentUpdate.paymentStatus, "pending");
+    assert.equal(registrationPaymentUpdate.assignedSlotNumber, 4);
+    assert.equal(registrationPaymentUpdate.quotedFeeAmount, 1750);
+    assert.equal(createdPayment.amount, 1750);
+    assert.equal(consumedHoldId, "hold-1");
     assert.ok(registrationPaymentUpdate.reservedUntil instanceof Date);
     assert.match(result.paymentOrderId, /^TOUR-/);
     assert.equal(result.checkout.orderId, result.paymentOrderId);

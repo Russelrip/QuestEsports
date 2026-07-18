@@ -45,6 +45,60 @@ const loadWorkbook = async (buffer) => {
   return workbook;
 };
 
+test("reserveAdminRegistrationSlot locks the lowest free slot and its bank-transfer fee", async () => {
+  let createdHold;
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({
+        id: "registration-1",
+        tournamentId: "tournament-1",
+        paymentStatus: "unpaid",
+        status: "pending",
+        members: [{ inviteStatus: "pending" }],
+        adminSlotReservation: null,
+        tournament: {
+          id: "tournament-1",
+          maxTeams: 10,
+          paymentMethod: "bank_transfer",
+          registrationFeeAmount: 5000,
+          registrationFeeCurrency: "LKR",
+          registrationFeeTiers: [
+            { startSlot: 1, endSlot: 2, amount: 2000 },
+            { startSlot: 3, endSlot: 10, amount: 3000 },
+          ],
+        },
+      }),
+      count: async ({ where }) => where.adminSlotReservation ? 0 : 2,
+      findMany: async () => [{ assignedSlotNumber: 2 }],
+    },
+    adminSlotReservation: {
+      count: async () => 1,
+      findMany: async () => [{ assignedSlotNumber: 1 }],
+      create: async ({ data }) => {
+        createdHold = data;
+        return { id: "hold-1", ...data };
+      },
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const hold = await adminService.reserveAdminRegistrationSlot({
+      registrationId: "registration-1",
+      adminUserId: "admin-1",
+      body: { note: "Invited roster" },
+    });
+    assert.equal(hold.assignedSlotNumber, 3);
+    assert.equal(hold.quotedFeeAmount, 3000);
+    assert.equal(hold.quotedFeeCurrency, "LKR");
+    assert.equal(createdHold.registrationId, "registration-1");
+  } finally {
+    restore();
+  }
+});
+
 test("exportTeamRegistrations creates an Excel workbook with registration and roster sheets", async () => {
   const findManyCalls = [];
   const { module: adminService, restore } = loadAdminService({

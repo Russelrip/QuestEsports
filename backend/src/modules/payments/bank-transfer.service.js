@@ -267,6 +267,11 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
       if (otherActiveCount >= current.registration.tournament.maxTeams) {
         throw new HttpError(409, "The tournament no longer has an available slot.");
       }
+      if (tx.adminSlotReservation?.deleteMany) {
+        await tx.adminSlotReservation.deleteMany({
+          where: { registrationId: current.registration.id },
+        });
+      }
       await tx.teamRegistration.update({
         where: { id: current.registration.id },
         data: { paymentStatus: "paid", reservedUntil: null },
@@ -289,6 +294,11 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
       });
     }
 
+    if (tx.adminSlotReservation?.deleteMany) {
+      await tx.adminSlotReservation.deleteMany({
+        where: { registrationId: current.registration.id },
+      });
+    }
     await tx.teamRegistration.update({
       where: { id: current.registration.id },
       data: {

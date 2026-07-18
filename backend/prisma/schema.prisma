@@ -543,16 +543,20 @@ model TeamRegistration {
 }
 
 model AdminSlotReservation {
-  id             String           @id @default(uuid()) @db.Uuid
-  tournamentId   String           @map("tournament_id") @db.Uuid
-  registrationId String           @unique @map("registration_id") @db.Uuid
-  createdById    String           @map("created_by_id") @db.Uuid
-  note           String?
-  createdAt      DateTime         @default(now()) @map("created_at")
-  tournament     Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  registration   TeamRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
-  createdBy      User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  id                 String           @id @default(uuid()) @db.Uuid
+  tournamentId       String           @map("tournament_id") @db.Uuid
+  registrationId     String           @unique @map("registration_id") @db.Uuid
+  createdById        String           @map("created_by_id") @db.Uuid
+  assignedSlotNumber Int              @map("assigned_slot_number")
+  quotedFeeAmount    Decimal          @map("quoted_fee_amount") @db.Decimal(12, 2)
+  quotedFeeCurrency  String           @map("quoted_fee_currency")
+  note               String?
+  createdAt          DateTime         @default(now()) @map("created_at")
+  tournament         Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  registration       TeamRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  createdBy          User             @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
+  @@unique([tournamentId, assignedSlotNumber])
   @@index([tournamentId])
   @@index([createdById])
   @@map("admin_slot_reservations")

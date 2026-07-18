@@ -106,6 +106,8 @@ Also tracks:
 - authenticated account and saved-team links
 - solo/team entry type and configurable field values
 - assigned slot, quoted tier fee/currency, and reservation expiry
+- private admin holds store their own unique tournament slot and fee/currency
+  snapshot until the hold is released or consumed by payment
 - linked payment transactions
 
 ### `RegistrationMember`
