@@ -1067,12 +1067,14 @@ const listAdminSavedTeams = async ({ search } = {}) => {
     take: 200,
     include: {
       captainUser: { select: { firstName: true, lastName: true, username: true } },
+      members: { orderBy: [{ role: "asc" }, { memberOrder: "asc" }] },
       _count: { select: { members: true } },
     },
   });
   return teams.map((team) => ({
     id: team.id,
     name: team.name,
+    teamTag: team.teamTag,
     logoUrl: team.logoName ? `/api/uploads/team-logos/${team.logoName}` : null,
     country: team.country,
     organizationName: team.organizationName || "Independent",
@@ -1080,7 +1082,63 @@ const listAdminSavedTeams = async ({ search } = {}) => {
       [team.captainUser.firstName, team.captainUser.lastName].filter(Boolean).join(" ").trim() ||
       team.captainUser.username,
     memberCount: team._count.members,
+    members: (team.members || []).map((member) => ({
+      id: member.id,
+      role: member.role,
+      name: member.name,
+      email: member.email,
+      discord: member.discord,
+      gameId: member.riotId,
+      inviteStatus: member.inviteStatus,
+    })),
   }));
+};
+
+const updateAdminSavedTeam = async (teamId, body) => {
+  const name = normalizeText(body.name);
+  const teamTag = normalizeText(body.teamTag) || null;
+  const country = normalizeText(body.country) || null;
+  const organization = normalizeText(body.organizationName);
+  const organizationName = organization && organization.toLowerCase() !== "independent" ? organization : null;
+  const members = Array.isArray(body.members) ? body.members : [];
+
+  if (!name || name.length > 120) throw new HttpError(400, "Team name is required and must be 120 characters or fewer.");
+  if (teamTag && teamTag.length > 20) throw new HttpError(400, "Team tag must be 20 characters or fewer.");
+  if (country && country.length > 100) throw new HttpError(400, "Country must be 100 characters or fewer.");
+  if (organization.length > 120) throw new HttpError(400, "Organization name is too long.");
+  if (members.length > 20) throw new HttpError(400, "A team can include up to 20 members.");
+
+  const existing = await prisma.savedTeam.findUnique({
+    where: { id: teamId },
+    select: { id: true, members: { select: { id: true } } },
+  });
+  if (!existing) throw new HttpError(404, "Team not found.");
+  const memberIds = new Set(existing.members.map((member) => member.id));
+  const normalizedMembers = members.map((member) => ({
+    id: normalizeText(member.id),
+    name: normalizeText(member.name),
+    email: normalizeEmail(member.email),
+    discord: normalizeText(member.discord) || null,
+    riotId: normalizeText(member.gameId) || null,
+  }));
+  if (normalizedMembers.some((member) => !memberIds.has(member.id))) throw new HttpError(400, "One or more roster members do not belong to this team.");
+  if (normalizedMembers.some((member) => !member.name || member.name.length > 120)) throw new HttpError(400, "Each roster member needs a name of 120 characters or fewer.");
+  if (normalizedMembers.some((member) => !isValidEmail(member.email) || member.email.length > 254)) throw new HttpError(400, "Each roster member needs a valid email address.");
+  if (new Set(normalizedMembers.map((member) => member.email)).size !== normalizedMembers.length) throw new HttpError(400, "Roster member emails must be unique.");
+
+  try {
+    await prisma.$transaction([
+      prisma.savedTeam.update({ where: { id: teamId }, data: { name, teamTag, country, organizationName } }),
+      ...normalizedMembers.map((member) => prisma.savedTeamMember.update({
+        where: { id: member.id },
+        data: { name: member.name, email: member.email, emailNormalized: member.email, discord: member.discord, riotId: member.riotId },
+      })),
+    ]);
+  } catch (error) {
+    if (error?.code === "P2002") throw new HttpError(409, "That team name, roster email, or role position is already in use.");
+    throw error;
+  }
+  return { id: teamId };
 };
 
 const updateAdminSavedTeamOrganization = async (teamId, body) => {
@@ -1137,6 +1195,7 @@ module.exports = {
   runLegacyPosterImport,
   runPosterImageAssetMigration,
   listAdminSavedTeams,
+  updateAdminSavedTeam,
   updateAdminSavedTeamOrganization,
   deleteAdminSavedTeam,
 };

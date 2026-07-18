@@ -21,6 +21,7 @@ const {
   runLegacyPosterImport,
   runPosterImageAssetMigration,
   listAdminSavedTeams,
+  updateAdminSavedTeam,
   updateAdminSavedTeamOrganization,
   deleteAdminSavedTeam,
 } = require("./admin.service");
@@ -249,6 +250,11 @@ const updateSavedTeamOrganization = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "Team organization updated.", team });
 });
 
+const updateSavedTeam = asyncHandler(async (req, res) => {
+  const team = await updateAdminSavedTeam(req.params.teamId, req.body);
+  res.status(200).json({ success: true, message: "Team updated successfully.", team });
+});
+
 const removeSavedTeam = asyncHandler(async (req, res) => {
   await deleteAdminSavedTeam(req.params.teamId);
   res.status(200).json({ success: true, message: "Team deleted successfully." });
@@ -276,6 +282,7 @@ module.exports = {
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
   getSavedTeams,
+  updateSavedTeam,
   updateSavedTeamOrganization,
   removeSavedTeam,
 };

@@ -22,6 +22,7 @@ const {
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
   getSavedTeams,
+  updateSavedTeam,
   updateSavedTeamOrganization,
   removeSavedTeam,
 } = require("./admin.controller");
@@ -51,6 +52,7 @@ router.delete("/admin/recruitment-applications/:applicationId", removeRecruitmen
 router.post("/admin/media/import-legacy-posters", importLegacyPosterMedia);
 router.post("/admin/media/migrate-image-assets", migratePosterMediaToFilesystem);
 router.get("/admin/teams", getSavedTeams);
+router.patch("/admin/teams/:teamId", updateSavedTeam);
 router.patch("/admin/teams/:teamId/organization", updateSavedTeamOrganization);
 router.delete("/admin/teams/:teamId", removeSavedTeam);
 

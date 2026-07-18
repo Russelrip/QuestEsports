@@ -495,9 +495,13 @@ test("listAdminSavedTeams maps saved teams for the admin team manager", async ()
           {
             id: "saved-team-1",
             name: "Quest Five",
+            teamTag: "Q5",
             logoName: "quest-five.png",
             country: "Sri Lanka",
             organizationName: null,
+            members: [
+              { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: "player", riotId: "Player#001", inviteStatus: "accepted" },
+            ],
             captainUser: {
               firstName: "Team",
               lastName: "Captain",
@@ -523,11 +527,15 @@ test("listAdminSavedTeams maps saved teams for the admin team manager", async ()
       {
         id: "saved-team-1",
         name: "Quest Five",
+        teamTag: "Q5",
         logoUrl: "/api/uploads/team-logos/quest-five.png",
         country: "Sri Lanka",
         organizationName: "Independent",
         captainName: "Team Captain",
         memberCount: 5,
+        members: [
+          { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: "player", gameId: "Player#001", inviteStatus: "accepted" },
+        ],
       },
     ]);
   } finally {
