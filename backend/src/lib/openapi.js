@@ -266,6 +266,7 @@ const openApiDocument = {
     },
     "/api/tournaments/{slug}/registrations": {
       post: { tags: ["Registrations"], summary: "Submit a slug-bound configurable solo or team registration", parameters: [createPathParameter("slug", { type: "string" })], responses: { 201: createResponse("Registration and optional checkout payload") } },
+      delete: { tags: ["Registrations"], summary: "Cancel the current captain's unpaid registration", parameters: [createPathParameter("slug", { type: "string" })], responses: { 200: createResponse("Registration cancelled") } },
     },
     "/api/tournaments/{slug}/registration-status": {
       get: {

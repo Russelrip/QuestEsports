@@ -75,6 +75,66 @@ test("bank-transfer references are short and banking-app friendly", () => {
   }
 });
 
+test("captains can cancel their own unpaid tournament registration", async () => {
+  let deletedId = null;
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        teamRegistration: {
+          findFirst: async () => ({
+            id: "registration-1",
+            paymentStatus: "unpaid",
+            teamLogoName: null,
+          }),
+          delete: async ({ where }) => {
+            deletedId = where.id;
+          },
+        },
+      },
+    },
+    [uploadModulePath]: {},
+    [teamServicePath]: {},
+    [paymentServicePath]: {},
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    await service.cancelUnpaidRegistration({ slug: tournament.slug, user });
+    assert.equal(deletedId, "registration-1");
+  } finally {
+    restore();
+  }
+});
+
+test("captains cannot cancel after a payment reservation has started", async () => {
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        teamRegistration: {
+          findFirst: async () => ({
+            id: "registration-1",
+            paymentStatus: "pending",
+            teamLogoName: null,
+          }),
+        },
+      },
+    },
+    [uploadModulePath]: {},
+    [teamServicePath]: {},
+    [paymentServicePath]: {},
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      () => service.cancelUnpaidRegistration({ slug: tournament.slug, user }),
+      (error) => error.statusCode === 409
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("paid direct team registration saves the team and dispatches player invites immediately", async () => {
   const syncedTeams = [];
   let createdRegistration;

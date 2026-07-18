@@ -24,6 +24,7 @@ const {
   deleteTournament,
   getTournamentRegistrationStatus,
   submitConfiguredTournamentRegistration,
+  cancelTournamentRegistration,
   getTournamentBracket,
   generateBracket,
   updateBracketMatch,
@@ -64,6 +65,13 @@ router.post(
   tournamentRegistrationRateLimiter,
   imageUpload.single("teamLogo"),
   submitConfiguredTournamentRegistration
+);
+router.delete(
+  "/tournaments/:slug/registrations",
+  requireAuth,
+  requireVerifiedEmail,
+  tournamentRegistrationRateLimiter,
+  cancelTournamentRegistration
 );
 
 router.get("/admin/tournaments", requireAdmin, getAdminTournaments);

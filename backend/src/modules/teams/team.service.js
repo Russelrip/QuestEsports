@@ -529,6 +529,75 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
       if (memberRecords.length > 0) {
         await tx.savedTeamMember.createMany({ data: memberRecords });
       }
+
+      const unpaidRegistrations = tx.teamRegistration?.findMany
+        ? await tx.teamRegistration.findMany({
+        where: { savedTeamId: teamId, paymentStatus: "unpaid" },
+        include: { members: true },
+          })
+        : [];
+      for (const registration of unpaidRegistrations) {
+        const registrationMembers = registration.members.filter(
+          (member) => member.role !== "CAPTAIN"
+        );
+        const registrationPositions = new Set(
+          registrationMembers.map((member) => `${member.role}:${member.memberOrder}`)
+        );
+        const savedPositions = new Set(
+          memberRecords.map((member) => `${member.role}:${member.memberOrder}`)
+        );
+        if (
+          registrationPositions.size !== savedPositions.size ||
+          [...registrationPositions].some((position) => !savedPositions.has(position))
+        ) {
+          throw new HttpError(
+            409,
+            "This registered roster's player and substitute positions cannot be changed. Cancel the unpaid registration first to change the roster structure."
+          );
+        }
+
+        await tx.teamRegistration.update({
+          where: { id: registration.id },
+          data: {
+            teamName: name,
+            country,
+            teamTag,
+            organizationRequested,
+            teamLogoName: nextLogoName,
+            verificationStatus: "pending",
+          },
+        });
+        for (const member of memberRecords) {
+          await tx.registrationMember.update({
+            where: {
+              registrationId_role_memberOrder: {
+                registrationId: registration.id,
+                role: member.role,
+                memberOrder: member.memberOrder,
+              },
+            },
+            data: {
+              userId: member.userId || null,
+              name: member.name,
+              email: member.email,
+              emailNormalized: member.emailNormalized,
+              discord: member.discord,
+              riotId: member.riotId,
+              inviteStatus: member.inviteStatus,
+              // The saved-team invitation is authoritative for roster corrections.
+              // Reusing it across registrations would violate token uniqueness.
+              inviteTokenHash: null,
+              inviteSentAt: member.inviteSentAt,
+              inviteExpiresAt: member.inviteExpiresAt,
+              inviteRespondedAt: member.inviteRespondedAt || null,
+            },
+          });
+        }
+        await refreshRegistrationVerificationStatus({
+          tx,
+          registrationId: registration.id,
+        });
+      }
       return tx.savedTeam.findUnique({
         where: { id: teamId },
         include: {
@@ -668,7 +737,7 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
         data: {
           userId: null,
           inviteStatus: "pending",
-          inviteTokenHash: token.tokenHash,
+          inviteTokenHash: null,
           inviteSentAt: now,
           inviteExpiresAt,
           inviteRespondedAt: null,
@@ -892,6 +961,34 @@ const respondToTeamInvite = async ({ token, decision, user }) => {
 
       if (consumedInvite.count === 0) {
         throw new HttpError(400, "This team invite link is invalid or has expired.");
+      }
+
+      const linkedRegistrations = await tx.teamRegistration.findMany({
+        where: { savedTeamId: savedTeamMember.team.id, paymentStatus: "unpaid" },
+        select: { id: true },
+      });
+      await tx.registrationMember.updateMany({
+        where: {
+          emailNormalized: savedTeamMember.emailNormalized,
+          inviteStatus: "pending",
+          registration: {
+            savedTeamId: savedTeamMember.team.id,
+            paymentStatus: "unpaid",
+          },
+        },
+        data: {
+          userId: linkedUserId,
+          inviteStatus,
+          inviteRespondedAt,
+          inviteTokenHash: null,
+          inviteExpiresAt: null,
+        },
+      });
+      for (const registration of linkedRegistrations) {
+        await refreshRegistrationVerificationStatus({
+          tx,
+          registrationId: registration.id,
+        });
       }
 
       return tx.savedTeamMember.findUnique({

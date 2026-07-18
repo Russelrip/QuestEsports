@@ -1019,8 +1019,40 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   };
 };
 
+const cancelUnpaidRegistration = async ({ slug, user }) => {
+  const tournamentSlug = normalizeText(slug).toLowerCase();
+  const registration = await prisma.teamRegistration.findFirst({
+    where: {
+      tournament: { slug: tournamentSlug },
+      OR: [{ userId: user.id }, { captainEmail: normalizeEmail(user.email) }],
+    },
+    select: {
+      id: true,
+      paymentStatus: true,
+      teamLogoName: true,
+    },
+  });
+  if (!registration) throw new HttpError(404, "Tournament registration not found.");
+  if (registration.paymentStatus !== "unpaid") {
+    throw new HttpError(
+      409,
+      "This registration cannot be cancelled after payment or a payment reservation has started. Contact an administrator for help."
+    );
+  }
+
+  await prisma.teamRegistration.delete({ where: { id: registration.id } });
+  if (registration.teamLogoName) {
+    await removeTeamLogoIfUnreferenced({
+      prisma,
+      filename: registration.teamLogoName,
+      context: { operation: "cancelUnpaidRegistration", registrationId: registration.id },
+    });
+  }
+};
+
 module.exports = {
   createConfiguredRegistration,
+  cancelUnpaidRegistration,
   validateConfiguredFields,
   validateGameIdentities,
   buildPaymentOrderId,

@@ -15,7 +15,10 @@ const {
   updateTournamentBracketMatch,
   publishTournamentBracket,
 } = require("./bracket.service");
-const { createConfiguredRegistration } = require("./registration.service");
+const {
+  createConfiguredRegistration,
+  cancelUnpaidRegistration,
+} = require("./registration.service");
 
 const getPublicTournaments = asyncHandler(async (req, res) => {
   const tournaments = await listPublicTournaments(req.query);
@@ -123,6 +126,14 @@ const submitConfiguredTournamentRegistration = asyncHandler(async (req, res) => 
   });
 });
 
+const cancelTournamentRegistration = asyncHandler(async (req, res) => {
+  await cancelUnpaidRegistration({ slug: req.params.slug, user: req.user });
+  res.status(200).json({
+    success: true,
+    message: "Registration cancelled. You can correct your team and register again.",
+  });
+});
+
 const getTournamentBracket = asyncHandler(async (req, res) => {
   const bracket = await getAdminTournamentBracket(req.params.tournamentId);
 
@@ -176,6 +187,7 @@ module.exports = {
   deleteTournament,
   getTournamentRegistrationStatus: getTournamentRegistrationStatusController,
   submitConfiguredTournamentRegistration,
+  cancelTournamentRegistration,
   getTournamentBracket,
   generateBracket,
   updateBracketMatch,

@@ -89,6 +89,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const [captainAdditionalData, setCaptainAdditionalData] = useState<Record<string, string>>({});
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [existingRegistration, setExistingRegistration] = useState<ExistingRegistrationState | null>(null);
@@ -243,6 +244,25 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
     }
   };
 
+  const cancelRegistration = async () => {
+    if (!window.confirm("Cancel this unpaid registration? Your saved team will remain available so you can correct it and register again.")) return;
+    setCancelling(true);
+    setError("");
+    try {
+      const response = await apiFetch(`/api/tournaments/${tournament.slug}/registrations`, {
+        method: "DELETE",
+      });
+      const data = await readApiResponse<{ success?: boolean; message?: string }>(response, "Registration could not be cancelled.");
+      if (!response.ok || !data.success) throw new Error(data.message || "Registration could not be cancelled.");
+      setExistingRegistration(null);
+      setSuccess("");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Registration could not be cancelled.");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   if (isLoading || !user) return <Card className="p-8"><p className="text-slate-300">Loading your account…</p></Card>;
   if (!user.emailVerified) {
     return <Card className="p-8"><h2 className="text-3xl text-white">Verify your email first</h2><p className="mt-3 text-sm text-slate-300">A verified account is required before registering.</p><div className="mt-5"><ResendVerificationButton email={user.email} /></div></Card>;
@@ -288,6 +308,11 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
             <Button type="button" disabled={loading} onClick={() => void continueToPayment()}>{loading ? "Starting payment…" : "Reserve slot and continue to payment"}</Button>
           )}
           <Link href="/profile" className={buttonClassName({ variant: "secondary" })}>Open profile</Link>
+          {existingRegistration.paymentStatus === "unpaid" ? (
+            <Button type="button" variant="danger" disabled={loading || cancelling} onClick={() => void cancelRegistration()}>
+              {cancelling ? "Cancelling…" : "Cancel registration"}
+            </Button>
+          ) : null}
         </div>
       </Card>
     );
