@@ -307,6 +307,7 @@ Playwright critical journeys run in CI. Manual production checks remain necessar
 
 ```env
 NODE_ENV=production
+API_PROCESS_COUNT=1
 PORT=5001
 CORS_ORIGIN=https://questesports.lk
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE

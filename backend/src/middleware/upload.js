@@ -1,4 +1,5 @@
 const fs = require("fs/promises");
+const { constants: fsConstants } = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const multer = require("multer");
@@ -62,6 +63,15 @@ const ensureUploadDirectories = async () => {
   await fs.mkdir(gameAssetDirectory, { recursive: true });
   await fs.mkdir(sponsorLogoDirectory, { recursive: true });
   await fs.mkdir(bankTransferProofDirectory, { recursive: true, mode: 0o700 });
+};
+
+const checkUploadReadiness = async () => {
+  await Promise.all(
+    [uploadRoot, privateUploadRoot].map((directory) =>
+      fs.access(directory, fsConstants.R_OK | fsConstants.W_OK)
+    )
+  );
+  return true;
 };
 
 const detectImageType = (buffer) => {
@@ -445,6 +455,7 @@ module.exports = {
   detectImageType,
   normalizeImageUpload,
   ensureUploadDirectories,
+  checkUploadReadiness,
   imageUpload,
   avatarUpload,
   tournamentBannerUpload,

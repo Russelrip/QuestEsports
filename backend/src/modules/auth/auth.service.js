@@ -555,7 +555,7 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
 
   const existingUser = await prisma.user.findUnique({
     where: { id: requestedUserId },
-    select: { id: true },
+    select: { id: true, email: true },
   });
 
   if (!existingUser) {
@@ -579,7 +579,7 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
   const profileErrors = validateUserBasics({
     firstName,
     lastName,
-    email: currentUser.email,
+    email: existingUser.email,
     username,
   });
   if (phone && phone.length > 50) profileErrors.phone = "Phone must be 50 characters or fewer.";

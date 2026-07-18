@@ -16,57 +16,10 @@ const sendPublicUpload = (directoryKey) =>
     await pipeline(createReadStream(file.path), res);
   });
 
-router.get(
-  "/uploads/tournament-banners/:filename",
-  asyncHandler(async (req, res) => {
-    const file = await streamUpload("tournament-banners", req.params.filename);
-
-    res.setHeader("Content-Type", file.contentType);
-    res.setHeader("Content-Length", file.size);
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200);
-    await pipeline(createReadStream(file.path), res);
-  })
-);
-
-router.get(
-  "/uploads/poster-images/:filename",
-  asyncHandler(async (req, res) => {
-    const file = await streamUpload("poster-images", req.params.filename);
-
-    res.setHeader("Content-Type", file.contentType);
-    res.setHeader("Content-Length", file.size);
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200);
-    await pipeline(createReadStream(file.path), res);
-  })
-);
-
-router.get(
-  "/uploads/team-logos/:filename",
-  asyncHandler(async (req, res) => {
-    const file = await streamUpload("team-logos", req.params.filename);
-
-    res.setHeader("Content-Type", file.contentType);
-    res.setHeader("Content-Length", file.size);
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200);
-    await pipeline(createReadStream(file.path), res);
-  })
-);
-
-router.get(
-  "/uploads/avatars/:filename",
-  asyncHandler(async (req, res) => {
-    const file = await streamUpload("avatars", req.params.filename);
-
-    res.setHeader("Content-Type", file.contentType);
-    res.setHeader("Content-Length", file.size);
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.status(200);
-    await pipeline(createReadStream(file.path), res);
-  })
-);
+router.get("/uploads/tournament-banners/:filename", sendPublicUpload("tournament-banners"));
+router.get("/uploads/poster-images/:filename", sendPublicUpload("poster-images"));
+router.get("/uploads/team-logos/:filename", sendPublicUpload("team-logos"));
+router.get("/uploads/avatars/:filename", sendPublicUpload("avatars"));
 
 router.get("/uploads/game-assets/:filename", sendPublicUpload("game-assets"));
 router.get("/uploads/sponsor-logos/:filename", sendPublicUpload("sponsor-logos"));

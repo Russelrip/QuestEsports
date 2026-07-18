@@ -228,3 +228,32 @@ test("completeMfaLogin rejects reused challenges without consuming recovery code
     restore();
   }
 });
+
+test("admin profile updates validate the target user's email", async () => {
+  const calls = [];
+  const target = { ...user, email: "target@example.com", username: "target" };
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: {
+        findUnique: async () => ({ id: target.id, email: target.email }),
+        findFirst: async () => null,
+        update: async (args) => {
+          calls.push(args);
+          return { ...target, ...args.data };
+        },
+      },
+    },
+  });
+
+  try {
+    const updated = await authService.updateUserProfile({
+      requestedUserId: target.id,
+      currentUser: { ...user, id: "admin-1", role: "admin", email: "not-an-email" },
+      body: { firstName: "Target", lastName: "User", username: "target-user" },
+    });
+    assert.equal(updated.username, "target-user");
+    assert.equal(calls.length, 1);
+  } finally {
+    restore();
+  }
+});

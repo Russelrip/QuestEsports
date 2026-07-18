@@ -26,7 +26,7 @@ Important optional groups:
 - `TRUST_PROXY` and `REQUIRE_API_ORIGIN` for production proxy and origin enforcement
 - `LOG_DRAIN_URL` and `MONITORING_WEBHOOK_URL` for external observability hooks
 
-Production additionally requires HTTPS `APP_URL`/`API_PUBLIC_URL`, a 64-character hexadecimal `AUTH_ENCRYPTION_KEY`, durable `UPLOAD_ROOT`/`PRIVATE_UPLOAD_ROOT`, trusted-proxy/origin enforcement, `MAIL_DELIVERY_REQUIRED=true`, and complete values for the selected mail provider. PayHere remains optional, but its merchant ID, secret, and notify URL must be configured together.
+Production additionally requires HTTPS `APP_URL`/`API_PUBLIC_URL`, a 64-character hexadecimal `AUTH_ENCRYPTION_KEY`, durable shared `UPLOAD_ROOT`/`PRIVATE_UPLOAD_ROOT`, trusted-proxy/origin enforcement, `MAIL_DELIVERY_REQUIRED=true`, and complete values for the selected mail provider. Set `API_PROCESS_COUNT` to the real replica/process count; values above one require the shared Upstash cache. PayHere remains optional, but its merchant ID, secret, and notify URL must be configured together. Configured production payments require live mode unless `PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION=true` is deliberately set for production-like sandbox testing.
 
 See [Setup And Deployment Guide](../docs/setup-and-deployment.md) for complete local and production examples.
 
@@ -116,6 +116,7 @@ Backend tests use Node's built-in test runner:
 
 ```bash
 npm test
+npm run test:integration # set RUN_DATABASE_INTEGRATION_TESTS=true with a test PostgreSQL database
 npm run test:coverage
 npm run lint
 ```

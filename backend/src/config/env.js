@@ -114,6 +114,7 @@ const env = {
     2000
   ),
   CACHE_KEY_PREFIX: optional("CACHE_KEY_PREFIX", "quest-esports"),
+  API_PROCESS_COUNT: normalizePositiveInteger(process.env.API_PROCESS_COUNT, 1),
   UPSTASH_REDIS_REST_URL: optional("UPSTASH_REDIS_REST_URL"),
   UPSTASH_REDIS_REST_TOKEN: optional("UPSTASH_REDIS_REST_TOKEN"),
   NODE_ENV: normalizeNodeEnv(process.env.NODE_ENV),
@@ -172,6 +173,10 @@ const env = {
   DISCORD_CLIENT_SECRET: optional("DISCORD_CLIENT_SECRET"),
   DISCORD_CALLBACK_URL: optional("DISCORD_CALLBACK_URL"),
   PAYHERE_MODE: optional("PAYHERE_MODE", "sandbox").toLowerCase(),
+  PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION: normalizeBoolean(
+    process.env.PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION,
+    false
+  ),
   PAYHERE_MERCHANT_ID: optional("PAYHERE_MERCHANT_ID"),
   PAYHERE_MERCHANT_SECRET: optional("PAYHERE_MERCHANT_SECRET"),
   PAYHERE_NOTIFY_URL: optional("PAYHERE_NOTIFY_URL"),
@@ -203,6 +208,13 @@ if (
   throw new Error(
     "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for the Upstash cache."
   );
+}
+if (
+  env.NODE_ENV === "production" &&
+  env.API_PROCESS_COUNT > 1 &&
+  env.CACHE_DRIVER !== "upstash"
+) {
+  throw new Error("CACHE_DRIVER=upstash is required when API_PROCESS_COUNT is greater than 1.");
 }
 
 if (!["sandbox", "live"].includes(env.PAYHERE_MODE)) {
@@ -307,6 +319,16 @@ const payHereValues = [
 ];
 if (payHereValues.some(Boolean) && !payHereValues.every(Boolean)) {
   throw new Error("PAYHERE_MERCHANT_ID, PAYHERE_MERCHANT_SECRET, and PAYHERE_NOTIFY_URL must be configured together.");
+}
+if (
+  env.NODE_ENV === "production" &&
+  payHereValues.every(Boolean) &&
+  env.PAYHERE_MODE !== "live" &&
+  !env.PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION
+) {
+  throw new Error(
+    "PAYHERE_MODE=live is required for configured production payments. Set PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION=true only for an intentional production-like sandbox."
+  );
 }
 if (env.NODE_ENV === "production" && env.PAYHERE_NOTIFY_URL) {
   assertHttpsUrl("PAYHERE_NOTIFY_URL", env.PAYHERE_NOTIFY_URL);

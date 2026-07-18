@@ -59,7 +59,7 @@ Field-level validation errors are returned in `details.fieldErrors` on validatio
 
 ### `GET /api/health`
 
-Returns API health plus monitoring metadata.
+Returns a minimal public health response. The readiness variants additionally report only whether required dependency classes are ready; detailed operational metrics remain in structured logs and monitoring systems.
 
 ### `GET /api/openapi.json`
 

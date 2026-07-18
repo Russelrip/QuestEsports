@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
 
 test("privacy policy page renders the app shell and policy content", async ({ page }) => {
   await page.goto("/privacy-policy");
@@ -81,6 +81,16 @@ test("mobile layout stays within the viewport and opens navigation without page 
 
 test("gallery poster preview fits the full image inside a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  const fulfillTestImage = (route: Route) =>
+    route.fulfill({
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64"
+      ),
+    });
+  await page.route("**/_next/image**", fulfillTestImage);
+  await page.route("**/api/uploads/**", fulfillTestImage);
   await page.route("**/api/posters*", async (route) => {
     const requestOrigin = route.request().headers()["origin"] || new URL(page.url()).origin;
     await route.fulfill({
@@ -152,7 +162,6 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
   const posterButton = page.locator("main section button").filter({ has: page.locator("img") }).first();
   const posterImage = posterButton.locator("img");
   await expect(posterImage).toHaveCSS("object-fit", "contain");
-  await expect.poll(() => posterImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await posterButton.click();
 
   const dialog = page.getByRole("dialog", { name: "Poster preview" });

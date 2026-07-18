@@ -31,6 +31,8 @@ const productionEnv = {
   PAYHERE_MERCHANT_ID: "",
   PAYHERE_MERCHANT_SECRET: "",
   PAYHERE_NOTIFY_URL: "",
+  PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION: "false",
+  API_PROCESS_COUNT: "1",
 };
 
 const loadEnvironment = (overrides) =>
@@ -59,6 +61,30 @@ test("production environment accepts an HTTPS OAuth callback on the API origin",
     GOOGLE_CALLBACK_URL: "https://api.quest.example.com/api/auth/google/callback",
   });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("production rejects process-local caching when multiple API processes are declared", () => {
+  const result = loadEnvironment({ API_PROCESS_COUNT: "2", CACHE_DRIVER: "memory" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /CACHE_DRIVER=upstash/);
+});
+
+test("configured production PayHere requires live mode unless sandbox is explicit", () => {
+  const configured = {
+    PAYHERE_MERCHANT_ID: "merchant",
+    PAYHERE_MERCHANT_SECRET: "secret",
+    PAYHERE_NOTIFY_URL: "https://api.quest.example.com/api/payments/payhere/notify",
+    PAYHERE_MODE: "sandbox",
+  };
+  const rejected = loadEnvironment(configured);
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /PAYHERE_MODE=live/);
+
+  const intentionalSandbox = loadEnvironment({
+    ...configured,
+    PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION: "true",
+  });
+  assert.equal(intentionalSandbox.status, 0, intentionalSandbox.stderr);
 });
 
 test("environment normalizers cover valid, default, and invalid values", () => {
