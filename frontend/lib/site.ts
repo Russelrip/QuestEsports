@@ -10,7 +10,9 @@ const fallbackSiteUrl =
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || fallbackSiteUrl;
 const creatorHandle = "@questesportslk";
 const defaultLocale = "en_US";
-const defaultSocialImage = "/images/banner.jpg";
+// Keep a version in the URL so social platforms fetch a fresh preview when the
+// artwork changes instead of continuing to serve a cached image.
+const defaultSocialImage = "/images/mainbg.png?v=20260718";
 
 const defaultKeywords = [
   "Quest E-sports",
@@ -60,8 +62,8 @@ const channelKeywords = {
 
 const defaultOpenGraphImage = {
   url: defaultSocialImage,
-  width: 1200,
-  height: 630,
+  width: 1920,
+  height: 1080,
   alt: `${siteTitle} social share banner`,
 };
 
