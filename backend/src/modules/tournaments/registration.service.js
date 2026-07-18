@@ -181,8 +181,19 @@ const buildCheckout = ({ payment, tournament, user, body }) =>
 
 const buildPaymentOrderId = (paymentMethod) => {
   if (paymentMethod === "bank_transfer") {
-    // Short enough to type into a banking app, with 40 bits of randomness.
-    return `QST-${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
+    // Eight Crockford Base32 characters retain 40 bits of randomness while
+    // being shorter and easier to read/type than the previous hexadecimal ID.
+    const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    let randomValue = 0n;
+    for (const byte of crypto.randomBytes(5)) {
+      randomValue = (randomValue << 8n) | BigInt(byte);
+    }
+    let reference = "";
+    for (let index = 0; index < 8; index += 1) {
+      reference = alphabet[Number(randomValue & 31n)] + reference;
+      randomValue >>= 5n;
+    }
+    return reference;
   }
   return `TOUR-${crypto.randomUUID()}`;
 };

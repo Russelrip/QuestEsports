@@ -68,8 +68,8 @@ test("bank-transfer references are short and banking-app friendly", () => {
 
   try {
     const reference = service.buildPaymentOrderId("bank_transfer");
-    assert.match(reference, /^QST-[A-F0-9]{10}$/);
-    assert.equal(reference.length, 14);
+    assert.match(reference, /^[0-9A-HJKMNP-TV-Z]{8}$/);
+    assert.equal(reference.length, 8);
   } finally {
     restore();
   }
