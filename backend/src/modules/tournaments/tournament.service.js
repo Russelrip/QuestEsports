@@ -31,7 +31,10 @@ const {
   buildShortCode,
   mapPublicBracket,
 } = require("./bracket.service");
-const { buildActiveRegistrationWhere } = require("./registration-eligibility");
+const {
+  buildActiveRegistrationWhere,
+  isRegistrationActive,
+} = require("./registration-eligibility");
 const { isPayHereConfigured } = require("../payments/payment.service");
 const { ensureTeamRegistrationSaved } = require("../teams/team.service");
 
@@ -56,6 +59,17 @@ const buildRegistrationCountInclude = (now = new Date()) => ({
         where: buildActiveRegistrationWhere({ now }),
       },
       adminSlotReservations: true,
+    },
+  },
+  adminSlotReservations: {
+    select: {
+      registration: {
+        select: {
+          status: true,
+          paymentStatus: true,
+          reservedUntil: true,
+        },
+      },
     },
   },
   rulebook: {
@@ -418,14 +432,27 @@ const parseEditableScheduleData = (value) => {
   return { sheetName, headers, rows };
 };
 
-const withRegistrationCount = (tournament) => ({
-  ...tournament,
-  registrationCount:
-    tournament.registrationCount || tournament._count?.teamRegistrations || 0,
-  capacityUsed:
-    (tournament.registrationCount || tournament._count?.teamRegistrations || 0) +
-    (tournament._count?.adminSlotReservations || 0),
-});
+const withRegistrationCount = (tournament) => {
+  if (tournament.registrationCount !== undefined) {
+    return {
+      ...tournament,
+      capacityUsed: tournament.capacityUsed ?? tournament.registrationCount,
+    };
+  }
+
+  const activeRegistrationCount = tournament._count?.teamRegistrations || 0;
+  const adminHoldCount = tournament._count?.adminSlotReservations || 0;
+  const activeHeldRegistrationCount = (tournament.adminSlotReservations || [])
+    .filter(({ registration }) => isRegistrationActive(registration))
+    .length;
+  const capacityUsed = activeRegistrationCount + adminHoldCount - activeHeldRegistrationCount;
+
+  return {
+    ...tournament,
+    registrationCount: capacityUsed,
+    capacityUsed,
+  };
+};
 
 const getRegistrationState = (tournament) => {
   const now = new Date();

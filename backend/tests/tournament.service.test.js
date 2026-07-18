@@ -437,6 +437,68 @@ test("future registrationOpenAt keeps an otherwise open tournament closed", asyn
   }
 });
 
+test("public slot count does not count an active registration and its admin hold twice", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    const tournament = tournamentService.mapTournament({
+      id: "tournament-1",
+      slug: "held-slot-cup",
+      title: "Held Slot Cup",
+      status: "registration_open",
+      maxTeams: 10,
+      isPublished: true,
+      _count: { teamRegistrations: 2, adminSlotReservations: 1 },
+      adminSlotReservations: [{
+        registration: {
+          status: "pending",
+          paymentStatus: "pending",
+          reservedUntil: new Date(Date.now() + 60_000),
+        },
+      }],
+    });
+
+    assert.equal(tournament.registrationCount, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("public slot count includes an admin hold for a registration without an active payment hold", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    const tournament = tournamentService.mapTournament({
+      id: "tournament-1",
+      slug: "held-slot-cup",
+      title: "Held Slot Cup",
+      status: "registration_open",
+      maxTeams: 10,
+      isPublished: true,
+      _count: { teamRegistrations: 1, adminSlotReservations: 1 },
+      adminSlotReservations: [{
+        registration: {
+          status: "pending",
+          paymentStatus: "unpaid",
+          reservedUntil: null,
+        },
+      }],
+    });
+
+    assert.equal(tournament.registrationCount, 2);
+  } finally {
+    restore();
+  }
+});
+
 test("a TBA registration deadline does not close an otherwise open tournament", async () => {
   const prismaMock = {
     prisma: {
