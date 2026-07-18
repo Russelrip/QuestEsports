@@ -325,7 +325,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
             <Select id="savedTeam" defaultValue="" onChange={(event) => {
               const team = savedTeams.find((candidate) => candidate.id === event.target.value);
               if (!team) return;
-              setForm((current) => ({ ...current, teamName: team.name, teamTag: team.teamTag || "", country: team.country || "Sri Lanka", organizationRequested: Boolean(team.organizationRequested) }));
+              setForm((current) => ({ ...current, teamName: team.name, teamTag: team.teamTag || "", country: team.country || "Sri Lanka", organizationRequested: false }));
               setMembers(team.members.filter((member) => member.role !== "CAPTAIN" && member.role !== "COACH").map((member) => ({ name: member.name, email: member.email, discord: member.discord || "", gameId: member.riotId || "", role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER", additionalData: {} })));
             }}>
               <option value="">Start with a new entry</option>

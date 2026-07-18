@@ -34,7 +34,6 @@ export default function RegistrationForm() {
   const [name, setName] = useState("");
   const [country, setCountry] = useState("");
   const [teamTag, setTeamTag] = useState("");
-  const [organizationRequested, setOrganizationRequested] = useState(false);
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [members, setMembers] = useState<CreateTeamMemberInput[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -69,7 +68,7 @@ export default function RegistrationForm() {
         name,
         country,
         teamTag,
-        organizationRequested,
+        organizationRequested: false,
         teamLogo,
         members,
       });
@@ -187,34 +186,16 @@ export default function RegistrationForm() {
               </Select>
             </FormField>
 
-            <div className="grid gap-5 sm:grid-cols-2">
-              <FormField label="Tag" htmlFor="teamTag" required>
-                <Input
-                  id="teamTag"
-                  required
-                  maxLength={12}
-                  placeholder="Enter Team Tag"
-                  value={teamTag}
-                  onChange={(event) => setTeamTag(event.target.value)}
-                />
-              </FormField>
-              <FormField
-                label="Request to Join Organization"
-                htmlFor="organization"
-                hint="Optional"
-              >
-                <Select
-                  id="organization"
-                  value={organizationRequested ? "quest" : ""}
-                  onChange={(event) =>
-                    setOrganizationRequested(event.target.value === "quest")
-                  }
-                >
-                  <option value="">No Organization Selected</option>
-                  <option value="quest">Quest E-sports</option>
-                </Select>
-              </FormField>
-            </div>
+            <FormField label="Tag" htmlFor="teamTag" required>
+              <Input
+                id="teamTag"
+                required
+                maxLength={12}
+                placeholder="Enter Team Tag"
+                value={teamTag}
+                onChange={(event) => setTeamTag(event.target.value)}
+              />
+            </FormField>
 
             <FormField
               label="Team Logo"

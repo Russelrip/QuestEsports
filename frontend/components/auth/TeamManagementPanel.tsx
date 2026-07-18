@@ -106,7 +106,6 @@ export default function TeamManagementPanel({
   const [name, setName] = useState("");
   const [country, setCountry] = useState("");
   const [teamTag, setTeamTag] = useState("");
-  const [organizationRequested, setOrganizationRequested] = useState(false);
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
   const [members, setMembers] = useState<EditableMember[]>([]);
@@ -121,7 +120,6 @@ export default function TeamManagementPanel({
     setName(selectedTeam.name);
     setCountry(selectedTeam.country || "");
     setTeamTag(selectedTeam.teamTag || "");
-    setOrganizationRequested(Boolean(selectedTeam.organizationRequested));
     setTeamLogo(null);
     setRemoveLogo(false);
     setError("");
@@ -165,7 +163,7 @@ export default function TeamManagementPanel({
         name,
         country,
         teamTag,
-        organizationRequested,
+        organizationRequested: false,
         teamLogo,
         removeLogo,
         members: members.map((member) => ({
@@ -253,7 +251,6 @@ export default function TeamManagementPanel({
             <FormField label="Team name" htmlFor="manageTeamName" required><Input id="manageTeamName" required value={name} onChange={(event) => setName(event.target.value)} /></FormField>
             <FormField label="Team tag" htmlFor="manageTeamTag" required><Input id="manageTeamTag" required maxLength={12} value={teamTag} onChange={(event) => setTeamTag(event.target.value)} /></FormField>
             <FormField label="Country" htmlFor="manageTeamCountry" required><Select id="manageTeamCountry" required value={country} onChange={(event) => setCountry(event.target.value)}><option value="">Select country</option>{teamCountries.map((option) => <option key={option} value={option}>{option}</option>)}</Select></FormField>
-            <FormField label="Organization request" htmlFor="manageTeamOrganization"><Select id="manageTeamOrganization" value={organizationRequested ? "quest" : ""} onChange={(event) => setOrganizationRequested(event.target.value === "quest")}><option value="">Independent</option><option value="quest">Request Quest E-sports</option></Select></FormField>
           </div>
 
           <div className="grid gap-3 border border-white/8 bg-white/[0.025] p-4">
