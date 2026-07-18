@@ -12,6 +12,7 @@
     "lint": "eslint",
     "test": "vitest run tests/unit",
     "test:e2e": "playwright test",
+    "test:e2e:local": "npm run build && playwright test",
     "perf:check": "node scripts/measure-page-performance.mjs"
   },
   "dependencies": {

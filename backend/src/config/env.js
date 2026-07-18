@@ -1,4 +1,9 @@
-require("dotenv").config();
+require("dotenv").config({
+  quiet:
+    Boolean(process.env.NODE_TEST_CONTEXT) ||
+    process.env.NODE_ENV === "test" ||
+    process.env.CI === "true",
+});
 
 const normalizePositiveInteger = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);

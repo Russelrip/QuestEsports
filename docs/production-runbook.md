@@ -183,7 +183,7 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 ## Normal Deployment
 
 1. Push to `main`.
-2. CI runs backend audit, migrations against PostgreSQL 16, migration/schema verification, coverage, lint, frontend audit/lint/build, and Playwright.
+2. CI runs backend audit, migrations against PostgreSQL 16, migration/schema verification, coverage, lint, frontend audit/lint/unit tests/build, and Playwright.
 3. After CI succeeds, CD deploys the exact CI commit SHA.
 4. CD installs backend dependencies, generates Prisma, lints, applies production migrations, restarts PM2, verifies local health, and saves the process list.
 

@@ -106,3 +106,75 @@ test("PayHere notifications are exempt from browser origin and CSRF checks", asy
     assert.equal(await runMiddleware(security.protectAgainstCsrf, request), null);
   } finally { restore(); }
 });
+
+test("origin and CSRF checks accept the configured origin and reject a foreign origin", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    const allowed = buildRequest({
+      path: "/api/change-password",
+      method: "POST",
+      headers: { origin: "https://app.example.com" },
+    });
+    const foreign = buildRequest({
+      path: "/api/change-password",
+      method: "POST",
+      headers: { origin: "https://evil.example" },
+    });
+
+    assert.equal(await runMiddleware(security.requireAllowedApiOrigin, allowed), null);
+    assert.equal(await runMiddleware(security.protectAgainstCsrf, allowed), null);
+    assert.equal(
+      (await runMiddleware(security.requireAllowedApiOrigin, foreign))?.statusCode,
+      403
+    );
+    assert.equal(
+      (await runMiddleware(security.protectAgainstCsrf, foreign))?.statusCode,
+      403
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("CSRF protection blocks cookie-authenticated writes without origin", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    const error = await runMiddleware(
+      security.protectAgainstCsrf,
+      buildRequest({
+        path: "/api/change-password",
+        method: "POST",
+        headers: { cookie: "other=1; quest_session=session-token" },
+      })
+    );
+    assert.equal(error?.statusCode, 403);
+  } finally {
+    restore();
+  }
+});
+
+test("security headers include API CSP and production transport protection", () => {
+  const productionLoad = loadModuleWithMocks(securityPath, {
+    [envPath]: {
+      env: {
+        CORS_ORIGINS: ["https://app.example.com"],
+        NODE_ENV: "production",
+        REQUIRE_API_ORIGIN: true,
+        SESSION_COOKIE_NAME: "quest_session",
+      },
+    },
+  });
+  const headers = new Map();
+  try {
+    productionLoad.module.setSecurityHeaders(
+      buildRequest({ path: "/api/health" }),
+      { setHeader: (name, value) => headers.set(name, value) },
+      () => {}
+    );
+    assert.match(headers.get("Content-Security-Policy"), /default-src 'none'/);
+    assert.match(headers.get("Strict-Transport-Security"), /max-age=31536000/);
+    assert.equal(headers.get("X-Content-Type-Options"), "nosniff");
+  } finally {
+    productionLoad.restore();
+  }
+});

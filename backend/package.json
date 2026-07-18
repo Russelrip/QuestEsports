@@ -10,7 +10,7 @@
     "lint": "eslint src tests scripts",
     "test": "node --test",
     "test:integration": "node --test tests/database-integration.test.js",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js --test-coverage-exclude=src/generated/** --test-coverage-lines=60 --test-coverage-branches=57.9 --test-coverage-functions=60",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js --test-coverage-exclude=src/generated/** --test-coverage-lines=60 --test-coverage-branches=58 --test-coverage-functions=60",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",

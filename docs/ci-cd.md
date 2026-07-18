@@ -32,11 +32,17 @@ Frontend:
 cd frontend
 npm ci
 npm run lint
+npm test
 npm run build
 npm run test:e2e
 ```
 
-CI audits frontend production dependencies, builds Next.js, installs Chromium, and runs the Playwright critical journeys under `frontend/tests/e2e`.
+CI audits frontend production dependencies, runs Vitest unit tests, builds Next.js,
+installs Chromium, and runs the Playwright critical journeys under
+`frontend/tests/e2e` with two workers. From a fresh local checkout,
+`npm run test:e2e:local` builds before starting Playwright.
+Playwright starts a deterministic local mock API on port 5001 so frontend CI
+does not depend on an external backend process.
 
 The frontend CI build uses these non-production values:
 

@@ -1,7 +1,6 @@
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
-const { execFileSync } = require("child_process");
 const { prisma } = require("../../lib/prisma");
 const { posterImageDirectory } = require("../../middleware/upload");
 
@@ -85,48 +84,6 @@ const legacyPosterDefinitions = [
     category: "poster",
     overlayAlign: "bottom-left",
   },
-  {
-    filePath: "frontend/public/images/womensbrackets.jpg",
-    title: "Women's Tournament Brackets",
-    headline: "Women's Tournament Brackets",
-    category: "banner",
-    overlayAlign: "top-left",
-  },
-  {
-    filePath: "frontend/public/images/womensposter.jpg",
-    title: "Women's Tournament Poster",
-    headline: "Women's Tournament Poster",
-    category: "poster",
-    overlayAlign: "top-left",
-  },
-  {
-    filePath: "frontend/public/images/womensprizepool.jpg",
-    title: "Women's Prize Pool",
-    headline: "Women's Prize Pool",
-    category: "graphic",
-    overlayAlign: "top-right",
-  },
-  {
-    filePath: "frontend/public/images/semi2womens.jpg",
-    title: "Women's Semi Finals 2",
-    headline: "Women's Semi Finals 2",
-    category: "poster",
-    overlayAlign: "bottom-left",
-  },
-  {
-    filePath: "frontend/public/images/semi1womens.jpg",
-    title: "Women's Semi Finals 1",
-    headline: "Women's Semi Finals 1",
-    category: "poster",
-    overlayAlign: "bottom-left",
-  },
-  {
-    filePath: "frontend/public/images/summarywomens.jpg",
-    title: "Women's Tournament Summary",
-    headline: "Women's Tournament Summary",
-    category: "graphic",
-    overlayAlign: "top-left",
-  },
 ];
 
 const getContentType = (filePath) => {
@@ -139,80 +96,97 @@ const getStoredFilename = (filePath) =>
 
 const readLegacyAsset = async (relativeFilePath) => {
   const absolutePath = path.join(repoRoot, relativeFilePath);
-
-  try {
-    return await fs.readFile(absolutePath);
-  } catch (error) {
-    if (error && error.code !== "ENOENT") {
-      throw error;
-    }
-
-    return execFileSync("git", ["show", `HEAD:${relativeFilePath.replace(/\\/g, "/")}`], {
-      cwd: repoRoot,
-    });
-  }
+  return fs.readFile(absolutePath);
 };
 
-const importLegacyPoster = async (definition) => {
-  const existingPoster = await prisma.poster.findFirst({
-    where: {
-      title: definition.title,
-      headline: definition.headline,
-    },
-  });
-
-  if (existingPoster) {
-    return { status: "skipped", title: definition.title };
-  }
-
-  const buffer = await readLegacyAsset(definition.filePath);
+const createLegacyPoster = async (tx, definition, buffer, onFileWritten) => {
   const originalName = path.basename(definition.filePath);
   const contentType = getContentType(definition.filePath);
   const storedFilename = getStoredFilename(definition.filePath);
 
   await fs.mkdir(posterImageDirectory, { recursive: true });
   await fs.writeFile(path.join(posterImageDirectory, storedFilename), buffer);
+  onFileWritten(storedFilename);
 
-  await prisma.$transaction(async (tx) => {
-    const imageAsset = await tx.imageAsset.create({
-      data: {
-        id: crypto.randomUUID(),
-        title: definition.title,
-        description: null,
-        category: definition.category,
-        originalName,
-        storedFilename,
-        contentType,
-        byteSize: buffer.length,
-      },
-    });
-
-    await tx.poster.create({
-      data: {
-        id: crypto.randomUUID(),
-        imageAssetId: imageAsset.id,
-        title: definition.title,
-        description: null,
-        category: definition.category,
-        headline: definition.headline,
-        subheadline: null,
-        accentColor: "#7c3aed",
-        textColor: "#ffffff",
-        overlayAlign: definition.overlayAlign,
-      },
-    });
+  const imageAsset = await tx.imageAsset.create({
+    data: {
+      id: crypto.randomUUID(),
+      title: definition.title,
+      description: null,
+      category: definition.category,
+      originalName,
+      storedFilename,
+      contentType,
+      byteSize: buffer.length,
+    },
   });
 
-  return { status: "imported", title: definition.title };
+  await tx.poster.create({
+    data: {
+      id: crypto.randomUUID(),
+      imageAssetId: imageAsset.id,
+      title: definition.title,
+      description: null,
+      category: definition.category,
+      headline: definition.headline,
+      subheadline: null,
+      accentColor: "#7c3aed",
+      textColor: "#ffffff",
+      overlayAlign: definition.overlayAlign,
+    },
+  });
+
+  return storedFilename;
 };
 
 const importLegacyPosters = async () => {
-  const results = [];
+  // Resolve every source before writing files or records. A broken deployment must
+  // fail cleanly instead of leaving a half-imported poster collection.
+  const sources = await Promise.all(
+    legacyPosterDefinitions.map(async (definition) => ({
+      definition,
+      buffer: await readLegacyAsset(definition.filePath),
+    }))
+  );
+  const existingPosters = await prisma.poster.findMany({
+    where: {
+      OR: legacyPosterDefinitions.map(({ title, headline }) => ({ title, headline })),
+    },
+    select: { title: true, headline: true },
+  });
+  const existingKeys = new Set(
+    existingPosters.map(({ title, headline }) => `${title}\u0000${headline}`)
+  );
+  const pendingSources = sources.filter(
+    ({ definition }) =>
+      !existingKeys.has(`${definition.title}\u0000${definition.headline}`)
+  );
+  const writtenFilenames = [];
 
-  for (const definition of legacyPosterDefinitions) {
-    const result = await importLegacyPoster(definition);
-    results.push(result);
+  try {
+    await fs.mkdir(posterImageDirectory, { recursive: true });
+    await prisma.$transaction(async (tx) => {
+      for (const { definition, buffer } of pendingSources) {
+        await createLegacyPoster(tx, definition, buffer, (filename) => {
+          writtenFilenames.push(filename);
+        });
+      }
+    });
+  } catch (error) {
+    await Promise.allSettled(
+      writtenFilenames.map((filename) =>
+        fs.unlink(path.join(posterImageDirectory, filename))
+      )
+    );
+    throw error;
   }
+
+  const results = sources.map(({ definition }) => ({
+    status: existingKeys.has(`${definition.title}\u0000${definition.headline}`)
+      ? "skipped"
+      : "imported",
+    title: definition.title,
+  }));
 
   return {
     importedCount: results.filter((item) => item.status === "imported").length,

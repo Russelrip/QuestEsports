@@ -63,6 +63,11 @@ npm run media:import-legacy-posters
 npm run media:migrate-image-assets
 ```
 
+The legacy import is idempotent and validates every packaged source image before
+writing any file or database record. It no longer depends on Git being installed
+on the runtime host. On failure, newly written poster files are removed and the
+database transaction is rolled back.
+
 ## Main Route Groups
 
 - Auth, sessions, MFA, OAuth, verification, password reset, and email change under `/api`

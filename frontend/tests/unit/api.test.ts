@@ -5,6 +5,7 @@ import {
   fetchWithTimeout,
   parseApiResponse,
   readApiResponse,
+  withServerOriginHeader,
 } from "../../lib/api";
 
 const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -59,5 +60,30 @@ describe("API helpers", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it("accepts short plain-text errors but rejects unsafe markup", async () => {
+    await expect(
+      readApiResponse(
+        new Response("Temporarily unavailable", {
+          status: 503,
+          headers: { "content-type": "text/plain" },
+        })
+      )
+    ).resolves.toMatchObject({ message: "Temporarily unavailable" });
+    await expect(
+      readApiResponse(
+        new Response("<script>alert(1)</script>", {
+          status: 500,
+          headers: { "content-type": "text/plain" },
+        }),
+        "Safe fallback"
+      )
+    ).resolves.toMatchObject({ message: "Safe fallback" });
+  });
+
+  it("preserves an explicitly supplied server origin header", () => {
+    const headers = withServerOriginHeader({ Origin: "https://explicit.example" });
+    expect(headers.get("Origin")).toBe("https://explicit.example");
   });
 });

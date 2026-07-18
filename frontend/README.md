@@ -71,6 +71,13 @@ npm run test:e2e
 npm run start
 ```
 
+`npm run test:e2e` expects the production build created by the preceding command.
+From a fresh checkout, `npm run test:e2e:local` builds first and then runs
+Playwright. Browser concurrency is capped at four workers locally and two in CI
+to keep the single Next.js test server stable.
+The Playwright configuration also starts a deterministic local mock API for
+server-rendered requests; individual journey tests override responses as needed.
+
 ## Notes
 
 - This app uses the Next.js App Router.
@@ -81,6 +88,7 @@ npm run start
 - Registration status in the tournament registration UI is rechecked against the backend; stale local browser markers are cleared when the backend says the user is not registered.
 - The public tournament board currently shows prize pool, registration deadline, and tournament start on active tournament cards.
 - Tournament detail pages hide empty registered-team and bracket sections; published native brackets render in a compact Challonge-style board.
-- Playwright critical journeys live under `frontend/tests/e2e` and run in CI after the production build.
+- Vitest unit tests and Playwright critical journeys both run in CI. Playwright
+  runs after the production build.
 
 The public tournament board includes completed events in the same compact four-column desktop grid, filters tournaments and event series through admin-managed game categories, and uses whole-card navigation with clear open, closed, full, and completed states. Detail pages include the full hero, sponsors, corrected participants, and Challonge-first/native-fallback brackets. `/admin/games` manages category art, `/admin/teams` verifies organization labels, and the tournament editor manages metadata, hero artwork, a PUBG Mobile preset, and sponsors.
