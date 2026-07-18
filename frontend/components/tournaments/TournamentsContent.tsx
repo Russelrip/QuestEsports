@@ -161,20 +161,20 @@ export default function TournamentsContent({ tournaments, series = [], categorie
   return <Section className="pt-6">
     <div className="relative mb-8">
       <div ref={gameScrollerRef} className="flex max-w-full snap-x snap-proximity gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pb-1 select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filter tournaments by game">
-        <button type="button" onClick={() => setGameFilter("all")} className={`h-24 w-28 shrink-0 snap-start rounded-none border px-4 text-sm font-semibold transition ${gameFilter === "all" ? "border-cyan-300 bg-cyan-400/15 text-cyan-100" : "border-white/10 text-slate-300 hover:border-white/30"}`}>View All Games</button>
+        <button type="button" onClick={() => setGameFilter("all")} className={`h-24 w-28 shrink-0 snap-start rounded-none border px-4 text-sm font-semibold transition ${gameFilter === "all" ? "border-purple-300 bg-purple-400/15 text-purple-100" : "border-white/10 text-slate-300 hover:border-purple-300/40"}`}>View All Games</button>
         {gameFilters.map((category) => {
           const icon = getGameIcon(category);
           const categorySlug = normalizeGameSlug(category.slug);
-          return <button key={categorySlug} type="button" onClick={() => setGameFilter(categorySlug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-24 w-28 shrink-0 snap-start overflow-hidden rounded-none border bg-[#0d0c13] transition ${gameFilter === categorySlug ? "border-cyan-300 shadow-[0_10px_30px_rgba(34,211,238,0.2)]" : "border-white/10 hover:border-white/30"}`}>
+          return <button key={categorySlug} type="button" onClick={() => setGameFilter(categorySlug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-24 w-28 shrink-0 snap-start overflow-hidden rounded-none border bg-[#0d0c13] transition ${gameFilter === categorySlug ? "border-purple-300 shadow-[0_10px_30px_rgba(168,85,247,0.22)]" : "border-white/10 hover:border-purple-300/40"}`}>
             {icon ? <Image src={icon} alt="" fill sizes="112px" draggable={false} className="object-cover" /> : <span className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{category.displayName}</span>}
             <span className="sr-only">{category.displayName}</span>
           </button>;
         })}
       </div>
-      <button type="button" onClick={() => scrollGames(-1)} aria-label="Scroll games left" className={`absolute left-2 top-1/2 z-10 hidden h-16 w-10 -translate-y-1/2 items-center justify-center rounded-none border border-white/15 bg-black/80 text-3xl text-white shadow-xl backdrop-blur transition hover:border-cyan-300/60 hover:bg-black md:flex ${canScrollLeft ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+      <button type="button" onClick={() => scrollGames(-1)} aria-label="Scroll games left" className={`absolute left-2 top-1/2 z-10 hidden h-16 w-10 -translate-y-1/2 items-center justify-center rounded-none border border-white/15 bg-black/80 text-3xl text-white shadow-xl backdrop-blur transition hover:border-purple-300/60 hover:bg-black md:flex ${canScrollLeft ? "opacity-100" : "pointer-events-none opacity-0"}`}>
         <span aria-hidden="true">‹</span>
       </button>
-      <button type="button" onClick={() => scrollGames(1)} aria-label="Scroll games right" className={`absolute right-2 top-1/2 z-10 hidden h-16 w-10 -translate-y-1/2 items-center justify-center rounded-none border border-white/15 bg-black/80 text-3xl text-white shadow-xl backdrop-blur transition hover:border-cyan-300/60 hover:bg-black md:flex ${canScrollRight ? "opacity-100" : "pointer-events-none opacity-0"}`}>
+      <button type="button" onClick={() => scrollGames(1)} aria-label="Scroll games right" className={`absolute right-2 top-1/2 z-10 hidden h-16 w-10 -translate-y-1/2 items-center justify-center rounded-none border border-white/15 bg-black/80 text-3xl text-white shadow-xl backdrop-blur transition hover:border-purple-300/60 hover:bg-black md:flex ${canScrollRight ? "opacity-100" : "pointer-events-none opacity-0"}`}>
         <span aria-hidden="true">›</span>
       </button>
     </div>
