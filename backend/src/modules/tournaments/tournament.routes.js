@@ -63,6 +63,7 @@ router.post(
   requireAuth,
   requireVerifiedEmail,
   tournamentRegistrationRateLimiter,
+  invalidateCache("tournaments"),
   imageUpload.single("teamLogo"),
   submitConfiguredTournamentRegistration
 );
@@ -71,6 +72,7 @@ router.delete(
   requireAuth,
   requireVerifiedEmail,
   tournamentRegistrationRateLimiter,
+  invalidateCache("tournaments"),
   cancelTournamentRegistration
 );
 

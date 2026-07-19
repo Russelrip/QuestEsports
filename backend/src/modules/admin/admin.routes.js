@@ -1,5 +1,6 @@
 const express = require("express");
 const { requireAdmin } = require("../auth/auth.middleware");
+const { invalidateCache } = require("../../middleware/response-cache");
 const {
   getDashboard,
   getUsers,
@@ -45,10 +46,10 @@ router.delete("/admin/contact-messages/:messageId", removeContactMessage);
 router.get("/admin/team-registrations", getTeamRegistrations);
 router.get("/admin/team-registrations/export", downloadTeamRegistrations);
 router.get("/admin/tournaments/:tournamentId/registrations", getTournamentRegistrations);
-router.patch("/admin/team-registrations/:registrationId/status", updateRegistrationStatus);
-router.delete("/admin/team-registrations/:registrationId", removeRegistration);
-router.post("/admin/team-registrations/:registrationId/slot-reservation", reserveRegistrationSlot);
-router.delete("/admin/team-registrations/:registrationId/slot-reservation", releaseRegistrationSlot);
+router.patch("/admin/team-registrations/:registrationId/status", invalidateCache("tournaments"), updateRegistrationStatus);
+router.delete("/admin/team-registrations/:registrationId", invalidateCache("tournaments"), removeRegistration);
+router.post("/admin/team-registrations/:registrationId/slot-reservation", invalidateCache("tournaments"), reserveRegistrationSlot);
+router.delete("/admin/team-registrations/:registrationId/slot-reservation", invalidateCache("tournaments"), releaseRegistrationSlot);
 router.get("/admin/recruitment-applications", getRecruitmentApplications);
 router.get("/admin/recruitment-applications/export", downloadRecruitmentApplications);
 router.patch("/admin/recruitment-applications/:applicationId/status", updateRecruitmentStatus);
