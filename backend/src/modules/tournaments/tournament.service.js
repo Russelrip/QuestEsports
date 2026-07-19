@@ -551,6 +551,7 @@ const mapTournament = (tournament) => {
       tournamentWithRegistrationCount.bankTransferReviewMinutes || 1440,
     maxTeams: tournamentWithRegistrationCount.maxTeams,
     registrationCount: tournamentWithRegistrationCount.registrationCount,
+    capacityUsed: tournamentWithRegistrationCount.capacityUsed,
     prizePool: tournamentWithRegistrationCount.prizePool,
     status: tournamentWithRegistrationCount.status,
     isPublished: tournamentWithRegistrationCount.isPublished,

@@ -182,7 +182,7 @@ function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
     { label: "Prize pool", value: tournament.prizePool },
     { label: "Entry", value: getTournamentRegistrationModeLabel(tournament) },
     { label: "Registration fee", value: getRegistrationFee(tournament) },
-    { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}` },
+    { label: "Slots", value: `${tournament.capacityUsed ?? tournament.registrationCount} / ${tournament.maxTeams}` },
     { label: "Start date", value: formatDateTime(tournament.startDate, tournament.startDateStatus) },
     { label: "End date", value: formatDateTime(tournament.endDate, tournament.endDateStatus) },
     { label: "Registration opens", value: formatDateTime(tournament.registrationOpenAt) },

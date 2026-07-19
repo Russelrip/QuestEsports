@@ -15,7 +15,7 @@ const infoItems = (tournament: Tournament) => [
   { label: "Format", value: tournament.format },
   { label: "Entry", value: getTournamentRegistrationModeLabel(tournament) },
   { label: "Team Size", value: `${tournament.teamSize}v${tournament.teamSize}` },
-  { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}` },
+  { label: "Slots", value: `${tournament.capacityUsed ?? tournament.registrationCount} / ${tournament.maxTeams}` },
   { label: "Registration Deadline", value: formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus) },
   { label: "Event Dates", value: formatTournamentDateRange(tournament) },
 ];
@@ -31,7 +31,7 @@ const compactItems = (tournament: Tournament) => [
     icon: CalendarIcon,
   },
   { label: "Deadline", value: formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus), icon: ClockIcon },
-  { label: "Slots", value: `${tournament.registrationCount} / ${tournament.maxTeams}`, icon: UsersIcon },
+  { label: "Slots", value: `${tournament.capacityUsed ?? tournament.registrationCount} / ${tournament.maxTeams}`, icon: UsersIcon },
   { label: "Tournament", value: toTitleCase(getTournamentStatusLabel(tournament.status)), icon: SignalIcon },
 ];
 
@@ -45,7 +45,7 @@ export default function TournamentInfoList({
   if (variant === "compact") {
     const filledPercentage = Math.min(
       100,
-      Math.round((tournament.registrationCount / Math.max(tournament.maxTeams, 1)) * 100)
+      Math.round(((tournament.capacityUsed ?? tournament.registrationCount) / Math.max(tournament.maxTeams, 1)) * 100)
     );
     const registrationLabel = getTournamentRegistrationLabel(tournament);
 
@@ -99,7 +99,7 @@ export default function TournamentInfoList({
                 <p className="mt-1 text-lg font-semibold text-white">{registrationLabel}</p>
               </div>
               <p className="text-sm text-slate-300">
-                {tournament.registrationCount} / {tournament.maxTeams} teams registered
+                {tournament.capacityUsed ?? tournament.registrationCount} / {tournament.maxTeams} slots occupied
               </p>
             </div>
 

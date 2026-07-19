@@ -474,6 +474,7 @@ test("public slot count shows confirmed teams and does not count pending holds",
     });
 
     assert.equal(tournament.registrationCount, 2);
+    assert.equal(tournament.capacityUsed, 3);
   } finally {
     restore();
   }
@@ -509,6 +510,7 @@ test("public slot count does not present a private admin hold as a confirmed tea
     });
 
     assert.equal(tournament.registrationCount, 1);
+    assert.equal(tournament.capacityUsed, 2);
   } finally {
     restore();
   }

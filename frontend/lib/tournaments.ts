@@ -208,6 +208,7 @@ export type Tournament = {
   bankAccountNumber?: string | null;
   maxTeams: number;
   registrationCount: number;
+  capacityUsed: number;
   prizePool: string;
   status: TournamentStatus;
   isPublished: boolean;
@@ -280,7 +281,7 @@ export const getTournamentRegistrationModeLabel = (tournament: Tournament) =>
 export const getTournamentCapacityPercentage = (tournament: Tournament) =>
   Math.min(
     100,
-    Math.round((tournament.registrationCount / Math.max(tournament.maxTeams, 1)) * 100)
+    Math.round(((tournament.capacityUsed ?? tournament.registrationCount) / Math.max(tournament.maxTeams, 1)) * 100)
   );
 
 export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => {
