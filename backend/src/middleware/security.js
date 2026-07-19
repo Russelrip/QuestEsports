@@ -63,6 +63,7 @@ const setSecurityHeaders = (req, res, next) => {
   );
 
   if (req.path.startsWith("/api")) {
+    res.setHeader("Cache-Control", "no-store");
     res.setHeader(
       "Content-Security-Policy",
       "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"

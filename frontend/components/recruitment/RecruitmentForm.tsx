@@ -318,7 +318,13 @@ export default function RecruitmentForm() {
                   <span>I confirm that I have read, understood, and agree to abide by the Quest E-sports rules, regulations, and membership requirements.</span>
                 </label>
                 <label className={choiceClassName}>
-                  <input type="checkbox" required className={checkboxClassName} />
+                  <input
+                    type="checkbox"
+                    required
+                    className={checkboxClassName}
+                    checked={fields.privacyAccepted}
+                    onChange={(event) => updateField("privacyAccepted", event.target.checked)}
+                  />
                   <span>I confirm these details are accurate and agree to the <Link href="/privacy-policy" className="text-purple-200 hover:text-purple-100">Privacy Policy</Link>.</span>
                 </label>
               </div>

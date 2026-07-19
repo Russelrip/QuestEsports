@@ -13,6 +13,7 @@ const APPLICATION_TYPES = new Set(["solo_player", "existing_team", "incomplete_t
 const MAX_MEMBERS = 20;
 const GENDERS = new Set(["male", "female", "other"]);
 const MEMBER_ROLES = new Set(["player", "substitute"]);
+const PRIVACY_POLICY_VERSION = "2026-07-14";
 
 const requiredText = (value, label, maxLength = 200) => {
   const normalized = normalizeText(value);
@@ -161,6 +162,7 @@ const createRecruitmentApplication = async ({ body, user }) => {
     additionalMembers: optionalText(body.additionalMembers),
     declarationAccepted: requiredBoolean(body.declarationAccepted, "Rules declaration"),
   };
+  requiredBoolean(body.privacyAccepted, "Privacy Policy agreement");
 
   if (details.previouslyInOrganization && !details.previousOrganization) {
     throw new HttpError(400, "Previous organization or clan name is required.");
@@ -184,6 +186,8 @@ const createRecruitmentApplication = async ({ body, user }) => {
       details,
       notes: optionalText(body.notes),
       womensLeagueInterest: false,
+      privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+      privacyAcceptedAt: new Date(),
     },
     select: {
       id: true,
@@ -194,4 +198,4 @@ const createRecruitmentApplication = async ({ body, user }) => {
   });
 };
 
-module.exports = { createRecruitmentApplication };
+module.exports = { createRecruitmentApplication, PRIVACY_POLICY_VERSION };

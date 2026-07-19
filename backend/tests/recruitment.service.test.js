@@ -23,6 +23,7 @@ const validSoloBody = {
   previouslyInOrganization: false,
   canAttendLan: true,
   declarationAccepted: true,
+  privacyAccepted: true,
 };
 
 test("createRecruitmentApplication stores the expanded recruitment details", async () => {
@@ -56,6 +57,31 @@ test("createRecruitmentApplication stores the expanded recruitment details", asy
     assert.equal(data.applicantIdNumberCiphertext, "encrypted:200212345678");
     assert.equal(data.details.ign, "QuestIGN");
     assert.equal(data.details.declarationAccepted, true);
+    assert.equal(data.privacyPolicyVersion, recruitmentService.PRIVACY_POLICY_VERSION);
+    assert.ok(data.privacyAcceptedAt instanceof Date);
+  } finally {
+    restore();
+  }
+});
+
+test("createRecruitmentApplication rejects missing privacy consent", async () => {
+  const { module: recruitmentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [secretBoxModulePath]: { encryptSecret: (value) => `encrypted:${value}` },
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        recruitmentService.createRecruitmentApplication({
+          user: { id: "user-1", email: "player@example.com" },
+          body: { ...validSoloBody, privacyAccepted: false },
+        }),
+      (error) =>
+        error.name === "HttpError" &&
+        error.statusCode === 400 &&
+        error.message === "Privacy Policy agreement is required."
+    );
   } finally {
     restore();
   }

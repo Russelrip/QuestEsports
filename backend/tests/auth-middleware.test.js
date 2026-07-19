@@ -65,3 +65,33 @@ test("attachSession remembers an anonymous lookup for the rest of the request", 
     restore();
   }
 });
+
+test("authentication and role middleware deny missing or insufficient credentials", () => {
+  const { module: middleware, restore } = loadModuleWithMocks(middlewarePath, {
+    [sessionServicePath]: { getSessionFromRequest: async () => null },
+    [loggerPath]: { logger: { warn: () => {} } },
+  });
+
+  try {
+    const run = (handler, req) => {
+      let result = "allowed";
+      handler(req, {}, (error) => {
+        result = error || null;
+      });
+      return result;
+    };
+
+    assert.equal(run(middleware.requireAuth, { user: null }).statusCode, 401);
+    assert.equal(
+      run(middleware.requireAdmin, { user: { id: "user-1", role: "user" }, method: "GET", originalUrl: "/api/admin/users", ip: "127.0.0.1" }).statusCode,
+      403
+    );
+    assert.equal(
+      run(middleware.requireVerifiedEmail, { user: { id: "user-1", emailVerified: false } }).statusCode,
+      403
+    );
+    assert.equal(run(middleware.requireAdmin, { user: { id: "admin-1", role: "admin" } }), null);
+  } finally {
+    restore();
+  }
+});

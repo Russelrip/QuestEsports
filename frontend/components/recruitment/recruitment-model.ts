@@ -35,6 +35,7 @@ export type RecruitmentFields = {
   additionalMembers: string;
   notes: string;
   declarationAccepted: boolean;
+  privacyAccepted: boolean;
 };
 
 export const recruitmentGames = [
@@ -91,4 +92,5 @@ export const initialRecruitmentFields: RecruitmentFields = {
   additionalMembers: "",
   notes: "",
   declarationAccepted: false,
+  privacyAccepted: false,
 };

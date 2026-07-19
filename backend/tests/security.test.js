@@ -174,6 +174,7 @@ test("security headers include API CSP and production transport protection", () 
     assert.match(headers.get("Content-Security-Policy"), /default-src 'none'/);
     assert.match(headers.get("Strict-Transport-Security"), /max-age=31536000/);
     assert.equal(headers.get("X-Content-Type-Options"), "nosniff");
+    assert.equal(headers.get("Cache-Control"), "no-store");
   } finally {
     productionLoad.restore();
   }
