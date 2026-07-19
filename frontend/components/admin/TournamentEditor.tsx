@@ -690,12 +690,12 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
                   {registrations.map((registration) => (
                     <div key={registration.id} className="grid gap-3 rounded-[24px] border border-white/8 bg-white/5 p-4 md:grid-cols-4">
                       <div>
-                        <p className="font-medium text-white">{registration.teamName}</p>
-                        <p className="text-sm text-slate-400">{registration.captain.name}</p>
+                        <p className="font-medium text-white">{registration.teamName || registration.contactEmail || "Unnamed registration"}</p>
+                        <p className="text-sm text-slate-400">{registration.captain?.name || registration.captain?.email || registration.contactEmail || "Captain unavailable"}</p>
                       </div>
                       <p className="text-sm text-slate-400">Status: <span className="text-white">{registration.status}</span></p>
                       <p className="text-sm text-slate-400">Payment: <span className="text-white">{registration.paymentStatus}</span></p>
-                      <p className="text-sm text-slate-400">Verification: <span className="text-white">{registration.verificationStatus}</span></p>
+                      <p className="text-sm text-slate-400">Verification: <span className="text-white">{registration.verificationStatus || "pending"}</span></p>
                     </div>
                   ))}
                 </div>

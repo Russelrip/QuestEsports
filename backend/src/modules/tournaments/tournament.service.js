@@ -576,14 +576,17 @@ const mapTournament = (tournament) => {
   };
 };
 
-const mapTournamentWithRegistrations = (tournament) => ({
+const mapTournamentWithRegistrations = (
+  tournament,
+  registrations = tournament.teamRegistrations || []
+) => ({
   ...mapTournament(tournament),
   bankName: tournament.bankName,
   bankBranch: tournament.bankBranch,
   bankAccountName: tournament.bankAccountName,
   bankAccountNumber: tournament.bankAccountNumber,
   bracket: tournament.bracket || null,
-  registrations: (tournament.teamRegistrations || []).map((registration) => ({
+  registrations: registrations.map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
     contactEmail: registration.contactEmail,
@@ -1144,10 +1147,6 @@ const getAdminTournamentById = async (tournamentId) => {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     include: {
-      teamRegistrations: {
-        orderBy: { createdAt: "desc" },
-        select: adminRegistrationSummarySelect,
-      },
       bracket: true,
       ...buildRegistrationCountInclude(),
     },
@@ -1157,7 +1156,13 @@ const getAdminTournamentById = async (tournamentId) => {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  return mapTournamentWithRegistrations(tournament);
+  const registrations = await prisma.teamRegistration.findMany({
+    where: { tournamentId },
+    orderBy: { createdAt: "desc" },
+    select: adminRegistrationSummarySelect,
+  });
+
+  return mapTournamentWithRegistrations(tournament, registrations);
 };
 
 const getReplacedTournamentUploads = ({ existingTournament, assetUpdates }) => {
