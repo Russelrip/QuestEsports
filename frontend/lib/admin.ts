@@ -456,7 +456,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   registrationFeeAmount: "0",
   registrationFeeCurrency: "LKR",
   registrationFeeTiers: "[]",
-  reservationMinutes: "15",
+  reservationMinutes: "1440",
   bankTransferReviewMinutes: "1440",
   bankName: "",
   bankBranch: "",

@@ -409,7 +409,7 @@ model Tournament {
   registrationFeeAmount      Decimal                    @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)
   registrationFeeCurrency    String                     @default("LKR") @map("registration_fee_currency")
   registrationFeeTiers       Json                       @default("[]") @map("registration_fee_tiers")
-  reservationMinutes         Int                        @default(15) @map("reservation_minutes")
+  reservationMinutes         Int                        @default(1440) @map("reservation_minutes")
   bankTransferReviewMinutes  Int                        @default(1440) @map("bank_transfer_review_minutes")
   bankName                   String?                    @map("bank_name")
   bankBranch                 String?                    @map("bank_branch")

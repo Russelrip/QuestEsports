@@ -55,7 +55,7 @@ export const mapTournamentToFormValues = (
   registrationFeeAmount: String(tournament.registrationFee?.amount || 0),
   registrationFeeCurrency: tournament.registrationFee?.currency || "LKR",
   registrationFeeTiers: JSON.stringify(tournament.registrationFeeTiers || [], null, 2),
-  reservationMinutes: String(tournament.reservationMinutes || 15),
+  reservationMinutes: String(tournament.reservationMinutes || 1440),
   bankTransferReviewMinutes: String(tournament.bankTransferReviewMinutes || 1440),
   bankName: tournament.bankName || "",
   bankBranch: tournament.bankBranch || "",

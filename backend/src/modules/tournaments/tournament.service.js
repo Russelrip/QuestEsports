@@ -546,7 +546,7 @@ const mapTournament = (tournament) => {
       Number(tournamentWithRegistrationCount.registrationFeeAmount || 0) === 0 ||
       tournamentWithRegistrationCount.paymentMethod === "bank_transfer" ||
       (tournamentWithRegistrationCount.paymentMethod === "payhere" && isPayHereConfigured()),
-    reservationMinutes: tournamentWithRegistrationCount.reservationMinutes || 15,
+    reservationMinutes: tournamentWithRegistrationCount.reservationMinutes || 1440,
     bankTransferReviewMinutes:
       tournamentWithRegistrationCount.bankTransferReviewMinutes || 1440,
     maxTeams: tournamentWithRegistrationCount.maxTeams,

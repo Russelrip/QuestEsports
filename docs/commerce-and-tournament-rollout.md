@@ -80,7 +80,7 @@ Use sandbox credentials until successful paid, failed, cancelled, duplicate-noti
 4. Create products and variants in `/admin/products`. Upload product images in the same editor, then activate the product.
 5. Monitor `/admin/orders` for fulfilment and `/admin/payments` for reconciliation.
 
-Registration field definitions accept only `text`, `number`, or `select`; `entry` or `member` scope; and required/optional flags. Select fields must include an `options` list. A zero tournament fee submits immediately; paid entries reserve capacity for the configured window (15 minutes by default).
+Registration field definitions accept only `text`, `number`, or `select`; `entry` or `member` scope; and required/optional flags. Select fields must include an `options` list. A zero tournament fee submits immediately; paid entries reserve capacity for the configured window (24 hours by default).
 
 ## Policy and launch checks
 
