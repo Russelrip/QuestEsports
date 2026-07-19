@@ -39,6 +39,7 @@ const {
   countTournamentCapacityUsage,
 } = require("../tournaments/registration-eligibility");
 const { getBankTransferAmountForSlot } = require("../payments/bank-transfer.service");
+const { activatePaidTeamRegistration } = require("../teams/team.service");
 
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
@@ -965,10 +966,11 @@ const getRegistrationsByTournament = async (tournamentId, query = {}) => {
   };
 };
 
-const updateTeamRegistrationStatus = async (registrationId, body) => {
+const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) => {
   const nextStatus = normalizeText(body.status).toLowerCase();
   const nextPaymentStatus = normalizeText(body.paymentStatus).toLowerCase();
   const nextVerificationStatus = normalizeText(body.verificationStatus).toLowerCase();
+  const adminOverridePayment = body.adminOverridePayment === true;
   const updateData = {};
 
   const currentRegistration = await prisma.teamRegistration.findUnique({
@@ -979,6 +981,75 @@ const updateTeamRegistrationStatus = async (registrationId, body) => {
     },
   });
   if (!currentRegistration) throw new HttpError(404, "Registration not found.");
+
+  if (adminOverridePayment) {
+    if (nextStatus && nextStatus !== "approved") {
+      throw new HttpError(400, "A payment override can only approve a registration.");
+    }
+    const registration = await prisma.$transaction(async (tx) => {
+      const current = await tx.teamRegistration.findUnique({
+        where: { id: registrationId },
+        include: { tournament: true, adminSlotReservation: true },
+      });
+      if (!current) throw new HttpError(404, "Registration not found.");
+      if (current.status === "rejected") {
+        throw new HttpError(409, "Restore the rejected registration to pending before overriding payment.");
+      }
+
+      let assignedSlotNumber = current.assignedSlotNumber || current.adminSlotReservation?.assignedSlotNumber;
+      if (!assignedSlotNumber) {
+        const used = await countTournamentCapacityUsage({
+          tx,
+          tournamentId: current.tournamentId,
+          excludeRegistrationId: current.id,
+        });
+        if (used >= current.tournament.maxTeams) {
+          throw new HttpError(409, "The tournament has no slot available.");
+        }
+        assignedSlotNumber = await allocateLowestAvailableSlot({
+          tx,
+          tournamentId: current.tournamentId,
+          maxTeams: current.tournament.maxTeams,
+          excludeRegistrationId: current.id,
+        });
+      }
+
+      const quotedFeeAmount = current.adminSlotReservation?.quotedFeeAmount ??
+        (current.tournament.paymentMethod === "bank_transfer"
+          ? getBankTransferAmountForSlot(current.tournament, assignedSlotNumber)
+          : Number(current.tournament.registrationFeeAmount || 0));
+      await tx.paymentTransaction.updateMany({
+        where: {
+          registrationId: current.id,
+          status: { in: ["created", "pending", "expired", "review_required"] },
+        },
+        data: {
+          status: "cancelled",
+          statusMessage: "Payment waived by an administrator.",
+          reconciledAt: new Date(),
+          reconciledById: adminUserId,
+          reconciliationNote: "Registration approved without payment.",
+        },
+      });
+      if (current.adminSlotReservation) {
+        await tx.adminSlotReservation.delete({ where: { registrationId: current.id } });
+      }
+      return tx.teamRegistration.update({
+        where: { id: current.id },
+        data: {
+          status: "approved",
+          paymentStatus: "paid",
+          assignedSlotNumber,
+          quotedFeeAmount,
+          quotedFeeCurrency: current.adminSlotReservation?.quotedFeeCurrency || current.tournament.registrationFeeCurrency,
+          reservedUntil: null,
+        },
+        include: TEAM_REGISTRATION_INCLUDE,
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    await activatePaidTeamRegistration(registration.id);
+    return mapTeamRegistration(registration);
+  }
 
   if (nextStatus) {
     if (!REGISTRATION_STATUSES.has(nextStatus)) {

@@ -25,6 +25,7 @@ export default function AdminRegistrationsManager() {
   const [page, setPage] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const [slotBusyId, setSlotBusyId] = useState<string | null>(null);
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(search);
   const debouncedTournament = useDebouncedValue(tournament);
   const debouncedStatus = useDebouncedValue(status);
@@ -129,6 +130,23 @@ export default function AdminRegistrationsManager() {
     } finally { setSlotBusyId(null); }
   };
 
+  const approveWithoutPayment = async (registration: TeamRegistration) => {
+    if (!window.confirm(`Approve ${registration.teamName} without payment? This will assign a slot and waive the registration fee.`)) return;
+    setApprovalBusyId(registration.id);
+    try {
+      await adminRequest(`/api/admin/team-registrations/${registration.id}/status`, {
+        method: "PATCH",
+        json: { status: "approved", adminOverridePayment: true },
+      });
+      showToast({ tone: "success", title: "Registration approved without payment" });
+      await refetch();
+    } catch (nextError) {
+      showToast({ tone: "error", title: "Unable to approve registration", description: nextError instanceof Error ? nextError.message : "Request failed." });
+    } finally {
+      setApprovalBusyId(null);
+    }
+  };
+
   return (
     <AdminShell
       title="Registrations"
@@ -198,6 +216,11 @@ export default function AdminRegistrationsManager() {
                     </Select>
                   </label>
                   <p className="text-sm text-slate-300">Payment: <span className="text-white">{registration.paymentStatus}</span></p>
+                  {registration.paymentStatus !== "paid" && registration.status !== "rejected" ? (
+                    <Button type="button" variant="secondary" size="sm" disabled={approvalBusyId === registration.id} onClick={() => void approveWithoutPayment(registration)}>
+                      {approvalBusyId === registration.id ? "Approving..." : "Approve without payment"}
+                    </Button>
+                  ) : null}
                   {registration.adminSlotReservation ? (
                     <div className="rounded-xl border border-purple-300/20 bg-purple-400/10 p-3 text-xs text-purple-100">
                       <p className="font-semibold">

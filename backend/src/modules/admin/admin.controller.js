@@ -167,7 +167,8 @@ const downloadTeamRegistrations = asyncHandler(async (req, res) => {
 const updateRegistrationStatus = asyncHandler(async (req, res) => {
   const registration = await updateTeamRegistrationStatus(
     req.params.registrationId,
-    req.body
+    req.body,
+    req.user.id
   );
 
   res.status(200).json({

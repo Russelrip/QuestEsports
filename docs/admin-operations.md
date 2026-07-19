@@ -73,6 +73,8 @@ Only approved registrations appear in public tournament team lists and are used 
 
 Registration rows may also expose entry type, assigned slot, quoted tier fee/currency, payment provider/order state, and reservation expiry. Payment state should normally be driven by verified PayHere callbacks or bank-transfer review rather than manually changed in the general registration table.
 
+Admins can use **Approve without payment** for a deliberate fee waiver. This confirms the registration, assigns the lowest available slot (or consumes its private hold), cancels unfinished payment transactions, and records the administrator on the reconciliation. It cannot bypass tournament capacity.
+
 A private admin hold assigns the lowest available numbered tournament slot and
 snapshots its fee and currency immediately. The admin registration card displays
 that locked slot and price. When the roster becomes eligible and starts payment,
