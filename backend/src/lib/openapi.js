@@ -452,6 +452,7 @@ const additionalPaths = {
   "/api/admin/payments/{transactionId}/bank-transfer-proof": { get: createOperation("Admin", "Download bank-transfer evidence", { authenticated: true, parameters: idParameter("transactionId") }) },
   "/api/admin/payments/{transactionId}/bank-transfer-review": { patch: createOperation("Admin", "Review bank-transfer evidence", { authenticated: true, parameters: idParameter("transactionId") }) },
   "/api/admin/payments/{transactionId}/payhere-reconciliation": { patch: createOperation("Admin", "Reconcile a PayHere payment", { authenticated: true, parameters: idParameter("transactionId") }) },
+  "/api/admin/payments/{transactionId}/reopen": { post: createOperation("Admin", "Reopen an expired tournament payment", { authenticated: true, parameters: idParameter("transactionId") }) },
   "/api/admin/tournaments/{tournamentId}": {
     get: createOperation("Admin", "Get an admin tournament", { authenticated: true, parameters: idParameter("tournamentId") }),
     patch: createOperation("Admin", "Update a tournament", { authenticated: true, parameters: idParameter("tournamentId") }),

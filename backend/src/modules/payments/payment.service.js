@@ -4,9 +4,15 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { Prisma } = require("../../generated/prisma");
-const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
+const {
+  allocateLowestAvailableSlot,
+  countTournamentCapacityUsage,
+} = require("../tournaments/registration-eligibility");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
-const { buildBankTransferInstructions } = require("./bank-transfer.service");
+const {
+  buildBankTransferInstructions,
+  getBankTransferAmountForSlot,
+} = require("./bank-transfer.service");
 
 const PAYHERE_STATUS = {
   "2": "paid",
@@ -540,6 +546,82 @@ const listPaymentTransactions = async (query = {}) => {
   };
 };
 
+const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
+  runSerializable(async (tx) => {
+    const current = await tx.paymentTransaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        bankTransferProof: true,
+        registration: { include: { tournament: true } },
+      },
+    });
+    if (
+      !current ||
+      current.purpose !== "tournament_registration" ||
+      current.provider !== "bank_transfer"
+    ) {
+      throw new HttpError(404, "Expired bank-transfer registration payment was not found.");
+    }
+    if (current.status !== "expired") {
+      throw new HttpError(409, "Only expired payments can be reopened.");
+    }
+    if (!current.registration || current.registration.status === "rejected") {
+      throw new HttpError(409, "This registration can no longer be reopened.");
+    }
+    if (current.registration.paymentStatus === "paid") {
+      throw new HttpError(409, "This registration is already paid.");
+    }
+
+    const used = await countTournamentCapacityUsage({
+      tx,
+      tournamentId: current.registration.tournamentId,
+      excludeRegistrationId: current.registration.id,
+    });
+    if (used >= current.registration.tournament.maxTeams) {
+      throw new HttpError(409, "The tournament has no slot available.");
+    }
+    const assignedSlotNumber = await allocateLowestAvailableSlot({
+      tx,
+      tournamentId: current.registration.tournamentId,
+      maxTeams: current.registration.tournament.maxTeams,
+      excludeRegistrationId: current.registration.id,
+    });
+    const hasProof = Boolean(current.bankTransferProof);
+    const holdMinutes = hasProof
+      ? current.registration.tournament.bankTransferReviewMinutes
+      : current.registration.tournament.reservationMinutes;
+    const reservedUntil = new Date(Date.now() + holdMinutes * 60 * 1000);
+    const amount = getBankTransferAmountForSlot(
+      current.registration.tournament,
+      assignedSlotNumber
+    );
+
+    await tx.teamRegistration.update({
+      where: { id: current.registration.id },
+      data: {
+        paymentStatus: "pending",
+        assignedSlotNumber,
+        quotedFeeAmount: amount,
+        quotedFeeCurrency: current.registration.tournament.registrationFeeCurrency,
+        reservedUntil,
+      },
+    });
+    return tx.paymentTransaction.update({
+      where: { id: current.id },
+      data: {
+        status: hasProof ? "review_required" : "pending",
+        amount,
+        currency: current.registration.tournament.registrationFeeCurrency,
+        statusMessage: hasProof
+          ? "Payment reopened by an administrator and awaits proof review."
+          : "Payment reopened by an administrator.",
+        reconciledAt: new Date(),
+        reconciledById: admin.id,
+        reconciliationNote: "Expired tournament payment reopened.",
+      },
+    });
+  });
+
 const reconcilePayHerePayment = async ({ transactionId, decision, note, providerRefundId, admin }) => {
   const normalizedDecision = String(decision || "").trim().toLowerCase();
   const normalizedNote = String(note || "").trim().slice(0, 1000);
@@ -631,6 +713,7 @@ module.exports = {
   getPaymentStatus,
   verifyNotificationSignature,
   listPaymentTransactions,
+  reopenExpiredTournamentPayment,
   releaseOrderStock,
   expireStaleCommerceReservations,
   reconcilePayHerePayment,

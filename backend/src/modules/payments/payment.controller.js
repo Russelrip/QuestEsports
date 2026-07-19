@@ -4,6 +4,7 @@ const {
   getPaymentStatus,
   listPaymentTransactions,
   reconcilePayHerePayment,
+  reopenExpiredTournamentPayment,
 } = require("./payment.service");
 const {
   submitBankTransferProof,
@@ -92,6 +93,18 @@ const reconcilePayHerePaymentController = asyncHandler(async (req, res) => {
   });
 });
 
+const reopenExpiredPayment = asyncHandler(async (req, res) => {
+  const payment = await reopenExpiredTournamentPayment({
+    transactionId: req.params.transactionId,
+    admin: req.user,
+  });
+  res.status(200).json({
+    success: true,
+    message: "Expired payment reopened and its slot reserved.",
+    payment: { id: payment.id, status: payment.status },
+  });
+});
+
 module.exports = {
   notifyPayHere,
   readPaymentStatus,
@@ -100,4 +113,5 @@ module.exports = {
   downloadBankTransferProof,
   reviewBankTransferPayment,
   reconcilePayHerePayment: reconcilePayHerePaymentController,
+  reopenExpiredPayment,
 };

@@ -120,6 +120,19 @@ export default function AdminPaymentsManager() {
     }
   };
 
+  const reopenPayment = async (payment: Payment) => {
+    if (!window.confirm(`Reopen expired payment ${payment.orderId}? A new slot will be reserved for the configured payment window.`)) return;
+    setBusyId(payment.id);
+    try {
+      await adminRequest(`/api/admin/payments/${payment.id}/reopen`, { method: "POST" });
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Payment could not be reopened.");
+    } finally {
+      setBusyId("");
+    }
+  };
+
   return (
     <AdminShell title="Payment Reconciliation" description="Verify manual transfers against the actual bank credit before approving them. An uploaded receipt alone is not proof of settlement.">
       <Card className="grid gap-4 p-5 sm:grid-cols-2">
@@ -171,6 +184,14 @@ export default function AdminPaymentsManager() {
                   <Button type="button" disabled={busyId === payment.id || !(reasons[payment.id] || "").trim()} onClick={() => void reconcilePayHere(payment, "accept")}>Accept verified payment</Button>
                   <Button type="button" variant="secondary" disabled={busyId === payment.id || !(reasons[payment.id] || "").trim() || !(refundReferences[payment.id] || "").trim()} onClick={() => void reconcilePayHere(payment, "mark_refunded")}>Record completed refund</Button>
                 </div>
+              </div>
+            ) : null}
+            {payment.provider === "bank_transfer" && payment.purpose === "tournament_registration" && payment.status === "expired" ? (
+              <div className="mt-5 rounded-[20px] border border-amber-300/20 p-4">
+                <p className="mb-3 text-sm text-amber-100">Reopening assigns the lowest available slot and starts a new payment window. The fee may change if the new slot is in a different price tier.</p>
+                <Button type="button" disabled={busyId === payment.id} onClick={() => void reopenPayment(payment)}>
+                  {busyId === payment.id ? "Reopening..." : "Reopen payment"}
+                </Button>
               </div>
             ) : null}
           </Card>
