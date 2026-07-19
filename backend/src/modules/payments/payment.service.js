@@ -33,16 +33,31 @@ const TERMINAL_FAILURE_STATUSES = new Set([
 const md5 = (value) => crypto.createHash("md5").update(String(value)).digest("hex");
 const sha256 = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
 const formatAmount = (value) => Number(value).toFixed(2);
+const RETRYABLE_PAYMENT_TRANSACTION_ERROR_CODES = new Set([
+  "P2024",
+  "P2028",
+  "P2034",
+  "P2037",
+]);
+const waitBeforeTransactionRetry = (attempt) =>
+  new Promise((resolve) => setTimeout(resolve, attempt * 100));
 const runSerializable = async (work) => {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       return await prisma.$transaction(work, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 10 * 1000,
+        timeout: 20 * 1000,
       });
     } catch (error) {
-      if (error?.code !== "P2034" || attempt === 3) throw error;
+      const shouldRetry =
+        RETRYABLE_PAYMENT_TRANSACTION_ERROR_CODES.has(error?.code) &&
+        attempt < 3;
+      if (!shouldRetry) throw error;
+      await waitBeforeTransactionRetry(attempt);
     }
   }
+  throw new Error("Payment transaction retry limit was exhausted.");
 };
 
 const isPayHereConfigured = () =>
