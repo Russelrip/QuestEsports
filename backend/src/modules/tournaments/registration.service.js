@@ -162,6 +162,14 @@ const mapRegistrationResult = (registration) => ({
   reservedUntil: registration.reservedUntil,
 });
 
+const getRosterVerificationStatus = (members = [], fallback = "pending") => {
+  if (members.some((member) => member.inviteStatus === "declined")) return "flagged";
+  if (members.length > 0 && members.every((member) => member.inviteStatus === "accepted")) {
+    return "verified";
+  }
+  return fallback;
+};
+
 const buildCheckout = ({ payment, tournament, user, body }) =>
   createPayHereCheckout({
     transaction: payment,
@@ -245,6 +253,11 @@ const startExistingRegistrationPayment = async ({
   const result = await runSerializable(async (tx) => {
     const currentRegistration = await tx.teamRegistration.findUnique({
       where: { id: existing.id },
+      include: {
+        members: {
+          select: { inviteStatus: true },
+        },
+      },
     });
     if (!currentRegistration || currentRegistration.paymentStatus === "paid") {
       throw new HttpError(409, "This tournament registration is already paid.");
@@ -252,13 +265,14 @@ const startExistingRegistrationPayment = async ({
     if (currentRegistration.status === "rejected") {
       throw new HttpError(409, "This tournament registration was rejected and cannot continue to payment.");
     }
-    if (
-      currentRegistration.entryType === "team" &&
-      currentRegistration.verificationStatus !== "verified"
-    ) {
+    const currentVerificationStatus = getRosterVerificationStatus(
+      currentRegistration.members,
+      currentRegistration.verificationStatus
+    );
+    if (currentRegistration.entryType === "team" && currentVerificationStatus !== "verified") {
       throw new HttpError(
         409,
-        currentRegistration.verificationStatus === "flagged"
+        currentVerificationStatus === "flagged"
           ? "A roster invitation was declined. Update the team before continuing to payment."
           : "Every roster member must accept the team invitation before payment."
       );
@@ -320,6 +334,7 @@ const startExistingRegistrationPayment = async ({
       where: { id: existing.id },
       data: {
         paymentStatus: "pending",
+        verificationStatus: currentVerificationStatus,
         reservedUntil,
         assignedSlotNumber,
         quotedFeeAmount,
@@ -587,15 +602,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     }
     const latestPayment = existing.payments[0];
     const existingMembers = existing.members || [];
-    const effectiveVerificationStatus = existingMembers.some(
-      (member) => member.inviteStatus === "declined"
-    )
-      ? "flagged"
-      : existingMembers.length > 0 && existingMembers.every(
-          (member) => member.inviteStatus === "accepted"
-        )
-        ? "verified"
-        : existing.verificationStatus;
+    const effectiveVerificationStatus = getRosterVerificationStatus(
+      existingMembers,
+      existing.verificationStatus
+    );
     const pendingInviteCount = existingMembers.filter(
       (member) => member.inviteStatus === "pending"
     ).length;
@@ -950,6 +960,9 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           paymentStatus: feeAmount > 0
             ? requiresTeamVerification ? "unpaid" : "pending"
             : "paid",
+          verificationStatus: members.every((member) => member.role === "CAPTAIN")
+            ? "verified"
+            : "pending",
           rulebookAccepted,
           falsityWarningAccepted,
           additionalData: configuredEntryData,

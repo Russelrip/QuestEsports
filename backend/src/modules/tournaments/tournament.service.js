@@ -1457,6 +1457,17 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
     await ensureTeamRegistrationSaved(existingRegistration.id);
   }
 
+  const registrationMembers = existingRegistration?.members || [];
+  const effectiveVerificationStatus = registrationMembers.some(
+    (member) => member.inviteStatus === "declined"
+  )
+    ? "flagged"
+    : registrationMembers.length > 0 && registrationMembers.every(
+        (member) => member.inviteStatus === "accepted"
+      )
+      ? "verified"
+      : existingRegistration?.verificationStatus;
+
   return {
     isRegistered: Boolean(existingRegistration),
     registration: existingRegistration
@@ -1464,8 +1475,8 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
           id: existingRegistration.id,
           status: existingRegistration.status,
           paymentStatus: existingRegistration.paymentStatus,
-          verificationStatus: existingRegistration.verificationStatus,
-          pendingInviteCount: (existingRegistration.members || []).filter(
+          verificationStatus: effectiveVerificationStatus,
+          pendingInviteCount: registrationMembers.filter(
             (member) => member.inviteStatus === "pending"
           ).length,
           reservedUntil: existingRegistration.reservedUntil,

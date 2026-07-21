@@ -277,6 +277,7 @@ test("paid direct team registration saves the team and dispatches player invites
     });
 
     assert.equal(createdRegistration.paymentStatus, "unpaid");
+    assert.equal(createdRegistration.verificationStatus, "pending");
     assert.equal(result.awaitingTeamVerification, true);
     assert.equal(result.checkout, null);
     assert.equal(result.paymentOrderId, null);
@@ -290,7 +291,7 @@ test("paid direct team registration saves the team and dispatches player invites
   }
 });
 
-test("verified direct-registration roster can start payment without re-entering the team", async () => {
+test("captain-only direct registration repairs stale verification and starts payment", async () => {
   let registrationPaymentUpdate;
   let createdPayment;
   let consumedHoldId;
@@ -300,11 +301,11 @@ test("verified direct-registration roster can start payment without re-entering 
     teamName: "Updated Quest",
     status: "pending",
     paymentStatus: "unpaid",
-    verificationStatus: "verified",
+    verificationStatus: "pending",
     captainPhone: "0771111111",
     country: "Sri Lanka",
     reservedUntil: null,
-    members: [{ inviteStatus: "accepted" }, { inviteStatus: "accepted" }],
+    members: [{ inviteStatus: "accepted" }],
     payments: [],
   };
   const tx = {
@@ -369,6 +370,7 @@ test("verified direct-registration roster can start payment without re-entering 
     });
 
     assert.equal(registrationPaymentUpdate.paymentStatus, "pending");
+    assert.equal(registrationPaymentUpdate.verificationStatus, "verified");
     assert.equal(registrationPaymentUpdate.assignedSlotNumber, 4);
     assert.equal(registrationPaymentUpdate.quotedFeeAmount, 1750);
     assert.equal(createdPayment.amount, 1750);

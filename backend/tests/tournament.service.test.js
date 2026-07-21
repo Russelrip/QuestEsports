@@ -50,7 +50,7 @@ test("Challonge URLs are restricted and normalized for safe module embeds", () =
   }
 });
 
-test("registration status includes the payment route needed to resume a bank transfer", async () => {
+test("registration status repairs stale captain-only verification and includes its payment route", async () => {
   let repairedRegistrationId = null;
   const prisma = {
     tournament: {
@@ -61,7 +61,7 @@ test("registration status includes the payment route needed to resume a bank tra
         id: "registration-1",
         status: "pending",
         paymentStatus: "pending",
-        verificationStatus: "verified",
+        verificationStatus: "pending",
         members: [{ inviteStatus: "accepted" }],
         reservedUntil: new Date("2026-08-01T10:00:00.000Z"),
         assignedSlotNumber: 7,
@@ -89,6 +89,7 @@ test("registration status includes the payment route needed to resume a bank tra
       user: { id: "user-1", email: "captain@example.com" },
     });
     assert.equal(result.isRegistered, true);
+    assert.equal(result.registration.verificationStatus, "verified");
     assert.equal(result.registration.assignedSlotNumber, 7);
     assert.equal(repairedRegistrationId, "registration-1");
     assert.deepEqual(result.registration.payment, {
