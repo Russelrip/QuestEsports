@@ -135,6 +135,58 @@ test("captains cannot cancel after a payment reservation has started", async () 
   }
 });
 
+test("roster validation explains that the captain counts as an active player", async () => {
+  const fivePlayerTournament = {
+    ...tournament,
+    minRosterSize: 5,
+    maxRosterSize: 5,
+  };
+  const members = [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      name: `Player ${index + 1}`,
+      email: `player${index + 1}@example.com`,
+      role: "PLAYER",
+    })),
+    ...Array.from({ length: 2 }, (_, index) => ({
+      name: `Substitute ${index + 1}`,
+      email: `substitute${index + 1}@example.com`,
+      role: "SUBSTITUTE",
+    })),
+  ];
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        tournament: { findFirst: async () => fivePlayerTournament },
+        teamRegistration: { findFirst: async () => null },
+      },
+    },
+    [uploadModulePath]: {},
+    [teamServicePath]: {},
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      () => service.createConfiguredRegistration({
+        slug: fivePlayerTournament.slug,
+        body: { ...body, members: JSON.stringify(members) },
+        user,
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 400);
+        assert.equal(
+          error.message,
+          "This event requires exactly 5 active players, including the captain, and allows up to 2 substitutes. Your roster has 6 active players and 2 substitutes."
+        );
+        return true;
+      }
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("paid direct team registration saves the team and dispatches player invites immediately", async () => {
   const syncedTeams = [];
   let createdRegistration;

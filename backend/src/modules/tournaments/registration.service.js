@@ -485,7 +485,13 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
   const playerCount = 1 + normalizedMembers.filter((member) => member.role === "PLAYER").length;
   const substituteCount = normalizedMembers.filter((member) => member.role === "SUBSTITUTE").length;
   if (playerCount < tournament.minRosterSize || playerCount > tournament.maxRosterSize || substituteCount > tournament.maxSubstitutes) {
-    throw new HttpError(400, `This event requires ${tournament.minRosterSize}-${tournament.maxRosterSize} players and allows up to ${tournament.maxSubstitutes} substitutes.`);
+    const requiredPlayers = tournament.minRosterSize === tournament.maxRosterSize
+      ? `exactly ${tournament.minRosterSize}`
+      : `${tournament.minRosterSize}-${tournament.maxRosterSize}`;
+    throw new HttpError(
+      400,
+      `This event requires ${requiredPlayers} active players, including the captain, and allows up to ${tournament.maxSubstitutes} substitutes. Your roster has ${playerCount} active players and ${substituteCount} substitutes.`
+    );
   }
   const emails = [normalizeEmail(user.email), ...normalizedMembers.map((member) => member.email)];
   if (new Set(emails).size !== emails.length) throw new HttpError(400, "Roster emails must be unique.");

@@ -15,6 +15,7 @@ import { apiFetch } from "@/lib/auth";
 import { ApiRequestError, readApiResponse } from "@/lib/api";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
 import { markTournamentRegistered } from "@/lib/registered-tournaments";
+import type { SavedTeam } from "@/lib/teams";
 import type { Tournament, TournamentRegistrationField } from "@/lib/tournaments";
 
 type MemberDraft = {
@@ -94,6 +95,8 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const [success, setSuccess] = useState("");
   const [existingRegistration, setExistingRegistration] = useState<ExistingRegistrationState | null>(null);
   const [checkingRegistration, setCheckingRegistration] = useState(true);
+  const [selectedSavedTeamId, setSelectedSavedTeamId] = useState("");
+  const [pendingSavedTeam, setPendingSavedTeam] = useState<SavedTeam | null>(null);
 
   const entryFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "entry"), [tournament.registrationFields]);
   const memberFields = useMemo(() => (tournament.registrationFields || []).filter((field) => field.scope === "member"), [tournament.registrationFields]);
@@ -103,6 +106,21 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const identityMemberFields = useMemo(() => memberFields.filter((field) => isGameIdentityField(field, tournament.game)), [memberFields, tournament.game]);
   const gameIdentity = useMemo(() => getGameIdentityConfig(tournament.game), [tournament.game]);
   const maximumAdditionalPlayers = Math.max(0, (tournament.maxRosterSize || tournament.teamSize || 1) + (tournament.maxSubstitutes || 0) - 1);
+  const activePlayerCount = 1 + members.filter((member) => member.role === "PLAYER").length;
+  const substituteCount = members.filter((member) => member.role === "SUBSTITUTE").length;
+  const rosterIssue = getRosterValidationMessage({
+    activePlayerCount,
+    substituteCount,
+    minRosterSize: tournament.minRosterSize || tournament.teamSize || 1,
+    maxRosterSize: tournament.maxRosterSize || tournament.teamSize || 1,
+    maxSubstitutes: tournament.maxSubstitutes || 0,
+  });
+
+  useEffect(() => {
+    if (!rosterIssue) {
+      setError((current) => current.startsWith("This event requires") ? "" : current);
+    }
+  }, [rosterIssue]);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -151,9 +169,62 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
     setMembers((current) => current.map((member, memberIndex) => memberIndex === index ? { ...member, ...updates } : member));
   };
 
+  const populateSavedTeam = (team: SavedTeam, omittedMemberId?: string) => {
+    setForm((current) => ({
+      ...current,
+      teamName: team.name,
+      teamTag: team.teamTag || "",
+      country: team.country || "Sri Lanka",
+      organizationRequested: false,
+    }));
+    setMembers(team.members
+      .filter((member) => member.id !== omittedMemberId && member.role !== "CAPTAIN" && member.role !== "COACH")
+      .map((member) => ({
+        name: member.name,
+        email: member.email,
+        discord: member.discord || "",
+        gameId: member.riotId || "",
+        role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
+        additionalData: {},
+      })));
+    setPendingSavedTeam(null);
+    setError("");
+  };
+
+  const selectSavedTeam = (teamId: string) => {
+    setSelectedSavedTeamId(teamId);
+    setPendingSavedTeam(null);
+    const team = savedTeams?.find((candidate) => candidate.id === teamId);
+    if (!team) return;
+
+    const activePlayers = team.members.filter((member) => member.role === "PLAYER");
+    const substituteTotal = team.members.filter((member) => member.role === "SUBSTITUTE").length;
+    const minimumActivePlayers = tournament.minRosterSize || tournament.teamSize || 1;
+    const maximumActivePlayers = tournament.maxRosterSize || tournament.teamSize || 1;
+    const needsOnePlayerRemoved =
+      1 + activePlayers.length === maximumActivePlayers + 1 &&
+      maximumActivePlayers >= minimumActivePlayers &&
+      substituteTotal <= (tournament.maxSubstitutes || 0);
+
+    if (needsOnePlayerRemoved) {
+      setPendingSavedTeam(team);
+      return;
+    }
+
+    populateSavedTeam(team);
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user) return;
+    if (pendingSavedTeam) {
+      setError("Choose the active player to leave out before submitting this registration.");
+      return;
+    }
+    if (tournament.entryType === "team" && rosterIssue) {
+      setError(rosterIssue);
+      return;
+    }
     setLoading(true);
     setError("");
     setSuccess("");
@@ -346,17 +417,34 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
 
       <Card className="grid gap-6 p-6 sm:p-8">
         {tournament.entryType === "team" && savedTeams && savedTeams.length > 0 ? (
-          <FormField label="Reuse a saved team" htmlFor="savedTeam">
-            <Select id="savedTeam" defaultValue="" onChange={(event) => {
-              const team = savedTeams.find((candidate) => candidate.id === event.target.value);
-              if (!team) return;
-              setForm((current) => ({ ...current, teamName: team.name, teamTag: team.teamTag || "", country: team.country || "Sri Lanka", organizationRequested: false }));
-              setMembers(team.members.filter((member) => member.role !== "CAPTAIN" && member.role !== "COACH").map((member) => ({ name: member.name, email: member.email, discord: member.discord || "", gameId: member.riotId || "", role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER", additionalData: {} })));
-            }}>
-              <option value="">Start with a new entry</option>
-              {savedTeams.filter((team) => team.isCaptain).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-            </Select>
-          </FormField>
+          <div className="grid gap-4">
+            <FormField label="Reuse a saved team" htmlFor="savedTeam">
+              <Select id="savedTeam" value={selectedSavedTeamId} onChange={(event) => selectSavedTeam(event.target.value)}>
+                <option value="">Start with a new entry</option>
+                {savedTeams.filter((team) => team.isCaptain).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+              </Select>
+            </FormField>
+            {pendingSavedTeam ? (
+              <div className="grid gap-4 rounded-[22px] border border-amber-300/25 bg-amber-300/[0.06] p-5">
+                <div>
+                  <p className="font-semibold text-amber-100">Choose one active player to leave out</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    {pendingSavedTeam.name} has one more active player than this event permits because the captain counts as a player. Your saved team will not be changed.
+                  </p>
+                </div>
+                <FormField label="Player to leave out" htmlFor="omittedSavedTeamMember">
+                  <Select id="omittedSavedTeamMember" defaultValue="" onChange={(event) => {
+                    if (event.target.value) populateSavedTeam(pendingSavedTeam, event.target.value);
+                  }}>
+                    <option value="">Select a player</option>
+                    {pendingSavedTeam.members
+                      .filter((member) => member.role === "PLAYER")
+                      .map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                  </Select>
+                </FormField>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         {tournament.entryType === "team" ? (
@@ -384,7 +472,12 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
 
       {tournament.entryType === "team" ? (
         <Card className="p-6 sm:p-8">
-          <div className="flex items-center justify-between gap-4"><div><h3 className="text-2xl text-white">Roster</h3><p className="mt-2 text-sm text-slate-400">Captain plus {minimumAdditionalPlayers}-{maximumAdditionalPlayers} additional players.</p></div>{members.length < maximumAdditionalPlayers ? <Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])}>Add player</Button> : null}</div>
+          <div className="flex items-center justify-between gap-4"><div><h3 className="text-2xl text-white">Roster</h3><p className="mt-2 text-sm text-slate-400">The captain counts as active player #1. Add {formatAdditionalPlayerRequirement(tournament.minRosterSize || tournament.teamSize || 1, tournament.maxRosterSize || tournament.teamSize || 1)} and up to {tournament.maxSubstitutes || 0} substitutes.</p></div>{members.length < maximumAdditionalPlayers ? <Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])}>Add roster member</Button> : null}</div>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full border border-white/10 px-3 py-2 text-slate-300">{activePlayerCount} active players (captain included)</span>
+            <span className="rounded-full border border-white/10 px-3 py-2 text-slate-300">{substituteCount} substitutes</span>
+          </div>
+          {rosterIssue ? <p className="mt-4 text-sm text-amber-200">{rosterIssue}</p> : null}
           <div className="mt-6 grid gap-5">
             {members.map((member, index) => (
               <div key={index} className="rounded-[22px] border border-white/10 bg-black/20 p-5">
@@ -408,7 +501,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         <label className="flex gap-3 text-sm text-slate-300"><input type="checkbox" required checked={form.falsityWarningAccepted} onChange={(event) => setForm((current) => ({ ...current, falsityWarningAccepted: event.target.checked }))} /><span>I confirm that the registration information is accurate.</span></label>
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         {success ? <p className="text-sm text-emerald-300">{success} <Link className="underline" href="/profile">Open dashboard</Link></p> : null}
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading || Boolean(pendingSavedTeam)}>
           {loading
             ? "Submitting…"
             : tournament.paymentMethod === "bank_transfer"
@@ -420,6 +513,37 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       </Card>
     </form>
   );
+}
+
+function formatAdditionalPlayerRequirement(minRosterSize: number, maxRosterSize: number) {
+  const minimum = Math.max(0, minRosterSize - 1);
+  const maximum = Math.max(0, maxRosterSize - 1);
+  return minimum === maximum ? `exactly ${minimum} more active players` : `${minimum}-${maximum} more active players`;
+}
+
+function getRosterValidationMessage({
+  activePlayerCount,
+  substituteCount,
+  minRosterSize,
+  maxRosterSize,
+  maxSubstitutes,
+}: {
+  activePlayerCount: number;
+  substituteCount: number;
+  minRosterSize: number;
+  maxRosterSize: number;
+  maxSubstitutes: number;
+}) {
+  if (
+    activePlayerCount >= minRosterSize &&
+    activePlayerCount <= maxRosterSize &&
+    substituteCount <= maxSubstitutes
+  ) return "";
+
+  const requiredPlayers = minRosterSize === maxRosterSize
+    ? `exactly ${minRosterSize}`
+    : `${minRosterSize}-${maxRosterSize}`;
+  return `This event requires ${requiredPlayers} active players, including the captain, and allows up to ${maxSubstitutes} substitutes. This roster currently has ${activePlayerCount} active players and ${substituteCount} substitutes.`;
 }
 
 function getRegistrationFeeLabel(tournament: Tournament) {
