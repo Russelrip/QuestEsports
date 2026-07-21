@@ -58,6 +58,14 @@ test("mobile layout stays within the viewport and opens navigation without page 
   );
   expect(hasHorizontalOverflow).toBe(false);
 
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    window.scrollTo(0, 900);
+    document.documentElement.style.scrollBehavior = "";
+  });
+  const scrollPosition = await page.evaluate(() => window.scrollY);
+  expect(scrollPosition).toBeGreaterThan(0);
+
   const menuButton = page.getByRole("banner").getByRole("button", { name: /navigation/ });
   await expect(async () => {
     if ((await menuButton.getAttribute("aria-expanded")) !== "true") {
@@ -69,14 +77,17 @@ test("mobile layout stays within the viewport and opens navigation without page 
   const mobileNavigation = page.getByRole("banner").getByRole("navigation");
   await expect(mobileNavigation).toBeVisible();
   await expect(page.getByRole("button", { name: "Close navigation" })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.overflow)).toBe("hidden");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollPosition);
 
   const navigationBox = await mobileNavigation.boundingBox();
   expect(navigationBox).not.toBeNull();
+  expect(navigationBox?.y || 0).toBeGreaterThanOrEqual(0);
   expect((navigationBox?.x || 0) + (navigationBox?.width || 0)).toBeLessThanOrEqual(390);
 
   await menuButton.click();
-  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("");
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.overflow)).toBe("");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollPosition);
 });
 
 test("gallery poster preview fits the full image inside a mobile viewport", async ({ page }) => {

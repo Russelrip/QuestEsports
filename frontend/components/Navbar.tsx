@@ -27,10 +27,33 @@ export default function Navbar() {
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const root = document.documentElement;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const previousOverflow = root.style.overflow;
+    const previousOverscrollBehavior = root.style.overscrollBehavior;
+    const previousScrollBehavior = root.style.scrollBehavior;
+
+    root.style.overflow = "hidden";
+    root.style.overscrollBehavior = "none";
+    root.style.scrollBehavior = "auto";
+
+    // Some mobile browsers reset the root scroll position when scrolling is
+    // locked. Keep the menu beside the viewport where it was opened.
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (window.scrollX !== scrollX || window.scrollY !== scrollY) {
+        window.scrollTo(scrollX, scrollY);
+      }
+    });
+
     return () => {
-      document.body.style.overflow = previousOverflow;
+      window.cancelAnimationFrame(restoreFrame);
+      root.style.overflow = previousOverflow;
+      root.style.overscrollBehavior = previousOverscrollBehavior;
+      if (window.scrollX !== scrollX || window.scrollY !== scrollY) {
+        window.scrollTo(scrollX, scrollY);
+      }
+      root.style.scrollBehavior = previousScrollBehavior;
     };
   }, [mobileNavOpen]);
 
