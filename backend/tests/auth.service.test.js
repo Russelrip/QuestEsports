@@ -257,3 +257,16 @@ test("admin profile updates validate the target user's email", async () => {
     restore();
   }
 });
+
+test("mapUserForResponse preserves an avatar URL from an already-mapped session user", () => {
+  const { module: authService, restore } = loadAuthService();
+  try {
+    const mapped = authService.mapUserForResponse({
+      ...user,
+      avatarUrl: "/api/uploads/avatars/player.webp",
+    });
+    assert.equal(mapped.avatarUrl, "/api/uploads/avatars/player.webp");
+  } finally {
+    restore();
+  }
+});

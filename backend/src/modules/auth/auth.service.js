@@ -59,7 +59,9 @@ const mapUserForResponse = (user) => ({
   discordTag: user.discordTag,
   avatarUrl: user.avatarImageName
     ? `/api/uploads/avatars/${user.avatarImageName}`
-    : null,
+    : typeof user.avatarUrl === "string" && user.avatarUrl.startsWith("/api/uploads/avatars/")
+      ? user.avatarUrl
+      : null,
   role: user.role,
   pendingEmail: user.pendingEmail || null,
   emailVerified: Boolean(user.emailVerified),
