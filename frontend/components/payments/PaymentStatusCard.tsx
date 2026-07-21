@@ -8,6 +8,11 @@ import { Button, buttonClassName } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCartStore } from "@/hooks/useCartStore";
 
+const MAX_PROOF_SIZE = 5 * 1024 * 1024;
+const ALLOWED_PROOF_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+type UploadPhase = "idle" | "uploading" | "confirming" | "complete" | "failed";
+
 type PaymentStatus = {
   orderId: string;
   status: "created" | "pending" | "paid" | "cancelled" | "failed" | "charged_back" | "expired" | "review_required" | "refunded";
@@ -38,6 +43,9 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
   const [refreshing, setRefreshing] = useState(false);
   const [proof, setProof] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
+  const [uploadError, setUploadError] = useState("");
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [copied, setCopied] = useState<"account" | "reference" | null>(null);
   const attempts = useRef(0);
   const clearCart = useCartStore((state) => state.clear);
@@ -70,7 +78,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
       const nextPayment = await loadStatus();
       if (cancelled) return;
       attempts.current += 1;
-      if (nextPayment && ["created", "pending"].includes(nextPayment.status) && attempts.current < 40) {
+      if (nextPayment && ["created", "pending", "review_required"].includes(nextPayment.status) && attempts.current < 40) {
         timer = setTimeout(poll, Math.min(2500 + attempts.current * 500, 10_000));
       } else if (!nextPayment && attempts.current < 8) {
         timer = setTimeout(poll, Math.min(2500 * attempts.current, 15_000));
@@ -84,17 +92,15 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
   const isBankTransfer = payment?.provider === "bank_transfer"
     ? payment.bankTransfer || null
     : null;
-  const statusTitle = terminalSuccess
-    ? "Payment confirmed"
-    : checkoutCancelled
-      ? "Payment cancelled"
-    : isBankTransfer?.proofSubmitted
-      ? "Receipt submitted"
-      : isBankTransfer
-        ? "Slot reserved"
-        : payment
-          ? payment.status.replace(/_/g, " ")
-          : "Checking payment…";
+  let statusTitle = payment ? payment.status.replace(/_/g, " ") : "Checking payment…";
+  if (terminalSuccess) statusTitle = "Payment confirmed";
+  else if (checkoutCancelled || payment?.status === "cancelled") statusTitle = "Payment cancelled";
+  else if (payment?.status === "charged_back") statusTitle = "Payment reversed";
+  else if (payment?.status === "failed") statusTitle = "Proof needs attention";
+  else if (payment?.status === "expired") statusTitle = "Reservation expired";
+  else if (payment?.status === "refunded") statusTitle = "Payment refunded";
+  else if (isBankTransfer?.proofSubmitted) statusTitle = "Proof under review";
+  else if (isBankTransfer) statusTitle = "Slot reserved";
 
   const copyValue = async (kind: "account" | "reference", value: string) => {
     try {
@@ -112,7 +118,8 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
   const uploadProof = async () => {
     if (!proof || !payment) return;
     setUploading(true);
-    setError("");
+    setUploadPhase("uploading");
+    setUploadError("");
     const body = new FormData();
     body.append("proof", proof);
     try {
@@ -121,13 +128,39 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
         { method: "POST", body }
       );
       if (!response.ok) throw new Error(data.message || "Payment proof could not be uploaded.");
+      setUploadPhase("confirming");
       setProof(null);
+      setFileInputKey((current) => current + 1);
       await loadStatus();
+      setUploadPhase("complete");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Payment proof could not be uploaded.");
+      setUploadPhase("failed");
+      setUploadError(nextError instanceof Error ? nextError.message : "Payment proof could not be uploaded.");
     } finally {
       setUploading(false);
     }
+  };
+
+  const selectProof = (file: File | null) => {
+    setUploadPhase("idle");
+    setUploadError("");
+    if (!file) {
+      setProof(null);
+      return;
+    }
+    if (!ALLOWED_PROOF_TYPES.has(file.type)) {
+      setProof(null);
+      setUploadError("Choose a JPEG, PNG, or WebP screenshot.");
+      setFileInputKey((current) => current + 1);
+      return;
+    }
+    if (file.size > MAX_PROOF_SIZE) {
+      setProof(null);
+      setUploadError("This screenshot is larger than 5 MB. Choose a smaller image.");
+      setFileInputKey((current) => current + 1);
+      return;
+    }
+    setProof(file);
   };
   useEffect(() => {
     if (terminalSuccess && clearCartOnPaid) clearCart();
@@ -137,8 +170,15 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
       <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Payment Status</p>
       <h2 className="mt-4 text-3xl capitalize text-white sm:text-4xl">{statusTitle}</h2>
       {payment ? <p className="mt-4 break-words text-sm text-slate-300 sm:text-base">{payment.currency} {payment.amount.toFixed(2)} · Order <span className="break-all">{payment.orderId}</span></p> : null}
+      {isBankTransfer && terminalSuccess ? <div className="mt-7 text-left"><ProofJourney paymentStatus={payment?.status} proofSelected={false} proofSubmitted={isBankTransfer.proofSubmitted} uploadPhase="complete" /></div> : null}
       {isBankTransfer && !terminalSuccess ? (
         <div className="mt-7 grid gap-5 text-left">
+          <ProofJourney
+            paymentStatus={payment?.status}
+            proofSelected={Boolean(proof)}
+            proofSubmitted={isBankTransfer.proofSubmitted}
+            uploadPhase={uploadPhase}
+          />
           <div className="min-w-0 rounded-[22px] border border-purple-300/20 bg-purple-300/5 p-4 sm:p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-purple-200">Assigned slot #{isBankTransfer.assignedSlotNumber}</p>
             <dl className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
@@ -153,13 +193,33 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
             <p className="mt-2 text-xs text-slate-400">Upload deadline: {new Date(isBankTransfer.expiresAt).toLocaleString()}</p>
           </div>
           {payment && ["created", "pending", "review_required"].includes(payment.status) ? (
-            <div className="min-w-0 grid gap-3 rounded-[22px] border border-white/10 p-4 sm:p-5">
+            <div className={`min-w-0 grid gap-4 border p-4 sm:p-5 ${uploadPhase === "failed" ? "border-rose-300/30 bg-rose-400/5" : isBankTransfer.proofSubmitted || uploadPhase === "complete" ? "border-emerald-300/25 bg-emerald-400/5" : "border-white/10 bg-white/[0.02]"}`}>
               <div>
-                <h3 className="text-lg text-white">{isBankTransfer.proofSubmitted ? "Replace payment proof" : "Upload payment proof"}</h3>
-                <p className="mt-1 text-xs leading-6 text-slate-400">Upload a screenshot of your bank slip as a JPEG, PNG, or WebP image up to 5 MB. Uploading proof does not automatically confirm payment.</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-purple-200">Upload checkpoint</p>
+                <h3 className="mt-1 text-xl text-white">{isBankTransfer.proofSubmitted || uploadPhase === "complete" ? "Proof submitted — review in progress" : uploadPhase === "failed" ? "Upload interrupted" : proof ? "Receipt ready to submit" : "Add your payment receipt"}</h3>
+                <p className="mt-1 text-xs leading-6 text-slate-400">JPEG, PNG, or WebP screenshot up to 5 MB. Quest confirms the payment only after matching it against the bank account.</p>
               </div>
-              <Input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProof(event.target.files?.[0] || null)} />
-              <Button type="button" disabled={!proof || uploading} onClick={() => void uploadProof()}>{uploading ? "Uploading…" : isBankTransfer.proofSubmitted ? "Replace proof" : "Submit proof"}</Button>
+              {uploading || uploadPhase === "confirming" ? (
+                <UploadActivity phase={uploadPhase} />
+              ) : isBankTransfer.proofSubmitted || uploadPhase === "complete" ? (
+                <div className="border border-emerald-300/20 bg-emerald-400/10 p-4" role="status" aria-live="polite">
+                  <div className="flex items-start gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center border border-emerald-300/30 bg-emerald-300/10 font-bold text-emerald-200" aria-hidden="true">✓</span>
+                    <div className="min-w-0"><p className="font-semibold text-emerald-100">Checkpoint reached</p><p className="mt-1 text-xs leading-5 text-emerald-100/70">Your slot remains held while the team verifies the transfer. You can replace the image below if you uploaded the wrong receipt.</p></div>
+                  </div>
+                </div>
+              ) : null}
+              <div className="grid gap-3">
+                <Input key={fileInputKey} type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(event) => selectProof(event.target.files?.[0] || null)} />
+                {proof ? (
+                  <div className="flex min-w-0 items-center gap-3 border border-white/10 bg-black/20 p-3">
+                    <span className="flex size-10 shrink-0 items-center justify-center border border-purple-300/20 bg-purple-400/10 text-lg" aria-hidden="true">▣</span>
+                    <div className="min-w-0"><p className="truncate text-sm font-medium text-white">{proof.name}</p><p className="text-xs text-slate-500">{formatFileSize(proof.size)} · Ready for secure upload</p></div>
+                  </div>
+                ) : null}
+              </div>
+              {uploadError ? <div className="border border-rose-300/20 bg-rose-400/10 p-3 text-sm text-rose-100" role="alert"><p className="font-semibold">Couldn’t submit this proof</p><p className="mt-1 text-xs leading-5 text-rose-100/75">{uploadError}</p>{proof ? <p className="mt-1 text-xs text-rose-100/75">Your selected file is still ready—retry when you’re connected.</p> : null}</div> : null}
+              <Button type="button" className="w-full" disabled={!proof || uploading} onClick={() => void uploadProof()}>{uploading ? "Submitting proof…" : uploadPhase === "failed" ? "Try upload again" : isBankTransfer.proofSubmitted ? "Replace proof" : "Submit proof securely"}</Button>
             </div>
           ) : null}
         </div>
@@ -181,4 +241,66 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
       <div className="mt-7 grid gap-3 sm:flex sm:flex-wrap sm:justify-center"><Link href={returnHref} className={buttonClassName({ variant: "secondary", className: "w-full sm:w-auto" })}>{terminalSuccess ? "Continue" : "Return"}</Link>{payment?.purpose === "tournament_registration" ? <Link href="/profile" className={buttonClassName({ variant: "ghost", className: "w-full sm:w-auto" })}>My registrations</Link> : null}{!terminalSuccess ? <button type="button" disabled={refreshing} onClick={() => void loadStatus()} className={buttonClassName({ variant: "ghost", className: "w-full sm:w-auto" })}>{refreshing ? "Refreshing…" : "Refresh status"}</button> : null}</div>
     </Card>
   );
+}
+
+function ProofJourney({ paymentStatus, proofSelected, proofSubmitted, uploadPhase }: { paymentStatus?: PaymentStatus["status"]; proofSelected: boolean; proofSubmitted: boolean; uploadPhase: UploadPhase }) {
+  const isConfirmed = paymentStatus === "paid";
+  const reviewFailed = paymentStatus === "failed" || paymentStatus === "expired" || paymentStatus === "cancelled" || paymentStatus === "charged_back" || paymentStatus === "refunded";
+  const currentStep = isConfirmed
+    ? 3
+    : reviewFailed || proofSubmitted || uploadPhase === "confirming" || uploadPhase === "complete"
+      ? 2
+      : proofSelected || uploadPhase === "uploading" || uploadPhase === "failed"
+        ? 1
+        : 0;
+  const steps = [
+    { label: "Transfer", hint: "Use reference" },
+    { label: "Upload", hint: "Send receipt" },
+    { label: "Review", hint: "Quest verifies" },
+    { label: "Confirmed", hint: "Slot secured" },
+  ];
+
+  return (
+    <div className="border border-white/10 bg-black/20 p-4 sm:p-5" aria-label="Payment progress">
+      <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-purple-200">Payment quest</p><p className="text-xs text-slate-500">Step {currentStep + 1} of 4</p></div>
+      <div className="mt-3 grid grid-cols-4 gap-1.5" aria-hidden="true">
+        {steps.map((_, index) => <span key={index} className={`h-1.5 ${index <= currentStep ? reviewFailed && index === currentStep ? "bg-rose-400" : "bg-purple-400" : "bg-white/10"}`} />)}
+      </div>
+      <ol className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {steps.map((step, index) => {
+          const completed = isConfirmed ? index <= currentStep : index < currentStep;
+          const active = index === currentStep;
+          const failed = active && reviewFailed;
+          return (
+            <li key={step.label} aria-current={active ? "step" : undefined} className={`min-w-0 border p-3 ${failed ? "border-rose-300/30 bg-rose-400/10" : active ? "border-purple-300/30 bg-purple-400/10" : completed ? "border-emerald-300/20 bg-emerald-400/5" : "border-white/8 bg-white/[0.02]"}`}>
+              <span className={`flex size-7 items-center justify-center border text-xs font-bold ${failed ? "border-rose-300/30 text-rose-200" : active ? "border-purple-300/40 text-purple-100" : completed ? "border-emerald-300/30 text-emerald-200" : "border-white/10 text-slate-600"}`} aria-hidden="true">{completed ? "✓" : failed ? "!" : index + 1}</span>
+              <p className={`mt-2 text-xs font-semibold ${failed ? "text-rose-100" : active ? "text-white" : completed ? "text-emerald-100" : "text-slate-500"}`}>{step.label}</p>
+              <p className="mt-0.5 text-[10px] text-slate-600">{failed ? "Needs action" : step.hint}</p>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function UploadActivity({ phase }: { phase: UploadPhase }) {
+  const confirming = phase === "confirming";
+  return (
+    <div className="border border-purple-300/25 bg-purple-400/10 p-4" role="status" aria-live="polite">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 size-8 shrink-0 animate-spin border-2 border-purple-200/20 border-t-purple-200" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-purple-100">{confirming ? "Confirming your checkpoint…" : "Submitting proof securely…"}</p>
+          <p className="mt-1 text-xs leading-5 text-purple-100/65">{confirming ? "The upload arrived. We’re refreshing your review status now." : "Keep this page open while the receipt is encrypted and uploaded."}</p>
+          <div className="mt-3 grid grid-cols-3 gap-1.5" aria-hidden="true"><span className="h-1.5 bg-purple-300" /><span className={`h-1.5 ${confirming ? "bg-purple-300" : "animate-pulse bg-purple-300/50"}`} /><span className={`h-1.5 ${confirming ? "animate-pulse bg-purple-300/50" : "bg-white/10"}`} /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
