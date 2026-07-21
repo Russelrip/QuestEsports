@@ -492,14 +492,83 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
   };
 };
 
+const ADMIN_PAYMENT_DETAIL_INCLUDE = {
+  bankTransferProof: {
+    select: {
+      originalFilename: true,
+      contentType: true,
+      byteSize: true,
+      submittedAt: true,
+      reviewedAt: true,
+      rejectionReason: true,
+    },
+  },
+  registration: {
+    select: {
+      id: true,
+      teamName: true,
+      contactEmail: true,
+      assignedSlotNumber: true,
+      reservedUntil: true,
+    },
+  },
+  merchandiseOrder: { select: { id: true, publicToken: true, email: true } },
+};
+
+const mapAdminPaymentDetail = (item) => ({
+  id: item.id,
+  orderId: item.providerOrderId,
+  paymentId: item.providerPaymentId,
+  purpose: item.purpose,
+  provider: item.provider,
+  amount: Number(item.amount),
+  currency: item.currency,
+  status: item.status,
+  method: item.method,
+  statusMessage: item.statusMessage,
+  reconciledAt: item.reconciledAt,
+  reconciliationNote: item.reconciliationNote,
+  providerRefundId: item.providerRefundId,
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+  registration: item.registration,
+  bankTransferProof: item.bankTransferProof,
+  merchandiseOrder: item.merchandiseOrder,
+});
+
+const mapAdminPaymentSummary = (item) => ({
+  id: item.id,
+  orderId: item.providerOrderId,
+  paymentId: item.providerPaymentId,
+  purpose: item.purpose,
+  provider: item.provider,
+  amount: Number(item.amount),
+  currency: item.currency,
+  status: item.status,
+  method: item.method,
+  createdAt: item.createdAt,
+  customerName: item.registration?.teamName || "Merchandise customer",
+  customerEmail: item.registration?.contactEmail || item.merchandiseOrder?.email || null,
+});
+
 const listPaymentTransactions = async (query = {}) => {
   const status = String(query.status || "").trim().toLowerCase();
   const purpose = String(query.purpose || "").trim().toLowerCase();
+  const search = String(query.search || "").trim();
   const where = {};
   if (["created", "pending", "paid", "failed", "cancelled", "charged_back", "expired", "review_required", "refunded"].includes(status)) where.status = status;
   if (["tournament_registration", "merchandise_order"].includes(purpose)) where.purpose = purpose;
+  if (search) {
+    const textFilter = { contains: search, mode: "insensitive" };
+    where.OR = [
+      { providerOrderId: textFilter },
+      { providerPaymentId: textFilter },
+      { registration: { is: { OR: [{ teamName: textFilter }, { contactEmail: textFilter }] } } },
+      { merchandiseOrder: { is: { email: textFilter } } },
+    ];
+  }
   const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
-  const pageSize = Math.min(Math.max(Number.parseInt(query.pageSize, 10) || 50, 1), 100);
+  const pageSize = Math.min(Math.max(Number.parseInt(query.pageSize, 10) || 20, 1), 50);
   const [total, items] = await prisma.$transaction([
     prisma.paymentTransaction.count({ where }),
     prisma.paymentTransaction.findMany({
@@ -507,51 +576,29 @@ const listPaymentTransactions = async (query = {}) => {
     orderBy: { createdAt: "desc" },
     skip: (page - 1) * pageSize,
     take: pageSize,
-    include: {
-      bankTransferProof: {
-        select: {
-          originalFilename: true,
-          contentType: true,
-          byteSize: true,
-          submittedAt: true,
-          reviewedAt: true,
-          rejectionReason: true,
-        },
-      },
+    select: {
+      id: true,
+      providerOrderId: true,
+      providerPaymentId: true,
+      purpose: true,
+      provider: true,
+      amount: true,
+      currency: true,
+      status: true,
+      method: true,
+      createdAt: true,
       registration: {
         select: {
-          id: true,
           teamName: true,
           contactEmail: true,
-          assignedSlotNumber: true,
-          reservedUntil: true,
         },
       },
-      merchandiseOrder: { select: { id: true, publicToken: true, email: true } },
+      merchandiseOrder: { select: { email: true } },
     },
     }),
   ]);
   return {
-    items: items.map((item) => ({
-    id: item.id,
-    orderId: item.providerOrderId,
-    paymentId: item.providerPaymentId,
-    purpose: item.purpose,
-    provider: item.provider,
-    amount: Number(item.amount),
-    currency: item.currency,
-    status: item.status,
-    method: item.method,
-    statusMessage: item.statusMessage,
-    reconciledAt: item.reconciledAt,
-    reconciliationNote: item.reconciliationNote,
-    providerRefundId: item.providerRefundId,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-    registration: item.registration,
-    bankTransferProof: item.bankTransferProof,
-    merchandiseOrder: item.merchandiseOrder,
-    })),
+    items: items.map(mapAdminPaymentSummary),
     pagination: {
       page,
       pageSize,
@@ -559,6 +606,15 @@ const listPaymentTransactions = async (query = {}) => {
       totalPages: Math.max(Math.ceil(total / pageSize), 1),
     },
   };
+};
+
+const getAdminPaymentTransaction = async (transactionId) => {
+  const transaction = await prisma.paymentTransaction.findUnique({
+    where: { id: transactionId },
+    include: ADMIN_PAYMENT_DETAIL_INCLUDE,
+  });
+  if (!transaction) throw new HttpError(404, "Payment transaction not found.");
+  return mapAdminPaymentDetail(transaction);
 };
 
 const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
@@ -728,6 +784,7 @@ module.exports = {
   getPaymentStatus,
   verifyNotificationSignature,
   listPaymentTransactions,
+  getAdminPaymentTransaction,
   reopenExpiredTournamentPayment,
   releaseOrderStock,
   expireStaleCommerceReservations,

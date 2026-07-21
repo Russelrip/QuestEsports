@@ -410,7 +410,10 @@ const additionalPaths = {
   "/api/admin/team-registrations/export": { get: createOperation("Admin", "Export tournament registrations", { authenticated: true }) },
   "/api/admin/tournaments/{tournamentId}/registrations": { get: createOperation("Admin", "List registrations for a tournament", { authenticated: true, parameters: idParameter("tournamentId") }) },
   "/api/admin/team-registrations/{registrationId}/status": { patch: createOperation("Admin", "Update registration status", { authenticated: true, parameters: idParameter("registrationId") }) },
-  "/api/admin/team-registrations/{registrationId}": { delete: createOperation("Admin", "Delete a registration", { authenticated: true, parameters: idParameter("registrationId") }) },
+  "/api/admin/team-registrations/{registrationId}": {
+    get: createOperation("Admin", "Get a tournament registration", { authenticated: true, parameters: idParameter("registrationId") }),
+    delete: createOperation("Admin", "Delete a registration", { authenticated: true, parameters: idParameter("registrationId") }),
+  },
   "/api/admin/team-registrations/{registrationId}/slot-reservation": {
     post: createOperation("Admin", "Privately reserve a slot for a pending team", { authenticated: true, parameters: idParameter("registrationId") }),
     delete: createOperation("Admin", "Release a private team slot reservation", { authenticated: true, parameters: idParameter("registrationId") }),
@@ -423,6 +426,7 @@ const additionalPaths = {
   "/api/admin/media/migrate-image-assets": { post: createOperation("Admin", "Migrate poster image assets", { authenticated: true }) },
   "/api/admin/teams": { get: createOperation("Admin", "List saved teams", { authenticated: true }) },
   "/api/admin/teams/{teamId}": {
+    get: createOperation("Admin", "Get a saved team and roster", { authenticated: true, parameters: idParameter("teamId") }),
     patch: createOperation("Admin", "Update a saved team and roster", { authenticated: true, parameters: idParameter("teamId") }),
     delete: createOperation("Admin", "Delete a saved team", { authenticated: true, parameters: idParameter("teamId") }),
   },
@@ -449,6 +453,7 @@ const additionalPaths = {
     delete: createOperation("Admin", "Archive a product", { authenticated: true, parameters: idParameter("productId") }),
   },
   "/api/admin/orders/{orderId}": { patch: createOperation("Admin", "Update order fulfillment status", { authenticated: true, parameters: idParameter("orderId") }) },
+  "/api/admin/payments/{transactionId}": { get: createOperation("Admin", "Get a payment transaction", { authenticated: true, parameters: idParameter("transactionId") }) },
   "/api/admin/payments/{transactionId}/bank-transfer-proof": { get: createOperation("Admin", "Download bank-transfer evidence", { authenticated: true, parameters: idParameter("transactionId") }) },
   "/api/admin/payments/{transactionId}/bank-transfer-review": { patch: createOperation("Admin", "Review bank-transfer evidence", { authenticated: true, parameters: idParameter("transactionId") }) },
   "/api/admin/payments/{transactionId}/payhere-reconciliation": { patch: createOperation("Admin", "Reconcile a PayHere payment", { authenticated: true, parameters: idParameter("transactionId") }) },

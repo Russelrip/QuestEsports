@@ -7,10 +7,12 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { AdminTableSkeleton } from "@/components/ui/skeleton";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { apiFetch } from "@/lib/auth";
-import { adminRequest } from "@/lib/admin";
+import { adminRequest, formatAdminCompactDateTime, getAdminPaginationSummary, type Pagination } from "@/lib/admin";
 
-type Payment = {
+type PaymentSummary = {
   id: string;
   orderId: string;
   paymentId?: string | null;
@@ -20,8 +22,17 @@ type Payment = {
   currency: string;
   status: string;
   method?: string | null;
-  statusMessage?: string | null;
   createdAt: string;
+  customerName: string;
+  customerEmail?: string | null;
+};
+
+type PaymentDetail = Omit<PaymentSummary, "customerName" | "customerEmail"> & {
+  statusMessage?: string | null;
+  updatedAt: string;
+  reconciledAt?: string | null;
+  reconciliationNote?: string | null;
+  providerRefundId?: string | null;
   registration?: {
     teamName: string;
     contactEmail: string;
@@ -39,169 +50,270 @@ type Payment = {
   } | null;
 };
 
-type Pagination = { page: number; pageSize: number; total: number; totalPages: number };
-
 export default function AdminPaymentsManager() {
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({ page: 1, pageSize: 50, total: 0, totalPages: 1 });
+  const [payments, setPayments] = useState<PaymentSummary[]>([]);
+  const [pagination, setPagination] = useState<Pagination>({ page: 1, pageSize: 20, total: 0, totalPages: 1 });
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
   const [status, setStatus] = useState("");
   const [purpose, setPurpose] = useState("");
   const [message, setMessage] = useState("");
-  const [busyId, setBusyId] = useState("");
-  const [reasons, setReasons] = useState<Record<string, string>>({});
-  const [refundReferences, setRefundReferences] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), pageSize: "50" });
+      const params = new URLSearchParams({ page: String(page), pageSize: "20" });
+      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
       if (status) params.set("status", status);
       if (purpose) params.set("purpose", purpose);
-      const data = await adminRequest<{ payments: Payment[]; pagination: Pagination }>(`/api/admin/payments?${params}`);
+      const data = await adminRequest<{ payments: PaymentSummary[]; pagination: Pagination }>(`/api/admin/payments?${params}`);
       setPayments(data.payments);
       setPagination(data.pagination);
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to load payments.");
+    } finally {
+      setLoading(false);
     }
-  }, [page, purpose, status]);
+  }, [debouncedSearch, page, purpose, status]);
+
+  const loadDetail = useCallback(async () => {
+    if (!selectedId) return;
+    setDetailLoading(true);
+    setDetailError("");
+    try {
+      const data = await adminRequest<{ payment: PaymentDetail }>(`/api/admin/payments/${selectedId}`);
+      setSelectedPayment(data.payment);
+    } catch (error) {
+      setDetailError(error instanceof Error ? error.message : "Unable to load this payment.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [selectedId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedPayment(null);
+      setDetailError("");
+      return;
+    }
+    void loadDetail();
+  }, [loadDetail, selectedId]);
 
-  const openProof = async (payment: Payment) => {
-    setBusyId(payment.id);
+  const refreshDetailAndList = async () => {
+    await Promise.all([refresh(), loadDetail()]);
+  };
+
+  return (
+    <AdminShell title="Payment Reconciliation" description="Browse transaction summaries, then open one payment to inspect evidence and perform reconciliation actions.">
+      {selectedId ? (
+        <PaymentDetailView
+          payment={selectedPayment}
+          loading={detailLoading}
+          error={detailError}
+          onBack={() => setSelectedId(null)}
+          onChanged={refreshDetailAndList}
+        />
+      ) : (
+        <Card className="min-w-0 overflow-hidden">
+          <div className="border-b border-white/10 p-5 sm:p-6">
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search reference, team, or email..." aria-label="Search payments" />
+              <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+                <option value="">All statuses</option>
+                {["created", "pending", "paid", "failed", "cancelled", "charged_back", "expired", "review_required", "refunded"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}
+              </Select>
+              <Select value={purpose} onChange={(event) => { setPurpose(event.target.value); setPage(1); }}>
+                <option value="">All purposes</option>
+                <option value="tournament_registration">Tournament registration</option>
+                <option value="merchandise_order">Merchandise order</option>
+              </Select>
+            </div>
+          </div>
+
+          {message ? <p className="p-5 text-sm text-rose-300">{message}</p> : null}
+          {loading ? (
+            <div className="p-5"><AdminTableSkeleton /></div>
+          ) : payments.length === 0 ? (
+            <div className="p-6 text-sm text-slate-400">No payments match these filters.</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1050px] border-collapse text-left">
+                  <thead className="border-b border-white/10 bg-white/[0.03] text-[11px] uppercase tracking-[0.16em] text-slate-500">
+                    <tr>
+                      <th className="px-5 py-4 font-semibold">Reference</th>
+                      <th className="px-5 py-4 font-semibold">Customer</th>
+                      <th className="px-5 py-4 font-semibold">Purpose</th>
+                      <th className="px-5 py-4 font-semibold">Provider</th>
+                      <th className="px-5 py-4 font-semibold">Amount</th>
+                      <th className="px-5 py-4 font-semibold">Status</th>
+                      <th className="px-5 py-4 font-semibold">Created</th>
+                      <th className="px-5 py-4 text-right font-semibold">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/8">
+                    {payments.map((payment) => (
+                      <tr key={payment.id} className={`transition hover:bg-purple-300/[0.04] ${payment.status === "review_required" ? "bg-amber-300/[0.03]" : ""}`}>
+                        <td className="px-5 py-4"><p className="max-w-52 break-all text-sm font-semibold text-white">{payment.orderId}</p>{payment.paymentId ? <p className="mt-1 max-w-52 break-all text-xs text-slate-500">PayHere {payment.paymentId}</p> : null}</td>
+                        <td className="px-5 py-4"><p className="text-sm text-slate-300">{payment.customerName}</p><p className="text-xs text-slate-500">{payment.customerEmail || "No email"}</p></td>
+                        <td className="px-5 py-4 text-xs uppercase tracking-wider text-slate-400">{payment.purpose.replaceAll("_", " ")}</td>
+                        <td className="px-5 py-4 text-sm text-slate-300">{payment.provider}</td>
+                        <td className="px-5 py-4 text-sm font-semibold text-white">{payment.currency} {payment.amount.toFixed(2)}</td>
+                        <td className="px-5 py-4"><PaymentStatus value={payment.status} /></td>
+                        <td className="px-5 py-4 text-sm text-slate-400">{formatAdminCompactDateTime(payment.createdAt)}</td>
+                        <td className="px-5 py-4 text-right"><Button type="button" variant="secondary" onClick={() => setSelectedId(payment.id)}>View & reconcile</Button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+                <span>{getAdminPaginationSummary(pagination, "transactions")}</span>
+                <div className="grid grid-cols-2 gap-2 sm:flex"><Button className="w-full sm:w-auto" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button className="w-full sm:w-auto" variant="secondary" disabled={page >= pagination.totalPages} onClick={() => setPage((current) => current + 1)}>Next</Button></div>
+              </div>
+            </>
+          )}
+        </Card>
+      )}
+    </AdminShell>
+  );
+}
+
+function PaymentDetailView({ payment, loading, error, onBack, onChanged }: {
+  payment: PaymentDetail | null;
+  loading: boolean;
+  error: string;
+  onBack: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState("");
+  const [refundReference, setRefundReference] = useState("");
+  const [actionError, setActionError] = useState("");
+
+  useEffect(() => {
+    setReason("");
+    setRefundReference("");
+    setActionError("");
+  }, [payment?.id]);
+
+  const openProof = async () => {
+    if (!payment) return;
+    setBusy(true);
     try {
       const response = await apiFetch(`/api/admin/payments/${payment.id}/bank-transfer-proof`);
       if (!response.ok) throw new Error("Payment proof could not be opened.");
       const objectUrl = URL.createObjectURL(await response.blob());
       window.open(objectUrl, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Payment proof could not be opened.");
+    } catch (nextError) {
+      setActionError(nextError instanceof Error ? nextError.message : "Payment proof could not be opened.");
     } finally {
-      setBusyId("");
+      setBusy(false);
     }
   };
 
-  const review = async (payment: Payment, decision: "approve" | "reject") => {
-    setBusyId(payment.id);
+  const runAction = async (path: string, options: Parameters<typeof adminRequest>[1]) => {
+    setBusy(true);
+    setActionError("");
     try {
-      await adminRequest(`/api/admin/payments/${payment.id}/bank-transfer-review`, {
-        method: "PATCH",
-        json: { decision, reason: reasons[payment.id] || "" },
-      });
-      setReasons((current) => ({ ...current, [payment.id]: "" }));
-      await refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Payment review could not be saved.");
+      await adminRequest(path, options);
+      setReason("");
+      setRefundReference("");
+      await onChanged();
+    } catch (nextError) {
+      setActionError(nextError instanceof Error ? nextError.message : "Payment action failed.");
     } finally {
-      setBusyId("");
-    }
-  };
-
-  const reconcilePayHere = async (payment: Payment, decision: "accept" | "mark_refunded") => {
-    setBusyId(payment.id);
-    try {
-      await adminRequest(`/api/admin/payments/${payment.id}/payhere-reconciliation`, {
-        method: "PATCH",
-        json: {
-          decision,
-          note: reasons[payment.id] || "",
-          providerRefundId: refundReferences[payment.id] || "",
-        },
-      });
-      setReasons((current) => ({ ...current, [payment.id]: "" }));
-      setRefundReferences((current) => ({ ...current, [payment.id]: "" }));
-      await refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Payment reconciliation could not be saved.");
-    } finally {
-      setBusyId("");
-    }
-  };
-
-  const reopenPayment = async (payment: Payment) => {
-    if (!window.confirm(`Reopen expired payment ${payment.orderId}? A new slot will be reserved for the configured payment window.`)) return;
-    setBusyId(payment.id);
-    try {
-      await adminRequest(`/api/admin/payments/${payment.id}/reopen`, { method: "POST" });
-      await refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Payment could not be reopened.");
-    } finally {
-      setBusyId("");
+      setBusy(false);
     }
   };
 
   return (
-    <AdminShell title="Payment Reconciliation" description="Verify manual transfers against the actual bank credit before approving them. An uploaded receipt alone is not proof of settlement.">
-      <Card className="grid gap-4 p-5 sm:grid-cols-2">
-        <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
-          <option value="">All statuses</option>
-          {["created", "pending", "paid", "failed", "cancelled", "charged_back", "expired", "review_required", "refunded"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}
-        </Select>
-        <Select value={purpose} onChange={(event) => { setPurpose(event.target.value); setPage(1); }}>
-          <option value="">All purposes</option>
-          <option value="tournament_registration">Tournament registration</option>
-          <option value="merchandise_order">Merchandise order</option>
-        </Select>
-      </Card>
-      {message ? <p className="mt-4 text-sm text-rose-300">{message}</p> : null}
-      <div className="mt-4 grid gap-4">
-        {payments.map((payment) => (
-          <Card key={payment.id} className={`min-w-0 overflow-hidden p-4 sm:p-5 ${payment.status === "review_required" ? "border-amber-300/30" : ""}`}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs uppercase tracking-[0.2em] text-purple-200">{payment.purpose.replaceAll("_", " ")} · {payment.provider}</p>
-                <h3 className="mt-2 break-words text-xl text-white">{payment.currency} {payment.amount.toFixed(2)} · {payment.status.replaceAll("_", " ")}</h3>
-                <p className="mt-2 break-all text-sm text-slate-400">Reference {payment.orderId}{payment.paymentId ? ` · PayHere ${payment.paymentId}` : ""}</p>
-                <p className="mt-1 break-all text-sm text-slate-400">{payment.registration?.contactEmail || payment.merchandiseOrder?.email || "No customer email"}{payment.registration?.assignedSlotNumber ? ` · Slot #${payment.registration.assignedSlotNumber}` : ""}</p>
-                {payment.statusMessage ? <p className="mt-2 break-words text-sm text-amber-100">{payment.statusMessage}</p> : null}
-              </div>
-              <div className="w-full text-left text-sm text-slate-400 sm:w-auto sm:text-right"><p>{payment.method || "Method pending"}</p><p>{new Date(payment.createdAt).toLocaleString()}</p></div>
+    <div className="space-y-4">
+      <Button type="button" variant="secondary" onClick={onBack}>← Back to payments</Button>
+      {error ? <Card className="p-6 text-sm text-rose-300">{error}</Card> : null}
+      {loading ? <Card className="p-5"><AdminTableSkeleton /></Card> : null}
+      {!loading && payment ? (
+        <Card className={`min-w-0 overflow-hidden p-5 sm:p-6 ${payment.status === "review_required" ? "border-amber-300/30" : ""}`}>
+          <div className="border-b border-white/10 pb-5">
+            <p className="text-xs uppercase tracking-[0.2em] text-purple-200">{payment.purpose.replaceAll("_", " ")} · {payment.provider}</p>
+            <h3 className="mt-2 text-2xl text-white">{payment.currency} {payment.amount.toFixed(2)}</h3>
+            <div className="mt-2"><PaymentStatus value={payment.status} /></div>
+            <p className="mt-3 break-all text-sm text-slate-400">Reference {payment.orderId}{payment.paymentId ? ` · Provider ID ${payment.paymentId}` : ""}</p>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <PaymentInfo title="Transaction" rows={[
+              ["Method", payment.method || "Pending"], ["Created", formatAdminCompactDateTime(payment.createdAt)],
+              ["Updated", formatAdminCompactDateTime(payment.updatedAt)], ["Status message", payment.statusMessage || "None"],
+            ]} />
+            <PaymentInfo title="Customer" rows={payment.registration ? [
+              ["Team", payment.registration.teamName], ["Email", payment.registration.contactEmail],
+              ["Slot", payment.registration.assignedSlotNumber ? `#${payment.registration.assignedSlotNumber}` : "Not assigned"],
+              ["Reserved until", payment.registration.reservedUntil ? formatAdminCompactDateTime(payment.registration.reservedUntil) : "Not reserved"],
+            ] : [["Email", payment.merchandiseOrder?.email || "No customer email"]]} />
+            <PaymentInfo title="Reconciliation" rows={[
+              ["Reconciled", payment.reconciledAt ? formatAdminCompactDateTime(payment.reconciledAt) : "No"],
+              ["Note", payment.reconciliationNote || "None"], ["Refund reference", payment.providerRefundId || "None"],
+            ]} />
+          </div>
+
+          {payment.bankTransferProof ? (
+            <div className="mt-5 grid gap-3 border border-white/10 bg-black/15 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Private bank-transfer evidence</p>
+              <p className="break-words text-sm text-slate-300">{payment.bankTransferProof.originalFilename} · {Math.ceil(payment.bankTransferProof.byteSize / 1024)} KB · {payment.bankTransferProof.contentType}</p>
+              <p className="text-sm text-slate-400">Submitted {formatAdminCompactDateTime(payment.bankTransferProof.submittedAt)}{payment.bankTransferProof.reviewedAt ? ` · Reviewed ${formatAdminCompactDateTime(payment.bankTransferProof.reviewedAt)}` : ""}</p>
+              {payment.bankTransferProof.rejectionReason ? <p className="text-sm text-rose-300">Previous rejection: {payment.bankTransferProof.rejectionReason}</p> : null}
+              <div><Button type="button" variant="secondary" disabled={busy} onClick={() => void openProof()}>Open private proof</Button></div>
             </div>
-            {payment.provider === "bank_transfer" && payment.bankTransferProof ? (
-              <div className="mt-5 min-w-0 grid gap-3 rounded-[20px] border border-white/10 p-4">
-                <p className="break-words text-sm text-slate-300">Receipt: <span className="break-all">{payment.bankTransferProof.originalFilename}</span> · {Math.ceil(payment.bankTransferProof.byteSize / 1024)} KB · submitted {new Date(payment.bankTransferProof.submittedAt).toLocaleString()}</p>
-                <div><Button type="button" className="w-full sm:w-auto" variant="secondary" disabled={busyId === payment.id} onClick={() => void openProof(payment)}>Open private proof</Button></div>
-                {payment.status === "review_required" ? (
-                  <>
-                    <Textarea value={reasons[payment.id] || ""} onChange={(event) => setReasons((current) => ({ ...current, [payment.id]: event.target.value }))} placeholder="Reason required only when rejecting" rows={3} />
-                    <div className="grid gap-2 sm:flex sm:flex-wrap">
-                      <Button type="button" className="w-full sm:w-auto" disabled={busyId === payment.id} onClick={() => void review(payment, "approve")}>Approve verified transfer</Button>
-                      <Button type="button" className="w-full sm:w-auto" variant="secondary" disabled={busyId === payment.id || !(reasons[payment.id] || "").trim()} onClick={() => void review(payment, "reject")}>Reject and release slot</Button>
-                    </div>
-                  </>
-                ) : null}
+          ) : null}
+
+          {payment.provider === "bank_transfer" && payment.bankTransferProof && payment.status === "review_required" ? (
+            <div className="mt-5 grid gap-3 border border-amber-300/20 p-4">
+              <Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason required only when rejecting" rows={3} />
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
+                <Button type="button" disabled={busy} onClick={() => void runAction(`/api/admin/payments/${payment.id}/bank-transfer-review`, { method: "PATCH", json: { decision: "approve", reason } })}>Approve verified transfer</Button>
+                <Button type="button" variant="secondary" disabled={busy || !reason.trim()} onClick={() => void runAction(`/api/admin/payments/${payment.id}/bank-transfer-review`, { method: "PATCH", json: { decision: "reject", reason } })}>Reject and release slot</Button>
               </div>
-            ) : null}
-            {payment.provider === "payhere" && payment.status === "review_required" ? (
-              <div className="mt-5 grid gap-3 rounded-[20px] border border-amber-300/20 p-4">
-                <p className="text-sm text-amber-100">Verify the payment in the PayHere merchant portal. Accept only if capacity or stock is still available. Otherwise issue the refund externally first, then record its reference here.</p>
-                <Textarea value={reasons[payment.id] || ""} onChange={(event) => setReasons((current) => ({ ...current, [payment.id]: event.target.value }))} placeholder="Required reconciliation note" rows={3} />
-                <Input value={refundReferences[payment.id] || ""} onChange={(event) => setRefundReferences((current) => ({ ...current, [payment.id]: event.target.value }))} placeholder="PayHere refund reference (required for refund)" />
-                <div className="grid gap-2 sm:flex sm:flex-wrap">
-                  <Button type="button" className="w-full sm:w-auto" disabled={busyId === payment.id || !(reasons[payment.id] || "").trim()} onClick={() => void reconcilePayHere(payment, "accept")}>Accept verified payment</Button>
-                  <Button type="button" className="w-full sm:w-auto" variant="secondary" disabled={busyId === payment.id || !(reasons[payment.id] || "").trim() || !(refundReferences[payment.id] || "").trim()} onClick={() => void reconcilePayHere(payment, "mark_refunded")}>Record completed refund</Button>
-                </div>
+            </div>
+          ) : null}
+
+          {payment.provider === "payhere" && payment.status === "review_required" ? (
+            <div className="mt-5 grid gap-3 border border-amber-300/20 p-4">
+              <p className="text-sm text-amber-100">Verify this payment in the PayHere merchant portal before reconciling it here.</p>
+              <Textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required reconciliation note" rows={3} />
+              <Input value={refundReference} onChange={(event) => setRefundReference(event.target.value)} placeholder="PayHere refund reference (required for refund)" />
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
+                <Button type="button" disabled={busy || !reason.trim()} onClick={() => void runAction(`/api/admin/payments/${payment.id}/payhere-reconciliation`, { method: "PATCH", json: { decision: "accept", note: reason, providerRefundId: refundReference } })}>Accept verified payment</Button>
+                <Button type="button" variant="secondary" disabled={busy || !reason.trim() || !refundReference.trim()} onClick={() => void runAction(`/api/admin/payments/${payment.id}/payhere-reconciliation`, { method: "PATCH", json: { decision: "mark_refunded", note: reason, providerRefundId: refundReference } })}>Record completed refund</Button>
               </div>
-            ) : null}
-            {payment.provider === "bank_transfer" && payment.purpose === "tournament_registration" && payment.status === "expired" ? (
-              <div className="mt-5 rounded-[20px] border border-amber-300/20 p-4">
-                <p className="mb-3 text-sm text-amber-100">Reopening assigns the lowest available slot and starts a new payment window. The fee may change if the new slot is in a different price tier.</p>
-                <Button type="button" disabled={busyId === payment.id} onClick={() => void reopenPayment(payment)}>
-                  {busyId === payment.id ? "Reopening..." : "Reopen payment"}
-                </Button>
-              </div>
-            ) : null}
-          </Card>
-        ))}
-        {payments.length === 0 ? <Card className="p-6 text-sm text-slate-400">No payments match these filters.</Card> : null}
-      </div>
-      <div className="mt-5 flex flex-col gap-3 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-        <span>{pagination.total} transactions · page {pagination.page} of {pagination.totalPages}</span>
-        <div className="grid grid-cols-2 gap-2 sm:flex"><Button className="w-full sm:w-auto" variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button className="w-full sm:w-auto" variant="secondary" disabled={page >= pagination.totalPages} onClick={() => setPage((current) => current + 1)}>Next</Button></div>
-      </div>
-    </AdminShell>
+            </div>
+          ) : null}
+
+          {payment.provider === "bank_transfer" && payment.purpose === "tournament_registration" && payment.status === "expired" ? (
+            <div className="mt-5 border border-amber-300/20 p-4"><p className="mb-3 text-sm text-amber-100">Reopening assigns the lowest available slot and begins a new payment window. The slot-tier price may change.</p><Button type="button" disabled={busy} onClick={() => window.confirm(`Reopen expired payment ${payment.orderId}?`) && void runAction(`/api/admin/payments/${payment.id}/reopen`, { method: "POST" })}>{busy ? "Reopening..." : "Reopen payment"}</Button></div>
+          ) : null}
+
+          {actionError ? <p className="mt-4 text-sm text-rose-300">{actionError}</p> : null}
+        </Card>
+      ) : null}
+    </div>
   );
+}
+
+function PaymentStatus({ value }: { value: string }) {
+  const tone = value === "paid" ? "text-emerald-300" : ["failed", "cancelled", "charged_back", "refunded"].includes(value) ? "text-rose-300" : "text-amber-300";
+  return <span className={`text-xs font-semibold uppercase tracking-wider ${tone}`}>{value.replaceAll("_", " ")}</span>;
+}
+
+function PaymentInfo({ title, rows }: { title: string; rows: Array<[string, string]> }) {
+  return <div className="border border-white/10 bg-black/15 p-4"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{title}</p><dl className="mt-4 grid gap-3">{rows.map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm text-slate-200">{value}</dd></div>)}</dl></div>;
 }

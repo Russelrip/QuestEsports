@@ -263,3 +263,75 @@ test("manual PayHere acceptance refuses orders whose inventory was released", as
     restore();
   }
 });
+
+test("listPaymentTransactions returns lightweight searchable summaries", async () => {
+  const findManyCalls = [];
+  const prisma = {
+    paymentTransaction: {
+      count: async () => 1,
+      findMany: async (args) => {
+        findManyCalls.push(args);
+        return [{
+          id: "payment-1",
+          providerOrderId: "ORDER-001",
+          providerPaymentId: null,
+          purpose: "tournament_registration",
+          provider: "bank_transfer",
+          amount: 2500,
+          currency: "LKR",
+          status: "review_required",
+          method: "bank_transfer",
+          createdAt: new Date("2026-07-20T10:00:00.000Z"),
+          registration: { teamName: "Quest Five", contactEmail: "captain@example.com" },
+          merchandiseOrder: null,
+        }];
+      },
+    },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    const result = await service.listPaymentTransactions({ search: "Quest", pageSize: "20" });
+    assert.equal(findManyCalls[0].select.bankTransferProof, undefined);
+    assert.equal(findManyCalls[0].where.OR[2].registration.is.OR[0].teamName.contains, "Quest");
+    assert.equal(result.items[0].customerName, "Quest Five");
+    assert.equal(result.items[0].bankTransferProof, undefined);
+  } finally {
+    restore();
+  }
+});
+
+test("getAdminPaymentTransaction loads proof and reconciliation detail on demand", async () => {
+  const prisma = {
+    paymentTransaction: {
+      findUnique: async () => ({
+        id: "payment-1",
+        providerOrderId: "ORDER-001",
+        providerPaymentId: null,
+        purpose: "tournament_registration",
+        provider: "bank_transfer",
+        amount: 2500,
+        currency: "LKR",
+        status: "review_required",
+        method: "bank_transfer",
+        statusMessage: "Awaiting review",
+        reconciledAt: null,
+        reconciliationNote: null,
+        providerRefundId: null,
+        createdAt: new Date("2026-07-20T10:00:00.000Z"),
+        updatedAt: new Date("2026-07-20T11:00:00.000Z"),
+        registration: { id: "registration-1", teamName: "Quest Five", contactEmail: "captain@example.com", assignedSlotNumber: 1, reservedUntil: null },
+        merchandiseOrder: null,
+        bankTransferProof: { originalFilename: "receipt.png", contentType: "image/png", byteSize: 1000, submittedAt: new Date(), reviewedAt: null, rejectionReason: null },
+      }),
+    },
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    const result = await service.getAdminPaymentTransaction("payment-1");
+    assert.equal(result.bankTransferProof.originalFilename, "receipt.png");
+    assert.equal(result.registration.teamName, "Quest Five");
+  } finally {
+    restore();
+  }
+});

@@ -10,6 +10,7 @@ const {
   updateContactMessageReadStatus,
   deleteContactMessage,
   listTeamRegistrations,
+  getAdminTeamRegistrationById,
   exportTeamRegistrations,
   listRecruitmentApplications,
   exportRecruitmentApplications,
@@ -21,6 +22,7 @@ const {
   runLegacyPosterImport,
   runPosterImageAssetMigration,
   listAdminSavedTeams,
+  getAdminSavedTeamById,
   updateAdminSavedTeam,
   updateAdminSavedTeamOrganization,
   deleteAdminSavedTeam,
@@ -144,6 +146,13 @@ const getTeamRegistrations = asyncHandler(async (req, res) => {
   });
 });
 
+const getTeamRegistration = asyncHandler(async (req, res) => {
+  res.status(200).json({
+    success: true,
+    registration: await getAdminTeamRegistrationById(req.params.registrationId),
+  });
+});
+
 const getTournamentRegistrations = asyncHandler(async (req, res) => {
   const result = await getRegistrationsByTournament(
     req.params.tournamentId,
@@ -255,7 +264,12 @@ const migratePosterMediaToFilesystem = asyncHandler(async (req, res) => {
 });
 
 const getSavedTeams = asyncHandler(async (req, res) => {
-  res.status(200).json({ success: true, teams: await listAdminSavedTeams(req.query) });
+  const result = await listAdminSavedTeams(req.query);
+  res.status(200).json({ success: true, teams: result.items, pagination: result.pagination });
+});
+
+const getSavedTeam = asyncHandler(async (req, res) => {
+  res.status(200).json({ success: true, team: await getAdminSavedTeamById(req.params.teamId) });
 });
 
 const updateSavedTeamOrganization = asyncHandler(async (req, res) => {
@@ -284,6 +298,7 @@ module.exports = {
   updateContactMessageStatus,
   removeContactMessage,
   getTeamRegistrations,
+  getTeamRegistration,
   getTournamentRegistrations,
   downloadTeamRegistrations,
   updateRegistrationStatus,
@@ -297,6 +312,7 @@ module.exports = {
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
   getSavedTeams,
+  getSavedTeam,
   updateSavedTeam,
   updateSavedTeamOrganization,
   removeSavedTeam,

@@ -541,8 +541,8 @@ test("deleteAdminSavedTeam reports missing saved teams", async () => {
 
 test("listAdminSavedTeams maps saved teams for the admin team manager", async () => {
   const findManyCalls = [];
-  const { module: adminService, restore } = loadAdminService({
-    savedTeam: {
+  const savedTeam = {
+      count: async () => 1,
       findMany: async (args) => {
         findManyCalls.push(args);
         return [
@@ -553,9 +553,7 @@ test("listAdminSavedTeams maps saved teams for the admin team manager", async ()
             logoName: "quest-five.png",
             country: "Sri Lanka",
             organizationName: null,
-            members: [
-              { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: "player", riotId: "Player#001", inviteStatus: "accepted" },
-            ],
+            updatedAt: new Date("2026-07-20T10:00:00.000Z"),
             captainUser: {
               firstName: "Team",
               lastName: "Captain",
@@ -565,19 +563,20 @@ test("listAdminSavedTeams maps saved teams for the admin team manager", async ()
           },
         ];
       },
-    },
+    };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam,
+    $transaction: async (operations) => Promise.all(operations),
   });
 
   try {
-    const teams = await adminService.listAdminSavedTeams({ search: "Quest" });
+    const result = await adminService.listAdminSavedTeams({ search: "Quest", page: "2", pageSize: "15" });
 
-    assert.deepEqual(findManyCalls[0].where, {
-      OR: [
-        { name: { contains: "Quest", mode: "insensitive" } },
-        { organizationName: { contains: "Quest", mode: "insensitive" } },
-      ],
-    });
-    assert.deepEqual(teams, [
+    assert.equal(findManyCalls[0].skip, 15);
+    assert.equal(findManyCalls[0].take, 15);
+    assert.equal(findManyCalls[0].where.OR[0].name.contains, "Quest");
+    assert.ok(findManyCalls[0].where.OR.some((filter) => filter.members?.some));
+    assert.deepEqual(result.items, [
       {
         id: "saved-team-1",
         name: "Quest Five",
@@ -587,10 +586,40 @@ test("listAdminSavedTeams maps saved teams for the admin team manager", async ()
         organizationName: "Independent",
         captainName: "Team Captain",
         memberCount: 5,
-        members: [
-          { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: "player", gameId: "Player#001", inviteStatus: "accepted" },
-        ],
+        updatedAt: new Date("2026-07-20T10:00:00.000Z"),
       },
+    ]);
+    assert.deepEqual(result.pagination, { page: 2, pageSize: 15, total: 1, totalPages: 1 });
+  } finally {
+    restore();
+  }
+});
+
+test("getAdminSavedTeamById loads the roster only for the selected team", async () => {
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({
+        id: "saved-team-1",
+        name: "Quest Five",
+        teamTag: "Q5",
+        logoName: null,
+        country: "Sri Lanka",
+        organizationName: null,
+        updatedAt: new Date("2026-07-20T10:00:00.000Z"),
+        captainUser: { firstName: "Team", lastName: "Captain", username: "captain" },
+        _count: { members: 1 },
+        members: [
+          { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: "player", riotId: "Player#001", inviteStatus: "accepted" },
+        ],
+      }),
+    },
+  });
+
+  try {
+    const team = await adminService.getAdminSavedTeamById("saved-team-1");
+    assert.equal(team.captainName, "Team Captain");
+    assert.deepEqual(team.members, [
+      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: "player", gameId: "Player#001", inviteStatus: "accepted" },
     ]);
   } finally {
     restore();
@@ -621,6 +650,84 @@ test("updateAdminSavedTeamOrganization stores a verified organization label", as
       },
     ]);
     assert.deepEqual(team, { organizationName: "Quest Esports" });
+  } finally {
+    restore();
+  }
+});
+
+test("listTeamRegistrations returns paginated summaries without loading rosters", async () => {
+  const findManyCalls = [];
+  const prisma = {
+    teamRegistration: {
+      count: async () => 1,
+      findMany: async (args) => {
+        findManyCalls.push(args);
+        return [{
+          id: "registration-1",
+          entryType: "team",
+          teamName: "Quest Five",
+          status: "pending",
+          paymentStatus: "unpaid",
+          verificationStatus: "pending",
+          createdAt: new Date("2026-07-20T10:00:00.000Z"),
+          captainName: "Team Captain",
+          captainEmail: "captain@example.com",
+          tournament: { id: "tournament-1", slug: "quest-cup", title: "Quest Cup", status: "registration_open", isPublished: true },
+          _count: { members: 5 },
+        }];
+      },
+    },
+    tournament: { findMany: async () => [] },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const { module: adminService, restore } = loadAdminService(prisma);
+  try {
+    const result = await adminService.listTeamRegistrations({ page: "1", pageSize: "10" });
+    assert.equal(findManyCalls[0].select.members, undefined);
+    assert.equal(result.items[0].memberCount, 5);
+    assert.equal(result.items[0].captain.email, "captain@example.com");
+    assert.equal(result.items[0].members, undefined);
+  } finally {
+    restore();
+  }
+});
+
+test("getAdminTeamRegistrationById loads the selected registration roster", async () => {
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: {
+      findUnique: async () => ({
+        id: "registration-1",
+        entryType: "team",
+        teamName: "Quest Five",
+        additionalData: {},
+        reservedUntil: null,
+        country: "Sri Lanka",
+        teamTag: "Q5",
+        organizationRequested: false,
+        status: "pending",
+        paymentStatus: "unpaid",
+        verificationStatus: "pending",
+        adminSlotReservation: null,
+        createdAt: new Date("2026-07-20T10:00:00.000Z"),
+        contactEmail: "captain@example.com",
+        teamLogoName: null,
+        tournament: { id: "tournament-1", slug: "quest-cup", title: "Quest Cup", status: "registration_open", isPublished: true },
+        captainName: "Team Captain",
+        captainEmail: "captain@example.com",
+        captainPhone: "0770000000",
+        captainDiscord: "captain",
+        captainRiotId: "Captain#001",
+        members: [{
+          id: "member-1", role: "CAPTAIN", memberOrder: 0, name: "Team Captain", email: "captain@example.com",
+          discord: "captain", riotId: "Captain#001", additionalData: {}, inviteStatus: "accepted", inviteRespondedAt: new Date(), user: null,
+        }],
+      }),
+    },
+  });
+  try {
+    const result = await adminService.getAdminTeamRegistrationById("registration-1");
+    assert.equal(result.members.length, 1);
+    assert.equal(result.members[0].name, "Team Captain");
   } finally {
     restore();
   }

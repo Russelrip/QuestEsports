@@ -12,6 +12,7 @@ const {
   updateContactMessageStatus,
   removeContactMessage,
   getTeamRegistrations,
+  getTeamRegistration,
   getTournamentRegistrations,
   downloadTeamRegistrations,
   updateRegistrationStatus,
@@ -25,6 +26,7 @@ const {
   importLegacyPosterMedia,
   migratePosterMediaToFilesystem,
   getSavedTeams,
+  getSavedTeam,
   updateSavedTeam,
   updateSavedTeamOrganization,
   removeSavedTeam,
@@ -45,6 +47,7 @@ router.patch("/admin/contact-messages/:messageId", updateContactMessageStatus);
 router.delete("/admin/contact-messages/:messageId", removeContactMessage);
 router.get("/admin/team-registrations", getTeamRegistrations);
 router.get("/admin/team-registrations/export", downloadTeamRegistrations);
+router.get("/admin/team-registrations/:registrationId", getTeamRegistration);
 router.get("/admin/tournaments/:tournamentId/registrations", getTournamentRegistrations);
 router.patch("/admin/team-registrations/:registrationId/status", invalidateCache("tournaments"), updateRegistrationStatus);
 router.delete("/admin/team-registrations/:registrationId", invalidateCache("tournaments"), removeRegistration);
@@ -57,6 +60,7 @@ router.delete("/admin/recruitment-applications/:applicationId", removeRecruitmen
 router.post("/admin/media/import-legacy-posters", importLegacyPosterMedia);
 router.post("/admin/media/migrate-image-assets", migratePosterMediaToFilesystem);
 router.get("/admin/teams", getSavedTeams);
+router.get("/admin/teams/:teamId", getSavedTeam);
 router.patch("/admin/teams/:teamId", updateSavedTeam);
 router.patch("/admin/teams/:teamId/organization", updateSavedTeamOrganization);
 router.delete("/admin/teams/:teamId", removeSavedTeam);

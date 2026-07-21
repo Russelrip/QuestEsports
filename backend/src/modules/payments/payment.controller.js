@@ -3,6 +3,7 @@ const {
   processPayHereNotification,
   getPaymentStatus,
   listPaymentTransactions,
+  getAdminPaymentTransaction,
   reconcilePayHerePayment,
   reopenExpiredTournamentPayment,
 } = require("./payment.service");
@@ -32,6 +33,13 @@ const getAdminPayments = asyncHandler(async (req, res) => {
     success: true,
     payments: result.items,
     pagination: result.pagination,
+  });
+});
+
+const getAdminPayment = asyncHandler(async (req, res) => {
+  res.status(200).json({
+    success: true,
+    payment: await getAdminPaymentTransaction(req.params.transactionId),
   });
 });
 
@@ -109,6 +117,7 @@ module.exports = {
   notifyPayHere,
   readPaymentStatus,
   getAdminPayments,
+  getAdminPayment,
   uploadBankTransferProof,
   downloadBankTransferProof,
   reviewBankTransferPayment,

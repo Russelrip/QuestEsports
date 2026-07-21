@@ -6,7 +6,7 @@ import {
   type ContactMessage,
   type Pagination,
   type RecruitmentApplication,
-  type TeamRegistration,
+  type TeamRegistrationSummary,
   type TournamentOption,
 } from "@/lib/admin";
 import { useApiQuery } from "@/hooks/api/useApiQuery";
@@ -50,7 +50,7 @@ export function useAdminRegistrations(search: string, tournament: string, status
     appendIfPresent(params, "status", status);
 
     return adminRequest<{
-      registrations: TeamRegistration[];
+      registrations: TeamRegistrationSummary[];
       tournaments: TournamentOption[];
       pagination: Pagination;
     }>(`/api/admin/team-registrations?${params.toString()}`);

@@ -154,6 +154,14 @@ export type TeamRegistration = {
   members: RegistrationMember[];
 };
 
+export type TeamRegistrationSummary = Pick<
+  TeamRegistration,
+  "id" | "entryType" | "teamName" | "status" | "paymentStatus" | "verificationStatus" | "createdAt" | "tournament"
+> & {
+  captain: Pick<TeamRegistration["captain"], "name" | "email">;
+  memberCount: number;
+};
+
 export type RecruitmentApplicationMember = {
   name: string;
   email: string;

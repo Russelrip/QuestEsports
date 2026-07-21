@@ -98,6 +98,20 @@ const TEAM_REGISTRATION_INCLUDE = {
   },
 };
 
+const TEAM_REGISTRATION_SUMMARY_SELECT = {
+  id: true,
+  entryType: true,
+  teamName: true,
+  status: true,
+  paymentStatus: true,
+  verificationStatus: true,
+  createdAt: true,
+  captainName: true,
+  captainEmail: true,
+  tournament: { select: TOURNAMENT_SUMMARY_SELECT },
+  _count: { select: { members: true } },
+};
+
 const mapContactMessage = (message) => ({
   id: message.id,
   name: message.name,
@@ -164,6 +178,22 @@ const mapTeamRegistration = (registration) => ({
     .slice()
     .sort((left, right) => left.memberOrder - right.memberOrder)
     .map(mapRegistrationMember),
+});
+
+const mapTeamRegistrationSummary = (registration) => ({
+  id: registration.id,
+  entryType: registration.entryType || "team",
+  teamName: registration.teamName,
+  status: registration.status,
+  paymentStatus: registration.paymentStatus,
+  verificationStatus: registration.verificationStatus,
+  createdAt: registration.createdAt,
+  tournament: registration.tournament,
+  captain: {
+    name: registration.captainName,
+    email: registration.captainEmail,
+  },
+  memberCount: registration._count.members,
 });
 
 const decryptNic = (ciphertext) => {
@@ -638,7 +668,7 @@ const listTeamRegistrations = async (query = {}) => {
       orderBy: { createdAt: "desc" },
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
-      include: TEAM_REGISTRATION_INCLUDE,
+      select: TEAM_REGISTRATION_SUMMARY_SELECT,
     }),
     prisma.tournament.findMany({
       orderBy: { startDate: { sort: "desc", nulls: "last" } },
@@ -648,13 +678,22 @@ const listTeamRegistrations = async (query = {}) => {
 
   return {
     ...buildPagedResponse({
-      items: registrations.map(mapTeamRegistration),
+      items: registrations.map(mapTeamRegistrationSummary),
       total,
       page: pagination.page,
       pageSize: pagination.pageSize,
     }),
     tournaments,
   };
+};
+
+const getAdminTeamRegistrationById = async (registrationId) => {
+  const registration = await prisma.teamRegistration.findUnique({
+    where: { id: registrationId },
+    include: TEAM_REGISTRATION_INCLUDE,
+  });
+  if (!registration) throw new HttpError(404, "Team registration not found.");
+  return mapTeamRegistration(registration);
 };
 
 const exportTeamRegistrations = async (query = {}) => {
@@ -1145,46 +1184,127 @@ const deleteTeamRegistration = async (registrationId) => {
 const runLegacyPosterImport = async () => importLegacyPosters();
 const runPosterImageAssetMigration = async () => migrateImageAssetsToFilesystem();
 
-const listAdminSavedTeams = async ({ search } = {}) => {
+const SAVED_TEAM_CAPTAIN_SELECT = {
+  firstName: true,
+  lastName: true,
+  username: true,
+};
+
+const SAVED_TEAM_MEMBER_SELECT = {
+  id: true,
+  role: true,
+  name: true,
+  email: true,
+  discord: true,
+  riotId: true,
+  inviteStatus: true,
+};
+
+const getSavedTeamCaptainName = (team) =>
+  [team.captainUser?.firstName, team.captainUser?.lastName].filter(Boolean).join(" ").trim() ||
+  team.captainUser?.username ||
+  "Unknown captain";
+
+const mapAdminSavedTeamSummary = (team) => ({
+  id: team.id,
+  name: team.name,
+  teamTag: team.teamTag,
+  logoUrl: team.logoName ? `/api/uploads/team-logos/${team.logoName}` : null,
+  country: team.country,
+  organizationName: team.organizationName || "Independent",
+  captainName: getSavedTeamCaptainName(team),
+  memberCount: team._count.members,
+  updatedAt: team.updatedAt,
+});
+
+const mapAdminSavedTeamDetail = (team) => ({
+  ...mapAdminSavedTeamSummary(team),
+  members: (team.members || []).map((member) => ({
+    id: member.id,
+    role: member.role,
+    name: member.name,
+    email: member.email,
+    discord: member.discord,
+    gameId: member.riotId,
+    inviteStatus: member.inviteStatus,
+  })),
+});
+
+const listAdminSavedTeams = async ({ page, pageSize, search } = {}) => {
+  const pagination = buildPagination({ page, pageSize });
   const normalizedSearch = normalizeText(search);
-  const teams = await prisma.savedTeam.findMany({
-    where: normalizedSearch
-      ? {
-          OR: [
-            { name: { contains: normalizedSearch, mode: "insensitive" } },
-            { organizationName: { contains: normalizedSearch, mode: "insensitive" } },
-          ],
-        }
-      : {},
-    orderBy: { updatedAt: "desc" },
-    take: 200,
-    include: {
-      captainUser: { select: { firstName: true, lastName: true, username: true } },
-      members: { orderBy: [{ role: "asc" }, { memberOrder: "asc" }] },
+  const textFilter = { contains: normalizedSearch, mode: "insensitive" };
+  const where = normalizedSearch
+    ? {
+        OR: [
+          { name: textFilter },
+          { teamTag: textFilter },
+          { country: textFilter },
+          { organizationName: textFilter },
+          { captainUser: { is: { OR: [
+            { firstName: textFilter },
+            { lastName: textFilter },
+            { username: textFilter },
+            { email: textFilter },
+          ] } } },
+          { members: { some: { OR: [
+            { name: textFilter },
+            { email: textFilter },
+            { discord: textFilter },
+            { riotId: textFilter },
+          ] } } },
+        ],
+      }
+    : {};
+  const [total, teams] = await prisma.$transaction([
+    prisma.savedTeam.count({ where }),
+    prisma.savedTeam.findMany({
+      where,
+      orderBy: { updatedAt: "desc" },
+      skip: (pagination.page - 1) * pagination.pageSize,
+      take: pagination.pageSize,
+      select: {
+        id: true,
+        name: true,
+        teamTag: true,
+        logoName: true,
+        country: true,
+        organizationName: true,
+        updatedAt: true,
+        captainUser: { select: SAVED_TEAM_CAPTAIN_SELECT },
+        _count: { select: { members: true } },
+      },
+    }),
+  ]);
+  return buildPagedResponse({
+    items: teams.map(mapAdminSavedTeamSummary),
+    total,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+  });
+};
+
+const getAdminSavedTeamById = async (teamId) => {
+  const team = await prisma.savedTeam.findUnique({
+    where: { id: teamId },
+    select: {
+      id: true,
+      name: true,
+      teamTag: true,
+      logoName: true,
+      country: true,
+      organizationName: true,
+      updatedAt: true,
+      captainUser: { select: SAVED_TEAM_CAPTAIN_SELECT },
+      members: {
+        orderBy: [{ role: "asc" }, { memberOrder: "asc" }],
+        select: SAVED_TEAM_MEMBER_SELECT,
+      },
       _count: { select: { members: true } },
     },
   });
-  return teams.map((team) => ({
-    id: team.id,
-    name: team.name,
-    teamTag: team.teamTag,
-    logoUrl: team.logoName ? `/api/uploads/team-logos/${team.logoName}` : null,
-    country: team.country,
-    organizationName: team.organizationName || "Independent",
-    captainName:
-      [team.captainUser.firstName, team.captainUser.lastName].filter(Boolean).join(" ").trim() ||
-      team.captainUser.username,
-    memberCount: team._count.members,
-    members: (team.members || []).map((member) => ({
-      id: member.id,
-      role: member.role,
-      name: member.name,
-      email: member.email,
-      discord: member.discord,
-      gameId: member.riotId,
-      inviteStatus: member.inviteStatus,
-    })),
-  }));
+  if (!team) throw new HttpError(404, "Team not found.");
+  return mapAdminSavedTeamDetail(team);
 };
 
 const updateAdminSavedTeam = async (teamId, body) => {
@@ -1332,6 +1452,7 @@ module.exports = {
   updateContactMessageReadStatus,
   deleteContactMessage,
   listTeamRegistrations,
+  getAdminTeamRegistrationById,
   exportTeamRegistrations,
   listRecruitmentApplications,
   exportRecruitmentApplications,
@@ -1343,6 +1464,7 @@ module.exports = {
   runLegacyPosterImport,
   runPosterImageAssetMigration,
   listAdminSavedTeams,
+  getAdminSavedTeamById,
   updateAdminSavedTeam,
   updateAdminSavedTeamOrganization,
   deleteAdminSavedTeam,

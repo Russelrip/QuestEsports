@@ -9,6 +9,7 @@ const {
   notifyPayHere,
   readPaymentStatus,
   getAdminPayments,
+  getAdminPayment,
   uploadBankTransferProof,
   downloadBankTransferProof,
   reviewBankTransferPayment,
@@ -41,6 +42,7 @@ router.post(
   uploadBankTransferProof
 );
 router.get("/admin/payments", requireAdmin, getAdminPayments);
+router.get("/admin/payments/:transactionId", requireAdmin, getAdminPayment);
 router.get(
   "/admin/payments/:transactionId/bank-transfer-proof",
   requireAdmin,
