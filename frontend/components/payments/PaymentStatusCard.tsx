@@ -133,27 +133,27 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
     if (terminalSuccess && clearCartOnPaid) clearCart();
   }, [clearCart, clearCartOnPaid, terminalSuccess]);
   return (
-    <Card className="mx-auto max-w-2xl p-8 text-center sm:p-10">
+    <Card className="mx-auto min-w-0 max-w-2xl overflow-hidden p-4 text-center sm:p-10">
       <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Payment Status</p>
-      <h2 className="mt-4 text-4xl capitalize text-white">{statusTitle}</h2>
-      {payment ? <p className="mt-4 text-slate-300">{payment.currency} {payment.amount.toFixed(2)} · Order {payment.orderId}</p> : null}
+      <h2 className="mt-4 text-3xl capitalize text-white sm:text-4xl">{statusTitle}</h2>
+      {payment ? <p className="mt-4 break-words text-sm text-slate-300 sm:text-base">{payment.currency} {payment.amount.toFixed(2)} · Order <span className="break-all">{payment.orderId}</span></p> : null}
       {isBankTransfer && !terminalSuccess ? (
         <div className="mt-7 grid gap-5 text-left">
-          <div className="rounded-[22px] border border-purple-300/20 bg-purple-300/5 p-5">
+          <div className="min-w-0 rounded-[22px] border border-purple-300/20 bg-purple-300/5 p-4 sm:p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-purple-200">Assigned slot #{isBankTransfer.assignedSlotNumber}</p>
             <dl className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
-              <div><dt className="text-slate-500">Bank</dt><dd>{isBankTransfer.bankAccount.bankName}</dd></div>
-              <div><dt className="text-slate-500">Branch</dt><dd>{isBankTransfer.bankAccount.branch || "—"}</dd></div>
-              <div><dt className="text-slate-500">Account name</dt><dd>{isBankTransfer.bankAccount.accountName}</dd></div>
-              <div><dt className="text-slate-500">Account number</dt><dd className="break-all font-semibold text-white">{isBankTransfer.bankAccount.accountNumber}</dd><button type="button" className="mt-1 text-xs text-purple-200 underline" onClick={() => void copyValue("account", isBankTransfer.bankAccount.accountNumber)}>{copied === "account" ? "Copied" : "Copy account number"}</button></div>
-              <div><dt className="text-slate-500">Exact amount</dt><dd>{isBankTransfer.currency} {isBankTransfer.amount.toFixed(2)}</dd></div>
-              <div><dt className="text-slate-500">Transfer reference</dt><dd className="break-all text-lg font-semibold tracking-wider text-white">{isBankTransfer.reference}</dd><button type="button" className="mt-1 text-xs text-purple-200 underline" onClick={() => void copyValue("reference", isBankTransfer.reference)}>{copied === "reference" ? "Copied" : "Copy reference"}</button></div>
+              <div className="min-w-0"><dt className="text-slate-500">Bank</dt><dd className="break-words">{isBankTransfer.bankAccount.bankName}</dd></div>
+              <div className="min-w-0"><dt className="text-slate-500">Branch</dt><dd className="break-words">{isBankTransfer.bankAccount.branch || "—"}</dd></div>
+              <div className="min-w-0"><dt className="text-slate-500">Account name</dt><dd className="break-words">{isBankTransfer.bankAccount.accountName}</dd></div>
+              <div className="min-w-0"><dt className="text-slate-500">Account number</dt><dd className="break-all font-semibold text-white">{isBankTransfer.bankAccount.accountNumber}</dd><button type="button" className="mt-1 min-h-11 text-left text-xs text-purple-200 underline" onClick={() => void copyValue("account", isBankTransfer.bankAccount.accountNumber)}>{copied === "account" ? "Copied" : "Copy account number"}</button></div>
+              <div className="min-w-0"><dt className="text-slate-500">Exact amount</dt><dd>{isBankTransfer.currency} {isBankTransfer.amount.toFixed(2)}</dd></div>
+              <div className="min-w-0"><dt className="text-slate-500">Transfer reference</dt><dd className="break-all text-base font-semibold tracking-wider text-white sm:text-lg">{isBankTransfer.reference}</dd><button type="button" className="mt-1 min-h-11 text-left text-xs text-purple-200 underline" onClick={() => void copyValue("reference", isBankTransfer.reference)}>{copied === "reference" ? "Copied" : "Copy reference"}</button></div>
             </dl>
             <p className="mt-4 text-xs leading-6 text-amber-100">Transfer the exact amount and include the reference. Never upload or share a password, PIN, OTP, card number, or banking login.</p>
             <p className="mt-2 text-xs text-slate-400">Upload deadline: {new Date(isBankTransfer.expiresAt).toLocaleString()}</p>
           </div>
           {payment && ["created", "pending", "review_required"].includes(payment.status) ? (
-            <div className="grid gap-3 rounded-[22px] border border-white/10 p-5">
+            <div className="min-w-0 grid gap-3 rounded-[22px] border border-white/10 p-4 sm:p-5">
               <div>
                 <h3 className="text-lg text-white">{isBankTransfer.proofSubmitted ? "Replace payment proof" : "Upload payment proof"}</h3>
                 <p className="mt-1 text-xs leading-6 text-slate-400">Upload a screenshot of your bank slip as a JPEG, PNG, or WebP image up to 5 MB. Uploading proof does not automatically confirm payment.</p>
@@ -178,7 +178,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
               : payment?.statusMessage || "Do not retry until the final status appears."}
       </p>
       {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
-      <div className="mt-7 flex flex-wrap justify-center gap-3"><Link href={returnHref} className={buttonClassName({ variant: "secondary" })}>{terminalSuccess ? "Continue" : "Return"}</Link>{payment?.purpose === "tournament_registration" ? <Link href="/profile" className={buttonClassName({ variant: "ghost" })}>My registrations</Link> : null}{!terminalSuccess ? <button type="button" disabled={refreshing} onClick={() => void loadStatus()} className={buttonClassName({ variant: "ghost" })}>{refreshing ? "Refreshing…" : "Refresh status"}</button> : null}</div>
+      <div className="mt-7 grid gap-3 sm:flex sm:flex-wrap sm:justify-center"><Link href={returnHref} className={buttonClassName({ variant: "secondary", className: "w-full sm:w-auto" })}>{terminalSuccess ? "Continue" : "Return"}</Link>{payment?.purpose === "tournament_registration" ? <Link href="/profile" className={buttonClassName({ variant: "ghost", className: "w-full sm:w-auto" })}>My registrations</Link> : null}{!terminalSuccess ? <button type="button" disabled={refreshing} onClick={() => void loadStatus()} className={buttonClassName({ variant: "ghost", className: "w-full sm:w-auto" })}>{refreshing ? "Refreshing…" : "Refresh status"}</button> : null}</div>
     </Card>
   );
 }
