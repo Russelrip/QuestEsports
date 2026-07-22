@@ -128,8 +128,8 @@ test("mapPublicBracket overlays current tournament registration logos", () => {
         match: [],
       },
     }, [
-      { id: "registration-1", teamLogoName: "new.webp" },
-      { id: "registration-2", teamLogoName: null },
+      { id: "registration-1", teamLogoName: "old.png", savedTeam: { logoName: "new.webp" } },
+      { id: "registration-2", teamLogoName: "stale.png", savedTeam: { logoName: null } },
     ]);
 
     assert.equal(result.bracketData.participant[0].logoUrl, "/api/uploads/team-logos/new.webp");

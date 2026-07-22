@@ -340,6 +340,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
               teamName: "Quest Five",
               captainName: "Captain Quest",
               teamLogoName: "private-logo.png",
+              savedTeam: { logoName: "current-logo.webp" },
               status: "approved",
               members: [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
             },
@@ -369,7 +370,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
       {
         id: "registration-1",
         teamName: "Quest Five",
-        logoUrl: "/api/uploads/team-logos/private-logo.png",
+        logoUrl: "/api/uploads/team-logos/current-logo.webp",
         shortCode: "QF",
         memberCount: 3,
         status: "approved",

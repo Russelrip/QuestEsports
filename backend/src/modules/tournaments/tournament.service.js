@@ -114,6 +114,7 @@ const adminRegistrationSummarySelect = {
   captainRiotId: true,
   contactEmail: true,
   teamLogoName: true,
+  savedTeam: { select: { logoName: true } },
   status: true,
   paymentStatus: true,
   verificationStatus: true,
@@ -251,6 +252,9 @@ const getTournamentBannerUrl = (bannerImageName) =>
 
 const getTeamLogoUrl = (teamLogoName) =>
   teamLogoName ? `/api/uploads/team-logos/${teamLogoName}` : null;
+
+const getCurrentTeamLogoName = (registration) =>
+  registration.savedTeam ? registration.savedTeam.logoName : registration.teamLogoName;
 
 const getShowcaseImageUrl = (imageName) =>
   imageName ? `/api/uploads/tournament-banners/${imageName}` : null;
@@ -594,7 +598,7 @@ const mapTournamentWithRegistrations = (
     id: registration.id,
     teamName: registration.teamName,
     contactEmail: registration.contactEmail,
-    logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
     status: registration.status,
     paymentStatus: registration.paymentStatus,
     verificationStatus: registration.verificationStatus,
@@ -617,7 +621,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
     .map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
-    logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
     shortCode: buildShortCode(registration.teamName),
     memberCount: registration.members?.length || 0,
     status: registration.status,
@@ -630,7 +634,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
       (registration.entryType || "team") === "solo"
         ? registration.captainName
         : registration.teamName,
-    logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
     avatarUrl:
       (registration.entryType || "team") === "solo" && registration.user?.avatarImageName
         ? `/api/uploads/avatars/${registration.user.avatarImageName}`
@@ -1079,6 +1083,7 @@ const getPublicTournamentBySlug = async (slug) => {
           captainName: true,
           entryType: true,
           teamLogoName: true,
+          savedTeam: { select: { logoName: true } },
           status: true,
           user: { select: { avatarImageName: true } },
           members: {

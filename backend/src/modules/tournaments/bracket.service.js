@@ -149,6 +149,9 @@ const parseIntegerValue = (value) => {
 const getTeamLogoUrl = (teamLogoName) =>
   teamLogoName ? `/api/uploads/team-logos/${teamLogoName}` : null;
 
+const getCurrentTeamLogoName = (registration) =>
+  registration.savedTeam ? registration.savedTeam.logoName : registration.teamLogoName;
+
 const mapBracketRecord = (bracket) => {
   if (!bracket) {
     return null;
@@ -204,7 +207,7 @@ const mapPublicBracket = (bracket, registrations = []) => {
   const currentLogos = new Map(
     registrations.map((registration) => [
       registration.id,
-      getTeamLogoUrl(registration.teamLogoName),
+      getTeamLogoUrl(getCurrentTeamLogoName(registration)),
     ])
   );
   const bracketData = currentLogos.size && Array.isArray(bracket.bracketData?.participant)
@@ -232,6 +235,9 @@ const listApprovedBracketSeeds = async (tournamentId) => {
     },
     orderBy: [{ createdAt: "asc" }],
     include: {
+      savedTeam: {
+        select: { logoName: true },
+      },
       members: {
         select: { id: true },
       },
@@ -243,7 +249,7 @@ const listApprovedBracketSeeds = async (tournamentId) => {
     seed: index + 1,
     name: registration.teamName,
     shortCode: buildShortCode(registration.teamName),
-    logoUrl: getTeamLogoUrl(registration.teamLogoName),
+    logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
     memberCount: registration.members.length,
   }));
 };
