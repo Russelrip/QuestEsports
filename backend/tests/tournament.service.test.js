@@ -293,13 +293,20 @@ test("scheduled tournament dates still require valid values", async () => {
 });
 
 test("getPublicTournamentBySlug exposes approved public team card data", async () => {
+  let capacityCountCalls = 0;
   const prismaMock = {
     prisma: {
       teamRegistration: {
-        count: async ({ where }) => where.adminSlotReservation ? 0 : 1,
+        count: async () => {
+          capacityCountCalls += 1;
+          return 1;
+        },
       },
       adminSlotReservation: {
-        count: async () => 0,
+        count: async () => {
+          capacityCountCalls += 1;
+          return 0;
+        },
       },
       tournament: {
         findFirst: async () => ({
@@ -332,8 +339,11 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
           createdAt: new Date("2026-05-01T00:00:00.000Z"),
           updatedAt: new Date("2026-05-01T00:00:00.000Z"),
           _count: {
-            teamRegistrations: 1,
+            // One approved participant plus one pending active payment reservation.
+            teamRegistrations: 2,
+            adminSlotReservations: 0,
           },
+          adminSlotReservations: [],
           teamRegistrations: [
             {
               id: "registration-1",
@@ -342,6 +352,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
               teamLogoName: "private-logo.png",
               savedTeam: { logoName: "current-logo.webp" },
               status: "approved",
+              paymentStatus: "paid",
               members: [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
             },
           ],
@@ -379,6 +390,9 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
     ]);
     assert.equal(tournament.bracketSummary, null);
     assert.equal(tournament.bracketData, null);
+    assert.equal(tournament.registrationCount, 1);
+    assert.equal(tournament.capacityUsed, 2);
+    assert.equal(capacityCountCalls, 0);
   } finally {
     restore();
   }

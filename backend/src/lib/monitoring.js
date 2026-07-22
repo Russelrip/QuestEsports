@@ -23,6 +23,9 @@ const buildDiscordPayload = (payload) => {
     { name: "Status", value: truncate(context.statusCode || 500, 1024), inline: true },
     { name: "Request ID", value: truncate(context.requestId || "Unavailable", 1024), inline: false },
     { name: "Request", value: truncate(`${context.method || "UNKNOWN"} ${context.path || "Unknown path"}`, 1024), inline: false },
+    ...(context.sourceErrorCode
+      ? [{ name: "Source code", value: truncate(context.sourceErrorCode, 1024), inline: true }]
+      : []),
   ];
 
   return {

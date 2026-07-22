@@ -1,4 +1,5 @@
 const { PrismaClient } = require("../generated/prisma");
+const { buildRuntimeDatabaseUrl } = require("./database-url");
 const { logger } = require("./logger");
 
 const globalForPrisma = globalThis;
@@ -15,6 +16,7 @@ const prismaLogConfig =
 const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
+    datasourceUrl: buildRuntimeDatabaseUrl(process.env.DATABASE_URL),
     log: prismaLogConfig,
   });
 

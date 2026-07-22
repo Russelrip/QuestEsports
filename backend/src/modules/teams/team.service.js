@@ -450,12 +450,14 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
     throw new HttpError(400, "The captain is already included in the member list.");
   }
 
-  const existingTeam = await prisma.savedTeam.findFirst({
-    where: { id: teamId, captainUserId: user.id },
-    include: {
-      members: true,
-    },
-  });
+  const existingTeam = await runRetryableTeamSyncOperation(() =>
+    prisma.savedTeam.findFirst({
+      where: { id: teamId, captainUserId: user.id },
+      include: {
+        members: true,
+      },
+    })
+  );
   if (!existingTeam) {
     throw new HttpError(404, "Team not found or you do not have permission to manage it.");
   }
@@ -512,7 +514,7 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
   });
 
   try {
-    const team = await prisma.$transaction(async (tx) => {
+    const team = await runTeamSyncTransaction(async (tx) => {
       await tx.savedTeam.update({
         where: { id: teamId },
         data: {

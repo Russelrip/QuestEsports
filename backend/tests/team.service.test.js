@@ -183,11 +183,20 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
       },
     },
   };
+  let transactionAttempts = 0;
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: {
       prisma: {
         savedTeam: { findFirst: async () => existingTeam },
-        $transaction: async (callback) => callback(tx),
+        $transaction: async (callback) => {
+          transactionAttempts += 1;
+          if (transactionAttempts === 1) {
+            const error = new Error("Timed out while acquiring a connection.");
+            error.code = "P2024";
+            throw error;
+          }
+          return callback(tx);
+        },
       },
     },
     [uploadModulePath]: {
@@ -228,6 +237,7 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
     assert.ok(createdMembers[2].inviteTokenHash);
     assert.equal(sentInvites.length, 1);
     assert.equal(sentInvites[0].email, "coach@example.com");
+    assert.equal(transactionAttempts, 2);
   } finally {
     restore();
   }

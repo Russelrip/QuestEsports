@@ -142,6 +142,7 @@ test("monitoring capture ships webhook events with request context", async () =>
     monitoring.captureException(new Error("boom"), {
       requestId: "req-123",
       path: "/api/test",
+      sourceErrorCode: "P2024",
     });
 
     assert.equal(loggedErrors.length, 1);
@@ -155,6 +156,9 @@ test("monitoring capture ships webhook events with request context", async () =>
     assert.equal(shippedPayloads[1].payload.allowed_mentions.parse.length, 0);
     assert.equal(shippedPayloads[1].payload.embeds[0].title, "Backend exception");
     assert.match(shippedPayloads[1].payload.embeds[0].description, /boom/);
+    assert.ok(shippedPayloads[1].payload.embeds[0].fields.some(
+      (field) => field.name === "Source code" && field.value === "P2024"
+    ));
   } finally {
     restore();
   }

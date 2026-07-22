@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import StructuredData from "@/components/StructuredData";
 import TournamentDetailsContent from "@/components/tournaments/TournamentDetailsContent";
 import { PageTransition } from "@/components/ui/page-transition";
@@ -10,6 +11,8 @@ import {
 import { Tournament, fetchPublicTournamentBySlug } from "@/lib/tournaments";
 import { ApiRequestError } from "@/lib/api";
 
+const getTournament = cache(fetchPublicTournamentBySlug);
+
 export async function generateMetadata({
   params,
 }: {
@@ -18,7 +21,7 @@ export async function generateMetadata({
   const { slug } = await params;
 
   try {
-    const tournament = await fetchPublicTournamentBySlug(slug);
+    const tournament = await getTournament(slug);
     return buildTournamentMetadata(tournament);
   } catch {
     return {
@@ -42,7 +45,7 @@ export default async function TournamentDetailsPage({
   const { payment } = await searchParams;
   let tournament: Tournament;
   try {
-    tournament = await fetchPublicTournamentBySlug(slug);
+    tournament = await getTournament(slug);
   } catch (error) {
     if (!(error instanceof ApiRequestError) || error.status !== 404) throw error;
     notFound();

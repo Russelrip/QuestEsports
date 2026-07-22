@@ -141,6 +141,10 @@ Configure the pool in `DATABASE_URL`, for example:
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?connection_limit=10&pool_timeout=10&connect_timeout=10
 ```
 
+At runtime, the API supplies conservative defaults (`connection_limit=5`, `pool_timeout=10`,
+and `connect_timeout=10`) when these parameters are absent. Values explicitly set in
+`DATABASE_URL` always take precedence.
+
 Choose `connection_limit` per API instance so the sum across all instances, workers, migrations,
 and administrative tools remains below the database connection limit. `pool_timeout` controls how
 long a request waits for a pooled connection and `connect_timeout` limits initial connection setup.

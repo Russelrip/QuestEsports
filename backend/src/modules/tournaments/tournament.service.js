@@ -33,7 +33,6 @@ const {
 } = require("./bracket.service");
 const {
   buildActiveRegistrationWhere,
-  countTournamentCapacityUsage,
   isRegistrationActive,
 } = require("./registration-eligibility");
 const {
@@ -59,6 +58,9 @@ const REGISTRATION_FIELD_SCOPES = new Set(["entry", "member"]);
 const buildRegistrationCountInclude = (now = new Date()) => ({
   _count: {
     select: {
+      teamRegistrations: {
+        where: buildActiveRegistrationWhere({ now }),
+      },
       adminSlotReservations: true,
     },
   },
@@ -459,9 +461,9 @@ const withRegistrationCount = (tournament) => {
   const confirmedRegistrationCount = registrations
     .filter(({ status }) => status === "approved")
     .length;
-  const activeRegistrationCount = registrations
-    .filter((registration) => isRegistrationActive(registration))
-    .length;
+  const activeRegistrationCount = Number.isInteger(tournament._count?.teamRegistrations)
+    ? tournament._count.teamRegistrations
+    : registrations.filter((registration) => isRegistrationActive(registration)).length;
   const adminHoldCount = tournament._count?.adminSlotReservations || 0;
   const activeHeldRegistrationCount = (tournament.adminSlotReservations || [])
     .filter(({ registration }) => isRegistrationActive(registration))
@@ -1098,11 +1100,6 @@ const getPublicTournamentBySlug = async (slug) => {
   if (!tournament) {
     throw new HttpError(404, "Tournament not found.");
   }
-
-  tournament.capacityUsed = await countTournamentCapacityUsage({
-    tx: prisma,
-    tournamentId: tournament.id,
-  });
 
   return mapTournamentWithPublicTeams(tournament);
 };
