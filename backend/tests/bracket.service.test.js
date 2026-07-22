@@ -110,3 +110,31 @@ test("updateTournamentBracketMatch completes a ready match and advances the winn
     restore();
   }
 });
+
+test("mapPublicBracket overlays current tournament registration logos", () => {
+  const { module: bracketService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+  });
+
+  try {
+    const result = bracketService.mapPublicBracket({
+      status: "published",
+      lastUpdatedAt: new Date("2026-07-22T00:00:00.000Z"),
+      bracketData: {
+        participant: [
+          { id: 0, registrationId: "registration-1", logoUrl: "/api/uploads/team-logos/old.png" },
+          { id: 1, registrationId: "registration-2", logoUrl: null },
+        ],
+        match: [],
+      },
+    }, [
+      { id: "registration-1", teamLogoName: "new.webp" },
+      { id: "registration-2", teamLogoName: null },
+    ]);
+
+    assert.equal(result.bracketData.participant[0].logoUrl, "/api/uploads/team-logos/new.webp");
+    assert.equal(result.bracketData.participant[1].logoUrl, null);
+  } finally {
+    restore();
+  }
+});

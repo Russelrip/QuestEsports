@@ -655,6 +655,78 @@ test("updateAdminSavedTeamOrganization stores a verified organization label", as
   }
 });
 
+test("updateAdminSavedTeam replaces its logo across linked tournament registrations", async () => {
+  const savedTeamUpdates = [];
+  const registrationUpdates = [];
+  const removedUploads = [];
+  const team = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    teamTag: "Q5",
+    logoName: "old-logo.png",
+    country: "Sri Lanka",
+    organizationName: null,
+    updatedAt: new Date("2026-07-20T10:00:00.000Z"),
+    captainUser: { firstName: "Team", lastName: "Captain", username: "captain" },
+    members: [
+      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: null, riotId: null, inviteStatus: "accepted" },
+    ],
+    _count: { members: 1 },
+  };
+  let savedTeamLookupCount = 0;
+  const tx = {
+    savedTeam: {
+      update: async (args) => savedTeamUpdates.push(args),
+    },
+    savedTeamMember: {
+      update: async () => undefined,
+    },
+    teamRegistration: {
+      updateMany: async (args) => registrationUpdates.push(args),
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({
+        ...team,
+        logoName: savedTeamLookupCount++ === 0 ? "old-logo.png" : "new-logo.webp",
+      }),
+      count: async () => 0,
+    },
+    teamRegistration: {
+      count: async () => 0,
+    },
+    $transaction: async (work) => work(tx),
+  }, {
+    persistTeamLogoUpload: async () => ({ filename: "new-logo.webp" }),
+    removeUploadFiles: async (uploads) => removedUploads.push(...uploads),
+  });
+
+  try {
+    const updated = await adminService.updateAdminSavedTeam(
+      "saved-team-1",
+      {
+        name: "Quest Five",
+        teamTag: "Q5",
+        country: "Sri Lanka",
+        organizationName: "Independent",
+        members: JSON.stringify([{ id: "member-1", name: "Player One", email: "player@example.com", discord: "", gameId: "" }]),
+      },
+      { buffer: Buffer.from("logo") }
+    );
+
+    assert.equal(savedTeamUpdates[0].data.logoName, "new-logo.webp");
+    assert.deepEqual(registrationUpdates, [{
+      where: { savedTeamId: "saved-team-1" },
+      data: { teamLogoName: "new-logo.webp" },
+    }]);
+    assert.equal(updated.logoUrl, "/api/uploads/team-logos/new-logo.webp");
+    assert.deepEqual(removedUploads, [{ directory: "uploads/team-logos", filename: "old-logo.png" }]);
+  } finally {
+    restore();
+  }
+});
+
 test("listTeamRegistrations returns paginated summaries without loading rosters", async () => {
   const findManyCalls = [];
   const prisma = {

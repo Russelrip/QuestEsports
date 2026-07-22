@@ -1,6 +1,7 @@
 const express = require("express");
 const { requireAdmin } = require("../auth/auth.middleware");
 const { invalidateCache } = require("../../middleware/response-cache");
+const { imageUpload } = require("../../middleware/upload");
 const {
   getDashboard,
   getUsers,
@@ -61,7 +62,12 @@ router.post("/admin/media/import-legacy-posters", importLegacyPosterMedia);
 router.post("/admin/media/migrate-image-assets", migratePosterMediaToFilesystem);
 router.get("/admin/teams", getSavedTeams);
 router.get("/admin/teams/:teamId", getSavedTeam);
-router.patch("/admin/teams/:teamId", updateSavedTeam);
+router.patch(
+  "/admin/teams/:teamId",
+  imageUpload.single("teamLogo"),
+  invalidateCache("tournaments"),
+  updateSavedTeam
+);
 router.patch("/admin/teams/:teamId/organization", updateSavedTeamOrganization);
 router.delete("/admin/teams/:teamId", removeSavedTeam);
 

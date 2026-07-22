@@ -19,6 +19,8 @@ const {
 } = require("../../lib/excel-export");
 const {
   bankTransferProofDirectory,
+  persistTeamLogoUpload,
+  teamLogoDirectory,
 } = require("../../middleware/upload");
 const {
   buildPagination,
@@ -1307,13 +1309,26 @@ const getAdminSavedTeamById = async (teamId) => {
   return mapAdminSavedTeamDetail(team);
 };
 
-const updateAdminSavedTeam = async (teamId, body) => {
+const parseAdminTeamMembers = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // Use the same client-safe validation error for malformed multipart JSON.
+  }
+  throw new HttpError(400, "Team members must be a valid array.");
+};
+
+const updateAdminSavedTeam = async (teamId, body, file) => {
   const name = normalizeText(body.name);
   const teamTag = normalizeText(body.teamTag) || null;
   const country = normalizeText(body.country) || null;
   const organization = normalizeText(body.organizationName);
   const organizationName = organization && organization.toLowerCase() !== "independent" ? organization : null;
-  const members = Array.isArray(body.members) ? body.members : [];
+  const members = parseAdminTeamMembers(body.members);
+  const removeLogo = ["true", "1", "on"].includes(normalizeText(body.removeLogo).toLowerCase());
 
   if (!name || name.length > 120) throw new HttpError(400, "Team name is required and must be 120 characters or fewer.");
   if (teamTag && teamTag.length > 20) throw new HttpError(400, "Team tag must be 20 characters or fewer.");
@@ -1323,7 +1338,7 @@ const updateAdminSavedTeam = async (teamId, body) => {
 
   const existing = await prisma.savedTeam.findUnique({
     where: { id: teamId },
-    select: { id: true, members: { select: { id: true } } },
+    select: { id: true, logoName: true, members: { select: { id: true } } },
   });
   if (!existing) throw new HttpError(404, "Team not found.");
   const memberIds = new Set(existing.members.map((member) => member.id));
@@ -1339,19 +1354,48 @@ const updateAdminSavedTeam = async (teamId, body) => {
   if (normalizedMembers.some((member) => !isValidEmail(member.email) || member.email.length > 254)) throw new HttpError(400, "Each roster member needs a valid email address.");
   if (new Set(normalizedMembers.map((member) => member.email)).size !== normalizedMembers.length) throw new HttpError(400, "Roster member emails must be unique.");
 
+  const persistedLogo = file ? await persistTeamLogoUpload(file) : null;
+  const nextLogoName = persistedLogo?.filename || (removeLogo ? null : existing.logoName);
+
   try {
-    await prisma.$transaction([
-      prisma.savedTeam.update({ where: { id: teamId }, data: { name, teamTag, country, organizationName } }),
-      ...normalizedMembers.map((member) => prisma.savedTeamMember.update({
-        where: { id: member.id },
-        data: { name: member.name, email: member.email, emailNormalized: member.email, discord: member.discord, riotId: member.riotId },
-      })),
-    ]);
+    await prisma.$transaction(async (tx) => {
+      await tx.savedTeam.update({
+        where: { id: teamId },
+        data: { name, teamTag, country, organizationName, logoName: nextLogoName },
+      });
+      for (const member of normalizedMembers) {
+        await tx.savedTeamMember.update({
+          where: { id: member.id },
+          data: { name: member.name, email: member.email, emailNormalized: member.email, discord: member.discord, riotId: member.riotId },
+        });
+      }
+
+      if (nextLogoName !== existing.logoName) {
+        await tx.teamRegistration.updateMany({
+          where: { savedTeamId: teamId },
+          data: { teamLogoName: nextLogoName },
+        });
+      }
+    });
+
+    if (existing.logoName && existing.logoName !== nextLogoName) {
+      await removeTeamLogoIfUnreferenced({
+        prisma,
+        filename: existing.logoName,
+        context: { operation: "updateAdminSavedTeam", teamId },
+      });
+    }
   } catch (error) {
+    if (persistedLogo) {
+      await removeUploadsQuietly(
+        [{ directory: teamLogoDirectory, filename: persistedLogo.filename }],
+        { operation: "updateAdminSavedTeamRollback", teamId }
+      );
+    }
     if (error?.code === "P2002") throw new HttpError(409, "That team name, roster email, or role position is already in use.");
     throw error;
   }
-  return { id: teamId };
+  return getAdminSavedTeamById(teamId);
 };
 
 const updateAdminSavedTeamOrganization = async (teamId, body) => {

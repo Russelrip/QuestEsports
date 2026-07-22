@@ -608,7 +608,7 @@ const mapTournamentWithRegistrations = (
 
 const mapTournamentWithPublicTeams = (tournament) => ({
   ...mapTournament(tournament),
-  ...mapPublicBracket(tournament.bracket),
+  ...mapPublicBracket(tournament.bracket, tournament.teamRegistrations),
   registeredTeams: (tournament.teamRegistrations || [])
     .filter((registration) => (registration.entryType || "team") === "team")
     .map((registration) => ({

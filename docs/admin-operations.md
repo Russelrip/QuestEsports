@@ -5,7 +5,7 @@
 - Populate `/admin/games` with approved 4:3 category artwork and transparent game logos. The migration creates published artwork-free records for Valorant, PUBG Mobile, MLBB, and CODM.
 - Set organizer, country, location, category, hero, and an HTTPS Challonge tournament link in the tournament editor. Use 1600×1200 card artwork.
 - Add ordered sponsor logos after saving the tournament. Sponsor websites must use HTTPS.
-- Use `/admin/teams` to verify organization labels or delete saved teams. Captains cannot self-assign labels; blank labels display as `Independent`.
+- Use `/admin/teams` to review rosters, verify organization labels, and replace or remove team logos. Captains cannot self-assign labels; blank labels display as `Independent`.
 - Review every live gallery description after deployment because production poster descriptions are not stored in this repository.
 
 This document covers the admin UI and API workflows for tournament/event configuration, registrations, payments, merchandise, recruitment, exports, deletion, and bracket effects.
@@ -27,7 +27,13 @@ All admin routes require a valid session and `user.role === "admin"`.
 - `/admin/recruitment` for Join Quest recruitment review
 - `/admin/rulebooks` for rulebook management
 - `/admin/contact-messages` for the contact inbox
-- `/admin/teams` for saved-team organization labels and deletion
+- `/admin/teams` for saved-team details, logos, organization labels, and deletion
+
+## Saved Team Logos
+
+Admins can see the current logo in the `/admin/teams` directory and team editor. The team update endpoint accepts an optional multipart `teamLogo` (JPEG, PNG, or WebP, up to 5 MB) and a `removeLogo` flag.
+
+Logo replacements and removals are copied to every tournament registration linked to the saved team. Public participant lists and published native brackets therefore use the current logo without requiring bracket regeneration.
 
 ## Saved Team Deletion
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
@@ -9,11 +10,16 @@ import { Input } from "@/components/ui/input";
 import { AdminTableSkeleton } from "@/components/ui/skeleton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
+import { buildApiUrl } from "@/lib/api";
 import {
   adminRequest,
   getAdminPaginationSummary,
   type Pagination,
 } from "@/lib/admin";
+import {
+  TEAM_LOGO_MAX_FILE_SIZE,
+  assertFileWithinUploadLimit,
+} from "@/lib/upload-limits";
 
 type TeamMember = {
   id: string;
@@ -29,6 +35,7 @@ type TeamSummary = {
   id: string;
   name: string;
   teamTag: string | null;
+  logoUrl: string | null;
   country: string | null;
   organizationName: string;
   captainName: string;
@@ -177,8 +184,13 @@ export default function AdminTeamsManager() {
                     {teams.map((team) => (
                       <tr key={team.id} className="transition hover:bg-purple-300/[0.04]">
                         <td className="px-5 py-4">
-                          <p className="font-semibold text-white">{team.name}</p>
-                          <p className="mt-1 text-xs uppercase tracking-wider text-purple-200/70">{team.teamTag || "No tag"}</p>
+                          <div className="flex items-center gap-3">
+                            <TeamLogo team={team} size="small" />
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-white">{team.name}</p>
+                              <p className="mt-1 text-xs uppercase tracking-wider text-purple-200/70">{team.teamTag || "No tag"}</p>
+                            </div>
+                          </div>
                         </td>
                         <td className="px-5 py-4 text-sm text-slate-300">{team.captainName}</td>
                         <td className="px-5 py-4 text-sm text-slate-400">{team.country || "Not set"}</td>
@@ -244,6 +256,8 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
   const [country, setCountry] = useState(team.country || "");
   const [organization, setOrganization] = useState(team.organizationName);
   const [members, setMembers] = useState(team.members);
+  const [teamLogo, setTeamLogo] = useState<File | null>(null);
+  const [removeLogo, setRemoveLogo] = useState(false);
   const [busyAction, setBusyAction] = useState<"save" | "delete" | null>(null);
   const showToast = useToastStore((state) => state.showToast);
 
@@ -253,6 +267,8 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
     setCountry(team.country || "");
     setOrganization(team.organizationName);
     setMembers(team.members);
+    setTeamLogo(null);
+    setRemoveLogo(false);
   }, [team]);
 
   const updateMember = (id: string, field: keyof TeamMember, value: string) => {
@@ -262,10 +278,18 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
   const saveTeam = async () => {
     setBusyAction("save");
     try {
+      assertFileWithinUploadLimit(teamLogo, TEAM_LOGO_MAX_FILE_SIZE, "Team logo");
+      const body = new FormData();
+      body.append("name", name);
+      body.append("teamTag", teamTag);
+      body.append("country", country);
+      body.append("organizationName", organization);
+      body.append("members", JSON.stringify(members));
+      body.append("removeLogo", String(removeLogo));
+      if (teamLogo) body.append("teamLogo", teamLogo);
       await adminRequest(`/api/admin/teams/${team.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, teamTag, country, organizationName: organization, members }),
+        body,
       });
       showToast({ tone: "success", title: "Team updated" });
       await onChanged();
@@ -292,10 +316,13 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
   return (
     <Card className="min-w-0 overflow-hidden p-4 sm:p-6">
       <div className="flex min-w-0 flex-col gap-2 border-b border-white/10 pb-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.2em] text-purple-200">Team details</p>
-          <h3 className="mt-2 break-words text-2xl text-white">{team.name}</h3>
-          <p className="mt-1 break-words text-sm text-slate-400">Captain {team.captainName} · {team.memberCount} roster member{team.memberCount === 1 ? "" : "s"}</p>
+        <div className="flex min-w-0 items-center gap-4">
+          <TeamLogo team={team} size="large" />
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.2em] text-purple-200">Team details</p>
+            <h3 className="mt-2 break-words text-2xl text-white">{team.name}</h3>
+            <p className="mt-1 break-words text-sm text-slate-400">Captain {team.captainName} · {team.memberCount} roster member{team.memberCount === 1 ? "" : "s"}</p>
+          </div>
         </div>
         {team.teamTag ? <span className="w-fit shrink-0 border border-purple-300/20 bg-purple-400/10 px-2 py-1 text-xs font-semibold uppercase tracking-wider text-purple-100">{team.teamTag}</span> : null}
       </div>
@@ -305,6 +332,34 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
         <Field label="Team tag"><Input value={teamTag} onChange={(event) => setTeamTag(event.target.value)} placeholder="QST" /></Field>
         <Field label="Country"><Input value={country} onChange={(event) => setCountry(event.target.value)} /></Field>
         <Field label="Verified organization"><Input value={organization} onChange={(event) => setOrganization(event.target.value)} placeholder="Independent" /></Field>
+      </div>
+
+      <div className="mt-5 grid gap-3 border border-white/10 bg-black/15 p-4">
+        <Field label={team.logoUrl ? "Replace team logo" : "Add team logo"}>
+          <Input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              setTeamLogo(event.target.files?.[0] || null);
+              setRemoveLogo(false);
+            }}
+          />
+        </Field>
+        <p className="text-xs text-slate-500">PNG, JPG, or WebP · Maximum 5 MB. Changes also apply to this team in tournaments.</p>
+        {teamLogo ? <p className="text-sm text-purple-200">Selected: {teamLogo.name}</p> : null}
+        {team.logoUrl ? (
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={removeLogo}
+              onChange={(event) => {
+                setRemoveLogo(event.target.checked);
+                if (event.target.checked) setTeamLogo(null);
+              }}
+            />
+            Remove current logo everywhere
+          </label>
+        ) : null}
       </div>
 
       <div className="mt-7 space-y-3">
@@ -333,4 +388,23 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="grid min-w-0 gap-1 text-sm text-slate-300"><span>{label}</span>{children}</label>;
+}
+
+function TeamLogo({ team, size }: { team: TeamSummary; size: "small" | "large" }) {
+  const dimensions = size === "large" ? "h-20 w-20" : "h-11 w-11";
+  return team.logoUrl ? (
+    <div className={`relative shrink-0 overflow-hidden border border-white/10 bg-white/5 ${dimensions}`}>
+      <Image
+        src={buildApiUrl(team.logoUrl)}
+        alt={`${team.name} logo`}
+        fill
+        sizes={size === "large" ? "80px" : "44px"}
+        className="object-contain p-1"
+      />
+    </div>
+  ) : (
+    <div className={`flex shrink-0 items-center justify-center border border-dashed border-white/15 bg-white/[0.03] text-[10px] uppercase tracking-wider text-slate-500 ${dimensions}`}>
+      No logo
+    </div>
+  );
 }

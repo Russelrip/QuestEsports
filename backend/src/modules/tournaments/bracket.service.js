@@ -193,7 +193,7 @@ const buildBracketSummary = (bracketData, lastUpdatedAt) => {
   };
 };
 
-const mapPublicBracket = (bracket) => {
+const mapPublicBracket = (bracket, registrations = []) => {
   if (!bracket || bracket.status !== "published") {
     return {
       bracketSummary: null,
@@ -201,9 +201,26 @@ const mapPublicBracket = (bracket) => {
     };
   }
 
+  const currentLogos = new Map(
+    registrations.map((registration) => [
+      registration.id,
+      getTeamLogoUrl(registration.teamLogoName),
+    ])
+  );
+  const bracketData = currentLogos.size && Array.isArray(bracket.bracketData?.participant)
+    ? {
+        ...bracket.bracketData,
+        participant: bracket.bracketData.participant.map((participant) =>
+          participant.registrationId && currentLogos.has(participant.registrationId)
+            ? { ...participant, logoUrl: currentLogos.get(participant.registrationId) }
+            : participant
+        ),
+      }
+    : bracket.bracketData;
+
   return {
     bracketSummary: buildBracketSummary(bracket.bracketData, bracket.lastUpdatedAt),
-    bracketData: bracket.bracketData,
+    bracketData,
   };
 };
 

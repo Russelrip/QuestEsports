@@ -278,7 +278,7 @@ const updateSavedTeamOrganization = asyncHandler(async (req, res) => {
 });
 
 const updateSavedTeam = asyncHandler(async (req, res) => {
-  const team = await updateAdminSavedTeam(req.params.teamId, req.body);
+  const team = await updateAdminSavedTeam(req.params.teamId, req.body, req.file);
   res.status(200).json({ success: true, message: "Team updated successfully.", team });
 });
 
