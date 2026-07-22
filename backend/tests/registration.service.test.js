@@ -135,6 +135,36 @@ test("captains cannot cancel after a payment reservation has started", async () 
   }
 });
 
+test("captains must contact an administrator after their payment window expires", async () => {
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        teamRegistration: {
+          findFirst: async () => ({
+            id: "registration-1",
+            paymentStatus: "unpaid",
+            teamLogoName: null,
+            payments: [{ status: "expired" }],
+          }),
+        },
+      },
+    },
+    [uploadModulePath]: {},
+    [teamServicePath]: {},
+    [paymentServicePath]: {},
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      () => service.cancelUnpaidRegistration({ slug: tournament.slug, user }),
+      (error) => error.statusCode === 409 && /administrator/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("roster validation explains that the captain counts as an active player", async () => {
   const fivePlayerTournament = {
     ...tournament,

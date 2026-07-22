@@ -151,6 +151,118 @@ test("expired registration maintenance releases review-required bank transfers",
   }
 });
 
+test("payment status immediately expires a stale tournament reservation", async () => {
+  const expiredAt = new Date("2026-07-14T11:59:00.000Z");
+  const current = {
+    id: "payment-expired",
+    providerOrderId: "TOUR-expired",
+    provider: "payhere",
+    status: "pending",
+    amount: 2500,
+    currency: "LKR",
+    purpose: "tournament_registration",
+    statusMessage: null,
+    updatedAt: expiredAt,
+    bankTransferProof: null,
+    merchandiseOrder: null,
+    registration: {
+      id: "registration-expired",
+      userId: "captain-1",
+      paymentStatus: "pending",
+      verificationStatus: "verified",
+      reservedUntil: expiredAt,
+      assignedSlotNumber: null,
+      tournament: { contactLink: "https://discord.gg/quest" },
+    },
+  };
+  const prisma = {
+    paymentTransaction: { findUnique: async () => current },
+    $transaction: async (callback) => callback({
+      teamRegistration: {
+        updateMany: async () => {
+          current.registration.paymentStatus = "unpaid";
+          current.registration.reservedUntil = null;
+          return { count: 1 };
+        },
+      },
+      paymentTransaction: {
+        updateMany: async ({ data }) => {
+          Object.assign(current, data);
+          return { count: 1 };
+        },
+      },
+    }),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    const result = await service.getPaymentStatus({
+      providerOrderId: current.providerOrderId,
+      userId: "captain-1",
+    });
+    assert.equal(result.status, "expired");
+    assert.equal(result.registration.expiresAt, null);
+    assert.equal(result.registration.contactLink, "https://discord.gg/quest");
+    assert.match(result.statusMessage, /Contact an administrator/);
+  } finally {
+    restore();
+  }
+});
+
+test("admins can reopen an expired PayHere tournament payment", async () => {
+  let registrationUpdate;
+  let paymentUpdate;
+  const current = {
+    id: "payment-payhere-expired",
+    provider: "payhere",
+    purpose: "tournament_registration",
+    status: "expired",
+    amount: 2500,
+    bankTransferProof: null,
+    registration: {
+      id: "registration-1",
+      tournamentId: "tournament-1",
+      status: "pending",
+      paymentStatus: "unpaid",
+      tournament: {
+        maxTeams: 16,
+        reservationMinutes: 30,
+        bankTransferReviewMinutes: 1440,
+        registrationFeeCurrency: "LKR",
+      },
+    },
+  };
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        paymentUpdate = data;
+        return { ...current, ...data };
+      },
+    },
+    teamRegistration: {
+      count: async () => 0,
+      update: async ({ data }) => {
+        registrationUpdate = data;
+      },
+    },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => callback(tx),
+  });
+  try {
+    await service.reopenExpiredTournamentPayment({
+      transactionId: current.id,
+      admin: { id: "admin-1" },
+    });
+    assert.equal(registrationUpdate.paymentStatus, "pending");
+    assert.equal(registrationUpdate.assignedSlotNumber, null);
+    assert.ok(registrationUpdate.reservedUntil instanceof Date);
+    assert.equal(paymentUpdate.status, "pending");
+  } finally {
+    restore();
+  }
+});
+
 test("expired order maintenance cannot cancel an order that became paid", async () => {
   let inventoryQueries = 0;
   let paymentUpdates = 0;

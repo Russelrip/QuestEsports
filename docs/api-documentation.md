@@ -498,6 +498,7 @@ Behavior:
 - PayHere registration returns a signed checkout only when all provider values are configured.
 - Bank-transfer registration assigns a slot and quoted fee tier, returns bank instructions, and waits for a private receipt plus admin approval.
 - Capacity counts paid/confirmed registrations and unexpired reservations; expired reservations release their slot.
+- Payment and registration-status reads enforce an elapsed reservation immediately instead of waiting for the maintenance worker. Expired registrations require an administrator to reopen payment.
 
 ## Account Endpoints
 
@@ -893,9 +894,10 @@ Product writes include variants and references to existing uploaded image assets
 - `GET /api/admin/payments`
 - `GET /api/admin/payments/:transactionId/bank-transfer-proof`
 - `PATCH /api/admin/payments/:transactionId/bank-transfer-review`
+- `POST /api/admin/payments/:transactionId/reopen`
 - `PATCH /api/admin/payments/:transactionId/payhere-reconciliation`
 
-Private bank evidence is returned with `Cache-Control: private, no-store` and attachment headers. PayHere reconciliation records an externally verified late payment or completed refund; it does not call a PayHere refund API.
+Private bank evidence is returned with `Cache-Control: private, no-store` and attachment headers. The reopen endpoint supports expired bank-transfer and PayHere tournament payments, rechecks capacity, and starts a fresh reservation deadline. PayHere reconciliation records an externally verified late payment or completed refund; it does not call a PayHere refund API.
 
 ### Rulebooks
 

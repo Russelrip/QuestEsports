@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import { Button, buttonClassName } from "@/components/ui/button";
+import ReservationCountdown from "@/components/payments/ReservationCountdown";
 import { Card } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,8 @@ type ExistingRegistrationState = {
   paymentStatus: "unpaid" | "pending" | "paid";
   verificationStatus: "pending" | "verified" | "flagged";
   pendingInviteCount: number;
+  reservedUntil?: string | null;
+  contactLink?: string | null;
   payment?: {
     orderId: string;
     provider: string;
@@ -344,6 +347,19 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   if (checkingRegistration) {
     return <Card className="p-8"><p className="text-slate-300">Checking your registration status…</p></Card>;
   }
+  if (existingRegistration?.payment?.status === "expired") {
+    return (
+      <Card className="mx-auto max-w-2xl border-rose-300/25 p-8 text-center sm:p-10">
+        <p className="text-xs uppercase tracking-[0.25em] text-rose-200">Payment window expired</p>
+        <h2 className="mt-4 text-3xl text-white">Your tournament slot was released</h2>
+        <p className="mt-4 text-sm leading-7 text-slate-300">Please contact an administrator for assistance. Payment cannot be restarted until an administrator assigns another available slot.</p>
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          <Link href={existingRegistration.contactLink || tournament.contactLink || "/contact"} className={buttonClassName({})}>Contact Admin</Link>
+          <Link href="/profile" className={buttonClassName({ variant: "secondary" })}>Open profile</Link>
+        </div>
+      </Card>
+    );
+  }
   if (existingRegistration && tournament.entryType === "team" && (tournament.registrationFee?.amount || 0) > 0) {
     const rosterPending = existingRegistration.verificationStatus !== "verified";
     const bankPayment = existingRegistration.payment?.provider === "bank_transfer"
@@ -364,6 +380,11 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
               ? `${existingRegistration.pendingInviteCount} player invitation${existingRegistration.pendingInviteCount === 1 ? " is" : "s are"} still pending. No payment or slot reservation will be created until the full roster is confirmed.`
               : "Every roster member has accepted. You can now reserve the slot and continue to payment."}
         </p>
+        {existingRegistration.reservedUntil && existingRegistration.paymentStatus === "pending" ? (
+          <div className="mt-6 text-left">
+            <ReservationCountdown expiresAt={existingRegistration.reservedUntil} />
+          </div>
+        ) : null}
         {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           {rosterPending ? (

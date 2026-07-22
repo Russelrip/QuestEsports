@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { Button, buttonClassName } from "@/components/ui/button";
+import ReservationCountdown from "@/components/payments/ReservationCountdown";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/auth";
 import { readApiResponse } from "@/lib/api";
@@ -44,6 +46,7 @@ export default function RegisterTournamentButton({
   const [status, setStatus] = useState<RegistrationStatus>("loading");
   const [registration, setRegistration] = useState<ExistingRegistration | null>(null);
   const [error, setError] = useState("");
+  const [deadlineReached, setDeadlineReached] = useState(false);
 
   useEffect(() => {
     if (
@@ -90,6 +93,7 @@ export default function RegisterTournamentButton({
           }
 
           setRegistration(data.registration || null);
+          setDeadlineReached(data.registration?.payment?.status === "expired");
           setStatus(registered ? "registered" : "ready");
         }
       } catch (nextError) {
@@ -118,24 +122,28 @@ export default function RegisterTournamentButton({
 
   const isRegistered = status === "registered";
   const isChecking = status === "loading";
+  const expiredPayment = isRegistered && (
+    registration?.payment?.status === "expired" || deadlineReached
+  );
   const pendingBankTransfer = isRegistered &&
     registration?.verificationStatus === "verified" &&
     registration?.payment?.provider === "bank_transfer" &&
-    registration.payment.status !== "paid" &&
+    !["paid", "expired"].includes(registration.payment.status) &&
     Boolean(registration.payment.orderId);
   const pendingPayHere = isRegistered &&
     registration?.verificationStatus === "verified" &&
     registration?.payment?.provider === "payhere" &&
-    registration.payment.status !== "paid";
+    !["paid", "expired"].includes(registration.payment.status);
   const awaitingRoster = isRegistered &&
     tournament.entryType === "team" &&
     registration?.verificationStatus !== "verified";
   const readyForPayment = isRegistered &&
     tournament.entryType === "team" &&
     registration?.verificationStatus === "verified" &&
-    registration.paymentStatus === "unpaid";
+    registration.paymentStatus === "unpaid" &&
+    !expiredPayment;
   const hasPaymentAction = pendingBankTransfer || pendingPayHere || readyForPayment;
-  const hasRegistrationAction = hasPaymentAction || awaitingRoster;
+  const hasRegistrationAction = hasPaymentAction || awaitingRoster || expiredPayment;
   const slotLabel = registration?.assignedSlotNumber
     ? `Slot #${registration.assignedSlotNumber}`
     : null;
@@ -150,6 +158,19 @@ export default function RegisterTournamentButton({
     }
 
     return <Badge className={className}>{getTournamentRegistrationLabel(tournament)}</Badge>;
+  }
+
+  if (expiredPayment) {
+    return (
+      <div className={className}>
+        <Link href={tournament.contactLink || "/contact"} className={buttonClassName({ variant: "secondary" })}>
+          Contact Admin
+        </Link>
+        <p className="mt-2 max-w-sm text-xs leading-5 text-rose-200">
+          Your payment window expired and the slot was released. An administrator must reopen it if capacity is available.
+        </p>
+      </div>
+    );
   }
 
   if (!tournament.registrationPaymentAvailable) {
@@ -202,15 +223,18 @@ export default function RegisterTournamentButton({
               : "Register Now"}
       </Button>
       {pendingBankTransfer ? (
-        <p className="mt-2 max-w-sm text-xs leading-5 text-amber-100">
-          {slotLabel ? `${slotLabel} is reserved. ` : "Your slot is reserved. "}
-          Complete the transfer and upload your receipt
-          {registration?.reservedUntil ? ` before ${new Date(registration.reservedUntil).toLocaleString()}.` : "."}
-        </p>
+        <div className="mt-2 max-w-sm">
+          <p className="text-xs leading-5 text-amber-100">
+            {slotLabel ? `${slotLabel} is reserved. ` : "Your slot is reserved. "}
+            Complete the transfer and upload your receipt before time runs out.
+          </p>
+          <ReservationCountdown expiresAt={registration?.reservedUntil} compact onExpire={() => setDeadlineReached(true)} />
+        </div>
       ) : pendingPayHere ? (
-        <p className="mt-2 max-w-sm text-xs leading-5 text-amber-100">
-          Your registration is saved, but payment is not confirmed. Retry payment to complete your entry.
-        </p>
+        <div className="mt-2 max-w-sm">
+          <p className="text-xs leading-5 text-amber-100">Your registration is saved, but payment is not confirmed.</p>
+          <ReservationCountdown expiresAt={registration?.reservedUntil} compact onExpire={() => setDeadlineReached(true)} />
+        </div>
       ) : awaitingRoster ? (
         <p className="mt-2 max-w-sm text-xs leading-5 text-amber-100">Every invited player must accept before payment and slot reservation are unlocked.</p>
       ) : readyForPayment ? (

@@ -298,8 +298,8 @@ function PaymentDetailView({ payment, loading, error, onBack, onChanged }: {
             </div>
           ) : null}
 
-          {payment.provider === "bank_transfer" && payment.purpose === "tournament_registration" && payment.status === "expired" ? (
-            <div className="mt-5 border border-amber-300/20 p-4"><p className="mb-3 text-sm text-amber-100">Reopening assigns the lowest available slot and begins a new payment window. The slot-tier price may change.</p><Button type="button" disabled={busy} onClick={() => window.confirm(`Reopen expired payment ${payment.orderId}?`) && void runAction(`/api/admin/payments/${payment.id}/reopen`, { method: "POST" })}>{busy ? "Reopening..." : "Reopen payment"}</Button></div>
+          {payment.purpose === "tournament_registration" && payment.status === "expired" ? (
+            <div className="mt-5 border border-amber-300/20 p-4"><p className="mb-3 text-sm text-amber-100">Reopening begins a new payment window{payment.provider === "bank_transfer" ? " and assigns the lowest available slot; the slot-tier price may change" : " if tournament capacity is still available"}.</p><Button type="button" disabled={busy} onClick={() => window.confirm(`Reopen expired payment ${payment.orderId}?`) && void runAction(`/api/admin/payments/${payment.id}/reopen`, { method: "POST" })}>{busy ? "Reopening..." : "Reopen payment"}</Button></div>
           ) : null}
 
           {actionError ? <p className="mt-4 text-sm text-rose-300">{actionError}</p> : null}

@@ -36,7 +36,10 @@ const {
   countTournamentCapacityUsage,
   isRegistrationActive,
 } = require("./registration-eligibility");
-const { isPayHereConfigured } = require("../payments/payment.service");
+const {
+  expireTournamentRegistrationReservation,
+  isPayHereConfigured,
+} = require("../payments/payment.service");
 const { ensureTeamRegistrationSaved } = require("../teams/team.service");
 
 const TOURNAMENT_STATUSES = new Set([
@@ -1412,6 +1415,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
     select: {
       id: true,
       registrationFeeAmount: true,
+      contactLink: true,
     },
   });
 
@@ -1419,7 +1423,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  const existingRegistration = await prisma.teamRegistration.findFirst({
+  const loadExistingRegistration = () => prisma.teamRegistration.findFirst({
     where: {
       tournamentId: tournament.id,
       AND: [
@@ -1452,6 +1456,18 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
       },
     },
   });
+  let existingRegistration = await loadExistingRegistration();
+
+  if (
+    existingRegistration?.paymentStatus === "pending" &&
+    existingRegistration.reservedUntil &&
+    existingRegistration.reservedUntil <= new Date()
+  ) {
+    await expireTournamentRegistrationReservation({
+      registrationId: existingRegistration.id,
+    });
+    existingRegistration = await loadExistingRegistration();
+  }
 
   if (existingRegistration) {
     await ensureTeamRegistrationSaved(existingRegistration.id);
@@ -1481,6 +1497,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
           ).length,
           reservedUntil: existingRegistration.reservedUntil,
           assignedSlotNumber: existingRegistration.assignedSlotNumber,
+          contactLink: tournament.contactLink,
           payment: existingRegistration.payments[0]
             ? {
                 orderId: existingRegistration.payments[0].providerOrderId,

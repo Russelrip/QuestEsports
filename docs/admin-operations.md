@@ -79,6 +79,8 @@ Only approved registrations appear in public tournament team lists and are used 
 
 Registration rows may also expose entry type, assigned slot, quoted tier fee/currency, payment provider/order state, and reservation expiry. Payment state should normally be driven by verified PayHere callbacks or bank-transfer review rather than manually changed in the general registration table.
 
+Paid registrations show the participant a live server-backed countdown. When it reaches zero, the reservation is expired atomically, its slot is released, and self-service payment restart/cancellation is disabled. The participant is directed to the tournament contact link (or the site contact page). From `/admin/payments`, an administrator can reopen an expired bank-transfer or PayHere registration when capacity remains; this creates a fresh payment window and bank transfers receive the lowest currently available numbered slot.
+
 Admins can use **Approve without payment** for a deliberate fee waiver. This confirms the registration, assigns the lowest available slot (or consumes its private hold), cancels unfinished payment transactions, and records the administrator on the reconciliation. It cannot bypass tournament capacity.
 
 A private admin hold assigns the lowest available numbered tournament slot and

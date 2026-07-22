@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCartStore } from "@/hooks/useCartStore";
+import ReservationCountdown from "@/components/payments/ReservationCountdown";
 
 const MAX_PROOF_SIZE = 5 * 1024 * 1024;
 const ALLOWED_PROOF_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -21,12 +22,17 @@ type PaymentStatus = {
   purpose: "tournament_registration" | "merchandise_order";
   statusMessage?: string | null;
   provider: string;
+  registration?: {
+    expiresAt?: string | null;
+    assignedSlotNumber?: number | null;
+    contactLink?: string | null;
+  } | null;
   bankTransfer?: {
     reference: string;
-    assignedSlotNumber: number;
+    assignedSlotNumber: number | null;
     amount: number;
     currency: string;
-    expiresAt: string;
+    expiresAt: string | null;
     proofSubmitted: boolean;
     bankAccount: {
       bankName: string;
@@ -47,6 +53,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
   const [uploadError, setUploadError] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
   const [copied, setCopied] = useState<"account" | "reference" | null>(null);
+  const [deadlineReached, setDeadlineReached] = useState(false);
   const attempts = useRef(0);
   const clearCart = useCartStore((state) => state.clear);
 
@@ -57,6 +64,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
       const { response, data } = await apiFetchJson<{ payment?: PaymentStatus; message?: string }>(`/api/payments/${encodeURIComponent(orderId)}${query}`);
       if (!response.ok || !data.payment) throw new Error(data.message || "Payment status could not be loaded.");
       setPayment(data.payment);
+      setDeadlineReached(data.payment.status === "expired");
       setError("");
       return data.payment;
     } catch (nextError) {
@@ -89,15 +97,17 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
   }, [loadStatus]);
 
   const terminalSuccess = payment?.status === "paid";
+  const reservationExpired = payment?.status === "expired" || deadlineReached;
+  const contactHref = payment?.registration?.contactLink || "/contact";
   const isBankTransfer = payment?.provider === "bank_transfer"
     ? payment.bankTransfer || null
     : null;
   let statusTitle = payment ? payment.status.replace(/_/g, " ") : "Checking payment…";
   if (terminalSuccess) statusTitle = "Payment confirmed";
+  else if (reservationExpired) statusTitle = "Reservation expired";
   else if (checkoutCancelled || payment?.status === "cancelled") statusTitle = "Payment cancelled";
   else if (payment?.status === "charged_back") statusTitle = "Payment reversed";
   else if (payment?.status === "failed") statusTitle = "Proof needs attention";
-  else if (payment?.status === "expired") statusTitle = "Reservation expired";
   else if (payment?.status === "refunded") statusTitle = "Payment refunded";
   else if (isBankTransfer?.proofSubmitted) statusTitle = "Proof under review";
   else if (isBankTransfer) statusTitle = "Slot reserved";
@@ -170,8 +180,27 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
       <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Payment Status</p>
       <h2 className="mt-4 text-3xl capitalize text-white sm:text-4xl">{statusTitle}</h2>
       {payment ? <p className="mt-4 break-words text-sm text-slate-300 sm:text-base">{payment.currency} {payment.amount.toFixed(2)} · Order <span className="break-all">{payment.orderId}</span></p> : null}
+      {payment?.purpose === "tournament_registration" && payment.registration?.expiresAt && !terminalSuccess && !reservationExpired ? (
+        <div className="mt-7 text-left">
+          <ReservationCountdown
+            expiresAt={payment.registration.expiresAt}
+            label={isBankTransfer?.proofSubmitted ? "Admin review time remaining" : "Time left to pay"}
+            onExpire={() => {
+              setDeadlineReached(true);
+              void loadStatus();
+            }}
+          />
+        </div>
+      ) : null}
+      {reservationExpired && payment?.purpose === "tournament_registration" ? (
+        <div className="mt-7 border border-rose-300/30 bg-rose-400/10 p-5 text-left">
+          <p className="font-semibold text-rose-100">Your payment window ran out and the slot is no longer reserved.</p>
+          <p className="mt-2 text-sm leading-6 text-rose-100/75">Please contact an administrator to request help. A new slot can only be assigned if tournament capacity is still available.</p>
+          <Link href={contactHref} className={buttonClassName({ className: "mt-4 w-full sm:w-auto" })}>Contact Admin</Link>
+        </div>
+      ) : null}
       {isBankTransfer && terminalSuccess ? <div className="mt-7 text-left"><ProofJourney paymentStatus={payment?.status} proofSelected={false} proofSubmitted={isBankTransfer.proofSubmitted} uploadPhase="complete" /></div> : null}
-      {isBankTransfer && !terminalSuccess ? (
+      {isBankTransfer && !terminalSuccess && !reservationExpired ? (
         <div className="mt-7 grid gap-5 text-left">
           <ProofJourney
             paymentStatus={payment?.status}
@@ -190,7 +219,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
               <div className="min-w-0"><dt className="text-slate-500">Transfer reference</dt><dd className="break-all text-base font-semibold tracking-wider text-white sm:text-lg">{isBankTransfer.reference}</dd><button type="button" className="mt-1 min-h-11 text-left text-xs text-purple-200 underline" onClick={() => void copyValue("reference", isBankTransfer.reference)}>{copied === "reference" ? "Copied" : "Copy reference"}</button></div>
             </dl>
             <p className="mt-4 text-xs leading-6 text-amber-100">Transfer the exact amount and include the reference. Never upload or share a password, PIN, OTP, card number, or banking login.</p>
-            <p className="mt-2 text-xs text-slate-400">Upload deadline: {new Date(isBankTransfer.expiresAt).toLocaleString()}</p>
+            {isBankTransfer.expiresAt ? <p className="mt-2 text-xs text-slate-400">Upload deadline: {new Date(isBankTransfer.expiresAt).toLocaleString()}</p> : null}
           </div>
           {payment && ["created", "pending", "review_required"].includes(payment.status) ? (
             <div className={`min-w-0 grid gap-4 border p-4 sm:p-5 ${uploadPhase === "failed" ? "border-rose-300/30 bg-rose-400/5" : isBankTransfer.proofSubmitted || uploadPhase === "complete" ? "border-emerald-300/25 bg-emerald-400/5" : "border-white/10 bg-white/[0.02]"}`}>
@@ -225,7 +254,9 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
         </div>
       ) : null}
       <p className="mt-4 text-sm leading-7 text-slate-400">
-        {terminalSuccess
+        {reservationExpired && payment?.purpose === "tournament_registration"
+          ? "This reservation cannot be restarted automatically. An administrator must review it before another payment window can be opened."
+          : terminalSuccess
           ? isBankTransfer
             ? "Quest E-sports verified the transfer against the bank account and confirmed your registration."
             : "The verified PayHere notification has been saved and your record is confirmed."
@@ -238,7 +269,7 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
               : payment?.statusMessage || "Do not retry until the final status appears."}
       </p>
       {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
-      <div className="mt-7 grid gap-3 sm:flex sm:flex-wrap sm:justify-center"><Link href={returnHref} className={buttonClassName({ variant: "secondary", className: "w-full sm:w-auto" })}>{terminalSuccess ? "Continue" : "Return"}</Link>{payment?.purpose === "tournament_registration" ? <Link href="/profile" className={buttonClassName({ variant: "ghost", className: "w-full sm:w-auto" })}>My registrations</Link> : null}{!terminalSuccess ? <button type="button" disabled={refreshing} onClick={() => void loadStatus()} className={buttonClassName({ variant: "ghost", className: "w-full sm:w-auto" })}>{refreshing ? "Refreshing…" : "Refresh status"}</button> : null}</div>
+      <div className="mt-7 grid gap-3 sm:flex sm:flex-wrap sm:justify-center"><Link href={returnHref} className={buttonClassName({ variant: "secondary", className: "w-full sm:w-auto" })}>{terminalSuccess ? "Continue" : "Return"}</Link>{payment?.purpose === "tournament_registration" ? <Link href="/profile" className={buttonClassName({ variant: "ghost", className: "w-full sm:w-auto" })}>My registrations</Link> : null}{!terminalSuccess && !reservationExpired ? <button type="button" disabled={refreshing} onClick={() => void loadStatus()} className={buttonClassName({ variant: "ghost", className: "w-full sm:w-auto" })}>{refreshing ? "Refreshing…" : "Refresh status"}</button> : null}</div>
     </Card>
   );
 }

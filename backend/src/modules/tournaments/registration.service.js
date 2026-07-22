@@ -601,6 +601,12 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       throw new HttpError(409, "You are already registered for this tournament.");
     }
     const latestPayment = existing.payments[0];
+    if (latestPayment?.status === "expired") {
+      throw new HttpError(
+        409,
+        "This payment window expired and the slot was released. Contact an administrator to request a new slot."
+      );
+    }
     const existingMembers = existing.members || [];
     const effectiveVerificationStatus = getRosterVerificationStatus(
       existingMembers,
@@ -1060,9 +1066,20 @@ const cancelUnpaidRegistration = async ({ slug, user }) => {
       id: true,
       paymentStatus: true,
       teamLogoName: true,
+      payments: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { status: true },
+      },
     },
   });
   if (!registration) throw new HttpError(404, "Tournament registration not found.");
+  if (registration.payments?.[0]?.status === "expired") {
+    throw new HttpError(
+      409,
+      "This expired registration must be reviewed by an administrator."
+    );
+  }
   if (registration.paymentStatus !== "unpaid") {
     throw new HttpError(
       409,

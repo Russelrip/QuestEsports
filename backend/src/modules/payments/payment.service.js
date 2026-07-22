@@ -253,6 +253,34 @@ const resolvePaidStatus = async ({ tx, current, now }) => {
   return "paid";
 };
 
+const expireTournamentRegistrationReservation = async ({ registrationId, now = new Date() }) =>
+  prisma.$transaction(async (tx) => {
+    const released = await tx.teamRegistration.updateMany({
+      where: {
+        id: registrationId,
+        paymentStatus: "pending",
+        reservedUntil: { lte: now },
+      },
+      data: {
+        paymentStatus: "unpaid",
+        reservedUntil: null,
+        assignedSlotNumber: null,
+      },
+    });
+    if (!released.count) return false;
+    await tx.paymentTransaction.updateMany({
+      where: {
+        registrationId,
+        status: { in: ["created", "pending", "review_required"] },
+      },
+      data: {
+        status: "expired",
+        statusMessage: "The payment window expired and the tournament slot was released. Contact an administrator for assistance.",
+      },
+    });
+    return true;
+  });
+
 const processPayHereNotification = async (body) => {
   const orderId = String(body.order_id || "").trim();
   if (!orderId) throw new HttpError(400, "Payment order ID is required.");
@@ -401,31 +429,9 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
   });
   let expiredRegistrationCount = 0;
   for (const registration of expiredRegistrations) {
-    const expired = await prisma.$transaction(async (tx) => {
-      const released = await tx.teamRegistration.updateMany({
-        where: {
-          id: registration.id,
-          paymentStatus: "pending",
-          reservedUntil: { lte: now },
-        },
-        data: {
-          paymentStatus: "unpaid",
-          reservedUntil: null,
-          assignedSlotNumber: null,
-        },
-      });
-      if (!released.count) return false;
-      await tx.paymentTransaction.updateMany({
-        where: {
-          registrationId: registration.id,
-          status: { in: ["created", "pending", "review_required"] },
-        },
-        data: {
-          status: "expired",
-          statusMessage: "The slot reservation expired before payment verification was completed.",
-        },
-      });
-      return true;
+    const expired = await expireTournamentRegistrationReservation({
+      registrationId: registration.id,
+      now,
     });
     if (expired) expiredRegistrationCount += 1;
   }
@@ -436,8 +442,8 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
   };
 };
 
-const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
-  const transaction = await prisma.paymentTransaction.findUnique({
+const loadPaymentStatusTransaction = (providerOrderId) =>
+  prisma.paymentTransaction.findUnique({
     where: { providerOrderId },
     include: {
       bankTransferProof: true,
@@ -449,6 +455,7 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
               bankBranch: true,
               bankAccountName: true,
               bankAccountNumber: true,
+              contactLink: true,
             },
           },
         },
@@ -456,6 +463,9 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
       merchandiseOrder: { select: { userId: true, publicToken: true } },
     },
   });
+
+const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
+  let transaction = await loadPaymentStatusTransaction(providerOrderId);
   if (!transaction) throw new HttpError(404, "Payment transaction not found.");
 
   const ownsRegistration = transaction.registration?.userId === userId;
@@ -464,6 +474,17 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
     (transaction.merchandiseOrder.userId === userId ||
       transaction.merchandiseOrder.publicToken === publicToken);
   if (!ownsRegistration && !ownsOrder) throw new HttpError(403, "Payment access denied.");
+  if (
+    transaction.registration?.paymentStatus === "pending" &&
+    transaction.registration.reservedUntil &&
+    transaction.registration.reservedUntil <= new Date()
+  ) {
+    await expireTournamentRegistrationReservation({
+      registrationId: transaction.registration.id,
+    });
+    transaction = await loadPaymentStatusTransaction(providerOrderId);
+    if (!transaction) throw new HttpError(404, "Payment transaction not found.");
+  }
   if (
     transaction.registration &&
     transaction.registration.verificationStatus !== "verified" &&
@@ -481,6 +502,13 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
     purpose: transaction.purpose,
     statusMessage: transaction.statusMessage,
     updatedAt: transaction.updatedAt,
+    registration: transaction.registration
+      ? {
+          expiresAt: transaction.registration.reservedUntil,
+          assignedSlotNumber: transaction.registration.assignedSlotNumber,
+          contactLink: transaction.registration.tournament.contactLink,
+        }
+      : null,
     bankTransfer:
       transaction.provider === "bank_transfer" && transaction.registration
         ? buildBankTransferInstructions({
@@ -628,10 +656,9 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
     });
     if (
       !current ||
-      current.purpose !== "tournament_registration" ||
-      current.provider !== "bank_transfer"
+      current.purpose !== "tournament_registration"
     ) {
-      throw new HttpError(404, "Expired bank-transfer registration payment was not found.");
+      throw new HttpError(404, "Expired tournament registration payment was not found.");
     }
     if (current.status !== "expired") {
       throw new HttpError(409, "Only expired payments can be reopened.");
@@ -651,21 +678,26 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
     if (used >= current.registration.tournament.maxTeams) {
       throw new HttpError(409, "The tournament has no slot available.");
     }
-    const assignedSlotNumber = await allocateLowestAvailableSlot({
-      tx,
-      tournamentId: current.registration.tournamentId,
-      maxTeams: current.registration.tournament.maxTeams,
-      excludeRegistrationId: current.registration.id,
-    });
-    const hasProof = Boolean(current.bankTransferProof);
+    const isBankTransfer = current.provider === "bank_transfer";
+    const assignedSlotNumber = isBankTransfer
+      ? await allocateLowestAvailableSlot({
+          tx,
+          tournamentId: current.registration.tournamentId,
+          maxTeams: current.registration.tournament.maxTeams,
+          excludeRegistrationId: current.registration.id,
+        })
+      : null;
+    const hasProof = isBankTransfer && Boolean(current.bankTransferProof);
     const holdMinutes = hasProof
       ? current.registration.tournament.bankTransferReviewMinutes
       : current.registration.tournament.reservationMinutes;
     const reservedUntil = new Date(Date.now() + holdMinutes * 60 * 1000);
-    const amount = getBankTransferAmountForSlot(
-      current.registration.tournament,
-      assignedSlotNumber
-    );
+    const amount = isBankTransfer
+      ? getBankTransferAmountForSlot(
+          current.registration.tournament,
+          assignedSlotNumber
+        )
+      : Number(current.amount);
 
     await tx.teamRegistration.update({
       where: { id: current.registration.id },
@@ -788,5 +820,6 @@ module.exports = {
   reopenExpiredTournamentPayment,
   releaseOrderStock,
   expireStaleCommerceReservations,
+  expireTournamentRegistrationReservation,
   reconcilePayHerePayment,
 };
