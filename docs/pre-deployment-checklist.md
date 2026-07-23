@@ -15,6 +15,7 @@ configuration and smoke check in the final column.
 | Logging | Structured JSON request/error/security logs include request IDs and redact credentials, cookies, secrets, and token-like query parameters. | Configure `LOG_DRAIN_URL` and verify delivery without exposing its token. Define retention and access ownership. |
 | Alerts | Unhandled exceptions can be shipped through `MONITORING_WEBHOOK_URL` or directly to Discord with `DISCORD_ALERT_WEBHOOK_URL`; readiness reports database/cache state. | **Deployment blocker:** configure an alert destination and run `npm run alerts:test:discord` when using Discord. Add uptime monitoring for `/api/health/ready`. |
 | Rollback | CD deploys an exact CI-passed SHA, rejects destructive migrations, health-checks the restart, and restores the prior application SHA/dependencies on failure. | Confirm the production environment approval, current database backup, PM2 ownership, and a rehearsed rollback. Migrations must remain backward-compatible. |
+| Search discovery | Next.js generates `/sitemap.xml`; `/robots.txt` advertises it; canonical public and dynamic routes are covered by sitemap unit tests. | Confirm both production endpoints return `200`, parse the sitemap XML, verify only canonical/indexable URLs are present, and review the Search Console Sitemaps report. |
 
 ## Required final commands
 
@@ -28,6 +29,7 @@ npm run prisma:migrate:status
 cd ../frontend
 npm ci
 npm run lint
+npm test
 npm run build
 npm run test:e2e
 ```
@@ -35,3 +37,5 @@ npm run test:e2e
 Do not approve production deployment until remote logging/alert delivery, database backup recency,
 mail delivery, payment callbacks (when enabled), persistent upload mounts, and the database-backed
 readiness endpoint have been verified in the target environment.
+
+For the crawler and Search Console release gate, follow [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md).

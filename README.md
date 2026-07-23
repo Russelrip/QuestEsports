@@ -142,6 +142,7 @@ Recommended flow:
 - [CI/CD Pipeline](./docs/ci-cd.md)
 - [Database and Storage](./docs/database-and-storage.md)
 - [Email System](./docs/email-system.md)
+- [Google Search Console and Sitemap Operations](./docs/search-console-and-sitemap.md)
 - [Setup and Deployment Guide](./docs/setup-and-deployment.md)
 - [Production Operations Runbook](./docs/production-runbook.md)
 - [Commerce and Tournament Rollout](./docs/commerce-and-tournament-rollout.md)
@@ -258,23 +259,29 @@ QuestEsports/
 
 ## Frontend Routes
 
-### Public routes
+### Public indexable routes
 
 - `/`
 - `/tournaments`
 - `/tournaments/[slug]`
-- `/tournaments/[slug]/register`
 - `/tournaments/series/[slug]`
-- `/tournaments/[slug]/register`
-- `/shop`, `/shop/[slug]`, `/shop/cart`, `/shop/order/[token]`
+- `/shop`, `/shop/[slug]`
 - `/refund-policy`
 - `/privacy-policy`, `/terms-of-service`
-- `/registration`
 - `/join`
-- `/match-videos`
-- `/posters`
-- `/rulebook`
+- `/gallery`, `/match-videos`
+- `/members`
+- `/rulebooks/[slug]`
 - `/contact`
+
+`/posters` redirects to `/gallery`, and `/rulebook` redirects to `/tournaments`; redirects are not included in the sitemap.
+
+### Public functional routes (`noindex` where applicable)
+
+- `/tournaments/[slug]/register`
+- `/tournaments/[slug]/payment`
+- `/shop/cart`, `/shop/order/[token]`
+- `/registration`
 - `/signup`
 - `/login`
 - `/verify-email`
@@ -469,6 +476,7 @@ Default local URLs:
 - Native brackets remain hidden from public responses until an admin publishes the bracket.
 - The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
 - The backend includes a Node test suite under `backend/tests`.
+- The frontend generates `/sitemap.xml` from canonical public routes, published tournaments/event series/rulebooks, and active products. `/robots.txt` advertises it; operational steps are in [Google Search Console and Sitemap Operations](./docs/search-console-and-sitemap.md).
 - Session/auth lifecycle behavior has dedicated unit coverage for session rehydration, throttled `lastSeenAt` writes, expired-session handling, and active-session listing.
 - Native bracket generation and score advancement have backend unit coverage.
 - There is currently no admin seed/bootstrap script beyond creating a user and promoting it through Prisma Studio.
@@ -481,6 +489,7 @@ Frontend:
 ```bash
 cd frontend
 npm run lint
+npm test
 npm run build
 npm run test:e2e
 ```
@@ -502,9 +511,10 @@ Backend tests use Node's built-in test runner and live in `backend/tests`.
 - Run one file: `cd backend && node --test tests/session.service.test.js`
 - Existing coverage focuses on backend behavior that benefits from deterministic unit testing, including jobs, observability, rate limiting, team helpers, tournament registration, recruitment validation, admin Excel exports, admin deletion workflows, and session/auth lifecycle logic.
 
-Frontend verification includes lint, a production build, and Playwright critical journeys:
+Frontend verification includes unit tests, lint, a production build, and Playwright critical journeys:
 
 - `cd frontend && npm run lint`
+- `cd frontend && npm test`
 - `cd frontend && npm run build`
 - `cd frontend && npm run test:e2e`
 
@@ -516,6 +526,7 @@ Frontend verification includes lint, a production build, and Playwright critical
 - Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
 - Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, provider settings, or queue behavior.
 - Read [Database and Storage](./docs/database-and-storage.md) before touching uploads, Prisma schema, or media migration scripts.
+- Use [Google Search Console and Sitemap Operations](./docs/search-console-and-sitemap.md) when changing public routes, canonical metadata, crawler rules, or sitemap submission state.
 
 ## Website Change Upgrade
 

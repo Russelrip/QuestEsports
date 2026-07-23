@@ -278,6 +278,7 @@ For frontend changes, run:
 ```bash
 cd frontend
 npm run lint
+npm test
 npm run build
 npm run test:e2e
 ```
@@ -435,7 +436,7 @@ Production notes:
 1. Set `NEXT_PUBLIC_API_URL`.
 2. Set `NEXT_PUBLIC_SITE_URL`.
 3. Install dependencies with `npm install`.
-4. Run `npm run build`.
+4. Run `npm run lint`, `npm test`, and `npm run build`.
 5. Start with `npm run start`.
 
 ## VPS Backend-Only Deploy Flow
@@ -486,8 +487,12 @@ Check all of the following:
 - tournament listing cards show prize pool, registration deadline, and tournament start
 - tournament detail pages render registered teams only when approved teams exist
 - tournament detail pages render native brackets only after an admin publishes bracket data
+- `https://questesports.lk/sitemap.xml` returns `200`, `application/xml`, and valid XML containing only canonical public/indexable URLs
+- `https://questesports.lk/robots.txt` returns `200` and advertises `https://questesports.lk/sitemap.xml`
 - deleting a tournament registration in admin lets the same captain register for that tournament again
 - admin registration Excel downloads include registration and roster-member sheets for the active filters
+
+After the crawler checks pass, review the existing sitemap submission and indexing reports using [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md).
 - recruitment submission works for verified users
 - admin recruitment Excel downloads include application and team-member sheets for the active filters
 - completed showcase sections render correctly

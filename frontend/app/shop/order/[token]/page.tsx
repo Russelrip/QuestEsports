@@ -4,6 +4,13 @@ import PageLayout from "@/components/PageLayout";
 import { Container } from "@/components/ui/container";
 import { fetchOrder } from "@/lib/shop";
 import { ApiRequestError } from "@/lib/api";
+import { buildNoIndexMetadata } from "@/lib/site";
+
+export const metadata = buildNoIndexMetadata(
+  "Order Status",
+  "View your Quest merchandise order.",
+  "/shop/order"
+);
 
 export default async function ShopOrderPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ cancelled?: string }> }) {
   const { token } = await params;

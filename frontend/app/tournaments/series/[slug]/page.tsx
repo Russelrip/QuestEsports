@@ -8,14 +8,29 @@ import { PageTransition } from "@/components/ui/page-transition";
 import { fetchPublicEventSeriesBySlug } from "@/lib/tournaments";
 import { formatTournamentDate } from "@/lib/utils";
 import { ApiRequestError } from "@/lib/api";
+import { buildNoIndexMetadata, buildPageMetadata } from "@/lib/site";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   try {
     const { slug } = await params;
     const series = await fetchPublicEventSeriesBySlug(slug);
-    return { title: series.title, description: series.description };
+    return buildPageMetadata({
+      title: series.title,
+      description: series.description,
+      path: `/tournaments/series/${slug}`,
+      image: series.heroUrl || undefined,
+      keywords: [
+        series.title,
+        "e-sports tournament series",
+        "Sri Lanka gaming events",
+      ],
+    });
   } catch {
-    return { title: "Event Not Found", robots: { index: false, follow: false } };
+    return buildNoIndexMetadata(
+      "Event Not Found",
+      "This event series could not be found.",
+      "/tournaments"
+    );
   }
 }
 

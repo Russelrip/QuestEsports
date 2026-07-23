@@ -602,6 +602,14 @@ Test at minimum: 320×568, 375×667, 390×844, 768×1024, 1366×768, 1440×900, 
 - [ ] SEO-010 Manifest name, icons, theme/background color, start URL, and installed-app launch behavior are correct.
 - [ ] SEO-011 Favicon and Apple touch icon display correctly.
 - [ ] SEO-012 Search engine crawl smoke test finds no accidental soft 404, redirect loop, or duplicate canonical page.
+- [ ] SEO-013 `/sitemap.xml` returns `200`, `application/xml`, and valid UTF-8 XML to both a normal client and a Googlebot user agent.
+- [ ] SEO-014 Sitemap entries cover published tournaments, published event series, published rulebooks, and active products while excluding redirects and functional/private routes.
+- [ ] SEO-015 Dynamic sitemap source failure is isolated; one unavailable API group does not make the sitemap endpoint fail or remove unrelated groups.
+- [ ] SEO-016 Search Console shows the submitted sitemap as `Success`, with a populated last-read time and a plausible discovered-page count.
+- [ ] SEO-017 Live URL inspection reports successful fetches for the sitemap and representative canonical pages.
+- [ ] SEO-018 Search Console Page indexing, HTTPS, Manual actions, Security issues, and Core Web Vitals reports have been reviewed for release blockers.
+
+Use [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md) for the commands, expected results, and `Couldn't fetch` procedure.
 
 ## 23. Security and privacy
 

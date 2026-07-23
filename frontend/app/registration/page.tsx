@@ -1,17 +1,12 @@
 import PageLayout from "@/components/PageLayout";
 import RegistrationForm from "@/components/registration/RegistrationForm";
-import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
+import { buildNoIndexMetadata, defaultPageDescriptions } from "@/lib/site";
 
-export const metadata = buildPageMetadata({
-  title: "Create Team",
-  description: defaultPageDescriptions.registration,
-  path: "/registration",
-  keywords: [
-    "create e-sports team",
-    "gaming team roster",
-    "invite team members",
-  ],
-});
+export const metadata = buildNoIndexMetadata(
+  "Create Team",
+  defaultPageDescriptions.registration,
+  "/registration"
+);
 
 export default function RegistrationPage() {
   return (

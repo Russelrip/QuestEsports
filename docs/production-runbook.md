@@ -207,12 +207,17 @@ systemctl is-active pm2-deploy
 sudo -u deploy -H pm2 list
 curl --fail --silent --show-error http://127.0.0.1:5001/api/health
 curl --fail --silent --show-error https://api.questesports.lk/api/health
+curl --fail --silent --show-error https://questesports.lk/sitemap.xml > /dev/null
+curl --fail --silent --show-error https://questesports.lk/robots.txt
 ```
 
 From Windows PowerShell, use:
 
 ```powershell
 Invoke-RestMethod https://api.questesports.lk/api/health
+$sitemap = Invoke-WebRequest https://questesports.lk/sitemap.xml -UseBasicParsing
+[xml]$sitemap.Content | Out-Null
+Invoke-WebRequest https://questesports.lk/robots.txt -UseBasicParsing
 ```
 
 PowerShell aliases `curl` to `Invoke-WebRequest`, and Windows `sudo.exe` is not Linux `sudo`.
@@ -285,3 +290,4 @@ Do not treat admin Excel exports as backups. Payment-proof backups contain sensi
 - Resend requires a verified sending domain for normal application recipients. If switching back, Amazon SES sandbox delivery remains restricted to verified recipients. Production startup always requires complete configuration for the selected provider while password authentication is enabled.
 - PayHere may remain completely unconfigured. Free registrations and bank-transfer tournaments continue to work; PayHere tournament checkout and merchandise checkout remain unavailable until all PayHere values are configured.
 - The frontend deploy is managed by Vercel's Git integration and is not restarted by the backend CD workflow.
+- The sitemap and crawler configuration are managed by the frontend deploy. After public-route or metadata changes, follow [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md) and confirm the existing Search Console submission remains healthy.
