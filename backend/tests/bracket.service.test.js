@@ -111,7 +111,7 @@ test("updateTournamentBracketMatch completes a ready match and advances the winn
   }
 });
 
-test("mapPublicBracket overlays current tournament registration logos", () => {
+test("mapPublicBracket overlays current tournament registration names and logos", () => {
   const { module: bracketService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
   });
@@ -122,17 +122,20 @@ test("mapPublicBracket overlays current tournament registration logos", () => {
       lastUpdatedAt: new Date("2026-07-22T00:00:00.000Z"),
       bracketData: {
         participant: [
-          { id: 0, registrationId: "registration-1", logoUrl: "/api/uploads/team-logos/old.png" },
-          { id: 1, registrationId: "registration-2", logoUrl: null },
+          { id: 0, registrationId: "registration-1", name: "Old Alpha", shortCode: "OA", logoUrl: "/api/uploads/team-logos/old.png" },
+          { id: 1, registrationId: "registration-2", name: "Old Beta", shortCode: "OB", logoUrl: null },
         ],
         match: [],
       },
     }, [
-      { id: "registration-1", teamLogoName: "old.png", savedTeam: { logoName: "new.webp" } },
-      { id: "registration-2", teamLogoName: "stale.png", savedTeam: { logoName: null } },
+      { id: "registration-1", teamName: "Thrownumi", teamLogoName: "old.png", savedTeam: { logoName: "new.webp" } },
+      { id: "registration-2", teamName: "Beta Team", teamLogoName: "stale.png", savedTeam: { logoName: null } },
     ]);
 
+    assert.equal(result.bracketData.participant[0].name, "Thrownumi");
+    assert.equal(result.bracketData.participant[0].shortCode, "THRO");
     assert.equal(result.bracketData.participant[0].logoUrl, "/api/uploads/team-logos/new.webp");
+    assert.equal(result.bracketData.participant[1].name, "Beta Team");
     assert.equal(result.bracketData.participant[1].logoUrl, null);
   } finally {
     restore();

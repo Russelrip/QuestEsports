@@ -204,18 +204,22 @@ const mapPublicBracket = (bracket, registrations = []) => {
     };
   }
 
-  const currentLogos = new Map(
+  const currentTeams = new Map(
     registrations.map((registration) => [
       registration.id,
-      getTeamLogoUrl(getCurrentTeamLogoName(registration)),
+      {
+        name: registration.teamName,
+        shortCode: buildShortCode(registration.teamName),
+        logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
+      },
     ])
   );
-  const bracketData = currentLogos.size && Array.isArray(bracket.bracketData?.participant)
+  const bracketData = currentTeams.size && Array.isArray(bracket.bracketData?.participant)
     ? {
         ...bracket.bracketData,
         participant: bracket.bracketData.participant.map((participant) =>
-          participant.registrationId && currentLogos.has(participant.registrationId)
-            ? { ...participant, logoUrl: currentLogos.get(participant.registrationId) }
+          participant.registrationId && currentTeams.has(participant.registrationId)
+            ? { ...participant, ...currentTeams.get(participant.registrationId) }
             : participant
         ),
       }

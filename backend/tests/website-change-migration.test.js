@@ -37,3 +37,16 @@ test("admin hold migration backfills and uniquely locks slot pricing", () => {
     /admin_slot_reservations_tournament_id_assigned_slot_number_key/
   );
 });
+
+test("saved team rename migration backfills linked tournament registration names", () => {
+  const teamNameMigration = fs.readFileSync(
+    path.join(
+      __dirname,
+      "../prisma/migrations/20260728020000_sync_saved_team_names_to_registrations/migration.sql"
+    ),
+    "utf8"
+  );
+  assert.match(teamNameMigration, /UPDATE "team_registrations" AS registration/);
+  assert.match(teamNameMigration, /registration\."saved_team_id" = team\."id"/);
+  assert.match(teamNameMigration, /registration\."team_name" IS DISTINCT FROM team\."name"/);
+});

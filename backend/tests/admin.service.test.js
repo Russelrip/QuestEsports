@@ -682,7 +682,14 @@ test("updateAdminSavedTeam replaces its logo across linked tournament registrati
       update: async () => undefined,
     },
     teamRegistration: {
+      findMany: async () => [{ id: "registration-1", tournamentId: "tournament-1", teamName: "Quest Five" }],
       updateMany: async (args) => registrationUpdates.push(args),
+    },
+    tournamentBracket: {
+      findMany: async () => [],
+    },
+    tournament: {
+      findMany: async () => [],
     },
   };
   const { module: adminService, restore } = loadAdminService({
@@ -718,10 +725,100 @@ test("updateAdminSavedTeam replaces its logo across linked tournament registrati
     assert.equal(savedTeamUpdates[0].data.logoName, "new-logo.webp");
     assert.deepEqual(registrationUpdates, [{
       where: { savedTeamId: "saved-team-1" },
-      data: { teamLogoName: "new-logo.webp" },
+      data: { teamName: "Quest Five", teamLogoName: "new-logo.webp" },
     }]);
     assert.equal(updated.logoUrl, "/api/uploads/team-logos/new-logo.webp");
     assert.deepEqual(removedUploads, [{ directory: "uploads/team-logos", filename: "old-logo.png" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("updateAdminSavedTeam syncs a renamed team across registrations, brackets, and schedules", async () => {
+  const savedTeamUpdates = [];
+  const registrationUpdates = [];
+  const bracketUpdates = [];
+  const tournamentUpdates = [];
+  const oldName = "OCG Valorant Academy";
+  const newName = "Thrownumi";
+  const team = {
+    id: "saved-team-1",
+    name: oldName,
+    teamTag: "OCG",
+    logoName: null,
+    country: "Sri Lanka",
+    organizationName: null,
+    updatedAt: new Date("2026-07-20T10:00:00.000Z"),
+    captainUser: { firstName: "Team", lastName: "Captain", username: "captain" },
+    members: [
+      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: null, riotId: null, inviteStatus: "accepted" },
+    ],
+    _count: { members: 1 },
+  };
+  let savedTeamLookupCount = 0;
+  const tx = {
+    savedTeam: {
+      update: async (args) => savedTeamUpdates.push(args),
+    },
+    savedTeamMember: {
+      update: async () => undefined,
+    },
+    teamRegistration: {
+      findMany: async () => [{ id: "registration-1", tournamentId: "tournament-1", teamName: oldName }],
+      updateMany: async (args) => registrationUpdates.push(args),
+    },
+    tournamentBracket: {
+      findMany: async () => [{
+        id: "bracket-1",
+        seedData: [{ id: "registration-1", name: oldName, shortCode: "OVA" }],
+        bracketData: {
+          participant: [{ id: 0, registrationId: "registration-1", name: oldName, shortCode: "OVA" }],
+          match: [],
+        },
+      }],
+      update: async (args) => bracketUpdates.push(args),
+    },
+    tournament: {
+      findMany: async () => [{
+        id: "tournament-1",
+        scheduleData: {
+          headers: ["Team A", "Team B"],
+          rows: [{ "Team A": oldName, "Team B": "Other Team" }],
+        },
+      }],
+      update: async (args) => tournamentUpdates.push(args),
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({
+        ...team,
+        name: savedTeamLookupCount++ === 0 ? oldName : newName,
+      }),
+    },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const updated = await adminService.updateAdminSavedTeam("saved-team-1", {
+      name: newName,
+      teamTag: "THR",
+      country: "Sri Lanka",
+      organizationName: "Independent",
+      members: JSON.stringify([{ id: "member-1", name: "Player One", email: "player@example.com", discord: "", gameId: "" }]),
+    });
+
+    assert.equal(savedTeamUpdates[0].data.name, newName);
+    assert.deepEqual(registrationUpdates, [{
+      where: { savedTeamId: "saved-team-1" },
+      data: { teamName: newName },
+    }]);
+    assert.equal(bracketUpdates[0].data.seedData[0].name, newName);
+    assert.equal(bracketUpdates[0].data.seedData[0].shortCode, "THRO");
+    assert.equal(bracketUpdates[0].data.bracketData.participant[0].name, newName);
+    assert.equal(tournamentUpdates[0].data.scheduleData.rows[0]["Team A"], newName);
+    assert.equal(tournamentUpdates[0].data.scheduleData.rows[0]["Team B"], "Other Team");
+    assert.equal(updated.name, newName);
   } finally {
     restore();
   }

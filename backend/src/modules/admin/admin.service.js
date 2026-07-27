@@ -42,6 +42,7 @@ const {
 } = require("../tournaments/registration-eligibility");
 const { getBankTransferAmountForSlot } = require("../payments/bank-transfer.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
+const { buildShortCode } = require("../tournaments/bracket.service");
 
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
@@ -1321,6 +1322,53 @@ const parseAdminTeamMembers = (value) => {
   throw new HttpError(400, "Team members must be a valid array.");
 };
 
+const syncBracketTeamName = (bracket, registrationIds, name) => {
+  let changed = false;
+  const shortCode = buildShortCode(name);
+  const updateEntry = (entry, registrationId) => {
+    if (!entry || !registrationIds.has(registrationId)) return entry;
+    if (entry.name === name && entry.shortCode === shortCode) return entry;
+    changed = true;
+    return { ...entry, name, shortCode };
+  };
+  const seedData = Array.isArray(bracket.seedData)
+    ? bracket.seedData.map((seed) => updateEntry(seed, seed?.id))
+    : bracket.seedData;
+  const bracketData = Array.isArray(bracket.bracketData?.participant)
+    ? {
+        ...bracket.bracketData,
+        participant: bracket.bracketData.participant.map((participant) =>
+          updateEntry(participant, participant?.registrationId)
+        ),
+      }
+    : bracket.bracketData;
+
+  return { changed, seedData, bracketData };
+};
+
+const syncScheduleTeamName = (scheduleData, previousNames, name) => {
+  if (!Array.isArray(scheduleData?.rows) || previousNames.size === 0) {
+    return { changed: false, scheduleData };
+  }
+
+  let changed = false;
+  const rows = scheduleData.rows.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+    return Object.fromEntries(Object.entries(row).map(([key, value]) => {
+      if (typeof value === "string" && previousNames.has(value) && value !== name) {
+        changed = true;
+        return [key, name];
+      }
+      return [key, value];
+    }));
+  });
+
+  return {
+    changed,
+    scheduleData: changed ? { ...scheduleData, rows } : scheduleData,
+  };
+};
+
 const updateAdminSavedTeam = async (teamId, body, file) => {
   const name = normalizeText(body.name);
   const teamTag = normalizeText(body.teamTag) || null;
@@ -1338,7 +1386,7 @@ const updateAdminSavedTeam = async (teamId, body, file) => {
 
   const existing = await prisma.savedTeam.findUnique({
     where: { id: teamId },
-    select: { id: true, logoName: true, members: { select: { id: true } } },
+    select: { id: true, name: true, logoName: true, members: { select: { id: true } } },
   });
   if (!existing) throw new HttpError(404, "Team not found.");
   const memberIds = new Set(existing.members.map((member) => member.id));
@@ -1359,6 +1407,10 @@ const updateAdminSavedTeam = async (teamId, body, file) => {
 
   try {
     await prisma.$transaction(async (tx) => {
+      const linkedRegistrations = await tx.teamRegistration.findMany({
+        where: { savedTeamId: teamId },
+        select: { id: true, tournamentId: true, teamName: true },
+      });
       await tx.savedTeam.update({
         where: { id: teamId },
         data: { name, teamTag, country, organizationName, logoName: nextLogoName },
@@ -1370,11 +1422,48 @@ const updateAdminSavedTeam = async (teamId, body, file) => {
         });
       }
 
-      if (nextLogoName !== existing.logoName) {
+      if (linkedRegistrations.length > 0) {
         await tx.teamRegistration.updateMany({
           where: { savedTeamId: teamId },
-          data: { teamLogoName: nextLogoName },
+          data: {
+            teamName: name,
+            ...(nextLogoName !== existing.logoName ? { teamLogoName: nextLogoName } : {}),
+          },
         });
+
+        const registrationIds = new Set(linkedRegistrations.map((registration) => registration.id));
+        const tournamentIds = [...new Set(linkedRegistrations.map((registration) => registration.tournamentId))];
+        const previousNames = new Set([
+          existing.name,
+          ...linkedRegistrations.map((registration) => registration.teamName),
+        ].filter((previousName) => previousName && previousName !== name));
+        const brackets = await tx.tournamentBracket.findMany({
+          where: { tournamentId: { in: tournamentIds } },
+          select: { id: true, seedData: true, bracketData: true },
+        });
+        for (const bracket of brackets) {
+          const synced = syncBracketTeamName(bracket, registrationIds, name);
+          if (synced.changed) {
+            await tx.tournamentBracket.update({
+              where: { id: bracket.id },
+              data: { seedData: synced.seedData, bracketData: synced.bracketData },
+            });
+          }
+        }
+
+        const tournaments = await tx.tournament.findMany({
+          where: { id: { in: tournamentIds }, scheduleData: { not: Prisma.JsonNull } },
+          select: { id: true, scheduleData: true },
+        });
+        for (const tournament of tournaments) {
+          const synced = syncScheduleTeamName(tournament.scheduleData, previousNames, name);
+          if (synced.changed) {
+            await tx.tournament.update({
+              where: { id: tournament.id },
+              data: { scheduleData: synced.scheduleData },
+            });
+          }
+        }
       }
     });
 

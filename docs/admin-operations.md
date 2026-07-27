@@ -29,11 +29,13 @@ All admin routes require a valid session and `user.role === "admin"`.
 - `/admin/contact-messages` for the contact inbox
 - `/admin/teams` for saved-team details, logos, organization labels, and deletion
 
-## Saved Team Logos
+## Saved Team Details and Logos
 
-Admins can see the current logo in the `/admin/teams` directory and team editor. The team update endpoint accepts an optional multipart `teamLogo` (JPEG, PNG, or WebP, up to 5 MB) and a `removeLogo` flag.
+Admins can edit the team name, tag, country, organization label, roster details, and logo from the `/admin/teams` directory. The team update endpoint accepts an optional multipart `teamLogo` (JPEG, PNG, or WebP, up to 5 MB) and a `removeLogo` flag.
 
 Logo replacements and removals are copied to every tournament registration linked to the saved team. Public participant lists and published native brackets therefore use the current logo without requiring bracket regeneration.
+
+Team-name changes are copied to every linked tournament registration, native bracket seed and participant, and exact team-name cells in saved tournament schedules. Registration-backed account, payment, export, admin, and public tournament views therefore show the current saved-team name.
 
 ## Saved Team Deletion
 
