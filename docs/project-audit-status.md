@@ -67,11 +67,15 @@ Windows ACLs on `backend/.env` and `D:\Work\QuestEsports-db-migration` were rest
 
 ## Remaining Findings and Release Gates
 
-### High: Complete a full off-site restore drill
+### Closed: Full off-site restore drill completed
 
 The French VPS now creates encrypted PostgreSQL/public-upload/private-upload archives, uploads them to `quest-backups:quest-esports/production`, and runs a daily restricted systemd timer. Both a manual full backup and the sandboxed systemd service completed successfully on 2026-07-29. The database-only Paris Windows snapshot also restored successfully on disposable PostgreSQL 17.
 
-The remaining disaster-recovery gate is to download one full Google Drive archive and checksum, decrypt it only on an isolated host holding the offline identity, and restore it to disposable PostgreSQL 17 plus empty temporary upload roots. Record table counts, asset checks, timing, and the recovery date. Do not test against Paris production.
+The full archive `quest-production-20260729T133809Z.tar.gz.enc` was downloaded with its checksum, decrypted only on the isolated recovery PC, and restored to disposable PostgreSQL 17 plus empty temporary upload roots. The result contained 35 public tables and 33 completed migrations. SHA-256 manifests matched all 41 public and 10 private files. The drill found and corrected the restore script's missing `pg_restore --dbname` option, then passed end to end. Production was never a restore target.
+
+### High: Replace rclone's retiring shared Google Drive client ID
+
+rclone 1.74.4 reported that its shared Google Drive OAuth client ID is being retired during 2026. The current VPS remote still works, but scheduled backups will eventually fail if it is not replaced. Create a dedicated Google OAuth desktop client, update the `quest-backups` remote without exposing its token, rerun `quest-esports-backup.service`, and record the successful result.
 
 ### Closed: Production deployment externally verified
 
@@ -101,9 +105,10 @@ The aggregate coverage gate passes, but authentication, TOTP, mail templates, sh
 
 1. Commit documentation/config-example changes without committing `.env`, database dumps, `age` identities, or `rclone` tokens.
 2. Require normal CI/CD and verify the public health endpoint after deployment.
-3. Complete and record the isolated full database/upload restore drill.
-4. Disable the unused Paris Supabase Data API in the dashboard and rerun `npm run prisma:security:verify`.
-5. Verify Tokyo mail delivery, alert delivery, persistent storage mounts, and any enabled payment paths.
-6. After the full restore drill and rollback-retention decision, delete the old Tokyo Supabase project and rotate credentials that no longer need to remain valid.
+3. Replace rclone's retiring shared Google Drive client ID and rerun the restricted systemd backup.
+4. Repeat the isolated full database/upload restore drill at least quarterly.
+5. Disable the unused Paris Supabase Data API in the dashboard and rerun `npm run prisma:security:verify`.
+6. Verify Tokyo mail delivery, alert delivery, persistent storage mounts, and any enabled payment paths.
+7. After the rollback-retention decision, delete the old Tokyo Supabase project and rotate credentials that no longer need to remain valid.
 
 Operational commands and exact safeguards are in [Production Operations Runbook](./production-runbook.md), [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md), and [Pre-deployment Checklist](./pre-deployment-checklist.md).

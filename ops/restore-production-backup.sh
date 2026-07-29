@@ -65,7 +65,7 @@ echo "Restore manifest:"
 cat "$work_directory/manifest.txt"
 echo "Database restore begins in 10 seconds. Press Ctrl+C to abort." >&2
 sleep 10
-pg_restore "$DIRECT_URL" \
+pg_restore --dbname="$DIRECT_URL" \
   --clean \
   --if-exists \
   --no-owner \

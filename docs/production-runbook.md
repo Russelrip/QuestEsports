@@ -331,7 +331,7 @@ journalctl -u quest-esports-backup.service --since today --no-pager
 
 The backup is not considered successful until both the encrypted archive and checksum are visible on the off-site remote.
 
-Production was verified on 2026-07-29 with a manual encrypted full backup, a successful restricted systemd service run, and the daily timer enabled. The verified manual archive was `quest-production-20260729T133147Z.tar.gz.enc` on `quest-backups:quest-esports/production`. This proves backup creation and remote upload, but a full off-site archive download/decrypt/restore drill remains required.
+Production was verified on 2026-07-29 with a manual encrypted full backup, a successful restricted systemd service run, and the daily timer enabled. The verified manual archive was `quest-production-20260729T133147Z.tar.gz.enc` on `quest-backups:quest-esports/production`.
 
 ### Local Paris database snapshot on Windows
 
@@ -360,6 +360,10 @@ RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
 ```
 
 Do not point a restore drill at Paris production. Record the archive timestamp, restored table counts, sample asset checks, and elapsed recovery time. Run a drill after setup and at least quarterly.
+
+The first full drill completed on 2026-07-29 using `quest-production-20260729T133809Z.tar.gz.enc`. The checksum matched, PostgreSQL 17 restored 35 public tables and 33 completed migration records, and SHA-256 manifests matched all 41 public and 10 private restored files. The drill also caught and corrected the restore script's missing `pg_restore --dbname` option before any production restore was attempted.
+
+The current Google Drive remote was created with rclone's shared OAuth client ID. rclone 1.74.4 warns that this shared client is being retired during 2026. Create a dedicated Google OAuth desktop client, update the `quest-backups` remote on the VPS without printing its token, run `systemctl start quest-esports-backup.service`, and confirm `Result=success` before the shared client stops working.
 
 ### Supabase Data API
 
