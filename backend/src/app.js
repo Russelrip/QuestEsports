@@ -6,6 +6,10 @@ const { openApiDocument } = require("./lib/openapi");
 const { checkDatabaseReadiness } = require("./lib/database");
 const { checkUploadReadiness } = require("./middleware/upload");
 const { logger } = require("./lib/logger");
+const {
+  requireSiteAvailable,
+  sendMaintenanceResponse,
+} = require("./middleware/maintenance");
 const { notFoundHandler, errorHandler } = require("./middleware/error-handler");
 const {
   attachRequestContext,
@@ -46,9 +50,16 @@ app.get("/api/health/live", (req, res) =>
     success: true,
     message: "Quest E-sports API is live.",
     timestamp: new Date().toISOString(),
+    maintenance: { enabled: env.SITE_MAINTENANCE_MODE },
   })
 );
 const readinessHandler = async (req, res) => {
+  if (env.SITE_MAINTENANCE_MODE) {
+    return sendMaintenanceResponse(req, res, {
+      readiness: { dependencies: "maintenance" },
+    });
+  }
+
   try {
     await Promise.all([checkDatabaseReadiness(), checkUploadReadiness()]);
     res.status(200).json({
@@ -67,6 +78,7 @@ const readinessHandler = async (req, res) => {
 };
 app.get("/api/health", readinessHandler);
 app.get("/api/health/ready", readinessHandler);
+app.use(requireSiteAvailable);
 app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));
 
 app.use("/api", apiRouter);

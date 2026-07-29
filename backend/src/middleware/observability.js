@@ -32,8 +32,13 @@ const logRequestLifecycle = (req, res, next) => {
 
   res.on("finish", () => {
     const durationMs = Math.max(Date.now() - (req.startedAt || Date.now()), 0);
-    const level =
-      res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
+    const level = res.locals?.expectedMaintenance
+      ? "info"
+      : res.statusCode >= 500
+        ? "error"
+        : res.statusCode >= 400
+          ? "warn"
+          : "info";
 
     logger[level]("HTTP request completed", {
       requestId: req.requestId,

@@ -167,6 +167,8 @@ jobs:
             exit 1
           fi
 
+          HEALTHCHECK_ORIGIN="${HEALTHCHECK_URL%/api/health}"
+
           rollback() {
             EXIT_CODE="$1"
             FAILED_COMMAND="$2"
@@ -189,7 +191,7 @@ jobs:
               fi
               HEALTHY=false
               for attempt in 1 2 3 4 5; do
-                if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" >/dev/null; then
+                if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/health/live" >/dev/null; then
                   HEALTHY=true
                   break
                 fi
@@ -243,17 +245,25 @@ jobs:
           pm2 restart "$PM2_PROCESS" --update-env
           HEALTHY=false
           for attempt in 1 2 3 4 5; do
-            if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" >/dev/null; then
+            if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/health/live" >/dev/null; then
               HEALTHY=true
               break
             fi
             sleep 2
           done
           test "$HEALTHY" = true
-          HEALTHCHECK_ORIGIN="${HEALTHCHECK_URL%/api/health}"
-          curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/tournaments" >/dev/null
-          curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/products" >/dev/null
-          curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/commerce/capabilities" >/dev/null
+          READINESS_HEADERS="$(curl --silent --show-error --max-time 10 --dump-header - --output /dev/null "$HEALTHCHECK_URL")"
+          READINESS_STATUS="$(printf '%s\n' "$READINESS_HEADERS" | awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }')"
+          if [ "$READINESS_STATUS" = 200 ]; then
+            curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/tournaments" >/dev/null
+            curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/products" >/dev/null
+            curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/commerce/capabilities" >/dev/null
+          elif [ "$READINESS_STATUS" = 503 ] && printf '%s\n' "$READINESS_HEADERS" | grep -Eiq '^x-maintenance-mode:[[:space:]]*active[[:space:]]*$'; then
+            echo "Backend deployed successfully while intentional site maintenance is active."
+          else
+            echo "Backend readiness check returned unexpected status $READINESS_STATUS." >&2
+            exit 1
+          fi
           pm2 save
           printf '%s\n' "$DEPLOY_SHA" > "$DEPLOYED_SHA_FILE"
           chmod 600 "$DEPLOYED_SHA_FILE"

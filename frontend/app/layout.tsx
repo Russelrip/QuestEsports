@@ -7,6 +7,7 @@ import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { designTokenCssVariables } from "@/lib/design-tokens";
+import { readSiteMaintenanceConfig } from "@/lib/maintenance";
 import { siteMetadata } from "@/lib/site";
 
 export const metadata = siteMetadata;
@@ -22,6 +23,19 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const maintenance = readSiteMaintenanceConfig();
+
+  if (maintenance.enabled) {
+    return (
+      <html lang="en">
+        <body className="page-shell">
+          <style>{designTokenCssVariables}</style>
+          {children}
+        </body>
+      </html>
+    );
+  }
+
   return (
     <html lang="en">
       <body className="page-shell">

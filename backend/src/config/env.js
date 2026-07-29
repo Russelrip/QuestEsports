@@ -107,6 +107,28 @@ const normalizeBoolean = (value, fallback = false) => {
   throw new Error(`Invalid boolean value "${value}".`);
 };
 
+const normalizeIntegerInRange = (name, value, fallback, minimum, maximum) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return fallback;
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}.`);
+  }
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}.`);
+  }
+  return parsed;
+};
+
+const normalizeMaintenanceMessage = (value) => {
+  const fallback = "We’re carrying out scheduled maintenance. Please try again shortly.";
+  const normalized = String(value || "").trim().replace(/\s+/g, " ") || fallback;
+  if (normalized.length > 240) {
+    throw new Error("SITE_MAINTENANCE_MESSAGE must be 240 characters or fewer.");
+  }
+  return normalized;
+};
+
 const env = {
   PORT: normalizePositiveInteger(process.env.PORT, 5001),
   CORS_ORIGINS: normalizeCsv(process.env.CORS_ORIGIN || "http://localhost:3000"),
@@ -142,6 +164,17 @@ const env = {
   COMMERCE_MAINTENANCE_ENABLED: normalizeBoolean(
     process.env.COMMERCE_MAINTENANCE_ENABLED,
     true
+  ),
+  SITE_MAINTENANCE_MODE: normalizeBoolean(process.env.SITE_MAINTENANCE_MODE, false),
+  SITE_MAINTENANCE_MESSAGE: normalizeMaintenanceMessage(
+    process.env.SITE_MAINTENANCE_MESSAGE
+  ),
+  SITE_MAINTENANCE_RETRY_AFTER_SECONDS: normalizeIntegerInRange(
+    "SITE_MAINTENANCE_RETRY_AFTER_SECONDS",
+    process.env.SITE_MAINTENANCE_RETRY_AFTER_SECONDS,
+    900,
+    1,
+    86400
   ),
   JOB_WORKER_POLL_MS: normalizePositiveInteger(process.env.JOB_WORKER_POLL_MS, 5000),
   JOB_WORKER_MAX_ATTEMPTS: normalizePositiveInteger(
@@ -346,6 +379,8 @@ module.exports = {
     assertHttpsUrl,
     normalizeBoolean,
     normalizeCsv,
+    normalizeIntegerInRange,
+    normalizeMaintenanceMessage,
     normalizeNodeEnv,
     normalizeNonNegativeInteger,
     normalizePositiveInteger,

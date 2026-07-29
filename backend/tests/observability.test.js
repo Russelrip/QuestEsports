@@ -108,6 +108,45 @@ test("request observability exposes application processing time", () => {
   }
 });
 
+test("expected maintenance responses are logged as information instead of failures", () => {
+  const levels = [];
+  const { module: middleware, restore } = loadModuleWithMocks(
+    observabilityMiddlewarePath,
+    {
+      [loggerPath]: {
+        logger: {
+          info: () => levels.push("info"),
+          warn: () => levels.push("warn"),
+          error: () => levels.push("error"),
+        },
+      },
+    }
+  );
+
+  try {
+    const listeners = new Map();
+    const req = {
+      startedAt: Date.now(),
+      headers: {},
+      method: "GET",
+      originalUrl: "/api/tournaments",
+    };
+    const res = {
+      locals: { expectedMaintenance: true },
+      statusCode: 503,
+      hasHeader: () => true,
+      setHeader: () => undefined,
+      on: (name, listener) => listeners.set(name, listener),
+    };
+
+    middleware.logRequestLifecycle(req, res, () => {});
+    listeners.get("finish")();
+    assert.deepEqual(levels, ["info"]);
+  } finally {
+    restore();
+  }
+});
+
 test("monitoring capture ships webhook events with request context", async () => {
   const shippedPayloads = [];
   const loggedErrors = [];

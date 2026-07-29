@@ -47,6 +47,22 @@ Typical error shape:
 
 Field-level validation errors are returned in `details.fieldErrors` on validation failures.
 
+### Maintenance
+
+When site maintenance is enabled, normal API routes return `503 Service Unavailable` with `Retry-After`, `Cache-Control: no-store`, and `X-Maintenance-Mode: active` headers:
+
+```json
+{
+  "success": false,
+  "code": "SITE_MAINTENANCE",
+  "message": "We’re carrying out scheduled maintenance. Please try again shortly.",
+  "retryAfterSeconds": 900,
+  "requestId": "request-id"
+}
+```
+
+`GET /api/health/live` remains `200`. `GET /api/health` and `GET /api/health/ready` return the intentional maintenance `503`. The exact `POST /api/payments/payhere/notify` route remains available for already-started payment notifications; other API routes, including the OpenAPI document, are protected.
+
 ## Security And Request Rules
 
 - CSRF protection checks `Origin` or `Referer` on non-safe methods.
@@ -60,6 +76,8 @@ Field-level validation errors are returned in `details.fieldErrors` on validatio
 ### `GET /api/health`
 
 Returns a minimal public health response. The readiness variants additionally report only whether required dependency classes are ready; detailed operational metrics remain in structured logs and monitoring systems.
+
+`GET /api/health/live` reports process liveness and includes `maintenance.enabled`. During maintenance, readiness returns `503` with the maintenance response described above.
 
 ### `GET /api/openapi.json`
 

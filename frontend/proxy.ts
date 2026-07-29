@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { readSiteMaintenanceConfig } from "./lib/maintenance";
 
 const isProduction = process.env.NODE_ENV === "production";
 
 export function proxy(request: NextRequest) {
+  const maintenance = readSiteMaintenanceConfig();
   const nonce = Buffer.from(randomUUID()).toString("base64");
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   const apiOrigin = apiUrl ? new URL(apiUrl).origin : null;
@@ -33,8 +35,20 @@ export function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", policy);
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  const response =
+    maintenance.enabled && request.nextUrl.pathname !== "/maintenance"
+      ? NextResponse.rewrite(new URL("/maintenance", request.url), {
+          status: 503,
+          request: { headers: requestHeaders },
+        })
+      : NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
+  if (maintenance.enabled) {
+    response.headers.set("Retry-After", String(maintenance.retryAfterSeconds));
+    response.headers.set("Cache-Control", "no-store, max-age=0");
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    response.headers.set("X-Maintenance-Mode", "active");
+  }
   return response;
 }
 

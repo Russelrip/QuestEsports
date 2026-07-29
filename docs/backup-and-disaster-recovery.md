@@ -14,6 +14,8 @@ This is the source of truth for Quest Esports production backup, restore testing
 6. Treat `ops/restore-production-backup.sh` as destructive: it runs `pg_restore --clean --if-exists` and synchronizes both upload roots with `rsync --delete`.
 7. Stop application writes and preserve the current failed state before an intentional production restore whenever possible.
 
+Visitor maintenance mode alone is not a write freeze: background jobs and the PayHere notification callback intentionally continue. A restore or destructive recovery requires stopping the PM2 backend process as described below.
+
 ## Current production recovery status
 
 | Component | Current state |

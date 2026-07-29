@@ -1,4 +1,7 @@
 import type { NextConfig } from "next";
+import { readSiteMaintenanceConfig } from "./lib/maintenance";
+
+readSiteMaintenanceConfig();
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;

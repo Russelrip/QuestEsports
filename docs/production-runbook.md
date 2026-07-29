@@ -201,6 +201,62 @@ If install, restart, or health validation fails, CD checks out the previous appl
 
 Never rely on a Free-plan Supabase dashboard backup. Confirm that the encrypted database-and-upload archive exists off-site before approving a migration. Clear `BACKEND_MIGRATION_APPROVAL_SHA` after the deployment.
 
+## Site Maintenance Mode
+
+Use maintenance mode when visitors should temporarily see a branded maintenance page and normal API traffic should be refused. The frontend responds with `503`, `Retry-After`, `Cache-Control: no-store`, and crawler `noindex` headers. The backend returns a structured `SITE_MAINTENANCE` `503` response. `/api/health/live` remains available, readiness returns the intentional `503`, and the exact `POST /api/payments/payhere/notify` callback remains available so a payment already started before the window can settle.
+
+The three values must match in the Vercel Production environment and `/var/www/QuestEsports/backend/.env`:
+
+```env
+SITE_MAINTENANCE_MODE=false
+SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
+SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
+```
+
+The message is limited to 240 characters. The retry window is an integer from 1 to 86400 seconds. Invalid values fail frontend builds or backend startup instead of silently choosing an unsafe state. `COMMERCE_MAINTENANCE_ENABLED` is unrelated: it controls scheduled commerce cleanup jobs, not visitor maintenance mode.
+
+### Enable maintenance safely
+
+1. Announce the window. Confirm the latest scheduled backup succeeded; create a manual full backup first if the work can change data.
+2. In Vercel, set the three variables for the **Production** environment with `SITE_MAINTENANCE_MODE=true`, then redeploy the current approved `main` commit. Enable the frontend first so visitors see the maintenance page before API access is restricted.
+3. On the VPS, edit the backend environment without printing it:
+
+   ```bash
+   sudo -u deploy -H nano /var/www/QuestEsports/backend/.env
+   sudo -u deploy -H pm2 restart quest-backend --update-env
+   sudo -u deploy -H pm2 save
+   ```
+
+4. Verify the expected behavior:
+
+   ```bash
+   curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' https://questesports.lk/
+   curl --fail --silent --show-error https://api.questesports.lk/api/health/live
+   curl --silent --show-error --dump-header - https://api.questesports.lk/api/health/ready
+   curl --silent --show-error --dump-header - https://api.questesports.lk/api/tournaments
+   ```
+
+   Expected: frontend `503`; liveness `200` with `maintenance.enabled=true`; readiness and ordinary API requests `503` with `X-Maintenance-Mode: active` and `Retry-After`.
+
+CD uses liveness to confirm that PM2 restarted and recognizes the explicit maintenance header on readiness, so an intentional maintenance window does not trigger a false rollback.
+
+### Disable maintenance safely
+
+1. Finish and verify the backend work while the page remains in maintenance.
+2. Set `SITE_MAINTENANCE_MODE=false` in the VPS backend `.env`, restart with `--update-env`, and confirm readiness is `200`.
+3. Set `SITE_MAINTENANCE_MODE=false` in Vercel Production and redeploy the same approved commit. Disable the frontend last so users cannot return before the API is ready.
+4. Run the normal production smoke checks and watch PM2 logs.
+
+### Full stop and write-freeze warning
+
+Maintenance mode is **not** a database write freeze. Background jobs continue and the PayHere notification callback can still write. For a database restore, destructive migration, suspected compromise, or any operation requiring zero writes, follow the disaster-recovery procedure and stop the backend:
+
+```bash
+sudo -u deploy -H pm2 stop quest-backend
+```
+
+Do not run `pm2 save` while it is stopped, or the stopped state can survive a reboot. For an emergency frontend-only notice, enable and redeploy the Vercel switch first. For an immediate API shutdown, stop PM2; the API will be unavailable rather than returning the branded maintenance response.
+
 ## Verification
 
 Run Linux commands from the VPS, not Windows PowerShell:

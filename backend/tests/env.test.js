@@ -34,6 +34,8 @@ const productionEnv = {
   PAYHERE_NOTIFY_URL: "",
   PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION: "false",
   API_PROCESS_COUNT: "1",
+  SITE_MAINTENANCE_MODE: "false",
+  SITE_MAINTENANCE_RETRY_AFTER_SECONDS: "900",
 };
 
 const loadEnvironment = (overrides) =>
@@ -111,6 +113,33 @@ test("environment normalizers cover valid, default, and invalid values", () => {
   assert.equal(environmentValidation.normalizeBoolean("yes"), true);
   assert.equal(environmentValidation.normalizeBoolean("off", true), false);
   assert.throws(() => environmentValidation.normalizeBoolean("sometimes"), /Invalid boolean/);
+  assert.equal(
+    environmentValidation.normalizeIntegerInRange("RETRY", "60", 900, 1, 86400),
+    60
+  );
+  assert.equal(
+    environmentValidation.normalizeIntegerInRange("RETRY", "", 900, 1, 86400),
+    900
+  );
+  assert.throws(
+    () => environmentValidation.normalizeIntegerInRange("RETRY", "0", 900, 1, 86400),
+    /integer from 1 to 86400/
+  );
+  assert.equal(environmentValidation.normalizeMaintenanceMessage("  Back   soon  "), "Back soon");
+  assert.throws(
+    () => environmentValidation.normalizeMaintenanceMessage("x".repeat(241)),
+    /240 characters/
+  );
+});
+
+test("maintenance environment rejects ambiguous switches and invalid retry windows", () => {
+  const invalidSwitch = loadEnvironment({ SITE_MAINTENANCE_MODE: "maybe" });
+  assert.notEqual(invalidSwitch.status, 0);
+  assert.match(invalidSwitch.stderr, /Invalid boolean/);
+
+  const invalidRetry = loadEnvironment({ SITE_MAINTENANCE_RETRY_AFTER_SECONDS: "90 seconds" });
+  assert.notEqual(invalidRetry.status, 0);
+  assert.match(invalidRetry.stderr, /integer from 1 to 86400/);
 });
 
 test("HTTPS URL validation rejects malformed, insecure, credentialed, and non-origin values", () => {

@@ -32,6 +32,9 @@ TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false
 JOB_WORKER_ENABLED=true
 COMMERCE_MAINTENANCE_ENABLED=true
+SITE_MAINTENANCE_MODE=false
+SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
+SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
 MAIL_PROVIDER=resend
@@ -68,6 +71,9 @@ Frontend: create `frontend/.env.local`
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+SITE_MAINTENANCE_MODE=false
+SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
+SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 ```
 
 Notes:
@@ -369,6 +375,10 @@ AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false
 JOB_WORKER_ENABLED=true
+COMMERCE_MAINTENANCE_ENABLED=true
+SITE_MAINTENANCE_MODE=false
+SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
+SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
 MAIL_PROVIDER=resend
@@ -397,6 +407,7 @@ Notes:
 - `APP_URL` must point at the frontend origin used in verification, password reset, email-change, invite, and security-alert emails when mail delivery is enabled.
 - Use `MAIL_PROVIDER=resend` with `RESEND_API_KEY` now. Production refuses to start unless `MAIL_DELIVERY_REQUIRED=true` and the selected provider configuration is complete.
 - `JOB_WORKER_ENABLED` must be enabled on at least one backend instance for queued email delivery.
+- `SITE_MAINTENANCE_MODE` is the coordinated full-site switch. Use the same message and retry values in the backend and frontend environments; it is separate from `COMMERCE_MAINTENANCE_ENABLED`.
 - To return to Amazon SES later, set `MAIL_PROVIDER=smtp` and provide the SES `SMTP_*` values; no code change is needed. `npm run mail:verify` checks connection/auth from `backend/.env` without sending an email.
 - See [Email System](./docs/email-system.md) for every recipient, trigger, subject, link, token lifetime, and retry rule.
 - If OAuth is enabled locally, register these redirect URIs with the providers:
@@ -427,12 +438,16 @@ Create `frontend/.env.local`.
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+SITE_MAINTENANCE_MODE=false
+SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
+SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 ```
 
 Notes:
 
 - `NEXT_PUBLIC_API_URL` must point at the backend origin.
 - `NEXT_PUBLIC_SITE_URL` is used for metadata, canonical URLs, sitemap generation, and structured data.
+- Maintenance variables are server-only. Follow the enable/disable order in the [Production Operations Runbook](./docs/production-runbook.md#site-maintenance-mode).
 
 ## Local Development
 
@@ -540,6 +555,7 @@ Frontend verification includes unit tests, lint, a production build, and Playwri
 ## Recommended Next Steps
 
 - Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
+- Use [Production Operations Runbook](./docs/production-runbook.md#site-maintenance-mode) to show the maintenance page or temporarily stop the site.
 - Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
 - Use [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md) as the source of truth for key custody, scheduled/manual backup checks, isolated drills, production restores, and complete VPS loss.
 - Production backups use `ops/backup-production.sh` plus the systemd timer templates in `ops/systemd/`; restores use the explicitly guarded `ops/restore-production-backup.sh` on an isolated recovery host.
