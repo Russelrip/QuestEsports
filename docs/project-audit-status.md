@@ -70,12 +70,6 @@ That historical drill predates the new two-pass backup and staged/transactional 
 
 ## Remaining external gates
 
-### High - revoke the exposed Google OAuth token
-
-A Google Drive OAuth access/refresh token was pasted into the conversation during setup. Treat it as compromised even if the message is no longer visible.
-
-Required action: revoke the authorization in the Google account/Google Cloud security controls, re-authorize `quest-backups-custom` with the dedicated desktop client, and run both a manual and systemd backup plus remote content verification. Never print the replacement rclone configuration or token.
-
 ### High - create and independently verify secret recovery
 
 The repository now provides `ops/create-secret-recovery-package.sh` and [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md), but no newly created package, separate vault copy, or isolated retrieval/decryption drill has been verified in this change.
@@ -108,13 +102,12 @@ The aggregate coverage gate passes, but auth/TOTP, mail, commerce, production er
 
 ## Safest rollout order
 
-1. Revoke and re-authorize the exposed Google Drive OAuth grant.
-2. Run the complete local/CI release suite on Node 24 and review this diff.
-3. Deploy through protected CI/CD; verify frontend, liveness, readiness, public reads, authentication, uploads, and enabled integrations.
-4. Install/reload the updated backup, failure, and freshness systemd units; test manual/systemd backup, freshness, and one alert.
-5. Create and independently test the secret recovery package.
-6. Run the new isolated full restore drill.
-7. Approve retention values, inspect the dry run, and only then prune old remote recovery points.
-8. Complete Supabase/mail/payment/monitoring/control-plane checks and retire obsolete Tokyo/historical resources after rollback retention expires.
+1. Run the complete local/CI release suite on Node 24 and review this diff.
+2. Deploy through protected CI/CD; verify frontend, liveness, readiness, public reads, authentication, uploads, and enabled integrations.
+3. Install/reload the updated backup, failure, and freshness systemd units; test manual/systemd backup, freshness, and one alert.
+4. Create and independently test the secret recovery package.
+5. Run the new isolated full restore drill.
+6. Approve retention values, inspect the dry run, and only then prune old remote recovery points.
+7. Complete Supabase/mail/payment/monitoring/control-plane checks and retire obsolete Tokyo/historical resources after rollback retention expires.
 
 Operational commands are in [Production Operations Runbook](./production-runbook.md), [Backup and Disaster Recovery](./backup-and-disaster-recovery.md), and [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md).
