@@ -298,7 +298,7 @@ The repository provides:
 - `ops/systemd/quest-esports-backup.service`
 - `ops/systemd/quest-esports-backup.timer`
 
-The backup includes a custom-format PostgreSQL dump, public uploads, private payment evidence, and a manifest. It is encrypted with an offline `age` recipient before upload through `rclone`. Keep the `age` private identity off the production VPS.
+The backup includes a portable custom-format dump of the application-owned PostgreSQL `public` schema, public uploads, private payment evidence, and a manifest. Supabase-managed schemas and extensions are intentionally excluded because they are provisioned by Supabase and prevent portable restores on ordinary PostgreSQL. The archive is encrypted with an offline `age` recipient before upload through `rclone`. Keep the `age` private identity off the production VPS.
 
 Install the prerequisites and configuration:
 
@@ -323,6 +323,20 @@ journalctl -u quest-esports-backup.service --since today
 ```
 
 The backup is not considered successful until both the encrypted archive and checksum are visible on the off-site remote.
+
+### Local Paris database snapshot on Windows
+
+For an immediate database-only snapshot from the secured development PC, run:
+
+```powershell
+cd D:\Work\Projects\QuestEsports
+.\ops\backup-paris-database-windows.ps1
+.\ops\test-paris-database-backup-windows.ps1
+```
+
+The first command reads the Paris `DIRECT_URL` without printing it, dumps only the application `public` schema, encrypts the result with the offline recovery recipient, writes a checksum, and removes plaintext staging data. The second command verifies the checksum and restores the latest archive into a disposable PostgreSQL 17 container. Files are stored under `D:\Work\QuestEsports-backups\paris-database` with restricted ACLs.
+
+This Windows snapshot does not contain production VPS uploads and is not a substitute for the scheduled full VPS backup or its off-site copy.
 
 ### Restore drill
 

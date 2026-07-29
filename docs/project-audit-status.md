@@ -26,6 +26,7 @@ This is not yet proof that production is updated or healthy. The changes are loc
 | Frontend production dependency audit | 0 known vulnerabilities |
 | GitHub Actions syntax | `actionlint` passed for CI and CD |
 | Backup/restore shell validation | `bash -n` and ShellCheck passed in Linux |
+| Local Paris database recovery | Encrypted database-only snapshot restored successfully to disposable PostgreSQL 17: 35 public tables and 35 migration records |
 | Git whitespace validation | Passed |
 
 ## Remediated Issues
@@ -68,7 +69,7 @@ Windows ACLs on `backend/.env` and `D:\Work\QuestEsports-db-migration` were rest
 
 ### High: Production backup and restore are not configured or proven
 
-Repository implementation is complete, but no off-site destination, offline `age` recipient, systemd timer, or isolated restore result was available to verify. A syntax-valid script is not a backup.
+An offline `age` identity now exists under restricted local ACLs, and a database-only Paris snapshot restored successfully on isolated PostgreSQL. However, no off-site destination, VPS upload archive, or systemd timer is configured yet. The local database snapshot alone is not a complete production backup.
 
 Required action:
 

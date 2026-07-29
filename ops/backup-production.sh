@@ -77,6 +77,7 @@ trap 'rm -rf -- "$work_directory"' EXIT
 
 pg_dump "$DIRECT_URL" \
   --format=custom \
+  --schema=public \
   --no-owner \
   --no-acl \
   --file="$work_directory/database.dump"
@@ -85,6 +86,8 @@ cat > "$work_directory/manifest.txt" <<MANIFEST
 created_at_utc=$timestamp
 source_host=$hostname_value
 database_format=postgres_custom
+database_scope=application_public_schema_only
+supabase_managed_schemas_included=false
 public_upload_root=$UPLOAD_ROOT
 private_upload_root=$PRIVATE_UPLOAD_ROOT
 MANIFEST

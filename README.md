@@ -529,6 +529,7 @@ Frontend verification includes unit tests, lint, a production build, and Playwri
 - Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
 - Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
 - Production backups use `ops/backup-production.sh` plus the systemd timer templates in `ops/systemd/`; restores use the explicitly guarded `ops/restore-production-backup.sh` on an isolated recovery host.
+- A secured Windows workstation can create and restore-test a Paris database-only snapshot with `ops/backup-paris-database-windows.ps1` and `ops/test-paris-database-backup-windows.ps1`; it does not include VPS uploads or off-site retention.
 - Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
 - Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
 - Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, provider settings, or queue behavior.
