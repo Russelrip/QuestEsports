@@ -1,6 +1,6 @@
 # Production Operations Runbook
 
-This is the operational source of truth for the current Quest Esports production deployment. It covers the Ubuntu VPS backend, Vercel frontend, Supabase PostgreSQL database, GitHub Actions deployment, persistent uploads, service recovery, and reboots.
+This is the operational source of truth for the current Quest Esports production deployment. It covers the Ubuntu VPS backend, Vercel frontend, Supabase PostgreSQL database, GitHub Actions deployment, persistent uploads, service recovery, and reboots. Use [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) as the authoritative backup, restore-drill, key-custody, and full-disaster procedure.
 
 ## Current Topology
 
@@ -291,6 +291,8 @@ Do not treat admin Excel exports as backups. Payment-proof backups contain sensi
 
 ### Automated encrypted off-site backups
 
+The complete backup and recovery procedure, including restore warnings, disaster scenarios, key loss, credential recovery, retention limitations, and the drill record template, is maintained in [Backup and Disaster Recovery](./backup-and-disaster-recovery.md). This section is the production quick reference.
+
 The repository provides:
 
 - `ops/backup-production.sh`
@@ -359,7 +361,7 @@ Run the restore script through Bash so it does not depend on a checkout retainin
 
 ```bash
 RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
-  BACKUP_ENV_FILE=/path/to/recovery.env \
+  BACKUP_ENV_FILE=/secure/recovery/quest-esports-recovery.env \
   bash ops/restore-production-backup.sh /absolute/path/to/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
 ```
 

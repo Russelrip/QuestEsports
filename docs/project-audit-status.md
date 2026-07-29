@@ -69,7 +69,7 @@ Windows ACLs on `backend/.env` and `D:\Work\QuestEsports-db-migration` were rest
 
 ### Closed: Full off-site restore drill completed
 
-The French VPS now creates encrypted PostgreSQL/public-upload/private-upload archives, uploads them to `quest-backups:quest-esports/production`, and runs a daily restricted systemd timer. Both a manual full backup and the sandboxed systemd service completed successfully on 2026-07-29. The database-only Paris Windows snapshot also restored successfully on disposable PostgreSQL 17.
+The French VPS now creates encrypted PostgreSQL/public-upload/private-upload archives, uploads them to the active `quest-backups-custom:quest-esports-v2/production` destination, and runs a daily restricted systemd timer. Both a manual full backup and the sandboxed systemd service completed successfully after the dedicated OAuth switch on 2026-07-29. Historical archives remain on `quest-backups:quest-esports/production`. The database-only Paris Windows snapshot also restored successfully on disposable PostgreSQL 17.
 
 The full archive `quest-production-20260729T133809Z.tar.gz.enc` was downloaded with its checksum, decrypted only on the isolated recovery PC, and restored to disposable PostgreSQL 17 plus empty temporary upload roots. The result contained 35 public tables and 33 completed migrations. SHA-256 manifests matched all 41 public and 10 private files. The drill found and corrected the restore script's missing `pg_restore --dbname` option, then passed end to end. Production was never a restore target.
 
@@ -97,17 +97,29 @@ Required action: keep the production audit as the release security gate, do not 
 
 SES Tokyo credentials and sandbox/production status, monitoring/Discord alert delivery, Vercel deployment state, Supabase health/capacity, and PayHere behavior require authorized live checks. Region labels in documentation do not prove delivery or uptime.
 
+### High: Complete production-secret recovery is not yet verified
+
+The encrypted full archive intentionally excludes the backend `.env`, Supabase/project credentials, rclone/OAuth configuration, Nginx/TLS/DNS configuration, and other infrastructure secrets. The repository and offline checklist now document this boundary, but an independently encrypted and access-controlled recovery copy of those values has not been verified. A total environment loss cannot be completed from the database/upload archive alone.
+
+Required action: establish the approved secret-recovery location, restrict and audit access, document the custodian and rotation process, and rehearse retrieving the values without copying any secret into Git, chat, tickets, or ordinary cloud storage.
+
+### Medium: Off-site retention and backup-failure paging remain manual
+
+The backup script enforces seven-day local retention but does not prune Google Drive, and a failed systemd job does not currently page an operator. Define the approved remote retention period and connect service failure/backup staleness to the operational alert channel before relying on the timer without daily manual review.
+
 ### Low: Critical-flow coverage can still improve
 
 The aggregate coverage gate passes, but authentication, TOTP, mail templates, shop service, production error mapping, and upload edge cases remain below the project average. Add targeted behavior tests as those areas change; do not lower the existing gate.
 
 ## Safest Remaining Order
 
-1. Commit documentation/config-example changes without committing `.env`, database dumps, `age` identities, OAuth credentials, or `rclone` tokens.
-2. Require normal CI/CD and verify the public health endpoint after deployment.
-3. Repeat the isolated full database/upload restore drill at least quarterly.
+1. Establish and verify the separate encrypted recovery process for the production `.env` and infrastructure credentials.
+2. Connect backup failure/staleness to the approved alert channel and define remote retention.
+3. Repeat the isolated full database/upload restore drill at least quarterly and record elapsed recovery time.
 4. Disable the unused Paris Supabase Data API in the dashboard and rerun `npm run prisma:security:verify`.
-5. Verify Tokyo mail delivery, alert delivery, persistent storage mounts, and any enabled payment paths.
+5. Verify Tokyo mail delivery, general alert delivery, persistent storage mounts, and any enabled payment paths.
 6. After the rollback-retention decision, delete the old Tokyo Supabase project and rotate credentials that no longer need to remain valid.
 
 Operational commands and exact safeguards are in [Production Operations Runbook](./production-runbook.md), [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md), and [Pre-deployment Checklist](./pre-deployment-checklist.md).
+
+The consolidated recovery source of truth is [Backup and Disaster Recovery](./backup-and-disaster-recovery.md).

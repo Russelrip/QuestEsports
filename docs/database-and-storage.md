@@ -414,6 +414,7 @@ From the migration names, the schema evolved through:
 - A database-only Windows snapshot can be created with `ops/backup-paris-database-windows.ps1` and restore-tested with `ops/test-paris-database-backup-windows.ps1`. It does not include VPS uploads or replace off-site storage.
 - Use the systemd service/timer templates in `ops/systemd/` for daily execution. A backup is incomplete until the encrypted archive and checksum exist off-site.
 - Test restores on disposable PostgreSQL and temporary upload directories using `ops/restore-production-backup.sh`; never run a drill against the live Paris database.
+- Follow [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) for key custody, routine checks, isolated drills, and intentional production recovery. The full archive does not contain the backend `.env`, rclone/OAuth credentials, Supabase-managed configuration, or the private decryption identity.
 
 ## Production Improvement Opportunities
 

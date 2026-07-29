@@ -17,3 +17,13 @@ test-results/
 Thumbs.db
 .idea/
 .vscode/
+
+# Production backup, recovery, and third-party credential artifacts
+quest-production-*.tar.gz.enc
+quest-production-*.tar.gz.enc.sha256
+quest-paris-database-*.tar.gz.age
+quest-paris-database-*.tar.gz.age.sha256
+quest-esports-production-age-identity.txt
+client_secret*.json
+rclone.conf
+quest-esports.conf

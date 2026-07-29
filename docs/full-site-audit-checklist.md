@@ -642,6 +642,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] SEC-023 Dependency, secret, and source scans contain no unresolved release-blocking findings.
 - [x] SEC-024 Database and upload backups are encrypted, restorable, access-controlled, and include required public/private asset roots.
 - [ ] SEC-025 Every public table has RLS enabled and `anon`, `authenticated`, and `service_role` have no table privileges when the Data API is unused; `npm run prisma:security:verify` passes.
+- [ ] SEC-026 Production `.env`, OAuth/rclone material, platform keys, and infrastructure configuration have a separate encrypted, access-controlled, restore-tested recovery copy.
 
 ## 24. API and operational audit
 
@@ -656,6 +657,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] OPS-009 Logs correlate requests/jobs/payment events without leaking secrets or personal data.
 - [ ] OPS-010 Alerting covers API health, elevated errors, database/storage exhaustion, job failure, mail failure, and payment callback failure.
 - [x] OPS-011 The latest scheduled backup has both encrypted archive and checksum on the off-site remote, and the systemd timer/service have no recent failures.
+- [ ] OPS-012 Backup failure/staleness pages an operator, and approved off-site retention is enforced without deleting the newest verified recovery points.
 
 ## 25. Automated checks and release sign-off
 
@@ -706,7 +708,7 @@ Retest result and build:
 | --- | ---: |
 | Passed | 11 verified release/operations checks |
 | Failed | 0 known |
-| Blocked / not tested | 451 staging/manual checks |
+| Blocked / not tested | 453 staging/manual checks |
 | S1 open | 0 known |
 | S2 open | 0 known |
 | S3 open | 0 known |

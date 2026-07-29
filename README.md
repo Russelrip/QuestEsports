@@ -2,6 +2,8 @@
 
 Quest Esports is a full-stack esports platform for publishing tournaments, registering teams, managing community communications, and curating poster/media content. The repository contains a public-facing Next.js application and an Express + Prisma API that powers authentication, tournament operations, admin tooling, security workflows, and media management.
 
+Documentation starts at the [Documentation Index](./docs/README.md). Production recovery procedures are centralized in [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md).
+
 ## Quick Start
 
 This repository does not have a single root `npm run dev` command. Run the backend and frontend separately.
@@ -203,19 +205,30 @@ Recommended flow:
 QuestEsports/
 |-- README.md
 |-- docs/
+|   |-- README.md
 |   |-- admin-operations.md
 |   |-- api-documentation.md
 |   |-- authentication-flow.md
+|   |-- backup-and-disaster-recovery.md
 |   |-- ci-cd.md
 |   |-- commerce-and-tournament-rollout.md
 |   |-- database-and-storage.md
+|   |-- DEPLOYMENT_SAFETY.md
 |   |-- email-system.md
+|   |-- full-site-audit-checklist.md
+|   |-- pre-deployment-checklist.md
 |   |-- project-audit-status.md
 |   |-- production-runbook.md
+|   |-- search-console-and-sitemap.md
 |   `-- setup-and-deployment.md
 |-- ops/
+|   |-- README.md
+|   |-- backup-paris-database-windows.ps1
 |   |-- backup-production.sh
+|   |-- quest-esports-backup.env.example
+|   |-- quest-esports-recovery.env.example
 |   |-- restore-production-backup.sh
+|   |-- test-paris-database-backup-windows.ps1
 |   `-- systemd/
 |-- backend/
 |   |-- README.md
@@ -528,10 +541,12 @@ Frontend verification includes unit tests, lint, a production build, and Playwri
 
 - Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
 - Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
+- Use [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md) as the source of truth for key custody, scheduled/manual backup checks, isolated drills, production restores, and complete VPS loss.
 - Production backups use `ops/backup-production.sh` plus the systemd timer templates in `ops/systemd/`; restores use the explicitly guarded `ops/restore-production-backup.sh` on an isolated recovery host.
 - The production Google Drive destination uses a project-owned OAuth desktop client and the least-privilege `drive.file` scope. On 2026-07-29, both a manual encrypted full backup and the restricted systemd service succeeded against `quest-backups-custom:quest-esports-v2/production`; the earlier shared-client remote is retained only for access to historical archives.
 - A complete isolated recovery drill has restored PostgreSQL 17, all public uploads, and all private uploads with matching checksums. Repeat the drill at least quarterly and keep the `age` private identity off the VPS and cloud storage.
 - A secured Windows workstation can create and restore-test a Paris database-only snapshot with `ops/backup-paris-database-windows.ps1` and `ops/test-paris-database-backup-windows.ps1`; it does not include VPS uploads or off-site retention.
+- The encrypted production archive does not include the backend `.env`, rclone configuration, OAuth credentials, infrastructure configuration, or private `age` identity. Maintain those through a separate encrypted and access-controlled recovery process.
 - Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
 - Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
 - Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, provider settings, or queue behavior.

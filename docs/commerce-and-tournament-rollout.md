@@ -3,7 +3,7 @@
 ## Website Change Rollout
 
 1. Deploy the backend and run `npm run prisma:migrate:deploy`; the migration is backward compatible and seeds the initial categories.
-2. Confirm durable storage and the encrypted off-site backup configured by `ops/backup-production.sh` include `game-assets/`, `sponsor-logos/`, and the private upload root; verify restoration on isolated infrastructure.
+2. Confirm durable storage and the encrypted off-site backup configured by `ops/backup-production.sh` include `game-assets/`, `sponsor-logos/`, and the private upload root; verify restoration on isolated infrastructure using [Backup and Disaster Recovery](./backup-and-disaster-recovery.md).
 3. Populate game artwork, tournament metadata, hero artwork, and a sponsor in admin.
 4. Deploy the frontend and verify filtering, red closed states, participants, gallery interaction, recruitment links, and the Challonge CSP/module fallback.
 5. Complete the editorial audit of live poster descriptions.

@@ -365,7 +365,8 @@ Notes:
 - `CORS_ORIGIN` can be a comma-separated allowlist.
 - `REQUIRE_API_ORIGIN=true` blocks API requests without an allowed `Origin` or `Referer`; use `CORS_ORIGIN=https://questesports.lk` for the public site domain.
 - The Supabase Data API is unused and should be disabled for the Paris project. `npm run prisma:security:verify` confirms all public tables use RLS and Data API roles have no table privileges.
-- Install and verify the encrypted off-site backup timer before approving any production migration. Follow the [Production Operations Runbook](./production-runbook.md#automated-encrypted-off-site-backups).
+- Install and verify the encrypted off-site backup timer before approving any production migration. Follow [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) and the [Production Operations Runbook](./production-runbook.md#automated-encrypted-off-site-backups).
+- The full archive excludes the backend `.env`, OAuth/rclone material, Supabase-managed settings, and infrastructure credentials. Maintain and test a separate encrypted, access-controlled recovery process for those values.
 
 ### Frontend
 

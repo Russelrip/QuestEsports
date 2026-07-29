@@ -22,4 +22,4 @@ The deployment must pass the database-backed `/api/health/ready` endpoint. `/api
 
 Before enabling commerce after a release, smoke-test product quoting, order creation in the payment sandbox, payment notification reconciliation, reservation expiration, and bank-transfer proof access.
 
-The production runbook contains the backup timer installation and isolated restore-drill procedure. Never test restoration against the live Paris database or live upload roots.
+The [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) guide contains timer verification, encryption/key custody, isolated drills, and production recovery. Never test restoration against the live Paris database or live upload roots.
