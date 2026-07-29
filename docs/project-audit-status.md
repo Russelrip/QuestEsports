@@ -13,14 +13,14 @@ The frontend, backend, Paris database migration status, VPS process, off-site ar
 | Check | Result |
 | --- | --- |
 | Backend lint | Passed |
-| Backend unit/service tests | 168 passed; 2 real-database tests skip unless `RUN_DATABASE_INTEGRATION_TESTS=true` |
-| Backend coverage gate | Passed: 66.09% lines, 59.45% branches, 68.16% functions |
+| Backend unit/service tests | 173 passed; 2 real-database tests skip unless `RUN_DATABASE_INTEGRATION_TESTS=true` |
+| Backend coverage gate | Passed: 66.25% lines, 59.95% branches, 68.37% functions |
 | PostgreSQL integration | Both database integration tests passed separately on disposable PostgreSQL 16 |
 | Full migration history | Applied successfully to disposable PostgreSQL 16 |
 | Database security verifier | Passed on the disposable migrated database |
 | Backend production dependency audit | 0 known vulnerabilities |
 | Frontend lint | Passed |
-| Frontend unit tests | 12 passed |
+| Frontend unit tests | 17 passed |
 | Frontend production build and TypeScript | Passed |
 | Frontend Playwright E2E | 12 passed with zero unexpected mock API requests |
 | Frontend production dependency audit | 0 known vulnerabilities |
@@ -60,6 +60,7 @@ Filesystem and PostgreSQL cannot form one atomic transaction. The importer retai
 - CD rejects additional destructive patterns, creates an encrypted off-site backup before migration, verifies database security afterward, and performs public API smoke reads after restart.
 - The backup captures PostgreSQL, public uploads, and private uploads, encrypts with an offline `age` recipient, uploads through `rclone`, and verifies the remote objects.
 - A guarded restore script and systemd service/timer templates are included.
+- Coordinated full-site maintenance now serves a branded non-cacheable frontend `503`, protects ordinary backend routes, preserves liveness and PayHere notifications, validates configuration strictly, and lets CD distinguish intentional maintenance from an unhealthy deployment.
 
 ### Local sensitive artifacts
 
@@ -81,6 +82,8 @@ The QuestEsports-owned Google Cloud project now provides a dedicated OAuth deskt
 
 Commit `239ecf745e78a85ca954e73b748d8df600831713` passed CI and protected CD on 2026-07-29. CD completed the encrypted pre-migration backup, applied the Paris hardening migration, verified database security, restarted `quest-backend`, and passed health and public API smoke checks. A separate post-deploy check found no pending Prisma migrations and received HTTP 200 from the frontend, health, tournaments, products, and commerce-capabilities endpoints. The one-release migration approval value was cleared afterward.
 
+Maintenance-mode commit `9737bde94d9c6bd9fb74452ed84d3e1132ac2ecb` subsequently passed CI and protected CD on 2026-07-29. GitHub recorded successful backend and Vercel production deployments, and post-deploy checks returned HTTP 200 from the frontend, liveness, readiness, tournaments, and products with maintenance disabled by default.
+
 ### Medium: Supabase Data API dashboard switch remains manual
 
 The application uses Prisma and does not need the Supabase Data API. The migration removes table privileges even if the API remains enabled, but the Paris dashboard switch itself could not be changed from the available local/browser session.
@@ -95,7 +98,7 @@ Required action: keep the production audit as the release security gate, do not 
 
 ### Medium: External service readiness is unverified
 
-SES Tokyo credentials and sandbox/production status, monitoring/Discord alert delivery, Vercel deployment state, Supabase health/capacity, and PayHere behavior require authorized live checks. Region labels in documentation do not prove delivery or uptime.
+SES Tokyo credentials and sandbox/production status, monitoring/Discord alert delivery, Supabase health/capacity, and PayHere behavior require authorized live checks. Region labels in documentation do not prove delivery or uptime.
 
 ### High: Complete production-secret recovery is not yet verified
 

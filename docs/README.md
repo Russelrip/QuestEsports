@@ -4,7 +4,7 @@ This directory contains the operational, architecture, security, and product doc
 
 ## Production and recovery
 
-- [Production Operations Runbook](./production-runbook.md) — current production topology, VPS operations, deploy verification, PM2, Nginx, and incident commands.
+- [Production Operations Runbook](./production-runbook.md) — current production topology, full-site maintenance mode, VPS operations, deploy verification, PM2, Nginx, and incident commands.
 - [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) — encrypted backups, key custody, routine validation, isolated restore drills, and production recovery.
 - [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md) — forward-only migration rules, approval gates, backup requirements, and rollback limits.
 - [Pre-deployment Checklist](./pre-deployment-checklist.md) — release security and reliability gate.

@@ -652,12 +652,14 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] OPS-004 Database migration status is clean and the deployed schema matches the application version.
 - [x] OPS-005 Public and private upload roots are durable, outside disposable release directories, and included in backup/restore procedures.
 - [ ] OPS-006 Proxy/client IP configuration produces correct secure-cookie, origin, audit, and rate-limit behavior.
-- [ ] OPS-007 Maintenance/capability flags disable only the intended commerce paths while free and bank-transfer registration remain correct.
+- [ ] OPS-007 Commerce capability and cleanup flags disable only their intended commerce behavior while free and bank-transfer registration remain correct; they do not activate full-site maintenance.
 - [ ] OPS-008 Server clock/timezone and database timestamps are synchronized; user-facing Sri Lankan times are correct.
 - [ ] OPS-009 Logs correlate requests/jobs/payment events without leaking secrets or personal data.
 - [ ] OPS-010 Alerting covers API health, elevated errors, database/storage exhaustion, job failure, mail failure, and payment callback failure.
 - [x] OPS-011 The latest scheduled backup has both encrypted archive and checksum on the off-site remote, and the systemd timer/service have no recent failures.
 - [ ] OPS-012 Backup failure/staleness pages an operator, and approved off-site retention is enforced without deleting the newest verified recovery points.
+- [ ] OPS-013 Full-site maintenance returns the branded frontend `503` and structured backend `503`, includes retry/no-cache/noindex headers, preserves liveness and the PayHere callback, and follows frontend-first enable/backend-first disable ordering.
+- [ ] OPS-014 A true write-freeze drill stops the deploy-owned PM2 backend without saving the stopped process list, and recovery restores readiness before the frontend maintenance page is disabled.
 
 ## 25. Automated checks and release sign-off
 

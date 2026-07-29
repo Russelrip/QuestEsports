@@ -175,7 +175,7 @@ pm2 restart "$BACKEND_PM2_PROCESS" --update-env
 pm2 save
 ```
 
-`npm ci` runs the backend `postinstall` hook, which generates the Prisma client. The workflow refuses root deployments and dirty checkouts, validates `.env` permissions and `node_modules` ownership, runs lint and migrations, then performs database-security, readiness, tournament, product, and commerce-capability checks. If installation, restart, or health validation fails, it restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release).
+`npm ci` runs the backend `postinstall` hook, which generates the Prisma client. The workflow refuses root deployments and dirty checkouts, validates `.env` permissions and `node_modules` ownership, runs lint and migrations, and then verifies process liveness plus application readiness. In normal operation it also reads tournaments, products, and commerce capabilities. During an approved maintenance window it accepts readiness only when the response is `503` with `X-Maintenance-Mode: active`, and skips public data reads that are intentionally blocked. Any other installation, restart, or health failure restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release).
 
 When a migration file changed, deployment additionally requires the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to equal the exact 40-character `DEPLOY_SHA`. Before applying that migration, CD runs `ops/backup-production.sh`; any missing backup prerequisite, encryption failure, or off-site upload failure aborts deployment. Set this secret only after reviewing the migration and clear it after the successful release. Protect the GitHub `production` environment with required reviewers.
 
@@ -197,7 +197,7 @@ sudo -u "$DEPLOY_USER" -H test -w "$APP_DIR/backend/node_modules/.prisma"
 
 Rerun the failed workflow after the write check succeeds. Run future `npm` and Prisma commands as the deploy user, not through `sudo`; the workflow now stops before checking out a new commit if it finds foreign-owned or unwritable dependency directories.
 
-Initial health retries may log connection failures while Node starts. A successful job means a later retry returned `200` and PM2 saved the process list.
+Initial liveness retries may log connection failures while Node starts. A successful job means liveness returned `200` and either readiness plus public smoke reads passed normally, or readiness returned the explicit maintenance `503` header during an approved window. PM2 then saves the process list.
 
 ## Manual Deployment
 
@@ -219,3 +219,4 @@ Use the [Production Operations Runbook](./production-runbook.md) for:
 - production `.env` validation failures
 - PM2/systemd ownership and reboot recovery
 - post-deployment health checks and rollback semantics
+- coordinated frontend/backend maintenance mode and deployment behavior

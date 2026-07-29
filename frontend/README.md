@@ -16,6 +16,9 @@ Local development example:
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+SITE_MAINTENANCE_MODE=false
+SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
+SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 ```
 
 Production example:
@@ -23,6 +26,9 @@ Production example:
 ```env
 NEXT_PUBLIC_API_URL=https://api.questesports.lk
 NEXT_PUBLIC_SITE_URL=https://questesports.lk
+SITE_MAINTENANCE_MODE=false
+SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
+SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 ```
 
 Notes:
@@ -30,6 +36,7 @@ Notes:
 - `NEXT_PUBLIC_API_URL` must match the backend origin.
 - `NEXT_PUBLIC_SITE_URL` is used for metadata, sitemap generation, canonical URLs, structured data, and server-rendered API requests when backend origin enforcement is enabled.
 - If the backend sends verification, reset, invite, or email-change emails, its `APP_URL` must point to this frontend origin.
+- The three `SITE_MAINTENANCE_*` variables are server-only. Vercel requires a new deployment after changing them. Keep the values aligned with the backend and follow the [maintenance runbook](../docs/production-runbook.md#site-maintenance-mode).
 
 ## Install And Run
 
@@ -43,6 +50,7 @@ The app runs at `http://localhost:3000` by default.
 ## Main Route Groups
 
 - Public: `/`, `/tournaments`, `/tournaments/series/[slug]`, `/tournaments/[slug]`, `/tournaments/[slug]/register`, `/shop`, `/shop/[slug]`, `/registration`, `/join`, `/posters`, `/gallery`, `/match-videos`, `/rulebook`, `/rulebooks/[slug]`, `/contact`, and the policy pages
+- Operations: `/maintenance` renders only while full-site maintenance is enabled; direct access redirects home during normal operation
 - Auth: `/signup`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/confirm-email-change`, `/team-invite`
 - User: `/profile`
 - Admin: `/admin`, `/admin/users`, `/admin/tournaments`, `/admin/event-series`, `/admin/registrations`, `/admin/recruitment`, `/admin/rulebooks`, `/admin/products`, `/admin/orders`, `/admin/payments`, and `/admin/contact-messages`
@@ -100,5 +108,6 @@ server-rendered requests; individual journey tests override responses as needed.
 - Tournament detail pages hide empty registered-team and bracket sections; published native brackets render in a compact Challonge-style board.
 - Vitest unit tests and Playwright critical journeys both run in CI. Playwright
   runs after the production build.
+- Maintenance mode uses a lightweight layout without authentication, navigation, analytics, or backend data requests. It returns `503`, `Retry-After`, no-cache, and crawler `noindex` headers.
 
 The public tournament board includes completed events in the same compact four-column desktop grid, filters tournaments and event series through admin-managed game categories, and uses whole-card navigation with clear open, closed, full, and completed states. Detail pages include the full hero, sponsors, corrected participants, and Challonge-first/native-fallback brackets. `/admin/games` manages category art, `/admin/teams` verifies organization labels, and the tournament editor manages metadata, hero artwork, a PUBG Mobile preset, and sponsors.

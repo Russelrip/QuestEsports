@@ -25,6 +25,7 @@ Important optional groups:
 - Google and Discord OAuth credentials for social login
 - `TRUST_PROXY` and `REQUIRE_API_ORIGIN` for production proxy and origin enforcement
 - `LOG_DRAIN_URL` and `MONITORING_WEBHOOK_URL` for external observability hooks
+- `SITE_MAINTENANCE_MODE`, `SITE_MAINTENANCE_MESSAGE`, and `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` for the coordinated full-site maintenance response
 
 Production additionally requires HTTPS `APP_URL`/`API_PUBLIC_URL`, a 64-character hexadecimal `AUTH_ENCRYPTION_KEY`, durable shared `UPLOAD_ROOT`/`PRIVATE_UPLOAD_ROOT`, trusted-proxy/origin enforcement, `MAIL_DELIVERY_REQUIRED=true`, and complete values for the selected mail provider. Set `API_PROCESS_COUNT` to the real replica/process count; values above one require the shared Upstash cache. PayHere remains optional, but its merchant ID, secret, and notify URL must be configured together. Configured production payments require live mode unless `PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION=true` is deliberately set for production-like sandbox testing.
 
@@ -44,6 +45,8 @@ The API runs at `http://localhost:5001` by default.
 Useful local URLs:
 
 - Health: `http://localhost:5001/api/health`
+- Liveness: `http://localhost:5001/api/health/live`
+- Readiness: `http://localhost:5001/api/health/ready`
 - OpenAPI JSON: `http://localhost:5001/api/openapi.json`
 - Prisma Studio: `npm run prisma:studio`
 
@@ -84,6 +87,10 @@ database transaction is rolled back.
 - Admin workflows under `/api/admin/...`
 
 See [API Documentation](../docs/api-documentation.md) for endpoint details.
+
+## Site Maintenance
+
+When `SITE_MAINTENANCE_MODE=true`, ordinary API routes return a structured `503 SITE_MAINTENANCE` response with `Retry-After` and no-cache headers. Liveness remains `200`; readiness returns the intentional maintenance `503`. The exact PayHere notification `POST` remains available so payments started before the window can settle. Background workers also continue, so this switch is not a write freeze. Use the [Production Operations Runbook](../docs/production-runbook.md#site-maintenance-mode) for safe ordering and PM2 stop instructions.
 
 ## Admin Operations
 
@@ -161,8 +168,9 @@ UPSTASH_REDIS_REST_TOKEN=secret
 ```
 
 Successful admin writes advance a resource generation, immediately making old entries unreachable.
-Cache failures degrade to database reads instead of failing API requests. `GET /api/health` reports
-the cache driver, hits, misses, writes, errors, and hit rate.
+Cache failures degrade to database reads instead of failing API requests. Readiness checks the
+database and durable upload roots; cache behavior remains visible through structured logs and
+application monitoring.
 
 Run the included API load profile after installing k6:
 
@@ -173,7 +181,7 @@ npm run load:test
 
 The profile ramps through 10 and 50 virtual users and enforces an error rate below 1%, p95 below
 500 ms, and p99 below 1 second. Adjust the stages and thresholds in `performance/k6-api.js` for
-stress, spike, or soak runs. Monitor the database pool, API CPU/memory, and health cache counters
+stress, spike, or soak runs. Monitor the database pool, API CPU/memory, and cache telemetry
 alongside the k6 output.
 
 To deliberately bypass the response cache and stress database reads up to 200 virtual users, run:

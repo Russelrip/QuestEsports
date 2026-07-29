@@ -10,6 +10,10 @@
 
 LankaPay, PayPal, and separate card integrations remain deferred. Free registration, PayHere, and bank transfer are unchanged.
 
+## Maintenance windows
+
+`COMMERCE_MAINTENANCE_ENABLED` controls background cleanup and is not the visitor-facing site switch. Full-site maintenance uses the coordinated `SITE_MAINTENANCE_*` values documented in the [Production Operations Runbook](./production-runbook.md#site-maintenance-mode). The PayHere notification callback and background workers intentionally remain active during site maintenance so in-flight payments can settle; stop PM2 when an operation requires a complete write freeze.
+
 ## Database deployment
 
 Apply the complete migration history before deploying either application. `20260713220000_complete_platform_foundations` adds event series, configurable solo/team registration, account history, products, orders, and generic payments. Later migrations add date statuses, tiered bank-transfer registration, duplicate-proof prevention, and payment reconciliation.
