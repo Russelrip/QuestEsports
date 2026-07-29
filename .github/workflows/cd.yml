@@ -133,7 +133,17 @@ jobs:
               exit 1
             fi
           fi
-          PREVIOUS_SHA="$(git rev-parse HEAD)"
+          CHECKOUT_SHA="$(git rev-parse HEAD)"
+          DEPLOYED_SHA_FILE="$APP_DIR/.quest-successful-deploy-sha"
+          PREVIOUS_SHA="$CHECKOUT_SHA"
+          if [ -f "$DEPLOYED_SHA_FILE" ]; then
+            RECORDED_SHA="$(tr -d '[:space:]' < "$DEPLOYED_SHA_FILE")"
+            if printf '%s' "$RECORDED_SHA" | grep -Eq '^[0-9a-f]{40}$' && git cat-file -e "$RECORDED_SHA^{commit}" 2>/dev/null; then
+              PREVIOUS_SHA="$RECORDED_SHA"
+            else
+              echo "Ignoring invalid successful-deploy marker: $DEPLOYED_SHA_FILE" >&2
+            fi
+          fi
           REMOTE_URL="$(git remote get-url origin)"
           if ! git fetch --prune origin "$DEPLOY_SHA"; then
             echo "The VPS could not fetch origin: $REMOTE_URL" >&2
@@ -160,7 +170,7 @@ jobs:
           rollback() {
             EXIT_CODE="$1"
             FAILED_COMMAND="$2"
-            trap - ERR
+            trap - ERR EXIT
             set +e
             echo "Deployment command failed with exit code $EXIT_CODE: $FAILED_COMMAND" >&2
             echo "Restoring application code at $PREVIOUS_SHA." >&2
@@ -172,39 +182,64 @@ jobs:
               echo "Rollback restored the previous code but could not restore its dependencies." >&2
               exit "$EXIT_CODE"
             fi
-            if ! pm2 restart "$PM2_PROCESS" --update-env; then
-              echo "Rollback restored the previous code and dependencies but could not restart $PM2_PROCESS." >&2
-              exit "$EXIT_CODE"
-            fi
-            HEALTHY=false
-            for attempt in 1 2 3 4 5; do
-              if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" >/dev/null; then
-                HEALTHY=true
-                break
+            if [ "$PROCESS_RESTART_ATTEMPTED" = true ]; then
+              if ! pm2 restart "$PM2_PROCESS" --update-env; then
+                echo "Rollback restored the previous code and dependencies but could not restart $PM2_PROCESS." >&2
+                exit "$EXIT_CODE"
               fi
-              sleep 2
-            done
-            if [ "$HEALTHY" != true ]; then
-              echo "Rollback restarted $PM2_PROCESS, but its health check failed." >&2
+              HEALTHY=false
+              for attempt in 1 2 3 4 5; do
+                if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL" >/dev/null; then
+                  HEALTHY=true
+                  break
+                fi
+                sleep 2
+              done
+              if [ "$HEALTHY" != true ]; then
+                echo "Rollback restarted $PM2_PROCESS, but its health check failed." >&2
+              fi
+            else
+              echo "The running PM2 process was not changed; no process restart is required." >&2
             fi
             exit "$EXIT_CODE"
           }
-          trap 'EXIT_CODE=$?; FAILED_COMMAND=$BASH_COMMAND; rollback "$EXIT_CODE" "$FAILED_COMMAND"' ERR
+          deployment_exit() {
+            EXIT_CODE="$1"
+            FAILED_COMMAND="$2"
+            trap - EXIT
+            if [ "$EXIT_CODE" -ne 0 ]; then
+              rollback "$EXIT_CODE" "$FAILED_COMMAND"
+            fi
+          }
+          PROCESS_RESTART_ATTEMPTED=false
+          trap 'deployment_exit "$?" "$BASH_COMMAND"' EXIT
 
           git checkout --detach "$DEPLOY_SHA"
           test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
-          if [ "$MIGRATION_CHANGED" = true ]; then
+          cd backend
+          npm ci
+          set +e
+          npm run prisma:migrations:check-pending
+          MIGRATION_STATUS_CODE="$?"
+          set -e
+          MIGRATION_PENDING=false
+          if [ "$MIGRATION_STATUS_CODE" -eq 10 ]; then
+            MIGRATION_PENDING=true
+          elif [ "$MIGRATION_STATUS_CODE" -ne 0 ]; then
+            echo "Could not determine whether production has pending database migrations." >&2
+            exit "$MIGRATION_STATUS_CODE"
+          fi
+          if [ "$MIGRATION_CHANGED" = true ] || [ "$MIGRATION_PENDING" = true ]; then
             if [ "$MIGRATION_APPROVAL_SHA" != "$DEPLOY_SHA" ]; then
               echo "A schema migration requires BACKEND_MIGRATION_APPROVAL_SHA to equal $DEPLOY_SHA." >&2
               exit 1
             fi
             BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash "$APP_DIR/ops/backup-production.sh"
           fi
-          cd backend
-          npm ci
           npm run lint
           npm run prisma:migrate:deploy
           npm run prisma:security:verify
+          PROCESS_RESTART_ATTEMPTED=true
           pm2 restart "$PM2_PROCESS" --update-env
           HEALTHY=false
           for attempt in 1 2 3 4 5; do
@@ -220,5 +255,7 @@ jobs:
           curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/products" >/dev/null
           curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/commerce/capabilities" >/dev/null
           pm2 save
-          trap - ERR
+          printf '%s\n' "$DEPLOY_SHA" > "$DEPLOYED_SHA_FILE"
+          chmod 600 "$DEPLOYED_SHA_FILE"
+          trap - EXIT
           SCRIPT

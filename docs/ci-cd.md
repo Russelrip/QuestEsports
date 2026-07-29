@@ -179,6 +179,8 @@ pm2 save
 
 When a migration file changed, deployment additionally requires the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to equal the exact 40-character `DEPLOY_SHA`. Before applying that migration, CD runs `ops/backup-production.sh`; any missing backup prerequisite, encryption failure, or off-site upload failure aborts deployment. Set this secret only after reviewing the migration and clear it after the successful release. Protect the GitHub `production` environment with required reviewers.
 
+CD also queries the production `_prisma_migrations` table after installing the target release. A pending database migration requires the same approval and backup even when the VPS checkout was advanced by an earlier interrupted deployment. Every successful deployment records `.quest-successful-deploy-sha`; all non-zero exits use an `EXIT` rollback handler, including deliberate approval failures that do not trigger Bash's `ERR` trap.
+
 ### Repairing `node_modules` ownership
 
 If deployment fails with `EACCES` while removing `backend/node_modules/.prisma/client`, files were created by a different VPS user (commonly by running `sudo npm ci`). Repair the existing dependency directory once, using the GitHub environment values for `BACKEND_SSH_USER` and `BACKEND_APP_DIR`:
