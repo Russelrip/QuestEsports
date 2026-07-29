@@ -122,6 +122,7 @@ test("createRecruitmentApplication encrypts team member NICs", async () => {
             email: "player2@example.com",
             phone: "0770000000",
             role: "player",
+            privacyAccepted: true,
           },
         ],
       },
@@ -130,6 +131,47 @@ test("createRecruitmentApplication encrypts team member NICs", async () => {
     const member = createCalls[0].data.members[0];
     assert.equal(member.idNumberCiphertext, "encrypted:200298765432");
     assert.equal("nic" in member, false);
+    assert.match(member.privacyAcceptedAt, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    restore();
+  }
+});
+
+test("createRecruitmentApplication requires permission for every submitted team member", async () => {
+  const { module: recruitmentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [secretBoxModulePath]: { encryptSecret: (value) => `encrypted:${value}` },
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        recruitmentService.createRecruitmentApplication({
+          user: { id: "user-1", email: "captain@example.com" },
+          body: {
+            ...validSoloBody,
+            applicationType: "incomplete_team",
+            teamName: "Quest Duo",
+            currentRosterSize: 2,
+            members: [
+              {
+                name: "Player Two",
+                ign: "QuestTwo",
+                nic: "200298765432",
+                discord: "questtwo",
+                email: "player2@example.com",
+                phone: "0770000000",
+                role: "player",
+                privacyAccepted: false,
+              },
+            ],
+          },
+        }),
+      (error) =>
+        error.name === "HttpError" &&
+        error.statusCode === 400 &&
+        error.message === "Team member 1 privacy permission is required."
+    );
   } finally {
     restore();
   }

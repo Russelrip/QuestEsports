@@ -547,6 +547,7 @@ Body is JSON. Primary fields:
 - `nic`
 - `notes`
 - Team applications only: `teamName`, `currentRosterSize`, `members`
+- Every team member object must include `privacyAccepted: true` after the applicant confirms that member gave permission to submit their contact details and NIC.
 
 Behavior:
 
@@ -554,6 +555,7 @@ Behavior:
 - `games` must contain at least one selected game.
 - `gender` must be `male`, `female`, or `other`.
 - NIC values are encrypted before storage.
+- Each submitted team member stores a `privacyAcceptedAt` timestamp in the application JSON. Older records may not contain it.
 - Existing-team applications require a roster size from 5 to 20 and at least four additional members.
 - Incomplete-team applications require a roster size from 2 to 4 and between one and three additional members.
 

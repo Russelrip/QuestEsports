@@ -238,6 +238,7 @@ test("exportRecruitmentApplications creates an Excel workbook with solo and team
                 ign: "Academy",
                 phone: "0773333333",
                 role: "duelist",
+                privacyAcceptedAt: "2026-07-03T09:00:00.000Z",
               },
             ],
             details: {},
@@ -268,6 +269,7 @@ test("exportRecruitmentApplications creates an Excel workbook with solo and team
     assert.equal(applicationsSheet.getRow(2).getCell(4).value, "Solo Player");
     assert.equal(applicationsSheet.getRow(3).getCell(11).value, "Quest Academy");
     assert.equal(membersSheet.getRow(2).getCell(5).value, "Academy Player");
+    assert.equal(membersSheet.getRow(2).getCell(13).value, "2026-07-03T09:00:00.000Z");
   } finally {
     restore();
   }

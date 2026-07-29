@@ -869,6 +869,7 @@ model ImageAsset {
 
 model Poster {
   id           String      @id @default(uuid()) @db.Uuid
+  importKey    String?     @unique @map("import_key")
   imageAssetId String      @map("image_asset_id") @db.Uuid
   tournamentId String?     @map("tournament_id") @db.Uuid
   title        String

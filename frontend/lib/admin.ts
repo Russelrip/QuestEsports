@@ -171,6 +171,7 @@ export type RecruitmentApplicationMember = {
   phone?: string | null;
   role?: string | null;
   nic?: string | null;
+  privacyAcceptedAt?: string | null;
 };
 
 export type RecruitmentApplicationDetails = {

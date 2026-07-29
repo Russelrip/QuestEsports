@@ -231,6 +231,7 @@ const mapRecruitmentApplication = (application) => ({
         phone: member.phone || null,
         role: member.role || "player",
         nic: member.idNumberCiphertext ? decryptNic(member.idNumberCiphertext) : null,
+        privacyAcceptedAt: member.privacyAcceptedAt || null,
       }))
     : [],
   details:
@@ -896,6 +897,7 @@ const exportRecruitmentApplications = async (query = {}) => {
       phone: member.phone || "",
       role: member.role || "",
       nic: member.nic || "",
+      privacyAcceptedAt: formatExportTimestamp(member.privacyAcceptedAt),
     }))
   );
 
@@ -949,6 +951,7 @@ const exportRecruitmentApplications = async (query = {}) => {
           { header: "Phone", key: "phone", width: 18 },
           { header: "Role", key: "role", width: 16 },
           { header: "NIC", key: "nic", width: 18 },
+          { header: "Privacy Permission At", key: "privacyAcceptedAt", width: 26 },
         ],
         rows: memberRows,
       },

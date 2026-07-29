@@ -208,6 +208,8 @@ Supported application types:
 - `existing_team`
 - `incomplete_team`
 
+Every newly submitted team member must have a checked permission declaration from the applicant before that member's contact or identity details are accepted. The backend records `privacyAcceptedAt` for each member. The admin UI shows that timestamp; older records created before July 29, 2026 are labeled as legacy records where permission was not captured.
+
 The recruitment admin page reads from:
 
 ```text
@@ -266,7 +268,7 @@ recruitment-applications-YYYY-MM-DD.xlsx
 Workbook sheets:
 
 - `Applications`: application type, status, applicant contact fields, game fields, NIC, team fields, Women's League interest, detailed answers, notes, submitted time, and updated time
-- `Team Members`: application ID, application type, applicant name, team name, member contact fields, IGN, player ID, role, and NIC
+- `Team Members`: application ID, application type, applicant name, team name, member contact fields, IGN, player ID, role, NIC, and the member privacy-permission timestamp
 
 Recruitment exports include sensitive applicant data such as NIC values. Treat downloaded files as private admin records.
 

@@ -111,6 +111,7 @@ const env = {
   PORT: normalizePositiveInteger(process.env.PORT, 5001),
   CORS_ORIGINS: normalizeCsv(process.env.CORS_ORIGIN || "http://localhost:3000"),
   DATABASE_URL: required("DATABASE_URL"),
+  DIRECT_URL: required("DIRECT_URL"),
   CACHE_DRIVER: optional("CACHE_DRIVER", "memory").toLowerCase(),
   CACHE_TTL_SECONDS: normalizePositiveInteger(process.env.CACHE_TTL_SECONDS, 300),
   CACHE_MAX_ENTRIES: normalizePositiveInteger(process.env.CACHE_MAX_ENTRIES, 1000),

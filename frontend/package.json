@@ -12,7 +12,7 @@
     "lint": "eslint",
     "test": "vitest run tests/unit",
     "test:e2e": "playwright test",
-    "test:e2e:local": "npm run build && playwright test",
+    "test:e2e:local": "node scripts/run-e2e-local.mjs",
     "perf:check": "node scripts/measure-page-performance.mjs"
   },
   "dependencies": {
@@ -31,18 +31,19 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "^16.2.6",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "brace-expansion@1.1.12": "1.1.13",
-    "brace-expansion@5.0.4": "5.0.6",
+    "brace-expansion@1.1.13": "1.1.17",
+    "brace-expansion@5.0.4": "5.0.8",
+    "eslint-plugin-react-hooks": "7.0.1",
     "flatted": "3.4.2",
     "picomatch@4.0.3": "4.0.4",
     "postcss": "8.5.23",

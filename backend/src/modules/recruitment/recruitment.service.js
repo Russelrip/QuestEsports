@@ -13,7 +13,7 @@ const APPLICATION_TYPES = new Set(["solo_player", "existing_team", "incomplete_t
 const MAX_MEMBERS = 20;
 const GENDERS = new Set(["male", "female", "other"]);
 const MEMBER_ROLES = new Set(["player", "substitute"]);
-const PRIVACY_POLICY_VERSION = "2026-07-14";
+const PRIVACY_POLICY_VERSION = "2026-07-29";
 
 const requiredText = (value, label, maxLength = 200) => {
   const normalized = normalizeText(value);
@@ -100,6 +100,12 @@ const normalizeMembers = (members, applicationType) => {
       email,
       phone: requiredText(member.phone, `Team member ${index + 1} WhatsApp number`, 50),
       role: MEMBER_ROLES.has(role) ? role : "player",
+      privacyAcceptedAt: requiredBoolean(
+        member.privacyAccepted,
+        `Team member ${index + 1} privacy permission`
+      )
+        ? new Date().toISOString()
+        : null,
     };
   });
 };

@@ -306,6 +306,8 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 - [ ] JOIN-008 A valid application submits once and confirms success.
 - [ ] JOIN-009 Repeated submission/rate-limit behavior provides a clear safe message.
 - [ ] JOIN-010 Submitted data appears accurately in admin without field loss or incorrect application type.
+- [ ] JOIN-011 Every team member requires an explicit permission declaration before their contact/NIC data can be submitted; removing and re-adding members cannot bypass it.
+- [ ] JOIN-012 Admin review and export show each member's permission timestamp, while pre-policy legacy records are clearly identified.
 
 ## 9. Shop, cart, checkout, and order status
 
@@ -639,6 +641,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] SEC-022 Privacy policy matches actual cookies, analytics, account data, recruitment data, uploads, payment processing, retention, and contact process.
 - [ ] SEC-023 Dependency, secret, and source scans contain no unresolved release-blocking findings.
 - [ ] SEC-024 Database and upload backups are encrypted, restorable, access-controlled, and include required public/private asset roots.
+- [ ] SEC-025 Every public table has RLS enabled and `anon`, `authenticated`, and `service_role` have no table privileges when the Data API is unused; `npm run prisma:security:verify` passes.
 
 ## 24. API and operational audit
 
@@ -652,6 +655,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] OPS-008 Server clock/timezone and database timestamps are synchronized; user-facing Sri Lankan times are correct.
 - [ ] OPS-009 Logs correlate requests/jobs/payment events without leaking secrets or personal data.
 - [ ] OPS-010 Alerting covers API health, elevated errors, database/storage exhaustion, job failure, mail failure, and payment callback failure.
+- [ ] OPS-011 The latest scheduled backup has both encrypted archive and checksum on the off-site remote, and the systemd timer/service have no recent failures.
 
 ## 25. Automated checks and release sign-off
 

@@ -11,7 +11,13 @@ export type RecruitmentMember = {
   email: string;
   phone: string;
   role: "player" | "substitute";
+  privacyAccepted: boolean;
 };
+
+export type RecruitmentMemberTextField = Exclude<
+  keyof RecruitmentMember,
+  "privacyAccepted"
+>;
 
 export type RecruitmentFields = {
   applicationType: ApplicationType;
@@ -68,6 +74,7 @@ export const createEmptyRecruitmentMember = (): RecruitmentMember => ({
   email: "",
   phone: "",
   role: "player",
+  privacyAccepted: false,
 });
 
 export const initialRecruitmentFields: RecruitmentFields = {

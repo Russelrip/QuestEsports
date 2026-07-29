@@ -58,7 +58,7 @@ RESEND_API_KEY=
 MAIL_FROM=
 MAIL_DELIVERY_REQUIRED=
 # Only needed when MAIL_PROVIDER=smtp:
-# SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+# SMTP_HOST=email-smtp.ap-northeast-1.amazonaws.com
 # SMTP_PORT=587
 # SMTP_USER=your_ses_smtp_username
 # SMTP_PASS=your_ses_smtp_password
@@ -102,7 +102,7 @@ npm run prisma:generate
 
 Use `npm run prisma:migrate` only for local development. For production deployments, use `npm run prisma:migrate:deploy`.
 
-If `DATABASE_URL` points at a pooled connection, set `DIRECT_URL` to the direct non-pooled connection string so Prisma migrations and schema operations can run reliably.
+Use a direct PostgreSQL URL for `DIRECT_URL` when the deployment host supports Supabase's IPv6 direct endpoint. On IPv4-only hosts, use Supavisor session mode on port `5432` for `DIRECT_URL`. Transaction mode on port `6543` is not suitable for Prisma migrations.
 
 ### 4. Start both apps
 
@@ -163,18 +163,18 @@ Verify the sending domain in Resend before sending to application users. Resend'
 
 To switch back to Amazon SES later, set `MAIL_PROVIDER=smtp` and replace the Resend key with the SES `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, and `SMTP_PASS` values below. No code change is required.
 
-For Amazon SES in Singapore (`ap-southeast-1`):
+For Amazon SES in Tokyo (`ap-northeast-1`):
 
 1. Create and verify a SES domain identity for `questesports.lk`.
 2. Publish the SES Easy DKIM CNAME records in DNS and wait for SES to show the identity as verified.
-3. Create SES SMTP credentials in `ap-southeast-1`; they are region-specific and separate from normal AWS access keys.
-4. Request production access for `ap-southeast-1` before launch. While still in the SES sandbox, you can only send to verified recipients.
+3. Create SES SMTP credentials in `ap-northeast-1`; they are region-specific and separate from normal AWS access keys.
+4. Request production access for `ap-northeast-1` before launch. While still in the SES sandbox, you can only send to verified recipients.
 5. Optional: configure a custom SES MAIL FROM domain such as `bounce.questesports.lk` and publish the MX/SPF records SES provides. Keep this separate from the visible `MAIL_FROM` sender address domain.
 6. Use this backend SMTP configuration:
 
 ```env
 MAIL_PROVIDER=smtp
-SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_HOST=email-smtp.ap-northeast-1.amazonaws.com
 SMTP_PORT=587
 SMTP_USER=your_ses_smtp_username
 SMTP_PASS=your_ses_smtp_password
@@ -356,6 +356,7 @@ DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback
 Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
+- The current French VPS uses the Paris Supavisor session pooler on port `5432` for both database URLs because the direct Supabase endpoint is IPv6.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
 - `AUTH_ENCRYPTION_KEY` must be exactly 64 hexadecimal characters; do not rotate an existing key without a data migration plan.
 - Production requires `MAIL_DELIVERY_REQUIRED=true` and complete settings for the selected provider.
@@ -363,6 +364,8 @@ Notes:
 - Keep `PAYMENT_PROOF_PDF_ENABLED=false` unless uploaded PDFs pass through a maintained malware-scanning/sanitization pipeline. Image receipts are decoded and re-encoded before storage.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
 - `REQUIRE_API_ORIGIN=true` blocks API requests without an allowed `Origin` or `Referer`; use `CORS_ORIGIN=https://questesports.lk` for the public site domain.
+- The Supabase Data API is unused and should be disabled for the Paris project. `npm run prisma:security:verify` confirms all public tables use RLS and Data API roles have no table privileges.
+- Install and verify the encrypted off-site backup timer before approving any production migration. Follow the [Production Operations Runbook](./production-runbook.md#automated-encrypted-off-site-backups).
 
 ### Frontend
 

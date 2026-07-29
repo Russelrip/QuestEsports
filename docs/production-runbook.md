@@ -4,15 +4,18 @@ This is the operational source of truth for the current Quest Esports production
 
 ## Current Topology
 
-- Frontend: Vercel at `https://questesports.lk`
-- Backend: Ubuntu 24.04 VPS at `https://api.questesports.lk`
+- Frontend: Vercel at `https://questesports.lk`, with the configured deployment region in Singapore and normal Vercel edge delivery
+- Backend: Ubuntu 24.04 VPS in France at `https://api.questesports.lk`
 - Backend checkout: `/var/www/QuestEsports`
 - Backend service user: `deploy` (never `root`)
 - Process manager: PM2 supervised by `pm2-deploy.service`
-- Database: Supabase PostgreSQL through `DATABASE_URL` and `DIRECT_URL`
+- Database: Supabase PostgreSQL in Paris (`eu-west-3`) through Supavisor session mode on port `5432` for both `DATABASE_URL` and `DIRECT_URL`
+- Email: Amazon SES in Tokyo (`ap-northeast-1`) when `MAIL_PROVIDER=smtp`; SMTP credentials are region-specific
 - Public uploads: `/srv/quest-esports/uploads`
 - Private payment evidence: `/srv/quest-esports/private`
 - CI/CD: GitHub Actions; CI gates CD on `main`
+
+The Paris database became production on July 29, 2026. The previous Tokyo project is a temporary rollback copy, not a second writable production database. Keep it unchanged only until the Paris backup and restore drill succeeds, then delete it and rotate its database credentials.
 
 ## Required Ownership And Permissions
 
@@ -185,7 +188,8 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 1. Push to `main`.
 2. CI runs backend audit, migrations against PostgreSQL 16, migration/schema verification, coverage, lint, frontend audit/lint/unit tests/build, and Playwright.
 3. After CI succeeds, CD deploys the exact CI commit SHA.
-4. CD installs backend dependencies, generates Prisma, lints, applies production migrations, restarts PM2, verifies local health, and saves the process list.
+4. If migrations changed, set the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to that exact 40-character commit SHA. CD refuses any other value and creates an encrypted off-site backup before applying the migration.
+5. CD installs backend dependencies, generates Prisma, lints, applies production migrations, verifies RLS/Data API privileges, restarts PM2, checks health plus public tournament/product/capability reads, and saves the process list.
 
 Manual redeploy: GitHub `Actions -> CD -> Run workflow`. The manual job redeploys the current `main` commit and refuses to continue unless that exact commit has a successful `CI` run.
 
@@ -195,7 +199,7 @@ The deployment refuses root SSH users, dirty tracked worktrees, insecure `.env` 
 
 If install, restart, or health validation fails, CD checks out the previous application commit, reinstalls its dependencies, regenerates Prisma, and restarts PM2. Database migrations are not reversed. Every production migration must therefore remain backward-compatible with the previous application release (expand first; contract later).
 
-Always confirm a current Supabase backup before approving migrations that change or remove data.
+Never rely on a Free-plan Supabase dashboard backup. Confirm that the encrypted database-and-upload archive exists off-site before approving a migration. Clear `BACKEND_MIGRATION_APPROVAL_SHA` after the deployment.
 
 ## Verification
 
@@ -284,6 +288,59 @@ Back up and restore these together:
 - production `.env` through a secure secret-management process.
 
 Do not treat admin Excel exports as backups. Payment-proof backups contain sensitive records and require restricted access, retention enforcement, and secure deletion.
+
+### Automated encrypted off-site backups
+
+The repository provides:
+
+- `ops/backup-production.sh`
+- `ops/restore-production-backup.sh`
+- `ops/systemd/quest-esports-backup.service`
+- `ops/systemd/quest-esports-backup.timer`
+
+The backup includes a custom-format PostgreSQL dump, public uploads, private payment evidence, and a manifest. It is encrypted with an offline `age` recipient before upload through `rclone`. Keep the `age` private identity off the production VPS.
+
+Install the prerequisites and configuration:
+
+```bash
+sudo apt install postgresql-client rclone age rsync
+sudo install -d -o deploy -g deploy -m 700 /srv/quest-esports/backups
+sudo install -o root -g deploy -m 640 ops/quest-esports-backup.env.example /etc/quest-esports-backup.env
+sudo install -d -o root -g root -m 755 /etc/rclone
+sudo install -o root -g deploy -m 640 /path/to/verified-rclone.conf /etc/rclone/quest-esports.conf
+sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.service /etc/systemd/system/
+sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.timer /etc/systemd/system/
+```
+
+Edit `/etc/quest-esports-backup.env` without printing its values. Set the Paris session-pooler `DIRECT_URL`, both upload roots, the offline `age` public recipient, and an off-site `rclone` remote. Then verify a manual run and enable the timer:
+
+```bash
+sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash /var/www/QuestEsports/ops/backup-production.sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now quest-esports-backup.timer
+systemctl list-timers quest-esports-backup.timer
+journalctl -u quest-esports-backup.service --since today
+```
+
+The backup is not considered successful until both the encrypted archive and checksum are visible on the off-site remote.
+
+### Restore drill
+
+Download one encrypted archive and its checksum to an isolated recovery host that has the offline `age` identity. Restore into a disposable PostgreSQL instance and empty temporary upload directories first. The restore script requires the explicit `RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION` value because its database cleanup and file synchronization are destructive.
+
+Run the restore script through Bash so it does not depend on a checkout retaining executable file modes:
+
+```bash
+RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+  BACKUP_ENV_FILE=/path/to/recovery.env \
+  bash ops/restore-production-backup.sh /absolute/path/to/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
+```
+
+Do not point a restore drill at Paris production. Record the archive timestamp, restored table counts, sample asset checks, and elapsed recovery time. Run a drill after setup and at least quarterly.
+
+### Supabase Data API
+
+The application uses Prisma, not the Supabase Data API. Disable Data API for the Paris project in Supabase Dashboard. The database migration also enables RLS and revokes table privileges from `anon`, `authenticated`, and `service_role`; `npm run prisma:security:verify` enforces that state during CI and deployment.
 
 ## External-Service Readiness
 

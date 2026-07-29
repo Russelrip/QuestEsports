@@ -1,0 +1,16 @@
+[Unit]
+Description=Quest Esports encrypted production backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
+ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/backup-production.sh
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/quest-esports

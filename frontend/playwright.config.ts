@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3010";
 const webServerPort = new URL(baseURL).port || "3010";
+const mockApiPort = process.env.PLAYWRIGHT_MOCK_API_PORT || "5011";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -10,6 +11,7 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
+  globalTeardown: "./tests/e2e/global-teardown.ts",
   use: {
     baseURL,
     trace: "on-first-retry",
@@ -19,7 +21,11 @@ export default defineConfig({
     : [
       {
         command: "node scripts/mock-api.mjs",
-        url: "http://127.0.0.1:5001/api/health/live",
+        url: `http://127.0.0.1:${mockApiPort}/api/health/live`,
+        env: {
+          PLAYWRIGHT_BASE_URL: baseURL,
+          PLAYWRIGHT_MOCK_API_PORT: mockApiPort,
+        },
         reuseExistingServer: false,
         timeout: 30 * 1000,
       },

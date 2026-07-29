@@ -409,10 +409,13 @@ From the migration names, the schema evolved through:
 - Restoring uploads without the database will orphan files because metadata and filenames live in PostgreSQL.
 - Admin Excel exports are not backup artifacts; they can be regenerated from database state.
 - Treat both configured roots as persistent production data; private backups require stricter access and retention controls.
+- Production backups are implemented by `ops/backup-production.sh`, which captures PostgreSQL plus both roots, encrypts the archive with an offline `age` recipient, uploads it through `rclone`, and writes a checksum.
+- Use the systemd service/timer templates in `ops/systemd/` for daily execution. A backup is incomplete until the encrypted archive and checksum exist off-site.
+- Test restores on disposable PostgreSQL and temporary upload directories using `ops/restore-production-backup.sh`; never run a drill against the live Paris database.
 
 ## Production Improvement Opportunities
 
 - Move uploads to object storage such as S3, R2, or GCS for horizontal scaling.
 - Move background-job processing to a dedicated worker process or external queue if email/media volume grows beyond the built-in database-backed worker.
-- Add scheduled cleanup for expired tokens and stale uploads.
+- Continue monitoring scheduled cleanup for expired sessions, payment reservations, proof retention, and stale uploads.
 - Add a seed/bootstrap workflow for the first admin user.

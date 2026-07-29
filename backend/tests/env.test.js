@@ -9,6 +9,7 @@ const productionEnv = {
   ...process.env,
   NODE_ENV: "production",
   DATABASE_URL: "postgresql://quest:quest@db.example.com:5432/quest",
+  DIRECT_URL: "postgresql://quest:quest@db.example.com:5432/quest",
   SESSION_COOKIE_NAME: "quest_session",
   AUTH_ENCRYPTION_KEY: "a".repeat(64),
   UPLOAD_ROOT: "/srv/quest/uploads",
@@ -46,6 +47,12 @@ test("production environment rejects CORS values that are not exact origins", ()
   const result = loadEnvironment({ CORS_ORIGIN: "https://quest.example.com/" });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /must be an origin without a path, query, fragment, or trailing slash/);
+});
+
+test("environment requires the direct migration database URL", () => {
+  const result = loadEnvironment({ DIRECT_URL: "" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Missing required environment variable: DIRECT_URL/);
 });
 
 test("production environment rejects insecure OAuth callbacks", () => {

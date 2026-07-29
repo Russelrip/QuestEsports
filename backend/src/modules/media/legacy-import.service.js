@@ -94,6 +94,8 @@ const getContentType = (filePath) => {
 const getStoredFilename = (filePath) =>
   `${Date.now()}-${crypto.randomUUID()}${path.extname(filePath).toLowerCase() || ".jpg"}`;
 
+const getImportKey = (filePath) => `legacy-poster:${filePath.toLowerCase()}`;
+
 const readLegacyAsset = async (relativeFilePath) => {
   const absolutePath = path.join(repoRoot, relativeFilePath);
   return fs.readFile(absolutePath);
@@ -124,6 +126,7 @@ const createLegacyPoster = async (tx, definition, buffer, onFileWritten) => {
   await tx.poster.create({
     data: {
       id: crypto.randomUUID(),
+      importKey: getImportKey(definition.filePath),
       imageAssetId: imageAsset.id,
       title: definition.title,
       description: null,
@@ -148,28 +151,66 @@ const importLegacyPosters = async () => {
       buffer: await readLegacyAsset(definition.filePath),
     }))
   );
-  const existingPosters = await prisma.poster.findMany({
-    where: {
-      OR: legacyPosterDefinitions.map(({ title, headline }) => ({ title, headline })),
-    },
-    select: { title: true, headline: true },
-  });
-  const existingKeys = new Set(
-    existingPosters.map(({ title, headline }) => `${title}\u0000${headline}`)
-  );
-  const pendingSources = sources.filter(
-    ({ definition }) =>
-      !existingKeys.has(`${definition.title}\u0000${definition.headline}`)
-  );
   const writtenFilenames = [];
+  let results = [];
 
   try {
     await fs.mkdir(posterImageDirectory, { recursive: true });
     await prisma.$transaction(async (tx) => {
-      for (const { definition, buffer } of pendingSources) {
+      // Serialize the deliberately rare administrative import across API processes.
+      // The stable import key remains the final database-level concurrency guard.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(718441902)`;
+      const existingPosters = await tx.poster.findMany({
+        where: {
+          OR: [
+            {
+              importKey: {
+                in: legacyPosterDefinitions.map(({ filePath }) =>
+                  getImportKey(filePath)
+                ),
+              },
+            },
+            ...legacyPosterDefinitions.map(({ title, headline }) => ({
+              title,
+              headline,
+            })),
+          ],
+        },
+        select: { id: true, importKey: true, title: true, headline: true },
+      });
+      const existingByImportKey = new Map(
+        existingPosters
+          .filter((poster) => poster.importKey)
+          .map((poster) => [poster.importKey, poster])
+      );
+      const existingByContent = new Map(
+        existingPosters.map((poster) => [
+          `${poster.title}\u0000${poster.headline}`,
+          poster,
+        ])
+      );
+
+      results = [];
+      for (const { definition, buffer } of sources) {
+        const importKey = getImportKey(definition.filePath);
+        const existing =
+          existingByImportKey.get(importKey) ||
+          existingByContent.get(`${definition.title}\u0000${definition.headline}`);
+        if (existing) {
+          if (!existing.importKey) {
+            await tx.poster.update({
+              where: { id: existing.id },
+              data: { importKey },
+            });
+          }
+          results.push({ status: "skipped", title: definition.title });
+          continue;
+        }
+
         await createLegacyPoster(tx, definition, buffer, (filename) => {
           writtenFilenames.push(filename);
         });
+        results.push({ status: "imported", title: definition.title });
       }
     });
   } catch (error) {
@@ -180,13 +221,6 @@ const importLegacyPosters = async () => {
     );
     throw error;
   }
-
-  const results = sources.map(({ definition }) => ({
-    status: existingKeys.has(`${definition.title}\u0000${definition.headline}`)
-      ? "skipped"
-      : "imported",
-    title: definition.title,
-  }));
 
   return {
     importedCount: results.filter((item) => item.status === "imported").length,

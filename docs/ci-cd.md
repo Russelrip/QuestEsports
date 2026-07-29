@@ -170,11 +170,14 @@ cd backend
 npm ci
 npm run lint
 npm run prisma:migrate:deploy
+npm run prisma:security:verify
 pm2 restart "$BACKEND_PM2_PROCESS" --update-env
 pm2 save
 ```
 
-`npm ci` runs the backend `postinstall` hook, which generates the Prisma client. The workflow refuses root deployments and dirty checkouts, validates `.env` permissions and `node_modules` ownership, runs lint and migrations, then performs a local health check. If installation, restart, or health validation fails, it restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release). Protect the GitHub `production` environment with required reviewers and keep a current Supabase backup before approving a migration deployment.
+`npm ci` runs the backend `postinstall` hook, which generates the Prisma client. The workflow refuses root deployments and dirty checkouts, validates `.env` permissions and `node_modules` ownership, runs lint and migrations, then performs database-security, readiness, tournament, product, and commerce-capability checks. If installation, restart, or health validation fails, it restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release).
+
+When a migration file changed, deployment additionally requires the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to equal the exact 40-character `DEPLOY_SHA`. Before applying that migration, CD runs `ops/backup-production.sh`; any missing backup prerequisite, encryption failure, or off-site upload failure aborts deployment. Set this secret only after reviewing the migration and clear it after the successful release. Protect the GitHub `production` environment with required reviewers.
 
 ### Repairing `node_modules` ownership
 

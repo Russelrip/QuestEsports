@@ -15,6 +15,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:migrate:status": "prisma migrate status",
+    "prisma:security:verify": "node scripts/verify-database-security.js",
     "prisma:studio": "prisma studio",
     "mail:verify": "node scripts/verify-mail-config.js",
     "media:import-legacy-posters": "node scripts/import-legacy-posters.js",

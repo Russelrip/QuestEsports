@@ -37,7 +37,7 @@ RESEND_API_KEY=
 MAIL_FROM=
 MAIL_DELIVERY_REQUIRED=
 # Only needed when MAIL_PROVIDER=smtp:
-# SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+# SMTP_HOST=email-smtp.ap-northeast-1.amazonaws.com
 # SMTP_PORT=587
 # SMTP_USER=your_ses_smtp_username
 # SMTP_PASS=your_ses_smtp_password
@@ -71,7 +71,7 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required for the backend to boot.
-- In hosted Postgres setups, `DATABASE_URL` can use a pooled connection string while `DIRECT_URL` should use the direct connection string for Prisma migrations.
+- `DIRECT_URL` may use a direct PostgreSQL endpoint when the host supports IPv6. On the current IPv4 VPS, both URLs use Supabase Supavisor session mode on port `5432`; do not use transaction mode for Prisma migrations.
 - `NEXT_PUBLIC_API_URL` must point at the backend origin.
 - `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
 - Mail delivery is optional for local development. Use `MAIL_PROVIDER=resend` with a Resend API key, or leave `MAIL_DELIVERY_REQUIRED` blank/false when delivery is absent. Production requires complete settings for the selected provider.
@@ -136,6 +136,7 @@ Recommended flow:
 ## Documentation
 
 - [Full Site Audit Checklist](./docs/full-site-audit-checklist.md)
+- [Current Audit and Remediation Status](./docs/project-audit-status.md)
 - [API Documentation](./docs/api-documentation.md)
 - [Admin Operations](./docs/admin-operations.md)
 - [Authentication Flow](./docs/authentication-flow.md)
@@ -209,8 +210,13 @@ QuestEsports/
 |   |-- commerce-and-tournament-rollout.md
 |   |-- database-and-storage.md
 |   |-- email-system.md
+|   |-- project-audit-status.md
 |   |-- production-runbook.md
 |   `-- setup-and-deployment.md
+|-- ops/
+|   |-- backup-production.sh
+|   |-- restore-production-backup.sh
+|   `-- systemd/
 |-- backend/
 |   |-- README.md
 |   |-- .env.example
@@ -357,7 +363,7 @@ RESEND_API_KEY=
 MAIL_DELIVERY_REQUIRED=
 MAIL_FROM=
 # Used only when MAIL_PROVIDER=smtp (for example, Amazon SES):
-# SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+# SMTP_HOST=email-smtp.ap-northeast-1.amazonaws.com
 # SMTP_PORT=587
 # SMTP_USER=your_ses_smtp_username
 # SMTP_PASS=your_ses_smtp_password
@@ -522,10 +528,12 @@ Frontend verification includes unit tests, lint, a production build, and Playwri
 
 - Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
 - Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
+- Production backups use `ops/backup-production.sh` plus the systemd timer templates in `ops/systemd/`; restores use the explicitly guarded `ops/restore-production-backup.sh` on an isolated recovery host.
 - Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
 - Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
 - Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, provider settings, or queue behavior.
 - Read [Database and Storage](./docs/database-and-storage.md) before touching uploads, Prisma schema, or media migration scripts.
+- Run `cd backend && npm run prisma:security:verify` after migrations to confirm RLS is enabled and unused Supabase Data API roles have no public-table privileges.
 - Use [Google Search Console and Sitemap Operations](./docs/search-console-and-sitemap.md) when changing public routes, canonical metadata, crawler rules, or sitemap submission state.
 
 ## Website Change Upgrade

@@ -94,9 +94,18 @@ jobs:
           APP_DIR: ${{ secrets.BACKEND_APP_DIR }}
           PM2_PROCESS: ${{ secrets.BACKEND_PM2_PROCESS }}
           HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
+          MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_MIGRATION_APPROVAL_SHA }}
           DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         run: |
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "DEPLOY_SHA must be a full lowercase 40-character commit SHA." >&2
+            exit 1
+          fi
+          if [ -n "$MIGRATION_APPROVAL_SHA" ] && ! printf '%s' "$MIGRATION_APPROVAL_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "BACKEND_MIGRATION_APPROVAL_SHA must be empty or a full lowercase 40-character commit SHA." >&2
+            exit 1
+          fi
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
@@ -138,7 +147,11 @@ jobs:
           fi
 
           MIGRATION_DIFF="$(git diff "$PREVIOUS_SHA" "$DEPLOY_SHA" -- 'backend/prisma/migrations/*/migration.sql')"
-          if printf '%s\n' "$MIGRATION_DIFF" | grep -Eiq '^\+[^+].*(DROP[[:space:]]+(TABLE|COLUMN)|ALTER[[:space:]]+COLUMN|RENAME[[:space:]]+(TO|COLUMN)|TRUNCATE)'; then
+          MIGRATION_CHANGED=false
+          if [ -n "$MIGRATION_DIFF" ]; then
+            MIGRATION_CHANGED=true
+          fi
+          if printf '%s\n' "$MIGRATION_DIFF" | grep -Eiq '^\+[^+].*(DROP[[:space:]]+(TABLE|COLUMN|INDEX|CONSTRAINT|TYPE)|ALTER[[:space:]]+COLUMN|RENAME[[:space:]]+(TO|COLUMN)|SET[[:space:]]+NOT[[:space:]]+NULL|TRUNCATE)'; then
             echo "Deployment contains a destructive or backward-incompatible migration." >&2
             echo "Use an expand-and-contract migration so the previous application version remains compatible." >&2
             exit 1
@@ -180,10 +193,18 @@ jobs:
 
           git checkout --detach "$DEPLOY_SHA"
           test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+          if [ "$MIGRATION_CHANGED" = true ]; then
+            if [ "$MIGRATION_APPROVAL_SHA" != "$DEPLOY_SHA" ]; then
+              echo "A schema migration requires BACKEND_MIGRATION_APPROVAL_SHA to equal $DEPLOY_SHA." >&2
+              exit 1
+            fi
+            BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash "$APP_DIR/ops/backup-production.sh"
+          fi
           cd backend
           npm ci
           npm run lint
           npm run prisma:migrate:deploy
+          npm run prisma:security:verify
           pm2 restart "$PM2_PROCESS" --update-env
           HEALTHY=false
           for attempt in 1 2 3 4 5; do
@@ -194,6 +215,10 @@ jobs:
             sleep 2
           done
           test "$HEALTHY" = true
+          HEALTHCHECK_ORIGIN="${HEALTHCHECK_URL%/api/health}"
+          curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/tournaments" >/dev/null
+          curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/products" >/dev/null
+          curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_ORIGIN/api/commerce/capabilities" >/dev/null
           pm2 save
           trap - ERR
           SCRIPT

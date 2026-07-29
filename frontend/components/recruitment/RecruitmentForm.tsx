@@ -18,6 +18,7 @@ import {
   type ApplicationType,
   type RecruitmentFields,
   type RecruitmentMember,
+  type RecruitmentMemberTextField,
   createEmptyRecruitmentMember,
   initialRecruitmentFields,
   recruitmentGames,
@@ -54,10 +55,18 @@ export default function RecruitmentForm() {
     value: RecruitmentFields[Key]
   ) => setFields((current) => ({ ...current, [key]: value }));
 
-  const updateMember = (index: number, key: keyof RecruitmentMember, value: string) => {
+  const updateMember = (index: number, key: RecruitmentMemberTextField, value: string) => {
     setMembers((current) =>
       current.map((member, memberIndex) =>
         memberIndex === index ? { ...member, [key]: value } : member
+      )
+    );
+  };
+
+  const updateMemberPrivacy = (index: number, privacyAccepted: boolean) => {
+    setMembers((current) =>
+      current.map((member, memberIndex) =>
+        memberIndex === index ? { ...member, privacyAccepted } : member
       )
     );
   };
@@ -289,7 +298,7 @@ export default function RecruitmentForm() {
                     <Button type="button" variant="secondary" disabled={fields.applicationType === "incomplete_team" && members.length >= 3} onClick={() => setMembers((current) => [...current, createEmptyRecruitmentMember()])}>Add Member</Button>
                   </div>
                   {members.map((member, index) => (
-                    <MemberFields key={index} member={member} number={index + 2} canRemove={members.length > (fields.applicationType === "existing_team" ? 4 : 1)} onUpdate={(key, value) => updateMember(index, key, value)} onRemove={() => setMembers((current) => current.filter((_, memberIndex) => memberIndex !== index))} />
+                    <MemberFields key={index} member={member} number={index + 2} canRemove={members.length > (fields.applicationType === "existing_team" ? 4 : 1)} onUpdate={(key, value) => updateMember(index, key, value)} onPrivacyAccepted={(accepted) => updateMemberPrivacy(index, accepted)} onRemove={() => setMembers((current) => current.filter((_, memberIndex) => memberIndex !== index))} />
                   ))}
                 </div>
                 {fields.applicationType === "existing_team" ? (
@@ -351,7 +360,7 @@ function YesNo({ label, value, onChange }: { label: string; value: boolean; onCh
   );
 }
 
-function MemberFields({ member, number, canRemove, onUpdate, onRemove }: { member: RecruitmentMember; number: number; canRemove: boolean; onUpdate: (key: keyof RecruitmentMember, value: string) => void; onRemove: () => void }) {
+function MemberFields({ member, number, canRemove, onUpdate, onPrivacyAccepted, onRemove }: { member: RecruitmentMember; number: number; canRemove: boolean; onUpdate: (key: RecruitmentMemberTextField, value: string) => void; onPrivacyAccepted: (accepted: boolean) => void; onRemove: () => void }) {
   return (
     <div className="rounded-[24px] border border-white/8 bg-white/5 p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -366,11 +375,15 @@ function MemberFields({ member, number, canRemove, onUpdate, onRemove }: { membe
         <FormField label="Email Address" required><Input required type="email" value={member.email} onChange={(event) => onUpdate("email", event.target.value)} /></FormField>
         <FormField label="WhatsApp Number" required><Input required type="tel" value={member.phone} onChange={(event) => onUpdate("phone", event.target.value)} /></FormField>
         <FormField label="Roster Role">
-          <Select value={member.role} onChange={(event) => onUpdate("role", event.target.value)}>
+          <Select value={member.role} onChange={(event) => onUpdate("role", event.target.value as RecruitmentMember["role"])}>
             <option value="player">Player</option><option value="substitute">Substitute</option>
           </Select>
         </FormField>
       </div>
+      <label className={`${choiceClassName} mt-4`}>
+        <input type="checkbox" required className={checkboxClassName} checked={member.privacyAccepted} onChange={(event) => onPrivacyAccepted(event.target.checked)} />
+        <span>I confirm Player {number} gave permission for their contact details and NIC to be submitted to Quest E-sports for recruitment review.</span>
+      </label>
     </div>
   );
 }

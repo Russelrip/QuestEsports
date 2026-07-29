@@ -15,7 +15,7 @@ const policySections = [
     bullets: [
       "Account information such as first name, last name, email address, username, password hash, and optional profile details like phone number or Discord tag.",
       "Authentication and security data such as session records, sign-in history, IP address, user agent, verification tokens, password reset tokens, and multi-factor authentication data if you enable it.",
-      "Tournament, recruitment, and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, NICs submitted for recruitment review, saved team information, and application or registration status.",
+      "Tournament, recruitment, and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, NICs submitted with the relevant member's permission for recruitment review, saved team information, and application or registration status.",
       "Contact information and messages that you submit through the contact form or support channels.",
       "Uploaded content such as team logos, tournament banners, posters, and private bank-transfer receipts submitted for payment verification.",
       "Commerce information such as merchandise selections, delivery address, order totals, payment status, and payment-provider references. Quest E-sports does not store full card numbers or security codes.",
@@ -87,7 +87,7 @@ const policySections = [
     title: "10. Data Retention",
     paragraphs: [
       "We keep personal information for as long as reasonably necessary for account management, tournament administration, security, dispute handling, recordkeeping, and legal compliance.",
-      "In general, account-related information may be kept while you maintain an account with us. Payment receipts and related records are retained only for as long as reasonably necessary for verification, disputes, fraud prevention, accounting, or legal obligations, after which they are deleted or de-identified where appropriate.",
+      "In general, account-related information may be kept while you maintain an account with us. Payment receipts and related records are retained only for as long as reasonably necessary for verification, disputes, fraud prevention, accounting, or legal obligations, after which they are deleted or de-identified where appropriate. Recruitment applicants must confirm that every listed member permitted submission of that member's contact details and NIC.",
     ],
   },
   {
@@ -134,7 +134,7 @@ export default function PrivacyPolicyContent() {
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Last Updated</p>
-          <h2 className="mt-3 text-3xl text-white">July 14, 2026</h2>
+          <h2 className="mt-3 text-3xl text-white">July 29, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             This policy applies to the Quest E-sports website at <span className="text-white">questesports.lk</span> and related
             tournament and account services.

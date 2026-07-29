@@ -186,7 +186,7 @@ No code change is required. Replace the provider configuration with:
 
 ```env
 MAIL_PROVIDER=smtp
-SMTP_HOST=email-smtp.ap-southeast-1.amazonaws.com
+SMTP_HOST=email-smtp.ap-northeast-1.amazonaws.com
 SMTP_PORT=587
 SMTP_USER=your_ses_smtp_username
 SMTP_PASS=your_ses_smtp_password
@@ -194,12 +194,12 @@ MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 APP_URL=https://questesports.lk
 ```
 
-For Amazon SES in `ap-southeast-1`:
+For Amazon SES in Tokyo (`ap-northeast-1`):
 
 1. In the SES console, create and verify a domain identity for `questesports.lk`. A verified domain identity covers sender addresses and subdomains under that domain, including `no-reply@mail.questesports.lk`.
 2. Keep Easy DKIM enabled and publish the three SES CNAME records in DNS. Wait until SES shows the identity and DKIM status as verified/successful.
 3. Create SES SMTP credentials in the same AWS Region. SES SMTP usernames and passwords are region-specific and are not the same as normal AWS access keys.
-4. If the SES account is still in the sandbox for `ap-southeast-1`, request production access before sending to normal users. Sandbox accounts can only send to verified recipients and have low sending limits. Valid sandbox SMTP credentials still pass transport verification, but real unverified recipients will be rejected and the queued jobs will retry/fail.
+4. If the SES account is still in the sandbox for `ap-northeast-1`, request production access before sending to normal users. Sandbox accounts can only send to verified recipients and have low sending limits. Valid sandbox SMTP credentials still pass transport verification, but real unverified recipients will be rejected and the queued jobs will retry/fail.
 5. Optional: configure a custom SES MAIL FROM domain such as `bounce.questesports.lk`, then publish the MX and SPF TXT records SES gives you. Keep this separate from the visible `MAIL_FROM` sender address domain.
 6. Set the backend SMTP env values, deploy/restart the worker-enabled backend, and run:
 

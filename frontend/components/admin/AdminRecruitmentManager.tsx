@@ -263,6 +263,7 @@ export default function AdminRecruitmentManager() {
                           {member.phone ? <Detail label="WhatsApp" value={member.phone} /> : null}
                           {member.role ? <Detail label="Role" value={member.role} /> : null}
                           {member.nic ? <Detail label="NIC" value={member.nic} /> : null}
+                          <Detail label="Privacy Permission" value={member.privacyAcceptedAt ? new Date(member.privacyAcceptedAt).toLocaleString() : "Legacy record - not captured"} />
                         </dl>
                       ))}
                     </div>

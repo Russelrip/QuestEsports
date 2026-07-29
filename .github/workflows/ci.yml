@@ -80,6 +80,9 @@ jobs:
           --from-schema-datasource prisma/schema.prisma
           --to-schema-datamodel prisma/schema.prisma
 
+      - name: Verify database RLS and Data API privileges
+        run: npm run prisma:security:verify
+
       - name: Run backend tests with coverage thresholds
         run: npm run test:coverage
 
@@ -87,15 +90,16 @@ jobs:
         run: npm run lint
 
   frontend:
-    name: Frontend lint and build
+    name: Frontend audit, test, and build
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
     env:
       ALLOW_INSECURE_LOOPBACK_URLS: true
-      NEXT_PUBLIC_API_URL: http://localhost:5001
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:5011
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      PLAYWRIGHT_MOCK_API_PORT: 5011
 
     steps:
       - name: Check out repository

@@ -51,7 +51,7 @@ test("Resend provider creates the documented secure SMTP transport", () => {
 test("SMTP provider remains available for a future SES switch", () => {
   const { module, restore, transportOptions } = loadTransporter({
     MAIL_PROVIDER: "smtp",
-    SMTP_HOST: "email-smtp.ap-southeast-1.amazonaws.com",
+    SMTP_HOST: "email-smtp.ap-northeast-1.amazonaws.com",
     SMTP_PORT: 587,
     SMTP_USER: "ses-user",
     SMTP_PASS: "ses-password",
@@ -64,7 +64,7 @@ test("SMTP provider remains available for a future SES switch", () => {
     module.getMailTransporter();
     assert.deepEqual(transportOptions, [
       {
-        host: "email-smtp.ap-southeast-1.amazonaws.com",
+        host: "email-smtp.ap-northeast-1.amazonaws.com",
         port: 587,
         secure: false,
         auth: { user: "ses-user", pass: "ses-password" },
