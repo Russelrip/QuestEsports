@@ -640,7 +640,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] SEC-021 Analytics/monitoring do not capture passwords, tokens, MFA data, payment proof, full identity data, or unnecessary personal information.
 - [ ] SEC-022 Privacy policy matches actual cookies, analytics, account data, recruitment data, uploads, payment processing, retention, and contact process.
 - [ ] SEC-023 Dependency, secret, and source scans contain no unresolved release-blocking findings.
-- [ ] SEC-024 Database and upload backups are encrypted, restorable, access-controlled, and include required public/private asset roots.
+- [x] SEC-024 Database and upload backups are encrypted, restorable, access-controlled, and include required public/private asset roots.
 - [ ] SEC-025 Every public table has RLS enabled and `anon`, `authenticated`, and `service_role` have no table privileges when the Data API is unused; `npm run prisma:security:verify` passes.
 
 ## 24. API and operational audit
@@ -649,13 +649,13 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] OPS-002 Common success, validation, authentication, authorization, not-found, conflict, rate-limit, and server-error shapes are consistent.
 - [ ] OPS-003 Production environment variables use correct frontend/API URLs, allowed origins, cookie name, database, storage, mail, proxy, and payment settings.
 - [ ] OPS-004 Database migration status is clean and the deployed schema matches the application version.
-- [ ] OPS-005 Public and private upload roots are durable, outside disposable release directories, and included in backup/restore procedures.
+- [x] OPS-005 Public and private upload roots are durable, outside disposable release directories, and included in backup/restore procedures.
 - [ ] OPS-006 Proxy/client IP configuration produces correct secure-cookie, origin, audit, and rate-limit behavior.
 - [ ] OPS-007 Maintenance/capability flags disable only the intended commerce paths while free and bank-transfer registration remain correct.
 - [ ] OPS-008 Server clock/timezone and database timestamps are synchronized; user-facing Sri Lankan times are correct.
 - [ ] OPS-009 Logs correlate requests/jobs/payment events without leaking secrets or personal data.
 - [ ] OPS-010 Alerting covers API health, elevated errors, database/storage exhaustion, job failure, mail failure, and payment callback failure.
-- [ ] OPS-011 The latest scheduled backup has both encrypted archive and checksum on the off-site remote, and the systemd timer/service have no recent failures.
+- [x] OPS-011 The latest scheduled backup has both encrypted archive and checksum on the off-site remote, and the systemd timer/service have no recent failures.
 
 ## 25. Automated checks and release sign-off
 
@@ -666,12 +666,12 @@ Perform intrusive tests only with authorization and in staging.
 - [x] REL-005 Frontend `npm run test:e2e` passes against the intended test build/environment.
 - [x] REL-006 New/fixed critical journeys have regression coverage or a documented reason why manual testing is sufficient.
 - [ ] REL-007 Production database migration has been rehearsed on a recent backup or production-like dataset.
-- [ ] REL-008 Backup restore has been tested for database, public uploads, and private proofs.
+- [x] REL-008 Backup restore has been tested for database, public uploads, and private proofs.
 - [ ] REL-009 Rollback procedure is understood and remains compatible with forward-only database migrations.
 - [ ] REL-010 PayHere sandbox launch matrix passes: paid, failed, cancelled, duplicate callback, mismatch, late callback, refund, and chargeback where enabled.
 - [ ] REL-011 Final legal/business approval exists for privacy, terms, refund/return policy, prices, fees, bank details, and public contact information.
 - [ ] REL-012 All S1/S2 defects are closed; remaining defects have accepted owner, severity, workaround, and target date.
-- [ ] REL-013 Smoke test is repeated immediately after deployment on the production URL.
+- [x] REL-013 Smoke test is repeated immediately after deployment on the production URL.
 - [ ] REL-014 Monitoring/logs are watched through the first real signup, verification, tournament registration, upload, order, and payment callback.
 
 ## Bug report template
@@ -704,9 +704,9 @@ Retest result and build:
 
 | Result | Count |
 | --- | ---: |
-| Passed | 6 automated release checks |
+| Passed | 11 verified release/operations checks |
 | Failed | 0 known |
-| Blocked / not tested | 456 staging/manual checks |
+| Blocked / not tested | 451 staging/manual checks |
 | S1 open | 0 known |
 | S2 open | 0 known |
 | S3 open | 0 known |

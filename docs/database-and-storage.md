@@ -410,6 +410,7 @@ From the migration names, the schema evolved through:
 - Admin Excel exports are not backup artifacts; they can be regenerated from database state.
 - Treat both configured roots as persistent production data; private backups require stricter access and retention controls.
 - Production backups are implemented by `ops/backup-production.sh`, which captures the portable application-owned PostgreSQL `public` schema plus both upload roots, encrypts the archive with an offline `age` recipient, uploads it through `rclone`, and writes a checksum. Supabase-managed schemas/extensions are excluded and must be supplied by the target Supabase project.
+- Configure the Google Drive remote with a project-owned OAuth desktop client in production status and the least-privilege `drive.file` scope. Do not depend on rclone's retiring shared client ID, print the rclone configuration, or store its client secret/token in Git or recovery notes.
 - A database-only Windows snapshot can be created with `ops/backup-paris-database-windows.ps1` and restore-tested with `ops/test-paris-database-backup-windows.ps1`. It does not include VPS uploads or replace off-site storage.
 - Use the systemd service/timer templates in `ops/systemd/` for daily execution. A backup is incomplete until the encrypted archive and checksum exist off-site.
 - Test restores on disposable PostgreSQL and temporary upload directories using `ops/restore-production-backup.sh`; never run a drill against the live Paris database.

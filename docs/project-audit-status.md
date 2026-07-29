@@ -4,16 +4,16 @@ Last reviewed: July 29, 2026
 
 ## Executive Summary
 
-The reviewed working tree is healthy and passes its local release checks. No unresolved Critical code defect or known production-package vulnerability remains in the repository changes from this audit.
+The reviewed project is healthy and passes its release checks. No unresolved Critical code defect or known production-package vulnerability remains from this audit. The Paris database migration, protected deployment, public smoke checks, encrypted off-site backup, and isolated full restore drill have all completed successfully.
 
-This is not yet proof that production is updated or healthy. The changes are local until they are committed, pass GitHub CI, and are deployed. The Paris production migration is intentionally gated on a successful encrypted off-site backup and isolated restore drill. The VPS process, Vercel deployment, Supabase dashboard settings, SES delivery, alert delivery, and payment provider were not externally verified during this local review.
+The frontend, backend, Paris database migration status, VPS process, off-site archive/checksum, backup systemd service, and daily timer were externally verified on 2026-07-29. Mail delivery, alert delivery, Supabase dashboard-only switches, and enabled payment-provider paths still require their own authorized operational checks.
 
 ## Current Verification Results
 
 | Check | Result |
 | --- | --- |
 | Backend lint | Passed |
-| Backend unit/service tests | 167 passed; 2 real-database tests skip unless `RUN_DATABASE_INTEGRATION_TESTS=true` |
+| Backend unit/service tests | 168 passed; 2 real-database tests skip unless `RUN_DATABASE_INTEGRATION_TESTS=true` |
 | Backend coverage gate | Passed: 66.09% lines, 59.45% branches, 68.16% functions |
 | PostgreSQL integration | Both database integration tests passed separately on disposable PostgreSQL 16 |
 | Full migration history | Applied successfully to disposable PostgreSQL 16 |
@@ -73,9 +73,9 @@ The French VPS now creates encrypted PostgreSQL/public-upload/private-upload arc
 
 The full archive `quest-production-20260729T133809Z.tar.gz.enc` was downloaded with its checksum, decrypted only on the isolated recovery PC, and restored to disposable PostgreSQL 17 plus empty temporary upload roots. The result contained 35 public tables and 33 completed migrations. SHA-256 manifests matched all 41 public and 10 private files. The drill found and corrected the restore script's missing `pg_restore --dbname` option, then passed end to end. Production was never a restore target.
 
-### High: Replace rclone's retiring shared Google Drive client ID
+### Closed: Replaced rclone's retiring shared Google Drive client ID
 
-rclone 1.74.4 reported that its shared Google Drive OAuth client ID is being retired during 2026. The current VPS remote still works, but scheduled backups will eventually fail if it is not replaced. Create a dedicated Google OAuth desktop client, update the `quest-backups` remote without exposing its token, rerun `quest-esports-backup.service`, and record the successful result.
+The QuestEsports-owned Google Cloud project now provides a dedicated OAuth desktop client using only `drive.file`; the External app is in production status to avoid seven-day Testing tokens. The active destination is `quest-backups-custom:quest-esports-v2/production`. Manual archive `quest-production-20260729T154756Z.tar.gz.enc` and its checksum were confirmed on the new remote, and the restricted systemd service then returned `Result=success` with status 0. The old remote remains available only for historical archives and rollback access.
 
 ### Closed: Production deployment externally verified
 
@@ -103,12 +103,11 @@ The aggregate coverage gate passes, but authentication, TOTP, mail templates, sh
 
 ## Safest Remaining Order
 
-1. Commit documentation/config-example changes without committing `.env`, database dumps, `age` identities, or `rclone` tokens.
+1. Commit documentation/config-example changes without committing `.env`, database dumps, `age` identities, OAuth credentials, or `rclone` tokens.
 2. Require normal CI/CD and verify the public health endpoint after deployment.
-3. Replace rclone's retiring shared Google Drive client ID and rerun the restricted systemd backup.
-4. Repeat the isolated full database/upload restore drill at least quarterly.
-5. Disable the unused Paris Supabase Data API in the dashboard and rerun `npm run prisma:security:verify`.
-6. Verify Tokyo mail delivery, alert delivery, persistent storage mounts, and any enabled payment paths.
-7. After the rollback-retention decision, delete the old Tokyo Supabase project and rotate credentials that no longer need to remain valid.
+3. Repeat the isolated full database/upload restore drill at least quarterly.
+4. Disable the unused Paris Supabase Data API in the dashboard and rerun `npm run prisma:security:verify`.
+5. Verify Tokyo mail delivery, alert delivery, persistent storage mounts, and any enabled payment paths.
+6. After the rollback-retention decision, delete the old Tokyo Supabase project and rotate credentials that no longer need to remain valid.
 
 Operational commands and exact safeguards are in [Production Operations Runbook](./production-runbook.md), [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md), and [Pre-deployment Checklist](./pre-deployment-checklist.md).

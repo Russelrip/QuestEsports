@@ -316,6 +316,8 @@ sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.timer /etc/
 
 The PostgreSQL repository helper is provided by the PostgreSQL project and prompts before adding `apt.postgresql.org`. Confirm `/usr/lib/postgresql/17/bin/pg_dump --version` reports major version 17. Keep the mutable OAuth configuration under `/srv/quest-esports/rclone`: the systemd unit deliberately hides home directories and permits writes only under `/srv/quest-esports`, allowing rclone to persist token refreshes without broadening the service sandbox.
 
+Use a dedicated Google Cloud project and OAuth desktop client for the Drive remote. Enable the Google Drive API, configure an External consent screen, add only the `drive.file` scope, create a Desktop client, and move the app to **In production** so refresh tokens do not inherit the seven-day Testing limit. Enter the client ID, client secret, and authorization token only through interactive `rclone config`; never print, commit, or copy the rclone configuration into documentation. Create and validate a second remote before changing `BACKUP_RCLONE_REMOTE`, so the existing remote remains an immediate rollback path.
+
 Edit `/etc/quest-esports-backup.env` without printing its values. Set the Paris session-pooler `DIRECT_URL`, both upload roots, the offline `age` public recipient, `RCLONE_CONFIG=/srv/quest-esports/rclone/quest-esports.conf`, and an off-site `rclone` remote. Run the manual backup from an accessible working directory; launching `sudo -u deploy` while still in `/root` makes GNU `find` fail when it tries to restore that inaccessible working directory. Then verify the systemd service and enable the timer:
 
 ```bash
@@ -331,7 +333,9 @@ journalctl -u quest-esports-backup.service --since today --no-pager
 
 The backup is not considered successful until both the encrypted archive and checksum are visible on the off-site remote.
 
-Production was verified on 2026-07-29 with a manual encrypted full backup, a successful restricted systemd service run, and the daily timer enabled. The verified manual archive was `quest-production-20260729T133147Z.tar.gz.enc` on `quest-backups:quest-esports/production`.
+Production was first verified on 2026-07-29 with a manual encrypted full backup, a successful restricted systemd service run, and the daily timer enabled. The original archive `quest-production-20260729T133147Z.tar.gz.enc` remains on the historical `quest-backups:quest-esports/production` destination.
+
+The active destination was then moved to the dedicated-client remote `quest-backups-custom:quest-esports-v2/production`. Manual archive `quest-production-20260729T154756Z.tar.gz.enc` and its checksum were confirmed off-site, and a subsequent `quest-esports-backup.service` run returned `Result=success`, `ExecMainStatus=0`, and `ActiveState=inactive`. The daily timer remained enabled. Keep the historical remote until its older encrypted archives have expired under the approved retention policy.
 
 ### Local Paris database snapshot on Windows
 
@@ -363,7 +367,7 @@ Do not point a restore drill at Paris production. Record the archive timestamp, 
 
 The first full drill completed on 2026-07-29 using `quest-production-20260729T133809Z.tar.gz.enc`. The checksum matched, PostgreSQL 17 restored 35 public tables and 33 completed migration records, and SHA-256 manifests matched all 41 public and 10 private restored files. The drill also caught and corrected the restore script's missing `pg_restore --dbname` option before any production restore was attempted.
 
-The current Google Drive remote was created with rclone's shared OAuth client ID. rclone 1.74.4 warns that this shared client is being retired during 2026. Create a dedicated Google OAuth desktop client, update the `quest-backups` remote on the VPS without printing its token, run `systemctl start quest-esports-backup.service`, and confirm `Result=success` before the shared client stops working.
+The retiring shared-client risk was closed on 2026-07-29. The active remote uses the QuestEsports-owned Google OAuth desktop client, `drive.file`, and an app publishing status of **In production**. Both a manual archive/checksum upload and the restricted systemd service passed after the switch. The old shared-client remote is not the scheduled destination and is retained only for access to historical encrypted archives.
 
 ### Supabase Data API
 
