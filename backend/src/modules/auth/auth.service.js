@@ -689,7 +689,15 @@ const completeMfaLogin = async ({ body }) => {
   };
 };
 
-const beginMfaSetup = async ({ currentUser }) => {
+const beginMfaSetup = async ({ currentUser, body = {} }) => {
+  const currentPassword = String(body.currentPassword || "");
+  if (!currentPassword) {
+    throw new HttpError(400, "Current password is required.");
+  }
+  if (!isPasswordWithinBcryptLimit(currentPassword)) {
+    throw new HttpError(401, "Current password is incorrect.");
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: currentUser.id },
     select: {
@@ -697,6 +705,7 @@ const beginMfaSetup = async ({ currentUser }) => {
       email: true,
       firstName: true,
       mfaEnabled: true,
+      passwordHash: true,
     },
   });
 
@@ -706,6 +715,10 @@ const beginMfaSetup = async ({ currentUser }) => {
 
   if (user.mfaEnabled) {
     throw new HttpError(400, "Multi-factor authentication is already enabled.");
+  }
+
+  if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+    throw new HttpError(401, "Current password is incorrect.");
   }
 
   const secret = generateTotpSecret();

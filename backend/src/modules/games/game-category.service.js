@@ -1,11 +1,11 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const { normalizeInteger, normalizeSlug, normalizeText } = require("../../lib/validation");
 const {
   gameAssetDirectory,
   persistGameAssetUpload,
-  removeUploadFile,
 } = require("../../middleware/upload");
 
 const asBoolean = (value, fallback = false) =>
@@ -76,14 +76,20 @@ const saveAdminGameCategory = async ({ categoryId, body, files = {} }) => {
       [existing?.logoName, saved.logoName],
     ]) {
       if (oldName && oldName !== newName) {
-        await removeUploadFile({ directory: gameAssetDirectory, filename: oldName }).catch(() => undefined);
+        await removeUploadsQuietly(
+          [{ directory: gameAssetDirectory, filename: oldName }],
+          { operation: "saveAdminGameCategory", categoryId: saved.id }
+        );
       }
     }
     return mapGameCategory(saved);
   } catch (error) {
-    for (const upload of [artwork, logo]) {
-      if (upload) await removeUploadFile({ directory: gameAssetDirectory, filename: upload.filename }).catch(() => undefined);
-    }
+    await removeUploadsQuietly(
+      [artwork, logo]
+        .filter(Boolean)
+        .map((upload) => ({ directory: gameAssetDirectory, filename: upload.filename })),
+      { operation: "rollbackAdminGameCategoryUpload", categoryId }
+    );
     throw error;
   }
 };
@@ -92,9 +98,12 @@ const deleteAdminGameCategory = async (categoryId) => {
   const existing = await prisma.gameCategory.findUnique({ where: { id: categoryId } });
   if (!existing) throw new HttpError(404, "Game category not found.");
   await prisma.gameCategory.delete({ where: { id: categoryId } });
-  for (const filename of [existing.artworkName, existing.logoName]) {
-    if (filename) await removeUploadFile({ directory: gameAssetDirectory, filename }).catch(() => undefined);
-  }
+  await removeUploadsQuietly(
+    [existing.artworkName, existing.logoName]
+      .filter(Boolean)
+      .map((filename) => ({ directory: gameAssetDirectory, filename })),
+    { operation: "deleteAdminGameCategory", categoryId }
+  );
 };
 
 module.exports = {

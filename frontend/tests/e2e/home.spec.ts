@@ -266,6 +266,76 @@ test("cart uses a server quote and clearly disables checkout without PayHere", a
   await expect(page.getByRole("button", { name: "Online payment unavailable" })).toBeDisabled();
 });
 
+test("private order status keeps the capability in the fragment and API header", async ({ page }) => {
+  const token = "a".repeat(48);
+  const apiRequests: Array<{ url: string; token?: string }> = [];
+
+  await page.route("**/api/orders/status", (route) => {
+    apiRequests.push({
+      url: route.request().url(),
+      token: route.request().headers()["x-order-token"],
+    });
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        order: {
+          id: "order-1",
+          publicToken: token,
+          status: "paid",
+          currency: "LKR",
+          subtotal: 7000,
+          deliveryFee: 500,
+          total: 7500,
+          createdAt: "2026-07-29T00:00:00.000Z",
+          paymentOrderId: "payment-1",
+          paymentStatus: "paid",
+          items: [{
+            id: "item-1",
+            productName: "Quest Shirt",
+            variantName: "Small",
+            sku: "QUEST-S",
+            unitPrice: 7000,
+            quantity: 1,
+            lineTotal: 7000,
+          }],
+        },
+      }),
+    });
+  });
+  await page.route("**/api/payments/payment-1", (route) => {
+    apiRequests.push({
+      url: route.request().url(),
+      token: route.request().headers()["x-order-token"],
+    });
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        payment: {
+          orderId: "payment-1",
+          status: "paid",
+          amount: 7500,
+          currency: "LKR",
+          purpose: "merchandise_order",
+          provider: "payhere",
+        },
+      }),
+    });
+  });
+
+  await page.goto(`/shop/order#token=${token}`);
+  await expect(page.getByRole("heading", { name: "Payment confirmed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Order summary" })).toBeVisible();
+  await expect(page.getByText("Total LKR 7500.00")).toBeVisible();
+  expect(apiRequests).toHaveLength(2);
+  for (const request of apiRequests) {
+    expect(request.token).toBe(token);
+    expect(request.url).not.toContain(token);
+  }
+  await expect(page).toHaveURL(new RegExp(`#token=${token}$`));
+});
+
 test("failed logout keeps the authenticated UI and warns that the server session may remain active", async ({ page }) => {
   await page.route("**/api/me", (route) => route.fulfill({
     contentType: "application/json",

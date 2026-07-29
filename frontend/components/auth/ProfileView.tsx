@@ -395,7 +395,30 @@ export default function ProfileView() {
                     ) : <p className="mt-5 text-sm text-slate-400">No recruitment applications submitted yet.</p>}
                   </section>
 
-                  <section className="border-t border-white/8 pt-10"><div className="flex items-center justify-between gap-3"><h3 className="border-l-2 border-purple-300 pl-3 text-2xl text-white">Merchandise Orders</h3><Link href="/shop" className="text-sm text-purple-200">Visit shop</Link></div>{dashboard.orders.length ? <div className="mt-5 grid gap-3 md:grid-cols-2">{dashboard.orders.map((order) => <Link key={order.id} href={`/shop/order/${order.publicToken}`} className="flex flex-wrap items-center justify-between gap-3 border border-white/8 bg-[#171923] p-4 text-sm transition hover:border-purple-300/25"><span className="text-white">{order.itemCount} item{order.itemCount === 1 ? "" : "s"} · {order.currency} {order.total.toFixed(2)}</span><span className="capitalize text-slate-400">{order.status} · {order.paymentStatus}</span></Link>)}</div> : <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>}</section>
+                  <section className="border-t border-white/8 pt-10">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="border-l-2 border-purple-300 pl-3 text-2xl text-white">Merchandise Orders</h3>
+                      <Link href="/shop" className="text-sm text-purple-200">Visit shop</Link>
+                    </div>
+                    {dashboard.orders.length ? (
+                      <div className="mt-5 grid gap-3 md:grid-cols-2">
+                        {dashboard.orders.map((order) => (
+                          <Link
+                            key={order.id}
+                            href={`/shop/order#token=${encodeURIComponent(order.publicToken)}`}
+                            className="flex flex-wrap items-center justify-between gap-3 border border-white/8 bg-[#171923] p-4 text-sm transition hover:border-purple-300/25"
+                          >
+                            <span className="text-white">
+                              {order.itemCount} item{order.itemCount === 1 ? "" : "s"} &middot; {order.currency} {order.total.toFixed(2)}
+                            </span>
+                            <span className="capitalize text-slate-400">{order.status} &middot; {order.paymentStatus}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-5 text-sm text-slate-400">No merchandise orders yet.</p>
+                    )}
+                  </section>
                 </> : null}
               </div>
             ) : activeTab === "account" ? (

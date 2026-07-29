@@ -226,11 +226,16 @@ QuestEsports/
 |   |-- project-audit-status.md
 |   |-- production-runbook.md
 |   |-- search-console-and-sitemap.md
+|   |-- secret-and-infrastructure-recovery.md
 |   `-- setup-and-deployment.md
 |-- ops/
 |   |-- README.md
 |   |-- backup-paris-database-windows.ps1
 |   |-- backup-production.sh
+|   |-- create-secret-recovery-package.sh
+|   |-- check-backup-freshness.sh
+|   |-- notify-backup-failure.sh
+|   |-- prune-production-backups.sh
 |   |-- quest-esports-backup.env.example
 |   |-- quest-esports-recovery.env.example
 |   |-- restore-production-backup.sh
@@ -305,7 +310,7 @@ QuestEsports/
 
 - `/tournaments/[slug]/register`
 - `/tournaments/[slug]/payment`
-- `/shop/cart`, `/shop/order/[token]`
+- `/shop/cart`, `/shop/order` (private capability in the URL fragment; legacy `/shop/order/[token]` redirects)
 - `/registration`
 - `/signup`
 - `/login`
@@ -343,7 +348,7 @@ The backend exposes these main route groups:
 - Public tournaments: `/api/tournaments`, `/api/tournaments/:slug`
 - Event series: `/api/event-series`, `/api/event-series/:slug`
 - Tournament registration: `/api/tournaments/:slug/registration-status`, `/api/tournaments/:slug/registrations`
-- Shop: `/api/products`, `/api/products/:slug`, `/api/orders`, `/api/orders/:publicToken`
+- Shop: `/api/products`, `/api/products/:slug`, `/api/orders`, `/api/orders/status` (private capability header), legacy `/api/orders/:publicToken`
 - Payments: `/api/payments/payhere/notify`, `/api/payments/:orderId`, `/api/payments/:orderId/bank-transfer-proof`
 - Account: `/api/me/dashboard`, `/api/me/avatar`
 - Recruitment applications: `/api/recruitment-applications`
@@ -558,11 +563,12 @@ Frontend verification includes unit tests, lint, a production build, and Playwri
 - Use [Production Operations Runbook](./docs/production-runbook.md#site-maintenance-mode) to show the maintenance page or temporarily stop the site.
 - Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
 - Use [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md) as the source of truth for key custody, scheduled/manual backup checks, isolated drills, production restores, and complete VPS loss.
-- Production backups use `ops/backup-production.sh` plus the systemd timer templates in `ops/systemd/`; restores use the explicitly guarded `ops/restore-production-backup.sh` on an isolated recovery host.
+- Production backups use the overlap-safe, remotely verified `ops/backup-production.sh` plus the systemd backup, freshness, and failure-alert templates in `ops/systemd/`; restores use the transactional, staged, explicitly guarded `ops/restore-production-backup.sh` on an isolated recovery host.
+- Use `ops/prune-production-backups.sh` for guarded off-site retention and `ops/create-secret-recovery-package.sh` for the separate encrypted application/infrastructure-secret recovery package. Both default to refusing destructive or sensitive work without their exact confirmation values.
 - The production Google Drive destination uses a project-owned OAuth desktop client and the least-privilege `drive.file` scope. On 2026-07-29, both a manual encrypted full backup and the restricted systemd service succeeded against `quest-backups-custom:quest-esports-v2/production`; the earlier shared-client remote is retained only for access to historical archives.
 - A complete isolated recovery drill has restored PostgreSQL 17, all public uploads, and all private uploads with matching checksums. Repeat the drill at least quarterly and keep the `age` private identity off the VPS and cloud storage.
 - A secured Windows workstation can create and restore-test a Paris database-only snapshot with `ops/backup-paris-database-windows.ps1` and `ops/test-paris-database-backup-windows.ps1`; it does not include VPS uploads or off-site retention.
-- The encrypted production archive does not include the backend `.env`, rclone configuration, OAuth credentials, infrastructure configuration, or private `age` identity. Maintain those through a separate encrypted and access-controlled recovery process.
+- The encrypted production archive does not include the backend `.env`, rclone configuration, OAuth credentials, infrastructure configuration, or private `age` identity. Maintain and restore-test those through the separate [Secret and Infrastructure Recovery](./docs/secret-and-infrastructure-recovery.md) process.
 - Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
 - Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
 - Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, provider settings, or queue behavior.

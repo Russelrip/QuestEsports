@@ -17,6 +17,14 @@ const createPathParameter = (name, schema) => ({
   schema,
 });
 
+const createHeaderParameter = (name, schema, { required = false, description } = {}) => ({
+  name,
+  in: "header",
+  required,
+  schema,
+  ...(description ? { description } : {}),
+});
+
 const createResponse = (description) => ({ description });
 const createOperation = (tag, summary, { authenticated = false, parameters = [] } = {}) => ({
   tags: [tag],
@@ -204,7 +212,7 @@ const openApiDocument = {
     "/api/email-change/confirm": { get: createOperation("Auth", "Confirm an email address change") },
     "/api/forgot-password": { post: createOperation("Auth", "Request a password reset") },
     "/api/reset-password": { post: createOperation("Auth", "Reset a password with a token") },
-    "/api/mfa/setup": { get: createOperation("Account", "Start MFA setup", { authenticated: true }) },
+    "/api/mfa/setup": { post: createOperation("Account", "Start MFA setup", { authenticated: true }) },
     "/api/mfa/verify-setup": { post: createOperation("Account", "Verify and enable MFA", { authenticated: true }) },
     "/api/mfa/disable": { post: createOperation("Account", "Disable MFA", { authenticated: true }) },
     "/api/mfa/backup-codes/regenerate": { post: createOperation("Account", "Regenerate MFA backup codes", { authenticated: true }) },
@@ -250,14 +258,31 @@ const openApiDocument = {
     "/api/orders": {
       post: { tags: ["Shop"], summary: "Create a merchandise order and signed PayHere checkout", responses: { 201: createResponse("Order and checkout payload") } },
     },
+    "/api/orders/status": {
+      get: {
+        tags: ["Shop"],
+        summary: "Get order status using the private X-Order-Token header",
+        parameters: [createHeaderParameter("X-Order-Token", { type: "string", pattern: "^[a-fA-F0-9]{48}$" }, { required: true, description: "Private order capability" })],
+        responses: { 200: createResponse("Order status") },
+      },
+    },
     "/api/orders/{publicToken}": {
-      get: { tags: ["Shop"], summary: "Get guest or member order status", parameters: [createPathParameter("publicToken", { type: "string" })], responses: { 200: createResponse("Order status") } },
+      get: { tags: ["Shop"], summary: "Get order status from a legacy capability link", parameters: [createPathParameter("publicToken", { type: "string" })], responses: { 200: createResponse("Order status") } },
     },
     "/api/payments/payhere/notify": {
       post: { tags: ["Payments"], summary: "Receive and verify an authoritative PayHere notification", responses: { 200: createResponse("Notification accepted") } },
     },
     "/api/payments/{orderId}": {
-      get: { tags: ["Payments"], summary: "Get locally verified payment status", parameters: [createPathParameter("orderId", { type: "string" }), createQueryParameter("token", { type: "string" })], responses: { 200: createResponse("Payment status") } },
+      get: {
+        tags: ["Payments"],
+        summary: "Get locally verified payment status",
+        parameters: [
+          createPathParameter("orderId", { type: "string" }),
+          createHeaderParameter("X-Order-Token", { type: "string", pattern: "^[a-fA-F0-9]{48}$" }, { description: "Private merchandise-order capability; omit for an authenticated owner" }),
+          { ...createQueryParameter("token", { type: "string" }), deprecated: true, description: "Legacy capability transport" },
+        ],
+        responses: { 200: createResponse("Payment status") },
+      },
     },
     "/api/me/dashboard": createListResponse("Account", "Get current and past registrations, teams, and orders"),
     "/api/me/avatar": {

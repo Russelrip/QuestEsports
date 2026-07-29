@@ -6,10 +6,10 @@ const { env } = require("../../config/env");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const {
   bankTransferProofDirectory,
   persistBankTransferProofUpload,
-  removeUploadFile,
 } = require("../../middleware/upload");
 const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
@@ -192,17 +192,17 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
       saved.previousFilename &&
       saved.previousFilename !== persisted.filename
     ) {
-      await removeUploadFile({
-        directory: bankTransferProofDirectory,
-        filename: saved.previousFilename,
-      }).catch(() => undefined);
+      await removeUploadsQuietly(
+        [{ directory: bankTransferProofDirectory, filename: saved.previousFilename }],
+        { operation: "replaceBankTransferProof", transactionId: transaction.id }
+      );
     }
     return { proof: saved.proof, reviewUntil: saved.reviewUntil };
   } catch (error) {
-    await removeUploadFile({
-      directory: bankTransferProofDirectory,
-      filename: persisted.filename,
-    }).catch(() => undefined);
+    await removeUploadsQuietly(
+      [{ directory: bankTransferProofDirectory, filename: persisted.filename }],
+      { operation: "rollbackBankTransferProofUpload", transactionId: transaction.id }
+    );
     if (error?.code === "P2002") {
       throw new HttpError(409, "This payment proof has already been used for another registration.");
     }
@@ -347,10 +347,11 @@ const cleanupRetainedBankTransferProofs = async ({ now = new Date(), batchSize =
   let deleted = 0;
   for (const proof of proofs) {
     try {
-      await removeUploadFile({
-        directory: bankTransferProofDirectory,
-        filename: proof.storedFilename,
-      });
+      const fileRemoved = await removeUploadsQuietly(
+        [{ directory: bankTransferProofDirectory, filename: proof.storedFilename }],
+        { operation: "cleanupRetainedBankTransferProof", proofId: proof.id }
+      );
+      if (!fileRemoved) continue;
       const result = await prisma.bankTransferProof.deleteMany({ where: { id: proof.id } });
       if (result.count) deleted += 1;
     } catch (error) {

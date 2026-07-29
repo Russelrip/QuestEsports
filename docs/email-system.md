@@ -15,6 +15,8 @@ Email is asynchronous and database-backed:
 
 The API response does not wait for provider delivery. Email enqueueing is best effort and callers log enqueue failures without rolling back the completed account or registration action. This means a successful API response does not confirm that a job was queued or that the recipient received the email.
 
+Delivery is an at-least-once external side effect: a worker can lose its database lock after SMTP accepts a message but before the job is marked successful. Every retry for one queued job now uses the same RFC Message-ID derived from the job ID, allowing SMTP providers and recipients to deduplicate consistently. This reduces duplicate mail but cannot promise exactly-once delivery across an arbitrary SMTP boundary.
+
 ### Main implementation files
 
 - Queue and retry behavior: `backend/src/lib/jobs.js`

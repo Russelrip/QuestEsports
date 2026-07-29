@@ -11,11 +11,20 @@ const LOG_LEVEL_ORDER = {
 const REDACTED_VALUE = "[REDACTED]";
 const SENSITIVE_QUERY_PARAMETER_PATTERN =
   /([?&][^?&#=\s]*(?:token|code|state)[^?&#=\s]*=)[^&#\s]*/gi;
+const SENSITIVE_CAPABILITY_PATH_PATTERNS = [
+  /(\/api\/orders\/)[^/?#\s]+/gi,
+  /(\/shop\/order\/)[^/?#\s]+/gi,
+];
 
-const redactString = (value) =>
-  String(value)
+const redactString = (value) => {
+  let redacted = String(value)
     .replace(SENSITIVE_QUERY_PARAMETER_PATTERN, `$1${REDACTED_VALUE}`)
     .replace(/(bearer\s+)[^\s,;]+/gi, `$1${REDACTED_VALUE}`);
+  for (const pattern of SENSITIVE_CAPABILITY_PATH_PATTERNS) {
+    redacted = redacted.replace(pattern, `$1${REDACTED_VALUE}`);
+  }
+  return redacted;
+};
 
 const redact = (value) => {
   if (value instanceof Error) {

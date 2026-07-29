@@ -1,7 +1,5 @@
 import "./globals.css";
 import type { Viewport } from "next";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
@@ -9,6 +7,7 @@ import { ToastProvider } from "@/components/ui/toast-provider";
 import { designTokenCssVariables } from "@/lib/design-tokens";
 import { readSiteMaintenanceConfig } from "@/lib/maintenance";
 import { siteMetadata } from "@/lib/site";
+import Telemetry from "@/components/Telemetry";
 
 export const metadata = siteMetadata;
 // A per-request CSP nonce is generated in proxy.ts, so pages must render per request.
@@ -45,8 +44,7 @@ export default function RootLayout({
           <main>{children}</main>
           <Footer />
           <ToastProvider />
-          <Analytics />
-          <SpeedInsights />
+          <Telemetry />
         </AuthProvider>
       </body>
     </html>

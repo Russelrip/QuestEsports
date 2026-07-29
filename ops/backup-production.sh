@@ -20,6 +20,18 @@ for name in "${required[@]}"; do
     exit 1
   fi
 done
+if [[ ! "$BACKUP_AGE_RECIPIENT" =~ ^age1[0-9a-z]{58}$ ]]; then
+  echo "BACKUP_AGE_RECIPIENT must be a valid age public recipient." >&2
+  exit 1
+fi
+if [[ ! -r "$RCLONE_CONFIG" ]]; then
+  echo "Rclone configuration is not readable: $RCLONE_CONFIG" >&2
+  exit 1
+fi
+if [[ ! "$BACKUP_RCLONE_REMOTE" =~ ^[A-Za-z0-9._-]+:.+[^/]$ ]]; then
+  echo "BACKUP_RCLONE_REMOTE must name an rclone remote and non-root destination path." >&2
+  exit 1
+fi
 
 for directory in "$UPLOAD_ROOT" "$PRIVATE_UPLOAD_ROOT"; do
   case "$directory" in
@@ -39,11 +51,11 @@ case "$BACKUP_ROOT" in
   /*) ;;
   *) echo "BACKUP_ROOT must be an absolute path." >&2; exit 1 ;;
 esac
-if [[ "$BACKUP_ROOT" == "/" ]]; then
-  echo "BACKUP_ROOT must not be the filesystem root." >&2
+if [[ "$BACKUP_ROOT" == "/" || -L "$BACKUP_ROOT" ]]; then
+  echo "BACKUP_ROOT must not be the filesystem root or a symbolic link." >&2
   exit 1
 fi
-for command in pg_dump tar age sha256sum rclone; do
+for command in age basename cat chmod date find flock hostname mkdir mktemp pg_dump realpath rm rclone rsync sha256sum tar; do
   command -v "$command" >/dev/null || {
     echo "Required backup command is unavailable: $command" >&2
     exit 1
@@ -52,9 +64,18 @@ done
 
 mkdir -p "$BACKUP_ROOT"
 chmod 700 "$BACKUP_ROOT"
+exec 9>"$BACKUP_ROOT/.quest-backup.lock"
+if ! flock -n 9; then
+  echo "Another production backup is already running." >&2
+  exit 1
+fi
 resolved_upload_root="$(realpath "$UPLOAD_ROOT")"
 resolved_private_root="$(realpath "$PRIVATE_UPLOAD_ROOT")"
 resolved_backup_root="$(realpath "$BACKUP_ROOT")"
+if [[ "$resolved_backup_root" == "/" ]]; then
+  echo "Resolved BACKUP_ROOT must not be the filesystem root." >&2
+  exit 1
+fi
 if [[ "$resolved_upload_root" == "$resolved_private_root" ]] ||
    [[ "$(basename "$resolved_upload_root")" == "$(basename "$resolved_private_root")" ]]; then
   echo "Public and private upload roots must be distinct and have distinct directory names." >&2
@@ -75,12 +96,25 @@ checksum_path="$archive_path.sha256"
 work_directory="$(mktemp -d "$BACKUP_ROOT/.quest-backup-${timestamp}-XXXXXX")"
 trap 'rm -rf -- "$work_directory"' EXIT
 
+public_name="$(basename "$resolved_upload_root")"
+private_name="$(basename "$resolved_private_root")"
+mkdir -p "$work_directory/$public_name" "$work_directory/$private_name"
+
+# Uploads use immutable random filenames. Two passes around the database dump create
+# a stable union snapshot that includes files committed immediately before or during
+# the dump without reading directly from the live trees while archiving.
+rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
+rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
+
 pg_dump "$DIRECT_URL" \
   --format=custom \
   --schema=public \
   --no-owner \
   --no-acl \
   --file="$work_directory/database.dump"
+
+rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
+rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
 
 cat > "$work_directory/manifest.txt" <<MANIFEST
 created_at_utc=$timestamp
@@ -90,25 +124,27 @@ database_scope=application_public_schema_only
 supabase_managed_schemas_included=false
 public_upload_root=$UPLOAD_ROOT
 private_upload_root=$PRIVATE_UPLOAD_ROOT
+file_snapshot_strategy=two_pass_union_around_database_dump
 MANIFEST
 
 tar \
   --create \
   --gzip \
   --file="$work_directory/payload.tar.gz" \
-  -C "$work_directory" database.dump manifest.txt \
-  -C "$(dirname "$resolved_upload_root")" "$(basename "$resolved_upload_root")" \
-  -C "$(dirname "$resolved_private_root")" "$(basename "$resolved_private_root")"
+  -C "$work_directory" database.dump manifest.txt "$public_name" "$private_name"
 
 age --recipient "$BACKUP_AGE_RECIPIENT" \
   --output "$archive_path" \
   "$work_directory/payload.tar.gz"
 (cd "$BACKUP_ROOT" && sha256sum "$archive_name" > "$archive_name.sha256")
 
-rclone copyto "$archive_path" "${BACKUP_RCLONE_REMOTE%/}/$archive_name"
-rclone copyto "$checksum_path" "${BACKUP_RCLONE_REMOTE%/}/$archive_name.sha256"
-rclone lsf "${BACKUP_RCLONE_REMOTE%/}/$archive_name" >/dev/null
-rclone lsf "${BACKUP_RCLONE_REMOTE%/}/$archive_name.sha256" >/dev/null
+rclone copyto "$archive_path" "${BACKUP_RCLONE_REMOTE%/}/$archive_name" --config "$RCLONE_CONFIG"
+rclone copyto "$checksum_path" "${BACKUP_RCLONE_REMOTE%/}/$archive_name.sha256" --config "$RCLONE_CONFIG"
+rclone check "$BACKUP_ROOT" "${BACKUP_RCLONE_REMOTE%/}" \
+  --config "$RCLONE_CONFIG" \
+  --one-way \
+  --include "/$archive_name" \
+  --include "/$archive_name.sha256"
 
 retention_days="${BACKUP_LOCAL_RETENTION_DAYS:-7}"
 if [[ ! "$retention_days" =~ ^[0-9]+$ ]]; then

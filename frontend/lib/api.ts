@@ -3,6 +3,13 @@ export type ApiEnvelope<T> = T & {
   message?: string;
 };
 
+type NextRequestInit = RequestInit & {
+  next?: {
+    revalidate?: number | false;
+    tags?: string[];
+  };
+};
+
 export class ApiRequestError extends Error {
   status: number;
 
@@ -57,7 +64,7 @@ export const withServerOriginHeader = (headers?: HeadersInit) => {
 
 export async function fetchWithTimeout(
   input: RequestInfo | URL,
-  options: RequestInit = {},
+  options: NextRequestInit = {},
   timeoutMs = 15_000
 ) {
   const controller = new AbortController();
@@ -141,7 +148,7 @@ export async function parseApiResponse<T>(
 
 export async function fetchApiJson<T>(
   path: string,
-  options: RequestInit = {},
+  options: NextRequestInit = {},
   fallbackMessage = "Request failed."
 ) {
   const response = await fetchWithTimeout(buildApiUrl(path), {

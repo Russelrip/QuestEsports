@@ -1,0 +1,15 @@
+[Unit]
+Description=Notify operators that QuestEsports backup unit %i failed
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/var/www/QuestEsports
+Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
+ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/notify-backup-failure.sh %i
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true

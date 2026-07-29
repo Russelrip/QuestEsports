@@ -232,6 +232,8 @@ test("logger redacts sensitive fields before writing log payloads", async () => 
       state: "oauth-state",
       callbackPath:
         "/api/auth/google/callback?oauthCode=oauth-code&state=oauth-state&invite-token=invite-token",
+      orderPath: "/api/orders/order-capability-secret",
+      storefrontPath: "https://questesports.lk/shop/order/storefront-capability-secret?cancelled=1",
       nested: {
         authToken: "abc123",
       },
@@ -250,6 +252,11 @@ test("logger redacts sensitive fields before writing log payloads", async () => 
       "/api/auth/google/callback?oauthCode=[REDACTED]&state=[REDACTED]&invite-token=[REDACTED]"
     );
     assert.equal(payload.nested.authToken, "[REDACTED]");
+    assert.equal(payload.orderPath, "/api/orders/[REDACTED]");
+    assert.equal(
+      payload.storefrontPath,
+      "https://questesports.lk/shop/order/[REDACTED]?cancelled=1"
+    );
     assert.doesNotMatch(payload.error.message, /verification-token/);
     assert.doesNotMatch(payload.error.stack, /verification-token/);
   } finally {

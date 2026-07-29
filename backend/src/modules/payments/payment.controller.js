@@ -22,7 +22,7 @@ const readPaymentStatus = asyncHandler(async (req, res) => {
   const payment = await getPaymentStatus({
     providerOrderId: req.params.orderId,
     userId: req.user?.id,
-    publicToken: req.query.token,
+    publicToken: req.get("x-order-token") || req.query.token,
   });
   res.status(200).json({ success: true, payment });
 });

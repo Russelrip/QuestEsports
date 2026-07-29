@@ -157,11 +157,13 @@ Authenticated users can manage MFA from the profile security area.
 
 ### Setup
 
-1. The frontend calls `GET /api/mfa/setup`.
-2. The backend generates a TOTP secret, encrypts it, and stores it in `mfa_credentials`.
-3. The backend returns the raw secret and an `otpauth://` URL for QR-code setup.
+1. The frontend asks for the current password and calls the rate-limited `POST /api/mfa/setup` endpoint.
+2. The backend verifies the current password before generating, encrypting, and storing a TOTP secret in `mfa_credentials`.
+3. Only after that reauthentication succeeds does the backend return the raw secret and an `otpauth://` URL for QR-code setup.
 4. The frontend confirms setup through `POST /api/mfa/verify-setup`.
 5. The backend validates the code, enables MFA, and issues backup codes.
+
+OAuth-created accounts have a random local password hash. A user who has never set a known local password must complete the password-reset flow before starting MFA setup. This prevents a stolen session cookie by itself from enrolling an attacker-controlled authenticator.
 
 ### Disable
 

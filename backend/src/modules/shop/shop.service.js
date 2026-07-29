@@ -11,7 +11,7 @@ const {
   createPayHereCheckout,
   isPayHereConfigured,
   releaseOrderStock,
-  expireStaleCommerceReservations,
+  expireMerchandiseOrderReservation,
 } = require("../payments/payment.service");
 
 const PRODUCT_STATUSES = new Set(["draft", "active", "archived"]);
@@ -469,8 +469,8 @@ const createMerchandiseOrder = async ({ body, user }) => {
     transaction: created.payment,
     customer: { firstName, lastName, email, phone, address, city, country: "Sri Lanka" },
     items: `Quest E-sports merchandise order ${orderId.slice(0, 8)}`,
-    returnPath: `/shop/order/${publicToken}`,
-    cancelPath: `/shop/order/${publicToken}?cancelled=1`,
+    returnPath: `/shop/order#token=${encodeURIComponent(publicToken)}`,
+    cancelPath: `/shop/order?cancelled=1#token=${encodeURIComponent(publicToken)}`,
   });
   return {
     order: {
@@ -488,12 +488,25 @@ const createMerchandiseOrder = async ({ body, user }) => {
 };
 
 const getOrderByToken = async (publicToken) => {
-  await expireStaleCommerceReservations({ batchSize: 25 });
-  const order = await prisma.merchandiseOrder.findUnique({
+  if (!/^[a-f0-9]{48}$/i.test(String(publicToken || ""))) {
+    throw new HttpError(404, "Order not found.");
+  }
+  let order = await prisma.merchandiseOrder.findUnique({
     where: { publicToken },
     include: { items: true, payments: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
   if (!order) throw new HttpError(404, "Order not found.");
+  if (
+    order.status === "pending_payment" &&
+    !order.inventoryReleasedAt &&
+    order.expiresAt <= new Date()
+  ) {
+    await expireMerchandiseOrderReservation({ orderId: order.id });
+    order = await prisma.merchandiseOrder.findUnique({
+      where: { id: order.id },
+      include: { items: true, payments: { orderBy: { createdAt: "desc" }, take: 1 } },
+    });
+  }
   return {
     id: order.id,
     publicToken: order.publicToken,

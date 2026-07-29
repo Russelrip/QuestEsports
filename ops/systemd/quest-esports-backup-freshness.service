@@ -1,7 +1,6 @@
 [Unit]
-Description=Quest Esports encrypted production backup
-After=network-online.target
-Wants=network-online.target
+Description=Check Quest Esports production backup freshness
+After=quest-esports-backup.service
 OnFailure=quest-esports-backup-failure@%n.service
 
 [Service]
@@ -10,9 +9,10 @@ User=deploy
 Group=deploy
 Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
 WorkingDirectory=/var/www/QuestEsports
-ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/backup-production.sh
+ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/check-backup-freshness.sh
 PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/srv/quest-esports
+RestrictSUIDSGID=true

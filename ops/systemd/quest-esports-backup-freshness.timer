@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Quest Esports production backup freshness daily
+
+[Timer]
+OnCalendar=*-*-* 05:00:00 UTC
+RandomizedDelaySec=900
+Persistent=true
+Unit=quest-esports-backup-freshness.service
+
+[Install]
+WantedBy=timers.target

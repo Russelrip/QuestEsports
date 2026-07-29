@@ -160,6 +160,25 @@ const releaseOrderStock = async (
   return true;
 };
 
+const expireMerchandiseOrderReservation = async ({ orderId, now = new Date() }) =>
+  prisma.$transaction(async (tx) => {
+    const released = await releaseOrderStock(tx, orderId, "cancelled", {
+      claimWhere: {
+        status: "pending_payment",
+        expiresAt: { lte: now },
+      },
+    });
+    if (!released) return false;
+    await tx.paymentTransaction.updateMany({
+      where: {
+        merchandiseOrderId: orderId,
+        status: { in: ["created", "pending"] },
+      },
+      data: { status: "expired" },
+    });
+    return true;
+  });
+
 const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) => {
   if (transaction.registrationId) {
     if (tx.adminSlotReservation?.deleteMany) {
@@ -398,23 +417,7 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
 
   let expiredOrderCount = 0;
   for (const order of expiredOrders) {
-    const expired = await prisma.$transaction(async (tx) => {
-      const released = await releaseOrderStock(tx, order.id, "cancelled", {
-        claimWhere: {
-          status: "pending_payment",
-          expiresAt: { lte: now },
-        },
-      });
-      if (!released) return false;
-      await tx.paymentTransaction.updateMany({
-        where: {
-          merchandiseOrderId: order.id,
-          status: { in: ["created", "pending"] },
-        },
-        data: { status: "expired" },
-      });
-      return true;
-    });
+    const expired = await expireMerchandiseOrderReservation({ orderId: order.id, now });
     if (expired) expiredOrderCount += 1;
   }
 
@@ -819,6 +822,7 @@ module.exports = {
   getAdminPaymentTransaction,
   reopenExpiredTournamentPayment,
   releaseOrderStock,
+  expireMerchandiseOrderReservation,
   expireStaleCommerceReservations,
   expireTournamentRegistrationReservation,
   reconcilePayHerePayment,

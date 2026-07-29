@@ -1227,15 +1227,15 @@ const buildTournamentAssetUpdates = async ({ body, files }) => {
     const persistedSchedule = await persistTournamentScheduleUpload(scheduleFile);
 
     if (persistedSchedule) {
+      uploadedFiles.push({
+        directory: tournamentScheduleDirectory,
+        filename: persistedSchedule.filename,
+      });
       const scheduleData = editableScheduleData === undefined
         ? await buildScheduleData(scheduleFile)
         : editableScheduleData;
       data.scheduleFileName = persistedSchedule.filename;
       data.scheduleData = scheduleData || Prisma.JsonNull;
-      uploadedFiles.push({
-        directory: tournamentScheduleDirectory,
-        filename: persistedSchedule.filename,
-      });
     } else if (editableScheduleData !== undefined) {
       data.scheduleData = editableScheduleData || Prisma.JsonNull;
     } else if (normalizeBooleanFlag(body.removeScheduleFile)) {

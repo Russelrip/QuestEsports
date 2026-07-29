@@ -15,6 +15,10 @@ const setupSchema = z.object({
   code: z.string().min(1, "Verification code is required."),
 });
 
+const startSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required."),
+});
+
 const disableSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required."),
   code: z.string().optional(),
@@ -22,6 +26,7 @@ const disableSchema = z.object({
 });
 
 type SetupValues = z.infer<typeof setupSchema>;
+type StartValues = z.infer<typeof startSchema>;
 type DisableValues = z.infer<typeof disableSchema>;
 
 type MfaSetupState = {
@@ -41,6 +46,11 @@ export default function MfaSettingsPanel() {
     defaultValues: { code: "" },
   });
 
+  const startForm = useForm<StartValues>({
+    resolver: zodResolver(startSchema),
+    defaultValues: { currentPassword: "" },
+  });
+
   const disableForm = useForm<DisableValues>({
     resolver: zodResolver(disableSchema),
     defaultValues: {
@@ -50,7 +60,7 @@ export default function MfaSettingsPanel() {
     },
   });
 
-  const handleStartSetup = async () => {
+  const handleStartSetup = startForm.handleSubmit(async (values) => {
     try {
       setIsStarting(true);
       setStatusMessage("");
@@ -59,7 +69,10 @@ export default function MfaSettingsPanel() {
         message?: string;
         secret?: string;
         otpauthUrl?: string;
-      }>("/api/mfa/setup");
+      }>("/api/mfa/setup", {
+        method: "POST",
+        json: values,
+      });
 
       const errorMessage = getApiErrorMessage(response, data, "Could not start MFA setup.");
       if (errorMessage || !data.secret || !data.otpauthUrl) {
@@ -71,6 +84,7 @@ export default function MfaSettingsPanel() {
         secret: data.secret,
         otpauthUrl: data.otpauthUrl,
       });
+      startForm.reset();
       setBackupCodes([]);
     } catch (error) {
       console.error("MFA setup start failed:", error);
@@ -78,7 +92,7 @@ export default function MfaSettingsPanel() {
     } finally {
       setIsStarting(false);
     }
-  };
+  });
 
   const handleVerifySetup = setupForm.handleSubmit(async (values) => {
     try {
@@ -186,9 +200,30 @@ export default function MfaSettingsPanel() {
       {!user?.mfaEnabled ? (
         <div className="mt-5 grid gap-5">
           {!setup ? (
-            <Button type="button" onClick={handleStartSetup} disabled={isStarting}>
-              {isStarting ? "Preparing..." : "Start MFA Setup"}
-            </Button>
+            <form className="grid max-w-xl gap-4" onSubmit={handleStartSetup}>
+              <FormField
+                label="Current Password"
+                htmlFor="startMfaPassword"
+                error={startForm.formState.errors.currentPassword?.message}
+                hint="Required before a new authenticator secret is shown"
+                required
+              >
+                <Input
+                  id="startMfaPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  {...startForm.register("currentPassword")}
+                />
+              </FormField>
+
+              {startForm.formState.errors.root?.message ? (
+                <p className="text-sm text-rose-300">{startForm.formState.errors.root.message}</p>
+              ) : null}
+
+              <Button type="submit" disabled={isStarting}>
+                {isStarting ? "Preparing..." : "Start MFA Setup"}
+              </Button>
+            </form>
           ) : (
             <div className="grid gap-5">
               <div className="rounded-[20px] border border-purple-300/20 bg-purple-400/8 p-4 text-sm text-slate-200">

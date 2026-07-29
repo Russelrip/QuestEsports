@@ -1,10 +1,10 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const { normalizeInteger, normalizeSlug, normalizeText } = require("../../lib/validation");
 const {
   persistTournamentBannerUpload,
-  removeUploadFile,
   tournamentBannerDirectory,
 } = require("../../middleware/upload");
 const { mapTournament, buildRegistrationCountInclude } = require("../tournaments/tournament.service");
@@ -100,7 +100,10 @@ const saveAdminSeries = async ({ seriesId, body, file }) => {
   if ([true, "true", "1", "on"].includes(body.removeHeroImage)) {
     data.heroImageName = null;
     if (uploaded) {
-      await removeUploadFile({ directory: tournamentBannerDirectory, filename: uploaded.filename });
+      await removeUploadsQuietly(
+        [{ directory: tournamentBannerDirectory, filename: uploaded.filename }],
+        { operation: "removeUnusedSeriesUpload", seriesId }
+      );
       uploaded = null;
     }
   }
@@ -112,13 +115,19 @@ const saveAdminSeries = async ({ seriesId, body, file }) => {
       : await prisma.eventSeries.create({ data: { id: crypto.randomUUID(), ...data } });
   } catch (error) {
     if (uploaded) {
-      await removeUploadFile({ directory: tournamentBannerDirectory, filename: uploaded.filename }).catch(() => undefined);
+      await removeUploadsQuietly(
+        [{ directory: tournamentBannerDirectory, filename: uploaded.filename }],
+        { operation: "rollbackAdminSeriesUpload", seriesId }
+      );
     }
     throw error;
   }
 
   if (existing?.heroImageName && existing.heroImageName !== series.heroImageName) {
-    await removeUploadFile({ directory: tournamentBannerDirectory, filename: existing.heroImageName }).catch(() => undefined);
+    await removeUploadsQuietly(
+      [{ directory: tournamentBannerDirectory, filename: existing.heroImageName }],
+      { operation: "saveAdminSeries", seriesId: series.id }
+    );
   }
   return mapSeries(series);
 };
@@ -128,7 +137,10 @@ const deleteAdminSeries = async (seriesId) => {
   if (!existing) throw new HttpError(404, "Event series not found.");
   await prisma.eventSeries.delete({ where: { id: seriesId } });
   if (existing.heroImageName) {
-    await removeUploadFile({ directory: tournamentBannerDirectory, filename: existing.heroImageName }).catch(() => undefined);
+    await removeUploadsQuietly(
+      [{ directory: tournamentBannerDirectory, filename: existing.heroImageName }],
+      { operation: "deleteAdminSeries", seriesId }
+    );
   }
 };
 

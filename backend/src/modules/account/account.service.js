@@ -1,9 +1,9 @@
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const {
   avatarDirectory,
   persistAvatarUpload,
-  removeUploadFile,
 } = require("../../middleware/upload");
 const { listProfileTeams } = require("../teams/team.service");
 const { mapUserForResponse, PUBLIC_USER_SELECT } = require("../auth/auth.service");
@@ -152,15 +152,18 @@ const updateAccountAvatar = async ({ user, file }) => {
       select: PUBLIC_USER_SELECT,
     });
   } catch (error) {
-    await removeUploadFile({ directory: avatarDirectory, filename: persisted.filename });
+    await removeUploadsQuietly(
+      [{ directory: avatarDirectory, filename: persisted.filename }],
+      { operation: "rollbackAccountAvatarUpload", userId: user.id }
+    );
     throw error;
   }
 
   if (existing?.avatarImageName) {
-    await removeUploadFile({
-      directory: avatarDirectory,
-      filename: existing.avatarImageName,
-    }).catch(() => undefined);
+    await removeUploadsQuietly(
+      [{ directory: avatarDirectory, filename: existing.avatarImageName }],
+      { operation: "replaceAccountAvatar", userId: user.id }
+    );
   }
 
   return mapUserForResponse(updated);
@@ -179,10 +182,10 @@ const removeAccountAvatar = async ({ user }) => {
   });
 
   if (previousName) {
-    await removeUploadFile({
-      directory: avatarDirectory,
-      filename: previousName,
-    }).catch(() => undefined);
+    await removeUploadsQuietly(
+      [{ directory: avatarDirectory, filename: previousName }],
+      { operation: "removeAccountAvatar", userId: user.id }
+    );
   }
 
   return mapUserForResponse(updated);

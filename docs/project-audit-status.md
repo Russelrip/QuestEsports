@@ -2,127 +2,119 @@
 
 Last reviewed: July 29, 2026
 
-## Executive Summary
+## Executive summary
 
-The reviewed project is healthy and passes its release checks. No unresolved Critical code defect or known production-package vulnerability remains from this audit. The Paris database migration, protected deployment, public smoke checks, encrypted off-site backup, and isolated full restore drill have all completed successfully.
+The repository is release-candidate healthy: no unresolved Critical code defect was found, production dependency audits are clean, and the current backend/frontend automated checks pass. This remediation hardens transactional restore behavior, backup consistency and verification, MFA enrollment, session parsing/races, order-capability privacy, upload cleanup, storage readiness, public-data caching, performance budgets, and recovery operations.
 
-The frontend, backend, Paris database migration status, VPS process, off-site archive/checksum, backup systemd service, and daily timer were externally verified on 2026-07-29. Mail delivery, alert delivery, Supabase dashboard-only switches, and enabled payment-provider paths still require their own authorized operational checks.
+Repository completion is not the same as live production completion. The latest changes still need to pass CI/CD, be deployed to the French VPS/Vercel, have the updated systemd units and protected backup settings installed, and be verified through the external actions below.
 
-## Current Verification Results
+## Current local verification
 
 | Check | Result |
 | --- | --- |
 | Backend lint | Passed |
-| Backend unit/service tests | 173 passed; 2 real-database tests skip unless `RUN_DATABASE_INTEGRATION_TESTS=true` |
-| Backend coverage gate | Passed: 66.25% lines, 59.95% branches, 68.37% functions |
-| PostgreSQL integration | Both database integration tests passed separately on disposable PostgreSQL 16 |
-| Full migration history | Applied successfully to disposable PostgreSQL 16 |
-| Database security verifier | Passed on the disposable migrated database |
+| Backend unit/service tests | 181 passed; 2 real-database tests skip unless `RUN_DATABASE_INTEGRATION_TESTS=true` |
+| Backend aggregate coverage | 66.60% lines; 60.07% branches; 69.37% functions; configured gates pass |
 | Backend production dependency audit | 0 known vulnerabilities |
 | Frontend lint | Passed |
 | Frontend unit tests | 17 passed |
-| Frontend production build and TypeScript | Passed |
-| Frontend Playwright E2E | 12 passed with zero unexpected mock API requests |
+| Frontend Chromium E2E | 13 passed, including fragment/header order-capability privacy |
+| Frontend production build and TypeScript | Passed on Next.js 16.2.11 |
 | Frontend production dependency audit | 0 known vulnerabilities |
-| GitHub Actions syntax | `actionlint` passed for CI and CD |
-| Backup/restore shell validation | `bash -n` and ShellCheck passed in Linux |
-| Local Paris database recovery | Encrypted database-only snapshot restored successfully to disposable PostgreSQL 17: 35 public tables and 35 migration records |
-| Git whitespace validation | Passed |
+| Frontend full development audit | 9 High advisories in lint-only dependency metadata; patched `brace-expansion` releases are installed |
+| Backup/restore regression tests | Passed, including restore ordering/transaction and backup lock/two-pass snapshot assertions |
 
-## Remediated Issues
+The checked-in Node requirement and CI use Node 24. The current Windows shell uses Node 22.15.0, so engine warnings on the workstation are expected; release authority belongs to the Node 24 CI result.
 
-### Database configuration and exposure
+## Remediated findings
 
-- `DIRECT_URL` is now required at backend startup and covered by tests.
-- The new database migration enables RLS on every public table and revokes table/default privileges from unused Supabase Data API roles.
-- `npm run prisma:security:verify` checks those properties in CI and deployment.
-- Documentation consistently identifies Paris `eu-west-3` through Supavisor session mode on port `5432` for the IPv4-only French VPS.
+### Backup and restore safety
 
-### Legacy poster import
+- The backup refuses overlap with `flock`.
+- Public/private immutable upload trees are copied before and after the PostgreSQL dump and the archive is built from that staging snapshot.
+- `rclone check` verifies the uploaded archive and checksum content, not only the presence of object names.
+- Restore validates commands, identity, checksum, archive paths, manifest, dump readability, target paths, and complete staged upload trees before changing the database.
+- PostgreSQL restore uses `--single-transaction` with error-stop behavior.
+- File trees are activated by same-filesystem directory renames under an exit guard before the single-transaction database restore. A restore failure rolls both file trees back; after success, previous trees are retained and printed for inspection/manual rollback.
+- Guarded pair-aware remote retention, local-checksum/off-site freshness monitoring, backup-failure/staleness webhook notification, and separately encrypted secret/infrastructure packaging tools are included.
 
-- Every legacy poster has a stable unique import key.
-- The importer takes a PostgreSQL advisory transaction lock, rechecks within the transaction, backfills legacy records, and handles repeated requests idempotently.
-- Functional tests cover stable keys, duplicate skips, and the lock.
+### Authentication and sessions
 
-Filesystem and PostgreSQL cannot form one atomic transaction. The importer retains cleanup handling, but an abrupt host/process failure can still require asset reconciliation. Run this administrative operation only with a current backup.
+- Starting MFA enrollment is now a rate-limited `POST` that verifies the current password before revealing a raw authenticator secret.
+- OAuth-created users without a known local password must use password reset before enrollment.
+- Malformed percent-encoded cookies are ignored instead of producing a server error.
+- Stale session `lastSeenAt` refresh uses a conditional `updateMany`, avoiding a `P2025` race when another request revokes the session.
+- Expired-session cleanup failures are logged.
 
-### Recruitment privacy
+### Commerce privacy and cleanup
 
-- Applicants must confirm permission separately for every team member whose contact or NIC data is submitted.
-- The backend enforces the declaration and records `privacyAcceptedAt` per member.
-- Admin review and Excel exports expose the timestamp; pre-policy records are labeled as legacy.
-- The API, admin, privacy policy, QA checklist, and operational documentation are aligned.
+- Public order lookup finds the capability first and expires only that matching stale order; arbitrary traffic no longer invokes global cleanup.
+- New order links keep the bearer capability in `/shop/order#token=...`; fragments are not sent in HTTP request lines. Order/payment reads carry it in `X-Order-Token` instead of paths or queries, while old path links remain redirect-only compatibility routes.
+- Backend logging still redacts legacy capability segments. The order page uses `no-referrer`; Vercel Analytics and Speed Insights are not initialized on order routes, and analytics has a second URL-redaction layer.
+- File cleanup failures use the durable cleanup queue. Schedule uploads are registered for rollback before spreadsheet parsing, eliminating a parse-failure orphan.
+- Bank-proof retention keeps its database record when file removal fails, while logging/queueing the retry.
 
-### CI, browser tests, and deployment safety
+### Reliability and performance
 
-- Playwright now builds against a dedicated mock API port and fails teardown on any unrecognized request.
-- Migration-changing production deploys require `BACKEND_MIGRATION_APPROVAL_SHA` to equal the exact tested 40-character commit.
-- CD rejects additional destructive patterns, creates an encrypted off-site backup before migration, verifies database security afterward, and performs public API smoke reads after restart.
-- The backup captures PostgreSQL, public uploads, and private uploads, encrypts with an offline `age` recipient, uploads through `rclone`, and verifies the remote objects.
-- A guarded restore script and systemd service/timer templates are included.
-- Coordinated full-site maintenance now serves a branded non-cacheable frontend `503`, protects ordinary backend routes, preserves liveness and PayHere notifications, validates configuration strictly, and lets CD distinguish intentional maintenance from an unhealthy deployment.
+- Readiness now proves that both durable roots can create and remove a file, with a short success cache to avoid unnecessary disk churn.
+- Public tournament data revalidates every 15 seconds, product data every 60 seconds, and rulebooks every 300 seconds; private order reads remain uncached.
+- The browser performance script has enforceable default budgets and returns failure when a median exceeds them.
+- Playwright server ordering keeps the mock API alive while the Next process shuts down, avoiding teardown connection noise.
+- Queued email retries use a stable RFC Message-ID derived from the job ID. SMTP remains an at-least-once boundary, but receiving systems can deduplicate retries consistently.
 
-### Local sensitive artifacts
+## Historical production verification
 
-Windows ACLs on `backend/.env` and `D:\Work\QuestEsports-db-migration` were restricted to the current user, `SYSTEM`, and Administrators. The migration dumps were preserved; none were deleted.
+On July 29, 2026, the Paris database migration, protected deployment, public smoke checks, active PM2 process, manual full backup, restricted systemd backup, daily timer, dedicated Google Drive OAuth remote, Windows Paris snapshot, and one isolated full database/upload restore drill were verified. The drill restored 35 public tables, 33 completed migrations, 41 public files, and 10 private files without targeting production.
 
-## Remaining Findings and Release Gates
+That historical drill predates the new two-pass backup and staged/transactional restore implementation. It proves the archive/key/data path, but the newly hardened workflow requires a fresh isolated drill before being marked end-to-end verified.
 
-### Closed: Full off-site restore drill completed
+## Remaining external gates
 
-The French VPS now creates encrypted PostgreSQL/public-upload/private-upload archives, uploads them to the active `quest-backups-custom:quest-esports-v2/production` destination, and runs a daily restricted systemd timer. Both a manual full backup and the sandboxed systemd service completed successfully after the dedicated OAuth switch on 2026-07-29. Historical archives remain on `quest-backups:quest-esports/production`. The database-only Paris Windows snapshot also restored successfully on disposable PostgreSQL 17.
+### High - revoke the exposed Google OAuth token
 
-The full archive `quest-production-20260729T133809Z.tar.gz.enc` was downloaded with its checksum, decrypted only on the isolated recovery PC, and restored to disposable PostgreSQL 17 plus empty temporary upload roots. The result contained 35 public tables and 33 completed migrations. SHA-256 manifests matched all 41 public and 10 private files. The drill found and corrected the restore script's missing `pg_restore --dbname` option, then passed end to end. Production was never a restore target.
+A Google Drive OAuth access/refresh token was pasted into the conversation during setup. Treat it as compromised even if the message is no longer visible.
 
-### Closed: Replaced rclone's retiring shared Google Drive client ID
+Required action: revoke the authorization in the Google account/Google Cloud security controls, re-authorize `quest-backups-custom` with the dedicated desktop client, and run both a manual and systemd backup plus remote content verification. Never print the replacement rclone configuration or token.
 
-The QuestEsports-owned Google Cloud project now provides a dedicated OAuth desktop client using only `drive.file`; the External app is in production status to avoid seven-day Testing tokens. The active destination is `quest-backups-custom:quest-esports-v2/production`. Manual archive `quest-production-20260729T154756Z.tar.gz.enc` and its checksum were confirmed on the new remote, and the restricted systemd service then returned `Result=success` with status 0. The old remote remains available only for historical archives and rollback access.
+### High - create and independently verify secret recovery
 
-### Closed: Production deployment externally verified
+The repository now provides `ops/create-secret-recovery-package.sh` and [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md), but no newly created package, separate vault copy, or isolated retrieval/decryption drill has been verified in this change.
 
-Commit `239ecf745e78a85ca954e73b748d8df600831713` passed CI and protected CD on 2026-07-29. CD completed the encrypted pre-migration backup, applied the Paris hardening migration, verified database security, restarted `quest-backend`, and passed health and public API smoke checks. A separate post-deploy check found no pending Prisma migrations and received HTTP 200 from the frontend, health, tournaments, products, and commerce-capabilities endpoints. The one-release migration approval value was cleared afterward.
+Required action: approve a separate offline recovery identity/vault, create the encrypted allowlisted package, move it off the VPS, remove staging, and complete the documented independent drill. Provider-account recovery inventory and MFA recovery codes remain separate.
 
-Maintenance-mode commit `9737bde94d9c6bd9fb74452ed84d3e1132ac2ecb` subsequently passed CI and protected CD on 2026-07-29. GitHub recorded successful backend and Vercel production deployments, and post-deploy checks returned HTTP 200 from the frontend, liveness, readiness, tournaments, and products with maintenance disabled by default.
+### High - repeat the isolated full restore drill
 
-### Medium: Supabase Data API dashboard switch remains manual
+Required action: after deployment, create a new archive with the two-pass backup, download its checksum pair, and run the hardened restore against disposable PostgreSQL 17 and empty disposable upload targets. Record transactional database success, tree activation/previous-tree behavior, counts, checksums, elapsed time, and plaintext cleanup.
 
-The application uses Prisma and does not need the Supabase Data API. The migration removes table privileges even if the API remains enabled, but the Paris dashboard switch itself could not be changed from the available local/browser session.
+### Medium - deploy and test backup alerting/freshness/retention
 
-Required action: in the Paris Supabase project, open API/Data API settings, disable Data API, then run `npm run prisma:security:verify` against production after deployment.
+The new failure/freshness units and guarded retention script are not active merely because they exist in Git.
 
-### Medium: Frontend development audit reports lint-tool advisories
+Required action: install the updated backup, failure, and freshness service/timer units; add the approved webhook privately; reload systemd; test exactly one alert and a passing freshness check; add owner-approved remote retention/minimum values; run a dry run; and only then approve a confirmation-gated prune. Do not schedule deletion until the new restore drill passes.
 
-`npm audit` including development packages reports nine High findings through ESLint/Next lint dependencies and `minimatch`. The production audit is clean. The vulnerable `brace-expansion` versions are overridden to patched releases, but npm still attributes the advisory to the parent `minimatch` package metadata. Forcing the proposed ESLint 10/older Next configuration caused incompatibility and lint failures, so it was not retained.
+### Medium - finish control-plane checks
 
-Required action: keep the production audit as the release security gate, do not process untrusted glob patterns in lint tooling, and retest removal of overrides when the supported Next/ESLint dependency chain updates.
+- Disable the unused Supabase Data API in the Paris dashboard, then rerun the database security verifier.
+- Verify Tokyo mail-provider credentials, sending status, domain identity, and an actual delivery path.
+- Verify monitoring/Discord alert delivery, PayHere paths if enabled, Supabase capacity/health, persistent storage mounts, Vercel deployment, DNS, TLS, and public readiness.
+- In the PayHere sandbox, verify that both return and cancel redirects preserve the `/shop/order#token=...` fragment and that the order page reads status only through the `X-Order-Token` header.
+- Decide the approved retirement date for the historical Drive remote and the old Tokyo Supabase project; rotate credentials before deletion.
 
-### Medium: External service readiness is unverified
+### Low - development dependency audit and coverage depth
 
-SES Tokyo credentials and sandbox/production status, monitoring/Discord alert delivery, Supabase health/capacity, and PayHere behavior require authorized live checks. Region labels in documentation do not prove delivery or uptime.
+`npm audit --omit=dev` is clean. The full frontend audit still attributes nine High findings to ESLint/Next lint packages through `minimatch`, although `npm ls` shows the vulnerable `brace-expansion` versions replaced by 1.1.17/5.0.8. Do not force an incompatible lint downgrade/major solely to silence metadata; re-evaluate when the supported dependency chain updates.
 
-### High: Complete production-secret recovery is not yet verified
+The aggregate coverage gate passes, but auth/TOTP, mail, commerce, production error mapping, upload failures, recovery scripts, and real-database concurrency deserve additional behavior/integration coverage as those areas change.
 
-The encrypted full archive intentionally excludes the backend `.env`, Supabase/project credentials, rclone/OAuth configuration, Nginx/TLS/DNS configuration, and other infrastructure secrets. The repository and offline checklist now document this boundary, but an independently encrypted and access-controlled recovery copy of those values has not been verified. A total environment loss cannot be completed from the database/upload archive alone.
+## Safest rollout order
 
-Required action: establish the approved secret-recovery location, restrict and audit access, document the custodian and rotation process, and rehearse retrieving the values without copying any secret into Git, chat, tickets, or ordinary cloud storage.
+1. Revoke and re-authorize the exposed Google Drive OAuth grant.
+2. Run the complete local/CI release suite on Node 24 and review this diff.
+3. Deploy through protected CI/CD; verify frontend, liveness, readiness, public reads, authentication, uploads, and enabled integrations.
+4. Install/reload the updated backup, failure, and freshness systemd units; test manual/systemd backup, freshness, and one alert.
+5. Create and independently test the secret recovery package.
+6. Run the new isolated full restore drill.
+7. Approve retention values, inspect the dry run, and only then prune old remote recovery points.
+8. Complete Supabase/mail/payment/monitoring/control-plane checks and retire obsolete Tokyo/historical resources after rollback retention expires.
 
-### Medium: Off-site retention and backup-failure paging remain manual
-
-The backup script enforces seven-day local retention but does not prune Google Drive, and a failed systemd job does not currently page an operator. Define the approved remote retention period and connect service failure/backup staleness to the operational alert channel before relying on the timer without daily manual review.
-
-### Low: Critical-flow coverage can still improve
-
-The aggregate coverage gate passes, but authentication, TOTP, mail templates, shop service, production error mapping, and upload edge cases remain below the project average. Add targeted behavior tests as those areas change; do not lower the existing gate.
-
-## Safest Remaining Order
-
-1. Establish and verify the separate encrypted recovery process for the production `.env` and infrastructure credentials.
-2. Connect backup failure/staleness to the approved alert channel and define remote retention.
-3. Repeat the isolated full database/upload restore drill at least quarterly and record elapsed recovery time.
-4. Disable the unused Paris Supabase Data API in the dashboard and rerun `npm run prisma:security:verify`.
-5. Verify Tokyo mail delivery, general alert delivery, persistent storage mounts, and any enabled payment paths.
-6. After the rollback-retention decision, delete the old Tokyo Supabase project and rotate credentials that no longer need to remain valid.
-
-Operational commands and exact safeguards are in [Production Operations Runbook](./production-runbook.md), [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md), and [Pre-deployment Checklist](./pre-deployment-checklist.md).
-
-The consolidated recovery source of truth is [Backup and Disaster Recovery](./backup-and-disaster-recovery.md).
+Operational commands are in [Production Operations Runbook](./production-runbook.md), [Backup and Disaster Recovery](./backup-and-disaster-recovery.md), and [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md).

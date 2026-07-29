@@ -67,16 +67,23 @@ export type CommerceCapabilities = {
 };
 
 export async function fetchProducts() {
-  const data = await fetchApiJson<{ products: Product[] }>("/api/products", { cache: "no-store" }, "Could not load the shop.");
+  const data = await fetchApiJson<{ products: Product[] }>("/api/products", { next: { revalidate: 60 } }, "Could not load the shop.");
   return data.products;
 }
 
 export async function fetchProduct(slug: string) {
-  const data = await fetchApiJson<{ product: Product }>(`/api/products/${encodeURIComponent(slug)}`, { cache: "no-store" }, "Product not found.");
+  const data = await fetchApiJson<{ product: Product }>(`/api/products/${encodeURIComponent(slug)}`, { next: { revalidate: 60 } }, "Product not found.");
   return data.product;
 }
 
 export async function fetchOrder(publicToken: string) {
-  const data = await fetchApiJson<{ order: MerchandiseOrder }>(`/api/orders/${encodeURIComponent(publicToken)}`, { cache: "no-store" }, "Order not found.");
+  const data = await fetchApiJson<{ order: MerchandiseOrder }>(
+    "/api/orders/status",
+    {
+      cache: "no-store",
+      headers: { "X-Order-Token": publicToken },
+    },
+    "Order not found."
+  );
   return data.order;
 }

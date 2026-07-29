@@ -59,9 +59,11 @@ export default function PaymentStatusCard({ orderId, returnHref = "/profile", pu
 
   const loadStatus = useCallback(async () => {
     setRefreshing(true);
-    const query = publicToken ? `?token=${encodeURIComponent(publicToken)}` : "";
     try {
-      const { response, data } = await apiFetchJson<{ payment?: PaymentStatus; message?: string }>(`/api/payments/${encodeURIComponent(orderId)}${query}`);
+      const { response, data } = await apiFetchJson<{ payment?: PaymentStatus; message?: string }>(
+        `/api/payments/${encodeURIComponent(orderId)}`,
+        publicToken ? { headers: { "X-Order-Token": publicToken } } : {}
+      );
       if (!response.ok || !data.payment) throw new Error(data.message || "Payment status could not be loaded.");
       setPayment(data.payment);
       setDeadlineReached(data.payment.status === "expired");

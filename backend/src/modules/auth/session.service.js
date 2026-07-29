@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { env } = require("../../config/env");
+const { logger } = require("../../lib/logger");
 const { PUBLIC_USER_SELECT } = require("./auth.service");
 
 const SESSION_COOKIE_NAME = env.SESSION_COOKIE_NAME;
@@ -39,7 +40,12 @@ const parseCookies = (cookieHeader = "") =>
       return cookies;
     }
 
-    cookies[rawName] = decodeURIComponent(rawValue.join("=") || "");
+    try {
+      cookies[rawName] = decodeURIComponent(rawValue.join("=") || "");
+    } catch {
+      // A malformed cookie is untrusted client input. Ignore only that cookie
+      // instead of turning an anonymous request into a server error.
+    }
     return cookies;
   }, {});
 
@@ -146,7 +152,9 @@ const scheduleExpiredSessionCleanup = () => {
 
   lastExpiredSessionCleanupStartedAt = now;
   expiredSessionCleanupPromise = deleteExpiredSessions()
-    .catch(() => null)
+    .catch((error) => {
+      logger.warn("Expired session cleanup failed", { error });
+    })
     .finally(() => {
       expiredSessionCleanupPromise = null;
     });
@@ -204,14 +212,19 @@ const getSessionFromRequest = async (req) => {
     !session.lastSeenAt ||
     Date.now() - session.lastSeenAt.getTime() >= LAST_SEEN_UPDATE_INTERVAL_MS
   ) {
-    await prisma.session.update({
+    const refreshed = await prisma.session.updateMany({
       where: {
         id: session.id,
+        tokenHash: hashToken(token),
+        expiresAt: { gt: new Date() },
       },
       data: {
         lastSeenAt: new Date(),
       },
     });
+    if (!refreshed.count) {
+      return null;
+    }
   }
 
   return {

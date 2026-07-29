@@ -235,7 +235,7 @@ export type Tournament = {
 const fetchJson = async <T>(path: string): Promise<T> => {
   return fetchApiJson<T>(
     path,
-    { cache: "no-store" },
+    { next: { revalidate: 15 } },
     "Tournament request failed."
   );
 };

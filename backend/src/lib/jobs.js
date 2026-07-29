@@ -274,7 +274,7 @@ const markJobFailed = async (job) => {
 const processJobByName = async (job) => {
   switch (job.name) {
     case EMAIL_JOB_NAME:
-      return processQueuedMailJob(job.payload);
+      return processQueuedMailJob(job.payload, { jobId: job.id });
     case FILE_CLEANUP_JOB_NAME:
       return processFileCleanupJob(job.payload);
     case TEAM_LOGO_CLEANUP_JOB_NAME:

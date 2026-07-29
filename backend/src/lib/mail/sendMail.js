@@ -9,6 +9,7 @@ const buildActionUrl = (pathname, token) => {
 };
 
 const sendMail = async ({
+  deliveryId,
   email,
   subject,
   skippedLogMessage,
@@ -27,6 +28,9 @@ const sendMail = async ({
     subject,
     html,
     text,
+    ...(deliveryId
+      ? { messageId: `<quest-job-${String(deliveryId).replace(/[^a-zA-Z0-9-]/g, "")}@questesports.lk>` }
+      : {}),
   });
 
   return true;

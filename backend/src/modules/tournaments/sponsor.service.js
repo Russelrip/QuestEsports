@@ -1,10 +1,10 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const { normalizeInteger, normalizeOptionalUrl, normalizeText } = require("../../lib/validation");
 const {
   persistSponsorLogoUpload,
-  removeUploadFile,
   sponsorLogoDirectory,
 } = require("../../middleware/upload");
 
@@ -58,11 +58,19 @@ const saveTournamentSponsor = async ({ tournamentId, sponsorId, body, file }) =>
       ? await prisma.tournamentSponsor.update({ where: { id: sponsorId }, data })
       : await prisma.tournamentSponsor.create({ data: { id: crypto.randomUUID(), tournamentId, ...data } });
     if (existing?.logoImageName && existing.logoImageName !== saved.logoImageName) {
-      await removeUploadFile({ directory: sponsorLogoDirectory, filename: existing.logoImageName }).catch(() => undefined);
+      await removeUploadsQuietly(
+        [{ directory: sponsorLogoDirectory, filename: existing.logoImageName }],
+        { operation: "saveTournamentSponsor", tournamentId, sponsorId }
+      );
     }
     return mapSponsor(saved);
   } catch (error) {
-    if (uploaded) await removeUploadFile({ directory: sponsorLogoDirectory, filename: uploaded.filename }).catch(() => undefined);
+    if (uploaded) {
+      await removeUploadsQuietly(
+        [{ directory: sponsorLogoDirectory, filename: uploaded.filename }],
+        { operation: "rollbackTournamentSponsorUpload", tournamentId, sponsorId }
+      );
+    }
     throw error;
   }
 };
@@ -72,7 +80,10 @@ const deleteTournamentSponsor = async ({ tournamentId, sponsorId }) => {
   if (!existing) throw new HttpError(404, "Sponsor not found.");
   await prisma.tournamentSponsor.delete({ where: { id: sponsorId } });
   if (existing.logoImageName) {
-    await removeUploadFile({ directory: sponsorLogoDirectory, filename: existing.logoImageName }).catch(() => undefined);
+    await removeUploadsQuietly(
+      [{ directory: sponsorLogoDirectory, filename: existing.logoImageName }],
+      { operation: "deleteTournamentSponsor", tournamentId, sponsorId }
+    );
   }
 };
 

@@ -9,6 +9,7 @@ const uploadPath = path.join(__dirname, "../src/middleware/upload.js");
 const teamPath = path.join(__dirname, "../src/modules/teams/team.service.js");
 const generatedPath = path.join(__dirname, "../src/generated/prisma/index.js");
 const loggerPath = path.join(__dirname, "../src/lib/logger.js");
+const uploadCleanupPath = path.join(__dirname, "../src/lib/upload-cleanup.js");
 
 const load = ({
   prisma = {},
@@ -22,6 +23,16 @@ const load = ({
       bankTransferProofDirectory: "private-proofs",
       persistBankTransferProofUpload,
       removeUploadFile,
+    },
+    [uploadCleanupPath]: {
+      removeUploadsQuietly: async (uploads) => {
+        try {
+          for (const upload of uploads) await removeUploadFile(upload);
+          return true;
+        } catch {
+          return false;
+        }
+      },
     },
     [teamPath]: { activatePaidTeamRegistration },
     [generatedPath]: {

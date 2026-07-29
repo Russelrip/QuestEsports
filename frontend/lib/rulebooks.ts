@@ -14,7 +14,7 @@ export type Rulebook = {
 
 export const fetchRulebooks = async () => {
   const data = await fetchApiJson<{ rulebooks: Rulebook[] }>("/api/rulebooks", {
-    cache: "no-store",
+    next: { revalidate: 300 },
   });
   return data.rulebooks;
 };
@@ -22,7 +22,7 @@ export const fetchRulebooks = async () => {
 export const fetchRulebookBySlug = async (slug: string) => {
   const data = await fetchApiJson<{ rulebook: Rulebook }>(
     `/api/rulebooks/${encodeURIComponent(slug)}`,
-    { cache: "no-store" }
+    { next: { revalidate: 300 } }
   );
   return data.rulebook;
 };

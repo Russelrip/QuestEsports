@@ -168,8 +168,9 @@ UPSTASH_REDIS_REST_TOKEN=secret
 ```
 
 Successful admin writes advance a resource generation, immediately making old entries unreachable.
-Cache failures degrade to database reads instead of failing API requests. Readiness checks the
-database and durable upload roots; cache behavior remains visible through structured logs and
+Cache failures degrade to database reads instead of failing API requests. Readiness queries the
+database and proves both durable upload roots can create and remove a small private probe file;
+successful storage probes are cached briefly to limit disk churn. Cache behavior remains visible through structured logs and
 application monitoring.
 
 Run the included API load profile after installing k6:

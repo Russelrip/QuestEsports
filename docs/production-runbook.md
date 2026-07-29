@@ -353,8 +353,15 @@ The repository provides:
 
 - `ops/backup-production.sh`
 - `ops/restore-production-backup.sh`
+- `ops/prune-production-backups.sh`
+- `ops/notify-backup-failure.sh`
+- `ops/check-backup-freshness.sh`
+- `ops/create-secret-recovery-package.sh`
 - `ops/systemd/quest-esports-backup.service`
 - `ops/systemd/quest-esports-backup.timer`
+- `ops/systemd/quest-esports-backup-failure@.service`
+- `ops/systemd/quest-esports-backup-freshness.service`
+- `ops/systemd/quest-esports-backup-freshness.timer`
 
 The backup includes a portable custom-format dump of the application-owned PostgreSQL `public` schema, public uploads, private payment evidence, and a manifest. Supabase-managed schemas and extensions are intentionally excluded because they are provisioned by Supabase and prevent portable restores on ordinary PostgreSQL. The archive is encrypted with an offline `age` recipient before upload through `rclone`. Keep the `age` private identity off the production VPS.
 
@@ -370,13 +377,16 @@ sudo install -o root -g deploy -m 640 ops/quest-esports-backup.env.example /etc/
 sudo install -o deploy -g deploy -m 600 /path/to/verified-rclone.conf /srv/quest-esports/rclone/quest-esports.conf
 sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.service /etc/systemd/system/
 sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.timer /etc/systemd/system/
+sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup-failure@.service /etc/systemd/system/
+sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup-freshness.service /etc/systemd/system/
+sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup-freshness.timer /etc/systemd/system/
 ```
 
 The PostgreSQL repository helper is provided by the PostgreSQL project and prompts before adding `apt.postgresql.org`. Confirm `/usr/lib/postgresql/17/bin/pg_dump --version` reports major version 17. Keep the mutable OAuth configuration under `/srv/quest-esports/rclone`: the systemd unit deliberately hides home directories and permits writes only under `/srv/quest-esports`, allowing rclone to persist token refreshes without broadening the service sandbox.
 
 Use a dedicated Google Cloud project and OAuth desktop client for the Drive remote. Enable the Google Drive API, configure an External consent screen, add only the `drive.file` scope, create a Desktop client, and move the app to **In production** so refresh tokens do not inherit the seven-day Testing limit. Enter the client ID, client secret, and authorization token only through interactive `rclone config`; never print, commit, or copy the rclone configuration into documentation. Create and validate a second remote before changing `BACKUP_RCLONE_REMOTE`, so the existing remote remains an immediate rollback path.
 
-Edit `/etc/quest-esports-backup.env` without printing its values. Set the Paris session-pooler `DIRECT_URL`, both upload roots, the offline `age` public recipient, `RCLONE_CONFIG=/srv/quest-esports/rclone/quest-esports.conf`, and an off-site `rclone` remote. Run the manual backup from an accessible working directory; launching `sudo -u deploy` while still in `/root` makes GNU `find` fail when it tries to restore that inaccessible working directory. Then verify the systemd service and enable the timer:
+Edit `/etc/quest-esports-backup.env` without printing its values. Set the Paris session-pooler `DIRECT_URL`, both upload roots, the offline `age` public recipient, `RCLONE_CONFIG=/srv/quest-esports/rclone/quest-esports.conf`, the active off-site `rclone` remote, `BACKUP_MAX_AGE_MINUTES=2160`, approved remote retention values, and the approved backup-failure webhook. Run the manual backup from an accessible working directory; launching `sudo -u deploy` while still in `/root` makes GNU `find` fail when it tries to restore that inaccessible working directory. Then verify the systemd service, test one failure notification, and enable both timers:
 
 ```bash
 cd /var/www/QuestEsports
@@ -384,12 +394,15 @@ sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash ops/bac
 sudo systemctl daemon-reload
 sudo systemctl start quest-esports-backup.service
 systemctl show quest-esports-backup.service --property=Result,ExecMainStatus,ActiveState --no-pager
-sudo systemctl enable --now quest-esports-backup.timer
-systemctl list-timers quest-esports-backup.timer --no-pager
+sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash ops/notify-backup-failure.sh operator-test
+sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash ops/check-backup-freshness.sh
+sudo systemctl start quest-esports-backup-freshness.service
+sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+systemctl list-timers quest-esports-backup.timer quest-esports-backup-freshness.timer --no-pager
 journalctl -u quest-esports-backup.service --since today --no-pager
 ```
 
-The backup is not considered successful until both the encrypted archive and checksum are visible on the off-site remote.
+The backup is not considered successful until rclone content verification succeeds for both the encrypted archive and checksum on the off-site remote. Review retention first in dry-run mode with `ops/prune-production-backups.sh`; actual deletion additionally requires `RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION` and refuses to cross the configured minimum recovery-point floor. Follow [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md) for the separate environment/rclone/infrastructure package that the normal archive intentionally excludes.
 
 Production was first verified on 2026-07-29 with a manual encrypted full backup, a successful restricted systemd service run, and the daily timer enabled. The original archive `quest-production-20260729T133147Z.tar.gz.enc` remains on the historical `quest-backups:quest-esports/production` destination.
 

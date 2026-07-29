@@ -1,5 +1,4 @@
 const fs = require("fs/promises");
-const { constants: fsConstants } = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const multer = require("multer");
@@ -30,6 +29,9 @@ const DEFAULT_FIELD_LIMITS = {
   fieldNestingDepth: 3,
   headerPairs: 100,
 };
+const READINESS_CACHE_MS = 30 * 1000;
+let uploadReadinessPromise = null;
+let lastSuccessfulReadinessAt = 0;
 
 const createUploadRequestSizeGuard = (maxBytes) => (req, res, next) => {
   const contentLength = Number.parseInt(req.headers["content-length"], 10);
@@ -66,12 +68,36 @@ const ensureUploadDirectories = async () => {
 };
 
 const checkUploadReadiness = async () => {
-  await Promise.all(
-    [uploadRoot, privateUploadRoot].map((directory) =>
-      fs.access(directory, fsConstants.R_OK | fsConstants.W_OK)
-    )
-  );
-  return true;
+  if (Date.now() - lastSuccessfulReadinessAt < READINESS_CACHE_MS) {
+    return true;
+  }
+  if (uploadReadinessPromise) {
+    return uploadReadinessPromise;
+  }
+
+  uploadReadinessPromise = Promise.all(
+    [uploadRoot, privateUploadRoot].map(async (directory) => {
+      const probePath = path.join(
+        directory,
+        `.quest-readiness-${process.pid}-${crypto.randomUUID()}`
+      );
+      try {
+        await fs.writeFile(probePath, "ready", { flag: "wx", mode: 0o600 });
+        await fs.rm(probePath);
+      } finally {
+        await fs.rm(probePath, { force: true }).catch(() => undefined);
+      }
+    })
+  )
+    .then(() => {
+      lastSuccessfulReadinessAt = Date.now();
+      return true;
+    })
+    .finally(() => {
+      uploadReadinessPromise = null;
+    });
+
+  return uploadReadinessPromise;
 };
 
 const detectImageType = (buffer) => {

@@ -6,6 +6,7 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
+const uploadCleanupModulePath = path.join(__dirname, "../src/lib/upload-cleanup.js");
 
 test("createImageAssets rolls back successful files when another persistence fails", async () => {
   const servicePath = path.join(__dirname, "../src/modules/media/media.service.js");
@@ -63,6 +64,12 @@ test("saveAdminGameCategory removes artwork when logo persistence fails", async 
       removeUploadFile: async ({ filename }) => removed.push(filename),
       gameAssetDirectory: "uploads/game-assets",
     },
+    [uploadCleanupModulePath]: {
+      removeUploadsQuietly: async (uploads) => {
+        removed.push(...uploads.map(({ filename }) => filename));
+        return true;
+      },
+    },
   });
 
   try {
@@ -112,6 +119,12 @@ test("saveAdminGameCategory updates publication fields and removes replaced asse
       persistGameAssetUpload: async () => null,
       removeUploadFile: async ({ filename }) => removed.push(filename),
       gameAssetDirectory: "uploads/game-assets",
+    },
+    [uploadCleanupModulePath]: {
+      removeUploadsQuietly: async (uploads) => {
+        removed.push(...uploads.map(({ filename }) => filename));
+        return true;
+      },
     },
   });
 
@@ -165,6 +178,12 @@ test("game category listing and deletion map optional artwork and logo values", 
       removeUploadFile: async ({ filename }) => removed.push(filename),
       gameAssetDirectory: "uploads/game-assets",
     },
+    [uploadCleanupModulePath]: {
+      removeUploadsQuietly: async (uploads) => {
+        removed.push(...uploads.map(({ filename }) => filename));
+        return true;
+      },
+    },
   });
 
   try {
@@ -196,6 +215,12 @@ test("updateAccountAvatar removes the new file when the existing-user lookup fai
       persistAvatarUpload: async () => ({ filename: "new-avatar.webp" }),
       removeUploadFile: async ({ filename }) => removed.push(filename),
       avatarDirectory: "uploads/avatars",
+    },
+    [uploadCleanupModulePath]: {
+      removeUploadsQuietly: async (uploads) => {
+        removed.push(...uploads.map(({ filename }) => filename));
+        return true;
+      },
     },
     [path.join(__dirname, "../src/modules/teams/team.service.js")]: {
       listProfileTeams: async () => [],

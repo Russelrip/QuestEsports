@@ -8,7 +8,6 @@ const {
   detectImageType,
   persistPosterImageUpload,
   posterImageDirectory,
-  removeUploadFile,
 } = require("../../middleware/upload");
 const { normalizeText } = require("../../lib/validation");
 
@@ -305,10 +304,10 @@ const deleteUnusedImageAsset = async (imageId) => {
   }
   await prisma.imageAsset.delete({ where: { id: imageId } });
   if (asset.storedFilename) {
-    await removeUploadFile({
-      directory: posterImageDirectory,
-      filename: asset.storedFilename,
-    }).catch(() => undefined);
+    await removeUploadsQuietly(
+      [{ directory: posterImageDirectory, filename: asset.storedFilename }],
+      { operation: "deleteUnusedImageAsset", imageId }
+    );
   }
 };
 

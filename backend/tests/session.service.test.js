@@ -13,6 +13,7 @@ const buildService = ({
   const sessionModel = {
     findUniqueCalls: [],
     updateCalls: [],
+    updateManyCalls: [],
     deleteManyCalls: [],
     findManyCalls: [],
     findUnique: async (args) => {
@@ -22,6 +23,10 @@ const buildService = ({
     update: async (args) => {
       sessionModel.updateCalls.push(args);
       return args;
+    },
+    updateMany: async (args) => {
+      sessionModel.updateManyCalls.push(args);
+      return { count: 1 };
     },
     deleteMany: async (args) => {
       sessionModel.deleteManyCalls.push(args);
@@ -57,6 +62,9 @@ const buildService = ({
         PUBLIC_USER_SELECT: {
           id: true,
         },
+      },
+      [require.resolve("../src/lib/logger")]: {
+        logger: { warn: () => undefined },
       },
     }
   );
@@ -113,7 +121,7 @@ test("getSessionFromRequest skips lastSeenAt writes for recently seen sessions",
     const session = await service.getSessionFromRequest(buildRequest("token-1"));
 
     assert.equal(session?.sessionId, "session-1");
-    assert.equal(sessionModel.updateCalls.length, 0);
+    assert.equal(sessionModel.updateManyCalls.length, 0);
     assert.equal(sessionModel.findUniqueCalls.length, 1);
   } finally {
     restore();
@@ -133,9 +141,10 @@ test("getSessionFromRequest refreshes lastSeenAt for stale sessions", async () =
     const session = await service.getSessionFromRequest(buildRequest("token-2"));
 
     assert.equal(session?.sessionId, "session-1");
-    assert.equal(sessionModel.updateCalls.length, 1);
-    assert.equal(sessionModel.updateCalls[0].where.id, "session-1");
-    assert.ok(sessionModel.updateCalls[0].data.lastSeenAt instanceof Date);
+    assert.equal(sessionModel.updateManyCalls.length, 1);
+    assert.equal(sessionModel.updateManyCalls[0].where.id, "session-1");
+    assert.ok(sessionModel.updateManyCalls[0].where.expiresAt.gt instanceof Date);
+    assert.ok(sessionModel.updateManyCalls[0].data.lastSeenAt instanceof Date);
   } finally {
     restore();
   }
@@ -154,13 +163,27 @@ test("getSessionFromRequest removes expired sessions and returns null", async ()
     const session = await service.getSessionFromRequest(buildRequest("token-3"));
 
     assert.equal(session, null);
-    assert.equal(sessionModel.updateCalls.length, 0);
+    assert.equal(sessionModel.updateManyCalls.length, 0);
     assert.equal(sessionModel.deleteManyCalls.length, 2);
     assert.ok(
       sessionModel.deleteManyCalls.some(
         (call) => call.where?.tokenHash && typeof call.where.tokenHash === "string"
       )
     );
+  } finally {
+    restore();
+  }
+});
+
+test("getSessionFromRequest ignores malformed percent-encoded cookies", async () => {
+  const { service, sessionModel, restore } = buildService();
+
+  try {
+    const session = await service.getSessionFromRequest({
+      headers: { cookie: `${SESSION_COOKIE_NAME}=%E0%A4%A` },
+    });
+    assert.equal(session, null);
+    assert.equal(sessionModel.findUniqueCalls.length, 0);
   } finally {
     restore();
   }

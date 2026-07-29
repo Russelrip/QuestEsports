@@ -14,7 +14,14 @@ const getCapabilities = asyncHandler(async (req, res) => res.status(200).json({ 
 const quoteOrder = asyncHandler(async (req, res) => res.status(200).json({ success: true, quote: await service.getMerchandiseQuote(req.body.items) }));
 const streamProductImage = asyncHandler(async (req, res) => sendImage(res, await service.getProductImage(req.params)));
 const createOrder = asyncHandler(async (req, res) => res.status(201).json({ success: true, ...(await service.createMerchandiseOrder({ body: req.body, user: req.user })) }));
-const getOrder = asyncHandler(async (req, res) => res.status(200).json({ success: true, order: await service.getOrderByToken(req.params.publicToken) }));
+const getOrder = asyncHandler(async (req, res) =>
+  res.status(200).json({
+    success: true,
+    order: await service.getOrderByToken(
+      req.get("x-order-token") || req.params.publicToken
+    ),
+  })
+);
 const getAdminProducts = asyncHandler(async (req, res) => res.status(200).json({ success: true, products: await service.listAdminProducts() }));
 const createProduct = asyncHandler(async (req, res) => res.status(201).json({ success: true, product: await service.saveAdminProduct({ body: req.body }) }));
 const updateProduct = asyncHandler(async (req, res) => res.status(200).json({ success: true, product: await service.saveAdminProduct({ productId: req.params.productId, body: req.body }) }));

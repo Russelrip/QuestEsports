@@ -270,3 +270,69 @@ test("mapUserForResponse preserves an avatar URL from an already-mapped session 
     restore();
   }
 });
+
+test("beginMfaSetup requires the current password before revealing a secret", async () => {
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: {
+        findUnique: async () => {
+          throw new Error("The database must not be queried without a password.");
+        },
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      authService.beginMfaSetup({ currentUser: { id: "user-1" }, body: {} }),
+      (error) => error.statusCode === 400 && error.message === "Current password is required."
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("beginMfaSetup verifies the current password before storing a new secret", async () => {
+  const upserts = [];
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: {
+        findUnique: async () => ({
+          ...user,
+          mfaEnabled: false,
+          passwordHash: "stored-password-hash",
+        }),
+      },
+      mfaCredential: {
+        upsert: async (args) => upserts.push(args),
+      },
+    },
+    additionalMocks: {
+      [require.resolve("bcryptjs")]: {
+        compare: async (password, hash) =>
+          password === "correct-password" && hash === "stored-password-hash",
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      authService.beginMfaSetup({
+        currentUser: { id: "user-1" },
+        body: { currentPassword: "wrong-password" },
+      }),
+      (error) => error.statusCode === 401 && error.message === "Current password is incorrect."
+    );
+    assert.equal(upserts.length, 0);
+
+    const setup = await authService.beginMfaSetup({
+      currentUser: { id: "user-1" },
+      body: { currentPassword: "correct-password" },
+    });
+    assert.equal(setup.secret, "totp-secret");
+    assert.equal(setup.otpauthUrl, "otpauth://totp/quest");
+    assert.equal(upserts.length, 1);
+  } finally {
+    restore();
+  }
+});

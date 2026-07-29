@@ -20,12 +20,13 @@ const EMAIL_TEMPLATE_TYPES = {
 const getRawToken = (payload) =>
   payload.tokenCiphertext ? decryptSecret(payload.tokenCiphertext) : payload.rawToken;
 
-const processQueuedMailJob = async (payload = {}) => {
+const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
   const type = String(payload.type || "").trim();
 
   switch (type) {
     case EMAIL_TEMPLATE_TYPES.verification:
       return sendMail({
+        deliveryId: jobId,
         email: payload.email,
         subject: "Verify your Quest E-sports account",
         skippedLogMessage: "Verification email skipped because mail delivery is not configured.",
@@ -37,6 +38,7 @@ const processQueuedMailJob = async (payload = {}) => {
       });
     case EMAIL_TEMPLATE_TYPES.resetPassword:
       return sendMail({
+        deliveryId: jobId,
         email: payload.email,
         subject: "Reset your Quest E-sports password",
         skippedLogMessage:
@@ -49,6 +51,7 @@ const processQueuedMailJob = async (payload = {}) => {
       });
     case EMAIL_TEMPLATE_TYPES.emailChange:
       return sendMail({
+        deliveryId: jobId,
         email: payload.email,
         subject: "Confirm your new Quest E-sports email",
         skippedLogMessage:
@@ -62,6 +65,7 @@ const processQueuedMailJob = async (payload = {}) => {
       });
     case EMAIL_TEMPLATE_TYPES.teamInvite:
       return sendMail({
+        deliveryId: jobId,
         email: payload.email,
         subject: "Quest E-sports team invitation",
         skippedLogMessage:
@@ -77,6 +81,7 @@ const processQueuedMailJob = async (payload = {}) => {
       });
     case EMAIL_TEMPLATE_TYPES.securityAlert:
       return sendMail({
+        deliveryId: jobId,
         email: payload.email,
         subject: payload.subject,
         skippedLogMessage:

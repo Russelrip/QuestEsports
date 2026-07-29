@@ -9,6 +9,7 @@ const {
 const removeUploadsQuietly = async (uploads, context = {}) => {
   try {
     await removeUploadFiles(uploads);
+    return true;
   } catch (error) {
     logger.warn("Failed to remove stale upload file.", {
       ...context,
@@ -26,6 +27,7 @@ const removeUploadsQuietly = async (uploads, context = {}) => {
         });
       }
     }
+    return false;
   }
 };
 

@@ -66,6 +66,12 @@ const resetPasswordRateLimiter = createRateLimiter({
   maxRequests: 5,
   message: "Too many password reset attempts. Please try again later.",
 });
+const mfaSettingsRateLimiter = createRateLimiter({
+  name: "mfa-settings",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 10,
+  message: "Too many MFA changes. Please try again later.",
+});
 
 router.get("/auth/google/start", startGoogleAuth);
 router.get("/auth/google/callback", googleCallback);
@@ -91,10 +97,15 @@ router.post(
 );
 router.post("/forgot-password", forgotPasswordRateLimiter, forgotPassword);
 router.post("/reset-password", resetPasswordRateLimiter, resetPassword);
-router.get("/mfa/setup", requireAuth, getMfaSetup);
-router.post("/mfa/verify-setup", requireAuth, verifyMfaSetup);
-router.post("/mfa/disable", requireAuth, disableMfa);
-router.post("/mfa/backup-codes/regenerate", requireAuth, regenerateBackupCodes);
+router.post("/mfa/setup", mfaSettingsRateLimiter, requireAuth, getMfaSetup);
+router.post("/mfa/verify-setup", mfaSettingsRateLimiter, requireAuth, verifyMfaSetup);
+router.post("/mfa/disable", mfaSettingsRateLimiter, requireAuth, disableMfa);
+router.post(
+  "/mfa/backup-codes/regenerate",
+  mfaSettingsRateLimiter,
+  requireAuth,
+  regenerateBackupCodes
+);
 router.get("/sessions", requireAuth, getSessions);
 router.delete("/sessions/:sessionId", requireAuth, revokeSession);
 router.post("/sessions/revoke-others", requireAuth, revokeOtherSessions);

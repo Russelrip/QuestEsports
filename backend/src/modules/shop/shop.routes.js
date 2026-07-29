@@ -13,6 +13,7 @@ router.get("/products/:slug", cacheJson({ ttlSeconds: env.CACHE_TTL_SECONDS, tag
 router.get("/products/:productId/images/:imageId", controller.streamProductImage);
 router.post("/orders", orderLimiter, controller.createOrder);
 router.post("/orders/quote", orderLimiter, controller.quoteOrder);
+router.get("/orders/status", controller.getOrder);
 router.get("/orders/:publicToken", controller.getOrder);
 router.get("/admin/products", requireAdmin, controller.getAdminProducts);
 router.post("/admin/products", requireAdmin, invalidateCache("products"), controller.createProduct);

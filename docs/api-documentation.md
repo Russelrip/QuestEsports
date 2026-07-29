@@ -309,11 +309,19 @@ Behavior:
 - Consumes the token
 - Deletes all existing sessions for that user
 
-### `GET /api/mfa/setup`
+### `POST /api/mfa/setup`
 
-Protected route.
+Protected and rate-limited route.
 
-Creates or refreshes the pending MFA secret for the current user.
+Body:
+
+```json
+{
+  "currentPassword": "current account password"
+}
+```
+
+Verifies the current password before creating or refreshing the pending MFA secret for the current user. A session cookie alone is insufficient to retrieve a new authenticator secret.
 
 Returns:
 
@@ -697,11 +705,12 @@ Only active products/variants are public. Capabilities report whether PayHere an
 
 - `POST /api/orders/quote`
 - `POST /api/orders`
-- `GET /api/orders/:publicToken`
+- `GET /api/orders/status` with `X-Order-Token: <private capability>`
+- `GET /api/orders/:publicToken` only for compatibility with previously issued links
 
 Quotes recompute prices, stock, currency, delivery fee, and total on the server. Orders accept guest or signed-in customer/delivery details, reserve tracked inventory for `SHOP_ORDER_RESERVATION_MINUTES`, reject mixed currencies/non-LKR products, and require the client's expected total/currency to match the server quote. Creating an order requires PayHere configuration.
 
-The public token is an order-access credential and must not be logged or shared. Browser return pages read local order/payment status; only the verified provider callback can mark PayHere paid.
+The public token is an order-access credential and must not be logged or shared. New links keep it in the browser fragment (`/shop/order#token=...`), which is not sent in the HTTP request, and API reads carry it in `X-Order-Token` rather than a path/query. The compatibility route redirects old links and should not be used for new output. Only the verified provider callback can mark PayHere paid.
 
 ### Payment status and callbacks
 
@@ -709,7 +718,7 @@ The public token is an order-access credential and must not be logged or shared.
 - `POST /api/payments/payhere/notify`
 - `POST /api/payments/:orderId/bank-transfer-proof`
 
-Payment status requires ownership of the registration/order or the matching merchandise public token. The PayHere notification is form-encoded, rate limited, signature/merchant/order/amount/currency validated, idempotent, and authoritative.
+Payment status requires ownership of the registration/order or the matching merchandise capability in `X-Order-Token`. A legacy `?token=` value is accepted only for previously issued clients. The PayHere notification is form-encoded, rate limited, signature/merchant/order/amount/currency validated, idempotent, and authoritative.
 
 Bank-transfer proof upload requires a verified account that owns the registration. It accepts one normalized image by default; PDF is accepted only when explicitly enabled. Proof files are private and are never available through `/api/uploads`.
 

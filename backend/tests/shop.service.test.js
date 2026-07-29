@@ -20,7 +20,7 @@ const variants = [
   },
 ];
 
-const load = (prisma = {}) => loadModuleWithMocks(servicePath, {
+const load = (prisma = {}, paymentOverrides = {}) => loadModuleWithMocks(servicePath, {
   [prismaPath]: { prisma },
   [envPath]: { env: { SHOP_DELIVERY_FEE_LKR: 500, SHOP_ORDER_RESERVATION_MINUTES: 30 } },
   [paymentPath]: {
@@ -28,7 +28,8 @@ const load = (prisma = {}) => loadModuleWithMocks(servicePath, {
     createPayHereCheckout: () => ({ actionUrl: "https://sandbox.payhere.lk/pay/checkout", fields: {} }),
     isPayHereConfigured: () => false,
     releaseOrderStock: async () => true,
-    expireStaleCommerceReservations: async () => ({ expiredOrders: 0, expiredRegistrations: 0 }),
+    expireMerchandiseOrderReservation: async () => false,
+    ...paymentOverrides,
   },
 });
 
@@ -137,5 +138,58 @@ test("commerce capabilities disable checkout without provider credentials", () =
       provider: null,
       shopCheckoutAvailable: false,
     });
+  } finally { restore(); }
+});
+
+test("public order lookup does not run global reservation cleanup for an unknown token", async () => {
+  let expirationCalls = 0;
+  const { module: service, restore } = load(
+    { merchandiseOrder: { findUnique: async () => null } },
+    { expireMerchandiseOrderReservation: async () => { expirationCalls += 1; } }
+  );
+  try {
+    await assert.rejects(
+      service.getOrderByToken("a".repeat(48)),
+      (error) => error.statusCode === 404
+    );
+    assert.equal(expirationCalls, 0);
+  } finally { restore(); }
+});
+
+test("public order lookup expires only the matching stale order", async () => {
+  const expirationCalls = [];
+  let reads = 0;
+  const expiredOrder = {
+    id: "order-1",
+    publicToken: "b".repeat(48),
+    status: "pending_payment",
+    inventoryReleasedAt: null,
+    currency: "LKR",
+    subtotal: 1000,
+    deliveryFee: 500,
+    total: 1500,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    expiresAt: new Date("2026-01-01T00:30:00.000Z"),
+    items: [],
+    payments: [],
+  };
+  const prisma = {
+    merchandiseOrder: {
+      findUnique: async () => {
+        reads += 1;
+        return reads === 1
+          ? expiredOrder
+          : { ...expiredOrder, status: "cancelled", inventoryReleasedAt: new Date() };
+      },
+    },
+  };
+  const { module: service, restore } = load(prisma, {
+    expireMerchandiseOrderReservation: async (args) => expirationCalls.push(args),
+  });
+  try {
+    const order = await service.getOrderByToken("b".repeat(48));
+    assert.equal(order.status, "cancelled");
+    assert.deepEqual(expirationCalls, [{ orderId: "order-1" }]);
+    assert.equal(reads, 2);
   } finally { restore(); }
 });
