@@ -67,22 +67,15 @@ Windows ACLs on `backend/.env` and `D:\Work\QuestEsports-db-migration` were rest
 
 ## Remaining Findings and Release Gates
 
-### High: Production backup and restore are not configured or proven
+### High: Complete a full off-site restore drill
 
-An offline `age` identity now exists under restricted local ACLs, and a database-only Paris snapshot restored successfully on isolated PostgreSQL. However, no off-site destination, VPS upload archive, or systemd timer is configured yet. The local database snapshot alone is not a complete production backup.
+The French VPS now creates encrypted PostgreSQL/public-upload/private-upload archives, uploads them to `quest-backups:quest-esports/production`, and runs a daily restricted systemd timer. Both a manual full backup and the sandboxed systemd service completed successfully on 2026-07-29. The database-only Paris Windows snapshot also restored successfully on disposable PostgreSQL 17.
 
-Required action:
+The remaining disaster-recovery gate is to download one full Google Drive archive and checksum, decrypt it only on an isolated host holding the offline identity, and restore it to disposable PostgreSQL 17 plus empty temporary upload roots. Record table counts, asset checks, timing, and the recovery date. Do not test against Paris production.
 
-1. Configure `/etc/quest-esports-backup.env` and the restricted `rclone` configuration on the VPS.
-2. Run a manual backup as `deploy` and confirm both encrypted archive and checksum remotely.
-3. Restore that archive to disposable PostgreSQL and temporary upload roots using the offline private identity.
-4. Record table counts, asset checks, timing, and the recovery date.
+### Closed: Production deployment externally verified
 
-Do not deploy the new production migration or delete the Tokyo rollback project until this gate passes.
-
-### High: Current working tree is not deployed or externally verified
-
-Local success does not establish that the VPS server or public site is running this commit. Commit/push the changes, require clean CI, then deploy through the protected production environment. Verify PM2, readiness, public API reads, frontend behavior, mail, alerts, and any enabled payment flows after deployment.
+Commit `239ecf745e78a85ca954e73b748d8df600831713` passed CI and protected CD on 2026-07-29. CD completed the encrypted pre-migration backup, applied the Paris hardening migration, verified database security, restarted `quest-backend`, and passed health and public API smoke checks. A separate post-deploy check found no pending Prisma migrations and received HTTP 200 from the frontend, health, tournaments, products, and commerce-capabilities endpoints. The one-release migration approval value was cleared afterward.
 
 ### Medium: Supabase Data API dashboard switch remains manual
 
@@ -104,17 +97,13 @@ SES Tokyo credentials and sandbox/production status, monitoring/Discord alert de
 
 The aggregate coverage gate passes, but authentication, TOTP, mail templates, shop service, production error mapping, and upload edge cases remain below the project average. Add targeted behavior tests as those areas change; do not lower the existing gate.
 
-## Safest Release Order
+## Safest Remaining Order
 
-1. Review and commit the complete diff without committing `.env`, database dumps, `age` private identities, or `rclone` secrets.
-2. Push a branch and require the complete Linux/PostgreSQL GitHub CI workflow to pass.
-3. Configure and manually verify the encrypted off-site backup on the French VPS.
-4. Complete and record an isolated database/upload restore drill.
-5. Disable the unused Paris Supabase Data API.
-6. Set `BACKEND_MIGRATION_APPROVAL_SHA` to the exact reviewed commit and deploy through CD.
-7. Verify production migrations/security, PM2, readiness, public API smoke reads, and the Vercel frontend.
-8. Verify Tokyo SES delivery, alert delivery, persistent storage mounts, and enabled payment paths.
-9. Clear the one-release approval secret.
-10. After backup/restore and production verification succeed, delete the old Tokyo Supabase project and rotate its database credentials.
+1. Commit documentation/config-example changes without committing `.env`, database dumps, `age` identities, or `rclone` tokens.
+2. Require normal CI/CD and verify the public health endpoint after deployment.
+3. Complete and record the isolated full database/upload restore drill.
+4. Disable the unused Paris Supabase Data API in the dashboard and rerun `npm run prisma:security:verify`.
+5. Verify Tokyo mail delivery, alert delivery, persistent storage mounts, and any enabled payment paths.
+6. After the full restore drill and rollback-retention decision, delete the old Tokyo Supabase project and rotate credentials that no longer need to remain valid.
 
 Operational commands and exact safeguards are in [Production Operations Runbook](./production-runbook.md), [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md), and [Pre-deployment Checklist](./pre-deployment-checklist.md).

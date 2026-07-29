@@ -303,26 +303,35 @@ The backup includes a portable custom-format dump of the application-owned Postg
 Install the prerequisites and configuration:
 
 ```bash
-sudo apt install postgresql-client rclone age rsync
+sudo apt install -y postgresql-common rclone age rsync
+sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+sudo apt install -y postgresql-client-17
 sudo install -d -o deploy -g deploy -m 700 /srv/quest-esports/backups
+sudo install -d -o deploy -g deploy -m 700 /srv/quest-esports/rclone
 sudo install -o root -g deploy -m 640 ops/quest-esports-backup.env.example /etc/quest-esports-backup.env
-sudo install -d -o root -g root -m 755 /etc/rclone
-sudo install -o root -g deploy -m 640 /path/to/verified-rclone.conf /etc/rclone/quest-esports.conf
+sudo install -o deploy -g deploy -m 600 /path/to/verified-rclone.conf /srv/quest-esports/rclone/quest-esports.conf
 sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.service /etc/systemd/system/
 sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.timer /etc/systemd/system/
 ```
 
-Edit `/etc/quest-esports-backup.env` without printing its values. Set the Paris session-pooler `DIRECT_URL`, both upload roots, the offline `age` public recipient, and an off-site `rclone` remote. Then verify a manual run and enable the timer:
+The PostgreSQL repository helper is provided by the PostgreSQL project and prompts before adding `apt.postgresql.org`. Confirm `/usr/lib/postgresql/17/bin/pg_dump --version` reports major version 17. Keep the mutable OAuth configuration under `/srv/quest-esports/rclone`: the systemd unit deliberately hides home directories and permits writes only under `/srv/quest-esports`, allowing rclone to persist token refreshes without broadening the service sandbox.
+
+Edit `/etc/quest-esports-backup.env` without printing its values. Set the Paris session-pooler `DIRECT_URL`, both upload roots, the offline `age` public recipient, `RCLONE_CONFIG=/srv/quest-esports/rclone/quest-esports.conf`, and an off-site `rclone` remote. Run the manual backup from an accessible working directory; launching `sudo -u deploy` while still in `/root` makes GNU `find` fail when it tries to restore that inaccessible working directory. Then verify the systemd service and enable the timer:
 
 ```bash
-sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash /var/www/QuestEsports/ops/backup-production.sh
+cd /var/www/QuestEsports
+sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash ops/backup-production.sh
 sudo systemctl daemon-reload
+sudo systemctl start quest-esports-backup.service
+systemctl show quest-esports-backup.service --property=Result,ExecMainStatus,ActiveState --no-pager
 sudo systemctl enable --now quest-esports-backup.timer
-systemctl list-timers quest-esports-backup.timer
-journalctl -u quest-esports-backup.service --since today
+systemctl list-timers quest-esports-backup.timer --no-pager
+journalctl -u quest-esports-backup.service --since today --no-pager
 ```
 
 The backup is not considered successful until both the encrypted archive and checksum are visible on the off-site remote.
+
+Production was verified on 2026-07-29 with a manual encrypted full backup, a successful restricted systemd service run, and the daily timer enabled. The verified manual archive was `quest-production-20260729T133147Z.tar.gz.enc` on `quest-backups:quest-esports/production`. This proves backup creation and remote upload, but a full off-site archive download/decrypt/restore drill remains required.
 
 ### Local Paris database snapshot on Windows
 
