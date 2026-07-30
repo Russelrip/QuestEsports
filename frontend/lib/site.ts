@@ -117,10 +117,11 @@ export const siteMetadata: Metadata = {
   },
   icons: {
     icon: [
+      { url: "/favicon.ico", type: "image/x-icon", sizes: "16x16 32x32 48x48" },
       { url: "/favicon-48.png", type: "image/png", sizes: "48x48" },
       { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
     ],
-    shortcut: "/favicon-48.png",
+    shortcut: "/favicon.ico",
     apple: { url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" },
   },
   manifest: "/manifest.webmanifest",
