@@ -418,7 +418,7 @@ From the migration names, the schema evolved through:
 
 ## Production Improvement Opportunities
 
-- Move uploads to object storage such as S3, R2, or GCS for horizontal scaling.
+- Evaluate remote/object storage for public uploads when it provides a concrete scaling or operational benefit. The currently unscheduled 9Drive candidate and its compatibility requirements are documented in [Future Technical Improvements](./future-technical-improvements.md#9drive-image-storage).
 - Move background-job processing to a dedicated worker process or external queue if email/media volume grows beyond the built-in database-backed worker.
 - Continue monitoring scheduled cleanup for expired sessions, payment reservations, proof retention, and stale uploads.
 - Add a seed/bootstrap workflow for the first admin user.

@@ -150,6 +150,7 @@ Recommended flow:
 - [Authentication Flow](./docs/authentication-flow.md)
 - [CI/CD Pipeline](./docs/ci-cd.md)
 - [Database and Storage](./docs/database-and-storage.md)
+- [Future Technical Improvements](./docs/future-technical-improvements.md) — feasible technical candidates that are not committed or scheduled
 - [Email System](./docs/email-system.md)
 - [Google Search Console and Sitemap Operations](./docs/search-console-and-sitemap.md)
 - [Setup and Deployment Guide](./docs/setup-and-deployment.md)
