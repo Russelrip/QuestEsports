@@ -199,6 +199,31 @@ const mapTeamRegistrationSummary = (registration) => ({
   memberCount: registration._count.members,
 });
 
+const isGameIdentityField = (field, game) => {
+  const fieldText = `${field?.key || ""} ${field?.label || ""}`.toLowerCase();
+  const gameWords = normalizeText(game)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 3);
+  return /(?:riot|ign|in[ -]?game|player[ -]?id|game[ -]?id|uid)/i.test(fieldText) ||
+    (/\bid\b/i.test(fieldText.replace(/[_-]/g, " ")) && gameWords.some((word) => fieldText.includes(word)));
+};
+
+const syncGameIdentityData = ({ additionalData, registrationFields, scope, game, gameId }) => {
+  const data = additionalData && typeof additionalData === "object" && !Array.isArray(additionalData)
+    ? { ...additionalData }
+    : {};
+  let changed = false;
+  for (const field of Array.isArray(registrationFields) ? registrationFields : []) {
+    if (field?.scope !== scope || !isGameIdentityField(field, game)) continue;
+    if (data[field.key] !== gameId) {
+      data[field.key] = gameId;
+      changed = true;
+    }
+  }
+  return { data, changed };
+};
+
 const decryptNic = (ciphertext) => {
   try {
     return decryptSecret(ciphertext);
@@ -698,6 +723,86 @@ const getAdminTeamRegistrationById = async (registrationId) => {
   });
   if (!registration) throw new HttpError(404, "Team registration not found.");
   return mapTeamRegistration(registration);
+};
+
+const updateTeamRegistrationGameIds = async (registrationId, body = {}) => {
+  const captainGameId = normalizeText(body.captainGameId);
+  const requestedMembers = Array.isArray(body.members) ? body.members : [];
+
+  if (!captainGameId || captainGameId.length > 100) {
+    throw new HttpError(400, "The captain needs a Game ID of 100 characters or fewer.");
+  }
+  if (requestedMembers.length > 20) {
+    throw new HttpError(400, "A registration can include up to 20 roster members.");
+  }
+
+  const normalizedMembers = requestedMembers.map((member) => ({
+    id: normalizeText(member.id),
+    gameId: normalizeText(member.gameId),
+  }));
+  if (normalizedMembers.some((member) => !member.id || !member.gameId || member.gameId.length > 100)) {
+    throw new HttpError(400, "Every roster member needs a Game ID of 100 characters or fewer.");
+  }
+  if (new Set(normalizedMembers.map((member) => member.id)).size !== normalizedMembers.length) {
+    throw new HttpError(400, "Each roster member can only be updated once.");
+  }
+
+  const registration = await prisma.teamRegistration.findUnique({
+    where: { id: registrationId },
+    select: {
+      id: true,
+      additionalData: true,
+      tournament: { select: { game: true, registrationFields: true } },
+      members: { select: { id: true, role: true, additionalData: true } },
+    },
+  });
+  if (!registration) throw new HttpError(404, "Team registration not found.");
+
+  const memberById = new Map(registration.members.map((member) => [member.id, member]));
+  if (normalizedMembers.length !== registration.members.length) {
+    throw new HttpError(400, "Submit a Game ID for every roster member.");
+  }
+  if (normalizedMembers.some((member) => !memberById.has(member.id))) {
+    throw new HttpError(400, "One or more roster members do not belong to this registration.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const entryData = syncGameIdentityData({
+      additionalData: registration.additionalData,
+      registrationFields: registration.tournament.registrationFields,
+      scope: "entry",
+      game: registration.tournament.game,
+      gameId: captainGameId,
+    });
+    await tx.teamRegistration.update({
+      where: { id: registrationId },
+      data: {
+        captainRiotId: captainGameId,
+        ...(entryData.changed ? { additionalData: entryData.data } : {}),
+      },
+    });
+
+    for (const member of normalizedMembers) {
+      const existingMember = memberById.get(member.id);
+      const gameId = existingMember.role === "CAPTAIN" ? captainGameId : member.gameId;
+      const memberData = syncGameIdentityData({
+        additionalData: existingMember.additionalData,
+        registrationFields: registration.tournament.registrationFields,
+        scope: "member",
+        game: registration.tournament.game,
+        gameId,
+      });
+      await tx.registrationMember.update({
+        where: { id: member.id },
+        data: {
+          riotId: gameId,
+          ...(memberData.changed ? { additionalData: memberData.data } : {}),
+        },
+      });
+    }
+  });
+
+  return getAdminTeamRegistrationById(registrationId);
 };
 
 const exportTeamRegistrations = async (query = {}) => {
@@ -1589,6 +1694,7 @@ module.exports = {
   deleteContactMessage,
   listTeamRegistrations,
   getAdminTeamRegistrationById,
+  updateTeamRegistrationGameIds,
   exportTeamRegistrations,
   listRecruitmentApplications,
   exportRecruitmentApplications,

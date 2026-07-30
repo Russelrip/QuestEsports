@@ -903,3 +903,78 @@ test("getAdminTeamRegistrationById loads the selected registration roster", asyn
     restore();
   }
 });
+
+test("updateTeamRegistrationGameIds updates the captain and every selected roster member", async () => {
+  const registrationUpdates = [];
+  const memberUpdates = [];
+  let lookupCount = 0;
+  const detail = {
+    id: "registration-1",
+    entryType: "team",
+    teamName: "Quest Five",
+    additionalData: {},
+    reservedUntil: null,
+    country: "Sri Lanka",
+    teamTag: "Q5",
+    organizationRequested: false,
+    status: "pending",
+    paymentStatus: "unpaid",
+    verificationStatus: "pending",
+    adminSlotReservation: null,
+    createdAt: new Date("2026-07-20T10:00:00.000Z"),
+    contactEmail: "captain@example.com",
+    teamLogoName: null,
+    tournament: { id: "tournament-1", slug: "quest-cup", title: "Quest Cup", status: "registration_open", isPublished: true },
+    captainName: "Team Captain",
+    captainEmail: "captain@example.com",
+    captainPhone: "0770000000",
+    captainDiscord: "captain",
+    captainRiotId: "Captain#002",
+    members: [
+      { id: "captain-1", role: "CAPTAIN", memberOrder: 0, name: "Team Captain", email: "captain@example.com", discord: "captain", riotId: "Captain#002", additionalData: {}, inviteStatus: "accepted", inviteRespondedAt: new Date(), user: null },
+      { id: "member-1", role: "PLAYER", memberOrder: 1, name: "Player One", email: "player@example.com", discord: null, riotId: "Player#002", additionalData: {}, inviteStatus: "accepted", inviteRespondedAt: new Date(), user: null },
+    ],
+  };
+  const tx = {
+    teamRegistration: { update: async (args) => registrationUpdates.push(args) },
+    registrationMember: { update: async (args) => memberUpdates.push(args) },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: {
+      findUnique: async () => lookupCount++ === 0
+        ? {
+            id: "registration-1",
+            additionalData: { valorant_id: "Captain#001" },
+            tournament: { game: "Valorant", registrationFields: [
+              { key: "valorant_id", label: "Valorant ID", scope: "entry" },
+              { key: "riot_id", label: "Riot ID", scope: "member" },
+            ] },
+            members: detail.members.map(({ id, role }) => ({ id, role, additionalData: { riot_id: "Old#001" } })),
+          }
+        : detail,
+    },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationGameIds("registration-1", {
+      captainGameId: "Captain#002",
+      members: [
+        { id: "captain-1", gameId: "Ignored#000" },
+        { id: "member-1", gameId: "Player#002" },
+      ],
+    });
+
+    assert.deepEqual(registrationUpdates, [{
+      where: { id: "registration-1" },
+      data: { captainRiotId: "Captain#002", additionalData: { valorant_id: "Captain#002" } },
+    }]);
+    assert.deepEqual(memberUpdates, [
+      { where: { id: "captain-1" }, data: { riotId: "Captain#002", additionalData: { riot_id: "Captain#002" } } },
+      { where: { id: "member-1" }, data: { riotId: "Player#002", additionalData: { riot_id: "Player#002" } } },
+    ]);
+    assert.equal(result.captain.riotId, "Captain#002");
+  } finally {
+    restore();
+  }
+});

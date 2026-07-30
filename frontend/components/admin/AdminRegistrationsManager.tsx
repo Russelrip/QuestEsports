@@ -200,7 +200,20 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
   onDeleted: () => Promise<void>;
 }) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [captainGameId, setCaptainGameId] = useState("");
+  const [memberGameIds, setMemberGameIds] = useState<Record<string, string>>({});
   const showToast = useToastStore((state) => state.showToast);
+
+  useEffect(() => {
+    if (!registration) return;
+    setCaptainGameId(registration.captain.riotId || "");
+    setMemberGameIds(Object.fromEntries(
+      registration.members.map((member) => [
+        member.id,
+        member.role === "CAPTAIN" ? registration.captain.riotId || member.riotId || "" : member.riotId || "",
+      ])
+    ));
+  }, [registration]);
 
   const updateRegistration = async (updates: Partial<Pick<TeamRegistration, "status" | "verificationStatus">> & { adminOverridePayment?: boolean }) => {
     if (!registration) return;
@@ -229,6 +242,29 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
       await onChanged();
     } catch (nextError) {
       showToast({ tone: "error", title: "Unable to update slot hold", description: nextError instanceof Error ? nextError.message : "Request failed." });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const saveGameIds = async () => {
+    if (!registration) return;
+    setBusyAction("game-ids");
+    try {
+      await adminRequest(`/api/admin/team-registrations/${registration.id}/game-ids`, {
+        method: "PATCH",
+        json: {
+          captainGameId,
+          members: registration.members.map((member) => ({
+            id: member.id,
+            gameId: member.role === "CAPTAIN" ? captainGameId : memberGameIds[member.id] || "",
+          })),
+        },
+      });
+      showToast({ tone: "success", title: "Registration Game IDs updated" });
+      await onChanged();
+    } catch (nextError) {
+      showToast({ tone: "error", title: "Unable to update Game IDs", description: nextError instanceof Error ? nextError.message : "Request failed." });
     } finally {
       setBusyAction(null);
     }
@@ -282,6 +318,38 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
           {registration.paymentStatus !== "paid" && registration.status !== "rejected" && (registration.adminSlotReservation || registration.members.some((member) => member.inviteStatus === "pending")) ? <Button className="mt-4" type="button" variant="secondary" disabled={busyAction !== null} onClick={() => void togglePrivateSlot()}>{busyAction === "slot" ? "Updating..." : registration.adminSlotReservation ? "Release private slot" : "Reserve slot privately"}</Button> : null}
 
           <DataFields title="Registration fields" values={registration.additionalData} />
+
+          <div className="mt-7 border border-purple-300/20 bg-purple-400/[0.06] p-4 sm:p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-purple-100">Game IDs</h4>
+                <p className="mt-1 text-sm text-slate-400">Edit the IDs for this tournament only. The saved team and its other registrations are not changed.</p>
+              </div>
+              <Button type="button" disabled={busyAction !== null} onClick={() => void saveGameIds()}>
+                {busyAction === "game-ids" ? "Saving..." : "Save Game IDs"}
+              </Button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {registration.members.map((member) => (
+                <label key={member.id} className="grid min-w-0 gap-1 text-sm text-slate-300">
+                  <span className="break-words">{member.name} <span className="text-xs uppercase text-slate-500">· {member.role.toLowerCase()}</span></span>
+                  <Input
+                    required
+                    value={member.role === "CAPTAIN" ? captainGameId : memberGameIds[member.id] || ""}
+                    placeholder="Player ID / Riot ID"
+                    onChange={(event) => {
+                      if (member.role === "CAPTAIN") {
+                        setCaptainGameId(event.target.value);
+                      } else {
+                        setMemberGameIds((current) => ({ ...current, [member.id]: event.target.value }));
+                      }
+                    }}
+                  />
+                  <span className="truncate text-xs text-slate-500">{member.email || "No email"}</span>
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div className="mt-7">
             <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Roster · {registration.members.length}</h4>

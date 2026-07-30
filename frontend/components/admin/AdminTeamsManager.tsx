@@ -363,7 +363,10 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
       </div>
 
       <div className="mt-7 space-y-3">
-        <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Roster</h4>
+        <div>
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Roster</h4>
+          <p className="mt-1 text-xs text-slate-500">Game ID changes apply to this saved team only. Existing tournament registrations keep their own Game IDs.</p>
+        </div>
         {members.map((member) => (
           <div key={member.id} className="min-w-0 border border-white/10 bg-black/15 p-3 sm:p-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

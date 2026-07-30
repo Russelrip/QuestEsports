@@ -11,6 +11,7 @@ const {
   deleteContactMessage,
   listTeamRegistrations,
   getAdminTeamRegistrationById,
+  updateTeamRegistrationGameIds,
   exportTeamRegistrations,
   listRecruitmentApplications,
   exportRecruitmentApplications,
@@ -187,6 +188,19 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
   });
 });
 
+const updateRegistrationGameIds = asyncHandler(async (req, res) => {
+  const registration = await updateTeamRegistrationGameIds(
+    req.params.registrationId,
+    req.body
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Registration Game IDs updated successfully.",
+    registration,
+  });
+});
+
 const removeRegistration = asyncHandler(async (req, res) => {
   await deleteTeamRegistration(req.params.registrationId);
 
@@ -302,6 +316,7 @@ module.exports = {
   getTournamentRegistrations,
   downloadTeamRegistrations,
   updateRegistrationStatus,
+  updateRegistrationGameIds,
   removeRegistration,
   reserveRegistrationSlot,
   releaseRegistrationSlot,
