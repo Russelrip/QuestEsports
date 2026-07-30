@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
@@ -111,8 +111,8 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
           <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Participants</h3><p className="mt-3 text-sm text-slate-400">Approved participants will appear here.</p></Card>
         ) : null}
 
-        {activeTab === "bracket" && tournament.challongeEmbedUrl ? (
-          <section className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-3xl text-white">Brackets</h3>{tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}</div><div className="overflow-hidden bg-[#242424]"><iframe src={tournament.challongeEmbedUrl} title={`${tournament.title} Challonge bracket`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" className="block h-[760px] w-full border-0" /></div></section>
+        {tournament.challongeEmbedUrl ? (
+          <ChallongeBracket tournament={tournament} active={activeTab === "bracket"} />
         ) : activeTab === "bracket" && tournament.bracketData ? (
           <section className="space-y-5">
             <h3 className="text-3xl text-white">Brackets</h3>
@@ -126,6 +126,56 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
         {activeTab === "rules" ? <RulesPanel tournament={tournament} /> : null}
       </div>
     </Section>
+  );
+}
+
+function ChallongeBracket({ tournament, active }: { tournament: Tournament; active: boolean }) {
+  const [shouldLoad, setShouldLoad] = useState(active);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const loadWhenIdle = () => setShouldLoad(true);
+    if (shouldLoad) return;
+    if (active) {
+      const timeoutId = globalThis.setTimeout(loadWhenIdle, 0);
+      return () => globalThis.clearTimeout(timeoutId);
+    }
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(loadWhenIdle, { timeout: 2500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timeoutId = globalThis.setTimeout(loadWhenIdle, 1200);
+    return () => globalThis.clearTimeout(timeoutId);
+  }, [active, shouldLoad]);
+
+  return (
+    <section className={active ? "space-y-5" : "hidden"} aria-hidden={!active}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-3xl text-white">Brackets</h3>
+        {tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}
+      </div>
+      <div className="relative min-h-[760px] overflow-hidden bg-[#242424]">
+        {!loaded ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#181818] px-6 text-center">
+            <div>
+              <span className="mx-auto block size-8 animate-spin rounded-full border-2 border-white/15 border-t-purple-300" aria-hidden="true" />
+              <p className="mt-4 text-sm font-semibold text-slate-200">Loading Challonge bracket…</p>
+              <p className="mt-1 text-xs text-slate-500">The external bracket may take a moment to respond.</p>
+            </div>
+          </div>
+        ) : null}
+        {shouldLoad ? (
+          <iframe
+            src={tournament.challongeEmbedUrl || undefined}
+            title={`${tournament.title} Challonge bracket`}
+            loading="eager"
+            referrerPolicy="strict-origin-when-cross-origin"
+            onLoad={() => setLoaded(true)}
+            className="block h-[760px] w-full border-0"
+          />
+        ) : null}
+      </div>
+    </section>
   );
 }
 
