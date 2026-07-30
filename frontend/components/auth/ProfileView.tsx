@@ -289,7 +289,7 @@ export default function ProfileView() {
           <Card className="relative overflow-hidden p-6 sm:p-8">
             <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-5">
-                <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-violet-700 text-lg font-bold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)]">
+                <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-700 text-lg font-bold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)]">
                   {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt={`${user.firstName} ${user.lastName}`} fill className="object-cover" sizes="80px" /> : initials}
                 </div>
                 <div className="min-w-0">
