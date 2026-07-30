@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import type { Tournament } from "@/lib/tournaments";
 
-const siteName = "Quest E-sports";
+const siteName = "Quest E-sports LK";
 const siteTitle = "Quest E-sports LK";
 const siteDescription =
-  "Quest E-sports runs Sri Lankan e-sports tournaments, match broadcasts, event galleries, and community events built for competitive players and gaming fans.";
+  "Join Quest E-sports LK for Sri Lankan esports tournaments, team registration, live match broadcasts, brackets, highlights, and community events.";
 const fallbackSiteUrl =
   process.env.NODE_ENV === "production" ? "https://questesports.lk" : "http://localhost:3000";
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || fallbackSiteUrl;
@@ -116,9 +116,12 @@ export const siteMetadata: Metadata = {
     },
   },
   icons: {
-    icon: "/images/logo.png",
-    shortcut: "/images/logo.png",
-    apple: "/images/logo.png",
+    icon: [
+      { url: "/favicon-48.png", type: "image/png", sizes: "48x48" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    shortcut: "/favicon-48.png",
+    apple: { url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" },
   },
   manifest: "/manifest.webmanifest",
   other: {
@@ -129,6 +132,7 @@ export const siteMetadata: Metadata = {
 
 type PageMetadataOptions = {
   title: string;
+  absoluteTitle?: string;
   description: string;
   path: string;
   keywords?: string[];
@@ -151,6 +155,7 @@ export const absoluteUrl = (path = "/") => new URL(resolvePath(path), siteUrl).t
 
 export const buildPageMetadata = ({
   title,
+  absoluteTitle,
   description,
   path,
   keywords,
@@ -159,10 +164,10 @@ export const buildPageMetadata = ({
   noIndex = false,
 }: PageMetadataOptions): Metadata => {
   const canonicalPath = resolvePath(path);
-  const pageTitle = `${title} | ${siteTitle}`;
+  const pageTitle = absoluteTitle || `${title} | ${siteTitle}`;
 
   return {
-    title,
+    title: absoluteTitle ? { absolute: absoluteTitle } : title,
     description,
     keywords: mergeKeywords(
       keywords,
@@ -254,8 +259,9 @@ export const organizationStructuredData = {
   "@context": "https://schema.org",
   "@type": "SportsOrganization",
   name: siteTitle,
+  alternateName: ["Quest Esports LK", "Quest Esports", "questesports.lk"],
   url: siteUrl,
-  logo: absoluteUrl("/images/logo.png"),
+  logo: absoluteUrl("/icon-512.png"),
   image: absoluteUrl(defaultSocialImage),
   description: siteDescription,
   email: "questesports.lk@gmail.com",
@@ -279,6 +285,7 @@ export const websiteStructuredData = {
   "@context": "https://schema.org",
   "@type": "WebSite",
   name: siteTitle,
+  alternateName: ["Quest Esports LK", "Quest Esports", "questesports.lk"],
   url: siteUrl,
   description: siteDescription,
   publisher: {

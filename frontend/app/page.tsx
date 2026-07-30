@@ -13,7 +13,8 @@ import {
 export const dynamic = "force-dynamic";
 
 export const metadata = buildPageMetadata({
-  title: "Home",
+  title: "Quest E-sports LK",
+  absoluteTitle: "Quest E-sports LK | Sri Lanka Esports Tournaments",
   description: defaultPageDescriptions.home,
   path: "/",
   keywords: [
