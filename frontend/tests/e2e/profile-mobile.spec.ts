@@ -59,6 +59,7 @@ test("profile content fits narrow portrait and landscape viewports", async ({ pa
     { width: 375, height: 812 },
     { width: 390, height: 844 },
     { width: 430, height: 932 },
+    { width: 662, height: 900 },
     { width: 768, height: 1024 },
     { width: 844, height: 390 },
   ]) {
@@ -66,6 +67,13 @@ test("profile content fits narrow portrait and landscape viewports", async ({ pa
     await page.goto("/profile");
     await expect(page.getByRole("heading", { name: `${longText} Champion` })).toBeVisible();
     await expectNoHorizontalOverflow(page);
+
+    if (viewport.width >= 640) {
+      const photoControlWidth = await page
+        .locator('label:has(input[type="file"])')
+        .evaluate((element) => element.getBoundingClientRect().width);
+      expect(photoControlWidth).toBeLessThan(220);
+    }
 
     for (const tab of ["Account", "Security", "Teams", "Overview"]) {
       await page.getByRole("tab", { name: tab }).click();
