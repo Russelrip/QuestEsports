@@ -50,6 +50,17 @@ test("foundation migration is additive and backfills links as disabled", () => {
   assert.doesNotMatch(migration, /DROP TABLE/);
 });
 
+test("foundation tables enable RLS and deny Data API table privileges", () => {
+  const migration = fs.readFileSync(path.join(__dirname, "../prisma/migrations/20260731110000_secure_foundation_tables/migration.sql"), "utf8");
+  for (const table of ["tournament_staff_assignments", "matches", "match_participants", "challonge_integrations", "challonge_participant_links", "challonge_sync_logs", "audit_logs"]) {
+    assert.match(migration, new RegExp(`ALTER TABLE public\\."${table}" ENABLE ROW LEVEL SECURITY`));
+    assert.match(migration, new RegExp(`public\\."${table}"`));
+  }
+  for (const role of ["anon", "authenticated", "service_role"]) assert.match(migration, new RegExp(`'${role}'`));
+  assert.match(migration, /REVOKE ALL PRIVILEGES ON TABLE/);
+  assert.doesNotMatch(migration, /DROP TABLE/);
+});
+
 test("Challonge requests keep credentials out of URLs and honor rate-limit retry guidance", async (context) => {
   const original = { enabled: env.CHALLONGE_ENABLED, username: env.CHALLONGE_USERNAME, key: env.CHALLONGE_API_KEY, fetch: global.fetch };
   context.after(() => { env.CHALLONGE_ENABLED = original.enabled; env.CHALLONGE_USERNAME = original.username; env.CHALLONGE_API_KEY = original.key; global.fetch = original.fetch; });
