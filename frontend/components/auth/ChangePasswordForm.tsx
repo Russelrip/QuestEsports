@@ -70,13 +70,13 @@ export default function ChangePasswordForm() {
   });
 
   return (
-    <div className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+    <div className="min-w-0 rounded-[24px] border border-white/8 bg-white/5 p-4 sm:p-5">
       <h3 className="text-2xl text-white">Change Password</h3>
       <p className="mt-2 text-sm text-slate-400">
         Other active sessions will be signed out after a successful password change.
       </p>
-      <form className="mt-5 grid gap-5" onSubmit={onSubmit}>
-        <div className="grid gap-5 sm:grid-cols-2">
+      <form className="mt-5 grid min-w-0 gap-5" onSubmit={onSubmit}>
+        <div className="grid min-w-0 gap-5 sm:grid-cols-2">
           <FormField label="Current Password" htmlFor="currentPassword" error={form.formState.errors.currentPassword?.message} required>
             <Input id="currentPassword" type="password" {...form.register("currentPassword")} />
           </FormField>
@@ -85,7 +85,7 @@ export default function ChangePasswordForm() {
           </FormField>
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-5 sm:grid-cols-2">
           <FormField label="New Password" htmlFor="newPassword" error={form.formState.errors.newPassword?.message} required>
             <Input id="newPassword" type="password" {...form.register("newPassword")} />
           </FormField>

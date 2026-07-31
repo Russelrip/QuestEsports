@@ -152,7 +152,7 @@ export default function SessionList() {
   };
 
   return (
-    <div className="rounded-[24px] border border-white/8 bg-white/5 p-5">
+    <div className="min-w-0 rounded-[24px] border border-white/8 bg-white/5 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-2xl text-white">Active Sessions</h3>
@@ -181,9 +181,9 @@ export default function SessionList() {
                 <div className="min-w-0">
                   <div className="flex items-start gap-3">
                     <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/8 text-lg">{device.detail.startsWith("Mobile") ? "◧" : "▱"}</span>
-                    <div>
-                      <p className="font-medium text-white">{device.title}</p>
-                      <p className="mt-1 text-sm text-slate-400">{device.detail}</p>
+                    <div className="min-w-0">
+                      <p className="break-words font-medium text-white [overflow-wrap:anywhere]">{device.title}</p>
+                      <p className="mt-1 break-words text-sm text-slate-400 [overflow-wrap:anywhere]">{device.detail}</p>
                     </div>
                   </div>
                   <dl className="mt-4 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">

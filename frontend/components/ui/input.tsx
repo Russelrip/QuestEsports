@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export const inputClassName =
-  "h-12 w-full rounded-2xl border border-white/10 bg-black/30 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-purple-300/40 focus:bg-black/45 focus:ring-4 focus:ring-purple-400/10 disabled:cursor-not-allowed disabled:opacity-60";
+  "h-12 w-full min-w-0 max-w-full rounded-2xl border border-white/10 bg-black/30 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-purple-300/40 focus:bg-black/45 focus:ring-4 focus:ring-purple-400/10 disabled:cursor-not-allowed disabled:opacity-60";
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, type, onChange, disabled, ...props }, ref) {
@@ -12,7 +12,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
       return (
         <span
           className={cn(
-            "relative flex min-h-12 w-full items-center gap-3 overflow-hidden border border-white/10 bg-black/30 p-1.5 text-sm transition focus-within:border-purple-300/40 focus-within:ring-4 focus-within:ring-purple-400/10",
+            "relative flex min-h-12 w-full min-w-0 max-w-full items-center gap-3 overflow-hidden border border-white/10 bg-black/30 p-1.5 text-sm transition focus-within:border-purple-300/40 focus-within:ring-4 focus-within:ring-purple-400/10",
             disabled && "cursor-not-allowed opacity-60",
             className
           )}

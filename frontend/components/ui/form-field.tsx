@@ -18,7 +18,7 @@ export function FormField({
   className?: string;
 }) {
   return (
-    <div className={cn("grid gap-2", className)}>
+    <div className={cn("grid min-w-0 gap-2", className)}>
       <label htmlFor={htmlFor} className="text-sm font-medium text-slate-200">
         {label}
         {required ? <span className="ml-1 text-purple-300">*</span> : null}

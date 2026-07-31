@@ -234,10 +234,10 @@ export default function TeamManagementPanel({
 
   const captain = selectedTeam.members.find((member) => member.role === "CAPTAIN");
   return (
-    <div className="grid gap-6">
+    <div className="grid min-w-0 gap-6">
       <button type="button" className="w-fit text-sm font-semibold text-purple-200 hover:text-white" onClick={() => onSelect(null)}>← Back to teams</button>
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-        <div><p className="text-xs uppercase tracking-[0.2em] text-purple-200/70">Team Management</p><h3 className="mt-2 text-3xl text-white">{selectedTeam.name}</h3></div>
+        <div className="min-w-0"><p className="text-xs uppercase tracking-[0.2em] text-purple-200/70">Team Management</p><h3 className="mt-2 break-words text-2xl text-white [overflow-wrap:anywhere] sm:text-3xl">{selectedTeam.name}</h3></div>
         <Badge>{selectedTeam.isCaptain ? "Captain controls" : "Member view"}</Badge>
       </div>
 
@@ -275,9 +275,9 @@ export default function TeamManagementPanel({
                 member.email.trim().toLowerCase() !== member.originalEmail.trim().toLowerCase()
               );
               return (
-                <div key={member.key} className="grid gap-4 border border-white/8 bg-white/[0.025] p-4">
+                <div key={member.key} className="grid min-w-0 gap-4 border border-white/8 bg-white/[0.025] p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-3">
                       <p className="text-sm font-semibold text-white">Roster member {index + 1}</p>
                       {member.inviteStatus ? <Badge>{member.inviteStatus}</Badge> : <Badge>Not invited yet</Badge>}
                     </div>
@@ -314,7 +314,7 @@ export default function TeamManagementPanel({
           {error ? <p className="text-sm text-rose-300">{error}</p> : null}
           <div className="border-t border-white/10 pt-5">
             {!selectedTeam.canDelete ? <p className="mb-3 text-sm text-amber-200">This team cannot be deleted because it has a tournament registration.</p> : null}
-            <div className="flex flex-wrap justify-between gap-3"><Button type="button" variant="danger" disabled={deleting || saving || !selectedTeam.canDelete} onClick={() => void removeTeam()}>{deleting ? "Deleting..." : "Delete Team"}</Button><Button type="submit" disabled={saving || deleting}>{saving ? "Saving..." : "Save Team Changes"}</Button></div>
+            <div className="grid gap-3 sm:flex sm:flex-wrap sm:justify-between"><Button type="button" variant="danger" disabled={deleting || saving || !selectedTeam.canDelete} onClick={() => void removeTeam()}>{deleting ? "Deleting..." : "Delete Team"}</Button><Button type="submit" disabled={saving || deleting}>{saving ? "Saving..." : "Save Team Changes"}</Button></div>
           </div>
         </form>
       )}

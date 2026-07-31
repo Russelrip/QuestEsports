@@ -78,6 +78,13 @@ a {
   text-decoration: none;
 }
 
+.profile-identity-text,
+.profile-identity-text * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 a:hover,
 a:active,
 a:focus-visible {
