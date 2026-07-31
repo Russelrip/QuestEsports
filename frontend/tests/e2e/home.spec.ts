@@ -1,23 +1,15 @@
 import { expect, test, type Route } from "@playwright/test";
 
-test("homepage presents the foundation sections in event-priority order", async ({ page }) => {
+test("homepage retains the original Quest marketing layout", async ({ page }) => {
   await page.goto("/");
-  const headings = await page.locator("main h2").allTextContents();
-  expect(headings).toEqual([
-    "Next match",
-    "Registration status",
-    "Featured tournaments",
-    "Recent results",
-    "Upcoming matches",
-    "Featured competitors",
-    "Match videos",
-    "Sponsors",
-    "Your next tournament starts here.",
+
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("QUEST E-SPORTS");
+  await expect(page.locator("main h2")).toHaveText([
+    "Quest E-sports Recruitment is Now Open!",
+    "People Behind Quest",
+    "Featured Events",
   ]);
-  await expect(
-    page.getByText(/(?:No match is scheduled yet|Live match data is temporarily unavailable)/i)
-  ).toBeVisible();
-  await expect(page.getByText("No registration window is open right now", { exact: false })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Next match" })).toHaveCount(0);
 });
 
 test("privacy policy page renders the app shell and policy content", async ({ page }) => {
