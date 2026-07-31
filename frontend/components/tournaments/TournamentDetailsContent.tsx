@@ -65,14 +65,14 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
           />
         </section>
 
-        <nav className="relative flex gap-1 overflow-x-auto border border-purple-300/15 bg-[#0b0911]/95 p-1.5 shadow-[0_16px_45px_rgba(0,0,0,0.28)] backdrop-blur" aria-label="Tournament sections">
+        <nav className="relative flex gap-1 overflow-x-auto border border-white/10 bg-[#101118] p-1.5" aria-label="Tournament sections">
           {(["overview", "rules", "schedule", "bracket", "participants"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
               aria-current={activeTab === tab ? "page" : undefined}
-              className={`relative whitespace-nowrap border px-5 py-3 text-xs font-semibold capitalize transition sm:px-7 ${activeTab === tab ? "border-purple-200/70 bg-gradient-to-r from-fuchsia-300 to-violet-300 text-[#120a1d] shadow-[0_8px_28px_rgba(192,132,252,0.22)]" : "border-transparent text-slate-400 hover:border-purple-300/15 hover:bg-purple-300/[0.07] hover:text-purple-100"}`}
+              className={`relative whitespace-nowrap border px-5 py-3 text-xs font-semibold capitalize transition sm:px-7 ${activeTab === tab ? "border-purple-300 bg-purple-300 text-[#120a1d]" : "border-transparent text-slate-400 hover:border-white/10 hover:bg-white/5 hover:text-white"}`}
             >
               {tab}
             </button>
@@ -307,8 +307,7 @@ function TeamsPanel({
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {teams?.map((team) => (
           <div key={team.id} className="overflow-hidden border border-white/10 bg-[#12141d]">
-            <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(192,132,252,0.16),transparent_34%),linear-gradient(135deg,#171126,#0a0d16)]">
-              <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:28px_28px]" />
+            <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[#171922]">
               {team.avatarUrl || team.logoUrl ? (
                 <Image
                   src={resolveMediaUrl(team.avatarUrl || team.logoUrl || "")}
@@ -318,7 +317,7 @@ function TeamsPanel({
                   className="object-cover"
                 />
               ) : (
-                <div className="relative flex size-24 items-center justify-center overflow-hidden border border-white/10 bg-black/30 text-2xl font-bold text-white shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
+                <div className="relative flex size-24 items-center justify-center overflow-hidden border border-white/10 bg-[#20222c] text-2xl font-bold text-white">
                   {team.shortCode}
                 </div>
               )}
@@ -359,31 +358,27 @@ function SchedulePanel({ tournament }: { tournament: Tournament }) {
   }
 
   return (
-    <details open className="group relative overflow-hidden border border-purple-300/20 bg-[#0b0912]/95 shadow-[0_24px_70px_rgba(0,0,0,0.38)]">
-      <summary className="relative flex cursor-pointer list-none items-center justify-between gap-4 overflow-hidden border-b border-purple-200/10 bg-[linear-gradient(105deg,rgba(126,34,206,0.34),rgba(30,20,48,0.96)_48%,rgba(10,8,16,0.98))] px-4 py-4 text-white [&::-webkit-details-marker]:hidden sm:px-5">
-        <span className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-fuchsia-300 via-purple-400 to-violet-500" />
+    <details open className="group overflow-hidden border border-white/10 bg-[#101118]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 border-b border-white/10 bg-[#171821] px-4 py-4 text-white [&::-webkit-details-marker]:hidden sm:px-5">
         <span className="flex items-center gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center border border-purple-200/20 bg-purple-300/10 text-purple-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" aria-hidden="true">
+          <span className="flex size-9 shrink-0 items-center justify-center border border-white/10 bg-[#22242d] text-slate-300" aria-hidden="true">
             <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
             </svg>
           </span>
           <span>
             <span className="block text-xs font-bold uppercase tracking-[0.18em] text-white sm:text-sm">Match Schedule</span>
-            <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.16em] text-purple-100/60">Tournament timeline</span>
+            <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.12em] text-slate-500">Tournament schedule</span>
           </span>
         </span>
-        <span className="flex size-8 shrink-0 items-center justify-center border border-white/10 bg-black/20 text-purple-100 transition duration-200 group-open:rotate-180" aria-hidden="true">
+        <span className="flex size-8 shrink-0 items-center justify-center border border-white/10 bg-[#101118] text-slate-400 transition duration-200 group-open:rotate-180" aria-hidden="true">
           <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m5 7.5 5 5 5-5" /></svg>
         </span>
       </summary>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 bg-white/[0.025] px-4 py-3 sm:px-5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="size-1.5 shrink-0 bg-fuchsia-300 shadow-[0_0_12px_rgba(240,171,252,0.9)]" aria-hidden="true" />
-          <p className="truncate text-sm font-semibold text-slate-100">{schedule.sheetName}</p>
-        </div>
-        <span className="border border-purple-300/15 bg-purple-400/[0.07] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-purple-100/80">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#13141c] px-4 py-3 sm:px-5">
+        <p className="truncate text-sm font-semibold text-slate-200">{schedule.sheetName}</p>
+        <span className="border border-white/10 bg-[#1c1e27] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
           {schedule.rows.length} {schedule.rows.length === 1 ? "match" : "matches"}
         </span>
       </div>
@@ -391,10 +386,10 @@ function SchedulePanel({ tournament }: { tournament: Tournament }) {
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] border-collapse text-left text-xs sm:text-sm">
           <caption className="sr-only">{schedule.sheetName}</caption>
-          <thead className="bg-[linear-gradient(90deg,rgba(88,28,135,0.46),rgba(35,24,52,0.92))] text-[10px] uppercase tracking-[0.14em] text-purple-100/85 sm:text-[11px]">
+          <thead className="bg-[#1b1c24] text-[10px] uppercase tracking-[0.12em] text-slate-300 sm:text-[11px]">
             <tr>
               {schedule.headers.map((header) => (
-                <th key={header} scope="col" className="whitespace-nowrap border-b border-purple-200/10 px-4 py-3.5 font-bold first:pl-5 last:pr-5">
+                <th key={header} scope="col" className="whitespace-nowrap border-b border-white/10 px-4 py-3.5 font-bold first:pl-5 last:pr-5">
                   {header}
                 </th>
               ))}
@@ -402,9 +397,9 @@ function SchedulePanel({ tournament }: { tournament: Tournament }) {
           </thead>
           <tbody className="divide-y divide-white/[0.055]">
             {schedule.rows.map((row, index) => (
-              <tr key={index} className="bg-white/[0.018] transition-colors odd:bg-purple-400/[0.035] hover:bg-purple-300/[0.09]">
+              <tr key={index} className="bg-[#101118] transition-colors odd:bg-[#14151d] hover:bg-[#1a1b24]">
                 {schedule.headers.map((header, headerIndex) => (
-                  <td key={header} className={`whitespace-nowrap px-4 py-3 text-slate-200 first:pl-5 last:pr-5 ${headerIndex === 0 ? "border-l-2 border-l-purple-300/45 font-semibold text-white" : ""}`}>
+                  <td key={header} className={`whitespace-nowrap px-4 py-3 text-slate-300 first:pl-5 last:pr-5 ${headerIndex === 0 ? "font-semibold text-white" : ""}`}>
                     {row[header] || "—"}
                   </td>
                 ))}
@@ -414,7 +409,7 @@ function SchedulePanel({ tournament }: { tournament: Tournament }) {
         </table>
       </div>
 
-      <div className="flex items-center justify-between border-t border-white/[0.06] bg-black/15 px-4 py-2 text-[10px] uppercase tracking-[0.13em] text-slate-500 sm:hidden">
+      <div className="flex items-center justify-between border-t border-white/10 bg-[#13141c] px-4 py-2 text-[10px] uppercase tracking-[0.12em] text-slate-500 sm:hidden">
         <span>Swipe to view</span>
         <span aria-hidden="true">← →</span>
       </div>
@@ -466,7 +461,7 @@ function LiveBracketView({
   }).filter((group) => group.rounds.length > 0);
 
   return (
-    <div className="overflow-hidden rounded-sm border border-[#454545] bg-[#303030] text-white shadow-[0_20px_70px_rgba(0,0,0,0.35)] tournament-print-bracket">
+    <div className="overflow-hidden rounded-sm border border-[#454545] bg-[#303030] text-white tournament-print-bracket">
       <div className="overflow-x-auto border-y border-[#454545] bg-[#383838] text-[11px] font-bold text-slate-200">
         <div className="flex min-w-max items-center justify-between">
         <div className="flex min-w-0 flex-1">
@@ -538,7 +533,7 @@ function MatchCard({
         <span>{status}</span>
         <span className={tone.text}>{getGroupLabel(groupNumber)}</span>
       </div>
-      <div className="overflow-hidden rounded-[2px] shadow-[0_2px_0_rgba(0,0,0,0.25)]">
+      <div className="overflow-hidden rounded-[2px]">
         <OpponentRow opponent={match.opponent1} participants={participants} />
         <OpponentRow opponent={match.opponent2} participants={participants} />
       </div>
