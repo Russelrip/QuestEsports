@@ -5,6 +5,10 @@ const allowedOrigin = new URL(
   process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3010"
 ).origin;
 const unexpectedRequests = [];
+const mobileTestAvatar = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64"
+);
 const collections = new Map([
   ["/api/posters", { posters: [] }],
   ["/api/tournaments", { tournaments: [] }],
@@ -31,6 +35,14 @@ const server = createServer((request, response) => {
   }
   if (request.url === "/__mock-api/status") {
     response.end(JSON.stringify({ success: true, unexpectedRequests }));
+    return;
+  }
+  if (
+    request.method === "GET" &&
+    request.url === "/api/uploads/avatars/mobile-test.png"
+  ) {
+    response.setHeader("Content-Type", "image/png");
+    response.end(mobileTestAvatar);
     return;
   }
   if (request.url === "/api/me") {
