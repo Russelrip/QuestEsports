@@ -181,6 +181,31 @@ const env = {
     process.env.JOB_WORKER_MAX_ATTEMPTS,
     5
   ),
+  CHALLONGE_ENABLED: normalizeBoolean(process.env.CHALLONGE_ENABLED, false),
+  CHALLONGE_USERNAME: optional("CHALLONGE_USERNAME"),
+  CHALLONGE_API_KEY: optional("CHALLONGE_API_KEY"),
+  CHALLONGE_REQUEST_TIMEOUT_MS: normalizeIntegerInRange(
+    "CHALLONGE_REQUEST_TIMEOUT_MS",
+    process.env.CHALLONGE_REQUEST_TIMEOUT_MS,
+    8000,
+    1000,
+    30000
+  ),
+  CHALLONGE_DEFAULT_SYNC_MINUTES: normalizeIntegerInRange(
+    "CHALLONGE_DEFAULT_SYNC_MINUTES",
+    process.env.CHALLONGE_DEFAULT_SYNC_MINUTES,
+    5,
+    1,
+    60
+  ),
+  CHALLONGE_SYNC_LEASE_SECONDS: normalizeIntegerInRange(
+    "CHALLONGE_SYNC_LEASE_SECONDS",
+    process.env.CHALLONGE_SYNC_LEASE_SECONDS,
+    90,
+    30,
+    600
+  ),
+  REALTIME_SSE_ENABLED: normalizeBoolean(process.env.REALTIME_SSE_ENABLED, true),
   MAIL_PROVIDER: optional("MAIL_PROVIDER", "smtp").toLowerCase(),
   RESEND_API_KEY: optional("RESEND_API_KEY"),
   SMTP_HOST: optional("SMTP_HOST"),
@@ -284,6 +309,15 @@ if (env.DISCORD_ALERT_WEBHOOK_URL) {
 if (env.NODE_ENV !== "test" && !env.AUTH_ENCRYPTION_KEY) {
   throw new Error(
     "AUTH_ENCRYPTION_KEY is required outside tests for MFA secret encryption and OAuth state signing."
+  );
+}
+
+if (
+  env.CHALLONGE_ENABLED &&
+  (!env.CHALLONGE_USERNAME || !env.CHALLONGE_API_KEY)
+) {
+  throw new Error(
+    "CHALLONGE_USERNAME and CHALLONGE_API_KEY are required when CHALLONGE_ENABLED is true."
   );
 }
 

@@ -378,6 +378,30 @@ const openApiDocument = {
 
 const idParameter = (name) => [createPathParameter(name, { type: "string" })];
 const additionalPaths = {
+  "/api/v1/home": { get: createOperation("Foundation", "Get the cached homepage tournament and live-match feed") },
+  "/api/v1/tournaments/{slug}": { get: createOperation("Foundation", "Get slim versioned tournament detail", { parameters: idParameter("slug") }) },
+  "/api/v1/tournaments/{slug}/bracket": { get: createOperation("Brackets", "Get the authoritative Challonge or native bracket snapshot", { parameters: idParameter("slug") }) },
+  "/api/v1/tournaments/{slug}/matches": { get: createOperation("Matches", "List a tournament's public matches", { parameters: idParameter("slug") }) },
+  "/api/v1/matches": { get: createOperation("Matches", "List paginated public matches") },
+  "/api/v1/matches/next": { get: createOperation("Matches", "Get the next public or authenticated-user match") },
+  "/api/v1/events": { get: createOperation("Realtime", "Subscribe to public match and bracket invalidation events") },
+  "/api/v1/admin/tournaments/{id}/challonge": {
+    get: createOperation("Challonge", "Get Challonge integration status", { authenticated: true, parameters: idParameter("id") }),
+    patch: createOperation("Challonge", "Configure a Challonge integration", { authenticated: true, parameters: idParameter("id") }),
+  },
+  "/api/v1/admin/tournaments/{id}/challonge/sync": { post: createOperation("Challonge", "Synchronize a Challonge tournament", { authenticated: true, parameters: idParameter("id") }) },
+  "/api/v1/admin/tournaments/{id}/challonge/logs": { get: createOperation("Challonge", "List sanitized synchronization logs", { authenticated: true, parameters: idParameter("id") }) },
+  "/api/v1/admin/tournaments/{id}/challonge/participants/{participantId}": { patch: createOperation("Challonge", "Confirm an external participant mapping", { authenticated: true, parameters: [...idParameter("id"), ...idParameter("participantId")] }) },
+  "/api/v1/admin/tournaments/{id}/matches": {
+    get: createOperation("Matches", "List tournament matches for staff", { authenticated: true, parameters: idParameter("id") }),
+    post: createOperation("Matches", "Create a Quest-managed match", { authenticated: true, parameters: idParameter("id") }),
+  },
+  "/api/v1/admin/matches/{matchId}": { patch: createOperation("Matches", "Update Quest-owned match operations", { authenticated: true, parameters: idParameter("matchId") }) },
+  "/api/v1/admin/tournaments/{id}/staff": {
+    get: createOperation("Permissions", "List tournament staff assignments", { authenticated: true, parameters: idParameter("id") }),
+    post: createOperation("Permissions", "Assign tournament staff", { authenticated: true, parameters: idParameter("id") }),
+  },
+  "/api/v1/admin/tournaments/{id}/staff/{assignmentId}": { delete: createOperation("Permissions", "Remove a tournament staff assignment", { authenticated: true, parameters: [...idParameter("id"), ...idParameter("assignmentId")] }) },
   "/api/contact": { post: createOperation("Contact", "Submit a contact message") },
   "/api/recruitment-applications": { post: createOperation("Recruitment", "Submit a recruitment application", { authenticated: true }) },
   "/api/game-categories": { get: createOperation("Games", "List public game categories") },

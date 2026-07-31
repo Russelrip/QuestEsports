@@ -64,6 +64,13 @@ PAYHERE_MERCHANT_SECRET=
 PAYHERE_NOTIFY_URL=
 SHOP_DELIVERY_FEE_LKR=500
 SHOP_ORDER_RESERVATION_MINUTES=30
+CHALLONGE_ENABLED=false
+CHALLONGE_USERNAME=
+CHALLONGE_API_KEY=
+CHALLONGE_REQUEST_TIMEOUT_MS=8000
+CHALLONGE_DEFAULT_SYNC_MINUTES=5
+CHALLONGE_SYNC_LEASE_SECONDS=90
+REALTIME_SSE_ENABLED=true
 ```
 
 Frontend: create `frontend/.env.local`
@@ -87,6 +94,7 @@ Notes:
 - Paid tournament registration and shop checkout require PayHere credentials plus a publicly reachable HTTPS notification URL. Browser return pages never mark an order paid.
 - When PayHere is not configured, free and bank-transfer tournament registrations remain available; PayHere registration and merchandise checkout are disabled.
 - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` are optional locally and required in production; point both at durable, backed-up storage outside disposable release directories. Private payment proofs must never be exposed by Nginx.
+- Challonge is optional and disabled by default. Configure its username and API key only on the backend, then follow the staged validation in the foundation release runbook before enabling automatic synchronization.
 
 ### 2. Install dependencies
 
@@ -156,6 +164,7 @@ Recommended flow:
 - [Setup and Deployment Guide](./docs/setup-and-deployment.md)
 - [Production Operations Runbook](./docs/production-runbook.md)
 - [Commerce and Tournament Rollout](./docs/commerce-and-tournament-rollout.md)
+- [Foundation Release Operations](./docs/foundation-release.md)
 - [Backend README](./backend/README.md)
 - [Frontend README](./frontend/README.md)
 

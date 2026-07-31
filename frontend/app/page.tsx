@@ -1,8 +1,6 @@
-import FeaturedTournaments from "@/components/home/FeaturedTournaments";
-import HomeHero from "@/components/home/HomeHero";
-import JoinQuestSection from "@/components/home/JoinQuestSection";
+import HomeFoundation from "@/components/home/HomeFoundation";
 import StructuredData from "@/components/StructuredData";
-import TeamSection from "@/components/home/TeamSection";
+import { fetchHomeFeed, type HomeFeed } from "@/lib/matches";
 import {
   buildPageMetadata,
   defaultPageDescriptions,
@@ -10,7 +8,7 @@ import {
   websiteStructuredData,
 } from "@/lib/site";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 15;
 
 export const metadata = buildPageMetadata({
   title: "Quest E-sports LK",
@@ -25,16 +23,25 @@ export const metadata = buildPageMetadata({
   ],
 });
 
-export default function HomePage() {
+const emptyFeed: HomeFeed = { nextMatch: null, recentResults: [], upcomingMatches: [], featuredTournaments: [], featuredCompetitors: [] };
+
+export default async function HomePage() {
+  let feed = emptyFeed;
+  let serverNow = new Date().toISOString();
+  let failed = false;
+  try {
+    const response = await fetchHomeFeed();
+    feed = response.data;
+    serverNow = response.meta.serverNow;
+  } catch (error) {
+    failed = true;
+    console.error("Unable to load the public home feed:", error);
+  }
   return (
     <>
       <StructuredData data={organizationStructuredData} />
       <StructuredData data={websiteStructuredData} />
-      {/* The home page is assembled from reusable marketing sections. */}
-      <HomeHero />
-      <JoinQuestSection />
-      <TeamSection />
-      <FeaturedTournaments />
+      <HomeFoundation feed={feed} serverNow={serverNow} failed={failed} />
     </>
   );
 }

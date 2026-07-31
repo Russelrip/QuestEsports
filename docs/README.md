@@ -10,6 +10,7 @@ This directory contains the operational, architecture, security, and product doc
 - [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) — encrypted backups, key custody, routine validation, isolated restore drills, and production recovery.
 - [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md) — forward-only migration rules, approval gates, backup requirements, and rollback limits.
 - [Pre-deployment Checklist](./pre-deployment-checklist.md) — release security and reliability gate.
+- [Foundation Release Operations](./foundation-release.md) — migration order, Challonge enablement, verification, monitoring, rollback, and favicon recrawl steps.
 - [Project Audit Status](./project-audit-status.md) — completed remediation, verified production state, and remaining manual checks.
 - [Full Site Audit Checklist](./full-site-audit-checklist.md) — comprehensive manual and automated QA inventory.
 

@@ -63,7 +63,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
       </button>
 
       {isOpen ? (
-          <div className="account-menu-panel popover-enter absolute right-0 top-[calc(100%+0.75rem)] z-20 w-72 border border-white/10 bg-[rgba(12,12,20,0.98)] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
+          <div className="account-menu-panel popover-enter absolute right-0 top-[calc(100%+0.75rem)] z-20 w-[min(18rem,calc(100vw-2rem))] border border-white/10 bg-[rgba(12,12,20,0.98)] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
             <div className="mb-4 space-y-2 border-b border-white/8 pb-4">
               <div className="flex items-center justify-between gap-3">
                 <div>

@@ -14,6 +14,19 @@ const MULTER_ERROR_MESSAGES = {
   LIMIT_UNEXPECTED_FILE: "Unexpected upload field.",
 };
 
+const isVersionedRequest = (req) => req.originalUrl?.startsWith("/api/v1/");
+const statusErrorCode = (statusCode) => ({
+  400: "invalid_request",
+  401: "authentication_required",
+  403: "forbidden",
+  404: "not_found",
+  409: "conflict",
+  429: "rate_limited",
+  502: "upstream_unavailable",
+  503: "service_unavailable",
+  504: "upstream_timeout",
+}[statusCode] || "request_failed");
+
 const notFoundHandler = (req, res) => {
   res.status(404).json({
     success: false,
@@ -51,12 +64,22 @@ const errorHandler = (error, req, res, next) => {
       });
     }
 
-    res.status(normalizedError.statusCode).json({
+    const body = {
       success: false,
       message: normalizedError.message,
       details: normalizedError.details || undefined,
       requestId: req.requestId,
-    });
+    };
+    if (isVersionedRequest(req)) {
+      body.error = {
+        code: /^[a-z][a-z0-9_]{1,80}$/.test(sourceErrorCode || "")
+          ? sourceErrorCode
+          : statusErrorCode(normalizedError.statusCode),
+        message: normalizedError.message,
+      };
+      body.meta = { serverNow: new Date().toISOString() };
+    }
+    res.status(normalizedError.statusCode).json(body);
     return;
   }
 
@@ -82,11 +105,16 @@ const errorHandler = (error, req, res, next) => {
     statusCode: 500,
   });
 
-  res.status(500).json({
+  const body = {
     success: false,
     message: "Internal server error.",
     requestId: req.requestId,
-  });
+  };
+  if (isVersionedRequest(req)) {
+    body.error = { code: "internal_error", message: "Internal server error." };
+    body.meta = { serverNow: new Date().toISOString() };
+  }
+  res.status(500).json(body);
 };
 
 module.exports = { notFoundHandler, errorHandler };

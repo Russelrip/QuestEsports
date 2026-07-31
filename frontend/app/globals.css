@@ -30,12 +30,6 @@
 *::before,
 *::after {
   box-sizing: border-box;
-  border-radius: 0 !important;
-}
-
-/* Keep animated loading indicators circular so their motion stays legible. */
-.animate-spin {
-  border-radius: 9999px !important;
 }
 
 .account-menu-trigger,
@@ -94,6 +88,16 @@ textarea {
 button,
 a {
   touch-action: manipulation;
+}
+
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand-2) 72%, white);
+  outline-offset: 3px;
+}
+
+.overflow-wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 input[type="checkbox"] {

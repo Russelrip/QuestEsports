@@ -4,8 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { openApiDocument } = require("../src/lib/openapi");
 
-const normalizeExpressPath = (path) =>
-  `/api${path}`.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+const normalizeExpressPath = (path, prefix = "/api") =>
+  `${prefix}${path}`.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
 
 const collectRouteFiles = (directory, files = []) => {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -19,13 +19,19 @@ const collectRouteFiles = (directory, files = []) => {
 const collectRouteOperations = () => {
   const modulesDirectory = path.join(__dirname, "../src/modules");
   const routePattern = /router\.(get|post|put|patch|delete)\(\s*["']([^"']+)["']/g;
-  return collectRouteFiles(modulesDirectory).flatMap((file) => {
+  const legacy = collectRouteFiles(modulesDirectory).flatMap((file) => {
     const source = fs.readFileSync(file, "utf8");
     return [...source.matchAll(routePattern)].map((match) => ({
       method: match[1],
       path: normalizeExpressPath(match[2]),
     }));
   });
+  const v1Source = fs.readFileSync(path.join(__dirname, "../src/routes/v1.js"), "utf8");
+  const v1 = [...v1Source.matchAll(routePattern)].map((match) => ({
+    method: match[1],
+    path: normalizeExpressPath(match[2], "/api/v1"),
+  }));
+  return [...legacy, ...v1];
 };
 
 test("OpenAPI documents every mounted API route and method", () => {

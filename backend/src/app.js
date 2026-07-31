@@ -2,10 +2,12 @@ const express = require("express");
 const cors = require("cors");
 const { env } = require("./config/env");
 const apiRouter = require("./routes");
+const v1Router = require("./routes/v1");
 const { openApiDocument } = require("./lib/openapi");
 const { checkDatabaseReadiness } = require("./lib/database");
 const { checkUploadReadiness } = require("./middleware/upload");
 const { logger } = require("./lib/logger");
+const { getRealtimeStatus } = require("./modules/realtime/realtime.service");
 const {
   requireSiteAvailable,
   sendMaintenanceResponse,
@@ -51,6 +53,7 @@ app.get("/api/health/live", (req, res) =>
     message: "Quest E-sports API is live.",
     timestamp: new Date().toISOString(),
     maintenance: { enabled: env.SITE_MAINTENANCE_MODE },
+    realtime: { enabled: env.REALTIME_SSE_ENABLED, ...getRealtimeStatus() },
   })
 );
 const readinessHandler = async (req, res) => {
@@ -81,6 +84,7 @@ app.get("/api/health/ready", readinessHandler);
 app.use(requireSiteAvailable);
 app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));
 
+app.use("/api/v1", v1Router);
 app.use("/api", apiRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);

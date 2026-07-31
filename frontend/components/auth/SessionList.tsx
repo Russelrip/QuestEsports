@@ -181,7 +181,7 @@ export default function SessionList() {
                 <div className="min-w-0">
                   <div className="flex items-start gap-3">
                     <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/8 text-lg">{device.detail.startsWith("Mobile") ? "◧" : "▱"}</span>
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-medium text-white">{device.title}</p>
                       <p className="mt-1 text-sm text-slate-400">{device.detail}</p>
                     </div>

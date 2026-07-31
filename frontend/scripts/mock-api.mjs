@@ -38,6 +38,14 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ success: false, message: "Not authenticated." }));
     return;
   }
+  if (request.method === "GET" && request.url === "/api/v1/home") {
+    response.end(JSON.stringify({
+      success: true,
+      data: { nextMatch: null, recentResults: [], upcomingMatches: [], featuredTournaments: [], featuredCompetitors: [] },
+      meta: { serverNow: "2026-07-31T00:00:00.000Z" },
+    }));
+    return;
+  }
   if (request.method === "GET" && request.url === "/api/admin/dashboard") {
     response.statusCode = 401;
     response.end(JSON.stringify({ success: false, message: "Not authenticated." }));

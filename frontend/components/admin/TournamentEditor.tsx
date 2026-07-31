@@ -34,6 +34,7 @@ import { type Tournament } from "@/lib/tournaments";
 import type { GameCategory } from "@/lib/tournaments";
 import TournamentSponsorsManager from "@/components/admin/TournamentSponsorsManager";
 import TournamentScheduleEditor from "@/components/admin/TournamentScheduleEditor";
+import TournamentFoundationOperations from "@/components/admin/TournamentFoundationOperations";
 
 function EditorSection({
   number,
@@ -676,6 +677,8 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               onBracketChange={setBracket}
             />
           ) : null}
+
+          {isEdit ? <TournamentFoundationOperations tournamentId={tournamentId || ""} registrations={registrations} /> : null}
 
           {isEdit ? (
             <Card className="p-6 sm:p-8">

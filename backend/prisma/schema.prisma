@@ -127,30 +127,68 @@ enum RecruitmentApplicationStatus {
   rejected
 }
 
+enum TournamentStaffRole {
+  tournament_admin
+  referee
+}
+
+enum MatchSource {
+  quest
+  challonge
+}
+
+enum MatchStatus {
+  not_scheduled
+  scheduled
+  check_in_open
+  veto_starting_soon
+  veto_in_progress
+  ready
+  live
+  delayed
+  paused
+  completed
+  cancelled
+  walkover
+}
+
+enum ChallongeSyncFrequency {
+  manual
+  one_minute
+  five_minutes
+}
+
+enum ChallongeSyncStatus {
+  running
+  succeeded
+  failed
+  skipped
+}
+
 model User {
-  id                      String                   @id @default(uuid()) @db.Uuid
-  firstName               String                   @map("first_name")
-  lastName                String                   @map("last_name")
+  id                      String                      @id @default(uuid()) @db.Uuid
+  firstName               String                      @map("first_name")
+  lastName                String                      @map("last_name")
   email                   String
-  emailNormalized         String                   @unique @map("email_normalized")
-  pendingEmail            String?                  @map("pending_email")
-  pendingEmailNormalized  String?                  @unique @map("pending_email_normalized")
+  emailNormalized         String                      @unique @map("email_normalized")
+  pendingEmail            String?                     @map("pending_email")
+  pendingEmailNormalized  String?                     @unique @map("pending_email_normalized")
   username                String
-  usernameNormalized      String                   @unique @map("username_normalized")
-  passwordHash            String                   @map("password_hash")
-  emailVerified           Boolean                  @default(false) @map("email_verified")
-  emailVerifiedAt         DateTime?                @map("email_verified_at")
-  role                    UserRole                 @default(user)
+  usernameNormalized      String                      @unique @map("username_normalized")
+  passwordHash            String                      @map("password_hash")
+  emailVerified           Boolean                     @default(false) @map("email_verified")
+  emailVerifiedAt         DateTime?                   @map("email_verified_at")
+  role                    UserRole                    @default(user)
   phone                   String?
-  discordTag              String?                  @map("discord_tag")
-  avatarImageName         String?                  @map("avatar_image_name")
-  lastLoginAt             DateTime?                @map("last_login_at")
-  failedLoginCount        Int                      @default(0) @map("failed_login_count")
-  lastFailedLoginAt       DateTime?                @map("last_failed_login_at")
-  lockedUntil             DateTime?                @map("locked_until")
-  mfaEnabled              Boolean                  @default(false) @map("mfa_enabled")
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  discordTag              String?                     @map("discord_tag")
+  avatarImageName         String?                     @map("avatar_image_name")
+  lastLoginAt             DateTime?                   @map("last_login_at")
+  failedLoginCount        Int                         @default(0) @map("failed_login_count")
+  lastFailedLoginAt       DateTime?                   @map("last_failed_login_at")
+  lockedUntil             DateTime?                   @map("locked_until")
+  mfaEnabled              Boolean                     @default(false) @map("mfa_enabled")
+  createdAt               DateTime                    @default(now()) @map("created_at")
+  updatedAt               DateTime                    @updatedAt @map("updated_at")
   sessions                Session[]
   verificationTokens      VerificationToken[]
   emailChangeTokens       EmailChangeToken[]
@@ -165,9 +203,12 @@ model User {
   recruitmentApplications RecruitmentApplication[]
   tournamentRegistrations TeamRegistration[]
   merchandiseOrders       MerchandiseOrder[]
-  reviewedPaymentProofs   BankTransferProof[]      @relation("PaymentProofReviewer")
-  reconciledPayments      PaymentTransaction[]     @relation("PaymentReconciler")
+  reviewedPaymentProofs   BankTransferProof[]         @relation("PaymentProofReviewer")
+  reconciledPayments      PaymentTransaction[]        @relation("PaymentReconciler")
   adminSlotReservations   AdminSlotReservation[]
+  tournamentStaff         TournamentStaffAssignment[]
+  assignedMatches         Match[]                     @relation("AssignedMatchStaff")
+  auditLogs               AuditLog[]                  @relation("AuditActor")
 
   @@index([role])
   @@index([createdAt])
@@ -369,72 +410,75 @@ model ContactSubmission {
 }
 
 model Tournament {
-  id                         String                     @id @default(uuid()) @db.Uuid
-  slug                       String                     @unique
+  id                         String                      @id @default(uuid()) @db.Uuid
+  slug                       String                      @unique
   title                      String
   game                       String
-  gameCategoryId             String?                    @map("game_category_id") @db.Uuid
-  organizer                  String                     @default("Quest E-sports")
-  country                    String                     @default("Sri Lanka")
-  location                   String                     @default("TBA")
-  seriesId                   String?                    @map("series_id") @db.Uuid
-  seriesOrder                Int                        @default(100) @map("series_order")
-  displayPriority            Int                        @default(100) @map("display_priority")
-  bannerImageName            String?                    @map("banner_image_name")
-  heroImageName              String?                    @map("hero_image_name")
-  scheduleFileName           String?                    @map("schedule_file_name")
-  scheduleData               Json?                      @map("schedule_data")
-  completedPosterImageName   String?                    @map("completed_poster_image_name")
-  firstPlaceImageName        String?                    @map("first_place_image_name")
-  secondPlaceImageName       String?                    @map("second_place_image_name")
-  thirdPlaceImageName        String?                    @map("third_place_image_name")
-  shortDescription           String                     @map("short_description")
-  fullDescription            String                     @map("full_description")
+  gameCategoryId             String?                     @map("game_category_id") @db.Uuid
+  organizer                  String                      @default("Quest E-sports")
+  country                    String                      @default("Sri Lanka")
+  location                   String                      @default("TBA")
+  seriesId                   String?                     @map("series_id") @db.Uuid
+  seriesOrder                Int                         @default(100) @map("series_order")
+  displayPriority            Int                         @default(100) @map("display_priority")
+  bannerImageName            String?                     @map("banner_image_name")
+  heroImageName              String?                     @map("hero_image_name")
+  scheduleFileName           String?                     @map("schedule_file_name")
+  scheduleData               Json?                       @map("schedule_data")
+  completedPosterImageName   String?                     @map("completed_poster_image_name")
+  firstPlaceImageName        String?                     @map("first_place_image_name")
+  secondPlaceImageName       String?                     @map("second_place_image_name")
+  thirdPlaceImageName        String?                     @map("third_place_image_name")
+  shortDescription           String                      @map("short_description")
+  fullDescription            String                      @map("full_description")
   rules                      String?
-  rulebookId                 String?                    @map("rulebook_id") @db.Uuid
-  registrationOpenAt         DateTime?                  @map("registration_open_at")
-  startDate                  DateTime?                  @map("start_date")
-  startDateStatus            TournamentDateStatus       @default(scheduled) @map("start_date_status")
-  endDate                    DateTime?                  @map("end_date")
-  endDateStatus              TournamentDateStatus       @default(scheduled) @map("end_date_status")
-  registrationDeadline       DateTime?                  @map("registration_deadline")
-  registrationDeadlineStatus TournamentDateStatus       @default(scheduled) @map("registration_deadline_status")
+  rulebookId                 String?                     @map("rulebook_id") @db.Uuid
+  registrationOpenAt         DateTime?                   @map("registration_open_at")
+  startDate                  DateTime?                   @map("start_date")
+  startDateStatus            TournamentDateStatus        @default(scheduled) @map("start_date_status")
+  endDate                    DateTime?                   @map("end_date")
+  endDateStatus              TournamentDateStatus        @default(scheduled) @map("end_date_status")
+  registrationDeadline       DateTime?                   @map("registration_deadline")
+  registrationDeadlineStatus TournamentDateStatus        @default(scheduled) @map("registration_deadline_status")
   format                     String
-  registrationMode           TournamentRegistrationMode @default(open_entry) @map("registration_mode")
-  entryType                  TournamentEntryType        @default(team) @map("entry_type")
-  teamSize                   Int                        @map("team_size")
-  minRosterSize              Int                        @default(1) @map("min_roster_size")
-  maxRosterSize              Int                        @default(5) @map("max_roster_size")
-  maxSubstitutes             Int                        @default(0) @map("max_substitutes")
-  registrationFields         Json                       @default("[]") @map("registration_fields")
-  paymentMethod              TournamentPaymentMethod    @default(free) @map("payment_method")
-  registrationFeeAmount      Decimal                    @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)
-  registrationFeeCurrency    String                     @default("LKR") @map("registration_fee_currency")
-  registrationFeeTiers       Json                       @default("[]") @map("registration_fee_tiers")
-  reservationMinutes         Int                        @default(1440) @map("reservation_minutes")
-  bankTransferReviewMinutes  Int                        @default(1440) @map("bank_transfer_review_minutes")
-  bankName                   String?                    @map("bank_name")
-  bankBranch                 String?                    @map("bank_branch")
-  bankAccountName            String?                    @map("bank_account_name")
-  bankAccountNumber          String?                    @map("bank_account_number")
-  maxTeams                   Int                        @map("max_teams")
-  prizePool                  String                     @map("prize_pool")
-  status                     TournamentStatus           @default(draft)
-  isPublished                Boolean                    @default(false) @map("is_published")
-  bracketLink                String?                    @map("bracket_link")
-  contactLink                String?                    @map("contact_link")
-  isFeatured                 Boolean                    @default(false) @map("is_featured")
-  isActive                   Boolean                    @default(true) @map("is_active")
-  createdAt                  DateTime                   @default(now()) @map("created_at")
-  updatedAt                  DateTime                   @updatedAt @map("updated_at")
+  registrationMode           TournamentRegistrationMode  @default(open_entry) @map("registration_mode")
+  entryType                  TournamentEntryType         @default(team) @map("entry_type")
+  teamSize                   Int                         @map("team_size")
+  minRosterSize              Int                         @default(1) @map("min_roster_size")
+  maxRosterSize              Int                         @default(5) @map("max_roster_size")
+  maxSubstitutes             Int                         @default(0) @map("max_substitutes")
+  registrationFields         Json                        @default("[]") @map("registration_fields")
+  paymentMethod              TournamentPaymentMethod     @default(free) @map("payment_method")
+  registrationFeeAmount      Decimal                     @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)
+  registrationFeeCurrency    String                      @default("LKR") @map("registration_fee_currency")
+  registrationFeeTiers       Json                        @default("[]") @map("registration_fee_tiers")
+  reservationMinutes         Int                         @default(1440) @map("reservation_minutes")
+  bankTransferReviewMinutes  Int                         @default(1440) @map("bank_transfer_review_minutes")
+  bankName                   String?                     @map("bank_name")
+  bankBranch                 String?                     @map("bank_branch")
+  bankAccountName            String?                     @map("bank_account_name")
+  bankAccountNumber          String?                     @map("bank_account_number")
+  maxTeams                   Int                         @map("max_teams")
+  prizePool                  String                      @map("prize_pool")
+  status                     TournamentStatus            @default(draft)
+  isPublished                Boolean                     @default(false) @map("is_published")
+  bracketLink                String?                     @map("bracket_link")
+  contactLink                String?                     @map("contact_link")
+  isFeatured                 Boolean                     @default(false) @map("is_featured")
+  isActive                   Boolean                     @default(true) @map("is_active")
+  createdAt                  DateTime                    @default(now()) @map("created_at")
+  updatedAt                  DateTime                    @updatedAt @map("updated_at")
   teamRegistrations          TeamRegistration[]
   posters                    Poster[]
   bracket                    TournamentBracket?
-  rulebook                   Rulebook?                  @relation(fields: [rulebookId], references: [id], onDelete: SetNull)
-  series                     EventSeries?               @relation(fields: [seriesId], references: [id], onDelete: SetNull)
-  gameCategory               GameCategory?              @relation(fields: [gameCategoryId], references: [id], onDelete: SetNull)
+  rulebook                   Rulebook?                   @relation(fields: [rulebookId], references: [id], onDelete: SetNull)
+  series                     EventSeries?                @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  gameCategory               GameCategory?               @relation(fields: [gameCategoryId], references: [id], onDelete: SetNull)
   sponsors                   TournamentSponsor[]
   adminSlotReservations      AdminSlotReservation[]
+  staffAssignments           TournamentStaffAssignment[]
+  matches                    Match[]
+  challongeIntegration       ChallongeIntegration?
 
   @@index([isActive])
   @@index([isPublished, status, startDate])
@@ -495,6 +539,161 @@ model TournamentBracket {
   @@map("tournament_brackets")
 }
 
+model TournamentStaffAssignment {
+  id           String              @id @default(uuid()) @db.Uuid
+  tournamentId String              @map("tournament_id") @db.Uuid
+  userId       String              @map("user_id") @db.Uuid
+  role         TournamentStaffRole
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+  tournament   Tournament          @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, userId, role])
+  @@index([userId, role])
+  @@index([tournamentId, role])
+  @@map("tournament_staff_assignments")
+}
+
+model Match {
+  id                String             @id @default(uuid()) @db.Uuid
+  tournamentId      String             @map("tournament_id") @db.Uuid
+  source            MatchSource        @default(quest)
+  externalId        String?            @map("external_id")
+  identifier        String?
+  roundNumber       Int?               @map("round_number")
+  status            MatchStatus        @default(not_scheduled)
+  scheduledAt       DateTime?          @map("scheduled_at")
+  estimatedAt       DateTime?          @map("estimated_at")
+  station           String?
+  checkInDeadline   DateTime?          @map("check_in_deadline")
+  vetoStartAt       DateTime?          @map("veto_start_at")
+  assignedStaffId   String?            @map("assigned_staff_id") @db.Uuid
+  localNotes        String?            @map("local_notes")
+  scoreData         Json               @default("{}") @map("score_data")
+  winnerSlot        Int?               @map("winner_slot")
+  completedAt       DateTime?          @map("completed_at")
+  externalUpdatedAt DateTime?          @map("external_updated_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  tournament        Tournament         @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  assignedStaff     User?              @relation("AssignedMatchStaff", fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  participants      MatchParticipant[]
+
+  @@unique([tournamentId, source, externalId])
+  @@index([tournamentId, status, scheduledAt])
+  @@index([status, scheduledAt])
+  @@index([assignedStaffId, scheduledAt])
+  @@index([source, externalUpdatedAt])
+  @@map("matches")
+}
+
+model MatchParticipant {
+  id                    String            @id @default(uuid()) @db.Uuid
+  matchId               String            @map("match_id") @db.Uuid
+  slot                  Int
+  registrationId        String?           @map("registration_id") @db.Uuid
+  externalParticipantId String?           @map("external_participant_id")
+  displayName           String            @map("display_name")
+  seed                  Int?
+  score                 String?
+  result                String?
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  match                 Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  registration          TeamRegistration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+
+  @@unique([matchId, slot])
+  @@index([registrationId])
+  @@index([externalParticipantId])
+  @@map("match_participants")
+}
+
+model ChallongeIntegration {
+  id                String                     @id @default(uuid()) @db.Uuid
+  tournamentId      String                     @unique @map("tournament_id") @db.Uuid
+  identifier        String
+  enabled           Boolean                    @default(false)
+  syncFrequency     ChallongeSyncFrequency     @default(five_minutes) @map("sync_frequency")
+  snapshotData      Json?                      @map("snapshot_data")
+  snapshotHash      String?                    @map("snapshot_hash")
+  snapshotUpdatedAt DateTime?                  @map("snapshot_updated_at")
+  nextSyncAt        DateTime?                  @map("next_sync_at")
+  syncLeaseUntil    DateTime?                  @map("sync_lease_until")
+  lastAttemptAt     DateTime?                  @map("last_attempt_at")
+  lastSuccessAt     DateTime?                  @map("last_success_at")
+  lastErrorCode     String?                    @map("last_error_code")
+  lastErrorMessage  String?                    @map("last_error_message")
+  createdAt         DateTime                   @default(now()) @map("created_at")
+  updatedAt         DateTime                   @updatedAt @map("updated_at")
+  tournament        Tournament                 @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  participantLinks  ChallongeParticipantLink[]
+  syncLogs          ChallongeSyncLog[]
+
+  @@index([enabled, nextSyncAt])
+  @@index([syncLeaseUntil])
+  @@map("challonge_integrations")
+}
+
+model ChallongeParticipantLink {
+  id                    String               @id @default(uuid()) @db.Uuid
+  integrationId         String               @map("integration_id") @db.Uuid
+  externalParticipantId String               @map("external_participant_id")
+  registrationId        String?              @map("registration_id") @db.Uuid
+  displayName           String               @map("display_name")
+  seed                  Int?
+  isConfirmed           Boolean              @default(false) @map("is_confirmed")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  integration           ChallongeIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  registration          TeamRegistration?    @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+
+  @@unique([integrationId, externalParticipantId])
+  @@index([registrationId, isConfirmed])
+  @@map("challonge_participant_links")
+}
+
+model ChallongeSyncLog {
+  id               String               @id @default(uuid()) @db.Uuid
+  integrationId    String               @map("integration_id") @db.Uuid
+  status           ChallongeSyncStatus
+  trigger          String
+  requestId        String?              @map("request_id")
+  httpStatus       Int?                 @map("http_status")
+  errorCode        String?              @map("error_code")
+  errorMessage     String?              @map("error_message")
+  tournamentState  String?              @map("tournament_state")
+  participantCount Int                  @default(0) @map("participant_count")
+  matchCount       Int                  @default(0) @map("match_count")
+  durationMs       Int?                 @map("duration_ms")
+  startedAt        DateTime             @default(now()) @map("started_at")
+  completedAt      DateTime?            @map("completed_at")
+  integration      ChallongeIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, startedAt])
+  @@index([status, startedAt])
+  @@map("challonge_sync_logs")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String?  @map("target_id")
+  beforeData  Json?    @map("before_data")
+  afterData   Json?    @map("after_data")
+  requestId   String?  @map("request_id")
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
 model TeamRegistration {
   id                     String                         @id @default(uuid()) @db.Uuid
   tournamentId           String                         @map("tournament_id") @db.Uuid
@@ -530,6 +729,8 @@ model TeamRegistration {
   members                RegistrationMember[]
   payments               PaymentTransaction[]
   adminSlotReservation   AdminSlotReservation?
+  matchParticipants      MatchParticipant[]
+  challongeLinks         ChallongeParticipantLink[]
 
   @@unique([tournamentId, captainEmail])
   @@index([tournamentId])

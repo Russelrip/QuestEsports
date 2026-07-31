@@ -47,6 +47,28 @@ Typical error shape:
 
 Field-level validation errors are returned in `details.fieldErrors` on validation failures.
 
+New foundation endpoints use a versioned envelope:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "meta": { "serverNow": "2026-07-31T12:00:00.000Z" }
+}
+```
+
+List resources add `meta.pagination`. All timestamps are ISO-8601 UTC. Existing unversioned response shapes remain supported for compatibility.
+
+## Versioned tournament and match endpoints
+
+- `GET /api/v1/home` returns the 15-second public homepage feed.
+- `GET /api/v1/tournaments/:slug`, `/bracket`, and `/matches` return slim tournament data plus the authoritative linked-or-native bracket and normalized schedule.
+- `GET /api/v1/matches` supports `page`, `pageSize`, `status`, `from`, and `to` filters.
+- `GET /api/v1/matches/next?scope=public|me` returns the next relevant fixture. The `me` scope requires a session.
+- `GET /api/v1/events?topics=matches,brackets` is an SSE invalidation stream with heartbeat and reconnect guidance. Clients refetch JSON rather than treating events as match state.
+
+Tournament administrators and referees can use `/api/v1/admin/tournaments/:id/matches`. Super admins manage `/staff` assignments. Challonge configuration, manual sync, sanitized logs, and confirmed participant mapping are under `/api/v1/admin/tournaments/:id/challonge`. Complete contracts are published by `/api/openapi.json`.
+
 ### Maintenance
 
 When site maintenance is enabled, normal API routes return `503 Service Unavailable` with `Retry-After`, `Cache-Control: no-store`, and `X-Maintenance-Mode: active` headers:

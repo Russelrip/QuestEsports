@@ -12,6 +12,9 @@ const {
   processFileCleanupJob,
   processTeamLogoCleanupJob,
 } = require("./upload-cleanup-job");
+const { syncChallongeIntegration } = require("../modules/challonge/challonge.service");
+
+const CHALLONGE_SYNC_JOB_NAME = "challonge.sync";
 
 const JOB_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 const JOB_RETRY_BASE_DELAY_MS = 30 * 1000;
@@ -279,6 +282,15 @@ const processJobByName = async (job) => {
       return processFileCleanupJob(job.payload);
     case TEAM_LOGO_CLEANUP_JOB_NAME:
       return processTeamLogoCleanupJob(job.payload, prisma);
+    case CHALLONGE_SYNC_JOB_NAME:
+      if (!job.payload?.integrationId) {
+        throw new Error("Challonge sync job is missing integrationId.");
+      }
+      return syncChallongeIntegration({
+        integrationId: job.payload.integrationId,
+        trigger: "scheduled",
+        requestId: job.payload.requestId || null,
+      });
     default:
       throw new Error(`Unsupported background job: ${job.name}`);
   }
@@ -405,4 +417,5 @@ module.exports = {
   startJobWorker,
   stopJobWorker,
   suggestedJobBackends,
+  CHALLONGE_SYNC_JOB_NAME,
 };

@@ -8,6 +8,10 @@ const {
 const { logger } = require("./lib/logger");
 const { env } = require("./config/env");
 const { ensureUploadDirectories } = require("./middleware/upload");
+const {
+  startChallongeScheduler,
+  stopChallongeScheduler,
+} = require("./modules/challonge/challonge.jobs");
 
 let isShuttingDown = false;
 let server = null;
@@ -68,13 +72,14 @@ const shutdown = async (signal, exitCode = 0) => {
       closeHttp,
       stopJobWorker(),
       stopCommerceMaintenance(),
+      stopChallongeScheduler(),
     ]);
 
     for (const [index, result] of drainResults.entries()) {
       if (result.status === "rejected") {
         shutdownFailed = true;
         logger.error("Shutdown drain task failed", {
-          task: ["http", "job_worker", "commerce_maintenance"][index],
+          task: ["http", "job_worker", "commerce_maintenance", "challonge_scheduler"][index],
           error: result.reason,
           signal,
         });
@@ -111,6 +116,7 @@ const start = async () => {
   await initializeDatabase();
   startJobWorker();
   startCommerceMaintenance();
+  startChallongeScheduler();
 
   server = app.listen(env.PORT);
 

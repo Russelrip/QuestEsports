@@ -1,5 +1,23 @@
 import { expect, test, type Route } from "@playwright/test";
 
+test("homepage presents the foundation sections in event-priority order", async ({ page }) => {
+  await page.goto("/");
+  const headings = await page.locator("main h2").allTextContents();
+  expect(headings).toEqual([
+    "Next match",
+    "Registration status",
+    "Featured tournaments",
+    "Recent results",
+    "Upcoming matches",
+    "Featured competitors",
+    "Match videos",
+    "Sponsors",
+    "Your next tournament starts here.",
+  ]);
+  await expect(page.getByText("Live match data is temporarily unavailable", { exact: false })).toBeVisible();
+  await expect(page.getByText("No registration window is open right now", { exact: false })).toBeVisible();
+});
+
 test("privacy policy page renders the app shell and policy content", async ({ page }) => {
   await page.goto("/privacy-policy");
 

@@ -230,7 +230,7 @@ export default function MfaSettingsPanel() {
                 <p>Scan this QR code with your authenticator app, then enter the 6-digit code it generates.</p>
 
                 <div className="mt-5 flex justify-center">
-                  <div className="rounded-[24px] border border-white/12 bg-white p-4 shadow-[0_16px_40px_rgba(0,0,0,0.18)]">
+                  <div className="max-w-full overflow-hidden rounded-[24px] border border-white/12 bg-white p-2 shadow-[0_16px_40px_rgba(0,0,0,0.18)] sm:p-4">
                     <QRCodeSVG
                       value={setup.otpauthUrl}
                       size={192}
@@ -311,7 +311,7 @@ export default function MfaSettingsPanel() {
           <p className="text-sm font-medium text-white">Save these backup codes now.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {backupCodes.map((code) => (
-              <div key={code} className="rounded-2xl border border-white/8 bg-black/20 px-3 py-2 font-mono text-sm text-slate-100">
+              <div key={code} className="overflow-wrap-anywhere min-w-0 rounded-2xl border border-white/8 bg-black/20 px-3 py-2 font-mono text-sm text-slate-100">
                 {code}
               </div>
             ))}
