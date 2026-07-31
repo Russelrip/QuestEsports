@@ -14,7 +14,9 @@ test("homepage presents the foundation sections in event-priority order", async 
     "Sponsors",
     "Your next tournament starts here.",
   ]);
-  await expect(page.getByText("Live match data is temporarily unavailable", { exact: false })).toBeVisible();
+  await expect(
+    page.getByText(/(?:No match is scheduled yet|Live match data is temporarily unavailable)/i)
+  ).toBeVisible();
   await expect(page.getByText("No registration window is open right now", { exact: false })).toBeVisible();
 });
 

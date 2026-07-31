@@ -648,7 +648,10 @@ model ChallongeParticipantLink {
   integration           ChallongeIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
   registration          TeamRegistration?    @relation(fields: [registrationId], references: [id], onDelete: SetNull)
 
-  @@unique([integrationId, externalParticipantId])
+  // PostgreSQL truncates Prisma's generated name for this composite key differently
+  // from Prisma's own identifier shortening. Keep the mapped name explicit so a
+  // freshly migrated database and the datamodel remain identical.
+  @@unique([integrationId, externalParticipantId], map: "challonge_participant_links_integration_id_external_participant")
   @@index([registrationId, isConfirmed])
   @@map("challonge_participant_links")
 }
