@@ -1,17 +1,5 @@
 import { expect, test, type Route } from "@playwright/test";
 
-test("homepage retains the original Quest marketing layout", async ({ page }) => {
-  await page.goto("/");
-
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("QUEST E-SPORTS");
-  await expect(page.locator("main h2")).toHaveText([
-    "Quest E-sports Recruitment is Now Open!",
-    "People Behind Quest",
-    "Featured Events",
-  ]);
-  await expect(page.getByRole("heading", { name: "Next match" })).toHaveCount(0);
-});
-
 test("privacy policy page renders the app shell and policy content", async ({ page }) => {
   await page.goto("/privacy-policy");
 

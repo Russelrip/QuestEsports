@@ -27,7 +27,6 @@ import { useToastStore } from "@/hooks/useToastStore";
 import { getInitials } from "@/lib/utils";
 import { buildApiUrl } from "@/lib/api";
 import { AccountDashboard, DashboardRegistration, fetchAccountDashboard } from "@/lib/account";
-import LiveMatchSchedule from "@/components/matches/LiveMatchSchedule";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required."),
@@ -65,7 +64,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
       ? new Date(entry.tournament.startDate).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
       : entry.tournament.startDateStatus.toUpperCase();
 
-    return <article key={entry.id} className="flex h-full min-w-0 flex-col overflow-hidden border border-white/10 bg-[#181a24] shadow-[0_18px_45px_rgba(0,0,0,0.2)]">
+    return <article key={entry.id} className="flex h-full flex-col overflow-hidden border border-white/10 bg-[#181a24] shadow-[0_18px_45px_rgba(0,0,0,0.2)]">
       <div className="relative aspect-[16/8] overflow-hidden bg-[#090b12]">
         {entry.tournament.bannerUrl ? <Image src={buildApiUrl(entry.tournament.bannerUrl)} alt={`${entry.tournament.title} poster`} fill className="object-cover" sizes="(min-width: 1280px) 30vw, (min-width: 768px) 45vw, 100vw" /> : <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(168,85,247,0.28),transparent_36%),linear-gradient(135deg,#111827,#090b12)]" />}
         <span className="absolute left-4 top-4 bg-black/75 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-purple-200 backdrop-blur">{entry.tournament.game}</span>
@@ -78,7 +77,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
           <div><dt className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Registration</dt><dd className="mt-1.5 text-xs font-semibold capitalize text-white">{entry.status}</dd></div>
         </dl>
         <div className="mt-4 flex flex-wrap gap-2"><Badge>{entry.status}</Badge><Badge>{entry.verificationStatus}</Badge><Badge>{entry.payment?.status || entry.paymentStatus}</Badge></div>
-        <Link href={href} className="mt-5 flex min-w-0 items-center justify-between gap-3 bg-purple-300 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-purple-200">
+        <Link href={href} className="mt-5 flex items-center justify-between bg-purple-300 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-950 transition hover:bg-purple-200">
           <span>{awaitingRoster ? "Confirm full roster" : needsBankPayment ? "Complete bank transfer" : needsOnlinePayment ? "Retry online payment" : readyForPayment ? "Continue to payment" : "View tournament"}</span><span aria-hidden="true">→</span>
         </Link>
       </div>
@@ -286,30 +285,30 @@ export default function ProfileView() {
   return (
     <section className="py-8 sm:py-12">
       <Container>
-        <div className="grid min-w-0 gap-6">
+        <div className="grid gap-6">
           <Card className="relative overflow-hidden p-6 sm:p-8">
-            <div className="relative flex min-w-0 flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-5">
-                <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-[#20232b] text-lg font-bold text-white shadow-[0_12px_32px_rgba(0,0,0,0.28)]">
+            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-5">
+                <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-700 text-lg font-bold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)]">
                   {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt={`${user.firstName} ${user.lastName}`} fill className="object-cover" sizes="80px" /> : initials}
                 </div>
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-purple-200/75">Player overview</p>
-                  <h2 className="overflow-wrap-anywhere mt-2 text-2xl leading-tight text-white sm:text-3xl">{user.firstName} {user.lastName}</h2>
-                  <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm text-slate-400"><span className="overflow-wrap-anywhere min-w-0">@{user.username}</span><span className="hidden sm:inline" aria-hidden="true">•</span><span className="overflow-wrap-anywhere min-w-0 basis-full sm:basis-auto">{user.email}</span><Badge className={user.emailVerified ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-200" : "border-amber-300/20 bg-amber-400/10 text-amber-200"}>{user.emailVerified ? "Verified" : "Verification needed"}</Badge></div>
+                  <h2 className="mt-2 truncate text-3xl text-white">{user.firstName} {user.lastName}</h2>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400"><span>@{user.username}</span><span aria-hidden="true">•</span><span>{user.email}</span><Badge className={user.emailVerified ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-200" : "border-amber-300/20 bg-amber-400/10 text-amber-200"}>{user.emailVerified ? "Verified" : "Verification needed"}</Badge></div>
                 </div>
               </div>
-              <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                <label className={buttonClassName({ variant: "secondary", className: "w-full min-w-0 cursor-pointer" })}>{avatarSaving ? "Saving..." : "Change photo"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarSaving} onChange={(event) => void updateAvatar(event.target.files?.[0])} /></label>
-                {user.avatarUrl ? <Button className="min-w-0" type="button" variant="ghost" disabled={avatarSaving} onClick={() => void removeAvatar()}>Remove photo</Button> : null}
-                {user.role === "admin" ? <Link href="/admin" className={buttonClassName({ variant: "secondary", className: "min-w-0" })}>Admin</Link> : null}
-                <Button className="min-w-0" variant="ghost" onClick={async () => { if (await logout()) router.push("/"); }}>Logout</Button>
+              <div className="flex flex-wrap gap-2">
+                <label className={buttonClassName({ variant: "secondary", className: "cursor-pointer" })}>{avatarSaving ? "Saving..." : "Change photo"}<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={avatarSaving} onChange={(event) => void updateAvatar(event.target.files?.[0])} /></label>
+                {user.avatarUrl ? <Button type="button" variant="ghost" disabled={avatarSaving} onClick={() => void removeAvatar()}>Remove photo</Button> : null}
+                {user.role === "admin" ? <Link href="/admin" className={buttonClassName({ variant: "secondary" })}>Admin</Link> : null}
+                <Button variant="ghost" onClick={async () => { if (await logout()) router.push("/"); }}>Logout</Button>
               </div>
             </div>
 
             {user.pendingEmail ? (
               <div className="relative mt-6 border border-amber-300/20 bg-amber-400/8 p-4 text-sm text-slate-200">
-                Email change pending for <strong className="overflow-wrap-anywhere">{user.pendingEmail}</strong>. Your current email stays active until the new address is confirmed.
+                Email change pending for <strong>{user.pendingEmail}</strong>. Your current email stays active until the new address is confirmed.
               </div>
             ) : null}
 
@@ -326,12 +325,12 @@ export default function ProfileView() {
           </Card>
 
           <Card className="p-4 sm:p-6 lg:p-8">
-            <div className="mb-8 grid grid-cols-2 gap-1 border-b border-white/8 sm:flex" role="tablist" aria-label="Profile sections">
+            <div className="mb-8 flex gap-1 overflow-x-auto border-b border-white/8" role="tablist" aria-label="Profile sections">
               <button
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "dashboard"}
-                className={`min-w-0 border-b-2 px-2 py-3 text-sm font-medium transition sm:px-4 ${activeTab === "dashboard" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "dashboard" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("dashboard")}
               >
                 Overview
@@ -340,7 +339,7 @@ export default function ProfileView() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "account"}
-                className={`min-w-0 border-b-2 px-2 py-3 text-sm font-medium transition sm:px-4 ${activeTab === "account" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "account" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("account")}
               >
                 Account
@@ -349,7 +348,7 @@ export default function ProfileView() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "teams"}
-                className={`min-w-0 border-b-2 px-2 py-3 text-sm font-medium transition sm:px-4 ${activeTab === "teams" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "teams" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("teams")}
               >
                 Teams
@@ -358,7 +357,7 @@ export default function ProfileView() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "security"}
-                className={`min-w-0 border-b-2 px-2 py-3 text-sm font-medium transition sm:px-4 ${activeTab === "security" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                className={`border-b-2 px-4 py-3 text-sm font-medium transition ${activeTab === "security" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("security")}
               >
                 Security
@@ -367,7 +366,6 @@ export default function ProfileView() {
 
             {activeTab === "dashboard" ? (
               <div className="grid gap-10">
-                <section className="border border-white/10 bg-[#11131b] p-5 sm:p-6"><p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-200">Your next fixture</p><LiveMatchSchedule scope="me" showList={false} /></section>
                 {dashboardLoading ? <LoadingState title="Loading dashboard" description="Fetching your registrations and orders." /> : dashboardError ? <p className="text-sm text-rose-300">{dashboardError}</p> : dashboard ? <>
                   <div className="grid gap-3 sm:grid-cols-3">{[["Active registrations", dashboard.currentRegistrations.length], ["Completed tournaments", dashboard.pastRegistrations.length], ["Teams you are in", dashboard.teams.length]].map(([label, value], index) => <div key={String(label)} className="relative overflow-hidden border border-white/8 bg-[#171923] p-5"><span className={`absolute inset-y-0 left-0 w-1 ${index === 0 ? "bg-purple-300" : index === 1 ? "bg-violet-400" : "bg-emerald-300"}`} /><p className="text-3xl font-semibold text-white">{value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">{label}</p></div>)}</div>
 
@@ -488,7 +486,6 @@ export default function ProfileView() {
               </div>
             ) : (
               <div>
-                <section className="mb-8 border border-white/10 bg-[#11131b] p-5 sm:p-6"><p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.22em] text-blue-200">Next team match</p><LiveMatchSchedule scope="me" showList={false} /></section>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="text-2xl text-white">My Teams</h3>

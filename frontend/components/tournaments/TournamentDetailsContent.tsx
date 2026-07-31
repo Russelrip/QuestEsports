@@ -1,17 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
-import { Button, buttonClassName } from "@/components/ui/button";
+import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Section } from "@/components/ui/section";
-import LiveMatchSchedule from "@/components/matches/LiveMatchSchedule";
-import { useApiQuery } from "@/hooks/api/useApiQuery";
-import { fetchTournamentBracket, type BracketResponse } from "@/lib/matches";
 import { resolveMediaUrl } from "@/lib/media";
 import { formatSriLankaDateTime } from "@/lib/date-time";
 import {
@@ -115,7 +111,16 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
           <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Participants</h3><p className="mt-3 text-sm text-slate-400">Approved participants will appear here.</p></Card>
         ) : null}
 
-        {activeTab === "bracket" ? <BracketPanel tournament={tournament} /> : null}
+        {tournament.challongeEmbedUrl ? (
+          <ChallongeBracket tournament={tournament} active={activeTab === "bracket"} />
+        ) : activeTab === "bracket" && tournament.bracketData ? (
+          <section className="space-y-5">
+            <h3 className="text-3xl text-white">Brackets</h3>
+            <LiveBracketView bracketData={tournament.bracketData} />
+          </section>
+        ) : activeTab === "bracket" ? (
+          <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Bracket</h3><p className="mt-3 text-sm text-slate-400">The bracket will appear after it is published.</p></Card>
+        ) : null}
 
         {activeTab === "schedule" ? <SchedulePanel tournament={tournament} /> : null}
         {activeTab === "rules" ? <RulesPanel tournament={tournament} /> : null}
@@ -124,32 +129,54 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
   );
 }
 
-type ChallongeSnapshot = {
-  tournament: { name: string; state: string };
-  participants: Array<{ id: string; name: string; seed: number | null }>;
-  matches: Array<{ id: string; identifier: string | null; round: number | null; state: string; player1Id: string | null; player2Id: string | null; winnerId: string | null; scoresCsv: string | null }>;
-};
+function ChallongeBracket({ tournament, active }: { tournament: Tournament; active: boolean }) {
+  const [shouldLoad, setShouldLoad] = useState(active);
+  const [loaded, setLoaded] = useState(false);
 
-function BracketPanel({ tournament }: { tournament: Tournament }) {
-  const load = useCallback(async () => (await fetchTournamentBracket(tournament.slug)).data, [tournament.slug]);
-  const { data, error, loading, refetch } = useApiQuery<BracketResponse>(["tournament-bracket", tournament.slug], load);
-  const externalUrl = data?.externalUrl || tournament.bracketLink;
-  return <section className="space-y-5">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-3xl text-white">Bracket</h3>{data?.syncedAt ? <p className="mt-1 text-xs text-slate-500">Last synchronized {new Date(data.syncedAt).toLocaleString()}</p> : null}</div>{externalUrl ? <a href={externalUrl} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open source bracket</a> : null}</div>
-    {loading && !data ? <div className="grid gap-3"><Skeleton className="h-10 w-64" /><Skeleton className="h-80 w-full" /></div> : null}
-    {error && !data ? <Card className="border-rose-300/20 p-6"><p className="text-sm text-rose-100">{error}</p><Button className="mt-4" variant="secondary" onClick={() => void refetch()}>Try again</Button></Card> : null}
-    {data?.status === "stale" ? <div className="border-l-2 border-amber-300 bg-amber-400/8 p-4 text-sm text-amber-100">Challonge is temporarily unavailable. Showing the last successful bracket snapshot.</div> : null}
-    {data?.error && data.data ? <p className="text-xs text-slate-500">Latest synchronization note: {data.error.message}</p> : null}
-    {data?.source === "native" && data.data ? <LiveBracketView bracketData={data.data as TournamentBracketData} /> : null}
-    {data?.source === "challonge" && data.data ? <ChallongeSnapshotView snapshot={data.data as ChallongeSnapshot} /> : null}
-    {data && (!data.data || data.source === "none") ? <Card className="p-6 sm:p-8"><p className="text-sm text-slate-400">The bracket will appear after it is published.</p></Card> : null}
-  </section>;
-}
+  useEffect(() => {
+    const loadWhenIdle = () => setShouldLoad(true);
+    if (shouldLoad) return;
+    if (active) {
+      const timeoutId = globalThis.setTimeout(loadWhenIdle, 0);
+      return () => globalThis.clearTimeout(timeoutId);
+    }
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(loadWhenIdle, { timeout: 2500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timeoutId = globalThis.setTimeout(loadWhenIdle, 1200);
+    return () => globalThis.clearTimeout(timeoutId);
+  }, [active, shouldLoad]);
 
-function ChallongeSnapshotView({ snapshot }: { snapshot: ChallongeSnapshot }) {
-  const participants = new Map(snapshot.participants.map((participant) => [participant.id, participant]));
-  const rounds = Array.from(new Set(snapshot.matches.map((match) => match.round ?? 0))).sort((left, right) => left - right);
-  return <div className="overflow-x-auto border border-white/10 bg-[#10121a] p-4 sm:p-5"><div className="flex min-w-max items-start gap-5">{rounds.map((round) => <section key={round} className="w-64 shrink-0"><h4 className="border-b border-blue-300/30 pb-3 text-center text-xs font-semibold uppercase tracking-[0.16em] text-blue-100">{round < 0 ? `Lower round ${Math.abs(round)}` : round === 0 ? "Finals" : `Round ${round}`}</h4><div className="mt-4 grid gap-5">{snapshot.matches.filter((match) => (match.round ?? 0) === round).map((match) => { const player1 = match.player1Id ? participants.get(match.player1Id) : null; const player2 = match.player2Id ? participants.get(match.player2Id) : null; return <article key={match.id} className="border border-white/10 bg-[#191c26] p-3"><div className="mb-2 flex justify-between text-[10px] uppercase tracking-[0.12em] text-slate-500"><span>{match.identifier || `Match ${match.id}`}</span><span>{match.state}</span></div>{[[player1, match.player1Id], [player2, match.player2Id]].map(([participant, id], index) => <p key={`${match.id}-${index}`} className={`overflow-wrap-anywhere mt-1 border-l-2 px-2 py-1.5 text-xs ${id && id === match.winnerId ? "border-emerald-300 bg-emerald-400/8 text-white" : "border-white/15 bg-white/[0.025] text-slate-300"}`}>{(participant as ChallongeSnapshot["participants"][number] | undefined)?.name || "TBD"}</p>)}{match.scoresCsv ? <p className="mt-2 text-right text-[10px] text-slate-500">{match.scoresCsv}</p> : null}</article>; })}</div></section>)}</div></div>;
+  return (
+    <section className={active ? "space-y-5" : "hidden"} aria-hidden={!active}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-3xl text-white">Brackets</h3>
+        {tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}
+      </div>
+      <div className="relative min-h-[760px] overflow-hidden bg-[#242424]">
+        {!loaded ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#181818] px-6 text-center">
+            <div>
+              <span className="mx-auto block size-8 animate-spin rounded-full border-2 border-white/15 border-t-purple-300" aria-hidden="true" />
+              <p className="mt-4 text-sm font-semibold text-slate-200">Loading Challonge bracket…</p>
+              <p className="mt-1 text-xs text-slate-500">The external bracket may take a moment to respond.</p>
+            </div>
+          </div>
+        ) : null}
+        {shouldLoad ? (
+          <iframe
+            src={tournament.challongeEmbedUrl || undefined}
+            title={`${tournament.title} Challonge bracket`}
+            loading="eager"
+            referrerPolicy="strict-origin-when-cross-origin"
+            onLoad={() => setLoaded(true)}
+            className="block h-[760px] w-full border-0"
+          />
+        ) : null}
+      </div>
+    </section>
+  );
 }
 
 function SponsorsPanel({ tournament }: { tournament: Tournament }) {
@@ -324,12 +351,15 @@ function SchedulePanel({ tournament }: { tournament: Tournament }) {
   const schedule = tournament.scheduleData;
   if (!schedule || schedule.headers.length === 0 || schedule.rows.length === 0) {
     return (
-      <section className="space-y-5"><h3 className="text-3xl text-white">Live schedule</h3><Card className="p-5 sm:p-7"><LiveMatchSchedule tournamentSlug={tournament.slug} /></Card></section>
+      <Card className="p-6 sm:p-8">
+        <h3 className="text-3xl text-white">Schedule</h3>
+        <p className="mt-3 text-sm text-slate-400">The match schedule will be published here when it is ready.</p>
+      </Card>
     );
   }
 
   return (
-    <section className="space-y-6"><div><h3 className="text-3xl text-white">Live schedule</h3><Card className="mt-4 p-5 sm:p-7"><LiveMatchSchedule tournamentSlug={tournament.slug} /></Card></div><details open className="group relative overflow-hidden border border-purple-300/20 bg-[#0b0912]/95 shadow-[0_24px_70px_rgba(0,0,0,0.38)]">
+    <details open className="group relative overflow-hidden border border-purple-300/20 bg-[#0b0912]/95 shadow-[0_24px_70px_rgba(0,0,0,0.38)]">
       <summary className="relative flex cursor-pointer list-none items-center justify-between gap-4 overflow-hidden border-b border-purple-200/10 bg-[linear-gradient(105deg,rgba(126,34,206,0.34),rgba(30,20,48,0.96)_48%,rgba(10,8,16,0.98))] px-4 py-4 text-white [&::-webkit-details-marker]:hidden sm:px-5">
         <span className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-fuchsia-300 via-purple-400 to-violet-500" />
         <span className="flex items-center gap-3">
@@ -388,7 +418,7 @@ function SchedulePanel({ tournament }: { tournament: Tournament }) {
         <span>Swipe to view</span>
         <span aria-hidden="true">← →</span>
       </div>
-    </details></section>
+    </details>
   );
 }
 
