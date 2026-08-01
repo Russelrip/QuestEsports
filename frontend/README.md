@@ -74,6 +74,7 @@ The frontend expects the backend to expose:
 
 ```bash
 npm run lint
+npm run typecheck
 npm test
 npm run build
 npm run test:e2e

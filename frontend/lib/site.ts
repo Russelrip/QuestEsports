@@ -354,18 +354,6 @@ export const secondaryNavItems = [
   { href: "/contact", label: "Contact" },
 ] as const;
 
-export const footerNavItems = [
-  { href: "/contact", label: "Contact" },
-  { href: "/terms-of-service", label: "Terms of Service" },
-  { href: "/privacy-policy", label: "Privacy Policy" },
-  { href: "/match-videos", label: "Match Videos" },
-  { href: "/gallery", label: "Gallery" },
-  { href: "/tournaments", label: "Tournaments" },
-  { href: "/shop", label: "Shop" },
-  { href: "/members", label: "Members" },
-  { href: "/join", label: "Join Quest" },
-] as const;
-
 export const authNavItems = [
   { href: "/signup", label: "Sign Up" },
   { href: "/login", label: "Login" },

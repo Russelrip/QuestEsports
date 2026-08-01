@@ -191,24 +191,6 @@ export function ShieldIcon() {
   );
 }
 
-export function DiscordBadgeIcon() {
-  return (
-    <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-red-600 shadow-[0_16px_32px_rgba(255,59,59,0.28)]">
-      <UserPlusIcon />
-    </div>
-  );
-}
-
-function UserPlusIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="text-white">
-      <path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M3.5 18a5.5 5.5 0 0 1 11 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M17 8v6M14 11h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function EyeIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">

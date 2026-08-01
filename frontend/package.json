@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters",
     "test": "vitest run tests/unit",
     "test:e2e": "playwright test",
     "test:e2e:local": "node scripts/run-e2e-local.mjs",

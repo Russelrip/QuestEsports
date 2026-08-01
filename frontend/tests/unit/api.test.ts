@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  ApiRequestError,
   buildApiUrl,
   fetchWithTimeout,
   parseApiResponse,
@@ -55,7 +54,7 @@ describe("API helpers", () => {
     globalThis.fetch = () => neverCompletes;
     try {
       await expect(fetchWithTimeout("https://api.example.com", {}, 1)).rejects.toEqual(
-        expect.objectContaining<ApiRequestError>({ status: 408 })
+        expect.objectContaining({ status: 408 })
       );
     } finally {
       globalThis.fetch = originalFetch;

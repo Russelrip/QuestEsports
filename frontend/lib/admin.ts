@@ -61,15 +61,6 @@ export type AdminDashboardStats = {
   unreadContactMessages: number;
 };
 
-export type LegacyPosterImportSummary = {
-  importedCount: number;
-  skippedCount: number;
-  results: {
-    status: "imported" | "skipped";
-    title: string;
-  }[];
-};
-
 export type AdminUser = {
   id: string;
   firstName: string;
@@ -255,13 +246,6 @@ export type AdminTournamentBracket = {
   lastUpdatedAt: string;
 };
 
-export const emptyPagination: Pagination = {
-  page: 1,
-  pageSize: 10,
-  total: 0,
-  totalPages: 1,
-};
-
 export const formatAdminDateTime = (
   value?: string | null,
   options?: Intl.DateTimeFormatOptions
@@ -283,10 +267,6 @@ export const getAdminPaginationSummary = (
   pagination: Pagination,
   totalLabel = "total"
 ) => `Page ${pagination.page} of ${pagination.totalPages} - ${pagination.total} ${totalLabel}`;
-
-export type PagedAdminResponse<TItemKey extends string, TItem> = {
-  pagination: Pagination;
-} & Record<TItemKey, TItem[]>;
 
 export const adminRequest = async <T>(
   path: string,

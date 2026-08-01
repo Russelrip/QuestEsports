@@ -243,9 +243,6 @@ const fetchJson = async <T>(path: string): Promise<T> => {
 export const getTournamentStatusLabel = (status: TournamentStatus) =>
   status.replace(/_/g, " ");
 
-export const getTournamentStatusBadgeClassName = (status: TournamentStatus) =>
-  `status status-${status}`;
-
 export const canRegisterForTournament = (tournament: Tournament) =>
   tournament.registrationState === "registration_open";
 
@@ -263,26 +260,8 @@ export const getTournamentRegistrationLabel = (tournament: Tournament) => {
     : "Registration Open";
 };
 
-export const getTournamentRegistrationShortLabel = (tournament: Tournament) => {
-  if (tournament.registrationState === "slots_full") {
-    return "Full";
-  }
-
-  if (tournament.registrationState === "registration_closed") {
-    return "Closed";
-  }
-
-  return tournament.registrationMode === "slot_based" ? "Slots Open" : "Open";
-};
-
 export const getTournamentRegistrationModeLabel = (tournament: Tournament) =>
   tournament.registrationMode === "slot_based" ? "Slot Based" : "Open Entry";
-
-export const getTournamentCapacityPercentage = (tournament: Tournament) =>
-  Math.min(
-    100,
-    Math.round(((tournament.capacityUsed ?? tournament.registrationCount) / Math.max(tournament.maxTeams, 1)) * 100)
-  );
 
 export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => {
   const featured = tournaments.filter((tournament) => tournament.isFeatured);
@@ -327,9 +306,4 @@ export const fetchPublicEventSeriesBySlug = async (slug: string) => {
 export const fetchPublicTournamentBySlug = async (slug: string) => {
   const data = await fetchJson<{ tournament: Tournament }>(`/api/tournaments/${slug}`);
   return data.tournament;
-};
-
-export const fetchRegisterableTournaments = async () => {
-  const tournaments = await fetchPublicTournaments();
-  return tournaments.filter(canRegisterForTournament);
 };

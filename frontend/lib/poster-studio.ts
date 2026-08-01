@@ -21,13 +21,6 @@ export const initialPosterDraft: PosterDraft = {
   imageAssetId: "",
 };
 
-export const formatMediaDate = (value: string) =>
-  new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-
 export const revokeUploadPreviews = (previews: UploadPreview[]) => {
   previews.forEach((item) => {
     URL.revokeObjectURL(item.previewUrl);
