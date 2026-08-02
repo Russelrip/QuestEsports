@@ -302,6 +302,13 @@ const relationshipId = (match, name, legacyName) => {
   return value === null || value === undefined ? null : String(value);
 };
 
+const pointsParticipantId = (match, index) => {
+  const value = Array.isArray(match.points_by_participant)
+    ? match.points_by_participant[index]?.participant_id
+    : null;
+  return value === null || value === undefined ? null : String(value);
+};
+
 const scoresCsvFromMatch = (match) => {
   if (Array.isArray(match.score_in_sets) && match.score_in_sets.length) {
     return match.score_in_sets
@@ -339,8 +346,8 @@ const normalizeSnapshot = ({ tournamentPayload, participantPayload, matchPayload
       identifier: match.identifier ? String(match.identifier) : null,
       round: Number.isInteger(match.round) ? match.round : null,
       state: String(match.state || "pending").trim().toLowerCase(),
-      player1Id: relationshipId(match, "player1", "player1_id"),
-      player2Id: relationshipId(match, "player2", "player2_id"),
+      player1Id: relationshipId(match, "player1", "player1_id") || pointsParticipantId(match, 0),
+      player2Id: relationshipId(match, "player2", "player2_id") || pointsParticipantId(match, 1),
       winnerId: match.winner_id === null || match.winner_id === undefined ? null : String(match.winner_id),
       loserId: match.loser_id === null || match.loser_id === undefined ? null : String(match.loser_id),
       scoresCsv: scoresCsvFromMatch(match),

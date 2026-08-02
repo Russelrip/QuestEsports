@@ -49,9 +49,10 @@ test("Challonge v2.1 JSON:API payloads normalize into the public snapshot contra
     ] },
     matchPayload: { data: [{ id: "22", type: "match", attributes: {
       identifier: "A", round: 1, state: "complete", winner_id: 2,
+      points_by_participant: [{ participant_id: 2, scores: [13, 13] }, { participant_id: 3, scores: [8, 10] }],
       score_in_sets: [[13, 8], [13, 10]],
       timestamps: { started_at: "2026-08-02T07:00:00Z", updated_at: "2026-08-02T07:45:00Z" },
-    }, relationships: { player1: { data: { id: "2" } }, player2: { data: { id: "3" } } } }] },
+    } }] },
   });
   assert.equal(snapshot.tournament.fullChallongeUrl, "https://challonge.com/quest-open");
   assert.equal(snapshot.tournament.updatedAt, "2026-08-02T08:00:00Z");

@@ -195,16 +195,46 @@ function ParticipantEditor({ participant, tournamentId, busy, runAction, onUpdat
 function MatchEditor({ match, participantById, tournamentId, busy, runAction, onUpdated, setMessage }: { match: EditorMatch; participantById: Map<string, EditorParticipant>; tournamentId: string; busy: string; runAction: (key: string, action: () => Promise<void>) => Promise<void>; onUpdated: (match: EditorMatch) => void; setMessage: (message: string) => void }) {
   const [player1Score, setPlayer1Score] = useState("");
   const [player2Score, setPlayer2Score] = useState("");
-  const [winnerId, setWinnerId] = useState(match.winnerId || match.player1Id || "");
+  const [winnerId, setWinnerId] = useState(match.winnerId || "");
   const [tie, setTie] = useState(false);
   const player1 = match.player1Id ? participantById.get(match.player1Id) : null;
   const player2 = match.player2Id ? participantById.get(match.player2Id) : null;
+  const isOpen = match.state === "open";
+  const disabled = Boolean(busy) || !isOpen;
   const submit = () => runAction(`match-${match.id}`, async () => {
     const response = await adminRequest<{ data: EditorMatch }>(`/api/v1/admin/tournaments/${tournamentId}/challonge/matches/${match.id}`, { method: "PUT", json: { player1Score, player2Score, winnerId, tie } });
     onUpdated(response.data); setMessage(`Match ${match.identifier || match.id} was updated in Challonge.`);
   });
-  const ready = Boolean(match.player1Id && match.player2Id && player1Score && player2Score && (tie || winnerId));
-  return <div className="grid gap-3 border border-white/8 bg-white/5 p-3"><div className="flex flex-wrap justify-between gap-2 text-sm"><span className="font-semibold text-white">{match.identifier || `Match ${match.id}`} · Round {match.round ?? "-"}</span><span className="text-slate-500">{match.state.replace(/_/g, " ")}</span></div><div className="grid gap-2 sm:grid-cols-2"><Input aria-label={`${match.id} player 1 score`} value={player1Score} onChange={(event) => setPlayer1Score(event.target.value)} placeholder={`${player1?.name || "Player 1"} scores, e.g. 13,13`} disabled={Boolean(busy) || !player1} /><Input aria-label={`${match.id} player 2 score`} value={player2Score} onChange={(event) => setPlayer2Score(event.target.value)} placeholder={`${player2?.name || "Player 2"} scores, e.g. 8,10`} disabled={Boolean(busy) || !player2} /></div><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]"><Select aria-label={`${match.id} winner`} value={winnerId} onChange={(event) => setWinnerId(event.target.value)} disabled={Boolean(busy) || tie}><option value="">Choose winner</option>{match.player1Id ? <option value={match.player1Id}>{player1?.name || match.player1Id}</option> : null}{match.player2Id ? <option value={match.player2Id}>{player2?.name || match.player2Id}</option> : null}</Select><label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={tie} onChange={(event) => setTie(event.target.checked)} disabled={Boolean(busy)} />Tie</label><Button type="button" size="sm" onClick={() => void submit()} disabled={Boolean(busy) || !ready}>{busy === `match-${match.id}` ? "Submitting..." : "Report Result"}</Button></div></div>;
+  const ready = Boolean(isOpen && player1 && player2 && player1Score && player2Score && (tie || winnerId));
+  return (
+    <div className="grid gap-3 border border-white/8 bg-white/5 p-3">
+      <div className="flex flex-wrap justify-between gap-2 text-sm">
+        <div>
+          <span className="font-semibold text-white">{match.identifier || `Match ${match.id}`} · Round {match.round ?? "-"}</span>
+          <p className="mt-1 text-slate-300">{player1?.name || "TBD"} <span className="text-slate-600">vs</span> {player2?.name || "TBD"}</p>
+        </div>
+        <span className={isOpen ? "text-emerald-300" : "text-slate-500"}>{match.state.replace(/_/g, " ")}</span>
+      </div>
+      {!isOpen ? <p className="text-xs text-slate-500">Waiting for the preceding match to determine both competitors.</p> : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label={`${player1?.name || "Player 1"} scores`} htmlFor={`match-${match.id}-player-1`}>
+          <Input id={`match-${match.id}-player-1`} value={player1Score} onChange={(event) => setPlayer1Score(event.target.value)} placeholder="Example: 13,13" disabled={disabled || !player1} />
+        </FormField>
+        <FormField label={`${player2?.name || "Player 2"} scores`} htmlFor={`match-${match.id}-player-2`}>
+          <Input id={`match-${match.id}-player-2`} value={player2Score} onChange={(event) => setPlayer2Score(event.target.value)} placeholder="Example: 8,10" disabled={disabled || !player2} />
+        </FormField>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+        <Select aria-label={`${match.id} winner`} value={winnerId} onChange={(event) => setWinnerId(event.target.value)} disabled={disabled || tie || !player1 || !player2}>
+          <option value="">Choose winner</option>
+          {match.player1Id ? <option value={match.player1Id}>{player1?.name || match.player1Id}</option> : null}
+          {match.player2Id ? <option value={match.player2Id}>{player2?.name || match.player2Id}</option> : null}
+        </Select>
+        <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={tie} onChange={(event) => setTie(event.target.checked)} disabled={disabled || !player1 || !player2} />Tie</label>
+        <Button type="button" size="sm" onClick={() => void submit()} disabled={Boolean(busy) || !ready}>{busy === `match-${match.id}` ? "Submitting..." : "Report Result"}</Button>
+      </div>
+    </div>
+  );
 }
 
 function Status({ label, value, error = false }: { label: string; value: string; error?: boolean }) {
