@@ -6,6 +6,8 @@ const allowedOrigins = new Set(env.CORS_ORIGINS);
 const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
   "/api/auth/google/callback",
   "/api/auth/discord/callback",
+  "/api/mobile/auth/login",
+  "/api/mobile/auth/login/mfa",
   "/api/payments/payhere/notify",
 ]);
 const SAFE_PUBLIC_API_PATHS = [
@@ -46,6 +48,10 @@ const hasSessionCookie = (req) => {
   });
 };
 
+const hasNativeBearerCredential = (req) =>
+  !hasSessionCookie(req) &&
+  /^Bearer\s+[a-f0-9]{96}$/i.test(String(req.headers.authorization || "").trim());
+
 const getRequestOrigin = (req) =>
   extractOrigin(req.headers.origin) || extractOrigin(req.headers.referer);
 
@@ -85,7 +91,8 @@ const requireAllowedApiOrigin = (req, res, next) => {
     !req.path.startsWith("/api") ||
     req.method === "OPTIONS" ||
     ORIGIN_CHECK_EXEMPT_PATHS.has(req.path) ||
-    isSafePublicApiRequest(req)
+    isSafePublicApiRequest(req) ||
+    hasNativeBearerCredential(req)
   ) {
     next();
     return;
@@ -112,7 +119,11 @@ const requireAllowedApiOrigin = (req, res, next) => {
 };
 
 const protectAgainstCsrf = (req, res, next) => {
-  if (SAFE_METHODS.has(req.method) || ORIGIN_CHECK_EXEMPT_PATHS.has(req.path)) {
+  if (
+    SAFE_METHODS.has(req.method) ||
+    ORIGIN_CHECK_EXEMPT_PATHS.has(req.path) ||
+    hasNativeBearerCredential(req)
+  ) {
     next();
     return;
   }

@@ -8,6 +8,9 @@ The frontend is deployed by Vercel's Git integration. Do not configure a separat
 
 - `.github/workflows/ci.yml` runs on pull requests to `main` and pushes to `main`.
 - `.github/workflows/cd.yml` runs after CI succeeds on `main`, and can also be started manually from the GitHub Actions tab.
+- `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
+
+The APK workflow requires `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` as repository Actions secrets. Because the repository is private, its release assets remain accessible only to authorized GitHub users. Keep the original keystore in encrypted offline custody; all future updates must use the same signing certificate.
 
 ## CI Checks
 

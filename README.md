@@ -1,6 +1,6 @@
 # Quest Esports
 
-Quest Esports is a full-stack esports platform for publishing tournaments, registering teams, managing community communications, and curating poster/media content. The repository contains a public-facing Next.js application and an Express + Prisma API that powers authentication, tournament operations, admin tooling, security workflows, and media management.
+Quest Esports is a full-stack esports platform for publishing tournaments, registering teams, managing community communications, and curating poster/media content. The repository contains a public-facing Next.js application, an Express + Prisma API, and a private Android admin client for tournament and commerce operations.
 
 Documentation starts at the [Documentation Index](./docs/README.md). Production recovery procedures are centralized in [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md).
 
@@ -87,6 +87,8 @@ SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try 
 SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 ```
 
+Mobile admin: copy `mobile-admin/.env.example` to `mobile-admin/.env.local` when overriding the production defaults.
+
 Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required for the backend to boot.
@@ -112,6 +114,11 @@ cd frontend
 npm install
 ```
 
+```bash
+cd mobile-admin
+npm install
+```
+
 ### 3. Apply database migrations
 
 ```bash
@@ -134,6 +141,13 @@ Frontend:
 ```bash
 cd frontend
 npm run dev
+```
+
+Android admin app (Android Studio/SDK required):
+
+```bash
+cd mobile-admin
+npm run android
 ```
 
 ### 5. Verify startup
@@ -171,12 +185,14 @@ Recommended flow:
 - [Foundation Release Operations](./docs/foundation-release.md)
 - [Backend README](./backend/README.md)
 - [Frontend README](./frontend/README.md)
+- [Private Android Admin App](./mobile-admin/README.md)
 
 ## Stack
 
 - Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS v4
+- Mobile admin: Expo 57, React Native, Expo Router, Android APK
 - Backend: Express 5, Prisma ORM, PostgreSQL
-- Auth: Cookie-based sessions with server-side session storage
+- Auth: Cookie-based browser sessions and revocable bearer sessions for the private Android app, both backed by server-side session storage
 - Brackets: `brackets-manager` with Prisma-persisted native bracket data
 - Admin exports: ExcelJS-generated `.xlsx` downloads
 - Uploads: Multer, durable public storage, and isolated private payment evidence

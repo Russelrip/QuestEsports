@@ -189,6 +189,54 @@ test("getSessionFromRequest ignores malformed percent-encoded cookies", async ()
   }
 });
 
+test("getSessionFromRequest accepts a native bearer session without a cookie", async () => {
+  const now = Date.now();
+  const token = "a".repeat(96);
+  const { service, sessionModel, restore } = buildService({
+    findUniqueResult: buildSessionRecord({
+      expiresAt: new Date(now + 60_000),
+      lastSeenAt: new Date(now - 60_000),
+    }),
+  });
+
+  try {
+    const session = await service.getSessionFromRequest({
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    assert.equal(session?.source, "bearer");
+    assert.equal(session?.token, token);
+    assert.equal(sessionModel.findUniqueCalls.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("a browser cookie takes precedence over a bearer header", async () => {
+  const now = Date.now();
+  const { service, sessionModel, restore } = buildService({
+    findUniqueResult: buildSessionRecord({
+      expiresAt: new Date(now + 60_000),
+      lastSeenAt: new Date(now - 60_000),
+    }),
+  });
+
+  try {
+    const session = await service.getSessionFromRequest({
+      headers: {
+        cookie: `${SESSION_COOKIE_NAME}=browser-token`,
+        authorization: `Bearer ${"b".repeat(96)}`,
+      },
+    });
+
+    assert.equal(session?.source, "cookie");
+    assert.equal(session?.token, "browser-token");
+    assert.equal(sessionModel.findUniqueCalls.length, 1);
+  } finally {
+    restore();
+  }
+});
+
 test("listUserSessions only queries active sessions and marks the current session", async () => {
   const futureExpiry = new Date(Date.now() + 60_000);
   const { service, sessionModel, restore } = buildService({
