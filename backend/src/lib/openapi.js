@@ -391,7 +391,14 @@ const additionalPaths = {
   },
   "/api/v1/admin/tournaments/{id}/challonge/sync": { post: createOperation("Challonge", "Synchronize a Challonge tournament", { authenticated: true, parameters: idParameter("id") }) },
   "/api/v1/admin/tournaments/{id}/challonge/logs": { get: createOperation("Challonge", "List sanitized synchronization logs", { authenticated: true, parameters: idParameter("id") }) },
-  "/api/v1/admin/tournaments/{id}/challonge/participants/{participantId}": { patch: createOperation("Challonge", "Confirm an external participant mapping", { authenticated: true, parameters: [...idParameter("id"), ...idParameter("participantId")] }) },
+  "/api/v1/admin/tournaments/{id}/challonge/participants": { post: createOperation("Challonge", "Create a participant in a connected Challonge tournament", { authenticated: true, parameters: idParameter("id") }) },
+  "/api/v1/admin/tournaments/{id}/challonge/participants/{participantId}": {
+    put: createOperation("Challonge", "Update a participant in Challonge", { authenticated: true, parameters: [...idParameter("id"), ...idParameter("participantId")] }),
+    delete: createOperation("Challonge", "Delete or deactivate a participant in Challonge", { authenticated: true, parameters: [...idParameter("id"), ...idParameter("participantId")] }),
+  },
+  "/api/v1/admin/tournaments/{id}/challonge/participant-mappings/{participantId}": { patch: createOperation("Challonge", "Confirm an external participant mapping", { authenticated: true, parameters: [...idParameter("id"), ...idParameter("participantId")] }) },
+  "/api/v1/admin/tournaments/{id}/challonge/state": { put: createOperation("Challonge", "Change the connected Challonge tournament state", { authenticated: true, parameters: idParameter("id") }) },
+  "/api/v1/admin/tournaments/{id}/challonge/matches/{matchId}": { put: createOperation("Challonge", "Report a Challonge match result", { authenticated: true, parameters: [...idParameter("id"), ...idParameter("matchId")] }) },
   "/api/v1/admin/tournaments/{id}/matches": {
     get: createOperation("Matches", "List tournament matches for staff", { authenticated: true, parameters: idParameter("id") }),
     post: createOperation("Matches", "Create a Quest-managed match", { authenticated: true, parameters: idParameter("id") }),

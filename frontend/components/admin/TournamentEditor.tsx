@@ -34,6 +34,7 @@ import { type Tournament } from "@/lib/tournaments";
 import type { GameCategory } from "@/lib/tournaments";
 import TournamentSponsorsManager from "@/components/admin/TournamentSponsorsManager";
 import TournamentScheduleEditor from "@/components/admin/TournamentScheduleEditor";
+import ChallongeAdminPanel from "@/components/admin/ChallongeAdminPanel";
 
 function EditorSection({
   number,
@@ -665,6 +666,10 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
 
           {isEdit ? (
             <TournamentSponsorsManager tournamentId={tournamentId || ""} />
+          ) : null}
+
+          {isEdit ? (
+            <ChallongeAdminPanel tournamentId={tournamentId || ""} />
           ) : null}
 
           {isEdit ? (

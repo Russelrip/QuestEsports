@@ -63,7 +63,7 @@ test("registration status repairs stale captain-only verification and includes i
         paymentStatus: "pending",
         verificationStatus: "pending",
         members: [{ inviteStatus: "accepted" }],
-        reservedUntil: new Date("2026-08-01T10:00:00.000Z"),
+        reservedUntil: new Date("2099-08-01T10:00:00.000Z"),
         assignedSlotNumber: 7,
         payments: [{
           providerOrderId: "QST-0123456789",

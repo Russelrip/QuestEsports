@@ -2,8 +2,8 @@ const cache = require("../lib/cache");
 
 const inFlightResponses = new Map();
 
-const cacheJson = ({ ttlSeconds, tags = [] }) => async (req, res, next) => {
-  if (req.method !== "GET" || req.headers.authorization || req.headers.cookie) return next();
+const cacheJson = ({ ttlSeconds, tags = [], allowCookies = false }) => async (req, res, next) => {
+  if (req.method !== "GET" || req.headers.authorization || (!allowCookies && req.headers.cookie)) return next();
   const key = `response:${req.originalUrl}`;
   const cached = await cache.get(key, tags);
   if (cached) {

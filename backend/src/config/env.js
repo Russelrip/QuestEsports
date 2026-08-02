@@ -182,8 +182,28 @@ const env = {
     5
   ),
   CHALLONGE_ENABLED: normalizeBoolean(process.env.CHALLONGE_ENABLED, false),
-  CHALLONGE_USERNAME: optional("CHALLONGE_USERNAME"),
-  CHALLONGE_API_KEY: optional("CHALLONGE_API_KEY"),
+  CHALLONGE_AUTOMATIC_SYNC_ENABLED: normalizeBoolean(
+    process.env.CHALLONGE_AUTOMATIC_SYNC_ENABLED,
+    false
+  ),
+  CHALLONGE_CLIENT_ID: optional("CHALLONGE_CLIENT_ID"),
+  CHALLONGE_CLIENT_SECRET: optional("CHALLONGE_CLIENT_SECRET"),
+  CHALLONGE_OAUTH_SCOPE: optional("CHALLONGE_OAUTH_SCOPE", "application:manage"),
+  CHALLONGE_TOKEN_URL: optional(
+    "CHALLONGE_TOKEN_URL",
+    "https://api.challonge.com/oauth/token"
+  ),
+  CHALLONGE_BASE_URL: optional(
+    "CHALLONGE_BASE_URL",
+    "https://api.challonge.com/v2.1"
+  ).replace(/\/+$/, ""),
+  CHALLONGE_BRACKET_CACHE_SECONDS: normalizeIntegerInRange(
+    "CHALLONGE_BRACKET_CACHE_SECONDS",
+    process.env.CHALLONGE_BRACKET_CACHE_SECONDS,
+    30,
+    1,
+    300
+  ),
   CHALLONGE_REQUEST_TIMEOUT_MS: normalizeIntegerInRange(
     "CHALLONGE_REQUEST_TIMEOUT_MS",
     process.env.CHALLONGE_REQUEST_TIMEOUT_MS,
@@ -314,11 +334,22 @@ if (env.NODE_ENV !== "test" && !env.AUTH_ENCRYPTION_KEY) {
 
 if (
   env.CHALLONGE_ENABLED &&
-  (!env.CHALLONGE_USERNAME || !env.CHALLONGE_API_KEY)
+  (!env.CHALLONGE_CLIENT_ID || !env.CHALLONGE_CLIENT_SECRET)
 ) {
   throw new Error(
-    "CHALLONGE_USERNAME and CHALLONGE_API_KEY are required when CHALLONGE_ENABLED is true."
+    "CHALLONGE_CLIENT_ID and CHALLONGE_CLIENT_SECRET are required when CHALLONGE_ENABLED is true."
   );
+}
+
+assertHttpsUrl("CHALLONGE_BASE_URL", env.CHALLONGE_BASE_URL);
+const challongeBaseUrl = new URL(env.CHALLONGE_BASE_URL);
+if (challongeBaseUrl.search || challongeBaseUrl.hash) {
+  throw new Error("CHALLONGE_BASE_URL must not contain a query or fragment.");
+}
+assertHttpsUrl("CHALLONGE_TOKEN_URL", env.CHALLONGE_TOKEN_URL);
+const challongeTokenUrl = new URL(env.CHALLONGE_TOKEN_URL);
+if (challongeTokenUrl.search || challongeTokenUrl.hash) {
+  throw new Error("CHALLONGE_TOKEN_URL must not contain a query or fragment.");
 }
 
 if (env.AUTH_ENCRYPTION_KEY && !/^[a-f0-9]{64}$/i.test(env.AUTH_ENCRYPTION_KEY)) {

@@ -41,6 +41,11 @@ const createJobsPrismaMock = () => {
   const tx = {
     backgroundJob: {
       create: async ({ data }) => {
+        if (data.dedupeKey && jobs.some((entry) => entry.dedupeKey === data.dedupeKey)) {
+          const error = new Error("Unique constraint failed");
+          error.code = "P2002";
+          throw error;
+        }
         const job = {
           ...data,
           createdAt: new Date(),
@@ -129,7 +134,7 @@ const createJobsPrismaMock = () => {
         return { count: 1 };
       },
       findUnique: async ({ where }) => {
-        const job = jobs.find((entry) => entry.id === where.id);
+        const job = jobs.find((entry) => where.id ? entry.id === where.id : entry.dedupeKey === where.dedupeKey);
         return job ? cloneJob(job) : null;
       },
       update: async ({ where, data }) => {
@@ -202,6 +207,28 @@ test("enqueueJob persists a queued background job without raw sensitive tokens",
   } finally {
     restore();
   }
+});
+
+test("enqueueJob coalesces active jobs with the same deduplication key", async () => {
+  const prismaMock = createJobsPrismaMock();
+  const mocks = {
+    [prismaModulePath]: { prisma: prismaMock.prisma },
+    [generatedPrismaPath]: { Prisma: { TransactionIsolationLevel: { Serializable: "Serializable" }, PrismaClientKnownRequestError: class extends Error {} } },
+    [envPath]: { env: { JOB_WORKER_ENABLED: true, JOB_WORKER_POLL_MS: 5000, JOB_WORKER_MAX_ATTEMPTS: 5, AUTH_ENCRYPTION_KEY: "jobs-test-encryption-key" } },
+    [loggerPath]: loggerMock,
+    [monitoringPath]: { captureException: () => {} },
+    [mailDefinitionsPath]: { EMAIL_JOB_NAME: "email.send", processQueuedMailJob: async () => true },
+  };
+  const { module: jobsModule, restore } = loadModuleWithMocks(jobsPath, mocks);
+  try {
+    const first = await jobsModule.enqueueJob("challonge.sync", { integrationId: "one" }, { dedupeKey: "challonge.sync:one" });
+    const second = await jobsModule.enqueueJob("challonge.sync", { integrationId: "one" }, { dedupeKey: "challonge.sync:one" });
+    assert.equal(first.accepted, true);
+    assert.equal(second.accepted, false);
+    assert.equal(second.duplicate, true);
+    assert.equal(second.jobId, first.jobId);
+    assert.equal(prismaMock.jobs.length, 1);
+  } finally { restore(); }
 });
 
 test("enqueueJobs persists invitation jobs in one batch without raw tokens", async () => {

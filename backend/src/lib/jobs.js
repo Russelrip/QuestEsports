@@ -104,6 +104,7 @@ const buildQueuedJobData = (name, payload = {}, options = {}) => {
     id: crypto.randomUUID(),
     name,
     payload: protectJobPayload(payload),
+    dedupeKey: options.dedupeKey || null,
     status: "queued",
     attempts: 0,
     maxAttempts,
@@ -113,9 +114,32 @@ const buildQueuedJobData = (name, payload = {}, options = {}) => {
 
 const enqueueJob = async (name, payload = {}, options = {}) => {
   const data = buildQueuedJobData(name, payload, options);
-  const job = await prisma.backgroundJob.create({
-    data,
-  });
+  let job;
+  try {
+    job = await prisma.backgroundJob.create({ data });
+  } catch (error) {
+    if (data.dedupeKey && error?.code === "P2002") {
+      const existing = await prisma.backgroundJob.findUnique({
+        where: { dedupeKey: data.dedupeKey },
+      });
+      if (existing) {
+        logger.info("Duplicate background job coalesced", {
+          jobId: existing.id,
+          jobName: name,
+          dedupeKey: data.dedupeKey,
+        });
+        return {
+          accepted: false,
+          duplicate: true,
+          jobId: existing.id,
+          name: existing.name,
+          availableAt: existing.availableAt,
+          maxAttempts: existing.maxAttempts,
+        };
+      }
+    }
+    throw error;
+  }
 
   logger.info("Background job enqueued", {
     jobId: job.id,
@@ -248,6 +272,7 @@ const markJobSucceeded = async (job) => {
       completedAt: new Date(),
       failedAt: null,
       lastError: null,
+      dedupeKey: null,
     },
   });
 };
@@ -268,7 +293,7 @@ const markJobFailed = async (job) => {
         : new Date(now.getTime() + computeRetryDelayMs(attempts)),
       lastError: summarizeJobError(job.error),
       ...(reachedMaxAttempts
-        ? { payload: scrubJobPayload(job.payload) }
+        ? { payload: scrubJobPayload(job.payload), dedupeKey: null }
         : {}),
     },
   });

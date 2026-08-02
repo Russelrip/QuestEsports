@@ -18,6 +18,12 @@ const {
 const router = express.Router();
 const publicCache = cachePublicData();
 const shortCache = cacheJson({ ttlSeconds: Math.min(env.CACHE_TTL_SECONDS, 15), tags: ["foundation"] });
+const bracketPublicCache = cachePublicData({ browserSeconds: 0, sharedSeconds: env.CHALLONGE_BRACKET_CACHE_SECONDS });
+const bracketResponseCache = cacheJson({
+  ttlSeconds: env.CHALLONGE_BRACKET_CACHE_SECONDS,
+  tags: ["foundation"],
+  allowCookies: true,
+});
 const tournamentAdmin = requireTournamentStaff({ roles: ["tournament_admin"], parameter: "id" });
 const tournamentStaff = requireTournamentStaff({ roles: ["tournament_admin", "referee"], parameter: "id" });
 
@@ -32,18 +38,17 @@ router.get(
     const tournament = await getPublicTournamentBySlug(req.params.slug);
     const data = { ...tournament };
     delete data.bracketData;
-    delete data.challongeEmbedUrl;
     res.status(200).json({
       success: true,
       data: {
         ...data,
-        bracketSource: tournament.challongeEmbedUrl ? "challonge" : tournament.bracketData ? "native" : "none",
+        bracketSource: tournament.bracketSource || (tournament.bracketData ? "native" : "none"),
       },
       meta: { serverNow: new Date().toISOString() },
     });
   })
 );
-router.get("/tournaments/:slug/bracket", publicCache, shortCache, challongeController.publicBracket);
+router.get("/tournaments/:slug/bracket", bracketPublicCache, bracketResponseCache, challongeController.publicBracket);
 router.get("/tournaments/:slug/matches", publicCache, shortCache, matchController.listTournamentMatches);
 router.get("/matches", publicCache, shortCache, matchController.listMatches);
 router.get("/matches/next", matchController.nextMatch);
@@ -53,12 +58,42 @@ router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, cha
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);
 router.post("/admin/tournaments/:id/challonge/sync", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.syncIntegration);
 router.get("/admin/tournaments/:id/challonge/logs", requireAuth, tournamentAdmin, challongeController.getLogs);
-router.patch(
+router.post(
+  "/admin/tournaments/:id/challonge/participants",
+  requireAuth,
+  tournamentAdmin,
+  challongeController.createParticipant
+);
+router.put(
   "/admin/tournaments/:id/challonge/participants/:participantId",
+  requireAuth,
+  tournamentAdmin,
+  challongeController.updateParticipant
+);
+router.delete(
+  "/admin/tournaments/:id/challonge/participants/:participantId",
+  requireAuth,
+  tournamentAdmin,
+  challongeController.deleteParticipant
+);
+router.patch(
+  "/admin/tournaments/:id/challonge/participant-mappings/:participantId",
   requireAuth,
   tournamentAdmin,
   invalidateCache("foundation"),
   challongeController.mapParticipant
+);
+router.put(
+  "/admin/tournaments/:id/challonge/state",
+  requireAuth,
+  tournamentAdmin,
+  challongeController.changeTournamentState
+);
+router.put(
+  "/admin/tournaments/:id/challonge/matches/:matchId",
+  requireAuth,
+  tournamentAdmin,
+  challongeController.updateMatchResult
 );
 
 router.get("/admin/tournaments/:id/matches", requireAuth, tournamentStaff, matchController.listAdminTournamentMatches);

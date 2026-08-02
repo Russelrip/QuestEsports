@@ -4,6 +4,7 @@ const { enqueueJob, CHALLONGE_SYNC_JOB_NAME } = require("../../lib/jobs");
 const {
   syncChallongeIntegration,
   claimDueIntegrationsForQueue,
+  recordChallongeSkippedAttempt,
 } = require("./challonge.service");
 
 let schedulerInterval = null;
@@ -19,12 +20,23 @@ const processChallongeSyncJob = async (payload = {}) => {
 };
 
 const runChallongeSchedulerTick = async () => {
-  if (schedulerRunning || !env.CHALLONGE_ENABLED) return;
+  if (schedulerRunning || !env.CHALLONGE_ENABLED || !env.CHALLONGE_AUTOMATIC_SYNC_ENABLED) return;
   schedulerRunning = true;
   try {
     const integrationIds = await claimDueIntegrationsForQueue();
     for (const integrationId of integrationIds) {
-      await enqueueJob(CHALLONGE_SYNC_JOB_NAME, { integrationId }, { maxAttempts: 3 });
+      const queued = await enqueueJob(
+        CHALLONGE_SYNC_JOB_NAME,
+        { integrationId },
+        { maxAttempts: 3, dedupeKey: `challonge.sync:${integrationId}` }
+      );
+      if (queued.duplicate) {
+        await recordChallongeSkippedAttempt({
+          integrationId,
+          trigger: "scheduled",
+          reason: "duplicate_job",
+        });
+      }
     }
   } catch (error) {
     logger.error("Challonge scheduler tick failed", { error });
@@ -34,7 +46,7 @@ const runChallongeSchedulerTick = async () => {
 };
 
 const startChallongeScheduler = () => {
-  if (!env.CHALLONGE_ENABLED || schedulerInterval) return;
+  if (!env.CHALLONGE_ENABLED || !env.CHALLONGE_AUTOMATIC_SYNC_ENABLED || schedulerInterval) return;
   void runChallongeSchedulerTick();
   schedulerInterval = setInterval(() => void runChallongeSchedulerTick(), 30_000);
   schedulerInterval.unref?.();

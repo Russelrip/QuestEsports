@@ -213,7 +213,28 @@ test("production security policy permits only the configured PayHere form endpoi
   expect(policy).toContain("'strict-dynamic'");
   expect(policy).toMatch(/script-src 'self' 'nonce-[^']+'/);
   expect(policy).not.toMatch(/script-src[^;]*'unsafe-inline'/);
-  expect(policy).toContain("frame-src https://challonge.com https://*.challonge.com");
+  expect(policy).toContain("frame-src 'self' https://challonge.com https://*.challonge.com");
+  expect(policy).not.toContain("frame-src *");
+});
+
+test("Challonge public bracket is lazy-loaded without consuming REST requests", async ({ page }) => {
+  let bracketRequests = 0;
+  await page.route("**/api/v1/tournaments/challonge-test/bracket", (route) => {
+    bracketRequests += 1;
+    return route.abort();
+  });
+  await page.route("https://challonge.com/quest-test/module", (route) => route.fulfill({
+    contentType: "text/html",
+    body: "<!doctype html><title>Quest Test bracket</title><p>Public bracket</p>",
+  }));
+
+  await page.goto("/tournaments/challonge-test");
+  expect(bracketRequests).toBe(0);
+  await expect(page.locator("iframe")).toHaveCount(0);
+  await page.getByRole("button", { name: "bracket", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Open on Challonge" })).toHaveAttribute("href", "https://challonge.com/quest-test");
+  await expect(page.locator("iframe")).toHaveAttribute("src", "https://challonge.com/quest-test/module");
+  expect(bracketRequests).toBe(0);
 });
 
 test("recruitment deep links initialize all supported application types", async ({ page }) => {

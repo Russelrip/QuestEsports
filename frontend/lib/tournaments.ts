@@ -1,4 +1,4 @@
-import { fetchApiJson } from "@/lib/api";
+import { fetchApiJson } from "./api";
 
 export type TournamentStatus =
   | "draft"
@@ -157,6 +157,72 @@ export type TournamentBracketSummary = {
   lastUpdatedAt?: string | null;
 };
 
+export type ChallongeBracketParticipant = {
+  id: string;
+  name: string;
+  teamName: string;
+  seed: number | null;
+  active: boolean;
+  finalRank: number | null;
+  registrationId: string | null;
+  logoUrl: string | null;
+};
+
+export type ChallongeBracketMatch = {
+  id: string;
+  identifier: string | null;
+  roundNumber: number | null;
+  status: string;
+  scheduledAt: string | null;
+  startedAt: string | null;
+  location: string | null;
+  scoresCsv: string | null;
+  scoreSets: string[];
+  participants: Array<{
+    id: string | null;
+    name: string;
+    seed: number | null;
+    score: string | null;
+    result: "win" | "loss" | null;
+    logoUrl: string | null;
+  }>;
+  winner: { id: string; name: string; seed: number | null } | null;
+  completedResult: string | null;
+};
+
+export type ChallongeBracketData = {
+  tournament: {
+    id: string | null;
+    name: string;
+    status: string;
+    tournamentType: string;
+    teams: boolean;
+    startedAt: string | null;
+    completedAt: string | null;
+    updatedAt: string | null;
+    progressPercent: number;
+  };
+  participants: ChallongeBracketParticipant[];
+  matches: ChallongeBracketMatch[];
+  progression: {
+    completedMatches: number;
+    totalMatches: number;
+    progressPercent: number;
+    winner: { id: string; name: string; seed: number | null } | null;
+    standings: ChallongeBracketParticipant[];
+  };
+};
+
+export type PublicBracketResponse = {
+  source: "challonge" | "native" | "none";
+  requestedSource?: "challonge";
+  status: "fresh" | "stale" | "unavailable";
+  data: ChallongeBracketData | TournamentBracketData | null;
+  syncedAt: string | null;
+  error: { code: string; message: string } | null;
+  externalUrl: string | null;
+};
+
 export type Tournament = {
   id: string;
   slug: string;
@@ -213,7 +279,8 @@ export type Tournament = {
   status: TournamentStatus;
   isPublished: boolean;
   bracketLink: string | null;
-  challongeEmbedUrl: string | null;
+  challongeEmbedUrl?: string | null;
+  bracketSource?: "challonge" | "native" | "none";
   sponsors: TournamentSponsor[];
   contactLink: string | null;
   isFeatured: boolean;
@@ -306,4 +373,19 @@ export const fetchPublicEventSeriesBySlug = async (slug: string) => {
 export const fetchPublicTournamentBySlug = async (slug: string) => {
   const data = await fetchJson<{ tournament: Tournament }>(`/api/tournaments/${slug}`);
   return data.tournament;
+};
+
+const bracketRequests = new Map<string, Promise<PublicBracketResponse>>();
+
+export const fetchPublicTournamentBracket = (slug: string) => {
+  const key = slug.trim().toLowerCase();
+  const current = bracketRequests.get(key);
+  if (current) return current;
+  const request = fetchApiJson<{ data: PublicBracketResponse }>(
+    `/api/v1/tournaments/${encodeURIComponent(key)}/bracket`,
+    { cache: "no-store" },
+    "The tournament bracket is temporarily unavailable."
+  ).then((response) => response.data).finally(() => bracketRequests.delete(key));
+  bracketRequests.set(key, request);
+  return request;
 };

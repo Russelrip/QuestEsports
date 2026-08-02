@@ -94,3 +94,24 @@ test("concurrent response-cache misses share transient failures without caching 
     restore();
   }
 });
+
+test("route-scoped public caches may explicitly serve identical responses to cookie requests", async () => {
+  let reads = 0;
+  const cachedBody = { status: 200, body: { success: true, data: { source: "challonge" } } };
+  const { module: responseCache, restore } = loadModuleWithMocks(middlewarePath, {
+    [cachePath]: {
+      get: async () => { reads += 1; return cachedBody; },
+      set: async () => undefined,
+      invalidateTags: async () => undefined,
+    },
+  });
+  try {
+    const middleware = responseCache.cacheJson({ ttlSeconds: 30, allowCookies: true });
+    const response = createResponse();
+    let nextCalls = 0;
+    await middleware({ method: "GET", originalUrl: "/api/v1/tournaments/quest/bracket", headers: { cookie: "session=abc" } }, response, () => { nextCalls += 1; });
+    assert.equal(reads, 1);
+    assert.equal(nextCalls, 0);
+    assert.equal(response.headers.get("X-Cache"), "HIT");
+  } finally { restore(); }
+});

@@ -65,8 +65,12 @@ PAYHERE_NOTIFY_URL=
 SHOP_DELIVERY_FEE_LKR=500
 SHOP_ORDER_RESERVATION_MINUTES=30
 CHALLONGE_ENABLED=false
-CHALLONGE_USERNAME=
-CHALLONGE_API_KEY=
+CHALLONGE_CLIENT_ID=
+CHALLONGE_CLIENT_SECRET=
+CHALLONGE_OAUTH_SCOPE=application:manage
+CHALLONGE_TOKEN_URL=https://api.challonge.com/oauth/token
+CHALLONGE_BASE_URL=https://api.challonge.com/v2.1
+CHALLONGE_BRACKET_CACHE_SECONDS=30
 CHALLONGE_REQUEST_TIMEOUT_MS=8000
 CHALLONGE_DEFAULT_SYNC_MINUTES=5
 CHALLONGE_SYNC_LEASE_SECONDS=90
@@ -94,7 +98,7 @@ Notes:
 - Paid tournament registration and shop checkout require PayHere credentials plus a publicly reachable HTTPS notification URL. Browser return pages never mark an order paid.
 - When PayHere is not configured, free and bank-transfer tournament registrations remain available; PayHere registration and merchandise checkout are disabled.
 - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` are optional locally and required in production; point both at durable, backed-up storage outside disposable release directories. Private payment proofs must never be exposed by Nginx.
-- Challonge is optional and disabled by default. Configure its username and API key only on the backend, then follow the staged validation in the foundation release runbook before enabling automatic synchronization.
+- Challonge is optional and disabled by default. Create a Challonge developer application, associate each managed tournament with it, and configure its v2.1 client ID and client secret only on the backend. Public bracket tabs lazy-load the public Challonge module, while deliberate admin edits use the server API. Keep automatic synchronization disabled on the 500-request plan.
 
 ### 2. Install dependencies
 

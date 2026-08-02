@@ -7,11 +7,16 @@ const {
   saveAdminIntegration,
   listSyncLogs,
   updateParticipantMapping,
+  createChallongeParticipant,
+  updateChallongeParticipant,
+  deleteChallongeParticipant,
+  changeChallongeTournamentState,
+  updateChallongeMatchResult,
   syncChallongeIntegration,
   getPublicBracket,
 } = require("./challonge.service");
 
-const meta = () => ({ serverNow: new Date().toISOString() });
+const meta = (extra = {}) => ({ serverNow: new Date().toISOString(), ...extra });
 
 const getIntegration = asyncHandler(async (req, res) => {
   const data = await getAdminIntegration(req.params.id);
@@ -50,11 +55,86 @@ const syncIntegration = asyncHandler(async (req, res) => {
   });
   publishRealtimeEvent("brackets", { tournamentId: req.params.id, integrationId: integration.id, syncedAt: result.syncedAt || null });
   publishRealtimeEvent("matches", { tournamentId: req.params.id, source: "challonge", syncedAt: result.syncedAt || null });
-  res.status(200).json({ success: true, data: await getAdminIntegration(req.params.id), meta: meta() });
+  res.status(200).json({
+    success: true,
+    data: await getAdminIntegration(req.params.id),
+    meta: meta({ syncResult: { skipped: result.skipped, reason: result.reason || null, syncedAt: result.syncedAt || null } }),
+  });
 });
 
 const getLogs = asyncHandler(async (req, res) => {
   const data = await listSyncLogs(req.params.id);
+  res.status(200).json({ success: true, data, meta: meta() });
+});
+
+const createParticipant = asyncHandler(async (req, res) => {
+  const data = await createChallongeParticipant({ tournamentId: req.params.id, body: req.body });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "challonge.participant.created",
+    targetType: "ChallongeParticipant",
+    targetId: data.id,
+    afterData: data,
+  });
+  res.status(201).json({ success: true, data, meta: meta() });
+});
+
+const updateParticipant = asyncHandler(async (req, res) => {
+  const data = await updateChallongeParticipant({
+    tournamentId: req.params.id,
+    participantId: req.params.participantId,
+    body: req.body,
+  });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "challonge.participant.updated",
+    targetType: "ChallongeParticipant",
+    targetId: data.id,
+    afterData: data,
+  });
+  res.status(200).json({ success: true, data, meta: meta() });
+});
+
+const deleteParticipant = asyncHandler(async (req, res) => {
+  const data = await deleteChallongeParticipant({
+    tournamentId: req.params.id,
+    participantId: req.params.participantId,
+  });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "challonge.participant.deleted",
+    targetType: "ChallongeParticipant",
+    targetId: data.id,
+    afterData: data,
+  });
+  res.status(200).json({ success: true, data, meta: meta() });
+});
+
+const changeTournamentState = asyncHandler(async (req, res) => {
+  const data = await changeChallongeTournamentState({ tournamentId: req.params.id, body: req.body });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "challonge.tournament.state_changed",
+    targetType: "ChallongeTournament",
+    targetId: data.tournamentId,
+    afterData: data,
+  });
+  res.status(200).json({ success: true, data, meta: meta() });
+});
+
+const updateMatchResult = asyncHandler(async (req, res) => {
+  const data = await updateChallongeMatchResult({
+    tournamentId: req.params.id,
+    matchId: req.params.matchId,
+    body: req.body,
+  });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "challonge.match.result_updated",
+    targetType: "ChallongeMatch",
+    targetId: data.id,
+    afterData: data,
+  });
   res.status(200).json({ success: true, data, meta: meta() });
 });
 
@@ -85,6 +165,11 @@ module.exports = {
   saveIntegration,
   syncIntegration,
   getLogs,
+  createParticipant,
+  updateParticipant,
+  deleteParticipant,
+  changeTournamentState,
+  updateMatchResult,
   mapParticipant,
   publicBracket,
 };

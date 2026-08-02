@@ -26,7 +26,7 @@ Important optional groups:
 - `TRUST_PROXY` and `REQUIRE_API_ORIGIN` for production proxy and origin enforcement
 - `LOG_DRAIN_URL` and `MONITORING_WEBHOOK_URL` for external observability hooks
 - `SITE_MAINTENANCE_MODE`, `SITE_MAINTENANCE_MESSAGE`, and `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` for the coordinated full-site maintenance response
-- `CHALLONGE_ENABLED`, `CHALLONGE_USERNAME`, `CHALLONGE_API_KEY`, and the Challonge timeout/frequency/lease settings for optional server-side synchronization
+- `CHALLONGE_ENABLED`, `CHALLONGE_AUTOMATIC_SYNC_ENABLED`, `CHALLONGE_CLIENT_ID`, `CHALLONGE_CLIENT_SECRET`, `CHALLONGE_OAUTH_SCOPE`, `CHALLONGE_TOKEN_URL`, `CHALLONGE_BASE_URL`, and the timeout/frequency/lease settings for optional server-side Challonge v2.1 editing and manual data loads. Keep automatic synchronization false on the 500-request plan.
 - `REALTIME_SSE_ENABLED` for public invalidation events (clients retain polling fallback)
 
 Production additionally requires HTTPS `APP_URL`/`API_PUBLIC_URL`, a 64-character hexadecimal `AUTH_ENCRYPTION_KEY`, durable shared `UPLOAD_ROOT`/`PRIVATE_UPLOAD_ROOT`, trusted-proxy/origin enforcement, `MAIL_DELIVERY_REQUIRED=true`, and complete values for the selected mail provider. Set `API_PROCESS_COUNT` to the real replica/process count; values above one require the shared Upstash cache. PayHere remains optional, but its merchant ID, secret, and notify URL must be configured together. Configured production payments require live mode unless `PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION=true` is deliberately set for production-like sandbox testing.

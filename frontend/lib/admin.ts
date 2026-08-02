@@ -246,6 +246,69 @@ export type AdminTournamentBracket = {
   lastUpdatedAt: string;
 };
 
+export type AdminChallongeIntegration = {
+  id: string;
+  tournamentId: string;
+  identifier: string;
+  enabled: boolean;
+  automaticSyncEnabled: boolean;
+  syncFrequency: "one_minute" | "five_minutes";
+  snapshotUpdatedAt: string | null;
+  nextSyncAt: string | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: { code: string; message: string } | null;
+  editor: {
+    tournament: {
+      id: string | null;
+      name: string;
+      state: string;
+      tournamentType: string;
+    } | null;
+    participants: Array<{
+      id: string;
+      name: string;
+      seed: number | null;
+      active: boolean;
+      finalRank: number | null;
+    }>;
+    matches: Array<{
+      id: string;
+      identifier: string | null;
+      round: number | null;
+      state: string;
+      player1Id: string | null;
+      player2Id: string | null;
+      winnerId: string | null;
+      scoresCsv: string | null;
+    }>;
+  } | null;
+  participants: Array<{
+    id: string;
+    externalParticipantId: string;
+    displayName: string;
+    seed: number | null;
+    registrationId: string | null;
+    isConfirmed: boolean;
+  }>;
+};
+
+export type ChallongeSyncLog = {
+  id: string;
+  identifier: string;
+  status: "running" | "succeeded" | "failed" | "skipped";
+  trigger: string;
+  httpStatus: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  tournamentState: string | null;
+  participantCount: number;
+  matchCount: number;
+  durationMs: number | null;
+  startedAt: string;
+  completedAt: string | null;
+};
+
 export const formatAdminDateTime = (
   value?: string | null,
   options?: Intl.DateTimeFormatOptions

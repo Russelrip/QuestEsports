@@ -610,25 +610,26 @@ model MatchParticipant {
 }
 
 model ChallongeIntegration {
-  id                String                     @id @default(uuid()) @db.Uuid
-  tournamentId      String                     @unique @map("tournament_id") @db.Uuid
-  identifier        String
-  enabled           Boolean                    @default(false)
-  syncFrequency     ChallongeSyncFrequency     @default(five_minutes) @map("sync_frequency")
-  snapshotData      Json?                      @map("snapshot_data")
-  snapshotHash      String?                    @map("snapshot_hash")
-  snapshotUpdatedAt DateTime?                  @map("snapshot_updated_at")
-  nextSyncAt        DateTime?                  @map("next_sync_at")
-  syncLeaseUntil    DateTime?                  @map("sync_lease_until")
-  lastAttemptAt     DateTime?                  @map("last_attempt_at")
-  lastSuccessAt     DateTime?                  @map("last_success_at")
-  lastErrorCode     String?                    @map("last_error_code")
-  lastErrorMessage  String?                    @map("last_error_message")
-  createdAt         DateTime                   @default(now()) @map("created_at")
-  updatedAt         DateTime                   @updatedAt @map("updated_at")
-  tournament        Tournament                 @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  participantLinks  ChallongeParticipantLink[]
-  syncLogs          ChallongeSyncLog[]
+  id                   String                     @id @default(uuid()) @db.Uuid
+  tournamentId         String                     @unique @map("tournament_id") @db.Uuid
+  identifier           String
+  enabled              Boolean                    @default(false)
+  automaticSyncEnabled Boolean                    @default(false) @map("automatic_sync_enabled")
+  syncFrequency        ChallongeSyncFrequency     @default(five_minutes) @map("sync_frequency")
+  snapshotData         Json?                      @map("snapshot_data")
+  snapshotHash         String?                    @map("snapshot_hash")
+  snapshotUpdatedAt    DateTime?                  @map("snapshot_updated_at")
+  nextSyncAt           DateTime?                  @map("next_sync_at")
+  syncLeaseUntil       DateTime?                  @map("sync_lease_until")
+  lastAttemptAt        DateTime?                  @map("last_attempt_at")
+  lastSuccessAt        DateTime?                  @map("last_success_at")
+  lastErrorCode        String?                    @map("last_error_code")
+  lastErrorMessage     String?                    @map("last_error_message")
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+  tournament           Tournament                 @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  participantLinks     ChallongeParticipantLink[]
+  syncLogs             ChallongeSyncLog[]
 
   @@index([enabled, nextSyncAt])
   @@index([syncLeaseUntil])
@@ -659,6 +660,7 @@ model ChallongeParticipantLink {
 model ChallongeSyncLog {
   id               String               @id @default(uuid()) @db.Uuid
   integrationId    String               @map("integration_id") @db.Uuid
+  identifier       String
   status           ChallongeSyncStatus
   trigger          String
   requestId        String?              @map("request_id")
@@ -1035,6 +1037,7 @@ model BackgroundJob {
   id          String              @id @default(uuid()) @db.Uuid
   name        String
   payload     Json
+  dedupeKey   String?             @unique @map("dedupe_key")
   status      BackgroundJobStatus @default(queued)
   attempts    Int                 @default(0)
   maxAttempts Int                 @default(5) @map("max_attempts")

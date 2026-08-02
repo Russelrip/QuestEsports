@@ -566,6 +566,11 @@ const mapTournament = (tournament) => {
     isPublished: tournamentWithRegistrationCount.isPublished,
     bracketLink: tournamentWithRegistrationCount.bracketLink,
     challongeEmbedUrl: buildChallongeEmbedUrl(tournamentWithRegistrationCount.bracketLink),
+    bracketSource: tournamentWithRegistrationCount.challongeIntegration?.enabled
+      ? "challonge"
+      : tournamentWithRegistrationCount.bracket?.status === "published"
+        ? "native"
+        : "none",
     sponsors: (tournamentWithRegistrationCount.sponsors || []).map(mapSponsor),
     contactLink: tournamentWithRegistrationCount.contactLink,
     isFeatured: tournamentWithRegistrationCount.isFeatured,
@@ -1094,6 +1099,7 @@ const getPublicTournamentBySlug = async (slug) => {
         },
       },
       bracket: true,
+      challongeIntegration: { select: { enabled: true } },
     },
   });
 

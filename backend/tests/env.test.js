@@ -132,6 +132,50 @@ test("environment normalizers cover valid, default, and invalid values", () => {
   );
 });
 
+test("Challonge configuration rejects unsafe base URLs and invalid cache durations", () => {
+  const insecureBase = loadEnvironment({ CHALLONGE_BASE_URL: "http://api.challonge.com/v2.1" });
+  assert.notEqual(insecureBase.status, 0);
+  assert.match(insecureBase.stderr, /CHALLONGE_BASE_URL must use HTTPS/);
+
+  const credentialedBase = loadEnvironment({
+    CHALLONGE_BASE_URL: "https://user:secret@api.challonge.com/v2.1",
+  });
+  assert.notEqual(credentialedBase.status, 0);
+  assert.match(credentialedBase.stderr, /must not contain URL credentials/);
+
+  const queryBase = loadEnvironment({
+    CHALLONGE_BASE_URL: "https://api.challonge.com/v2.1?client_secret=secret",
+  });
+  assert.notEqual(queryBase.status, 0);
+  assert.match(queryBase.stderr, /must not contain a query or fragment/);
+
+  const invalidCache = loadEnvironment({ CHALLONGE_BRACKET_CACHE_SECONDS: "0" });
+  assert.notEqual(invalidCache.status, 0);
+  assert.match(invalidCache.stderr, /integer from 1 to 300/);
+});
+
+test("Challonge v2.1 requires server application credentials and a safe token URL", () => {
+  const missingSecret = loadEnvironment({
+    CHALLONGE_ENABLED: "true",
+    CHALLONGE_CLIENT_ID: "quest-app",
+    CHALLONGE_CLIENT_SECRET: "",
+  });
+  assert.notEqual(missingSecret.status, 0);
+  assert.match(missingSecret.stderr, /CHALLONGE_CLIENT_ID and CHALLONGE_CLIENT_SECRET/);
+
+  const insecureTokenUrl = loadEnvironment({
+    CHALLONGE_TOKEN_URL: "http://api.challonge.com/oauth/token",
+  });
+  assert.notEqual(insecureTokenUrl.status, 0);
+  assert.match(insecureTokenUrl.stderr, /CHALLONGE_TOKEN_URL must use HTTPS/);
+
+  const queryTokenUrl = loadEnvironment({
+    CHALLONGE_TOKEN_URL: "https://api.challonge.com/oauth/token?client_secret=secret",
+  });
+  assert.notEqual(queryTokenUrl.status, 0);
+  assert.match(queryTokenUrl.stderr, /CHALLONGE_TOKEN_URL must not contain a query or fragment/);
+});
+
 test("maintenance environment rejects ambiguous switches and invalid retry windows", () => {
   const invalidSwitch = loadEnvironment({ SITE_MAINTENANCE_MODE: "maybe" });
   assert.notEqual(invalidSwitch.status, 0);
