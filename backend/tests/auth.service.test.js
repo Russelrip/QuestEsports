@@ -229,6 +229,80 @@ test("completeMfaLogin rejects reused challenges without consuming recovery code
   }
 });
 
+test("createMobileOAuthGrant stores only a short-lived token hash", async () => {
+  const calls = [];
+  const tx = {
+    mobileOAuthGrant: {
+      updateMany: async (args) => calls.push(["invalidate", args]),
+      create: async (args) => calls.push(["create", args]),
+    },
+  };
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      $transaction: async (callback) => callback(tx),
+    },
+  });
+
+  try {
+    const result = await authService.createMobileOAuthGrant({
+      userId: "admin-1",
+      provider: "google",
+    });
+
+    assert.equal(result.token, "raw-token");
+    assert.equal(calls[0][0], "invalidate");
+    assert.equal(calls[1][0], "create");
+    assert.equal(calls[1][1].data.userId, "admin-1");
+    assert.equal(calls[1][1].data.provider, "google");
+    assert.equal(calls[1][1].data.tokenHash, "hash:raw-token");
+    assert.deepEqual(Object.keys(calls[1][1].data).sort(), [
+      "expiresAt",
+      "id",
+      "provider",
+      "tokenHash",
+      "userId",
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("consumeMobileOAuthGrant atomically rejects a reused one-time grant", async () => {
+  const updates = [];
+  const grant = {
+    id: "grant-1",
+    provider: "discord",
+    user: { ...user, id: "admin-1", role: "admin", mfaEnabled: false },
+  };
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      mobileOAuthGrant: {
+        findFirst: async (args) => {
+          assert.equal(args.where.tokenHash, "hash:one-time-grant");
+          return grant;
+        },
+        updateMany: async (args) => {
+          updates.push(args);
+          return { count: 0 };
+        },
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      authService.consumeMobileOAuthGrant({ token: "one-time-grant" }),
+      (error) =>
+        error.statusCode === 400 &&
+        error.message === "This mobile sign-in has expired or was already used."
+    );
+    assert.equal(updates[0].where.id, "grant-1");
+    assert.equal(updates[0].where.usedAt, null);
+  } finally {
+    restore();
+  }
+});
+
 test("admin profile updates validate the target user's email", async () => {
   const calls = [];
   const target = { ...user, email: "target@example.com", username: "target" };

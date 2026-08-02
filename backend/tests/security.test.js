@@ -65,6 +65,13 @@ test("strict API origin checks allow health checks and safe public GET requests"
       ),
       null
     );
+    assert.equal(
+      await runMiddleware(
+        security.requireAllowedApiOrigin,
+        buildRequest({ path: "/api/mobile/auth/oauth/google/start" })
+      ),
+      null
+    );
   } finally {
     restore();
   }
@@ -105,6 +112,20 @@ test("PayHere notifications are exempt from browser origin and CSRF checks", asy
     assert.equal(await runMiddleware(security.requireAllowedApiOrigin, request), null);
     assert.equal(await runMiddleware(security.protectAgainstCsrf, request), null);
   } finally { restore(); }
+});
+
+test("mobile OAuth grant exchange is exempt from browser origin and CSRF checks", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    const request = buildRequest({
+      path: "/api/mobile/auth/oauth/exchange",
+      method: "POST",
+    });
+    assert.equal(await runMiddleware(security.requireAllowedApiOrigin, request), null);
+    assert.equal(await runMiddleware(security.protectAgainstCsrf, request), null);
+  } finally {
+    restore();
+  }
 });
 
 test("origin and CSRF checks accept the configured origin and reject a foreign origin", async () => {

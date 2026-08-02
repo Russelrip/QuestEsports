@@ -24,6 +24,8 @@ const {
   getUserProfile,
   updateUserProfile,
   completeMfaLogin,
+  createMobileOAuthGrant,
+  consumeMobileOAuthGrant,
   beginMfaSetup,
   confirmMfaSetup,
   disableMfa,
@@ -37,6 +39,9 @@ const {
   changePassword,
   mapUserForResponse,
 } = require("./auth.service");
+
+const MOBILE_ADMIN_OAUTH_REDIRECT = "/mobile-admin-oauth";
+const MOBILE_ADMIN_DEEP_LINK = "questadmin://oauth";
 
 const getAppRedirectUrl = (destination) => {
   const appUrl = String(env.APP_URL || "").trim();
@@ -81,18 +86,24 @@ const completeAuthenticatedLogin = async ({
     : refreshedUser;
 };
 
-const assertMobileAdmin = (user) => {
+const assertMobileAdmin = (user, { requireMfa = true } = {}) => {
   if (!user || user.role !== "admin") {
     throw new HttpError(403, "Admin access is required for the mobile app.");
   }
 
-  if (!user.mfaEnabled) {
+  if (requireMfa && !user.mfaEnabled) {
     throw new HttpError(403, "Enable multi-factor authentication before using the mobile admin app.");
   }
 };
 
-const completeMobileAuthenticatedLogin = async ({ userId, rememberMe, req, responseUser }) => {
-  assertMobileAdmin(responseUser);
+const completeMobileAuthenticatedLogin = async ({
+  userId,
+  rememberMe,
+  req,
+  responseUser,
+  requireMfa = true,
+}) => {
+  assertMobileAdmin(responseUser, { requireMfa });
   const { token, expiresAt, sessionId } = await createSession({
     userId,
     rememberMe,
@@ -139,6 +150,24 @@ const startGoogleAuth = asyncHandler(async (req, res) => {
 
 const startDiscordAuth = asyncHandler(async (req, res) => {
   startOAuth({ provider: "discord", req, res });
+});
+
+const startMobileOAuth = ({ provider, res }) => {
+  const { authorizationUrl, flowCookie } = createOAuthAuthorization({
+    provider,
+    redirectTo: MOBILE_ADMIN_OAUTH_REDIRECT,
+  });
+
+  res.setHeader("Set-Cookie", flowCookie);
+  res.redirect(authorizationUrl);
+};
+
+const startMobileGoogleAuth = asyncHandler(async (_req, res) => {
+  startMobileOAuth({ provider: "google", res });
+});
+
+const startMobileDiscordAuth = asyncHandler(async (_req, res) => {
+  startMobileOAuth({ provider: "discord", res });
 });
 
 const login = asyncHandler(async (req, res) => {
@@ -240,6 +269,23 @@ const verifyMobileMfaLogin = asyncHandler(async (req, res) => {
   });
 });
 
+const exchangeMobileOAuthGrant = asyncHandler(async (req, res) => {
+  const result = await consumeMobileOAuthGrant({ token: req.body.grantToken });
+  const session = await completeMobileAuthenticatedLogin({
+    userId: result.user.id,
+    rememberMe: true,
+    req,
+    responseUser: result.user,
+    requireMfa: false,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Signed in with ${result.provider}.`,
+    ...session,
+  });
+});
+
 const mobileLogout = asyncHandler(async (req, res) => {
   if (req.session?.source === "bearer" && req.session.token) {
     await deleteSessionByToken(req.session.token);
@@ -261,6 +307,17 @@ const completeOAuthLogin = async ({ provider, req, res }) => {
       cookieHeader: req.headers.cookie,
     }),
   });
+
+  if (redirectTo === MOBILE_ADMIN_OAUTH_REDIRECT) {
+    assertMobileAdmin(user, { requireMfa: false });
+    const grant = await createMobileOAuthGrant({ userId: user.id, provider });
+    const appRedirectUrl = new URL(MOBILE_ADMIN_DEEP_LINK);
+    appRedirectUrl.searchParams.set("grant", grant.token);
+    appRedirectUrl.searchParams.set("provider", provider);
+    res.setHeader("Set-Cookie", buildExpiredOAuthFlowCookie(provider));
+    res.redirect(appRedirectUrl.toString());
+    return;
+  }
 
   const refreshedUser = await completeAuthenticatedLogin({
     userId: user.id,
@@ -550,12 +607,15 @@ module.exports = {
   signup,
   startGoogleAuth,
   startDiscordAuth,
+  startMobileGoogleAuth,
+  startMobileDiscordAuth,
   googleCallback,
   discordCallback,
   login,
   verifyMfaLogin,
   mobileLogin,
   verifyMobileMfaLogin,
+  exchangeMobileOAuthGrant,
   mobileLogout,
   logout,
   getCurrentSession,
