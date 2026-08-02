@@ -29,6 +29,7 @@ const {
 } = require("../../lib/validation");
 
 const LOGIN_CHALLENGE_MINUTES = 10;
+const MOBILE_OAUTH_GRANT_MINUTES = 2;
 const BACKUP_CODE_COUNT = 8;
 
 const PUBLIC_USER_SELECT = {
@@ -226,6 +227,73 @@ const buildLoginChallengeResponse = (user, challengeToken) => ({
     mfaEnabled: true,
   },
 });
+
+const createMobileOAuthGrant = async ({ userId, provider }) => {
+  const grantToken = createTokenPair({ minutes: MOBILE_OAUTH_GRANT_MINUTES });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.mobileOAuthGrant.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    await tx.mobileOAuthGrant.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId,
+        provider,
+        tokenHash: grantToken.tokenHash,
+        expiresAt: grantToken.expiresAt,
+      },
+    });
+  });
+
+  return {
+    token: grantToken.rawToken,
+    expiresAt: grantToken.expiresAt,
+  };
+};
+
+const consumeMobileOAuthGrant = async ({ token }) => {
+  const normalizedToken = normalizeText(token);
+  if (!normalizedToken) {
+    throw new HttpError(400, "A mobile OAuth grant is required.");
+  }
+
+  const grant = await prisma.mobileOAuthGrant.findFirst({
+    where: {
+      tokenHash: hashToken(normalizedToken),
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    include: {
+      user: { select: PUBLIC_USER_SELECT },
+    },
+  });
+
+  if (!grant) {
+    throw new HttpError(400, "This mobile sign-in has expired or was already used.");
+  }
+
+  const usedAt = new Date();
+  const consumed = await prisma.mobileOAuthGrant.updateMany({
+    where: {
+      id: grant.id,
+      usedAt: null,
+      expiresAt: { gt: usedAt },
+    },
+    data: { usedAt },
+  });
+
+  if (consumed.count !== 1) {
+    throw new HttpError(400, "This mobile sign-in has expired or was already used.");
+  }
+
+  return {
+    provider: grant.provider,
+    user: mapUserForResponse(grant.user),
+  };
+};
 
 const generateBackupCodeValues = () =>
   Array.from({ length: BACKUP_CODE_COUNT }, () =>
@@ -1420,6 +1488,8 @@ module.exports = {
   getUserProfile,
   updateUserProfile,
   completeMfaLogin,
+  createMobileOAuthGrant,
+  consumeMobileOAuthGrant,
   beginMfaSetup,
   confirmMfaSetup,
   disableMfa,

@@ -3,12 +3,15 @@ const {
   signup,
   startGoogleAuth,
   startDiscordAuth,
+  startMobileGoogleAuth,
+  startMobileDiscordAuth,
   googleCallback,
   discordCallback,
   login,
   verifyMfaLogin,
   mobileLogin,
   verifyMobileMfaLogin,
+  exchangeMobileOAuthGrant,
   mobileLogout,
   logout,
   getCurrentSession,
@@ -33,11 +36,23 @@ const { requireAuth } = require("./auth.middleware");
 const { createRateLimiter } = require("../../middleware/rate-limit");
 
 const router = express.Router();
-const authRateLimiter = createRateLimiter({
-  name: "auth-login",
+const passwordLoginRateLimiter = createRateLimiter({
+  name: "auth-login-password",
   windowMs: 15 * 60 * 1000,
   maxRequests: 5,
   message: "Too many login attempts. Please try again in 15 minutes.",
+});
+const mfaLoginRateLimiter = createRateLimiter({
+  name: "auth-login-mfa",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 10,
+  message: "Too many verification attempts. Please try again in 15 minutes.",
+});
+const mobileOAuthExchangeRateLimiter = createRateLimiter({
+  name: "auth-mobile-oauth-exchange",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 10,
+  message: "Too many mobile sign-in attempts. Please try again in 15 minutes.",
 });
 const signupRateLimiter = createRateLimiter({
   name: "auth-signup",
@@ -80,11 +95,18 @@ router.get("/auth/google/start", startGoogleAuth);
 router.get("/auth/google/callback", googleCallback);
 router.get("/auth/discord/start", startDiscordAuth);
 router.get("/auth/discord/callback", discordCallback);
+router.get("/mobile/auth/oauth/google/start", startMobileGoogleAuth);
+router.get("/mobile/auth/oauth/discord/start", startMobileDiscordAuth);
 router.post("/signup", signupRateLimiter, signup);
-router.post("/login", authRateLimiter, login);
-router.post("/login/mfa", authRateLimiter, verifyMfaLogin);
-router.post("/mobile/auth/login", authRateLimiter, mobileLogin);
-router.post("/mobile/auth/login/mfa", authRateLimiter, verifyMobileMfaLogin);
+router.post("/login", passwordLoginRateLimiter, login);
+router.post("/login/mfa", mfaLoginRateLimiter, verifyMfaLogin);
+router.post("/mobile/auth/login", passwordLoginRateLimiter, mobileLogin);
+router.post("/mobile/auth/login/mfa", mfaLoginRateLimiter, verifyMobileMfaLogin);
+router.post(
+  "/mobile/auth/oauth/exchange",
+  mobileOAuthExchangeRateLimiter,
+  exchangeMobileOAuthGrant
+);
 router.post("/mobile/auth/logout", requireAuth, mobileLogout);
 router.get("/mobile/auth/me", requireAuth, getCurrentSession);
 router.post("/logout", logout);

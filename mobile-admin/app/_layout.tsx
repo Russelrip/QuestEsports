@@ -16,9 +16,10 @@ function AuthGate() {
     const route = segments[0];
     const inLogin = route === "login";
     const inMfa = route === "mfa";
+    const inOAuth = route === "oauth";
     if (!user && challengeToken && !inMfa) router.replace("/mfa");
-    else if (!user && !challengeToken && !inLogin) router.replace("/login");
-    else if (user && (inLogin || inMfa || !route)) router.replace("/(tabs)");
+    else if (!user && !challengeToken && !inLogin && !inOAuth) router.replace("/login");
+    else if (user && (inLogin || inMfa || inOAuth || !route)) router.replace("/(tabs)");
   }, [challengeToken, loading, router, segments, user]);
 
   if (loading) {
@@ -30,6 +31,7 @@ function AuthGate() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="mfa" options={{ headerShown: false }} />
+      <Stack.Screen name="oauth" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="resources/[kind]" options={{ headerShown: false }} />
       <Stack.Screen name="sessions" options={{ title: "Device sessions" }} />

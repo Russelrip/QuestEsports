@@ -2,15 +2,17 @@ import { useState } from "react";
 import { Image, KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/auth";
+import type { OAuthProvider } from "@/auth";
 import { Button, ErrorNotice, Field, Screen } from "@/components/ui";
 import { colors, radius, spacing } from "@/theme";
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, loginWithProvider } = useAuth();
   const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [providerLoading, setProviderLoading] = useState<OAuthProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
@@ -27,6 +29,19 @@ export default function LoginScreen() {
     }
   };
 
+  const submitProvider = async (provider: OAuthProvider) => {
+    setProviderLoading(provider);
+    setError(null);
+    try {
+      await loginWithProvider(provider);
+      router.replace("/(tabs)");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Social sign-in failed.");
+    } finally {
+      setProviderLoading(null);
+    }
+  };
+
   return (
     <Screen scroll>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.wrap}>
@@ -38,10 +53,13 @@ export default function LoginScreen() {
         </View>
         <View style={styles.panel}>
           {error ? <ErrorNotice message={error} /> : null}
+          <Button label="Continue with Google" icon="logo-google" tone="secondary" loading={providerLoading === "google"} disabled={loading || providerLoading !== null} onPress={() => void submitProvider("google")} />
+          <Button label="Continue with Discord" icon="logo-discord" tone="secondary" loading={providerLoading === "discord"} disabled={loading || providerLoading !== null} onPress={() => void submitProvider("discord")} />
+          <View style={styles.divider}><View style={styles.dividerLine} /><Text style={styles.dividerText}>OR USE PASSWORD</Text><View style={styles.dividerLine} /></View>
           <Field label="Email or username" value={identity} onChangeText={setIdentity} autoCapitalize="none" autoCorrect={false} textContentType="username" />
           <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" onSubmitEditing={() => void submit()} />
-          <Button label="Continue securely" icon="shield-checkmark-outline" loading={loading} disabled={!identity.trim() || !password} onPress={() => void submit()} />
-          <Text style={styles.securityNote}>Admin MFA is mandatory. Your password is never stored on this device.</Text>
+          <Button label="Continue securely" icon="shield-checkmark-outline" loading={loading} disabled={!identity.trim() || !password || providerLoading !== null} onPress={() => void submit()} />
+          <Text style={styles.securityNote}>Google and Discord use your linked provider account directly. Password sign-in still requires your Quest authenticator code.</Text>
         </View>
       </KeyboardAvoidingView>
     </Screen>
@@ -56,5 +74,8 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 36, fontWeight: "900" },
   subtitle: { color: colors.muted, textAlign: "center", maxWidth: 320, lineHeight: 21 },
   panel: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md },
+  divider: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginVertical: spacing.xs },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { color: colors.muted, fontSize: 10, fontWeight: "800", letterSpacing: 1 },
   securityNote: { color: colors.muted, textAlign: "center", fontSize: 12, lineHeight: 18 },
 });

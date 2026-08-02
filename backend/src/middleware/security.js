@@ -8,12 +8,14 @@ const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
   "/api/auth/discord/callback",
   "/api/mobile/auth/login",
   "/api/mobile/auth/login/mfa",
+  "/api/mobile/auth/oauth/exchange",
   "/api/payments/payhere/notify",
 ]);
 const SAFE_PUBLIC_API_PATHS = [
   /^\/api\/health(?:\/(?:live|ready))?$/,
   /^\/api\/openapi\.json$/,
   /^\/api\/auth\/(?:google|discord)\/start$/,
+  /^\/api\/mobile\/auth\/oauth\/(?:google|discord)\/start$/,
   /^\/api\/tournaments(?:\/[^/]+)?$/,
   /^\/api\/posters(?:\/[^/]+(?:\/image)?)?$/,
   /^\/api\/rulebooks(?:\/[^/]+)?$/,
