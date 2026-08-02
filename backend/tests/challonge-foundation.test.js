@@ -87,11 +87,12 @@ test("foundation tables enable RLS and deny Data API table privileges", () => {
   assert.doesNotMatch(migration, /DROP TABLE/);
 });
 
-test("completion migration adds automatic sync, job deduplication, and immutable log identifiers", () => {
+test("completion migration expands safely while backfilling immutable log identifiers", () => {
   const migration = fs.readFileSync(path.join(__dirname, "../prisma/migrations/20260801120000_complete_challonge_integration/migration.sql"), "utf8");
   assert.match(migration, /automatic_sync_enabled/);
   assert.match(migration, /dedupe_key/);
-  assert.match(migration, /ALTER COLUMN "identifier" SET NOT NULL/);
+  assert.match(migration, /SET "identifier" = integrations\."identifier"/);
+  assert.doesNotMatch(migration, /ALTER COLUMN "identifier" SET NOT NULL/);
   assert.doesNotMatch(migration, /DROP TABLE/);
 });
 

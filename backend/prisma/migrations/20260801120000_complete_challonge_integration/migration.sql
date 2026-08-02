@@ -18,9 +18,6 @@ SET "identifier" = integrations."identifier"
 FROM "challonge_integrations" AS integrations
 WHERE integrations."id" = logs."integration_id";
 
-ALTER TABLE "challonge_sync_logs"
-ALTER COLUMN "identifier" SET NOT NULL;
-
 ALTER TABLE "background_jobs"
 ADD COLUMN "dedupe_key" TEXT;
 

@@ -660,7 +660,7 @@ model ChallongeParticipantLink {
 model ChallongeSyncLog {
   id               String               @id @default(uuid()) @db.Uuid
   integrationId    String               @map("integration_id") @db.Uuid
-  identifier       String
+  identifier       String?
   status           ChallongeSyncStatus
   trigger          String
   requestId        String?              @map("request_id")

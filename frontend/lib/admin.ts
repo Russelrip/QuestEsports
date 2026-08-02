@@ -295,7 +295,7 @@ export type AdminChallongeIntegration = {
 
 export type ChallongeSyncLog = {
   id: string;
-  identifier: string;
+  identifier: string | null;
   status: "running" | "succeeded" | "failed" | "skipped";
   trigger: string;
   httpStatus: number | null;
