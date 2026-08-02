@@ -16,6 +16,7 @@ This directory contains the operational, architecture, security, and product doc
 
 ## Setup and architecture
 
+- [Private Android Admin App](../mobile-admin/README.md) — local development, security model, signing, and private GitHub APK releases.
 - [Setup and Deployment](./setup-and-deployment.md) — local setup, environment configuration, VPS deployment, and reverse proxy guidance.
 - [CI/CD](./ci-cd.md) — GitHub Actions, protected deployment, migration approval, and troubleshooting.
 - [Database and Storage](./database-and-storage.md) — Prisma models, persistent upload roots, storage behavior, and data handling.

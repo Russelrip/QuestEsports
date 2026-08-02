@@ -49,6 +49,11 @@ const parseCookies = (cookieHeader = "") =>
     return cookies;
   }, {});
 
+const getBearerToken = (authorizationHeader = "") => {
+  const match = /^Bearer\s+([a-f0-9]{96})$/i.exec(String(authorizationHeader).trim());
+  return match ? match[1] : null;
+};
+
 const getSessionDurationMs = (rememberMe) =>
   (rememberMe
     ? env.REMEMBER_ME_SESSION_TTL_DAYS
@@ -173,7 +178,12 @@ const mapSessionSummary = (session, currentSessionId = null) => ({
 
 const getSessionFromRequest = async (req) => {
   const cookies = parseCookies(req.headers.cookie || "");
-  const token = cookies[SESSION_COOKIE_NAME];
+  const cookieToken = cookies[SESSION_COOKIE_NAME];
+  const bearerToken = getBearerToken(req.headers.authorization);
+  // Never let an Authorization header silently override an authenticated
+  // browser cookie. Native clients deliberately send no session cookie.
+  const token = cookieToken || bearerToken;
+  const source = cookieToken ? "cookie" : bearerToken ? "bearer" : null;
 
   if (!token) {
     return null;
@@ -229,6 +239,7 @@ const getSessionFromRequest = async (req) => {
 
   return {
     token,
+    source,
     sessionId: session.id,
     createdAt: session.createdAt,
     lastSeenAt: session.lastSeenAt,
@@ -297,6 +308,7 @@ const clearSessionCookie = (res) => {
 module.exports = {
   createSession,
   deleteSessionByToken,
+  getBearerToken,
   getSessionFromRequest,
   setSessionCookie,
   clearSessionCookie,

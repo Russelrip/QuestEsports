@@ -340,21 +340,36 @@ const buildRecruitmentWhere = ({ search, status, applicationType }) => {
 };
 
 const getAdminDashboardData = async () => {
-  const [totalTournaments, openTournaments, totalRegistrations, pendingRecruitmentApplications, unreadContactMessages] =
+  const [
+    totalTournaments,
+    openTournaments,
+    totalRegistrations,
+    pendingRegistrations,
+    pendingRecruitmentApplications,
+    unreadContactMessages,
+    pendingPayments,
+    actionableOrders,
+  ] =
     await prisma.$transaction([
       prisma.tournament.count(),
       prisma.tournament.count({ where: { status: "registration_open" } }),
       prisma.teamRegistration.count(),
+      prisma.teamRegistration.count({ where: { status: "pending" } }),
       prisma.recruitmentApplication.count({ where: { status: "pending" } }),
       prisma.contactSubmission.count({ where: { isRead: false } }),
+      prisma.paymentTransaction.count({ where: { status: { in: ["pending", "review_required"] } } }),
+      prisma.merchandiseOrder.count({ where: { status: { in: ["paid", "processing"] } } }),
     ]);
 
   return {
     totalTournaments,
     openTournaments,
     totalRegistrations,
+    pendingRegistrations,
     pendingRecruitmentApplications,
     unreadContactMessages,
+    pendingPayments,
+    actionableOrders,
   };
 };
 

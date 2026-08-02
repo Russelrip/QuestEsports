@@ -7,6 +7,9 @@ const {
   discordCallback,
   login,
   verifyMfaLogin,
+  mobileLogin,
+  verifyMobileMfaLogin,
+  mobileLogout,
   logout,
   getCurrentSession,
   getProfile,
@@ -80,6 +83,10 @@ router.get("/auth/discord/callback", discordCallback);
 router.post("/signup", signupRateLimiter, signup);
 router.post("/login", authRateLimiter, login);
 router.post("/login/mfa", authRateLimiter, verifyMfaLogin);
+router.post("/mobile/auth/login", authRateLimiter, mobileLogin);
+router.post("/mobile/auth/login/mfa", authRateLimiter, verifyMobileMfaLogin);
+router.post("/mobile/auth/logout", requireAuth, mobileLogout);
+router.get("/mobile/auth/me", requireAuth, getCurrentSession);
 router.post("/logout", logout);
 router.get("/me", getCurrentSession);
 router.get("/email-verification/verify", verifyEmail);

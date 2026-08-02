@@ -28,8 +28,18 @@ const buildResponse = () => {
 
   return {
     headers,
+    statusCode: null,
+    body: null,
     getHeader: (name) => headers.get(name),
     setHeader: (name, value) => headers.set(name, value),
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
     redirectUrl: null,
     redirect(url) {
       this.redirectUrl = url;
@@ -156,6 +166,96 @@ test("OAuth controller binds callbacks to the browser flow cookie", async () => 
       "oauth-flow=; Expires=expired",
     ]);
     assert.equal(callbackResponse.redirectUrl, "https://app.example.com/profile");
+  } finally {
+    restore();
+  }
+});
+
+test("mobile admin login requires MFA and returns a challenge without a cookie", async () => {
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {},
+    [sessionPath]: {},
+    [authServicePath]: {
+      authenticateUser: async () => ({
+        requiresMfa: true,
+        challengeToken: "challenge-token",
+        challengeExpiresAt: "2026-08-03T01:00:00.000Z",
+        user: { id: "admin-1", role: "admin", mfaEnabled: true },
+      }),
+    },
+  });
+
+  try {
+    const response = buildResponse();
+    await invoke(
+      controller.mobileLogin,
+      {
+        body: { emailOrUsername: "admin", password: "secret" },
+        headers: { "user-agent": "Quest Admin test" },
+        ip: "127.0.0.1",
+      },
+      response
+    );
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.requiresMfa, true);
+    assert.equal(response.body.challengeToken, "challenge-token");
+    assert.equal(response.getHeader("Set-Cookie"), undefined);
+  } finally {
+    restore();
+  }
+});
+
+test("mobile MFA completion issues a bearer token only to an admin", async () => {
+  const createSessionCalls = [];
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {},
+    [sessionPath]: {
+      createSession: async (args) => {
+        createSessionCalls.push(args);
+        return {
+          token: "a".repeat(96),
+          expiresAt: "2026-09-03T01:00:00.000Z",
+          sessionId: "session-1",
+        };
+      },
+    },
+    [authServicePath]: {
+      completeMfaLogin: async () => ({
+        userId: "admin-1",
+        rememberMe: true,
+        usedRecoveryCode: false,
+        user: { id: "admin-1", role: "admin", mfaEnabled: true },
+      }),
+      markUserLoginSucceeded: async () => ({
+        id: "admin-1",
+        role: "admin",
+        mfaEnabled: true,
+      }),
+    },
+  });
+
+  try {
+    const response = buildResponse();
+    await invoke(
+      controller.verifyMobileMfaLogin,
+      {
+        body: { challengeToken: "challenge-token", code: "123456" },
+        headers: { "user-agent": "Quest Admin test" },
+        ip: "127.0.0.1",
+      },
+      response
+    );
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.token, "a".repeat(96));
+    assert.equal(response.body.user.role, "admin");
+    assert.match(createSessionCalls[0].userAgent, /^Quest Admin Android/);
+    assert.equal(response.getHeader("Set-Cookie"), undefined);
   } finally {
     restore();
   }

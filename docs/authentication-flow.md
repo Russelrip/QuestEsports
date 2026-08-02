@@ -1,6 +1,6 @@
 # Authentication Flow
 
-This project uses cookie-based session authentication with server-side session storage in PostgreSQL. The browser never stores a bearer token for API access.
+This project uses server-side session storage in PostgreSQL. Browsers authenticate with an `HttpOnly` cookie and never store a bearer token; the private Android admin app uses a revocable opaque bearer representation of the same session model.
 
 For the complete email inventory, recipients, triggers, token rules, and delivery behavior, see [Email System](./email-system.md).
 
@@ -25,6 +25,17 @@ For the complete email inventory, recipients, triggers, token rules, and deliver
   - explicit `Expires`
 
 The cookie name comes from `SESSION_COOKIE_NAME`.
+
+## Mobile Admin Login
+
+1. The Android app posts credentials to `POST /api/mobile/auth/login`.
+2. The backend requires an admin role and enabled MFA, then returns a short-lived login challenge.
+3. The app completes TOTP or backup-code verification through `POST /api/mobile/auth/login/mfa`.
+4. The backend creates a normal database-backed session and returns the raw opaque token once instead of setting a cookie.
+5. The app stores the token with Expo SecureStore, backed by Android Keystore, and sends it in the `Authorization` header.
+6. `GET /api/mobile/auth/me` restores the signed-in admin, while `POST /api/mobile/auth/logout` revokes that device session.
+
+Only the SHA-256 token hash is stored in PostgreSQL. Native bearer requests must not carry the browser session cookie; if both are present, cookie precedence preserves browser Origin and CSRF enforcement.
 
 ## Login Flow
 

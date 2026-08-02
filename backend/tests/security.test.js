@@ -153,6 +153,41 @@ test("CSRF protection blocks cookie-authenticated writes without origin", async 
   }
 });
 
+test("native bearer sessions can call protected APIs without a browser origin", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    const request = buildRequest({
+      path: "/api/admin/orders",
+      method: "PATCH",
+      headers: { authorization: `Bearer ${"a".repeat(96)}` },
+    });
+
+    assert.equal(await runMiddleware(security.requireAllowedApiOrigin, request), null);
+    assert.equal(await runMiddleware(security.protectAgainstCsrf, request), null);
+  } finally {
+    restore();
+  }
+});
+
+test("bearer headers cannot bypass browser protections when a session cookie is present", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    const request = buildRequest({
+      path: "/api/admin/orders",
+      method: "PATCH",
+      headers: {
+        cookie: "quest_session=browser-token",
+        authorization: `Bearer ${"a".repeat(96)}`,
+      },
+    });
+
+    assert.equal((await runMiddleware(security.requireAllowedApiOrigin, request))?.statusCode, 403);
+    assert.equal((await runMiddleware(security.protectAgainstCsrf, request))?.statusCode, 403);
+  } finally {
+    restore();
+  }
+});
+
 test("security headers include API CSP and production transport protection", () => {
   const productionLoad = loadModuleWithMocks(securityPath, {
     [envPath]: {

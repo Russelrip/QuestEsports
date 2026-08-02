@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Quest Admin",
+    "slug": "quest-admin",
+    "scheme": "questadmin",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#07060b",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "lk.questesports.admin",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#07060b",
+        "foregroundImage": "./assets/icon.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
+      "./plugins/withAndroidReleaseSigning"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

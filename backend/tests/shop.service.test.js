@@ -130,6 +130,48 @@ test("admins cannot manually mark orders paid or refunded", async () => {
   } finally { restore(); }
 });
 
+test("admin order listing applies mobile status and search filters", async () => {
+  const calls = {};
+  const order = {
+    id: "order-1",
+    publicToken: "c".repeat(48),
+    status: "processing",
+    email: "captain@example.com",
+    firstName: "Quest",
+    lastName: "Captain",
+    phone: "0712345678",
+    address: "1 Main Street",
+    city: "Colombo",
+    country: "Sri Lanka",
+    currency: "LKR",
+    subtotal: 3500,
+    deliveryFee: 500,
+    total: 4000,
+    createdAt: new Date("2026-08-01T00:00:00.000Z"),
+    expiresAt: null,
+    items: [],
+    payments: [{ providerOrderId: "MERCH-1", status: "paid" }],
+  };
+  const prisma = {
+    merchandiseOrder: {
+      count: async (args) => { calls.count = args; return 1; },
+      findMany: async (args) => { calls.findMany = args; return [order]; },
+    },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    const result = await service.listAdminOrders({ status: "processing", search: "captain", page: "2", pageSize: "10" });
+    assert.equal(result.items[0].paymentStatus, "paid");
+    assert.deepEqual(result.pagination, { page: 2, pageSize: 10, total: 1, totalPages: 1 });
+    assert.equal(calls.count.where.status, "processing");
+    assert.equal(calls.count.where.OR[0].email.contains, "captain");
+    assert.equal(calls.findMany.skip, 10);
+    assert.equal(calls.findMany.take, 10);
+    assert.deepEqual(calls.findMany.where, calls.count.where);
+  } finally { restore(); }
+});
+
 test("commerce capabilities disable checkout without provider credentials", () => {
   const { module: service, restore } = load({});
   try {

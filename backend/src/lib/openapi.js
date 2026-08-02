@@ -30,7 +30,7 @@ const createOperation = (tag, summary, { authenticated = false, parameters = [] 
   tags: [tag],
   summary,
   parameters,
-  ...(authenticated ? { security: [{ sessionCookie: [] }] } : {}),
+  ...(authenticated ? { security: [{ sessionCookie: [] }, { mobileBearer: [] }] } : {}),
   responses: {
     200: createResponse(summary),
     ...(authenticated ? { 401: createResponse("Authentication required") } : {}),
@@ -97,6 +97,12 @@ const openApiDocument = {
         in: "cookie",
         name: env.SESSION_COOKIE_NAME,
         description: "HttpOnly session cookie issued by the login or OAuth flow.",
+      },
+      mobileBearer: {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "opaque-session-token",
+        description: "Revocable bearer session issued only by the MFA-protected Quest Admin mobile login.",
       },
     },
     parameters: {
@@ -204,6 +210,10 @@ const openApiDocument = {
     "/api/signup": { post: createOperation("Auth", "Create an account") },
     "/api/login": { post: createOperation("Auth", "Create a password-authenticated session") },
     "/api/login/mfa": { post: createOperation("Auth", "Complete an MFA login challenge") },
+    "/api/mobile/auth/login": { post: createOperation("Auth", "Start an MFA-required mobile admin login") },
+    "/api/mobile/auth/login/mfa": { post: createOperation("Auth", "Complete mobile admin MFA and issue a bearer session") },
+    "/api/mobile/auth/logout": { post: createOperation("Auth", "Revoke the current mobile bearer session", { authenticated: true }) },
+    "/api/mobile/auth/me": { get: createOperation("Account", "Get the current mobile admin session", { authenticated: true }) },
     "/api/logout": { post: createOperation("Auth", "End the current session", { authenticated: true }) },
     "/api/me": { get: createOperation("Account", "Get the current session", { authenticated: true }) },
     "/api/email-verification/verify": { get: createOperation("Auth", "Verify an email token") },

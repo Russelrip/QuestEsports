@@ -11,12 +11,15 @@ This document describes the implemented HTTP API in `backend/src`. All routes ar
 
 ## Authentication Model
 
-- Session auth uses an `HttpOnly` cookie.
+- Browser session auth uses an `HttpOnly` cookie.
 - The frontend sends cookies with `credentials: "include"`.
-- Protected routes require the session cookie to be present and valid.
+- The private Android admin client sends its opaque session token as `Authorization: Bearer <token>`.
+- Protected routes accept either a valid browser cookie or a valid mobile bearer session.
 - Admin routes require `user.role === "admin"`.
 - Tournament registration additionally requires `emailVerified === true`.
 - The cookie name comes from the required `SESSION_COOKIE_NAME` environment variable.
+
+Mobile bearer sessions are issued only through the mobile login flow, which requires an admin account with MFA enabled. The raw token is returned once, stored by the app in Android Keystore-backed secure storage, and only its SHA-256 hash is stored in PostgreSQL. A request containing a browser session cookie remains subject to browser origin and CSRF checks even if it also contains an Authorization header.
 
 See [Authentication Flow](./authentication-flow.md) for the full flow.
 
@@ -59,6 +62,15 @@ New foundation endpoints use a versioned envelope:
 
 List resources add `meta.pagination`. All timestamps are ISO-8601 UTC. Existing unversioned response shapes remain supported for compatibility.
 
+## Mobile Admin Authentication
+
+- `POST /api/mobile/auth/login` validates the admin username/password and returns a short-lived MFA challenge. Non-admin accounts and admin accounts without MFA are rejected.
+- `POST /api/mobile/auth/login/mfa` accepts an authenticator code or one-time backup code and returns the opaque bearer token, expiry, and admin user.
+- `GET /api/mobile/auth/me` rehydrates the current bearer session.
+- `POST /api/mobile/auth/logout` revokes the current bearer session.
+
+The mobile bearer token works with the existing protected admin endpoints; it is not a separate authorization model. Sessions can also be inspected and revoked through `GET /api/sessions`, `DELETE /api/sessions/:sessionId`, and `POST /api/sessions/revoke-others`.
+
 ## Versioned tournament and match endpoints
 
 - `GET /api/v1/home` returns the 15-second public homepage feed.
@@ -88,6 +100,7 @@ When site maintenance is enabled, normal API routes return `503 Service Unavaila
 ## Security And Request Rules
 
 - CSRF protection checks `Origin` or `Referer` on non-safe methods.
+- A correctly formed native bearer credential without a session cookie bypasses browser-only Origin/CSRF enforcement. Cookie-bearing requests never receive this exemption.
 - Allowed origins come from `CORS_ORIGIN`.
 - Rate limiting is applied to login, signup, contact, password reset, invite response, and tournament registration endpoints.
 - Team-logo uploads accept JPEG, PNG, and WebP with a 5 MB per-file limit.

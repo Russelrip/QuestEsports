@@ -552,9 +552,29 @@ const mapAdminOrder = (order) => ({
 const listAdminOrders = async (query = {}) => {
   const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
   const pageSize = Math.min(Math.max(Number.parseInt(query.pageSize, 10) || 25, 1), 100);
+  const status = normalizeText(query.status).toLowerCase();
+  const search = normalizeText(query.search);
+  const allowedStatuses = new Set(["pending_payment", "paid", "processing", "fulfilled", "cancelled", "refunded"]);
+  const textFilter = { contains: search, mode: "insensitive" };
+  const where = {
+    ...(allowedStatuses.has(status) ? { status } : {}),
+    ...(search
+      ? {
+          OR: [
+            { email: textFilter },
+            { firstName: textFilter },
+            { lastName: textFilter },
+            { phone: textFilter },
+            { city: textFilter },
+            { publicToken: { contains: search } },
+          ],
+        }
+      : {}),
+  };
   const [total, orders] = await prisma.$transaction([
-    prisma.merchandiseOrder.count(),
+    prisma.merchandiseOrder.count({ where }),
     prisma.merchandiseOrder.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,

@@ -81,6 +81,39 @@ const completeAuthenticatedLogin = async ({
     : refreshedUser;
 };
 
+const assertMobileAdmin = (user) => {
+  if (!user || user.role !== "admin") {
+    throw new HttpError(403, "Admin access is required for the mobile app.");
+  }
+
+  if (!user.mfaEnabled) {
+    throw new HttpError(403, "Enable multi-factor authentication before using the mobile admin app.");
+  }
+};
+
+const completeMobileAuthenticatedLogin = async ({ userId, rememberMe, req, responseUser }) => {
+  assertMobileAdmin(responseUser);
+  const { token, expiresAt, sessionId } = await createSession({
+    userId,
+    rememberMe,
+    userAgent: `Quest Admin Android | ${req.headers["user-agent"] || "unknown"}`,
+    ipAddress: req.ip || null,
+  });
+  const refreshedUser = await markUserLoginSucceeded({ userId });
+
+  logger.info("Mobile admin login succeeded", {
+    userId,
+    sessionId,
+    ip: req.ip,
+  });
+
+  return {
+    token,
+    expiresAt,
+    user: { ...responseUser, ...refreshedUser },
+  };
+};
+
 const signup = asyncHandler(async (req, res) => {
   await createSignup({ body: req.body });
 
@@ -160,6 +193,61 @@ const verifyMfaLogin = asyncHandler(async (req, res) => {
       ? "Login successful. Your backup code was used."
       : "Login successful.",
     user: authenticatedUser,
+  });
+});
+
+const mobileLogin = asyncHandler(async (req, res) => {
+  const authResult = await authenticateUser({
+    body: { ...req.body, remember: true },
+    requestMeta: {
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
+      client: "quest-admin-android",
+    },
+  });
+
+  assertMobileAdmin(authResult.user);
+
+  if (authResult.requiresMfa) {
+    res.status(200).json({
+      success: true,
+      message: "Verification code required.",
+      ...authResult,
+    });
+    return;
+  }
+
+  // Admin mobile access intentionally requires MFA, so this branch is only a
+  // defensive fallback if the authentication service contract changes.
+  throw new HttpError(403, "Multi-factor authentication is required for the mobile admin app.");
+});
+
+const verifyMobileMfaLogin = asyncHandler(async (req, res) => {
+  const result = await completeMfaLogin({ body: req.body });
+  const session = await completeMobileAuthenticatedLogin({
+    userId: result.userId,
+    rememberMe: true,
+    req,
+    responseUser: result.user,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: result.usedRecoveryCode
+      ? "Login successful. Your backup code was used."
+      : "Login successful.",
+    ...session,
+  });
+});
+
+const mobileLogout = asyncHandler(async (req, res) => {
+  if (req.session?.source === "bearer" && req.session.token) {
+    await deleteSessionByToken(req.session.token);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Mobile session ended.",
   });
 });
 
@@ -466,6 +554,9 @@ module.exports = {
   discordCallback,
   login,
   verifyMfaLogin,
+  mobileLogin,
+  verifyMobileMfaLogin,
+  mobileLogout,
   logout,
   getCurrentSession,
   getProfile,
