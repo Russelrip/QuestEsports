@@ -4,17 +4,13 @@ import * as WebBrowser from "expo-web-browser";
 import { API_URL, apiRequest, jsonBody, sessionStore, setUnauthorizedHandler } from "@/api";
 import type { AdminUser, ApiEnvelope } from "@/types";
 
-type LoginResult = { requiresMfa: true } | { requiresMfa: false };
 export type OAuthProvider = "google" | "discord";
 type AuthContextValue = {
   loading: boolean;
   user: AdminUser | null;
-  challengeToken: string | null;
-  login: (identity: string, password: string) => Promise<LoginResult>;
+  login: (identity: string, password: string) => Promise<void>;
   loginWithProvider: (provider: OAuthProvider) => Promise<void>;
   exchangeOAuthGrant: (grantToken: string) => Promise<void>;
-  verifyMfa: (code: string, useBackupCode?: boolean) => Promise<void>;
-  cancelMfa: () => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -25,13 +21,11 @@ WebBrowser.maybeCompleteAuthSession();
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<AdminUser | null>(null);
-  const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const oauthExchanges = useRef(new Map<string, Promise<void>>());
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setUser(null);
-      setChallengeToken(null);
     });
     return () => setUnauthorizedHandler(null);
   }, []);
@@ -55,19 +49,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [refreshUser]);
 
-  const login = useCallback(async (identity: string, password: string): Promise<LoginResult> => {
+  const login = useCallback(async (identity: string, password: string) => {
     const data = await apiRequest<
-      ApiEnvelope & { requiresMfa?: boolean; challengeToken?: string }
+      ApiEnvelope & { token: string; user: AdminUser; expiresAt: string }
     >("/api/mobile/auth/login", {
       method: "POST",
       authenticated: false,
       ...jsonBody({ emailOrUsername: identity, password }),
     });
-    if (!data.requiresMfa || !data.challengeToken) {
-      throw new Error("The server did not start MFA verification.");
-    }
-    setChallengeToken(data.challengeToken);
-    return { requiresMfa: true };
+    await sessionStore.set(data.token);
+    setUser(data.user);
   }, []);
 
   const exchangeOAuthGrant = useCallback(async (grantToken: string) => {
@@ -87,7 +78,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       await sessionStore.set(data.token);
       setUser(data.user);
-      setChallengeToken(null);
     })();
 
     oauthExchanges.current.set(normalizedGrant, exchange);
@@ -123,41 +113,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [exchangeOAuthGrant]
   );
 
-  const verifyMfa = useCallback(
-    async (code: string, useBackupCode = false) => {
-      if (!challengeToken) throw new Error("Your verification challenge has expired.");
-      const data = await apiRequest<
-        ApiEnvelope & { token: string; user: AdminUser; expiresAt: string }
-      >("/api/mobile/auth/login/mfa", {
-        method: "POST",
-        authenticated: false,
-        ...jsonBody({
-          challengeToken,
-          ...(useBackupCode ? { backupCode: code } : { code }),
-        }),
-      });
-      await sessionStore.set(data.token);
-      setUser(data.user);
-      setChallengeToken(null);
-    },
-    [challengeToken]
-  );
-
-  const cancelMfa = useCallback(() => setChallengeToken(null), []);
-
   const logout = useCallback(async () => {
     try {
       await apiRequest<ApiEnvelope>("/api/mobile/auth/logout", { method: "POST" });
     } finally {
       await sessionStore.clear();
       setUser(null);
-      setChallengeToken(null);
     }
   }, []);
 
   const value = useMemo(
-    () => ({ loading, user, challengeToken, login, loginWithProvider, exchangeOAuthGrant, verifyMfa, cancelMfa, logout, refreshUser }),
-    [loading, user, challengeToken, login, loginWithProvider, exchangeOAuthGrant, verifyMfa, cancelMfa, logout, refreshUser]
+    () => ({ loading, user, login, loginWithProvider, exchangeOAuthGrant, logout, refreshUser }),
+    [loading, user, login, loginWithProvider, exchangeOAuthGrant, logout, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -171,44 +171,7 @@ test("OAuth controller binds callbacks to the browser flow cookie", async () => 
   }
 });
 
-test("mobile admin login requires MFA and returns a challenge without a cookie", async () => {
-  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
-    [envPath]: { env: { APP_URL: "https://app.example.com" } },
-    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
-    [oauthPath]: {},
-    [sessionPath]: {},
-    [authServicePath]: {
-      authenticateUser: async () => ({
-        requiresMfa: true,
-        challengeToken: "challenge-token",
-        challengeExpiresAt: "2026-08-03T01:00:00.000Z",
-        user: { id: "admin-1", role: "admin", mfaEnabled: true },
-      }),
-    },
-  });
-
-  try {
-    const response = buildResponse();
-    await invoke(
-      controller.mobileLogin,
-      {
-        body: { emailOrUsername: "admin", password: "secret" },
-        headers: { "user-agent": "Quest Admin test" },
-        ip: "127.0.0.1",
-      },
-      response
-    );
-
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.body.requiresMfa, true);
-    assert.equal(response.body.challengeToken, "challenge-token");
-    assert.equal(response.getHeader("Set-Cookie"), undefined);
-  } finally {
-    restore();
-  }
-});
-
-test("mobile MFA completion issues a bearer token only to an admin", async () => {
+test("mobile admin password login issues a bearer session directly", async () => {
   const createSessionCalls = [];
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
     [envPath]: { env: { APP_URL: "https://app.example.com" } },
@@ -225,26 +188,21 @@ test("mobile MFA completion issues a bearer token only to an admin", async () =>
       },
     },
     [authServicePath]: {
-      completeMfaLogin: async () => ({
+      authenticateUser: async () => ({
         userId: "admin-1",
         rememberMe: true,
-        usedRecoveryCode: false,
-        user: { id: "admin-1", role: "admin", mfaEnabled: true },
+        user: { id: "admin-1", role: "admin" },
       }),
-      markUserLoginSucceeded: async () => ({
-        id: "admin-1",
-        role: "admin",
-        mfaEnabled: true,
-      }),
+      markUserLoginSucceeded: async () => ({ id: "admin-1", role: "admin" }),
     },
   });
 
   try {
     const response = buildResponse();
     await invoke(
-      controller.verifyMobileMfaLogin,
+      controller.mobileLogin,
       {
-        body: { challengeToken: "challenge-token", code: "123456" },
+        body: { emailOrUsername: "admin", password: "secret" },
         headers: { "user-agent": "Quest Admin test" },
         ip: "127.0.0.1",
       },
@@ -261,7 +219,7 @@ test("mobile MFA completion issues a bearer token only to an admin", async () =>
   }
 });
 
-test("mobile Google OAuth returns a one-time app grant and skips Quest MFA", async () => {
+test("mobile Google OAuth returns a one-time app grant", async () => {
   const grantCalls = [];
   let sessionCreated = false;
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
@@ -276,7 +234,7 @@ test("mobile Google OAuth returns a one-time app grant and skips Quest MFA", asy
       getOAuthFlowToken: () => "signed-flow",
       handleOAuthCallback: async () => ({
         redirectTo: "/mobile-admin-oauth",
-        user: { id: "admin-1", role: "admin", mfaEnabled: false },
+        user: { id: "admin-1", role: "admin" },
       }),
     },
     [sessionPath]: {
@@ -325,7 +283,7 @@ test("mobile Google OAuth returns a one-time app grant and skips Quest MFA", asy
   }
 });
 
-test("mobile OAuth grant exchange issues an admin bearer session without Quest MFA", async () => {
+test("mobile OAuth grant exchange issues an admin bearer session", async () => {
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
     [envPath]: { env: { APP_URL: "https://app.example.com" } },
     [loggerPath]: { logger: { info: () => {}, error: () => {} } },
@@ -340,12 +298,11 @@ test("mobile OAuth grant exchange issues an admin bearer session without Quest M
     [authServicePath]: {
       consumeMobileOAuthGrant: async () => ({
         provider: "discord",
-        user: { id: "admin-1", role: "admin", mfaEnabled: false },
+        user: { id: "admin-1", role: "admin" },
       }),
       markUserLoginSucceeded: async () => ({
         id: "admin-1",
         role: "admin",
-        mfaEnabled: false,
       }),
     },
   });

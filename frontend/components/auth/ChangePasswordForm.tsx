@@ -7,7 +7,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
+import { apiFetchJson, getApiErrorMessage, type AuthUser } from "@/lib/auth";
 import { passwordByteLimitMessage, passwordFitsBcrypt } from "@/lib/password";
 
 const changePasswordSchema = z
@@ -15,8 +15,6 @@ const changePasswordSchema = z
     currentPassword: z.string().min(1, "Current password is required."),
     newPassword: z.string().min(8, "Password must be at least 8 characters long.").refine(passwordFitsBcrypt, passwordByteLimitMessage),
     confirmNewPassword: z.string().min(1, "Please confirm your new password."),
-    code: z.string().optional(),
-    backupCode: z.string().optional(),
   })
   .refine((value) => value.newPassword === value.confirmNewPassword, {
     path: ["confirmNewPassword"],
@@ -26,15 +24,13 @@ const changePasswordSchema = z
 type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
 
 export default function ChangePasswordForm() {
-  const { user, refreshUser } = useAuth();
+  const { refreshUser } = useAuth();
   const form = useForm<ChangePasswordValues>({
     resolver: zodResolver(changePasswordSchema),
     defaultValues: {
       currentPassword: "",
       newPassword: "",
       confirmNewPassword: "",
-      code: "",
-      backupCode: "",
     },
   });
 
@@ -43,7 +39,7 @@ export default function ChangePasswordForm() {
       const { response, data } = await apiFetchJson<{
         success?: boolean;
         message?: string;
-        user?: typeof user;
+        user?: AuthUser;
       }>("/api/change-password", {
         method: "POST",
         json: values,
@@ -76,14 +72,9 @@ export default function ChangePasswordForm() {
         Other active sessions will be signed out after a successful password change.
       </p>
       <form className="mt-5 grid min-w-0 gap-5" onSubmit={onSubmit}>
-        <div className="grid min-w-0 gap-5 sm:grid-cols-2">
-          <FormField label="Current Password" htmlFor="currentPassword" error={form.formState.errors.currentPassword?.message} required>
-            <Input id="currentPassword" type="password" {...form.register("currentPassword")} />
-          </FormField>
-          <FormField label="Authenticator Code" htmlFor="passwordCode" hint={user?.mfaEnabled ? "Required if MFA is enabled" : "Optional"}>
-            <Input id="passwordCode" inputMode="numeric" {...form.register("code")} />
-          </FormField>
-        </div>
+        <FormField label="Current Password" htmlFor="currentPassword" error={form.formState.errors.currentPassword?.message} required>
+          <Input id="currentPassword" type="password" {...form.register("currentPassword")} />
+        </FormField>
 
         <div className="grid min-w-0 gap-5 sm:grid-cols-2">
           <FormField label="New Password" htmlFor="newPassword" error={form.formState.errors.newPassword?.message} required>
@@ -93,10 +84,6 @@ export default function ChangePasswordForm() {
             <Input id="confirmNewPassword" type="password" {...form.register("confirmNewPassword")} />
           </FormField>
         </div>
-
-        <FormField label="Backup Code" htmlFor="passwordBackupCode" hint="Use instead of the authenticator code if needed">
-          <Input id="passwordBackupCode" {...form.register("backupCode")} />
-        </FormField>
 
         {form.formState.errors.root?.message ? (
           <p className="text-sm text-slate-300">{form.formState.errors.root.message}</p>

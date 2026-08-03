@@ -23,13 +23,8 @@ const {
   markUserLoginSucceeded,
   getUserProfile,
   updateUserProfile,
-  completeMfaLogin,
   createMobileOAuthGrant,
   consumeMobileOAuthGrant,
-  beginMfaSetup,
-  confirmMfaSetup,
-  disableMfa,
-  regenerateBackupCodes,
   verifyEmailAddress,
   resendVerificationEmail,
   requestEmailChange,
@@ -86,13 +81,9 @@ const completeAuthenticatedLogin = async ({
     : refreshedUser;
 };
 
-const assertMobileAdmin = (user, { requireMfa = true } = {}) => {
+const assertMobileAdmin = (user) => {
   if (!user || user.role !== "admin") {
     throw new HttpError(403, "Admin access is required for the mobile app.");
-  }
-
-  if (requireMfa && !user.mfaEnabled) {
-    throw new HttpError(403, "Enable multi-factor authentication before using the mobile admin app.");
   }
 };
 
@@ -101,9 +92,8 @@ const completeMobileAuthenticatedLogin = async ({
   rememberMe,
   req,
   responseUser,
-  requireMfa = true,
 }) => {
-  assertMobileAdmin(responseUser, { requireMfa });
+  assertMobileAdmin(responseUser);
   const { token, expiresAt, sessionId } = await createSession({
     userId,
     rememberMe,
@@ -179,15 +169,6 @@ const login = asyncHandler(async (req, res) => {
     },
   });
 
-  if (authResult.requiresMfa) {
-    res.status(200).json({
-      success: true,
-      message: "Verification code required.",
-      ...authResult,
-    });
-    return;
-  }
-
   const { userId, rememberMe } = authResult;
   const user = await completeAuthenticatedLogin({
     userId,
@@ -203,28 +184,6 @@ const login = asyncHandler(async (req, res) => {
   });
 });
 
-const verifyMfaLogin = asyncHandler(async (req, res) => {
-  const { userId, rememberMe, user, usedRecoveryCode } = await completeMfaLogin({
-    body: req.body,
-  });
-
-  const authenticatedUser = await completeAuthenticatedLogin({
-    userId,
-    rememberMe,
-    req,
-    res,
-    responseUser: user,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: usedRecoveryCode
-      ? "Login successful. Your backup code was used."
-      : "Login successful.",
-    user: authenticatedUser,
-  });
-});
-
 const mobileLogin = asyncHandler(async (req, res) => {
   const authResult = await authenticateUser({
     body: { ...req.body, remember: true },
@@ -237,34 +196,16 @@ const mobileLogin = asyncHandler(async (req, res) => {
 
   assertMobileAdmin(authResult.user);
 
-  if (authResult.requiresMfa) {
-    res.status(200).json({
-      success: true,
-      message: "Verification code required.",
-      ...authResult,
-    });
-    return;
-  }
-
-  // Admin mobile access intentionally requires MFA, so this branch is only a
-  // defensive fallback if the authentication service contract changes.
-  throw new HttpError(403, "Multi-factor authentication is required for the mobile admin app.");
-});
-
-const verifyMobileMfaLogin = asyncHandler(async (req, res) => {
-  const result = await completeMfaLogin({ body: req.body });
   const session = await completeMobileAuthenticatedLogin({
-    userId: result.userId,
+    userId: authResult.userId,
     rememberMe: true,
     req,
-    responseUser: result.user,
+    responseUser: authResult.user,
   });
 
   res.status(200).json({
     success: true,
-    message: result.usedRecoveryCode
-      ? "Login successful. Your backup code was used."
-      : "Login successful.",
+    message: "Login successful.",
     ...session,
   });
 });
@@ -276,7 +217,6 @@ const exchangeMobileOAuthGrant = asyncHandler(async (req, res) => {
     rememberMe: true,
     req,
     responseUser: result.user,
-    requireMfa: false,
   });
 
   res.status(200).json({
@@ -309,7 +249,7 @@ const completeOAuthLogin = async ({ provider, req, res }) => {
   });
 
   if (redirectTo === MOBILE_ADMIN_OAUTH_REDIRECT) {
-    assertMobileAdmin(user, { requireMfa: false });
+    assertMobileAdmin(user);
     const grant = await createMobileOAuthGrant({ userId: user.id, provider });
     const appRedirectUrl = new URL(MOBILE_ADMIN_DEEP_LINK);
     appRedirectUrl.searchParams.set("grant", grant.token);
@@ -499,74 +439,6 @@ const resetPasswordController = asyncHandler(async (req, res) => {
   });
 });
 
-const getMfaSetup = asyncHandler(async (req, res) => {
-  const setup = await beginMfaSetup({
-    currentUser: req.user,
-    body: req.body,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: "Authenticator setup created.",
-    ...setup,
-  });
-});
-
-const verifyMfaSetup = asyncHandler(async (req, res) => {
-  const result = await confirmMfaSetup({
-    currentUser: req.user,
-    body: req.body,
-  });
-
-  await deleteOtherSessions({
-    userId: req.user.id,
-    excludeSessionId: req.session?.sessionId || null,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: "Multi-factor authentication enabled successfully.",
-    user: result.user,
-    backupCodes: result.backupCodes,
-  });
-});
-
-const disableMfaController = asyncHandler(async (req, res) => {
-  const user = await disableMfa({
-    currentUser: req.user,
-    body: req.body,
-  });
-
-  await deleteOtherSessions({
-    userId: req.user.id,
-    excludeSessionId: req.session?.sessionId || null,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: "Multi-factor authentication disabled.",
-    user,
-  });
-});
-
-const regenerateBackupCodesController = asyncHandler(async (req, res) => {
-  const backupCodes = await regenerateBackupCodes({
-    currentUser: req.user,
-    body: req.body,
-  });
-
-  await deleteOtherSessions({
-    userId: req.user.id,
-    excludeSessionId: req.session?.sessionId || null,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: "Backup codes regenerated successfully.",
-    backupCodes,
-  });
-});
-
 const getSessionsController = asyncHandler(async (req, res) => {
   const sessions = await listUserSessions({
     userId: req.user.id,
@@ -612,9 +484,7 @@ module.exports = {
   googleCallback,
   discordCallback,
   login,
-  verifyMfaLogin,
   mobileLogin,
-  verifyMobileMfaLogin,
   exchangeMobileOAuthGrant,
   mobileLogout,
   logout,
@@ -628,10 +498,6 @@ module.exports = {
   confirmEmailChange: confirmEmailChangeController,
   forgotPassword,
   resetPassword: resetPasswordController,
-  getMfaSetup,
-  verifyMfaSetup,
-  disableMfa: disableMfaController,
-  regenerateBackupCodes: regenerateBackupCodesController,
   getSessions: getSessionsController,
   revokeSession: revokeSessionController,
   revokeOtherSessions: revokeOtherSessionsController,

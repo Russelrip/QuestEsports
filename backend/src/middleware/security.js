@@ -7,7 +7,6 @@ const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
   "/api/auth/google/callback",
   "/api/auth/discord/callback",
   "/api/mobile/auth/login",
-  "/api/mobile/auth/login/mfa",
   "/api/mobile/auth/oauth/exchange",
   "/api/payments/payhere/notify",
 ]);

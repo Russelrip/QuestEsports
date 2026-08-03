@@ -26,7 +26,6 @@ DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
-MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false
@@ -215,7 +214,7 @@ Recommended flow:
 - Merchandise catalogue, product variants, cart, guest/member checkout, delivery fee, and order status
 - Join Quest recruitment application flow for solo players, complete teams, and incomplete teams
 - Email verification, login, logout, password reset, and email change flows
-- MFA setup, MFA login challenge, backup codes, session management, and Google/Discord OAuth sign-in
+- Session management and Google/Discord OAuth sign-in
 - Posters gallery and match-video archive
 - Rulebook and contact pages
 - Player dashboard with avatars, current/past registrations, visual teams, and order history
@@ -374,7 +373,7 @@ QuestEsports/
 
 The backend exposes these main route groups:
 
-- Auth: `/api/signup`, `/api/login`, `/api/login/mfa`, OAuth start/callback routes, `/api/logout`, `/api/me`, verification, email-change, password-reset, MFA, and session endpoints
+- Auth: `/api/signup`, `/api/login`, OAuth start/callback routes, `/api/logout`, `/api/me`, verification, email-change, password-reset, and session endpoints
 - Public tournaments: `/api/tournaments`, `/api/tournaments/:slug`
 - Event series: `/api/event-series`, `/api/event-series/:slug`
 - Tournament registration: `/api/tournaments/:slug/registration-status`, `/api/tournaments/:slug/registrations`
@@ -405,7 +404,6 @@ DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
-MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false

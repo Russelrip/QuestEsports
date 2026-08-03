@@ -40,7 +40,6 @@ LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
-MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=
 TRUST_PROXY=false
 REQUIRE_API_ORIGIN=false
@@ -201,8 +200,7 @@ npm run mail:verify
 
 Security-related variables:
 
-- `MFA_ISSUER` to customize authenticator app labeling
-- `AUTH_ENCRYPTION_KEY` for encrypting MFA/NIC/token data and signing OAuth state; production requires exactly 64 hexadecimal characters. If an older deployment used an arbitrary string, follow the compatibility conversion in the [Production Operations Runbook](./production-runbook.md#preserving-existing-encrypted-data-when-normalizing-the-auth-key) instead of rotating it blindly.
+- `AUTH_ENCRYPTION_KEY` for encrypting sensitive NIC/token data and signing OAuth state; production requires exactly 64 hexadecimal characters. If an older deployment used an arbitrary string, follow the compatibility conversion in the [Production Operations Runbook](./production-runbook.md#preserving-existing-encrypted-data-when-normalizing-the-auth-key) instead of rotating it blindly.
 - `JOB_WORKER_ENABLED`, `JOB_WORKER_POLL_MS`, and `JOB_WORKER_MAX_ATTEMPTS` for persistent background job processing
 - `SITE_MAINTENANCE_MODE`, `SITE_MAINTENANCE_MESSAGE`, and `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` for coordinated visitor maintenance; these are separate from commerce cleanup
 - `LOG_LEVEL` to control backend log verbosity
@@ -326,7 +324,6 @@ LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
 REMEMBER_ME_SESSION_TTL_DAYS=30
-MFA_ISSUER=Quest Esports
 AUTH_ENCRYPTION_KEY=replace_with_exactly_64_hexadecimal_characters
 TRUST_PROXY=1
 REQUIRE_API_ORIGIN=true
@@ -495,8 +492,6 @@ Check all of the following:
 - `GET /api/health` returns `200`
 - signup works
 - login sets a session cookie
-- MFA setup can be started and confirmed
-- MFA login challenge works with both authenticator and backup code paths
 - active sessions appear under `/api/sessions`
 - `/api/me` returns the authenticated user
 - verification emails contain the correct frontend URL

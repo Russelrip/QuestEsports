@@ -11,7 +11,6 @@ import { apiFetch, apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 import { readApiResponse } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ChangePasswordForm from "@/components/auth/ChangePasswordForm";
-import MfaSettingsPanel from "@/components/auth/MfaSettingsPanel";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import SessionList from "@/components/auth/SessionList";
 import TeamManagementPanel, { TeamSummaryGrid } from "@/components/auth/TeamManagementPanel";
@@ -481,7 +480,6 @@ export default function ProfileView() {
             ) : activeTab === "security" ? (
               <div className="grid min-w-0 gap-6">
                 <ChangePasswordForm />
-                <MfaSettingsPanel />
                 <SessionList />
               </div>
             ) : (

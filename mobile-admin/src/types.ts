@@ -15,7 +15,6 @@ export type AdminUser = {
   phone?: string | null;
   discordTag?: string | null;
   emailVerified: boolean;
-  mfaEnabled?: boolean;
   lastLoginAt?: string | null;
   createdAt?: string | null;
 };

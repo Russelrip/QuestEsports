@@ -4,15 +4,15 @@ Quest Admin is the private Android operations client for Quest E-sports. It uses
 
 ## Security model
 
-- Admin username/password login always continues through MFA.
-- Google and Discord login can issue a mobile session without Quest MFA after the provider identity resolves to an existing admin account.
+- Admin username/password login issues a mobile session after the credentials and admin role are validated.
+- Google and Discord login can issue a mobile session after the provider identity resolves to an existing admin account.
 - Social sign-in returns a two-minute, single-use grant to the APK; the reusable bearer token is issued only through the follow-up API exchange.
 - The APK stores that token with Expo SecureStore backed by Android Keystore.
 - No password, GitHub token, signing key, or private API credential is bundled into the APK.
 - Operational data stays in memory and is not persisted for offline use.
 - Browser sessions continue using the existing `HttpOnly` cookie and CSRF protections.
 
-An admin must enable MFA to use password login in the app. A linked Google or Discord account can be used instead without Quest MFA.
+Admins can sign in with a password or a linked Google or Discord account.
 
 ## Local development
 

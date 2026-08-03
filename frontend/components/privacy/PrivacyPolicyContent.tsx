@@ -14,7 +14,7 @@ const policySections = [
     title: "2. Information We Collect",
     bullets: [
       "Account information such as first name, last name, email address, username, password hash, and optional profile details like phone number or Discord tag.",
-      "Authentication and security data such as session records, sign-in history, IP address, user agent, verification tokens, password reset tokens, and multi-factor authentication data if you enable it.",
+      "Authentication and security data such as session records, sign-in history, IP address, user agent, verification tokens, and password reset tokens.",
       "Tournament, recruitment, and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, NICs submitted with the relevant member's permission for recruitment review, saved team information, and application or registration status.",
       "Contact information and messages that you submit through the contact form or support channels.",
       "Uploaded content such as team logos, tournament banners, posters, and private bank-transfer receipts submitted for payment verification.",
@@ -93,7 +93,7 @@ const policySections = [
   {
     title: "11. Security",
     paragraphs: [
-      "We use reasonable administrative, technical, and organisational measures to protect personal information, including password hashing, session controls, verification workflows, multi-factor authentication support, and security monitoring.",
+      "We use reasonable administrative, technical, and organisational measures to protect personal information, including password hashing, session controls, verification workflows, and security monitoring.",
       "No online system is completely secure, so we cannot guarantee absolute security.",
     ],
   },

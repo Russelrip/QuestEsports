@@ -75,7 +75,7 @@ database transaction is rolled back.
 
 ## Main Route Groups
 
-- Auth, sessions, MFA, OAuth, verification, password reset, and email change under `/api`
+- Auth, sessions, OAuth, verification, password reset, and email change under `/api`
 - Public tournaments under `/api/tournaments`
 - Slug-bound tournament registration under `/api/tournaments/:slug/registrations`
 - Event series under `/api/event-series`

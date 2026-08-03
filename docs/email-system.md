@@ -109,9 +109,6 @@ Security alerts use one shared template with event-specific subjects and message
 
 | Event | Trigger | Subject |
 | --- | --- | --- |
-| MFA enabled | Successful MFA setup confirmation | `Quest Esports MFA enabled` |
-| MFA disabled | Successful MFA removal | `Quest Esports MFA disabled` |
-| Backup codes regenerated | Successful backup-code regeneration | `Quest Esports backup codes regenerated` |
 | Email address changed | Successful email-change confirmation | `Quest Esports email address changed` |
 | Password reset completed | Successful password reset using an emailed reset token | `Quest Esports password reset completed` |
 | Password changed | Successful authenticated password change | `Quest Esports password changed` |

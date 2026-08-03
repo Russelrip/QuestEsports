@@ -153,7 +153,6 @@ const env = {
     process.env.REMEMBER_ME_SESSION_TTL_DAYS,
     30
   ),
-  MFA_ISSUER: optional("MFA_ISSUER", "Quest E-sports"),
   AUTH_ENCRYPTION_KEY: optional("AUTH_ENCRYPTION_KEY"),
   TRUST_PROXY: normalizeTrustProxy(process.env.TRUST_PROXY),
   REQUIRE_API_ORIGIN: normalizeBoolean(
@@ -328,7 +327,7 @@ if (env.DISCORD_ALERT_WEBHOOK_URL) {
 
 if (env.NODE_ENV !== "test" && !env.AUTH_ENCRYPTION_KEY) {
   throw new Error(
-    "AUTH_ENCRYPTION_KEY is required outside tests for MFA secret encryption and OAuth state signing."
+    "AUTH_ENCRYPTION_KEY is required outside tests for sensitive-data encryption and OAuth state signing."
   );
 }
 

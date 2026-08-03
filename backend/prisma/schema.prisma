@@ -186,16 +186,12 @@ model User {
   failedLoginCount        Int                         @default(0) @map("failed_login_count")
   lastFailedLoginAt       DateTime?                   @map("last_failed_login_at")
   lockedUntil             DateTime?                   @map("locked_until")
-  mfaEnabled              Boolean                     @default(false) @map("mfa_enabled")
   createdAt               DateTime                    @default(now()) @map("created_at")
   updatedAt               DateTime                    @updatedAt @map("updated_at")
   sessions                Session[]
   verificationTokens      VerificationToken[]
   emailChangeTokens       EmailChangeToken[]
   passwordResetTokens     PasswordResetToken[]
-  mfaCredential           MfaCredential?
-  backupCodes             BackupCode[]
-  loginChallenges         LoginChallenge[]
   mobileOAuthGrants       MobileOAuthGrant[]
   oauthAccounts           OAuthAccount[]
   savedTeams              SavedTeam[]
@@ -338,46 +334,6 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
-}
-
-model MfaCredential {
-  id               String    @id @default(uuid()) @db.Uuid
-  userId           String    @unique @map("user_id") @db.Uuid
-  secretCiphertext String    @map("secret_ciphertext")
-  enabledAt        DateTime? @map("enabled_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("mfa_credentials")
-}
-
-model BackupCode {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  codeHash  String    @unique @map("code_hash")
-  usedAt    DateTime? @map("used_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([usedAt])
-  @@map("backup_codes")
-}
-
-model LoginChallenge {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @map("user_id") @db.Uuid
-  tokenHash  String    @unique @map("token_hash")
-  expiresAt  DateTime  @map("expires_at")
-  usedAt     DateTime? @map("used_at")
-  rememberMe Boolean   @default(false) @map("remember_me")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@map("login_challenges")
 }
 
 model MobileOAuthGrant {

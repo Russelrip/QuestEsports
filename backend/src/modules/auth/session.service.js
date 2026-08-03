@@ -28,7 +28,6 @@ const mapUserForSession = (record) => ({
   pendingEmail: record.pendingEmail || null,
   emailVerified: Boolean(record.emailVerified),
   emailVerifiedAt: record.emailVerifiedAt || null,
-  mfaEnabled: Boolean(record.mfaEnabled),
   lastLoginAt: record.lastLoginAt,
   createdAt: record.createdAt,
 });

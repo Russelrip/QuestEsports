@@ -103,7 +103,7 @@ Run `npm run perf:check` to measure the production site. The script fails when m
 
 - This app uses the Next.js App Router.
 - Auth is session-cookie based, so frontend requests include `credentials: "include"` when needed.
-- Login supports password auth, MFA challenges, and Google/Discord OAuth hand-offs via the backend.
+- Login supports password auth and Google/Discord OAuth hand-offs via the backend.
 - Admin screens depend on a logged-in user whose backend role is `admin`.
 - Admin registration and recruitment pages can delete rows and download the currently filtered results as Excel files.
 - Registration status in the tournament registration UI is rechecked against the backend; stale local browser markers are cleared when the backend says the user is not registered.
