@@ -39,7 +39,6 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 - [ ] SETUP-001 A logged-out browser session is available.
 - [ ] SETUP-002 An unverified user account is available.
 - [ ] SETUP-003 A verified normal user account is available.
-- [ ] SETUP-004 A verified user with MFA enabled and unused backup codes is available.
 - [ ] SETUP-005 An admin account is available.
 - [ ] SETUP-006 Two additional verified accounts are available for team-invite testing.
 - [ ] SETUP-007 Test inboxes can receive verification, reset, invite, email-change, and security-alert emails.
@@ -172,17 +171,6 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 - [ ] PROFILE-016 The old email remains active until the new email is confirmed.
 - [ ] PROFILE-017 `/confirm-email-change` promotes the new email for a valid token and rejects invalid/expired/used tokens.
 - [ ] PROFILE-018 Email-change confirmation sends the intended security alert.
-
-### MFA
-
-- [ ] PROFILE-019 MFA setup displays a scannable QR code and manual secret.
-- [ ] PROFILE-020 A wrong/expired authenticator code cannot enable MFA.
-- [ ] PROFILE-021 A valid code enables MFA and backup codes are shown once with clear storage guidance.
-- [ ] PROFILE-022 Subsequent login requires MFA before creating a session.
-- [ ] PROFILE-023 Valid TOTP completes login; invalid, reused, or expired challenge data is rejected.
-- [ ] PROFILE-024 A backup code completes login once and cannot be reused.
-- [ ] PROFILE-025 Backup-code regeneration requires the intended password and second factor, invalidates old codes, and alerts the user.
-- [ ] PROFILE-026 MFA disable requires the intended password/second factor and subsequent login no longer requests MFA.
 
 ### Session management
 
@@ -521,7 +509,7 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 - [ ] EMAIL-003 Links use the correct HTTPS frontend/API domains and do not contain localhost, staging references in production, or malformed encoding.
 - [ ] EMAIL-004 Tokenized links expire and are single-use according to the documented flow.
 - [ ] EMAIL-005 Email HTML and plain-text versions are readable on desktop and mobile clients.
-- [ ] EMAIL-006 No password, raw stored token/hash, MFA secret, backup-code set, bank proof, or unrelated personal data appears in emails/logs.
+- [ ] EMAIL-006 No password, raw stored token/hash, bank proof, or unrelated personal data appears in emails/logs.
 - [ ] EMAIL-007 Queue retry does not send unintended duplicate messages or duplicate state changes.
 - [ ] EMAIL-008 Delivery failure is recorded/observable and the user receives an accurate non-misleading response.
 - [ ] EMAIL-009 SPF, DKIM, and DMARC pass for the production sender domain.
@@ -632,12 +620,11 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] SEC-013 OAuth state/redirect validation prevents CSRF, replay, provider mix-up, and open redirects.
 - [ ] SEC-014 Password/reset/verification/invite/email-change tokens are random, hashed at rest where designed, expire, and are single-use.
 - [ ] SEC-015 Account enumeration is not possible through login, forgot-password, resend, invite, or timing/message differences beyond accepted risk.
-- [ ] SEC-016 MFA secrets and backup codes are encrypted/hashed as designed and never returned after their one-time display.
 - [ ] SEC-017 PayHere merchant secret never reaches frontend code, page source, logs, or public repository data.
 - [ ] SEC-018 Payment callback validates signature, merchant, order, exact amount, currency, and status and is idempotent.
 - [ ] SEC-019 Bank proofs require admin authorization, have approved retention, and are absent from backups/logs/public caches beyond policy.
 - [ ] SEC-020 Sensitive recruitment identity data is encrypted at rest and limited to approved admin/export/log access.
-- [ ] SEC-021 Analytics/monitoring do not capture passwords, tokens, MFA data, payment proof, full identity data, or unnecessary personal information.
+- [ ] SEC-021 Analytics/monitoring do not capture passwords, tokens, payment proof, full identity data, or unnecessary personal information.
 - [ ] SEC-022 Privacy policy matches actual cookies, analytics, account data, recruitment data, uploads, payment processing, retention, and contact process.
 - [ ] SEC-023 Dependency, secret, and source scans contain no unresolved release-blocking findings.
 - [x] SEC-024 Database and upload backups are encrypted, restorable, access-controlled, and include required public/private asset roots.

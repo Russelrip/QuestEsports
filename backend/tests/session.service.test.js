@@ -102,7 +102,6 @@ const buildSessionRecord = ({ expiresAt, lastSeenAt }) => ({
     pendingEmail: null,
     emailVerified: true,
     emailVerifiedAt: new Date("2026-05-01T00:00:00.000Z"),
-    mfaEnabled: false,
     lastLoginAt: new Date("2026-05-02T00:00:00.000Z"),
     createdAt: new Date("2026-04-01T00:00:00.000Z"),
   },

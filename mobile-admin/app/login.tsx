@@ -21,7 +21,7 @@ export default function LoginScreen() {
     try {
       await login(identity, password);
       setPassword("");
-      router.replace("/mfa");
+      router.replace("/(tabs)");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Sign in failed.");
     } finally {
@@ -59,7 +59,7 @@ export default function LoginScreen() {
           <Field label="Email or username" value={identity} onChangeText={setIdentity} autoCapitalize="none" autoCorrect={false} textContentType="username" />
           <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" onSubmitEditing={() => void submit()} />
           <Button label="Continue securely" icon="shield-checkmark-outline" loading={loading} disabled={!identity.trim() || !password || providerLoading !== null} onPress={() => void submit()} />
-          <Text style={styles.securityNote}>Google and Discord use your linked provider account directly. Password sign-in still requires your Quest authenticator code.</Text>
+          <Text style={styles.securityNote}>Use your Quest admin password or a linked Google or Discord account.</Text>
         </View>
       </KeyboardAvoidingView>
     </Screen>

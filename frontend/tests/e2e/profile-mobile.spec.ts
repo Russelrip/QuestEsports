@@ -11,7 +11,6 @@ const user = {
   emailVerified: true,
   phone: "+94770000000",
   discordTag: `${longText}#1234`,
-  mfaEnabled: false,
   avatarUrl: "/api/uploads/avatars/mobile-test.png",
 };
 const team = {

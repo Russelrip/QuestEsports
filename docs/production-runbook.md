@@ -46,7 +46,7 @@ Use [backend/.env.example](../backend/.env.example) for the full variable list a
 
 ### Preserving existing encrypted data when normalizing the auth key
 
-Older deployments accepted an arbitrary `AUTH_ENCRYPTION_KEY` and derived the AES key with SHA-256. Do not replace that value with a random key if encrypted MFA, recruitment NIC, or queued-token data already exists. Convert the existing value to its SHA-256 hexadecimal representation; the derived encryption bytes remain identical:
+Older deployments accepted an arbitrary `AUTH_ENCRYPTION_KEY` and derived the AES key with SHA-256. Do not replace that value with a random key if encrypted recruitment NIC or queued-token data already exists. Convert the existing value to its SHA-256 hexadecimal representation; the derived encryption bytes remain identical:
 
 ```bash
 cd /var/www/QuestEsports/backend

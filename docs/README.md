@@ -21,7 +21,7 @@ This directory contains the operational, architecture, security, and product doc
 - [CI/CD](./ci-cd.md) — GitHub Actions, protected deployment, migration approval, and troubleshooting.
 - [Database and Storage](./database-and-storage.md) — Prisma models, persistent upload roots, storage behavior, and data handling.
 - [Future Technical Improvements](./future-technical-improvements.md) — feasible architecture and infrastructure candidates that are not committed or scheduled.
-- [Authentication Flow](./authentication-flow.md) — sessions, OAuth, MFA, password recovery, and authorization.
+- [Authentication Flow](./authentication-flow.md) — sessions, OAuth, password recovery, and authorization.
 - [Email System](./email-system.md) — providers, templates, triggers, queue behavior, and operational verification.
 - [API Documentation](./api-documentation.md) — implemented endpoints and response behavior.
 

@@ -1,13 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import AuthPanel from "@/components/auth/AuthPanel";
-import MfaChallengeForm from "@/components/auth/MfaChallengeForm";
 import {
   AuthInput,
   AuthPasswordInput,
@@ -18,7 +16,7 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
-import { apiFetchJson, AuthUser, PendingMfaUser, getApiErrorMessage } from "@/lib/auth";
+import { apiFetchJson, AuthUser, getApiErrorMessage } from "@/lib/auth";
 
 const loginSchema = z.object({
   emailOrUsername: z.string().min(1, "Please enter your username or email."),
@@ -32,8 +30,6 @@ export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
-  const [mfaChallengeToken, setMfaChallengeToken] = useState("");
-  const [pendingMfaUser, setPendingMfaUser] = useState<PendingMfaUser | null>(null);
   const redirectTo = searchParams.get("redirect");
   const nextPath = redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//") ? redirectTo : null;
 
@@ -51,9 +47,7 @@ export default function LoginForm() {
       const { response, data } = await apiFetchJson<{
         success?: boolean;
         message?: string;
-        user?: AuthUser | PendingMfaUser;
-        requiresMfa?: boolean;
-        challengeToken?: string;
+        user?: AuthUser;
       }>("/api/login", {
         method: "POST",
         json: values,
@@ -62,13 +56,6 @@ export default function LoginForm() {
       const errorMessage = getApiErrorMessage(response, data, "Login failed.");
       if (errorMessage) {
         form.setError("root", { message: errorMessage });
-        return;
-      }
-
-      if (data.requiresMfa && data.challengeToken) {
-        setMfaChallengeToken(data.challengeToken);
-        setPendingMfaUser((data.user as PendingMfaUser) || null);
-        form.setError("root", { message: data.message || "Verification code required." });
         return;
       }
 
@@ -91,23 +78,6 @@ export default function LoginForm() {
       title="Welcome Back"
       description="Sign in to manage your roster, registrations, and tournament profile."
     >
-      {mfaChallengeToken ? (
-        <MfaChallengeForm
-          challengeToken={mfaChallengeToken}
-          pendingUser={pendingMfaUser}
-          onCancel={() => {
-            setMfaChallengeToken("");
-            setPendingMfaUser(null);
-          }}
-          onSuccess={(user) => {
-            login(user);
-            form.reset();
-            setMfaChallengeToken("");
-            setPendingMfaUser(null);
-            router.push(nextPath || (user.role === "admin" ? "/admin" : "/profile"));
-          }}
-        />
-      ) : (
       <form className="grid gap-5" onSubmit={onSubmit}>
         <FormField label="Email or Username" htmlFor="emailOrUsername" error={form.formState.errors.emailOrUsername?.message} required>
           <AuthInput
@@ -161,7 +131,6 @@ export default function LoginForm() {
           </span>
         </div>
       </form>
-      )}
     </AuthPanel>
   );
 }

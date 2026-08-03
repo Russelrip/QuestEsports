@@ -102,7 +102,7 @@ const openApiDocument = {
         type: "http",
         scheme: "bearer",
         bearerFormat: "opaque-session-token",
-        description: "Revocable bearer session issued only by the MFA-protected Quest Admin mobile login.",
+        description: "Revocable bearer session issued by Quest Admin mobile login.",
       },
     },
     parameters: {
@@ -209,9 +209,7 @@ const openApiDocument = {
     "/api/auth/discord/callback": { get: createOperation("Auth", "Complete Discord OAuth login") },
     "/api/signup": { post: createOperation("Auth", "Create an account") },
     "/api/login": { post: createOperation("Auth", "Create a password-authenticated session") },
-    "/api/login/mfa": { post: createOperation("Auth", "Complete an MFA login challenge") },
-    "/api/mobile/auth/login": { post: createOperation("Auth", "Start an MFA-required mobile admin login") },
-    "/api/mobile/auth/login/mfa": { post: createOperation("Auth", "Complete mobile admin MFA and issue a bearer session") },
+    "/api/mobile/auth/login": { post: createOperation("Auth", "Sign in to the mobile admin app and issue a bearer session") },
     "/api/mobile/auth/oauth/google/start": { get: createOperation("Auth", "Start Google sign-in for the mobile admin app") },
     "/api/mobile/auth/oauth/discord/start": { get: createOperation("Auth", "Start Discord sign-in for the mobile admin app") },
     "/api/mobile/auth/oauth/exchange": { post: createOperation("Auth", "Exchange a one-time mobile OAuth grant for a bearer session") },
@@ -225,10 +223,6 @@ const openApiDocument = {
     "/api/email-change/confirm": { get: createOperation("Auth", "Confirm an email address change") },
     "/api/forgot-password": { post: createOperation("Auth", "Request a password reset") },
     "/api/reset-password": { post: createOperation("Auth", "Reset a password with a token") },
-    "/api/mfa/setup": { post: createOperation("Account", "Start MFA setup", { authenticated: true }) },
-    "/api/mfa/verify-setup": { post: createOperation("Account", "Verify and enable MFA", { authenticated: true }) },
-    "/api/mfa/disable": { post: createOperation("Account", "Disable MFA", { authenticated: true }) },
-    "/api/mfa/backup-codes/regenerate": { post: createOperation("Account", "Regenerate MFA backup codes", { authenticated: true }) },
     "/api/sessions": { get: createOperation("Account", "List active sessions", { authenticated: true }) },
     "/api/sessions/{sessionId}": {
       delete: createOperation("Account", "Revoke a session", {

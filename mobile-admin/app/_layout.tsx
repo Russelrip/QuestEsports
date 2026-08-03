@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from "@/auth";
 import { colors } from "@/theme";
 
 function AuthGate() {
-  const { loading, user, challengeToken } = useAuth();
+  const { loading, user } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -15,12 +15,10 @@ function AuthGate() {
     if (loading) return;
     const route = segments[0];
     const inLogin = route === "login";
-    const inMfa = route === "mfa";
     const inOAuth = route === "oauth";
-    if (!user && challengeToken && !inMfa) router.replace("/mfa");
-    else if (!user && !challengeToken && !inLogin && !inOAuth) router.replace("/login");
-    else if (user && (inLogin || inMfa || inOAuth || !route)) router.replace("/(tabs)");
-  }, [challengeToken, loading, router, segments, user]);
+    if (!user && !inLogin && !inOAuth) router.replace("/login");
+    else if (user && (inLogin || inOAuth || !route)) router.replace("/(tabs)");
+  }, [loading, router, segments, user]);
 
   if (loading) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={colors.accent} /></View>;
@@ -30,7 +28,6 @@ function AuthGate() {
     <Stack screenOptions={{ headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.text, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="mfa" options={{ headerShown: false }} />
       <Stack.Screen name="oauth" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="resources/[kind]" options={{ headerShown: false }} />

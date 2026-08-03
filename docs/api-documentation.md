@@ -19,7 +19,7 @@ This document describes the implemented HTTP API in `backend/src`. All routes ar
 - Tournament registration additionally requires `emailVerified === true`.
 - The cookie name comes from the required `SESSION_COOKIE_NAME` environment variable.
 
-Mobile bearer sessions are issued only through the mobile login flow, which requires an admin account with MFA enabled. The raw token is returned once, stored by the app in Android Keystore-backed secure storage, and only its SHA-256 hash is stored in PostgreSQL. A request containing a browser session cookie remains subject to browser origin and CSRF checks even if it also contains an Authorization header.
+Mobile bearer sessions are issued only through the mobile login flow, which requires an admin account. The raw token is returned once, stored by the app in Android Keystore-backed secure storage, and only its SHA-256 hash is stored in PostgreSQL. A request containing a browser session cookie remains subject to browser origin and CSRF checks even if it also contains an Authorization header.
 
 See [Authentication Flow](./authentication-flow.md) for the full flow.
 
@@ -64,8 +64,7 @@ List resources add `meta.pagination`. All timestamps are ISO-8601 UTC. Existing 
 
 ## Mobile Admin Authentication
 
-- `POST /api/mobile/auth/login` validates the admin username/password and returns a short-lived MFA challenge. Non-admin accounts and admin accounts without MFA are rejected.
-- `POST /api/mobile/auth/login/mfa` accepts an authenticator code or one-time backup code and returns the opaque bearer token, expiry, and admin user.
+- `POST /api/mobile/auth/login` validates the admin username/password and returns the opaque bearer token, expiry, and admin user. Non-admin accounts are rejected.
 - `GET /api/mobile/auth/me` rehydrates the current bearer session.
 - `POST /api/mobile/auth/logout` revokes the current bearer session.
 
@@ -163,51 +162,10 @@ Body:
 
 Behavior:
 
-- Creates a server-side session record when MFA is not enabled.
+- Creates a server-side session record after valid credentials.
 - Sets an `HttpOnly`, `SameSite=Lax` cookie after a completed login.
 - Uses the remember-me TTL when `remember` is truthy.
 - Applies account lockout rules after repeated password failures.
-
-Possible MFA response:
-
-```json
-{
-  "success": true,
-  "message": "Verification code required.",
-  "requiresMfa": true,
-  "challengeToken": "raw-login-challenge-token",
-  "challengeExpiresAt": "2026-05-25T12:00:00.000Z",
-  "user": {
-    "id": "uuid",
-    "email": "jane@example.com",
-    "username": "janeplayer",
-    "firstName": "Jane",
-    "lastName": "Player",
-    "role": "user",
-    "mfaEnabled": true
-  }
-}
-```
-
-### `POST /api/login/mfa`
-
-Completes an MFA login challenge and sets the session cookie.
-
-Body:
-
-```json
-{
-  "challengeToken": "raw-login-challenge-token",
-  "code": "123456",
-  "backupCode": "AB12CD34"
-}
-```
-
-Behavior:
-
-- Requires either `code` or `backupCode`.
-- Authenticator codes are checked against the encrypted TOTP secret.
-- Backup codes are single-use.
 
 ### `GET /api/auth/google/start`
 
@@ -343,76 +301,6 @@ Behavior:
 - Resets the password
 - Consumes the token
 - Deletes all existing sessions for that user
-
-### `POST /api/mfa/setup`
-
-Protected and rate-limited route.
-
-Body:
-
-```json
-{
-  "currentPassword": "current account password"
-}
-```
-
-Verifies the current password before creating or refreshing the pending MFA secret for the current user. A session cookie alone is insufficient to retrieve a new authenticator secret.
-
-Returns:
-
-- `secret`
-- `otpauthUrl`
-
-### `POST /api/mfa/verify-setup`
-
-Protected route.
-
-Body:
-
-```json
-{
-  "code": "123456"
-}
-```
-
-Behavior:
-
-- Enables MFA
-- Returns a new backup-code set
-- Revokes other active sessions
-
-### `POST /api/mfa/disable`
-
-Protected route.
-
-Body:
-
-```json
-{
-  "currentPassword": "secret123",
-  "code": "123456",
-  "backupCode": "AB12CD34"
-}
-```
-
-Behavior:
-
-- Verifies the current password
-- Requires an authenticator code or backup code when MFA is enabled
-- Deletes MFA credentials, login challenges, and backup codes
-- Revokes other active sessions
-
-### `POST /api/mfa/backup-codes/regenerate`
-
-Protected route.
-
-Uses the same request body as MFA disable.
-
-Behavior:
-
-- Verifies the current password plus a second factor
-- Replaces all existing backup codes
-- Revokes other active sessions
 
 ### `GET /api/sessions`
 

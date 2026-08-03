@@ -4,7 +4,7 @@ Last reviewed: July 29, 2026
 
 ## Executive summary
 
-The repository is release-candidate healthy: no unresolved Critical code defect was found, production dependency audits are clean, and the current backend/frontend automated checks pass. This remediation hardens transactional restore behavior, backup consistency and verification, MFA enrollment, session parsing/races, order-capability privacy, upload cleanup, storage readiness, public-data caching, performance budgets, and recovery operations.
+The repository is release-candidate healthy: no unresolved Critical code defect was found, production dependency audits are clean, and the current backend/frontend automated checks pass. This remediation hardens transactional restore behavior, backup consistency and verification, session parsing/races, order-capability privacy, upload cleanup, storage readiness, public-data caching, performance budgets, and recovery operations.
 
 Repository completion is not the same as live production completion. The latest changes still need to pass CI/CD, be deployed to the French VPS/Vercel, have the updated systemd units and protected backup settings installed, and be verified through the external actions below.
 
@@ -40,8 +40,6 @@ The checked-in Node requirement and CI use Node 24. The current Windows shell us
 
 ### Authentication and sessions
 
-- Starting MFA enrollment is now a rate-limited `POST` that verifies the current password before revealing a raw authenticator secret.
-- OAuth-created users without a known local password must use password reset before enrollment.
 - Malformed percent-encoded cookies are ignored instead of producing a server error.
 - Stale session `lastSeenAt` refresh uses a conditional `updateMany`, avoiding a `P2025` race when another request revokes the session.
 - Expired-session cleanup failures are logged.
@@ -74,7 +72,7 @@ That historical drill predates the new two-pass backup and staged/transactional 
 
 The repository now provides `ops/create-secret-recovery-package.sh` and [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md), but no newly created package, separate vault copy, or isolated retrieval/decryption drill has been verified in this change.
 
-Required action: approve a separate offline recovery identity/vault, create the encrypted allowlisted package, move it off the VPS, remove staging, and complete the documented independent drill. Provider-account recovery inventory and MFA recovery codes remain separate.
+Required action: approve a separate offline recovery identity/vault, create the encrypted allowlisted package, move it off the VPS, remove staging, and complete the documented independent drill. Provider-account recovery inventory and recovery codes remain separate.
 
 ### High - repeat the isolated full restore drill
 
@@ -98,7 +96,7 @@ Required action: install the updated backup, failure, and freshness service/time
 
 `npm audit --omit=dev` is clean. The full frontend audit still attributes nine High findings to ESLint/Next lint packages through `minimatch`, although `npm ls` shows the vulnerable `brace-expansion` versions replaced by 1.1.17/5.0.8. Do not force an incompatible lint downgrade/major solely to silence metadata; re-evaluate when the supported dependency chain updates.
 
-The aggregate coverage gate passes, but auth/TOTP, mail, commerce, production error mapping, upload failures, recovery scripts, and real-database concurrency deserve additional behavior/integration coverage as those areas change.
+The aggregate coverage gate passes, but auth, mail, commerce, production error mapping, upload failures, recovery scripts, and real-database concurrency deserve additional behavior/integration coverage as those areas change.
 
 ## Safest rollout order
 

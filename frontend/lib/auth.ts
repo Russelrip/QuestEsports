@@ -14,16 +14,10 @@ export type AuthUser = {
   pendingEmail?: string | null;
   emailVerified: boolean;
   emailVerifiedAt?: string | null;
-  mfaEnabled?: boolean;
   lastLoginAt?: string | null;
   createdAt?: string | null;
   avatarUrl?: string | null;
 };
-
-export type PendingMfaUser = Pick<
-  AuthUser,
-  "id" | "email" | "username" | "firstName" | "lastName" | "role" | "mfaEnabled"
->;
 
 export type UserSession = {
   id: string;

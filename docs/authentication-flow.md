@@ -29,11 +29,10 @@ The cookie name comes from `SESSION_COOKIE_NAME`.
 ## Mobile Admin Login
 
 1. The Android app posts credentials to `POST /api/mobile/auth/login`.
-2. The backend requires an admin role and enabled MFA, then returns a short-lived login challenge.
-3. The app completes TOTP or backup-code verification through `POST /api/mobile/auth/login/mfa`.
-4. The backend creates a normal database-backed session and returns the raw opaque token once instead of setting a cookie.
-5. The app stores the token with Expo SecureStore, backed by Android Keystore, and sends it in the `Authorization` header.
-6. `GET /api/mobile/auth/me` restores the signed-in admin, while `POST /api/mobile/auth/logout` revokes that device session.
+2. The backend validates the credentials and requires an admin role.
+3. The backend creates a normal database-backed session and returns the raw opaque token once instead of setting a cookie.
+4. The app stores the token with Expo SecureStore, backed by Android Keystore, and sends it in the `Authorization` header.
+5. `GET /api/mobile/auth/me` restores the signed-in admin, while `POST /api/mobile/auth/logout` revokes that device session.
 
 Only the SHA-256 token hash is stored in PostgreSQL. Native bearer requests must not carry the browser session cookie; if both are present, cookie precedence preserves browser Origin and CSRF enforcement.
 
@@ -43,31 +42,15 @@ Only the SHA-256 token hash is stored in PostgreSQL. Native bearer requests must
 2. The backend looks up the user by normalized email or username.
 3. The password is validated with bcrypt.
 4. Failed-login counters are reset on success, or incremented on failure.
-5. If the account has MFA enabled, the backend returns a short-lived login challenge instead of creating the session immediately.
-6. Otherwise, a session record is created in the database.
-7. The backend sends the session cookie.
-8. The frontend stores the returned user object in `AuthProvider`.
+5. A session record is created in the database.
+6. The backend sends the session cookie.
+7. The frontend stores the returned user object in `AuthProvider`.
 
 ## Account Lockout
 
 - Failed password attempts increment `failedLoginCount`.
 - After `LOGIN_LOCKOUT_THRESHOLD` consecutive failures, the account is locked for `LOGIN_LOCKOUT_MINUTES`.
 - Successful login clears the failure counters and lockout timestamp.
-
-## MFA Challenge Login
-
-1. The user submits credentials to `POST /api/login`.
-2. If `mfaEnabled` is true, the backend creates a `LoginChallenge` that expires after `LOGIN_CHALLENGE_MINUTES`.
-3. The frontend renders the MFA challenge step and posts to `POST /api/login/mfa`.
-4. The user can complete the challenge with either:
-   - a TOTP authenticator code
-   - a one-time backup code
-5. On success, the challenge is marked used, a normal session is created, and the login continues as usual.
-
-Important notes:
-
-- Backup codes are single-use.
-- MFA login does not set the session cookie until the challenge is completed.
 
 ## Session Rehydration
 
@@ -162,33 +145,6 @@ Important notes:
 - The provider redirect URI must match the backend callback URL exactly.
 - If OAuth is not configured, leave the provider client ID and secret blank; placeholder strings are treated as invalid configuration.
 
-## MFA Management
-
-Authenticated users can manage MFA from the profile security area.
-
-### Setup
-
-1. The frontend asks for the current password and calls the rate-limited `POST /api/mfa/setup` endpoint.
-2. The backend verifies the current password before generating, encrypting, and storing a TOTP secret in `mfa_credentials`.
-3. Only after that reauthentication succeeds does the backend return the raw secret and an `otpauth://` URL for QR-code setup.
-4. The frontend confirms setup through `POST /api/mfa/verify-setup`.
-5. The backend validates the code, enables MFA, and issues backup codes.
-
-OAuth-created accounts have a random local password hash. A user who has never set a known local password must complete the password-reset flow before starting MFA setup. This prevents a stolen session cookie by itself from enrolling an attacker-controlled authenticator.
-
-### Disable
-
-1. The frontend posts to `POST /api/mfa/disable`.
-2. The backend verifies the current password.
-3. If MFA is enabled, the user must also provide an authenticator code or backup code.
-4. The backend deletes backup codes, login challenges, and MFA credentials, then disables MFA.
-
-### Regenerate backup codes
-
-1. The frontend posts to `POST /api/mfa/backup-codes/regenerate`.
-2. The backend verifies the current password and a second factor.
-3. Existing backup codes are replaced with a new one-time set.
-
 ## Session Management
 
 Authenticated users can review and revoke sessions:
@@ -213,7 +169,7 @@ Recent backend unit tests cover the most performance-sensitive session behaviors
 - expired sessions are deleted on lookup
 - session listings only return active sessions
 
-Routine sign-ins do not send security-alert emails, including sign-ins from a new IP address or user-agent. Security alerts are still sent after MFA changes, backup-code regeneration, email-change confirmation, password reset, and authenticated password changes. See [Email System](./email-system.md) for the complete trigger list.
+Routine sign-ins do not send security-alert emails, including sign-ins from a new IP address or user-agent. Security alerts are sent after email-change confirmation, password reset, and authenticated password changes. See [Email System](./email-system.md) for the complete trigger list.
 
 ## Authorization Layers
 
@@ -265,7 +221,7 @@ This is especially important because authentication is cookie-based.
 - Set `TRUST_PROXY` correctly when the backend runs behind Nginx, a load balancer, or a platform proxy.
 - Keep frontend and backend origins aligned with `CORS_ORIGIN`, `APP_URL`, and `NEXT_PUBLIC_API_URL`.
 - `SESSION_COOKIE_NAME` is required at boot because the backend does not fall back to a default cookie name.
-- Set `AUTH_ENCRYPTION_KEY` to exactly 64 hexadecimal characters in production so MFA/NIC/token encryption and OAuth state signing do not depend on fallback material.
+- Set `AUTH_ENCRYPTION_KEY` to exactly 64 hexadecimal characters in production so sensitive-data encryption and OAuth state signing do not depend on fallback material.
 - Do not rotate an existing encryption key without re-encrypting stored ciphertext. Older arbitrary-string keys can be normalized without changing the derived AES key by following the [Production Operations Runbook](./production-runbook.md#preserving-existing-encrypted-data-when-normalizing-the-auth-key).
 - OAuth providers require their client IDs, secrets, callback URLs, and a valid `APP_URL`.
 - Configure `MONITORING_WEBHOOK_URL` (and `MONITORING_WEBHOOK_TOKEN` when required) or the structured log drain for production alerts. Delivery failures are logged without interrupting authentication requests; alert ownership and webhook health must be verified during release sign-off.
