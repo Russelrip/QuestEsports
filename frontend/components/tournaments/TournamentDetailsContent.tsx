@@ -1,13 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
-import { Button, buttonClassName } from "@/components/ui/button";
+import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Section } from "@/components/ui/section";
 import { resolveMediaUrl } from "@/lib/media";
 import { formatSriLankaDateTime } from "@/lib/date-time";
@@ -112,8 +111,22 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
           <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Participants</h3><p className="mt-3 text-sm text-slate-400">Approved participants will appear here.</p></Card>
         ) : null}
 
-        {tournament.bracketSource === "challonge" ? (
-          <ChallongeBracket tournament={tournament} active={activeTab === "bracket"} />
+        {activeTab === "bracket" && tournament.challongeEmbedUrl ? (
+          <section className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-3xl text-white">Brackets</h3>
+              {tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}
+            </div>
+            <div className="overflow-hidden bg-[#242424]">
+              <iframe
+                src={tournament.challongeEmbedUrl}
+                title={`${tournament.title} Challonge bracket`}
+                loading="eager"
+                referrerPolicy="strict-origin-when-cross-origin"
+                className="block h-[760px] w-full border-0"
+              />
+            </div>
+          </section>
         ) : activeTab === "bracket" && tournament.bracketData ? (
           <section className="space-y-5">
             <h3 className="text-3xl text-white">Brackets</h3>
@@ -128,53 +141,6 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
       </div>
     </Section>
   );
-}
-
-function ChallongeBracket({ tournament, active }: { tournament: Tournament; active: boolean }) {
-  const [frameKey, setFrameKey] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-  const embedUrl = tournament.challongeEmbedUrl;
-
-  useEffect(() => {
-    if (!active || !embedUrl) return;
-    const reset = window.setTimeout(() => {
-      setLoading(true);
-      setFailed(false);
-    }, 0);
-    const timeout = window.setTimeout(() => {
-      setLoading(false);
-      setFailed(true);
-    }, 15000);
-    return () => {
-      window.clearTimeout(reset);
-      window.clearTimeout(timeout);
-    };
-  }, [active, embedUrl, frameKey]);
-
-  if (!active) return null;
-  const retry = () => setFrameKey((value) => value + 1);
-
-  return (
-    <section className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-3xl text-white">Brackets</h3>
-        {tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}
-      </div>
-      {!embedUrl ? <BracketError message="A valid public Challonge bracket link has not been configured." onRetry={retry} /> : null}
-      {embedUrl && loading ? <BracketLoadingSkeleton /> : null}
-      {embedUrl && failed ? <BracketError message="The public Challonge bracket did not load. You can retry or open it directly on Challonge." onRetry={retry} /> : null}
-      {embedUrl ? <iframe key={frameKey} src={embedUrl} title={`${tournament.title} Challonge bracket`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" className={`min-h-[720px] w-full border border-white/10 bg-[#101118] ${loading || failed ? "sr-only" : "block"}`} onLoad={() => { setLoading(false); setFailed(false); }} onError={() => { setLoading(false); setFailed(true); }} /> : null}
-    </section>
-  );
-}
-
-function BracketLoadingSkeleton() {
-  return <div className="grid gap-4" aria-label="Loading tournament bracket"><Skeleton className="h-28 w-full rounded-none" /><div className="grid gap-4 lg:grid-cols-3">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-72 w-full rounded-none" />)}</div></div>;
-}
-
-function BracketError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return <Card className="border-rose-300/20 p-6" role="alert"><h4 className="text-xl text-white">Bracket unavailable</h4><p className="mt-2 text-sm text-slate-400">{message}</p><Button type="button" className="mt-4" onClick={onRetry}>Retry</Button></Card>;
 }
 
 function SponsorsPanel({ tournament }: { tournament: Tournament }) {

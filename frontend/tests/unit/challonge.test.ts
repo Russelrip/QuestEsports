@@ -8,9 +8,12 @@ describe("Challonge frontend boundary", () => {
     const frontendEnv = readFileSync(resolve(process.cwd(), ".env.example"), "utf8");
     expect(component).toMatch(/<iframe/i);
     expect(component).toContain("challongeEmbedUrl");
+    expect(component).toContain('loading="eager"');
     expect(component).not.toContain("fetchPublicTournamentBracket");
     expect(component).not.toContain("EventSource");
     expect(component).not.toContain("api.challonge.com");
+    expect(component).not.toContain("Bracket unavailable");
+    expect(component).not.toContain("setTimeout");
     expect(frontendEnv).not.toContain("CHALLONGE_API_KEY");
     expect(frontendEnv).not.toContain("CHALLONGE_USERNAME");
     expect(frontendEnv).not.toContain("CHALLONGE_CLIENT_SECRET");
