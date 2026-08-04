@@ -24,10 +24,22 @@ export default function MoreScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const signOut = () => Alert.alert("Sign out", "End this device’s admin session?", [
     { text: "Cancel", style: "cancel" },
-    { text: "Sign out", style: "destructive", onPress: () => void (async () => { setBusy(true); await logout(); setBusy(false); router.replace("/login"); })() },
+    { text: "Sign out", style: "destructive", onPress: () => void (async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        await logout();
+        router.replace("/login");
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Unable to end this session.");
+      } finally {
+        setBusy(false);
+      }
+    })() },
   ]);
 
   return (
@@ -47,6 +59,7 @@ export default function MoreScreen() {
       </View>
       <View style={styles.securityPanel}>
         <Text style={styles.panelTitle}>Security and advanced tools</Text>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
         <Button label="Manage device sessions" tone="secondary" icon="phone-portrait-outline" onPress={() => router.push("/sessions")} />
         <Button label="Open full web admin" tone="secondary" icon="open-outline" onPress={() => void Linking.openURL(`${SITE_URL}/admin`)} />
         <Button label="Sign out this device" tone="danger" icon="log-out-outline" loading={busy} onPress={signOut} />
@@ -66,5 +79,6 @@ const styles = StyleSheet.create({
   resourceDescription: { color: colors.muted, fontSize: 12, marginTop: 2 },
   securityPanel: { marginTop: spacing.lg, padding: spacing.md, gap: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },
   panelTitle: { color: colors.text, fontSize: 17, fontWeight: "900", marginBottom: spacing.xs },
+  error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
   version: { color: colors.muted, fontSize: 11, textAlign: "center", marginTop: spacing.md },
 });

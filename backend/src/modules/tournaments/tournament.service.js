@@ -1114,6 +1114,9 @@ const listAdminTournaments = async ({ page, pageSize, search, status, isPublishe
   const pagination = buildPagination({ page, pageSize });
   const normalizedSearch = normalizeText(search);
   const normalizedStatus = normalizeText(status).toLowerCase();
+  if (normalizedStatus && !TOURNAMENT_STATUSES.has(normalizedStatus)) {
+    throw new HttpError(400, "Tournament status is invalid.");
+  }
   const visibilityFilter =
     typeof isPublished === "string" && isPublished.length > 0
       ? normalizeBooleanFlag(isPublished)
@@ -1128,7 +1131,7 @@ const listAdminTournaments = async ({ page, pageSize, search, status, isPublishe
           ],
         }
       : {}),
-    ...(TOURNAMENT_STATUSES.has(normalizedStatus) ? { status: normalizedStatus } : {}),
+    ...(normalizedStatus ? { status: normalizedStatus } : {}),
     ...(typeof visibilityFilter === "boolean" ? { isPublished: visibilityFilter } : {}),
   };
 

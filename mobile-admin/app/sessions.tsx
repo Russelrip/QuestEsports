@@ -9,10 +9,11 @@ import type { ApiEnvelope, SessionSummary } from "@/types";
 
 export default function SessionsScreen() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { clearLocalSession } = useAuth();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -34,9 +35,21 @@ export default function SessionsScreen() {
     [
       { text: "Cancel", style: "cancel" },
       { text: "Revoke", style: "destructive", onPress: () => void (async () => {
-        await apiRequest<ApiEnvelope>(`/api/sessions/${session.id}`, { method: "DELETE" });
-        if (session.isCurrent) { await logout(); router.replace("/login"); }
-        else await load();
+        setRevokingId(session.id);
+        setError(null);
+        try {
+          await apiRequest<ApiEnvelope>(`/api/sessions/${session.id}`, { method: "DELETE" });
+          if (session.isCurrent) {
+            await clearLocalSession();
+            router.replace("/login");
+          } else {
+            await load();
+          }
+        } catch (caught) {
+          setError(caught instanceof Error ? caught.message : "Unable to revoke this session.");
+        } finally {
+          setRevokingId(null);
+        }
       })() },
     ]
   );
@@ -59,7 +72,7 @@ export default function SessionsScreen() {
               <Text style={styles.meta}>Last used: {formatDate(item.lastSeenAt)}</Text>
               <Text style={styles.meta}>Expires: {formatDate(item.expiresAt)}</Text>
               <Text style={styles.meta}>IP: {item.ipAddress || "Unavailable"}</Text>
-              <Button label={item.isCurrent ? "Sign out this device" : "Revoke access"} tone="danger" onPress={() => revoke(item)} />
+              <Button label={item.isCurrent ? "Sign out this device" : "Revoke access"} tone="danger" loading={revokingId === item.id} disabled={revokingId !== null} onPress={() => revoke(item)} />
             </Card>
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}

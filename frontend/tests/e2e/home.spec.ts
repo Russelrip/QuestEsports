@@ -231,7 +231,11 @@ test("Challonge public bracket is lazy-loaded without consuming REST requests", 
   await page.goto("/tournaments/challonge-test");
   expect(bracketRequests).toBe(0);
   await expect(page.locator("iframe")).toHaveCount(0);
-  await page.getByRole("button", { name: "bracket", exact: true }).click();
+  const bracketTab = page.getByRole("button", { name: "bracket", exact: true });
+  await expect(async () => {
+    await bracketTab.click();
+    await expect(bracketTab).toHaveAttribute("aria-current", "page");
+  }).toPass();
   await expect(page.getByRole("link", { name: "Open on Challonge" })).toHaveAttribute("href", "https://challonge.com/quest-test");
   await expect(page.locator("iframe")).toHaveAttribute("src", "https://challonge.com/quest-test/module");
   expect(bracketRequests).toBe(0);
@@ -380,11 +384,22 @@ test("failed logout keeps the authenticated UI and warns that the server session
   }));
 
   await page.goto("/privacy-policy");
-  await page.getByRole("button", { name: /questplayer/i }).click();
+  const desktopUserMenu = page.getByRole("button", { name: /questplayer/i });
+  const usesDesktopMenu = (page.viewportSize()?.width || 0) >= 1024;
+  if (usesDesktopMenu) {
+    await expect(desktopUserMenu).toBeVisible();
+    await desktopUserMenu.click();
+  } else {
+    await page.getByRole("banner").getByRole("button", { name: "Open navigation" }).click();
+  }
   await page.getByRole("button", { name: "Logout" }).click();
 
   await expect(page.getByText("Logout did not complete")).toBeVisible();
-  await expect(page.getByRole("button", { name: /questplayer/i })).toBeVisible();
+  if (usesDesktopMenu) {
+    await expect(desktopUserMenu).toBeVisible();
+  } else {
+    await expect(page.getByRole("link", { name: /questplayer/i })).toBeVisible();
+  }
 });
 
 test("admin guard shows a retry state instead of redirecting when session lookup fails", async ({ page }) => {

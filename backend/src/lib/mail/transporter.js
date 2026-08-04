@@ -2,6 +2,11 @@ const nodemailer = require("nodemailer");
 const { env } = require("../../config/env");
 
 let transporter;
+const TRANSPORT_TIMEOUTS = {
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 60_000,
+};
 
 const getMailConfigKeys = () =>
   env.MAIL_PROVIDER === "resend"
@@ -19,6 +24,7 @@ const getTransportOptions = () => {
       host: "smtp.resend.com",
       port: 465,
       secure: true,
+      ...TRANSPORT_TIMEOUTS,
       auth: {
         user: "resend",
         pass: env.RESEND_API_KEY,
@@ -30,6 +36,7 @@ const getTransportOptions = () => {
     host: env.SMTP_HOST,
     port: env.SMTP_PORT,
     secure: env.SMTP_PORT === 465,
+    ...TRANSPORT_TIMEOUTS,
     auth: {
       user: env.SMTP_USER,
       pass: env.SMTP_PASS,

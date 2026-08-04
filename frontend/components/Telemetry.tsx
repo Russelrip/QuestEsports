@@ -11,12 +11,12 @@ const redactCapabilityUrl = <T extends { url: string }>(event: T): T => ({
   url: event.url.replace(/(\/shop\/order\/)[^/?#]+/i, "$1[REDACTED]"),
 });
 
-export default function Telemetry() {
+export default function Telemetry({ enabled }: { enabled: boolean }) {
   const pathname = usePathname();
 
   // Order status URLs contain a bearer capability. Do not initialize either
   // browser telemetry client on those pages.
-  if (CAPABILITY_ROUTE_PATTERN.test(pathname)) {
+  if (!enabled || CAPABILITY_ROUTE_PATTERN.test(pathname)) {
     return null;
   }
 

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { apiRequest } from "@/api";
 import { Button, ErrorNotice, StatusBadge } from "@/components/ui";
 import { colors, formatDate, humanize, radius, spacing } from "@/theme";
 import type { ApiEnvelope } from "@/types";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export type RecordAction = {
   label: string;
@@ -50,20 +51,36 @@ export function DetailModal<T extends { id: string }>({ visible, item, title, de
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<RecordAction | null>(null);
   const [input, setInput] = useState("");
+  const detailRequest = useRef(0);
 
   useEffect(() => {
     if (!visible || !item) return;
+    const currentRequest = ++detailRequest.current;
     setDetail(item as unknown as Record<string, unknown>);
     setError(null);
-    if (!detailPath || !detailKey) return;
+    if (!detailPath || !detailKey) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     void apiRequest<ApiEnvelope>(detailPath(item))
       .then((data) => {
         const loaded = data[detailKey];
-        if (loaded && typeof loaded === "object") setDetail(loaded as Record<string, unknown>);
+        if (currentRequest === detailRequest.current && loaded && typeof loaded === "object") {
+          setDetail(loaded as Record<string, unknown>);
+        }
       })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load details."))
-      .finally(() => setLoading(false));
+      .catch((caught) => {
+        if (currentRequest === detailRequest.current) {
+          setError(caught instanceof Error ? caught.message : "Unable to load details.");
+        }
+      })
+      .finally(() => {
+        if (currentRequest === detailRequest.current) setLoading(false);
+      });
+    return () => {
+      detailRequest.current += 1;
+    };
   }, [detailKey, detailPath, item, visible]);
 
   const rows = useMemo(() => flattenRecord(detail), [detail]);
@@ -106,13 +123,13 @@ export function DetailModal<T extends { id: string }>({ visible, item, title, de
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.modal}>
+      <SafeAreaView style={styles.modal} edges={["top", "bottom", "left", "right"]}>
         <View style={styles.modalHeader}>
           <View style={styles.modalTitleWrap}>
             <Text style={styles.modalEyebrow}>RECORD DETAILS</Text>
             <Text style={styles.modalTitle}>{item ? title(item) : "Details"}</Text>
           </View>
-          <Button label="Close" tone="ghost" onPress={onClose} />
+          <Button label="Close" tone="ghost" disabled={busy !== null} onPress={onClose} />
         </View>
         {error ? <ErrorNotice message={error} /> : null}
         {loading ? <ActivityIndicator color={colors.accent} style={styles.loader} /> : null}
@@ -134,8 +151,8 @@ export function DetailModal<T extends { id: string }>({ visible, item, title, de
               </Text>
               <ActionTextInput value={input} onChangeText={setInput} />
               <View style={styles.actionRow}>
-                <Button label="Cancel" tone="secondary" onPress={() => setPendingAction(null)} />
-                <Button label={pendingAction.label} tone={pendingAction.tone} loading={busy === pendingAction.label} onPress={() => void execute(pendingAction)} />
+                <Button label="Cancel" tone="secondary" disabled={busy !== null} onPress={() => setPendingAction(null)} />
+                <Button label={pendingAction.label} tone={pendingAction.tone} loading={busy === pendingAction.label} disabled={busy !== null} onPress={() => void execute(pendingAction)} />
               </View>
             </View>
           ) : null}
@@ -143,11 +160,11 @@ export function DetailModal<T extends { id: string }>({ visible, item, title, de
         {!pendingAction && availableActions.length ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actions}>
             {availableActions.map((action) => (
-              <Button key={action.label} label={action.label} tone={action.tone} loading={busy === action.label} onPress={() => requestAction(action)} />
+              <Button key={action.label} label={action.label} tone={action.tone} loading={busy === action.label} disabled={busy !== null} onPress={() => requestAction(action)} />
             ))}
           </ScrollView>
         ) : null}
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }

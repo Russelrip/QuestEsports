@@ -2,7 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import { OperationsScreen, type ListCard } from "@/components/OperationsScreen";
 import type { RecordAction } from "@/components/DetailModal";
 import { formatDate, formatMoney, humanize } from "@/theme";
-import type { AdminUser, ContactMessage, ProductSummary, RecruitmentApplication, TeamSummary, TournamentSummary } from "@/types";
+import type { AdminUser, ContactMessage, GameCategorySummary, ProductSummary, RecruitmentApplication, TeamSummary, TournamentSummary } from "@/types";
 
 type Identified = { id: string; [key: string]: unknown };
 type ResourceConfig<T extends Identified> = {
@@ -12,6 +12,7 @@ type ResourceConfig<T extends Identified> = {
   responseKey: string;
   filters?: Array<{ label: string; value: string }>;
   filterKey?: string;
+  searchable?: boolean;
   card: (item: T) => ListCard;
   detailPath?: (item: T) => string;
   detailKey?: string;
@@ -104,7 +105,7 @@ const configs: Record<string, ResourceConfig<Identified>> = {
     subtitle: "Events, capacity and brackets",
     endpoint: "/api/admin/tournaments",
     responseKey: "tournaments",
-    filters: ["", "draft", "registration_open", "registration_closed", "ongoing", "completed"].map((value) => ({ label: value ? humanize(value) : "All", value })),
+    filters: ["", "draft", "registration_open", "ongoing", "completed", "cancelled"].map((value) => ({ label: value ? humanize(value) : "All", value })),
     card: (raw) => {
       const item = raw as TournamentSummary;
       return { title: item.title, subtitle: `${humanize(item.game)} · ${item.slug}`, status: item.status, secondaryStatus: item.isPublished ? "published" : "unpublished", meta: [`${item.capacityUsed ?? item.registrationCount}/${item.maxTeams || "∞"} capacity`, item.prizePool || "No prize pool", formatDate(item.startDate)] };
@@ -121,6 +122,7 @@ const configs: Record<string, ResourceConfig<Identified>> = {
     subtitle: "Merchandise catalogue",
     endpoint: "/api/admin/products",
     responseKey: "products",
+    searchable: false,
     card: (raw) => {
       const item = raw as ProductSummary;
       const variants = Array.isArray(item.variants) ? item.variants as Array<{ price?: number; stock?: number | null }> : [];
@@ -138,6 +140,7 @@ const configs: Record<string, ResourceConfig<Identified>> = {
     subtitle: "Tournament collections",
     endpoint: "/api/admin/event-series",
     responseKey: "series",
+    searchable: false,
     card: (item) => ({ title: String(item.name || item.title || "Series"), subtitle: String(item.slug || ""), status: item.isPublished ? "published" : "draft", meta: [String(item.description || "").slice(0, 100)] }),
     actions: (item) => [deleteAction("series", `/api/admin/event-series/${item.id}`)],
   },
@@ -146,7 +149,16 @@ const configs: Record<string, ResourceConfig<Identified>> = {
     subtitle: "Games available to tournaments",
     endpoint: "/api/admin/game-categories",
     responseKey: "categories",
-    card: (item) => ({ title: String(item.name || "Game"), subtitle: String(item.slug || item.key || ""), status: item.isActive === false ? "archived" : "active", meta: [String(item.description || "").slice(0, 100)] }),
+    searchable: false,
+    card: (raw) => {
+      const item = raw as GameCategorySummary;
+      return {
+        title: item.displayName,
+        subtitle: item.slug,
+        status: item.isPublished ? "published" : "draft",
+        meta: [`${item.tournamentCount || 0} tournaments`],
+      };
+    },
     actions: (item) => [deleteAction("game category", `/api/admin/game-categories/${item.id}`)],
   },
   rulebooks: {
@@ -154,6 +166,7 @@ const configs: Record<string, ResourceConfig<Identified>> = {
     subtitle: "Competition rule documents",
     endpoint: "/api/rulebooks",
     responseKey: "rulebooks",
+    searchable: false,
     card: (item) => ({ title: String(item.title || item.name || "Rulebook"), subtitle: String(item.slug || ""), status: item.isPublished === false ? "draft" : "published", meta: [formatDate(String(item.updatedAt || item.createdAt || ""))] }),
     actions: (item) => [deleteAction("rulebook", `/api/admin/rulebooks/${item.id}`)],
   },
@@ -173,6 +186,7 @@ export default function ResourceRoute() {
       responseKey={config.responseKey}
       filters={config.filters}
       filterKey={config.filterKey}
+      searchable={config.searchable}
       mapCard={config.card}
       detailPath={config.detailPath}
       detailKey={config.detailKey}

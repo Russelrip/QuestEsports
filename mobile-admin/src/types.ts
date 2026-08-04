@@ -160,6 +160,14 @@ export type ProductSummary = {
   [key: string]: unknown;
 };
 
+export type GameCategorySummary = {
+  id: string;
+  slug: string;
+  displayName: string;
+  isPublished: boolean;
+  tournamentCount?: number;
+};
+
 export type SessionSummary = {
   id: string;
   createdAt: string;

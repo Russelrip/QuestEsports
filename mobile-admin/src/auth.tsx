@@ -1,17 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import { API_URL, apiRequest, jsonBody, sessionStore, setUnauthorizedHandler } from "@/api";
+import { API_URL, ApiError, apiRequest, jsonBody, sessionStore, setUnauthorizedHandler } from "@/api";
 import type { AdminUser, ApiEnvelope } from "@/types";
 
 export type OAuthProvider = "google" | "discord";
 type AuthContextValue = {
   loading: boolean;
+  sessionError: string | null;
   user: AdminUser | null;
   login: (identity: string, password: string) => Promise<void>;
   loginWithProvider: (provider: OAuthProvider) => Promise<void>;
   exchangeOAuthGrant: (grantToken: string) => Promise<void>;
   logout: () => Promise<void>;
+  clearLocalSession: () => Promise<void>;
+  retrySession: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
 
@@ -21,6 +24,7 @@ WebBrowser.maybeCompleteAuthSession();
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<AdminUser | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const oauthExchanges = useRef(new Map<string, Promise<void>>());
 
   useEffect(() => {
@@ -32,22 +36,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = useCallback(async () => {
     const data = await apiRequest<ApiEnvelope & { user: AdminUser }>("/api/mobile/auth/me");
-    if (data.user?.role !== "admin") throw new Error("Admin access is required.");
+    if (data.user?.role !== "admin") throw new ApiError("Admin access is required.", 403);
     setUser(data.user);
+    setSessionError(null);
   }, []);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const token = await sessionStore.get();
-        if (token) await refreshUser();
-      } catch {
-        await sessionStore.clear();
-      } finally {
-        setLoading(false);
+  const clearLocalSession = useCallback(async () => {
+    await sessionStore.clear();
+    setUser(null);
+    setSessionError(null);
+  }, []);
+
+  const restoreSession = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = await sessionStore.get();
+      if (token) await refreshUser();
+      else setSessionError(null);
+    } catch (caught) {
+      if (caught instanceof ApiError && [401, 403].includes(caught.status)) {
+        await clearLocalSession();
+      } else {
+        setSessionError(caught instanceof Error ? caught.message : "Unable to verify this admin session.");
       }
-    })();
-  }, [refreshUser]);
+    } finally {
+      setLoading(false);
+    }
+  }, [clearLocalSession, refreshUser]);
+
+  useEffect(() => {
+    void restoreSession();
+  }, [restoreSession]);
 
   const login = useCallback(async (identity: string, password: string) => {
     const data = await apiRequest<
@@ -59,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     await sessionStore.set(data.token);
     setUser(data.user);
+    setSessionError(null);
   }, []);
 
   const exchangeOAuthGrant = useCallback(async (grantToken: string) => {
@@ -78,6 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       await sessionStore.set(data.token);
       setUser(data.user);
+      setSessionError(null);
     })();
 
     oauthExchanges.current.set(normalizedGrant, exchange);
@@ -116,15 +137,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await apiRequest<ApiEnvelope>("/api/mobile/auth/logout", { method: "POST" });
-    } finally {
-      await sessionStore.clear();
-      setUser(null);
+    } catch (caught) {
+      if (!(caught instanceof ApiError) || ![401, 403].includes(caught.status)) {
+        throw caught;
+      }
     }
-  }, []);
+    await clearLocalSession();
+  }, [clearLocalSession]);
 
   const value = useMemo(
-    () => ({ loading, user, login, loginWithProvider, exchangeOAuthGrant, logout, refreshUser }),
-    [loading, user, login, loginWithProvider, exchangeOAuthGrant, logout, refreshUser]
+    () => ({ loading, sessionError, user, login, loginWithProvider, exchangeOAuthGrant, logout, clearLocalSession, retrySession: restoreSession, refreshUser }),
+    [loading, sessionError, user, login, loginWithProvider, exchangeOAuthGrant, logout, clearLocalSession, restoreSession, refreshUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

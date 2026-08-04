@@ -40,6 +40,9 @@ test("Resend provider creates the documented secure SMTP transport", () => {
         host: "smtp.resend.com",
         port: 465,
         secure: true,
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 60_000,
         auth: { user: "resend", pass: "re_test_key" },
       },
     ]);
@@ -67,6 +70,9 @@ test("SMTP provider remains available for a future SES switch", () => {
         host: "email-smtp.ap-northeast-1.amazonaws.com",
         port: 587,
         secure: false,
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 60_000,
         auth: { user: "ses-user", pass: "ses-password" },
       },
     ]);
