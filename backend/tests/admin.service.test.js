@@ -1177,3 +1177,171 @@ test("updateTeamRegistrationGameIds updates the captain and every selected roste
     restore();
   }
 });
+
+test("correctTeamRegistrationRoster replaces a paid roster and its linked saved team", async () => {
+  const registrationDeletes = [];
+  const registrationCreates = [];
+  const savedTeamDeletes = [];
+  const savedTeamCreates = [];
+  const registrationUpdates = [];
+  const currentMembers = [
+    { id: "captain-1", role: "CAPTAIN", memberOrder: 0, name: "Captain", email: "captain@example.com", emailNormalized: "captain@example.com", discord: "captain", riotId: "Captain#001", additionalData: {}, inviteStatus: "accepted" },
+    { id: "old-player", role: "PLAYER", memberOrder: 1, name: "Old Player", email: "old@example.com", emailNormalized: "old@example.com", discord: "old", riotId: "Old#001", additionalData: {}, inviteStatus: "accepted" },
+  ];
+  const requestedMembers = [
+    { role: "PLAYER", name: "Player One", email: "one@example.com", discord: "one", gameId: "One#001" },
+    { role: "PLAYER", name: "Player Two", email: "two@example.com", discord: "two", gameId: "Two#001" },
+    { role: "PLAYER", name: "Player Three", email: "three@example.com", discord: "three", gameId: "Three#001" },
+    { role: "PLAYER", name: "Player Four", email: "four@example.com", discord: "four", gameId: "Four#001" },
+    { role: "SUBSTITUTE", name: "Sub One", email: "sub-one@example.com", discord: "sub-one", gameId: "SubOne#001" },
+    { role: "SUBSTITUTE", name: "Sub Two", email: "sub-two@example.com", discord: "sub-two", gameId: "SubTwo#001" },
+  ];
+  const users = requestedMembers.map((member, index) => ({
+    id: `user-${index + 1}`,
+    email: member.email,
+    emailNormalized: member.email,
+    emailVerified: true,
+  }));
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({
+        id: "registration-1",
+        tournamentId: "tournament-1",
+        savedTeamId: "saved-team-1",
+        entryType: "team",
+        captainEmail: "captain@example.com",
+        tournament: {
+          id: "tournament-1",
+          title: "Quest Cup",
+          game: "Valorant",
+          registrationFields: [{ key: "riot_id", label: "Riot ID", scope: "member" }],
+          minRosterSize: 5,
+          maxRosterSize: 5,
+          maxSubstitutes: 2,
+        },
+        members: currentMembers,
+        savedTeam: {
+          id: "saved-team-1",
+          members: currentMembers.map((member) => ({ ...member, teamId: "saved-team-1" })),
+        },
+      }),
+      update: async (args) => registrationUpdates.push(args),
+    },
+    user: { findMany: async () => users },
+    registrationMember: {
+      findMany: async () => [],
+      deleteMany: async (args) => registrationDeletes.push(args),
+      createMany: async (args) => registrationCreates.push(args),
+    },
+    savedTeamMember: {
+      deleteMany: async (args) => savedTeamDeletes.push(args),
+      createMany: async (args) => savedTeamCreates.push(args),
+    },
+  };
+  const detail = {
+    id: "registration-1",
+    savedTeamId: "saved-team-1",
+    entryType: "team",
+    teamName: "Quest Five",
+    additionalData: {},
+    reservedUntil: null,
+    country: "Sri Lanka",
+    teamTag: "Q5",
+    organizationRequested: false,
+    status: "approved",
+    paymentStatus: "paid",
+    verificationStatus: "verified",
+    adminSlotReservation: null,
+    createdAt: new Date("2026-07-20T10:00:00.000Z"),
+    contactEmail: "captain@example.com",
+    teamLogoName: null,
+    tournament: {
+      id: "tournament-1",
+      slug: "quest-cup",
+      title: "Quest Cup",
+      status: "registration_open",
+      isPublished: true,
+      minRosterSize: 5,
+      maxRosterSize: 5,
+      maxSubstitutes: 2,
+    },
+    captainName: "Captain",
+    captainEmail: "captain@example.com",
+    captainPhone: "0770000000",
+    captainDiscord: "captain",
+    captainRiotId: "Captain#001",
+    members: currentMembers.map((member) => ({ ...member, inviteRespondedAt: new Date(), user: null })),
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+    teamRegistration: { findUnique: async () => detail },
+  });
+
+  try {
+    const result = await adminService.correctTeamRegistrationRoster("registration-1", {
+      syncSavedTeam: true,
+      members: requestedMembers,
+    });
+
+    assert.equal(result.registration.savedTeamLinked, true);
+    assert.equal(result.correction.before.length, 2);
+    assert.equal(result.correction.after.length, 7);
+    assert.equal(result.correction.savedTeamId, "saved-team-1");
+    assert.deepEqual(registrationDeletes, [{ where: { registrationId: "registration-1", role: { not: "CAPTAIN" } } }]);
+    assert.equal(registrationCreates[0].data.length, 6);
+    assert.deepEqual(registrationCreates[0].data.map(({ role, memberOrder }) => ({ role, memberOrder })), [
+      { role: "PLAYER", memberOrder: 1 },
+      { role: "PLAYER", memberOrder: 2 },
+      { role: "PLAYER", memberOrder: 3 },
+      { role: "PLAYER", memberOrder: 4 },
+      { role: "SUBSTITUTE", memberOrder: 1 },
+      { role: "SUBSTITUTE", memberOrder: 2 },
+    ]);
+    assert.ok(registrationCreates[0].data.every((member) => member.inviteStatus === "accepted" && member.userId));
+    assert.deepEqual(registrationUpdates, [{ where: { id: "registration-1" }, data: { verificationStatus: "verified" } }]);
+    assert.deepEqual(savedTeamDeletes, [{ where: { teamId: "saved-team-1", role: { not: "CAPTAIN" } } }]);
+    assert.equal(savedTeamCreates[0].data.length, 6);
+  } finally {
+    restore();
+  }
+});
+
+test("correctTeamRegistrationRoster rejects missing or unverified Quest accounts", async () => {
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({
+        id: "registration-1",
+        tournamentId: "tournament-1",
+        savedTeamId: null,
+        entryType: "team",
+        captainEmail: "captain@example.com",
+        tournament: {
+          id: "tournament-1",
+          title: "Quest Cup",
+          game: "Valorant",
+          registrationFields: [],
+          minRosterSize: 2,
+          maxRosterSize: 2,
+          maxSubstitutes: 0,
+        },
+        members: [{ id: "captain-1", role: "CAPTAIN", name: "Captain", email: "captain@example.com" }],
+        savedTeam: null,
+      }),
+    },
+    user: { findMany: async () => [] },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    await assert.rejects(
+      adminService.correctTeamRegistrationRoster("registration-1", {
+        members: [{ role: "PLAYER", name: "New Player", email: "new@example.com", discord: "new", gameId: "New#001" }],
+      }),
+      (error) => error.statusCode === 409 && /verified Quest account/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});

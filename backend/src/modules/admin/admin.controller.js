@@ -13,6 +13,7 @@ const {
   listTeamRegistrations,
   getAdminTeamRegistrationById,
   updateTeamRegistrationGameIds,
+  correctTeamRegistrationRoster,
   exportTeamRegistrations,
   listRecruitmentApplications,
   exportRecruitmentApplications,
@@ -203,6 +204,31 @@ const updateRegistrationGameIds = asyncHandler(async (req, res) => {
   });
 });
 
+const correctRegistrationRoster = asyncHandler(async (req, res) => {
+  const result = await correctTeamRegistrationRoster(
+    req.params.registrationId,
+    req.body
+  );
+
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "team_registration.roster_corrected",
+    targetType: "TeamRegistration",
+    targetId: req.params.registrationId,
+    beforeData: { members: result.correction.before },
+    afterData: {
+      members: result.correction.after,
+      savedTeamId: result.correction.savedTeamId,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Registration roster corrected successfully.",
+    registration: result.registration,
+  });
+});
+
 const removeRegistration = asyncHandler(async (req, res) => {
   await deleteTeamRegistration(req.params.registrationId);
 
@@ -343,6 +369,7 @@ module.exports = {
   downloadTeamRegistrations,
   updateRegistrationStatus,
   updateRegistrationGameIds,
+  correctRegistrationRoster,
   removeRegistration,
   reserveRegistrationSlot,
   releaseRegistrationSlot,

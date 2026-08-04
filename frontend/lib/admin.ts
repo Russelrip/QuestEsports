@@ -91,6 +91,9 @@ export type TournamentOption = {
   title: string;
   status: string;
   isPublished: boolean;
+  minRosterSize?: number;
+  maxRosterSize?: number;
+  maxSubstitutes?: number;
 };
 
 export type RegistrationMember = {
@@ -134,6 +137,7 @@ export type TeamRegistration = {
   createdAt: string;
   contactEmail: string;
   logoUrl?: string | null;
+  savedTeamLinked: boolean;
   tournament: TournamentOption;
   captain: {
     name: string;

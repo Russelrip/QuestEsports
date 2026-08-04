@@ -100,6 +100,18 @@ the hold is consumed atomically and the same slot, amount, and currency are copi
 to the registration and payment transaction. Releasing the hold makes that slot
 available again.
 
+## Paid Roster Corrections
+
+Admins can replace the non-captain roster from a registration detail view, including registrations that are already approved and paid. The captain remains fixed. Each corrected player or substitute must provide a name, verified Quest account email, Discord username, and Game ID, and cannot already belong to another non-rejected registration in the same tournament.
+
+The correction is validated against the tournament's active-player and substitute limits. Admins may also replace the linked reusable saved-team roster in the same database transaction. Approval and payment state are preserved, accepted account links are rebuilt, verification is marked verified, and the action is recorded as `team_registration.roster_corrected`.
+
+```text
+PATCH /api/admin/team-registrations/:registrationId/roster
+```
+
+Use the saved-team option only when players are joining or leaving the reusable team, not for a tournament-only exception. Historical registrations other than the selected registration are not rewritten.
+
 ## Registration Deletion
 
 Admins can delete a tournament registration from `/admin/registrations`.
