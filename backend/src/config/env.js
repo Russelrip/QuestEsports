@@ -393,6 +393,16 @@ if (env.NODE_ENV === "production") {
   if (!env.MAIL_DELIVERY_REQUIRED) {
     throw new Error("MAIL_DELIVERY_REQUIRED must be enabled in production while password authentication is available.");
   }
+  if (!env.JOB_WORKER_ENABLED) {
+    throw new Error("JOB_WORKER_ENABLED must be enabled in production while asynchronous mail delivery is required.");
+  }
+  for (const [name, endpoint] of [
+    ["UPSTASH_REDIS_REST_URL", env.UPSTASH_REDIS_REST_URL],
+    ["LOG_DRAIN_URL", env.LOG_DRAIN_URL],
+    ["MONITORING_WEBHOOK_URL", env.MONITORING_WEBHOOK_URL],
+  ]) {
+    if (endpoint) assertHttpsUrl(name, endpoint);
+  }
 }
 
 const mailProviderCredentialValues =

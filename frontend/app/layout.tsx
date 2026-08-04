@@ -44,7 +44,7 @@ export default function RootLayout({
           <main>{children}</main>
           <Footer />
           <ToastProvider />
-          <Telemetry />
+          <Telemetry enabled={process.env.VERCEL_ENV === "production"} />
         </AuthProvider>
       </body>
     </html>

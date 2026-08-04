@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { apiFetchJson, getApiErrorMessage } from "@/lib/auth";
 import { passwordByteLimitMessage, passwordFitsBcrypt } from "@/lib/password";
+import { normalizeSafeRedirectPath } from "@/lib/safe-redirect";
 
 const signupSchema = z
   .object({
@@ -55,10 +56,7 @@ type SignupApiResponse = {
 export default function SignupForm() {
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect");
-  const nextPath =
-    redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//")
-      ? redirectTo
-      : null;
+  const nextPath = normalizeSafeRedirectPath(redirectTo);
   const invitedEmail = searchParams.get("email") || "";
   const loginPath = nextPath
     ? `/login?redirect=${encodeURIComponent(nextPath)}`

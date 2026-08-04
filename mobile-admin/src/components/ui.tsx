@@ -21,7 +21,7 @@ export function Screen({ children, scroll = false }: { children: ReactNode; scro
   ) : (
     children
   );
-  return <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>{content}</SafeAreaView>;
+  return <SafeAreaView style={styles.screen} edges={["top", "bottom", "left", "right"]}>{content}</SafeAreaView>;
 }
 
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {

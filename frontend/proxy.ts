@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readSiteMaintenanceConfig } from "./lib/maintenance";
 
 const isProduction = process.env.NODE_ENV === "production";
+const allowInsecureLoopbackUrls = process.env.ALLOW_INSECURE_LOOPBACK_URLS === "true";
 
 export function proxy(request: NextRequest) {
   const maintenance = readSiteMaintenanceConfig();
@@ -29,7 +30,7 @@ export function proxy(request: NextRequest) {
     `connect-src ${connectSources.join(" ")}`,
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isProduction ? "" : " 'unsafe-eval'"}`,
     "form-action 'self' https://sandbox.payhere.lk https://www.payhere.lk",
-    ...(isProduction ? ["upgrade-insecure-requests"] : []),
+    ...(isProduction && !allowInsecureLoopbackUrls ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
 
   const requestHeaders = new Headers(request.headers);

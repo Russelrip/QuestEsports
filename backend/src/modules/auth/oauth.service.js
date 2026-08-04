@@ -4,7 +4,12 @@ const { prisma } = require("../../lib/prisma");
 const { env } = require("../../config/env");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
-const { normalizeEmail, normalizeText, normalizeUsername } = require("../../lib/validation");
+const {
+  normalizeEmail,
+  normalizeSafeRedirectPath,
+  normalizeText,
+  normalizeUsername,
+} = require("../../lib/validation");
 const { PUBLIC_USER_SELECT, mapUserForResponse } = require("./auth.service");
 
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
@@ -131,16 +136,7 @@ const createSignedPayload = (payload) => {
 };
 
 const normalizeRedirectPath = (value) => {
-  const redirect = normalizeText(value);
-  if (!redirect) {
-    return "/profile";
-  }
-
-  if (redirect.startsWith("/") && !redirect.startsWith("//")) {
-    return redirect;
-  }
-
-  return "/profile";
+  return normalizeSafeRedirectPath(value) || "/profile";
 };
 
 const createOAuthState = ({ provider, redirectTo, nonce }) =>

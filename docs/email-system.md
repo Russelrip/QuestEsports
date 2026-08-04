@@ -162,7 +162,7 @@ JOB_WORKER_MAX_ATTEMPTS=5
 
 With `MAIL_PROVIDER=resend`, mail is configured when `RESEND_API_KEY`, `MAIL_FROM`, and `APP_URL` all have values. The transport uses Resend's `smtp.resend.com` endpoint on port `465`; the SMTP username is `resend` and the API key is used as the password.
 
-`MAIL_DELIVERY_REQUIRED` may remain blank/false for local development. In production it must be true and the selected provider configuration must be complete; the backend refuses startup otherwise. This prevents password signup/reset from launching with silently unavailable delivery.
+`MAIL_DELIVERY_REQUIRED` may remain blank/false for local development. In production it must be true, `JOB_WORKER_ENABLED` must be true, and the selected provider configuration must be complete; the backend refuses startup otherwise. This prevents password signup/reset from launching with silently unavailable delivery.
 
 - `MAIL_PROVIDER` accepts `resend` or `smtp` and defaults to `smtp` for backward compatibility.
 - `MAIL_FROM` controls the sender shown to recipients.
@@ -211,12 +211,13 @@ npm run mail:verify
 
 If mail configuration is incomplete in local development, the worker logs a warning, skips delivery, and marks the job as succeeded. Production configuration validation prevents that state when `MAIL_DELIVERY_REQUIRED=true`.
 
-If `JOB_WORKER_ENABLED=false`, email jobs remain queued until a worker-enabled API instance processes them.
+`JOB_WORKER_ENABLED=false` is supported only outside production. Email jobs remain queued until a worker-enabled API instance processes them.
 
 ## Retry And Queue Behavior
 
 - The worker processes up to 10 jobs per tick.
 - Failed provider sends are retried until `JOB_WORKER_MAX_ATTEMPTS` is reached.
+- SMTP connection and greeting attempts time out after 10 seconds, and inactive sockets time out after 60 seconds so one delivery cannot block the worker lease indefinitely.
 - Retry delay is linear: 30 seconds multiplied by the completed attempt count.
 - Jobs locked in `processing` for more than five minutes can be reclaimed.
 - Multiple API instances can poll safely through serializable claim transactions.

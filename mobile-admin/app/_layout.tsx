@@ -1,13 +1,14 @@
 import { useEffect } from "react";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "@/auth";
 import { colors } from "@/theme";
+import { Button } from "@/components/ui";
 
 function AuthGate() {
-  const { loading, user } = useAuth();
+  const { clearLocalSession, loading, retrySession, sessionError, user } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -22,6 +23,17 @@ function AuthGate() {
 
   if (loading) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={colors.accent} /></View>;
+  }
+
+  if (sessionError && !user) {
+    return (
+      <View style={styles.sessionError}>
+        <Text style={styles.sessionErrorTitle}>Unable to verify your session</Text>
+        <Text style={styles.sessionErrorMessage}>{sessionError}</Text>
+        <Button label="Try again" onPress={() => void retrySession()} />
+        <Button label="Sign in again" tone="secondary" onPress={() => void clearLocalSession()} />
+      </View>
+    );
   }
 
   return (
@@ -49,4 +61,7 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
+  sessionError: { flex: 1, justifyContent: "center", gap: 14, padding: 24, backgroundColor: colors.background },
+  sessionErrorTitle: { color: colors.text, fontSize: 24, fontWeight: "900", textAlign: "center" },
+  sessionErrorMessage: { color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: "center" },
 });

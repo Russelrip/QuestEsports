@@ -52,7 +52,8 @@ jobs:
       - name: Validate application
         run: |
           npm run typecheck
-          npx expo-doctor
+          npm test
+          npm run doctor
 
       - name: Set Android release version
         run: node scripts/set-release-version.mjs "${GITHUB_REF_NAME}" "${GITHUB_RUN_NUMBER}"

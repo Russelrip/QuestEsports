@@ -132,6 +132,24 @@ test("environment normalizers cover valid, default, and invalid values", () => {
   );
 });
 
+test("production requires the asynchronous job worker for required email delivery", () => {
+  const result = loadEnvironment({ JOB_WORKER_ENABLED: "false" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /JOB_WORKER_ENABLED must be enabled in production/);
+});
+
+test("production rejects insecure secret-bearing integration endpoints", () => {
+  for (const [name, value] of [
+    ["UPSTASH_REDIS_REST_URL", "http://redis.example.com"],
+    ["LOG_DRAIN_URL", "http://logs.example.com/ingest"],
+    ["MONITORING_WEBHOOK_URL", "http://monitoring.example.com/events"],
+  ]) {
+    const result = loadEnvironment({ [name]: value });
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, new RegExp(`${name} must use HTTPS`));
+  }
+});
+
 test("Challonge configuration rejects unsafe base URLs and invalid cache durations", () => {
   const insecureBase = loadEnvironment({ CHALLONGE_BASE_URL: "http://api.challonge.com/v2.1" });
   assert.notEqual(insecureBase.status, 0);

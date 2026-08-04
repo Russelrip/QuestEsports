@@ -27,14 +27,27 @@ const {
   revokeOtherSessions,
 } = require("./auth.controller");
 const { requireAuth } = require("./auth.middleware");
-const { createRateLimiter } = require("../../middleware/rate-limit");
+const { createRateLimiter, getClientIp } = require("../../middleware/rate-limit");
+const { normalizeEmail, normalizeUsername } = require("../../lib/validation");
 
 const router = express.Router();
-const passwordLoginRateLimiter = createRateLimiter({
-  name: "auth-login-password",
+const passwordLoginIpRateLimiter = createRateLimiter({
+  name: "auth-login-password-ip",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 50,
+  message: "Too many login attempts from this network. Please try again in 15 minutes.",
+});
+const passwordLoginIdentityRateLimiter = createRateLimiter({
+  name: "auth-login-password-identity",
   windowMs: 15 * 60 * 1000,
   maxRequests: 5,
   message: "Too many login attempts. Please try again in 15 minutes.",
+  keyGenerator: (req) => {
+    const identity = normalizeEmail(req.body?.emailOrUsername) ||
+      normalizeUsername(req.body?.emailOrUsername) ||
+      "unknown";
+    return `${getClientIp(req)}:${identity}`;
+  },
 });
 const mobileOAuthExchangeRateLimiter = createRateLimiter({
   name: "auth-mobile-oauth-exchange",
@@ -79,8 +92,13 @@ router.get("/auth/discord/callback", discordCallback);
 router.get("/mobile/auth/oauth/google/start", startMobileGoogleAuth);
 router.get("/mobile/auth/oauth/discord/start", startMobileDiscordAuth);
 router.post("/signup", signupRateLimiter, signup);
-router.post("/login", passwordLoginRateLimiter, login);
-router.post("/mobile/auth/login", passwordLoginRateLimiter, mobileLogin);
+router.post("/login", passwordLoginIpRateLimiter, passwordLoginIdentityRateLimiter, login);
+router.post(
+  "/mobile/auth/login",
+  passwordLoginIpRateLimiter,
+  passwordLoginIdentityRateLimiter,
+  mobileLogin
+);
 router.post(
   "/mobile/auth/oauth/exchange",
   mobileOAuthExchangeRateLimiter,

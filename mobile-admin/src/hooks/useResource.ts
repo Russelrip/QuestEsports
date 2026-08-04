@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest, buildQuery } from "@/api";
 import type { ApiEnvelope, Pagination } from "@/types";
+import { hasNextResourcePage, mergeUniqueResourcePage } from "@/resource-pages";
 
 type ResourceOptions<T> = {
   endpoint: string;
@@ -12,7 +13,7 @@ type ResourceOptions<T> = {
   transform?: (value: unknown) => T[];
 };
 
-export function useResource<T>({
+export function useResource<T extends { id: string }>({
   endpoint,
   responseKey,
   search = "",
@@ -25,17 +26,20 @@ export function useResource<T>({
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestNumber = useRef(0);
 
-  const load = useCallback(
-    async (refresh = false) => {
+  const loadPage = useCallback(
+    async (page: number, mode: "replace" | "append", refresh = false) => {
       const currentRequest = ++requestNumber.current;
-      refresh ? setRefreshing(true) : setLoading(true);
+      if (refresh) setRefreshing(true);
+      else if (mode === "append") setLoadingMore(true);
+      else setLoading(true);
       setError(null);
       try {
         const query = buildQuery({
-          page: 1,
+          page,
           pageSize,
           search: search.trim() || undefined,
           [filterKey]: filterValue || undefined,
@@ -43,7 +47,11 @@ export function useResource<T>({
         const data = await apiRequest<ApiEnvelope & { pagination?: Pagination }>(`${endpoint}${query}`);
         if (currentRequest !== requestNumber.current) return;
         const raw = data[responseKey];
-        setItems(transform ? transform(raw) : Array.isArray(raw) ? (raw as T[]) : []);
+        const nextItems = transform ? transform(raw) : Array.isArray(raw) ? (raw as T[]) : [];
+        setItems((currentItems) => {
+          if (mode === "replace") return nextItems;
+          return mergeUniqueResourcePage(currentItems, nextItems);
+        });
         setPagination(data.pagination || null);
       } catch (caught) {
         if (currentRequest !== requestNumber.current) return;
@@ -52,6 +60,7 @@ export function useResource<T>({
         if (currentRequest === requestNumber.current) {
           setLoading(false);
           setRefreshing(false);
+          setLoadingMore(false);
         }
       }
     },
@@ -59,9 +68,28 @@ export function useResource<T>({
   );
 
   useEffect(() => {
-    const timeout = setTimeout(() => void load(), 300);
-    return () => clearTimeout(timeout);
-  }, [load]);
+    const timeout = setTimeout(() => void loadPage(1, "replace"), 300);
+    return () => {
+      clearTimeout(timeout);
+      requestNumber.current += 1;
+    };
+  }, [loadPage]);
 
-  return { items, pagination, loading, refreshing, error, reload: () => load(true) };
+  const hasMore = hasNextResourcePage(pagination);
+  const loadNext = () => {
+    if (!pagination || !hasMore || loading || refreshing || loadingMore) return;
+    void loadPage(pagination.page + 1, "append");
+  };
+
+  return {
+    items,
+    pagination,
+    loading,
+    refreshing,
+    loadingMore,
+    hasMore,
+    error,
+    reload: () => loadPage(1, "replace", true),
+    loadNext,
+  };
 }

@@ -380,11 +380,22 @@ test("failed logout keeps the authenticated UI and warns that the server session
   }));
 
   await page.goto("/privacy-policy");
-  await page.getByRole("button", { name: /questplayer/i }).click();
+  const desktopUserMenu = page.getByRole("button", { name: /questplayer/i });
+  const usesDesktopMenu = (page.viewportSize()?.width || 0) >= 1024;
+  if (usesDesktopMenu) {
+    await expect(desktopUserMenu).toBeVisible();
+    await desktopUserMenu.click();
+  } else {
+    await page.getByRole("banner").getByRole("button", { name: "Open navigation" }).click();
+  }
   await page.getByRole("button", { name: "Logout" }).click();
 
   await expect(page.getByText("Logout did not complete")).toBeVisible();
-  await expect(page.getByRole("button", { name: /questplayer/i })).toBeVisible();
+  if (usesDesktopMenu) {
+    await expect(desktopUserMenu).toBeVisible();
+  } else {
+    await expect(page.getByRole("link", { name: /questplayer/i })).toBeVisible();
+  }
 });
 
 test("admin guard shows a retry state instead of redirecting when session lookup fails", async ({ page }) => {

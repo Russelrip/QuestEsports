@@ -17,6 +17,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { apiFetchJson, AuthUser, getApiErrorMessage } from "@/lib/auth";
+import { normalizeSafeRedirectPath } from "@/lib/safe-redirect";
 
 const loginSchema = z.object({
   emailOrUsername: z.string().min(1, "Please enter your username or email."),
@@ -31,7 +32,7 @@ export default function LoginForm() {
   const searchParams = useSearchParams();
   const { login } = useAuth();
   const redirectTo = searchParams.get("redirect");
-  const nextPath = redirectTo && redirectTo.startsWith("/") && !redirectTo.startsWith("//") ? redirectTo : null;
+  const nextPath = normalizeSafeRedirectPath(redirectTo);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),

@@ -95,6 +95,7 @@ jobs:
           PM2_PROCESS: ${{ secrets.BACKEND_PM2_PROCESS }}
           HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
           MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_MIGRATION_APPROVAL_SHA }}
+          DESTRUCTIVE_MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA }}
           DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         run: |
           if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -105,7 +106,11 @@ jobs:
             echo "BACKEND_MIGRATION_APPROVAL_SHA must be empty or a full lowercase 40-character commit SHA." >&2
             exit 1
           fi
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          if [ -n "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" ] && ! printf '%s' "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA must be empty or a full lowercase 40-character commit SHA." >&2
+            exit 1
+          fi
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
@@ -158,13 +163,13 @@ jobs:
 
           MIGRATION_DIFF="$(git diff "$PREVIOUS_SHA" "$DEPLOY_SHA" -- 'backend/prisma/migrations/*/migration.sql')"
           MIGRATION_CHANGED=false
+          DESTRUCTIVE_MIGRATION=false
           if [ -n "$MIGRATION_DIFF" ]; then
             MIGRATION_CHANGED=true
           fi
           if printf '%s\n' "$MIGRATION_DIFF" | grep -Eiq '^\+[^+].*(DROP[[:space:]]+(TABLE|COLUMN|INDEX|CONSTRAINT|TYPE)|ALTER[[:space:]]+COLUMN|RENAME[[:space:]]+(TO|COLUMN)|SET[[:space:]]+NOT[[:space:]]+NULL|TRUNCATE)'; then
-            echo "Deployment contains a destructive or backward-incompatible migration." >&2
-            echo "Use an expand-and-contract migration so the previous application version remains compatible." >&2
-            exit 1
+            DESTRUCTIVE_MIGRATION=true
+            echo "Deployment contains a destructive or backward-incompatible migration and requires separate approval." >&2
           fi
 
           HEALTHCHECK_ORIGIN="${HEALTHCHECK_URL%/api/health}"
@@ -234,6 +239,11 @@ jobs:
           if [ "$MIGRATION_CHANGED" = true ] || [ "$MIGRATION_PENDING" = true ]; then
             if [ "$MIGRATION_APPROVAL_SHA" != "$DEPLOY_SHA" ]; then
               echo "A schema migration requires BACKEND_MIGRATION_APPROVAL_SHA to equal $DEPLOY_SHA." >&2
+              exit 1
+            fi
+            if [ "$DESTRUCTIVE_MIGRATION" = true ] && [ "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" != "$DEPLOY_SHA" ]; then
+              echo "A destructive migration requires BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA to equal $DEPLOY_SHA." >&2
+              echo "Prefer an expand-and-contract release; use this approval only after a verified recovery backup and maintenance plan." >&2
               exit 1
             fi
             BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash "$APP_DIR/ops/backup-production.sh"

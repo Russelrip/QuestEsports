@@ -50,6 +50,23 @@ test("Challonge URLs are restricted and normalized for safe module embeds", () =
   }
 });
 
+test("admin tournament listing rejects unsupported status filters", async () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      tournamentService.listAdminTournaments({ status: "registration_closed" }),
+      (error) => error.statusCode === 400 && error.message === "Tournament status is invalid."
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("registration status repairs stale captain-only verification and includes its payment route", async () => {
   let repairedRegistrationId = null;
   const prisma = {

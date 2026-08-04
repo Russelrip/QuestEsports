@@ -21,6 +21,7 @@ type Props<T extends { id: string }> = {
   responseKey: string;
   filters?: Array<{ label: string; value: string }>;
   filterKey?: string;
+  searchable?: boolean;
   mapCard: (item: T) => ListCard;
   detailPath?: (item: T) => string;
   detailKey?: string;
@@ -35,6 +36,7 @@ export function OperationsScreen<T extends { id: string }>({
   responseKey,
   filters = [{ label: "All", value: "" }],
   filterKey,
+  searchable = true,
   mapCard,
   detailPath,
   detailKey,
@@ -59,9 +61,11 @@ export function OperationsScreen<T extends { id: string }>({
         title={title}
         subtitle={resource.pagination ? `${resource.pagination.total} records · ${subtitle}` : subtitle}
       />
-      <View style={styles.searchWrap}>
-        <Field value={search} onChangeText={setSearch} placeholder={`Search ${title.toLowerCase()}`} autoCapitalize="none" returnKeyType="search" />
-      </View>
+      {searchable ? (
+        <View style={styles.searchWrap}>
+          <Field value={search} onChangeText={setSearch} placeholder={`Search ${title.toLowerCase()}`} autoCapitalize="none" returnKeyType="search" />
+        </View>
+      ) : null}
       {filters.length > 1 ? <FilterPills values={filters} selected={filter} onSelect={setFilter} /> : null}
       {resource.error ? <ErrorNotice message={resource.error} retry={resource.reload} /> : null}
       {resource.loading ? (
@@ -73,6 +77,8 @@ export function OperationsScreen<T extends { id: string }>({
           contentContainerStyle={[styles.list, !resource.items.length && styles.emptyList]}
           refreshing={resource.refreshing}
           onRefresh={resource.reload}
+          onEndReached={resource.hasMore ? resource.loadNext : undefined}
+          onEndReachedThreshold={0.4}
           renderItem={({ item }) => {
             const card = mapCard(item);
             return (
@@ -94,6 +100,7 @@ export function OperationsScreen<T extends { id: string }>({
           }}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListEmptyComponent={<EmptyState title={`No ${title.toLowerCase()}`} message="No records match the current filters." />}
+          ListFooterComponent={resource.loadingMore ? <ActivityIndicator color={colors.accent} style={styles.footerLoader} /> : null}
         />
       )}
       <DetailModal
@@ -116,6 +123,7 @@ const styles = StyleSheet.create({
   list: { padding: spacing.md, paddingTop: spacing.sm, paddingBottom: 100 },
   emptyList: { flexGrow: 1, justifyContent: "center" },
   separator: { height: spacing.sm },
+  footerLoader: { marginVertical: spacing.lg },
   cardTop: { flexDirection: "row", gap: spacing.md, justifyContent: "space-between" },
   cardText: { flex: 1 },
   cardTitle: { color: colors.text, fontWeight: "800", fontSize: 17 },
