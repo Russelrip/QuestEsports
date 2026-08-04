@@ -7,7 +7,9 @@ const mockApiPort = process.env.PLAYWRIGHT_MOCK_API_PORT || "5011";
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
-  workers: 2,
+  // A single CI worker keeps the shared production server stable while all
+  // three browser engines run. Local runs can still use two workers.
+  workers: process.env.CI ? 1 : 2,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",

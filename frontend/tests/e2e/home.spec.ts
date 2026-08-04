@@ -231,7 +231,11 @@ test("Challonge public bracket is lazy-loaded without consuming REST requests", 
   await page.goto("/tournaments/challonge-test");
   expect(bracketRequests).toBe(0);
   await expect(page.locator("iframe")).toHaveCount(0);
-  await page.getByRole("button", { name: "bracket", exact: true }).click();
+  const bracketTab = page.getByRole("button", { name: "bracket", exact: true });
+  await expect(async () => {
+    await bracketTab.click();
+    await expect(bracketTab).toHaveAttribute("aria-current", "page");
+  }).toPass();
   await expect(page.getByRole("link", { name: "Open on Challonge" })).toHaveAttribute("href", "https://challonge.com/quest-test");
   await expect(page.locator("iframe")).toHaveAttribute("src", "https://challonge.com/quest-test/module");
   expect(bracketRequests).toBe(0);
