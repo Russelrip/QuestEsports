@@ -219,6 +219,7 @@ const correctRegistrationRoster = asyncHandler(async (req, res) => {
     afterData: {
       members: result.correction.after,
       savedTeamId: result.correction.savedTeamId,
+      captainChanged: result.correction.captainChanged,
     },
   });
 

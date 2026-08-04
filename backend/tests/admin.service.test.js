@@ -1189,6 +1189,7 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
     { id: "old-player", role: "PLAYER", memberOrder: 1, name: "Old Player", email: "old@example.com", emailNormalized: "old@example.com", discord: "old", riotId: "Old#001", additionalData: {}, inviteStatus: "accepted" },
   ];
   const requestedMembers = [
+    { role: "CAPTAIN", name: "Captain", email: "captain@example.com", discord: "captain", gameId: "Captain#001" },
     { role: "PLAYER", name: "Player One", email: "one@example.com", discord: "one", gameId: "One#001" },
     { role: "PLAYER", name: "Player Two", email: "two@example.com", discord: "two", gameId: "Two#001" },
     { role: "PLAYER", name: "Player Three", email: "three@example.com", discord: "three", gameId: "Three#001" },
@@ -1201,6 +1202,7 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
     email: member.email,
     emailNormalized: member.email,
     emailVerified: true,
+    phone: member.role === "CAPTAIN" ? "0770000000" : null,
   }));
   const tx = {
     teamRegistration: {
@@ -1210,6 +1212,9 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
         savedTeamId: "saved-team-1",
         entryType: "team",
         captainEmail: "captain@example.com",
+        captainPhone: "0770000000",
+        contactEmail: "captain@example.com",
+        additionalData: {},
         tournament: {
           id: "tournament-1",
           title: "Quest Cup",
@@ -1222,7 +1227,9 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
         members: currentMembers,
         savedTeam: {
           id: "saved-team-1",
+          name: "Quest Five",
           members: currentMembers.map((member) => ({ ...member, teamId: "saved-team-1" })),
+          registrations: [{ id: "registration-1" }],
         },
       }),
       update: async (args) => registrationUpdates.push(args),
@@ -1287,9 +1294,10 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
     assert.equal(result.correction.before.length, 2);
     assert.equal(result.correction.after.length, 7);
     assert.equal(result.correction.savedTeamId, "saved-team-1");
-    assert.deepEqual(registrationDeletes, [{ where: { registrationId: "registration-1", role: { not: "CAPTAIN" } } }]);
-    assert.equal(registrationCreates[0].data.length, 6);
+    assert.deepEqual(registrationDeletes, [{ where: { registrationId: "registration-1" } }]);
+    assert.equal(registrationCreates[0].data.length, 7);
     assert.deepEqual(registrationCreates[0].data.map(({ role, memberOrder }) => ({ role, memberOrder })), [
+      { role: "CAPTAIN", memberOrder: 0 },
       { role: "PLAYER", memberOrder: 1 },
       { role: "PLAYER", memberOrder: 2 },
       { role: "PLAYER", memberOrder: 3 },
@@ -1298,9 +1306,123 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
       { role: "SUBSTITUTE", memberOrder: 2 },
     ]);
     assert.ok(registrationCreates[0].data.every((member) => member.inviteStatus === "accepted" && member.userId));
-    assert.deepEqual(registrationUpdates, [{ where: { id: "registration-1" }, data: { verificationStatus: "verified" } }]);
-    assert.deepEqual(savedTeamDeletes, [{ where: { teamId: "saved-team-1", role: { not: "CAPTAIN" } } }]);
-    assert.equal(savedTeamCreates[0].data.length, 6);
+    assert.deepEqual(registrationUpdates, [{ where: { id: "registration-1" }, data: {
+      userId: "user-1",
+      captainName: "Captain",
+      captainEmail: "captain@example.com",
+      captainPhone: "0770000000",
+      captainDiscord: "captain",
+      captainRiotId: "Captain#001",
+      contactEmail: "captain@example.com",
+      verificationStatus: "verified",
+    } }]);
+    assert.deepEqual(savedTeamDeletes, [{ where: { teamId: "saved-team-1" } }]);
+    assert.equal(savedTeamCreates[0].data.length, 7);
+  } finally {
+    restore();
+  }
+});
+
+test("correctTeamRegistrationRoster transfers captain ownership with the linked saved team", async () => {
+  const registrationUpdates = [];
+  const savedTeamUpdates = [];
+  const currentMembers = [
+    { id: "old-captain", role: "CAPTAIN", memberOrder: 0, name: "Old Captain", email: "old@example.com", emailNormalized: "old@example.com", discord: "old", riotId: "Old#001", additionalData: {}, inviteStatus: "accepted" },
+    { id: "new-captain", role: "PLAYER", memberOrder: 1, name: "New Captain", email: "new@example.com", emailNormalized: "new@example.com", discord: "new", riotId: "New#001", additionalData: {}, inviteStatus: "accepted" },
+  ];
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({
+        id: "registration-1",
+        tournamentId: "tournament-1",
+        savedTeamId: "saved-team-1",
+        entryType: "team",
+        captainEmail: "old@example.com",
+        captainPhone: "0771111111",
+        contactEmail: "old@example.com",
+        additionalData: {},
+        tournament: {
+          id: "tournament-1",
+          title: "Quest Cup",
+          game: "Valorant",
+          registrationFields: [],
+          minRosterSize: 2,
+          maxRosterSize: 2,
+          maxSubstitutes: 0,
+        },
+        members: currentMembers,
+        savedTeam: {
+          id: "saved-team-1",
+          name: "Quest Five",
+          members: currentMembers.map((member) => ({ ...member, teamId: "saved-team-1" })),
+          registrations: [{ id: "registration-1" }],
+        },
+      }),
+      update: async (args) => registrationUpdates.push(args),
+    },
+    user: {
+      findMany: async () => [
+        { id: "old-user", email: "old@example.com", emailNormalized: "old@example.com", emailVerified: true, phone: "0771111111" },
+        { id: "new-user", email: "new@example.com", emailNormalized: "new@example.com", emailVerified: true, phone: "0772222222" },
+      ],
+    },
+    registrationMember: {
+      findMany: async () => [],
+      deleteMany: async () => undefined,
+      createMany: async () => undefined,
+    },
+    savedTeamMember: {
+      deleteMany: async () => undefined,
+      createMany: async () => undefined,
+    },
+    savedTeam: {
+      findFirst: async () => null,
+      update: async (args) => savedTeamUpdates.push(args),
+    },
+  };
+  const detail = {
+    id: "registration-1",
+    savedTeamId: "saved-team-1",
+    entryType: "team",
+    teamName: "Quest Five",
+    additionalData: {},
+    reservedUntil: null,
+    status: "approved",
+    paymentStatus: "paid",
+    verificationStatus: "verified",
+    createdAt: new Date(),
+    contactEmail: "new@example.com",
+    captainName: "New Captain",
+    captainEmail: "new@example.com",
+    captainPhone: "0772222222",
+    captainDiscord: "new",
+    captainRiotId: "New#001",
+    tournament: { id: "tournament-1", title: "Quest Cup" },
+    members: [],
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+    teamRegistration: { findUnique: async () => detail },
+  });
+
+  try {
+    const result = await adminService.correctTeamRegistrationRoster("registration-1", {
+      syncSavedTeam: true,
+      members: [
+        { id: "new-captain", role: "CAPTAIN", name: "New Captain", email: "new@example.com", discord: "new", gameId: "New#001" },
+        { id: "old-captain", role: "PLAYER", name: "Old Captain", email: "old@example.com", discord: "old", gameId: "Old#001" },
+      ],
+    });
+
+    assert.equal(result.correction.captainChanged, true);
+    assert.equal(registrationUpdates[0].data.userId, "new-user");
+    assert.equal(registrationUpdates[0].data.captainEmail, "new@example.com");
+    assert.equal(registrationUpdates[0].data.captainPhone, "0772222222");
+    assert.equal(registrationUpdates[0].data.contactEmail, "new@example.com");
+    assert.deepEqual(savedTeamUpdates, [{
+      where: { id: "saved-team-1" },
+      data: { captainUserId: "new-user" },
+    }]);
   } finally {
     restore();
   }
@@ -1315,6 +1437,9 @@ test("correctTeamRegistrationRoster rejects missing or unverified Quest accounts
         savedTeamId: null,
         entryType: "team",
         captainEmail: "captain@example.com",
+        captainPhone: "0770000000",
+        contactEmail: "captain@example.com",
+        additionalData: {},
         tournament: {
           id: "tournament-1",
           title: "Quest Cup",
@@ -1328,7 +1453,13 @@ test("correctTeamRegistrationRoster rejects missing or unverified Quest accounts
         savedTeam: null,
       }),
     },
-    user: { findMany: async () => [] },
+    user: { findMany: async () => [{
+      id: "captain-user",
+      email: "captain@example.com",
+      emailNormalized: "captain@example.com",
+      emailVerified: true,
+      phone: "0770000000",
+    }] },
   };
   const { module: adminService, restore } = loadAdminService({
     $transaction: async (work) => work(tx),
@@ -1337,7 +1468,10 @@ test("correctTeamRegistrationRoster rejects missing or unverified Quest accounts
   try {
     await assert.rejects(
       adminService.correctTeamRegistrationRoster("registration-1", {
-        members: [{ role: "PLAYER", name: "New Player", email: "new@example.com", discord: "new", gameId: "New#001" }],
+        members: [
+          { role: "CAPTAIN", name: "Captain", email: "captain@example.com", discord: "captain", gameId: "Captain#001" },
+          { role: "PLAYER", name: "New Player", email: "new@example.com", discord: "new", gameId: "New#001" },
+        ],
       }),
       (error) => error.statusCode === 409 && /verified Quest account/.test(error.message)
     );

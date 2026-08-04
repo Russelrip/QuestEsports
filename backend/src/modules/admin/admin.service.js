@@ -824,25 +824,25 @@ const updateTeamRegistrationGameIds = async (registrationId, body = {}) => {
   return getAdminTeamRegistrationById(registrationId);
 };
 
-const ADMIN_ROSTER_ROLES = new Set(["PLAYER", "SUBSTITUTE"]);
+const ADMIN_ROSTER_ROLES = new Set(["CAPTAIN", "PLAYER", "SUBSTITUTE"]);
 
 const normalizeAdminRosterMembers = (body = {}) => {
   const requestedMembers = Array.isArray(body.members) ? body.members : [];
-  if (requestedMembers.length > 19) {
-    throw new HttpError(400, "A registration can include up to 20 roster members including the captain.");
+  if (requestedMembers.length < 1 || requestedMembers.length > 20) {
+    throw new HttpError(400, "A registration must include a captain and can include up to 20 roster members.");
   }
 
-  const roleCounts = { PLAYER: 0, SUBSTITUTE: 0 };
+  const roleCounts = { CAPTAIN: 0, PLAYER: 0, SUBSTITUTE: 0 };
   const members = requestedMembers.map((member) => {
     const role = normalizeText(member?.role).toUpperCase();
     if (!ADMIN_ROSTER_ROLES.has(role)) {
-      throw new HttpError(400, "Roster corrections may only include players and substitutes.");
+      throw new HttpError(400, "Roster corrections may only include a captain, players, and substitutes.");
     }
     roleCounts[role] += 1;
     return {
       id: normalizeText(member?.id) || null,
       role,
-      memberOrder: roleCounts[role],
+      memberOrder: role === "CAPTAIN" ? 0 : roleCounts[role],
       name: normalizeText(member?.name),
       email: normalizeEmail(member?.email),
       discord: normalizeText(member?.discord),
@@ -865,6 +865,9 @@ const normalizeAdminRosterMembers = (body = {}) => {
 
   if (new Set(members.map((member) => member.email)).size !== members.length) {
     throw new HttpError(400, "Roster member emails must be unique.");
+  }
+  if (roleCounts.CAPTAIN !== 1) {
+    throw new HttpError(400, "The corrected roster must include exactly one captain.");
   }
 
   return members;
@@ -892,7 +895,10 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
         },
         members: { orderBy: [{ role: "asc" }, { memberOrder: "asc" }] },
         savedTeam: {
-          include: { members: true },
+          include: {
+            members: true,
+            registrations: { select: { id: true } },
+          },
         },
       },
     });
@@ -904,10 +910,26 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       throw new HttpError(409, "This registration is not linked to a saved team.");
     }
 
-    const captain = registration.members.find((member) => member.role === "CAPTAIN");
-    if (!captain) throw new HttpError(409, "This registration does not have a valid captain roster record.");
+    const currentCaptain = registration.members.find((member) => member.role === "CAPTAIN");
+    if (!currentCaptain) throw new HttpError(409, "This registration does not have a valid captain roster record.");
+    const requestedCaptain = requestedMembers.find((member) => member.role === "CAPTAIN");
+    const currentCaptainEmail = normalizeEmail(registration.captainEmail || currentCaptain.email);
+    const captainChanged = requestedCaptain.email !== currentCaptainEmail;
+    if (captainChanged && registration.savedTeam && !syncSavedTeam) {
+      throw new HttpError(409, "Changing the captain of a linked registration also requires saved-team synchronization.");
+    }
+    if (
+      captainChanged &&
+      syncSavedTeam &&
+      registration.savedTeam.registrations.some((linkedRegistration) => linkedRegistration.id !== registrationId)
+    ) {
+      throw new HttpError(
+        409,
+        "This saved team is linked to other registrations. Use the full team captain-transfer action before correcting this tournament roster."
+      );
+    }
 
-    const playerCount = 1 + requestedMembers.filter((member) => member.role === "PLAYER").length;
+    const playerCount = requestedMembers.filter((member) => member.role === "CAPTAIN" || member.role === "PLAYER").length;
     const substituteCount = requestedMembers.filter((member) => member.role === "SUBSTITUTE").length;
     if (
       playerCount < registration.tournament.minRosterSize ||
@@ -923,11 +945,6 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       );
     }
 
-    const captainEmail = normalizeEmail(registration.captainEmail || captain.email);
-    if (!captainEmail || requestedMembers.some((member) => member.email === captainEmail)) {
-      throw new HttpError(400, "The captain must appear exactly once and cannot also be added as a roster member.");
-    }
-
     const requestedEmails = requestedMembers.map((member) => member.email);
     const users = requestedEmails.length > 0
       ? await tx.user.findMany({
@@ -937,6 +954,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
             email: true,
             emailNormalized: true,
             emailVerified: true,
+            phone: true,
           },
         })
       : [];
@@ -947,6 +965,10 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
         409,
         `Every corrected roster member must have a verified Quest account. Missing or unverified: ${missingAccounts.join(", ")}.`
       );
+    }
+    const captainAccount = usersByEmail.get(requestedCaptain.email);
+    if (captainChanged && !normalizeText(captainAccount.phone)) {
+      throw new HttpError(409, "The new captain must add a phone number to their Quest profile first.");
     }
 
     const tournamentConflicts = requestedEmails.length > 0
@@ -970,11 +992,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       );
     }
 
-    const existingById = new Map(
-      registration.members
-        .filter((member) => member.role !== "CAPTAIN")
-        .map((member) => [member.id, member])
-    );
+    const existingById = new Map(registration.members.map((member) => [member.id, member]));
     const registrationFields = Array.isArray(registration.tournament.registrationFields)
       ? registration.tournament.registrationFields
       : [];
@@ -1016,75 +1034,97 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       riotId: member.riotId,
     }));
 
-    await tx.registrationMember.deleteMany({
-      where: { registrationId, role: { not: "CAPTAIN" } },
+    const nextCaptain = nextMembers.find((member) => member.role === "CAPTAIN");
+    const entryData = syncGameIdentityData({
+      additionalData: registration.additionalData,
+      registrationFields,
+      scope: "entry",
+      game: registration.tournament.game,
+      gameId: nextCaptain.riotId,
     });
-    if (nextMembers.length > 0) {
-      await tx.registrationMember.createMany({ data: nextMembers });
-    }
+
+    await tx.registrationMember.deleteMany({ where: { registrationId } });
+    await tx.registrationMember.createMany({ data: nextMembers });
     await tx.teamRegistration.update({
       where: { id: registrationId },
-      data: { verificationStatus: "verified" },
+      data: {
+        userId: nextCaptain.userId,
+        captainName: nextCaptain.name,
+        captainEmail: nextCaptain.emailNormalized,
+        captainPhone: captainChanged ? normalizeText(captainAccount.phone) : registration.captainPhone,
+        captainDiscord: nextCaptain.discord,
+        captainRiotId: nextCaptain.riotId,
+        contactEmail: captainChanged ? nextCaptain.emailNormalized : registration.contactEmail,
+        verificationStatus: "verified",
+        ...(entryData.changed ? { additionalData: entryData.data } : {}),
+      },
     });
 
     if (syncSavedTeam) {
       const savedCaptain = registration.savedTeam.members.find((member) => member.role === "CAPTAIN");
-      if (!savedCaptain || savedCaptain.emailNormalized !== captainEmail) {
+      if (!savedCaptain || savedCaptain.emailNormalized !== currentCaptainEmail) {
         throw new HttpError(409, "The linked saved team and registration do not have the same captain.");
+      }
+      if (captainChanged) {
+        const ownedTeamConflict = await tx.savedTeam.findFirst({
+          where: {
+            id: { not: registration.savedTeam.id },
+            captainUserId: nextCaptain.userId,
+            name: registration.savedTeam.name,
+          },
+          select: { id: true },
+        });
+        if (ownedTeamConflict) {
+          throw new HttpError(409, "The new captain already owns another saved team with this name.");
+        }
       }
       const savedByEmail = new Map(
         registration.savedTeam.members.map((member) => [member.emailNormalized, member])
       );
-      await tx.savedTeamMember.deleteMany({
-        where: { teamId: registration.savedTeam.id, role: { not: "CAPTAIN" } },
+      await tx.savedTeamMember.deleteMany({ where: { teamId: registration.savedTeam.id } });
+      await tx.savedTeamMember.createMany({
+        data: nextMembers.map((member) => {
+          const existingMember = savedByEmail.get(member.emailNormalized);
+          return {
+            id: crypto.randomUUID(),
+            teamId: registration.savedTeam.id,
+            userId: member.userId,
+            role: member.role,
+            memberOrder: member.memberOrder,
+            name: member.name,
+            email: member.email,
+            emailNormalized: member.emailNormalized,
+            discord: member.discord,
+            riotId: member.riotId,
+            inviteStatus: "accepted",
+            inviteTokenHash: null,
+            inviteSentAt: existingMember?.inviteSentAt || null,
+            inviteExpiresAt: null,
+            inviteRespondedAt: existingMember?.inviteRespondedAt || respondedAt,
+          };
+        }),
       });
-      if (nextMembers.length > 0) {
-        await tx.savedTeamMember.createMany({
-          data: nextMembers.map((member) => {
-            const existingMember = savedByEmail.get(member.emailNormalized);
-            return {
-              id: crypto.randomUUID(),
-              teamId: registration.savedTeam.id,
-              userId: member.userId,
-              role: member.role,
-              memberOrder: member.memberOrder,
-              name: member.name,
-              email: member.email,
-              emailNormalized: member.emailNormalized,
-              discord: member.discord,
-              riotId: member.riotId,
-              inviteStatus: "accepted",
-              inviteTokenHash: null,
-              inviteSentAt: existingMember?.inviteSentAt || null,
-              inviteExpiresAt: null,
-              inviteRespondedAt: existingMember?.inviteRespondedAt || respondedAt,
-            };
-          }),
+      if (captainChanged) {
+        await tx.savedTeam.update({
+          where: { id: registration.savedTeam.id },
+          data: { captainUserId: nextCaptain.userId },
         });
       }
     }
 
     return {
       before,
-      after: [
-        {
-          id: captain.id,
-          role: captain.role,
-          name: captain.name,
-          email: captain.email,
-          riotId: captain.riotId,
-        },
-        ...nextMembers.map((member) => ({
+      after: nextMembers.map((member) => ({
           id: member.id,
           role: member.role,
           name: member.name,
           email: member.email,
           riotId: member.riotId,
         })),
-      ],
       savedTeamId: syncSavedTeam ? registration.savedTeam.id : null,
+      captainChanged,
     };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
   return {
     registration: await getAdminTeamRegistrationById(registrationId),

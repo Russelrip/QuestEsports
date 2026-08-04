@@ -102,7 +102,7 @@ available again.
 
 ## Paid Roster Corrections
 
-Admins can replace the non-captain roster from a registration detail view, including registrations that are already approved and paid. The captain remains fixed. Each corrected player or substitute must provide a name, verified Quest account email, Discord username, and Game ID, and cannot already belong to another non-rejected registration in the same tournament.
+Admins can replace the full roster from a registration detail view, including registrations that are already approved and paid. The corrected roster must contain exactly one captain. Every member must provide a name, verified Quest account email, Discord username, and Game ID, and cannot already belong to another non-rejected registration in the same tournament.
 
 The correction is validated against the tournament's active-player and substitute limits. Admins may also replace the linked reusable saved-team roster in the same database transaction. Approval and payment state are preserved, accepted account links are rebuilt, verification is marked verified, and the action is recorded as `team_registration.roster_corrected`.
 
@@ -110,7 +110,7 @@ The correction is validated against the tournament's active-player and substitut
 PATCH /api/admin/team-registrations/:registrationId/roster
 ```
 
-Use the saved-team option only when players are joining or leaving the reusable team, not for a tournament-only exception. Historical registrations other than the selected registration are not rewritten.
+Use the saved-team option only when players are joining or leaving the reusable team, not for a tournament-only exception. Changing the captain of a linked saved team requires this option, transfers registration and saved-team ownership, and requires a phone number on the new captain's account. A roster correction cannot change the captain when that saved team has other linked registrations; use the separate full captain-transfer action in that case. Historical registrations other than the selected registration are not rewritten.
 
 ## Registration Deletion
 

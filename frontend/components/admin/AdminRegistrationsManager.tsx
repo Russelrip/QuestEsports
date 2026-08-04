@@ -22,7 +22,7 @@ import {
 type RosterDraftMember = {
   key: string;
   id?: string;
-  role: "PLAYER" | "SUBSTITUTE";
+  role: "CAPTAIN" | "PLAYER" | "SUBSTITUTE";
   name: string;
   email: string;
   discord: string;
@@ -235,12 +235,10 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
       ])
     ));
     setRosterMembers(
-      registration.members
-        .filter((member) => member.role !== "CAPTAIN")
-        .map((member) => ({
+      registration.members.map((member) => ({
           key: member.id,
           id: member.id,
-          role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
+          role: member.role === "CAPTAIN" ? "CAPTAIN" : member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
           name: member.name,
           email: member.email || "",
           discord: member.discord || "",
@@ -258,7 +256,12 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
 
   const saveRosterCorrection = async () => {
     if (!registration) return;
-    const playerCount = 1 + rosterMembers.filter((member) => member.role === "PLAYER").length;
+    const captainCount = rosterMembers.filter((member) => member.role === "CAPTAIN").length;
+    if (captainCount !== 1) {
+      showToast({ tone: "error", title: "Choose exactly one captain" });
+      return;
+    }
+    const playerCount = rosterMembers.filter((member) => member.role === "CAPTAIN" || member.role === "PLAYER").length;
     const substituteCount = rosterMembers.filter((member) => member.role === "SUBSTITUTE").length;
     const savedTeamMessage = syncSavedTeam ? " The linked saved-team roster will also be replaced." : "";
     if (!window.confirm(
@@ -400,7 +403,7 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
                 <div>
                   <h4 className="text-sm font-semibold uppercase tracking-wide text-amber-100">Roster correction</h4>
                   <p className="mt-1 max-w-3xl text-sm text-slate-400">
-                    The captain remains fixed. Replacing this list is allowed for paid registrations, requires verified Quest accounts, and is recorded in the audit log.
+                    Choose exactly one captain. Replacing this list is allowed for paid registrations, requires verified Quest accounts, and is recorded in the audit log.
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
                     Event limits: {registration.tournament.minRosterSize || 1}-{registration.tournament.maxRosterSize || 1} active players including the captain, up to {registration.tournament.maxSubstitutes || 0} substitutes.
@@ -411,17 +414,11 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
                 </Button>
               </div>
 
-              <div className="mt-4 border border-white/10 bg-black/15 p-4">
-                <p className="font-semibold text-white">{registration.captain.name}</p>
-                <p className="mt-1 text-sm text-slate-400">Captain · {registration.captain.email}</p>
-                <p className="mt-1 text-sm text-slate-500">{registration.captain.riotId} · Discord {registration.captain.discord}</p>
-              </div>
-
-              <div className="mt-3 grid gap-3">
+              <div className="mt-4 grid gap-3">
                 {rosterMembers.map((member, index) => (
                   <div key={member.key} className="border border-white/10 bg-black/15 p-4">
                     <div className="mb-3 flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-white">Roster member {index + 2}</p>
+                      <p className="text-sm font-semibold text-white">Roster member {index + 1}</p>
                       <Button
                         type="button"
                         variant="danger"
@@ -432,7 +429,7 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
                       </Button>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      <label className="grid gap-1 text-sm text-slate-300">Role<Select value={member.role} onChange={(event) => updateRosterMember(member.key, "role", event.target.value)}><option value="PLAYER">Main player</option><option value="SUBSTITUTE">Substitute</option></Select></label>
+                      <label className="grid gap-1 text-sm text-slate-300">Role<Select value={member.role} onChange={(event) => updateRosterMember(member.key, "role", event.target.value)}><option value="CAPTAIN">Captain</option><option value="PLAYER">Main player</option><option value="SUBSTITUTE">Substitute</option></Select></label>
                       <label className="grid gap-1 text-sm text-slate-300">Player name<Input required value={member.name} onChange={(event) => updateRosterMember(member.key, "name", event.target.value)} /></label>
                       <label className="grid gap-1 text-sm text-slate-300">Quest account email<Input required type="email" value={member.email} onChange={(event) => updateRosterMember(member.key, "email", event.target.value)} /></label>
                       <label className="grid gap-1 text-sm text-slate-300">Game ID<Input required value={member.gameId} onChange={(event) => updateRosterMember(member.key, "gameId", event.target.value)} /></label>
@@ -443,14 +440,14 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
               </div>
 
               <div className="mt-4 flex flex-wrap gap-3">
-                <Button type="button" variant="secondary" disabled={busyAction !== null || rosterMembers.length >= 19} onClick={() => setRosterMembers((current) => [...current, createRosterDraftMember("PLAYER")])}>Add main player</Button>
-                <Button type="button" variant="secondary" disabled={busyAction !== null || rosterMembers.length >= 19} onClick={() => setRosterMembers((current) => [...current, createRosterDraftMember("SUBSTITUTE")])}>Add substitute</Button>
+                <Button type="button" variant="secondary" disabled={busyAction !== null || rosterMembers.length >= 20} onClick={() => setRosterMembers((current) => [...current, createRosterDraftMember("PLAYER")])}>Add main player</Button>
+                <Button type="button" variant="secondary" disabled={busyAction !== null || rosterMembers.length >= 20} onClick={() => setRosterMembers((current) => [...current, createRosterDraftMember("SUBSTITUTE")])}>Add substitute</Button>
               </div>
 
               {registration.savedTeamLinked ? (
                 <label className="mt-4 flex items-start gap-3 border border-white/10 bg-black/15 p-4 text-sm text-slate-300">
                   <input type="checkbox" className="mt-1" checked={syncSavedTeam} onChange={(event) => setSyncSavedTeam(event.target.checked)} />
-                  <span><span className="font-semibold text-white">Replace the linked saved-team roster too</span><span className="mt-1 block text-xs text-slate-500">Use this when players are joining or leaving the reusable team, not only this tournament.</span></span>
+                  <span><span className="font-semibold text-white">Replace the linked saved-team roster too</span><span className="mt-1 block text-xs text-slate-500">Required when changing the captain. This also transfers saved-team ownership.</span></span>
                 </label>
               ) : null}
             </div>
