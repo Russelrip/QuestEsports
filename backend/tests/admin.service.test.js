@@ -826,6 +826,205 @@ test("updateAdminSavedTeam syncs a renamed team across registrations, brackets, 
   }
 });
 
+test("transferAdminSavedTeamCaptain promotes an accepted member and removes the former captain everywhere", async () => {
+  const savedMemberDeletes = [];
+  const savedMemberUpdates = [];
+  const savedTeamUpdates = [];
+  const registrationMemberDeletes = [];
+  const registrationMemberUpdates = [];
+  const registrationUpdates = [];
+  const sourceTeam = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    captainUserId: "captain-user",
+    captainUser: {
+      id: "captain-user",
+      firstName: "Former",
+      lastName: "Captain",
+      username: "former-captain",
+      email: "former@example.com",
+      emailNormalized: "former@example.com",
+    },
+    members: [
+      {
+        id: "saved-captain",
+        userId: "captain-user",
+        role: "CAPTAIN",
+        memberOrder: 0,
+        name: "Former Captain",
+        email: "former@example.com",
+        emailNormalized: "former@example.com",
+        discord: "former",
+        riotId: "Former#001",
+        inviteStatus: "accepted",
+        user: null,
+      },
+      {
+        id: "saved-player",
+        userId: "player-user",
+        role: "PLAYER",
+        memberOrder: 1,
+        name: "New Captain",
+        email: "new@example.com",
+        emailNormalized: "new@example.com",
+        discord: "new-discord",
+        riotId: "New#002",
+        inviteStatus: "accepted",
+        user: {
+          id: "player-user",
+          email: "new@example.com",
+          emailNormalized: "new@example.com",
+          emailVerified: true,
+          phone: "0771234567",
+          discordTag: "new-profile",
+        },
+      },
+    ],
+    registrations: [
+      {
+        id: "registration-1",
+        tournamentId: "tournament-1",
+        captainEmail: "former@example.com",
+        additionalData: {},
+        tournament: {
+          title: "Quest Cup",
+          game: "Valorant",
+          registrationFields: [],
+        },
+        members: [
+          {
+            id: "registration-captain",
+            userId: "captain-user",
+            role: "CAPTAIN",
+            name: "Former Captain",
+            email: "former@example.com",
+            emailNormalized: "former@example.com",
+            discord: "former",
+            riotId: "Former#001",
+            additionalData: {},
+            inviteStatus: "accepted",
+          },
+          {
+            id: "registration-player",
+            userId: "player-user",
+            role: "PLAYER",
+            name: "New Captain",
+            email: "new@example.com",
+            emailNormalized: "new@example.com",
+            discord: "new-discord",
+            riotId: "New#002",
+            additionalData: {},
+            inviteStatus: "accepted",
+          },
+        ],
+      },
+    ],
+  };
+  const updatedTeam = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    teamTag: "Q5",
+    logoName: null,
+    country: "Sri Lanka",
+    organizationName: null,
+    updatedAt: new Date("2026-08-03T10:00:00.000Z"),
+    captainUser: { firstName: "New", lastName: "Captain", username: "new-captain" },
+    members: [
+      { id: "saved-player", role: "CAPTAIN", name: "New Captain", email: "new@example.com", discord: "new-discord", riotId: "New#002", inviteStatus: "accepted" },
+    ],
+    _count: { members: 1 },
+  };
+  const tx = {
+    savedTeam: {
+      findUnique: async () => sourceTeam,
+      findFirst: async () => null,
+      update: async (args) => savedTeamUpdates.push(args),
+    },
+    savedTeamMember: {
+      delete: async (args) => savedMemberDeletes.push(args),
+      update: async (args) => savedMemberUpdates.push(args),
+    },
+    teamRegistration: {
+      findFirst: async () => null,
+      update: async (args) => registrationUpdates.push(args),
+    },
+    registrationMember: {
+      delete: async (args) => registrationMemberDeletes.push(args),
+      update: async (args) => registrationMemberUpdates.push(args),
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: { findUnique: async () => updatedTeam },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.transferAdminSavedTeamCaptain({
+      teamId: "saved-team-1",
+      memberId: "saved-player",
+    });
+
+    assert.deepEqual(savedMemberDeletes, [{ where: { id: "saved-captain" } }]);
+    assert.equal(savedMemberUpdates[0].data.role, "CAPTAIN");
+    assert.equal(savedMemberUpdates[0].data.memberOrder, 0);
+    assert.deepEqual(savedTeamUpdates, [{ where: { id: "saved-team-1" }, data: { captainUserId: "player-user" } }]);
+    assert.deepEqual(registrationMemberDeletes, [{ where: { id: "registration-captain" } }]);
+    assert.equal(registrationMemberUpdates[0].data.role, "CAPTAIN");
+    assert.equal(registrationUpdates[0].data.userId, "player-user");
+    assert.equal(registrationUpdates[0].data.captainEmail, "new@example.com");
+    assert.equal(registrationUpdates[0].data.captainPhone, "0771234567");
+    assert.equal(result.team.captainName, "New Captain");
+    assert.deepEqual(result.transfer.registrationIds, ["registration-1"]);
+  } finally {
+    restore();
+  }
+});
+
+test("transferAdminSavedTeamCaptain requires a phone before transferring linked registrations", async () => {
+  const sourceTeam = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    captainUserId: "captain-user",
+    captainUser: {
+      id: "captain-user",
+      firstName: "Former",
+      lastName: "Captain",
+      username: "former-captain",
+      email: "former@example.com",
+      emailNormalized: "former@example.com",
+    },
+    members: [
+      { id: "saved-captain", userId: "captain-user", role: "CAPTAIN", memberOrder: 0, name: "Former Captain", email: "former@example.com", emailNormalized: "former@example.com", discord: "former", riotId: "Former#001", inviteStatus: "accepted", user: null },
+      {
+        id: "saved-player",
+        userId: "player-user",
+        role: "PLAYER",
+        memberOrder: 1,
+        name: "New Captain",
+        email: "new@example.com",
+        emailNormalized: "new@example.com",
+        discord: "new-discord",
+        riotId: "New#002",
+        inviteStatus: "accepted",
+        user: { id: "player-user", email: "new@example.com", emailNormalized: "new@example.com", emailVerified: true, phone: null, discordTag: "new-profile" },
+      },
+    ],
+    registrations: [{ id: "registration-1" }],
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work({ savedTeam: { findUnique: async () => sourceTeam } }),
+  });
+
+  try {
+    await assert.rejects(
+      adminService.transferAdminSavedTeamCaptain({ teamId: "saved-team-1", memberId: "saved-player" }),
+      (error) => error.statusCode === 409 && /phone number/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("listTeamRegistrations returns paginated summaries without loading rosters", async () => {
   const findManyCalls = [];
   const prisma = {

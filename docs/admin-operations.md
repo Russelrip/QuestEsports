@@ -37,6 +37,14 @@ Logo replacements and removals are copied to every tournament registration linke
 
 Team-name changes are copied to every linked tournament registration, native bracket seed and participant, and exact team-name cells in saved tournament schedules. Registration-backed account, payment, export, admin, and public tournament views therefore show the current saved-team name.
 
+## Captain Transfers
+
+Admins can transfer captain ownership to an accepted roster member from the team detail view at `/admin/teams`. The action is intentionally separate from ordinary roster editing and always removes the former captain.
+
+The new captain must have an accepted roster place linked to a verified Quest account. If the team has linked tournament registrations, the account must also have a phone number and the member must have an accepted place, Discord handle, and Game ID in every linked registration.
+
+The transfer runs as one serializable database transaction. It changes saved-team ownership, promotes the selected member, removes the former captain, transfers each linked registration and registration roster, and updates registration contact and game-identity data. Conflicting team ownership or a second registration for the new captain in the same tournament blocks the entire operation. Successful transfers are written to the audit log as `saved_team.captain_transferred`.
+
 ## Saved Team Deletion
 
 Admins can delete a saved team from `/admin/teams`:

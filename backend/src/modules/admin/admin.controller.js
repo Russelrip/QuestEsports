@@ -1,4 +1,5 @@
 const { asyncHandler } = require("../../lib/async-handler");
+const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const {
   getAdminDashboardData,
   listAdminUsers,
@@ -26,6 +27,7 @@ const {
   getAdminSavedTeamById,
   updateAdminSavedTeam,
   updateAdminSavedTeamOrganization,
+  transferAdminSavedTeamCaptain,
   deleteAdminSavedTeam,
   reserveAdminRegistrationSlot,
   releaseAdminRegistrationSlot,
@@ -296,6 +298,30 @@ const updateSavedTeam = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "Team updated successfully.", team });
 });
 
+const transferSavedTeamCaptain = asyncHandler(async (req, res) => {
+  const result = await transferAdminSavedTeamCaptain({
+    teamId: req.params.teamId,
+    memberId: req.body?.memberId,
+  });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "saved_team.captain_transferred",
+    targetType: "SavedTeam",
+    targetId: req.params.teamId,
+    beforeData: result.transfer.before,
+    afterData: {
+      ...result.transfer.after,
+      removedMemberId: result.transfer.removedMemberId,
+      registrationIds: result.transfer.registrationIds,
+    },
+  });
+  res.status(200).json({
+    success: true,
+    message: "Captain transferred and former captain removed successfully.",
+    team: result.team,
+  });
+});
+
 const removeSavedTeam = asyncHandler(async (req, res) => {
   await deleteAdminSavedTeam(req.params.teamId);
   res.status(200).json({ success: true, message: "Team deleted successfully." });
@@ -330,5 +356,6 @@ module.exports = {
   getSavedTeam,
   updateSavedTeam,
   updateSavedTeamOrganization,
+  transferSavedTeamCaptain,
   removeSavedTeam,
 };

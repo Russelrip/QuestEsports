@@ -494,6 +494,9 @@ const additionalPaths = {
     patch: createOperation("Admin", "Update a saved team and roster", { authenticated: true, parameters: idParameter("teamId") }),
     delete: createOperation("Admin", "Delete a saved team", { authenticated: true, parameters: idParameter("teamId") }),
   },
+  "/api/admin/teams/{teamId}/captain-transfer": {
+    post: createOperation("Admin", "Transfer saved-team captain and remove the former captain", { authenticated: true, parameters: idParameter("teamId") }),
+  },
   "/api/admin/teams/{teamId}/organization": { patch: createOperation("Admin", "Update team organization status", { authenticated: true, parameters: idParameter("teamId") }) },
   "/api/admin/game-categories": {
     get: createOperation("Admin", "List game categories", { authenticated: true }),

@@ -258,7 +258,7 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
   const [members, setMembers] = useState(team.members);
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
-  const [busyAction, setBusyAction] = useState<"save" | "delete" | null>(null);
+  const [busyAction, setBusyAction] = useState<"save" | "delete" | `transfer:${string}` | null>(null);
   const showToast = useToastStore((state) => state.showToast);
 
   useEffect(() => {
@@ -309,6 +309,34 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
       await onDeleted();
     } catch (error) {
       showToast({ tone: "error", title: "Unable to delete team", description: error instanceof Error ? error.message : "Request failed." });
+      setBusyAction(null);
+    }
+  };
+
+  const transferCaptain = async (member: TeamMember) => {
+    if (!window.confirm(
+      `Make ${member.name} the captain of ${team.name}? The current captain will be removed from the saved roster and every linked tournament registration.`
+    )) return;
+
+    setBusyAction(`transfer:${member.id}`);
+    try {
+      await adminRequest(`/api/admin/teams/${team.id}/captain-transfer`, {
+        method: "POST",
+        json: { memberId: member.id },
+      });
+      showToast({
+        tone: "success",
+        title: "Captain transferred",
+        description: `${member.name} is now captain and the former captain was removed.`,
+      });
+      await onChanged();
+    } catch (error) {
+      showToast({
+        tone: "error",
+        title: "Unable to transfer captain",
+        description: error instanceof Error ? error.message : "Request failed.",
+      });
+    } finally {
       setBusyAction(null);
     }
   };
@@ -366,6 +394,7 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
         <div>
           <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Roster</h4>
           <p className="mt-1 text-xs text-slate-500">Game ID changes apply to this saved team only. Existing tournament registrations keep their own Game IDs.</p>
+          <p className="mt-1 text-xs text-amber-200/80">Captain transfer is immediate: it updates linked registrations and removes the former captain from every roster.</p>
         </div>
         {members.map((member) => (
           <div key={member.id} className="min-w-0 border border-white/10 bg-black/15 p-3 sm:p-4">
@@ -376,6 +405,22 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
               <Field label="Game ID"><Input value={member.gameId || ""} onChange={(event) => updateMember(member.id, "gameId", event.target.value)} placeholder="Player ID / Riot ID" /></Field>
               <Field label="Discord"><Input value={member.discord || ""} onChange={(event) => updateMember(member.id, "discord", event.target.value)} /></Field>
               <p className="break-words self-end pb-2 text-xs capitalize text-slate-500">Invite: {member.inviteStatus.replaceAll("_", " ")}</p>
+            </div>
+            <div className="mt-3 flex justify-end border-t border-white/10 pt-3">
+              {member.role === "CAPTAIN" ? (
+                <span className="border border-purple-300/20 bg-purple-400/10 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-purple-100">Current captain</span>
+              ) : member.inviteStatus === "accepted" ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={busyAction !== null}
+                  onClick={() => void transferCaptain(member)}
+                >
+                  {busyAction === `transfer:${member.id}` ? "Transferring..." : "Make captain & remove current captain"}
+                </Button>
+              ) : (
+                <span className="text-xs text-slate-500">This member must accept their invitation before becoming captain.</span>
+              )}
             </div>
           </div>
         ))}

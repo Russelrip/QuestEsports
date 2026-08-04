@@ -31,6 +31,7 @@ const {
   getSavedTeam,
   updateSavedTeam,
   updateSavedTeamOrganization,
+  transferSavedTeamCaptain,
   removeSavedTeam,
 } = require("./admin.controller");
 
@@ -71,6 +72,11 @@ router.patch(
   updateSavedTeam
 );
 router.patch("/admin/teams/:teamId/organization", updateSavedTeamOrganization);
+router.post(
+  "/admin/teams/:teamId/captain-transfer",
+  invalidateCache("tournaments"),
+  transferSavedTeamCaptain
+);
 router.delete("/admin/teams/:teamId", removeSavedTeam);
 
 module.exports = router;
