@@ -21,6 +21,7 @@ const SAFE_PUBLIC_API_PATHS = [
   /^\/api\/event-series(?:\/[^/]+)?$/,
   /^\/api\/game-categories(?:\/[^/]+)?$/,
   /^\/api\/products(?:\/[^/]+)?$/,
+  /^\/api\/ticket-events(?:\/[^/]+)?$/,
   /^\/api\/commerce\/capabilities$/,
   /^\/api\/products\/[^/]+\/images\/[^/]+$/,
   /^\/api\/orders\/[^/]+$/,
@@ -51,7 +52,9 @@ const hasSessionCookie = (req) => {
 
 const hasNativeBearerCredential = (req) =>
   !hasSessionCookie(req) &&
-  /^Bearer\s+[a-f0-9]{96}$/i.test(String(req.headers.authorization || "").trim());
+  /^Bearer\s+[a-f0-9]{96}$/i.test(
+    String(req.headers.authorization || "").trim(),
+  );
 
 const getRequestOrigin = (req) =>
   extractOrigin(req.headers.origin) || extractOrigin(req.headers.referer);
@@ -66,21 +69,21 @@ const setSecurityHeaders = (req, res, next) => {
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader(
     "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=()"
+    "camera=(), microphone=(), geolocation=()",
   );
 
   if (req.path.startsWith("/api")) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     );
   }
 
   if (env.NODE_ENV === "production") {
     res.setHeader(
       "Strict-Transport-Security",
-      "max-age=31536000; includeSubDomains"
+      "max-age=31536000; includeSubDomains",
     );
   }
 
