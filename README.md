@@ -212,6 +212,7 @@ Recommended flow:
 - Native double-elimination bracket viewing when an admin publishes bracket data
 - Slug-bound configurable solo/team registration with free, PayHere, or tiered bank-transfer fees
 - Merchandise catalogue, product variants, cart, guest/member checkout, delivery fee, and order status
+- Event ticket catalogue, pair-bundle pricing, PayHere checkout, and one QR code per attendee
 - Join Quest recruitment application flow for solo players, complete teams, and incomplete teams
 - Email verification, login, logout, password reset, and email change flows
 - Session management and Google/Discord OAuth sign-in
@@ -228,6 +229,8 @@ Recommended flow:
 - Tournament asset management for banners, schedules, and completed-event showcase images
 - Native bracket generation from approved teams, match-result updates, and publish/unpublish controls
 - Registration review, status management, deletion, and filtered Excel export
+- Grouped registration and payment review by tournament, event, or merchandise order
+- Ticket-event management, attendee lookup, QR check-in, reissue/cancellation, and CSV reports
 - Recruitment application review, status management, deletion, and filtered Excel export
 - Contact inbox moderation
 - Poster/image asset management
@@ -310,6 +313,7 @@ QuestEsports/
 
 - `User`, `Session`, `VerificationToken`, `PasswordResetToken`, `EmailChangeToken`
 - `EventSeries`, `Tournament`, `TournamentBracket`, `TeamRegistration`, `RegistrationMember`, `PaymentTransaction`, `BankTransferProof`, `PaymentNotificationAudit`
+- `TicketEvent`, `TicketOrder`, `Ticket`, `TicketScan`
 - `Product`, `ProductVariant`, `ProductImage`, `MerchandiseOrder`, `MerchandiseOrderItem`
 - `SavedTeam`, `SavedTeamMember`
 - `ContactSubmission`
@@ -325,6 +329,7 @@ QuestEsports/
 - `/tournaments/[slug]`
 - `/tournaments/series/[slug]`
 - `/shop`, `/shop/[slug]`
+- `/tickets`, `/tickets/[slug]`
 - `/refund-policy`
 - `/privacy-policy`, `/terms-of-service`
 - `/join`
@@ -340,6 +345,7 @@ QuestEsports/
 - `/tournaments/[slug]/register`
 - `/tournaments/[slug]/payment`
 - `/shop/cart`, `/shop/order` (private capability in the URL fragment; legacy `/shop/order/[token]` redirects)
+- `/tickets/order` (private order capability in the URL fragment)
 - `/registration`
 - `/signup`
 - `/login`
@@ -364,6 +370,7 @@ QuestEsports/
 - `/admin/products`
 - `/admin/orders`
 - `/admin/payments`
+- `/admin/tickets`
 - `/admin/registrations`
 - `/admin/recruitment`
 - `/admin/rulebooks`
@@ -378,6 +385,7 @@ The backend exposes these main route groups:
 - Event series: `/api/event-series`, `/api/event-series/:slug`
 - Tournament registration: `/api/tournaments/:slug/registration-status`, `/api/tournaments/:slug/registrations`
 - Shop: `/api/products`, `/api/products/:slug`, `/api/orders`, `/api/orders/status` (private capability header), legacy `/api/orders/:publicToken`
+- Tickets: `/api/ticket-events`, `/api/ticket-events/:slug`, quote/order creation, and `/api/ticket-orders/status`
 - Payments: `/api/payments/payhere/notify`, `/api/payments/:orderId`, `/api/payments/:orderId/bank-transfer-proof`
 - Account: `/api/me/dashboard`, `/api/me/avatar`
 - Recruitment applications: `/api/recruitment-applications`
@@ -385,6 +393,7 @@ The backend exposes these main route groups:
 - Contact: `/api/contact`
 - Media: `/api/posters`, `/api/images`, `/api/uploads/...`
 - Admin: `/api/admin/...`
+- Admin ticketing: `/api/admin/ticket-events/...` and `/api/admin/tickets/:ticketId/...`
 - Admin registration/recruitment exports: `/api/admin/team-registrations/export`, `/api/admin/recruitment-applications/export`
 - Admin native brackets: `/api/admin/tournaments/:tournamentId/bracket`, `/generate`, `/matches/:matchId`, and `/publish`
 
@@ -537,6 +546,8 @@ Default local URLs:
 - Admin tournament management supports spreadsheet uploads for schedules, showcase-image uploads for completed events, and native bracket generation from approved teams.
 - Admin registration deletion removes the tournament registration source-of-truth row; saved reusable team rosters can remain for profile reuse. Captains cannot delete a saved team while it has a tournament registration.
 - Admin registration and recruitment pages can download filtered `.xlsx` exports generated on demand by the backend.
+- Registration and payment records are visually grouped by their tournament, ticket event, or merchandise order in admin.
+- Every paid event-ticket attendee receives an independently signed, one-use QR code. Browser and Android admin scanners verify it against the selected event and record every attempt.
 - Public tournament responses now include `displayPriority`, `registrationOpenAt`, `scheduleData`, `isCompleted`, `showcase`, published bracket data, bracket summaries, and per-tournament `registeredTeams` on detail pages.
 - Direct imports that touch backend config now load `.env` automatically, so scripts and one-off Node entrypoints behave the same as `node src/server.js`.
 - Public tournament detail responses include approved team names, public team-logo URLs, short codes, member counts, and statuses.

@@ -10,7 +10,10 @@ import type {
   TournamentBracketSummary,
   TournamentScheduleData,
 } from "@/lib/tournaments";
-import { formatSriLankaDateTime, sriLankaDateTimeLocalToIso } from "@/lib/date-time";
+import {
+  formatSriLankaDateTime,
+  sriLankaDateTimeLocalToIso,
+} from "@/lib/date-time";
 
 export const adminNavigationGroups = [
   {
@@ -39,6 +42,7 @@ export const adminNavigationGroups = [
   {
     label: "Commerce",
     links: [
+      { href: "/admin/tickets", label: "Ticketing" },
       { href: "/admin/products", label: "Products" },
       { href: "/admin/orders", label: "Orders" },
       { href: "/admin/payments", label: "Payments" },
@@ -151,7 +155,14 @@ export type TeamRegistration = {
 
 export type TeamRegistrationSummary = Pick<
   TeamRegistration,
-  "id" | "entryType" | "teamName" | "status" | "paymentStatus" | "verificationStatus" | "createdAt" | "tournament"
+  | "id"
+  | "entryType"
+  | "teamName"
+  | "status"
+  | "paymentStatus"
+  | "verificationStatus"
+  | "createdAt"
+  | "tournament"
 > & {
   captain: Pick<TeamRegistration["captain"], "name" | "email">;
   memberCount: number;
@@ -213,13 +224,13 @@ export type NormalizedRecruitmentApplication = Omit<
 };
 
 export const normalizeRecruitmentApplication = (
-  application: RecruitmentApplication
+  application: RecruitmentApplication,
 ): NormalizedRecruitmentApplication => ({
   ...application,
   members: Array.isArray(application.members)
     ? application.members.filter(
         (member): member is RecruitmentApplicationMember =>
-          Boolean(member) && typeof member === "object"
+          Boolean(member) && typeof member === "object",
       )
     : [],
   details:
@@ -315,11 +326,8 @@ export type ChallongeSyncLog = {
 
 export const formatAdminDateTime = (
   value?: string | null,
-  options?: Intl.DateTimeFormatOptions
-) =>
-  value
-    ? formatSriLankaDateTime(value, options)
-    : "N/A";
+  options?: Intl.DateTimeFormatOptions,
+) => (value ? formatSriLankaDateTime(value, options) : "N/A");
 
 export const formatAdminCompactDateTime = (value?: string | null) =>
   formatAdminDateTime(value, {
@@ -332,12 +340,13 @@ export const formatAdminCompactDateTime = (value?: string | null) =>
 
 export const getAdminPaginationSummary = (
   pagination: Pagination,
-  totalLabel = "total"
-) => `Page ${pagination.page} of ${pagination.totalPages} - ${pagination.total} ${totalLabel}`;
+  totalLabel = "total",
+) =>
+  `Page ${pagination.page} of ${pagination.totalPages} - ${pagination.total} ${totalLabel}`;
 
 export const adminRequest = async <T>(
   path: string,
-  options?: Parameters<typeof apiFetch>[1]
+  options?: Parameters<typeof apiFetch>[1],
 ) => {
   const response = await apiFetch(path, options);
   return parseApiResponse<T>(response);
@@ -345,7 +354,7 @@ export const adminRequest = async <T>(
 
 const getDownloadFilename = (
   contentDisposition: string | null,
-  fallbackFilename: string
+  fallbackFilename: string,
 ) => {
   if (!contentDisposition) {
     return fallbackFilename;
@@ -367,7 +376,7 @@ const getDownloadFilename = (
 
 export const downloadAdminFile = async (
   path: string,
-  fallbackFilename: string
+  fallbackFilename: string,
 ) => {
   const response = await apiFetch(path);
 
@@ -382,7 +391,7 @@ export const downloadAdminFile = async (
   link.href = objectUrl;
   link.download = getDownloadFilename(
     response.headers.get("content-disposition"),
-    fallbackFilename
+    fallbackFilename,
   );
   document.body.appendChild(link);
   link.click();
@@ -554,7 +563,7 @@ export const buildTournamentFormData = (values: TournamentFormValues) => {
   ];
 
   uploadFields.forEach(([label, file]) =>
-    assertFileWithinUploadLimit(file, ADMIN_UPLOAD_MAX_FILE_SIZE, label)
+    assertFileWithinUploadLimit(file, ADMIN_UPLOAD_MAX_FILE_SIZE, label),
   );
 
   const formData = new FormData();
@@ -585,7 +594,7 @@ export const buildTournamentFormData = (values: TournamentFormValues) => {
       key,
       sriLankaDateFields.has(key)
         ? sriLankaDateTimeLocalToIso(String(value))
-        : String(value)
+        : String(value),
     );
   });
 

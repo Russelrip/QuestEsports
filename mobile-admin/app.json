@@ -32,7 +32,13 @@
         }
       ],
       "./plugins/withAndroidReleaseSigning",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Quest Admin to scan event ticket QR codes."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

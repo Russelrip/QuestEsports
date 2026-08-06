@@ -9,14 +9,15 @@ const {
   countTournamentCapacityUsage,
 } = require("../tournaments/registration-eligibility");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
+const { sendTicketOrderEmail } = require("../../lib/mail/sendTicketOrderEmail");
 const {
   buildBankTransferInstructions,
   getBankTransferAmountForSlot,
 } = require("./bank-transfer.service");
 
 const PAYHERE_STATUS = {
-  "2": "paid",
-  "0": "pending",
+  2: "paid",
+  0: "pending",
   "-1": "cancelled",
   "-2": "failed",
   "-3": "charged_back",
@@ -30,8 +31,10 @@ const TERMINAL_FAILURE_STATUSES = new Set([
   "refunded",
 ]);
 
-const md5 = (value) => crypto.createHash("md5").update(String(value)).digest("hex");
-const sha256 = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
+const md5 = (value) =>
+  crypto.createHash("md5").update(String(value)).digest("hex");
+const sha256 = (value) =>
+  crypto.createHash("sha256").update(String(value)).digest("hex");
 const formatAmount = (value) => Number(value).toFixed(2);
 const RETRYABLE_PAYMENT_TRANSACTION_ERROR_CODES = new Set([
   "P2024",
@@ -60,19 +63,56 @@ const runSerializable = async (work) => {
   throw new Error("Payment transaction retry limit was exhausted.");
 };
 
+const queueTicketOrderConfirmation = async (ticketOrderId) => {
+  const claimedAt = new Date();
+  const claimed = await prisma.ticketOrder.updateMany({
+    where: {
+      id: ticketOrderId,
+      status: "paid",
+      confirmationEmailQueuedAt: null,
+    },
+    data: { confirmationEmailQueuedAt: claimedAt },
+  });
+  if (!claimed.count) return false;
+  try {
+    const order = await prisma.ticketOrder.findUnique({
+      where: { id: ticketOrderId },
+      include: { event: { select: { title: true } } },
+    });
+    if (!order) return false;
+    await sendTicketOrderEmail({
+      orderId: order.id,
+      email: order.email,
+      firstName: order.firstName,
+      eventTitle: order.event.title,
+      quantity: order.quantity,
+      rawToken: order.publicToken,
+    });
+    return true;
+  } catch (error) {
+    await prisma.ticketOrder
+      .updateMany({
+        where: { id: ticketOrderId, confirmationEmailQueuedAt: claimedAt },
+        data: { confirmationEmailQueuedAt: null },
+      })
+      .catch(() => undefined);
+    throw error;
+  }
+};
+
 const isPayHereConfigured = () =>
   Boolean(
     env.PAYHERE_MERCHANT_ID &&
       env.PAYHERE_MERCHANT_SECRET &&
       env.PAYHERE_NOTIFY_URL &&
-      env.APP_URL
+      env.APP_URL,
   );
 
 const assertPayHereConfigured = () => {
   if (!isPayHereConfigured()) {
     throw new HttpError(
       503,
-      "Online payments are not configured yet. Please contact Quest E-sports."
+      "Online payments are not configured yet. Please contact Quest E-sports.",
     );
   }
 };
@@ -81,12 +121,18 @@ const createCheckoutHash = ({ orderId, amount, currency }) => {
   assertPayHereConfigured();
   return md5(
     `${env.PAYHERE_MERCHANT_ID}${orderId}${formatAmount(amount)}${currency}${md5(
-      env.PAYHERE_MERCHANT_SECRET
-    ).toUpperCase()}`
+      env.PAYHERE_MERCHANT_SECRET,
+    ).toUpperCase()}`,
   ).toUpperCase();
 };
 
-const createPayHereCheckout = ({ transaction, customer, items, returnPath, cancelPath }) => {
+const createPayHereCheckout = ({
+  transaction,
+  customer,
+  items,
+  returnPath,
+  cancelPath,
+}) => {
   assertPayHereConfigured();
   const appUrl = env.APP_URL.replace(/\/$/, "");
   const currency = transaction.currency.toUpperCase();
@@ -126,20 +172,23 @@ const verifyNotificationSignature = (body) => {
   assertPayHereConfigured();
   const localSignature = md5(
     `${body.merchant_id}${body.order_id}${body.payhere_amount}${body.payhere_currency}${body.status_code}${md5(
-      env.PAYHERE_MERCHANT_SECRET
-    ).toUpperCase()}`
+      env.PAYHERE_MERCHANT_SECRET,
+    ).toUpperCase()}`,
   ).toUpperCase();
 
   const received = String(body.md5sig || "").toUpperCase();
   if (!received || received.length !== localSignature.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(received), Buffer.from(localSignature));
+  return crypto.timingSafeEqual(
+    Buffer.from(received),
+    Buffer.from(localSignature),
+  );
 };
 
 const releaseOrderStock = async (
   tx,
   orderId,
   orderStatus = "cancelled",
-  { restoreInventory = true, claimWhere = {} } = {}
+  { restoreInventory = true, claimWhere = {} } = {},
 ) => {
   const claimed = await tx.merchandiseOrder.updateMany({
     where: { id: orderId, inventoryReleasedAt: null, ...claimWhere },
@@ -160,7 +209,10 @@ const releaseOrderStock = async (
   return true;
 };
 
-const expireMerchandiseOrderReservation = async ({ orderId, now = new Date() }) =>
+const expireMerchandiseOrderReservation = async ({
+  orderId,
+  now = new Date(),
+}) =>
   prisma.$transaction(async (tx) => {
     const released = await releaseOrderStock(tx, orderId, "cancelled", {
       claimWhere: {
@@ -179,7 +231,12 @@ const expireMerchandiseOrderReservation = async ({ orderId, now = new Date() }) 
     return true;
   });
 
-const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) => {
+const applyTargetStatus = async ({
+  tx,
+  transaction,
+  previousStatus,
+  status,
+}) => {
   if (transaction.registrationId) {
     if (tx.adminSlotReservation?.deleteMany) {
       await tx.adminSlotReservation.deleteMany({
@@ -191,7 +248,9 @@ const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) =>
         where: { id: transaction.registrationId },
         data: { paymentStatus: "paid", reservedUntil: null },
       });
-    } else if (["cancelled", "failed", "charged_back", "refunded"].includes(status)) {
+    } else if (
+      ["cancelled", "failed", "charged_back", "refunded"].includes(status)
+    ) {
       await tx.teamRegistration.update({
         where: { id: transaction.registrationId },
         data: { paymentStatus: "unpaid", reservedUntil: null },
@@ -212,7 +271,9 @@ const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) =>
       });
     } else if (
       ["cancelled", "failed", "charged_back", "refunded"].includes(status) &&
-      !["cancelled", "failed", "charged_back", "refunded"].includes(previousStatus)
+      !["cancelled", "failed", "charged_back", "refunded"].includes(
+        previousStatus,
+      )
     ) {
       const order = await tx.merchandiseOrder.findUnique({
         where: { id: transaction.merchandiseOrderId },
@@ -221,9 +282,41 @@ const applyTargetStatus = async ({ tx, transaction, previousStatus, status }) =>
       await releaseOrderStock(
         tx,
         transaction.merchandiseOrderId,
-        ["charged_back", "refunded"].includes(status) ? "refunded" : "cancelled",
-        { restoreInventory: order?.status !== "fulfilled" }
+        ["charged_back", "refunded"].includes(status)
+          ? "refunded"
+          : "cancelled",
+        { restoreInventory: order?.status !== "fulfilled" },
       );
+    }
+  }
+
+  if (transaction.ticketOrderId) {
+    if (status === "paid") {
+      await tx.ticketOrder.update({
+        where: { id: transaction.ticketOrderId },
+        data: { status: "paid", capacityReleasedAt: null },
+      });
+      await tx.ticket.updateMany({
+        where: { orderId: transaction.ticketOrderId, status: "pending" },
+        data: { status: "valid" },
+      });
+    } else if (
+      ["cancelled", "failed", "charged_back", "refunded"].includes(status)
+    ) {
+      const orderStatus = ["charged_back", "refunded"].includes(status)
+        ? "refunded"
+        : "cancelled";
+      await tx.ticketOrder.updateMany({
+        where: { id: transaction.ticketOrderId, status: { not: "expired" } },
+        data: { status: orderStatus, capacityReleasedAt: new Date() },
+      });
+      await tx.ticket.updateMany({
+        where: {
+          orderId: transaction.ticketOrderId,
+          status: { in: ["pending", "valid"] },
+        },
+        data: { status: orderStatus === "refunded" ? "refunded" : "cancelled" },
+      });
     }
   }
 };
@@ -252,7 +345,12 @@ const resolvePaidStatus = async ({ tx, current, now }) => {
     ) {
       return "review_required";
     }
-    const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: registration.tournamentId, excludeRegistrationId: registration.id, now });
+    const activeCount = await countTournamentCapacityUsage({
+      tx,
+      tournamentId: registration.tournamentId,
+      excludeRegistrationId: registration.id,
+      now,
+    });
     if (activeCount >= registration.tournament.maxTeams) {
       return "review_required";
     }
@@ -269,10 +367,25 @@ const resolvePaidStatus = async ({ tx, current, now }) => {
     }
   }
 
+  if (current.ticketOrderId) {
+    const order = current.ticketOrder;
+    if (
+      !order ||
+      order.capacityReleasedAt ||
+      (order.status === "pending_payment" && order.expiresAt <= now) ||
+      order.event.status === "cancelled"
+    ) {
+      return "review_required";
+    }
+  }
+
   return "paid";
 };
 
-const expireTournamentRegistrationReservation = async ({ registrationId, now = new Date() }) =>
+const expireTournamentRegistrationReservation = async ({
+  registrationId,
+  now = new Date(),
+}) =>
   prisma.$transaction(async (tx) => {
     const released = await tx.teamRegistration.updateMany({
       where: {
@@ -294,7 +407,8 @@ const expireTournamentRegistrationReservation = async ({ registrationId, now = n
       },
       data: {
         status: "expired",
-        statusMessage: "The payment window expired and the tournament slot was released. Contact an administrator for assistance.",
+        statusMessage:
+          "The payment window expired and the tournament slot was released. Contact an administrator for assistance.",
       },
     });
     return true;
@@ -304,11 +418,15 @@ const processPayHereNotification = async (body) => {
   const orderId = String(body.order_id || "").trim();
   if (!orderId) throw new HttpError(400, "Payment order ID is required.");
   if (String(body.merchant_id || "") !== env.PAYHERE_MERCHANT_ID) {
-    logger.warn("PayHere notification rejected: merchant mismatch", { orderId });
+    logger.warn("PayHere notification rejected: merchant mismatch", {
+      orderId,
+    });
     throw new HttpError(400, "Payment merchant does not match.");
   }
   if (!verifyNotificationSignature(body)) {
-    logger.warn("PayHere notification rejected: invalid signature", { orderId });
+    logger.warn("PayHere notification rejected: invalid signature", {
+      orderId,
+    });
     throw new HttpError(400, "Payment notification signature is invalid.");
   }
 
@@ -319,31 +437,54 @@ const processPayHereNotification = async (body) => {
 
   const currency = String(body.payhere_currency || "").toUpperCase();
   const amount = formatAmount(body.payhere_amount);
-  if (currency !== transaction.currency || amount !== formatAmount(transaction.amount)) {
-    logger.warn("PayHere notification rejected: amount or currency mismatch", { orderId, receivedAmount: amount, receivedCurrency: currency });
-    throw new HttpError(400, "Payment amount or currency does not match the order.");
+  if (
+    currency !== transaction.currency ||
+    amount !== formatAmount(transaction.amount)
+  ) {
+    logger.warn("PayHere notification rejected: amount or currency mismatch", {
+      orderId,
+      receivedAmount: amount,
+      receivedCurrency: currency,
+    });
+    throw new HttpError(
+      400,
+      "Payment amount or currency does not match the order.",
+    );
   }
 
   const status = PAYHERE_STATUS[String(body.status_code)];
   if (!status) throw new HttpError(400, "Payment status is invalid.");
   const digest = sha256(
-    [orderId, body.payment_id, amount, currency, body.status_code, body.md5sig].join("|")
+    [
+      orderId,
+      body.payment_id,
+      amount,
+      currency,
+      body.status_code,
+      body.md5sig,
+    ].join("|"),
   );
 
   const result = await runSerializable(async (tx) => {
     const current = await tx.paymentTransaction.findUnique({
       where: { id: transaction.id },
       include: {
-        registration: { include: { tournament: { select: { maxTeams: true } } } },
+        registration: {
+          include: { tournament: { select: { maxTeams: true } } },
+        },
         merchandiseOrder: true,
+        ticketOrder: { include: { event: { select: { status: true } } } },
       },
     });
     const now = new Date();
     let appliedStatus = status;
     if (current.notificationDigest === digest) appliedStatus = current.status;
-    else if (status === "paid") appliedStatus = await resolvePaidStatus({ tx, current, now });
-    else if (current.status === "paid" && status !== "charged_back") appliedStatus = current.status;
-    else if (TERMINAL_FAILURE_STATUSES.has(current.status)) appliedStatus = current.status;
+    else if (status === "paid")
+      appliedStatus = await resolvePaidStatus({ tx, current, now });
+    else if (current.status === "paid" && status !== "charged_back")
+      appliedStatus = current.status;
+    else if (TERMINAL_FAILURE_STATUSES.has(current.status))
+      appliedStatus = current.status;
 
     if (appliedStatus === current.status) {
       await tx.paymentNotificationAudit.create({
@@ -363,14 +504,16 @@ const processPayHereNotification = async (body) => {
       where: { id: transaction.id },
       data: {
         status: appliedStatus,
-        providerPaymentId: String(body.payment_id || "").trim() || current.providerPaymentId,
+        providerPaymentId:
+          String(body.payment_id || "").trim() || current.providerPaymentId,
         method: String(body.method || "").trim() || null,
         statusMessage:
           appliedStatus === "review_required"
             ? "Payment was received after the reservation became unavailable and requires manual review or refund."
             : String(body.status_message || "").trim() || null,
         notificationDigest: digest,
-        paidAt: appliedStatus === "paid" ? current.paidAt || now : current.paidAt,
+        paidAt:
+          appliedStatus === "paid" ? current.paidAt || now : current.paidAt,
       },
     });
     await applyTargetStatus({
@@ -391,7 +534,14 @@ const processPayHereNotification = async (body) => {
     });
     return updated;
   });
-  logger.info("PayHere notification reconciled", { orderId, transactionId: result.id, purpose: result.purpose, status: result.status, amount, currency });
+  logger.info("PayHere notification reconciled", {
+    orderId,
+    transactionId: result.id,
+    purpose: result.purpose,
+    status: result.status,
+    amount,
+    currency,
+  });
   if (result.status === "paid" && result.registrationId) {
     await activatePaidTeamRegistration(result.registrationId).catch((error) => {
       logger.error("Paid tournament registration team activation failed", {
@@ -400,10 +550,21 @@ const processPayHereNotification = async (body) => {
       });
     });
   }
+  if (result.status === "paid" && result.ticketOrderId) {
+    await queueTicketOrderConfirmation(result.ticketOrderId).catch((error) => {
+      logger.error("Paid ticket order email queueing failed", {
+        ticketOrderId: result.ticketOrderId,
+        error,
+      });
+    });
+  }
   return result;
 };
 
-const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 50 } = {}) => {
+const expireStaleCommerceReservations = async ({
+  now = new Date(),
+  batchSize = 50,
+} = {}) => {
   const expiredOrders = await prisma.merchandiseOrder.findMany({
     where: {
       status: "pending_payment",
@@ -417,7 +578,10 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
 
   let expiredOrderCount = 0;
   for (const order of expiredOrders) {
-    const expired = await expireMerchandiseOrderReservation({ orderId: order.id, now });
+    const expired = await expireMerchandiseOrderReservation({
+      orderId: order.id,
+      now,
+    });
     if (expired) expiredOrderCount += 1;
   }
 
@@ -439,9 +603,32 @@ const expireStaleCommerceReservations = async ({ now = new Date(), batchSize = 5
     if (expired) expiredRegistrationCount += 1;
   }
 
+  const expiredTicketOrders = prisma.ticketOrder?.findMany
+    ? await prisma.ticketOrder.findMany({
+        where: {
+          status: "pending_payment",
+          capacityReleasedAt: null,
+          expiresAt: { lte: now },
+        },
+        orderBy: { expiresAt: "asc" },
+        take: batchSize,
+        select: { id: true },
+      })
+    : [];
+  let expiredTicketOrderCount = 0;
+  const { expireTicketOrderReservation } = require("../tickets/ticket.service");
+  for (const order of expiredTicketOrders) {
+    const expired = await expireTicketOrderReservation({
+      orderId: order.id,
+      now,
+    });
+    if (expired) expiredTicketOrderCount += 1;
+  }
+
   return {
     expiredOrders: expiredOrderCount,
     expiredRegistrations: expiredRegistrationCount,
+    expiredTicketOrders: expiredTicketOrderCount,
   };
 };
 
@@ -464,6 +651,14 @@ const loadPaymentStatusTransaction = (providerOrderId) =>
         },
       },
       merchandiseOrder: { select: { userId: true, publicToken: true } },
+      ticketOrder: {
+        select: {
+          userId: true,
+          publicToken: true,
+          expiresAt: true,
+          status: true,
+        },
+      },
     },
   });
 
@@ -476,7 +671,12 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
     transaction.merchandiseOrder &&
     (transaction.merchandiseOrder.userId === userId ||
       transaction.merchandiseOrder.publicToken === publicToken);
-  if (!ownsRegistration && !ownsOrder) throw new HttpError(403, "Payment access denied.");
+  const ownsTicketOrder =
+    transaction.ticketOrder &&
+    (transaction.ticketOrder.userId === userId ||
+      transaction.ticketOrder.publicToken === publicToken);
+  if (!ownsRegistration && !ownsOrder && !ownsTicketOrder)
+    throw new HttpError(403, "Payment access denied.");
   if (
     transaction.registration?.paymentStatus === "pending" &&
     transaction.registration.reservedUntil &&
@@ -486,14 +686,18 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
       registrationId: transaction.registration.id,
     });
     transaction = await loadPaymentStatusTransaction(providerOrderId);
-    if (!transaction) throw new HttpError(404, "Payment transaction not found.");
+    if (!transaction)
+      throw new HttpError(404, "Payment transaction not found.");
   }
   if (
     transaction.registration &&
     transaction.registration.verificationStatus !== "verified" &&
     transaction.status !== "paid"
   ) {
-    throw new HttpError(409, "Every roster member must accept the team invitation before payment.");
+    throw new HttpError(
+      409,
+      "Every roster member must accept the team invitation before payment.",
+    );
   }
 
   return {
@@ -544,6 +748,16 @@ const ADMIN_PAYMENT_DETAIL_INCLUDE = {
     },
   },
   merchandiseOrder: { select: { id: true, publicToken: true, email: true } },
+  ticketOrder: {
+    select: {
+      id: true,
+      publicToken: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      event: { select: { id: true, title: true } },
+    },
+  },
 };
 
 const mapAdminPaymentDetail = (item) => ({
@@ -565,6 +779,7 @@ const mapAdminPaymentDetail = (item) => ({
   registration: item.registration,
   bankTransferProof: item.bankTransferProof,
   merchandiseOrder: item.merchandiseOrder,
+  ticketOrder: item.ticketOrder,
 });
 
 const mapAdminPaymentSummary = (item) => ({
@@ -578,54 +793,122 @@ const mapAdminPaymentSummary = (item) => ({
   status: item.status,
   method: item.method,
   createdAt: item.createdAt,
-  customerName: item.registration?.teamName || "Merchandise customer",
-  customerEmail: item.registration?.contactEmail || item.merchandiseOrder?.email || null,
+  customerName:
+    item.registration?.teamName ||
+    (item.ticketOrder
+      ? `${item.ticketOrder.firstName} ${item.ticketOrder.lastName}`.trim()
+      : "Merchandise customer"),
+  customerEmail:
+    item.registration?.contactEmail ||
+    item.merchandiseOrder?.email ||
+    item.ticketOrder?.email ||
+    null,
+  groupId:
+    item.registration?.tournament?.id || item.ticketOrder?.event?.id || null,
+  groupName:
+    item.registration?.tournament?.title ||
+    item.ticketOrder?.event?.title ||
+    "Merchandise",
 });
 
 const listPaymentTransactions = async (query = {}) => {
-  const status = String(query.status || "").trim().toLowerCase();
-  const purpose = String(query.purpose || "").trim().toLowerCase();
+  const status = String(query.status || "")
+    .trim()
+    .toLowerCase();
+  const purpose = String(query.purpose || "")
+    .trim()
+    .toLowerCase();
   const search = String(query.search || "").trim();
   const where = {};
-  if (["created", "pending", "paid", "failed", "cancelled", "charged_back", "expired", "review_required", "refunded"].includes(status)) where.status = status;
-  if (["tournament_registration", "merchandise_order"].includes(purpose)) where.purpose = purpose;
+  if (
+    [
+      "created",
+      "pending",
+      "paid",
+      "failed",
+      "cancelled",
+      "charged_back",
+      "expired",
+      "review_required",
+      "refunded",
+    ].includes(status)
+  )
+    where.status = status;
+  if (
+    ["tournament_registration", "merchandise_order", "ticket_order"].includes(
+      purpose,
+    )
+  )
+    where.purpose = purpose;
+  if (query.eventId)
+    where.ticketOrder = { is: { eventId: String(query.eventId) } };
+  if (query.tournamentId)
+    where.registration = { is: { tournamentId: String(query.tournamentId) } };
   if (search) {
     const textFilter = { contains: search, mode: "insensitive" };
     where.OR = [
       { providerOrderId: textFilter },
       { providerPaymentId: textFilter },
-      { registration: { is: { OR: [{ teamName: textFilter }, { contactEmail: textFilter }] } } },
+      {
+        registration: {
+          is: { OR: [{ teamName: textFilter }, { contactEmail: textFilter }] },
+        },
+      },
       { merchandiseOrder: { is: { email: textFilter } } },
+      {
+        ticketOrder: {
+          is: {
+            OR: [
+              { email: textFilter },
+              { firstName: textFilter },
+              { lastName: textFilter },
+              { event: { is: { title: textFilter } } },
+            ],
+          },
+        },
+      },
     ];
   }
   const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
-  const pageSize = Math.min(Math.max(Number.parseInt(query.pageSize, 10) || 20, 1), 50);
+  const pageSize = Math.min(
+    Math.max(Number.parseInt(query.pageSize, 10) || 20, 1),
+    50,
+  );
   const [total, items] = await prisma.$transaction([
     prisma.paymentTransaction.count({ where }),
     prisma.paymentTransaction.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-    select: {
-      id: true,
-      providerOrderId: true,
-      providerPaymentId: true,
-      purpose: true,
-      provider: true,
-      amount: true,
-      currency: true,
-      status: true,
-      method: true,
-      createdAt: true,
-      registration: {
-        select: {
-          teamName: true,
-          contactEmail: true,
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        providerOrderId: true,
+        providerPaymentId: true,
+        purpose: true,
+        provider: true,
+        amount: true,
+        currency: true,
+        status: true,
+        method: true,
+        createdAt: true,
+        registration: {
+          select: {
+            teamName: true,
+            contactEmail: true,
+            tournament: { select: { id: true, title: true } },
+          },
+        },
+        merchandiseOrder: { select: { email: true } },
+        ticketOrder: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+            event: { select: { id: true, title: true } },
+          },
         },
       },
-      merchandiseOrder: { select: { email: true } },
-    },
     }),
   ]);
   return {
@@ -657,11 +940,11 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
         registration: { include: { tournament: true } },
       },
     });
-    if (
-      !current ||
-      current.purpose !== "tournament_registration"
-    ) {
-      throw new HttpError(404, "Expired tournament registration payment was not found.");
+    if (!current || current.purpose !== "tournament_registration") {
+      throw new HttpError(
+        404,
+        "Expired tournament registration payment was not found.",
+      );
     }
     if (current.status !== "expired") {
       throw new HttpError(409, "Only expired payments can be reopened.");
@@ -698,7 +981,7 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
     const amount = isBankTransfer
       ? getBankTransferAmountForSlot(
           current.registration.tournament,
-          assignedSlotNumber
+          assignedSlotNumber,
         )
       : Number(current.amount);
 
@@ -708,7 +991,8 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
         paymentStatus: "pending",
         assignedSlotNumber,
         quotedFeeAmount: amount,
-        quotedFeeCurrency: current.registration.tournament.registrationFeeCurrency,
+        quotedFeeCurrency:
+          current.registration.tournament.registrationFeeCurrency,
         reservedUntil,
       },
     });
@@ -728,14 +1012,27 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
     });
   });
 
-const reconcilePayHerePayment = async ({ transactionId, decision, note, providerRefundId, admin }) => {
-  const normalizedDecision = String(decision || "").trim().toLowerCase();
-  const normalizedNote = String(note || "").trim().slice(0, 1000);
-  const normalizedRefundId = String(providerRefundId || "").trim().slice(0, 200);
+const reconcilePayHerePayment = async ({
+  transactionId,
+  decision,
+  note,
+  providerRefundId,
+  admin,
+}) => {
+  const normalizedDecision = String(decision || "")
+    .trim()
+    .toLowerCase();
+  const normalizedNote = String(note || "")
+    .trim()
+    .slice(0, 1000);
+  const normalizedRefundId = String(providerRefundId || "")
+    .trim()
+    .slice(0, 200);
   if (!["accept", "mark_refunded"].includes(normalizedDecision)) {
     throw new HttpError(400, "Choose accept or mark_refunded.");
   }
-  if (!normalizedNote) throw new HttpError(400, "A reconciliation note is required.");
+  if (!normalizedNote)
+    throw new HttpError(400, "A reconciliation note is required.");
   if (normalizedDecision === "mark_refunded" && !normalizedRefundId) {
     throw new HttpError(400, "The PayHere refund reference is required.");
   }
@@ -744,43 +1041,90 @@ const reconcilePayHerePayment = async ({ transactionId, decision, note, provider
     const current = await tx.paymentTransaction.findUnique({
       where: { id: transactionId },
       include: {
-        registration: { include: { tournament: { select: { maxTeams: true } } } },
+        registration: {
+          include: { tournament: { select: { maxTeams: true } } },
+        },
         merchandiseOrder: true,
+        ticketOrder: { include: { event: { select: { status: true } } } },
       },
     });
     if (!current || current.provider !== "payhere") {
       throw new HttpError(404, "PayHere payment was not found.");
     }
     if (current.status !== "review_required") {
-      throw new HttpError(409, "This payment is not awaiting manual reconciliation.");
+      throw new HttpError(
+        409,
+        "This payment is not awaiting manual reconciliation.",
+      );
     }
     const now = new Date();
     if (normalizedDecision === "accept") {
       if (current.registrationId) {
-        if (!current.registration || current.registration.status === "rejected") {
-          throw new HttpError(409, "This registration can no longer be confirmed; refund the payment.");
+        if (
+          !current.registration ||
+          current.registration.status === "rejected"
+        ) {
+          throw new HttpError(
+            409,
+            "This registration can no longer be confirmed; refund the payment.",
+          );
         }
-        const otherActiveCount = await countTournamentCapacityUsage({ tx, tournamentId: current.registration.tournamentId, excludeRegistrationId: current.registrationId, now });
+        const otherActiveCount = await countTournamentCapacityUsage({
+          tx,
+          tournamentId: current.registration.tournamentId,
+          excludeRegistrationId: current.registrationId,
+          now,
+        });
         if (otherActiveCount >= current.registration.tournament.maxTeams) {
-          throw new HttpError(409, "No registration slot remains; refund the payment.");
+          throw new HttpError(
+            409,
+            "No registration slot remains; refund the payment.",
+          );
         }
       }
-      if (current.merchandiseOrderId && current.merchandiseOrder?.inventoryReleasedAt) {
-        throw new HttpError(409, "Reserved inventory was released; refund the payment.");
+      if (
+        current.merchandiseOrderId &&
+        current.merchandiseOrder?.inventoryReleasedAt
+      ) {
+        throw new HttpError(
+          409,
+          "Reserved inventory was released; refund the payment.",
+        );
+      }
+      if (current.ticketOrderId && current.ticketOrder?.capacityReleasedAt) {
+        throw new HttpError(
+          409,
+          "Reserved ticket capacity was released; refund the payment.",
+        );
+      }
+      if (
+        current.ticketOrderId &&
+        current.ticketOrder?.event?.status === "cancelled"
+      ) {
+        throw new HttpError(
+          409,
+          "The ticketed event is cancelled; refund the payment.",
+        );
       }
       const updated = await tx.paymentTransaction.update({
         where: { id: current.id },
         data: {
           status: "paid",
           paidAt: current.paidAt || now,
-          statusMessage: "Payment accepted after manual PayHere reconciliation.",
+          statusMessage:
+            "Payment accepted after manual PayHere reconciliation.",
           reconciledAt: now,
           reconciledById: admin.id,
           reconciliationNote: normalizedNote,
           providerRefundId: null,
         },
       });
-      await applyTargetStatus({ tx, transaction: updated, previousStatus: current.status, status: "paid" });
+      await applyTargetStatus({
+        tx,
+        transaction: updated,
+        previousStatus: current.status,
+        status: "paid",
+      });
       return updated;
     }
 
@@ -795,12 +1139,25 @@ const reconcilePayHerePayment = async ({ transactionId, decision, note, provider
         providerRefundId: normalizedRefundId,
       },
     });
-    await applyTargetStatus({ tx, transaction: updated, previousStatus: current.status, status: "refunded" });
+    await applyTargetStatus({
+      tx,
+      transaction: updated,
+      previousStatus: current.status,
+      status: "refunded",
+    });
     return updated;
   });
 
   if (result.status === "paid" && result.registrationId) {
     await activatePaidTeamRegistration(result.registrationId);
+  }
+  if (result.status === "paid" && result.ticketOrderId) {
+    await queueTicketOrderConfirmation(result.ticketOrderId).catch((error) => {
+      logger.error("Reconciled ticket order email queueing failed", {
+        ticketOrderId: result.ticketOrderId,
+        error,
+      });
+    });
   }
   logger.info("PayHere payment manually reconciled", {
     transactionId: result.id,

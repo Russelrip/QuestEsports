@@ -4,6 +4,7 @@ const {
   buildEmailChangeEmail,
   buildTeamInviteEmail,
   buildSecurityAlertEmail,
+  buildTicketOrderEmail,
 } = require("./templates");
 const { buildActionUrl, sendMail } = require("./sendMail");
 const { decryptSecret } = require("../secret-box");
@@ -15,10 +16,13 @@ const EMAIL_TEMPLATE_TYPES = {
   emailChange: "emailChange",
   teamInvite: "teamInvite",
   securityAlert: "securityAlert",
+  ticketOrder: "ticketOrder",
 };
 
 const getRawToken = (payload) =>
-  payload.tokenCiphertext ? decryptSecret(payload.tokenCiphertext) : payload.rawToken;
+  payload.tokenCiphertext
+    ? decryptSecret(payload.tokenCiphertext)
+    : payload.rawToken;
 
 const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
   const type = String(payload.type || "").trim();
@@ -29,11 +33,15 @@ const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
         deliveryId: jobId,
         email: payload.email,
         subject: "Verify your Quest E-sports account",
-        skippedLogMessage: "Verification email skipped because mail delivery is not configured.",
+        skippedLogMessage:
+          "Verification email skipped because mail delivery is not configured.",
         templateBuilder: () =>
           buildVerificationEmail({
             firstName: payload.firstName,
-            verificationUrl: buildActionUrl("/verify-email", getRawToken(payload)),
+            verificationUrl: buildActionUrl(
+              "/verify-email",
+              getRawToken(payload),
+            ),
           }),
       });
     case EMAIL_TEMPLATE_TYPES.resetPassword:
@@ -60,7 +68,10 @@ const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
           buildEmailChangeEmail({
             firstName: payload.firstName,
             nextEmail: payload.nextEmail,
-            confirmUrl: buildActionUrl("/confirm-email-change", getRawToken(payload)),
+            confirmUrl: buildActionUrl(
+              "/confirm-email-change",
+              getRawToken(payload),
+            ),
           }),
       });
     case EMAIL_TEMPLATE_TYPES.teamInvite:
@@ -94,6 +105,21 @@ const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
             actionLabel: payload.actionLabel,
             actionUrl: payload.actionUrl,
             outro: payload.outro,
+          }),
+      });
+    case EMAIL_TEMPLATE_TYPES.ticketOrder:
+      return sendMail({
+        deliveryId: jobId,
+        email: payload.email,
+        subject: `Your Quest E-sports tickets for ${payload.eventTitle}`,
+        skippedLogMessage:
+          "Ticket confirmation email skipped because mail delivery is not configured.",
+        templateBuilder: () =>
+          buildTicketOrderEmail({
+            firstName: payload.firstName,
+            eventTitle: payload.eventTitle,
+            quantity: payload.quantity,
+            orderUrl: buildActionUrl("/tickets/order", getRawToken(payload)),
           }),
       });
     default:

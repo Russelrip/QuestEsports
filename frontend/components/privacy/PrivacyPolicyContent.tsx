@@ -18,7 +18,7 @@ const policySections = [
       "Tournament, recruitment, and team information such as team names, captain details, roster member details, Riot IDs, Discord handles, NICs submitted with the relevant member's permission for recruitment review, saved team information, and application or registration status.",
       "Contact information and messages that you submit through the contact form or support channels.",
       "Uploaded content such as team logos, tournament banners, posters, and private bank-transfer receipts submitted for payment verification.",
-      "Commerce information such as merchandise selections, delivery address, order totals, payment status, and payment-provider references. Quest E-sports does not store full card numbers or security codes.",
+      "Commerce information such as merchandise selections, delivery address, entrance-ticket orders, QR ticket and check-in status, order totals, payment status, and payment-provider references. Quest E-sports does not store full card numbers or security codes.",
       "Technical and usage information collected through hosting, analytics, performance monitoring, and server logs.",
     ],
   },
@@ -38,7 +38,7 @@ const policySections = [
       "To send account-related emails such as verification, password reset, security alerts, and invite notifications.",
       "To maintain platform security, prevent abuse, investigate suspicious activity, and enforce our rules.",
       "To understand website performance and improve the user experience.",
-      "To process merchandise orders, arrange delivery, reconcile PayHere payments, verify tournament bank transfers, detect duplicate receipts, and provide payment support.",
+      "To process merchandise and entrance-ticket orders, arrange delivery, issue and verify event QR tickets, record check-ins, reconcile PayHere payments, verify tournament bank transfers, detect duplicate receipts, and provide payment support.",
       "To comply with legal obligations and protect Quest E-sports, participants, and the community.",
     ],
   },
@@ -134,7 +134,7 @@ export default function PrivacyPolicyContent() {
       <div className="grid gap-6">
         <Card className="p-6 sm:p-8">
           <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Last Updated</p>
-          <h2 className="mt-3 text-3xl text-white">July 29, 2026</h2>
+          <h2 className="mt-3 text-3xl text-white">August 6, 2026</h2>
           <p className="mt-4 max-w-4xl text-sm leading-7 text-slate-300">
             This policy applies to the Quest E-sports website at <span className="text-white">questesports.lk</span> and related
             tournament and account services.

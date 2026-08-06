@@ -8,7 +8,7 @@
 - Use `/admin/teams` to review rosters, verify organization labels, and replace or remove team logos. Captains cannot self-assign labels; blank labels display as `Independent`.
 - Review every live gallery description after deployment because production poster descriptions are not stored in this repository.
 
-This document covers the admin UI and API workflows for tournament/event configuration, registrations, payments, merchandise, recruitment, exports, deletion, and bracket effects.
+This document covers the admin UI and API workflows for tournament/event configuration, entrance tickets, registrations, payments, merchandise, recruitment, exports, deletion, and bracket effects.
 
 All admin routes require a valid session and `user.role === "admin"`.
 
@@ -22,6 +22,7 @@ All admin routes require a valid session and `user.role === "admin"`.
 - `/admin/event-series` for published event groupings and hero images
 - `/admin/registrations` for tournament registration review
 - `/admin/payments` for bank-transfer review and PayHere reconciliation
+- `/admin/tickets` for ticket events, paid orders, attendee QR codes, scanning, and check-in reports
 - `/admin/products` for products, variants, images, prices, and stock
 - `/admin/orders` for paid-order fulfilment
 - `/admin/recruitment` for Join Quest recruitment review
@@ -56,6 +57,8 @@ DELETE /api/admin/teams/:teamId
 Deletion removes the reusable `SavedTeam` and cascades its saved roster members and pending invites. Existing tournament registrations remain and are detached from the deleted saved team.
 
 ## Tournament Registration Review
+
+The registration page groups results under tournament headings so records from different tournaments are not mixed together. Search and status filters still apply to the complete result set.
 
 The registration admin page reads from:
 
@@ -159,7 +162,33 @@ The payments page reads:
 GET /api/admin/payments
 ```
 
-Filters include `page`, `pageSize`, `status`, and `purpose`. Payment statuses include `created`, `pending`, `paid`, `failed`, `cancelled`, `charged_back`, `expired`, `review_required`, and `refunded`. Purposes are `tournament_registration` and `merchandise_order`.
+Filters include `page`, `pageSize`, `status`, and `purpose`. Payment statuses include `created`, `pending`, `paid`, `failed`, `cancelled`, `charged_back`, `expired`, `review_required`, and `refunded`. Purposes are `tournament_registration`, `merchandise_order`, and `ticket_order`.
+
+The page groups filtered results by tournament, ticket event, or merchandise order so unrelated payment workflows remain visually separate.
+
+## Event Ticketing and Check-in
+
+Create and manage entrance-ticket events from `/admin/tickets`. An event controls its public slug, venue and start time, sales window, capacity, currency, single-ticket price, pair-bundle price, and lifecycle status. For the standard offer, set the single price to LKR 500 and the pair price to LKR 800. The server always calculates totals as complete pairs plus an optional single: one ticket is LKR 500, two are LKR 800, and three are LKR 1,300.
+
+Paid orders issue one independently signed QR code per attendee. The QR contains an opaque ticket identifier, version, and signature; it contains no buyer contact details. Reissuing a ticket increments its version and invalidates the previous QR.
+
+Use either the browser camera scanner on `/admin/tickets` or the Tickets tab in the private Android admin app. Select the correct event before scanning. Verification is atomic and records accepted and rejected attempts, preventing two gates from admitting the same ticket at the same time. The result shows attendee/order details and clearly distinguishes accepted, already used, cancelled, unpaid, invalid, and wrong-event codes. Manual check-in is available from the attendee list when a camera cannot be used.
+
+Relevant endpoints include:
+
+```text
+GET|POST /api/admin/ticket-events
+GET|PATCH /api/admin/ticket-events/:eventId
+GET /api/admin/ticket-events/:eventId/orders
+GET /api/admin/ticket-events/:eventId/tickets
+GET /api/admin/ticket-events/:eventId/report
+POST /api/admin/ticket-events/:eventId/scan
+POST /api/admin/ticket-events/:eventId/tickets/:ticketId/check-in
+POST /api/admin/tickets/:ticketId/reissue
+PATCH /api/admin/tickets/:ticketId
+```
+
+Ticket reservations expire after `TICKET_ORDER_RESERVATION_MINUTES` (30 minutes by default), releasing capacity. Payment callbacks are authoritative. Cancelling an event blocks new sales and check-ins; cancelling an individual ticket blocks that code. Download the event CSV report before and after doors close for an operational record.
 
 ### Bank transfers
 

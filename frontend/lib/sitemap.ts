@@ -6,6 +6,7 @@ export const sitemapStaticPaths = [
   "/match-videos",
   "/gallery",
   "/shop",
+  "/tickets",
   "/members",
   "/join",
   "/contact",
@@ -21,6 +22,6 @@ export const parseSitemapDate = (value?: string | Date | null) => {
 };
 
 export const deduplicateSitemapEntries = (
-  entries: MetadataRoute.Sitemap
+  entries: MetadataRoute.Sitemap,
 ): MetadataRoute.Sitemap =>
   Array.from(new Map(entries.map((entry) => [entry.url, entry])).values());

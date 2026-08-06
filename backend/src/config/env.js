@@ -31,7 +31,8 @@ const required = (name) => {
   return value;
 };
 
-const optional = (name, fallback = "") => String(process.env[name] || fallback).trim();
+const optional = (name, fallback = "") =>
+  String(process.env[name] || fallback).trim();
 
 const assertHttpsUrl = (name, value, { originOnly = false } = {}) => {
   let parsed;
@@ -47,17 +48,21 @@ const assertHttpsUrl = (name, value, { originOnly = false } = {}) => {
     throw new Error(`${name} must not contain URL credentials.`);
   }
   if (originOnly && value !== parsed.origin) {
-    throw new Error(`${name} must be an origin without a path, query, fragment, or trailing slash.`);
+    throw new Error(
+      `${name} must be an origin without a path, query, fragment, or trailing slash.`,
+    );
   }
 };
 
 const normalizeNodeEnv = (value) => {
-  const normalized = String(value || "development").trim().toLowerCase();
+  const normalized = String(value || "development")
+    .trim()
+    .toLowerCase();
   const allowed = new Set(["development", "test", "production"]);
 
   if (!allowed.has(normalized)) {
     throw new Error(
-      `Invalid NODE_ENV value "${value}". Expected development, test, or production.`
+      `Invalid NODE_ENV value "${value}". Expected development, test, or production.`,
     );
   }
 
@@ -65,7 +70,9 @@ const normalizeNodeEnv = (value) => {
 };
 
 const normalizeTrustProxy = (value) => {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
 
   if (!normalized) {
     return false;
@@ -85,12 +92,14 @@ const normalizeTrustProxy = (value) => {
   }
 
   throw new Error(
-    `Invalid TRUST_PROXY value "${value}". Expected true, false, or a non-negative integer.`
+    `Invalid TRUST_PROXY value "${value}". Expected true, false, or a non-negative integer.`,
   );
 };
 
 const normalizeBoolean = (value, fallback = false) => {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
 
   if (!normalized) {
     return fallback;
@@ -111,35 +120,53 @@ const normalizeIntegerInRange = (name, value, fallback, minimum, maximum) => {
   const normalized = String(value || "").trim();
   if (!normalized) return fallback;
   if (!/^\d+$/.test(normalized)) {
-    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}.`);
+    throw new Error(
+      `${name} must be an integer from ${minimum} to ${maximum}.`,
+    );
   }
   const parsed = Number(normalized);
   if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
-    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}.`);
+    throw new Error(
+      `${name} must be an integer from ${minimum} to ${maximum}.`,
+    );
   }
   return parsed;
 };
 
 const normalizeMaintenanceMessage = (value) => {
-  const fallback = "We’re carrying out scheduled maintenance. Please try again shortly.";
-  const normalized = String(value || "").trim().replace(/\s+/g, " ") || fallback;
+  const fallback =
+    "We’re carrying out scheduled maintenance. Please try again shortly.";
+  const normalized =
+    String(value || "")
+      .trim()
+      .replace(/\s+/g, " ") || fallback;
   if (normalized.length > 240) {
-    throw new Error("SITE_MAINTENANCE_MESSAGE must be 240 characters or fewer.");
+    throw new Error(
+      "SITE_MAINTENANCE_MESSAGE must be 240 characters or fewer.",
+    );
   }
   return normalized;
 };
 
 const env = {
   PORT: normalizePositiveInteger(process.env.PORT, 5001),
-  CORS_ORIGINS: normalizeCsv(process.env.CORS_ORIGIN || "http://localhost:3000"),
+  CORS_ORIGINS: normalizeCsv(
+    process.env.CORS_ORIGIN || "http://localhost:3000",
+  ),
   DATABASE_URL: required("DATABASE_URL"),
   DIRECT_URL: required("DIRECT_URL"),
   CACHE_DRIVER: optional("CACHE_DRIVER", "memory").toLowerCase(),
-  CACHE_TTL_SECONDS: normalizePositiveInteger(process.env.CACHE_TTL_SECONDS, 300),
-  CACHE_MAX_ENTRIES: normalizePositiveInteger(process.env.CACHE_MAX_ENTRIES, 1000),
+  CACHE_TTL_SECONDS: normalizePositiveInteger(
+    process.env.CACHE_TTL_SECONDS,
+    300,
+  ),
+  CACHE_MAX_ENTRIES: normalizePositiveInteger(
+    process.env.CACHE_MAX_ENTRIES,
+    1000,
+  ),
   CACHE_CONNECTION_TIMEOUT_MS: normalizePositiveInteger(
     process.env.CACHE_CONNECTION_TIMEOUT_MS,
-    2000
+    2000,
   ),
   CACHE_KEY_PREFIX: optional("CACHE_KEY_PREFIX", "quest-esports"),
   API_PROCESS_COUNT: normalizePositiveInteger(process.env.API_PROCESS_COUNT, 1),
@@ -151,80 +178,92 @@ const env = {
   SESSION_TTL_DAYS: normalizePositiveInteger(process.env.SESSION_TTL_DAYS, 1),
   REMEMBER_ME_SESSION_TTL_DAYS: normalizePositiveInteger(
     process.env.REMEMBER_ME_SESSION_TTL_DAYS,
-    30
+    30,
   ),
   AUTH_ENCRYPTION_KEY: optional("AUTH_ENCRYPTION_KEY"),
   TRUST_PROXY: normalizeTrustProxy(process.env.TRUST_PROXY),
   REQUIRE_API_ORIGIN: normalizeBoolean(
     process.env.REQUIRE_API_ORIGIN,
-    normalizeNodeEnv(process.env.NODE_ENV) === "production"
+    normalizeNodeEnv(process.env.NODE_ENV) === "production",
   ),
   JOB_WORKER_ENABLED: normalizeBoolean(process.env.JOB_WORKER_ENABLED, true),
   COMMERCE_MAINTENANCE_ENABLED: normalizeBoolean(
     process.env.COMMERCE_MAINTENANCE_ENABLED,
-    true
+    true,
   ),
-  SITE_MAINTENANCE_MODE: normalizeBoolean(process.env.SITE_MAINTENANCE_MODE, false),
+  SITE_MAINTENANCE_MODE: normalizeBoolean(
+    process.env.SITE_MAINTENANCE_MODE,
+    false,
+  ),
   SITE_MAINTENANCE_MESSAGE: normalizeMaintenanceMessage(
-    process.env.SITE_MAINTENANCE_MESSAGE
+    process.env.SITE_MAINTENANCE_MESSAGE,
   ),
   SITE_MAINTENANCE_RETRY_AFTER_SECONDS: normalizeIntegerInRange(
     "SITE_MAINTENANCE_RETRY_AFTER_SECONDS",
     process.env.SITE_MAINTENANCE_RETRY_AFTER_SECONDS,
     900,
     1,
-    86400
+    86400,
   ),
-  JOB_WORKER_POLL_MS: normalizePositiveInteger(process.env.JOB_WORKER_POLL_MS, 5000),
+  JOB_WORKER_POLL_MS: normalizePositiveInteger(
+    process.env.JOB_WORKER_POLL_MS,
+    5000,
+  ),
   JOB_WORKER_MAX_ATTEMPTS: normalizePositiveInteger(
     process.env.JOB_WORKER_MAX_ATTEMPTS,
-    5
+    5,
   ),
   CHALLONGE_ENABLED: normalizeBoolean(process.env.CHALLONGE_ENABLED, false),
   CHALLONGE_AUTOMATIC_SYNC_ENABLED: normalizeBoolean(
     process.env.CHALLONGE_AUTOMATIC_SYNC_ENABLED,
-    false
+    false,
   ),
   CHALLONGE_CLIENT_ID: optional("CHALLONGE_CLIENT_ID"),
   CHALLONGE_CLIENT_SECRET: optional("CHALLONGE_CLIENT_SECRET"),
-  CHALLONGE_OAUTH_SCOPE: optional("CHALLONGE_OAUTH_SCOPE", "application:manage"),
+  CHALLONGE_OAUTH_SCOPE: optional(
+    "CHALLONGE_OAUTH_SCOPE",
+    "application:manage",
+  ),
   CHALLONGE_TOKEN_URL: optional(
     "CHALLONGE_TOKEN_URL",
-    "https://api.challonge.com/oauth/token"
+    "https://api.challonge.com/oauth/token",
   ),
   CHALLONGE_BASE_URL: optional(
     "CHALLONGE_BASE_URL",
-    "https://api.challonge.com/v2.1"
+    "https://api.challonge.com/v2.1",
   ).replace(/\/+$/, ""),
   CHALLONGE_BRACKET_CACHE_SECONDS: normalizeIntegerInRange(
     "CHALLONGE_BRACKET_CACHE_SECONDS",
     process.env.CHALLONGE_BRACKET_CACHE_SECONDS,
     30,
     1,
-    300
+    300,
   ),
   CHALLONGE_REQUEST_TIMEOUT_MS: normalizeIntegerInRange(
     "CHALLONGE_REQUEST_TIMEOUT_MS",
     process.env.CHALLONGE_REQUEST_TIMEOUT_MS,
     8000,
     1000,
-    30000
+    30000,
   ),
   CHALLONGE_DEFAULT_SYNC_MINUTES: normalizeIntegerInRange(
     "CHALLONGE_DEFAULT_SYNC_MINUTES",
     process.env.CHALLONGE_DEFAULT_SYNC_MINUTES,
     5,
     1,
-    60
+    60,
   ),
   CHALLONGE_SYNC_LEASE_SECONDS: normalizeIntegerInRange(
     "CHALLONGE_SYNC_LEASE_SECONDS",
     process.env.CHALLONGE_SYNC_LEASE_SECONDS,
     90,
     30,
-    600
+    600,
   ),
-  REALTIME_SSE_ENABLED: normalizeBoolean(process.env.REALTIME_SSE_ENABLED, true),
+  REALTIME_SSE_ENABLED: normalizeBoolean(
+    process.env.REALTIME_SSE_ENABLED,
+    true,
+  ),
   MAIL_PROVIDER: optional("MAIL_PROVIDER", "smtp").toLowerCase(),
   RESEND_API_KEY: optional("RESEND_API_KEY"),
   SMTP_HOST: optional("SMTP_HOST"),
@@ -234,7 +273,7 @@ const env = {
   MAIL_FROM: optional("MAIL_FROM"),
   MAIL_DELIVERY_REQUIRED: normalizeBoolean(
     process.env.MAIL_DELIVERY_REQUIRED,
-    normalizeNodeEnv(process.env.NODE_ENV) === "production"
+    normalizeNodeEnv(process.env.NODE_ENV) === "production",
   ),
   APP_URL: optional("APP_URL"),
   API_PUBLIC_URL: optional("API_PUBLIC_URL"),
@@ -242,7 +281,7 @@ const env = {
   PRIVATE_UPLOAD_ROOT: optional("PRIVATE_UPLOAD_ROOT"),
   BANK_TRANSFER_PROOF_RETENTION_DAYS: normalizePositiveInteger(
     process.env.BANK_TRANSFER_PROOF_RETENTION_DAYS,
-    365
+    365,
   ),
   LOG_DRAIN_URL: optional("LOG_DRAIN_URL"),
   LOG_DRAIN_TOKEN: optional("LOG_DRAIN_TOKEN"),
@@ -258,18 +297,22 @@ const env = {
   PAYHERE_MODE: optional("PAYHERE_MODE", "sandbox").toLowerCase(),
   PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION: normalizeBoolean(
     process.env.PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION,
-    false
+    false,
   ),
   PAYHERE_MERCHANT_ID: optional("PAYHERE_MERCHANT_ID"),
   PAYHERE_MERCHANT_SECRET: optional("PAYHERE_MERCHANT_SECRET"),
   PAYHERE_NOTIFY_URL: optional("PAYHERE_NOTIFY_URL"),
   SHOP_DELIVERY_FEE_LKR: normalizeNonNegativeInteger(
     process.env.SHOP_DELIVERY_FEE_LKR,
-    500
+    500,
   ),
   SHOP_ORDER_RESERVATION_MINUTES: normalizePositiveInteger(
     process.env.SHOP_ORDER_RESERVATION_MINUTES,
-    30
+    30,
+  ),
+  TICKET_ORDER_RESERVATION_MINUTES: normalizePositiveInteger(
+    process.env.TICKET_ORDER_RESERVATION_MINUTES,
+    30,
   ),
 };
 
@@ -278,7 +321,7 @@ if (env.CORS_ORIGINS.length === 0) {
 }
 
 if (!["debug", "info", "warn", "error"].includes(env.LOG_LEVEL)) {
-  throw new Error('LOG_LEVEL must be one of: debug, info, warn, error.');
+  throw new Error("LOG_LEVEL must be one of: debug, info, warn, error.");
 }
 
 if (!["memory", "upstash"].includes(env.CACHE_DRIVER)) {
@@ -289,7 +332,7 @@ if (
   (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN)
 ) {
   throw new Error(
-    "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for the Upstash cache."
+    "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for the Upstash cache.",
   );
 }
 if (
@@ -297,7 +340,9 @@ if (
   env.API_PROCESS_COUNT > 1 &&
   env.CACHE_DRIVER !== "upstash"
 ) {
-  throw new Error("CACHE_DRIVER=upstash is required when API_PROCESS_COUNT is greater than 1.");
+  throw new Error(
+    "CACHE_DRIVER=upstash is required when API_PROCESS_COUNT is greater than 1.",
+  );
 }
 
 if (!["sandbox", "live"].includes(env.PAYHERE_MODE)) {
@@ -321,13 +366,15 @@ if (env.DISCORD_ALERT_WEBHOOK_URL) {
     !allowedDiscordHosts.has(discordWebhookUrl.hostname) ||
     !/^\/api\/webhooks\/[^/]+\/[^/]+\/?$/.test(discordWebhookUrl.pathname)
   ) {
-    throw new Error("DISCORD_ALERT_WEBHOOK_URL must be an HTTPS Discord webhook URL.");
+    throw new Error(
+      "DISCORD_ALERT_WEBHOOK_URL must be an HTTPS Discord webhook URL.",
+    );
   }
 }
 
 if (env.NODE_ENV !== "test" && !env.AUTH_ENCRYPTION_KEY) {
   throw new Error(
-    "AUTH_ENCRYPTION_KEY is required outside tests for sensitive-data encryption and OAuth state signing."
+    "AUTH_ENCRYPTION_KEY is required outside tests for sensitive-data encryption and OAuth state signing.",
   );
 }
 
@@ -336,7 +383,7 @@ if (
   (!env.CHALLONGE_CLIENT_ID || !env.CHALLONGE_CLIENT_SECRET)
 ) {
   throw new Error(
-    "CHALLONGE_CLIENT_ID and CHALLONGE_CLIENT_SECRET are required when CHALLONGE_ENABLED is true."
+    "CHALLONGE_CLIENT_ID and CHALLONGE_CLIENT_SECRET are required when CHALLONGE_ENABLED is true.",
   );
 }
 
@@ -351,20 +398,26 @@ if (challongeTokenUrl.search || challongeTokenUrl.hash) {
   throw new Error("CHALLONGE_TOKEN_URL must not contain a query or fragment.");
 }
 
-if (env.AUTH_ENCRYPTION_KEY && !/^[a-f0-9]{64}$/i.test(env.AUTH_ENCRYPTION_KEY)) {
-  throw new Error("AUTH_ENCRYPTION_KEY must be a 64-character hexadecimal secret.");
+if (
+  env.AUTH_ENCRYPTION_KEY &&
+  !/^[a-f0-9]{64}$/i.test(env.AUTH_ENCRYPTION_KEY)
+) {
+  throw new Error(
+    "AUTH_ENCRYPTION_KEY must be a 64-character hexadecimal secret.",
+  );
 }
 
 if (env.NODE_ENV === "production" && !env.UPLOAD_ROOT) {
   throw new Error(
-    "UPLOAD_ROOT is required in production and must point to durable, backed-up storage shared by the API process."
+    "UPLOAD_ROOT is required in production and must point to durable, backed-up storage shared by the API process.",
   );
 }
 
-
 if (env.NODE_ENV === "production") {
   if (!env.PRIVATE_UPLOAD_ROOT) {
-    throw new Error("PRIVATE_UPLOAD_ROOT is required in production for private payment evidence.");
+    throw new Error(
+      "PRIVATE_UPLOAD_ROOT is required in production for private payment evidence.",
+    );
   }
   if (!env.APP_URL || !env.API_PUBLIC_URL) {
     throw new Error("APP_URL and API_PUBLIC_URL are required in production.");
@@ -372,7 +425,7 @@ if (env.NODE_ENV === "production") {
   assertHttpsUrl("APP_URL", env.APP_URL, { originOnly: true });
   assertHttpsUrl("API_PUBLIC_URL", env.API_PUBLIC_URL, { originOnly: true });
   env.CORS_ORIGINS.forEach((origin) =>
-    assertHttpsUrl("CORS_ORIGIN", origin, { originOnly: true })
+    assertHttpsUrl("CORS_ORIGIN", origin, { originOnly: true }),
   );
   for (const [name, callbackUrl] of [
     ["GOOGLE_CALLBACK_URL", env.GOOGLE_CALLBACK_URL],
@@ -385,16 +438,22 @@ if (env.NODE_ENV === "production") {
     }
   }
   if (env.TRUST_PROXY === false) {
-    throw new Error("TRUST_PROXY must be configured in production when the API is behind Nginx.");
+    throw new Error(
+      "TRUST_PROXY must be configured in production when the API is behind Nginx.",
+    );
   }
   if (!env.REQUIRE_API_ORIGIN) {
     throw new Error("REQUIRE_API_ORIGIN must be enabled in production.");
   }
   if (!env.MAIL_DELIVERY_REQUIRED) {
-    throw new Error("MAIL_DELIVERY_REQUIRED must be enabled in production while password authentication is available.");
+    throw new Error(
+      "MAIL_DELIVERY_REQUIRED must be enabled in production while password authentication is available.",
+    );
   }
   if (!env.JOB_WORKER_ENABLED) {
-    throw new Error("JOB_WORKER_ENABLED must be enabled in production while asynchronous mail delivery is required.");
+    throw new Error(
+      "JOB_WORKER_ENABLED must be enabled in production while asynchronous mail delivery is required.",
+    );
   }
   for (const [name, endpoint] of [
     ["UPSTASH_REDIS_REST_URL", env.UPSTASH_REDIS_REST_URL],
@@ -417,11 +476,13 @@ if (hasAnyMailProviderValue && !hasCompleteMailProviderConfiguration) {
     env.MAIL_PROVIDER === "resend"
       ? "RESEND_API_KEY, MAIL_FROM, and APP_URL"
       : "SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM, and APP_URL";
-  throw new Error(`${requiredValues} must be configured together for ${env.MAIL_PROVIDER}.`);
+  throw new Error(
+    `${requiredValues} must be configured together for ${env.MAIL_PROVIDER}.`,
+  );
 }
 if (env.MAIL_DELIVERY_REQUIRED && !hasCompleteMailProviderConfiguration) {
   throw new Error(
-    `Complete ${env.MAIL_PROVIDER} mail configuration is required when MAIL_DELIVERY_REQUIRED is enabled.`
+    `Complete ${env.MAIL_PROVIDER} mail configuration is required when MAIL_DELIVERY_REQUIRED is enabled.`,
   );
 }
 
@@ -431,7 +492,9 @@ const payHereValues = [
   env.PAYHERE_NOTIFY_URL,
 ];
 if (payHereValues.some(Boolean) && !payHereValues.every(Boolean)) {
-  throw new Error("PAYHERE_MERCHANT_ID, PAYHERE_MERCHANT_SECRET, and PAYHERE_NOTIFY_URL must be configured together.");
+  throw new Error(
+    "PAYHERE_MERCHANT_ID, PAYHERE_MERCHANT_SECRET, and PAYHERE_NOTIFY_URL must be configured together.",
+  );
 }
 if (
   env.NODE_ENV === "production" &&
@@ -440,7 +503,7 @@ if (
   !env.PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION
 ) {
   throw new Error(
-    "PAYHERE_MODE=live is required for configured production payments. Set PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION=true only for an intentional production-like sandbox."
+    "PAYHERE_MODE=live is required for configured production payments. Set PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION=true only for an intentional production-like sandbox.",
   );
 }
 if (env.NODE_ENV === "production" && env.PAYHERE_NOTIFY_URL) {

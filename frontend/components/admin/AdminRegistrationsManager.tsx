@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import EmptyState from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   formatAdminCompactDateTime,
   getAdminPaginationSummary,
   type TeamRegistration,
+  type TeamRegistrationSummary,
 } from "@/lib/admin";
 
 type RosterDraftMember = {
@@ -29,7 +30,9 @@ type RosterDraftMember = {
   gameId: string;
 };
 
-const createRosterDraftMember = (role: RosterDraftMember["role"]): RosterDraftMember => ({
+const createRosterDraftMember = (
+  role: RosterDraftMember["role"],
+): RosterDraftMember => ({
   key: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   role,
   name: "",
@@ -45,7 +48,8 @@ export default function AdminRegistrationsManager() {
   const [page, setPage] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedRegistration, setSelectedRegistration] = useState<TeamRegistration | null>(null);
+  const [selectedRegistration, setSelectedRegistration] =
+    useState<TeamRegistration | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const debouncedSearch = useDebouncedValue(search);
@@ -55,22 +59,45 @@ export default function AdminRegistrationsManager() {
     debouncedSearch,
     debouncedTournament,
     debouncedStatus,
-    page
+    page,
   );
   const showToast = useToastStore((state) => state.showToast);
   const registrations = data?.registrations || [];
   const tournaments = data?.tournaments || [];
   const pagination = data?.pagination;
+  const registrationGroups = registrations.reduce<
+    Array<{
+      tournament: TeamRegistrationSummary["tournament"];
+      entries: TeamRegistrationSummary[];
+    }>
+  >((groups, registration) => {
+    const existing = groups.find(
+      (group) => group.tournament.id === registration.tournament.id,
+    );
+    if (existing) existing.entries.push(registration);
+    else
+      groups.push({
+        tournament: registration.tournament,
+        entries: [registration],
+      });
+    return groups;
+  }, []);
 
   const loadDetail = useCallback(async () => {
     if (!selectedId) return;
     setDetailLoading(true);
     setDetailError("");
     try {
-      const data = await adminRequest<{ registration: TeamRegistration }>(`/api/admin/team-registrations/${selectedId}`);
+      const data = await adminRequest<{ registration: TeamRegistration }>(
+        `/api/admin/team-registrations/${selectedId}`,
+      );
       setSelectedRegistration(data.registration);
     } catch (nextError) {
-      setDetailError(nextError instanceof Error ? nextError.message : "Unable to load this registration.");
+      setDetailError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to load this registration.",
+      );
     } finally {
       setDetailLoading(false);
     }
@@ -100,7 +127,12 @@ export default function AdminRegistrationsManager() {
       await downloadAdminFile(buildExportPath(), "team-registrations.xlsx");
       showToast({ tone: "success", title: "Excel download started" });
     } catch (nextError) {
-      showToast({ tone: "error", title: "Unable to download registrations", description: nextError instanceof Error ? nextError.message : "Download failed." });
+      showToast({
+        tone: "error",
+        title: "Unable to download registrations",
+        description:
+          nextError instanceof Error ? nextError.message : "Download failed.",
+      });
     } finally {
       setDownloading(false);
     }
@@ -133,22 +165,54 @@ export default function AdminRegistrationsManager() {
           <div className="border-b border-white/10 p-5 sm:p-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <h3 className="text-2xl text-white">Tournament registrations</h3>
-                <p className="mt-1 text-sm text-slate-400">Full rosters load only when you open a registration.</p>
+                <h3 className="text-2xl text-white">
+                  Tournament registrations
+                </h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Full rosters load only when you open a registration.
+                </p>
               </div>
               <div className="grid gap-3 md:grid-cols-4">
-                <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search teams or captains..." />
-                <Select value={tournament} onChange={(event) => { setTournament(event.target.value); setPage(1); }}>
+                <Input
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search teams or captains..."
+                />
+                <Select
+                  value={tournament}
+                  onChange={(event) => {
+                    setTournament(event.target.value);
+                    setPage(1);
+                  }}
+                >
                   <option value="">All tournaments</option>
-                  {tournaments.map((item) => <option key={item.id} value={item.slug}>{item.title}</option>)}
+                  {tournaments.map((item) => (
+                    <option key={item.id} value={item.slug}>
+                      {item.title}
+                    </option>
+                  ))}
                 </Select>
-                <Select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+                <Select
+                  value={status}
+                  onChange={(event) => {
+                    setStatus(event.target.value);
+                    setPage(1);
+                  }}
+                >
                   <option value="">All statuses</option>
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
                 </Select>
-                <Button type="button" variant="secondary" disabled={downloading} onClick={() => void downloadRegistrations()}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={downloading}
+                  onClick={() => void downloadRegistrations()}
+                >
                   {downloading ? "Downloading..." : "Download Excel"}
                 </Button>
               </div>
@@ -156,11 +220,17 @@ export default function AdminRegistrationsManager() {
           </div>
 
           {loading ? (
-            <div className="p-5 sm:p-6"><AdminTableSkeleton /></div>
+            <div className="p-5 sm:p-6">
+              <AdminTableSkeleton />
+            </div>
           ) : error ? (
-            <div className="p-5"><EmptyState description={error} /></div>
+            <div className="p-5">
+              <EmptyState description={error} />
+            </div>
           ) : registrations.length === 0 ? (
-            <div className="p-5"><EmptyState description="No registrations matched your filters." /></div>
+            <div className="p-5">
+              <EmptyState description="No registrations matched your filters." />
+            </div>
           ) : (
             <>
               <div className="overflow-x-auto">
@@ -173,32 +243,104 @@ export default function AdminRegistrationsManager() {
                       <th className="px-5 py-4 font-semibold">Approval</th>
                       <th className="px-5 py-4 font-semibold">Payment</th>
                       <th className="px-5 py-4 font-semibold">Verification</th>
-                      <th className="px-5 py-4 text-center font-semibold">Roster</th>
-                      <th className="px-5 py-4 text-right font-semibold">Details</th>
+                      <th className="px-5 py-4 text-center font-semibold">
+                        Roster
+                      </th>
+                      <th className="px-5 py-4 text-right font-semibold">
+                        Details
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/8">
-                    {registrations.map((registration) => (
-                      <tr key={registration.id} className="transition hover:bg-purple-300/[0.04]">
-                        <td className="px-5 py-4"><p className="font-semibold text-white">{registration.teamName}</p><p className="mt-1 text-xs text-slate-500">{formatAdminCompactDateTime(registration.createdAt)}</p></td>
-                        <td className="px-5 py-4 text-sm text-slate-300">{registration.tournament.title}</td>
-                        <td className="px-5 py-4"><p className="text-sm text-slate-300">{registration.captain.name}</p><p className="text-xs text-slate-500">{registration.captain.email}</p></td>
-                        <td className="px-5 py-4"><StatusText value={registration.status} /></td>
-                        <td className="px-5 py-4"><StatusText value={registration.paymentStatus} /></td>
-                        <td className="px-5 py-4"><StatusText value={registration.verificationStatus} /></td>
-                        <td className="px-5 py-4 text-center text-sm font-semibold text-white">{registration.memberCount}</td>
-                        <td className="px-5 py-4 text-right"><Button type="button" variant="secondary" onClick={() => setSelectedId(registration.id)}>View & manage</Button></td>
-                      </tr>
+                    {registrationGroups.map((group) => (
+                      <Fragment key={group.tournament.id}>
+                        <tr className="border-y border-purple-300/15 bg-purple-400/[0.06]">
+                          <td
+                            colSpan={8}
+                            className="px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-purple-100"
+                          >
+                            {group.tournament.title} · {group.entries.length}{" "}
+                            registration{group.entries.length === 1 ? "" : "s"}
+                          </td>
+                        </tr>
+                        {group.entries.map((registration) => (
+                          <tr
+                            key={registration.id}
+                            className="transition hover:bg-purple-300/[0.04]"
+                          >
+                            <td className="px-5 py-4">
+                              <p className="font-semibold text-white">
+                                {registration.teamName}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {formatAdminCompactDateTime(
+                                  registration.createdAt,
+                                )}
+                              </p>
+                            </td>
+                            <td className="px-5 py-4 text-sm text-slate-300">
+                              {registration.tournament.title}
+                            </td>
+                            <td className="px-5 py-4">
+                              <p className="text-sm text-slate-300">
+                                {registration.captain.name}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {registration.captain.email}
+                              </p>
+                            </td>
+                            <td className="px-5 py-4">
+                              <StatusText value={registration.status} />
+                            </td>
+                            <td className="px-5 py-4">
+                              <StatusText value={registration.paymentStatus} />
+                            </td>
+                            <td className="px-5 py-4">
+                              <StatusText
+                                value={registration.verificationStatus}
+                              />
+                            </td>
+                            <td className="px-5 py-4 text-center text-sm font-semibold text-white">
+                              {registration.memberCount}
+                            </td>
+                            <td className="px-5 py-4 text-right">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setSelectedId(registration.id)}
+                              >
+                                View & manage
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
               </div>
               {pagination ? (
                 <div className="flex flex-col gap-3 border-t border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-slate-400">{getAdminPaginationSummary(pagination, "registrations")}</p>
+                  <p className="text-sm text-slate-400">
+                    {getAdminPaginationSummary(pagination, "registrations")}
+                  </p>
                   <div className="flex gap-3">
-                    <Button type="button" variant="secondary" disabled={pagination.page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button>
-                    <Button type="button" variant="secondary" disabled={pagination.page >= pagination.totalPages} onClick={() => setPage((current) => current + 1)}>Next</Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={pagination.page <= 1}
+                      onClick={() => setPage((current) => current - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={pagination.page >= pagination.totalPages}
+                      onClick={() => setPage((current) => current + 1)}
+                    >
+                      Next
+                    </Button>
                   </div>
                 </div>
               ) : null}
@@ -210,7 +352,14 @@ export default function AdminRegistrationsManager() {
   );
 }
 
-function RegistrationDetail({ registration, loading, error, onBack, onChanged, onDeleted }: {
+function RegistrationDetail({
+  registration,
+  loading,
+  error,
+  onBack,
+  onChanged,
+  onDeleted,
+}: {
   registration: TeamRegistration | null;
   loading: boolean;
   error: string;
@@ -220,7 +369,9 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
 }) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [captainGameId, setCaptainGameId] = useState("");
-  const [memberGameIds, setMemberGameIds] = useState<Record<string, string>>({});
+  const [memberGameIds, setMemberGameIds] = useState<Record<string, string>>(
+    {},
+  );
   const [rosterMembers, setRosterMembers] = useState<RosterDraftMember[]>([]);
   const [syncSavedTeam, setSyncSavedTeam] = useState(false);
   const showToast = useToastStore((state) => state.showToast);
@@ -228,80 +379,126 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
   useEffect(() => {
     if (!registration) return;
     setCaptainGameId(registration.captain.riotId || "");
-    setMemberGameIds(Object.fromEntries(
-      registration.members.map((member) => [
-        member.id,
-        member.role === "CAPTAIN" ? registration.captain.riotId || member.riotId || "" : member.riotId || "",
-      ])
-    ));
+    setMemberGameIds(
+      Object.fromEntries(
+        registration.members.map((member) => [
+          member.id,
+          member.role === "CAPTAIN"
+            ? registration.captain.riotId || member.riotId || ""
+            : member.riotId || "",
+        ]),
+      ),
+    );
     setRosterMembers(
       registration.members.map((member) => ({
-          key: member.id,
-          id: member.id,
-          role: member.role === "CAPTAIN" ? "CAPTAIN" : member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
-          name: member.name,
-          email: member.email || "",
-          discord: member.discord || "",
-          gameId: member.riotId || "",
-        }))
+        key: member.id,
+        id: member.id,
+        role:
+          member.role === "CAPTAIN"
+            ? "CAPTAIN"
+            : member.role === "SUBSTITUTE"
+              ? "SUBSTITUTE"
+              : "PLAYER",
+        name: member.name,
+        email: member.email || "",
+        discord: member.discord || "",
+        gameId: member.riotId || "",
+      })),
     );
     setSyncSavedTeam(registration.savedTeamLinked);
   }, [registration]);
 
-  const updateRosterMember = (key: string, field: keyof Omit<RosterDraftMember, "key" | "id">, value: string) => {
-    setRosterMembers((current) => current.map((member) => (
-      member.key === key ? { ...member, [field]: value } : member
-    )));
+  const updateRosterMember = (
+    key: string,
+    field: keyof Omit<RosterDraftMember, "key" | "id">,
+    value: string,
+  ) => {
+    setRosterMembers((current) =>
+      current.map((member) =>
+        member.key === key ? { ...member, [field]: value } : member,
+      ),
+    );
   };
 
   const saveRosterCorrection = async () => {
     if (!registration) return;
-    const captainCount = rosterMembers.filter((member) => member.role === "CAPTAIN").length;
+    const captainCount = rosterMembers.filter(
+      (member) => member.role === "CAPTAIN",
+    ).length;
     if (captainCount !== 1) {
       showToast({ tone: "error", title: "Choose exactly one captain" });
       return;
     }
-    const playerCount = rosterMembers.filter((member) => member.role === "CAPTAIN" || member.role === "PLAYER").length;
-    const substituteCount = rosterMembers.filter((member) => member.role === "SUBSTITUTE").length;
-    const savedTeamMessage = syncSavedTeam ? " The linked saved-team roster will also be replaced." : "";
-    if (!window.confirm(
-      `Replace ${registration.teamName}'s tournament roster with ${playerCount} active players and ${substituteCount} substitutes?${savedTeamMessage}`
-    )) return;
+    const playerCount = rosterMembers.filter(
+      (member) => member.role === "CAPTAIN" || member.role === "PLAYER",
+    ).length;
+    const substituteCount = rosterMembers.filter(
+      (member) => member.role === "SUBSTITUTE",
+    ).length;
+    const savedTeamMessage = syncSavedTeam
+      ? " The linked saved-team roster will also be replaced."
+      : "";
+    if (
+      !window.confirm(
+        `Replace ${registration.teamName}'s tournament roster with ${playerCount} active players and ${substituteCount} substitutes?${savedTeamMessage}`,
+      )
+    )
+      return;
 
     setBusyAction("roster");
     try {
-      await adminRequest(`/api/admin/team-registrations/${registration.id}/roster`, {
-        method: "PATCH",
-        json: {
-          syncSavedTeam,
-          members: rosterMembers.map((member) => ({
-            id: member.id,
-            role: member.role,
-            name: member.name,
-            email: member.email,
-            discord: member.discord,
-            gameId: member.gameId,
-          })),
+      await adminRequest(
+        `/api/admin/team-registrations/${registration.id}/roster`,
+        {
+          method: "PATCH",
+          json: {
+            syncSavedTeam,
+            members: rosterMembers.map((member) => ({
+              id: member.id,
+              role: member.role,
+              name: member.name,
+              email: member.email,
+              discord: member.discord,
+              gameId: member.gameId,
+            })),
+          },
         },
-      });
+      );
       showToast({ tone: "success", title: "Registration roster corrected" });
       await onChanged();
     } catch (nextError) {
-      showToast({ tone: "error", title: "Unable to correct roster", description: nextError instanceof Error ? nextError.message : "Request failed." });
+      showToast({
+        tone: "error",
+        title: "Unable to correct roster",
+        description:
+          nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     } finally {
       setBusyAction(null);
     }
   };
 
-  const updateRegistration = async (updates: Partial<Pick<TeamRegistration, "status" | "verificationStatus">> & { adminOverridePayment?: boolean }) => {
+  const updateRegistration = async (
+    updates: Partial<
+      Pick<TeamRegistration, "status" | "verificationStatus">
+    > & { adminOverridePayment?: boolean },
+  ) => {
     if (!registration) return;
     setBusyAction("status");
     try {
-      await adminRequest(`/api/admin/team-registrations/${registration.id}/status`, { method: "PATCH", json: updates });
+      await adminRequest(
+        `/api/admin/team-registrations/${registration.id}/status`,
+        { method: "PATCH", json: updates },
+      );
       showToast({ tone: "success", title: "Registration updated" });
       await onChanged();
     } catch (nextError) {
-      showToast({ tone: "error", title: "Unable to update registration", description: nextError instanceof Error ? nextError.message : "Request failed." });
+      showToast({
+        tone: "error",
+        title: "Unable to update registration",
+        description:
+          nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     } finally {
       setBusyAction(null);
     }
@@ -310,16 +507,41 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
   const togglePrivateSlot = async () => {
     if (!registration) return;
     const releasing = Boolean(registration.adminSlotReservation);
-    const note = releasing ? "" : window.prompt("Optional private admin note (not visible to the team):", "");
+    const note = releasing
+      ? ""
+      : window.prompt(
+          "Optional private admin note (not visible to the team):",
+          "",
+        );
     if (!releasing && note === null) return;
-    if (releasing && !window.confirm(`Release the private slot held for ${registration.teamName}?`)) return;
+    if (
+      releasing &&
+      !window.confirm(
+        `Release the private slot held for ${registration.teamName}?`,
+      )
+    )
+      return;
     setBusyAction("slot");
     try {
-      await adminRequest(`/api/admin/team-registrations/${registration.id}/slot-reservation`, { method: releasing ? "DELETE" : "POST", json: releasing ? undefined : { note } });
-      showToast({ tone: "success", title: releasing ? "Private slot released" : "Private slot reserved" });
+      await adminRequest(
+        `/api/admin/team-registrations/${registration.id}/slot-reservation`,
+        {
+          method: releasing ? "DELETE" : "POST",
+          json: releasing ? undefined : { note },
+        },
+      );
+      showToast({
+        tone: "success",
+        title: releasing ? "Private slot released" : "Private slot reserved",
+      });
       await onChanged();
     } catch (nextError) {
-      showToast({ tone: "error", title: "Unable to update slot hold", description: nextError instanceof Error ? nextError.message : "Request failed." });
+      showToast({
+        tone: "error",
+        title: "Unable to update slot hold",
+        description:
+          nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     } finally {
       setBusyAction(null);
     }
@@ -329,125 +551,396 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
     if (!registration) return;
     setBusyAction("game-ids");
     try {
-      await adminRequest(`/api/admin/team-registrations/${registration.id}/game-ids`, {
-        method: "PATCH",
-        json: {
-          captainGameId,
-          members: registration.members.map((member) => ({
-            id: member.id,
-            gameId: member.role === "CAPTAIN" ? captainGameId : memberGameIds[member.id] || "",
-          })),
+      await adminRequest(
+        `/api/admin/team-registrations/${registration.id}/game-ids`,
+        {
+          method: "PATCH",
+          json: {
+            captainGameId,
+            members: registration.members.map((member) => ({
+              id: member.id,
+              gameId:
+                member.role === "CAPTAIN"
+                  ? captainGameId
+                  : memberGameIds[member.id] || "",
+            })),
+          },
         },
-      });
+      );
       showToast({ tone: "success", title: "Registration Game IDs updated" });
       await onChanged();
     } catch (nextError) {
-      showToast({ tone: "error", title: "Unable to update Game IDs", description: nextError instanceof Error ? nextError.message : "Request failed." });
+      showToast({
+        tone: "error",
+        title: "Unable to update Game IDs",
+        description:
+          nextError instanceof Error ? nextError.message : "Request failed.",
+      });
     } finally {
       setBusyAction(null);
     }
   };
 
   const deleteRegistration = async () => {
-    if (!registration || !window.confirm(`Delete the registration for ${registration.teamName}?`)) return;
+    if (
+      !registration ||
+      !window.confirm(`Delete the registration for ${registration.teamName}?`)
+    )
+      return;
     setBusyAction("delete");
     try {
-      await adminRequest(`/api/admin/team-registrations/${registration.id}`, { method: "DELETE" });
+      await adminRequest(`/api/admin/team-registrations/${registration.id}`, {
+        method: "DELETE",
+      });
       showToast({ tone: "success", title: "Registration deleted" });
       await onDeleted();
     } catch (nextError) {
-      showToast({ tone: "error", title: "Unable to delete registration", description: nextError instanceof Error ? nextError.message : "Request failed." });
+      showToast({
+        tone: "error",
+        title: "Unable to delete registration",
+        description:
+          nextError instanceof Error ? nextError.message : "Request failed.",
+      });
       setBusyAction(null);
     }
   };
 
   return (
     <div className="space-y-4">
-      <Button type="button" variant="secondary" onClick={onBack}>← Back to registrations</Button>
-      {error ? <Card className="p-6 text-sm text-rose-300">{error}</Card> : null}
-      {loading ? <Card className="p-5"><AdminTableSkeleton /></Card> : null}
+      <Button type="button" variant="secondary" onClick={onBack}>
+        ← Back to registrations
+      </Button>
+      {error ? (
+        <Card className="p-6 text-sm text-rose-300">{error}</Card>
+      ) : null}
+      {loading ? (
+        <Card className="p-5">
+          <AdminTableSkeleton />
+        </Card>
+      ) : null}
       {!loading && registration ? (
         <Card className="min-w-0 overflow-hidden p-5 sm:p-6">
           <div className="border-b border-white/10 pb-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-purple-200">{registration.entryType === "solo" ? "Solo registration" : "Team registration"}</p>
-            <h3 className="mt-2 text-2xl text-white">{registration.teamName}</h3>
-            <p className="mt-1 text-sm text-slate-400">{registration.tournament.title} · Submitted {formatAdminCompactDateTime(registration.createdAt)}</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-purple-200">
+              {registration.entryType === "solo"
+                ? "Solo registration"
+                : "Team registration"}
+            </p>
+            <h3 className="mt-2 text-2xl text-white">
+              {registration.teamName}
+            </h3>
+            <p className="mt-1 text-sm text-slate-400">
+              {registration.tournament.title} · Submitted{" "}
+              {formatAdminCompactDateTime(registration.createdAt)}
+            </p>
           </div>
 
           <div className="mt-5 grid gap-4 lg:grid-cols-3">
-            <DetailBlock title="Captain" rows={[
-              ["Name", registration.captain.name], ["Email", registration.captain.email], ["Phone", registration.captain.phone],
-              ["Discord", registration.captain.discord], ["Game ID", registration.captain.riotId], ["Contact", registration.contactEmail],
-            ]} />
-            <DetailBlock title="Entry" rows={[
-              ["Country", registration.country || "Not set"], ["Team tag", registration.teamTag || "Not set"],
-              ["Organization requested", registration.organizationRequested ? "Yes" : "No"], ["Payment", registration.paymentStatus],
-              ["Reserved until", registration.reservedUntil ? formatAdminCompactDateTime(registration.reservedUntil) : "Not reserved"],
-            ]} />
+            <DetailBlock
+              title="Captain"
+              rows={[
+                ["Name", registration.captain.name],
+                ["Email", registration.captain.email],
+                ["Phone", registration.captain.phone],
+                ["Discord", registration.captain.discord],
+                ["Game ID", registration.captain.riotId],
+                ["Contact", registration.contactEmail],
+              ]}
+            />
+            <DetailBlock
+              title="Entry"
+              rows={[
+                ["Country", registration.country || "Not set"],
+                ["Team tag", registration.teamTag || "Not set"],
+                [
+                  "Organization requested",
+                  registration.organizationRequested ? "Yes" : "No",
+                ],
+                ["Payment", registration.paymentStatus],
+                [
+                  "Reserved until",
+                  registration.reservedUntil
+                    ? formatAdminCompactDateTime(registration.reservedUntil)
+                    : "Not reserved",
+                ],
+              ]}
+            />
             <div className="border border-white/10 bg-black/15 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Management</p>
-              <label className="mt-4 grid gap-2 text-sm text-slate-300">Approval<Select disabled={busyAction !== null} value={registration.status} onChange={(event) => void updateRegistration({ status: event.target.value as TeamRegistration["status"] })}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></Select></label>
-              <label className="mt-3 grid gap-2 text-sm text-slate-300">Verification<Select disabled={busyAction !== null} value={registration.verificationStatus} onChange={(event) => void updateRegistration({ verificationStatus: event.target.value as TeamRegistration["verificationStatus"] })}><option value="pending">Pending</option><option value="verified">Verified</option><option value="flagged">Flagged</option></Select></label>
-              {registration.paymentStatus !== "paid" && registration.status !== "rejected" ? <Button className="mt-3 w-full" type="button" variant="secondary" disabled={busyAction !== null} onClick={() => window.confirm(`Approve ${registration.teamName} without payment? This will waive the registration fee.`) && void updateRegistration({ status: "approved", adminOverridePayment: true })}>Approve without payment</Button> : null}
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Management
+              </p>
+              <label className="mt-4 grid gap-2 text-sm text-slate-300">
+                Approval
+                <Select
+                  disabled={busyAction !== null}
+                  value={registration.status}
+                  onChange={(event) =>
+                    void updateRegistration({
+                      status: event.target.value as TeamRegistration["status"],
+                    })
+                  }
+                >
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </Select>
+              </label>
+              <label className="mt-3 grid gap-2 text-sm text-slate-300">
+                Verification
+                <Select
+                  disabled={busyAction !== null}
+                  value={registration.verificationStatus}
+                  onChange={(event) =>
+                    void updateRegistration({
+                      verificationStatus: event.target
+                        .value as TeamRegistration["verificationStatus"],
+                    })
+                  }
+                >
+                  <option value="pending">Pending</option>
+                  <option value="verified">Verified</option>
+                  <option value="flagged">Flagged</option>
+                </Select>
+              </label>
+              {registration.paymentStatus !== "paid" &&
+              registration.status !== "rejected" ? (
+                <Button
+                  className="mt-3 w-full"
+                  type="button"
+                  variant="secondary"
+                  disabled={busyAction !== null}
+                  onClick={() =>
+                    window.confirm(
+                      `Approve ${registration.teamName} without payment? This will waive the registration fee.`,
+                    ) &&
+                    void updateRegistration({
+                      status: "approved",
+                      adminOverridePayment: true,
+                    })
+                  }
+                >
+                  Approve without payment
+                </Button>
+              ) : null}
             </div>
           </div>
 
-          {registration.adminSlotReservation ? <div className="mt-5 border border-purple-300/20 bg-purple-400/10 p-4 text-sm text-purple-100">Slot #{registration.adminSlotReservation.assignedSlotNumber} privately held · {registration.adminSlotReservation.quotedFeeCurrency} {registration.adminSlotReservation.quotedFeeAmount.toFixed(2)}{registration.adminSlotReservation.note ? ` · ${registration.adminSlotReservation.note}` : ""}</div> : null}
-          {registration.paymentStatus !== "paid" && registration.status !== "rejected" && (registration.adminSlotReservation || registration.members.some((member) => member.inviteStatus === "pending")) ? <Button className="mt-4" type="button" variant="secondary" disabled={busyAction !== null} onClick={() => void togglePrivateSlot()}>{busyAction === "slot" ? "Updating..." : registration.adminSlotReservation ? "Release private slot" : "Reserve slot privately"}</Button> : null}
+          {registration.adminSlotReservation ? (
+            <div className="mt-5 border border-purple-300/20 bg-purple-400/10 p-4 text-sm text-purple-100">
+              Slot #{registration.adminSlotReservation.assignedSlotNumber}{" "}
+              privately held ·{" "}
+              {registration.adminSlotReservation.quotedFeeCurrency}{" "}
+              {registration.adminSlotReservation.quotedFeeAmount.toFixed(2)}
+              {registration.adminSlotReservation.note
+                ? ` · ${registration.adminSlotReservation.note}`
+                : ""}
+            </div>
+          ) : null}
+          {registration.paymentStatus !== "paid" &&
+          registration.status !== "rejected" &&
+          (registration.adminSlotReservation ||
+            registration.members.some(
+              (member) => member.inviteStatus === "pending",
+            )) ? (
+            <Button
+              className="mt-4"
+              type="button"
+              variant="secondary"
+              disabled={busyAction !== null}
+              onClick={() => void togglePrivateSlot()}
+            >
+              {busyAction === "slot"
+                ? "Updating..."
+                : registration.adminSlotReservation
+                  ? "Release private slot"
+                  : "Reserve slot privately"}
+            </Button>
+          ) : null}
 
-          <DataFields title="Registration fields" values={registration.additionalData} />
+          <DataFields
+            title="Registration fields"
+            values={registration.additionalData}
+          />
 
           {registration.entryType !== "solo" ? (
             <div className="mt-7 border border-amber-300/20 bg-amber-400/[0.06] p-4 sm:p-5">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <h4 className="text-sm font-semibold uppercase tracking-wide text-amber-100">Roster correction</h4>
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-amber-100">
+                    Roster correction
+                  </h4>
                   <p className="mt-1 max-w-3xl text-sm text-slate-400">
-                    Choose exactly one captain. Replacing this list is allowed for paid registrations, requires verified Quest accounts, and is recorded in the audit log.
+                    Choose exactly one captain. Replacing this list is allowed
+                    for paid registrations, requires verified Quest accounts,
+                    and is recorded in the audit log.
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    Event limits: {registration.tournament.minRosterSize || 1}-{registration.tournament.maxRosterSize || 1} active players including the captain, up to {registration.tournament.maxSubstitutes || 0} substitutes.
+                    Event limits: {registration.tournament.minRosterSize || 1}-
+                    {registration.tournament.maxRosterSize || 1} active players
+                    including the captain, up to{" "}
+                    {registration.tournament.maxSubstitutes || 0} substitutes.
                   </p>
                 </div>
-                <Button type="button" disabled={busyAction !== null} onClick={() => void saveRosterCorrection()}>
-                  {busyAction === "roster" ? "Saving..." : "Apply roster correction"}
+                <Button
+                  type="button"
+                  disabled={busyAction !== null}
+                  onClick={() => void saveRosterCorrection()}
+                >
+                  {busyAction === "roster"
+                    ? "Saving..."
+                    : "Apply roster correction"}
                 </Button>
               </div>
 
               <div className="mt-4 grid gap-3">
                 {rosterMembers.map((member, index) => (
-                  <div key={member.key} className="border border-white/10 bg-black/15 p-4">
+                  <div
+                    key={member.key}
+                    className="border border-white/10 bg-black/15 p-4"
+                  >
                     <div className="mb-3 flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-white">Roster member {index + 1}</p>
+                      <p className="text-sm font-semibold text-white">
+                        Roster member {index + 1}
+                      </p>
                       <Button
                         type="button"
                         variant="danger"
                         disabled={busyAction !== null}
-                        onClick={() => setRosterMembers((current) => current.filter((item) => item.key !== member.key))}
+                        onClick={() =>
+                          setRosterMembers((current) =>
+                            current.filter((item) => item.key !== member.key),
+                          )
+                        }
                       >
                         Remove
                       </Button>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      <label className="grid gap-1 text-sm text-slate-300">Role<Select value={member.role} onChange={(event) => updateRosterMember(member.key, "role", event.target.value)}><option value="CAPTAIN">Captain</option><option value="PLAYER">Main player</option><option value="SUBSTITUTE">Substitute</option></Select></label>
-                      <label className="grid gap-1 text-sm text-slate-300">Player name<Input required value={member.name} onChange={(event) => updateRosterMember(member.key, "name", event.target.value)} /></label>
-                      <label className="grid gap-1 text-sm text-slate-300">Quest account email<Input required type="email" value={member.email} onChange={(event) => updateRosterMember(member.key, "email", event.target.value)} /></label>
-                      <label className="grid gap-1 text-sm text-slate-300">Game ID<Input required value={member.gameId} onChange={(event) => updateRosterMember(member.key, "gameId", event.target.value)} /></label>
-                      <label className="grid gap-1 text-sm text-slate-300">Discord<Input required value={member.discord} onChange={(event) => updateRosterMember(member.key, "discord", event.target.value)} /></label>
+                      <label className="grid gap-1 text-sm text-slate-300">
+                        Role
+                        <Select
+                          value={member.role}
+                          onChange={(event) =>
+                            updateRosterMember(
+                              member.key,
+                              "role",
+                              event.target.value,
+                            )
+                          }
+                        >
+                          <option value="CAPTAIN">Captain</option>
+                          <option value="PLAYER">Main player</option>
+                          <option value="SUBSTITUTE">Substitute</option>
+                        </Select>
+                      </label>
+                      <label className="grid gap-1 text-sm text-slate-300">
+                        Player name
+                        <Input
+                          required
+                          value={member.name}
+                          onChange={(event) =>
+                            updateRosterMember(
+                              member.key,
+                              "name",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="grid gap-1 text-sm text-slate-300">
+                        Quest account email
+                        <Input
+                          required
+                          type="email"
+                          value={member.email}
+                          onChange={(event) =>
+                            updateRosterMember(
+                              member.key,
+                              "email",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="grid gap-1 text-sm text-slate-300">
+                        Game ID
+                        <Input
+                          required
+                          value={member.gameId}
+                          onChange={(event) =>
+                            updateRosterMember(
+                              member.key,
+                              "gameId",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="grid gap-1 text-sm text-slate-300">
+                        Discord
+                        <Input
+                          required
+                          value={member.discord}
+                          onChange={(event) =>
+                            updateRosterMember(
+                              member.key,
+                              "discord",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
                     </div>
                   </div>
                 ))}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-3">
-                <Button type="button" variant="secondary" disabled={busyAction !== null || rosterMembers.length >= 20} onClick={() => setRosterMembers((current) => [...current, createRosterDraftMember("PLAYER")])}>Add main player</Button>
-                <Button type="button" variant="secondary" disabled={busyAction !== null || rosterMembers.length >= 20} onClick={() => setRosterMembers((current) => [...current, createRosterDraftMember("SUBSTITUTE")])}>Add substitute</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busyAction !== null || rosterMembers.length >= 20}
+                  onClick={() =>
+                    setRosterMembers((current) => [
+                      ...current,
+                      createRosterDraftMember("PLAYER"),
+                    ])
+                  }
+                >
+                  Add main player
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busyAction !== null || rosterMembers.length >= 20}
+                  onClick={() =>
+                    setRosterMembers((current) => [
+                      ...current,
+                      createRosterDraftMember("SUBSTITUTE"),
+                    ])
+                  }
+                >
+                  Add substitute
+                </Button>
               </div>
 
               {registration.savedTeamLinked ? (
                 <label className="mt-4 flex items-start gap-3 border border-white/10 bg-black/15 p-4 text-sm text-slate-300">
-                  <input type="checkbox" className="mt-1" checked={syncSavedTeam} onChange={(event) => setSyncSavedTeam(event.target.checked)} />
-                  <span><span className="font-semibold text-white">Replace the linked saved-team roster too</span><span className="mt-1 block text-xs text-slate-500">Required when changing the captain. This also transfers saved-team ownership.</span></span>
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={syncSavedTeam}
+                    onChange={(event) => setSyncSavedTeam(event.target.checked)}
+                  />
+                  <span>
+                    <span className="font-semibold text-white">
+                      Replace the linked saved-team roster too
+                    </span>
+                    <span className="mt-1 block text-xs text-slate-500">
+                      Required when changing the captain. This also transfers
+                      saved-team ownership.
+                    </span>
+                  </span>
                 </label>
               ) : null}
             </div>
@@ -456,51 +949,105 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
           <div className="mt-7 border border-purple-300/20 bg-purple-400/[0.06] p-4 sm:p-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h4 className="text-sm font-semibold uppercase tracking-wide text-purple-100">Game IDs</h4>
-                <p className="mt-1 text-sm text-slate-400">Edit the IDs for this tournament only. The saved team and its other registrations are not changed.</p>
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-purple-100">
+                  Game IDs
+                </h4>
+                <p className="mt-1 text-sm text-slate-400">
+                  Edit the IDs for this tournament only. The saved team and its
+                  other registrations are not changed.
+                </p>
               </div>
-              <Button type="button" disabled={busyAction !== null} onClick={() => void saveGameIds()}>
+              <Button
+                type="button"
+                disabled={busyAction !== null}
+                onClick={() => void saveGameIds()}
+              >
                 {busyAction === "game-ids" ? "Saving..." : "Save Game IDs"}
               </Button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {registration.members.map((member) => (
-                <label key={member.id} className="grid min-w-0 gap-1 text-sm text-slate-300">
-                  <span className="break-words">{member.name} <span className="text-xs uppercase text-slate-500">· {member.role.toLowerCase()}</span></span>
+                <label
+                  key={member.id}
+                  className="grid min-w-0 gap-1 text-sm text-slate-300"
+                >
+                  <span className="break-words">
+                    {member.name}{" "}
+                    <span className="text-xs uppercase text-slate-500">
+                      · {member.role.toLowerCase()}
+                    </span>
+                  </span>
                   <Input
                     required
-                    value={member.role === "CAPTAIN" ? captainGameId : memberGameIds[member.id] || ""}
+                    value={
+                      member.role === "CAPTAIN"
+                        ? captainGameId
+                        : memberGameIds[member.id] || ""
+                    }
                     placeholder="Player ID / Riot ID"
                     onChange={(event) => {
                       if (member.role === "CAPTAIN") {
                         setCaptainGameId(event.target.value);
                       } else {
-                        setMemberGameIds((current) => ({ ...current, [member.id]: event.target.value }));
+                        setMemberGameIds((current) => ({
+                          ...current,
+                          [member.id]: event.target.value,
+                        }));
                       }
                     }}
                   />
-                  <span className="truncate text-xs text-slate-500">{member.email || "No email"}</span>
+                  <span className="truncate text-xs text-slate-500">
+                    {member.email || "No email"}
+                  </span>
                 </label>
               ))}
             </div>
           </div>
 
           <div className="mt-7">
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Roster · {registration.members.length}</h4>
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">
+              Roster · {registration.members.length}
+            </h4>
             <div className="mt-3 grid gap-3">
               {registration.members.map((member) => (
-                <div key={member.id} className="border border-white/10 bg-black/15 p-4">
+                <div
+                  key={member.id}
+                  className="border border-white/10 bg-black/15 p-4"
+                >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div><p className="font-semibold text-white">{member.name}</p><p className="mt-1 text-sm text-slate-400">{member.role.toLowerCase()} · {member.email || "No email"}</p><p className="mt-1 text-sm text-slate-500">{member.riotId || "No game ID"}{member.discord ? ` · Discord ${member.discord}` : ""}</p></div>
+                    <div>
+                      <p className="font-semibold text-white">{member.name}</p>
+                      <p className="mt-1 text-sm text-slate-400">
+                        {member.role.toLowerCase()} ·{" "}
+                        {member.email || "No email"}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {member.riotId || "No game ID"}
+                        {member.discord ? ` · Discord ${member.discord}` : ""}
+                      </p>
+                    </div>
                     <StatusText value={member.inviteStatus} />
                   </div>
-                  <DataFields title="Player fields" values={member.additionalData} compact />
+                  <DataFields
+                    title="Player fields"
+                    values={member.additionalData}
+                    compact
+                  />
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="mt-6 border-t border-white/10 pt-5"><Button type="button" variant="danger" disabled={busyAction !== null} onClick={() => void deleteRegistration()}>{busyAction === "delete" ? "Deleting..." : "Delete registration"}</Button></div>
+          <div className="mt-6 border-t border-white/10 pt-5">
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busyAction !== null}
+              onClick={() => void deleteRegistration()}
+            >
+              {busyAction === "delete" ? "Deleting..." : "Delete registration"}
+            </Button>
+          </div>
         </Card>
       ) : null}
     </div>
@@ -508,16 +1055,72 @@ function RegistrationDetail({ registration, loading, error, onBack, onChanged, o
 }
 
 function StatusText({ value }: { value: string }) {
-  const tone = ["paid", "approved", "verified", "accepted"].includes(value) ? "text-emerald-300" : ["rejected", "failed", "flagged", "declined", "cancelled"].includes(value) ? "text-rose-300" : "text-amber-300";
-  return <span className={`text-xs font-semibold uppercase tracking-wider ${tone}`}>{value.replaceAll("_", " ")}</span>;
+  const tone = ["paid", "approved", "verified", "accepted"].includes(value)
+    ? "text-emerald-300"
+    : ["rejected", "failed", "flagged", "declined", "cancelled"].includes(value)
+      ? "text-rose-300"
+      : "text-amber-300";
+  return (
+    <span className={`text-xs font-semibold uppercase tracking-wider ${tone}`}>
+      {value.replaceAll("_", " ")}
+    </span>
+  );
 }
 
-function DetailBlock({ title, rows }: { title: string; rows: Array<[string, string]> }) {
-  return <div className="border border-white/10 bg-black/15 p-4"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{title}</p><dl className="mt-4 grid gap-3">{rows.map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm text-slate-200">{value}</dd></div>)}</dl></div>;
+function DetailBlock({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<[string, string]>;
+}) {
+  return (
+    <div className="border border-white/10 bg-black/15 p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {title}
+      </p>
+      <dl className="mt-4 grid gap-3">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-xs text-slate-500">{label}</dt>
+            <dd className="mt-1 break-words text-sm text-slate-200">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
-function DataFields({ title, values, compact = false }: { title: string; values?: Record<string, string>; compact?: boolean }) {
-  const entries = Object.entries(values || {}).filter(([, value]) => value !== "" && value !== null && value !== undefined);
+function DataFields({
+  title,
+  values,
+  compact = false,
+}: {
+  title: string;
+  values?: Record<string, string>;
+  compact?: boolean;
+}) {
+  const entries = Object.entries(values || {}).filter(
+    ([, value]) => value !== "" && value !== null && value !== undefined,
+  );
   if (entries.length === 0) return null;
-  return <div className={compact ? "mt-4" : "mt-7"}><h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{title}</h4><dl className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{entries.map(([key, value]) => <div key={key} className="border border-white/8 p-3"><dt className="text-xs text-slate-500">{key.replaceAll("_", " ")}</dt><dd className="mt-1 break-words text-sm text-slate-200">{String(value)}</dd></div>)}</dl></div>;
+  return (
+    <div className={compact ? "mt-4" : "mt-7"}>
+      <h4 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {title}
+      </h4>
+      <dl className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {entries.map(([key, value]) => (
+          <div key={key} className="border border-white/8 p-3">
+            <dt className="text-xs text-slate-500">
+              {key.replaceAll("_", " ")}
+            </dt>
+            <dd className="mt-1 break-words text-sm text-slate-200">
+              {String(value)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
