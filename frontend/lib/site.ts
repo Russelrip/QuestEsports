@@ -6,7 +6,9 @@ const siteTitle = "Quest E-sports LK";
 const siteDescription =
   "Join Quest E-sports LK for Sri Lankan esports tournaments, team registration, live match broadcasts, brackets, highlights, and community events.";
 const fallbackSiteUrl =
-  process.env.NODE_ENV === "production" ? "https://questesports.lk" : "http://localhost:3000";
+  process.env.NODE_ENV === "production"
+    ? "https://questesports.lk"
+    : "http://localhost:3000";
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || fallbackSiteUrl;
 const creatorHandle = "@questesportslk";
 const defaultLocale = "en_US";
@@ -122,7 +124,11 @@ export const siteMetadata: Metadata = {
       { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
     ],
     shortcut: "/favicon.ico",
-    apple: { url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" },
+    apple: {
+      url: "/apple-touch-icon.png",
+      type: "image/png",
+      sizes: "180x180",
+    },
   },
   manifest: "/manifest.webmanifest",
   other: {
@@ -144,15 +150,14 @@ type PageMetadataOptions = {
 
 const mergeKeywords = (...keywords: Array<readonly string[] | undefined>) =>
   Array.from(
-    new Set([
-      ...defaultKeywords,
-      ...keywords.flatMap((entry) => entry ?? []),
-    ])
+    new Set([...defaultKeywords, ...keywords.flatMap((entry) => entry ?? [])]),
   );
 
-const resolvePath = (path: string) => (path.startsWith("/") ? path : `/${path}`);
+const resolvePath = (path: string) =>
+  path.startsWith("/") ? path : `/${path}`;
 
-export const absoluteUrl = (path = "/") => new URL(resolvePath(path), siteUrl).toString();
+export const absoluteUrl = (path = "/") =>
+  new URL(resolvePath(path), siteUrl).toString();
 
 export const buildPageMetadata = ({
   title,
@@ -176,7 +181,7 @@ export const buildPageMetadata = ({
       channelKeywords.instagram,
       channelKeywords.tiktok,
       channelKeywords.linkedin,
-      channelKeywords.appStores
+      channelKeywords.appStores,
     ),
     alternates: {
       canonical: canonicalPath,
@@ -247,7 +252,7 @@ export const buildTournamentMetadata = (tournament: Tournament): Metadata => {
 export const buildNoIndexMetadata = (
   title: string,
   description: string,
-  path: string
+  path: string,
 ): Metadata =>
   buildPageMetadata({
     title,
@@ -349,6 +354,7 @@ export const primaryNavItems = [
 ] as const;
 
 export const secondaryNavItems = [
+  { href: "/tickets", label: "Tickets" },
   { href: "/shop", label: "Shop" },
   { href: "/members", label: "Members" },
   { href: "/contact", label: "Contact" },
@@ -470,29 +476,33 @@ export const teamMembers = [
 
 export const defaultPageDescriptions = {
   home: siteDescription,
-  tournaments: "Discover upcoming Quest E-sports tournaments, prize pools, registration windows, and featured competitive gaming events.",
+  tournaments:
+    "Discover upcoming Quest E-sports tournaments, prize pools, registration windows, and featured competitive gaming events.",
   tournamentRegistration:
     "Enter a Quest E-sports tournament using its configured solo or team registration form.",
   registration:
     "Create and save your E-sports team, upload a logo, and invite members before entering tournaments.",
-  login: "Access your Quest E-sports account to manage registrations, profiles, and tournament participation.",
+  login:
+    "Access your Quest E-sports account to manage registrations, profiles, and tournament participation.",
   signup:
     "Create a Quest E-sports account to join tournaments, follow events, and stay ready for upcoming competitions.",
   profile: "View your account details and update your player profile.",
   admin: "Review user activity and monitor Quest E-sports account data.",
-  adminUsers: "Create, update, and manage Quest E-sports user accounts and admin access.",
-  adminTournaments: "Create, publish, edit, and manage Quest E-sports tournaments.",
-  adminRegistrations: "Review registrations, approvals, payments, and verification states.",
-  adminContactMessages: "Read and manage incoming contact messages from the website.",
+  adminUsers:
+    "Create, update, and manage Quest E-sports user accounts and admin access.",
+  adminTournaments:
+    "Create, publish, edit, and manage Quest E-sports tournaments.",
+  adminRegistrations:
+    "Review registrations, approvals, payments, and verification states.",
+  adminContactMessages:
+    "Read and manage incoming contact messages from the website.",
   matchVideos:
     "Watch official Quest E-sports tournament broadcasts, YouTube match replays, highlights, and livestream archives.",
   gallery:
     "Browse Quest E-sports event photos, tournament highlights, promotional artwork, and community moments.",
-  shop:
-    "Shop Quest E-sports apparel and made-to-order merchandise with secure online checkout.",
+  shop: "Shop Quest E-sports apparel and made-to-order merchandise with secure online checkout.",
   members: "Quest E-sports members and community leadership.",
-  join:
-    "Apply to join Quest E-sports as a solo player, existing team, or incomplete roster looking for teammates.",
+  join: "Apply to join Quest E-sports as a solo player, existing team, or incomplete roster looking for teammates.",
   rulebook:
     "Read the official Quest E-sports VALORANT tournament rules, eligibility guidelines, and match conduct standards.",
   contact:

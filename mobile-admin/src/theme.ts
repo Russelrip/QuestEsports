@@ -49,6 +49,11 @@ export const statusColors: Record<string, string> = {
   charged_back: colors.danger,
   expired: colors.muted,
   refunded: colors.info,
+  valid: colors.success,
+  checked_in: colors.accent,
+  on_sale: colors.success,
+  sales_paused: colors.warning,
+  sales_closed: colors.muted,
   draft: colors.muted,
   unpublished: colors.muted,
 };
@@ -71,7 +76,10 @@ export const formatDate = (value?: string | null) => {
   }).format(parsed);
 };
 
-export const formatMoney = (amount?: number | string | null, currency = "LKR") => {
+export const formatMoney = (
+  amount?: number | string | null,
+  currency = "LKR",
+) => {
   const numericAmount = Number(amount || 0);
   return new Intl.NumberFormat("en-LK", {
     style: "currency",

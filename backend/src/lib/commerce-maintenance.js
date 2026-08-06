@@ -19,12 +19,19 @@ const runCommerceMaintenance = async () => {
   activeRun = (async () => {
     try {
       const result = await expireStaleCommerceReservations();
-      const deletedBankTransferProofs = await cleanupRetainedBankTransferProofs();
-      if (result.expiredOrders || result.expiredRegistrations) {
+      const deletedBankTransferProofs =
+        await cleanupRetainedBankTransferProofs();
+      if (
+        result.expiredOrders ||
+        result.expiredRegistrations ||
+        result.expiredTicketOrders
+      ) {
         logger.info("Expired commerce reservations released", result);
       }
       if (deletedBankTransferProofs) {
-        logger.info("Expired bank-transfer proof files deleted", { deletedBankTransferProofs });
+        logger.info("Expired bank-transfer proof files deleted", {
+          deletedBankTransferProofs,
+        });
       }
     } catch (error) {
       logger.error("Commerce reservation maintenance failed", { error });
@@ -39,7 +46,10 @@ const runCommerceMaintenance = async () => {
 const startCommerceMaintenance = () => {
   if (!env.COMMERCE_MAINTENANCE_ENABLED || interval) return false;
   stopping = false;
-  interval = setInterval(() => void runCommerceMaintenance(), MAINTENANCE_INTERVAL_MS);
+  interval = setInterval(
+    () => void runCommerceMaintenance(),
+    MAINTENANCE_INTERVAL_MS,
+  );
   interval.unref?.();
   void runCommerceMaintenance();
   return true;

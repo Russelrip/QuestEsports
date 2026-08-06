@@ -6,7 +6,13 @@ const escapeHtml = (value) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const renderEmailLayout = ({ title, intro, actionLabel, actionUrl, outro }) => ({
+const renderEmailLayout = ({
+  title,
+  intro,
+  actionLabel,
+  actionUrl,
+  outro,
+}) => ({
   html: `
     <div style="background:#090313;padding:32px 16px;font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#f5f3ff;">
       <div style="max-width:640px;margin:0 auto;background:linear-gradient(180deg,#140a27,#0e061c);border:1px solid rgba(192,132,252,0.25);border-radius:20px;padding:32px;box-shadow:0 18px 40px rgba(0,0,0,0.28);">
@@ -40,7 +46,7 @@ const buildVerificationEmail = ({ firstName, verificationUrl }) =>
     title: "Verify your Quest E-sports account",
     intro: buildGreeting(
       firstName,
-      "confirm your email address to finish setting up your Quest E-sports account."
+      "confirm your email address to finish setting up your Quest E-sports account.",
     ),
     actionLabel: "Verify Email",
     actionUrl: verificationUrl,
@@ -53,7 +59,7 @@ const buildResetPasswordEmail = ({ firstName, resetUrl }) =>
     title: "Reset your Quest E-sports password",
     intro: buildGreeting(
       firstName,
-      "we received a request to reset your password."
+      "we received a request to reset your password.",
     ),
     actionLabel: "Reset Password",
     actionUrl: resetUrl,
@@ -66,7 +72,7 @@ const buildEmailChangeEmail = ({ firstName, nextEmail, confirmUrl }) =>
     title: "Confirm your new Quest E-sports email",
     intro: buildGreeting(
       firstName,
-      `confirm ${nextEmail} as the new email address for your Quest E-sports account.`
+      `confirm ${nextEmail} as the new email address for your Quest E-sports account.`,
     ),
     actionLabel: "Confirm New Email",
     actionUrl: confirmUrl,
@@ -87,7 +93,7 @@ const buildTeamInviteEmail = ({
       recipientName,
       `you have been invited by ${captainName} to join ${teamName}${
         tournamentTitle ? ` for ${tournamentTitle}` : ""
-      }.`
+      }.`,
     ),
     actionLabel: "Review Invite",
     actionUrl: inviteUrl,
@@ -113,10 +119,24 @@ const buildSecurityAlertEmail = ({
       "If this activity was not yours, secure your account immediately and contact support.",
   });
 
+const buildTicketOrderEmail = ({ firstName, eventTitle, quantity, orderUrl }) =>
+  renderEmailLayout({
+    title: `Your tickets for ${eventTitle}`,
+    intro: buildGreeting(
+      firstName,
+      `your payment is confirmed and ${quantity} ticket${quantity === 1 ? " is" : "s are"} ready.`,
+    ),
+    actionLabel: "View QR Tickets",
+    actionUrl: orderUrl,
+    outro:
+      "Present each QR code at the entrance. Every ticket has its own code and can be checked in only once.",
+  });
+
 module.exports = {
   buildVerificationEmail,
   buildResetPasswordEmail,
   buildEmailChangeEmail,
   buildTeamInviteEmail,
   buildSecurityAlertEmail,
+  buildTicketOrderEmail,
 };

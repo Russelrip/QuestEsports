@@ -8,6 +8,7 @@ const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
   registrations: "people-outline",
   payments: "card-outline",
   orders: "bag-handle-outline",
+  tickets: "qr-code-outline",
   more: "menu-outline",
 };
 
@@ -29,13 +30,20 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
-        tabBarIcon: ({ color, size }) => <Ionicons name={icons[route.name] || "ellipse-outline"} color={color} size={size} />,
+        tabBarIcon: ({ color, size }) => (
+          <Ionicons
+            name={icons[route.name] || "ellipse-outline"}
+            color={color}
+            size={size}
+          />
+        ),
       })}
     >
       <Tabs.Screen name="index" options={{ title: "Dashboard" }} />
       <Tabs.Screen name="registrations" options={{ title: "Registrations" }} />
       <Tabs.Screen name="payments" options={{ title: "Payments" }} />
       <Tabs.Screen name="orders" options={{ title: "Orders" }} />
+      <Tabs.Screen name="tickets" options={{ title: "Tickets" }} />
       <Tabs.Screen name="more" options={{ title: "More" }} />
     </Tabs>
   );

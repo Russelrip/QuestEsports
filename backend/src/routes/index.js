@@ -14,6 +14,7 @@ const seriesRoutes = require("../modules/series/series.routes");
 const paymentRoutes = require("../modules/payments/payment.routes");
 const shopRoutes = require("../modules/shop/shop.routes");
 const gameCategoryRoutes = require("../modules/games/game-category.routes");
+const ticketRoutes = require("../modules/tickets/ticket.routes");
 
 const router = express.Router();
 
@@ -24,6 +25,7 @@ router.use(seriesRoutes);
 router.use(gameCategoryRoutes);
 router.use(paymentRoutes);
 router.use(shopRoutes);
+router.use(ticketRoutes);
 router.use(adminRoutes);
 router.use(contactRoutes);
 router.use(mediaRoutes);

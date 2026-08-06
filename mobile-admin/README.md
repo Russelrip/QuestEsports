@@ -1,6 +1,6 @@
 # Quest Admin Android app
 
-Quest Admin is the private Android operations client for Quest E-sports. It uses the production API and supports dashboard monitoring, tournament registrations, payment review and reconciliation, merchandise fulfilment, recruitment, contact messages, teams, users, tournaments, products, event series, game categories, rulebooks, and session revocation.
+Quest Admin is the private Android operations client for Quest E-sports. It uses the production API and supports dashboard monitoring, tournament registrations, payment review and reconciliation, event-ticket QR scanning, merchandise fulfilment, recruitment, contact messages, teams, users, tournaments, products, event series, game categories, rulebooks, and session revocation.
 
 ## Security model
 
@@ -13,6 +13,10 @@ Quest Admin is the private Android operations client for Quest E-sports. It uses
 - Browser sessions continue using the existing `HttpOnly` cookie and CSRF protections.
 
 Admins can sign in with a password or a linked Google or Discord account.
+
+## Ticket scanner
+
+Open the Tickets tab, select the event at the gate, and grant camera access. Each QR is checked live against the production database. A green result admits the attendee; red results identify already-used, invalid, cancelled, unpaid, or wrong-event tickets and must not be admitted. The scanner records all attempts and does not support offline admission.
 
 ## Local development
 

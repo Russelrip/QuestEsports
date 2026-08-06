@@ -16,7 +16,7 @@ LankaPay, PayPal, and separate card integrations remain deferred. Free registrat
 
 ## Database deployment
 
-Apply the complete migration history before deploying either application. `20260713220000_complete_platform_foundations` adds event series, configurable solo/team registration, account history, products, orders, and generic payments. Later migrations add date statuses, tiered bank-transfer registration, duplicate-proof prevention, and payment reconciliation.
+Apply the complete migration history before deploying either application. `20260713220000_complete_platform_foundations` adds event series, configurable solo/team registration, account history, products, orders, and generic payments. Later migrations add date statuses, tiered bank-transfer registration, duplicate-proof prevention, payment reconciliation, and event ticketing.
 
 ```bash
 cd backend
@@ -33,6 +33,7 @@ Current commerce migrations are:
 - `20260714140000_add_bank_transfer_registration`
 - `20260714170000_enforce_unique_bank_transfer_proofs`
 - `20260714180000_add_payment_reconciliation`
+- `20260806120000_add_event_ticketing`
 
 Never mark a migration as applied manually unless its SQL has actually completed. Production CD runs `prisma migrate deploy`; its code rollback does not reverse database migrations, so migrations must remain compatible with the previous release.
 
@@ -65,6 +66,7 @@ PAYHERE_MERCHANT_SECRET=
 PAYHERE_NOTIFY_URL=https://api.example.com/api/payments/payhere/notify
 SHOP_DELIVERY_FEE_LKR=500
 SHOP_ORDER_RESERVATION_MINUTES=30
+TICKET_ORDER_RESERVATION_MINUTES=30
 APP_URL=https://www.example.com
 ```
 
@@ -82,7 +84,14 @@ Use sandbox credentials until successful paid, failed, cancelled, duplicate-noti
 2. Configure each tournament's entry type, roster limits, substitutes, JSON field schema, payment method, fee/currency or tiers, reservation/review duration, and bank details when applicable.
 3. Upload schedules and rulebooks, approve participants, generate the bracket, and publish it when ready.
 4. Create products and variants in `/admin/products`. Upload product images in the same editor, then activate the product.
-5. Monitor `/admin/orders` for fulfilment and `/admin/payments` for reconciliation.
+5. Create ticket events in `/admin/tickets`, set the sales window/capacity, and confirm the single and pair prices before publishing.
+6. Monitor `/admin/orders` for fulfilment, `/admin/payments` for reconciliation, and `/admin/tickets` for ticket orders and check-ins.
+
+## Entrance tickets
+
+Entrance-ticket checkout uses PayHere and reserves capacity for `TICKET_ORDER_RESERVATION_MINUTES`. Pricing is calculated only by the backend as complete pair bundles plus an optional single. With a LKR 500 single and LKR 800 pair, quantities total LKR 500, 800, 1,300, 1,600, and 2,100 for one through five tickets.
+
+The paid-order page receives its private lookup token through the URL fragment, and each attendee receives a distinct signed QR code. A QR is valid only for its event, paid order, active ticket, and current version. Every scan is verified and written atomically in PostgreSQL; no offline admission mode is provided. Keep the production API reachable at the venue and test both the website scanner and private Android app before doors open.
 
 Registration field definitions accept only `text`, `number`, or `select`; `entry` or `member` scope; and required/optional flags. Select fields must include an `options` list. A zero tournament fee submits immediately; paid entries reserve capacity for the configured window (24 hours by default).
 
