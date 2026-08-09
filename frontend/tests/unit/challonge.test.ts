@@ -23,6 +23,16 @@ describe("Challonge frontend boundary", () => {
     expect(frontendEnv).not.toContain("CHALLONGE_CLIENT_ID");
   });
 
+  it("keeps Challonge admin controls contained on mobile", () => {
+    const panel = readFileSync(resolve(process.cwd(), "components/admin/ChallongeAdminPanel.tsx"), "utf8");
+    const select = readFileSync(resolve(process.cwd(), "components/ui/select.tsx"), "utf8");
+
+    expect(panel).toContain("min-w-0 overflow-hidden p-4 sm:p-8");
+    expect(panel).toContain("[&>*]:w-full sm:[&>*]:w-auto");
+    expect(panel).toContain("[&>*]:min-w-0");
+    expect(select).toContain("w-full min-w-0 max-w-full");
+  });
+
   it("ships deliberate, quota-labelled tournament-admin write controls", () => {
     const panel = readFileSync(resolve(process.cwd(), "components/admin/ChallongeAdminPanel.tsx"), "utf8");
     for (const label of ["Numeric tournament ID or public URL", "Load Current Data (3–4 Requests)", "Add Participant", "Apply State Action", "Report Result", "Last editor load", "Last error"]) {
