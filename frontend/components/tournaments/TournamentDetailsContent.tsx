@@ -67,6 +67,8 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
           />
         </section>
 
+        {tournament.isCompleted ? <CompletedTournamentShowcase tournament={tournament} /> : null}
+
         <nav className="relative flex gap-1 overflow-x-auto border border-white/10 bg-[#101118] p-1.5" aria-label="Tournament sections">
           {(["overview", "rules", "schedule", "bracket", "participants"] as const).map((tab) => (
             <button
@@ -235,12 +237,90 @@ function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
         ))}
       </dl>
       <div className="border-t border-white/10 p-4">
+        {tournament.isCompleted ? (
+          <div className="border border-amber-300/20 bg-amber-300/8 px-4 py-3 text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-200">Tournament Completed</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-400">Final results and the completed bracket are available above.</p>
+          </div>
+        ) : (
+          <>
         <p className={`mb-3 text-xs font-semibold ${tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}`}>
           {toTitleCase(tournament.registrationState.replace(/_/g, " "))}
         </p>
         <RegisterTournamentButton tournament={tournament} closedAsButton className="w-full [&_button]:w-full" />
+          </>
+        )}
       </div>
     </aside>
+  );
+}
+
+function CompletedTournamentShowcase({ tournament }: { tournament: Tournament }) {
+  const standings = new Map((tournament.resultSummary?.standings || []).map((standing) => [standing.rank, standing]));
+  const champion = standings.get(1);
+  const podium = [
+    { rank: 1, label: "Champion", imageUrl: tournament.showcase.firstPlaceUrl, standing: standings.get(1) },
+    { rank: 2, label: "Runner-up", imageUrl: tournament.showcase.secondPlaceUrl, standing: standings.get(2) },
+    { rank: 3, label: "Third place", imageUrl: tournament.showcase.thirdPlaceUrl, standing: standings.get(3) },
+  ].filter((place) => place.imageUrl || place.standing);
+
+  return (
+    <section className="overflow-hidden border border-amber-300/20 bg-[#100d13]" aria-labelledby="tournament-results-heading">
+      <div className={`grid ${tournament.showcase.posterUrl ? "lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.78fr)]" : ""}`}>
+        <div className="relative flex min-h-64 flex-col justify-center overflow-hidden p-6 sm:p-9">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_25%,rgba(251,191,36,0.16),transparent_38%),linear-gradient(120deg,rgba(168,85,247,0.1),transparent_55%)]" />
+          <div className="relative">
+            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-amber-200">Tournament completed</p>
+            <h2 id="tournament-results-heading" className="mt-3 text-3xl uppercase text-white sm:text-5xl">The tournament is over</h2>
+            {champion ? (
+              <div className="mt-7 flex min-w-0 items-center gap-4">
+                <ResultLogo name={champion.name} logoUrl={champion.logoUrl} />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">Champion</p>
+                  <p className="mt-1 break-words text-2xl font-bold text-white sm:text-3xl">{champion.name}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-slate-300">Final results have been recorded. View the bracket for every completed match.</p>
+            )}
+          </div>
+        </div>
+        {tournament.showcase.posterUrl ? (
+          <div className="relative min-h-72 border-t border-white/10 lg:border-l lg:border-t-0">
+            <Image src={resolveMediaUrl(tournament.showcase.posterUrl)} alt={`${tournament.title} completed tournament poster`} fill sizes="(min-width: 1024px) 40vw, 100vw" className="object-cover" />
+          </div>
+        ) : null}
+      </div>
+
+      {podium.length ? (
+        <div className="grid gap-px border-t border-white/10 bg-white/10 sm:grid-cols-3">
+          {podium.map((place) => (
+            <article key={place.rank} className="min-w-0 bg-[#121018]">
+              {place.imageUrl ? (
+                <div className="relative aspect-square overflow-hidden">
+                  <Image src={resolveMediaUrl(place.imageUrl)} alt={`${place.label}${place.standing ? ` - ${place.standing.name}` : ""}`} fill sizes="(min-width: 640px) 33vw, 100vw" className="object-cover" />
+                </div>
+              ) : null}
+              <div className="flex min-w-0 items-center gap-3 p-4 sm:p-5">
+                <span className={`flex size-10 shrink-0 items-center justify-center border font-bold ${place.rank === 1 ? "border-amber-300/40 bg-amber-300/10 text-amber-200" : "border-white/10 bg-white/5 text-slate-300"}`}>{place.rank}</span>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{place.label}</p>
+                  <p className="mt-1 break-words font-semibold text-white">{place.standing?.name || "Official result"}</p>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ResultLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
+  return (
+    <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden border border-amber-300/30 bg-black/30 sm:size-20">
+      {logoUrl ? <Image src={resolveMediaUrl(logoUrl)} alt="" fill sizes="80px" className="object-cover" /> : <span className="text-xl font-bold text-amber-100">{name.slice(0, 2).toUpperCase()}</span>}
+    </div>
   );
 }
 

@@ -620,9 +620,53 @@ const mapTournamentWithRegistrations = (
   })),
 });
 
+const mapCompletedChallongeResult = (integration) => {
+  if (!integration?.enabled || !integration.snapshotData) return null;
+
+  const snapshot = integration.snapshotData;
+  const participants = Array.isArray(snapshot.participants) ? snapshot.participants : [];
+  const matches = Array.isArray(snapshot.matches) ? snapshot.matches : [];
+  const links = new Map(
+    (integration.participantLinks || []).map((link) => [
+      String(link.externalParticipantId),
+      link,
+    ])
+  );
+  const mapStanding = (participant, rank) => {
+    const link = links.get(String(participant.id));
+    const registration = link?.isConfirmed ? link.registration : null;
+    return {
+      rank,
+      name: registration?.teamName || link?.displayName || participant.name || "Participant",
+      seed: Number.isInteger(participant.seed) ? participant.seed : null,
+      logoUrl: registration
+        ? getTeamLogoUrl(getCurrentTeamLogoName(registration))
+        : null,
+    };
+  };
+
+  const standings = participants
+    .filter((participant) => Number.isInteger(participant.finalRank) && participant.finalRank >= 1 && participant.finalRank <= 3)
+    .sort((left, right) => left.finalRank - right.finalRank)
+    .map((participant) => mapStanding(participant, participant.finalRank));
+
+  if (!standings.some((standing) => standing.rank === 1)) {
+    const finalWinnerId = [...matches].reverse().find((match) => match.winnerId)?.winnerId;
+    const winner = participants.find((participant) => String(participant.id) === String(finalWinnerId));
+    if (winner) standings.unshift(mapStanding(winner, 1));
+  }
+
+  return {
+    status: snapshot.tournament?.state || "complete",
+    completedAt: snapshot.tournament?.completedAt || null,
+    standings,
+  };
+};
+
 const mapTournamentWithPublicTeams = (tournament) => ({
   ...mapTournament(tournament),
   ...mapPublicBracket(tournament.bracket, tournament.teamRegistrations),
+  resultSummary: mapCompletedChallongeResult(tournament.challongeIntegration),
   registeredTeams: (tournament.teamRegistrations || [])
     .filter((registration) => (registration.entryType || "team") === "team")
     .map((registration) => ({
@@ -1099,7 +1143,26 @@ const getPublicTournamentBySlug = async (slug) => {
         },
       },
       bracket: true,
-      challongeIntegration: { select: { enabled: true } },
+      challongeIntegration: {
+        select: {
+          enabled: true,
+          snapshotData: true,
+          participantLinks: {
+            select: {
+              externalParticipantId: true,
+              displayName: true,
+              isConfirmed: true,
+              registration: {
+                select: {
+                  teamName: true,
+                  teamLogoName: true,
+                  savedTeam: { select: { logoName: true } },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
 

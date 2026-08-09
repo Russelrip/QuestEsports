@@ -361,6 +361,30 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
             adminSlotReservations: 0,
           },
           adminSlotReservations: [],
+          challongeIntegration: {
+            enabled: true,
+            snapshotData: {
+              tournament: { state: "complete", completedAt: "2026-06-02T12:00:00.000Z" },
+              participants: [
+                { id: "10", name: "Quest Five", seed: 2, finalRank: 1 },
+                { id: "20", name: "Final Boss", seed: 1, finalRank: 2 },
+                { id: "30", name: "Third Wave", seed: 3, finalRank: 3 },
+              ],
+              matches: [],
+            },
+            participantLinks: [
+              {
+                externalParticipantId: "10",
+                displayName: "Quest Five",
+                isConfirmed: true,
+                registration: {
+                  teamName: "Quest Five",
+                  teamLogoName: "private-logo.png",
+                  savedTeam: { logoName: "current-logo.webp" },
+                },
+              },
+            ],
+          },
           teamRegistrations: [
             {
               id: "registration-1",
@@ -407,6 +431,15 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
     ]);
     assert.equal(tournament.bracketSummary, null);
     assert.equal(tournament.bracketData, null);
+    assert.deepEqual(tournament.resultSummary, {
+      status: "complete",
+      completedAt: "2026-06-02T12:00:00.000Z",
+      standings: [
+        { rank: 1, name: "Quest Five", seed: 2, logoUrl: "/api/uploads/team-logos/current-logo.webp" },
+        { rank: 2, name: "Final Boss", seed: 1, logoUrl: null },
+        { rank: 3, name: "Third Wave", seed: 3, logoUrl: null },
+      ],
+    });
     assert.equal(tournament.registrationCount, 1);
     assert.equal(tournament.capacityUsed, 2);
     assert.equal(capacityCountCalls, 0);

@@ -40,6 +40,17 @@ export type TournamentShowcase = {
   thirdPlaceUrl: string | null;
 };
 
+export type TournamentResultSummary = {
+  status: string;
+  completedAt: string | null;
+  standings: Array<{
+    rank: number;
+    name: string;
+    seed: number | null;
+    logoUrl: string | null;
+  }>;
+};
+
 export type RegisteredTournamentTeam = {
   id: string;
   teamName: string;
@@ -288,6 +299,7 @@ export type Tournament = {
   bracketSummary: TournamentBracketSummary | null;
   bracketData: TournamentBracketData | null;
   showcase: TournamentShowcase;
+  resultSummary?: TournamentResultSummary | null;
   registeredTeams?: RegisteredTournamentTeam[];
   registeredParticipants?: RegisteredTournamentParticipant[];
   isCompleted: boolean;

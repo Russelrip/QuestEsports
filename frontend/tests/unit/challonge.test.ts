@@ -17,6 +17,9 @@ describe("Challonge frontend boundary", () => {
     expect(component).not.toContain("api.challonge.com");
     expect(component).not.toContain("Bracket unavailable");
     expect(component).not.toContain("setTimeout");
+    expect(component).toContain("CompletedTournamentShowcase");
+    expect(component).toContain("The tournament is over");
+    expect(component).toContain("tournament.resultSummary?.standings");
     expect(frontendEnv).not.toContain("CHALLONGE_API_KEY");
     expect(frontendEnv).not.toContain("CHALLONGE_USERNAME");
     expect(frontendEnv).not.toContain("CHALLONGE_CLIENT_SECRET");

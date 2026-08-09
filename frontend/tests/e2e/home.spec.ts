@@ -234,6 +234,11 @@ test("Challonge public bracket is preloaded and reused without consuming REST re
 
   await page.goto("/tournaments/challonge-test");
   expect(bracketRequests).toBe(0);
+  await expect(page.getByRole("heading", { name: "The tournament is over" })).toBeVisible();
+  await expect(page.getByText("Quest Champions", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Final Boss", { exact: true })).toBeVisible();
+  await expect(page.getByText("Third Wave", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   const bracketFrame = page.locator("iframe");
   await expect(bracketFrame).toHaveAttribute("src", "https://challonge.com/quest-test/module");
   await expect(bracketFrame).toBeHidden();
