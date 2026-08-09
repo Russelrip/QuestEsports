@@ -30,6 +30,8 @@ describe("Challonge frontend boundary", () => {
     expect(panel).toContain("min-w-0 overflow-hidden p-4 sm:p-8");
     expect(panel).toContain("[&>*]:w-full sm:[&>*]:w-auto");
     expect(panel).toContain("[&>*]:min-w-0");
+    expect(panel).toContain("mt-3 grid min-w-0 gap-2 md:hidden");
+    expect(panel).toContain("mt-3 hidden max-w-full overflow-x-auto md:block");
     expect(select).toContain("w-full min-w-0 max-w-full");
   });
 

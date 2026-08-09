@@ -169,7 +169,34 @@ export default function ChallongeAdminPanel({ tournamentId }: { tournamentId: st
         </> : integration ? <p className="text-sm text-amber-200">Load current data once before using the API editor.</p> : null}
 
         {integration ? <div className="grid gap-3 border border-white/8 bg-white/5 p-4 text-sm sm:grid-cols-3"><Status label="Last editor load" value={formatAdminCompactDateTime(integration.lastSuccessAt)} /><Status label="Automatic polling" value="Disabled" /><Status label="Last error" value={integration.lastError?.message || "None"} error={Boolean(integration.lastError)} /></div> : null}
-        <div className="min-w-0"><h4 className="text-lg text-white">Recent data-load attempts</h4>{logs.length ? <div className="mt-3 max-w-full overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="text-xs uppercase tracking-[0.1em] text-slate-500"><tr><th className="pb-2">Started</th><th>Status</th><th>Tournament</th><th>Records</th><th>Details</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id} className="border-t border-white/8 text-slate-300"><td className="py-3">{formatAdminCompactDateTime(log.startedAt)}</td><td className={log.status === "failed" ? "text-rose-300" : log.status === "succeeded" ? "text-emerald-300" : "text-amber-200"}>{log.status}</td><td>{log.identifier || integration?.identifier || "Legacy attempt"}</td><td>{log.participantCount} / {log.matchCount}</td><td>{log.errorMessage || log.errorCode?.replace(/_/g, " ") || `${log.durationMs ?? 0} ms`}</td></tr>)}</tbody></table></div> : <p className="mt-2 text-sm text-slate-500">No data loads recorded yet.</p>}</div>
+        <div className="min-w-0">
+          <h4 className="text-lg text-white">Recent data-load attempts</h4>
+          {logs.length ? (
+            <>
+              <div className="mt-3 grid min-w-0 gap-2 md:hidden">
+                {logs.map((log) => (
+                  <article key={log.id} className="min-w-0 border border-white/8 bg-white/[0.03] p-3 text-sm">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <p className="min-w-0 break-words text-slate-300">{formatAdminCompactDateTime(log.startedAt)}</p>
+                      <p className={`shrink-0 text-xs font-semibold uppercase ${log.status === "failed" ? "text-rose-300" : log.status === "succeeded" ? "text-emerald-300" : "text-amber-200"}`}>{log.status}</p>
+                    </div>
+                    <dl className="mt-3 grid min-w-0 grid-cols-2 gap-3">
+                      <div className="min-w-0"><dt className="text-[10px] uppercase tracking-wider text-slate-500">Tournament</dt><dd className="mt-1 break-all text-slate-300">{log.identifier || integration?.identifier || "Legacy attempt"}</dd></div>
+                      <div className="min-w-0"><dt className="text-[10px] uppercase tracking-wider text-slate-500">Records</dt><dd className="mt-1 text-slate-300">{log.participantCount} / {log.matchCount}</dd></div>
+                    </dl>
+                    <div className="mt-3 min-w-0"><p className="text-[10px] uppercase tracking-wider text-slate-500">Details</p><p className="mt-1 break-words text-slate-400">{log.errorMessage || log.errorCode?.replace(/_/g, " ") || `${log.durationMs ?? 0} ms`}</p></div>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-3 hidden max-w-full overflow-x-auto md:block">
+                <table className="w-full min-w-[680px] text-left text-sm">
+                  <thead className="text-xs uppercase tracking-[0.1em] text-slate-500"><tr><th className="pb-2">Started</th><th>Status</th><th>Tournament</th><th>Records</th><th>Details</th></tr></thead>
+                  <tbody>{logs.map((log) => <tr key={log.id} className="border-t border-white/8 text-slate-300"><td className="py-3">{formatAdminCompactDateTime(log.startedAt)}</td><td className={log.status === "failed" ? "text-rose-300" : log.status === "succeeded" ? "text-emerald-300" : "text-amber-200"}>{log.status}</td><td>{log.identifier || integration?.identifier || "Legacy attempt"}</td><td>{log.participantCount} / {log.matchCount}</td><td>{log.errorMessage || log.errorCode?.replace(/_/g, " ") || `${log.durationMs ?? 0} ms`}</td></tr>)}</tbody>
+                </table>
+              </div>
+            </>
+          ) : <p className="mt-2 text-sm text-slate-500">No data loads recorded yet.</p>}
+        </div>
       </div>}
     </Card>
   );
