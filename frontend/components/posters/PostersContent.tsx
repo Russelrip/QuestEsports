@@ -276,7 +276,7 @@ export default function PostersContent({
       />
 
       {selectedPoster ? (
-        <MediaModal onClose={() => setSelectedPoster(null)}>
+        <MediaModal ariaLabel="Poster preview" onClose={() => setSelectedPoster(null)}>
           <PosterPreview
             asset={selectedPoster.imageAsset}
             draft={selectedPoster}
