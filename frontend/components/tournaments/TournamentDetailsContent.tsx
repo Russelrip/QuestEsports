@@ -33,6 +33,8 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
   const [teamPagination, setTeamPagination] = useState({ tournamentId: tournament.id, page: 1 });
   const teamPage = teamPagination.tournamentId === tournament.id ? teamPagination.page : 1;
   const [activeTab, setActiveTab] = useState<"overview" | "rules" | "schedule" | "bracket" | "participants">("overview");
+  const [loadedChallongeUrl, setLoadedChallongeUrl] = useState<string | null>(null);
+  const isChallongeBracketLoaded = loadedChallongeUrl === tournament.challongeEmbedUrl;
   const participants = tournament.registeredParticipants || [];
   const teamPageCount = Math.max(1, Math.ceil(participants.length / TEAMS_PER_PAGE));
   const visibleParticipants = participants.slice(
@@ -111,19 +113,31 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
           <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Participants</h3><p className="mt-3 text-sm text-slate-400">Approved participants will appear here.</p></Card>
         ) : null}
 
-        {activeTab === "bracket" && tournament.challongeEmbedUrl ? (
-          <section className="space-y-5">
+        {tournament.challongeEmbedUrl ? (
+          <section
+            aria-hidden={activeTab !== "bracket"}
+            className={activeTab === "bracket" ? "space-y-5" : "hidden"}
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-3xl text-white">Brackets</h3>
               {tournament.bracketLink ? <a href={tournament.bracketLink} target="_blank" rel="noreferrer" className={buttonClassName({ variant: "secondary" })}>Open on Challonge</a> : null}
             </div>
-            <div className="overflow-hidden bg-[#242424]">
+            <div className="relative min-h-[760px] overflow-hidden bg-[#242424]">
+              {!isChallongeBracketLoaded ? (
+                <div className="absolute inset-0 flex items-center justify-center" role="status">
+                  <div className="flex items-center gap-3 text-sm font-semibold text-slate-300">
+                    <span className="size-5 animate-spin rounded-full border-2 border-white/20 border-t-purple-300" aria-hidden="true" />
+                    Loading bracket...
+                  </div>
+                </div>
+              ) : null}
               <iframe
                 src={tournament.challongeEmbedUrl}
                 title={`${tournament.title} Challonge bracket`}
                 loading="eager"
                 referrerPolicy="strict-origin-when-cross-origin"
-                className="block h-[760px] w-full border-0"
+                onLoad={() => setLoadedChallongeUrl(tournament.challongeEmbedUrl || null)}
+                className={`block h-[760px] w-full border-0 transition-opacity duration-200 ${isChallongeBracketLoaded ? "opacity-100" : "opacity-0"}`}
               />
             </div>
           </section>

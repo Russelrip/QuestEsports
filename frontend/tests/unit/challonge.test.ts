@@ -9,6 +9,9 @@ describe("Challonge frontend boundary", () => {
     expect(component).toMatch(/<iframe/i);
     expect(component).toContain("challongeEmbedUrl");
     expect(component).toContain('loading="eager"');
+    expect(component).toContain('aria-hidden={activeTab !== "bracket"}');
+    expect(component).toContain("setLoadedChallongeUrl");
+    expect(component).not.toContain('activeTab === "bracket" && tournament.challongeEmbedUrl');
     expect(component).not.toContain("fetchPublicTournamentBracket");
     expect(component).not.toContain("EventSource");
     expect(component).not.toContain("api.challonge.com");
