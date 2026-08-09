@@ -45,3 +45,48 @@ test("streamUpload validates a small header and returns a path without buffering
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
+
+test("listPublicUploads returns only allowlisted public image folders", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "quest-upload-list-"));
+  const directories = Object.fromEntries(
+    ["team-logos", "tournament-banners", "poster-images", "avatars", "game-assets", "sponsor-logos"].map(
+      (name) => [name, path.join(root, name)]
+    )
+  );
+  await Promise.all(Object.values(directories).map((directory) => fs.mkdir(directory, { recursive: true })));
+  await fs.writeFile(path.join(directories["tournament-banners"], "event-banner.webp"), Buffer.alloc(25));
+  await fs.writeFile(path.join(directories["tournament-banners"], "notes.txt"), "not an image");
+
+  const { module: uploadService, restore } = loadModuleWithMocks(servicePath, {
+    [uploadModulePath]: {
+      detectImageType: () => "webp",
+      teamLogoDirectory: directories["team-logos"],
+      tournamentBannerDirectory: directories["tournament-banners"],
+      posterImageDirectory: directories["poster-images"],
+      avatarDirectory: directories.avatars,
+      gameAssetDirectory: directories["game-assets"],
+      sponsorLogoDirectory: directories["sponsor-logos"],
+    },
+  });
+
+  try {
+    const result = await uploadService.listPublicUploads({ directory: "tournament-banners" });
+    assert.equal(result.pagination.total, 1);
+    assert.deepEqual(result.directories, [
+      "team-logos",
+      "tournament-banners",
+      "poster-images",
+      "avatars",
+      "game-assets",
+      "sponsor-logos",
+    ]);
+    assert.equal(result.items[0].directory, "tournament-banners");
+    assert.equal(result.items[0].filename, "event-banner.webp");
+    assert.equal(result.items[0].contentType, "image/webp");
+    assert.equal(result.items[0].byteSize, 25);
+    assert.equal(result.items[0].imageUrl, "/api/uploads/tournament-banners/event-banner.webp");
+  } finally {
+    restore();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

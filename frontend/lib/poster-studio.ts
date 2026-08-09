@@ -36,6 +36,8 @@ export const buildUploadPreviews = (files: File[]) =>
 export const uploadImages = async (input: {
   title: string;
   previews: UploadPreview[];
+  description?: string;
+  category?: "poster" | "logo" | "banner" | "graphic";
 }) => {
   input.previews.forEach((item) =>
     assertFileWithinUploadLimit(
@@ -47,7 +49,8 @@ export const uploadImages = async (input: {
 
   const formData = new FormData();
   formData.append("title", input.title);
-  formData.append("category", "poster");
+  formData.append("description", input.description || "");
+  formData.append("category", input.category || "poster");
 
   input.previews.forEach((item) => {
     formData.append("images", item.file);

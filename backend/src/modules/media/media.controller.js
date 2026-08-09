@@ -1,6 +1,7 @@
 const { asyncHandler } = require("../../lib/async-handler");
 const { createReadStream } = require("fs");
 const { pipeline } = require("stream/promises");
+const { listPublicUploads } = require("../uploads/upload.service");
 const {
   createImageAssets,
   listImageAssets,
@@ -45,6 +46,16 @@ const getImages = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     images: result.items,
+    pagination: result.pagination,
+  });
+});
+
+const getPublicUploadFiles = asyncHandler(async (req, res) => {
+  const result = await listPublicUploads(req.query);
+  res.status(200).json({
+    success: true,
+    files: result.items,
+    directories: result.directories,
     pagination: result.pagination,
   });
 });
@@ -116,6 +127,7 @@ const deleteImage = asyncHandler(async (req, res) => {
 module.exports = {
   uploadImages,
   getImages,
+  getPublicUploadFiles,
   getImage,
   streamImage,
   streamPosterImage,

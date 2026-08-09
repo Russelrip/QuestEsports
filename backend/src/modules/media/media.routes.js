@@ -4,6 +4,7 @@ const { dbImageUpload, createUploadRequestSizeGuard } = require("../../middlewar
 const {
   uploadImages,
   getImages,
+  getPublicUploadFiles,
   getImage,
   streamImage,
   createPosterEntry,
@@ -21,6 +22,7 @@ router.get("/posters/:posterId", getPoster);
 router.get("/posters/:posterId/image", streamPosterImage);
 
 router.get("/images", requireAdmin, getImages);
+router.get("/admin/media/files", requireAdmin, getPublicUploadFiles);
 router.get("/images/:imageId", requireAdmin, getImage);
 router.get("/images/:imageId/binary", requireAdmin, streamImage);
 router.post(

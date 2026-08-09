@@ -18,7 +18,10 @@ import {
 export const adminNavigationGroups = [
   {
     label: "Workspace",
-    links: [{ href: "/admin", label: "Overview" }],
+    links: [
+      { href: "/admin", label: "Overview" },
+      { href: "/admin/media", label: "Media" },
+    ],
   },
   {
     label: "Competition",

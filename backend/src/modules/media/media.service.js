@@ -37,8 +37,19 @@ const TOURNAMENT_POSTER_SELECT = {
   endDate: true,
   createdAt: true,
 };
+const IMAGE_ASSET_METADATA_SELECT = {
+  id: true,
+  title: true,
+  description: true,
+  category: true,
+  originalName: true,
+  storedFilename: true,
+  contentType: true,
+  byteSize: true,
+  createdAt: true,
+};
 const POSTER_INCLUDE = {
-  imageAsset: true,
+  imageAsset: { select: IMAGE_ASSET_METADATA_SELECT },
   tournament: {
     select: TOURNAMENT_POSTER_SELECT,
   },
@@ -72,8 +83,18 @@ const mapImageAsset = (asset) => ({
   category: asset.category,
   originalName: asset.originalName,
   contentType: asset.contentType,
+  byteSize: asset.byteSize ?? asset.data?.length ?? null,
   createdAt: asset.createdAt,
   imageUrl: buildImageUrl(asset),
+  ...(asset._count
+    ? {
+        usage: {
+          posters: asset._count.posters,
+          products: asset._count.productImages,
+        },
+        canDelete: asset._count.posters + asset._count.productImages === 0,
+      }
+    : {}),
 });
 
 const mapPoster = (poster) => ({
@@ -296,7 +317,11 @@ const createImageAssets = async ({ body, files }) => {
 const deleteUnusedImageAsset = async (imageId) => {
   const asset = await prisma.imageAsset.findUnique({
     where: { id: imageId },
-    include: { _count: { select: { posters: true, productImages: true } } },
+    select: {
+      id: true,
+      storedFilename: true,
+      _count: { select: { posters: true, productImages: true } },
+    },
   });
   if (!asset) throw new HttpError(404, "Image was not found.");
   if (asset._count.posters || asset._count.productImages) {
@@ -335,6 +360,10 @@ const listImageAssets = async (query = {}) => {
       orderBy: { createdAt: "desc" },
       skip: (pagination.page - 1) * pagination.pageSize,
       take: pagination.pageSize,
+      select: {
+        ...IMAGE_ASSET_METADATA_SELECT,
+        _count: { select: { posters: true, productImages: true } },
+      },
     }),
   ]);
 
@@ -364,7 +393,16 @@ const getImageAssetById = async (imageId) => {
 };
 
 const getImageAssetMetadata = async (imageId) => {
-  const asset = await getImageAssetRecordById(imageId);
+  const asset = await prisma.imageAsset.findUnique({
+    where: { id: imageId },
+    select: {
+      ...IMAGE_ASSET_METADATA_SELECT,
+      _count: { select: { posters: true, productImages: true } },
+    },
+  });
+  if (!asset) {
+    throw new HttpError(404, "Image not found.");
+  }
   return mapImageAsset(asset);
 };
 

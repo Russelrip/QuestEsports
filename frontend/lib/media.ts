@@ -15,7 +15,29 @@ export type ImageAsset = {
   category: string;
   originalName?: string | null;
   contentType: string;
+  byteSize?: number | null;
   createdAt: string;
+  imageUrl: string;
+  usage?: {
+    posters: number;
+    products: number;
+  };
+  canDelete?: boolean;
+};
+
+export type MediaPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type PublicUploadFile = {
+  directory: string;
+  filename: string;
+  contentType: string;
+  byteSize: number;
+  modifiedAt: string;
   imageUrl: string;
 };
 
@@ -359,7 +381,22 @@ export const fetchImages = async (searchParams?: URLSearchParams) => {
     headers: withServerOriginHeader(),
   });
 
-  return parseApiResponse<{ images: ImageAsset[] }>(response, "Media request failed.");
+  return parseApiResponse<{ images: ImageAsset[]; pagination: MediaPagination }>(response, "Media request failed.");
+};
+
+export const fetchPublicUploadFiles = async (searchParams?: URLSearchParams) => {
+  const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
+  const response = await fetchWithTimeout(`${resolveMediaUrl("/api/admin/media/files")}${suffix}`, {
+    cache: "no-store",
+    credentials: "include",
+    headers: withServerOriginHeader(),
+  });
+
+  return parseApiResponse<{
+    files: PublicUploadFile[];
+    directories: string[];
+    pagination: MediaPagination;
+  }>(response, "Unable to list public upload files.");
 };
 
 export const fetchPosters = async (searchParams?: URLSearchParams) => {

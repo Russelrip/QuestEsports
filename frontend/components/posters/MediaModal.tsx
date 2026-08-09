@@ -5,9 +5,10 @@ import { useEffect } from "react";
 type MediaModalProps = {
   onClose: () => void;
   children: React.ReactNode;
+  ariaLabel?: string;
 };
 
-export default function MediaModal({ onClose, children }: MediaModalProps) {
+export default function MediaModal({ onClose, children, ariaLabel = "Media preview" }: MediaModalProps) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -32,7 +33,7 @@ export default function MediaModal({ onClose, children }: MediaModalProps) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Poster preview"
+        aria-label={ariaLabel}
         className="modal-panel-enter relative flex h-[96svh] max-h-[56rem] w-full max-w-5xl flex-col overflow-hidden rounded-none border border-white/10 bg-[var(--color-card-strong)] p-3 shadow-[var(--shadow-lg)] sm:h-[92svh] sm:p-6"
         onClick={(event) => event.stopPropagation()}
       >

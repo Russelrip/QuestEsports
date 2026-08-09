@@ -885,6 +885,11 @@ const additionalPaths = {
       parameters: idParameter("imageId"),
     }),
   },
+  "/api/admin/media/files": {
+    get: createOperation("Media", "List public upload files", {
+      authenticated: true,
+    }),
+  },
   "/api/teams/profile": {
     get: createOperation("Teams", "List the current user's teams", {
       authenticated: true,

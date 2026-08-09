@@ -15,6 +15,7 @@ All admin routes require a valid session and `user.role === "admin"`.
 ## Admin UI Routes
 
 - `/admin` for overview metrics
+- `/admin/media` for the managed image library and read-only public upload-folder browser
 - `/admin/users` for account management
 - `/admin/tournaments` for tournament setup and asset management
 - `/admin/tournaments/new` for creating tournaments
@@ -29,6 +30,15 @@ All admin routes require a valid session and `user.role === "admin"`.
 - `/admin/rulebooks` for rulebook management
 - `/admin/contact-messages` for the contact inbox
 - `/admin/teams` for saved-team details, logos, organization labels, and deletion
+
+## Media Library
+
+`/admin/media` provides two related views:
+
+- The managed library contains poster and product image assets. Admins can upload, search, filter, preview, download, and copy image URLs. An unused asset can be deleted; assets referenced by a gallery entry or product are locked until the owning reference is removed.
+- Public Storage lists the allowlisted filesystem folders for tournament artwork, poster images, team logos, avatars, game assets, and sponsor logos. Files can be previewed, downloaded, and linked. Deletion remains in the tournament, team, game, sponsor, product, or gallery workflow that owns the reference.
+
+The browser never lists `PRIVATE_UPLOAD_ROOT`, bank-transfer evidence, recovery packages, environment files, credentials, or arbitrary server paths. A missing public folder is treated as empty, which is normal in a new staging environment.
 
 ## Saved Team Details and Logos
 

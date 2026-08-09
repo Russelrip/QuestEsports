@@ -582,6 +582,8 @@ Returns one public rulebook by slug.
 - `GET /api/images/:imageId`
 - `GET /api/images/:imageId/binary`
 - `POST /api/images`
+- `DELETE /api/images/:imageId`
+- `GET /api/admin/media/files`
 - `POST /api/posters`
 - `DELETE /api/posters/:posterId`
 
@@ -595,6 +597,10 @@ Fields:
 - `description`
 - `category`
 - `images[]`
+
+### `GET /api/admin/media/files`
+
+Admin-only read-only listing of allowlisted public upload folders. Supports `page`, `pageSize`, `search`, and `directory`. It never traverses arbitrary paths or includes private payment evidence.
 
 ### `POST /api/posters`
 
