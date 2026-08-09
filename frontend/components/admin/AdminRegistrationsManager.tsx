@@ -233,7 +233,37 @@ export default function AdminRegistrationsManager() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="grid gap-4 p-3 md:hidden">
+                {registrationGroups.map((group) => (
+                  <section key={group.tournament.id} className="grid gap-3">
+                    <div className="border border-purple-300/15 bg-purple-400/[0.06] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-purple-100">
+                      {group.tournament.title} · {group.entries.length} registration{group.entries.length === 1 ? "" : "s"}
+                    </div>
+                    {group.entries.map((registration) => (
+                      <article key={registration.id} className="min-w-0 border border-white/10 bg-white/[0.03] p-4">
+                        <div className="min-w-0">
+                          <h4 className="break-words font-semibold text-white">{registration.teamName}</h4>
+                          <p className="mt-1 text-xs text-slate-500">{formatAdminCompactDateTime(registration.createdAt)}</p>
+                        </div>
+                        <div className="mt-4 min-w-0 text-sm">
+                          <p className="break-words text-slate-300">{registration.captain.name}</p>
+                          <p className="break-all text-xs text-slate-500">{registration.captain.email}</p>
+                        </div>
+                        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Approval</dt><dd className="mt-1"><StatusText value={registration.status} /></dd></div>
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Payment</dt><dd className="mt-1"><StatusText value={registration.paymentStatus} /></dd></div>
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Verification</dt><dd className="mt-1"><StatusText value={registration.verificationStatus} /></dd></div>
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Roster</dt><dd className="mt-1 font-semibold text-white">{registration.memberCount}</dd></div>
+                        </dl>
+                        <Button type="button" className="mt-4 w-full" variant="secondary" onClick={() => setSelectedId(registration.id)}>
+                          View & manage
+                        </Button>
+                      </article>
+                    ))}
+                  </section>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[980px] border-collapse text-left">
                   <thead className="border-b border-white/10 bg-white/[0.03] text-[11px] uppercase tracking-[0.16em] text-slate-500">
                     <tr>

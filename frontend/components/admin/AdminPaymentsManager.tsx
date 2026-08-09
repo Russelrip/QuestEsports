@@ -234,7 +234,36 @@ export default function AdminPaymentsManager() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="grid gap-4 p-3 md:hidden">
+                {paymentGroups.map((group) => (
+                  <section key={group.key} className="grid gap-3">
+                    <div className="border border-purple-300/15 bg-purple-400/[0.06] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-purple-100">
+                      {group.label} · {group.payments.length} transaction{group.payments.length === 1 ? "" : "s"}
+                    </div>
+                    {group.payments.map((payment) => (
+                      <article key={payment.id} className={`min-w-0 border border-white/10 p-4 ${payment.status === "review_required" ? "bg-amber-300/[0.05]" : "bg-white/[0.03]"}`}>
+                        <p className="break-all text-sm font-semibold text-white">{payment.orderId}</p>
+                        {payment.paymentId ? <p className="mt-1 break-all text-xs text-slate-500">PayHere {payment.paymentId}</p> : null}
+                        <div className="mt-4 min-w-0">
+                          <p className="break-words text-sm text-slate-300">{payment.customerName}</p>
+                          <p className="break-all text-xs text-slate-500">{payment.customerEmail || "No email"}</p>
+                        </div>
+                        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Purpose</dt><dd className="mt-1 break-words text-slate-300">{payment.purpose.replaceAll("_", " ")}</dd></div>
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Provider</dt><dd className="mt-1 break-words text-slate-300">{payment.provider}</dd></div>
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Amount</dt><dd className="mt-1 font-semibold text-white">{payment.currency} {payment.amount.toFixed(2)}</dd></div>
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Status</dt><dd className="mt-1"><PaymentStatus value={payment.status} /></dd></div>
+                        </dl>
+                        <p className="mt-4 text-xs text-slate-500">{formatAdminCompactDateTime(payment.createdAt)}</p>
+                        <Button type="button" className="mt-4 w-full" variant="secondary" onClick={() => setSelectedId(payment.id)}>
+                          View & reconcile
+                        </Button>
+                      </article>
+                    ))}
+                  </section>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[1050px] border-collapse text-left">
                   <thead className="border-b border-white/10 bg-white/[0.03] text-[11px] uppercase tracking-[0.16em] text-slate-500">
                     <tr>

@@ -426,3 +426,52 @@ test("admin guard shows a retry state instead of redirecting when session lookup
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
+
+test("mobile admin teams use contained cards with accessible navigation and actions", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/me", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      user: {
+        id: "admin-1",
+        firstName: "Quest",
+        lastName: "Admin",
+        email: "admin@quest.test",
+        username: "questadmin",
+        role: "admin",
+        emailVerified: true,
+      },
+    }),
+  }));
+  await page.route("**/api/admin/teams?**", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      teams: [{
+        id: "team-1",
+        name: "Mobile Layout Champions",
+        teamTag: "MLC",
+        logoUrl: null,
+        country: "Sri Lanka",
+        organizationName: "Independent",
+        captainName: "Long Captain Name",
+        memberCount: 7,
+        updatedAt: "2026-08-09T00:00:00.000Z",
+      }],
+      pagination: { page: 1, pageSize: 15, total: 1, totalPages: 1 },
+    }),
+  }));
+
+  await page.goto("/admin/teams");
+  await expect(page.getByRole("heading", { name: "Teams", exact: true })).toBeVisible();
+  await expect(page.getByText("Admin section")).toBeVisible();
+  await expect(page.locator("table")).toBeHidden();
+  await expect(page.getByRole("button", { name: "View & edit" })).toBeVisible();
+
+  const pageWidth = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(pageWidth.scrollWidth).toBe(pageWidth.clientWidth);
+});

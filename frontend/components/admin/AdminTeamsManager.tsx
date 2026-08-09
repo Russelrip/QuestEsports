@@ -168,7 +168,29 @@ export default function AdminTeamsManager() {
             <EmptyState description={debouncedSearch ? "No teams matched your search." : "No saved teams yet."} />
           ) : (
             <Card className="min-w-0 overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="grid gap-3 p-3 md:hidden">
+                {teams.map((team) => (
+                  <article key={team.id} className="min-w-0 border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <TeamLogo team={team} size="small" />
+                      <div className="min-w-0">
+                        <h4 className="truncate font-semibold text-white">{team.name}</h4>
+                        <p className="mt-1 text-xs uppercase tracking-wider text-purple-200/70">{team.teamTag || "No tag"}</p>
+                      </div>
+                    </div>
+                    <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 text-sm">
+                      <MobileDetail label="Captain" value={team.captainName} />
+                      <MobileDetail label="Roster" value={String(team.memberCount)} />
+                      <MobileDetail label="Country" value={team.country || "Not set"} />
+                      <MobileDetail label="Organization" value={team.organizationName} />
+                    </dl>
+                    <Button type="button" className="mt-4 w-full" variant="secondary" onClick={() => setSelectedTeamId(team.id)}>
+                      View & edit
+                    </Button>
+                  </article>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[820px] border-collapse text-left">
                   <thead className="border-b border-white/10 bg-white/[0.03] text-[11px] uppercase tracking-[0.16em] text-slate-500">
                     <tr>
@@ -436,6 +458,15 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="grid min-w-0 gap-1 text-sm text-slate-300"><span>{label}</span>{children}</label>;
+}
+
+function MobileDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</dt>
+      <dd className="mt-1 break-words text-slate-200">{value}</dd>
+    </div>
+  );
 }
 
 function TeamLogo({ team, size }: { team: TeamSummary; size: "small" | "large" }) {

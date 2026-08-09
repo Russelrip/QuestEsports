@@ -196,11 +196,11 @@ export default function AdminUsersManager() {
         ) : (
           <div className="grid gap-4">
             {users.map((user) => (
-              <div key={user.id} className="grid gap-4 rounded-[24px] border border-white/8 bg-white/5 p-5 xl:grid-cols-[1.2fr_1fr_0.9fr_auto] xl:items-center">
-                <div>
+              <div key={user.id} className="grid min-w-0 gap-4 border border-white/8 bg-white/5 p-4 sm:p-5 xl:grid-cols-[1.2fr_1fr_0.9fr_auto] xl:items-center">
+                <div className="min-w-0">
                   <p className="font-semibold text-white">{user.firstName} {user.lastName}</p>
-                  <p className="text-sm text-slate-400">@{user.username}</p>
-                  <p className="text-sm text-slate-500">{user.email}</p>
+                  <p className="break-all text-sm text-slate-400">@{user.username}</p>
+                  <p className="break-all text-sm text-slate-500">{user.email}</p>
                 </div>
                 <div className="grid gap-1 text-sm text-slate-400">
                   <p>Role: <span className="text-white">{user.role}</span></p>
@@ -211,9 +211,9 @@ export default function AdminUsersManager() {
                   <p>Phone: {user.phone || "N/A"}</p>
                   <p>Discord: {user.discordTag || "N/A"}</p>
                 </div>
-                <div className="flex flex-wrap gap-3 xl:justify-end">
-                  <Button type="button" variant="secondary" onClick={() => startEdit(user)}>Edit</Button>
-                  <Button type="button" variant="danger" onClick={() => handleDelete(user.id)}>Delete</Button>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:justify-end">
+                  <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={() => startEdit(user)}>Edit</Button>
+                  <Button className="w-full sm:w-auto" type="button" variant="danger" onClick={() => handleDelete(user.id)}>Delete</Button>
                 </div>
               </div>
             ))}

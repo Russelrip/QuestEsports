@@ -559,7 +559,23 @@ function OrdersPanel({ event }: { event: TicketEvent }) {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div className="grid gap-3 p-3 md:hidden">
+            {orders.map((order) => (
+              <article key={order.id} className="min-w-0 border border-white/10 bg-white/[0.03] p-4">
+                <h4 className="break-words font-semibold text-white">{order.buyerName}</h4>
+                <p className="mt-1 break-all text-xs text-slate-500">{order.email}</p>
+                <p className="break-words text-xs text-slate-500">{order.phone}</p>
+                <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Tickets</dt><dd className="mt-1 text-slate-200">{order.quantity}</dd></div>
+                  <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Total</dt><dd className="mt-1 font-semibold text-white">{order.currency} {order.total.toFixed(2)}</dd></div>
+                  <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Order</dt><dd className={`mt-1 text-xs uppercase ${statusTone(order.status)}`}>{order.status.replaceAll("_", " ")}</dd></div>
+                  <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Payment</dt><dd className={`mt-1 text-xs uppercase ${statusTone(order.paymentStatus)}`}>{order.paymentStatus.replaceAll("_", " ")}</dd></div>
+                </dl>
+                <p className="mt-4 text-xs text-slate-500">{formatAdminCompactDateTime(order.createdAt)}</p>
+              </article>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[900px] text-left">
               <thead className="border-b border-white/10 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
@@ -702,7 +718,26 @@ function TicketsPanel({
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div className="grid gap-3 p-3 md:hidden">
+            {tickets.map((ticket) => (
+              <article key={ticket.id} className="min-w-0 border border-white/10 bg-white/[0.03] p-4">
+                <p className="break-all font-mono text-sm text-white">{ticket.ticketNumber}</p>
+                <div className="mt-3 min-w-0">
+                  <h4 className="break-words text-sm font-semibold text-white">{ticket.buyerName}</h4>
+                  <p className="mt-1 break-all text-xs text-slate-500">{ticket.email}</p>
+                  <p className="break-words text-xs text-slate-500">{ticket.phone}</p>
+                </div>
+                <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Status</dt><dd className={`mt-1 text-xs uppercase ${statusTone(ticket.status)}`}>{ticket.status.replaceAll("_", " ")}</dd></div>
+                  <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Check-in</dt><dd className="mt-1 break-words text-xs text-slate-400">{ticket.checkedInAt ? `${formatAdminCompactDateTime(ticket.checkedInAt)}${ticket.checkedInBy ? ` · ${ticket.checkedInBy}` : ""}` : "Not checked in"}</dd></div>
+                </dl>
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <TicketActions ticket={ticket} eventId={event.id} onAction={action} />
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[980px] text-left">
               <thead className="border-b border-white/10 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
@@ -736,66 +771,7 @@ function TicketsPanel({
                         : "Not checked in"}
                     </td>
                     <td className="p-4">
-                      <div className="flex justify-end gap-2">
-                        {ticket.status === "valid" ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() =>
-                                void action(
-                                  `/api/admin/ticket-events/${event.id}/tickets/${ticket.id}/check-in`,
-                                  { method: "POST" },
-                                )
-                              }
-                            >
-                              Check in
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() =>
-                                window.confirm("Invalidate this ticket?") &&
-                                void action(`/api/admin/tickets/${ticket.id}`, {
-                                  method: "PATCH",
-                                  json: { status: "cancelled" },
-                                })
-                              }
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() =>
-                                window.confirm(
-                                  "Replace this QR code? The old code will stop working.",
-                                ) &&
-                                void action(
-                                  `/api/admin/tickets/${ticket.id}/reissue`,
-                                  { method: "POST" },
-                                )
-                              }
-                            >
-                              Reissue
-                            </Button>
-                          </>
-                        ) : ticket.status === "cancelled" &&
-                          ticket.orderStatus === "paid" ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() =>
-                              void action(`/api/admin/tickets/${ticket.id}`, {
-                                method: "PATCH",
-                                json: { status: "valid" },
-                              })
-                            }
-                          >
-                            Restore
-                          </Button>
-                        ) : null}
-                      </div>
+                      <TicketActions ticket={ticket} eventId={event.id} onAction={action} />
                     </td>
                   </tr>
                 ))}
@@ -806,6 +782,38 @@ function TicketsPanel({
         </>
       )}
     </Card>
+  );
+}
+
+function TicketActions({
+  ticket,
+  eventId,
+  onAction,
+}: {
+  ticket: TicketSummary;
+  eventId: string;
+  onAction: (path: string, options: { method: "POST" | "PATCH"; json?: unknown }) => Promise<void>;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end [&>*]:w-full sm:[&>*]:w-auto">
+      {ticket.status === "valid" ? (
+        <>
+          <Button type="button" variant="secondary" onClick={() => void onAction(`/api/admin/ticket-events/${eventId}/tickets/${ticket.id}/check-in`, { method: "POST" })}>
+            Check in
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => window.confirm("Invalidate this ticket?") && void onAction(`/api/admin/tickets/${ticket.id}`, { method: "PATCH", json: { status: "cancelled" } })}>
+            Cancel
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => window.confirm("Replace this QR code? The old code will stop working.") && void onAction(`/api/admin/tickets/${ticket.id}/reissue`, { method: "POST" })}>
+            Reissue
+          </Button>
+        </>
+      ) : ticket.status === "cancelled" && ticket.orderStatus === "paid" ? (
+        <Button type="button" variant="secondary" onClick={() => void onAction(`/api/admin/tickets/${ticket.id}`, { method: "PATCH", json: { status: "valid" } })}>
+          Restore
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

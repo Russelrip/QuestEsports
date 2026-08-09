@@ -46,9 +46,9 @@ export default function AdminOrdersManager() {
   return <AdminShell title="Merchandise Orders" description="Review provider-confirmed payments and manage delivery fulfilment separately from payment state.">
     {message ? <p className="mb-4 text-sm text-rose-300">{message}</p> : null}
     <div className="grid gap-4">
-      {orders.map((order) => <Card key={order.id} className="p-5">
+      {orders.map((order) => <Card key={order.id} className="p-4 sm:p-5">
         <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div>
+          <div className="min-w-0 [&_p]:break-words">
             <p className="text-xs uppercase tracking-[0.2em] text-purple-200">{order.paymentStatus} payment · {order.status.replaceAll("_", " ")}</p>
             <h3 className="mt-2 text-xl text-white">{order.currency} {order.total.toFixed(2)} · {order.items.reduce((sum, item) => sum + item.quantity, 0)} items</h3>
             <p className="mt-2 text-sm text-slate-300">{order.firstName} {order.lastName} · {order.email} · {order.phone}</p>
@@ -56,9 +56,9 @@ export default function AdminOrdersManager() {
             <p className="mt-2 text-sm text-slate-300">{order.items.map((item) => `${item.productName} (${item.variantName}) × ${item.quantity}`).join(", ")}</p>
             <p className="mt-2 text-xs text-slate-500">Order {order.id} · {new Date(order.createdAt).toLocaleString()}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <Select aria-label="Order status" value={order.status} disabled={updating === order.id || nextStatuses(order).length === 1} onChange={(event) => void updateStatus(order, event.target.value)}>{nextStatuses(order).map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</Select>
-            <Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(order.id); setMessage("Order ID copied."); } catch { setMessage("The order ID could not be copied."); } }}>Copy ID</Button>
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(order.id); setMessage("Order ID copied."); } catch { setMessage("The order ID could not be copied."); } }}>Copy ID</Button>
           </div>
         </div>
       </Card>)}
