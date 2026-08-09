@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore the documented non-production encryption-key placeholder"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^docs/setup-and-deployment\.md$''']
+regexes = ['''(?i)replace[-_a-z0-9]*''']

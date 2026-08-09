@@ -25,5 +25,12 @@ quest-paris-database-*.tar.gz.age
 quest-paris-database-*.tar.gz.age.sha256
 quest-esports-production-age-identity.txt
 client_secret*.json
+credentials*.json
+service-account*.json
+service_account*.json
+*.pem
+*.key
+*.p12
+*.pfx
 rclone.conf
 quest-esports.conf

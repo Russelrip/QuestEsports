@@ -2,13 +2,6 @@ name: CD
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - CI
-    branches:
-      - main
-    types:
-      - completed
 
 permissions:
   actions: read
@@ -27,20 +20,19 @@ jobs:
     name: Deploy backend
     runs-on: ubuntu-latest
     environment: production
-    if: ${{ vars.BACKEND_DEPLOY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    if: ${{ vars.BACKEND_DEPLOY_ENABLED == 'true' && github.actor == 'Russelrip' }}
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci
       DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci
       SESSION_COOKIE_NAME: quest_session
-      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      DEPLOY_SHA: ${{ github.sha }}
     defaults:
       run:
         working-directory: backend
 
     steps:
       - name: Verify manual deployment commit passed CI
-        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           GH_TOKEN: ${{ github.token }}
         working-directory: .

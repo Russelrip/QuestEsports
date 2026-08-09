@@ -7,7 +7,8 @@ The frontend is deployed by Vercel's Git integration. Do not configure a separat
 ## Workflows
 
 - `.github/workflows/ci.yml` runs on pull requests to `main` and pushes to `main`.
-- `.github/workflows/cd.yml` runs after CI succeeds on `main`, and can also be started manually from the GitHub Actions tab.
+- `.github/workflows/secret-scan.yml` scans pull requests and pushes to `main` for committed credentials.
+- `.github/workflows/cd.yml` can only be started manually from the GitHub Actions tab and only deploys when the actor is `Russelrip`.
 - `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
 
 The APK workflow requires `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` as repository Actions secrets. Because the repository is private, its release assets remain accessible only to authorized GitHub users. Keep the original keystore in encrypted offline custody; all future updates must use the same signing certificate.
@@ -164,7 +165,7 @@ systemctl enable pm2-deploy
 
 Verify `systemctl is-active pm2-deploy` and `sudo -u deploy -H pm2 list`. See the [Production Operations Runbook](./production-runbook.md#pm2-and-automatic-boot) for migrating an existing root-owned PM2 process and recovering from `Result: protocol`.
 
-After a successful CI run, deployment checks out and deploys that run's exact commit SHA. On deploy, the workflow runs:
+After a successful CI run, the repository owner may manually deploy the current `main` commit. On deploy, the workflow runs:
 
 ```bash
 git fetch origin "$DEPLOY_SHA"
@@ -211,6 +212,8 @@ To redeploy the current `main` branch without pushing a new commit:
 3. Choose `Run workflow`.
 
 The workflow deploys the current `main` commit only after confirming that the same commit has a successful `CI` run. The production environment approval and deploy enablement variables still apply.
+
+The owner-only manual trigger is intentional because GitHub Free does not provide branch-protection enforcement for this private personal repository. See [Collaboration And Staging](./collaboration-and-staging.md) before granting collaborator access.
 
 ## Troubleshooting And Verification
 

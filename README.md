@@ -598,6 +598,7 @@ Frontend verification includes unit tests, lint, a production build, and Playwri
 
 ## Recommended Next Steps
 
+- Read [Collaboration And Staging](./docs/collaboration-and-staging.md) before granting repository access or preparing a contributor environment.
 - Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
 - Use [Production Operations Runbook](./docs/production-runbook.md#site-maintenance-mode) to show the maintenance page or temporarily stop the site.
 - Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
