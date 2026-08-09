@@ -9,6 +9,7 @@ const {
   mapChallongeStatus,
   requestChallongeJson,
   fetchChallongeSnapshot,
+  buildSyncedTournamentUpdate,
 } = require("../src/modules/challonge/challonge.service");
 const { env } = require("../src/config/env");
 
@@ -67,6 +68,19 @@ test("malformed collection payloads degrade to an empty normalized snapshot", ()
   assert.equal(snapshot.tournament.name, "Challonge Tournament");
   assert.deepEqual(snapshot.participants, []);
   assert.deepEqual(snapshot.matches, []);
+});
+
+test("completed Challonge snapshots repair the Quest tournament status", () => {
+  assert.deepEqual(buildSyncedTournamentUpdate({
+    tournament: {
+      state: "complete",
+      fullChallongeUrl: "https://challonge.com/quest-open",
+    },
+  }), {
+    bracketLink: "https://challonge.com/quest-open",
+    status: "completed",
+    isActive: false,
+  });
 });
 
 test("foundation migration is additive and backfills links as disabled", () => {
@@ -225,6 +239,65 @@ test("Challonge match results are written once through the application-scoped v2
     assert.equal(body.data.attributes.match[0].advancing, true);
     assert.equal(result.winnerId, "2");
     assert.equal(stored[0].matches[0].state, "complete");
+  } finally { restore(); }
+});
+
+test("finalizing Challonge also completes the Quest tournament", async (context) => {
+  const servicePath = path.join(__dirname, "../src/modules/challonge/challonge.service.js");
+  const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
+  const envPath = path.join(__dirname, "../src/config/env.js");
+  const cachePath = path.join(__dirname, "../src/lib/cache.js");
+  const originalFetch = global.fetch;
+  context.after(() => { global.fetch = originalFetch; });
+  const tournamentUpdates = [];
+  const invalidatedTags = [];
+  const prisma = {
+    challongeIntegration: {
+      findUnique: async () => ({
+        id: "integration-1",
+        tournamentId: "tournament-1",
+        identifier: "10",
+        enabled: true,
+        snapshotData: { tournament: { id: "10", state: "underway" }, participants: [], matches: [] },
+      }),
+      update: async ({ data }) => data,
+    },
+    tournament: {
+      update: async (query) => { tournamentUpdates.push(query); return query.data; },
+    },
+  };
+  global.fetch = async (url) => String(url).endsWith("/oauth/token")
+    ? new Response(JSON.stringify({ access_token: "state-token", expires_in: 3600 }), { status: 200 })
+    : new Response(JSON.stringify({ data: { type: "TournamentState" } }), { status: 200 });
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [envPath]: { env: {
+      ...env,
+      CHALLONGE_ENABLED: true,
+      CHALLONGE_CLIENT_ID: "state-client",
+      CHALLONGE_CLIENT_SECRET: "state-secret",
+      CHALLONGE_BASE_URL: "https://api.challonge.com/v2.1",
+      CHALLONGE_TOKEN_URL: "https://api.challonge.com/oauth/token",
+      CHALLONGE_OAUTH_SCOPE: "application:manage",
+    } },
+    [cachePath]: {
+      get: async () => null,
+      set: async () => undefined,
+      del: async () => undefined,
+      invalidateTags: async (tags) => { invalidatedTags.push(...tags); },
+    },
+  });
+  try {
+    const result = await service.changeChallongeTournamentState({
+      tournamentId: "tournament-1",
+      body: { state: "finalize" },
+    });
+    assert.equal(result.state, "complete");
+    assert.deepEqual(tournamentUpdates, [{
+      where: { id: "tournament-1" },
+      data: { status: "completed", isActive: false },
+    }]);
+    assert.deepEqual(invalidatedTags, ["foundation", "tournaments"]);
   } finally { restore(); }
 });
 

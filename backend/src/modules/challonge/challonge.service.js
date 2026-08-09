@@ -8,6 +8,14 @@ const { normalizeText } = require("../../lib/validation");
 const { publishRealtimeEvent } = require("../realtime/realtime.service");
 
 const SYNC_FREQUENCIES = new Set(["manual", "one_minute", "five_minutes"]);
+const buildSyncedTournamentUpdate = (snapshot) => ({
+  ...(snapshot?.tournament?.fullChallongeUrl
+    ? { bracketLink: snapshot.tournament.fullChallongeUrl }
+    : {}),
+  ...(["complete", "completed", "ended"].includes(snapshot?.tournament?.state)
+    ? { status: "completed", isActive: false }
+    : {}),
+});
 const rateLimitCacheKey = () => {
   const clientHash = crypto
     .createHash("sha256")
@@ -664,6 +672,7 @@ const syncChallongeIntegration = async ({ integrationId, trigger = "manual", req
     const now = new Date();
     const shouldSchedule = integration.enabled && integration.automaticSyncEnabled &&
       integration.tournament.status !== "completed" && !completed;
+    const tournamentUpdate = buildSyncedTournamentUpdate(snapshot);
     await prisma.$transaction([
       prisma.challongeIntegration.update({
         where: { id: integration.id },
@@ -689,16 +698,16 @@ const syncChallongeIntegration = async ({ integrationId, trigger = "manual", req
           durationMs: Math.max(0, now.getTime() - log.startedAt.getTime()),
         },
       }),
-      ...(snapshot.tournament.fullChallongeUrl
+      ...(Object.keys(tournamentUpdate).length
         ? [prisma.tournament.update({
             where: { id: integration.tournamentId },
-            data: { bracketLink: snapshot.tournament.fullChallongeUrl },
+            data: tournamentUpdate,
           })]
         : []),
     ]);
     publishRealtimeEvent("brackets", { tournamentId: integration.tournamentId, syncedAt: now.toISOString() });
     publishRealtimeEvent("matches", { tournamentId: integration.tournamentId, syncedAt: now.toISOString() });
-    await cache.invalidateTags(["foundation"]);
+    await cache.invalidateTags(["foundation", "tournaments"]);
     return { skipped: false, snapshot, syncedAt: now };
   } catch (error) {
     const now = new Date();
@@ -950,6 +959,13 @@ const changeChallongeTournamentState = async ({ tournamentId, body }) => {
     snapshot.tournament = { ...(snapshot.tournament || {}), id: externalTournamentId, state };
     return snapshot;
   });
+  if (transition === "finalize") {
+    await prisma.tournament.update({
+      where: { id: tournamentId },
+      data: { status: "completed", isActive: false },
+    });
+  }
+  await cache.invalidateTags(["foundation", "tournaments"]);
   return { tournamentId: externalTournamentId, transition, state };
 };
 
@@ -1273,6 +1289,7 @@ const claimDueIntegrationsForQueue = async () => {
 };
 
 module.exports = {
+  buildSyncedTournamentUpdate,
   ChallongeRequestError,
   extractChallongeIdentifier,
   normalizeSnapshot,

@@ -87,6 +87,7 @@ router.put(
   "/admin/tournaments/:id/challonge/state",
   requireAuth,
   tournamentAdmin,
+  invalidateCache("foundation", "tournaments"),
   challongeController.changeTournamentState
 );
 router.put(
