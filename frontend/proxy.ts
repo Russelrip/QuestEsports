@@ -6,6 +6,21 @@ const isProduction = process.env.NODE_ENV === "production";
 const allowInsecureLoopbackUrls = process.env.ALLOW_INSECURE_LOOPBACK_URLS === "true";
 
 export function proxy(request: NextRequest) {
+  if (
+    process.env.VERCEL_ENV === "production" &&
+    request.nextUrl.hostname.endsWith(".vercel.app") &&
+    process.env.NEXT_PUBLIC_SITE_URL
+  ) {
+    const canonicalOrigin = new URL(process.env.NEXT_PUBLIC_SITE_URL);
+    if (canonicalOrigin.hostname !== request.nextUrl.hostname) {
+      const canonicalUrl = new URL(
+        `${request.nextUrl.pathname}${request.nextUrl.search}`,
+        canonicalOrigin,
+      );
+      return NextResponse.redirect(canonicalUrl, 308);
+    }
+  }
+
   const maintenance = readSiteMaintenanceConfig();
   const nonce = Buffer.from(randomUUID()).toString("base64");
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;

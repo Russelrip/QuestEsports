@@ -5,6 +5,7 @@ import StructuredData from "@/components/StructuredData";
 import TournamentDetailsContent from "@/components/tournaments/TournamentDetailsContent";
 import { PageTransition } from "@/components/ui/page-transition";
 import {
+  buildBreadcrumbStructuredData,
   buildTournamentMetadata,
   buildTournamentStructuredData,
 } from "@/lib/site";
@@ -54,6 +55,13 @@ export default async function TournamentDetailsPage({
   return (
     <PageTransition>
       <StructuredData data={buildTournamentStructuredData(tournament)} />
+      <StructuredData
+        data={buildBreadcrumbStructuredData([
+          { name: "Home", path: "/" },
+          { name: "Tournaments", path: "/tournaments" },
+          { name: tournament.title, path: `/tournaments/${tournament.slug}` },
+        ])}
+      />
       <TournamentDetailsContent tournament={tournament} paymentCancelled={payment === "cancelled"} />
     </PageTransition>
   );

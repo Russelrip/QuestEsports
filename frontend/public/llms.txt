@@ -1,0 +1,21 @@
+# Quest E-sports LK
+
+Quest E-sports LK is a Sri Lankan esports organization and tournament platform.
+
+## Primary pages
+
+- Home: https://questesports.lk/
+- Tournaments: https://questesports.lk/tournaments
+- Match videos: https://questesports.lk/match-videos
+- Event tickets: https://questesports.lk/tickets
+- Shop: https://questesports.lk/shop
+- Gallery: https://questesports.lk/gallery
+- Members: https://questesports.lk/members
+- Contact: https://questesports.lk/contact
+
+## Discovery
+
+- Sitemap: https://questesports.lk/sitemap.xml
+- Robots policy: https://questesports.lk/robots.txt
+
+Public tournament, ticket, product, and rulebook pages may be discovered through the sitemap and their respective index pages.

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import type { Product } from "@/lib/shop";
+import type { TicketedEvent } from "@/lib/tickets";
 import type { Tournament } from "@/lib/tournaments";
 
 const siteName = "Quest E-sports LK";
@@ -157,7 +159,10 @@ const resolvePath = (path: string) =>
   path.startsWith("/") ? path : `/${path}`;
 
 export const absoluteUrl = (path = "/") =>
-  new URL(resolvePath(path), siteUrl).toString();
+  new URL(
+    /^https?:\/\//i.test(path) ? path : resolvePath(path),
+    siteUrl,
+  ).toString();
 
 export const buildPageMetadata = ({
   title,
@@ -344,6 +349,104 @@ export const buildTournamentStructuredData = (tournament: Tournament) => ({
     price: tournament.registrationFee.amount,
     priceCurrency: tournament.registrationFee.currency,
   },
+});
+
+export const buildTicketEventStructuredData = (event: TicketedEvent) => ({
+  "@context": "https://schema.org",
+  "@type": "Event",
+  name: event.title,
+  description: event.description,
+  image: absoluteUrl(defaultSocialImage),
+  url: absoluteUrl(`/tickets/${event.slug}`),
+  startDate: event.startsAt,
+  eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+  eventStatus: `https://schema.org/${
+    event.status === "cancelled"
+      ? "EventCancelled"
+      : event.status === "completed"
+        ? "EventCompleted"
+        : "EventScheduled"
+  }`,
+  location: {
+    "@type": "Place",
+    name: event.venue,
+    address: {
+      "@type": "PostalAddress",
+      addressCountry: "LK",
+    },
+  },
+  organizer: {
+    "@type": "SportsOrganization",
+    name: siteTitle,
+    url: siteUrl,
+  },
+  offers: [
+    {
+      "@type": "Offer",
+      name: "Single ticket",
+      url: absoluteUrl(`/tickets/${event.slug}`),
+      price: event.singlePrice,
+      priceCurrency: event.currency,
+      availability: event.salesActive
+        ? "https://schema.org/InStock"
+        : "https://schema.org/SoldOut",
+      validFrom: event.salesStartAt,
+      priceValidUntil: event.salesEndAt,
+    },
+    {
+      "@type": "Offer",
+      name: "Pair ticket",
+      url: absoluteUrl(`/tickets/${event.slug}`),
+      price: event.pairPrice,
+      priceCurrency: event.currency,
+      availability: event.salesActive
+        ? "https://schema.org/InStock"
+        : "https://schema.org/SoldOut",
+      validFrom: event.salesStartAt,
+      priceValidUntil: event.salesEndAt,
+    },
+  ],
+});
+
+export const buildProductStructuredData = (product: Product) => ({
+  "@context": "https://schema.org",
+  "@type": "Product",
+  name: product.name,
+  description: product.description,
+  image: product.images.map((image) => absoluteUrl(image.imageUrl)),
+  url: absoluteUrl(`/shop/${product.slug}`),
+  brand: {
+    "@type": "Brand",
+    name: siteTitle,
+  },
+  offers: product.variants
+    .filter((variant) => variant.isActive)
+    .map((variant) => ({
+      "@type": "Offer",
+      name: variant.name,
+      sku: variant.sku,
+      url: absoluteUrl(`/shop/${product.slug}`),
+      price: variant.price,
+      priceCurrency: product.currency,
+      availability:
+        variant.stock === 0
+          ? "https://schema.org/OutOfStock"
+          : "https://schema.org/InStock",
+      itemCondition: "https://schema.org/NewCondition",
+    })),
+});
+
+export const buildBreadcrumbStructuredData = (
+  items: Array<{ name: string; path: string }>,
+) => ({
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: items.map((item, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    name: item.name,
+    item: absoluteUrl(item.path),
+  })),
 });
 
 export const primaryNavItems = [

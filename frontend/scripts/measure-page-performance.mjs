@@ -8,7 +8,7 @@ const runs = Math.max(Number.parseInt(process.env.PERF_RUNS || "3", 10), 1);
 const budgets = {
   ttfbMs: Number.parseInt(process.env.PERF_MAX_TTFB_MS || "2000", 10),
   loadMs: Number.parseInt(process.env.PERF_MAX_LOAD_MS || "5000", 10),
-  transferKb: Number.parseInt(process.env.PERF_MAX_TRANSFER_KB || "2500", 10),
+  transferKb: Number.parseInt(process.env.PERF_MAX_TRANSFER_KB || "1000", 10),
   resourceCount: Number.parseInt(process.env.PERF_MAX_RESOURCE_COUNT || "150", 10),
 };
 const median = (values) => {

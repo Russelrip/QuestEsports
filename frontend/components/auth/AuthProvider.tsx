@@ -65,7 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoggedInUser(data?.user || null);
       setSessionError(null);
     } catch (error) {
-      console.error("Failed to refresh session:", error);
+      if (process.env.NODE_ENV !== "production") {
+        console.error("Failed to refresh session:", error);
+      }
       setSessionError(
         error instanceof Error ? error.message : "The session service is unavailable."
       );
@@ -99,7 +101,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error(data.message || "The server could not end your session.");
         }
       } catch (error) {
-        console.error("Failed to logout session:", error);
+        if (process.env.NODE_ENV !== "production") {
+          console.error("Failed to logout session:", error);
+        }
         showToast({
           title: "Logout did not complete",
           description: "Your server session may still be active. Please try again.",

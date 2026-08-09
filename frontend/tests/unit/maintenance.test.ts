@@ -32,6 +32,41 @@ describe("maintenance configuration", () => {
 });
 
 describe("maintenance proxy", () => {
+  it("redirects the production Vercel alias to the canonical domain", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://questesports.lk");
+    const response = proxy(
+      new NextRequest("https://quest-esports.vercel.app/tournaments?game=valorant"),
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://questesports.lk/tournaments?game=valorant",
+    );
+  });
+
+  it("does not redirect Vercel preview deployments", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://questesports.lk");
+    const response = proxy(
+      new NextRequest("https://quest-esports-git-feature.vercel.app/tournaments"),
+    );
+
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("does not loop when the configured canonical host is a Vercel alias", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://quest-esports.vercel.app");
+    const response = proxy(
+      new NextRequest("https://quest-esports.vercel.app/tournaments"),
+    );
+
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+
   it("rewrites public pages to a 503 maintenance response", () => {
     vi.stubEnv("SITE_MAINTENANCE_MODE", "true");
     vi.stubEnv("SITE_MAINTENANCE_RETRY_AFTER_SECONDS", "600");
