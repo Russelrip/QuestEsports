@@ -84,6 +84,48 @@ const legacyPosterDefinitions = [
     category: "poster",
     overlayAlign: "bottom-left",
   },
+  {
+    filePath: "frontend/public/images/womensbrackets.jpg",
+    title: "Women's Tournament Brackets",
+    headline: "Women's Tournament Brackets",
+    category: "banner",
+    overlayAlign: "top-left",
+  },
+  {
+    filePath: "frontend/public/images/womensposter.jpg",
+    title: "Women's Tournament Poster",
+    headline: "Women's Tournament Poster",
+    category: "poster",
+    overlayAlign: "top-left",
+  },
+  {
+    filePath: "frontend/public/images/womensprizepool.jpg",
+    title: "Women's Prize Pool",
+    headline: "Women's Prize Pool",
+    category: "graphic",
+    overlayAlign: "top-right",
+  },
+  {
+    filePath: "frontend/public/images/semi2womens.jpg",
+    title: "Women's Semi Finals 2",
+    headline: "Women's Semi Finals 2",
+    category: "poster",
+    overlayAlign: "bottom-left",
+  },
+  {
+    filePath: "frontend/public/images/semi1womens.jpg",
+    title: "Women's Semi Finals 1",
+    headline: "Women's Semi Finals 1",
+    category: "poster",
+    overlayAlign: "bottom-left",
+  },
+  {
+    filePath: "frontend/public/images/summarywomens.jpg",
+    title: "Women's Tournament Summary",
+    headline: "Women's Tournament Summary",
+    category: "graphic",
+    overlayAlign: "top-left",
+  },
 ];
 
 const getContentType = (filePath) => {
@@ -99,6 +141,43 @@ const getImportKey = (filePath) => `legacy-poster:${filePath.toLowerCase()}`;
 const readLegacyAsset = async (relativeFilePath) => {
   const absolutePath = path.join(repoRoot, relativeFilePath);
   return fs.readFile(absolutePath);
+};
+
+const repairLegacyPosterFile = async ({ poster, buffer, onFileWritten }) => {
+  const storedFilename = poster.imageAsset?.storedFilename;
+  if (!storedFilename) {
+    return false;
+  }
+
+  if (path.basename(storedFilename) !== storedFilename) {
+    throw new Error(`Invalid stored legacy poster filename: ${storedFilename}`);
+  }
+
+  const targetPath = path.join(posterImageDirectory, storedFilename);
+  await fs.mkdir(posterImageDirectory, { recursive: true });
+
+  try {
+    const stats = await fs.stat(targetPath);
+    if (!stats.isFile()) {
+      throw new Error(`Legacy poster target is not a file: ${storedFilename}`);
+    }
+    return false;
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  try {
+    await fs.writeFile(targetPath, buffer, { flag: "wx" });
+    onFileWritten(storedFilename);
+    return true;
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      return false;
+    }
+    throw error;
+  }
 };
 
 const createLegacyPoster = async (tx, definition, buffer, onFileWritten) => {
@@ -176,7 +255,13 @@ const importLegacyPosters = async () => {
             })),
           ],
         },
-        select: { id: true, importKey: true, title: true, headline: true },
+        select: {
+          id: true,
+          importKey: true,
+          title: true,
+          headline: true,
+          imageAsset: { select: { storedFilename: true } },
+        },
       });
       const existingByImportKey = new Map(
         existingPosters
@@ -203,7 +288,15 @@ const importLegacyPosters = async () => {
               data: { importKey },
             });
           }
-          results.push({ status: "skipped", title: definition.title });
+          const repaired = await repairLegacyPosterFile({
+            poster: existing,
+            buffer,
+            onFileWritten: (filename) => writtenFilenames.push(filename),
+          });
+          results.push({
+            status: repaired ? "repaired" : "skipped",
+            title: definition.title,
+          });
           continue;
         }
 
@@ -224,6 +317,7 @@ const importLegacyPosters = async () => {
 
   return {
     importedCount: results.filter((item) => item.status === "imported").length,
+    repairedCount: results.filter((item) => item.status === "repaired").length,
     skippedCount: results.filter((item) => item.status === "skipped").length,
     results,
   };

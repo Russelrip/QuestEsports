@@ -359,6 +359,12 @@ const legacyGalleryImageNames = new Set([
   "openposter.jpg",
   "womenswinners.jpg",
   "womens2place.jpg",
+  "womensbrackets.jpg",
+  "womensposter.jpg",
+  "womensprizepool.jpg",
+  "semi2womens.jpg",
+  "semi1womens.jpg",
+  "summarywomens.jpg",
 ]);
 
 export const resolveImageAssetUrl = (

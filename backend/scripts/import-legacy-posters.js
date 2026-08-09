@@ -7,7 +7,7 @@ const main = async () => {
   const summary = await importLegacyPosters();
 
   console.log(
-    `Legacy poster import complete. Imported: ${summary.importedCount}, skipped: ${summary.skippedCount}`
+    `Legacy poster import complete. Imported: ${summary.importedCount}, repaired: ${summary.repairedCount}, skipped: ${summary.skippedCount}`
   );
 
   summary.results.forEach((result) => {

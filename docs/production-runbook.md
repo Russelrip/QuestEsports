@@ -193,6 +193,12 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 
 Manual redeploy: GitHub `Actions -> CD -> Run workflow`. The manual job redeploys the current `main` commit and refuses to continue unless that exact commit has a successful `CI` run.
 
+For a confirmed missing-file incident affecting packaged legacy posters, enable
+the `repair_legacy_media` workflow input. The deployment then runs the idempotent
+legacy import after creating and verifying an encrypted off-site backup and
+checking database security. It restores only missing poster files associated
+with matching records and leaves healthy files alone.
+
 The deployment refuses root SSH users, dirty tracked worktrees, insecure `.env` permissions, and unpinned SSH hosts.
 
 ## Rollback Semantics

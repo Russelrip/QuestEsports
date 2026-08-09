@@ -2,6 +2,12 @@ name: CD
 
 on:
   workflow_dispatch:
+    inputs:
+      repair_legacy_media:
+        description: Restore missing packaged legacy poster files on the VPS
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -88,6 +94,7 @@ jobs:
           HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
           MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_MIGRATION_APPROVAL_SHA }}
           DESTRUCTIVE_MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA }}
+          REPAIR_LEGACY_MEDIA: ${{ inputs.repair_legacy_media }}
           DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         run: |
           if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -102,7 +109,11 @@ jobs:
             echo "BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA must be empty or a full lowercase 40-character commit SHA." >&2
             exit 1
           fi
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          if [ "$REPAIR_LEGACY_MEDIA" != "true" ] && [ "$REPAIR_LEGACY_MEDIA" != "false" ]; then
+            echo "REPAIR_LEGACY_MEDIA must be true or false." >&2
+            exit 1
+          fi
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
@@ -238,11 +249,16 @@ jobs:
               echo "Prefer an expand-and-contract release; use this approval only after a verified recovery backup and maintenance plan." >&2
               exit 1
             fi
+          fi
+          if [ "$MIGRATION_CHANGED" = true ] || [ "$MIGRATION_PENDING" = true ] || [ "$REPAIR_LEGACY_MEDIA" = "true" ]; then
             BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash "$APP_DIR/ops/backup-production.sh"
           fi
           npm run lint
           npm run prisma:migrate:deploy
           npm run prisma:security:verify
+          if [ "$REPAIR_LEGACY_MEDIA" = "true" ]; then
+            npm run media:import-legacy-posters
+          fi
           PROCESS_RESTART_ATTEMPTED=true
           pm2 restart "$PM2_PROCESS" --update-env
           HEALTHY=false

@@ -33,6 +33,7 @@ test("every declared legacy poster source is packaged in the repository", () => 
 
 test("legacy poster import uses a stable key and becomes idempotent", async () => {
   const posters = new Map();
+  const imageAssets = new Map();
   const advisoryLockCalls = [];
   const tempRoot = await fsPromises.mkdtemp(
     path.join(os.tmpdir(), "quest-legacy-import-test-")
@@ -40,10 +41,16 @@ test("legacy poster import uses a stable key and becomes idempotent", async () =
   const tx = {
     $executeRaw: async (strings) => advisoryLockCalls.push(strings.join("")),
     imageAsset: {
-      create: async ({ data }) => data,
+      create: async ({ data }) => {
+        imageAssets.set(data.id, data);
+        return data;
+      },
     },
     poster: {
-      findMany: async () => [...posters.values()],
+      findMany: async () => [...posters.values()].map((poster) => ({
+        ...poster,
+        imageAsset: imageAssets.get(poster.imageAssetId),
+      })),
       create: async ({ data }) => {
         assert.ok(data.importKey.startsWith("legacy-poster:"));
         assert.equal(posters.has(data.importKey), false);
@@ -69,15 +76,24 @@ test("legacy poster import uses a stable key and becomes idempotent", async () =
   try {
     const first = await service.importLegacyPosters();
     const firstWriteCount = (await fsPromises.readdir(tempRoot)).length;
+    const posterToRepair = [...posters.values()][0];
+    const assetToRepair = imageAssets.get(posterToRepair.imageAssetId);
+    await fsPromises.unlink(path.join(tempRoot, assetToRepair.storedFilename));
     const second = await service.importLegacyPosters();
+    const third = await service.importLegacyPosters();
 
     assert.ok(first.importedCount > 0);
+    assert.equal(first.repairedCount, 0);
     assert.equal(first.skippedCount, 0);
     assert.equal(firstWriteCount, first.importedCount);
     assert.equal(second.importedCount, 0);
-    assert.equal(second.skippedCount, first.importedCount);
+    assert.equal(second.repairedCount, 1);
+    assert.equal(second.skippedCount, first.importedCount - 1);
+    assert.equal(third.importedCount, 0);
+    assert.equal(third.repairedCount, 0);
+    assert.equal(third.skippedCount, first.importedCount);
     assert.equal((await fsPromises.readdir(tempRoot)).length, firstWriteCount);
-    assert.equal(advisoryLockCalls.length, 2);
+    assert.equal(advisoryLockCalls.length, 3);
     assert.ok(advisoryLockCalls.every((query) => query.includes("pg_advisory_xact_lock")));
   } finally {
     restore();
