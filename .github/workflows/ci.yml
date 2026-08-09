@@ -161,7 +161,7 @@ jobs:
         run: npm ci
 
       - name: Audit mobile dependencies
-        run: npm audit --audit-level=high
+        run: npm run audit:ci
 
       - name: Run mobile tests
         run: npm test

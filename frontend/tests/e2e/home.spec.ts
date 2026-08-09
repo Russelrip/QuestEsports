@@ -217,27 +217,39 @@ test("production security policy permits only the configured PayHere form endpoi
   expect(policy).not.toContain("frame-src *");
 });
 
-test("Challonge public bracket is lazy-loaded without consuming REST requests", async ({ page }) => {
+test("Challonge public bracket is preloaded and reused without consuming REST requests", async ({ page }) => {
   let bracketRequests = 0;
+  let moduleRequests = 0;
   await page.route("**/api/v1/tournaments/challonge-test/bracket", (route) => {
     bracketRequests += 1;
     return route.abort();
   });
-  await page.route("https://challonge.com/quest-test/module", (route) => route.fulfill({
-    contentType: "text/html",
-    body: "<!doctype html><title>Quest Test bracket</title><p>Public bracket</p>",
-  }));
+  await page.route("https://challonge.com/quest-test/module", (route) => {
+    moduleRequests += 1;
+    return route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Quest Test bracket</title><p>Public bracket</p>",
+    });
+  });
 
   await page.goto("/tournaments/challonge-test");
   expect(bracketRequests).toBe(0);
-  await expect(page.locator("iframe")).toHaveCount(0);
+  const bracketFrame = page.locator("iframe");
+  await expect(bracketFrame).toHaveAttribute("src", "https://challonge.com/quest-test/module");
+  await expect(bracketFrame).toBeHidden();
+  expect(moduleRequests).toBe(1);
+
   const bracketTab = page.getByRole("button", { name: "bracket", exact: true });
-  await expect(async () => {
-    await bracketTab.click();
-    await expect(bracketTab).toHaveAttribute("aria-current", "page");
-  }).toPass();
+  await bracketTab.click();
+  await expect(bracketTab).toHaveAttribute("aria-current", "page");
+  await expect(bracketFrame).toBeVisible();
   await expect(page.getByRole("link", { name: "Open on Challonge" })).toHaveAttribute("href", "https://challonge.com/quest-test");
-  await expect(page.locator("iframe")).toHaveAttribute("src", "https://challonge.com/quest-test/module");
+
+  await page.getByRole("button", { name: "overview", exact: true }).click();
+  await expect(bracketFrame).toBeHidden();
+  await bracketTab.click();
+  await expect(bracketFrame).toBeVisible();
+  expect(moduleRequests).toBe(1);
   expect(bracketRequests).toBe(0);
 });
 
