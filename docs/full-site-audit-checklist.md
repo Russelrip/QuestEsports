@@ -15,15 +15,15 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 
 | Field | Value |
 | --- | --- |
-| Environment / URL | Local automated remediation verification |
-| Build / commit | Working tree based on `be4c5a4` with audit fixes |
-| Test start and end | 2026-07-17 |
-| Tester | Codex automated checks |
-| Device(s) | Windows development workstation |
-| Browser(s) and versions | Playwright Chromium |
-| API environment | Unit/integration mocks; local database integration not enabled |
-| Payment mode | Disabled / mocked |
-| Overall result | Blocked — automated checks pass; staging UAT and operational sign-off remain |
+| Environment / URL | |
+| Build / commit | |
+| Test start and end | |
+| Tester | |
+| Device(s) | |
+| Browser(s) and versions | |
+| API environment | |
+| Payment mode | |
+| Overall result | |
 
 ### Severity guide
 

@@ -2,7 +2,7 @@ export function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-export function formatDisplayDate(value?: string | null, options?: Intl.DateTimeFormatOptions) {
+function formatDisplayDate(value?: string | null, options?: Intl.DateTimeFormatOptions) {
   if (!value) {
     return "TBD";
   }

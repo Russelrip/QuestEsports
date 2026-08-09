@@ -100,7 +100,7 @@ export type TournamentOption = {
   maxSubstitutes?: number;
 };
 
-export type RegistrationMember = {
+type RegistrationMember = {
   id: string;
   role: string;
   order: number;
@@ -180,7 +180,7 @@ export type RecruitmentApplicationMember = {
   privacyAcceptedAt?: string | null;
 };
 
-export type RecruitmentApplicationDetails = {
+type RecruitmentApplicationDetails = {
   ign?: string;
   birthday?: string;
   gender?: string;
@@ -324,7 +324,7 @@ export type ChallongeSyncLog = {
   completedAt: string | null;
 };
 
-export const formatAdminDateTime = (
+const formatAdminDateTime = (
   value?: string | null,
   options?: Intl.DateTimeFormatOptions,
 ) => (value ? formatSriLankaDateTime(value, options) : "N/A");

@@ -1,6 +1,6 @@
 import { fetchApiJson } from "@/lib/api";
 
-export type ProductVariant = {
+type ProductVariant = {
   id: string;
   sku: string;
   name: string;

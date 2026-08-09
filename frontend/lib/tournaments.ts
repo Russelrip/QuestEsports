@@ -8,15 +8,15 @@ export type TournamentStatus =
   | "completed"
   | "cancelled";
 
-export type TournamentRegistrationState =
+type TournamentRegistrationState =
   | "registration_open"
   | "registration_closed"
   | "slots_full";
 
-export type TournamentRegistrationMode = "open_entry" | "slot_based";
-export type TournamentEntryType = "team" | "solo";
-export type TournamentPaymentMethod = "free" | "payhere" | "bank_transfer";
-export type TournamentDateStatus = "scheduled" | "tba" | "tbd";
+type TournamentRegistrationMode = "open_entry" | "slot_based";
+type TournamentEntryType = "team" | "solo";
+type TournamentPaymentMethod = "free" | "payhere" | "bank_transfer";
+type TournamentDateStatus = "scheduled" | "tba" | "tbd";
 
 export type TournamentRegistrationField = {
   key: string;
@@ -33,14 +33,14 @@ export type TournamentScheduleData = {
   rows: Record<string, string>[];
 };
 
-export type TournamentShowcase = {
+type TournamentShowcase = {
   posterUrl: string | null;
   firstPlaceUrl: string | null;
   secondPlaceUrl: string | null;
   thirdPlaceUrl: string | null;
 };
 
-export type TournamentResultSummary = {
+type TournamentResultSummary = {
   status: string;
   completedAt: string | null;
   standings: Array<{
@@ -51,7 +51,7 @@ export type TournamentResultSummary = {
   }>;
 };
 
-export type RegisteredTournamentTeam = {
+type RegisteredTournamentTeam = {
   id: string;
   teamName: string;
   logoUrl: string | null;
@@ -60,7 +60,7 @@ export type RegisteredTournamentTeam = {
   status: string;
 };
 
-export type RegisteredTournamentParticipant = {
+type RegisteredTournamentParticipant = {
   id: string;
   entryType: TournamentEntryType;
   displayName: string;
@@ -112,26 +112,26 @@ export type BracketParticipant = {
   seed?: number;
 };
 
-export type BracketOpponent = {
+type BracketOpponent = {
   id: number | null;
   position?: number;
   score?: number;
   result?: "win" | "loss" | "draw";
 };
 
-export type BracketStage = {
+type BracketStage = {
   id: number;
   name: string;
   type: string;
 };
 
-export type BracketGroup = {
+type BracketGroup = {
   id: number;
   stage_id: number;
   number: number;
 };
 
-export type BracketRound = {
+type BracketRound = {
   id: number;
   stage_id: number;
   group_id: number;
@@ -166,72 +166,6 @@ export type TournamentBracketSummary = {
   paused: number;
   pending: number;
   lastUpdatedAt?: string | null;
-};
-
-export type ChallongeBracketParticipant = {
-  id: string;
-  name: string;
-  teamName: string;
-  seed: number | null;
-  active: boolean;
-  finalRank: number | null;
-  registrationId: string | null;
-  logoUrl: string | null;
-};
-
-export type ChallongeBracketMatch = {
-  id: string;
-  identifier: string | null;
-  roundNumber: number | null;
-  status: string;
-  scheduledAt: string | null;
-  startedAt: string | null;
-  location: string | null;
-  scoresCsv: string | null;
-  scoreSets: string[];
-  participants: Array<{
-    id: string | null;
-    name: string;
-    seed: number | null;
-    score: string | null;
-    result: "win" | "loss" | null;
-    logoUrl: string | null;
-  }>;
-  winner: { id: string; name: string; seed: number | null } | null;
-  completedResult: string | null;
-};
-
-export type ChallongeBracketData = {
-  tournament: {
-    id: string | null;
-    name: string;
-    status: string;
-    tournamentType: string;
-    teams: boolean;
-    startedAt: string | null;
-    completedAt: string | null;
-    updatedAt: string | null;
-    progressPercent: number;
-  };
-  participants: ChallongeBracketParticipant[];
-  matches: ChallongeBracketMatch[];
-  progression: {
-    completedMatches: number;
-    totalMatches: number;
-    progressPercent: number;
-    winner: { id: string; name: string; seed: number | null } | null;
-    standings: ChallongeBracketParticipant[];
-  };
-};
-
-export type PublicBracketResponse = {
-  source: "challonge" | "native" | "none";
-  requestedSource?: "challonge";
-  status: "fresh" | "stale" | "unavailable";
-  data: ChallongeBracketData | TournamentBracketData | null;
-  syncedAt: string | null;
-  error: { code: string; message: string } | null;
-  externalUrl: string | null;
 };
 
 export type Tournament = {
@@ -385,19 +319,4 @@ export const fetchPublicEventSeriesBySlug = async (slug: string) => {
 export const fetchPublicTournamentBySlug = async (slug: string) => {
   const data = await fetchJson<{ tournament: Tournament }>(`/api/tournaments/${slug}`);
   return data.tournament;
-};
-
-const bracketRequests = new Map<string, Promise<PublicBracketResponse>>();
-
-export const fetchPublicTournamentBracket = (slug: string) => {
-  const key = slug.trim().toLowerCase();
-  const current = bracketRequests.get(key);
-  if (current) return current;
-  const request = fetchApiJson<{ data: PublicBracketResponse }>(
-    `/api/v1/tournaments/${encodeURIComponent(key)}/bracket`,
-    { cache: "no-store" },
-    "The tournament bracket is temporarily unavailable."
-  ).then((response) => response.data).finally(() => bracketRequests.delete(key));
-  bracketRequests.set(key, request);
-  return request;
 };

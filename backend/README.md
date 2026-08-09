@@ -1,198 +1,87 @@
 # Quest Esports Backend
 
-This is the Express 5 API for Quest Esports. It owns authentication, sessions, tournament registration, team invites, recruitment applications, admin workflows, media uploads, native bracket data, and transactional email jobs.
+Express 5 API for authentication, tournaments, teams, commerce, event tickets, admin workflows, uploads, integrations, and background jobs. PostgreSQL access is managed through Prisma.
 
 ## Requirements
 
 - Node.js 24 LTS
-- npm 10+
-- PostgreSQL 15+ recommended
+- npm 10 or newer
+- PostgreSQL 15 or newer
 
-## Environment
+## Setup
 
-Create `backend/.env` from `.env.example`.
-
-Required in every environment:
-
-- `DATABASE_URL`
-- `DIRECT_URL`
-- `SESSION_COOKIE_NAME`
-
-Important optional groups:
-
-- `MAIL_PROVIDER=resend`, `RESEND_API_KEY`, `MAIL_FROM`, and `APP_URL` for real verification, password reset, invite, email-change, and security-alert delivery
-- Generic `SMTP_*` credentials only when `MAIL_PROVIDER=smtp`, including a future Amazon SES switch
-- Google and Discord OAuth credentials for social login
-- `TRUST_PROXY` and `REQUIRE_API_ORIGIN` for production proxy and origin enforcement
-- `LOG_DRAIN_URL` and `MONITORING_WEBHOOK_URL` for external observability hooks
-- `SITE_MAINTENANCE_MODE`, `SITE_MAINTENANCE_MESSAGE`, and `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` for the coordinated full-site maintenance response
-- `CHALLONGE_ENABLED`, `CHALLONGE_AUTOMATIC_SYNC_ENABLED`, `CHALLONGE_CLIENT_ID`, `CHALLONGE_CLIENT_SECRET`, `CHALLONGE_OAUTH_SCOPE`, `CHALLONGE_TOKEN_URL`, `CHALLONGE_BASE_URL`, and the timeout/frequency/lease settings for optional server-side Challonge v2.1 editing and manual data loads. Keep automatic synchronization false on the 500-request plan.
-- `REALTIME_SSE_ENABLED` for public invalidation events (clients retain polling fallback)
-
-Production additionally requires HTTPS `APP_URL`/`API_PUBLIC_URL`, a 64-character hexadecimal `AUTH_ENCRYPTION_KEY`, durable shared `UPLOAD_ROOT`/`PRIVATE_UPLOAD_ROOT`, trusted-proxy/origin enforcement, `MAIL_DELIVERY_REQUIRED=true`, and complete values for the selected mail provider. Set `API_PROCESS_COUNT` to the real replica/process count; values above one require the shared Upstash cache. PayHere remains optional, but its merchant ID, secret, and notify URL must be configured together. Configured production payments require live mode unless `PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION=true` is deliberately set for production-like sandbox testing.
-
-See [Setup And Deployment Guide](../docs/setup-and-deployment.md) for complete local and production examples.
-
-## Install And Run
-
-```bash
-npm install
-npm run prisma:migrate
+```powershell
+Copy-Item .env.example .env
+npm ci
 npm run prisma:generate
+npm run prisma:migrate
 npm run dev
 ```
 
-The API runs at `http://localhost:5001` by default.
+The API defaults to `http://localhost:5001`.
 
-Useful local URLs:
+Required environment values are `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME`. Normal development outside automated tests also needs a unique 64-character hexadecimal `AUTH_ENCRYPTION_KEY`. Use [.env.example](./.env.example) as the key reference and [Setup and Deployment](../docs/setup-and-deployment.md) for production requirements.
 
-- Health: `http://localhost:5001/api/health`
+Do not point local development at production. Shared staging environments should use their own database, encryption key, OAuth applications, mail configuration, and upload roots.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start with Nodemon |
+| `npm start` | Start without file watching |
+| `npm run lint` | Lint source, scripts, and tests |
+| `npm test` | Run the unit/service suite |
+| `npm run test:coverage` | Run enforced coverage gates |
+| `npm run test:integration` | Run real-database integration tests when enabled |
+| `npm run prisma:generate` | Generate the Prisma client |
+| `npm run prisma:migrate` | Create/apply a local development migration |
+| `npm run prisma:migrate:deploy` | Apply committed migrations to a shared environment |
+| `npm run prisma:migrate:status` | Check migration state |
+| `npm run prisma:security:verify` | Verify RLS and Data API privilege hardening |
+| `npm run prisma:studio` | Open Prisma Studio |
+| `npm run mail:verify` | Validate configured mail delivery |
+| `npm run load:test` | Run the standard k6 API profile |
+| `npm run load:stress:db` | Run the database-focused k6 profile |
+
+Legacy media import/migration commands remain available for controlled recovery work. Back up PostgreSQL and uploads before using them.
+
+## API and Health
+
+- API root: `http://localhost:5001/api`
 - Liveness: `http://localhost:5001/api/health/live`
 - Readiness: `http://localhost:5001/api/health/ready`
 - OpenAPI JSON: `http://localhost:5001/api/openapi.json`
-- Prisma Studio: `npm run prisma:studio`
 
-## Scripts
+Route families cover authentication, sessions, tournaments, registrations, teams, event series, recruitment, contact messages, media, products, payments, tickets, brackets, matches, and admin operations. See [API Documentation](../docs/api-documentation.md) for contracts.
 
-```bash
-npm run dev
-npm start
-npm test
-npm run prisma:generate
-npm run prisma:migrate
-npm run prisma:migrate:deploy
-npm run prisma:migrate:status
-npm run prisma:studio
-npm run mail:verify
-npm run media:import-legacy-posters
-npm run media:migrate-image-assets
-```
+## Data and Storage
 
-The legacy import is idempotent and validates every packaged source image before
-writing any file or database record. It no longer depends on Git being installed
-on the runtime host. On failure, newly written poster files are removed and the
-database transaction is rolled back.
+- Prisma uses one process-wide client with bounded pool defaults.
+- Public uploads live below `UPLOAD_ROOT`; private payment evidence lives below `PRIVATE_UPLOAD_ROOT`.
+- The database and both durable roots form one backup set.
+- Public response caching defaults to bounded in-memory storage; multi-process deployments require the shared Upstash cache.
+- Readiness verifies PostgreSQL and write access to both configured upload roots.
 
-## Main Route Groups
+See [Database and Storage](../docs/database-and-storage.md) before changing schema, uploads, retention, or media behavior.
 
-- Auth, sessions, OAuth, verification, password reset, and email change under `/api`
-- Public tournaments under `/api/tournaments`
-- Slug-bound tournament registration under `/api/tournaments/:slug/registrations`
-- Event series under `/api/event-series`
-- Account dashboard and avatar management under `/api/me/dashboard` and `/api/me/avatar`
-- Products, quotes, orders, and commerce capabilities under `/api/products`, `/api/orders`, and `/api/commerce/capabilities`
-- PayHere status/notifications and bank-transfer proofs under `/api/payments`
-- Recruitment applications under `/api/recruitment-applications`
-- Team creation, captain-managed roster updates/deletion, profiles, and invite responses under `/api/teams`, `/api/teams/:teamId`, `/api/teams/profile`, and `/api/team-invite`
-- Contact messages under `/api/contact`
-- Media and uploads under `/api/posters`, `/api/images`, and `/api/uploads/...`
-- Admin workflows under `/api/admin/...`
-- Versioned home, tournament, normalized match, bracket, and SSE resources under `/api/v1/...`; contextual tournament operations live under `/api/v1/admin/...`
+## Security Boundaries
 
-See [API Documentation](../docs/api-documentation.md) for endpoint details.
+- Browser auth uses hashed server-side sessions and `HttpOnly` cookies.
+- Native admin auth uses revocable bearer sessions; OAuth hand-off grants are short-lived and single-use.
+- Production requires exact HTTPS origins, trusted-proxy configuration, durable storage, a unique encryption key, and complete mail settings.
+- OAuth, payment, mail, monitoring, webhook, and Challonge credentials are backend-only.
+- The Supabase Data API is unused; migrations enforce RLS and revoke its table privileges.
+- Maintenance mode is not a write freeze: liveness, PayHere callbacks, and workers continue.
 
-## Site Maintenance
+Operational details are in [Authentication Flow](../docs/authentication-flow.md), [Email System](../docs/email-system.md), [Admin Operations](../docs/admin-operations.md), and the [Production Operations Runbook](../docs/production-runbook.md).
 
-When `SITE_MAINTENANCE_MODE=true`, ordinary API routes return a structured `503 SITE_MAINTENANCE` response with `Retry-After` and no-cache headers. Liveness remains `200`; readiness returns the intentional maintenance `503`. The exact PayHere notification `POST` remains available so payments started before the window can settle. Background workers also continue, so this switch is not a write freeze. Use the [Production Operations Runbook](../docs/production-runbook.md#site-maintenance-mode) for safe ordering and PM2 stop instructions.
+## Testing and Performance
 
-## Admin Operations
-
-Admin APIs require a valid session with `role === "admin"`.
-
-Current admin-only operational endpoints include:
-
-- tournament registration listing, status updates, deletion, and filtered Excel export
-- recruitment application listing, status updates, deletion, and filtered Excel export
-- tournament management, schedule uploads, completed-event showcase uploads, and native bracket generation
-- contact inbox moderation
-- user management
-- rulebook management
-- poster/image maintenance jobs
-
-Excel exports are generated on demand with `exceljs` and returned as `.xlsx` downloads. They are not stored on disk by the backend.
-
-See [Admin Operations](../docs/admin-operations.md) for UI workflows, export contents, and deletion behavior.
-
-## Storage
-
-Application data lives in PostgreSQL through Prisma. Locally, public uploads default to `backend/uploads/`; production uses `UPLOAD_ROOT` outside the Git checkout:
-
-- `team-logos/`
-- `tournament-banners/`
-- `poster-images/`
-- `tournament-schedules/`
-- `avatars/`
-
-Bank-transfer evidence is written below `PRIVATE_UPLOAD_ROOT/bank-transfer-proofs/` with private permissions and is never served by `/api/uploads`. Treat the database plus both configured upload roots as one backup set.
-
-## Tests
-
-Backend tests use Node's built-in test runner:
-
-```bash
-npm test
-npm run test:integration # set RUN_DATABASE_INTEGRATION_TESTS=true with a test PostgreSQL database
-npm run test:coverage
+```powershell
 npm run lint
+npm test
+npm run test:coverage
 ```
 
-The current suite covers auth/session behavior, email jobs, observability helpers, rate limiting, teams, configurable registration, slot pricing, bank-transfer and PayHere payment handling, shop behavior, bracket behavior, and admin workflows. CI enforces coverage thresholds and runs lint against `src`, `tests`, and `scripts`.
-
-## Tournament Content Upgrade
-
-`GET /api/game-categories` supplies the public artwork strip. Admins manage categories through `/api/admin/game-categories`, sponsors through `/api/admin/tournaments/:tournamentId/sponsors`, and verified organization labels through `/api/admin/teams`. Tournament responses retain legacy fields while adding category, organizer, country, location, hero, sponsors, captain/avatar participant data, and a server-derived `challongeEmbedUrl`. Public uploads also use `game-assets/` and `sponsor-logos/` below `UPLOAD_ROOT`.
-# Performance and scalability
-
-The API creates one process-wide Prisma client in `src/lib/prisma.js`. Prisma's PostgreSQL
-connector manages the underlying connection pool; do not construct a client per request.
-Configure the pool in `DATABASE_URL`, for example:
-
-```env
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE?connection_limit=10&pool_timeout=10&connect_timeout=10
-```
-
-At runtime, the API supplies conservative defaults (`connection_limit=5`, `pool_timeout=10`,
-and `connect_timeout=10`) when these parameters are absent. Values explicitly set in
-`DATABASE_URL` always take precedence.
-
-Choose `connection_limit` per API instance so the sum across all instances, workers, migrations,
-and administrative tools remains below the database connection limit. `pool_timeout` controls how
-long a request waits for a pooled connection and `connect_timeout` limits initial connection setup.
-Configure idle-client lifetime at the managed PostgreSQL provider or external pooler when required.
-
-Public tournaments, game categories, and products use cache-aside response caching. Local development
-defaults to a bounded in-memory cache. Shared/serverless deployments should use Upstash:
-
-```env
-CACHE_DRIVER=upstash
-CACHE_TTL_SECONDS=300
-UPSTASH_REDIS_REST_URL=https://example.upstash.io
-UPSTASH_REDIS_REST_TOKEN=secret
-```
-
-Successful admin writes advance a resource generation, immediately making old entries unreachable.
-Cache failures degrade to database reads instead of failing API requests. Readiness queries the
-database and proves both durable upload roots can create and remove a small private probe file;
-successful storage probes are cached briefly to limit disk churn. Cache behavior remains visible through structured logs and
-application monitoring.
-
-Run the included API load profile after installing k6:
-
-```powershell
-$env:BASE_URL="http://localhost:5001"
-npm run load:test
-```
-
-The profile ramps through 10 and 50 virtual users and enforces an error rate below 1%, p95 below
-500 ms, and p99 below 1 second. Adjust the stages and thresholds in `performance/k6-api.js` for
-stress, spike, or soak runs. Monitor the database pool, API CPU/memory, and cache telemetry
-alongside the k6 output.
-
-To deliberately bypass the response cache and stress database reads up to 200 virtual users, run:
-
-```powershell
-$env:BASE_URL="http://localhost:5001"
-npm run load:stress:db
-```
-
-This profile is intended for a local or dedicated test environment, not a shared production database.
+Set `RUN_DATABASE_INTEGRATION_TESTS=true` only with an isolated test database. Run k6 profiles only against local or dedicated test infrastructure, never production.

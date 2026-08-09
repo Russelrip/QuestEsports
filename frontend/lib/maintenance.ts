@@ -1,6 +1,6 @@
 export const DEFAULT_MAINTENANCE_MESSAGE =
   "We’re carrying out scheduled maintenance. Please try again shortly.";
-export const DEFAULT_MAINTENANCE_RETRY_AFTER_SECONDS = 900;
+const DEFAULT_MAINTENANCE_RETRY_AFTER_SECONDS = 900;
 
 type Environment = Record<string, string | undefined>;
 

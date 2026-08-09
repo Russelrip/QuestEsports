@@ -6,7 +6,7 @@ const JSON_LD_ESCAPE_LOOKUP: Record<string, string> = {
   "\u2029": "\\u2029",
 };
 
-export function serializeStructuredData(data: object) {
+function serializeStructuredData(data: object) {
   return JSON.stringify(data).replace(
     /[<>&\u2028\u2029]/g,
     (character) => JSON_LD_ESCAPE_LOOKUP[character]

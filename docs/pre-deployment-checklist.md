@@ -21,6 +21,19 @@ configuration and smoke check in the final column.
 | Database API exposure | The hardening migration enables RLS and revokes Data API table grants; `npm run prisma:security:verify` fails if exposure returns. | Disable the unused Data API in the Paris Supabase dashboard and run the verifier against production after migration. |
 | Search discovery | Next.js generates `/sitemap.xml`; `/robots.txt` advertises it; canonical public and dynamic routes are covered by sitemap unit tests. | Confirm both production endpoints return `200`, parse the sitemap XML, verify only canonical/indexable URLs are present, and review the Search Console Sitemaps report. |
 
+## Required External Evidence
+
+Repository checks do not prove that production control-plane services are configured correctly. Before declaring a release fully operational, record current evidence for:
+
+- an encrypted off-site backup and an isolated restore drill using the current backup/restore scripts
+- a separately encrypted secret/infrastructure recovery package and an independent retrieval/decryption test
+- backup failure and freshness alerts, approved retention values, and a reviewed retention dry run
+- production Supabase health, disabled Data API, RLS verification, and capacity
+- mail delivery, monitoring/alert delivery, persistent upload mounts, DNS, TLS, and Vercel/backend readiness
+- enabled PayHere callbacks, return/cancel behavior, reconciliation, and refund handling
+
+Do not retain a dated audit snapshot in the repository. Put durable procedures here or in the runbooks and store dated release evidence in the approved operational record.
+
 ## Required final commands
 
 ```powershell

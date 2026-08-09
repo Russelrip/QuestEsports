@@ -2,9 +2,9 @@
 
 import { create } from "zustand";
 
-export type ToastTone = "success" | "error" | "info";
+type ToastTone = "success" | "error" | "info";
 
-export type ToastItem = {
+type ToastItem = {
   id: string;
   title: string;
   description?: string;

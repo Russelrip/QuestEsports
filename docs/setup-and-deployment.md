@@ -541,12 +541,6 @@ if the import fails. Git and repository history are not runtime dependencies.
 
 Run these in a controlled environment and back up the database plus uploads first.
 
-## Current Production Gaps
+## Follow-up Work
 
-Before calling the system fully production-hardened, consider adding:
-
-- broader Playwright coverage beyond the current critical journeys
-- production-grade log retention, alerting, and monitoring dashboards
-- object storage for uploads
-- an admin bootstrap script
-- blue-green or canary release automation for zero-downtime deploys
+Use [Pre-deployment Checklist](./pre-deployment-checklist.md) for required release evidence and [Future Technical Improvements](./future-technical-improvements.md) for unscheduled architecture candidates. Keep dated audit results outside this setup guide so its instructions remain current.

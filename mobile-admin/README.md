@@ -1,4 +1,4 @@
-# Quest Admin Android app
+# Quest Admin Android App
 
 Quest Admin is the private Android operations client for Quest E-sports. It uses the production API and supports dashboard monitoring, tournament registrations, payment review and reconciliation, event-ticket QR scanning, merchandise fulfilment, recruitment, contact messages, teams, users, tournaments, products, event series, game categories, rulebooks, and session revocation.
 
@@ -70,7 +70,8 @@ Private GitHub assets require GitHub authentication, so updates are intentionall
 
 ```powershell
 npm run typecheck
-npx expo-doctor
+npm test
+npm run doctor
 $env:CI='1'; npm run prebuild:android
 ```
 

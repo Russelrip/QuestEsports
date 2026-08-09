@@ -1,38 +1,36 @@
 # Quest Esports Documentation
 
-This directory contains the operational, architecture, security, and product documentation for Quest Esports. Start with the guide that matches the work being performed.
+Use the guide that matches the work being performed. The root [README](../README.md) is the project entry point; this directory holds focused architecture, product, security, and operations material.
 
-## Production and recovery
+## Production and Recovery
 
-- [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md) - separately encrypted application secrets, infrastructure configuration, custody, and recovery testing.
-
-- [Production Operations Runbook](./production-runbook.md) — current production topology, full-site maintenance mode, VPS operations, deploy verification, PM2, Nginx, and incident commands.
-- [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) — encrypted backups, key custody, routine validation, isolated restore drills, and production recovery.
+- [Production Operations Runbook](./production-runbook.md) — production topology, maintenance mode, VPS operations, deployment verification, and incidents.
+- [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) — encrypted backups, key custody, validation, restore drills, and recovery.
+- [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md) — separately encrypted application secrets, infrastructure configuration, custody, and recovery testing.
 - [Deployment and Migration Safety](./DEPLOYMENT_SAFETY.md) — forward-only migration rules, approval gates, backup requirements, and rollback limits.
-- [Pre-deployment Checklist](./pre-deployment-checklist.md) — release security and reliability gate.
-- [Foundation Release Operations](./foundation-release.md) — migration order, Challonge enablement, verification, monitoring, rollback, and favicon recrawl steps.
-- [Project Audit Status](./project-audit-status.md) — completed remediation, verified production state, and remaining manual checks.
+- [Pre-deployment Checklist](./pre-deployment-checklist.md) — current release security and reliability gate.
 - [Full Site Audit Checklist](./full-site-audit-checklist.md) — comprehensive manual and automated QA inventory.
 
-## Setup and architecture
+## Setup and Architecture
 
-- [Private Android Admin App](../mobile-admin/README.md) — local development, security model, signing, and private GitHub APK releases.
 - [Setup and Deployment](./setup-and-deployment.md) — local setup, environment configuration, VPS deployment, and reverse proxy guidance.
-- [CI/CD](./ci-cd.md) — GitHub Actions, protected deployment, migration approval, and troubleshooting.
-- [Database and Storage](./database-and-storage.md) — Prisma models, persistent upload roots, storage behavior, and data handling.
-- [Future Technical Improvements](./future-technical-improvements.md) — feasible architecture and infrastructure candidates that are not committed or scheduled.
+- [Collaboration and Staging](./collaboration-and-staging.md) — contributor workflow, staging isolation, and credential boundaries.
+- [CI/CD](./ci-cd.md) — GitHub Actions, manual production deployment, migration approval, and troubleshooting.
+- [Database and Storage](./database-and-storage.md) — Prisma models, upload roots, storage behavior, and data handling.
 - [Authentication Flow](./authentication-flow.md) — sessions, OAuth, password recovery, and authorization.
-- [Email System](./email-system.md) — providers, templates, triggers, queue behavior, and operational verification.
+- [Email System](./email-system.md) — providers, templates, triggers, queue behavior, and verification.
 - [API Documentation](./api-documentation.md) — implemented endpoints and response behavior.
+- [Private Android Admin App](../mobile-admin/README.md) — local development, security model, signing, and private APK releases.
+- [Future Technical Improvements](./future-technical-improvements.md) — feasible candidates that are not committed or scheduled.
 
-## Product and administration
+## Product and Administration
 
 - [Admin Operations](./admin-operations.md) — administrative workflows and safeguards.
-- [Commerce and Tournament Rollout](./commerce-and-tournament-rollout.md) — rollout checks for registration, payment, products, and tournament features.
+- [Commerce and Tournament Operations](./commerce-and-tournament-operations.md) — registration, payment, shop, and ticket operations.
 - [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md) — crawler, sitemap, canonical, and Search Console procedures.
 
-## Documentation safety
+## Documentation Rules
 
-Documentation may name services, regions, non-secret paths, and public endpoints. It must never contain database passwords, `.env` contents, OAuth client secrets, OAuth tokens, rclone configuration contents, payment secrets, webhook tokens, or the private `age` recovery identity.
+Documentation may name services, regions, non-secret paths, and public endpoints. It must never contain database passwords, filled `.env` values, OAuth secrets/tokens, payment secrets, webhook tokens, signing keys, rclone configuration contents, or private recovery identities.
 
-When production behavior changes, update the relevant focused guide, this index if discovery changes, the root [README](../README.md), and the audit/runbook records in the same pull or commit.
+Update the relevant focused guide and this index whenever behavior or operational ownership changes. Avoid release snapshots and duplicated setup instructions; Git history already preserves obsolete release state.

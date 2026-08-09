@@ -2,7 +2,7 @@ const STORAGE_KEY = "quest-registered-tournaments";
 
 const isBrowser = () => typeof window !== "undefined";
 
-export const getRegisteredTournamentSlugs = () => {
+const getRegisteredTournamentSlugs = () => {
   if (!isBrowser()) {
     return [];
   }

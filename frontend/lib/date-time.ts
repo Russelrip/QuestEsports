@@ -1,5 +1,5 @@
-export const SRI_LANKA_TIME_ZONE = "Asia/Colombo";
-export const SRI_LANKA_UTC_OFFSET = "+05:30";
+const SRI_LANKA_TIME_ZONE = "Asia/Colombo";
+const SRI_LANKA_UTC_OFFSET = "+05:30";
 
 const DATE_TIME_LOCAL_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;

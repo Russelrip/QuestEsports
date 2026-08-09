@@ -32,7 +32,7 @@ export type DashboardRegistration = {
   } | null;
 };
 
-export type DashboardOrder = {
+type DashboardOrder = {
   id: string;
   publicToken: string;
   status: string;
@@ -43,7 +43,7 @@ export type DashboardOrder = {
   paymentStatus: string;
 };
 
-export type DashboardRecruitmentApplication = {
+type DashboardRecruitmentApplication = {
   id: string;
   applicationType: "solo_player" | "existing_team" | "incomplete_team";
   game: string;

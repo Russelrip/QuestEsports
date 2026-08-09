@@ -1,4 +1,4 @@
-export type ApiEnvelope<T> = T & {
+type ApiEnvelope<T> = T & {
   success?: boolean;
   message?: string;
 };

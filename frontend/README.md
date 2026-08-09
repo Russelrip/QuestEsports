@@ -1,117 +1,73 @@
 # Quest Esports Frontend
 
-This is the public and admin-facing Next.js application for Quest Esports. It renders the marketing site, tournament pages, native bracket views, auth flows, profile UI, admin dashboard, and media views, and it talks to the Express API in `../backend`.
+Next.js application for the public website, account area, tournament registration, commerce, tickets, and the web admin dashboard. It communicates with the Express API in `../backend`.
 
 ## Requirements
 
 - Node.js 24 LTS
-- A running backend API
+- A reachable Quest Esports backend
 
-## Environment Variables
+## Setup
 
-Create `frontend/.env.local`.
+```powershell
+Copy-Item .env.example .env.local
+npm ci
+npm run dev
+```
 
-Local development example:
+The app defaults to `http://localhost:3000`.
+
+Local environment values:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 SITE_MAINTENANCE_MODE=false
-SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
-SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 ```
 
-Production example:
+`NEXT_PUBLIC_API_URL` must identify the backend origin. `NEXT_PUBLIC_SITE_URL` controls canonical URLs, metadata, structured data, server-rendered API requests, and sitemap generation. Keep maintenance values aligned with the backend; changing server-only values on Vercel requires a new deployment.
 
-```env
-NEXT_PUBLIC_API_URL=https://api.questesports.lk
-NEXT_PUBLIC_SITE_URL=https://questesports.lk
-SITE_MAINTENANCE_MODE=false
-SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
-SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
-```
+## Commands
 
-Notes:
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the development server |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | Run strict TypeScript checks |
+| `npm test` | Run Vitest unit tests |
+| `npm run build` | Create the production build |
+| `npm run start` | Serve the production build |
+| `npm run test:e2e` | Run Playwright against an existing build |
+| `npm run test:e2e:local` | Build and run the local Playwright journey suite |
+| `npm run perf:check` | Measure the production site against performance budgets |
 
-- `NEXT_PUBLIC_API_URL` must match the backend origin.
-- `NEXT_PUBLIC_SITE_URL` is used for metadata, sitemap generation, canonical URLs, structured data, and server-rendered API requests when backend origin enforcement is enabled.
-- If the backend sends verification, reset, invite, or email-change emails, its `APP_URL` must point to this frontend origin.
-- The three `SITE_MAINTENANCE_*` variables are server-only. Vercel requires a new deployment after changing them. Keep the values aligned with the backend and follow the [maintenance runbook](../docs/production-runbook.md#site-maintenance-mode).
+## Route Areas
 
-## Install And Run
+- Public content: home, tournaments, event series, shop, tickets, posters, gallery, match videos, rulebooks, recruitment, contact, and policies
+- Authentication: signup, login, verification, recovery, email change, and team invitations
+- Account: profile, sessions, saved teams, registrations, orders, and applications
+- Admin: users, tournaments, series, teams, registrations, recruitment, products, orders, payments, tickets, rulebooks, games, and contact messages
 
-```bash
-npm install
-npm run dev
-```
+Complete backend contracts are in [API Documentation](../docs/api-documentation.md).
 
-The app runs at `http://localhost:3000` by default.
+## Security and Rendering Notes
 
-## Main Route Groups
+- Authenticated browser requests include session cookies through `credentials: "include"`.
+- Private, checkout, payment, account, and admin pages are excluded from the sitemap and use appropriate `noindex` behavior.
+- Order-status capabilities stay in URL fragments and request headers; do not copy those URLs into logs, tickets, or analytics.
+- Maintenance mode returns a lightweight, non-cacheable `503` page without auth, analytics, or backend data requests.
+- Challonge content is restricted to allowlisted HTTPS sources and falls back to published native bracket data.
 
-- Public: `/`, `/tournaments`, `/tournaments/series/[slug]`, `/tournaments/[slug]`, `/tournaments/[slug]/register`, `/shop`, `/shop/[slug]`, `/shop/order#token=...`, `/registration`, `/join`, `/posters`, `/gallery`, `/match-videos`, `/rulebook`, `/rulebooks/[slug]`, `/contact`, and the policy pages
-- Operations: `/maintenance` renders only while full-site maintenance is enabled; direct access redirects home during normal operation
-- Auth: `/signup`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/confirm-email-change`, `/team-invite`
-- User: `/profile`
-- Admin: `/admin`, `/admin/users`, `/admin/tournaments`, `/admin/event-series`, `/admin/registrations`, `/admin/recruitment`, `/admin/rulebooks`, `/admin/products`, `/admin/orders`, `/admin/payments`, and `/admin/contact-messages`
+See [Authentication Flow](../docs/authentication-flow.md), [Search Console and Sitemap Operations](../docs/search-console-and-sitemap.md), and the [Production Operations Runbook](../docs/production-runbook.md).
 
-## Related Backend Endpoints
+## Verification
 
-The frontend expects the backend to expose:
-
-- auth routes under `/api`
-- account dashboard/avatar routes under `/api/me`
-- event-series routes under `/api/event-series`
-- tournament routes under `/api/tournaments`, including slug-bound registration
-- product/order/payment routes under `/api/products`, `/api/orders`, `/api/payments`, and `/api/commerce/capabilities`
-- recruitment submission routes under `/api/recruitment-applications`
-- native bracket admin routes under `/api/admin/tournaments/:tournamentId/bracket`
-- admin registration/recruitment list, delete, status, and export routes under `/api/admin`
-- team list, captain management, and invite routes under `/api/teams`, `/api/teams/profile`, and `/api/team-invite`
-- media routes under `/api/posters`, `/api/images`, and `/api/uploads/...`
-
-## Build For Production
-
-```bash
+```powershell
 npm run lint
 npm run typecheck
 npm test
 npm run build
 npm run test:e2e
-npm run start
 ```
 
-`npm run test:e2e` expects the production build created by the preceding command.
-From a fresh checkout, `npm run test:e2e:local` builds first and then runs
-Playwright. Browser concurrency is capped at four workers locally and two in CI
-to keep the single Next.js test server stable.
-The Playwright configuration also starts a deterministic local mock API for
-server-rendered requests; individual journey tests override responses as needed.
-
-Run `npm run perf:check` to measure the production site. The script fails when median TTFB, load time, transfer size, or resource count exceeds the default budget. Override budgets only for an approved, recorded reason with `PERF_MAX_TTFB_MS`, `PERF_MAX_LOAD_MS`, `PERF_MAX_TRANSFER_KB`, or `PERF_MAX_RESOURCE_COUNT`; `PERF_RUNS` controls the sample count.
-
-## Search Metadata And Sitemap
-
-- `/sitemap.xml` is generated by `app/sitemap.ts` from the maintained static route inventory plus published tournaments, event series, rulebooks, and active products.
-- `/robots.txt` advertises the production sitemap and allows crawlers to read page-level `noindex` directives.
-- Account, registration, checkout, payment, admin, and other private/utility pages are excluded from the sitemap.
-- Dynamic product and event-series pages generate their own canonical metadata.
-- `NEXT_PUBLIC_SITE_URL` controls every sitemap and canonical origin and must be `https://questesports.lk` in production.
-- Run `npm test` to verify sitemap invariants, then follow [Google Search Console and Sitemap Operations](../docs/search-console-and-sitemap.md) for production and Search Console checks.
-
-## Notes
-
-- This app uses the Next.js App Router.
-- Auth is session-cookie based, so frontend requests include `credentials: "include"` when needed.
-- Login supports password auth and Google/Discord OAuth hand-offs via the backend.
-- Admin screens depend on a logged-in user whose backend role is `admin`.
-- Admin registration and recruitment pages can delete rows and download the currently filtered results as Excel files.
-- Registration status in the tournament registration UI is rechecked against the backend; stale local browser markers are cleared when the backend says the user is not registered.
-- The public tournament board currently shows prize pool, registration deadline, and tournament start on active tournament cards.
-- Tournament detail pages hide empty registered-team and bracket sections; published native brackets render in a compact Challonge-style board.
-- Vitest unit tests and Playwright critical journeys both run in CI. Playwright
-  runs after the production build.
-- Maintenance mode uses a lightweight layout without authentication, navigation, analytics, or backend data requests. It returns `503`, `Retry-After`, no-cache, and crawler `noindex` headers.
-- Order-status URLs contain a bearer capability. They use `no-referrer`, do not initialize Vercel Analytics or Speed Insights, and backend logs redact their capability path segment. Never paste an order-status URL into logs, tickets, or public analytics.
-
-The public tournament board includes completed events in the same compact four-column desktop grid, filters tournaments and event series through admin-managed game categories, and uses whole-card navigation with clear open, closed, full, and completed states. Detail pages include the full hero, sponsors, corrected participants, and Challonge-first/native-fallback brackets. `/admin/games` manages category art, `/admin/teams` verifies organization labels, and the tournament editor manages metadata, hero artwork, a PUBG Mobile preset, and sponsors.
+Playwright uses a deterministic local mock API and capped worker counts for stable critical journeys. Performance-budget overrides require an approved, recorded reason.

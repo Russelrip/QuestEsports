@@ -35,7 +35,7 @@ export type TicketQuote = {
   currency: string;
 };
 
-export type IssuedTicket = {
+type IssuedTicket = {
   id: string;
   ticketNumber: string;
   sequence: number;

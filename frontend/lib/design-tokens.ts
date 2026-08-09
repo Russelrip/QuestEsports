@@ -1,4 +1,4 @@
-export const designTokens = {
+const designTokens = {
   spacing: {
     xs: "0.5rem",
     sm: "0.75rem",

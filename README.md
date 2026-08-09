@@ -1,621 +1,181 @@
 # Quest Esports
 
-Quest Esports is a full-stack esports platform for publishing tournaments, registering teams, managing community communications, and curating poster/media content. The repository contains a public-facing Next.js application, an Express + Prisma API, and a private Android admin client for tournament and commerce operations.
+Quest Esports is a tournament, team, commerce, and event-operations platform. The repository contains the public website and admin dashboard, an Express API, a private Android admin client, PostgreSQL migrations, and production backup/deployment tooling.
 
-Documentation starts at the [Documentation Index](./docs/README.md). Production recovery procedures are centralized in [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md).
+## Applications
+
+| Workspace | Purpose | Local URL |
+| --- | --- | --- |
+| `frontend/` | Next.js public site, account area, and web admin | `http://localhost:3000` |
+| `backend/` | Express API, Prisma, jobs, uploads, and integrations | `http://localhost:5001` |
+| `mobile-admin/` | Private Expo/Android operations client | Expo development server |
+| `ops/` | Production backup, restore, retention, and recovery scripts | Not applicable |
+
+## Requirements
+
+- Node.js 24 LTS
+- npm 10 or newer
+- PostgreSQL 15 or newer, or a Supabase PostgreSQL project
+- Android Studio/SDK only when working on `mobile-admin/`
 
 ## Quick Start
 
-This repository does not have a single root `npm run dev` command. Run the backend and frontend separately.
+### 1. Create local environment files
 
-### Requirements
-
-- Node.js 24 LTS
-- npm 10+
-- PostgreSQL 15+ recommended
-
-### 1. Configure environment variables
-
-Backend: create `backend/.env`
-
-```env
-PORT=5001
-CORS_ORIGIN=http://localhost:3000
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-SESSION_COOKIE_NAME=quest_session
-SESSION_TTL_DAYS=1
-REMEMBER_ME_SESSION_TTL_DAYS=30
-AUTH_ENCRYPTION_KEY=
-TRUST_PROXY=false
-REQUIRE_API_ORIGIN=false
-JOB_WORKER_ENABLED=true
-COMMERCE_MAINTENANCE_ENABLED=true
-SITE_MAINTENANCE_MODE=false
-SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
-SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
-JOB_WORKER_POLL_MS=5000
-JOB_WORKER_MAX_ATTEMPTS=5
-MAIL_PROVIDER=resend
-RESEND_API_KEY=
-MAIL_FROM=
-MAIL_DELIVERY_REQUIRED=
-# Only needed when MAIL_PROVIDER=smtp:
-# SMTP_HOST=email-smtp.ap-northeast-1.amazonaws.com
-# SMTP_PORT=587
-# SMTP_USER=your_ses_smtp_username
-# SMTP_PASS=your_ses_smtp_password
-APP_URL=http://localhost:3000
-API_PUBLIC_URL=http://localhost:5001
-UPLOAD_ROOT=
-PRIVATE_UPLOAD_ROOT=
-PAYMENT_PROOF_PDF_ENABLED=false
-BANK_TRANSFER_PROOF_RETENTION_DAYS=365
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
-DISCORD_CLIENT_ID=
-DISCORD_CLIENT_SECRET=
-DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
-PAYHERE_MODE=sandbox
-PAYHERE_MERCHANT_ID=
-PAYHERE_MERCHANT_SECRET=
-PAYHERE_NOTIFY_URL=
-SHOP_DELIVERY_FEE_LKR=500
-SHOP_ORDER_RESERVATION_MINUTES=30
-CHALLONGE_ENABLED=false
-CHALLONGE_CLIENT_ID=
-CHALLONGE_CLIENT_SECRET=
-CHALLONGE_OAUTH_SCOPE=application:manage
-CHALLONGE_TOKEN_URL=https://api.challonge.com/oauth/token
-CHALLONGE_BASE_URL=https://api.challonge.com/v2.1
-CHALLONGE_BRACKET_CACHE_SECONDS=30
-CHALLONGE_REQUEST_TIMEOUT_MS=8000
-CHALLONGE_DEFAULT_SYNC_MINUTES=5
-CHALLONGE_SYNC_LEASE_SECONDS=90
-REALTIME_SSE_ENABLED=true
+```powershell
+Copy-Item backend/.env.example backend/.env
+Copy-Item frontend/.env.example frontend/.env.local
+Copy-Item mobile-admin/.env.example mobile-admin/.env.local
 ```
 
-Frontend: create `frontend/.env.local`
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5001
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
-SITE_MAINTENANCE_MODE=false
-SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
-SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
-```
-
-Mobile admin: copy `mobile-admin/.env.example` to `mobile-admin/.env.local` when overriding the production defaults.
-
-Notes:
-
-- `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required for the backend to boot.
-- `DIRECT_URL` may use a direct PostgreSQL endpoint when the host supports IPv6. On the current IPv4 VPS, both URLs use Supabase Supavisor session mode on port `5432`; do not use transaction mode for Prisma migrations.
-- `NEXT_PUBLIC_API_URL` must point at the backend origin.
-- `NEXT_PUBLIC_SITE_URL` powers metadata, sitemap, canonical URLs, and structured data.
-- Mail delivery is optional for local development. Use `MAIL_PROVIDER=resend` with a Resend API key, or leave `MAIL_DELIVERY_REQUIRED` blank/false when delivery is absent. Production requires complete settings for the selected provider.
-- OAuth is optional. If you enable Google or Discord login, use real client credentials and register the callback URLs shown above. Do not leave placeholder values like `your_google_client_id`.
-- Paid tournament registration and shop checkout require PayHere credentials plus a publicly reachable HTTPS notification URL. Browser return pages never mark an order paid.
-- When PayHere is not configured, free and bank-transfer tournament registrations remain available; PayHere registration and merchandise checkout are disabled.
-- `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` are optional locally and required in production; point both at durable, backed-up storage outside disposable release directories. Private payment proofs must never be exposed by Nginx.
-- Challonge is optional and disabled by default. Create a Challonge developer application, associate each managed tournament with it, and configure its v2.1 client ID and client secret only on the backend. Public bracket tabs lazy-load the public Challonge module, while deliberate admin edits use the server API. Keep automatic synchronization disabled on the 500-request plan.
+Set the backend database URLs and required local values in `backend/.env`. Keep all real `.env` files and credentials untracked. The example files document the supported keys; production requirements live in [Setup and Deployment](./docs/setup-and-deployment.md).
 
 ### 2. Install dependencies
 
-```bash
-cd backend
-npm install
+```powershell
+Set-Location backend
+npm ci
+
+Set-Location ../frontend
+npm ci
+
+Set-Location ../mobile-admin
+npm ci
 ```
 
-```bash
-cd frontend
-npm install
-```
+### 3. Prepare the database
 
-```bash
-cd mobile-admin
-npm install
-```
+For a new shared environment such as staging:
 
-### 3. Apply database migrations
-
-```bash
-cd backend
-npm run prisma:migrate
+```powershell
+Set-Location backend
 npm run prisma:generate
+npm run prisma:migrate:deploy
+npm run prisma:security:verify
 ```
 
-### 4. Start both apps
+Use `npm run prisma:migrate` only when creating a new local development migration. Never edit a migration already applied to a shared environment.
+
+### 4. Start the web applications
+
+Run these in separate terminals:
+
+```powershell
+Set-Location backend
+npm run dev
+```
+
+```powershell
+Set-Location frontend
+npm run dev
+```
+
+Useful endpoints:
+
+- Frontend: `http://localhost:3000`
+- API: `http://localhost:5001`
+- Liveness: `http://localhost:5001/api/health/live`
+- Readiness: `http://localhost:5001/api/health/ready`
+- OpenAPI: `http://localhost:5001/api/openapi.json`
+
+## Verification
 
 Backend:
 
-```bash
-cd backend
-npm run dev
-```
-
-Frontend:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Android admin app (Android Studio/SDK required):
-
-```bash
-cd mobile-admin
-npm run android
-```
-
-### 5. Verify startup
-
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:5001`
-- Health: `http://localhost:5001/api/health`
-- OpenAPI JSON: `http://localhost:5001/api/openapi.json`
-
-### 6. Bootstrap the first admin user
-
-There is no seed script for the first admin account.
-
-Recommended flow:
-
-1. Sign up through the app or create a user in Prisma Studio.
-2. Open Prisma Studio with `cd backend && npm run prisma:studio`.
-3. Change that user's `role` to `admin`.
-
-## Documentation
-
-- [Full Site Audit Checklist](./docs/full-site-audit-checklist.md)
-- [Current Audit and Remediation Status](./docs/project-audit-status.md)
-- [API Documentation](./docs/api-documentation.md)
-- [Admin Operations](./docs/admin-operations.md)
-- [Authentication Flow](./docs/authentication-flow.md)
-- [CI/CD Pipeline](./docs/ci-cd.md)
-- [Database and Storage](./docs/database-and-storage.md)
-- [Future Technical Improvements](./docs/future-technical-improvements.md) — feasible technical candidates that are not committed or scheduled
-- [Email System](./docs/email-system.md)
-- [Google Search Console and Sitemap Operations](./docs/search-console-and-sitemap.md)
-- [Setup and Deployment Guide](./docs/setup-and-deployment.md)
-- [Production Operations Runbook](./docs/production-runbook.md)
-- [Commerce and Tournament Rollout](./docs/commerce-and-tournament-rollout.md)
-- [Foundation Release Operations](./docs/foundation-release.md)
-- [Backend README](./backend/README.md)
-- [Frontend README](./frontend/README.md)
-- [Private Android Admin App](./mobile-admin/README.md)
-
-## Stack
-
-- Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS v4
-- Mobile admin: Expo 57, React Native, Expo Router, Android APK
-- Backend: Express 5, Prisma ORM, PostgreSQL
-- Auth: Cookie-based browser sessions and revocable bearer sessions for the private Android app, both backed by server-side session storage
-- Brackets: `brackets-manager` with Prisma-persisted native bracket data
-- Admin exports: ExcelJS-generated `.xlsx` downloads
-- Uploads: Multer, durable public storage, and isolated private payment evidence
-- Email: Nodemailer with selectable Resend or generic SMTP delivery
-
-## What The Platform Includes
-
-### Public product features
-
-- Marketing homepage and brand sections
-- Tournament listing and tournament detail pages
-- Event-series pages, image-led game navigation, public schedules, participants, rules, and published brackets
-- Tournament listing cards with prize pool, registration deadline, and tournament start summaries
-- Tournament detail pages with native tournament metadata, rulebook link, registered-team cards, and published bracket boards
-- Tournament schedule data parsed from uploaded XLSX or CSV files for admin/event workflows
-- Completed-tournament showcase sections with official poster plus 1st, 2nd, and 3rd place visuals
-- Public tournament team lists with approved registered teams, team logos, short codes, and member counts
-- Native double-elimination bracket viewing when an admin publishes bracket data
-- Slug-bound configurable solo/team registration with free, PayHere, or tiered bank-transfer fees
-- Merchandise catalogue, product variants, cart, guest/member checkout, delivery fee, and order status
-- Event ticket catalogue, pair-bundle pricing, PayHere checkout, and one QR code per attendee
-- Join Quest recruitment application flow for solo players, complete teams, and incomplete teams
-- Email verification, login, logout, password reset, and email change flows
-- Session management and Google/Discord OAuth sign-in
-- Posters gallery and match-video archive
-- Rulebook and contact pages
-- Player dashboard with avatars, current/past registrations, visual teams, and order history
-- Privacy, terms, and refund/return policy pages
-
-### Admin features
-
-- Dashboard summary cards
-- User management
-- Tournament creation and editing
-- Tournament asset management for banners, schedules, and completed-event showcase images
-- Native bracket generation from approved teams, match-result updates, and publish/unpublish controls
-- Registration review, status management, deletion, and filtered Excel export
-- Grouped registration and payment review by tournament, event, or merchandise order
-- Ticket-event management, attendee lookup, QR check-in, reissue/cancellation, and CSV reports
-- Recruitment application review, status management, deletion, and filtered Excel export
-- Contact inbox moderation
-- Poster/image asset management
-- Event-series, products, orders, and payment reconciliation management
-- Legacy poster import and image migration utilities
-
-## Repository Structure
-
-```text
-QuestEsports/
-|-- README.md
-|-- docs/
-|   |-- README.md
-|   |-- admin-operations.md
-|   |-- api-documentation.md
-|   |-- authentication-flow.md
-|   |-- backup-and-disaster-recovery.md
-|   |-- ci-cd.md
-|   |-- commerce-and-tournament-rollout.md
-|   |-- database-and-storage.md
-|   |-- DEPLOYMENT_SAFETY.md
-|   |-- email-system.md
-|   |-- full-site-audit-checklist.md
-|   |-- pre-deployment-checklist.md
-|   |-- project-audit-status.md
-|   |-- production-runbook.md
-|   |-- search-console-and-sitemap.md
-|   |-- secret-and-infrastructure-recovery.md
-|   `-- setup-and-deployment.md
-|-- ops/
-|   |-- README.md
-|   |-- backup-paris-database-windows.ps1
-|   |-- backup-production.sh
-|   |-- create-secret-recovery-package.sh
-|   |-- check-backup-freshness.sh
-|   |-- notify-backup-failure.sh
-|   |-- prune-production-backups.sh
-|   |-- quest-esports-backup.env.example
-|   |-- quest-esports-recovery.env.example
-|   |-- restore-production-backup.sh
-|   |-- test-paris-database-backup-windows.ps1
-|   `-- systemd/
-|-- backend/
-|   |-- README.md
-|   |-- .env.example
-|   |-- package.json
-|   |-- prisma/
-|   |   |-- schema.prisma
-|   |   `-- migrations/
-|   |-- scripts/
-|   `-- src/
-|       |-- app.js
-|       |-- server.js
-|       |-- config/
-|       |-- lib/
-|       |-- middleware/
-|       |-- modules/
-|       `-- routes/
-`-- frontend/
-    |-- package.json
-    |-- next.config.ts
-    |-- app/
-    |-- components/
-    |-- hooks/
-    |-- lib/
-    `-- public/
-```
-
-## Architecture Summary
-
-- The frontend runs on Next.js App Router and calls the backend with `credentials: "include"` so browser cookies are sent on authenticated requests.
-- The backend exposes JSON APIs under `/api`, stores business data in PostgreSQL through Prisma, and persists session state in the `sessions` table.
-- Public uploads are written below `UPLOAD_ROOT` (locally `backend/uploads/`); bank-transfer evidence is isolated below `PRIVATE_UPLOAD_ROOT` and never publicly served.
-- Native bracket data is generated with `brackets-manager`, exported as JSON, and persisted in PostgreSQL through the `tournament_brackets` table.
-- Poster/image metadata is stored in PostgreSQL. Poster assets support filesystem-backed storage with a database binary fallback for older records.
-- Transactional emails and failed upload cleanup operations are persisted as background jobs. At least one worker-enabled backend instance must remain active so mail and privacy-sensitive file cleanup retries are processed.
-- Email action flows generate cryptographically random tokens, store only token hashes in the database, and send links that point to the frontend origin configured by `APP_URL`.
-
-## Main Data Domains
-
-- `User`, `Session`, `VerificationToken`, `PasswordResetToken`, `EmailChangeToken`
-- `EventSeries`, `Tournament`, `TournamentBracket`, `TeamRegistration`, `RegistrationMember`, `PaymentTransaction`, `BankTransferProof`, `PaymentNotificationAudit`
-- `TicketEvent`, `TicketOrder`, `Ticket`, `TicketScan`
-- `Product`, `ProductVariant`, `ProductImage`, `MerchandiseOrder`, `MerchandiseOrderItem`
-- `SavedTeam`, `SavedTeamMember`
-- `ContactSubmission`
-- `ImageAsset`, `Poster`
-- `BackgroundJob`
-
-## Frontend Routes
-
-### Public indexable routes
-
-- `/`
-- `/tournaments`
-- `/tournaments/[slug]`
-- `/tournaments/series/[slug]`
-- `/shop`, `/shop/[slug]`
-- `/tickets`, `/tickets/[slug]`
-- `/refund-policy`
-- `/privacy-policy`, `/terms-of-service`
-- `/join`
-- `/gallery`, `/match-videos`
-- `/members`
-- `/rulebooks/[slug]`
-- `/contact`
-
-`/posters` redirects to `/gallery`, and `/rulebook` redirects to `/tournaments`; redirects are not included in the sitemap.
-
-### Public functional routes (`noindex` where applicable)
-
-- `/tournaments/[slug]/register`
-- `/tournaments/[slug]/payment`
-- `/shop/cart`, `/shop/order` (private capability in the URL fragment; legacy `/shop/order/[token]` redirects)
-- `/tickets/order` (private order capability in the URL fragment)
-- `/registration`
-- `/signup`
-- `/login`
-- `/verify-email`
-- `/confirm-email-change`
-- `/forgot-password`
-- `/reset-password`
-- `/team-invite`
-
-### Authenticated routes
-
-- `/profile`
-
-### Admin routes
-
-- `/admin`
-- `/admin/users`
-- `/admin/tournaments`
-- `/admin/tournaments/new`
-- `/admin/tournaments/[id]/edit`
-- `/admin/event-series`
-- `/admin/products`
-- `/admin/orders`
-- `/admin/payments`
-- `/admin/tickets`
-- `/admin/registrations`
-- `/admin/recruitment`
-- `/admin/rulebooks`
-- `/admin/contact-messages`
-
-## API Surface
-
-The backend exposes these main route groups:
-
-- Auth: `/api/signup`, `/api/login`, OAuth start/callback routes, `/api/logout`, `/api/me`, verification, email-change, password-reset, and session endpoints
-- Public tournaments: `/api/tournaments`, `/api/tournaments/:slug`
-- Event series: `/api/event-series`, `/api/event-series/:slug`
-- Tournament registration: `/api/tournaments/:slug/registration-status`, `/api/tournaments/:slug/registrations`
-- Shop: `/api/products`, `/api/products/:slug`, `/api/orders`, `/api/orders/status` (private capability header), legacy `/api/orders/:publicToken`
-- Tickets: `/api/ticket-events`, `/api/ticket-events/:slug`, quote/order creation, and `/api/ticket-orders/status`
-- Payments: `/api/payments/payhere/notify`, `/api/payments/:orderId`, `/api/payments/:orderId/bank-transfer-proof`
-- Account: `/api/me/dashboard`, `/api/me/avatar`
-- Recruitment applications: `/api/recruitment-applications`
-- Teams: `/api/teams`, `/api/teams/:teamId`, `/api/teams/profile`, `/api/team-invite`, `/api/team-invite/respond`
-- Contact: `/api/contact`
-- Media: `/api/posters`, `/api/images`, `/api/uploads/...`
-- Admin: `/api/admin/...`
-- Admin ticketing: `/api/admin/ticket-events/...` and `/api/admin/tickets/:ticketId/...`
-- Admin registration/recruitment exports: `/api/admin/team-registrations/export`, `/api/admin/recruitment-applications/export`
-- Admin native brackets: `/api/admin/tournaments/:tournamentId/bracket`, `/generate`, `/matches/:matchId`, and `/publish`
-
-See [API Documentation](./docs/api-documentation.md) for the complete reference.
-
-## Environment Variables
-
-### Backend
-
-Create `backend/.env` from `backend/.env.example`.
-
-```env
-PORT=5001
-CORS_ORIGIN=http://localhost:3000
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-SESSION_COOKIE_NAME=quest_session
-SESSION_TTL_DAYS=1
-REMEMBER_ME_SESSION_TTL_DAYS=30
-AUTH_ENCRYPTION_KEY=
-TRUST_PROXY=false
-REQUIRE_API_ORIGIN=false
-JOB_WORKER_ENABLED=true
-COMMERCE_MAINTENANCE_ENABLED=true
-SITE_MAINTENANCE_MODE=false
-SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
-SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
-JOB_WORKER_POLL_MS=5000
-JOB_WORKER_MAX_ATTEMPTS=5
-MAIL_PROVIDER=resend
-RESEND_API_KEY=
-MAIL_DELIVERY_REQUIRED=
-MAIL_FROM=
-# Used only when MAIL_PROVIDER=smtp (for example, Amazon SES):
-# SMTP_HOST=email-smtp.ap-northeast-1.amazonaws.com
-# SMTP_PORT=587
-# SMTP_USER=your_ses_smtp_username
-# SMTP_PASS=your_ses_smtp_password
-APP_URL=http://localhost:3000
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
-DISCORD_CLIENT_ID=
-DISCORD_CLIENT_SECRET=
-DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback
-```
-
-Notes:
-
-- `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
-- `CORS_ORIGIN` supports a comma-separated allowlist.
-- Set `REQUIRE_API_ORIGIN=true` in production to reject API requests unless the request `Origin` or `Referer` matches `CORS_ORIGIN`.
-- `APP_URL` must point at the frontend origin used in verification, password reset, email-change, invite, and security-alert emails when mail delivery is enabled.
-- Use `MAIL_PROVIDER=resend` with `RESEND_API_KEY` now. Production refuses to start unless `MAIL_DELIVERY_REQUIRED=true` and the selected provider configuration is complete.
-- `JOB_WORKER_ENABLED` must be enabled on at least one backend instance for queued email delivery.
-- `SITE_MAINTENANCE_MODE` is the coordinated full-site switch. Use the same message and retry values in the backend and frontend environments; it is separate from `COMMERCE_MAINTENANCE_ENABLED`.
-- To return to Amazon SES later, set `MAIL_PROVIDER=smtp` and provide the SES `SMTP_*` values; no code change is needed. `npm run mail:verify` checks connection/auth from `backend/.env` without sending an email.
-- See [Email System](./docs/email-system.md) for every recipient, trigger, subject, link, token lifetime, and retry rule.
-- If OAuth is enabled locally, register these redirect URIs with the providers:
-  - Google: `http://localhost:5001/api/auth/google/callback`
-  - Discord: `http://localhost:5001/api/auth/discord/callback`
-- If OAuth is disabled, leave the OAuth client ID and secret values blank rather than using placeholder text.
-
-## OAuth Setup
-
-Use these values for local development:
-
-- `APP_URL=http://localhost:3000`
-- `GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback`
-- `DISCORD_CALLBACK_URL=http://localhost:5001/api/auth/discord/callback`
-
-Use these values for production:
-
-- `APP_URL=https://questesports.lk`
-- `GOOGLE_CALLBACK_URL=https://api.questesports.lk/api/auth/google/callback`
-- `DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback`
-
-Provider dashboard redirects should match the callback URL values exactly.
-
-### Frontend
-
-Create `frontend/.env.local`.
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5001
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
-SITE_MAINTENANCE_MODE=false
-SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try again shortly.
-SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
-```
-
-Notes:
-
-- `NEXT_PUBLIC_API_URL` must point at the backend origin.
-- `NEXT_PUBLIC_SITE_URL` is used for metadata, canonical URLs, sitemap generation, and structured data.
-- Maintenance variables are server-only. Follow the enable/disable order in the [Production Operations Runbook](./docs/production-runbook.md#site-maintenance-mode).
-
-## Local Development
-
-### 1. Install dependencies
-
-```bash
-cd backend
-npm install
-```
-
-```bash
-cd frontend
-npm install
-```
-
-### 2. Apply database migrations
-
-```bash
-cd backend
-npm run prisma:migrate
-npm run prisma:generate
-```
-
-### 3. Start the apps
-
-Backend:
-
-```bash
-cd backend
-npm run dev
-```
-
-Frontend:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Default local URLs:
-
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:5001`
-- Health: `http://localhost:5001/api/health`
-- OpenAPI JSON: `http://localhost:5001/api/openapi.json`
-
-## Operational Notes
-
-- The backend creates upload directories automatically at startup.
-- There is no root workspace runner; start `backend` and `frontend` in separate terminals.
-- Team registration requires a logged-in user with a verified email address.
-- Recruitment applications require a logged-in user with a verified email address.
-- Team invite responses require a logged-in, verified account whose email matches the invitation. Accepted teams appear on both the captain's and accepted members' profiles.
-- Admin tournament management supports spreadsheet uploads for schedules, showcase-image uploads for completed events, and native bracket generation from approved teams.
-- Admin registration deletion removes the tournament registration source-of-truth row; saved reusable team rosters can remain for profile reuse. Captains cannot delete a saved team while it has a tournament registration.
-- Admin registration and recruitment pages can download filtered `.xlsx` exports generated on demand by the backend.
-- Registration and payment records are visually grouped by their tournament, ticket event, or merchandise order in admin.
-- Every paid event-ticket attendee receives an independently signed, one-use QR code. Browser and Android admin scanners verify it against the selected event and record every attempt.
-- Public tournament responses now include `displayPriority`, `registrationOpenAt`, `scheduleData`, `isCompleted`, `showcase`, published bracket data, bracket summaries, and per-tournament `registeredTeams` on detail pages.
-- Direct imports that touch backend config now load `.env` automatically, so scripts and one-off Node entrypoints behave the same as `node src/server.js`.
-- Public tournament detail responses include approved team names, public team-logo URLs, short codes, member counts, and statuses.
-- Native brackets remain hidden from public responses until an admin publishes the bracket.
-- The built-in `/api/openapi.json` file is a partial contract, not a full generated spec.
-- The backend includes a Node test suite under `backend/tests`.
-- The frontend generates `/sitemap.xml` from canonical public routes, published tournaments/event series/rulebooks, and active products. `/robots.txt` advertises it; operational steps are in [Google Search Console and Sitemap Operations](./docs/search-console-and-sitemap.md).
-- Session/auth lifecycle behavior has dedicated unit coverage for session rehydration, throttled `lastSeenAt` writes, expired-session handling, and active-session listing.
-- Native bracket generation and score advancement have backend unit coverage.
-- There is currently no admin seed/bootstrap script beyond creating a user and promoting it through Prisma Studio.
-- The built-in database-backed email worker is suitable for low-volume transactional mail; use a dedicated worker or external queue before scaling email workloads substantially.
-
-## Verification Commands
-
-Frontend:
-
-```bash
-cd frontend
+```powershell
+Set-Location backend
 npm run lint
+npm test
+npm run test:coverage
+```
+
+Frontend:
+
+```powershell
+Set-Location frontend
+npm run lint
+npm run typecheck
 npm test
 npm run build
 npm run test:e2e
 ```
 
-Backend:
+Mobile admin:
 
-```bash
-cd backend
-npm run prisma:generate
+```powershell
+Set-Location mobile-admin
+npm run typecheck
 npm test
-node src/server.js
+npm run doctor
 ```
 
-## Testing
+CI runs the supported release checks with Node 24. Real-database integration tests require an isolated test database and `RUN_DATABASE_INTEGRATION_TESTS=true`.
 
-Backend tests use Node's built-in test runner and live in `backend/tests`.
+## Platform Scope
 
-- Run all backend unit tests: `cd backend && npm test`
-- Run one file: `cd backend && node --test tests/session.service.test.js`
-- Existing coverage focuses on backend behavior that benefits from deterministic unit testing, including jobs, observability, rate limiting, team helpers, tournament registration, recruitment validation, admin Excel exports, admin deletion workflows, and session/auth lifecycle logic.
+The platform currently supports:
 
-Frontend verification includes unit tests, lint, a production build, and Playwright critical journeys:
+- tournament discovery, registration, schedules, participants, and completed-event results
+- native brackets and optional Challonge-backed bracket operations
+- reusable teams, invitations, player profiles, and verified organizations
+- event series, game categories, sponsors, posters, rulebooks, and media
+- free, PayHere, and reviewed bank-transfer tournament payments
+- merchandise products, variants, orders, fulfilment, and reconciliation
+- entrance-ticket sales, signed QR tickets, and live check-in
+- recruitment, contact messages, exports, and administrative review workflows
+- password and OAuth authentication, sessions, email verification, and recovery
+- private Android operations for registrations, payments, tickets, content, and users
 
-- `cd frontend && npm run lint`
-- `cd frontend && npm test`
-- `cd frontend && npm run build`
-- `cd frontend && npm run test:e2e`
+Detailed endpoint contracts are in [API Documentation](./docs/api-documentation.md); operating procedures are in [Admin Operations](./docs/admin-operations.md).
 
-## Recommended Next Steps
+## Architecture and Data
 
-- Read [Collaboration And Staging](./docs/collaboration-and-staging.md) before granting repository access or preparing a contributor environment.
-- Read [Setup and Deployment Guide](./docs/setup-and-deployment.md) before standing up a production environment.
-- Use [Production Operations Runbook](./docs/production-runbook.md#site-maintenance-mode) to show the maintenance page or temporarily stop the site.
-- Use the [Production Operations Runbook](./docs/production-runbook.md) for the current Quest VPS, GitHub Actions, PM2, backup, reboot, and incident procedures.
-- Use [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md) as the source of truth for key custody, scheduled/manual backup checks, isolated drills, production restores, and complete VPS loss.
-- Production backups use the overlap-safe, remotely verified `ops/backup-production.sh` plus the systemd backup, freshness, and failure-alert templates in `ops/systemd/`; restores use the transactional, staged, explicitly guarded `ops/restore-production-backup.sh` on an isolated recovery host.
-- Use `ops/prune-production-backups.sh` for guarded off-site retention and `ops/create-secret-recovery-package.sh` for the separate encrypted application/infrastructure-secret recovery package. Both default to refusing destructive or sensitive work without their exact confirmation values.
-- The production Google Drive destination uses a project-owned OAuth desktop client and the least-privilege `drive.file` scope. On 2026-07-29, both a manual encrypted full backup and the restricted systemd service succeeded against `quest-backups-custom:quest-esports-v2/production`; the earlier shared-client remote is retained only for access to historical archives.
-- A complete isolated recovery drill has restored PostgreSQL 17, all public uploads, and all private uploads with matching checksums. Repeat the drill at least quarterly and keep the `age` private identity off the VPS and cloud storage.
-- A secured Windows workstation can create and restore-test a Paris database-only snapshot with `ops/backup-paris-database-windows.ps1` and `ops/test-paris-database-backup-windows.ps1`; it does not include VPS uploads or off-site retention.
-- The encrypted production archive does not include the backend `.env`, rclone configuration, OAuth credentials, infrastructure configuration, or private `age` identity. Maintain and restore-test those through the separate [Secret and Infrastructure Recovery](./docs/secret-and-infrastructure-recovery.md) process.
-- Read [Authentication Flow](./docs/authentication-flow.md) before changing session or authentication logic.
-- Read [Admin Operations](./docs/admin-operations.md) before changing registration, recruitment, export, or admin deletion behavior.
-- Read [Email System](./docs/email-system.md) before changing email templates, triggers, tokens, provider settings, or queue behavior.
-- Read [Database and Storage](./docs/database-and-storage.md) before touching uploads, Prisma schema, or media migration scripts.
-- Run `cd backend && npm run prisma:security:verify` after migrations to confirm RLS is enabled and unused Supabase Data API roles have no public-table privileges.
-- Use [Google Search Console and Sitemap Operations](./docs/search-console-and-sitemap.md) when changing public routes, canonical metadata, crawler rules, or sitemap submission state.
+- The browser talks to the Express API; it does not access PostgreSQL directly.
+- Prisma owns the application schema and migration history.
+- PostgreSQL stores relational data; public and private uploads live on durable filesystem roots.
+- Browser authentication uses `HttpOnly` sessions. The Android client uses a Keystore-backed bearer session.
+- Payment evidence is private and never served through public upload routes.
+- Production backups cover PostgreSQL and both upload roots as one recovery set.
+- The Supabase Data API is unused; public tables retain RLS and Data API roles have no table privileges.
 
-## Website Change Upgrade
+Read [Database and Storage](./docs/database-and-storage.md), [Authentication Flow](./docs/authentication-flow.md), and [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md) before changing those boundaries.
 
-The tournament experience now uses admin-managed game categories, 4:3 whole-card listings, event metadata, hero artwork, ordered sponsors, verified team organizations, and privacy-safe team/solo participants. Tournament brackets prefer a validated HTTPS Challonge module and fall back to the published native bracket. Admin content is managed from `/admin/games`, `/admin/teams`, and the tournament editor. Persistent upload backups must include `game-assets/` and `sponsor-logos/`.
+## Repository Layout
+
+```text
+QuestEsports/
+|-- .github/        GitHub Actions, ownership, and PR policy
+|-- backend/        Express API, Prisma schema/migrations, tests, and load profiles
+|-- frontend/       Next.js application, unit tests, and Playwright journeys
+|-- mobile-admin/   Private Expo/Android admin application
+|-- docs/           Architecture, product, security, and operations documentation
+|-- ops/            Production backup and recovery tooling
+`-- README.md       Repository entry point
+```
+
+Generated output, dependencies, uploads, local environment files, credentials, and recovery artifacts must remain untracked.
+
+## Documentation
+
+Start at the [documentation index](./docs/README.md). Frequently used guides:
+
+| Task | Guide |
+| --- | --- |
+| Local setup or deployment | [Setup and Deployment](./docs/setup-and-deployment.md) |
+| Collaborator or staging setup | [Collaboration and Staging](./docs/collaboration-and-staging.md) |
+| Production operation or incident | [Production Operations Runbook](./docs/production-runbook.md) |
+| Release approval | [Pre-deployment Checklist](./docs/pre-deployment-checklist.md) |
+| CI/CD behavior | [CI/CD Pipeline](./docs/ci-cd.md) |
+| Database and files | [Database and Storage](./docs/database-and-storage.md) |
+| Admin workflows | [Admin Operations](./docs/admin-operations.md) |
+| Commerce and tournaments | [Commerce and Tournament Operations](./docs/commerce-and-tournament-operations.md) |
+| Backup or restore | [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md) |
+| Secret recovery | [Secret and Infrastructure Recovery](./docs/secret-and-infrastructure-recovery.md) |
+
+## Collaboration and Deployment
+
+Contributors work on branches and submit pull requests. CODEOWNERS requests review from `@Russelrip`, CI validates every PR, and Gitleaks scans commits for credentials.
+
+Because this private personal repository is on GitHub Free, branch protection is not enforceable. Production backend deployment is therefore manual and restricted in the workflow to the repository owner. A collaborator must never receive production database, VPS, payment, OAuth, mail, or signing credentials.
+
+See [Collaboration and Staging](./docs/collaboration-and-staging.md) before granting access.
