@@ -143,8 +143,11 @@ const readLegacyAsset = async (relativeFilePath) => {
   return fs.readFile(absolutePath);
 };
 
-const repairLegacyPosterFile = async ({ poster, buffer, onFileWritten }) => {
-  const storedFilename = poster.imageAsset?.storedFilename;
+const getImageAssetKey = (originalName, title) =>
+  `${String(originalName || "").toLowerCase()}\u0000${title}`;
+
+const repairLegacyAssetFile = async ({ imageAsset, buffer, onFileWritten }) => {
+  const storedFilename = imageAsset?.storedFilename;
   if (!storedFilename) {
     return false;
   }
@@ -180,6 +183,23 @@ const repairLegacyPosterFile = async ({ poster, buffer, onFileWritten }) => {
   }
 };
 
+const createPosterForImageAsset = async (tx, definition, imageAssetId) =>
+  tx.poster.create({
+    data: {
+      id: crypto.randomUUID(),
+      importKey: getImportKey(definition.filePath),
+      imageAssetId,
+      title: definition.title,
+      description: null,
+      category: definition.category,
+      headline: definition.headline,
+      subheadline: null,
+      accentColor: "#7c3aed",
+      textColor: "#ffffff",
+      overlayAlign: definition.overlayAlign,
+    },
+  });
+
 const createLegacyPoster = async (tx, definition, buffer, onFileWritten) => {
   const originalName = path.basename(definition.filePath);
   const contentType = getContentType(definition.filePath);
@@ -202,21 +222,7 @@ const createLegacyPoster = async (tx, definition, buffer, onFileWritten) => {
     },
   });
 
-  await tx.poster.create({
-    data: {
-      id: crypto.randomUUID(),
-      importKey: getImportKey(definition.filePath),
-      imageAssetId: imageAsset.id,
-      title: definition.title,
-      description: null,
-      category: definition.category,
-      headline: definition.headline,
-      subheadline: null,
-      accentColor: "#7c3aed",
-      textColor: "#ffffff",
-      overlayAlign: definition.overlayAlign,
-    },
-  });
+  await createPosterForImageAsset(tx, definition, imageAsset.id);
 
   return storedFilename;
 };
@@ -231,6 +237,7 @@ const importLegacyPosters = async () => {
     }))
   );
   const writtenFilenames = [];
+  const detachedFilenames = [];
   let results = [];
 
   try {
@@ -260,7 +267,29 @@ const importLegacyPosters = async () => {
           importKey: true,
           title: true,
           headline: true,
-          imageAsset: { select: { storedFilename: true } },
+          imageAssetId: true,
+          imageAsset: {
+            select: {
+              id: true,
+              storedFilename: true,
+              _count: { select: { posters: true, productImages: true } },
+            },
+          },
+        },
+      });
+      const existingImageAssets = await tx.imageAsset.findMany({
+        where: {
+          OR: legacyPosterDefinitions.map(({ filePath, title }) => ({
+            originalName: path.basename(filePath),
+            title,
+          })),
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          title: true,
+          originalName: true,
+          storedFilename: true,
         },
       });
       const existingByImportKey = new Map(
@@ -274,28 +303,78 @@ const importLegacyPosters = async () => {
           poster,
         ])
       );
+      const preferredImageAssetBySource = new Map();
+      for (const imageAsset of existingImageAssets) {
+        const key = getImageAssetKey(imageAsset.originalName, imageAsset.title);
+        if (!preferredImageAssetBySource.has(key)) {
+          preferredImageAssetBySource.set(key, imageAsset);
+        }
+      }
 
       results = [];
       for (const { definition, buffer } of sources) {
         const importKey = getImportKey(definition.filePath);
+        const originalName = path.basename(definition.filePath);
+        const preferredImageAsset = preferredImageAssetBySource.get(
+          getImageAssetKey(originalName, definition.title)
+        );
         const existing =
           existingByImportKey.get(importKey) ||
           existingByContent.get(`${definition.title}\u0000${definition.headline}`);
         if (existing) {
+          const posterUpdate = {};
           if (!existing.importKey) {
+            posterUpdate.importKey = importKey;
+          }
+          if (preferredImageAsset && preferredImageAsset.id !== existing.imageAssetId) {
+            posterUpdate.imageAssetId = preferredImageAsset.id;
+          }
+          const deduplicated = Boolean(posterUpdate.imageAssetId);
+          if (Object.keys(posterUpdate).length > 0) {
             await tx.poster.update({
               where: { id: existing.id },
-              data: { importKey },
+              data: posterUpdate,
             });
           }
-          const repaired = await repairLegacyPosterFile({
-            poster: existing,
+          if (
+            deduplicated &&
+            existing.imageAsset._count.posters === 1 &&
+            existing.imageAsset._count.productImages === 0
+          ) {
+            await tx.imageAsset.delete({ where: { id: existing.imageAsset.id } });
+            if (
+              existing.imageAsset.storedFilename &&
+              path.basename(existing.imageAsset.storedFilename) === existing.imageAsset.storedFilename
+            ) {
+              detachedFilenames.push(existing.imageAsset.storedFilename);
+            }
+          }
+          const repaired = await repairLegacyAssetFile({
+            imageAsset: preferredImageAsset || existing.imageAsset,
             buffer,
             onFileWritten: (filename) => writtenFilenames.push(filename),
           });
           results.push({
-            status: repaired ? "repaired" : "skipped",
+            status: repaired ? "repaired" : deduplicated ? "deduplicated" : "skipped",
             title: definition.title,
+            repaired,
+            deduplicated,
+          });
+          continue;
+        }
+
+        if (preferredImageAsset) {
+          const repaired = await repairLegacyAssetFile({
+            imageAsset: preferredImageAsset,
+            buffer,
+            onFileWritten: (filename) => writtenFilenames.push(filename),
+          });
+          await createPosterForImageAsset(tx, definition, preferredImageAsset.id);
+          results.push({
+            status: repaired ? "repaired" : "linked",
+            title: definition.title,
+            repaired,
+            linked: true,
           });
           continue;
         }
@@ -303,7 +382,7 @@ const importLegacyPosters = async () => {
         await createLegacyPoster(tx, definition, buffer, (filename) => {
           writtenFilenames.push(filename);
         });
-        results.push({ status: "imported", title: definition.title });
+        results.push({ status: "imported", title: definition.title, imported: true });
       }
     });
   } catch (error) {
@@ -315,9 +394,17 @@ const importLegacyPosters = async () => {
     throw error;
   }
 
+  await Promise.allSettled(
+    [...new Set(detachedFilenames)].map((filename) =>
+      fs.unlink(path.join(posterImageDirectory, filename))
+    )
+  );
+
   return {
-    importedCount: results.filter((item) => item.status === "imported").length,
-    repairedCount: results.filter((item) => item.status === "repaired").length,
+    importedCount: results.filter((item) => item.imported).length,
+    linkedCount: results.filter((item) => item.linked).length,
+    repairedCount: results.filter((item) => item.repaired).length,
+    deduplicatedCount: results.filter((item) => item.deduplicated).length,
     skippedCount: results.filter((item) => item.status === "skipped").length,
     results,
   };

@@ -536,9 +536,11 @@ npm run media:import-legacy-posters
 
 The command imports only the legacy images packaged under
 `frontend/public/images`. It validates all sources before making changes, repairs
-missing filesystem copies for matching existing poster records, skips healthy
-posters, and rolls back database changes and newly written files if the import
-fails. Git and repository history are not runtime dependencies.
+missing filesystem copies for matching image records, reuses the oldest matching
+asset instead of creating a duplicate, reconciles an imported poster that points
+at a duplicate asset, skips healthy posters, and rolls back database changes and
+newly written files if the import fails. Git and repository history are not
+runtime dependencies.
 
 Run these in a controlled environment and back up the database plus uploads first.
 

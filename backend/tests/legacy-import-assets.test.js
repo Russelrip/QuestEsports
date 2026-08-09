@@ -42,14 +42,26 @@ test("legacy poster import uses a stable key and becomes idempotent", async () =
     $executeRaw: async (strings) => advisoryLockCalls.push(strings.join("")),
     imageAsset: {
       create: async ({ data }) => {
-        imageAssets.set(data.id, data);
-        return data;
+        const stored = { ...data, createdAt: new Date(imageAssets.size) };
+        imageAssets.set(data.id, stored);
+        return stored;
       },
+      findMany: async () => [...imageAssets.values()]
+        .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id)),
+      delete: async ({ where }) => imageAssets.delete(where.id),
     },
     poster: {
       findMany: async () => [...posters.values()].map((poster) => ({
         ...poster,
-        imageAsset: imageAssets.get(poster.imageAssetId),
+        imageAsset: {
+          ...imageAssets.get(poster.imageAssetId),
+          _count: {
+            posters: [...posters.values()].filter(
+              (candidate) => candidate.imageAssetId === poster.imageAssetId
+            ).length,
+            productImages: 0,
+          },
+        },
       })),
       create: async ({ data }) => {
         assert.ok(data.importKey.startsWith("legacy-poster:"));
@@ -79,18 +91,38 @@ test("legacy poster import uses a stable key and becomes idempotent", async () =
     const posterToRepair = [...posters.values()][0];
     const assetToRepair = imageAssets.get(posterToRepair.imageAssetId);
     await fsPromises.unlink(path.join(tempRoot, assetToRepair.storedFilename));
+    const duplicateAsset = {
+      ...assetToRepair,
+      id: "00000000-0000-0000-0000-000000000001",
+      storedFilename: "duplicate-openwinners.jpg",
+      createdAt: new Date(86400000),
+    };
+    imageAssets.set(duplicateAsset.id, duplicateAsset);
+    await fsPromises.writeFile(
+      path.join(tempRoot, duplicateAsset.storedFilename),
+      "temporary duplicate"
+    );
+    posterToRepair.imageAssetId = duplicateAsset.id;
     const second = await service.importLegacyPosters();
     const third = await service.importLegacyPosters();
 
     assert.ok(first.importedCount > 0);
+    assert.equal(first.linkedCount, 0);
     assert.equal(first.repairedCount, 0);
+    assert.equal(first.deduplicatedCount, 0);
     assert.equal(first.skippedCount, 0);
     assert.equal(firstWriteCount, first.importedCount);
     assert.equal(second.importedCount, 0);
+    assert.equal(second.linkedCount, 0);
     assert.equal(second.repairedCount, 1);
+    assert.equal(second.deduplicatedCount, 1);
     assert.equal(second.skippedCount, first.importedCount - 1);
+    assert.equal(posters.get(posterToRepair.importKey).imageAssetId, assetToRepair.id);
+    assert.equal(imageAssets.has(duplicateAsset.id), false);
     assert.equal(third.importedCount, 0);
+    assert.equal(third.linkedCount, 0);
     assert.equal(third.repairedCount, 0);
+    assert.equal(third.deduplicatedCount, 0);
     assert.equal(third.skippedCount, first.importedCount);
     assert.equal((await fsPromises.readdir(tempRoot)).length, firstWriteCount);
     assert.equal(advisoryLockCalls.length, 3);
