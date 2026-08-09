@@ -23,7 +23,9 @@
     "media:migrate-image-assets": "node scripts/migrate-image-assets.js",
     "load:test": "k6 run performance/k6-api.js",
     "load:stress:db": "k6 run performance/k6-db-stress.js",
-    "alerts:test:discord": "node scripts/verify-discord-alert.js"
+    "alerts:test:discord": "node scripts/verify-discord-alert.js",
+    "data:copy-public-to-staging": "node scripts/copy-public-data-to-staging.js",
+    "data:copy-public-to-staging:apply": "node scripts/copy-public-data-to-staging.js --apply"
   },
   "keywords": [],
   "author": "",

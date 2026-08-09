@@ -21,6 +21,23 @@ GitHub Free does not enforce branch protection for this private personal reposit
 - Prefer schema-only migrations plus synthetic test records.
 - If production-like data is essential for a test, anonymize it before it enters staging and document the approved fields and retention period.
 
+The repository includes a guarded copier for the limited public-data subset. It copies published game categories, event series, tournaments and sponsors, referenced rulebooks, active products and variants, and non-draft ticket events. It removes media file references and bank details, changes copied tournament payment methods to free, clears product stock, and never reads identity or transaction tables.
+
+Preview the source and target row counts before writing:
+
+```powershell
+Set-Location backend
+npm run data:copy-public-to-staging
+```
+
+Apply the sanitized upserts only after confirming both database labels are correct:
+
+```powershell
+npm run data:copy-public-to-staging:apply
+```
+
+The command reads production from the ignored `backend/.env` and staging from the ignored `backend/.env.staging.local`. It refuses matching database identities, enforces TLS for remote connections, and rejects explicitly unsafe TLS modes. The operation is read-only on production and does not delete staging rows.
+
 ## Local Configuration
 
 Copy the tracked example files to ignored local files:
