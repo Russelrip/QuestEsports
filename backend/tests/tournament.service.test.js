@@ -236,6 +236,74 @@ test("admin tournaments can save an editable schedule without a spreadsheet", as
   }
 });
 
+test("updating a bank-transfer tournament returns its bank details to the editor", async () => {
+  const existingTournament = {
+    id: "tournament-1",
+    ...buildAdminTournamentBody(),
+    registrationFeeAmount: 2500,
+    registrationFeeCurrency: "LKR",
+    registrationFeeTiers: [],
+    paymentMethod: "bank_transfer",
+    bankName: "Quest Bank",
+    bankBranch: "Colombo",
+    bankAccountName: "Quest Esports",
+    bankAccountNumber: "1234567890",
+  };
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findUnique: async () => existingTournament,
+        findFirst: async () => null,
+        update: async ({ data }) => ({
+          ...existingTournament,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          _count: { teamRegistrations: 0 },
+          teamRegistrations: [],
+          adminSlotReservations: [],
+        }),
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+      removeUploadFiles: async () => undefined,
+    },
+    [teamServiceModulePath]: {
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
+    },
+  });
+
+  try {
+    const tournament = await tournamentService.updateAdminTournament({
+      tournamentId: existingTournament.id,
+      body: buildAdminTournamentBody({
+        registrationFeeAmount: "2500",
+        registrationFeeCurrency: "LKR",
+        paymentMethod: "bank_transfer",
+        bankName: "Quest Bank",
+        bankBranch: "Colombo",
+        bankAccountName: "Quest Esports",
+        bankAccountNumber: "1234567890",
+      }),
+      files: {},
+    });
+
+    assert.equal(tournament.bankName, "Quest Bank");
+    assert.equal(tournament.bankBranch, "Colombo");
+    assert.equal(tournament.bankAccountName, "Quest Esports");
+    assert.equal(tournament.bankAccountNumber, "1234567890");
+  } finally {
+    restore();
+  }
+});
+
 test("editable schedule columns must be unique", async () => {
   const prismaMock = {
     prisma: {

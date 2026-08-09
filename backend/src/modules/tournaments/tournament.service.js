@@ -591,15 +591,19 @@ const mapTournament = (tournament) => {
   };
 };
 
-const mapTournamentWithRegistrations = (
-  tournament,
-  registrations = tournament.teamRegistrations || []
-) => ({
+const mapAdminTournament = (tournament) => ({
   ...mapTournament(tournament),
   bankName: tournament.bankName,
   bankBranch: tournament.bankBranch,
   bankAccountName: tournament.bankAccountName,
   bankAccountNumber: tournament.bankAccountNumber,
+});
+
+const mapTournamentWithRegistrations = (
+  tournament,
+  registrations = tournament.teamRegistrations || []
+) => ({
+  ...mapAdminTournament(tournament),
   bracket: tournament.bracket || null,
   registrations: registrations.map((registration) => ({
     id: registration.id,
@@ -1351,7 +1355,7 @@ const createAdminTournament = async ({ body, files }) => {
     throw error;
   }
 
-  return mapTournament(tournament);
+  return mapAdminTournament(tournament);
 };
 
 const updateAdminTournament = async ({ tournamentId, body, files }) => {
@@ -1401,7 +1405,7 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
     }
   );
 
-  return mapTournament(tournament);
+  return mapAdminTournament(tournament);
 };
 
 const deleteAdminTournament = async (tournamentId) => {
