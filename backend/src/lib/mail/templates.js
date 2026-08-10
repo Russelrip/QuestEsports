@@ -1,3 +1,5 @@
+const { env } = require("../../config/env");
+
 const escapeHtml = (value) =>
   String(value || "")
     .replace(/&/g, "&amp;")
@@ -5,6 +7,9 @@ const escapeHtml = (value) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+
+const getBrandAvatarUrl = () =>
+  env.APP_URL ? new URL("/icon-192.png", env.APP_URL).toString() : "";
 
 const renderEmailLayout = ({
   title,
@@ -16,7 +21,16 @@ const renderEmailLayout = ({
   html: `
     <div style="background:#090313;padding:32px 16px;font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#f5f3ff;">
       <div style="max-width:640px;margin:0 auto;background:linear-gradient(180deg,#140a27,#0e061c);border:1px solid rgba(192,132,252,0.25);border-radius:20px;padding:32px;box-shadow:0 18px 40px rgba(0,0,0,0.28);">
-        <p style="margin:0 0 12px;font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:#c4b5fd;">Quest E-sports</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border-collapse:collapse;">
+          <tr>
+            ${
+              getBrandAvatarUrl()
+                ? `<td style="padding:0 12px 0 0;vertical-align:middle;"><img src="${escapeHtml(getBrandAvatarUrl())}" width="48" height="48" alt="Quest E-sports" style="display:block;width:48px;height:48px;border:0;border-radius:50%;" /></td>`
+                : ""
+            }
+            <td style="padding:0;vertical-align:middle;font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#c4b5fd;">Quest E-sports</td>
+          </tr>
+        </table>
         <h1 style="margin:0 0 16px;font-size:28px;line-height:1.2;color:#ffffff;">${escapeHtml(title)}</h1>
         <p style="margin:0 0 24px;font-size:16px;line-height:1.7;color:#ddd6fe;">${escapeHtml(intro)}</p>
         ${
