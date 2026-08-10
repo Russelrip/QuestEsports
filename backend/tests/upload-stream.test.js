@@ -90,3 +90,48 @@ test("listPublicUploads returns only allowlisted public image folders", async ()
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test("public upload pagination stats only files on the requested page", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "quest-upload-page-"));
+  const directory = path.join(root, "poster-images");
+  await fs.mkdir(directory, { recursive: true });
+  await Promise.all(
+    Array.from({ length: 100 }, (_, index) =>
+      fs.writeFile(
+        path.join(directory, `${String(1_800_000_000_000 - index)}-image.webp`),
+        Buffer.alloc(1),
+      ),
+    ),
+  );
+  let statCalls = 0;
+  const originalStat = fs.stat;
+  fs.stat = async (...args) => {
+    statCalls += 1;
+    return originalStat(...args);
+  };
+  const { module: uploadService, restore } = loadModuleWithMocks(servicePath, {
+    [uploadModulePath]: {
+      detectImageType: () => "webp",
+      teamLogoDirectory: path.join(root, "team-logos"),
+      tournamentBannerDirectory: path.join(root, "tournament-banners"),
+      posterImageDirectory: directory,
+      avatarDirectory: path.join(root, "avatars"),
+      gameAssetDirectory: path.join(root, "game-assets"),
+      sponsorLogoDirectory: path.join(root, "sponsor-logos"),
+    },
+  });
+  try {
+    const result = await uploadService.listPublicUploads({
+      directory: "poster-images",
+      page: "3",
+      pageSize: "10",
+    });
+    assert.equal(result.pagination.total, 100);
+    assert.equal(result.items.length, 10);
+    assert.equal(statCalls, 10);
+  } finally {
+    restore();
+    fs.stat = originalStat;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

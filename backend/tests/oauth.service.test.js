@@ -165,6 +165,7 @@ test("OAuth callback auto-links a verified provider email", async () => {
 
     assert.deepEqual(result, {
       redirectTo: "/profile",
+      mobileCodeChallenge: null,
       user: existingUser,
     });
     assert.equal(oAuthAccountModel.createCalls.length, 1);

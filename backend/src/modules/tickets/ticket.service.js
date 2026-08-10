@@ -173,10 +173,17 @@ const listPublicEvents = async () => {
     },
     orderBy: { startsAt: "asc" },
   });
-  const quantities = await Promise.all(
-    events.map((event) => getReservedQuantity(prisma, event.id, now)),
+  const groupedQuantities = events.length
+    ? await prisma.ticketOrder.groupBy({
+        by: ["eventId"],
+        where: { eventId: { in: events.map((event) => event.id) }, ...activeOrderWhere(now) },
+        _sum: { quantity: true },
+      })
+    : [];
+  const quantityByEvent = new Map(
+    groupedQuantities.map((entry) => [entry.eventId, entry._sum.quantity || 0]),
   );
-  return events.map((event, index) => mapPublicEvent(event, quantities[index]));
+  return events.map((event) => mapPublicEvent(event, quantityByEvent.get(event.id) || 0));
 };
 
 const getPublicEvent = async (slug) => {

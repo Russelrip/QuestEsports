@@ -20,6 +20,18 @@ const getRealtimeEvents = (req, res) => {
   }
 
   const topics = parseTopics(req.query.topics);
+  const clientKey = String(req.ip || req.socket?.remoteAddress || "unknown");
+  const opened = openRealtimeConnection(clientKey, {
+    maxTotal: env.REALTIME_SSE_MAX_CONNECTIONS,
+    maxPerClient: env.REALTIME_SSE_MAX_CONNECTIONS_PER_IP,
+  });
+  if (!opened) {
+    res.status(429).json({
+      success: false,
+      error: { code: "realtime_limit", message: "Too many live-update connections." },
+    });
+    return;
+  }
   res.status(200);
   res.set({
     "Content-Type": "text/event-stream; charset=utf-8",
@@ -28,15 +40,23 @@ const getRealtimeEvents = (req, res) => {
     "X-Accel-Buffering": "no",
   });
   res.flushHeaders?.();
-  openRealtimeConnection();
-  res.write(`retry: 5000\nevent: ready\ndata: ${JSON.stringify({ serverNow: new Date().toISOString() })}\n\n`);
+  const safeWrite = (value) => {
+    try {
+      return res.write(value);
+    } catch {
+      return false;
+    }
+  };
+  safeWrite(`retry: 5000\nevent: ready\ndata: ${JSON.stringify({ serverNow: new Date().toISOString() })}\n\n`);
 
   const unsubscribe = subscribeToRealtimeEvents((event) => {
     const rootTopic = event.topic.split(":")[0];
     if (topics.size && !topics.has(event.topic) && !topics.has(rootTopic)) return;
-    res.write(`id: ${event.id}\nevent: update\ndata: ${JSON.stringify(event)}\n\n`);
+    if (!safeWrite(`id: ${event.id}\nevent: update\ndata: ${JSON.stringify(event)}\n\n`)) close();
   });
-  const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 25_000);
+  const heartbeat = setInterval(() => {
+    if (!safeWrite(": heartbeat\n\n")) close();
+  }, 25_000);
 
   let closed = false;
   const close = () => {
@@ -44,7 +64,8 @@ const getRealtimeEvents = (req, res) => {
     closed = true;
     clearInterval(heartbeat);
     unsubscribe();
-    closeRealtimeConnection();
+    closeRealtimeConnection(clientKey);
+    if (!res.writableEnded) res.end();
   };
   req.on("close", close);
   req.on("aborted", close);

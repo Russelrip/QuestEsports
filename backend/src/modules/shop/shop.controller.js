@@ -17,9 +17,7 @@ const createOrder = asyncHandler(async (req, res) => res.status(201).json({ succ
 const getOrder = asyncHandler(async (req, res) =>
   res.status(200).json({
     success: true,
-    order: await service.getOrderByToken(
-      req.get("x-order-token") || req.params.publicToken
-    ),
+    order: await service.getOrderByToken(req.get("x-order-token")),
   })
 );
 const getAdminProducts = asyncHandler(async (req, res) => res.status(200).json({ success: true, products: await service.listAdminProducts() }));

@@ -5,6 +5,7 @@ const { PrismaClient } = require("../src/generated/prisma");
 
 const backendRoot = path.resolve(__dirname, "..");
 const applyChanges = process.argv.includes("--apply");
+const pruneStaleRows = process.argv.includes("--prune");
 
 function readEnvironmentFile(filename) {
   const filePath = path.resolve(backendRoot, filename);
@@ -50,6 +51,69 @@ function parseDatabaseUrl(value, label) {
 
 function databaseIdentity(parsed) {
   return [parsed.protocol, parsed.hostname, parsed.port || "5432", parsed.pathname, parsed.username].join("|");
+}
+
+function extractSupabaseProjectRef(parsed) {
+  const directHostMatch = parsed.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+  if (directHostMatch) return directHostMatch[1].toLowerCase();
+  const poolerUserMatch = decodeURIComponent(parsed.username).match(/^postgres\.([a-z0-9]+)$/i);
+  return poolerUserMatch?.[1]?.toLowerCase() || null;
+}
+
+async function readDatabaseMarker(client, label) {
+  let rows;
+  try {
+    rows = await client.$queryRaw`
+      SELECT environment, project_ref AS "projectRef", current_database() AS "databaseName"
+      FROM deployment_environment
+      WHERE id = 1
+    `;
+  } catch {
+    throw new Error(
+      `${label} database has no readable deployment marker. Apply migrations and configure deployment_environment first.`,
+    );
+  }
+  if (rows.length !== 1) {
+    throw new Error(`${label} database deployment marker is missing; copy refused.`);
+  }
+  return rows[0];
+}
+
+async function assertSafeDatabasePair({ production, staging, parsedProductionUrl, parsedStagingUrl }) {
+  const [sourceMarker, targetMarker] = await Promise.all([
+    readDatabaseMarker(production, "Production"),
+    readDatabaseMarker(staging, "Staging"),
+  ]);
+  if (sourceMarker.environment !== "production") {
+    throw new Error(`Source marker must be production, received ${sourceMarker.environment}.`);
+  }
+  if (targetMarker.environment !== "staging") {
+    throw new Error(`Target marker must be staging, received ${targetMarker.environment}.`);
+  }
+
+  const sourceProjectRef = extractSupabaseProjectRef(parsedProductionUrl);
+  const targetProjectRef = extractSupabaseProjectRef(parsedStagingUrl);
+  if (!sourceMarker.projectRef || !targetMarker.projectRef) {
+    throw new Error("Both database markers must define project_ref; copy refused.");
+  }
+  for (const [label, marker, urlRef] of [
+    ["Production", sourceMarker, sourceProjectRef],
+    ["Staging", targetMarker, targetProjectRef],
+  ]) {
+    if (marker.projectRef && urlRef && marker.projectRef.toLowerCase() !== urlRef) {
+      throw new Error(`${label} URL does not match its configured Supabase project reference.`);
+    }
+  }
+  const effectiveSourceRef = String(sourceMarker.projectRef).toLowerCase();
+  const effectiveTargetRef = String(targetMarker.projectRef).toLowerCase();
+  if (effectiveSourceRef === effectiveTargetRef) {
+    throw new Error("Production and staging markers resolve to the same project; copy refused.");
+  }
+  if (sourceMarker.databaseName === targetMarker.databaseName && databaseIdentity(parsedProductionUrl) === databaseIdentity(parsedStagingUrl)) {
+    throw new Error("Production and staging resolve to the same database; copy refused.");
+  }
+
+  return { sourceMarker, targetMarker, targetProjectRef: effectiveTargetRef };
 }
 
 function describeDatabase(parsed) {
@@ -358,6 +422,15 @@ async function copyPublicData(staging, data) {
           update: values,
         });
       }
+
+      if (pruneStaleRows) {
+        const tournamentSlugs = data.tournaments.map((item) => item.slug);
+        const productSlugs = data.products.map((item) => item.slug);
+        const ticketEventSlugs = data.ticketEvents.map((item) => item.slug);
+        await database.tournament.deleteMany({ where: { slug: { notIn: tournamentSlugs } } });
+        await database.product.deleteMany({ where: { slug: { notIn: productSlugs } } });
+        await database.ticketEvent.deleteMany({ where: { slug: { notIn: ticketEventSlugs } } });
+      }
     },
     { maxWait: 10_000, timeout: 120_000 },
   );
@@ -383,6 +456,12 @@ async function main() {
   const staging = new PrismaClient({ datasourceUrl: parsedStagingUrl.toString() });
 
   try {
+    const { targetProjectRef } = await assertSafeDatabasePair({
+      production,
+      staging,
+      parsedProductionUrl,
+      parsedStagingUrl,
+    });
     const data = await readPublicSourceData(production);
     console.log(`Source: ${describeDatabase(parsedProductionUrl)}`);
     console.log(`Target: ${describeDatabase(parsedStagingUrl)}`);
@@ -394,6 +473,11 @@ async function main() {
       return;
     }
 
+    const expectedConfirmation = `${pruneStaleRows ? "PRUNE_AND_COPY" : "COPY"}_PRODUCTION_TO_STAGING:${targetProjectRef}`;
+    if (process.env.STAGING_COPY_CONFIRMATION !== expectedConfirmation) {
+      throw new Error(`Set STAGING_COPY_CONFIRMATION=${expectedConfirmation} for this operation.`);
+    }
+
     await copyPublicData(staging, data);
     console.log("Staging rows after copy:", await stagingCounts(staging));
     console.log("Copy complete. No users, sessions, registrations, payments, orders, tickets, private files, or tokens were read.");
@@ -402,7 +486,16 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`Public staging-data copy failed: ${error.message}`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`Public staging-data copy failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  parseDatabaseUrl,
+  databaseIdentity,
+  extractSupabaseProjectRef,
+  assertSafeDatabasePair,
+};

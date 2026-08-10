@@ -5,6 +5,8 @@ require("dotenv").config({
     process.env.CI === "true",
 });
 
+const { validatePostgresDatabaseUrl } = require("../lib/database-url");
+
 const normalizePositiveInteger = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -262,7 +264,21 @@ const env = {
   ),
   REALTIME_SSE_ENABLED: normalizeBoolean(
     process.env.REALTIME_SSE_ENABLED,
-    true,
+    false,
+  ),
+  REALTIME_SSE_MAX_CONNECTIONS: normalizeIntegerInRange(
+    "REALTIME_SSE_MAX_CONNECTIONS",
+    process.env.REALTIME_SSE_MAX_CONNECTIONS,
+    100,
+    1,
+    10000,
+  ),
+  REALTIME_SSE_MAX_CONNECTIONS_PER_IP: normalizeIntegerInRange(
+    "REALTIME_SSE_MAX_CONNECTIONS_PER_IP",
+    process.env.REALTIME_SSE_MAX_CONNECTIONS_PER_IP,
+    5,
+    1,
+    100,
   ),
   MAIL_PROVIDER: optional("MAIL_PROVIDER", "smtp").toLowerCase(),
   RESEND_API_KEY: optional("RESEND_API_KEY"),
@@ -277,6 +293,13 @@ const env = {
   ),
   APP_URL: optional("APP_URL"),
   API_PUBLIC_URL: optional("API_PUBLIC_URL"),
+  MOBILE_ADMIN_OAUTH_REDIRECT_URL: optional(
+    "MOBILE_ADMIN_OAUTH_REDIRECT_URL",
+    "questadmin://oauth",
+  ),
+  MOBILE_ADMIN_ANDROID_CERT_SHA256: optional(
+    "MOBILE_ADMIN_ANDROID_CERT_SHA256",
+  ),
   UPLOAD_ROOT: optional("UPLOAD_ROOT"),
   PRIVATE_UPLOAD_ROOT: optional("PRIVATE_UPLOAD_ROOT"),
   BANK_TRANSFER_PROOF_RETENTION_DAYS: normalizePositiveInteger(
@@ -414,6 +437,12 @@ if (env.NODE_ENV === "production" && !env.UPLOAD_ROOT) {
 }
 
 if (env.NODE_ENV === "production") {
+  validatePostgresDatabaseUrl("DATABASE_URL", env.DATABASE_URL, {
+    requireTls: true,
+  });
+  validatePostgresDatabaseUrl("DIRECT_URL", env.DIRECT_URL, {
+    requireTls: true,
+  });
   if (!env.PRIVATE_UPLOAD_ROOT) {
     throw new Error(
       "PRIVATE_UPLOAD_ROOT is required in production for private payment evidence.",
@@ -424,6 +453,26 @@ if (env.NODE_ENV === "production") {
   }
   assertHttpsUrl("APP_URL", env.APP_URL, { originOnly: true });
   assertHttpsUrl("API_PUBLIC_URL", env.API_PUBLIC_URL, { originOnly: true });
+  assertHttpsUrl(
+    "MOBILE_ADMIN_OAUTH_REDIRECT_URL",
+    env.MOBILE_ADMIN_OAUTH_REDIRECT_URL,
+  );
+  const mobileRedirectUrl = new URL(env.MOBILE_ADMIN_OAUTH_REDIRECT_URL);
+  if (
+    mobileRedirectUrl.origin !== new URL(env.API_PUBLIC_URL).origin ||
+    mobileRedirectUrl.pathname !== "/mobile-admin-oauth" ||
+    mobileRedirectUrl.search ||
+    mobileRedirectUrl.hash
+  ) {
+    throw new Error(
+      "MOBILE_ADMIN_OAUTH_REDIRECT_URL must be /mobile-admin-oauth on the API_PUBLIC_URL origin.",
+    );
+  }
+  if (!/^(?:[A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}$/.test(env.MOBILE_ADMIN_ANDROID_CERT_SHA256)) {
+    throw new Error(
+      "MOBILE_ADMIN_ANDROID_CERT_SHA256 must be the colon-separated SHA-256 signing certificate fingerprint.",
+    );
+  }
   env.CORS_ORIGINS.forEach((origin) =>
     assertHttpsUrl("CORS_ORIGIN", origin, { originOnly: true }),
   );
@@ -522,5 +571,6 @@ module.exports = {
     normalizeNonNegativeInteger,
     normalizePositiveInteger,
     normalizeTrustProxy,
+    validatePostgresDatabaseUrl,
   },
 };

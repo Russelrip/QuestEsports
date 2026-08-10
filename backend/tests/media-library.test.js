@@ -74,3 +74,57 @@ test("media library listing returns file size and reference counts without loadi
     restore();
   }
 });
+
+test("poster ordering is applied globally before pagination", async () => {
+  const servicePath = path.join(__dirname, "../src/modules/media/media.service.js");
+  const ids = Array.from({ length: 18 }, (_, index) => `poster-${index + 19}`);
+  let rawQueryCalled = false;
+  const prisma = {
+    poster: {
+      count: async () => 40,
+      findMany: async () => [...ids].reverse().map((id) => ({
+        id,
+        title: id,
+        description: null,
+        category: "poster",
+        headline: id,
+        subheadline: null,
+        accentColor: "#000000",
+        textColor: "#ffffff",
+        overlayAlign: "bottom-left",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        tournament: null,
+        imageAsset: {
+          id: `image-${id}`,
+          title: id,
+          description: null,
+          category: "poster",
+          originalName: null,
+          storedFilename: `${id}.webp`,
+          contentType: "image/webp",
+          byteSize: 10,
+          createdAt: new Date(),
+        },
+      })),
+    },
+    $queryRaw: async () => {
+      rawQueryCalled = true;
+      return ids.map((id) => ({ id }));
+    },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const { module: mediaService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: { posterImageDirectory: "uploads/poster-images" },
+    [cleanupModulePath]: { removeUploadsQuietly: async () => true },
+  });
+  try {
+    const result = await mediaService.listPosters({ page: "2", pageSize: "18" });
+    assert.equal(rawQueryCalled, true);
+    assert.deepEqual(result.items.map((poster) => poster.id), ids);
+    assert.deepEqual(result.pagination, { page: 2, pageSize: 18, total: 40, totalPages: 3 });
+  } finally {
+    restore();
+  }
+});

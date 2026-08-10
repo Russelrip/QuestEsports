@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { ImageAsset, Poster, resolveImageAssetUrl } from "@/lib/media";
+import { applyLegacyImageFallback, ImageAsset, Poster, resolveImageAssetUrl } from "@/lib/media";
 
 type PosterPreviewDraft = Pick<
   Poster,
@@ -36,6 +36,7 @@ export default function PosterPreview({
         fill
         sizes="(min-width: 1024px) 960px, calc(100vw - 2rem)"
         className="object-contain"
+        onError={(event) => applyLegacyImageFallback(event.currentTarget, asset)}
       />
       {showOverlay ? (
         <div className={`absolute inset-0 flex p-6 sm:p-8 ${alignmentClassName[draft.overlayAlign]}`}>

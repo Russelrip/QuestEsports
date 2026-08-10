@@ -7,7 +7,9 @@ const { openApiDocument } = require("./lib/openapi");
 const { checkDatabaseReadiness } = require("./lib/database");
 const { checkUploadReadiness } = require("./middleware/upload");
 const { logger } = require("./lib/logger");
+const { getObservabilityTransportStatus } = require("./lib/observability-transport");
 const { getRealtimeStatus } = require("./modules/realtime/realtime.service");
+const { getApiCapabilities } = require("./lib/release");
 const {
   requireSiteAvailable,
   sendMaintenanceResponse,
@@ -54,8 +56,25 @@ app.get("/api/health/live", (req, res) =>
     timestamp: new Date().toISOString(),
     maintenance: { enabled: env.SITE_MAINTENANCE_MODE },
     realtime: { enabled: env.REALTIME_SSE_ENABLED, ...getRealtimeStatus() },
+    observability: getObservabilityTransportStatus(),
   })
 );
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  if (!env.MOBILE_ADMIN_ANDROID_CERT_SHA256) {
+    return res.status(404).json({ success: false, message: "App link configuration is unavailable." });
+  }
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  return res.status(200).json([
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: "lk.questesports.admin",
+        sha256_cert_fingerprints: [env.MOBILE_ADMIN_ANDROID_CERT_SHA256],
+      },
+    },
+  ]);
+});
 const readinessHandler = async (req, res) => {
   if (env.SITE_MAINTENANCE_MODE) {
     return sendMaintenanceResponse(req, res, {
@@ -81,6 +100,9 @@ const readinessHandler = async (req, res) => {
 };
 app.get("/api/health", readinessHandler);
 app.get("/api/health/ready", readinessHandler);
+app.get("/api/capabilities", (req, res) =>
+  res.status(200).json({ success: true, ...getApiCapabilities() }),
+);
 app.use(requireSiteAvailable);
 app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));
 

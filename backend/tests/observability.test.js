@@ -265,3 +265,40 @@ test("logger redacts sensitive fields before writing log payloads", async () => 
     restore();
   }
 });
+
+test("observability transport drains bounded work and opens its failure circuit", async () => {
+  const originalFetch = global.fetch;
+  const { module: transport, restore } = loadModuleWithMocks(transportPath, {});
+  let requests = 0;
+  let reportedErrors = 0;
+
+  try {
+    global.fetch = async () => {
+      requests += 1;
+      throw new Error("collector unavailable");
+    };
+
+    for (let index = 0; index < 5; index += 1) {
+      assert.equal(transport.schedulePostJson({
+        url: "https://monitoring.example.com/events",
+        payload: { index },
+        onError: () => {
+          reportedErrors += 1;
+        },
+      }), true);
+    }
+
+    assert.equal(await transport.flushObservabilityTransport({ timeoutMs: 1000 }), true);
+    assert.equal(requests, 5);
+    assert.equal(reportedErrors, 5);
+    assert.equal(transport.getObservabilityTransportStatus().circuitOpen, true);
+    assert.equal(transport.schedulePostJson({
+      url: "https://monitoring.example.com/events",
+      payload: { afterCircuit: true },
+    }), false);
+    assert.equal(transport.getObservabilityTransportStatus().dropped, 1);
+  } finally {
+    global.fetch = originalFetch;
+    restore();
+  }
+});

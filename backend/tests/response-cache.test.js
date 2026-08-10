@@ -29,8 +29,9 @@ test("concurrent response-cache misses share one successful handler response", a
   const writes = [];
   const { module: responseCache, restore } = loadModuleWithMocks(middlewarePath, {
     [cachePath]: {
-      get: async () => null,
-      set: async (...args) => writes.push(args),
+      resolveKey: async (key) => ({ key, tags: [], versions: [] }),
+      getResolved: async () => null,
+      setResolved: async (...args) => writes.push(args),
       invalidateTags: async () => undefined,
     },
   });
@@ -45,7 +46,7 @@ test("concurrent response-cache misses share one successful handler response", a
 
     await middleware(request, firstResponse, () => { firstNextCalls += 1; });
     const secondRequest = middleware(request, secondResponse, () => { secondNextCalls += 1; });
-    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
     firstResponse.json({ success: true, tournament: { id: "tournament-1" } });
     await secondRequest;
 
@@ -63,8 +64,9 @@ test("concurrent response-cache misses share transient failures without caching 
   const writes = [];
   const { module: responseCache, restore } = loadModuleWithMocks(middlewarePath, {
     [cachePath]: {
-      get: async () => null,
-      set: async (...args) => writes.push(args),
+      resolveKey: async (key) => ({ key, tags: [], versions: [] }),
+      getResolved: async () => null,
+      setResolved: async (...args) => writes.push(args),
       invalidateTags: async () => undefined,
     },
   });
@@ -80,7 +82,7 @@ test("concurrent response-cache misses share transient failures without caching 
 
     await middleware(firstRequest, firstResponse, () => { firstNextCalls += 1; });
     const waitingRequest = middleware(secondRequest, secondResponse, () => { secondNextCalls += 1; });
-    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
     firstResponse.status(503).json({ success: false, message: "Database is busy.", requestId: "first" });
     await waitingRequest;
 
@@ -100,8 +102,9 @@ test("route-scoped public caches may explicitly serve identical responses to coo
   const cachedBody = { status: 200, body: { success: true, data: { source: "challonge" } } };
   const { module: responseCache, restore } = loadModuleWithMocks(middlewarePath, {
     [cachePath]: {
-      get: async () => { reads += 1; return cachedBody; },
-      set: async () => undefined,
+      resolveKey: async (key) => ({ key, tags: [], versions: [] }),
+      getResolved: async () => { reads += 1; return cachedBody; },
+      setResolved: async () => undefined,
       invalidateTags: async () => undefined,
     },
   });
@@ -114,4 +117,27 @@ test("route-scoped public caches may explicitly serve identical responses to coo
     assert.equal(nextCalls, 0);
     assert.equal(response.headers.get("X-Cache"), "HIT");
   } finally { restore(); }
+});
+
+test("a response from an invalidated generation is never cached", async () => {
+  const envPath = path.join(__dirname, "../src/config/env.js");
+  const loggerPath = path.join(__dirname, "../src/lib/logger.js");
+  const { module: cache, restore } = loadModuleWithMocks(cachePath, {
+    [envPath]: {
+      env: {
+        CACHE_DRIVER: "memory",
+        CACHE_KEY_PREFIX: "test-cache",
+        CACHE_MAX_ENTRIES: 100,
+      },
+    },
+    [loggerPath]: { logger: { warn: () => undefined } },
+  });
+  try {
+    const snapshot = await cache.resolveKey("response:/api/home", ["home"]);
+    await cache.invalidateTags(["home"]);
+    assert.equal(await cache.setResolved(snapshot, { stale: true }, 60), false);
+    assert.equal(await cache.get("response:/api/home", ["home"]), null);
+  } finally {
+    restore();
+  }
 });

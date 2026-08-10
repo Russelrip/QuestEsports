@@ -218,6 +218,9 @@ const openApiDocument = {
     "/api/health/ready": {
       get: createOperation("System", "Database-backed readiness check"),
     },
+    "/api/capabilities": {
+      get: createOperation("System", "Frontend deployment compatibility capabilities"),
+    },
     "/api/openapi.json": {
       get: {
         tags: ["System"],
@@ -410,14 +413,6 @@ const openApiDocument = {
             { required: true, description: "Private order capability" },
           ),
         ],
-        responses: { 200: createResponse("Order status") },
-      },
-    },
-    "/api/orders/{publicToken}": {
-      get: {
-        tags: ["Shop"],
-        summary: "Get order status from a legacy capability link",
-        parameters: [createPathParameter("publicToken", { type: "string" })],
         responses: { 200: createResponse("Order status") },
       },
     },
@@ -619,6 +614,15 @@ const additionalPaths = {
     get: createOperation(
       "Tickets",
       "Get a private ticket order and issued QR codes",
+      {
+        parameters: [
+          createHeaderParameter(
+            "X-Ticket-Order-Token",
+            { type: "string", pattern: "^[a-fA-F0-9]{48}$" },
+            { required: true, description: "Private ticket-order capability" },
+          ),
+        ],
+      },
     ),
   },
   "/api/admin/ticket-events": {

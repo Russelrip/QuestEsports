@@ -36,7 +36,6 @@ const {
 } = require("./auth.service");
 
 const MOBILE_ADMIN_OAUTH_REDIRECT = "/mobile-admin-oauth";
-const MOBILE_ADMIN_DEEP_LINK = "questadmin://oauth";
 
 const getAppRedirectUrl = (destination) => {
   const appUrl = String(env.APP_URL || "").trim();
@@ -142,22 +141,27 @@ const startDiscordAuth = asyncHandler(async (req, res) => {
   startOAuth({ provider: "discord", req, res });
 });
 
-const startMobileOAuth = ({ provider, res }) => {
+const startMobileOAuth = ({ provider, req, res }) => {
+  const mobileCodeChallenge = String(req.query.code_challenge || "").trim();
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(mobileCodeChallenge)) {
+    throw new HttpError(400, "A valid mobile OAuth code challenge is required.");
+  }
   const { authorizationUrl, flowCookie } = createOAuthAuthorization({
     provider,
     redirectTo: MOBILE_ADMIN_OAUTH_REDIRECT,
+    mobileCodeChallenge,
   });
 
   res.setHeader("Set-Cookie", flowCookie);
   res.redirect(authorizationUrl);
 };
 
-const startMobileGoogleAuth = asyncHandler(async (_req, res) => {
-  startMobileOAuth({ provider: "google", res });
+const startMobileGoogleAuth = asyncHandler(async (req, res) => {
+  startMobileOAuth({ provider: "google", req, res });
 });
 
-const startMobileDiscordAuth = asyncHandler(async (_req, res) => {
-  startMobileOAuth({ provider: "discord", res });
+const startMobileDiscordAuth = asyncHandler(async (req, res) => {
+  startMobileOAuth({ provider: "discord", req, res });
 });
 
 const login = asyncHandler(async (req, res) => {
@@ -211,7 +215,10 @@ const mobileLogin = asyncHandler(async (req, res) => {
 });
 
 const exchangeMobileOAuthGrant = asyncHandler(async (req, res) => {
-  const result = await consumeMobileOAuthGrant({ token: req.body.grantToken });
+  const result = await consumeMobileOAuthGrant({
+    token: req.body.grantToken,
+    codeVerifier: req.body.codeVerifier,
+  });
   const session = await completeMobileAuthenticatedLogin({
     userId: result.user.id,
     rememberMe: true,
@@ -238,7 +245,7 @@ const mobileLogout = asyncHandler(async (req, res) => {
 });
 
 const completeOAuthLogin = async ({ provider, req, res }) => {
-  const { redirectTo, user } = await handleOAuthCallback({
+  const { redirectTo, mobileCodeChallenge, user } = await handleOAuthCallback({
     provider,
     code: String(req.query.code || ""),
     state: String(req.query.state || ""),
@@ -250,8 +257,12 @@ const completeOAuthLogin = async ({ provider, req, res }) => {
 
   if (redirectTo === MOBILE_ADMIN_OAUTH_REDIRECT) {
     assertMobileAdmin(user);
-    const grant = await createMobileOAuthGrant({ userId: user.id, provider });
-    const appRedirectUrl = new URL(MOBILE_ADMIN_DEEP_LINK);
+    const grant = await createMobileOAuthGrant({
+      userId: user.id,
+      provider,
+      codeChallenge: mobileCodeChallenge,
+    });
+    const appRedirectUrl = new URL(env.MOBILE_ADMIN_OAUTH_REDIRECT_URL);
     appRedirectUrl.searchParams.set("grant", grant.token);
     appRedirectUrl.searchParams.set("provider", provider);
     res.setHeader("Set-Cookie", buildExpiredOAuthFlowCookie(provider));

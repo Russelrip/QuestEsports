@@ -40,21 +40,24 @@ const getGeneration = async (tag) => {
   return String(generations.get(tag) || 0);
 };
 
-const buildKey = async (key, tags) => {
+const resolveKey = async (key, tags = []) => {
   const versions = await Promise.all(tags.map(getGeneration));
-  return namespaced(`${key}:${tags.map((tag, index) => `${tag}@${versions[index]}`).join("|")}`);
+  return {
+    key: namespaced(`${key}:${tags.map((tag, index) => `${tag}@${versions[index]}`).join("|")}`),
+    tags: [...tags],
+    versions,
+  };
 };
 
-const get = async (key, tags = []) => {
+const getResolved = async (snapshot) => {
   try {
-    const resolvedKey = await buildKey(key, tags);
     let value;
     if (env.CACHE_DRIVER === "upstash") {
-      value = await upstashCommand("GET", resolvedKey);
+      value = await upstashCommand("GET", snapshot.key);
     } else {
-      const entry = memory.get(resolvedKey);
+      const entry = memory.get(snapshot.key);
       if (entry?.expiresAt > Date.now()) value = entry.value;
-      else if (entry) memory.delete(resolvedKey);
+      else if (entry) memory.delete(snapshot.key);
     }
     if (value === undefined || value === null) {
       metrics.misses += 1;
@@ -69,21 +72,33 @@ const get = async (key, tags = []) => {
   }
 };
 
-const set = async (key, value, ttlSeconds, tags = []) => {
+const get = async (key, tags = []) => getResolved(await resolveKey(key, tags));
+
+const snapshotIsCurrent = async (snapshot) => {
+  const currentVersions = await Promise.all(snapshot.tags.map(getGeneration));
+  return currentVersions.every((version, index) => String(version) === String(snapshot.versions[index]));
+};
+
+const setResolved = async (snapshot, value, ttlSeconds) => {
   try {
-    const resolvedKey = await buildKey(key, tags);
+    if (!(await snapshotIsCurrent(snapshot))) return false;
     if (env.CACHE_DRIVER === "upstash") {
-      await upstashCommand("SET", resolvedKey, JSON.stringify(value), "EX", ttlSeconds);
+      await upstashCommand("SET", snapshot.key, JSON.stringify(value), "EX", ttlSeconds);
     } else {
       pruneMemory();
-      memory.set(resolvedKey, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
+      memory.set(snapshot.key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
     }
     metrics.writes += 1;
+    return true;
   } catch (error) {
     metrics.errors += 1;
     logger.warn("Cache write failed; response was still served", { error });
+    return false;
   }
 };
+
+const set = async (key, value, ttlSeconds, tags = []) =>
+  setResolved(await resolveKey(key, tags), value, ttlSeconds);
 
 const invalidateTags = async (tags) => {
   await Promise.all(tags.map(async (tag) => {
@@ -109,4 +124,12 @@ const cacheStatus = () => ({
     : 0,
 });
 
-module.exports = { get, set, invalidateTags, cacheStatus };
+module.exports = {
+  resolveKey,
+  getResolved,
+  setResolved,
+  get,
+  set,
+  invalidateTags,
+  cacheStatus,
+};

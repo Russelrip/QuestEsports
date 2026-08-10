@@ -1,11 +1,12 @@
 "use client";
 
 import Image from "next/image";
+import { useState } from "react";
 import EmptyState from "@/components/ui/empty-state";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Poster, resolveImageAssetUrl } from "@/lib/media";
+import { Poster, resolveImageAssetUrl, resolveLegacyImageFallbackUrl } from "@/lib/media";
 
 const posterExternalLinks: Record<string, string> = {
   "VALORANT SHOWDOWN APPRECIATION POST":
@@ -15,16 +16,39 @@ const posterExternalLinks: Record<string, string> = {
 const getPosterExternalLink = (poster: Poster) =>
   posterExternalLinks[poster.title.trim().toUpperCase()] || null;
 
+const PosterImage = ({ poster }: { poster: Poster }) => {
+  const [source, setSource] = useState(resolveImageAssetUrl(poster.imageAsset));
+  return (
+    <Image
+      src={source}
+      alt={poster.title}
+      fill
+      sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
+      className="h-full w-full object-contain transition duration-500 group-hover:scale-[1.015] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+      onError={() => {
+        const fallback = resolveLegacyImageFallbackUrl(poster.imageAsset);
+        if (fallback && source !== fallback) setSource(fallback);
+      }}
+    />
+  );
+};
+
 export default function PosterGallery({
   loading,
   error,
   posters,
   onSelectPoster,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: {
   loading: boolean;
   error: string;
   posters: Poster[];
   onSelectPoster: (poster: Poster) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   return (
     <Section className="pt-6">
@@ -44,19 +68,14 @@ export default function PosterGallery({
       ) : posters.length === 0 ? (
         <EmptyState description="No gallery photos have been added yet." />
       ) : (
+        <>
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {posters.map((poster) => {
             const externalLink = getPosterExternalLink(poster);
             const card = (
               <Card className="group overflow-hidden rounded-none transition duration-300 hover:-translate-y-1 hover:border-purple-300/30 hover:shadow-[0_20px_60px_rgba(168,85,247,0.14)] motion-reduce:transition-none motion-reduce:hover:translate-y-0">
                 <div className="relative aspect-[4/5] overflow-hidden bg-[#0b0712] p-3">
-                  <Image
-                    src={resolveImageAssetUrl(poster.imageAsset)}
-                    alt={poster.title}
-                    fill
-                    sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
-                    className="h-full w-full object-contain transition duration-500 group-hover:scale-[1.015] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  />
+                  <PosterImage poster={poster} />
                 </div>
                 <div className="p-5">
                   <h3 className="text-xl text-white">{poster.title}</h3>
@@ -87,6 +106,19 @@ export default function PosterGallery({
             );
           })}
         </div>
+        {hasMore ? (
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+              className="border border-purple-300/40 px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
+        ) : null}
+        </>
       )}
     </Section>
   );

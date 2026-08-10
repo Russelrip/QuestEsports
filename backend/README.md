@@ -20,7 +20,7 @@ npm run dev
 
 The API defaults to `http://localhost:5001`.
 
-Required environment values are `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME`. Normal development outside automated tests also needs a unique 64-character hexadecimal `AUTH_ENCRYPTION_KEY`. Use [.env.example](./.env.example) as the key reference and [Setup and Deployment](../docs/setup-and-deployment.md) for production requirements.
+Required environment values are `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME`. Remote production database URLs must explicitly use `sslmode=require`, `verify-ca`, or `verify-full`. Normal development outside automated tests also needs a unique 64-character hexadecimal `AUTH_ENCRYPTION_KEY`. Use [.env.example](./.env.example) as the key reference and [Setup and Deployment](../docs/setup-and-deployment.md) for production requirements.
 
 Do not point local development at production. Shared staging environments should use their own database, encryption key, OAuth applications, mail configuration, and upload roots.
 

@@ -54,6 +54,34 @@ test("ticket pricing applies the pair bundle before one odd single", () => {
   }
 });
 
+test("public ticket events aggregate reserved capacity in one grouped query", async () => {
+  let groupCalls = 0;
+  const future = new Date(Date.now() + 86_400_000);
+  const events = [
+    { id: "event-1", slug: "one", title: "One", description: "", venue: "A", startsAt: future, salesStartAt: new Date(0), salesEndAt: future, status: "on_sale", capacity: 100, maxTicketsPerOrder: 4, currency: "LKR", singlePrice: 500, pairPrice: 800 },
+    { id: "event-2", slug: "two", title: "Two", description: "", venue: "B", startsAt: future, salesStartAt: new Date(0), salesEndAt: future, status: "on_sale", capacity: 50, maxTicketsPerOrder: 4, currency: "LKR", singlePrice: 500, pairPrice: 800 },
+  ];
+  const { module: service, restore } = load({
+    ticketEvent: { findMany: async () => events },
+    ticketOrder: {
+      groupBy: async ({ by, where }) => {
+        groupCalls += 1;
+        assert.deepEqual(by, ["eventId"]);
+        assert.deepEqual(where.eventId.in, ["event-1", "event-2"]);
+        return [{ eventId: "event-1", _sum: { quantity: 7 } }];
+      },
+    },
+  });
+  try {
+    const result = await service.listPublicEvents();
+    assert.equal(groupCalls, 1);
+    assert.equal(result[0].availableTickets, 93);
+    assert.equal(result[1].availableTickets, 50);
+  } finally {
+    restore();
+  }
+});
+
 test("a valid ticket is atomically claimed once and audited", async () => {
   const ticket = {
     id: "a6a67b53-e59c-4f12-9de8-b9f0b38cd3b5",

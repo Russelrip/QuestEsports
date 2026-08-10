@@ -64,22 +64,22 @@ const runSerializable = async (work) => {
 };
 
 const queueTicketOrderConfirmation = async (ticketOrderId) => {
-  const claimedAt = new Date();
-  const claimed = await prisma.ticketOrder.updateMany({
-    where: {
-      id: ticketOrderId,
-      status: "paid",
-      confirmationEmailQueuedAt: null,
-    },
-    data: { confirmationEmailQueuedAt: claimedAt },
-  });
-  if (!claimed.count) return false;
-  try {
-    const order = await prisma.ticketOrder.findUnique({
+  return prisma.$transaction(async (tx) => {
+    const claimedAt = new Date();
+    const claimed = await tx.ticketOrder.updateMany({
+      where: {
+        id: ticketOrderId,
+        status: "paid",
+        confirmationEmailQueuedAt: null,
+      },
+      data: { confirmationEmailQueuedAt: claimedAt },
+    });
+    if (!claimed.count) return false;
+    const order = await tx.ticketOrder.findUnique({
       where: { id: ticketOrderId },
       include: { event: { select: { title: true } } },
     });
-    if (!order) return false;
+    if (!order) throw new Error("Claimed ticket order could not be loaded.");
     await sendTicketOrderEmail({
       orderId: order.id,
       email: order.email,
@@ -87,17 +87,10 @@ const queueTicketOrderConfirmation = async (ticketOrderId) => {
       eventTitle: order.event.title,
       quantity: order.quantity,
       rawToken: order.publicToken,
+      database: tx,
     });
     return true;
-  } catch (error) {
-    await prisma.ticketOrder
-      .updateMany({
-        where: { id: ticketOrderId, confirmationEmailQueuedAt: claimedAt },
-        data: { confirmationEmailQueuedAt: null },
-      })
-      .catch(() => undefined);
-    throw error;
-  }
+  });
 };
 
 const isPayHereConfigured = () =>
@@ -292,14 +285,30 @@ const applyTargetStatus = async ({
 
   if (transaction.ticketOrderId) {
     if (status === "paid") {
-      await tx.ticketOrder.update({
+      const order = await tx.ticketOrder.update({
         where: { id: transaction.ticketOrderId },
         data: { status: "paid", capacityReleasedAt: null },
+        include: { event: { select: { title: true } } },
       });
       await tx.ticket.updateMany({
         where: { orderId: transaction.ticketOrderId, status: "pending" },
         data: { status: "valid" },
       });
+      if (!order.confirmationEmailQueuedAt) {
+        await sendTicketOrderEmail({
+          orderId: order.id,
+          email: order.email,
+          firstName: order.firstName,
+          eventTitle: order.event.title,
+          quantity: order.quantity,
+          rawToken: order.publicToken,
+          database: tx,
+        });
+        await tx.ticketOrder.update({
+          where: { id: order.id },
+          data: { confirmationEmailQueuedAt: new Date() },
+        });
+      }
     } else if (
       ["cancelled", "failed", "charged_back", "refunded"].includes(status)
     ) {
@@ -550,15 +559,21 @@ const processPayHereNotification = async (body) => {
       });
     });
   }
-  if (result.status === "paid" && result.ticketOrderId) {
-    await queueTicketOrderConfirmation(result.ticketOrderId).catch((error) => {
-      logger.error("Paid ticket order email queueing failed", {
-        ticketOrderId: result.ticketOrderId,
-        error,
-      });
-    });
-  }
   return result;
+};
+
+const reconcileTicketOrderConfirmations = async ({ batchSize = 25 } = {}) => {
+  const orders = await prisma.ticketOrder.findMany({
+    where: { status: "paid", confirmationEmailQueuedAt: null },
+    orderBy: { updatedAt: "asc" },
+    take: Math.min(Math.max(Number(batchSize) || 25, 1), 100),
+    select: { id: true },
+  });
+  let queued = 0;
+  for (const order of orders) {
+    if (await queueTicketOrderConfirmation(order.id)) queued += 1;
+  }
+  return queued;
 };
 
 const expireStaleCommerceReservations = async ({
@@ -1151,14 +1166,6 @@ const reconcilePayHerePayment = async ({
   if (result.status === "paid" && result.registrationId) {
     await activatePaidTeamRegistration(result.registrationId);
   }
-  if (result.status === "paid" && result.ticketOrderId) {
-    await queueTicketOrderConfirmation(result.ticketOrderId).catch((error) => {
-      logger.error("Reconciled ticket order email queueing failed", {
-        ticketOrderId: result.ticketOrderId,
-        error,
-      });
-    });
-  }
   logger.info("PayHere payment manually reconciled", {
     transactionId: result.id,
     status: result.status,
@@ -1183,4 +1190,5 @@ module.exports = {
   expireStaleCommerceReservations,
   expireTournamentRegistrationReservation,
   reconcilePayHerePayment,
+  reconcileTicketOrderConfirmations,
 };

@@ -199,6 +199,16 @@ enum ChallongeSyncStatus {
   skipped
 }
 
+model DeploymentEnvironment {
+  id          Int      @id @default(1)
+  environment String   @unique
+  projectRef  String?  @map("project_ref")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("deployment_environment")
+}
+
 model User {
   id                      String                      @id @default(uuid()) @db.Uuid
   firstName               String                      @map("first_name")
@@ -378,6 +388,7 @@ model MobileOAuthGrant {
   userId    String       @map("user_id") @db.Uuid
   provider  AuthProvider
   tokenHash String       @unique @map("token_hash")
+  codeChallenge String?  @map("code_challenge")
   expiresAt DateTime     @map("expires_at")
   usedAt    DateTime?    @map("used_at")
   createdAt DateTime     @default(now()) @map("created_at")

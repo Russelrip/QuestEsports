@@ -11,6 +11,7 @@ const sendTicketOrderEmail = async ({
   eventTitle,
   quantity,
   rawToken,
+  database,
 }) =>
   enqueueJob(
     EMAIL_JOB_NAME,
@@ -22,7 +23,7 @@ const sendTicketOrderEmail = async ({
       quantity,
       rawToken,
     },
-    { dedupeKey: `ticket-order-email:${orderId}` },
+    { dedupeKey: `ticket-order-email:${orderId}`, database },
   );
 
 module.exports = { sendTicketOrderEmail };

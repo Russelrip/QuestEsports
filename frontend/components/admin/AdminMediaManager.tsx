@@ -16,6 +16,7 @@ import { apiFetch } from "@/lib/auth";
 import {
   fetchImages,
   fetchPublicUploadFiles,
+  applyLegacyImageFallback,
   resolveImageAssetUrl,
   resolveMediaUrl,
   type ImageAsset,
@@ -67,7 +68,9 @@ export default function AdminMediaManager() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [imageError, setImageError] = useState("");
+  const [storageError, setStorageError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [selected, setSelected] = useState<ImageAsset | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadDescription, setUploadDescription] = useState("");
@@ -86,7 +89,7 @@ export default function AdminMediaManager() {
 
   const loadImages = useCallback(async () => {
     setLoading(true);
-    setError("");
+    setImageError("");
     const params = new URLSearchParams({ page: String(page), pageSize: "24" });
     if (search) params.set("search", search);
     if (category) params.set("category", category);
@@ -96,7 +99,7 @@ export default function AdminMediaManager() {
       setImages(result.images);
       setPagination(result.pagination);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to load the media library.");
+      setImageError(nextError instanceof Error ? nextError.message : "Unable to load the media library.");
     } finally {
       setLoading(false);
     }
@@ -108,6 +111,7 @@ export default function AdminMediaManager() {
 
   const loadStorageFiles = useCallback(async () => {
     setStorageLoading(true);
+    setStorageError("");
     const params = new URLSearchParams({ page: String(storagePage), pageSize: "24" });
     if (search) params.set("search", search);
     if (storageDirectory) params.set("directory", storageDirectory);
@@ -117,7 +121,7 @@ export default function AdminMediaManager() {
       setStorageDirectories(result.directories);
       setStoragePagination(result.pagination);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to load public upload folders.");
+      setStorageError(nextError instanceof Error ? nextError.message : "Unable to load public upload folders.");
     } finally {
       setStorageLoading(false);
     }
@@ -152,7 +156,7 @@ export default function AdminMediaManager() {
     event.preventDefault();
     if (uploadPreviews.length === 0) return;
     setUploading(true);
-    setError("");
+    setActionError("");
 
     try {
       const title =
@@ -179,7 +183,7 @@ export default function AdminMediaManager() {
       });
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : "Unable to upload media.";
-      setError(message);
+      setActionError(message);
       showToast({ tone: "error", title: "Upload failed", description: message });
     } finally {
       setUploading(false);
@@ -364,7 +368,7 @@ export default function AdminMediaManager() {
             </div>
           </Card>
 
-          {error ? <p className="border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+          {actionError || imageError ? <p className="border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{actionError || imageError}</p> : null}
 
           {loading ? (
             <Card className="p-10 text-center text-sm text-slate-400">Loading media...</Card>
@@ -377,7 +381,7 @@ export default function AdminMediaManager() {
                 return (
                   <Card key={asset.id} className="overflow-hidden">
                     <button type="button" className="relative block aspect-[4/3] w-full bg-black/30" onClick={() => setSelected(asset)}>
-                      <img src={resolveImageAssetUrl(asset)} alt={asset.title} loading="lazy" className="h-full w-full object-contain" />
+                      <img src={resolveImageAssetUrl(asset)} alt={asset.title} loading="lazy" className="h-full w-full object-contain" onError={(event) => applyLegacyImageFallback(event.currentTarget, asset)} />
                     </button>
                     <div className="grid gap-3 p-4">
                       <div className="min-w-0">
@@ -437,6 +441,8 @@ export default function AdminMediaManager() {
             <p className="mt-4 text-xs text-slate-500">{storagePagination.total} file{storagePagination.total === 1 ? "" : "s"}{search ? ` matching “${search}”` : ""}</p>
           </Card>
 
+          {storageError ? <p className="border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{storageError}</p> : null}
+
           {storageLoading ? (
             <Card className="p-8 text-center text-sm text-slate-400">Loading upload folders...</Card>
           ) : storageFiles.length === 0 ? (
@@ -481,7 +487,7 @@ export default function AdminMediaManager() {
       {selected ? (
         <MediaModal ariaLabel="Image details" onClose={() => setSelected(null)}>
           <div className="flex min-h-0 flex-1 items-center justify-center bg-black/35 p-2 sm:p-6">
-            <img src={resolveImageAssetUrl(selected)} alt={selected.title} className="max-h-full max-w-full object-contain" />
+            <img src={resolveImageAssetUrl(selected)} alt={selected.title} className="max-h-full max-w-full object-contain" onError={(event) => applyLegacyImageFallback(event.currentTarget, selected)} />
           </div>
           <div className="grid shrink-0 gap-3 pt-4 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="min-w-0">

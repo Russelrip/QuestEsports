@@ -139,11 +139,12 @@ const normalizeRedirectPath = (value) => {
   return normalizeSafeRedirectPath(value) || "/profile";
 };
 
-const createOAuthState = ({ provider, redirectTo, nonce }) =>
+const createOAuthState = ({ provider, redirectTo, nonce, mobileCodeChallenge }) =>
   createSignedPayload({
     provider,
     redirectTo: normalizeRedirectPath(redirectTo),
     nonce,
+    mobileCodeChallenge: mobileCodeChallenge || null,
     timestamp: Date.now(),
   });
 
@@ -182,6 +183,7 @@ const verifyOAuthState = ({ state, provider, flowToken }) => {
   return {
     redirectTo: normalizeRedirectPath(parsedState.redirectTo),
     codeVerifier: parsedFlow.codeVerifier,
+    mobileCodeChallenge: parsedState.mobileCodeChallenge || null,
   };
 };
 
@@ -251,14 +253,20 @@ const getOAuthFlowToken = ({ provider, cookieHeader }) => {
   return "";
 };
 
-const createOAuthAuthorization = ({ provider, redirectTo }) => {
+const createOAuthAuthorization = ({ provider, redirectTo, mobileCodeChallenge }) => {
   const config = getProviderConfig(provider);
   const nonce = crypto.randomBytes(18).toString("hex");
   const codeVerifier = toBase64Url(crypto.randomBytes(32));
   const codeChallenge = toBase64Url(
     crypto.createHash("sha256").update(codeVerifier).digest()
   );
-  const state = createOAuthState({ provider, redirectTo, nonce });
+  if (
+    mobileCodeChallenge &&
+    !/^[A-Za-z0-9_-]{43,128}$/.test(mobileCodeChallenge)
+  ) {
+    throw new HttpError(400, "Invalid mobile OAuth code challenge.");
+  }
+  const state = createOAuthState({ provider, redirectTo, nonce, mobileCodeChallenge });
   const flowToken = createOAuthFlowToken({ provider, nonce, codeVerifier });
   const url = new URL(config.authorizeUrl);
   url.searchParams.set("client_id", config.clientId);
@@ -524,7 +532,7 @@ const handleOAuthCallback = async ({ provider, code, state, flowToken }) => {
     throw new HttpError(400, "OAuth code is missing.");
   }
 
-  const { redirectTo, codeVerifier } = verifyOAuthState({
+  const { redirectTo, codeVerifier, mobileCodeChallenge } = verifyOAuthState({
     state,
     provider,
     flowToken,
@@ -539,6 +547,7 @@ const handleOAuthCallback = async ({ provider, code, state, flowToken }) => {
 
   return {
     redirectTo,
+    mobileCodeChallenge,
     user: mapUserForResponse(user),
   };
 };

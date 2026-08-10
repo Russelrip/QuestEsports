@@ -43,6 +43,11 @@ const contentTypeFromFilename = (filename) => {
   return "image/jpeg";
 };
 
+const filenameTimestamp = (filename) => {
+  const match = String(filename).match(/^(\d{13})-/);
+  return match ? Number(match[1]) : 0;
+};
+
 const isPathInsideDirectory = (directory, targetPath) => {
   const relativePath = path.relative(path.resolve(directory), path.resolve(targetPath));
   return (
@@ -115,29 +120,33 @@ const listPublicUploads = async (query = {}) => {
         .map((entry) => entry.name)
         .filter((filename) => !search || filename.toLowerCase().includes(search));
 
-      return Promise.all(
-        filenames.map(async (filename) => {
-          const stats = await fs.stat(path.join(directory, filename));
-          return {
-            directory: directoryKey,
-            filename,
-            contentType: contentTypeFromFilename(filename),
-            byteSize: stats.size,
-            modifiedAt: stats.mtime,
-            imageUrl: `/api/uploads/${directoryKey}/${filename}`,
-          };
-        })
-      );
+      return filenames.map((filename) => ({ directory: directoryKey, filename }));
     })
   );
 
-  const files = groups
+  const candidates = groups
     .flat()
-    .sort((left, right) => right.modifiedAt.getTime() - left.modifiedAt.getTime());
-  const total = files.length;
+    .sort((left, right) =>
+      filenameTimestamp(right.filename) - filenameTimestamp(left.filename) ||
+      right.filename.localeCompare(left.filename) ||
+      left.directory.localeCompare(right.directory),
+    );
+  const total = candidates.length;
+  const selected = candidates.slice((page - 1) * pageSize, page * pageSize);
+  const files = await Promise.all(selected.map(async ({ directory, filename }) => {
+    const stats = await fs.stat(path.join(UPLOAD_DIRECTORIES[directory], filename));
+    return {
+      directory,
+      filename,
+      contentType: contentTypeFromFilename(filename),
+      byteSize: stats.size,
+      modifiedAt: stats.mtime,
+      imageUrl: `/api/uploads/${directory}/${filename}`,
+    };
+  }));
 
   return {
-    items: files.slice((page - 1) * pageSize, page * pageSize),
+    items: files,
     directories: Object.keys(UPLOAD_DIRECTORIES),
     pagination: {
       page,

@@ -6,7 +6,10 @@ readSiteMaintenanceConfig();
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 const isProduction = process.env.NODE_ENV === "production";
-const allowInsecureLoopbackUrls = process.env.ALLOW_INSECURE_LOOPBACK_URLS === "true";
+const allowInsecureLoopbackUrls =
+  process.env.CI === "true" &&
+  !process.env.VERCEL_ENV &&
+  process.env.ALLOW_INSECURE_LOOPBACK_URLS === "true";
 if (isProduction && (!apiUrl || !siteUrl)) {
   throw new Error(
     "NEXT_PUBLIC_API_URL and NEXT_PUBLIC_SITE_URL are required for production builds."
@@ -55,7 +58,8 @@ const apiRemotePattern = parsedApiUrl
 
 const nextConfig: NextConfig = {
   images: {
-    dangerouslyAllowLocalIP: !isProduction || apiUsesLocalNetwork,
+    dangerouslyAllowLocalIP:
+      !isProduction || (allowInsecureLoopbackUrls && apiUsesLocalNetwork),
     minimumCacheTTL: 3600,
     remotePatterns: [
       {

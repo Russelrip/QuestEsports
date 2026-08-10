@@ -10,7 +10,7 @@
     "lint": "eslint src tests scripts",
     "test": "node --test",
     "test:integration": "node --test tests/database-integration.test.js",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js --test-coverage-exclude=src/generated/** --test-coverage-lines=60 --test-coverage-branches=58 --test-coverage-functions=60",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js --test-coverage-exclude=src/generated/** --test-coverage-lines=68 --test-coverage-branches=60 --test-coverage-functions=68",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
@@ -25,7 +25,8 @@
     "load:stress:db": "k6 run performance/k6-db-stress.js",
     "alerts:test:discord": "node scripts/verify-discord-alert.js",
     "data:copy-public-to-staging": "node scripts/copy-public-data-to-staging.js",
-    "data:copy-public-to-staging:apply": "node scripts/copy-public-data-to-staging.js --apply"
+    "data:copy-public-to-staging:apply": "node scripts/copy-public-data-to-staging.js --apply",
+    "data:copy-public-to-staging:prune": "node scripts/copy-public-data-to-staging.js --apply --prune"
   },
   "keywords": [],
   "author": "",

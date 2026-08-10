@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as Linking from "expo-linking";
+import * as Crypto from "expo-crypto";
+import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { API_URL, ApiError, apiRequest, jsonBody, sessionStore, setUnauthorizedHandler } from "@/api";
 import type { AdminUser, ApiEnvelope } from "@/types";
@@ -19,7 +21,26 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const OAUTH_VERIFIER_KEY = "quest_admin_oauth_verifier";
+const PKCE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
 WebBrowser.maybeCompleteAuthSession();
+
+const createPkcePair = async () => {
+  const bytes = await Crypto.getRandomBytesAsync(64);
+  const verifier = Array.from(
+    bytes,
+    (value) => PKCE_ALPHABET[value % PKCE_ALPHABET.length],
+  ).join("");
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    verifier,
+    { encoding: Crypto.CryptoEncoding.BASE64 },
+  );
+  return {
+    verifier,
+    challenge: digest.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""),
+  };
+};
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
@@ -89,13 +110,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (existingExchange) return existingExchange;
 
     const exchange = (async () => {
+      const codeVerifier = await SecureStore.getItemAsync(OAUTH_VERIFIER_KEY);
+      if (!codeVerifier) {
+        throw new Error("The secure social sign-in session has expired. Please try again.");
+      }
       const data = await apiRequest<
         ApiEnvelope & { token: string; user: AdminUser; expiresAt: string }
       >("/api/mobile/auth/oauth/exchange", {
         method: "POST",
         authenticated: false,
-        ...jsonBody({ grantToken: normalizedGrant }),
+        ...jsonBody({ grantToken: normalizedGrant, codeVerifier }),
       });
+      await SecureStore.deleteItemAsync(OAUTH_VERIFIER_KEY);
       await sessionStore.set(data.token);
       setUser(data.user);
       setSessionError(null);
@@ -112,13 +138,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithProvider = useCallback(
     async (provider: OAuthProvider) => {
-      const redirectUrl = Linking.createURL("oauth");
-      const result = await WebBrowser.openAuthSessionAsync(
+      const { verifier, challenge } = await createPkcePair();
+      await SecureStore.setItemAsync(OAUTH_VERIFIER_KEY, verifier);
+      const redirectUrl =
+        process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URL || Linking.createURL("oauth");
+      const authorizationUrl = new URL(
         `${API_URL}/api/mobile/auth/oauth/${provider}/start`,
+      );
+      authorizationUrl.searchParams.set("code_challenge", challenge);
+      const result = await WebBrowser.openAuthSessionAsync(
+        authorizationUrl.toString(),
         redirectUrl
       );
 
       if (result.type !== "success") {
+        await SecureStore.deleteItemAsync(OAUTH_VERIFIER_KEY);
         throw new Error(`${provider === "google" ? "Google" : "Discord"} sign-in was cancelled.`);
       }
 

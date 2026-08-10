@@ -42,9 +42,7 @@ const getOrder = asyncHandler(async (req, res) =>
     .status(200)
     .json({
       success: true,
-      order: await service.getTicketOrderByToken(
-        req.get("x-ticket-order-token") || req.query.token,
-      ),
+      order: await service.getTicketOrderByToken(req.get("x-ticket-order-token")),
     }),
 );
 const getAdminEvents = asyncHandler(async (_req, res) =>

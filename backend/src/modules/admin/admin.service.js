@@ -1245,6 +1245,7 @@ const exportTeamRegistrations = async (query = {}) => {
     buffer,
     contentType: EXCEL_CONTENT_TYPE,
     filename: buildExportFilename("team-registrations"),
+    recordCount: mappedRegistrations.length,
   };
 };
 
@@ -1394,6 +1395,7 @@ const exportRecruitmentApplications = async (query = {}) => {
     buffer,
     contentType: EXCEL_CONTENT_TYPE,
     filename: buildExportFilename("recruitment-applications"),
+    recordCount: mappedApplications.length,
   };
 };
 

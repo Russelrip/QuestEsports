@@ -32,17 +32,8 @@ export default function TicketOrderStatus() {
       if (!active) return;
       const query = new URLSearchParams(window.location.search);
       const fragment = new URLSearchParams(window.location.hash.slice(1));
-      const publicToken = String(
-        fragment.get("token") || query.get("token") || "",
-      ).trim();
+      const publicToken = String(fragment.get("token") || "").trim();
       setCancelled(query.get("cancelled") === "1");
-      if (query.has("token") && TOKEN_PATTERN.test(publicToken)) {
-        window.history.replaceState(
-          null,
-          "",
-          `/tickets/order${query.get("cancelled") === "1" ? "?cancelled=1" : ""}#token=${publicToken}`,
-        );
-      }
       if (!TOKEN_PATTERN.test(publicToken)) {
         setStatus("invalid");
         return;

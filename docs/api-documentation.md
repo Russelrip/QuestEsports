@@ -67,6 +67,8 @@ List resources add `meta.pagination`. All timestamps are ISO-8601 UTC. Existing 
 - `POST /api/mobile/auth/login` validates the admin username/password and returns the opaque bearer token, expiry, and admin user. Non-admin accounts are rejected.
 - `GET /api/mobile/auth/me` rehydrates the current bearer session.
 - `POST /api/mobile/auth/logout` revokes the current bearer session.
+- `GET /api/mobile/auth/oauth/google/start?code_challenge=...` and the Discord equivalent begin an administrator OAuth flow bound to the app's PKCE challenge.
+- `POST /api/mobile/auth/oauth/exchange` requires both the two-minute grant and the original PKCE verifier. A grant intercepted from the verified App Link cannot be exchanged without that verifier.
 
 The mobile bearer token works with the existing protected admin endpoints; it is not a separate authorization model. Sessions can also be inspected and revoked through `GET /api/sessions`, `DELETE /api/sessions/:sessionId`, and `POST /api/sessions/revoke-others`.
 
@@ -76,7 +78,7 @@ The mobile bearer token works with the existing protected admin endpoints; it is
 - `GET /api/v1/tournaments/:slug`, `/bracket`, and `/matches` return slim tournament data plus the authoritative linked-or-native bracket and normalized schedule.
 - `GET /api/v1/matches` supports `page`, `pageSize`, `status`, `from`, and `to` filters.
 - `GET /api/v1/matches/next?scope=public|me` returns the next relevant fixture. The `me` scope requires a session.
-- `GET /api/v1/events?topics=matches,brackets` is an SSE invalidation stream with heartbeat and reconnect guidance. Clients refetch JSON rather than treating events as match state.
+- `GET /api/v1/events?topics=matches,brackets` is an optional SSE invalidation stream with heartbeat and reconnect guidance. It is disabled by default and enforces total and per-IP connection caps when enabled. Clients refetch JSON rather than treating events as match state.
 
 Tournament administrators and referees can use `/api/v1/admin/tournaments/:id/matches`. Super admins manage `/staff` assignments. Challonge configuration, manual sync, sanitized logs, and confirmed participant mapping are under `/api/v1/admin/tournaments/:id/challonge`. Complete contracts are published by `/api/openapi.json`.
 
@@ -635,11 +637,10 @@ Only active products/variants are public. Capabilities report whether PayHere an
 - `POST /api/orders/quote`
 - `POST /api/orders`
 - `GET /api/orders/status` with `X-Order-Token: <private capability>`
-- `GET /api/orders/:publicToken` only for compatibility with previously issued links
 
 Quotes recompute prices, stock, currency, delivery fee, and total on the server. Orders accept guest or signed-in customer/delivery details, reserve tracked inventory for `SHOP_ORDER_RESERVATION_MINUTES`, reject mixed currencies/non-LKR products, and require the client's expected total/currency to match the server quote. Creating an order requires PayHere configuration.
 
-The public token is an order-access credential and must not be logged or shared. New links keep it in the browser fragment (`/shop/order#token=...`), which is not sent in the HTTP request, and API reads carry it in `X-Order-Token` rather than a path/query. The compatibility route redirects old links and should not be used for new output. Only the verified provider callback can mark PayHere paid.
+The public token is an order-access credential and must not be logged or shared. Links keep it in the browser fragment (`/shop/order#token=...`), which is not sent in the HTTP request, and API reads carry it in `X-Order-Token` rather than a path/query. Only the verified provider callback can mark PayHere paid.
 
 ### Payment status and callbacks
 
@@ -647,7 +648,7 @@ The public token is an order-access credential and must not be logged or shared.
 - `POST /api/payments/payhere/notify`
 - `POST /api/payments/:orderId/bank-transfer-proof`
 
-Payment status requires ownership of the registration/order or the matching merchandise capability in `X-Order-Token`. A legacy `?token=` value is accepted only for previously issued clients. The PayHere notification is form-encoded, rate limited, signature/merchant/order/amount/currency validated, idempotent, and authoritative.
+Payment status requires ownership of the registration/order or the matching merchandise capability in `X-Order-Token`. Order capabilities are never accepted in an API path or query string. The PayHere notification is form-encoded, rate limited, signature/merchant/order/amount/currency validated, idempotent, and authoritative.
 
 Bank-transfer proof upload requires a verified account that owns the registration. It accepts one normalized image by default; PDF is accepted only when explicitly enabled. Proof files are private and are never available through `/api/uploads`.
 

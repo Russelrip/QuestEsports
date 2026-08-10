@@ -35,12 +35,16 @@ Production startup intentionally fails when any of these invariants is broken:
 - `AUTH_ENCRYPTION_KEY` is exactly 64 hexadecimal characters.
 - `APP_URL=https://questesports.lk`.
 - `API_PUBLIC_URL=https://api.questesports.lk`.
+- `MOBILE_ADMIN_OAUTH_REDIRECT_URL=https://api.questesports.lk/mobile-admin-oauth` and `MOBILE_ADMIN_ANDROID_CERT_SHA256` matches the APK release certificate.
 - every `CORS_ORIGIN` entry uses HTTPS.
 - `TRUST_PROXY` is enabled for the Nginx hop.
 - `REQUIRE_API_ORIGIN=true`.
 - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` are configured.
 - `MAIL_DELIVERY_REQUIRED=true` and the selected provider credentials plus `MAIL_FROM` are complete.
 - PayHere values are either all blank or all configured; a configured notify URL must use HTTPS.
+- `DATABASE_URL` and `DIRECT_URL` explicitly use an approved `sslmode` and the mobile App Link fingerprint is configured.
+
+The PKCE migration intentionally leaves `mobile_oauth_grants.code_challenge` nullable for one release so migrations can run before the old API process is replaced. New code writes and requires the challenge and rejects any unbound grant. Enforce the database `NOT NULL` constraint only in a later release after all old API processes are retired.
 
 Use [backend/.env.example](../backend/.env.example) for the full variable list and the [Setup and Deployment Guide](./setup-and-deployment.md) for production examples.
 
@@ -455,5 +459,5 @@ The application uses Prisma, not the Supabase Data API. Disable Data API for the
 
 - Resend requires a verified sending domain for normal application recipients. If switching back, Amazon SES sandbox delivery remains restricted to verified recipients. Production startup always requires complete configuration for the selected provider while password authentication is enabled.
 - PayHere may remain completely unconfigured. Free registrations and bank-transfer tournaments continue to work; PayHere tournament checkout and merchandise checkout remain unavailable until all PayHere values are configured.
-- The frontend deploy is managed by Vercel's Git integration and is not restarted by the backend CD workflow.
+- Vercel automatic production deployment is disabled. The protected `Deploy frontend` workflow promotes an exact CI-passed `main` SHA only after `/api/capabilities` confirms the compatible backend is live.
 - The sitemap and crawler configuration are managed by the frontend deploy. After public-route or metadata changes, follow [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md) and confirm the existing Search Console submission remains healthy.

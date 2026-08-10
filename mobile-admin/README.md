@@ -6,9 +6,11 @@ Quest Admin is the private Android operations client for Quest E-sports. It uses
 
 - Admin username/password login issues a mobile session after the credentials and admin role are validated.
 - Google and Discord login can issue a mobile session after the provider identity resolves to an existing admin account.
-- Social sign-in returns a two-minute, single-use grant to the APK; the reusable bearer token is issued only through the follow-up API exchange.
+- Social sign-in returns a two-minute, single-use grant through the verified `https://api.questesports.lk/mobile-admin-oauth` Android App Link. The grant is bound to an app-generated PKCE verifier, and the reusable bearer token is issued only through the follow-up API exchange.
 - The APK stores that token with Expo SecureStore backed by Android Keystore.
 - No password, GitHub token, signing key, or private API credential is bundled into the APK.
+
+Production must set `MOBILE_ADMIN_OAUTH_REDIRECT_URL=https://api.questesports.lk/mobile-admin-oauth` and `MOBILE_ADMIN_ANDROID_CERT_SHA256` to the release certificate fingerprint. The backend serves that fingerprint from `/.well-known/assetlinks.json`; verify the URL from an unsigned browser before distributing an APK.
 - Operational data stays in memory and is not persisted for offline use.
 - Browser sessions continue using the existing `HttpOnly` cookie and CSRF protections.
 
@@ -40,7 +42,7 @@ git tag admin-v1.0.0
 git push origin admin-v1.0.0
 ```
 
-Configure these repository Actions secrets first:
+Configure these secrets in the `android-release` GitHub Environment only when the repository plan supports private environment secrets and enforced owner review; otherwise build the signed release locally or from a separate owner-only repository:
 
 - `ANDROID_KEYSTORE_BASE64`
 - `ANDROID_KEYSTORE_PASSWORD`
@@ -62,7 +64,7 @@ $encoded = [Convert]::ToBase64String($bytes)
 $encoded | Set-Clipboard
 ```
 
-The workflow generates the native Android project, signs the release APK, adds a SHA-256 checksum, and attaches both files to the private repository release. Keep an encrypted offline backup of the keystore: Android updates must always use the same signing certificate.
+The workflow generates the native Android project, signs the release APK, adds a SHA-256 checksum, and attaches both files to the private repository release. An environment name or workflow actor check alone does not protect secrets from someone who can edit the workflow. Keep an encrypted offline backup of the keystore: Android updates must always use the same signing certificate.
 
 Private GitHub assets require GitHub authentication, so updates are intentionally installed manually. Never embed a GitHub personal access token in the app.
 

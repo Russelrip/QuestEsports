@@ -8,13 +8,15 @@ const servicePath = path.join(__dirname, "../src/modules/payments/payment.servic
 const envPath = path.join(__dirname, "../src/config/env.js");
 const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
 const teamServicePath = path.join(__dirname, "../src/modules/teams/team.service.js");
+const ticketEmailPath = path.join(__dirname, "../src/lib/mail/sendTicketOrderEmail.js");
 const md5 = (value) => crypto.createHash("md5").update(String(value)).digest("hex");
 const env = { PAYHERE_MERCHANT_ID: "1210000", PAYHERE_MERCHANT_SECRET: "secret", PAYHERE_NOTIFY_URL: "https://example.com/api/payments/payhere/notify", APP_URL: "https://example.com", PAYHERE_MODE: "sandbox" };
 const signature = (body) => md5(`${body.merchant_id}${body.order_id}${body.payhere_amount}${body.payhere_currency}${body.status_code}${md5(env.PAYHERE_MERCHANT_SECRET).toUpperCase()}`).toUpperCase();
-const load = (prisma = {}) => loadModuleWithMocks(servicePath, {
+const load = (prisma = {}, additionalMocks = {}) => loadModuleWithMocks(servicePath, {
   [envPath]: { env },
   [prismaPath]: { prisma },
   [teamServicePath]: { activatePaidTeamRegistration: async () => undefined },
+  ...additionalMocks,
 });
 
 test("PayHere checkout hashes are generated only from the configured merchant values", () => {
@@ -109,6 +111,117 @@ test("late successful notifications are routed to manual review", async () => {
     assert.equal(result.status, "review_required");
     assert.equal(appliedStatus, "review_required");
   } finally { restore(); }
+});
+
+test("paid ticket state and its confirmation job commit in one transaction", async () => {
+  const body = {
+    merchant_id: env.PAYHERE_MERCHANT_ID,
+    order_id: "ticket-order-payment",
+    payment_id: "pay-ticket",
+    payhere_amount: "2000.00",
+    payhere_currency: "LKR",
+    status_code: "2",
+    method: "VISA",
+  };
+  body.md5sig = signature(body);
+  const current = {
+    id: "tx-ticket",
+    providerOrderId: body.order_id,
+    amount: 2000,
+    currency: "LKR",
+    status: "pending",
+    notificationDigest: null,
+    registrationId: null,
+    merchandiseOrderId: null,
+    ticketOrderId: "ticket-order-1",
+    ticketOrder: {
+      id: "ticket-order-1",
+      status: "pending_payment",
+      capacityReleasedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      event: { status: "on_sale" },
+    },
+  };
+  const ticketOrderUpdates = [];
+  const emailCalls = [];
+  const order = {
+    id: "ticket-order-1",
+    email: "buyer@example.com",
+    firstName: "Buyer",
+    quantity: 2,
+    publicToken: "public-token",
+    confirmationEmailQueuedAt: null,
+    event: { title: "Quest LAN" },
+  };
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => ({ ...current, ...data }),
+    },
+    ticketOrder: {
+      update: async (args) => {
+        ticketOrderUpdates.push(args);
+        return order;
+      },
+    },
+    ticket: { updateMany: async () => ({ count: 2 }) },
+    paymentNotificationAudit: { create: async () => undefined },
+  };
+  const prisma = {
+    paymentTransaction: { findUnique: async () => current },
+    $transaction: async (callback) => callback(tx),
+  };
+  const { module: service, restore } = load(prisma, {
+    [ticketEmailPath]: {
+      sendTicketOrderEmail: async (args) => emailCalls.push(args),
+    },
+  });
+  try {
+    const result = await service.processPayHereNotification(body);
+    assert.equal(result.status, "paid");
+    assert.equal(emailCalls.length, 1);
+    assert.equal(emailCalls[0].database, tx);
+    assert.equal(emailCalls[0].rawToken, "public-token");
+    assert.ok(ticketOrderUpdates[1].data.confirmationEmailQueuedAt instanceof Date);
+  } finally {
+    restore();
+  }
+});
+
+test("ticket confirmation repair claims and enqueues within one transaction", async () => {
+  const emailCalls = [];
+  const tx = {
+    ticketOrder: {
+      updateMany: async () => ({ count: 1 }),
+      findUnique: async () => ({
+        id: "ticket-order-repair",
+        email: "buyer@example.com",
+        firstName: "Buyer",
+        quantity: 1,
+        publicToken: "repair-token",
+        event: { title: "Quest LAN" },
+      }),
+    },
+  };
+  const prisma = {
+    ticketOrder: {
+      findMany: async () => [{ id: "ticket-order-repair" }],
+    },
+    $transaction: async (callback) => callback(tx),
+  };
+  const { module: service, restore } = load(prisma, {
+    [ticketEmailPath]: {
+      sendTicketOrderEmail: async (args) => emailCalls.push(args),
+    },
+  });
+
+  try {
+    assert.equal(await service.reconcileTicketOrderConfirmations(), 1);
+    assert.equal(emailCalls.length, 1);
+    assert.equal(emailCalls[0].database, tx);
+  } finally {
+    restore();
+  }
 });
 
 test("expired registration maintenance releases review-required bank transfers", async () => {

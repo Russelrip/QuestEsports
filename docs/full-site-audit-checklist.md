@@ -323,7 +323,7 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 - [ ] SHOP-017 Concurrent orders cannot reduce tracked inventory below zero.
 - [ ] SHOP-018 Abandoned/expired pending orders release reserved stock after the configured period.
 
-### Order `/shop/order#token=...` (legacy `/shop/order/[token]` redirects)
+### Order `/shop/order#token=...`
 
 - [ ] SHOP-019 Valid token shows correct items, quantities, unit/line totals, delivery fee, total, payment, order status, and expiry.
 - [ ] SHOP-020 Invalid token does not disclose whether nearby orders exist or expose customer/order data.

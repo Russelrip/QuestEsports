@@ -1,14 +1,14 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { ChangeEvent, FormEvent } from "react";
+import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import EmptyState from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { resolveImageAssetUrl, type ImageAsset } from "@/lib/media";
+import { applyLegacyImageFallback, resolveImageAssetUrl, type ImageAsset } from "@/lib/media";
 import { type UploadPreview } from "@/lib/poster-studio";
 
 type PosterDraftValues = {
@@ -49,6 +49,18 @@ export default function AdminPosterStudio({
   onPosterDraftChange: (updates: Partial<PosterDraftValues>) => void;
   onPosterSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const [imageSearch, setImageSearch] = useState("");
+  const filteredImages = useMemo(() => {
+    const needle = imageSearch.trim().toLowerCase();
+    if (!needle) return images;
+    return images.filter((image) =>
+      image.id === posterDraft.imageAssetId ||
+      [image.title, image.originalName, image.category]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle)),
+    );
+  }, [imageSearch, images, posterDraft.imageAssetId]);
+
   return (
     <section className="pt-6">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -103,9 +115,16 @@ export default function AdminPosterStudio({
                 <Input id="posterTitle" value={posterDraft.title} onChange={(event) => onPosterDraftChange({ title: event.target.value })} placeholder="Open Finals highlights" required />
               </FormField>
               <FormField label="Source image" htmlFor="posterImage">
+                <Input
+                  value={imageSearch}
+                  onChange={(event) => setImageSearch(event.target.value)}
+                  placeholder="Filter images by title or filename"
+                  aria-label="Filter source images"
+                  className="mb-2"
+                />
                 <Select id="posterImage" value={posterDraft.imageAssetId} onChange={(event) => onPosterDraftChange({ imageAssetId: event.target.value })} required>
                   <option value="">Select an uploaded image</option>
-                  {images.map((image) => (
+                  {filteredImages.map((image) => (
                     <option key={image.id} value={image.id}>{image.title} ({image.category})</option>
                   ))}
                 </Select>
@@ -113,7 +132,7 @@ export default function AdminPosterStudio({
 
               {selectedDraftAsset ? (
                 <div className="overflow-hidden rounded-none border border-white/8 bg-white/5 p-3">
-                  <img src={resolveImageAssetUrl(selectedDraftAsset)} alt={selectedDraftAsset.title} className="w-full rounded-none object-cover" />
+                  <img src={resolveImageAssetUrl(selectedDraftAsset)} alt={selectedDraftAsset.title} className="w-full rounded-none object-cover" onError={(event) => applyLegacyImageFallback(event.currentTarget, selectedDraftAsset)} />
                 </div>
               ) : (
                 <EmptyState description="Upload or select an image to preview the gallery entry." />

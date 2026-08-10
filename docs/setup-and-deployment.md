@@ -34,8 +34,8 @@ Backend `backend/.env`:
 ```env
 PORT=5001
 CORS_ORIGIN=http://localhost:3000
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
 LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
@@ -66,6 +66,8 @@ MAIL_DELIVERY_REQUIRED=
 # SMTP_PASS=your_ses_smtp_password
 APP_URL=http://localhost:3000
 API_PUBLIC_URL=http://localhost:5001
+MOBILE_ADMIN_OAUTH_REDIRECT_URL=questadmin://oauth
+MOBILE_ADMIN_ANDROID_CERT_SHA256=
 UPLOAD_ROOT=
 PRIVATE_UPLOAD_ROOT=
 PAYMENT_PROOF_PDF_ENABLED=false
@@ -318,8 +320,8 @@ NODE_ENV=production
 API_PROCESS_COUNT=1
 PORT=5001
 CORS_ORIGIN=https://questesports.lk
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
-DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
 LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
@@ -344,6 +346,8 @@ MAIL_FROM="Quest Esports <no-reply@mail.questesports.lk>"
 MAIL_DELIVERY_REQUIRED=true
 APP_URL=https://questesports.lk
 API_PUBLIC_URL=https://api.questesports.lk
+MOBILE_ADMIN_OAUTH_REDIRECT_URL=https://api.questesports.lk/mobile-admin-oauth
+MOBILE_ADMIN_ANDROID_CERT_SHA256=COLON_SEPARATED_RELEASE_CERTIFICATE_SHA256
 UPLOAD_ROOT=/srv/quest-esports/uploads
 PRIVATE_UPLOAD_ROOT=/srv/quest-esports/private
 PAYMENT_PROOF_PDF_ENABLED=false
@@ -367,6 +371,7 @@ Notes:
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
 - The current French VPS uses the Paris Supavisor session pooler on port `5432` for both database URLs because the direct Supabase endpoint is IPv6.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
+- Mobile administrator OAuth requires the verified API-origin App Link and the colon-separated SHA-256 fingerprint of the release signing certificate.
 - `AUTH_ENCRYPTION_KEY` must be exactly 64 hexadecimal characters; do not rotate an existing key without a data migration plan.
 - Production requires `MAIL_DELIVERY_REQUIRED=true` and complete settings for the selected provider.
 - PayHere merchant values must be all configured or all blank. When blank, free and bank-transfer tournament registration remain available, but PayHere registration and merchandise checkout are disabled.

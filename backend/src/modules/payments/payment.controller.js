@@ -1,4 +1,5 @@
 const { asyncHandler } = require("../../lib/async-handler");
+const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const {
   processPayHereNotification,
   getPaymentStatus,
@@ -22,7 +23,7 @@ const readPaymentStatus = asyncHandler(async (req, res) => {
   const payment = await getPaymentStatus({
     providerOrderId: req.params.orderId,
     userId: req.user?.id,
-    publicToken: req.get("x-order-token") || req.query.token,
+    publicToken: req.get("x-order-token"),
   });
   res.status(200).json({ success: true, payment });
 });
@@ -58,6 +59,13 @@ const uploadBankTransferProof = asyncHandler(async (req, res) => {
 
 const downloadBankTransferProof = asyncHandler(async (req, res) => {
   const proof = await getBankTransferProofFile(req.params.transactionId);
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "bank_transfer_proof.downloaded",
+    targetType: "PaymentTransaction",
+    targetId: req.params.transactionId,
+    afterData: { contentType: proof.contentType, byteSize: proof.buffer.length },
+  });
   const safeName = proof.originalFilename.replace(/["\r\n]/g, "_");
   res.setHeader("Content-Type", proof.contentType);
   res.setHeader("Content-Length", proof.buffer.length);

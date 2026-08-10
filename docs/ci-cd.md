@@ -1,17 +1,16 @@
 # CI/CD Pipeline
 
-This repository uses GitHub Actions for continuous integration and optional backend production deployment.
-
-The frontend is deployed by Vercel's Git integration. Do not configure a separate GitHub Actions Vercel deploy unless you intentionally want to replace the Vercel auto-deploy flow.
+This repository uses GitHub Actions for continuous integration and owner-approved backend, frontend, and Android production releases. Disable Vercel's automatic production deployment from `main`; the protected frontend workflow promotes only the exact CI-passed commit after checking backend API compatibility.
 
 ## Workflows
 
 - `.github/workflows/ci.yml` runs on pull requests to `main` and pushes to `main`.
 - `.github/workflows/secret-scan.yml` scans pull requests and pushes to `main` for committed credentials.
-- `.github/workflows/cd.yml` can only be started manually from the GitHub Actions tab and only deploys when the actor is `Russelrip`.
+- `.github/workflows/cd.yml` can only be started manually from the GitHub Actions tab and only deploys when the actor is the repository owner.
+- `.github/workflows/deploy-frontend.yml` deploys an explicitly supplied, CI-passed `main` SHA after the production backend reports API compatibility version 2 or newer.
 - `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
 
-The APK workflow requires `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` as repository Actions secrets. Because the repository is private, its release assets remain accessible only to authorized GitHub users. Keep the original keystore in encrypted offline custody; all future updates must use the same signing certificate.
+The APK workflow references the `android-release` Environment and accepts only an owner-created tag pointing at the current `main` commit after CI passed that exact SHA. Where the GitHub plan supports required reviewers for private repositories, require repository-owner approval before exposing `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. GitHub Free private repositories cannot use that as a security boundary; keep releases offline or move deployment automation to an owner-only repository before granting another account write access. Keep the original keystore in encrypted offline custody; all future updates must use the same signing certificate.
 
 ## CI Checks
 
@@ -62,6 +61,8 @@ Backend deployment is disabled by default. Enable it with this GitHub repository
 ```text
 BACKEND_DEPLOY_ENABLED=true
 ```
+
+For frontend releases, set `FRONTEND_DEPLOY_ENABLED=true`, set `PRODUCTION_API_URL`, and configure `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID`. Use a `frontend-production` Environment with a required repository-owner reviewer only when the plan supports that protection for private repositories. Otherwise keep production credentials out of any repository writable by collaborators and deploy from an owner-only repository or locally. Run **Deploy frontend** with the full approved `main` SHA only after the backend for that release is healthy.
 
 ## Backend Deployment Secrets
 
@@ -181,7 +182,7 @@ pm2 save
 
 `npm ci` runs the backend `postinstall` hook, which generates the Prisma client. The workflow refuses root deployments and dirty checkouts, validates `.env` permissions and `node_modules` ownership, runs lint and migrations, and then verifies process liveness plus application readiness. In normal operation it also reads tournaments, products, and commerce capabilities. During an approved maintenance window it accepts readiness only when the response is `503` with `X-Maintenance-Mode: active`, and skips public data reads that are intentionally blocked. Any other installation, restart, or health failure restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release).
 
-When a migration file changed, deployment additionally requires the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to equal the exact 40-character `DEPLOY_SHA`. Before applying that migration, CD runs `ops/backup-production.sh`; any missing backup prerequisite, encryption failure, or off-site upload failure aborts deployment. Set this secret only after reviewing the migration and clear it after the successful release. Protect the GitHub `production` environment with required reviewers.
+When a migration file changed, deployment additionally requires `BACKEND_MIGRATION_APPROVAL_SHA` to equal the exact 40-character `DEPLOY_SHA`. Before applying that migration, CD runs `ops/backup-production.sh`; any missing backup prerequisite, encryption failure, or off-site upload failure aborts deployment. Set this secret only after reviewing the migration and clear it after the successful release. Use a required repository-owner reviewer for the `production` Environment only when the plan enforces that protection for private repositories; otherwise perform migration deployment from an owner-only system.
 
 Backup success in CD proves archive creation and remote presence; it does not replace an isolated restore drill. Follow [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) for quarterly restoration, key custody, and full environment recovery.
 

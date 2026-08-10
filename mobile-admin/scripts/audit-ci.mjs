@@ -3,8 +3,20 @@ import { spawnSync } from "node:child_process";
 const minimumSeverity = "high";
 const severityRanks = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 const allowedAdvisories = new Map([
-  [1138808, { packageName: "image-size", advisory: "GHSA-w3rx-r6r6-pgpr" }],
-  [1138809, { packageName: "image-size", advisory: "GHSA-5p2g-fcmc-qvqq" }],
+  [1138808, {
+    packageName: "image-size",
+    advisory: "GHSA-w3rx-r6r6-pgpr",
+    owner: "repository-owner",
+    expiresOn: "2026-09-30",
+    scope: "Expo/Metro build tooling only; uploads are validated by the backend.",
+  }],
+  [1138809, {
+    packageName: "image-size",
+    advisory: "GHSA-5p2g-fcmc-qvqq",
+    owner: "repository-owner",
+    expiresOn: "2026-09-30",
+    scope: "Expo/Metro build tooling only; uploads are validated by the backend.",
+  }],
 ]);
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -48,7 +60,12 @@ const allowed = [];
 
 for (const finding of findings.values()) {
   const exception = allowedAdvisories.get(finding.source);
-  if (exception?.packageName === finding.name && finding.url?.endsWith(exception.advisory)) {
+  const exceptionExpired = exception && Date.now() > Date.parse(`${exception.expiresOn}T23:59:59Z`);
+  if (
+    exception?.packageName === finding.name &&
+    finding.url?.endsWith(exception.advisory) &&
+    !exceptionExpired
+  ) {
     allowed.push(finding);
   } else {
     blocked.push(finding);
@@ -56,7 +73,10 @@ for (const finding of findings.values()) {
 }
 
 for (const finding of allowed) {
-  console.warn(`Allowed temporary build-tool advisory: ${finding.name} ${finding.url}`);
+  const exception = allowedAdvisories.get(finding.source);
+  console.warn(
+    `Allowed temporary build-tool advisory until ${exception.expiresOn} (${exception.owner}): ${finding.name} ${finding.url}`,
+  );
 }
 
 if (blocked.length > 0) {

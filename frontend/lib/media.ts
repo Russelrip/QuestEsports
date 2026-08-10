@@ -370,13 +370,27 @@ const legacyGalleryImageNames = new Set([
 export const resolveImageAssetUrl = (
   asset: Pick<ImageAsset, "imageUrl" | "originalName">
 ) => {
-  const originalName = asset.originalName?.trim().toLowerCase();
-
-  if (originalName && legacyGalleryImageNames.has(originalName)) {
-    return `/images/${originalName}`;
-  }
-
   return resolveMediaUrl(asset.imageUrl);
+};
+
+export const resolveLegacyImageFallbackUrl = (
+  asset: Pick<ImageAsset, "originalName">,
+) => {
+  const originalName = asset.originalName?.trim().toLowerCase();
+  return originalName && legacyGalleryImageNames.has(originalName)
+    ? `/images/${originalName}`
+    : null;
+};
+
+export const applyLegacyImageFallback = (
+  image: HTMLImageElement,
+  asset: Pick<ImageAsset, "originalName">,
+) => {
+  const fallback = resolveLegacyImageFallbackUrl(asset);
+  if (!fallback || image.dataset.legacyFallbackApplied === "true") return false;
+  image.dataset.legacyFallbackApplied = "true";
+  image.src = fallback;
+  return true;
 };
 
 export const fetchImages = async (searchParams?: URLSearchParams) => {
@@ -413,7 +427,19 @@ export const fetchPosters = async (searchParams?: URLSearchParams) => {
     headers: withServerOriginHeader(),
   });
 
-  return parseApiResponse<{ posters: Poster[] }>(response, "Media request failed.");
+  const payload = await parseApiResponse<{ posters: Poster[]; pagination?: MediaPagination }>(
+    response,
+    "Media request failed.",
+  );
+  return {
+    ...payload,
+    pagination: payload.pagination || {
+      page: 1,
+      pageSize: payload.posters.length,
+      total: payload.posters.length,
+      totalPages: 1,
+    },
+  };
 };
 
 export const fetchPublicPosters = async (searchParams?: URLSearchParams) => {
@@ -423,5 +449,17 @@ export const fetchPublicPosters = async (searchParams?: URLSearchParams) => {
     headers: withServerOriginHeader(),
   });
 
-  return parseApiResponse<{ posters: Poster[] }>(response, "Media request failed.");
+  const payload = await parseApiResponse<{ posters: Poster[]; pagination?: MediaPagination }>(
+    response,
+    "Media request failed.",
+  );
+  return {
+    ...payload,
+    pagination: payload.pagination || {
+      page: 1,
+      pageSize: payload.posters.length,
+      total: payload.posters.length,
+      totalPages: 1,
+    },
+  };
 };

@@ -6,6 +6,7 @@ const {
   stopCommerceMaintenance,
 } = require("./lib/commerce-maintenance");
 const { logger } = require("./lib/logger");
+const { flushObservabilityTransport } = require("./lib/observability-transport");
 const { env } = require("./config/env");
 const { ensureUploadDirectories } = require("./middleware/upload");
 const {
@@ -104,6 +105,7 @@ const shutdown = async (signal, exitCode = 0) => {
     if (!shutdownFailed) {
       logger.info("Graceful shutdown completed", { signal });
     }
+    await flushObservabilityTransport({ timeoutMs: 3000 });
     process.exit(shutdownFailed ? 1 : exitCode);
   } finally {
     clearTimeout(deadline);

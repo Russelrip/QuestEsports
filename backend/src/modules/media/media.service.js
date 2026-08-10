@@ -1,6 +1,7 @@
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
+const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
@@ -122,28 +123,6 @@ const buildPagedResponse = ({ items, total, page, pageSize }) => ({
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
   },
 });
-
-const sortPostersByPriority = (posters) =>
-  [...posters].sort((left, right) => {
-    const leftPriority = left.tournament?.displayPriority ?? Number.MAX_SAFE_INTEGER;
-    const rightPriority = right.tournament?.displayPriority ?? Number.MAX_SAFE_INTEGER;
-
-    if (leftPriority !== rightPriority) {
-      return leftPriority - rightPriority;
-    }
-
-    const leftTournamentDate = left.tournament?.endDate || left.tournament?.startDate || left.tournament?.createdAt;
-    const rightTournamentDate =
-      right.tournament?.endDate || right.tournament?.startDate || right.tournament?.createdAt;
-    const leftDate = new Date(leftTournamentDate || left.createdAt).getTime();
-    const rightDate = new Date(rightTournamentDate || right.createdAt).getTime();
-
-    if (leftDate !== rightDate) {
-      return rightDate - leftDate;
-    }
-
-    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-  });
 
 const normalizeCategory = (value, fallback = "poster") => {
   const normalized = normalizeText(value).toLowerCase();
@@ -502,19 +481,46 @@ const listPosters = async (query = {}) => {
       : {}),
   };
 
-  const [total, posters] = await prisma.$transaction([
+  const filters = [];
+  if (IMAGE_CATEGORIES.has(category)) {
+    filters.push(Prisma.sql`p.category = ${category}`);
+  }
+  if (search) {
+    const pattern = `%${search}%`;
+    filters.push(
+      Prisma.sql`(p.title ILIKE ${pattern} OR p.headline ILIKE ${pattern} OR p.description ILIKE ${pattern})`,
+    );
+  }
+  const whereSql = filters.length
+    ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}`
+    : Prisma.empty;
+  const offset = (pagination.page - 1) * pagination.pageSize;
+
+  const [total, orderedIds] = await prisma.$transaction([
     prisma.poster.count({ where }),
-    prisma.poster.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: (pagination.page - 1) * pagination.pageSize,
-      take: pagination.pageSize,
-      include: POSTER_INCLUDE,
-    }),
+    prisma.$queryRaw`
+      SELECT p.id
+      FROM posters p
+      LEFT JOIN tournaments t ON t.id = p.tournament_id
+      ${whereSql}
+      ORDER BY
+        COALESCE(t.display_priority, 2147483647) ASC,
+        COALESCE(t.end_date, t.start_date, t.created_at, p.created_at) DESC,
+        p.created_at DESC,
+        p.id ASC
+      LIMIT ${pagination.pageSize}
+      OFFSET ${offset}
+    `,
   ]);
+  const ids = orderedIds.map((row) => row.id);
+  const posters = ids.length
+    ? await prisma.poster.findMany({ where: { id: { in: ids } }, include: POSTER_INCLUDE })
+    : [];
+  const position = new Map(ids.map((id, index) => [id, index]));
+  posters.sort((left, right) => position.get(left.id) - position.get(right.id));
 
   return buildPagedResponse({
-    items: sortPostersByPriority(posters.map(mapPoster)),
+    items: posters.map(mapPoster),
     total,
     page: pagination.page,
     pageSize: pagination.pageSize,

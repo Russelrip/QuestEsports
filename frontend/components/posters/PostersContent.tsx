@@ -8,7 +8,7 @@ import MediaModal from "@/components/posters/MediaModal";
 import PosterGallery from "@/components/posters/PosterGallery";
 import PosterPreview from "@/components/posters/PosterPreview";
 import { useToastStore } from "@/hooks/useToastStore";
-import { fetchImages, fetchPosters, ImageAsset, Poster } from "@/lib/media";
+import { fetchImages, fetchPosters, ImageAsset, MediaPagination, Poster } from "@/lib/media";
 import {
   buildUploadPreviews,
   deletePoster,
@@ -23,9 +23,11 @@ import {
 export default function PostersContent({
   initialPosters = [],
   initialLoadError = "",
+  initialPagination = { page: 1, pageSize: 18, total: initialPosters.length, totalPages: 1 },
 }: {
   initialPosters?: Poster[];
   initialLoadError?: string;
+  initialPagination?: MediaPagination;
 }) {
   const { user, isLoading: authLoading } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -33,6 +35,8 @@ export default function PostersContent({
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [posters, setPosters] = useState<Poster[]>(initialPosters);
   const [loading, setLoading] = useState(initialPosters.length === 0);
+  const [pagination, setPagination] = useState(initialPagination);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(initialLoadError);
   const [selectedPoster, setSelectedPoster] = useState<Poster | null>(null);
   const [uploadTitle, setUploadTitle] = useState("");
@@ -62,18 +66,24 @@ export default function PostersContent({
       let postersData = null;
 
       if (shouldFetchPosters) {
-        postersData = await fetchPosters();
+        postersData = await fetchPosters(new URLSearchParams({ page: "1", pageSize: "18" }));
         setPosters(postersData.posters);
+        setPagination(postersData.pagination);
       }
 
       if (shouldFetchImages) {
-        const imagesData = await fetchImages();
-        setImages(imagesData.images);
+        const firstImagesPage = await fetchImages(new URLSearchParams({ page: "1", pageSize: "60" }));
+        const allImages = [...firstImagesPage.images];
+        for (let page = 2; page <= firstImagesPage.pagination.totalPages; page += 1) {
+          const nextPage = await fetchImages(new URLSearchParams({ page: String(page), pageSize: "60" }));
+          allImages.push(...nextPage.images);
+        }
+        setImages(allImages);
         setPosterDraft((current) => ({
           ...current,
           imageAssetId:
             current.imageAssetId ||
-            imagesData.images[0]?.id ||
+            allImages[0]?.id ||
             postersData?.posters[0]?.imageAsset.id ||
             initialPosters[0]?.imageAsset.id ||
             "",
@@ -236,6 +246,26 @@ export default function PostersContent({
     }
   };
 
+  const handleLoadMore = async () => {
+    if (loadingMore || pagination.page >= pagination.totalPages) return;
+    setLoadingMore(true);
+    setError("");
+    try {
+      const next = await fetchPosters(
+        new URLSearchParams({ page: String(pagination.page + 1), pageSize: String(pagination.pageSize) }),
+      );
+      setPosters((current) => [
+        ...current,
+        ...next.posters.filter((poster) => !current.some((item) => item.id === poster.id)),
+      ]);
+      setPagination(next.pagination);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to load more gallery entries.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const selectedDraftAsset =
     images.find((image) => image.id === posterDraft.imageAssetId) ||
     posters.find((poster) => poster.imageAsset.id === posterDraft.imageAssetId)?.imageAsset ||
@@ -273,6 +303,9 @@ export default function PostersContent({
         error={error}
         posters={posters}
         onSelectPoster={setSelectedPoster}
+        hasMore={pagination.page < pagination.totalPages}
+        loadingMore={loadingMore}
+        onLoadMore={() => void handleLoadMore()}
       />
 
       {selectedPoster ? (

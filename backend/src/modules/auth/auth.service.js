@@ -113,10 +113,19 @@ const consumeUserToken = async ({
   userId,
   usedAt = new Date(),
 }) => {
-  await tx[model].update({
-    where: { id: recordId },
+  const claimed = await tx[model].updateMany({
+    where: {
+      id: recordId,
+      userId,
+      usedAt: null,
+      expiresAt: { gt: usedAt },
+    },
     data: { usedAt },
   });
+
+  if (claimed.count !== 1) {
+    throw new HttpError(400, "This link is invalid, expired, or was already used.");
+  }
 
   await markOutstandingTokensAsUsed({
     tx,
@@ -129,7 +138,10 @@ const consumeUserToken = async ({
   return usedAt;
 };
 
-const createMobileOAuthGrant = async ({ userId, provider }) => {
+const createMobileOAuthGrant = async ({ userId, provider, codeChallenge }) => {
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(String(codeChallenge || ""))) {
+    throw new HttpError(400, "A valid mobile OAuth code challenge is required.");
+  }
   const grantToken = createTokenPair({ minutes: MOBILE_OAUTH_GRANT_MINUTES });
 
   await prisma.$transaction(async (tx) => {
@@ -144,6 +156,7 @@ const createMobileOAuthGrant = async ({ userId, provider }) => {
         userId,
         provider,
         tokenHash: grantToken.tokenHash,
+        codeChallenge,
         expiresAt: grantToken.expiresAt,
       },
     });
@@ -155,10 +168,14 @@ const createMobileOAuthGrant = async ({ userId, provider }) => {
   };
 };
 
-const consumeMobileOAuthGrant = async ({ token }) => {
+const consumeMobileOAuthGrant = async ({ token, codeVerifier }) => {
   const normalizedToken = normalizeText(token);
   if (!normalizedToken) {
     throw new HttpError(400, "A mobile OAuth grant is required.");
+  }
+  const normalizedVerifier = normalizeText(codeVerifier);
+  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(normalizedVerifier)) {
+    throw new HttpError(400, "A valid mobile OAuth code verifier is required.");
   }
 
   const grant = await prisma.mobileOAuthGrant.findFirst({
@@ -174,6 +191,21 @@ const consumeMobileOAuthGrant = async ({ token }) => {
 
   if (!grant) {
     throw new HttpError(400, "This mobile sign-in has expired or was already used.");
+  }
+  if (!/^[A-Za-z0-9_-]{43,128}$/.test(String(grant.codeChallenge || ""))) {
+    throw new HttpError(400, "This mobile sign-in has expired or was already used.");
+  }
+  const suppliedChallenge = crypto
+    .createHash("sha256")
+    .update(normalizedVerifier)
+    .digest("base64url");
+  const expectedChallenge = Buffer.from(grant.codeChallenge);
+  const actualChallenge = Buffer.from(suppliedChallenge);
+  if (
+    expectedChallenge.length !== actualChallenge.length ||
+    !crypto.timingSafeEqual(expectedChallenge, actualChallenge)
+  ) {
+    throw new HttpError(400, "This mobile sign-in is not valid for this device flow.");
   }
 
   const usedAt = new Date();

@@ -113,13 +113,14 @@ const buildQueuedJobData = (name, payload = {}, options = {}) => {
 };
 
 const enqueueJob = async (name, payload = {}, options = {}) => {
-  const data = buildQueuedJobData(name, payload, options);
+  const { database = prisma, ...jobOptions } = options;
+  const data = buildQueuedJobData(name, payload, jobOptions);
   let job;
   try {
-    job = await prisma.backgroundJob.create({ data });
+    job = await database.backgroundJob.create({ data });
   } catch (error) {
     if (data.dedupeKey && error?.code === "P2002") {
-      const existing = await prisma.backgroundJob.findUnique({
+      const existing = await database.backgroundJob.findUnique({
         where: { dedupeKey: data.dedupeKey },
       });
       if (existing) {

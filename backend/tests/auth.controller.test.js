@@ -174,7 +174,12 @@ test("OAuth controller binds callbacks to the browser flow cookie", async () => 
 test("mobile admin password login issues a bearer session directly", async () => {
   const createSessionCalls = [];
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
-    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [envPath]: {
+      env: {
+        APP_URL: "https://app.example.com",
+        MOBILE_ADMIN_OAUTH_REDIRECT_URL: "https://api.example.com/mobile-admin-oauth",
+      },
+    },
     [loggerPath]: { logger: { info: () => {}, error: () => {} } },
     [oauthPath]: {},
     [sessionPath]: {
@@ -223,7 +228,12 @@ test("mobile Google OAuth returns a one-time app grant", async () => {
   const grantCalls = [];
   let sessionCreated = false;
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
-    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [envPath]: {
+      env: {
+        APP_URL: "https://app.example.com",
+        MOBILE_ADMIN_OAUTH_REDIRECT_URL: "https://api.example.com/mobile-admin-oauth",
+      },
+    },
     [loggerPath]: { logger: { info: () => {}, error: () => {} } },
     [oauthPath]: {
       buildExpiredOAuthFlowCookie: () => "oauth-flow=; Expires=expired",
@@ -234,6 +244,7 @@ test("mobile Google OAuth returns a one-time app grant", async () => {
       getOAuthFlowToken: () => "signed-flow",
       handleOAuthCallback: async () => ({
         redirectTo: "/mobile-admin-oauth",
+        mobileCodeChallenge: "c".repeat(43),
         user: { id: "admin-1", role: "admin" },
       }),
     },
@@ -255,7 +266,7 @@ test("mobile Google OAuth returns a one-time app grant", async () => {
     const startResponse = buildResponse();
     await invoke(
       controller.startMobileGoogleAuth,
-      { query: {} },
+      { query: { code_challenge: "c".repeat(43) } },
       startResponse
     );
     assert.equal(
@@ -274,10 +285,33 @@ test("mobile Google OAuth returns a one-time app grant", async () => {
       callbackResponse
     );
 
-    assert.deepEqual(grantCalls, [{ userId: "admin-1", provider: "google" }]);
+    assert.deepEqual(grantCalls, [{
+      userId: "admin-1",
+      provider: "google",
+      codeChallenge: "c".repeat(43),
+    }]);
     assert.equal(sessionCreated, false);
     assert.equal(callbackResponse.getHeader("Set-Cookie"), "oauth-flow=; Expires=expired");
-    assert.equal(callbackResponse.redirectUrl, "questadmin://oauth?grant=mobile-grant&provider=google");
+    assert.equal(callbackResponse.redirectUrl, "https://api.example.com/mobile-admin-oauth?grant=mobile-grant&provider=google");
+  } finally {
+    restore();
+  }
+});
+
+test("mobile OAuth start rejects requests without PKCE binding", async () => {
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: { createOAuthAuthorization: () => assert.fail("OAuth must not start") },
+    [sessionPath]: {},
+    [authServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      invoke(controller.startMobileGoogleAuth, { query: {} }, buildResponse()),
+      /valid mobile OAuth code challenge/,
+    );
   } finally {
     restore();
   }

@@ -8,14 +8,16 @@ const backendRoot = path.join(__dirname, "..");
 const productionEnv = {
   ...process.env,
   NODE_ENV: "production",
-  DATABASE_URL: "postgresql://quest:quest@db.example.com:5432/quest",
-  DIRECT_URL: "postgresql://quest:quest@db.example.com:5432/quest",
+  DATABASE_URL: "postgresql://quest:quest@db.example.com:5432/quest?sslmode=require",
+  DIRECT_URL: "postgresql://quest:quest@db.example.com:5432/quest?sslmode=require",
   SESSION_COOKIE_NAME: "quest_session",
   AUTH_ENCRYPTION_KEY: "a".repeat(64),
   UPLOAD_ROOT: "/srv/quest/uploads",
   PRIVATE_UPLOAD_ROOT: "/srv/quest/private",
   APP_URL: "https://quest.example.com",
   API_PUBLIC_URL: "https://api.quest.example.com",
+  MOBILE_ADMIN_OAUTH_REDIRECT_URL: "https://api.quest.example.com/mobile-admin-oauth",
+  MOBILE_ADMIN_ANDROID_CERT_SHA256: Array(32).fill("AA").join(":"),
   CORS_ORIGIN: "https://quest.example.com",
   TRUST_PROXY: "1",
   REQUIRE_API_ORIGIN: "true",
@@ -57,6 +59,17 @@ test("environment requires the direct migration database URL", () => {
   assert.match(result.stderr, /Missing required environment variable: DIRECT_URL/);
 });
 
+test("production requires explicit TLS for remote database URLs", () => {
+  for (const [name, value] of [
+    ["DATABASE_URL", "postgresql://quest:quest@db.example.com:5432/quest"],
+    ["DIRECT_URL", "postgresql://quest:quest@db.example.com:5432/quest?sslmode=disable"],
+  ]) {
+    const result = loadEnvironment({ [name]: value });
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, new RegExp(`${name} must explicitly use sslmode`));
+  }
+});
+
 test("production environment rejects insecure OAuth callbacks", () => {
   const result = loadEnvironment({
     GOOGLE_CALLBACK_URL: "http://api.quest.example.com/api/auth/google/callback",
@@ -70,6 +83,26 @@ test("production environment accepts an HTTPS OAuth callback on the API origin",
     GOOGLE_CALLBACK_URL: "https://api.quest.example.com/api/auth/google/callback",
   });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("production binds the mobile OAuth App Link to the API origin", () => {
+  const wrongOrigin = loadEnvironment({
+    MOBILE_ADMIN_OAUTH_REDIRECT_URL: "https://quest.example.com/mobile-admin-oauth",
+  });
+  assert.notEqual(wrongOrigin.status, 0);
+  assert.match(wrongOrigin.stderr, /must be \/mobile-admin-oauth on the API_PUBLIC_URL origin/);
+
+  const wrongPath = loadEnvironment({
+    MOBILE_ADMIN_OAUTH_REDIRECT_URL: "https://api.quest.example.com/oauth",
+  });
+  assert.notEqual(wrongPath.status, 0);
+  assert.match(wrongPath.stderr, /must be \/mobile-admin-oauth on the API_PUBLIC_URL origin/);
+});
+
+test("production requires a valid Android signing certificate fingerprint", () => {
+  const result = loadEnvironment({ MOBILE_ADMIN_ANDROID_CERT_SHA256: "not-a-fingerprint" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /colon-separated SHA-256 signing certificate fingerprint/);
 });
 
 test("production rejects process-local caching when multiple API processes are declared", () => {

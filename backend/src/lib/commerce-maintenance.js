@@ -2,6 +2,7 @@ const { env } = require("../config/env");
 const { logger } = require("./logger");
 const {
   expireStaleCommerceReservations,
+  reconcileTicketOrderConfirmations,
 } = require("../modules/payments/payment.service");
 const {
   cleanupRetainedBankTransferProofs,
@@ -19,6 +20,8 @@ const runCommerceMaintenance = async () => {
   activeRun = (async () => {
     try {
       const result = await expireStaleCommerceReservations();
+      const queuedTicketConfirmations =
+        await reconcileTicketOrderConfirmations();
       const deletedBankTransferProofs =
         await cleanupRetainedBankTransferProofs();
       if (
@@ -31,6 +34,11 @@ const runCommerceMaintenance = async () => {
       if (deletedBankTransferProofs) {
         logger.info("Expired bank-transfer proof files deleted", {
           deletedBankTransferProofs,
+        });
+      }
+      if (queuedTicketConfirmations) {
+        logger.info("Missing paid ticket confirmations queued", {
+          queuedTicketConfirmations,
         });
       }
     } catch (error) {

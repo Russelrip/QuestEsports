@@ -174,6 +174,12 @@ const getTournamentRegistrations = asyncHandler(async (req, res) => {
 
 const downloadTeamRegistrations = asyncHandler(async (req, res) => {
   const exportFile = await exportTeamRegistrations(req.query);
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "team_registration.exported",
+    targetType: "TeamRegistration",
+    afterData: { filters: req.query, recordCount: exportFile.recordCount },
+  });
   sendExcelExport(res, exportFile);
 });
 
@@ -261,6 +267,12 @@ const getRecruitmentApplications = asyncHandler(async (req, res) => {
 
 const downloadRecruitmentApplications = asyncHandler(async (req, res) => {
   const exportFile = await exportRecruitmentApplications(req.query);
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "recruitment_application.exported",
+    targetType: "RecruitmentApplication",
+    afterData: { filters: req.query, recordCount: exportFile.recordCount },
+  });
   sendExcelExport(res, exportFile);
 });
 
