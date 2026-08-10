@@ -6,6 +6,7 @@ const {
   listPaymentTransactions,
   getAdminPaymentTransaction,
   reconcilePayHerePayment,
+  reconcileCashTicketPayment,
   reopenExpiredTournamentPayment,
 } = require("./payment.service");
 const {
@@ -48,6 +49,7 @@ const uploadBankTransferProof = asyncHandler(async (req, res) => {
   const result = await submitBankTransferProof({
     providerOrderId: req.params.orderId,
     user: req.user,
+    publicToken: req.get("x-order-token"),
     file: req.file,
   });
   res.status(201).json({
@@ -86,8 +88,8 @@ const reviewBankTransferPayment = asyncHandler(async (req, res) => {
     success: true,
     message:
       payment.status === "paid"
-        ? "Bank transfer approved and registration confirmed."
-        : "Bank transfer rejected and the slot released.",
+        ? "Bank transfer approved and payment confirmed."
+        : "Bank transfer rejected and the reservation released.",
     payment: { id: payment.id, status: payment.status },
   });
 });
@@ -105,6 +107,23 @@ const reconcilePayHerePaymentController = asyncHandler(async (req, res) => {
     message: payment.status === "paid"
       ? "PayHere payment accepted and the purchase confirmed."
       : "External PayHere refund recorded.",
+    payment: { id: payment.id, status: payment.status },
+  });
+});
+
+const reconcileCashTicketPaymentController = asyncHandler(async (req, res) => {
+  const payment = await reconcileCashTicketPayment({
+    transactionId: req.params.transactionId,
+    decision: req.body.decision,
+    note: req.body.note,
+    admin: req.user,
+  });
+  res.status(200).json({
+    success: true,
+    message:
+      payment.status === "paid"
+        ? "Cash collected and entrance tickets activated."
+        : "Cash order cancelled and capacity released.",
     payment: { id: payment.id, status: payment.status },
   });
 });
@@ -130,5 +149,6 @@ module.exports = {
   downloadBankTransferProof,
   reviewBankTransferPayment,
   reconcilePayHerePayment: reconcilePayHerePaymentController,
+  reconcileCashTicketPayment: reconcileCashTicketPaymentController,
   reopenExpiredPayment,
 };

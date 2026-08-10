@@ -62,6 +62,34 @@ test("bank-transfer fee tiers quote the exact assigned slot price", () => {
   }
 });
 
+test("ticket bank-transfer instructions use the LAN event bank account", () => {
+  const { module: service, restore } = load();
+  try {
+    const expiresAt = new Date(Date.now() + 60_000);
+    const instructions = service.buildBankTransferInstructions({
+      transaction: {
+        providerOrderId: "TICKET-BANK-1",
+        amount: 1600,
+        currency: "LKR",
+        status: "pending",
+        bankTransferProof: null,
+      },
+      ticketOrder: { expiresAt },
+      ticketEvent: {
+        bankName: "Quest Bank",
+        bankBranch: "Colombo",
+        bankAccountName: "Quest E-sports",
+        bankAccountNumber: "123456789",
+      },
+    });
+    assert.equal(instructions.assignedSlotNumber, null);
+    assert.equal(instructions.expiresAt, expiresAt);
+    assert.equal(instructions.bankAccount.accountNumber, "123456789");
+  } finally {
+    restore();
+  }
+});
+
 test("admin approval confirms a reserved bank transfer and activates the team", async () => {
   const registrationUpdates = [];
   let activatedId = null;

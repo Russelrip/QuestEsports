@@ -27,6 +27,7 @@ const ticketEvent: TicketedEvent = {
   currency: "LKR",
   singlePrice: 1500,
   pairPrice: 2500,
+  paymentMethods: ["payhere", "bank_transfer", "cash"],
   salesActive: true,
 };
 

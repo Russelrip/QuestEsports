@@ -24,6 +24,7 @@ export type TicketedEvent = {
   currency: string;
   singlePrice: number;
   pairPrice: number;
+  paymentMethods: Array<"payhere" | "bank_transfer" | "cash">;
   salesActive: boolean;
 };
 

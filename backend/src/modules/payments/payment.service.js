@@ -668,10 +668,20 @@ const loadPaymentStatusTransaction = (providerOrderId) =>
       merchandiseOrder: { select: { userId: true, publicToken: true } },
       ticketOrder: {
         select: {
+          id: true,
           userId: true,
           publicToken: true,
           expiresAt: true,
           status: true,
+          capacityReleasedAt: true,
+          event: {
+            select: {
+              bankName: true,
+              bankBranch: true,
+              bankAccountName: true,
+              bankAccountNumber: true,
+            },
+          },
         },
       },
     },
@@ -705,6 +715,17 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
       throw new HttpError(404, "Payment transaction not found.");
   }
   if (
+    transaction.ticketOrder?.status === "pending_payment" &&
+    !transaction.ticketOrder.capacityReleasedAt &&
+    transaction.ticketOrder.expiresAt <= new Date()
+  ) {
+    const { expireTicketOrderReservation } = require("../tickets/ticket.service");
+    await expireTicketOrderReservation({ orderId: transaction.ticketOrder.id });
+    transaction = await loadPaymentStatusTransaction(providerOrderId);
+    if (!transaction)
+      throw new HttpError(404, "Payment transaction not found.");
+  }
+  if (
     transaction.registration &&
     transaction.registration.verificationStatus !== "verified" &&
     transaction.status !== "paid"
@@ -731,12 +752,18 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
           contactLink: transaction.registration.tournament.contactLink,
         }
       : null,
+    ticketOrder: transaction.ticketOrder
+      ? { expiresAt: transaction.ticketOrder.expiresAt }
+      : null,
     bankTransfer:
-      transaction.provider === "bank_transfer" && transaction.registration
+      transaction.provider === "bank_transfer" &&
+      (transaction.registration || transaction.ticketOrder)
         ? buildBankTransferInstructions({
             transaction,
             registration: transaction.registration,
-            tournament: transaction.registration.tournament,
+            tournament: transaction.registration?.tournament,
+            ticketOrder: transaction.ticketOrder,
+            ticketEvent: transaction.ticketOrder?.event,
           })
         : null,
   };
@@ -1174,6 +1201,74 @@ const reconcilePayHerePayment = async ({
   return result;
 };
 
+const reconcileCashTicketPayment = async ({
+  transactionId,
+  decision,
+  note,
+  admin,
+}) => {
+  const normalizedDecision = String(decision || "").trim().toLowerCase();
+  const normalizedNote = String(note || "").trim().slice(0, 1000);
+  if (!["confirm", "cancel"].includes(normalizedDecision))
+    throw new HttpError(400, "Choose confirm or cancel.");
+  if (!normalizedNote)
+    throw new HttpError(400, "A cash reconciliation note is required.");
+
+  return runSerializable(async (tx) => {
+    const current = await tx.paymentTransaction.findUnique({
+      where: { id: transactionId },
+      include: { ticketOrder: { include: { event: true } } },
+    });
+    if (
+      !current ||
+      current.provider !== "cash" ||
+      current.purpose !== "ticket_order" ||
+      !current.ticketOrder
+    ) {
+      throw new HttpError(404, "Cash entrance payment was not found.");
+    }
+    if (current.status === "paid" && normalizedDecision === "confirm")
+      return current;
+    if (!["created", "pending"].includes(current.status))
+      throw new HttpError(409, "This cash payment is no longer pending.");
+
+    const now = new Date();
+    if (
+      normalizedDecision === "confirm" &&
+      (current.ticketOrder.capacityReleasedAt ||
+        current.ticketOrder.expiresAt <= now ||
+        current.ticketOrder.event.status === "cancelled")
+    ) {
+      throw new HttpError(
+        409,
+        "The cash reservation expired or the event was cancelled.",
+      );
+    }
+    const status = normalizedDecision === "confirm" ? "paid" : "cancelled";
+    const updated = await tx.paymentTransaction.update({
+      where: { id: current.id },
+      data: {
+        status,
+        paidAt: status === "paid" ? now : null,
+        statusMessage:
+          status === "paid"
+            ? "Cash collected and confirmed by Quest staff."
+            : "Cash order cancelled by Quest staff.",
+        reconciledAt: now,
+        reconciledById: admin.id,
+        reconciliationNote: normalizedNote,
+      },
+    });
+    await applyTargetStatus({
+      tx,
+      transaction: updated,
+      previousStatus: current.status,
+      status,
+    });
+    return updated;
+  });
+};
+
 module.exports = {
   assertPayHereConfigured,
   isPayHereConfigured,
@@ -1190,5 +1285,6 @@ module.exports = {
   expireStaleCommerceReservations,
   expireTournamentRegistrationReservation,
   reconcilePayHerePayment,
+  reconcileCashTicketPayment,
   reconcileTicketOrderConfirmations,
 };

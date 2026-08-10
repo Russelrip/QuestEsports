@@ -13,6 +13,7 @@ const {
 } = require("../../middleware/upload");
 const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
+const { sendTicketOrderEmail } = require("../../lib/mail/sendTicketOrderEmail");
 
 const runSerializable = async (work) => {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -53,38 +54,59 @@ const assertBankTransferConfigured = (tournament) => {
   }
 };
 
-const buildBankTransferInstructions = ({ transaction, registration, tournament }) => ({
+const buildBankTransferInstructions = ({
+  transaction,
+  registration,
+  tournament,
+  ticketOrder,
+  ticketEvent,
+}) => ({
   orderId: transaction.providerOrderId,
   reference: transaction.providerOrderId,
-  assignedSlotNumber: registration.assignedSlotNumber,
+  assignedSlotNumber: registration?.assignedSlotNumber || null,
   amount: Number(transaction.amount),
   currency: transaction.currency,
-  expiresAt: registration.reservedUntil,
+  expiresAt: registration?.reservedUntil || ticketOrder?.expiresAt || null,
   status: transaction.status,
   proofSubmitted: Boolean(transaction.bankTransferProof),
   bankAccount: {
-    bankName: tournament.bankName,
-    branch: tournament.bankBranch,
-    accountName: tournament.bankAccountName,
-    accountNumber: tournament.bankAccountNumber,
+    bankName: tournament?.bankName || ticketEvent?.bankName,
+    branch: tournament?.bankBranch || ticketEvent?.bankBranch,
+    accountName: tournament?.bankAccountName || ticketEvent?.bankAccountName,
+    accountNumber:
+      tournament?.bankAccountNumber || ticketEvent?.bankAccountNumber,
   },
 });
 
-const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
+const submitBankTransferProof = async ({ providerOrderId, user, publicToken, file }) => {
   const transaction = await prisma.paymentTransaction.findUnique({
     where: { providerOrderId },
     include: {
       bankTransferProof: true,
       registration: { include: { tournament: true } },
+      ticketOrder: { include: { event: true } },
     },
   });
-  if (!transaction || transaction.provider !== "bank_transfer" || !transaction.registration) {
+  if (
+    !transaction ||
+    transaction.provider !== "bank_transfer" ||
+    (!transaction.registration && !transaction.ticketOrder)
+  ) {
     throw new HttpError(404, "Bank-transfer payment was not found.");
   }
-  if (transaction.registration.userId !== user.id) {
+  const ownsRegistration =
+    transaction.registration && transaction.registration.userId === user?.id;
+  const ownsTicketOrder =
+    transaction.ticketOrder &&
+    (transaction.ticketOrder.userId === user?.id ||
+      transaction.ticketOrder.publicToken === publicToken);
+  if (!ownsRegistration && !ownsTicketOrder) {
     throw new HttpError(403, "Payment access denied.");
   }
-  if (transaction.registration.verificationStatus !== "verified") {
+  if (
+    transaction.registration &&
+    transaction.registration.verificationStatus !== "verified"
+  ) {
     throw new HttpError(409, "Every roster member must accept the team invitation before payment.");
   }
   if (transaction.status === "paid") {
@@ -93,11 +115,10 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
   if (!["created", "pending", "review_required"].includes(transaction.status)) {
     throw new HttpError(409, "This payment is no longer accepting proof uploads.");
   }
-  if (
-    !transaction.registration.reservedUntil ||
-    transaction.registration.reservedUntil <= new Date()
-  ) {
-    throw new HttpError(409, "This slot reservation expired. Start the registration again.");
+  const initialDeadline =
+    transaction.registration?.reservedUntil || transaction.ticketOrder?.expiresAt;
+  if (!initialDeadline || initialDeadline <= new Date()) {
+    throw new HttpError(409, "This payment reservation expired. Start again.");
   }
 
   const persisted = await persistBankTransferProofUpload(file);
@@ -110,15 +131,29 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
         include: {
           bankTransferProof: true,
           registration: { include: { tournament: true } },
+          ticketOrder: { include: { event: true } },
         },
       });
-      if (!current || current.provider !== "bank_transfer" || !current.registration) {
+      if (
+        !current ||
+        current.provider !== "bank_transfer" ||
+        (!current.registration && !current.ticketOrder)
+      ) {
         throw new HttpError(404, "Bank-transfer payment was not found.");
       }
-      if (current.registration.userId !== user.id) {
+      const ownsCurrentRegistration =
+        current.registration && current.registration.userId === user?.id;
+      const ownsCurrentTicketOrder =
+        current.ticketOrder &&
+        (current.ticketOrder.userId === user?.id ||
+          current.ticketOrder.publicToken === publicToken);
+      if (!ownsCurrentRegistration && !ownsCurrentTicketOrder) {
         throw new HttpError(403, "Payment access denied.");
       }
-      if (current.registration.verificationStatus !== "verified") {
+      if (
+        current.registration &&
+        current.registration.verificationStatus !== "verified"
+      ) {
         throw new HttpError(409, "Every roster member must accept the team invitation before payment.");
       }
       if (current.status === "paid") {
@@ -128,8 +163,10 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
         throw new HttpError(409, "This payment is no longer accepting proof uploads.");
       }
       const now = new Date();
-      if (!current.registration.reservedUntil || current.registration.reservedUntil <= now) {
-        throw new HttpError(409, "This slot reservation expired. Start the registration again.");
+      const currentDeadline =
+        current.registration?.reservedUntil || current.ticketOrder?.expiresAt;
+      if (!currentDeadline || currentDeadline <= now) {
+        throw new HttpError(409, "This payment reservation expired. Start again.");
       }
 
       const duplicate = await tx.bankTransferProof.findFirst({
@@ -140,11 +177,14 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
         select: { id: true },
       });
       if (duplicate) {
-        throw new HttpError(409, "This payment proof has already been used for another registration.");
+        throw new HttpError(409, "This payment proof has already been used for another payment.");
       }
 
+      const reviewMinutes = current.registration
+        ? current.registration.tournament.bankTransferReviewMinutes
+        : current.ticketOrder.event.bankTransferReviewMinutes;
       const reviewUntil = new Date(
-        now.getTime() + current.registration.tournament.bankTransferReviewMinutes * 60 * 1000
+        now.getTime() + reviewMinutes * 60 * 1000
       );
       const savedProof = await tx.bankTransferProof.upsert({
         where: { transactionId: current.id },
@@ -177,10 +217,17 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
           statusMessage: "Payment proof submitted and awaiting bank-account verification.",
         },
       });
-      await tx.teamRegistration.update({
-        where: { id: current.registrationId },
-        data: { paymentStatus: "pending", reservedUntil: reviewUntil },
-      });
+      if (current.registrationId) {
+        await tx.teamRegistration.update({
+          where: { id: current.registrationId },
+          data: { paymentStatus: "pending", reservedUntil: reviewUntil },
+        });
+      } else {
+        await tx.ticketOrder.update({
+          where: { id: current.ticketOrderId },
+          data: { expiresAt: reviewUntil },
+        });
+      }
       return {
         proof: savedProof,
         reviewUntil,
@@ -204,7 +251,7 @@ const submitBankTransferProof = async ({ providerOrderId, user, file }) => {
       { operation: "rollbackBankTransferProofUpload", transactionId: transaction.id }
     );
     if (error?.code === "P2002") {
-      throw new HttpError(409, "This payment proof has already been used for another registration.");
+      throw new HttpError(409, "This payment proof has already been used for another payment.");
     }
     throw error;
   }
@@ -245,9 +292,14 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
       include: {
         bankTransferProof: true,
         registration: { include: { tournament: true } },
+        ticketOrder: { include: { event: true } },
       },
     });
-    if (!current || current.provider !== "bank_transfer" || !current.registration) {
+    if (
+      !current ||
+      current.provider !== "bank_transfer" ||
+      (!current.registration && !current.ticketOrder)
+    ) {
       throw new HttpError(404, "Bank-transfer payment was not found.");
     }
     if (!current.bankTransferProof) {
@@ -260,22 +312,35 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
 
     const now = new Date();
     if (normalizedDecision === "approve") {
-      if (!current.registration.reservedUntil || current.registration.reservedUntil <= now) {
-        throw new HttpError(409, "The reservation expired. Reject it and ask the team to register again.");
+      const deadline =
+        current.registration?.reservedUntil || current.ticketOrder?.expiresAt;
+      if (!deadline || deadline <= now) {
+        throw new HttpError(409, "The reservation expired. Reject it and ask the buyer to start again.");
       }
-      const otherActiveCount = await countTournamentCapacityUsage({ tx, tournamentId: current.registration.tournamentId, excludeRegistrationId: current.registration.id, now });
-      if (otherActiveCount >= current.registration.tournament.maxTeams) {
-        throw new HttpError(409, "The tournament no longer has an available slot.");
-      }
-      if (tx.adminSlotReservation?.deleteMany) {
-        await tx.adminSlotReservation.deleteMany({
-          where: { registrationId: current.registration.id },
+      if (current.registration) {
+        const otherActiveCount = await countTournamentCapacityUsage({ tx, tournamentId: current.registration.tournamentId, excludeRegistrationId: current.registration.id, now });
+        if (otherActiveCount >= current.registration.tournament.maxTeams) {
+          throw new HttpError(409, "The tournament no longer has an available slot.");
+        }
+        if (tx.adminSlotReservation?.deleteMany) {
+          await tx.adminSlotReservation.deleteMany({
+            where: { registrationId: current.registration.id },
+          });
+        }
+        await tx.teamRegistration.update({
+          where: { id: current.registration.id },
+          data: { paymentStatus: "paid", reservedUntil: null },
+        });
+      } else {
+        await tx.ticketOrder.update({
+          where: { id: current.ticketOrder.id },
+          data: { status: "paid", capacityReleasedAt: null },
+        });
+        await tx.ticket.updateMany({
+          where: { orderId: current.ticketOrder.id, status: "pending" },
+          data: { status: "valid" },
         });
       }
-      await tx.teamRegistration.update({
-        where: { id: current.registration.id },
-        data: { paymentStatus: "paid", reservedUntil: null },
-      });
       await tx.bankTransferProof.update({
         where: { transactionId: current.id },
         data: {
@@ -284,7 +349,7 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
           rejectionReason: null,
         },
       });
-      return tx.paymentTransaction.update({
+      const payment = await tx.paymentTransaction.update({
         where: { id: current.id },
         data: {
           status: "paid",
@@ -292,21 +357,48 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
           statusMessage: "Bank transfer verified by Quest E-sports.",
         },
       });
+      if (current.ticketOrder && !current.ticketOrder.confirmationEmailQueuedAt) {
+        await sendTicketOrderEmail({
+          orderId: current.ticketOrder.id,
+          email: current.ticketOrder.email,
+          firstName: current.ticketOrder.firstName,
+          eventTitle: current.ticketOrder.event.title,
+          quantity: current.ticketOrder.quantity,
+          rawToken: current.ticketOrder.publicToken,
+          database: tx,
+        });
+        await tx.ticketOrder.update({
+          where: { id: current.ticketOrder.id },
+          data: { confirmationEmailQueuedAt: now },
+        });
+      }
+      return payment;
     }
 
-    if (tx.adminSlotReservation?.deleteMany) {
-      await tx.adminSlotReservation.deleteMany({
-        where: { registrationId: current.registration.id },
+    if (current.registration) {
+      if (tx.adminSlotReservation?.deleteMany) {
+        await tx.adminSlotReservation.deleteMany({
+          where: { registrationId: current.registration.id },
+        });
+      }
+      await tx.teamRegistration.update({
+        where: { id: current.registration.id },
+        data: {
+          paymentStatus: "unpaid",
+          reservedUntil: null,
+          assignedSlotNumber: null,
+        },
+      });
+    } else {
+      await tx.ticketOrder.update({
+        where: { id: current.ticketOrder.id },
+        data: { status: "cancelled", capacityReleasedAt: now },
+      });
+      await tx.ticket.updateMany({
+        where: { orderId: current.ticketOrder.id, status: "pending" },
+        data: { status: "cancelled" },
       });
     }
-    await tx.teamRegistration.update({
-      where: { id: current.registration.id },
-      data: {
-        paymentStatus: "unpaid",
-        reservedUntil: null,
-        assignedSlotNumber: null,
-      },
-    });
     await tx.bankTransferProof.update({
       where: { transactionId: current.id },
       data: {

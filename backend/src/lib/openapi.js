@@ -1186,6 +1186,12 @@ const additionalPaths = {
       parameters: idParameter("transactionId"),
     }),
   },
+  "/api/admin/payments/{transactionId}/cash-reconciliation": {
+    patch: createOperation("Admin", "Confirm or cancel a cash entrance payment", {
+      authenticated: true,
+      parameters: idParameter("transactionId"),
+    }),
+  },
   "/api/admin/payments/{transactionId}/reopen": {
     post: createOperation("Admin", "Reopen an expired tournament payment", {
       authenticated: true,

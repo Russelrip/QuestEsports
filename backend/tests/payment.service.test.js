@@ -224,6 +224,59 @@ test("ticket confirmation repair claims and enqueues within one transaction", as
   }
 });
 
+test("admin cash confirmation activates pending entrance tickets", async () => {
+  const emailCalls = [];
+  const ticketOrder = {
+    id: "cash-order-1",
+    email: "cash@example.com",
+    firstName: "Cash",
+    quantity: 1,
+    publicToken: "cash-token",
+    confirmationEmailQueuedAt: null,
+    capacityReleasedAt: null,
+    expiresAt: new Date(Date.now() + 60_000),
+    event: { title: "Quest LAN", status: "on_sale" },
+  };
+  const current = {
+    id: "cash-payment-1",
+    provider: "cash",
+    purpose: "ticket_order",
+    status: "pending",
+    ticketOrderId: ticketOrder.id,
+    ticketOrder,
+  };
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => ({ ...current, ...data }),
+    },
+    ticketOrder: {
+      update: async ({ data }) => ({ ...ticketOrder, ...data }),
+    },
+    ticket: { updateMany: async () => ({ count: 1 }) },
+  };
+  const { module: service, restore } = load(
+    { $transaction: async (callback) => callback(tx) },
+    {
+      [ticketEmailPath]: {
+        sendTicketOrderEmail: async (args) => emailCalls.push(args),
+      },
+    },
+  );
+  try {
+    const result = await service.reconcileCashTicketPayment({
+      transactionId: current.id,
+      decision: "confirm",
+      note: "Collected at Gate A",
+      admin: { id: "admin-1" },
+    });
+    assert.equal(result.status, "paid");
+    assert.equal(emailCalls.length, 1);
+  } finally {
+    restore();
+  }
+});
+
 test("expired registration maintenance releases review-required bank transfers", async () => {
   const transactionUpdates = [];
   const registrationUpdates = [];

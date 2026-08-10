@@ -33,6 +33,7 @@ const RETRYABLE_TRANSACTION_CODES = new Set([
   "P2034",
   "P2037",
 ]);
+const TICKET_PAYMENT_METHODS = new Set(["payhere", "bank_transfer", "cash"]);
 const ticketSeriesSelect = {
   id: true,
   slug: true,
@@ -174,6 +175,9 @@ const mapPublicEvent = (event, reservedQuantity = 0) => {
     currency: event.currency,
     singlePrice: Number(event.singlePrice),
     pairPrice: Number(event.pairPrice),
+    paymentMethods: Array.isArray(event.paymentMethods)
+      ? event.paymentMethods.filter((method) => TICKET_PAYMENT_METHODS.has(method))
+      : ["payhere"],
     salesActive,
   };
 };
@@ -278,20 +282,35 @@ const validateBuyer = (body, user) => {
 };
 
 const createTicketOrder = async ({ slug, body, user }) => {
-  assertPayHereConfigured();
   const buyer = validateBuyer(body, user);
+  const paymentMethod = normalizeText(body.paymentMethod || "payhere").toLowerCase();
+  if (!TICKET_PAYMENT_METHODS.has(paymentMethod))
+    throw new HttpError(400, "Choose a valid entrance-fee payment method.");
+  if (paymentMethod === "payhere") assertPayHereConfigured();
   const expectedCurrency = normalizeText(body.expectedCurrency).toUpperCase();
   const expectedTotal = decimal(body.expectedTotal, "Expected total");
   const eventSlug = normalizeSlug(slug);
   const orderId = crypto.randomUUID();
   const publicToken = crypto.randomBytes(24).toString("hex");
-  const providerOrderId = `TICKET-${crypto.randomUUID()}`;
+  const providerOrderId = `TICKET-${paymentMethod === "bank_transfer" ? "BANK" : paymentMethod === "cash" ? "CASH" : "PAYHERE"}-${crypto.randomUUID()}`;
 
   const created = await runSerializable(async (tx) => {
     const event = await tx.ticketEvent.findUnique({
       where: { slug: eventSlug },
     });
     if (!event) throw new HttpError(404, "Ticketed event not found.");
+    const availablePaymentMethods = Array.isArray(event.paymentMethods)
+      ? event.paymentMethods
+      : ["payhere"];
+    if (!availablePaymentMethods.includes(paymentMethod)) {
+      throw new HttpError(409, "That payment method is not available for this event.");
+    }
+    if (
+      paymentMethod === "bank_transfer" &&
+      (!event.bankName || !event.bankAccountName || !event.bankAccountNumber)
+    ) {
+      throw new HttpError(503, "Bank transfer is not fully configured for this event.");
+    }
     const now = new Date();
     if (
       event.status !== "on_sale" ||
@@ -362,7 +381,15 @@ const createTicketOrder = async ({ slug, body, user }) => {
       data: {
         id: crypto.randomUUID(),
         purpose: "ticket_order",
-        status: "created",
+        status: paymentMethod === "payhere" ? "created" : "pending",
+        provider: paymentMethod,
+        method: paymentMethod,
+        statusMessage:
+          paymentMethod === "bank_transfer"
+            ? "Awaiting bank-transfer proof."
+            : paymentMethod === "cash"
+              ? "Cash payment must be confirmed by Quest staff."
+              : null,
         providerOrderId,
         ticketOrderId: orderId,
         amount: pricing.total,
@@ -372,18 +399,25 @@ const createTicketOrder = async ({ slug, body, user }) => {
     return { event, order, payment, pricing };
   });
 
-  const checkout = createPayHereCheckout({
-    transaction: created.payment,
-    customer: {
-      ...buyer,
-      address: "Not applicable",
-      city: "Colombo",
-      country: "Sri Lanka",
-    },
-    items: `${created.pricing.quantity} ticket${created.pricing.quantity === 1 ? "" : "s"} for ${created.event.title}`,
-    returnPath: `/tickets/order#token=${encodeURIComponent(publicToken)}`,
-    cancelPath: `/tickets/order?cancelled=1#token=${encodeURIComponent(publicToken)}`,
-  });
+  const orderPath = `/tickets/order#token=${encodeURIComponent(publicToken)}`;
+  const checkout =
+    paymentMethod === "payhere"
+      ? (() => {
+          assertPayHereConfigured();
+          return createPayHereCheckout({
+            transaction: created.payment,
+            customer: {
+              ...buyer,
+              address: "Not applicable",
+              city: "Colombo",
+              country: "Sri Lanka",
+            },
+            items: `${created.pricing.quantity} ticket${created.pricing.quantity === 1 ? "" : "s"} for ${created.event.title}`,
+            returnPath: orderPath,
+            cancelPath: `/tickets/order?cancelled=1#token=${encodeURIComponent(publicToken)}`,
+          });
+        })()
+      : null;
   return {
     order: {
       id: orderId,
@@ -396,6 +430,7 @@ const createTicketOrder = async ({ slug, body, user }) => {
     },
     paymentOrderId: providerOrderId,
     checkout,
+    orderPath,
   };
 };
 
@@ -522,6 +557,44 @@ const parseEventInput = (body, existing) => {
     body.pairPrice ?? existing?.pairPrice,
     "Pair price",
   );
+  let paymentMethods = body.paymentMethods ?? existing?.paymentMethods ?? ["payhere"];
+  if (typeof paymentMethods === "string") {
+    try {
+      paymentMethods = JSON.parse(paymentMethods);
+    } catch {
+      paymentMethods = paymentMethods.split(",");
+    }
+  }
+  paymentMethods = Array.from(
+    new Set(
+      (Array.isArray(paymentMethods) ? paymentMethods : [])
+        .map((method) => normalizeText(method).toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+  if (
+    !paymentMethods.length ||
+    paymentMethods.some((method) => !TICKET_PAYMENT_METHODS.has(method))
+  ) {
+    throw new HttpError(400, "Choose at least one valid payment method.");
+  }
+  const bankTransferReviewMinutes = normalizeInteger(
+    body.bankTransferReviewMinutes ?? existing?.bankTransferReviewMinutes ?? 1440,
+  );
+  const bankName = normalizeText(body.bankName ?? existing?.bankName) || null;
+  const bankBranch = normalizeText(body.bankBranch ?? existing?.bankBranch) || null;
+  const bankAccountName =
+    normalizeText(body.bankAccountName ?? existing?.bankAccountName) || null;
+  const bankAccountNumber =
+    normalizeText(body.bankAccountNumber ?? existing?.bankAccountNumber) || null;
+  if (
+    paymentMethods.includes("bank_transfer") &&
+    (!bankName || !bankAccountName || !bankAccountNumber)
+  ) {
+    throw new HttpError(400, "Complete the bank account details for bank transfers.");
+  }
+  if (!bankTransferReviewMinutes || bankTransferReviewMinutes > 10080)
+    throw new HttpError(400, "Bank-transfer review time is invalid.");
   if (!seriesId)
     throw new HttpError(400, "Choose the LAN event for this entrance fee.");
   if (!title || !slug || !description || !venue)
@@ -581,6 +654,12 @@ const parseEventInput = (body, existing) => {
     salesEndAt,
     singlePrice,
     pairPrice,
+    paymentMethods,
+    bankTransferReviewMinutes,
+    bankName,
+    bankBranch,
+    bankAccountName,
+    bankAccountNumber,
   };
 };
 
@@ -670,6 +749,11 @@ const getEventStats = async (eventId) => {
 
 const mapAdminEvent = (event, stats) => ({
   ...mapPublicEvent(event, stats.reserved || 0),
+  bankTransferReviewMinutes: event.bankTransferReviewMinutes,
+  bankName: event.bankName,
+  bankBranch: event.bankBranch,
+  bankAccountName: event.bankAccountName,
+  bankAccountNumber: event.bankAccountNumber,
   stats,
   createdAt: event.createdAt,
   updatedAt: event.updatedAt,

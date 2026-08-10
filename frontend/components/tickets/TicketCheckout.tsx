@@ -13,6 +13,9 @@ import type { TicketedEvent, TicketQuote } from "@/lib/tickets";
 export default function TicketCheckout({ event }: { event: TicketedEvent }) {
   const [quantity, setQuantity] = useState(Math.min(1, event.availableTickets));
   const [quote, setQuote] = useState<TicketQuote | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<
+    TicketedEvent["paymentMethods"][number]
+  >(event.paymentMethods[0] || "payhere");
   const [buyer, setBuyer] = useState({
     firstName: "",
     lastName: "",
@@ -82,18 +85,23 @@ export default function TicketCheckout({ event }: { event: TicketedEvent }) {
             quantity,
             expectedTotal: quote.total,
             expectedCurrency: quote.currency,
+            paymentMethod,
           },
         },
       );
-      const data = await readApiResponse<{ checkout?: PayHereCheckout }>(
+      const data = await readApiResponse<{
+        checkout?: PayHereCheckout | null;
+        orderPath?: string;
+      }>(
         response,
         "Ticket checkout could not be started.",
       );
-      if (!response.ok || !data.checkout)
+      if (!response.ok || (!data.checkout && !data.orderPath))
         throw new Error(
           data.message || "Ticket checkout could not be started.",
         );
-      submitPayHereCheckout(data.checkout);
+      if (data.checkout) submitPayHereCheckout(data.checkout);
+      else if (data.orderPath) window.location.assign(data.orderPath);
     } catch (nextError) {
       setError(
         nextError instanceof Error
@@ -128,7 +136,7 @@ export default function TicketCheckout({ event }: { event: TicketedEvent }) {
             </p>
           </div>
         </div>
-        <FormField label="Quantity" required className="mt-6">
+          <FormField label="Quantity" required className="mt-6">
           <Input
             type="number"
             min={1}
@@ -215,6 +223,41 @@ export default function TicketCheckout({ event }: { event: TicketedEvent }) {
               }
             />
           </FormField>
+          <FormField label="Payment method" required className="mt-6">
+            <div className="grid gap-3">
+              {event.paymentMethods.map((method) => (
+                <label
+                  key={method}
+                  className={`flex cursor-pointer items-start gap-3 border p-4 ${paymentMethod === method ? "border-purple-300/50 bg-purple-400/10" : "border-white/10 bg-black/10"}`}
+                >
+                  <input
+                    type="radio"
+                    name="ticket-payment-method"
+                    value={method}
+                    checked={paymentMethod === method}
+                    onChange={() => setPaymentMethod(method)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block font-semibold text-white">
+                      {method === "payhere"
+                        ? "Pay online with PayHere"
+                        : method === "bank_transfer"
+                          ? "Manual bank transfer"
+                          : "Cash at the entrance"}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-400">
+                      {method === "payhere"
+                        ? "Complete payment securely online."
+                        : method === "bank_transfer"
+                          ? "Transfer the exact amount, upload the receipt, and wait for admin approval."
+                          : "Show the pending order at the entrance. QR tickets activate after staff collect and confirm the cash."}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </FormField>
           <FormField label="Phone" required>
             <Input
               required
@@ -232,11 +275,17 @@ export default function TicketCheckout({ event }: { event: TicketedEvent }) {
             type="submit"
             disabled={!event.salesActive || !quote || quoteLoading || loading}
           >
-            {loading ? "Starting secure payment…" : "Proceed to secure payment"}
+            {loading
+              ? "Creating order…"
+              : paymentMethod === "payhere"
+                ? "Proceed to secure payment"
+                : paymentMethod === "bank_transfer"
+                  ? "Continue to bank instructions"
+                  : "Create cash payment order"}
           </Button>
           <p className="text-xs leading-6 text-slate-500">
-            Prices and capacity are verified by the server. Tickets activate
-            only after PayHere confirms payment.
+            Prices and capacity are verified by the server. QR tickets activate
+            only after the selected payment is confirmed.
           </p>
         </form>
       </Card>

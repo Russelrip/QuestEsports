@@ -36,6 +36,7 @@ type PaymentStatus = {
     assignedSlotNumber?: number | null;
     contactLink?: string | null;
   } | null;
+  ticketOrder?: { expiresAt: string } | null;
   bankTransfer?: {
     reference: string;
     assignedSlotNumber: number | null;
@@ -144,6 +145,7 @@ export default function PaymentStatusCard({
   const contactHref = payment?.registration?.contactLink || "/contact";
   const isBankTransfer =
     payment?.provider === "bank_transfer" ? payment.bankTransfer || null : null;
+  const isCash = payment?.provider === "cash";
   let statusTitle = payment
     ? payment.status.replace(/_/g, " ")
     : "Checking payment…";
@@ -155,7 +157,8 @@ export default function PaymentStatusCard({
   else if (payment?.status === "failed") statusTitle = "Proof needs attention";
   else if (payment?.status === "refunded") statusTitle = "Payment refunded";
   else if (isBankTransfer?.proofSubmitted) statusTitle = "Proof under review";
-  else if (isBankTransfer) statusTitle = "Slot reserved";
+  else if (isBankTransfer) statusTitle = "Bank transfer pending";
+  else if (isCash) statusTitle = "Cash payment pending";
 
   const copyValue = async (kind: "account" | "reference", value: string) => {
     try {
@@ -180,7 +183,13 @@ export default function PaymentStatusCard({
     try {
       const { response, data } = await apiFetchJson<{ message?: string }>(
         `/api/payments/${encodeURIComponent(payment.orderId)}/bank-transfer-proof`,
-        { method: "POST", body },
+        {
+          method: "POST",
+          body,
+          ...(publicToken
+            ? { headers: { "X-Order-Token": publicToken } }
+            : {}),
+        },
       );
       if (!response.ok)
         throw new Error(data.message || "Payment proof could not be uploaded.");
@@ -241,13 +250,16 @@ export default function PaymentStatusCard({
           <span className="break-all">{payment.orderId}</span>
         </p>
       ) : null}
-      {payment?.purpose === "tournament_registration" &&
-      payment.registration?.expiresAt &&
+      {(payment?.registration?.expiresAt || payment?.ticketOrder?.expiresAt) &&
       !terminalSuccess &&
       !reservationExpired ? (
         <div className="mt-7 text-left">
           <ReservationCountdown
-            expiresAt={payment.registration.expiresAt}
+            expiresAt={
+              payment.registration?.expiresAt ||
+              payment.ticketOrder?.expiresAt ||
+              ""
+            }
             label={
               isBankTransfer?.proofSubmitted
                 ? "Admin review time remaining"
@@ -260,14 +272,14 @@ export default function PaymentStatusCard({
           />
         </div>
       ) : null}
-      {reservationExpired && payment?.purpose === "tournament_registration" ? (
+      {reservationExpired ? (
         <div className="mt-7 border border-rose-300/30 bg-rose-400/10 p-5 text-left">
           <p className="font-semibold text-rose-100">
-            Your payment window ran out and the slot is no longer reserved.
+            Your payment window ran out and the reservation was released.
           </p>
           <p className="mt-2 text-sm leading-6 text-rose-100/75">
-            Please contact an administrator to request help. A new slot can only
-            be assigned if tournament capacity is still available.
+            Start a new order if capacity is still available, or contact an
+            administrator if payment was already made.
           </p>
           <Link
             href={contactHref}
@@ -297,7 +309,9 @@ export default function PaymentStatusCard({
           />
           <div className="min-w-0 rounded-[22px] border border-purple-300/20 bg-purple-300/5 p-4 sm:p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-purple-200">
-              Assigned slot #{isBankTransfer.assignedSlotNumber}
+              {isBankTransfer.assignedSlotNumber
+                ? `Assigned slot #${isBankTransfer.assignedSlotNumber}`
+                : "Entrance payment details"}
             </p>
             <dl className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
               <div className="min-w-0">
@@ -413,7 +427,7 @@ export default function PaymentStatusCard({
                         Checkpoint reached
                       </p>
                       <p className="mt-1 text-xs leading-5 text-emerald-100/70">
-                        Your slot remains held while the team verifies the
+                        Your reservation remains held while the team verifies the
                         transfer. You can replace the image below if you
                         uploaded the wrong receipt.
                       </p>
@@ -485,14 +499,30 @@ export default function PaymentStatusCard({
           ) : null}
         </div>
       ) : null}
+      {isCash && !terminalSuccess && !reservationExpired ? (
+        <div className="mt-7 border border-amber-300/25 bg-amber-300/5 p-5 text-left">
+          <p className="font-semibold text-amber-100">Pay cash at the entrance</p>
+          <p className="mt-2 text-sm leading-6 text-amber-100/75">
+            Show this order reference to Quest staff and pay the exact amount.
+            Your QR tickets appear only after staff confirm the cash was collected.
+          </p>
+          <p className="mt-3 break-all text-sm font-semibold text-white">
+            Reference: {payment?.orderId}
+          </p>
+        </div>
+      ) : null}
       <p className="mt-4 text-sm leading-7 text-slate-400">
-        {reservationExpired && payment?.purpose === "tournament_registration"
-          ? "This reservation cannot be restarted automatically. An administrator must review it before another payment window can be opened."
+        {reservationExpired
+          ? "This reservation cannot be restarted automatically. Create another order or contact an administrator."
           : terminalSuccess
             ? isBankTransfer
-              ? "Quest E-sports verified the transfer against the bank account and confirmed your registration."
-              : "The verified PayHere notification has been saved and your record is confirmed."
-            : checkoutCancelled
+              ? "Quest E-sports verified the transfer against the bank account and confirmed your payment."
+              : isCash
+                ? "Quest staff confirmed the cash was collected and activated your tickets."
+                : "The verified PayHere notification has been saved and your record is confirmed."
+            : isCash
+              ? payment?.statusMessage || "Waiting for Quest staff to confirm the cash payment."
+              : checkoutCancelled
               ? "You returned before payment was confirmed. Review the order status before starting another checkout."
               : isBankTransfer
                 ? payment?.statusMessage ||

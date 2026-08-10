@@ -686,6 +686,55 @@ function PaymentDetailView({
             </div>
           ) : null}
 
+          {payment.provider === "cash" &&
+          payment.purpose === "ticket_order" &&
+          ["created", "pending"].includes(payment.status) ? (
+            <div className="mt-5 grid gap-3 border border-amber-300/20 p-4">
+              <p className="text-sm text-amber-100">
+                Confirm only after staff have physically collected the full cash amount.
+              </p>
+              <Textarea
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Required note, such as gate and staff reference"
+                rows={3}
+              />
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
+                <Button
+                  type="button"
+                  disabled={busy || !reason.trim()}
+                  onClick={() =>
+                    void runAction(
+                      `/api/admin/payments/${payment.id}/cash-reconciliation`,
+                      {
+                        method: "PATCH",
+                        json: { decision: "confirm", note: reason },
+                      },
+                    )
+                  }
+                >
+                  Confirm cash collected
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy || !reason.trim()}
+                  onClick={() =>
+                    void runAction(
+                      `/api/admin/payments/${payment.id}/cash-reconciliation`,
+                      {
+                        method: "PATCH",
+                        json: { decision: "cancel", note: reason },
+                      },
+                    )
+                  }
+                >
+                  Cancel cash order
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {payment.purpose === "tournament_registration" &&
           payment.status === "expired" ? (
             <div className="mt-5 border border-amber-300/20 p-4">

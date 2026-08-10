@@ -53,6 +53,12 @@ type TicketEvent = {
   currency: string;
   singlePrice: number;
   pairPrice: number;
+  paymentMethods: Array<"payhere" | "bank_transfer" | "cash">;
+  bankTransferReviewMinutes: number;
+  bankName: string | null;
+  bankBranch: string | null;
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
   stats: {
     orders: Record<string, number>;
     tickets: Record<string, number>;
@@ -120,6 +126,12 @@ type EventForm = {
   currency: string;
   singlePrice: string;
   pairPrice: string;
+  paymentMethods: Array<"payhere" | "bank_transfer" | "cash">;
+  bankTransferReviewMinutes: string;
+  bankName: string;
+  bankBranch: string;
+  bankAccountName: string;
+  bankAccountNumber: string;
 };
 type Tab = "overview" | "orders" | "tickets" | "check-in" | "reports";
 
@@ -138,6 +150,12 @@ const blankForm: EventForm = {
   currency: "LKR",
   singlePrice: "500",
   pairPrice: "800",
+  paymentMethods: ["payhere"],
+  bankTransferReviewMinutes: "1440",
+  bankName: "",
+  bankBranch: "",
+  bankAccountName: "",
+  bankAccountNumber: "",
 };
 
 const eventToForm = (event: TicketEvent): EventForm => ({
@@ -155,6 +173,12 @@ const eventToForm = (event: TicketEvent): EventForm => ({
   currency: event.currency,
   singlePrice: String(event.singlePrice),
   pairPrice: String(event.pairPrice),
+  paymentMethods: event.paymentMethods,
+  bankTransferReviewMinutes: String(event.bankTransferReviewMinutes),
+  bankName: event.bankName || "",
+  bankBranch: event.bankBranch || "",
+  bankAccountName: event.bankAccountName || "",
+  bankAccountNumber: event.bankAccountNumber || "",
 });
 
 const statusTone = (value: string) =>
@@ -240,6 +264,7 @@ export default function AdminTicketsManager() {
         maxTicketsPerOrder: Number(form.maxTicketsPerOrder),
         singlePrice: Number(form.singlePrice),
         pairPrice: Number(form.pairPrice),
+        bankTransferReviewMinutes: Number(form.bankTransferReviewMinutes),
       };
       const data = await adminRequest<{ event: TicketEvent }>(
         selected
@@ -1066,6 +1091,13 @@ function EventEditor({
       >,
     ) => setForm((current) => ({ ...current, [key]: input.target.value })),
   });
+  const togglePaymentMethod = (method: EventForm["paymentMethods"][number]) =>
+    setForm((current) => ({
+      ...current,
+      paymentMethods: current.paymentMethods.includes(method)
+        ? current.paymentMethods.filter((candidate) => candidate !== method)
+        : [...current.paymentMethods, method],
+    }));
   return (
     <Card className="p-6 sm:p-8">
       <h3 className="text-3xl text-white">
@@ -1172,6 +1204,50 @@ function EventEditor({
             />
           </FormField>
         </div>
+        <FormField
+          label="Accepted payment methods"
+          hint="Choose one or more methods available to entrance-pass buyers."
+          required
+        >
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              ["payhere", "PayHere online"],
+              ["bank_transfer", "Manual bank transfer"],
+              ["cash", "Cash at entrance"],
+            ].map(([value, label]) => {
+              const method = value as EventForm["paymentMethods"][number];
+              return (
+                <label key={method} className="flex items-center gap-3 border border-white/10 p-4 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={form.paymentMethods.includes(method)}
+                    onChange={() => togglePaymentMethod(method)}
+                  />
+                  {label}
+                </label>
+              );
+            })}
+          </div>
+        </FormField>
+        {form.paymentMethods.includes("bank_transfer") ? (
+          <div className="grid gap-5 border border-white/10 bg-black/15 p-5 sm:grid-cols-2">
+            <FormField label="Bank name" required>
+              <Input required {...field("bankName")} />
+            </FormField>
+            <FormField label="Branch">
+              <Input {...field("bankBranch")} />
+            </FormField>
+            <FormField label="Account name" required>
+              <Input required {...field("bankAccountName")} />
+            </FormField>
+            <FormField label="Account number" required>
+              <Input required {...field("bankAccountNumber")} />
+            </FormField>
+            <FormField label="Admin review time (minutes)" required>
+              <Input type="number" min="1" max="10080" required {...field("bankTransferReviewMinutes")} />
+            </FormField>
+          </div>
+        ) : null}
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         <div className="flex flex-wrap gap-3">
           <Button type="submit" disabled={saving}>

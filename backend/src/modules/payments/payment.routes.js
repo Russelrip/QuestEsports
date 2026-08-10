@@ -1,8 +1,6 @@
 const express = require("express");
 const {
-  requireAuth,
   requireAdmin,
-  requireVerifiedEmail,
 } = require("../auth/auth.middleware");
 const { paymentProofUpload } = require("../../middleware/upload");
 const {
@@ -14,6 +12,7 @@ const {
   downloadBankTransferProof,
   reviewBankTransferPayment,
   reconcilePayHerePayment,
+  reconcileCashTicketPayment,
   reopenExpiredPayment,
 } = require("./payment.controller");
 const { createRateLimiter } = require("../../middleware/rate-limit");
@@ -35,8 +34,6 @@ router.post("/payments/payhere/notify", notificationLimiter, notifyPayHere);
 router.get("/payments/:orderId", readPaymentStatus);
 router.post(
   "/payments/:orderId/bank-transfer-proof",
-  requireAuth,
-  requireVerifiedEmail,
   proofUploadLimiter,
   paymentProofUpload.single("proof"),
   uploadBankTransferProof
@@ -64,6 +61,12 @@ router.patch(
   requireAdmin,
   express.json(),
   reconcilePayHerePayment
+);
+router.patch(
+  "/admin/payments/:transactionId/cash-reconciliation",
+  requireAdmin,
+  express.json(),
+  reconcileCashTicketPayment
 );
 
 module.exports = router;
