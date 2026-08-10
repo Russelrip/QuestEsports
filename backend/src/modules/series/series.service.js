@@ -8,6 +8,7 @@ const {
   tournamentBannerDirectory,
 } = require("../../middleware/upload");
 const { mapTournament, buildRegistrationCountInclude } = require("../tournaments/tournament.service");
+const { getPublicEventForSeries } = require("../tickets/ticket.service");
 
 const mapSeries = (series) => ({
   id: series.id,
@@ -49,7 +50,10 @@ const getPublicSeriesBySlug = async (slug) => {
     include: { tournaments: buildSeriesTournamentInclude() },
   });
   if (!series) throw new HttpError(404, "Event series not found.");
-  return mapSeries(series);
+  return {
+    ...mapSeries(series),
+    ticketEvent: await getPublicEventForSeries(series.id),
+  };
 };
 
 const listAdminSeries = async () => {

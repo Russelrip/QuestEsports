@@ -271,6 +271,7 @@ model EventSeries {
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
   tournaments   Tournament[]
+  ticketEvent   TicketEvent?
 
   @@index([isPublished, displayOrder])
   @@map("event_series")
@@ -928,6 +929,7 @@ model PaymentTransaction {
 
 model TicketEvent {
   id                 String            @id @default(uuid()) @db.Uuid
+  seriesId           String?           @unique @map("series_id") @db.Uuid
   slug               String            @unique
   title              String
   description        String
@@ -943,6 +945,7 @@ model TicketEvent {
   pairPrice          Decimal           @map("pair_price") @db.Decimal(12, 2)
   createdAt          DateTime          @default(now()) @map("created_at")
   updatedAt          DateTime          @updatedAt @map("updated_at")
+  series             EventSeries?      @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   orders             TicketOrder[]
   tickets            Ticket[]
   scans              TicketScan[]

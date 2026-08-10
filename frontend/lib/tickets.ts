@@ -2,6 +2,8 @@ import { fetchApiJson } from "@/lib/api";
 
 export type TicketedEvent = {
   id: string;
+  seriesId: string | null;
+  series: { id: string; slug: string; title: string } | null;
   slug: string;
   title: string;
   description: string;

@@ -1,4 +1,5 @@
 import { fetchApiJson } from "./api";
+import type { TicketedEvent } from "@/lib/tickets";
 
 export type TournamentStatus =
   | "draft"
@@ -100,6 +101,7 @@ export type EventSeries = {
   displayOrder: number;
   isPublished: boolean;
   tournaments: Tournament[];
+  ticketEvent?: TicketedEvent | null;
 };
 
 export type BracketParticipant = {

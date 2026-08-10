@@ -13,6 +13,13 @@ import { cn, getInitials } from "@/lib/utils";
 import { buildApiUrl } from "@/lib/api";
 import { authNavItems, primaryNavItems, secondaryNavItems } from "@/lib/site";
 
+const isNavItemActive = (pathname: string, href: string) =>
+  href === "/"
+    ? pathname === href
+    : pathname === href ||
+      pathname.startsWith(`${href}/`) ||
+      (href === "/tournaments" && pathname.startsWith("/tickets"));
+
 export default function Navbar() {
   const pathname = usePathname();
   const { user, isAuthenticated, logout, isLoading } = useAuth();
@@ -70,7 +77,7 @@ export default function Navbar() {
                   prefetch={false}
                   className={cn(
                     "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
-                    pathname === item.href && "text-white"
+                    isNavItemActive(pathname, item.href) && "text-white"
                   )}
                 >
                   {item.label}
@@ -107,7 +114,7 @@ export default function Navbar() {
                   prefetch={false}
                   className={cn(
                     "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
-                    pathname === item.href && "text-white"
+                    isNavItemActive(pathname, item.href) && "text-white"
                   )}
                 >
                   {item.label}
@@ -162,7 +169,7 @@ export default function Navbar() {
                     prefetch={false}
                     className={cn(
                       "rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/8 hover:text-white",
-                      pathname === item.href && "bg-white/10 text-white"
+                      isNavItemActive(pathname, item.href) && "bg-white/10 text-white"
                     )}
                   >
                     {item.label}

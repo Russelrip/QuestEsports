@@ -37,6 +37,8 @@ type TicketEventStatus =
   | "cancelled";
 type TicketEvent = {
   id: string;
+  seriesId: string | null;
+  series: { id: string; slug: string; title: string } | null;
   slug: string;
   title: string;
   description: string;
@@ -104,6 +106,7 @@ type ScanResult = {
   } | null;
 };
 type EventForm = {
+  seriesId: string;
   title: string;
   slug: string;
   description: string;
@@ -121,6 +124,7 @@ type EventForm = {
 type Tab = "overview" | "orders" | "tickets" | "check-in" | "reports";
 
 const blankForm: EventForm = {
+  seriesId: "",
   title: "",
   slug: "",
   description: "",
@@ -137,6 +141,7 @@ const blankForm: EventForm = {
 };
 
 const eventToForm = (event: TicketEvent): EventForm => ({
+  seriesId: event.seriesId || "",
   title: event.title,
   slug: event.slug,
   description: event.description,
@@ -167,6 +172,7 @@ const statusTone = (value: string) =>
 
 export default function AdminTicketsManager() {
   const [events, setEvents] = useState<TicketEvent[]>([]);
+  const [eventSeries, setEventSeries] = useState<Array<{ id: string; title: string }>>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [editing, setEditing] = useState(false);
@@ -200,6 +206,14 @@ export default function AdminTicketsManager() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    void adminRequest<{ series: Array<{ id: string; title: string }> }>(
+      "/api/admin/event-series",
+    )
+      .then((data) => setEventSeries(data.series))
+      .catch(() => setEventSeries([]));
+  }, []);
 
   const startCreate = () => {
     setForm(blankForm);
@@ -253,11 +267,11 @@ export default function AdminTicketsManager() {
 
   return (
     <AdminShell
-      title="Ticketing"
-      description="Keep every event's orders, payments, issued QR tickets, check-ins, and reports together."
+      title="LAN Entrance Fees"
+      description="Attach paid entrance passes to selected LAN events and manage their orders, QR tickets, check-ins, and reports."
       actions={
         <Button type="button" onClick={startCreate}>
-          New ticketed event
+          Add entrance fee
         </Button>
       }
     >
@@ -268,6 +282,7 @@ export default function AdminTicketsManager() {
           error={error}
           saving={saving}
           isEditing={Boolean(selected)}
+          eventSeries={eventSeries}
           onSubmit={save}
           onCancel={() => setEditing(false)}
         />
@@ -316,8 +331,8 @@ function EventGrid({
   if (!events.length)
     return (
       <EmptyState
-        title="No ticketed events"
-        description="Create the first event to start selling entrance tickets."
+        title="No entrance fees"
+        description="Add an entrance fee to a LAN event when paid venue access is required."
       />
     );
   return (
@@ -332,6 +347,9 @@ function EventGrid({
                 {event.status.replaceAll("_", " ")}
               </p>
               <h3 className="mt-2 text-2xl text-white">{event.title}</h3>
+              <p className="mt-1 text-sm font-medium text-purple-200">
+                {event.series?.title || "LAN event not linked"}
+              </p>
               <p className="mt-1 text-sm text-slate-400">
                 {event.venue} · {formatAdminCompactDateTime(event.startsAt)}
               </p>
@@ -1027,6 +1045,7 @@ function EventEditor({
   error,
   saving,
   isEditing,
+  eventSeries,
   onSubmit,
   onCancel,
 }: {
@@ -1035,6 +1054,7 @@ function EventEditor({
   error: string;
   saving: boolean;
   isEditing: boolean;
+  eventSeries: Array<{ id: string; title: string }>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
 }) {
@@ -1049,13 +1069,27 @@ function EventEditor({
   return (
     <Card className="p-6 sm:p-8">
       <h3 className="text-3xl text-white">
-        {isEditing ? "Edit ticketed event" : "Create ticketed event"}
+        {isEditing ? "Edit entrance fee" : "Add entrance fee"}
       </h3>
       <p className="mt-2 text-sm text-slate-400">
-        Bundle pricing is automatic: every pair uses the pair price and one odd
-        remaining ticket uses the single price.
+        Attach an entrance fee to a LAN event. It will appear only on that
+        event&apos;s public page. Bundle pricing is automatic.
       </p>
       <form className="mt-7 grid gap-5" onSubmit={onSubmit}>
+        <FormField
+          label="LAN event"
+          hint="Only the selected event page will display this entrance fee."
+          required
+        >
+          <Select required {...field("seriesId")}>
+            <option value="">Choose an event series</option>
+            {eventSeries.map((series) => (
+              <option key={series.id} value={series.id}>
+                {series.title}
+              </option>
+            ))}
+          </Select>
+        </FormField>
         <div className="grid gap-5 sm:grid-cols-2">
           <FormField label="Event title" required>
             <Input required {...field("title")} />
@@ -1141,7 +1175,7 @@ function EventEditor({
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         <div className="flex flex-wrap gap-3">
           <Button type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save event"}
+            {saving ? "Saving…" : "Save entrance fee"}
           </Button>
           <Button type="button" variant="secondary" onClick={onCancel}>
             Cancel

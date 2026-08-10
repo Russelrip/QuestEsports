@@ -6,7 +6,6 @@ export const sitemapStaticPaths = [
   "/match-videos",
   "/gallery",
   "/shop",
-  "/tickets",
   "/members",
   "/join",
   "/contact",

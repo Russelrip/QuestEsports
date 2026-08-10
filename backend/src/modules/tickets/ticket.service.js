@@ -33,6 +33,12 @@ const RETRYABLE_TRANSACTION_CODES = new Set([
   "P2034",
   "P2037",
 ]);
+const ticketSeriesSelect = {
+  id: true,
+  slug: true,
+  title: true,
+  isPublished: true,
+};
 
 const runSerializable = async (work) => {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -146,6 +152,14 @@ const mapPublicEvent = (event, reservedQuantity = 0) => {
     reservedQuantity < event.capacity;
   return {
     id: event.id,
+    seriesId: event.seriesId || null,
+    series: event.series
+      ? {
+          id: event.series.id,
+          slug: event.series.slug,
+          title: event.series.title,
+        }
+      : null,
     slug: event.slug,
     title: event.title,
     description: event.description,
@@ -170,8 +184,10 @@ const listPublicEvents = async () => {
     where: {
       status: { in: ["on_sale", "sales_paused", "sales_closed"] },
       startsAt: { gt: now },
+      series: { is: { isPublished: true } },
     },
     orderBy: { startsAt: "asc" },
+    include: { series: { select: ticketSeriesSelect } },
   });
   const groupedQuantities = events.length
     ? await prisma.ticketOrder.groupBy({
@@ -189,9 +205,26 @@ const listPublicEvents = async () => {
 const getPublicEvent = async (slug) => {
   const event = await prisma.ticketEvent.findUnique({
     where: { slug: normalizeSlug(slug) },
+    include: { series: { select: ticketSeriesSelect } },
   });
-  if (!event || event.status === "draft")
+  if (!event || event.status === "draft" || !event.series?.isPublished)
     throw new HttpError(404, "Ticketed event not found.");
+  return mapPublicEvent(event, await getReservedQuantity(prisma, event.id));
+};
+
+const getPublicEventForSeries = async (seriesId) => {
+  const event = await prisma.ticketEvent.findUnique({
+    where: { seriesId },
+    include: { series: { select: ticketSeriesSelect } },
+  });
+  if (
+    !event ||
+    !event.series?.isPublished ||
+    !["on_sale", "sales_paused", "sales_closed"].includes(event.status) ||
+    event.startsAt <= new Date()
+  ) {
+    return null;
+  }
   return mapPublicEvent(event, await getReservedQuantity(prisma, event.id));
 };
 
@@ -463,6 +496,7 @@ const getTicketOrderByToken = async (rawToken) => {
 };
 
 const parseEventInput = (body, existing) => {
+  const seriesId = normalizeText(body.seriesId ?? existing?.seriesId) || null;
   const title = normalizeText(body.title ?? existing?.title);
   const slug = normalizeSlug(body.slug ?? title ?? existing?.slug);
   const description = normalizeText(body.description ?? existing?.description);
@@ -488,6 +522,8 @@ const parseEventInput = (body, existing) => {
     body.pairPrice ?? existing?.pairPrice,
     "Pair price",
   );
+  if (!seriesId)
+    throw new HttpError(400, "Choose the LAN event for this entrance fee.");
   if (!title || !slug || !description || !venue)
     throw new HttpError(400, "Complete all event details.");
   if (
@@ -531,6 +567,7 @@ const parseEventInput = (body, existing) => {
     );
   }
   return {
+    seriesId,
     title,
     slug,
     description,
@@ -554,12 +591,26 @@ const saveAdminEvent = async ({ eventId, body }) => {
   if (eventId && !existing)
     throw new HttpError(404, "Ticketed event not found.");
   const data = parseEventInput(body, existing);
+  const series = await prisma.eventSeries.findUnique({
+    where: { id: data.seriesId },
+    select: { id: true },
+  });
+  if (!series) throw new HttpError(400, "The selected LAN event was not found.");
   const duplicate = await prisma.ticketEvent.findFirst({
     where: { slug: data.slug, ...(eventId ? { id: { not: eventId } } : {}) },
     select: { id: true },
   });
   if (duplicate)
     throw new HttpError(400, "Another ticketed event already uses this slug.");
+  const linkedEvent = await prisma.ticketEvent.findFirst({
+    where: {
+      seriesId: data.seriesId,
+      ...(eventId ? { id: { not: eventId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (linkedEvent)
+    throw new HttpError(400, "This LAN event already has an entrance fee.");
   if (
     existing &&
     data.capacity < (await getReservedQuantity(prisma, existing.id))
@@ -570,9 +621,14 @@ const saveAdminEvent = async ({ eventId, body }) => {
     );
   }
   const event = eventId
-    ? await prisma.ticketEvent.update({ where: { id: eventId }, data })
+    ? await prisma.ticketEvent.update({
+        where: { id: eventId },
+        data,
+        include: { series: { select: ticketSeriesSelect } },
+      })
     : await prisma.ticketEvent.create({
         data: { id: crypto.randomUUID(), ...data },
+        include: { series: { select: ticketSeriesSelect } },
       });
   return mapAdminEvent(event, await getEventStats(event.id));
 };
@@ -622,6 +678,7 @@ const mapAdminEvent = (event, stats) => ({
 const listAdminEvents = async () => {
   const events = await prisma.ticketEvent.findMany({
     orderBy: [{ startsAt: "desc" }, { createdAt: "desc" }],
+    include: { series: { select: ticketSeriesSelect } },
   });
   return Promise.all(
     events.map(async (event) =>
@@ -631,7 +688,10 @@ const listAdminEvents = async () => {
 };
 
 const getAdminEvent = async (eventId) => {
-  const event = await prisma.ticketEvent.findUnique({ where: { id: eventId } });
+  const event = await prisma.ticketEvent.findUnique({
+    where: { id: eventId },
+    include: { series: { select: ticketSeriesSelect } },
+  });
   if (!event) throw new HttpError(404, "Ticketed event not found.");
   return mapAdminEvent(event, await getEventStats(event.id));
 };
@@ -1041,6 +1101,7 @@ module.exports = {
   parseQrPayload,
   listPublicEvents,
   getPublicEvent,
+  getPublicEventForSeries,
   getTicketQuote,
   createTicketOrder,
   getTicketOrderByToken,

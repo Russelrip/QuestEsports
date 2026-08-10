@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
+import TicketCheckout from "@/components/tickets/TicketCheckout";
 import { buttonClassName } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { PageTransition } from "@/components/ui/page-transition";
@@ -58,6 +59,23 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
           </div>
         </Container>
       </section>
+
+      {series.ticketEvent ? (
+        <section className="border-b border-white/10 bg-white/[0.02] py-10 sm:py-14">
+          <Container>
+            <div className="mb-7 max-w-3xl border-l-2 border-purple-300 pl-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-purple-200">
+                LAN entrance fee
+              </p>
+              <h2 className="mt-3 text-3xl text-white">Get your event entrance pass</h2>
+              <p className="mt-3 text-sm leading-7 text-slate-400">
+                This fee is for entry to {series.title}. Tournament registration is handled separately for each game below.
+              </p>
+            </div>
+            <TicketCheckout event={series.ticketEvent} />
+          </Container>
+        </section>
+      ) : null}
 
       <section className="py-10 sm:py-14">
         <Container>

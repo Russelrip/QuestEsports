@@ -65,7 +65,7 @@ export default async function TicketEventPage({
       <StructuredData
         data={buildBreadcrumbStructuredData([
           { name: "Home", path: "/" },
-          { name: "Tickets", path: "/tickets" },
+          { name: "Tournaments", path: "/tournaments" },
           { name: event.title, path: `/tickets/${event.slug}` },
         ])}
       />

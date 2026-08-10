@@ -457,7 +457,6 @@ export const primaryNavItems = [
 ] as const;
 
 export const secondaryNavItems = [
-  { href: "/tickets", label: "Tickets" },
   { href: "/shop", label: "Shop" },
   { href: "/members", label: "Members" },
   { href: "/contact", label: "Contact" },

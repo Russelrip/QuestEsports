@@ -178,7 +178,7 @@ The page groups filtered results by tournament, ticket event, or merchandise ord
 
 ## Event Ticketing and Check-in
 
-Create and manage entrance-ticket events from `/admin/tickets`. An event controls its public slug, venue and start time, sales window, capacity, currency, single-ticket price, pair-bundle price, and lifecycle status. For the standard offer, set the single price to LKR 500 and the pair price to LKR 800. The server always calculates totals as complete pairs plus an optional single: one ticket is LKR 500, two are LKR 800, and three are LKR 1,300.
+Create and manage entrance fees from `/admin/tickets`. Each fee must be linked to one Event Series representing the LAN event, and an Event Series can have at most one entrance-fee setup. The purchase area appears only on that event's public page; there is no general public ticket catalog. The setup controls its venue and start time, sales window, capacity, currency, single-ticket price, pair-bundle price, and lifecycle status. For the standard offer, set the single price to LKR 500 and the pair price to LKR 800. The server always calculates totals as complete pairs plus an optional single: one ticket is LKR 500, two are LKR 800, and three are LKR 1,300.
 
 Paid orders issue one independently signed QR code per attendee. The QR contains an opaque ticket identifier, version, and signature; it contains no buyer contact details. Reissuing a ticket increments its version and invalidates the previous QR.
 

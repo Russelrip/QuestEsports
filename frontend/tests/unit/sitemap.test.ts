@@ -9,7 +9,7 @@ describe("sitemap helpers", () => {
   it("includes canonical public pages and excludes account-only routes", () => {
     expect(sitemapStaticPaths).toContain("/privacy-policy");
     expect(sitemapStaticPaths).toContain("/terms-of-service");
-    expect(sitemapStaticPaths).toContain("/tickets");
+    expect(sitemapStaticPaths).not.toContain("/tickets");
     expect(sitemapStaticPaths).not.toContain("/registration");
     expect(sitemapStaticPaths).not.toContain("/login");
   });

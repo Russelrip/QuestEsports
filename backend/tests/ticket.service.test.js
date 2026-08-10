@@ -82,6 +82,51 @@ test("public ticket events aggregate reserved capacity in one grouped query", as
   }
 });
 
+test("a LAN event exposes only its linked active entrance fee", async () => {
+  const future = new Date(Date.now() + 86_400_000);
+  const event = {
+    id: "event-1",
+    seriesId: "series-1",
+    series: {
+      id: "series-1",
+      slug: "quest-lan",
+      title: "Quest LAN",
+      isPublished: true,
+    },
+    slug: "quest-lan-entry",
+    title: "Quest LAN Entry",
+    description: "Venue entrance",
+    venue: "Colombo",
+    startsAt: future,
+    salesStartAt: new Date(0),
+    salesEndAt: future,
+    status: "on_sale",
+    capacity: 100,
+    maxTicketsPerOrder: 4,
+    currency: "LKR",
+    singlePrice: 500,
+    pairPrice: 800,
+  };
+  const { module: service, restore } = load({
+    ticketEvent: {
+      findUnique: async ({ where }) => {
+        assert.deepEqual(where, { seriesId: "series-1" });
+        return event;
+      },
+    },
+    ticketOrder: {
+      aggregate: async () => ({ _sum: { quantity: 6 } }),
+    },
+  });
+  try {
+    const result = await service.getPublicEventForSeries("series-1");
+    assert.equal(result.series.slug, "quest-lan");
+    assert.equal(result.availableTickets, 94);
+  } finally {
+    restore();
+  }
+});
+
 test("a valid ticket is atomically claimed once and audited", async () => {
   const ticket = {
     id: "a6a67b53-e59c-4f12-9de8-b9f0b38cd3b5",

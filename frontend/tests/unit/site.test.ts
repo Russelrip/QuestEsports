@@ -11,6 +11,8 @@ import {
 
 const ticketEvent: TicketedEvent = {
   id: "event-1",
+  seriesId: "series-1",
+  series: { id: "series-1", slug: "quest-lan", title: "Quest LAN" },
   slug: "quest-community-night",
   title: "Quest Community Night",
   description: "An in-person community event.",
