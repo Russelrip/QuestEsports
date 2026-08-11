@@ -108,6 +108,8 @@ Two different SSH directions are involved:
 
 The repository deploy key remains read-only.
 
+If a deployment reports that the production mobile OAuth redirect is stale, manually dispatch `CD` with `repair_mobile_oauth_redirect=true`. The repair derives the required `/mobile-admin-oauth` App Link from the existing HTTPS `API_PUBLIC_URL`, refuses missing or duplicate entries, preserves `.env` permissions, and does not print environment values.
+
 ## PM2 And Automatic Boot
 
 The process must belong to the `deploy` user's PM2 daemon:
