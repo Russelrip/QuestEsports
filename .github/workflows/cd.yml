@@ -3,6 +3,11 @@ name: CD
 on:
   workflow_dispatch:
     inputs:
+      repair_mobile_android_fingerprint:
+        description: Set the verified Android release certificate fingerprint
+        required: false
+        default: false
+        type: boolean
       repair_mobile_oauth_redirect:
         description: Set the production mobile OAuth App Link from API_PUBLIC_URL
         required: false
@@ -104,8 +109,10 @@ jobs:
           HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
           MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_MIGRATION_APPROVAL_SHA }}
           DESTRUCTIVE_MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA }}
+          MOBILE_ANDROID_CERT_SHA256: ${{ secrets.MOBILE_ADMIN_ANDROID_CERT_SHA256 }}
           REPAIR_LEGACY_MEDIA: ${{ inputs.repair_legacy_media }}
           REPAIR_DATABASE_SSL: ${{ inputs.repair_database_ssl }}
+          REPAIR_MOBILE_ANDROID_FINGERPRINT: ${{ inputs.repair_mobile_android_fingerprint }}
           REPAIR_MOBILE_OAUTH_REDIRECT: ${{ inputs.repair_mobile_oauth_redirect }}
           DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         run: |
@@ -133,7 +140,15 @@ jobs:
             echo "REPAIR_MOBILE_OAUTH_REDIRECT must be true or false." >&2
             exit 1
           fi
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          if [ "$REPAIR_MOBILE_ANDROID_FINGERPRINT" != "true" ] && [ "$REPAIR_MOBILE_ANDROID_FINGERPRINT" != "false" ]; then
+            echo "REPAIR_MOBILE_ANDROID_FINGERPRINT must be true or false." >&2
+            exit 1
+          fi
+          if [ "$REPAIR_MOBILE_ANDROID_FINGERPRINT" = "true" ] && ! printf '%s' "$MOBILE_ANDROID_CERT_SHA256" | grep -Eiq '^([0-9a-f]{2}:){31}[0-9a-f]{2}$'; then
+            echo "MOBILE_ADMIN_ANDROID_CERT_SHA256 must contain the verified release certificate fingerprint." >&2
+            exit 1
+          fi
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' MOBILE_ANDROID_CERT_SHA256='$MOBILE_ANDROID_CERT_SHA256' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_ANDROID_FINGERPRINT='$REPAIR_MOBILE_ANDROID_FINGERPRINT' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
@@ -251,6 +266,9 @@ jobs:
           fi
           if [ "$REPAIR_MOBILE_OAUTH_REDIRECT" = "true" ]; then
             node ops/normalize-production-mobile-oauth.js backend/.env
+          fi
+          if [ "$REPAIR_MOBILE_ANDROID_FINGERPRINT" = "true" ]; then
+            EXPECTED_MOBILE_ADMIN_ANDROID_CERT_SHA256="$MOBILE_ANDROID_CERT_SHA256" node ops/normalize-production-mobile-certificate.js backend/.env
           fi
           cd backend
           npm ci
