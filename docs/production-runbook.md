@@ -197,6 +197,8 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 
 Manual redeploy: GitHub `Actions -> CD -> Run workflow`. The manual job redeploys the current `main` commit and refuses to continue unless that exact commit has a successful `CI` run.
 
+The `repair_database_ssl` input is a narrowly scoped recovery option for an older VPS `.env` whose `DATABASE_URL` or `DIRECT_URL` predates the explicit TLS requirement. It updates only those two URL entries to `sslmode=require`, preserves `.env` permissions, and never prints credentials. Leave it disabled during normal deployments. After a successful repair deployment, future deployments validate the stored values without changing them.
+
 For a confirmed missing-file incident affecting packaged legacy posters, enable
 the `repair_legacy_media` workflow input. The deployment then runs the idempotent
 legacy import after creating and verifying an encrypted off-site backup and
