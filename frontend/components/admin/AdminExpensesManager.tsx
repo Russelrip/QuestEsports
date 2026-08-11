@@ -210,21 +210,22 @@ export default function AdminExpensesManager() {
   return (
     <AdminShell title="Expenses" description="Keep a quick running cost list for every tournament and ticketed event, on desktop or mobile.">
       <Card className="p-5 sm:p-7">
-        <label className="grid gap-2 text-sm text-slate-300">
-          Tournament or event
-          <Select value={selectedKey} onChange={(event) => {
-            const next = targets.find((target) => `${target.type}:${target.id}` === event.target.value);
-            setSelectedKey(event.target.value);
-            resetForm(next?.currency || "LKR");
-          }}>
-            {targets.filter((target) => target.type === "tournament").length ? <optgroup label="Tournaments">
-              {targets.filter((target) => target.type === "tournament").map((target) => <option key={`${target.type}:${target.id}`} value={`${target.type}:${target.id}`}>{target.title}</option>)}
-            </optgroup> : null}
-            {targets.filter((target) => target.type === "event").length ? <optgroup label="Ticketed events">
-              {targets.filter((target) => target.type === "event").map((target) => <option key={`${target.type}:${target.id}`} value={`${target.type}:${target.id}`}>{target.title}</option>)}
-            </optgroup> : null}
-          </Select>
-        </label>
+        {loading && !targets.length ? <p className="text-sm text-slate-400">Loading tournaments and events…</p> : <label className="grid gap-2 text-sm text-slate-300">
+            Tournament or event
+            <Select disabled={!targets.length} value={selectedKey} onChange={(event) => {
+              const next = targets.find((target) => `${target.type}:${target.id}` === event.target.value);
+              setSelectedKey(event.target.value);
+              resetForm(next?.currency || "LKR");
+            }}>
+              {!targets.length ? <option value="">No tournaments or ticketed events</option> : null}
+              {targets.filter((target) => target.type === "tournament").length ? <optgroup label="Tournaments">
+                {targets.filter((target) => target.type === "tournament").map((target) => <option key={`${target.type}:${target.id}`} value={`${target.type}:${target.id}`}>{target.title}</option>)}
+              </optgroup> : null}
+              {targets.filter((target) => target.type === "event").length ? <optgroup label="Ticketed events">
+                {targets.filter((target) => target.type === "event").map((target) => <option key={`${target.type}:${target.id}`} value={`${target.type}:${target.id}`}>{target.title}</option>)}
+              </optgroup> : null}
+            </Select>
+          </label>}
       </Card>
 
       {!selectedTarget ? <EmptyState description="Create a tournament or ticketed event before adding expenses." /> : <>

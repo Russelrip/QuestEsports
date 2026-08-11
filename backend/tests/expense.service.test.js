@@ -28,6 +28,39 @@ const baseExpense = (overrides = {}) => ({
   ...overrides,
 });
 
+test("expense targets include inactive tournaments for historical cost tracking", async () => {
+  let tournamentQuery;
+  const { module: service, restore } = loadService({
+    tournament: {
+      findMany: async (args) => {
+        tournamentQuery = args;
+        return [{
+          id: "tournament-1",
+          title: "Completed Quest Cup",
+          status: "completed",
+          startDate: new Date("2026-07-01T00:00:00.000Z"),
+          registrationFeeCurrency: "LKR",
+        }];
+      },
+    },
+    ticketEvent: { findMany: async () => [] },
+  });
+  try {
+    const targets = await service.listExpenseTargets();
+    assert.equal(Object.hasOwn(tournamentQuery, "where"), false);
+    assert.deepEqual(targets, [{
+      type: "tournament",
+      id: "tournament-1",
+      title: "Completed Quest Cup",
+      status: "completed",
+      date: new Date("2026-07-01T00:00:00.000Z"),
+      currency: "LKR",
+    }]);
+  } finally {
+    restore();
+  }
+});
+
 test("event expense summaries exclude cancelled costs from the tracked total", async () => {
   const { module: service, restore } = loadService({
     tournament: { findUnique: async () => ({ id: "tournament-1", title: "Quest Cup", registrationFeeCurrency: "LKR" }) },
