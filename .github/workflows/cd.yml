@@ -3,6 +3,11 @@ name: CD
 on:
   workflow_dispatch:
     inputs:
+      repair_database_ssl:
+        description: Add the required sslmode to production database URLs without printing credentials
+        required: false
+        default: false
+        type: boolean
       repair_legacy_media:
         description: Restore missing packaged legacy poster files on the VPS
         required: false
@@ -95,6 +100,7 @@ jobs:
           MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_MIGRATION_APPROVAL_SHA }}
           DESTRUCTIVE_MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA }}
           REPAIR_LEGACY_MEDIA: ${{ inputs.repair_legacy_media }}
+          REPAIR_DATABASE_SSL: ${{ inputs.repair_database_ssl }}
           DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         run: |
           if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -113,7 +119,11 @@ jobs:
             echo "REPAIR_LEGACY_MEDIA must be true or false." >&2
             exit 1
           fi
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          if [ "$REPAIR_DATABASE_SSL" != "true" ] && [ "$REPAIR_DATABASE_SSL" != "false" ]; then
+            echo "REPAIR_DATABASE_SSL must be true or false." >&2
+            exit 1
+          fi
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
@@ -226,6 +236,9 @@ jobs:
 
           git checkout --detach "$DEPLOY_SHA"
           test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+          if [ "$REPAIR_DATABASE_SSL" = "true" ]; then
+            node ops/normalize-production-database-ssl.js backend/.env
+          fi
           cd backend
           npm ci
           set +e
