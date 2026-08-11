@@ -110,6 +110,8 @@ The repository deploy key remains read-only.
 
 If a deployment reports that the production mobile OAuth redirect is stale or missing, manually dispatch `CD` with `repair_mobile_oauth_redirect=true`. The repair derives the required `/mobile-admin-oauth` App Link from the existing HTTPS `API_PUBLIC_URL`, adds or updates the entry while refusing duplicates, preserves `.env` permissions, and does not print environment values.
 
+Store the SHA-256 fingerprint verified from a signed Quest Admin APK as the production environment secret `MOBILE_ADMIN_ANDROID_CERT_SHA256`. If the VPS value is stale or missing, manually dispatch `CD` with `repair_mobile_android_fingerprint=true`. The repair validates the secret format, adds or updates exactly one environment entry, preserves `.env` permissions, and never prints the fingerprint or environment contents.
+
 ## PM2 And Automatic Boot
 
 The process must belong to the `deploy` user's PM2 daemon:
