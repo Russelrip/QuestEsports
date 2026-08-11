@@ -36,7 +36,7 @@ const normalizeMobileOauthRedirect = (source) => {
   const expected = new URL("/mobile-admin-oauth", parsed).toString();
   let seen = 0;
   let changed = false;
-  const normalized = source.replace(
+  let normalized = source.replace(
     /^(\s*)(MOBILE_ADMIN_OAUTH_REDIRECT_URL)(\s*=\s*)(.*)$/gm,
     (line, indent, key, separator, rawValue) => {
       seen += 1;
@@ -52,8 +52,11 @@ const normalizeMobileOauthRedirect = (source) => {
     },
   );
 
-  if (seen !== 1) {
-    throw new Error("MOBILE_ADMIN_OAUTH_REDIRECT_URL must be defined exactly once.");
+  if (seen === 0) {
+    const newline = source.includes("\r\n") ? "\r\n" : "\n";
+    const hadFinalNewline = source.endsWith("\n");
+    normalized = `${normalized}${hadFinalNewline ? "" : newline}MOBILE_ADMIN_OAUTH_REDIRECT_URL=${expected}${hadFinalNewline ? newline : ""}`;
+    changed = true;
   }
   return { changed, source: normalized };
 };

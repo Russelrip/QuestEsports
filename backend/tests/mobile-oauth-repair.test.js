@@ -49,7 +49,7 @@ test("mobile OAuth file repair is atomic and preserves permissions", () => {
   }
 });
 
-test("mobile OAuth repair refuses unsafe or ambiguous source values", () => {
+test("mobile OAuth repair adds a missing value and refuses unsafe or ambiguous sources", () => {
   assert.throws(
     () => normalizeMobileOauthRedirect([
       "API_PUBLIC_URL=http://api.questesports.lk",
@@ -57,8 +57,19 @@ test("mobile OAuth repair refuses unsafe or ambiguous source values", () => {
     ].join("\n")),
     /HTTPS origin/,
   );
+  assert.equal(
+    normalizeMobileOauthRedirect("API_PUBLIC_URL=https://api.questesports.lk").source,
+    [
+      "API_PUBLIC_URL=https://api.questesports.lk",
+      "MOBILE_ADMIN_OAUTH_REDIRECT_URL=https://api.questesports.lk/mobile-admin-oauth",
+    ].join("\n"),
+  );
   assert.throws(
-    () => normalizeMobileOauthRedirect("API_PUBLIC_URL=https://api.questesports.lk"),
-    /must be defined exactly once/,
+    () => normalizeMobileOauthRedirect([
+      "API_PUBLIC_URL=https://api.questesports.lk",
+      "MOBILE_ADMIN_OAUTH_REDIRECT_URL=questadmin://oauth",
+      "MOBILE_ADMIN_OAUTH_REDIRECT_URL=questadmin://other",
+    ].join("\n")),
+    /defined more than once/,
   );
 });
