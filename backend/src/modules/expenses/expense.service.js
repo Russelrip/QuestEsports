@@ -115,7 +115,6 @@ const parsePayload = async ({ body, existing }) => {
 const listExpenseTargets = async () => {
   const [tournaments, events] = await Promise.all([
     prisma.tournament.findMany({
-      where: { isActive: true },
       orderBy: [{ startDate: { sort: "desc", nulls: "last" } }, { title: "asc" }],
       select: { id: true, title: true, status: true, startDate: true, registrationFeeCurrency: true },
     }),
