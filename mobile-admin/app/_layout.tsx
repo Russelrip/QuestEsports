@@ -43,6 +43,7 @@ function AuthGate() {
       <Stack.Screen name="oauth" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="resources/[kind]" options={{ headerShown: false }} />
+      <Stack.Screen name="expenses" options={{ headerShown: false }} />
       <Stack.Screen name="sessions" options={{ title: "Device sessions" }} />
     </Stack>
   );

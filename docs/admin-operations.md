@@ -237,6 +237,16 @@ Admin event-series endpoints:
 
 Create/update supports a hero image plus slug, title, description, display order, and publication state. Tournaments link to a series and use `seriesOrder`. Deleting a series detaches child tournaments rather than deleting them.
 
+## Tournament And Event Expenses
+
+The web dashboard and mobile admin share the same admin-only cost list. Each expense belongs to exactly one tournament or ticketed event. Cancelled entries remain visible for history but are excluded from the tracked total.
+
+- `GET /api/admin/expense-targets`
+- `GET /api/admin/expenses?targetType=tournament|event&targetId=<uuid>`
+- `POST /api/admin/expenses`
+- `PATCH /api/admin/expenses/:expenseId`
+- `DELETE /api/admin/expenses/:expenseId`
+
 ## Products And Orders
 
 Product endpoints:
