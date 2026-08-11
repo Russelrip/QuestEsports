@@ -50,3 +50,18 @@ test("saved team rename migration backfills linked tournament registration names
   assert.match(teamNameMigration, /registration\."saved_team_id" = team\."id"/);
   assert.match(teamNameMigration, /registration\."team_name" IS DISTINCT FROM team\."name"/);
 });
+
+test("event expense migration enforces one owning event and protects admin cost data", () => {
+  const expenseMigration = fs.readFileSync(
+    path.join(
+      __dirname,
+      "../prisma/migrations/20260811183000_add_event_expenses/migration.sql"
+    ),
+    "utf8"
+  );
+  assert.match(expenseMigration, /CREATE TABLE "event_expenses"/);
+  assert.match(expenseMigration, /event_expenses_one_target_check/);
+  assert.match(expenseMigration, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(expenseMigration, /REVOKE ALL PRIVILEGES/);
+  assert.match(expenseMigration, /ON DELETE CASCADE/);
+});

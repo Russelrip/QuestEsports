@@ -46,6 +46,7 @@ export const adminNavigationGroups = [
     label: "Commerce",
     links: [
       { href: "/admin/tickets", label: "Ticketing" },
+      { href: "/admin/expenses", label: "Expenses" },
       { href: "/admin/products", label: "Products" },
       { href: "/admin/orders", label: "Orders" },
       { href: "/admin/payments", label: "Payments" },

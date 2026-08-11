@@ -379,13 +379,22 @@ function EventGrid({
                 {event.venue} · {formatAdminCompactDateTime(event.startsAt)}
               </p>
             </div>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => onSelect(event.id)}
-            >
-              Open
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onSelect(event.id)}
+              >
+                Open
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => { window.location.href = `/admin/expenses?targetType=event&targetId=${event.id}`; }}
+              >
+                Expenses
+              </Button>
+            </div>
           </div>
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Metric

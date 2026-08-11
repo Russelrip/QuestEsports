@@ -150,6 +150,7 @@ export default function AdminTournamentsManager() {
                 </div>
                 <div className="flex flex-wrap gap-3 xl:justify-end">
                   <Link href={`/admin/tournaments/${tournament.id}/edit`} className={buttonClassName({ variant: "secondary" })}>Edit</Link>
+                  <Link href={`/admin/expenses?targetType=tournament&targetId=${tournament.id}`} className={buttonClassName({ variant: "secondary" })}>Expenses</Link>
                   <Button type="button" variant="secondary" onClick={() => handleQuickUpdate(tournament, { isPublished: !tournament.isPublished })}>
                     {tournament.isPublished ? "Unpublish" : "Publish"}
                   </Button>

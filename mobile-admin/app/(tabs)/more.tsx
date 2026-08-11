@@ -9,6 +9,7 @@ import { Button, PageHeader, Screen } from "@/components/ui";
 import { colors, radius, spacing } from "@/theme";
 
 const resources = [
+  { kind: "expenses", label: "Expenses", description: "Tournament and event costs", icon: "receipt-outline" as const, route: "/expenses" as const },
   { kind: "tournaments", label: "Tournaments", description: "Events, capacity and brackets", icon: "trophy-outline" as const },
   { kind: "recruitment", label: "Recruitment", description: "Review Quest applications", icon: "person-add-outline" as const },
   { kind: "messages", label: "Contact messages", description: "Read and triage support", icon: "mail-outline" as const },
@@ -47,7 +48,7 @@ export default function MoreScreen() {
       <PageHeader title="More tools" subtitle={`${user?.email || "Admin"} · secure mobile session`} />
       <View style={styles.grid}>
         {resources.map((item) => (
-          <Pressable key={item.kind} onPress={() => router.push({ pathname: "/resources/[kind]", params: { kind: item.kind } })} style={({ pressed }) => [styles.resource, pressed && styles.pressed]}>
+          <Pressable key={item.kind} onPress={() => item.route ? router.push(item.route) : router.push({ pathname: "/resources/[kind]", params: { kind: item.kind } })} style={({ pressed }) => [styles.resource, pressed && styles.pressed]}>
             <View style={styles.icon}><Ionicons name={item.icon} size={23} color={colors.accent} /></View>
             <View style={styles.resourceText}>
               <Text style={styles.resourceTitle}>{item.label}</Text>

@@ -944,6 +944,29 @@ const additionalPaths = {
       authenticated: true,
     }),
   },
+  "/api/admin/expense-targets": {
+    get: createOperation("Admin", "List tournaments and events available for expense tracking", {
+      authenticated: true,
+    }),
+  },
+  "/api/admin/expenses": {
+    get: createOperation("Admin", "List expenses for one tournament or event", {
+      authenticated: true,
+    }),
+    post: createOperation("Admin", "Add an expense to a tournament or event", {
+      authenticated: true,
+    }),
+  },
+  "/api/admin/expenses/{expenseId}": {
+    patch: createOperation("Admin", "Update an event expense", {
+      authenticated: true,
+      parameters: idParameter("expenseId"),
+    }),
+    delete: createOperation("Admin", "Delete an event expense", {
+      authenticated: true,
+      parameters: idParameter("expenseId"),
+    }),
+  },
   "/api/admin/tournaments": {
     post: createOperation("Admin", "Create a tournament", {
       authenticated: true,
