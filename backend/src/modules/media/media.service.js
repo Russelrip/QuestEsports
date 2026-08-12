@@ -15,7 +15,7 @@ const { normalizeText } = require("../../lib/validation");
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 18;
 const MAX_PAGE_SIZE = 60;
-const IMAGE_CATEGORIES = new Set(["poster", "logo", "banner", "graphic"]);
+const IMAGE_CATEGORIES = new Set(["poster", "photo", "logo", "banner", "graphic"]);
 const POSTER_ALIGNMENTS = new Set(["top-left", "top-right", "bottom-left", "bottom-right"]);
 const CONTENT_TYPE_BY_IMAGE_TYPE = {
   jpeg: "image/jpeg",
@@ -92,8 +92,13 @@ const mapImageAsset = (asset) => ({
         usage: {
           posters: asset._count.posters,
           products: asset._count.productImages,
+          albumPhotos: asset._count.albumPhotos || 0,
         },
-        canDelete: asset._count.posters + asset._count.productImages === 0,
+        canDelete:
+          asset._count.posters +
+            asset._count.productImages +
+            (asset._count.albumPhotos || 0) ===
+          0,
       }
     : {}),
 });
@@ -299,11 +304,11 @@ const deleteUnusedImageAsset = async (imageId) => {
     select: {
       id: true,
       storedFilename: true,
-      _count: { select: { posters: true, productImages: true } },
+      _count: { select: { posters: true, productImages: true, albumPhotos: true } },
     },
   });
   if (!asset) throw new HttpError(404, "Image was not found.");
-  if (asset._count.posters || asset._count.productImages) {
+  if (asset._count.posters || asset._count.productImages || asset._count.albumPhotos) {
     throw new HttpError(409, "This image is still in use and cannot be removed.");
   }
   await prisma.imageAsset.delete({ where: { id: imageId } });
@@ -341,7 +346,7 @@ const listImageAssets = async (query = {}) => {
       take: pagination.pageSize,
       select: {
         ...IMAGE_ASSET_METADATA_SELECT,
-        _count: { select: { posters: true, productImages: true } },
+        _count: { select: { posters: true, productImages: true, albumPhotos: true } },
       },
     }),
   ]);
@@ -376,7 +381,7 @@ const getImageAssetMetadata = async (imageId) => {
     where: { id: imageId },
     select: {
       ...IMAGE_ASSET_METADATA_SELECT,
-      _count: { select: { posters: true, productImages: true } },
+      _count: { select: { posters: true, productImages: true, albumPhotos: true } },
     },
   });
   if (!asset) {
@@ -550,6 +555,43 @@ const deletePosterById = async (posterId) => {
   }
 };
 
+const updatePosterById = async (posterId, body = {}) => {
+  const existing = await prisma.poster.findUnique({
+    where: { id: posterId },
+    select: { id: true },
+  });
+  if (!existing) throw new HttpError(404, "Poster not found.");
+
+  const data = {};
+  if (Object.prototype.hasOwnProperty.call(body, "tournamentId")) {
+    const tournamentId = normalizeText(body.tournamentId) || null;
+    if (tournamentId) {
+      const tournament = await prisma.tournament.findUnique({
+        where: { id: tournamentId },
+        select: { id: true },
+      });
+      if (!tournament) throw new HttpError(404, "Selected tournament could not be found.");
+    }
+    data.tournamentId = tournamentId;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "title")) {
+    const title = normalizeText(body.title);
+    if (!title) throw new HttpError(400, "Poster title is required.");
+    data.title = title;
+    data.headline = title;
+  }
+
+  if (Object.keys(data).length === 0) {
+    throw new HttpError(400, "No poster changes were provided.");
+  }
+  const poster = await prisma.poster.update({
+    where: { id: posterId },
+    data,
+    include: POSTER_INCLUDE,
+  });
+  return mapPoster(poster);
+};
+
 const migrateImageAssetsToFilesystem = async () => {
   await fs.mkdir(posterImageDirectory, { recursive: true });
 
@@ -617,6 +659,7 @@ module.exports = {
   createPoster,
   listPosters,
   getPosterById,
+  updatePosterById,
   deletePosterById,
   migrateImageAssetsToFilesystem,
 };

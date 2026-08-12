@@ -31,7 +31,7 @@ import {
 } from "@/lib/poster-studio";
 import { parseApiResponse } from "@/lib/api";
 
-const categories = ["poster", "logo", "banner", "graphic"] as const;
+const categories = ["poster", "photo", "logo", "banner", "graphic"] as const;
 type MediaCategory = (typeof categories)[number];
 
 const emptyPagination: MediaPagination = {

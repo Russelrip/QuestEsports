@@ -17,6 +17,7 @@ const SAFE_PUBLIC_API_PATHS = [
   /^\/api\/mobile\/auth\/oauth\/(?:google|discord)\/start$/,
   /^\/api\/tournaments(?:\/[^/]+)?$/,
   /^\/api\/posters(?:\/[^/]+(?:\/image)?)?$/,
+  /^\/api\/event-albums(?:\/[^/]+(?:\/photos\/[^/]+\/image)?)?$/,
   /^\/api\/rulebooks(?:\/[^/]+)?$/,
   /^\/api\/event-series(?:\/[^/]+)?$/,
   /^\/api\/game-categories(?:\/[^/]+)?$/,

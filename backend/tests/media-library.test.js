@@ -21,7 +21,7 @@ test("media library listing returns file size and reference counts without loadi
     contentType: "image/webp",
     byteSize: 2048,
     createdAt: new Date("2026-08-01T00:00:00.000Z"),
-    _count: { posters: 1, productImages: 2 },
+    _count: { posters: 1, productImages: 2, albumPhotos: 3 },
   };
   const prisma = {
     imageAsset: {
@@ -49,7 +49,7 @@ test("media library listing returns file size and reference counts without loadi
 
     assert.equal(findManyOptions.select.data, undefined);
     assert.deepEqual(findManyOptions.select._count, {
-      select: { posters: true, productImages: true },
+      select: { posters: true, productImages: true, albumPhotos: true },
     });
     assert.deepEqual(result.pagination, {
       page: 1,
@@ -67,7 +67,7 @@ test("media library listing returns file size and reference counts without loadi
       byteSize: 2048,
       createdAt: asset.createdAt,
       imageUrl: "/api/uploads/poster-images/stored-finals.webp",
-      usage: { posters: 1, products: 2 },
+      usage: { posters: 1, products: 2, albumPhotos: 3 },
       canDelete: false,
     });
   } finally {

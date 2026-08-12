@@ -21,6 +21,7 @@ export type ImageAsset = {
   usage?: {
     posters: number;
     products: number;
+    albumPhotos: number;
   };
   canDelete?: boolean;
 };

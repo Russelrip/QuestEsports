@@ -14,11 +14,13 @@ export type UploadPreview = {
 export type PosterDraft = {
   title: string;
   imageAssetId: string;
+  tournamentId: string;
 };
 
 export const initialPosterDraft: PosterDraft = {
   title: "",
   imageAssetId: "",
+  tournamentId: "",
 };
 
 export const revokeUploadPreviews = (previews: UploadPreview[]) => {
@@ -37,7 +39,7 @@ export const uploadImages = async (input: {
   title: string;
   previews: UploadPreview[];
   description?: string;
-  category?: "poster" | "logo" | "banner" | "graphic";
+  category?: "poster" | "photo" | "logo" | "banner" | "graphic";
 }) => {
   input.previews.forEach((item) =>
     assertFileWithinUploadLimit(
@@ -84,6 +86,7 @@ export const savePoster = async (draft: PosterDraft) => {
     accentColor: "#7c3aed",
     textColor: "#ffffff",
     overlayAlign: "bottom-left" as const,
+    tournamentId: draft.tournamentId || null,
   };
 
   const response = await apiFetch("/api/posters", {

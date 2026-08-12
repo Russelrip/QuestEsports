@@ -11,6 +11,7 @@ const {
   createPoster,
   listPosters,
   getPosterById,
+  updatePosterById,
   deletePosterById,
   deleteUnusedImageAsset,
 } = require("./media.service");
@@ -120,6 +121,11 @@ const deletePoster = asyncHandler(async (req, res) => {
   });
 });
 
+const updatePoster = asyncHandler(async (req, res) => {
+  const poster = await updatePosterById(req.params.posterId, req.body);
+  res.status(200).json({ success: true, message: "Tournament media updated.", poster });
+});
+
 const deleteImage = asyncHandler(async (req, res) => {
   await deleteUnusedImageAsset(req.params.imageId);
   res.status(200).json({ success: true, message: "Unused image removed." });
@@ -135,6 +141,7 @@ module.exports = {
   createPosterEntry,
   getPosters,
   getPoster,
+  updatePoster,
   deletePoster,
   deleteImage,
 };

@@ -859,10 +859,63 @@ const additionalPaths = {
       authenticated: true,
       parameters: idParameter("posterId"),
     }),
+    patch: createOperation("Media", "Update tournament media", {
+      authenticated: true,
+      parameters: idParameter("posterId"),
+    }),
   },
   "/api/posters/{posterId}/image": {
     get: createOperation("Media", "Stream a poster image", {
       parameters: idParameter("posterId"),
+    }),
+  },
+  "/api/event-albums": {
+    get: createOperation("Media", "List published event albums"),
+  },
+  "/api/event-albums/{slug}": {
+    get: createOperation("Media", "Get a published event album", {
+      parameters: idParameter("slug"),
+    }),
+  },
+  "/api/event-albums/{slug}/photos/{photoId}/image": {
+    get: createOperation("Media", "Stream a published album photo", {
+      parameters: [...idParameter("slug"), ...idParameter("photoId")],
+    }),
+  },
+  "/api/admin/event-albums": {
+    get: createOperation("Media", "List all event albums", { authenticated: true }),
+    post: createOperation("Media", "Create an event album", { authenticated: true }),
+  },
+  "/api/admin/event-albums/{albumId}": {
+    get: createOperation("Media", "Get an event album for editing", {
+      authenticated: true,
+      parameters: idParameter("albumId"),
+    }),
+    patch: createOperation("Media", "Update an event album", {
+      authenticated: true,
+      parameters: idParameter("albumId"),
+    }),
+    delete: createOperation("Media", "Delete an event album", {
+      authenticated: true,
+      parameters: idParameter("albumId"),
+    }),
+  },
+  "/api/admin/event-albums/{albumId}/photos": {
+    post: createOperation("Media", "Upload event album photos", {
+      authenticated: true,
+      parameters: idParameter("albumId"),
+    }),
+  },
+  "/api/admin/event-albums/{albumId}/photos/reorder": {
+    patch: createOperation("Media", "Reorder event album photos", {
+      authenticated: true,
+      parameters: idParameter("albumId"),
+    }),
+  },
+  "/api/admin/event-albums/{albumId}/photos/{photoId}": {
+    delete: createOperation("Media", "Delete an event album photo", {
+      authenticated: true,
+      parameters: [...idParameter("albumId"), ...idParameter("photoId")],
     }),
   },
   "/api/images": {

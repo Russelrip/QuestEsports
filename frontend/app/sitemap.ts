@@ -8,6 +8,7 @@ import {
 } from "@/lib/sitemap";
 import { fetchProducts } from "@/lib/shop";
 import { fetchTicketedEvents } from "@/lib/tickets";
+import { fetchPublicEventAlbums } from "@/lib/event-albums";
 import {
   fetchPublicEventSeries,
   fetchPublicTournaments,
@@ -22,13 +23,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Keep each content source independent so one unavailable API endpoint does not
   // remove every other dynamic URL from the generated sitemap.
-  const [tournaments, series, rulebooks, products, ticketedEvents] =
+  const [tournaments, series, rulebooks, products, ticketedEvents, eventAlbums] =
     await Promise.all([
       fetchPublicTournaments().catch(() => []),
       fetchPublicEventSeries().catch(() => []),
       fetchRulebooks().catch(() => []),
       fetchProducts().catch(() => []),
       fetchTicketedEvents().catch(() => []),
+      fetchPublicEventAlbums(new URLSearchParams({ page: "1", pageSize: "50" }))
+        .then((result) => result.albums)
+        .catch(() => []),
     ]);
 
   const tournamentEntries: MetadataRoute.Sitemap = tournaments.map(
@@ -59,6 +63,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     url: absoluteUrl(`/tickets/${event.slug}`),
   }));
 
+  const albumEntries: MetadataRoute.Sitemap = eventAlbums.map((album) => ({
+    url: absoluteUrl(`/gallery/${album.slug}`),
+    lastModified: parseSitemapDate(album.updatedAt),
+  }));
+
   return deduplicateSitemapEntries([
     ...staticEntries,
     ...tournamentEntries,
@@ -66,5 +75,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...rulebookEntries,
     ...productEntries,
     ...ticketEntries,
+    ...albumEntries,
   ]);
 }

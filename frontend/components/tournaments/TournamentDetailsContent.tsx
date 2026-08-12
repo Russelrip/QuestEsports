@@ -5,6 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
+import MediaModal from "@/components/posters/MediaModal";
 import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
@@ -14,6 +15,7 @@ import {
   BracketMatch,
   BracketParticipant,
   Tournament,
+  TournamentEventMedia,
   TournamentBracketData,
   getTournamentRegistrationModeLabel,
 } from "@/lib/tournaments";
@@ -95,6 +97,8 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
               </Card>
 
               {tournament.sponsors?.length ? <SponsorsPanel tournament={tournament} /> : null}
+              {tournament.eventMedia?.length ? <TournamentMediaPanel media={tournament.eventMedia} tournamentTitle={tournament.title} /> : null}
+              {tournament.eventAlbums?.length ? <TournamentAlbumsPanel tournament={tournament} /> : null}
             </div>
 
             <TournamentOverviewSidebar tournament={tournament} />
@@ -252,6 +256,66 @@ function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
         )}
       </div>
     </aside>
+  );
+}
+
+function TournamentMediaPanel({ media, tournamentTitle }: { media: TournamentEventMedia[]; tournamentTitle: string }) {
+  const [selected, setSelected] = useState<TournamentEventMedia | null>(null);
+  return (
+    <Card className="overflow-hidden">
+      <div className="border-b border-white/10 p-5 sm:p-6">
+        <SectionHeading>Event media</SectionHeading>
+        <p className="mt-2 text-sm text-slate-400">Official posters, schedules, results, and promotional artwork.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-px bg-white/10 lg:grid-cols-3">
+        {media.map((item) => (
+          <button key={item.id} type="button" onClick={() => setSelected(item)} className="group min-w-0 bg-[#0b0a0f] text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-300">
+            <div className="relative aspect-[4/5] overflow-hidden">
+              <Image src={resolveMediaUrl(item.imageUrl)} alt={item.title} fill sizes="(min-width: 1024px) 20vw, 45vw" className="object-contain p-2 transition duration-300 group-hover:scale-[1.02] motion-reduce:transition-none" />
+            </div>
+            <p className="truncate border-t border-white/10 px-3 py-3 text-xs font-semibold uppercase tracking-[0.05em] text-slate-200">{item.title}</p>
+          </button>
+        ))}
+      </div>
+      {selected ? (
+        <MediaModal ariaLabel={`${selected.title} preview`} onClose={() => setSelected(null)}>
+          <div className="relative min-h-0 flex-1">
+            <Image src={resolveMediaUrl(selected.imageUrl)} alt={selected.title} fill sizes="90vw" className="object-contain" />
+          </div>
+          <div className="mt-4 shrink-0">
+            <p className="text-xl font-semibold text-white">{selected.title}</p>
+            {selected.description ? <p className="mt-2 text-sm text-slate-400">{selected.description}</p> : null}
+            <p className="mt-2 text-xs text-slate-500">{tournamentTitle}</p>
+          </div>
+        </MediaModal>
+      ) : null}
+    </Card>
+  );
+}
+
+function TournamentAlbumsPanel({ tournament }: { tournament: Tournament }) {
+  return (
+    <Card className="p-5 sm:p-6">
+      <SectionHeading>Event photos</SectionHeading>
+      <p className="mt-2 text-sm text-slate-400">Browse photography from this tournament.</p>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        {tournament.eventAlbums.map((album) => (
+          <Link key={album.id} href={`/gallery/${album.slug}`} className="group overflow-hidden border border-white/10 bg-black/20 outline-none transition hover:border-purple-300/35 focus-visible:ring-2 focus-visible:ring-purple-300">
+            <div className="grid aspect-[16/9] grid-cols-2 gap-px bg-white/10">
+              {album.photos.slice(0, 2).map((photo) => (
+                <div key={photo.id} className="relative overflow-hidden bg-black">
+                  <Image src={resolveMediaUrl(photo.imageUrl)} alt={photo.caption || `${album.title} event photo`} fill sizes="(min-width: 640px) 25vw, 50vw" className="object-cover transition duration-300 group-hover:scale-[1.03] motion-reduce:transition-none" />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-3 p-4">
+              <p className="min-w-0 truncate font-semibold text-white">{album.title}</p>
+              <span className="shrink-0 text-xs text-purple-200">{album.photoCount} photos</span>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </Card>
   );
 }
 

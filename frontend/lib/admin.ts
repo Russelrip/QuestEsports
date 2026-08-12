@@ -21,6 +21,7 @@ export const adminNavigationGroups = [
     links: [
       { href: "/admin", label: "Overview" },
       { href: "/admin/media", label: "Media" },
+      { href: "/admin/event-albums", label: "Albums" },
     ],
   },
   {

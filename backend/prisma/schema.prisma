@@ -492,6 +492,7 @@ model Tournament {
   updatedAt                  DateTime                    @updatedAt @map("updated_at")
   teamRegistrations          TeamRegistration[]
   posters                    Poster[]
+  eventAlbums                EventAlbum[]
   bracket                    TournamentBracket?
   rulebook                   Rulebook?                   @relation(fields: [rulebookId], references: [id], onDelete: SetNull)
   series                     EventSeries?                @relation(fields: [seriesId], references: [id], onDelete: SetNull)
@@ -1229,6 +1230,7 @@ model ImageAsset {
   createdAt      DateTime       @default(now()) @map("created_at")
   posters        Poster[]
   productImages  ProductImage[]
+  albumPhotos    AlbumPhoto[]
 
   @@index([category, createdAt])
   @@index([createdAt])
@@ -1258,4 +1260,41 @@ model Poster {
   @@index([category, createdAt])
   @@index([createdAt])
   @@map("posters")
+}
+
+model EventAlbum {
+  id             String       @id @default(uuid()) @db.Uuid
+  slug           String       @unique
+  tournamentId   String?      @map("tournament_id") @db.Uuid
+  title          String
+  description    String?
+  location       String?
+  eventDate      DateTime?    @map("event_date")
+  isPublished    Boolean      @default(false) @map("is_published")
+  allowDownloads Boolean      @default(true) @map("allow_downloads")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  tournament     Tournament?  @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  photos         AlbumPhoto[]
+
+  @@index([isPublished, eventDate])
+  @@index([tournamentId])
+  @@index([createdAt])
+  @@map("event_albums")
+}
+
+model AlbumPhoto {
+  id           String     @id @default(uuid()) @db.Uuid
+  albumId      String     @map("album_id") @db.Uuid
+  imageAssetId String     @map("image_asset_id") @db.Uuid
+  caption      String?
+  position     Int        @default(0)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  album        EventAlbum @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  imageAsset   ImageAsset @relation(fields: [imageAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, imageAssetId])
+  @@index([albumId, position])
+  @@index([imageAssetId])
+  @@map("album_photos")
 }

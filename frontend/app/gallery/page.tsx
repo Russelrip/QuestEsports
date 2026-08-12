@@ -1,39 +1,39 @@
 import PageLayout from "@/components/PageLayout";
-import PostersContent from "@/components/posters/PostersContent";
-import { fetchPublicPosters, type MediaPagination, type Poster } from "@/lib/media";
+import EventAlbumsContent from "@/components/gallery/EventAlbumsContent";
+import { fetchPublicEventAlbums } from "@/lib/event-albums";
+import type { EventAlbum } from "@/lib/event-albums";
+import type { MediaPagination } from "@/lib/media";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 
 export const metadata = buildPageMetadata({
-  title: "Gallery",
+  title: "Event Albums",
   description: defaultPageDescriptions.gallery,
   path: "/gallery",
   keywords: [
     "Quest E-sports event photos",
     "Sri Lanka e-sports gallery",
-    "tournament highlights",
+    "tournament photo albums",
     "gaming event photography",
   ],
 });
 
 export default async function GalleryPage() {
-  let initialPosters: Poster[] = [];
-  let initialPagination: MediaPagination = { page: 1, pageSize: 18, total: 0, totalPages: 1 };
-  let initialLoadError = "";
+  let albums: EventAlbum[] = [];
+  let pagination: MediaPagination = { page: 1, pageSize: 12, total: 0, totalPages: 1 };
+  let initialError = "";
+  let totalPhotos = 0;
   try {
-    const postersData = await fetchPublicPosters();
-    initialPosters = postersData.posters;
-    initialPagination = postersData.pagination;
+    const result = await fetchPublicEventAlbums(new URLSearchParams({ page: "1", pageSize: "12" }));
+    albums = result.albums;
+    pagination = result.pagination;
+    totalPhotos = result.totalPhotos;
   } catch {
-    initialLoadError = "The gallery is temporarily unavailable. Retrying from your browser.";
+    initialError = "The event albums are temporarily unavailable. Please try again shortly.";
   }
 
   return (
     <PageLayout title="Gallery" description={defaultPageDescriptions.gallery}>
-      <PostersContent
-        initialPosters={initialPosters}
-        initialLoadError={initialLoadError}
-        initialPagination={initialPagination}
-      />
+      <EventAlbumsContent initialAlbums={albums} initialPagination={pagination} initialError={initialError} initialTotalPhotos={totalPhotos} />
     </PageLayout>
   );
 }

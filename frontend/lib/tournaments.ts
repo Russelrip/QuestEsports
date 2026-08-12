@@ -52,6 +52,26 @@ type TournamentResultSummary = {
   }>;
 };
 
+export type TournamentEventMedia = {
+  id: string;
+  title: string;
+  description?: string | null;
+  category: string;
+  createdAt: string;
+  imageUrl: string;
+};
+
+export type TournamentEventAlbum = {
+  id: string;
+  slug: string;
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  eventDate?: string | null;
+  photoCount: number;
+  photos: Array<{ id: string; caption?: string | null; imageUrl: string }>;
+};
+
 type RegisteredTournamentTeam = {
   id: string;
   teamName: string;
@@ -235,6 +255,8 @@ export type Tournament = {
   bracketSummary: TournamentBracketSummary | null;
   bracketData: TournamentBracketData | null;
   showcase: TournamentShowcase;
+  eventMedia: TournamentEventMedia[];
+  eventAlbums: TournamentEventAlbum[];
   resultSummary?: TournamentResultSummary | null;
   registeredTeams?: RegisteredTournamentTeam[];
   registeredParticipants?: RegisteredTournamentParticipant[];

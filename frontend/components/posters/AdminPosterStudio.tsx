@@ -10,10 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { applyLegacyImageFallback, resolveImageAssetUrl, type ImageAsset } from "@/lib/media";
 import { type UploadPreview } from "@/lib/poster-studio";
+import type { TournamentOption } from "@/lib/admin";
 
 type PosterDraftValues = {
   title: string;
   imageAssetId: string;
+  tournamentId: string;
 };
 
 export default function AdminPosterStudio({
@@ -32,6 +34,7 @@ export default function AdminPosterStudio({
   onUploadSubmit,
   onPosterDraftChange,
   onPosterSubmit,
+  tournaments,
 }: {
   images: ImageAsset[];
   uploadTitle: string;
@@ -48,6 +51,7 @@ export default function AdminPosterStudio({
   onUploadSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onPosterDraftChange: (updates: Partial<PosterDraftValues>) => void;
   onPosterSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  tournaments: TournamentOption[];
 }) {
   const [imageSearch, setImageSearch] = useState("");
   const filteredImages = useMemo(() => {
@@ -66,9 +70,9 @@ export default function AdminPosterStudio({
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-6">
           <p className="text-xs uppercase tracking-[0.28em] text-purple-200/80">Media Studio</p>
-          <h2 className="mt-3 text-3xl text-white">Manage gallery photos and artwork</h2>
+          <h2 className="mt-3 text-3xl text-white">Manage tournament artwork</h2>
           <p className="mt-2 max-w-3xl text-sm text-slate-400">
-            Upload event photos or promotional artwork, then add them to the public gallery.
+            Upload promotional artwork, then attach it to the tournament where visitors should see it.
           </p>
         </div>
 
@@ -108,11 +112,17 @@ export default function AdminPosterStudio({
           <Card className="p-6 sm:p-8">
             <form className="grid gap-5" onSubmit={onPosterSubmit}>
               <div>
-                <h3 className="text-2xl text-white">Create Gallery Entry</h3>
-                <p className="mt-2 text-sm text-slate-400">Select an uploaded image, add a title, preview it, and publish it to the gallery.</p>
+                <h3 className="text-2xl text-white">Create Tournament Media</h3>
+                <p className="mt-2 text-sm text-slate-400">Select an uploaded image, add a title, and place it inside a tournament page.</p>
               </div>
-              <FormField label="Gallery title" htmlFor="posterTitle">
+              <FormField label="Media title" htmlFor="posterTitle">
                 <Input id="posterTitle" value={posterDraft.title} onChange={(event) => onPosterDraftChange({ title: event.target.value })} placeholder="Open Finals highlights" required />
+              </FormField>
+              <FormField label="Tournament" htmlFor="posterTournament" hint="Promotional media appears on the selected tournament page.">
+                <Select id="posterTournament" value={posterDraft.tournamentId} onChange={(event) => onPosterDraftChange({ tournamentId: event.target.value })} required>
+                  <option value="">Select a tournament</option>
+                  {tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.title}</option>)}
+                </Select>
               </FormField>
               <FormField label="Source image" htmlFor="posterImage">
                 <Input
@@ -140,7 +150,7 @@ export default function AdminPosterStudio({
 
               {error ? <p className="text-sm text-rose-300">{error}</p> : null}
               {posterSuccess ? <p className="text-sm text-emerald-300">{posterSuccess}</p> : null}
-              <Button type="submit" disabled={posterSaving}>{posterSaving ? "Saving..." : "Publish gallery entry"}</Button>
+              <Button type="submit" disabled={posterSaving}>{posterSaving ? "Saving..." : "Add tournament media"}</Button>
             </form>
           </Card>
         </div>

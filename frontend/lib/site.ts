@@ -601,7 +601,7 @@ export const defaultPageDescriptions = {
   matchVideos:
     "Watch official Quest E-sports tournament broadcasts, YouTube match replays, highlights, and livestream archives.",
   gallery:
-    "Browse Quest E-sports event photos, tournament highlights, promotional artwork, and community moments.",
+    "Browse Quest E-sports event photography organised into albums from tournaments, expos, and community events.",
   shop: "Shop Quest E-sports apparel and made-to-order merchandise with secure online checkout.",
   members: "Quest E-sports members and community leadership.",
   join: "Apply to join Quest E-sports as a solo player, existing team, or incomplete roster looking for teammates.",

@@ -9,6 +9,7 @@ import PosterGallery from "@/components/posters/PosterGallery";
 import PosterPreview from "@/components/posters/PosterPreview";
 import { useToastStore } from "@/hooks/useToastStore";
 import { fetchImages, fetchPosters, ImageAsset, MediaPagination, Poster } from "@/lib/media";
+import { adminRequest, type TournamentOption } from "@/lib/admin";
 import {
   buildUploadPreviews,
   deletePoster,
@@ -24,10 +25,12 @@ export default function PostersContent({
   initialPosters = [],
   initialLoadError = "",
   initialPagination = { page: 1, pageSize: 18, total: initialPosters.length, totalPages: 1 },
+  adminOnly = false,
 }: {
   initialPosters?: Poster[];
   initialLoadError?: string;
   initialPagination?: MediaPagination;
+  adminOnly?: boolean;
 }) {
   const { user, isLoading: authLoading } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -47,6 +50,7 @@ export default function PostersContent({
   const [posterSaving, setPosterSaving] = useState(false);
   const [posterSuccess, setPosterSuccess] = useState("");
   const [deletingPosterId, setDeletingPosterId] = useState("");
+  const [tournaments, setTournaments] = useState<TournamentOption[]>([]);
 
   const loadMedia = useCallback(async () => {
     const shouldFetchPosters = initialPosters.length === 0 || isAdmin;
@@ -116,6 +120,13 @@ export default function PostersContent({
   useEffect(() => {
     void loadMedia();
   }, [loadMedia]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void adminRequest<{ tournaments: TournamentOption[] }>("/api/admin/tournaments?page=1&pageSize=50")
+      .then((data) => setTournaments(data.tournaments))
+      .catch(() => setTournaments([]));
+  }, [isAdmin]);
 
   useEffect(
     () => () => {
@@ -295,10 +306,11 @@ export default function PostersContent({
             }))
           }
           onPosterSubmit={handlePosterSubmit}
+          tournaments={tournaments}
         />
       ) : null}
 
-      <PosterGallery
+      {!adminOnly ? <PosterGallery
         loading={loading}
         error={error}
         posters={posters}
@@ -306,7 +318,7 @@ export default function PostersContent({
         hasMore={pagination.page < pagination.totalPages}
         loadingMore={loadingMore}
         onLoadMore={() => void handleLoadMore()}
-      />
+      /> : null}
 
       {selectedPoster ? (
         <MediaModal ariaLabel="Poster preview" onClose={() => setSelectedPoster(null)}>
