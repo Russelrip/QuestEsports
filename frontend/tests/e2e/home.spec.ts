@@ -90,7 +90,7 @@ test("mobile layout stays within the viewport and opens navigation without page 
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollPosition);
 });
 
-test("gallery poster preview fits the full image inside a mobile viewport", async ({ page }) => {
+test("gallery album opens a full event photo inside a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fulfillTestImage = (route: Route) =>
     route.fulfill({
@@ -102,91 +102,31 @@ test("gallery poster preview fits the full image inside a mobile viewport", asyn
     });
   await page.route("**/_next/image**", fulfillTestImage);
   await page.route("**/api/uploads/**", fulfillTestImage);
-  await page.route("**/api/posters*", async (route) => {
-    const requestOrigin = route.request().headers()["origin"] || new URL(page.url()).origin;
-    await route.fulfill({
-      contentType: "application/json",
-      headers: {
-        "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Allow-Origin": requestOrigin,
-      },
-      body: JSON.stringify({
-        success: true,
-        posters: [
-          {
-            id: "poster-appreciation",
-            title: "VALORANT SHOWDOWN APPRECIATION POST",
-            description: "",
-            category: "poster",
-            headline: "VALORANT SHOWDOWN APPRECIATION POST",
-            subheadline: "",
-            accentColor: "#7c3aed",
-            textColor: "#ffffff",
-            overlayAlign: "bottom-left",
-            createdAt: "2026-07-10T00:00:00.000Z",
-            updatedAt: "2026-07-10T00:00:00.000Z",
-            imageAsset: {
-              id: "image-appreciation",
-              title: "VALORANT SHOWDOWN APPRECIATION POST",
-              category: "poster",
-              contentType: "image/png",
-              createdAt: "2026-07-10T00:00:00.000Z",
-              imageUrl: "/images/mainbg.png",
-            },
-          },
-          {
-            id: "poster-mobile-fit",
-            title: "Mobile Fit Poster",
-            description: "Full poster preview test",
-            category: "poster",
-            headline: "Mobile Fit Poster",
-            subheadline: "",
-            accentColor: "#7c3aed",
-            textColor: "#ffffff",
-            overlayAlign: "bottom-left",
-            createdAt: "2026-07-10T00:00:00.000Z",
-            updatedAt: "2026-07-10T00:00:00.000Z",
-            imageAsset: {
-              id: "image-mobile-fit",
-              title: "Mobile Fit Poster",
-              category: "poster",
-              originalName: "opensemis1.jpg",
-              contentType: "image/png",
-              createdAt: "2026-07-10T00:00:00.000Z",
-              imageUrl: "/api/uploads/poster-images/missing.jpg",
-            },
-          },
-        ],
-      }),
-    });
-  });
+  await page.route("**/api/event-albums/**/image*", fulfillTestImage);
 
   await page.goto("/gallery");
-  await expect(
-    page.getByRole("link", { name: /VALORANT SHOWDOWN APPRECIATION POST/ }).first()
-  ).toHaveAttribute(
-    "href",
-    "https://www.facebook.com/share/p/14gNLGrBLWF/?mibextid=wwXIfr",
-    { timeout: 15_000 }
-  );
-  await expect(page.getByText("Selected capture")).toHaveCount(0);
-  const posterButton = page.locator("main section button").filter({ has: page.locator("img") }).first();
-  const posterImage = posterButton.locator("img");
-  await expect(posterImage).toHaveCSS("object-fit", "contain");
-  await posterButton.click();
+  const albumLink = page.getByRole("link", { name: /Open Mobile Test Album, 1 photos?/ });
+  await expect(albumLink).toHaveAttribute("href", "/gallery/mobile-test", { timeout: 15_000 });
+  await albumLink.click();
+  await expect(page).toHaveURL(/\/gallery\/mobile-test$/);
 
-  const dialog = page.getByRole("dialog", { name: "Poster preview" });
+  const photoButton = page.getByRole("button", { name: "Open photo 1 of 1" });
+  const thumbnail = photoButton.locator("img");
+  await expect(thumbnail).toHaveCSS("object-fit", "cover");
+  await photoButton.click();
+
+  const dialog = page.getByRole("dialog", { name: "Mobile Test Album photo viewer" });
   const previewImage = dialog.locator("img");
   await expect(dialog).toBeVisible();
   await expect(previewImage).toBeVisible();
   await expect(previewImage).toHaveCSS("object-fit", "contain");
+  await expect(page).toHaveURL(/photo=photo-mobile-test/);
 
   const dialogBox = await dialog.boundingBox();
   expect(dialogBox).not.toBeNull();
   expect((dialogBox?.y || 0) + (dialogBox?.height || 0)).toBeLessThanOrEqual(844);
-  expect(await dialog.evaluate((element) => element.scrollHeight)).toBe(
-    await dialog.evaluate((element) => element.clientHeight)
-  );
+  await page.getByRole("button", { name: "Close photo viewer" }).click();
+  await expect(dialog).toBeHidden();
 });
 
 test("members page lists the named CODM leader without placeholder groups", async ({ page }) => {

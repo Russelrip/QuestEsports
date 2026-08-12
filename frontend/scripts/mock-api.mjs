@@ -9,8 +9,45 @@ const mobileTestAvatar = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64"
 );
+const eventAlbumPhoto = {
+  id: "photo-mobile-test",
+  caption: "Mobile event photo",
+  position: 0,
+  createdAt: "2026-08-12T00:00:00.000Z",
+  imageAsset: {
+    id: "image-mobile-test",
+    title: "Mobile event photo",
+    description: null,
+    category: "photo",
+    originalName: "mobile-event-photo.png",
+    contentType: "image/png",
+    byteSize: mobileTestAvatar.length,
+    createdAt: "2026-08-12T00:00:00.000Z",
+    imageUrl: "/api/event-albums/mobile-test/photos/photo-mobile-test/image",
+  },
+};
+const eventAlbum = {
+  id: "album-mobile-test",
+  slug: "mobile-test",
+  title: "Mobile Test Album",
+  description: "Responsive event album test.",
+  location: "Colombo",
+  eventDate: "2026-08-12T00:00:00.000Z",
+  isPublished: true,
+  allowDownloads: true,
+  createdAt: "2026-08-12T00:00:00.000Z",
+  updatedAt: "2026-08-12T00:00:00.000Z",
+  photoCount: 1,
+  photos: [eventAlbumPhoto],
+  tournament: null,
+};
 const collections = new Map([
   ["/api/posters", { posters: [] }],
+  ["/api/event-albums", {
+    albums: [eventAlbum],
+    pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1 },
+    totalPhotos: 1,
+  }],
   ["/api/tournaments", { tournaments: [] }],
   ["/api/event-series", { series: [] }],
   ["/api/game-categories", { categories: [] }],
@@ -43,6 +80,19 @@ const server = createServer((request, response) => {
   ) {
     response.setHeader("Content-Type", "image/png");
     response.end(mobileTestAvatar);
+    return;
+  }
+  if (
+    request.method === "GET" &&
+    new URL(request.url || "/", `http://127.0.0.1:${port}`).pathname ===
+      "/api/event-albums/mobile-test/photos/photo-mobile-test/image"
+  ) {
+    response.setHeader("Content-Type", "image/png");
+    response.end(mobileTestAvatar);
+    return;
+  }
+  if (request.method === "GET" && request.url === "/api/event-albums/mobile-test") {
+    response.end(JSON.stringify({ success: true, album: eventAlbum }));
     return;
   }
   if (request.url === "/api/me") {
@@ -118,6 +168,8 @@ const server = createServer((request, response) => {
         bracketSummary: null,
         bracketData: null,
         showcase: { posterUrl: null, firstPlaceUrl: null, secondPlaceUrl: null, thirdPlaceUrl: null },
+        eventMedia: [],
+        eventAlbums: [],
         resultSummary: {
           status: "complete",
           completedAt: "2026-08-03T12:00:00.000Z",
