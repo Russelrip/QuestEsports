@@ -36,7 +36,7 @@ All admin routes require a valid session and `user.role === "admin"`.
 `/admin/media` provides two related views:
 
 - The managed library contains poster and product image assets. Admins can upload, search, filter, preview, download, and copy image URLs. An unused asset can be deleted; assets referenced by a gallery entry or product are locked until the owning reference is removed.
-- Public Storage lists the allowlisted filesystem folders for tournament artwork, poster images, team logos, avatars, game assets, and sponsor logos. Files can be previewed, downloaded, and linked. Deletion remains in the tournament, team, game, sponsor, product, or gallery workflow that owns the reference.
+- Public Storage lists the allowlisted filesystem folders for tournament artwork, poster images, team logos, avatars, game assets, and sponsor logos. Its summary shows the combined size of all files in the current search and folder view so operators can track public media storage use. Files can be previewed, downloaded, and linked. Deletion remains in the tournament, team, game, sponsor, product, or gallery workflow that owns the reference.
 
 The browser never lists `PRIVATE_UPLOAD_ROOT`, bank-transfer evidence, recovery packages, environment files, credentials, or arbitrary server paths. A missing public folder is treated as empty, which is normal in a new staging environment.
 

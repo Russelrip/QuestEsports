@@ -415,6 +415,7 @@ export const fetchPublicUploadFiles = async (searchParams?: URLSearchParams) => 
   return parseApiResponse<{
     files: PublicUploadFile[];
     directories: string[];
+    totalBytes: number;
     pagination: MediaPagination;
   }>(response, "Unable to list public upload files.");
 };

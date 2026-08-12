@@ -85,13 +85,14 @@ test("listPublicUploads returns only allowlisted public image folders", async ()
     assert.equal(result.items[0].contentType, "image/webp");
     assert.equal(result.items[0].byteSize, 25);
     assert.equal(result.items[0].imageUrl, "/api/uploads/tournament-banners/event-banner.webp");
+    assert.equal(result.totalBytes, 25);
   } finally {
     restore();
     await fs.rm(root, { recursive: true, force: true });
   }
 });
 
-test("public upload pagination stats only files on the requested page", async () => {
+test("public upload pagination reports total bytes across all matching files", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "quest-upload-page-"));
   const directory = path.join(root, "poster-images");
   await fs.mkdir(directory, { recursive: true });
@@ -128,7 +129,8 @@ test("public upload pagination stats only files on the requested page", async ()
     });
     assert.equal(result.pagination.total, 100);
     assert.equal(result.items.length, 10);
-    assert.equal(statCalls, 10);
+    assert.equal(result.totalBytes, 100);
+    assert.equal(statCalls, 100);
   } finally {
     restore();
     fs.stat = originalStat;

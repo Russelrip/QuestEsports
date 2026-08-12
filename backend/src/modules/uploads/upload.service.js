@@ -131,10 +131,18 @@ const listPublicUploads = async (query = {}) => {
       right.filename.localeCompare(left.filename) ||
       left.directory.localeCompare(right.directory),
     );
-  const total = candidates.length;
-  const selected = candidates.slice((page - 1) * pageSize, page * pageSize);
-  const files = await Promise.all(selected.map(async ({ directory, filename }) => {
+  const candidatesWithStats = await Promise.all(candidates.map(async ({ directory, filename }) => {
     const stats = await fs.stat(path.join(UPLOAD_DIRECTORIES[directory], filename));
+    return {
+      directory,
+      filename,
+      stats,
+    };
+  }));
+  const total = candidatesWithStats.length;
+  const totalBytes = candidatesWithStats.reduce((sum, { stats }) => sum + stats.size, 0);
+  const selected = candidatesWithStats.slice((page - 1) * pageSize, page * pageSize);
+  const files = selected.map(({ directory, filename, stats }) => {
     return {
       directory,
       filename,
@@ -143,11 +151,12 @@ const listPublicUploads = async (query = {}) => {
       modifiedAt: stats.mtime,
       imageUrl: `/api/uploads/${directory}/${filename}`,
     };
-  }));
+  });
 
   return {
     items: files,
     directories: Object.keys(UPLOAD_DIRECTORIES),
+    totalBytes,
     pagination: {
       page,
       pageSize,

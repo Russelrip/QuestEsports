@@ -602,7 +602,7 @@ Fields:
 
 ### `GET /api/admin/media/files`
 
-Admin-only read-only listing of allowlisted public upload folders. Supports `page`, `pageSize`, `search`, and `directory`. It never traverses arbitrary paths or includes private payment evidence.
+Admin-only read-only listing of allowlisted public upload folders. Supports `page`, `pageSize`, `search`, and `directory`. The response includes `totalBytes`, the combined size of every file matching the current search and directory filters before pagination. It never traverses arbitrary paths or includes private payment evidence.
 
 ### `POST /api/posters`
 

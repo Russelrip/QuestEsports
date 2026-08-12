@@ -56,6 +56,7 @@ const getPublicUploadFiles = asyncHandler(async (req, res) => {
     success: true,
     files: result.items,
     directories: result.directories,
+    totalBytes: result.totalBytes,
     pagination: result.pagination,
   });
 });

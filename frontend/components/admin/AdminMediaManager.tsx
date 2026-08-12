@@ -42,10 +42,12 @@ const emptyPagination: MediaPagination = {
 };
 
 const formatBytes = (value?: number | null) => {
-  if (!value || value < 1) return "Size unavailable";
+  if (value === undefined || value === null || value < 0) return "Size unavailable";
+  if (value === 0) return "0 B";
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 };
 
 const safeDownloadName = (asset: ImageAsset) => {
@@ -80,6 +82,7 @@ export default function AdminMediaManager() {
   const [deletingId, setDeletingId] = useState("");
   const [downloadingId, setDownloadingId] = useState("");
   const [storageFiles, setStorageFiles] = useState<PublicUploadFile[]>([]);
+  const [storageTotalBytes, setStorageTotalBytes] = useState(0);
   const [storagePagination, setStoragePagination] = useState(emptyPagination);
   const [storagePage, setStoragePage] = useState(1);
   const [storageDirectory, setStorageDirectory] = useState("");
@@ -119,6 +122,7 @@ export default function AdminMediaManager() {
       const result = await fetchPublicUploadFiles(params);
       setStorageFiles(result.files);
       setStorageDirectories(result.directories);
+      setStorageTotalBytes(result.totalBytes);
       setStoragePagination(result.pagination);
     } catch (nextError) {
       setStorageError(nextError instanceof Error ? nextError.message : "Unable to load public upload folders.");
@@ -438,7 +442,9 @@ export default function AdminMediaManager() {
                 {storageDirectories.map((directory) => <option key={directory} value={directory}>{directory}</option>)}
               </Select>
             </div>
-            <p className="mt-4 text-xs text-slate-500">{storagePagination.total} file{storagePagination.total === 1 ? "" : "s"}{search ? ` matching “${search}”` : ""}</p>
+            <p className="mt-4 text-xs text-slate-500">
+              {storagePagination.total} file{storagePagination.total === 1 ? "" : "s"} · {formatBytes(storageTotalBytes)} used{search ? ` matching “${search}”` : ""}
+            </p>
           </Card>
 
           {storageError ? <p className="border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{storageError}</p> : null}
