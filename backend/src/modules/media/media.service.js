@@ -230,29 +230,23 @@ const createImageAssets = async ({ body, files }) => {
     throw new HttpError(400, "Upload at least one image.");
   }
 
-  const persistenceResults = await Promise.allSettled(
-    files.map(async (file, index) => {
+  const persistedFiles = [];
+
+  try {
+    for (const [index, file] of files.entries()) {
       const persistedImage = await persistPosterImageUpload(file);
 
       if (!persistedImage) {
         throw new HttpError(400, "Upload at least one image.");
       }
 
-      return {
+      persistedFiles.push({
         file,
         persistedImage,
         title: files.length === 1 ? title : `${title} ${index + 1}`,
-      };
-    })
-  );
-  const persistedFiles = persistenceResults
-    .filter((result) => result.status === "fulfilled")
-    .map((result) => result.value);
-  const persistenceFailure = persistenceResults.find(
-    (result) => result.status === "rejected"
-  );
-
-  if (persistenceFailure) {
+      });
+    }
+  } catch (error) {
     await removeUploadsQuietly(
       persistedFiles.map(({ persistedImage }) => ({
         directory: posterImageDirectory,
@@ -260,7 +254,7 @@ const createImageAssets = async ({ body, files }) => {
       })),
       { operation: "createImageAssetsPersistenceRollback" }
     );
-    throw persistenceFailure.reason;
+    throw error;
   }
 
   let createdAssets;

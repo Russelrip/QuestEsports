@@ -14,6 +14,7 @@ const {
   reorderEventAlbumPhotos,
   deleteEventAlbumPhoto,
   getPublicEventAlbumPhoto,
+  getAdminEventAlbumPhoto,
 } = require("./event-album.service");
 
 const safeDownloadName = (value) =>
@@ -48,6 +49,22 @@ const streamEventAlbumPhoto = asyncHandler(async (req, res) => {
       `attachment; filename="${safeDownloadName(image.originalName)}"`
     );
   }
+  res.status(200);
+  if (image.path) {
+    await pipeline(createReadStream(image.path), res);
+    return;
+  }
+  res.send(image.data);
+});
+
+const streamAdminEventAlbumPhoto = asyncHandler(async (req, res) => {
+  const image = await getAdminEventAlbumPhoto({
+    albumId: req.params.albumId,
+    photoId: req.params.photoId,
+  });
+  res.setHeader("Content-Type", image.contentType);
+  res.setHeader("Content-Length", image.size ?? image.data.length);
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
   res.status(200);
   if (image.path) {
     await pipeline(createReadStream(image.path), res);
@@ -104,6 +121,7 @@ module.exports = {
   getEventAlbums,
   getEventAlbum,
   streamEventAlbumPhoto,
+  streamAdminEventAlbumPhoto,
   getAdminEventAlbums,
   getAdminEventAlbum,
   createAdminEventAlbum,
