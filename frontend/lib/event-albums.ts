@@ -34,7 +34,7 @@ export type EventAlbum = {
 export const fetchPublicEventAlbums = async (searchParams?: URLSearchParams) => {
   const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
   const response = await fetchWithTimeout(`${resolveMediaUrl("/api/event-albums")}${suffix}`, {
-    next: { revalidate: 30 },
+    cache: "no-store",
     headers: withServerOriginHeader(),
   });
   return parseApiResponse<{ albums: EventAlbum[]; pagination: MediaPagination; totalPhotos: number }>(
@@ -46,7 +46,7 @@ export const fetchPublicEventAlbums = async (searchParams?: URLSearchParams) => 
 export const fetchPublicEventAlbum = async (slug: string) => {
   const response = await fetchWithTimeout(
     resolveMediaUrl(`/api/event-albums/${encodeURIComponent(slug)}`),
-    { next: { revalidate: 30 }, headers: withServerOriginHeader() },
+    { cache: "no-store", headers: withServerOriginHeader() },
   );
   return parseApiResponse<{ album: EventAlbum }>(response, "Unable to load this event album.").then(
     (payload) => payload.album,
