@@ -36,6 +36,20 @@ const collectReferencedImages = async () => {
   );
 };
 
+const clearMissingImageReferences = (sourceName) =>
+  prisma.$transaction([
+    ...TOURNAMENT_IMAGE_FIELDS.map((field) =>
+      prisma.tournament.updateMany({
+        where: { [field]: sourceName },
+        data: { [field]: null },
+      })
+    ),
+    prisma.eventSeries.updateMany({
+      where: { heroImageName: sourceName },
+      data: { heroImageName: null },
+    }),
+  ]);
+
 const optimizeImage = async (sourceName) => {
   if (!SAFE_IMAGE_NAME.test(sourceName)) {
     return { status: "skipped", reason: "unsafe filename" };
@@ -51,7 +65,11 @@ const optimizeImage = async (sourceName) => {
     ]);
   } catch (error) {
     if (error?.code === "ENOENT") {
-      return { status: "skipped", reason: "missing file" };
+      if (apply) {
+        await clearMissingImageReferences(sourceName);
+        return { status: "repaired", reason: "cleared missing file reference" };
+      }
+      return { status: "repair-candidate", reason: "missing file reference" };
     }
     throw error;
   }
@@ -123,6 +141,8 @@ async function main() {
     referenced: referencedImages.size,
     candidates: 0,
     optimized: 0,
+    repairCandidates: 0,
+    repaired: 0,
     skipped: 0,
     bytesBefore: 0,
     bytesAfter: 0,
@@ -132,13 +152,15 @@ async function main() {
     const result = await optimizeImage(sourceName);
     if (result.status === "candidate") summary.candidates += 1;
     else if (result.status === "optimized") summary.optimized += 1;
+    else if (result.status === "repair-candidate") summary.repairCandidates += 1;
+    else if (result.status === "repaired") summary.repaired += 1;
     else summary.skipped += 1;
     summary.bytesBefore += result.bytesBefore || 0;
     summary.bytesAfter += result.bytesAfter || 0;
   }
 
   console.log(JSON.stringify({ mode: apply ? "apply" : "dry-run", ...summary }, null, 2));
-  if (!apply && summary.candidates > 0) {
+  if (!apply && (summary.candidates > 0 || summary.repairCandidates > 0)) {
     console.log("Run with --apply to optimize the listed production assets and update their database references.");
   }
 }
