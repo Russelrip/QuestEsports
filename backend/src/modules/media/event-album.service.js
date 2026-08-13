@@ -49,7 +49,10 @@ const parseOptionalDate = (value) => {
 const buildAlbumPhotoImageUrl = (albumSlug, photoId) =>
   `/api/event-albums/${encodeURIComponent(albumSlug)}/photos/${photoId}/image`;
 
-const mapPhoto = (photo, albumSlug) => ({
+const buildAdminAlbumPhotoImageUrl = (albumId, photoId) =>
+  `/api/admin/event-albums/${albumId}/photos/${photoId}/image`;
+
+const mapPhoto = (photo, album, admin = false) => ({
   id: photo.id,
   caption: photo.caption,
   position: photo.position,
@@ -63,11 +66,13 @@ const mapPhoto = (photo, albumSlug) => ({
     contentType: photo.imageAsset.contentType,
     byteSize: photo.imageAsset.byteSize,
     createdAt: photo.imageAsset.createdAt,
-    imageUrl: buildAlbumPhotoImageUrl(albumSlug, photo.id),
+    imageUrl: admin
+      ? buildAdminAlbumPhotoImageUrl(album.id, photo.id)
+      : buildAlbumPhotoImageUrl(album.slug, photo.id),
   },
 });
 
-const mapAlbum = (album) => ({
+const mapAlbum = (album, { admin = false } = {}) => ({
   id: album.id,
   slug: album.slug,
   title: album.title,
@@ -80,7 +85,7 @@ const mapAlbum = (album) => ({
   updatedAt: album.updatedAt,
   tournament: album.tournament || null,
   photoCount: album._count?.photos ?? album.photos?.length ?? 0,
-  photos: (album.photos || []).map((photo) => mapPhoto(photo, album.slug)),
+  photos: (album.photos || []).map((photo) => mapPhoto(photo, album, admin)),
 });
 
 const albumListInclude = {
@@ -150,7 +155,7 @@ const listAdminEventAlbums = async (query = {}) => {
     }),
   ]);
   return buildPagedResponse({
-    items: albums.map(mapAlbum),
+    items: albums.map((album) => mapAlbum(album, { admin: true })),
     total,
     page: pagination.page,
     pageSize: pagination.pageSize,
@@ -174,7 +179,7 @@ const getAdminEventAlbumById = async (albumId) => {
     include: albumDetailInclude,
   });
   if (!album) throw new HttpError(404, "Event album not found.");
-  return mapAlbum(album);
+  return mapAlbum(album, { admin: true });
 };
 
 const validateTournament = async (tournamentId) => {
@@ -218,7 +223,7 @@ const createEventAlbum = async (body) => {
     data: { id: crypto.randomUUID(), ...data },
     include: albumDetailInclude,
   });
-  return mapAlbum(album);
+  return mapAlbum(album, { admin: true });
 };
 
 const updateEventAlbum = async (albumId, body) => {
@@ -231,7 +236,7 @@ const updateEventAlbum = async (albumId, body) => {
     data,
     include: albumDetailInclude,
   });
-  return mapAlbum(album);
+  return mapAlbum(album, { admin: true });
 };
 
 const cleanupAssets = async (assetIds) => {
@@ -345,6 +350,21 @@ const getPublicEventAlbumPhoto = async ({ slug, photoId }) => {
   };
 };
 
+const getAdminEventAlbumPhoto = async ({ albumId, photoId }) => {
+  const photo = await prisma.albumPhoto.findFirst({
+    where: { id: photoId, albumId },
+    select: {
+      imageAssetId: true,
+      imageAsset: { select: { originalName: true } },
+    },
+  });
+  if (!photo) throw new HttpError(404, "Album photo not found.");
+  return {
+    ...(await getImageAssetById(photo.imageAssetId)),
+    originalName: photo.imageAsset.originalName,
+  };
+};
+
 module.exports = {
   mapAlbum,
   listPublicEventAlbums,
@@ -358,4 +378,5 @@ module.exports = {
   reorderEventAlbumPhotos,
   deleteEventAlbumPhoto,
   getPublicEventAlbumPhoto,
+  getAdminEventAlbumPhoto,
 };

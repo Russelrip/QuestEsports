@@ -104,6 +104,52 @@ test("album photo reordering requires every photo exactly once", async () => {
   }
 });
 
+test("admin album responses use authenticated photo URLs for draft images", async () => {
+  const createdAt = new Date("2026-08-12T00:00:00.000Z");
+  const album = {
+    id: "album-draft",
+    slug: "draft-album",
+    title: "Draft album",
+    isPublished: false,
+    allowDownloads: true,
+    createdAt,
+    updatedAt: createdAt,
+    photos: [{
+      id: "photo-1",
+      caption: null,
+      position: 0,
+      createdAt,
+      imageAsset: {
+        id: "asset-1",
+        title: "Draft photo",
+        category: "photo",
+        contentType: "image/jpeg",
+        createdAt,
+      },
+    }],
+  };
+  const prisma = {
+    eventAlbum: { findUnique: async () => album },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [mediaServicePath]: {
+      createImageAssets: async () => [],
+      deleteUnusedImageAsset: async () => {},
+      getImageAssetById: async () => null,
+    },
+  });
+  try {
+    const result = await service.getAdminEventAlbumById("album-draft");
+    assert.equal(
+      result.photos[0].imageAsset.imageUrl,
+      "/api/admin/event-albums/album-draft/photos/photo-1/image",
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("public album photo lookup is constrained to a published album", async () => {
   let findOptions;
   const prisma = {

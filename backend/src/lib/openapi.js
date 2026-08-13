@@ -906,6 +906,12 @@ const additionalPaths = {
       parameters: idParameter("albumId"),
     }),
   },
+  "/api/admin/event-albums/{albumId}/photos/{photoId}/image": {
+    get: createOperation("Media", "Stream an event album photo for editing", {
+      authenticated: true,
+      parameters: [...idParameter("albumId"), ...idParameter("photoId")],
+    }),
+  },
   "/api/admin/event-albums/{albumId}/photos/reorder": {
     patch: createOperation("Media", "Reorder event album photos", {
       authenticated: true,

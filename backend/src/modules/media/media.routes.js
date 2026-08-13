@@ -21,6 +21,7 @@ const {
   getEventAlbums,
   getEventAlbum,
   streamEventAlbumPhoto,
+  streamAdminEventAlbumPhoto,
   getAdminEventAlbums,
   getAdminEventAlbum,
   createAdminEventAlbum,
@@ -62,6 +63,11 @@ router.patch("/posters/:posterId", requireAdmin, updatePoster);
 router.delete("/posters/:posterId", requireAdmin, deletePoster);
 
 router.get("/admin/event-albums", requireAdmin, getAdminEventAlbums);
+router.get(
+  "/admin/event-albums/:albumId/photos/:photoId/image",
+  requireAdmin,
+  streamAdminEventAlbumPhoto
+);
 router.get("/admin/event-albums/:albumId", requireAdmin, getAdminEventAlbum);
 router.post(
   "/admin/event-albums",
@@ -85,7 +91,7 @@ router.post(
   "/admin/event-albums/:albumId/photos",
   requireAdmin,
   invalidateCache("event-albums"),
-  createUploadRequestSizeGuard(100 * 1024 * 1024),
+  createUploadRequestSizeGuard(25 * 1024 * 1024),
   dbImageUpload.array("photos", 10),
   uploadAdminEventAlbumPhotos
 );
