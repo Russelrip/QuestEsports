@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AdminPosterStudio from "@/components/posters/AdminPosterStudio";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ export default function PostersContent({
   const { user, isLoading: authLoading } = useAuth();
   const isAdmin = user?.role === "admin";
   const showToast = useToastStore((state) => state.showToast);
+  const initialPostersRef = useRef(initialPosters);
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [posters, setPosters] = useState<Poster[]>(initialPosters);
   const [loading, setLoading] = useState(initialPosters.length === 0);
@@ -53,7 +54,8 @@ export default function PostersContent({
   const [tournaments, setTournaments] = useState<TournamentOption[]>([]);
 
   const loadMedia = useCallback(async () => {
-    const shouldFetchPosters = initialPosters.length === 0 || isAdmin;
+    const initialPosterItems = initialPostersRef.current;
+    const shouldFetchPosters = initialPosterItems.length === 0 || isAdmin;
     const shouldFetchImages = !authLoading && isAdmin;
 
     if (!shouldFetchPosters && !shouldFetchImages) {
@@ -89,7 +91,7 @@ export default function PostersContent({
             current.imageAssetId ||
             allImages[0]?.id ||
             postersData?.posters[0]?.imageAsset.id ||
-            initialPosters[0]?.imageAsset.id ||
+            initialPosterItems[0]?.imageAsset.id ||
             "",
         }));
       } else {
@@ -99,7 +101,7 @@ export default function PostersContent({
           imageAssetId:
             current.imageAssetId ||
             postersData?.posters[0]?.imageAsset.id ||
-            initialPosters[0]?.imageAsset.id ||
+            initialPosterItems[0]?.imageAsset.id ||
             "",
         }));
       }
@@ -115,7 +117,7 @@ export default function PostersContent({
         setLoading(false);
       }
     }
-  }, [authLoading, initialPosters, isAdmin, showToast]);
+  }, [authLoading, isAdmin, showToast]);
 
   useEffect(() => {
     void loadMedia();
