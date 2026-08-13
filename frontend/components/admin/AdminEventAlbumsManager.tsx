@@ -16,6 +16,7 @@ import { adminRequest, type Pagination, type TournamentOption } from "@/lib/admi
 import {
   buildEventAlbumUploadBatches,
   EVENT_ALBUM_UPLOAD_BATCH_SIZE,
+  excludeAlreadyUploadedFiles,
 } from "@/lib/event-album-upload";
 import type { EventAlbum } from "@/lib/event-albums";
 import { fetchPosters, resolveImageAssetUrl, resolveMediaUrl, type Poster } from "@/lib/media";
@@ -362,9 +363,16 @@ export default function AdminEventAlbumsManager() {
                   multiple
                   disabled={uploading}
                   onChange={(event) => {
-                    setFiles(Array.from(event.target.files || []));
+                    const chosenFiles = Array.from(event.target.files || []);
+                    const { pending, skipped } = excludeAlreadyUploadedFiles(
+                      chosenFiles,
+                      selected.photos.map((photo) => photo.imageAsset.originalName),
+                    );
+                    setFiles(pending);
                     setUploadProgress(null);
-                    setMessage("");
+                    setMessage(skipped.length
+                      ? `${skipped.length} photo${skipped.length === 1 ? " was" : "s were"} already in this album and ${skipped.length === 1 ? "was" : "were"} skipped. ${pending.length} photo${pending.length === 1 ? " remains" : "s remain"} to upload.`
+                      : "");
                   }}
                   required={files.length === 0}
                 />
