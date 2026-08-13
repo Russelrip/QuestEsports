@@ -372,6 +372,72 @@ test("admin guard shows a retry state instead of redirecting when session lookup
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
 
+test("event album admin loads legacy poster tools once without a request loop", async ({ page }) => {
+  let posterStudioRequests = 0;
+  let imageLibraryRequests = 0;
+
+  await page.route("**/api/me", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      user: {
+        id: "admin-1",
+        firstName: "Quest",
+        lastName: "Admin",
+        email: "admin@quest.test",
+        username: "questadmin",
+        role: "admin",
+        emailVerified: true,
+      },
+    }),
+  }));
+  await page.route("**/api/admin/event-albums?**", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      albums: [],
+      pagination: { page: 1, pageSize: 24, total: 0, totalPages: 1 },
+    }),
+  }));
+  await page.route("**/api/admin/tournaments?**", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, tournaments: [] }),
+  }));
+  await page.route("**/api/posters?**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("pageSize") === "18") posterStudioRequests += 1;
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        posters: [],
+        pagination: { page: 1, pageSize: Number(url.searchParams.get("pageSize")), total: 0, totalPages: 1 },
+      }),
+    });
+  });
+  await page.route("**/api/images?**", (route) => {
+    imageLibraryRequests += 1;
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        images: [],
+        pagination: { page: 1, pageSize: 60, total: 0, totalPages: 1 },
+      }),
+    });
+  });
+
+  await page.goto("/admin/event-albums");
+  await expect(page.getByRole("heading", { name: "Event Albums" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create album" })).toBeVisible();
+  await expect.poll(() => posterStudioRequests).toBe(1);
+  await expect.poll(() => imageLibraryRequests).toBe(1);
+  await page.waitForTimeout(750);
+  expect(posterStudioRequests).toBe(1);
+  expect(imageLibraryRequests).toBe(1);
+  await expect(page.getByText("Unable to load gallery")).toHaveCount(0);
+});
+
 test("mobile admin teams use contained cards with accessible navigation and actions", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/me", (route) => route.fulfill({
