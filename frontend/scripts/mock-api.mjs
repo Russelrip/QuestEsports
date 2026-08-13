@@ -23,7 +23,7 @@ const eventAlbumPhoto = {
     contentType: "image/png",
     byteSize: mobileTestAvatar.length,
     createdAt: "2026-08-12T00:00:00.000Z",
-    imageUrl: "/api/event-albums/mobile-test/photos/photo-mobile-test/image",
+    imageUrl: "/api/event-albums/mobile-test/photos/photo-mobile-test/image?v=image-mobile-test",
   },
 };
 const eventAlbum = {
@@ -39,6 +39,7 @@ const eventAlbum = {
   updatedAt: "2026-08-12T00:00:00.000Z",
   photoCount: 1,
   photos: [eventAlbumPhoto],
+  photoPagination: { page: 1, pageSize: 30, total: 1, totalPages: 1 },
   tournament: null,
 };
 const collections = new Map([
@@ -91,7 +92,10 @@ const server = createServer((request, response) => {
     response.end(mobileTestAvatar);
     return;
   }
-  if (request.method === "GET" && request.url === "/api/event-albums/mobile-test") {
+  if (
+    request.method === "GET" &&
+    new URL(request.url || "/", `http://127.0.0.1:${port}`).pathname === "/api/event-albums/mobile-test"
+  ) {
     response.end(JSON.stringify({ success: true, album: eventAlbum }));
     return;
   }

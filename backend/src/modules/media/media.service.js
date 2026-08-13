@@ -7,6 +7,7 @@ const { HttpError } = require("../../lib/http-error");
 const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const {
   detectImageType,
+  persistEventAlbumPhotoUpload,
   persistPosterImageUpload,
   posterImageDirectory,
 } = require("../../middleware/upload");
@@ -231,10 +232,13 @@ const createImageAssets = async ({ body, files }) => {
   }
 
   const persistedFiles = [];
+  const persistImageUpload = category === "photo"
+    ? persistEventAlbumPhotoUpload
+    : persistPosterImageUpload;
 
   try {
     for (const [index, file] of files.entries()) {
-      const persistedImage = await persistPosterImageUpload(file);
+      const persistedImage = await persistImageUpload(file);
 
       if (!persistedImage) {
         throw new HttpError(400, "Upload at least one image.");

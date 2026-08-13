@@ -73,8 +73,56 @@ test("public event album listing only requests published albums and maps public 
     assert.equal(result.totalPhotos, 25);
     assert.equal(
       result.items[0].photos[0].imageAsset.imageUrl,
-      "/api/event-albums/quest-finals-2026/photos/photo-1/image",
+      "/api/event-albums/quest-finals-2026/photos/photo-1/image?v=stored.jpg",
     );
+  } finally {
+    restore();
+  }
+});
+
+test("public event album detail can return a bounded photo page", async () => {
+  let findOptions;
+  const createdAt = new Date("2026-08-12T00:00:00.000Z");
+  const prisma = {
+    eventAlbum: {
+      findFirst: async (options) => {
+        findOptions = options;
+        return {
+          id: "album-1",
+          slug: "quest-finals-2026",
+          title: "Quest Finals 2026",
+          isPublished: true,
+          allowDownloads: true,
+          createdAt,
+          updatedAt: createdAt,
+          tournament: null,
+          _count: { photos: 297 },
+          photos: [],
+        };
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [mediaServicePath]: {
+      createImageAssets: async () => [],
+      deleteUnusedImageAsset: async () => {},
+      getImageAssetById: async () => null,
+    },
+  });
+  try {
+    const result = await service.getPublicEventAlbumBySlug("Quest Finals 2026", {
+      photoPage: "3",
+      photoPageSize: "30",
+    });
+    assert.equal(findOptions.include.photos.skip, 60);
+    assert.equal(findOptions.include.photos.take, 30);
+    assert.deepEqual(result.photoPagination, {
+      page: 3,
+      pageSize: 30,
+      total: 297,
+      totalPages: 10,
+    });
   } finally {
     restore();
   }
@@ -143,7 +191,7 @@ test("admin album responses use authenticated photo URLs for draft images", asyn
     const result = await service.getAdminEventAlbumById("album-draft");
     assert.equal(
       result.photos[0].imageAsset.imageUrl,
-      "/api/admin/event-albums/album-draft/photos/photo-1/image",
+      "/api/admin/event-albums/album-draft/photos/photo-1/image?v=asset-1",
     );
   } finally {
     restore();

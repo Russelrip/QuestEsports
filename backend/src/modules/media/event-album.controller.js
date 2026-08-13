@@ -17,11 +17,19 @@ const {
   getAdminEventAlbumPhoto,
 } = require("./event-album.service");
 
-const safeDownloadName = (value) =>
-  path.basename(String(value || "event-photo.jpg")).replace(/[\r\n"\\]/g, "-");
+const safeDownloadName = (value, contentType) => {
+  const parsed = path.parse(path.basename(String(value || "event-photo")));
+  const extension = contentType === "image/webp"
+    ? ".webp"
+    : contentType === "image/png"
+      ? ".png"
+      : ".jpg";
+  return `${parsed.name || "event-photo"}${extension}`.replace(/[\r\n"\\]/g, "-");
+};
 
 const getEventAlbums = asyncHandler(async (req, res) => {
   const result = await listPublicEventAlbums(req.query);
+  res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=300");
   res.status(200).json({
     success: true,
     albums: result.items,
@@ -31,7 +39,8 @@ const getEventAlbums = asyncHandler(async (req, res) => {
 });
 
 const getEventAlbum = asyncHandler(async (req, res) => {
-  const album = await getPublicEventAlbumBySlug(req.params.slug);
+  const album = await getPublicEventAlbumBySlug(req.params.slug, req.query);
+  res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=300");
   res.status(200).json({ success: true, album });
 });
 
@@ -46,7 +55,7 @@ const streamEventAlbumPhoto = asyncHandler(async (req, res) => {
   if (req.query.download === "1" && image.allowDownloads) {
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${safeDownloadName(image.originalName)}"`
+      `attachment; filename="${safeDownloadName(image.originalName, image.contentType)}"`
     );
   }
   res.status(200);
