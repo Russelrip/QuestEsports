@@ -48,6 +48,8 @@ export default function EventAlbumCard({ album }: { album: EventAlbum }) {
             return (
               <div key={photo?.id || `empty-${index}`} className={`relative overflow-hidden bg-[#09080d] ${className}`}>
                 {photo ? (
+                  <>
+                  <span aria-hidden="true" className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,#09080d_25%,#1a1422_45%,#09080d_65%)] bg-[length:200%_100%]" />
                   <Image
                     src={resolveMediaUrl(photo.imageAsset.imageUrl)}
                     alt={photo.caption || photo.imageAsset.title || `${album.title} event photo`}
@@ -55,6 +57,7 @@ export default function EventAlbumCard({ album }: { album: EventAlbum }) {
                     sizes="(min-width: 1280px) 17vw, (min-width: 768px) 30vw, 50vw"
                     className="object-cover transition duration-500 group-hover:scale-[1.025] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                   />
+                  </>
                 ) : (
                   <span className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(168,85,247,0.08),transparent_65%)]" />
                 )}

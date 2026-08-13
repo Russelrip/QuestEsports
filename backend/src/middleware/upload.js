@@ -464,6 +464,16 @@ const persistTournamentScheduleUpload = async (file) => {
   };
 };
 
+const persistEventAlbumPhotoUpload = (file) =>
+  persistValidatedUpload({
+    file,
+    directory: posterImageDirectory,
+    invalidMessage: "Only JPEG, PNG, and WebP event photos are allowed.",
+    maxDimension: 2560,
+    outputFormat: "webp",
+    quality: 82,
+  });
+
 const persistBankTransferProofUpload = async (file) => {
   if (!file?.buffer) {
     throw new HttpError(400, "Choose a payment receipt to upload.");
@@ -474,6 +484,7 @@ const persistBankTransferProofUpload = async (file) => {
     invalidMessage: "The uploaded payment proof is not a valid JPEG, PNG, or WebP image.",
     maxDimension: 4096,
   });
+
   const { buffer, contentType, extension } = normalized;
 
   const filename = buildSafeUploadFilename(extension);
@@ -510,6 +521,7 @@ module.exports = {
   persistAvatarUpload,
   persistTournamentBannerUpload,
   persistPosterImageUpload,
+  persistEventAlbumPhotoUpload,
   persistGameAssetUpload,
   persistSponsorLogoUpload,
   persistTournamentScheduleUpload,

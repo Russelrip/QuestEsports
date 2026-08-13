@@ -28,6 +28,11 @@ on:
         required: false
         default: false
         type: boolean
+      optimize_event_album_photos:
+        description: Back up production, then optimize existing event album photos
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -117,6 +122,7 @@ jobs:
           MOBILE_ANDROID_CERT_SHA256: ${{ secrets.MOBILE_ADMIN_ANDROID_CERT_SHA256 }}
           REPAIR_LEGACY_MEDIA: ${{ inputs.repair_legacy_media }}
           OPTIMIZE_TOURNAMENT_BANNERS: ${{ inputs.optimize_tournament_banners }}
+          OPTIMIZE_EVENT_ALBUM_PHOTOS: ${{ inputs.optimize_event_album_photos }}
           REPAIR_DATABASE_SSL: ${{ inputs.repair_database_ssl }}
           REPAIR_MOBILE_ANDROID_FINGERPRINT: ${{ inputs.repair_mobile_android_fingerprint }}
           REPAIR_MOBILE_OAUTH_REDIRECT: ${{ inputs.repair_mobile_oauth_redirect }}
@@ -142,6 +148,10 @@ jobs:
             echo "OPTIMIZE_TOURNAMENT_BANNERS must be true or false." >&2
             exit 1
           fi
+          if [ "$OPTIMIZE_EVENT_ALBUM_PHOTOS" != "true" ] && [ "$OPTIMIZE_EVENT_ALBUM_PHOTOS" != "false" ]; then
+            echo "OPTIMIZE_EVENT_ALBUM_PHOTOS must be true or false." >&2
+            exit 1
+          fi
           if [ "$REPAIR_DATABASE_SSL" != "true" ] && [ "$REPAIR_DATABASE_SSL" != "false" ]; then
             echo "REPAIR_DATABASE_SSL must be true or false." >&2
             exit 1
@@ -158,7 +168,7 @@ jobs:
             echo "MOBILE_ADMIN_ANDROID_CERT_SHA256 must contain the verified release certificate fingerprint." >&2
             exit 1
           fi
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' MOBILE_ANDROID_CERT_SHA256='$MOBILE_ANDROID_CERT_SHA256' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' OPTIMIZE_TOURNAMENT_BANNERS='$OPTIMIZE_TOURNAMENT_BANNERS' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_ANDROID_FINGERPRINT='$REPAIR_MOBILE_ANDROID_FINGERPRINT' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' MOBILE_ANDROID_CERT_SHA256='$MOBILE_ANDROID_CERT_SHA256' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' OPTIMIZE_TOURNAMENT_BANNERS='$OPTIMIZE_TOURNAMENT_BANNERS' OPTIMIZE_EVENT_ALBUM_PHOTOS='$OPTIMIZE_EVENT_ALBUM_PHOTOS' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_ANDROID_FINGERPRINT='$REPAIR_MOBILE_ANDROID_FINGERPRINT' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
@@ -304,7 +314,7 @@ jobs:
               exit 1
             fi
           fi
-          if [ "$MIGRATION_CHANGED" = true ] || [ "$MIGRATION_PENDING" = true ] || [ "$REPAIR_LEGACY_MEDIA" = "true" ] || [ "$OPTIMIZE_TOURNAMENT_BANNERS" = "true" ]; then
+          if [ "$MIGRATION_CHANGED" = true ] || [ "$MIGRATION_PENDING" = true ] || [ "$REPAIR_LEGACY_MEDIA" = "true" ] || [ "$OPTIMIZE_TOURNAMENT_BANNERS" = "true" ] || [ "$OPTIMIZE_EVENT_ALBUM_PHOTOS" = "true" ]; then
             BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash "$APP_DIR/ops/backup-production.sh"
           fi
           npm run lint
@@ -316,6 +326,10 @@ jobs:
           if [ "$OPTIMIZE_TOURNAMENT_BANNERS" = "true" ]; then
             npm run media:optimize-tournament-banners
             npm run media:optimize-tournament-banners -- --apply
+          fi
+          if [ "$OPTIMIZE_EVENT_ALBUM_PHOTOS" = "true" ]; then
+            npm run media:optimize-event-album-photos
+            npm run media:optimize-event-album-photos -- --apply
           fi
           PROCESS_RESTART_ATTEMPTED=true
           pm2 restart "$PM2_PROCESS" --update-env

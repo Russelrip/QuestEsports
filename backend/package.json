@@ -22,6 +22,7 @@
     "media:import-legacy-posters": "node scripts/import-legacy-posters.js",
     "media:migrate-image-assets": "node scripts/migrate-image-assets.js",
     "media:optimize-tournament-banners": "node scripts/optimize-tournament-banners.js",
+    "media:optimize-event-album-photos": "node scripts/optimize-event-album-photos.js",
     "load:test": "k6 run performance/k6-api.js",
     "load:stress:db": "k6 run performance/k6-db-stress.js",
     "alerts:test:discord": "node scripts/verify-discord-alert.js",

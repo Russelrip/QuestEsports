@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Section } from "@/components/ui/section";
 import { apiFetch } from "@/lib/auth";
-import type { EventAlbum } from "@/lib/event-albums";
+import { fetchPublicEventAlbum, type EventAlbum } from "@/lib/event-albums";
 import { resolveMediaUrl } from "@/lib/media";
 
 const formatEventDate = (value?: string | null) => {
@@ -37,23 +37,100 @@ export default function EventAlbumBrowser({
     () => Math.max(-1, album.photos.findIndex((photo) => photo.id === initialPhotoId)),
     [album.photos, initialPhotoId],
   );
+  const [photos, setPhotos] = useState(album.photos);
+  const [photoPagination, setPhotoPagination] = useState(album.photoPagination);
   const [selectedIndex, setSelectedIndex] = useState(initialIndex);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const touchStartX = useRef<number | null>(null);
-  const selectedPhoto = selectedIndex >= 0 ? album.photos[selectedIndex] : null;
+  const selectedPhoto = selectedIndex >= 0 ? photos[selectedIndex] : null;
 
   const selectPhoto = useCallback((index: number) => {
-    const normalized = (index + album.photos.length) % album.photos.length;
+    const normalized = (index + photos.length) % photos.length;
     setSelectedIndex(normalized);
-    updatePhotoQuery(album.photos[normalized].id);
-  }, [album.photos]);
+    updatePhotoQuery(photos[normalized].id);
+  }, [photos]);
+
+  const loadMorePhotos = async () => {
+    if (!photoPagination || loadingMore || photoPagination.page >= photoPagination.totalPages) return;
+    setLoadingMore(true);
+    setLoadError("");
+    try {
+      const nextAlbum = await fetchPublicEventAlbum(album.slug, {
+        page: photoPagination.page + 1,
+        pageSize: photoPagination.pageSize,
+      });
+      setPhotos((current) => [
+        ...current,
+        ...nextAlbum.photos.filter((photo) => !current.some((item) => item.id === photo.id)),
+      ]);
+      setPhotoPagination(nextAlbum.photoPagination);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load more photos.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const closeLightbox = useCallback(() => {
     setSelectedIndex(-1);
     setDownloadError("");
     updatePhotoQuery();
   }, []);
+
+  useEffect(() => {
+    if (
+      !initialPhotoId ||
+      photos.some((photo) => photo.id === initialPhotoId) ||
+      !photoPagination ||
+      photoPagination.page >= photoPagination.totalPages
+    ) return;
+
+    let cancelled = false;
+    const loadLinkedPhoto = async () => {
+      setLoadingMore(true);
+      setLoadError("");
+      let combined = photos;
+      let pagination = photoPagination;
+      try {
+        while (pagination.page < pagination.totalPages) {
+          const nextAlbum = await fetchPublicEventAlbum(album.slug, {
+            page: pagination.page + 1,
+            pageSize: pagination.pageSize,
+          });
+          combined = [
+            ...combined,
+            ...nextAlbum.photos.filter((photo) => !combined.some((item) => item.id === photo.id)),
+          ];
+          if (nextAlbum.photoPagination) pagination = nextAlbum.photoPagination;
+          const linkedIndex = combined.findIndex((photo) => photo.id === initialPhotoId);
+          if (linkedIndex >= 0) {
+            if (!cancelled) {
+              setPhotos(combined);
+              setPhotoPagination(pagination);
+              setSelectedIndex(linkedIndex);
+            }
+            return;
+          }
+          if (!nextAlbum.photoPagination) break;
+        }
+        if (!cancelled) {
+          setPhotos(combined);
+          setPhotoPagination(pagination);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : "Unable to open the linked photo.");
+        }
+      } finally {
+        if (!cancelled) setLoadingMore(false);
+      }
+    };
+    void loadLinkedPhoto();
+    return () => { cancelled = true; };
+  }, [album.slug, initialPhotoId, photoPagination, photos]);
 
   useEffect(() => {
     if (!selectedPhoto) return;
@@ -120,9 +197,10 @@ export default function EventAlbumBrowser({
           </span>
         </div>
 
-        {album.photos.length ? (
+        {photos.length ? (
+          <>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-            {album.photos.map((photo, index) => (
+            {photos.map((photo, index) => (
               <button
                 key={photo.id}
                 type="button"
@@ -130,6 +208,7 @@ export default function EventAlbumBrowser({
                 className="group relative aspect-square overflow-hidden bg-[#0c0b10] text-left outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-purple-300"
                 aria-label={`Open photo ${index + 1} of ${album.photoCount}`}
               >
+                <span aria-hidden="true" className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,#0c0b10_25%,#1a1422_45%,#0c0b10_65%)] bg-[length:200%_100%]" />
                 <Image
                   src={resolveMediaUrl(photo.imageAsset.imageUrl)}
                   alt={photo.caption || photo.imageAsset.title || `${album.title} photo ${index + 1}`}
@@ -140,6 +219,15 @@ export default function EventAlbumBrowser({
               </button>
             ))}
           </div>
+          {loadError ? <p className="mt-5 text-center text-sm text-rose-300">{loadError}</p> : null}
+          {photoPagination && photoPagination.page < photoPagination.totalPages ? (
+            <div className="mt-8 flex justify-center">
+              <Button type="button" variant="secondary" onClick={() => void loadMorePhotos()} disabled={loadingMore}>
+                {loadingMore ? "Loading…" : `Load more photos (${photos.length} of ${album.photoCount})`}
+              </Button>
+            </div>
+          ) : null}
+          </>
         ) : (
           <div className="border border-white/10 bg-[#0d0c13] p-10 text-center text-sm text-slate-400">
             This album does not have any published photos yet.
@@ -187,11 +275,10 @@ export default function EventAlbumBrowser({
               alt={selectedPhoto.caption || selectedPhoto.imageAsset.title || `${album.title} event photo`}
               fill
               priority
-              unoptimized
               sizes="100vw"
               className="select-none object-contain p-2 sm:p-5"
             />
-            {album.photos.length > 1 ? (
+            {photos.length > 1 ? (
               <>
                 <button type="button" onClick={() => selectPhoto(selectedIndex - 1)} className="absolute left-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center border border-white/15 bg-black/60 text-3xl text-white transition hover:bg-purple-500/60 sm:left-5 sm:size-14" aria-label="Previous photo">‹</button>
                 <button type="button" onClick={() => selectPhoto(selectedIndex + 1)} className="absolute right-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center border border-white/15 bg-black/60 text-3xl text-white transition hover:bg-purple-500/60 sm:right-5 sm:size-14" aria-label="Next photo">›</button>
