@@ -12,6 +12,9 @@ coverage/
 playwright-report/
 test-results/
 
+# Subagent-driven-development coordination scratch (ledgers, briefs, reports)
+.superpowers/
+
 # Editor and operating-system files
 .DS_Store
 Thumbs.db

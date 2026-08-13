@@ -69,3 +69,64 @@ test("errorHandler maps Multer limit failures to 400 responses", () => {
     restore();
   }
 });
+
+test("errorHandler maps duck-typed upstream errors (FastApiError/InternalServiceError) to their mapped status", () => {
+  const { module: handlers, restore } = loadErrorHandler();
+
+  try {
+    const response = buildResponse();
+
+    handlers.errorHandler(
+      {
+        name: "FastApiError",
+        code: "TEAM_NOT_FOUND",
+        status: 404,
+        message: "VALORANT team not found",
+        requestId: "upstream-req-1",
+        responseSummary: { code: "TEAM_NOT_FOUND", message: "Team not found" },
+      },
+      {
+        requestId: "request-1",
+        method: "GET",
+        originalUrl: "/api/v1/admin/valorant/teams",
+      },
+      response,
+      () => {}
+    );
+
+    assert.equal(response.statusCode, 404);
+    assert.equal(response.body.success, false);
+    assert.deepEqual(response.body.error, {
+      code: "TEAM_NOT_FOUND",
+      message: "VALORANT team not found",
+      request_id: "upstream-req-1",
+    });
+    assert.ok(response.body.meta.serverNow);
+  } finally {
+    restore();
+  }
+});
+
+test("errorHandler keeps the generic 500 envelope for unmapped errors carrying no numeric status", () => {
+  const { module: handlers, restore } = loadErrorHandler();
+
+  try {
+    const response = buildResponse();
+
+    handlers.errorHandler(
+      { code: "P2002", message: "Unique constraint failed" },
+      {
+        requestId: "request-1",
+        method: "POST",
+        originalUrl: "/api/v1/admin/valorant/teams/bind",
+      },
+      response,
+      () => {}
+    );
+
+    assert.equal(response.statusCode, 500);
+    assert.equal(response.body.error.code, "internal_error");
+  } finally {
+    restore();
+  }
+});

@@ -9,7 +9,7 @@
     "start": "node src/server.js",
     "lint": "eslint src tests scripts",
     "test": "node --test",
-    "test:integration": "node --test tests/database-integration.test.js",
+    "test:integration": "node scripts/run-database-integration-tests.js",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js --test-coverage-exclude=src/generated/** --test-coverage-lines=68 --test-coverage-branches=60 --test-coverage-functions=68",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

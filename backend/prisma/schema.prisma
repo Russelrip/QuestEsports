@@ -14,6 +14,47 @@ enum UserRole {
   admin
 }
 
+enum ValorantBindingStatus {
+  active
+  detached
+}
+
+enum ValorantSeriesStatus {
+  draft
+  finalized
+  orphaned
+  reconciliation_required
+}
+
+enum ValorantOperationType {
+  team_bind
+  series_create
+  attach_game
+  set_game_order
+  remove_game
+  finalize
+  reconcile
+}
+
+enum ValorantOperationStatus {
+  pending
+  in_flight
+  succeeded
+  failed
+  reconciliation_required
+}
+
+enum ValorantFormat {
+  bo1
+  bo3
+  bo5
+}
+
+enum ValorantGameSide {
+  red
+  blue
+}
+
 enum AuthProvider {
   google
   discord
@@ -254,6 +295,8 @@ model User {
   assignedMatches         Match[]                     @relation("AssignedMatchStaff")
   auditLogs               AuditLog[]                  @relation("AuditActor")
   createdExpenses         EventExpense[]              @relation("ExpenseCreator")
+  valorantBindings        ValorantTeamBinding[]       @relation("ValorantBindingBoundBy")
+  valorantSeriesFinalized QuestValorantSeries[]       @relation("ValorantSeriesFinalizer")
 
   @@index([role])
   @@index([createdAt])
@@ -1130,6 +1173,116 @@ model RegistrationMember {
   @@map("registration_members")
 }
 
+model ValorantTeamBinding {
+  id               String                @id @default(uuid()) @db.Uuid
+  savedTeamId      String?               @map("saved_team_id") @db.Uuid
+  valorantTeamUuid String                @map("valorant_team_uuid")
+  status           ValorantBindingStatus @default(active)
+  boundByUserId    String?               @map("bound_by_user_id") @db.Uuid
+  boundAt          DateTime              @default(now()) @map("bound_at")
+  detachedAt       DateTime?             @map("detached_at")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  savedTeam        SavedTeam?            @relation(fields: [savedTeamId], references: [id], onDelete: SetNull)
+  boundByUser      User?                 @relation("ValorantBindingBoundBy", fields: [boundByUserId], references: [id], onDelete: SetNull)
+  seriesAsA        QuestValorantSeries[] @relation("ValorantBindingA")
+  seriesAsB        QuestValorantSeries[] @relation("ValorantBindingB")
+
+  @@index([savedTeamId])
+  @@index([valorantTeamUuid])
+  @@index([status])
+  @@map("valorant_team_bindings")
+}
+
+model QuestValorantSeries {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  externalKey          String                  @unique @map("external_key")
+  bindingAId           String                  @map("binding_a_id") @db.Uuid
+  bindingBId           String                  @map("binding_b_id") @db.Uuid
+  format               ValorantFormat
+  playedAt             DateTime                @map("played_at")
+  ratingModePreference String?                 @map("rating_mode_preference")
+  status               ValorantSeriesStatus    @default(draft)
+  valorantSeriesUuid   String?                 @map("valorant_series_uuid")
+  finalizedById        String?                 @map("finalized_by_id") @db.Uuid
+  lastOperationId      String?                 @unique @map("last_operation_id") @db.Uuid
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  bindingA             ValorantTeamBinding     @relation("ValorantBindingA", fields: [bindingAId], references: [id], onDelete: Restrict)
+  bindingB             ValorantTeamBinding     @relation("ValorantBindingB", fields: [bindingBId], references: [id], onDelete: Restrict)
+  finalizedBy          User?                   @relation("ValorantSeriesFinalizer", fields: [finalizedById], references: [id], onDelete: SetNull)
+  lastOperation        QuestValorantOperation? @relation("ValorantSeriesLastOperation", fields: [lastOperationId], references: [id], onDelete: SetNull)
+  games                QuestValorantSeriesGame[]
+  operations           QuestValorantOperation[]
+
+  @@index([bindingAId])
+  @@index([bindingBId])
+  @@index([status])
+  @@index([valorantSeriesUuid])
+  @@map("quest_valorant_series")
+}
+
+model QuestValorantSeriesGame {
+  id               String              @id @default(uuid()) @db.Uuid
+  questSeriesId    String              @map("quest_series_id") @db.Uuid
+  gameNumber       Int                 @map("game_number")
+  matchId          String              @map("match_id")
+  valorantGameUuid String?             @map("valorant_game_uuid")
+  teamASide        ValorantGameSide    @map("team_a_side")
+  teamBSide        ValorantGameSide    @map("team_b_side")
+  mapName          String?             @map("map_name")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  questSeries      QuestValorantSeries @relation(fields: [questSeriesId], references: [id], onDelete: Cascade)
+
+  @@unique([questSeriesId, gameNumber])
+  @@unique([matchId])
+  @@map("quest_valorant_series_games")
+}
+
+model QuestValorantMatch {
+  id            String   @id @default(uuid()) @db.Uuid
+  matchId       String   @unique @map("match_id")
+  henrikMatchId String   @unique @map("henrik_match_id")
+  mapName       String   @map("map_name")
+  startedAt     DateTime @map("started_at")
+  mode          String?
+  queue         String?
+  redScore      Int?     @map("red_score")
+  blueScore     Int?     @map("blue_score")
+  winningSide   String?  @map("winning_side")
+  rosterSummary Json?    @map("roster_summary")
+  lastSyncedAt  DateTime @default(now()) @map("last_synced_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([startedAt])
+  @@map("quest_valorant_matches")
+}
+
+model QuestValorantOperation {
+  id               String                  @id @default(uuid()) @db.Uuid
+  operationId      String                  @unique @map("operation_id")
+  type             ValorantOperationType
+  externalKey      String?                 @map("external_key")
+  questSeriesId    String?                 @map("quest_series_id") @db.Uuid
+  status           ValorantOperationStatus @default(pending)
+  fastapiRequestId String?                 @map("fastapi_request_id")
+  requestBodyHash  String?                 @map("request_body_hash")
+  responseCode     Int?                    @map("response_code")
+  errorCode        String?                 @map("error_code")
+  responseSummary  Json?                   @map("response_summary")
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+  questSeries      QuestValorantSeries?    @relation(fields: [questSeriesId], references: [id], onDelete: SetNull)
+  seriesLastOp     QuestValorantSeries?    @relation("ValorantSeriesLastOperation")
+
+  @@index([status])
+  @@index([questSeriesId])
+  @@index([type, status])
+  @@map("quest_valorant_operations")
+}
+
 model SavedTeam {
   id                    String             @id @default(uuid()) @db.Uuid
   captainUserId         String             @map("captain_user_id") @db.Uuid
@@ -1144,6 +1297,7 @@ model SavedTeam {
   captainUser           User               @relation(fields: [captainUserId], references: [id], onDelete: Cascade)
   members               SavedTeamMember[]
   registrations         TeamRegistration[]
+  valorantBindings      ValorantTeamBinding[]
 
   @@unique([captainUserId, name])
   @@index([captainUserId])

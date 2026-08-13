@@ -92,6 +92,50 @@ const errorHandler = (error, req, res, next) => {
     return;
   }
 
+  // Mapped upstream (FastAPI/valorant-client) errors. Duck-typed on shape so
+  // this shared middleware never imports the valorant client: FastApiError and
+  // InternalServiceError both carry a STRING `code` and a NUMERIC `status` in
+  // 400-599. Without this branch every mapped 409/404/422/429/502/503 would
+  // collapse into the generic 500 and body.error.code (spec §6.5) would never
+  // materialize.
+  const upstreamStatus =
+    typeof error?.code === "string" && typeof error?.status === "number" ? error.status : null;
+  if (upstreamStatus !== null && upstreamStatus >= 400 && upstreamStatus <= 599) {
+    if (upstreamStatus >= 500) {
+      logger.error("Handled upstream API error", {
+        requestId: req.requestId,
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: upstreamStatus,
+        sourceErrorCode: error.code,
+        error,
+      });
+      captureException(error, {
+        requestId: req.requestId,
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: upstreamStatus,
+        sourceErrorCode: error.code,
+      });
+    }
+
+    const body = {
+      success: false,
+      message: error.message,
+      requestId: req.requestId,
+    };
+    if (isVersionedRequest(req)) {
+      body.error = {
+        code: error.code,
+        message: error.message,
+        request_id: error.requestId || null,
+      };
+      body.meta = { serverNow: new Date().toISOString() };
+    }
+    res.status(upstreamStatus).json(body);
+    return;
+  }
+
   logger.error("Unhandled API error", {
     requestId: req.requestId,
     method: req.method,

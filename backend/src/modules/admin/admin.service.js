@@ -2197,6 +2197,17 @@ const deleteAdminSavedTeam = async (teamId) => {
   });
   if (!team) throw new HttpError(404, "Team not found.");
 
+  const activeBinding = await prisma.valorantTeamBinding.findFirst({
+    where: { savedTeamId: team.id, status: "active" },
+    select: { id: true },
+  });
+  if (activeBinding) {
+    throw new HttpError(
+      409,
+      "This team cannot be deleted because it has an active VALORANT binding. Detach the VALORANT binding first."
+    );
+  }
+
   const deleted = await prisma.savedTeam.deleteMany({
     where: { id: team.id },
   });

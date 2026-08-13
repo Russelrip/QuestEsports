@@ -38,6 +38,9 @@ const productionEnv = {
   API_PROCESS_COUNT: "1",
   SITE_MAINTENANCE_MODE: "false",
   SITE_MAINTENANCE_RETRY_AFTER_SECONDS: "900",
+  VALORANT_SERVICE_SECRET: "x".repeat(64),
+  VALORANT_SERVICE_KEY_ID: "kid-1",
+  VALORANT_INTERNAL_BASE_URL: "https://valorant.internal:8443",
 };
 
 const loadEnvironment = (overrides) =>
@@ -257,4 +260,36 @@ test("HTTPS URL validation rejects malformed, insecure, credentialed, and non-or
     () => environmentValidation.assertHttpsUrl("APP_URL", "https://quest.example.com/path", { originOnly: true }),
     /must be an origin/
   );
+});
+
+test("production requires the VALORANT service secret and key id", () => {
+  const missingSecret = loadEnvironment({ VALORANT_SERVICE_SECRET: "" });
+  assert.notEqual(missingSecret.status, 0);
+  assert.match(missingSecret.stderr, /VALORANT_SERVICE_SECRET is required outside tests/);
+
+  const missingKid = loadEnvironment({
+    VALORANT_SERVICE_SECRET: "x".repeat(64),
+    VALORANT_SERVICE_KEY_ID: "",
+  });
+  assert.notEqual(missingKid.status, 0);
+  assert.match(missingKid.stderr, /VALORANT_SERVICE_KEY_ID is required outside tests/);
+});
+
+test("production rejects an insecure VALORANT internal base URL", () => {
+  const insecure = loadEnvironment({
+    VALORANT_SERVICE_SECRET: "x".repeat(64),
+    VALORANT_SERVICE_KEY_ID: "kid-1",
+    VALORANT_INTERNAL_BASE_URL: "http://valorant.internal:8000",
+  });
+  assert.notEqual(insecure.status, 0);
+  assert.match(insecure.stderr, /VALORANT_INTERNAL_BASE_URL must use HTTPS/);
+});
+
+test("production accepts a valid HTTPS VALORANT internal base URL", () => {
+  const valid = loadEnvironment({
+    VALORANT_SERVICE_SECRET: "x".repeat(64),
+    VALORANT_SERVICE_KEY_ID: "kid-1",
+    VALORANT_INTERNAL_BASE_URL: "https://valorant.internal:8443",
+  });
+  assert.equal(valid.status, 0, valid.stderr);
 });

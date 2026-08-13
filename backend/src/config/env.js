@@ -174,6 +174,25 @@ const env = {
   API_PROCESS_COUNT: normalizePositiveInteger(process.env.API_PROCESS_COUNT, 1),
   UPSTASH_REDIS_REST_URL: optional("UPSTASH_REDIS_REST_URL"),
   UPSTASH_REDIS_REST_TOKEN: optional("UPSTASH_REDIS_REST_TOKEN"),
+  VALORANT_INTERNAL_BASE_URL: optional("VALORANT_INTERNAL_BASE_URL").replace(/\/+$/, ""),
+  VALORANT_SERVICE_SECRET: optional("VALORANT_SERVICE_SECRET"),
+  VALORANT_SERVICE_KEY_ID: optional("VALORANT_SERVICE_KEY_ID"),
+  VALORANT_SERVICE_ISSUER: optional("VALORANT_SERVICE_ISSUER", "quest-esports"),
+  VALORANT_SERVICE_AUDIENCE: optional("VALORANT_SERVICE_AUDIENCE", "valorant-platform"),
+  VALORANT_TIMEOUT_MS: normalizeIntegerInRange(
+    "VALORANT_TIMEOUT_MS",
+    process.env.VALORANT_TIMEOUT_MS,
+    15000,
+    1000,
+    60000,
+  ),
+  VALORANT_READ_RETRIES: normalizeIntegerInRange(
+    "VALORANT_READ_RETRIES",
+    process.env.VALORANT_READ_RETRIES,
+    2,
+    0,
+    5,
+  ),
   NODE_ENV: normalizeNodeEnv(process.env.NODE_ENV),
   LOG_LEVEL: optional("LOG_LEVEL", "info").toLowerCase(),
   SESSION_COOKIE_NAME: required("SESSION_COOKIE_NAME"),
@@ -399,6 +418,33 @@ if (env.NODE_ENV !== "test" && !env.AUTH_ENCRYPTION_KEY) {
   throw new Error(
     "AUTH_ENCRYPTION_KEY is required outside tests for sensitive-data encryption and OAuth state signing.",
   );
+}
+
+if (env.NODE_ENV !== "test" && !env.VALORANT_SERVICE_SECRET) {
+  throw new Error(
+    "VALORANT_SERVICE_SECRET is required outside tests for VALORANT service-auth signing.",
+  );
+}
+
+if (env.NODE_ENV !== "test" && !env.VALORANT_SERVICE_KEY_ID) {
+  throw new Error(
+    "VALORANT_SERVICE_KEY_ID is required outside tests for HMAC key rotation.",
+  );
+}
+
+if (env.VALORANT_INTERNAL_BASE_URL) {
+  let parsed;
+  try {
+    parsed = new URL(env.VALORANT_INTERNAL_BASE_URL);
+  } catch {
+    throw new Error("VALORANT_INTERNAL_BASE_URL must be a valid absolute URL.");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("VALORANT_INTERNAL_BASE_URL must not contain URL credentials.");
+  }
+  if (env.NODE_ENV === "production") {
+    assertHttpsUrl("VALORANT_INTERNAL_BASE_URL", env.VALORANT_INTERNAL_BASE_URL);
+  }
 }
 
 if (

@@ -1,7 +1,8 @@
 const express = require("express");
 const { env } = require("../config/env");
 const { asyncHandler } = require("../lib/async-handler");
-const { attachSession, requireAuth } = require("../modules/auth/auth.middleware");
+const { attachSession, requireAuth, requireAdmin } = require("../modules/auth/auth.middleware");
+const valorantController = require("../modules/valorant/valorant.controller");
 const { cachePublicData } = require("../middleware/cache-control");
 const { cacheJson, invalidateCache } = require("../middleware/response-cache");
 const { getPublicTournamentBySlug } = require("../modules/tournaments/tournament.service");
@@ -109,5 +110,27 @@ router.delete(
   requireSuperAdmin,
   staffController.removeStaff
 );
+
+router.use("/admin/valorant", requireAdmin);
+router.get("/admin/valorant/teams", valorantController.listTeams);
+router.post("/admin/valorant/teams/bind", valorantController.bindTeam);
+router.delete("/admin/valorant/teams/:bindingId/detach", valorantController.detachBinding);
+router.post("/admin/valorant/discover", valorantController.discover);
+router.post("/admin/valorant/matches/import", valorantController.importMatch);
+router.get("/admin/valorant/matches/by-henrik-id/:henrikMatchId", valorantController.getMatchByHenrikId);
+router.get("/admin/valorant/matches", valorantController.listMatches);
+router.post("/admin/valorant/series", valorantController.createSeries);
+router.get("/admin/valorant/series", valorantController.listSeries);
+router.get("/admin/valorant/series/:id", valorantController.getSeries);
+router.delete("/admin/valorant/series/:id", valorantController.deleteSeries);
+router.post("/admin/valorant/series/:id/games", valorantController.attachGame);
+router.put("/admin/valorant/series/:id/games/order", valorantController.setGameOrder);
+router.delete("/admin/valorant/series/:id/games/:gameId", valorantController.removeGame);
+router.get("/admin/valorant/series/:id/preview", valorantController.previewSeries);
+router.post("/admin/valorant/series/:id/finalize", valorantController.finalizeSeries);
+router.get("/admin/valorant/rankings", valorantController.getRankings);
+router.get("/admin/valorant/teams/:teamId/rating-history", valorantController.getRatingHistory);
+router.get("/admin/valorant/teams/:teamId/series", valorantController.getTeamSeries);
+router.get("/admin/valorant/reconciliation", valorantController.getReconciliation);
 
 module.exports = router;

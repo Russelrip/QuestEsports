@@ -913,6 +913,209 @@ Body:
 
 These are maintenance operations intended for controlled admin use.
 
+## VALORANT Admin Endpoints
+
+Quest admin routes for the VALORANT platform integration. Every route lives under `/api/v1/admin/valorant/*`, requires a valid session with `role === "admin"` (`requireAdmin` mounted via `router.use("/admin/valorant", requireAdmin)`), and proxies to the VALORANT FastAPI service over the internal network. Quest never exposes the VALORANT service directly to browsers; FastAPI is authoritative for canonical matches, series correctness/finalization, rating events, and rankings. Spec: `docs/superpowers/specs/2026-08-13-standalone-valorant-integration-design.md` §6.2–§6.5, §8.3, §9.2.
+
+### Route table (spec §6.2)
+
+| Method | Quest route | Backing FastAPI call |
+|---|---|---|
+| `GET` | `/api/v1/admin/valorant/teams` | `GET /api/v1/teams` + bindings joined |
+| `POST` | `/api/v1/admin/valorant/teams/bind` | `POST /api/v1/teams` (create-or-get by `quest_saved_team_id`) |
+| `DELETE` | `/api/v1/admin/valorant/teams/{bindingId}/detach` | none (Quest-local status change) |
+| `POST` | `/api/v1/admin/valorant/discover` | `POST /api/v1/match-search/two-player` |
+| `POST` | `/api/v1/admin/valorant/matches/import` | `POST /api/v1/matches/import` |
+| `GET` | `/api/v1/admin/valorant/matches/by-henrik-id/{henrikMatchId}` | `GET /api/v1/matches/by-henrik-id/{henrik_match_id}` |
+| `GET` | `/api/v1/admin/valorant/matches` | `GET /api/v1/matches[...]` (list filters) |
+| `POST` | `/api/v1/admin/valorant/series` | `POST /api/v1/series` (with `external_quest_series_id` + anchors) |
+| `GET` | `/api/v1/admin/valorant/series` | `GET /api/v1/series` |
+| `GET` | `/api/v1/admin/valorant/series/{id}` | `GET /api/v1/series/{valorant_series_uuid}` |
+| `DELETE` | `/api/v1/admin/valorant/series/{id}` | `DELETE /api/v1/series/{valorant_series_uuid}` (draft only) |
+| `POST` | `/api/v1/admin/valorant/series/{id}/games` | `POST /api/v1/series/{valorant_series_uuid}/games` |
+| `PUT` | `/api/v1/admin/valorant/series/{id}/games/order` | `PUT /api/v1/series/{valorant_series_uuid}/games/order` (delta D9) |
+| `DELETE` | `/api/v1/admin/valorant/series/{id}/games/{gameId}` | `DELETE /api/v1/series/{valorant_series_uuid}/games/{game_id}` |
+| `GET` | `/api/v1/admin/valorant/series/{id}/preview` | `GET /api/v1/series/{valorant_series_uuid}/preview` |
+| `POST` | `/api/v1/admin/valorant/series/{id}/finalize` | `POST /api/v1/series/{valorant_series_uuid}/finalize` |
+| `GET` | `/api/v1/admin/valorant/rankings` | `GET /api/v1/rankings/teams` |
+| `GET` | `/api/v1/admin/valorant/teams/{teamId}/rating-history` | `GET /api/v1/teams/{team_id}/rating-history` |
+| `GET` | `/api/v1/admin/valorant/teams/{teamId}/series` | `GET /api/v1/teams/{team_id}/series` |
+| `GET` | `/api/v1/admin/valorant/reconciliation` | reconciliation queries via FastAPI reads only (§8.3) |
+
+Responses follow the standard envelope `{ success: true, data: <payload>, meta: { serverNow } }`; errors go through `errorHandler` with `body.error.code`.
+
+### Request/response shapes (spec §6.4)
+
+**Discover (`POST /api/v1/admin/valorant/discover`):**
+
+```jsonc
+// Request (browser -> Quest)
+{
+  "playerA": { "name": "TenZ", "tag": "SEN" },
+  "playerB": { "name": "Demon1", "tag": "NA" },
+  "pageSize": 10,
+  "maxPages": 1,
+  "map": "Ascent",       // optional, applied locally
+  "from": "2026-07-01"   // optional local date filter
+}
+
+// Response (Quest -> browser, mapped from FastAPI two-player search; only
+// fields the current MatchCandidate actually returns)
+{
+  "success": true,
+  "players": {
+    "a": { "id": "...", "puuid": "puuid-a", "name": "TenZ", "tag": "SEN", "affinity": "eu" },
+    "b": { "id": "...", "puuid": "puuid-b", "name": "Demon1", "tag": "NA", "affinity": "eu" }
+  },
+  "candidates": [
+    {
+      "henrikMatchId": "abcdef0123...",   // text ID; display + import input
+      "affinity": "eu",
+      "map": "Ascent",
+      "startedAt": "2026-08-01T14:30:00Z",
+      "mode": "Standard",
+      "queue": "unrated",
+      "isCompleted": true,
+      "redScore": 13, "blueScore": 8,
+      "alreadyImported": false
+      // NOTE: no winningSide, no roster here — see detail stage
+    }
+  ],
+  "search": { "pagesExamined": 1, "pageSize": 10 }
+}
+```
+
+**Candidate detail (detail stage; reuses existing FastAPI endpoints):**
+
+```jsonc
+// Not imported: POST /api/v1/matches/import
+{ "match_id": "abcdef0123...", "affinity": "eu" }          // 201 created=true
+// Already imported: GET /api/v1/matches/by-henrik-id/abcdef0123...
+// Both return MatchDetailResponse:
+{
+  "id": "<val-match-uuid>",            // internal VAL match UUID -> "match_id" for attach
+  "henrik_match_id": "abcdef0123...",
+  "affinity": "eu", "platform": "pc",
+  "map_name": "Ascent", "mode": "Standard", "queue": "unrated",
+  "started_at": "2026-08-01T14:30:00Z",
+  "is_completed": true, "red_score": 13, "blue_score": 8, "winning_side": "red",
+  "players": [ { "puuid": "puuid-a", "name": "TenZ", "tag": "SEN", "side": "red",
+                 "agent_name": "Jett", "kills": 22, "deaths": 15 }, ... ],
+  "raw_payload_available": true
+}
+```
+
+**Create series (`POST /api/v1/admin/valorant/series`):**
+
+```jsonc
+// Request (browser -> Quest)
+{
+  "bindingTeamAId": "...", "bindingTeamBId": "...",
+  "format": "bo3",
+  "playedAt": "2026-08-02T18:00:00Z",
+  "ratingModePreference": "normal",       // draft preference only; decided at finalize
+  "anchorPlayerA": { "name": "TenZ", "tag": "SEN" },   // from discovery inputs
+  "anchorPlayerB": { "name": "Demon1", "tag": "NA" }
+}
+// Quest -> FastAPI POST /api/v1/series
+{
+  "team_a_id": "<valorant team uuid from binding>",
+  "team_b_id": "<valorant team uuid from binding>",
+  "format": "bo3",
+  "importance": "regular",
+  "played_at": "2026-08-02T18:00:00Z",
+  "external_quest_series_id": "quest-0000-...",   // == Idempotency-Key
+  "anchor_player_a": { "name": "TenZ", "tag": "SEN" },
+  "anchor_player_b": { "name": "Demon1", "tag": "NA" }
+}
+// Response (FastAPI -> Quest, then Quest -> browser with projection)
+{ "id": "<valorant-series-uuid>", "status": "draft", "...": "..." }
+```
+
+**Attach game (`POST /api/v1/admin/valorant/series/{id}/games`):**
+
+```jsonc
+// Request (browser -> Quest)  /  (Quest -> FastAPI POST /series/{uuid}/games)
+{
+  "gameNumber": 1, "matchId": "<val-match-uuid>", "teamASide": "red"
+}
+// Response (FastAPI -> Quest, GameView)
+{ "id": "<game-id>", "game_number": 1, "match_id": "<val-match-uuid>",
+  "map_name": "Ascent", "team_a_side": "red", "team_b_side": "blue",
+  "team_a_rounds": 13, "team_b_rounds": 8, "winner_team_id": "<team-uuid>" }
+```
+
+**Set game order (`PUT /api/v1/admin/valorant/series/{id}/games/order`) — absolute desired order (delta D9):**
+
+```jsonc
+// Request (Quest -> FastAPI PUT /series/{uuid}/games/order)
+{ "games": [ { "game_id": "g2-uuid", "game_number": 1 },
+             { "game_id": "g1-uuid", "game_number": 2 } ] }
+// Response: list of GameView in the new order (204/200)
+```
+
+**Finalize (`POST /api/v1/admin/valorant/series/{id}/finalize`):**
+
+```jsonc
+// Request (browser -> Quest)
+{ "ratingMode": "normal", "officialWinnerTeamId": null, "overrideReason": null }
+// Request (Quest -> FastAPI POST /series/{uuid}/finalize)
+{ "official_winner_id": null, "override_reason": null, "rating_mode": "normal" }
+// Response (FastAPI -> Quest, FinalizeResult; surfaced first-class under `data`)
+{ "series_id": "...", "status": "finalized",
+  "calculated_winner_id": "...", "official_winner_id": "...",
+  "winner_override_reason": null, "rating_mode": "normal",
+  "events": [ { "team_id": "...", "elo_before": 1200, "elo_after": 1218,
+                "result": "win", "sequence": 1, "calculation_details": { } } ],
+  "team_a_current_elo": 1218, "team_b_current_elo": 1180 }
+```
+
+### Error mapping (Quest surface → observed FastAPI codes, spec §6.5)
+
+Quest maps FastAPI's actual error codes to admin-friendly messages; "no overlap" is **not** an error — the search returns `candidates: []` with 200.
+
+| FastAPI code (observed) | HTTP | Quest surface |
+|---|---|---|
+| `ADMIN_AUTH_REQUIRED` | 401 | "VALORANT platform rejected the request (service auth)" |
+| `INVALID_REQUEST` | 422 | "Invalid request — check the form values" |
+| `INVALID_RIOT_ID` | 422 | "Invalid Riot ID or player identifier" |
+| `PLAYER_NOT_FOUND` / `PLAYER_REGION_UNKNOWN` | 404 | "Riot ID could not be resolved" |
+| `HENRIK_AUTH_FAILED` | 502 | "VALORANT provider auth failed — contact admin" |
+| `HENRIK_RATE_LIMITED` | 429 | "VALORANT provider is rate limited — retry shortly" |
+| `HENRIK_UNAVAILABLE` | 503 | "VALORANT platform unavailable — contact admin" |
+| `HENRIK_VALIDATION_ERROR` | 422 | "VALORANT provider rejected the search filters" |
+| `MATCH_NOT_FOUND` | 404 | "Match not found" |
+| `MATCH_NOT_COMPLETED` | 422 | "Match is not completed" |
+| `MATCH_ALREADY_ASSIGNED_TO_SERIES` | 409 | "This match is already used in another series" |
+| `MATCH_REFRESH_REJECTED` | 409 | "This match cannot be refreshed (finalized series)" |
+| `TEAM_NOT_FOUND` | 404 | "VALORANT team not found" (bind/series-create with unknown team) |
+| `TEAM_SLUG_TAKEN` | 409 | "Team slug already taken" |
+| `SERIES_NOT_FOUND` | 404 | "Series not found" |
+| `SERIES_INVALID` | 409/422 | "Series shape is invalid" (409 draft mutations, 422 finalize re-validation) |
+| `SERIES_ALREADY_FINALIZED` | 409 | "Series already finalized" (show committed result) |
+| `RATING_POLICY_REQUIRED` | 409 | "Choose an explicit rating policy and reason" |
+| `INVALID_SIDE_MAPPING` | 400 | "Invalid side mapping" |
+| `ANCHOR_MISMATCH` (delta D6) | 409 | "Anchor player not verified on one side of a map — override required" |
+| `BACKDATED_SERIES_REJECTED` (delta D8) | 409 | "Cannot rate a series older than the latest rated series" |
+
+Transport-level failures (timeout, connection) are **not** mapped to FastAPI codes — they enter the operation-record reconciliation path (§8).
+
+### Reconciliation (spec §8.3)
+
+`GET /api/v1/admin/valorant/reconciliation` surfaces, via FastAPI reads only (Quest has no direct VALORANT access):
+
+- Quest series with no matching FastAPI series (by `external_quest_series_id` or `valorantSeriesUuid`);
+- FastAPI series with no Quest projection (created out-of-band);
+- bindings whose VAL team no longer resolves (FastAPI 404);
+- match projections whose VAL match no longer exists;
+- operations stuck in `in_flight`/`reconciliation_required`.
+
+`quest_valorant_series.status` values: `draft | finalized | orphaned | reconciliation_required`. `finalizing` is a Quest-local transport attempt state on the operation record, not a series status. Admin-triggered actions: re-sync a projection from FastAPI or adopt a FastAPI series into a Quest projection. No destructive cleanup in MVP.
+
+### Audit (spec §9.2)
+
+Every admin VALORANT action writes an `AuditLog` row (`action: valorant.<targetType>`) plus a `QuestValorantOperation` row. The Quest `operationId` is the durable cross-service correlation key; FastAPI's echoed `X-Request-ID` is stored on the operation row as `fastapiRequestId` — never confused with the Quest operation ID. `finalizeSeries` carries `operationId` in the audit `afterData`.
+
 ## Pagination
 
 Paginated admin/media endpoints return:
