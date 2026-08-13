@@ -29,7 +29,6 @@ const safeDownloadName = (value, contentType) => {
 
 const getEventAlbums = asyncHandler(async (req, res) => {
   const result = await listPublicEventAlbums(req.query);
-  res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=300");
   res.status(200).json({
     success: true,
     albums: result.items,
@@ -40,7 +39,6 @@ const getEventAlbums = asyncHandler(async (req, res) => {
 
 const getEventAlbum = asyncHandler(async (req, res) => {
   const album = await getPublicEventAlbumBySlug(req.params.slug, req.query);
-  res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=300");
   res.status(200).json({ success: true, album });
 });
 
