@@ -13,9 +13,9 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToastStore } from "@/hooks/useToastStore";
 import { adminRequest, type Pagination, type TournamentOption } from "@/lib/admin";
+import { ApiRequestError } from "@/lib/api";
 import {
   buildEventAlbumUploadBatches,
-  EVENT_ALBUM_UPLOAD_BATCH_SIZE,
   excludeAlreadyUploadedFiles,
 } from "@/lib/event-album-upload";
 import type { EventAlbum } from "@/lib/event-albums";
@@ -168,6 +168,8 @@ export default function AdminEventAlbumsManager() {
       let processed = 0;
       let uploaded = 0;
       let latestAlbum = targetAlbum;
+      let consecutiveFailures = 0;
+      let stoppedAfterRepeatedFailures = false;
 
       setUploadProgress({
         currentBatch: 0,
@@ -179,7 +181,6 @@ export default function AdminEventAlbumsManager() {
       });
 
       for (const [index, batch] of batches.entries()) {
-        let batchFailed = false;
         setUploadProgress({
           currentBatch: index + 1,
           totalBatches: batches.length,
@@ -194,16 +195,24 @@ export default function AdminEventAlbumsManager() {
         try {
           const data = await adminRequest<{ album: EventAlbum }>(
             `/api/admin/event-albums/${targetAlbum.id}/photos`,
-            { method: "POST", body, timeoutMs: 120_000 },
+            { method: "POST", body, timeoutMs: 180_000 },
           );
           latestAlbum = data.album;
           uploaded += batch.length;
+          consecutiveFailures = 0;
         } catch (error) {
-          batchFailed = true;
-          failedFiles.push(...batch, ...batches.slice(index + 1).flat());
-          failureMessages.add(
-            error instanceof Error ? error.message : "A photo batch could not be uploaded.",
+          const isSystemicFailure = error instanceof ApiRequestError && (
+            error.status === 0 || error.status === 408 || error.status >= 500
           );
+          consecutiveFailures = isSystemicFailure ? consecutiveFailures + 1 : 0;
+          failedFiles.push(...batch);
+          failureMessages.add(
+            error instanceof Error ? error.message : "A photo could not be uploaded.",
+          );
+          if (isSystemicFailure && consecutiveFailures >= 3) {
+            stoppedAfterRepeatedFailures = true;
+            failedFiles.push(...batches.slice(index + 1).flat());
+          }
         }
         processed += batch.length;
         setUploadProgress({
@@ -214,11 +223,10 @@ export default function AdminEventAlbumsManager() {
           uploaded,
           failed: failedFiles.length,
         });
-        if (batchFailed) break;
+        if (stoppedAfterRepeatedFailures) break;
       }
 
       setSelected(latestAlbum);
-      setFiles(failedFiles);
       setFileInputKey((current) => current + 1);
 
       const refreshResults = await Promise.allSettled([
@@ -226,10 +234,26 @@ export default function AdminEventAlbumsManager() {
         loadAlbums(),
       ]);
       const albumRefresh = refreshResults[0];
-      if (albumRefresh.status === "fulfilled") setSelected(albumRefresh.value.album);
+      if (albumRefresh.status === "fulfilled") {
+        setSelected(albumRefresh.value.album);
+        const uploadedNames = new Set(
+          albumRefresh.value.album.photos
+            .map((photo) => photo.imageAsset.originalName?.trim().toLocaleLowerCase())
+            .filter((name): name is string => Boolean(name)),
+        );
+        const unresolvedFiles = failedFiles.filter(
+          (file) => !uploadedNames.has(file.name.trim().toLocaleLowerCase()),
+        );
+        uploaded += failedFiles.length - unresolvedFiles.length;
+        failedFiles.splice(0, failedFiles.length, ...unresolvedFiles);
+      }
+      setFiles(failedFiles);
 
       if (failedFiles.length) {
-        const nextMessage = `${uploaded} of ${queuedFiles.length} photos uploaded. ${failedFiles.length} ${failedFiles.length === 1 ? "photo is" : "photos are"} ready to retry. ${Array.from(failureMessages).join(" ")}`;
+        const stopMessage = stoppedAfterRepeatedFailures
+          ? " Uploading paused after three consecutive failures so the remaining photos stay safe to retry."
+          : "";
+        const nextMessage = `${uploaded} of ${queuedFiles.length} photos uploaded. ${failedFiles.length} ${failedFiles.length === 1 ? "photo is" : "photos are"} ready to retry.${stopMessage} ${Array.from(failureMessages).join(" ")}`;
         setMessage(nextMessage);
         showToast({
           tone: "error",
@@ -355,7 +379,7 @@ export default function AdminEventAlbumsManager() {
           {selected ? (
             <Card className="p-5 sm:p-6">
               <form className="grid gap-4" onSubmit={uploadPhotos}>
-                <div><h2 className="text-2xl text-white">Album photos</h2><p className="mt-1 text-sm text-slate-400">Select any number of JPG, PNG, or WebP photos up to 10 MiB each. They will upload safely in batches of {EVENT_ALBUM_UPLOAD_BATCH_SIZE}, then you can move the cover photos into your preferred order.</p></div>
+                <div><h2 className="text-2xl text-white">Album photos</h2><p className="mt-1 text-sm text-slate-400">Select any number of JPG, PNG, or WebP photos up to 10 MiB each. They will upload safely one at a time, then you can move the cover photos into your preferred order.</p></div>
                 <Input
                   key={fileInputKey}
                   type="file"

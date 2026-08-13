@@ -260,15 +260,38 @@ const deleteEventAlbum = async (albumId) => {
 };
 
 const uploadEventAlbumPhotos = async ({ albumId, body, files }) => {
-  const album = await prisma.eventAlbum.findUnique({ where: { id: albumId }, select: { id: true } });
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new HttpError(400, "Upload at least one image.");
+  }
+  const album = await prisma.eventAlbum.findUnique({
+    where: { id: albumId },
+    select: {
+      id: true,
+      photos: {
+        select: { imageAsset: { select: { originalName: true } } },
+      },
+    },
+  });
   if (!album) throw new HttpError(404, "Event album not found.");
+  const existingNames = new Set(
+    album.photos
+      .map((photo) => photo.imageAsset.originalName?.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const pendingFiles = (files || []).filter((file) => {
+    const normalizedName = file.originalname?.trim().toLowerCase();
+    if (!normalizedName || existingNames.has(normalizedName)) return false;
+    existingNames.add(normalizedName);
+    return true;
+  });
+  if (pendingFiles.length === 0) return getAdminEventAlbumById(albumId);
   const assets = await createImageAssets({
     body: {
       title: normalizeText(body.title) || "Event photo",
       description: normalizeText(body.description),
       category: "photo",
     },
-    files,
+    files: pendingFiles,
   });
   try {
     const aggregate = await prisma.albumPhoto.aggregate({

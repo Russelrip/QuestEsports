@@ -181,3 +181,63 @@ test("public album photo lookup is constrained to a published album", async () =
     restore();
   }
 });
+
+test("album photo retries skip filenames already stored in the album", async () => {
+  const createdAt = new Date("2026-08-12T00:00:00.000Z");
+  let createCalls = 0;
+  let findUniqueCalls = 0;
+  const album = {
+    id: "album-1",
+    slug: "album-1",
+    title: "Album 1",
+    isPublished: false,
+    allowDownloads: true,
+    createdAt,
+    updatedAt: createdAt,
+    photos: [{
+      id: "photo-1",
+      caption: null,
+      position: 0,
+      createdAt,
+      imageAsset: {
+        id: "asset-1",
+        title: "Photo 1",
+        category: "photo",
+        contentType: "image/jpeg",
+        originalName: "Quest Photo 1.JPG",
+        createdAt,
+      },
+    }],
+  };
+  const prisma = {
+    eventAlbum: {
+      findUnique: async () => {
+        findUniqueCalls += 1;
+        return album;
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [mediaServicePath]: {
+      createImageAssets: async () => {
+        createCalls += 1;
+        return [];
+      },
+      deleteUnusedImageAsset: async () => {},
+      getImageAssetById: async () => null,
+    },
+  });
+  try {
+    const result = await service.uploadEventAlbumPhotos({
+      albumId: "album-1",
+      body: { title: "Album 1" },
+      files: [{ originalname: "quest photo 1.jpg" }],
+    });
+    assert.equal(createCalls, 0);
+    assert.equal(findUniqueCalls, 2);
+    assert.equal(result.photoCount, 1);
+  } finally {
+    restore();
+  }
+});
