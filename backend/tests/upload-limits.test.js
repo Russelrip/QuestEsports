@@ -36,6 +36,17 @@ test("uploaded images are decoded and normalized before persistence", async () =
   assert.equal(normalized.contentType, "image/png");
   assert.ok(normalized.buffer.length > 0);
 
+  const webReady = await normalizeImageUpload({
+    file: { buffer: onePixelPng, originalname: "banner.png" },
+    invalidMessage: "Invalid image.",
+    maxDimension: 2400,
+    outputFormat: "webp",
+    quality: 82,
+  });
+  assert.equal(webReady.contentType, "image/webp");
+  assert.equal(webReady.extension, ".webp");
+  assert.ok(webReady.buffer.length > 0);
+
   await assert.rejects(
     normalizeImageUpload({
       file: { buffer: Buffer.from("not-an-image"), originalname: "avatar.png" },

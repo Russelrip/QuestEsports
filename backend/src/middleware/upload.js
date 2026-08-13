@@ -173,6 +173,8 @@ const normalizeImageUpload = async ({
   file,
   invalidMessage,
   maxDimension = 4096,
+  outputFormat,
+  quality = 88,
 }) => {
   const validated = validateImageUpload({ file, invalidMessage });
   try {
@@ -188,14 +190,18 @@ const normalizeImageUpload = async ({
         withoutEnlargement: true,
       });
     let buffer;
-    if (validated.detectedType === "jpeg") {
-      buffer = await pipeline.jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    if (outputFormat === "webp") {
+      buffer = await pipeline.webp({ quality, effort: 5 }).toBuffer();
+    } else if (validated.detectedType === "jpeg") {
+      buffer = await pipeline.jpeg({ quality, mozjpeg: true }).toBuffer();
     } else if (validated.detectedType === "png") {
       buffer = await pipeline.png({ compressionLevel: 9 }).toBuffer();
     } else {
-      buffer = await pipeline.webp({ quality: 88 }).toBuffer();
+      buffer = await pipeline.webp({ quality }).toBuffer();
     }
-    return { ...validated, buffer };
+    return outputFormat === "webp"
+      ? { ...validated, contentType: "image/webp", extension: ".webp", buffer }
+      : { ...validated, buffer };
   } catch {
     throw new HttpError(400, invalidMessage);
   }
@@ -357,7 +363,14 @@ const paymentProofUpload = multer({
   },
 });
 
-const persistValidatedUpload = async ({ file, directory, invalidMessage, maxDimension }) => {
+const persistValidatedUpload = async ({
+  file,
+  directory,
+  invalidMessage,
+  maxDimension,
+  outputFormat,
+  quality,
+}) => {
   if (!file?.buffer) {
     return null;
   }
@@ -366,6 +379,8 @@ const persistValidatedUpload = async ({ file, directory, invalidMessage, maxDime
     file,
     invalidMessage,
     maxDimension,
+    outputFormat,
+    quality,
   });
   const filename = buildSafeUploadFilename(extension);
   const filePath = path.join(directory, filename);
@@ -400,6 +415,9 @@ const persistTournamentBannerUpload = (file) =>
     file,
     directory: tournamentBannerDirectory,
     invalidMessage: "Only JPEG, PNG, and WebP tournament banners are allowed.",
+    maxDimension: 2400,
+    outputFormat: "webp",
+    quality: 82,
   });
 
 const persistPosterImageUpload = (file) =>

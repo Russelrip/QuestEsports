@@ -179,21 +179,27 @@ export default function TournamentsContent({ tournaments, series = [], categorie
       </button>
     </div>
 
-    {filteredSeries.length ? <div className="mb-9 grid gap-5 md:grid-cols-2">{filteredSeries.map((item) => {
+    {filteredSeries.length ? <div className="mb-9 grid gap-5 md:grid-cols-2">{filteredSeries.map((item, index) => {
       const available = item.tournaments.find((tournament) => tournament.isRegistrationOpen);
       const preview = available || item.tournaments[0];
       return <Link key={item.id} href={`/tournaments/series/${item.slug}`} prefetch={false} className={`group relative aspect-[4/3] overflow-hidden rounded-[30px] border bg-[#0d0c13] ${preview && !preview.isRegistrationOpen ? "border-rose-500/45" : "border-white/10"}`}>
-        <TournamentBannerImage bannerUrl={item.heroUrl || preview?.bannerUrl} title={item.title} className="absolute inset-0 h-full w-full object-contain" />
+        <TournamentBannerImage
+          bannerUrl={item.heroUrl || preview?.bannerUrl}
+          title={item.title}
+          preload={index === 0}
+          loading={index < 4 ? "eager" : "lazy"}
+          className="absolute inset-0 h-full w-full object-contain"
+        />
         <span className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent" />
         <span className="absolute inset-x-5 bottom-5"><span className="text-xs uppercase tracking-[0.22em] text-purple-200">Event Series · {preview?.game || "Multiple games"}</span><span className="mt-2 block text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{item.title}</span><span className="mt-3 flex flex-wrap items-center gap-3 text-sm"><b className="text-white">{preview?.prizePool || "Prize TBA"}</b><b className={available ? "text-emerald-300" : "text-rose-300"}>{available ? "Registration Open · Register" : "View Details"}</b></span></span>
       </Link>;
     })}</div> : null}
 
-    {standaloneTournaments.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{standaloneTournaments.map((tournament) => <TournamentCard key={tournament.id} tournament={tournament} />)}</div> : filteredSeries.length === 0 ? <EmptyState title="No tournaments match this game" description="Choose another game or view all events." /> : null}
+    {standaloneTournaments.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{standaloneTournaments.map((tournament, index) => <TournamentCard key={tournament.id} tournament={tournament} preload={filteredSeries.length === 0 && index === 0} eager={index < 4} />)}</div> : filteredSeries.length === 0 ? <EmptyState title="No tournaments match this game" description="Choose another game or view all events." /> : null}
   </Section>;
 }
 
-function TournamentCard({ tournament }: { tournament: Tournament }) {
+function TournamentCard({ tournament, preload = false, eager = false }: { tournament: Tournament; preload?: boolean; eager?: boolean }) {
   const statusLabel = tournament.isCompleted
     ? "Completed"
     : tournament.isRegistrationOpen
@@ -209,7 +215,7 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
 
   return <Link href={`/tournaments/${tournament.slug}`} prefetch={false} className="group relative flex h-full flex-col overflow-hidden border border-white/10 bg-[#0d0c13]">
     <div className="relative aspect-[4/3] overflow-hidden bg-[#09080e]">
-      <TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} rounded={false} showFallbackTitle={false} className="h-full w-full object-cover transition-opacity duration-300 group-hover:opacity-85 motion-reduce:transition-none" />
+      <TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} rounded={false} showFallbackTitle={false} preload={preload} loading={eager ? "eager" : "lazy"} className="h-full w-full object-cover transition-opacity duration-300 group-hover:opacity-85 motion-reduce:transition-none" />
       <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity duration-300 group-hover:opacity-100 motion-reduce:transition-none" />
     </div>
     <div className="bg-[#0d0c13] px-5 py-5"><h3 className="line-clamp-2 min-h-16 text-xl font-bold uppercase leading-8 text-white transition-colors group-hover:text-[var(--interactive-text)]">{tournament.title}</h3></div>
