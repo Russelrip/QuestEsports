@@ -23,6 +23,11 @@ on:
         required: false
         default: false
         type: boolean
+      optimize_tournament_banners:
+        description: Back up production, then optimize existing tournament banner files
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -111,6 +116,7 @@ jobs:
           DESTRUCTIVE_MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA }}
           MOBILE_ANDROID_CERT_SHA256: ${{ secrets.MOBILE_ADMIN_ANDROID_CERT_SHA256 }}
           REPAIR_LEGACY_MEDIA: ${{ inputs.repair_legacy_media }}
+          OPTIMIZE_TOURNAMENT_BANNERS: ${{ inputs.optimize_tournament_banners }}
           REPAIR_DATABASE_SSL: ${{ inputs.repair_database_ssl }}
           REPAIR_MOBILE_ANDROID_FINGERPRINT: ${{ inputs.repair_mobile_android_fingerprint }}
           REPAIR_MOBILE_OAUTH_REDIRECT: ${{ inputs.repair_mobile_oauth_redirect }}
@@ -132,6 +138,10 @@ jobs:
             echo "REPAIR_LEGACY_MEDIA must be true or false." >&2
             exit 1
           fi
+          if [ "$OPTIMIZE_TOURNAMENT_BANNERS" != "true" ] && [ "$OPTIMIZE_TOURNAMENT_BANNERS" != "false" ]; then
+            echo "OPTIMIZE_TOURNAMENT_BANNERS must be true or false." >&2
+            exit 1
+          fi
           if [ "$REPAIR_DATABASE_SSL" != "true" ] && [ "$REPAIR_DATABASE_SSL" != "false" ]; then
             echo "REPAIR_DATABASE_SSL must be true or false." >&2
             exit 1
@@ -148,7 +158,7 @@ jobs:
             echo "MOBILE_ADMIN_ANDROID_CERT_SHA256 must contain the verified release certificate fingerprint." >&2
             exit 1
           fi
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' MOBILE_ANDROID_CERT_SHA256='$MOBILE_ANDROID_CERT_SHA256' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_ANDROID_FINGERPRINT='$REPAIR_MOBILE_ANDROID_FINGERPRINT' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' MOBILE_ANDROID_CERT_SHA256='$MOBILE_ANDROID_CERT_SHA256' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' OPTIMIZE_TOURNAMENT_BANNERS='$OPTIMIZE_TOURNAMENT_BANNERS' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_ANDROID_FINGERPRINT='$REPAIR_MOBILE_ANDROID_FINGERPRINT' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
@@ -294,7 +304,7 @@ jobs:
               exit 1
             fi
           fi
-          if [ "$MIGRATION_CHANGED" = true ] || [ "$MIGRATION_PENDING" = true ] || [ "$REPAIR_LEGACY_MEDIA" = "true" ]; then
+          if [ "$MIGRATION_CHANGED" = true ] || [ "$MIGRATION_PENDING" = true ] || [ "$REPAIR_LEGACY_MEDIA" = "true" ] || [ "$OPTIMIZE_TOURNAMENT_BANNERS" = "true" ]; then
             BACKUP_ENV_FILE=/etc/quest-esports-backup.env bash "$APP_DIR/ops/backup-production.sh"
           fi
           npm run lint
@@ -302,6 +312,10 @@ jobs:
           npm run prisma:security:verify
           if [ "$REPAIR_LEGACY_MEDIA" = "true" ]; then
             npm run media:import-legacy-posters
+          fi
+          if [ "$OPTIMIZE_TOURNAMENT_BANNERS" = "true" ]; then
+            npm run media:optimize-tournament-banners
+            npm run media:optimize-tournament-banners -- --apply
           fi
           PROCESS_RESTART_ATTEMPTED=true
           pm2 restart "$PM2_PROCESS" --update-env
