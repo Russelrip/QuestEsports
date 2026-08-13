@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import UserMenu from "@/components/UserMenu";
 import { Button, buttonClassName } from "@/components/ui/button";
@@ -22,6 +22,7 @@ const isNavItemActive = (pathname: string, href: string) =>
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, isAuthenticated, logout, isLoading } = useAuth();
   const { mobileNavOpen, setMobileNavOpen, toggleMobileNav } = useUiStore();
 
@@ -75,6 +76,8 @@ export default function Navbar() {
                   key={item.href}
                   href={item.href}
                   prefetch={false}
+                  onMouseEnter={() => router.prefetch(item.href)}
+                  onFocus={() => router.prefetch(item.href)}
                   className={cn(
                     "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
                     isNavItemActive(pathname, item.href) && "text-white"
@@ -89,6 +92,8 @@ export default function Navbar() {
               <Link
                 href="/"
                 prefetch={false}
+                onMouseEnter={() => router.prefetch("/")}
+                onFocus={() => router.prefetch("/")}
                 className="flex flex-col items-center gap-1"
                 aria-label="Quest home"
               >
@@ -112,6 +117,8 @@ export default function Navbar() {
                   key={item.href}
                   href={item.href}
                   prefetch={false}
+                  onMouseEnter={() => router.prefetch(item.href)}
+                  onFocus={() => router.prefetch(item.href)}
                   className={cn(
                     "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
                     isNavItemActive(pathname, item.href) && "text-white"
@@ -128,6 +135,8 @@ export default function Navbar() {
                     key={item.href}
                     href={item.href}
                     prefetch={false}
+                    onMouseEnter={() => router.prefetch(item.href)}
+                    onFocus={() => router.prefetch(item.href)}
                     className={buttonClassName({
                       variant: "ghost",
                       size: "sm",

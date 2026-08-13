@@ -12,7 +12,7 @@ export default function HomeHero() {
   return (
     <section className="relative isolate flex min-h-[calc(100svh-5rem)] overflow-hidden">
       <Image
-        src="/images/mainbg.png"
+        src="/images/mainbg.webp"
         alt=""
         fill
         priority

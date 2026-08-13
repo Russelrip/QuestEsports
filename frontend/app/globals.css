@@ -167,18 +167,12 @@ main {
   overflow-x: clip;
 }
 
-.page-enter,
 .menu-enter,
 .popover-enter,
 .toast-enter,
 .modal-backdrop-enter,
 .modal-panel-enter {
   animation: ui-fade-in 0.24s ease-out;
-}
-
-.page-enter {
-  animation-name: page-fade-in;
-  animation-duration: 0.3s;
 }
 
 .menu-enter,
@@ -430,10 +424,6 @@ legend {
 
 @keyframes ui-fade-in {
   from { opacity: 0; }
-}
-
-@keyframes page-fade-in {
-  from { opacity: 0; transform: translate3d(0, 12px, 0); }
 }
 
 @keyframes menu-fade-in {
