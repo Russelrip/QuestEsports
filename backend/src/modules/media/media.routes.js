@@ -1,6 +1,8 @@
 const express = require("express");
 const { requireAdmin } = require("../auth/auth.middleware");
 const { dbImageUpload, createUploadRequestSizeGuard } = require("../../middleware/upload");
+const { cacheJson, invalidateCache } = require("../../middleware/response-cache");
+const { env } = require("../../config/env");
 const {
   uploadImages,
   getImages,
@@ -30,13 +32,18 @@ const {
 } = require("./event-album.controller");
 
 const router = express.Router();
+const eventAlbumCache = cacheJson({
+  ttlSeconds: env.CACHE_TTL_SECONDS,
+  tags: ["event-albums", "tournaments"],
+  allowCookies: true,
+});
 
 router.get("/posters", getPosters);
 router.get("/posters/:posterId", getPoster);
 router.get("/posters/:posterId/image", streamPosterImage);
-router.get("/event-albums", getEventAlbums);
+router.get("/event-albums", eventAlbumCache, getEventAlbums);
 router.get("/event-albums/:slug/photos/:photoId/image", streamEventAlbumPhoto);
-router.get("/event-albums/:slug", getEventAlbum);
+router.get("/event-albums/:slug", eventAlbumCache, getEventAlbum);
 
 router.get("/images", requireAdmin, getImages);
 router.get("/admin/media/files", requireAdmin, getPublicUploadFiles);
@@ -56,12 +63,28 @@ router.delete("/posters/:posterId", requireAdmin, deletePoster);
 
 router.get("/admin/event-albums", requireAdmin, getAdminEventAlbums);
 router.get("/admin/event-albums/:albumId", requireAdmin, getAdminEventAlbum);
-router.post("/admin/event-albums", requireAdmin, createAdminEventAlbum);
-router.patch("/admin/event-albums/:albumId", requireAdmin, updateAdminEventAlbum);
-router.delete("/admin/event-albums/:albumId", requireAdmin, deleteAdminEventAlbum);
+router.post(
+  "/admin/event-albums",
+  requireAdmin,
+  invalidateCache("event-albums"),
+  createAdminEventAlbum
+);
+router.patch(
+  "/admin/event-albums/:albumId",
+  requireAdmin,
+  invalidateCache("event-albums"),
+  updateAdminEventAlbum
+);
+router.delete(
+  "/admin/event-albums/:albumId",
+  requireAdmin,
+  invalidateCache("event-albums"),
+  deleteAdminEventAlbum
+);
 router.post(
   "/admin/event-albums/:albumId/photos",
   requireAdmin,
+  invalidateCache("event-albums"),
   createUploadRequestSizeGuard(100 * 1024 * 1024),
   dbImageUpload.array("photos", 10),
   uploadAdminEventAlbumPhotos
@@ -69,11 +92,13 @@ router.post(
 router.patch(
   "/admin/event-albums/:albumId/photos/reorder",
   requireAdmin,
+  invalidateCache("event-albums"),
   reorderAdminEventAlbumPhotos
 );
 router.delete(
   "/admin/event-albums/:albumId/photos/:photoId",
   requireAdmin,
+  invalidateCache("event-albums"),
   deleteAdminEventAlbumPhoto
 );
 
