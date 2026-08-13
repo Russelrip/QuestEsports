@@ -124,7 +124,7 @@ async function main() {
     bytesAfter: 0,
   };
 
-  for (const asset of assets) {
+  for (const [index, asset] of assets.entries()) {
     const result = await optimizeAsset(asset);
     if (result.status === "candidate") summary.candidates += 1;
     else if (result.status === "optimized") summary.optimized += 1;
@@ -133,6 +133,9 @@ async function main() {
     else summary.skipped += 1;
     summary.bytesBefore += result.bytesBefore || 0;
     summary.bytesAfter += result.bytesAfter || 0;
+    if (apply && ((index + 1) % 25 === 0 || index + 1 === assets.length)) {
+      console.log(`Processed ${index + 1}/${assets.length} album assets.`);
+    }
   }
 
   console.log(JSON.stringify({ mode: apply ? "apply" : "dry-run", ...summary }, null, 2));
