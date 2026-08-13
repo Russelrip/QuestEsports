@@ -2,6 +2,7 @@ const express = require("express");
 const { requireAdmin } = require("../auth/auth.middleware");
 const { dbImageUpload, createUploadRequestSizeGuard } = require("../../middleware/upload");
 const { cacheJson, invalidateCache } = require("../../middleware/response-cache");
+const { cachePublicData } = require("../../middleware/cache-control");
 const { env } = require("../../config/env");
 const {
   uploadImages,
@@ -38,13 +39,14 @@ const eventAlbumCache = cacheJson({
   tags: ["event-albums", "tournaments"],
   allowCookies: true,
 });
+const eventAlbumPublicCache = cachePublicData({ browserSeconds: 60, sharedSeconds: 300 });
 
 router.get("/posters", getPosters);
 router.get("/posters/:posterId", getPoster);
 router.get("/posters/:posterId/image", streamPosterImage);
-router.get("/event-albums", eventAlbumCache, getEventAlbums);
+router.get("/event-albums", eventAlbumPublicCache, eventAlbumCache, getEventAlbums);
 router.get("/event-albums/:slug/photos/:photoId/image", streamEventAlbumPhoto);
-router.get("/event-albums/:slug", eventAlbumCache, getEventAlbum);
+router.get("/event-albums/:slug", eventAlbumPublicCache, eventAlbumCache, getEventAlbum);
 
 router.get("/images", requireAdmin, getImages);
 router.get("/admin/media/files", requireAdmin, getPublicUploadFiles);
