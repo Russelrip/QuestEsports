@@ -82,6 +82,7 @@ export default function AdminEventAlbumsManager() {
   const [posterSearch, setPosterSearch] = useState("");
   const [posterAssignmentFilter, setPosterAssignmentFilter] = useState("all");
   const [updatingPosterId, setUpdatingPosterId] = useState<string | null>(null);
+  const [pendingPosterDeleteId, setPendingPosterDeleteId] = useState<string | null>(null);
 
   const normalizedPosterSearch = posterSearch.trim().toLowerCase();
   const filteredPosters = posters.filter((poster) => {
@@ -355,11 +356,11 @@ export default function AdminEventAlbumsManager() {
   };
 
   const removePosterEntry = async (poster: Poster) => {
-    if (!window.confirm(`Delete the artwork entry “${poster.title}”? The image file will be kept when another entry still uses it.`)) return;
     setUpdatingPosterId(poster.id);
     try {
       await adminRequest(`/api/posters/${poster.id}`, { method: "DELETE" });
       setPosters((current) => current.filter((item) => item.id !== poster.id));
+      setPendingPosterDeleteId(null);
       showToast({ tone: "success", title: "Artwork entry deleted" });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to delete tournament artwork.");
@@ -521,7 +522,17 @@ export default function AdminEventAlbumsManager() {
                       </Select>
                       {poster.tournament ? <button type="button" disabled={isUpdating} onClick={() => void assignPoster(poster, "")} className="h-10 shrink-0 border border-white/10 px-3 text-xs text-slate-300 transition hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-50">Unassign</button> : null}
                     </div>
-                    <button type="button" disabled={isUpdating} onClick={() => void removePosterEntry(poster)} className="mt-2 self-end text-xs text-rose-300/80 transition hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50">Delete entry</button>
+                    <div className="mt-2 flex items-center justify-end gap-3">
+                      {pendingPosterDeleteId === poster.id ? <button type="button" disabled={isUpdating} onClick={() => setPendingPosterDeleteId(null)} className="text-xs text-slate-400 transition hover:text-white disabled:opacity-50">Cancel</button> : null}
+                      <button
+                        type="button"
+                        disabled={isUpdating}
+                        onClick={() => pendingPosterDeleteId === poster.id ? void removePosterEntry(poster) : setPendingPosterDeleteId(poster.id)}
+                        className={`text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${pendingPosterDeleteId === poster.id ? "border border-rose-300/30 bg-rose-400/10 px-3 py-2 font-semibold text-rose-100" : "text-rose-300/80 hover:text-rose-200"}`}
+                      >
+                        {pendingPosterDeleteId === poster.id ? "Confirm delete" : "Delete entry"}
+                      </button>
+                    </div>
                   </div>
                 </article>
               );
