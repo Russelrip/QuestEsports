@@ -977,7 +977,8 @@ Responses follow the standard envelope `{ success: true, data: <payload>, meta: 
       "queue": "unrated",
       "isCompleted": true,
       "redScore": 13, "blueScore": 8,
-      "alreadyImported": false
+      "alreadyImported": false,
+      "matchId": null          // VAL matches.id UUID when already imported (direct attach); null otherwise
       // NOTE: no winningSide, no roster here — see detail stage
     }
   ],
