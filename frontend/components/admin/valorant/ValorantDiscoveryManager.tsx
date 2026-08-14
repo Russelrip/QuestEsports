@@ -128,6 +128,7 @@ export default function ValorantDiscoveryManager() {
           <div className="w-full max-w-2xl" onClick={(event) => event.stopPropagation()}>
             <ValorantCandidateReview
               candidate={selected}
+              players={players}
               onClose={handleCloseReview}
               onImported={handleImported}
             />

@@ -107,15 +107,16 @@ describe("VALORANT admin UI boundaries", () => {
     expect(manager).toContain("formatAdminCompactDateTime");
   });
 
-  it("attach dialog sends a VAL match UUID and a Team A side radio, and derives Team B from the platform", () => {
+  it("attach dialog derives sides from match.anchorASide, omits teamASide, and disables attach when unknown", () => {
     const dialog = read("components/admin/valorant/ValorantAttachGameDialog.tsx");
-    expect(dialog).toContain('name="teamASide"');
-    expect(dialog).toContain('value="red"');
-    expect(dialog).toContain('value="blue"');
-    expect(dialog).toContain("Team A side");
+    expect(dialog).toContain("anchorASide");
     expect(dialog).toContain("matchId");
     expect(dialog).toContain("nextGameNumber");
-    expect(dialog).toContain("The platform derives Team B side and scores — scores are never re-entered.");
+    expect(dialog).not.toContain('name="teamASide"');
+    expect(dialog).toContain("Team A");
+    expect(dialog).toContain("Team B");
+    expect(dialog).toContain("Sides couldn&apos;t be determined for this match");
+    expect(dialog).toContain("attachValorantGame");
   });
 
   it("reorder control submits the full absolute desired order and validates a permutation", () => {

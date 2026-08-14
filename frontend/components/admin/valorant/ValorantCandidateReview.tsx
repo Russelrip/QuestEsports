@@ -7,15 +7,39 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatAdminCompactDateTime } from "@/lib/admin";
-import { formatRiotId, type MatchCandidate, type MatchDetail } from "@/lib/valorant";
+import { formatRiotId, type MatchCandidate, type MatchDetail, type ResolvedPlayer } from "@/lib/valorant";
 import { fetchValorantMatchByHenrikId, importValorantMatch } from "@/lib/valorant-api";
+
+function findSideForPlayer(detail: MatchDetail, player: ResolvedPlayer): "red" | "blue" | null {
+  const normalize = (name: string, tag: string) => `${name.trim().toLowerCase()}#${tag.trim().toLowerCase()}`;
+  const key = normalize(player.name, player.tag);
+  const onRed = detail.players.some((p) => p.side === "red" && normalize(p.name, p.tag) === key);
+  const onBlue = detail.players.some((p) => p.side === "blue" && normalize(p.name, p.tag) === key);
+  if (onRed && !onBlue) return "red";
+  if (onBlue && !onRed) return "blue";
+  return null;
+}
+
+function resolveSideOwners(
+  detail: MatchDetail,
+  players: { a: ResolvedPlayer; b: ResolvedPlayer }
+): { red: ResolvedPlayer | null; blue: ResolvedPlayer | null } {
+  const aSide = findSideForPlayer(detail, players.a);
+  const bSide = findSideForPlayer(detail, players.b);
+  return {
+    red: aSide === "red" ? players.a : bSide === "red" ? players.b : null,
+    blue: aSide === "blue" ? players.a : bSide === "blue" ? players.b : null,
+  };
+}
 
 export default function ValorantCandidateReview({
   candidate,
+  players,
   onClose,
   onImported,
 }: {
   candidate: MatchCandidate | null;
+  players: { a: ResolvedPlayer; b: ResolvedPlayer } | null;
   onClose: () => void;
   onImported: (detail: MatchDetail, created: boolean) => void;
 }) {
@@ -87,6 +111,10 @@ export default function ValorantCandidateReview({
         ? "Winning side: Blue"
         : "Winning side: —";
 
+  const sideOwners = detail && players ? resolveSideOwners(detail, players) : null;
+  const redOwner = sideOwners?.red ?? null;
+  const blueOwner = sideOwners?.blue ?? null;
+
   return (
     <Card className="p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
@@ -130,6 +158,16 @@ export default function ValorantCandidateReview({
               <span className="text-slate-500">Score:</span> {detail.redScore ?? 0}–{detail.blueScore ?? 0}
             </p>
           </div>
+          {redOwner && blueOwner ? (
+            <div className="mt-4 grid gap-1 text-sm text-slate-300">
+              <p>
+                <span className="text-slate-500">Red —</span> {formatRiotId(redOwner)}
+              </p>
+              <p>
+                <span className="text-slate-500">Blue —</span> {formatRiotId(blueOwner)}
+              </p>
+            </div>
+          ) : null}
           <h4 className="mt-6 text-sm font-semibold text-white">Players</h4>
           <div className="mt-2 overflow-x-auto">
             <table aria-label="Match roster" className="w-full min-w-[520px] border-collapse text-left text-sm">

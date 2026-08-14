@@ -27,6 +27,7 @@ export type ValorantMatchSummary = {
   matchId: string; henrikMatchId: string; affinity: string; platform: string; mapName: string;
   mode: string | null; queue: string | null; startedAt: string; isCompleted: boolean;
   redScore: number | null; blueScore: number | null; winningSide: ValorantSide | null;
+  anchorASide?: ValorantSide | null;
 };
 export type Binding = {
   id: string; savedTeamId: string | null; valorantTeamUuid: string; status: ValorantBindingStatus;
@@ -128,6 +129,7 @@ export const mapMatchSummary = (raw: {
   id: string; henrik_match_id: string; affinity: string; platform: string; map_name: string;
   mode?: string | null; queue?: string | null; started_at: string; is_completed: boolean;
   red_score?: number | null; blue_score?: number | null; winning_side?: string | null;
+  anchor_a_side?: string | null;
 }): ValorantMatchSummary => ({
   matchId: raw.id,
   henrikMatchId: raw.henrik_match_id,
@@ -141,6 +143,7 @@ export const mapMatchSummary = (raw: {
   redScore: raw.red_score ?? null,
   blueScore: raw.blue_score ?? null,
   winningSide: raw.winning_side === "red" || raw.winning_side === "blue" ? raw.winning_side : null,
+  anchorASide: raw.anchor_a_side === "red" || raw.anchor_a_side === "blue" ? raw.anchor_a_side : null,
 });
 
 export const validateDesiredOrder = (numbers: number[], count: number): string | null => {

@@ -260,8 +260,10 @@ export default function ValorantSeriesDetail({
             <ValorantReorderControl games={games} onReorder={handleReorder} />
           ) : null}
 
-          {libraryOpen ? (
+          {libraryOpen && anchors ? (
             <ValorantMatchLibrary
+              seriesId={seriesId}
+              anchors={anchors}
               onPick={(match) => {
                 setPickedMatch(match);
               }}
@@ -345,6 +347,7 @@ export default function ValorantSeriesDetail({
           match={pickedMatch}
           existingNumbers={games.map((game) => game.gameNumber)}
           format={series.format}
+          anchors={anchors}
           onClose={() => setPickedMatch(null)}
           onAttached={handleAttached}
         />

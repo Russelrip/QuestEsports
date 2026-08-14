@@ -14,6 +14,7 @@ import type {
   SeriesPreview,
   SeriesViewLite,
   ValorantFormat,
+  ValorantMatchSummary,
   ValorantRatingMode,
   ValorantSide,
 } from "./valorant";
@@ -74,6 +75,11 @@ export const fetchValorantMatches = async (filters: { cursor?: string; limit?: n
   return { items: raw.items.map(mapMatchSummary), nextCursor: raw.next_cursor, total: raw.total };
 };
 
+export const fetchValorantSeriesMatches = (seriesId: string) =>
+  valorantAdminRequest<{ matches: ValorantMatchSummary[] }>(
+    `/api/v1/admin/valorant/series/${encodeURIComponent(seriesId)}/matches`
+  );
+
 export const createValorantSeries = (input: {
   bindingTeamAId: string; bindingTeamBId: string; format: ValorantFormat; playedAt: string;
   ratingModePreference?: ValorantRatingMode | null; anchorPlayerA: RiotId; anchorPlayerB: RiotId;
@@ -93,10 +99,17 @@ export const deleteValorantSeries = (seriesId: string) =>
     { method: "DELETE" }
   );
 
-export const attachValorantGame = (seriesId: string, input: { gameNumber: number; matchId: string; teamASide: ValorantSide }) =>
+export const attachValorantGame = (seriesId: string, input: { gameNumber: number; matchId: string; teamASide?: ValorantSide }) =>
   valorantAdminRequest<{ game: SeriesGame }>(
     `/api/v1/admin/valorant/series/${encodeURIComponent(seriesId)}/games`,
-    { method: "POST", json: input }
+    {
+      method: "POST",
+      json: {
+        gameNumber: input.gameNumber,
+        matchId: input.matchId,
+        ...(input.teamASide ? { teamASide: input.teamASide } : {}),
+      },
+    }
   );
 
 export const setValorantGameOrder = (seriesId: string, games: Array<{ gameId: string; gameNumber: number }>) =>

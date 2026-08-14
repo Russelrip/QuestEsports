@@ -123,4 +123,26 @@ describe("VALORANT admin API client", () => {
     expect(result.report.stuckOperations).toEqual([]);
     expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/reconciliation");
   });
+
+  it("returns series-scoped matches as camelCase from the BFF", async () => {
+    mockedRequest.mockResolvedValueOnce(unwrap({
+      matches: [
+        { matchId: "m-1", henrikMatchId: "h-1", affinity: "eu", platform: "pc", mapName: "Ascent", startedAt: "2026-08-01T14:30:00Z", isCompleted: true, redScore: 13, blueScore: 8, winningSide: "red", anchorASide: "blue" },
+      ],
+    }));
+    const { fetchValorantSeriesMatches } = await import("../../lib/valorant-api");
+    const result = await fetchValorantSeriesMatches("series-1");
+    expect(result.matches[0].matchId).toBe("m-1");
+    expect(result.matches[0].anchorASide).toBe("blue");
+    expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/series/series-1/matches");
+  });
+
+  it("attaches without teamASide when the backend derives it from anchors", async () => {
+    mockedRequest.mockResolvedValueOnce(unwrap({ game: { id: "game-1", teamASide: "red", teamBSide: "blue" } }));
+    const { attachValorantGame } = await import("../../lib/valorant-api");
+    await attachValorantGame("quest-series-1", { gameNumber: 2, matchId: "val-match-1" });
+    expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/series/quest-series-1/games", {
+      method: "POST", json: { gameNumber: 2, matchId: "val-match-1" },
+    });
+  });
 });

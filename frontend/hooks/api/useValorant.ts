@@ -10,6 +10,7 @@ import {
   fetchValorantReconciliation,
   fetchValorantSeries,
   fetchValorantSeriesList,
+  fetchValorantSeriesMatches,
   fetchValorantTeamSeries,
 } from "@/lib/valorant-api";
 
@@ -40,6 +41,12 @@ export function useValorantPreview(seriesId: string, enabled: boolean) {
 export function useValorantMatches(cursor: string | null, enabled: boolean) {
   return useApiQuery(["valorant-matches", cursor ?? ""], () => fetchValorantMatches({ cursor: cursor ?? undefined, limit: 20 }), {
     enabled,
+  });
+}
+
+export function useValorantSeriesMatches(seriesId: string, enabled: boolean) {
+  return useApiQuery(["valorant-series-matches", seriesId], () => fetchValorantSeriesMatches(seriesId), {
+    enabled: enabled && Boolean(seriesId),
   });
 }
 
