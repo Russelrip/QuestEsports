@@ -12,6 +12,7 @@ export type MatchCandidate = {
   henrikMatchId: string; affinity: string; map: string | null; startedAt: string | null;
   mode: string | null; queue: string | null; isCompleted: boolean;
   redScore: number | null; blueScore: number | null; alreadyImported: boolean;
+  matchId?: string | null;
 };
 export type MatchPlayer = {
   puuid: string; name: string; tag: string; side: ValorantSide;

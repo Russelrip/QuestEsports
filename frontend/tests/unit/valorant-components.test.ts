@@ -52,37 +52,14 @@ describe("VALORANT admin UI boundaries", () => {
     expect(manager).toContain("ValorantErrorAlert");
   });
 
-  it("candidate list shows only the lightweight fields and never auto-imports", () => {
-    const list = read("components/admin/valorant/ValorantCandidateList.tsx");
-    expect(list).not.toContain("winningSide");
-    expect(list).not.toContain("roster");
-    for (const field of ["henrikMatchId", "map", "startedAt", "mode", "queue", "redScore", "blueScore", "alreadyImported"]) {
-      expect(list).toContain(field);
-    }
-  });
-
-  it("candidate review requires an explicit import click and shows detail + created state", () => {
-    const review = read("components/admin/valorant/ValorantCandidateReview.tsx");
-    expect(review).toContain("Import this match");
-    expect(review).toContain("onClick");
-    expect(review).toContain("importValorantMatch");
-    expect(review).toContain("already imported");
-    expect(review).toContain("winningSide");
-    expect(review).toContain("players");
-  });
-
-  it("discovery form validates Riot IDs locally before submitting", () => {
-    const form = read("components/admin/valorant/ValorantDiscoveryForm.tsx");
-    expect(form).toContain('placeholder="Name#Tag"');
-    expect(form).toContain("parseRiotIdInput");
-    expect(form).toContain('aria-label="Player A Riot ID"');
-    expect(form).toContain('aria-label="Player B Riot ID"');
-  });
-
-  it("no-overlap is an empty state, not an error", () => {
-    const manager = read("components/admin/valorant/ValorantDiscoveryManager.tsx");
-    expect(manager).toContain("No matches found for these two players");
-    expect(manager).toContain("candidates.length");
+  it("inline discovery in the series detail attaches candidates via matchId or an import, never labeling sides Red/Blue", () => {
+    const detail = read("components/admin/valorant/ValorantSeriesDetail.tsx");
+    expect(detail).toContain("discoverValorant");
+    expect(detail).toContain("importValorantMatch");
+    expect(detail).toContain("attachValorantGame");
+    expect(detail).toContain("nextGameNumber");
+    expect(detail).not.toContain("Red");
+    expect(detail).not.toContain("Blue");
   });
 
   it("series create form covers BO1/BO3/BO5, playedAt, Rated/Unrated preference, and both anchors", () => {
@@ -105,20 +82,6 @@ describe("VALORANT admin UI boundaries", () => {
     expect(manager).toContain("onCreateSeries");
     expect(manager).toContain("onViewSeries");
     expect(manager).toContain("formatAdminCompactDateTime");
-  });
-
-  it("attach dialog labels matches by team name and disables attach when the anchored sides are unknown", () => {
-    const dialog = read("components/admin/valorant/ValorantAttachGameDialog.tsx");
-    expect(dialog).toContain("anchorASide");
-    expect(dialog).toContain("matchId");
-    expect(dialog).toContain("nextGameNumber");
-    expect(dialog).not.toContain('name="teamASide"');
-    expect(dialog).toContain("teamALabel");
-    expect(dialog).toContain("teamBLabel");
-    expect(dialog).toContain("isn&apos;t between the two anchored teams");
-    expect(dialog).not.toContain("Red");
-    expect(dialog).not.toContain("Blue");
-    expect(dialog).toContain("attachValorantGame");
   });
 
   it("reorder control submits the full absolute desired order and validates a permutation", () => {
@@ -208,7 +171,6 @@ describe("VALORANT admin UI boundaries", () => {
   it("every VALORANT manager ships loading, empty, and error surfaces", () => {
     for (const file of [
       "ValorantTeamsManager.tsx",
-      "ValorantDiscoveryManager.tsx",
       "ValorantSeriesManager.tsx",
       "ValorantSeriesDetail.tsx",
       "ValorantRankingsManager.tsx",
@@ -228,7 +190,6 @@ describe("VALORANT admin UI boundaries", () => {
     expect(page).toContain('role="tabpanel"');
     for (const file of [
       "ValorantTeamsManager.tsx",
-      "ValorantDiscoveryManager.tsx",
       "ValorantSeriesManager.tsx",
       "ValorantSeriesDetail.tsx",
       "ValorantRankingsManager.tsx",

@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import ValorantAttachGameDialog from "@/components/admin/valorant/ValorantAttachGameDialog";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantFinalizeForm from "@/components/admin/valorant/ValorantFinalizeForm";
 import ValorantGameRow from "@/components/admin/valorant/ValorantGameRow";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
-import ValorantMatchLibrary from "@/components/admin/valorant/ValorantMatchLibrary";
 import ValorantOperationBanner from "@/components/admin/valorant/ValorantOperationBanner";
 import ValorantPreviewPanel from "@/components/admin/valorant/ValorantPreviewPanel";
 import ValorantReorderControl from "@/components/admin/valorant/ValorantReorderControl";
@@ -18,13 +16,17 @@ import { useValorantPreview, useValorantSeriesDetail } from "@/hooks/api/useValo
 import { useToastStore } from "@/hooks/useToastStore";
 import { formatAdminCompactDateTime } from "@/lib/admin";
 import {
+  nextGameNumber,
   ratingModeLabel,
   type FinalizeResult,
+  type MatchCandidate,
   type QuestValorantSeries,
-  type ValorantMatchSummary,
 } from "@/lib/valorant";
 import {
+  attachValorantGame,
   deleteValorantSeries,
+  discoverValorant,
+  importValorantMatch,
   removeValorantGame,
   setValorantGameOrder,
 } from "@/lib/valorant-api";
@@ -50,8 +52,10 @@ export default function ValorantSeriesDetail({
   const preview = previewQuery.data?.preview ?? null;
 
   const [mutationBusy, setMutationBusy] = useState(false);
-  const [libraryOpen, setLibraryOpen] = useState(false);
-  const [pickedMatch, setPickedMatch] = useState<ValorantMatchSummary | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [discoverCandidates, setDiscoverCandidates] = useState<MatchCandidate[]>([]);
+  const [attachingCandidateId, setAttachingCandidateId] = useState<string | null>(null);
   const [removingGameId, setRemovingGameId] = useState<string | null>(null);
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [finalizeResult, setFinalizeResult] = useState<FinalizeResult | null>(null);
@@ -139,13 +143,61 @@ export default function ValorantSeriesDetail({
     }
   };
 
-  const handleAttached = async () => {
+  const handleDiscover = async () => {
+    if (!anchors) return;
+    setDiscovering(true);
+    setDiscoverError(null);
+    setDiscoverCandidates([]);
+    try {
+      const response = await discoverValorant({
+        playerA: anchors.playerA,
+        playerB: anchors.playerB,
+        maxPages: 5,
+      });
+      setDiscoverCandidates(response.candidates);
+    } catch (discoverError) {
+      const message =
+        discoverError instanceof Error ? discoverError.message : "Discovery failed.";
+      setDiscoverError(message);
+      showToast({ title: message, tone: "error" });
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  const handleAttachCandidate = async (candidate: MatchCandidate) => {
+    if (mutationBusy) return;
+    setAttachingCandidateId(candidate.henrikMatchId);
     setMutationBusy(true);
     try {
+      let matchId = candidate.matchId ?? null;
+      if (!matchId) {
+        const { match } = await importValorantMatch(candidate.henrikMatchId, candidate.affinity);
+        matchId = match.matchId;
+      }
+      if (!matchId) {
+        throw new Error("This match has no VALORANT match ID to attach.");
+      }
+      const gameNumber = nextGameNumber(
+        games.map((game) => game.gameNumber),
+        series.format
+      );
+      if (gameNumber === null) {
+        throw new Error("The series is full — no free game numbers remain.");
+      }
+      await attachValorantGame(seriesId, { gameNumber, matchId });
+      setDiscoverCandidates((current) =>
+        current.filter((item) => item.henrikMatchId !== candidate.henrikMatchId)
+      );
       await detailQuery.refetch();
       await previewQuery.refetch();
       showToast({ title: "Game attached", tone: "success" });
+    } catch (attachError) {
+      const message =
+        attachError instanceof Error ? attachError.message : "Could not attach the match.";
+      showToast({ title: message, tone: "error" });
     } finally {
+      setAttachingCandidateId(null);
       setMutationBusy(false);
     }
   };
@@ -245,30 +297,20 @@ export default function ValorantSeriesDetail({
         <section className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h4 className="text-lg font-semibold text-white">Games</h4>
-            {isDraft ? (
+            {isDraft && anchors ? (
               <Button
                 type="button"
                 size="sm"
-                onClick={() => setLibraryOpen((open) => !open)}
+                onClick={() => void handleDiscover()}
+                disabled={discovering}
               >
-                {libraryOpen ? "Close match library" : "Attach map"}
+                {discovering ? "Discovering…" : "Discover matches"}
               </Button>
             ) : null}
           </div>
 
           {isDraft && games.length > 1 ? (
             <ValorantReorderControl games={games} onReorder={handleReorder} />
-          ) : null}
-
-          {libraryOpen && anchors ? (
-            <ValorantMatchLibrary
-              seriesId={seriesId}
-              teamALabel={teamALabel}
-              teamBLabel={teamBLabel}
-              onPick={(match) => {
-                setPickedMatch(match);
-              }}
-            />
           ) : null}
 
           {games.length === 0 ? (
@@ -291,6 +333,57 @@ export default function ValorantSeriesDetail({
               ))}
             </div>
           )}
+
+          {isDraft && anchors ? (
+            discovering ? (
+              <ValorantLoadingState />
+            ) : discoverError ? (
+              <ValorantErrorAlert message={discoverError} onRetry={() => void handleDiscover()} />
+            ) : discoverCandidates.length > 0 ? (
+              <Card className="p-5">
+                <h4 className="text-sm font-semibold text-white">Discovered matches</h4>
+                <p className="mt-1 text-xs text-slate-400">
+                  Pick a match to attach as the next game in this series.
+                </p>
+                <ul className="mt-3 grid gap-2">
+                  {discoverCandidates.map((candidate) => (
+                    <li
+                      key={candidate.henrikMatchId}
+                      className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 px-4 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-white">
+                          {candidate.map ?? "Unknown map"}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {formatAdminCompactDateTime(candidate.startedAt)}
+                        </p>
+                      </div>
+                      <p className="whitespace-nowrap font-mono text-sm text-slate-300">
+                        {candidate.redScore ?? "–"}–{candidate.blueScore ?? "–"}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={attachingCandidateId !== null}
+                        onClick={() => void handleAttachCandidate(candidate)}
+                      >
+                        {attachingCandidateId === candidate.henrikMatchId
+                          ? "Attaching…"
+                          : "Attach"}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            ) : (
+              <ValorantEmptyState
+                title="No shared matches found"
+                description="Try again later, or review the anchor players on this series."
+              />
+            )
+          ) : null}
         </section>
 
         {series.status === "finalized" ? (
@@ -341,19 +434,6 @@ export default function ValorantSeriesDetail({
           </>
         )}
       </div>
-
-      {pickedMatch ? (
-        <ValorantAttachGameDialog
-          seriesId={seriesId}
-          match={pickedMatch}
-          existingNumbers={games.map((game) => game.gameNumber)}
-          format={series.format}
-          teamALabel={teamALabel}
-          teamBLabel={teamBLabel}
-          onClose={() => setPickedMatch(null)}
-          onAttached={handleAttached}
-        />
-      ) : null}
     </div>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
-import ValorantDiscoveryManager from "@/components/admin/valorant/ValorantDiscoveryManager";
 import ValorantRankingsManager from "@/components/admin/valorant/ValorantRankingsManager";
 import ValorantReconciliationManager from "@/components/admin/valorant/ValorantReconciliationManager";
 import ValorantSeriesDetail from "@/components/admin/valorant/ValorantSeriesDetail";
@@ -11,7 +10,7 @@ import ValorantSeriesManager from "@/components/admin/valorant/ValorantSeriesMan
 import ValorantTeamsManager from "@/components/admin/valorant/ValorantTeamsManager";
 import { cn } from "@/lib/utils";
 
-type Tab = "teams" | "discover" | "series" | "rankings" | "reconciliation";
+type Tab = "teams" | "series" | "rankings" | "reconciliation";
 
 type SeriesSubView =
   | { kind: "list" }
@@ -20,7 +19,6 @@ type SeriesSubView =
 
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: "teams", label: "Team Bindings" },
-  { id: "discover", label: "Discovery" },
   { id: "series", label: "Series" },
   { id: "rankings", label: "Rankings" },
   { id: "reconciliation", label: "Reconciliation" },
@@ -57,8 +55,6 @@ export default function ValorantManagementPage() {
     switch (activeTab) {
       case "teams":
         return <ValorantTeamsManager />;
-      case "discover":
-        return <ValorantDiscoveryManager />;
       case "series":
         switch (seriesSubView.kind) {
           case "list":
