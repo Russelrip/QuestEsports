@@ -1,7 +1,10 @@
 const { env } = require("../../config/env");
 const { buildServiceAuthHeaders } = require("./valorant.auth");
 
-const CONNECT_TIMEOUT_MS = 10000;
+// Multi-page two-player discovery fans out to many Henrik calls (up to
+// max_pages × 2), so the connect window must comfortably exceed the upstream
+// work — 10s was too tight once the UI began requesting 5 pages.
+const CONNECT_TIMEOUT_MS = 60000;
 const RETRY_BASE_DELAY_MS = 500;
 
 class FastApiError extends Error {

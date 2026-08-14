@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { parseRiotIdInput, type RiotId } from "@/lib/valorant";
 
 const DEFAULT_PAGE_SIZE = 10;
-const DEFAULT_MAX_PAGES = 1;
+const DEFAULT_MAX_PAGES = 5;
 
 export default function ValorantDiscoveryForm({
   onSearch,
