@@ -53,6 +53,17 @@ export const adminNavigationGroups = [
       { href: "/admin/payments", label: "Payments" },
     ],
   },
+  {
+    label: "VALORANT",
+    links: [
+      { href: "/admin/valorant", label: "Overview" },
+      { href: "/admin/valorant/teams", label: "Team Bindings" },
+      { href: "/admin/valorant/discover", label: "Discovery" },
+      { href: "/admin/valorant/series", label: "Series" },
+      { href: "/admin/valorant/rankings", label: "Rankings" },
+      { href: "/admin/valorant/reconciliation", label: "Reconciliation" },
+    ],
+  },
 ] as const;
 
 export type Pagination = {

@@ -1202,6 +1202,11 @@ model QuestValorantSeries {
   format               ValorantFormat
   playedAt             DateTime                @map("played_at")
   ratingModePreference String?                 @map("rating_mode_preference")
+  ratingMode           String?                 @map("rating_mode")
+  anchorPlayerAName    String?                 @map("anchor_player_a_name")
+  anchorPlayerATag     String?                 @map("anchor_player_a_tag")
+  anchorPlayerBName    String?                 @map("anchor_player_b_name")
+  anchorPlayerBTag     String?                 @map("anchor_player_b_tag")
   status               ValorantSeriesStatus    @default(draft)
   valorantSeriesUuid   String?                 @map("valorant_series_uuid")
   finalizedById        String?                 @map("finalized_by_id") @db.Uuid

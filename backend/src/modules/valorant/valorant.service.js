@@ -367,6 +367,10 @@ const createSeries = async ({
       format,
       playedAt,
       ratingModePreference,
+      anchorPlayerAName: anchorA.name,
+      anchorPlayerATag: anchorA.tag,
+      anchorPlayerBName: anchorB.name,
+      anchorPlayerBTag: anchorB.tag,
       status: "draft",
       valorantSeriesUuid: seriesView.id,
       lastOperationId: operation.id,
@@ -603,7 +607,7 @@ const finalizeSeries = async ({
   const result = mapFinalizeResult(response.data);
   await prisma.questValorantSeries.update({
     where: { id: series.id },
-    data: { status: "finalized", finalizedById: actorUserId, lastOperationId: operation.id },
+    data: { status: "finalized", finalizedById: actorUserId, lastOperationId: operation.id, ratingMode },
   });
   await markOperationSucceeded(operation.id, response);
   return { ...result, operationId: operation.operationId };
@@ -629,7 +633,7 @@ const reconcileSeries = async ({ seriesId, actorUserId, requestId, ipAddress }) 
   if (view.status === "finalized") {
     return prisma.questValorantSeries.update({
       where: { id: series.id },
-      data: { status: "finalized", finalizedById: actorUserId, lastOperationId: undefined },
+      data: { status: "finalized", finalizedById: actorUserId, lastOperationId: undefined, ratingMode: view.ratingMode },
     });
   }
   // FastAPI still reports draft: the finalize transaction rolled back; a fresh
