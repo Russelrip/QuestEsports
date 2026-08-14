@@ -126,8 +126,10 @@ Quest passes through `valorantsl-new`'s already-normalized fields; it does **not
 
 | Condition | Behavior |
 |---|---|
-| `valorantsl-new` timeout (5s) or 5xx | client → service raises → controller `503 VALORANT_LEADERBOARD_UNAVAILABLE` |
 | `VALORANT_SL_API_URL` unset | `503 VALORANT_LEADERBOARD_UNAVAILABLE` (fail-soft) |
+| `valorantsl-new` unreachable, or timeout (5s) | `503 VALORANT_LEADERBOARD_UNAVAILABLE` |
+| `valorantsl-new` returns a 5xx (or other non-ok) | `502` (upstream errored) — page shows the unavailable state |
+| Upstream page out of range | `404` |
 | Search miss (upstream `null`) | `200` with `null` → "No player found" state |
 | Frontend fetch failure | graceful empty state ("Leaderboard is temporarily unavailable") + register link; no hard error page |
 

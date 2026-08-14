@@ -300,6 +300,12 @@ Local-testing state (as of this session):
 
 ---
 
+## Public player leaderboard (read-only)
+
+Quest also serves a public, unauthenticated `/valorant-leaderboard` page backed by two public proxy routes — `GET /api/v1/valorant/leaderboard` (paginated) and `GET /api/v1/valorant/leaderboard/search` — which proxy the separate `valorantsl-new` leaderboard API server-to-server. This surface is distinct from the HMAC-authenticated admin VALORANT integration: it is read-only, requires no `VALORANT_SERVICE_SECRET`, and is gated only by `VALORANT_SL_API_URL` (fail-soft 503 when unset). Registration remains in `valorantsl-new`. Spec: `docs/superpowers/specs/2026-08-14-valorant-player-leaderboard-design.md`.
+
+---
+
 ## References (exact paths)
 
 - Design: `docs/superpowers/specs/2026-08-13-standalone-valorant-integration-design.md` (rev 2 + appended Revision 3 as-built).
