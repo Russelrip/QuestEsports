@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { useToastStore } from "@/hooks/useToastStore";
-import type { SavedTeam } from "@/lib/teams";
+import type { AdminTeamOption } from "@/hooks/api/useAdmin";
 import type { Binding } from "@/lib/valorant";
 import { bindValorantTeam } from "@/lib/valorant-api";
 
@@ -15,7 +15,7 @@ export default function ValorantBindingForm({
   bindings,
   onBound,
 }: {
-  teams: SavedTeam[];
+  teams: AdminTeamOption[];
   bindings: Binding[];
   onBound: () => Promise<void>;
 }) {

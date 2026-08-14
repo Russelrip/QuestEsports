@@ -124,6 +124,17 @@ export const parseRiotIdInput = (value: string): RiotId | null => {
   return match ? { name: match[1], tag: match[2] } : null;
 };
 
+// Stored roster Riot IDs may carry loose spacing around the separator (e.g. "Jiren #JAANU").
+// Split on the FIRST "#" and trim both sides so the stored value still resolves to a RiotId.
+export const parseStoredRiotId = (value: string): RiotId | null => {
+  const trimmed = String(value || "").trim();
+  const separatorIndex = trimmed.indexOf("#");
+  if (separatorIndex === -1) return null;
+  const name = trimmed.slice(0, separatorIndex).trim();
+  const tag = trimmed.slice(separatorIndex + 1).trim();
+  return name && tag ? { name, tag } : null;
+};
+
 export const formatRiotId = (id: RiotId): string => `${id.name}#${id.tag}`;
 
 export const teamValuesFromSide = <T>(

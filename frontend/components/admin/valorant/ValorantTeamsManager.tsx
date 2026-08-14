@@ -8,7 +8,7 @@ import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingSta
 import ValorantStatusBadge from "@/components/admin/valorant/ValorantStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useTeams } from "@/hooks/api/useTeams";
+import { useAdminTeams } from "@/hooks/api/useAdmin";
 import { useValorantBindings } from "@/hooks/api/useValorant";
 import { useToastStore } from "@/hooks/useToastStore";
 import { formatAdminCompactDateTime } from "@/lib/admin";
@@ -18,7 +18,7 @@ import { detachValorantBinding } from "@/lib/valorant-api";
 export default function ValorantTeamsManager() {
   const showToast = useToastStore((state) => state.showToast);
   const bindingsQuery = useValorantBindings();
-  const teamsQuery = useTeams();
+  const teamsQuery = useAdminTeams();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [detaching, setDetaching] = useState(false);
 

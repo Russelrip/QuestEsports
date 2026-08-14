@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,12 +10,16 @@ import { useValorantBindings } from "@/hooks/api/useValorant";
 import { useToastStore } from "@/hooks/useToastStore";
 import { isoToSriLankaDateTimeLocal, sriLankaDateTimeLocalToIso } from "@/lib/date-time";
 import {
-  parseRiotIdInput,
+  parseStoredRiotId,
   type Binding,
   type ValorantFormat,
   type ValorantRatingMode,
 } from "@/lib/valorant";
-import { createValorantSeries } from "@/lib/valorant-api";
+import {
+  createValorantSeries,
+  fetchAdminTeamMembers,
+  type AdminTeamMember,
+} from "@/lib/valorant-api";
 
 const bindingLabel = (binding: Binding) =>
   binding.savedTeam
@@ -37,16 +41,26 @@ export default function ValorantSeriesForm({
   const [format, setFormat] = useState<ValorantFormat>("bo3");
   const [playedAt, setPlayedAt] = useState(() => isoToSriLankaDateTimeLocal(new Date().toISOString()));
   const [ratingModePreference, setRatingModePreference] = useState<ValorantRatingMode>("normal");
-  const [anchorPlayerA, setAnchorPlayerA] = useState("");
-  const [anchorPlayerB, setAnchorPlayerB] = useState("");
+  const [anchorMemberAId, setAnchorMemberAId] = useState("");
+  const [anchorMemberBId, setAnchorMemberBId] = useState("");
+  const [teamAMembers, setTeamAMembers] = useState<AdminTeamMember[]>([]);
+  const [teamBMembers, setTeamBMembers] = useState<AdminTeamMember[]>([]);
+  const [teamAMembersLoading, setTeamAMembersLoading] = useState(false);
+  const [teamBMembersLoading, setTeamBMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   const activeBindings = (bindingsQuery.data?.bindings ?? []).filter((binding) => binding.status === "active");
   const teamBOptions = activeBindings.filter((binding) => binding.id !== bindingTeamAId);
 
-  const anchorA = parseRiotIdInput(anchorPlayerA);
-  const anchorB = parseRiotIdInput(anchorPlayerB);
+  const teamAMembersWithRiotId = teamAMembers.filter((member) => member.riotId && member.riotId.trim() !== "");
+  const teamBMembersWithRiotId = teamBMembers.filter((member) => member.riotId && member.riotId.trim() !== "");
+
+  const anchorAMember = teamAMembers.find((member) => member.id === anchorMemberAId) ?? null;
+  const anchorBMember = teamBMembers.find((member) => member.id === anchorMemberBId) ?? null;
+  const anchorA = anchorAMember ? parseStoredRiotId(anchorAMember.riotId ?? "") : null;
+  const anchorB = anchorBMember ? parseStoredRiotId(anchorBMember.riotId ?? "") : null;
   const sameTeam = Boolean(bindingTeamAId) && bindingTeamAId === bindingTeamBId;
   const canSubmit =
     !submitting &&
@@ -58,17 +72,79 @@ export default function ValorantSeriesForm({
     anchorA !== null &&
     anchorB !== null;
 
+  // Once a team binding is selected, load its roster so the anchor dropdown lists
+  // the members that carry a Riot ID.
+  useEffect(() => {
+    const bindings = bindingsQuery.data?.bindings ?? [];
+    const binding = bindings.find((candidate) => candidate.id === bindingTeamAId);
+    const teamId = binding?.savedTeamId ?? "";
+    if (!teamId) {
+      setTeamAMembers([]);
+      setTeamAMembersLoading(false);
+      return;
+    }
+    let active = true;
+    setTeamAMembersLoading(true);
+    setMembersError("");
+    void fetchAdminTeamMembers(teamId)
+      .then((members) => {
+        if (active) setTeamAMembers(members);
+      })
+      .catch((loadError) => {
+        if (active) {
+          setMembersError(
+            loadError instanceof Error ? loadError.message : "Could not load team members."
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setTeamAMembersLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bindingTeamAId, bindingsQuery.data]);
+
+  useEffect(() => {
+    const bindings = bindingsQuery.data?.bindings ?? [];
+    const binding = bindings.find((candidate) => candidate.id === bindingTeamBId);
+    const teamId = binding?.savedTeamId ?? "";
+    if (!teamId) {
+      setTeamBMembers([]);
+      setTeamBMembersLoading(false);
+      return;
+    }
+    let active = true;
+    setTeamBMembersLoading(true);
+    setMembersError("");
+    void fetchAdminTeamMembers(teamId)
+      .then((members) => {
+        if (active) setTeamBMembers(members);
+      })
+      .catch((loadError) => {
+        if (active) {
+          setMembersError(
+            loadError instanceof Error ? loadError.message : "Could not load team members."
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setTeamBMembersLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bindingTeamBId, bindingsQuery.data]);
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const parsedA = parseRiotIdInput(anchorPlayerA);
-    const parsedB = parseRiotIdInput(anchorPlayerB);
     if (
       !bindingTeamAId ||
       !bindingTeamBId ||
       bindingTeamAId === bindingTeamBId ||
       playedAt.trim() === "" ||
-      !parsedA ||
-      !parsedB ||
+      !anchorA ||
+      !anchorB ||
       submitting
     ) {
       return;
@@ -82,8 +158,8 @@ export default function ValorantSeriesForm({
         format,
         playedAt: sriLankaDateTimeLocalToIso(playedAt),
         ratingModePreference,
-        anchorPlayerA: parsedA,
-        anchorPlayerB: parsedB,
+        anchorPlayerA: anchorA,
+        anchorPlayerB: anchorB,
       });
       showToast({ title: "Draft series created", tone: "success" });
       onCreated(result.series.id);
@@ -142,6 +218,7 @@ export default function ValorantSeriesForm({
                     const next = event.target.value;
                     setBindingTeamAId(next);
                     if (bindingTeamBId === next) setBindingTeamBId("");
+                    setAnchorMemberAId("");
                   }}
                   disabled={submitting || activeBindings.length === 0}
                 >
@@ -161,7 +238,10 @@ export default function ValorantSeriesForm({
                   id="team-b-binding"
                   aria-label="Team B binding"
                   value={bindingTeamBId}
-                  onChange={(event) => setBindingTeamBId(event.target.value)}
+                  onChange={(event) => {
+                    setBindingTeamBId(event.target.value);
+                    setAnchorMemberBId("");
+                  }}
                   disabled={submitting || teamBOptions.length === 0}
                 >
                   <option value="">Select Team B binding…</option>
@@ -248,37 +328,62 @@ export default function ValorantSeriesForm({
                 <label htmlFor="anchor-player-a" className="text-sm font-medium text-slate-300">
                   Anchor player A
                 </label>
-                <Input
+                <Select
                   id="anchor-player-a"
-                  aria-label="Anchor player A Riot ID"
-                  placeholder="Name#Tag"
-                  value={anchorPlayerA}
-                  onChange={(event) => setAnchorPlayerA(event.target.value)}
-                  disabled={submitting}
-                  autoComplete="off"
-                />
-                {anchorPlayerA.trim() !== "" && anchorA === null ? (
-                  <p className="text-xs text-red-300">Enter the Riot ID as Name#Tag.</p>
-                ) : null}
+                  aria-label="Anchor player A"
+                  value={anchorMemberAId}
+                  onChange={(event) => setAnchorMemberAId(event.target.value)}
+                  disabled={submitting || !bindingTeamAId || teamAMembersLoading || teamAMembersWithRiotId.length === 0}
+                >
+                  <option value="">
+                    {!bindingTeamAId
+                      ? "Select a Team A binding first…"
+                      : teamAMembersLoading
+                        ? "Loading team members…"
+                        : teamAMembersWithRiotId.length === 0
+                          ? "No members with a Riot ID"
+                          : "Select an anchor player…"}
+                  </option>
+                  {teamAMembersWithRiotId.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name} — {member.riotId}
+                    </option>
+                  ))}
+                </Select>
               </div>
               <div className="grid min-w-0 gap-2">
                 <label htmlFor="anchor-player-b" className="text-sm font-medium text-slate-300">
                   Anchor player B
                 </label>
-                <Input
+                <Select
                   id="anchor-player-b"
-                  aria-label="Anchor player B Riot ID"
-                  placeholder="Name#Tag"
-                  value={anchorPlayerB}
-                  onChange={(event) => setAnchorPlayerB(event.target.value)}
-                  disabled={submitting}
-                  autoComplete="off"
-                />
-                {anchorPlayerB.trim() !== "" && anchorB === null ? (
-                  <p className="text-xs text-red-300">Enter the Riot ID as Name#Tag.</p>
-                ) : null}
+                  aria-label="Anchor player B"
+                  value={anchorMemberBId}
+                  onChange={(event) => setAnchorMemberBId(event.target.value)}
+                  disabled={submitting || !bindingTeamBId || teamBMembersLoading || teamBMembersWithRiotId.length === 0}
+                >
+                  <option value="">
+                    {!bindingTeamBId
+                      ? "Select a Team B binding first…"
+                      : teamBMembersLoading
+                        ? "Loading team members…"
+                        : teamBMembersWithRiotId.length === 0
+                          ? "No members with a Riot ID"
+                          : "Select an anchor player…"}
+                  </option>
+                  {teamBMembersWithRiotId.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name} — {member.riotId}
+                    </option>
+                  ))}
+                </Select>
               </div>
             </div>
+            {membersError ? (
+              <p role="alert" className="text-sm text-red-300">
+                Could not load anchor players: {membersError}
+              </p>
+            ) : null}
 
             <div>
               <Button type="submit" disabled={!canSubmit}>

@@ -22,6 +22,25 @@ import type {
   ValorantSide,
 } from "./valorant";
 
+export type AdminTeamMember = {
+  id: string;
+  name: string;
+  riotId: string | null;
+};
+
+// Admin saved-team detail exposes each member's Riot ID under the `gameId` field
+// (the backend maps member.riotId -> gameId). Normalize it back to `riotId`.
+export const fetchAdminTeamMembers = async (teamId: string): Promise<AdminTeamMember[]> => {
+  const data = await adminRequest<{
+    team: { members?: Array<{ id: string; name: string; gameId: string | null }> };
+  }>(`/api/admin/teams/${encodeURIComponent(teamId)}`);
+  return (data.team?.members ?? []).map((member) => ({
+    id: member.id,
+    name: member.name,
+    riotId: member.gameId,
+  }));
+};
+
 export const valorantAdminRequest = async <T>(
   path: string,
   options?: Parameters<typeof adminRequest>[1]

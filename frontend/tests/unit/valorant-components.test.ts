@@ -34,10 +34,11 @@ describe("VALORANT admin UI boundaries", () => {
     }
   });
 
-  it("bind form selects SavedTeams and detach copy never implies deleting VALORANT history", () => {
+  it("bind form lists ALL SavedTeams from the admin directory and detach copy never implies deleting VALORANT history", () => {
     const teamsManager = read("components/admin/valorant/ValorantTeamsManager.tsx");
     const bindingForm = read("components/admin/valorant/ValorantBindingForm.tsx");
-    expect(teamsManager).toContain("useTeams");
+    expect(teamsManager).toContain("useAdminTeams");
+    expect(teamsManager).not.toContain("useTeams");
     expect(bindingForm).toContain('label="Saved team to bind"');
     expect(bindingForm).toContain("Bind to VALORANT");
     expect(teamsManager).toContain("Detach binding");
@@ -62,7 +63,7 @@ describe("VALORANT admin UI boundaries", () => {
     expect(detail).not.toContain("Blue");
   });
 
-  it("series create form covers BO1/BO3/BO5, playedAt, Rated/Unrated preference, and both anchors", () => {
+  it("series create form covers BO1/BO3/BO5, playedAt, Rated/Unrated preference, and per-team anchor dropdowns from roster members", () => {
     const form = read("components/admin/valorant/ValorantSeriesForm.tsx");
     for (const value of ["bo1", "bo3", "bo5"]) expect(form).toContain(value);
     expect(form).toContain('type="datetime-local"');
@@ -71,7 +72,15 @@ describe("VALORANT admin UI boundaries", () => {
     expect(form).toContain('value="unrated"');
     expect(form).toContain("Anchor player A");
     expect(form).toContain("Anchor player B");
-    expect(form).toContain("parseRiotIdInput");
+    expect(form).toContain("fetchAdminTeamMembers");
+    expect(form).toContain('id="anchor-player-a"');
+    expect(form).toContain('id="anchor-player-b"');
+    expect(form).toContain("{member.name} — {member.riotId}");
+    expect(form).toContain("parseStoredRiotId");
+    expect(form).toContain("anchorPlayerA: anchorA");
+    expect(form).toContain("anchorPlayerB: anchorB");
+    expect(form).not.toContain("parseRiotIdInput");
+    expect(form).not.toContain("Name#Tag");
     expect(form).toContain("Both teams must have an active VALORANT binding");
   });
 
