@@ -125,6 +125,17 @@ export const parseRiotIdInput = (value: string): RiotId | null => {
 
 export const formatRiotId = (id: RiotId): string => `${id.name}#${id.tag}`;
 
+export const teamValuesFromSide = <T>(
+  anchorASide: ValorantSide | null | undefined,
+  onRed: T,
+  onBlue: T,
+): { teamA: T; teamB: T } | null =>
+  anchorASide === "red"
+    ? { teamA: onRed, teamB: onBlue }
+    : anchorASide === "blue"
+      ? { teamA: onBlue, teamB: onRed }
+      : null;
+
 export const mapMatchSummary = (raw: {
   id: string; henrik_match_id: string; affinity: string; platform: string; map_name: string;
   mode?: string | null; queue?: string | null; started_at: string; is_completed: boolean;

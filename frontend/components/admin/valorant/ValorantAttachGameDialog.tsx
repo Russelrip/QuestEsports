@@ -10,23 +10,19 @@ import { formatAdminCompactDateTime } from "@/lib/admin";
 import {
   mapsForFormat,
   nextGameNumber,
-  type RiotId,
+  teamValuesFromSide,
   type ValorantFormat,
   type ValorantMatchSummary,
-  type ValorantSide,
 } from "@/lib/valorant";
 import { attachValorantGame } from "@/lib/valorant-api";
-
-function oppositeSide(side: ValorantSide): ValorantSide {
-  return side === "red" ? "blue" : "red";
-}
 
 export default function ValorantAttachGameDialog({
   seriesId,
   match,
   existingNumbers,
   format,
-  anchors,
+  teamALabel,
+  teamBLabel,
   onClose,
   onAttached,
 }: {
@@ -34,7 +30,8 @@ export default function ValorantAttachGameDialog({
   match: ValorantMatchSummary | null;
   existingNumbers: number[];
   format: ValorantFormat;
-  anchors: { playerA: RiotId; playerB: RiotId } | null;
+  teamALabel: string;
+  teamBLabel: string;
   onClose: () => void;
   onAttached: () => Promise<void>;
 }) {
@@ -46,7 +43,8 @@ export default function ValorantAttachGameDialog({
   if (match === null) return null;
 
   const anchorASide = match.anchorASide ?? null;
-  const canAttach = anchorASide !== null;
+  const canAttach = anchorASide === "red" || anchorASide === "blue";
+  const s = teamValuesFromSide(match.anchorASide, match.redScore, match.blueScore);
 
   const handleAttach = async () => {
     setSubmitting(true);
@@ -81,8 +79,8 @@ export default function ValorantAttachGameDialog({
         <div className="mt-3 rounded-xl border border-white/10 px-4 py-3">
           <p className="font-medium text-white">{match.mapName}</p>
           <p className="mt-1 text-xs text-slate-400">
-            {formatAdminCompactDateTime(match.startedAt)} · {match.redScore ?? "–"}–
-            {match.blueScore ?? "–"}
+            {formatAdminCompactDateTime(match.startedAt)} · {teamALabel} {s?.teamA ?? "–"}–
+            {s?.teamB ?? "–"} {teamBLabel}
           </p>
           <p className="mt-1 truncate font-mono text-xs text-slate-500" title={match.matchId}>
             {match.matchId}
@@ -105,26 +103,11 @@ export default function ValorantAttachGameDialog({
           />
         </div>
 
-        <div className="mt-4 grid min-w-0 gap-2">
-          <span className="text-sm font-medium text-slate-300">Side mapping</span>
-          {canAttach && anchors ? (
-            <div className="rounded-xl border border-white/10 px-4 py-3 text-sm text-slate-300">
-              <p>
-                Team A ({anchors.playerA.name}) = <span className="font-semibold text-white">{anchorASide}</span>
-              </p>
-              <p className="mt-1">
-                Team B ({anchors.playerB.name}) = <span className="font-semibold text-white">{oppositeSide(anchorASide)}</span>
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-white/10 px-4 py-3 text-sm text-amber-100">
-              Sides couldn&apos;t be determined for this match.
-            </div>
-          )}
-          <p className="text-xs text-slate-500">
-            The platform derives sides from the series anchors — scores are never re-entered.
-          </p>
-        </div>
+        {!canAttach ? (
+          <div className="mt-4 rounded-xl border border-white/10 px-4 py-3 text-sm text-amber-100">
+            This match isn&apos;t between the two anchored teams.
+          </div>
+        ) : null}
 
         {error ? <div className="mt-4"><ValorantErrorAlert message={error} /></div> : null}
 

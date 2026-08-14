@@ -104,16 +104,11 @@ export default function ValorantCandidateReview({
     }
   };
 
-  const winningSideLabel =
-    detail?.winningSide === "red"
-      ? "Winning side: Red"
-      : detail?.winningSide === "blue"
-        ? "Winning side: Blue"
-        : "Winning side: —";
-
   const sideOwners = detail && players ? resolveSideOwners(detail, players) : null;
   const redOwner = sideOwners?.red ?? null;
   const blueOwner = sideOwners?.blue ?? null;
+  const winnerOwner =
+    detail?.winningSide === "red" ? redOwner : detail?.winningSide === "blue" ? blueOwner : null;
 
   return (
     <Card className="p-5 sm:p-6">
@@ -153,18 +148,26 @@ export default function ValorantCandidateReview({
             <p>
               <span className="text-slate-500">Started:</span> {formatAdminCompactDateTime(detail.startedAt)}
             </p>
-            <p>{winningSideLabel}</p>
             <p>
-              <span className="text-slate-500">Score:</span> {detail.redScore ?? 0}–{detail.blueScore ?? 0}
+              <span className="text-slate-500">Winner:</span>{" "}
+              {winnerOwner ? `${winnerOwner.name} win` : "—"}
+            </p>
+            <p>
+              <span className="text-slate-500">Score:</span>{" "}
+              {redOwner && blueOwner
+                ? `${redOwner.name}'s team ${detail.redScore ?? 0}–${detail.blueScore ?? 0} ${blueOwner.name}'s team`
+                : `${detail.redScore ?? 0}–${detail.blueScore ?? 0}`}
             </p>
           </div>
           {redOwner && blueOwner ? (
             <div className="mt-4 grid gap-1 text-sm text-slate-300">
               <p>
-                <span className="text-slate-500">Red —</span> {formatRiotId(redOwner)}
+                <span className="text-slate-500">{redOwner.name}&apos;s team —</span>{" "}
+                {formatRiotId(redOwner)}
               </p>
               <p>
-                <span className="text-slate-500">Blue —</span> {formatRiotId(blueOwner)}
+                <span className="text-slate-500">{blueOwner.name}&apos;s team —</span>{" "}
+                {formatRiotId(blueOwner)}
               </p>
             </div>
           ) : null}
@@ -186,7 +189,15 @@ export default function ValorantCandidateReview({
                     <td className="px-3 py-2 font-mono text-xs">
                       {formatRiotId({ name: player.name, tag: player.tag })}
                     </td>
-                    <td className="px-3 py-2">{player.side === "red" ? "Red" : "Blue"}</td>
+                    <td className="px-3 py-2">
+                      {player.side === "red"
+                        ? redOwner
+                          ? `${redOwner.name}'s team`
+                          : "Red"
+                        : blueOwner
+                          ? `${blueOwner.name}'s team`
+                          : "Blue"}
+                    </td>
                     <td className="px-3 py-2">{player.agentName ?? "—"}</td>
                     <td className="px-3 py-2">{player.kills ?? 0}</td>
                     <td className="px-3 py-2">{player.deaths ?? 0}</td>

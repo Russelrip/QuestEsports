@@ -263,7 +263,8 @@ export default function ValorantSeriesDetail({
           {libraryOpen && anchors ? (
             <ValorantMatchLibrary
               seriesId={seriesId}
-              anchors={anchors}
+              teamALabel={teamALabel}
+              teamBLabel={teamBLabel}
               onPick={(match) => {
                 setPickedMatch(match);
               }}
@@ -347,7 +348,8 @@ export default function ValorantSeriesDetail({
           match={pickedMatch}
           existingNumbers={games.map((game) => game.gameNumber)}
           format={series.format}
-          anchors={anchors}
+          teamALabel={teamALabel}
+          teamBLabel={teamBLabel}
           onClose={() => setPickedMatch(null)}
           onAttached={handleAttached}
         />

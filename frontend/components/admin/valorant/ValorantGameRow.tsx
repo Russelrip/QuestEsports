@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import ValorantSideBadges from "@/components/admin/valorant/ValorantSideBadges";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { SeriesGame } from "@/lib/valorant";
@@ -47,7 +46,6 @@ export default function ValorantGameRow({
           {game.matchId.slice(0, 8)}…
         </p>
       </div>
-      <ValorantSideBadges teamASide={game.teamASide} teamBSide={game.teamBSide} />
       {removable ? (
         <Button
           type="button"

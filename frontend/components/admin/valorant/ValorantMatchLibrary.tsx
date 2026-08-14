@@ -8,24 +8,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useValorantSeriesMatches } from "@/hooks/api/useValorant";
 import { formatAdminCompactDateTime } from "@/lib/admin";
-import type { RiotId, ValorantMatchSummary, ValorantSide } from "@/lib/valorant";
-
-function formatSideLabel(
-  match: ValorantMatchSummary,
-  anchors: { playerA: RiotId; playerB: RiotId }
-): string | null {
-  if (!match.anchorASide) return null;
-  const teamBSide: ValorantSide = match.anchorASide === "red" ? "blue" : "red";
-  return `${anchors.playerA.name} (${match.anchorASide}) vs ${anchors.playerB.name} (${teamBSide})`;
-}
+import { teamValuesFromSide, type ValorantMatchSummary } from "@/lib/valorant";
 
 export default function ValorantMatchLibrary({
   seriesId,
-  anchors,
+  teamALabel,
+  teamBLabel,
   onPick,
 }: {
   seriesId: string;
-  anchors: { playerA: RiotId; playerB: RiotId };
+  teamALabel: string;
+  teamBLabel: string;
   onPick: (match: ValorantMatchSummary) => void;
 }) {
   const matchesQuery = useValorantSeriesMatches(seriesId, true);
@@ -56,7 +49,7 @@ export default function ValorantMatchLibrary({
       ) : (
         <ul className="mt-4 grid gap-2">
           {matches.map((match) => {
-            const sideLabel = formatSideLabel(match, anchors);
+            const s = teamValuesFromSide(match.anchorASide, match.redScore, match.blueScore);
             return (
               <li
                 key={match.matchId}
@@ -64,16 +57,22 @@ export default function ValorantMatchLibrary({
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-white">{match.mapName}</p>
-                  {sideLabel ? <p className="text-xs text-slate-300">{sideLabel}</p> : null}
+                  <p className="text-xs text-slate-300">
+                    {teamALabel} vs {teamBLabel}
+                  </p>
                   <p className="text-xs text-slate-400">
                     {formatAdminCompactDateTime(match.startedAt)}
                   </p>
                 </div>
                 <p className="whitespace-nowrap text-sm text-slate-300">
-                  {match.redScore ?? "–"}–{match.blueScore ?? "–"}
+                  {teamALabel} {s?.teamA ?? "–"}–{s?.teamB ?? "–"} {teamBLabel}
                 </p>
-                {match.winningSide ? (
-                  <Badge>{match.winningSide === "red" ? "Red win" : "Blue win"}</Badge>
+                {match.winningSide && match.anchorASide ? (
+                  <Badge>
+                    {match.winningSide === match.anchorASide
+                      ? `${teamALabel} win`
+                      : `${teamBLabel} win`}
+                  </Badge>
                 ) : (
                   <Badge className="text-slate-500">No winner</Badge>
                 )}

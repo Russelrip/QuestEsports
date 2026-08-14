@@ -107,15 +107,17 @@ describe("VALORANT admin UI boundaries", () => {
     expect(manager).toContain("formatAdminCompactDateTime");
   });
 
-  it("attach dialog derives sides from match.anchorASide, omits teamASide, and disables attach when unknown", () => {
+  it("attach dialog labels matches by team name and disables attach when the anchored sides are unknown", () => {
     const dialog = read("components/admin/valorant/ValorantAttachGameDialog.tsx");
     expect(dialog).toContain("anchorASide");
     expect(dialog).toContain("matchId");
     expect(dialog).toContain("nextGameNumber");
     expect(dialog).not.toContain('name="teamASide"');
-    expect(dialog).toContain("Team A");
-    expect(dialog).toContain("Team B");
-    expect(dialog).toContain("Sides couldn&apos;t be determined for this match");
+    expect(dialog).toContain("teamALabel");
+    expect(dialog).toContain("teamBLabel");
+    expect(dialog).toContain("isn&apos;t between the two anchored teams");
+    expect(dialog).not.toContain("Red");
+    expect(dialog).not.toContain("Blue");
     expect(dialog).toContain("attachValorantGame");
   });
 
@@ -128,15 +130,14 @@ describe("VALORANT admin UI boundaries", () => {
     expect(detail).toContain("setValorantGameOrder");
   });
 
-  it("game rows show side mapping badges and a draft-only remove", () => {
+  it("game rows show team labels and a draft-only remove", () => {
     const row = read("components/admin/valorant/ValorantGameRow.tsx");
-    const badges = read("components/admin/valorant/ValorantSideBadges.tsx");
     const detail = read("components/admin/valorant/ValorantSeriesDetail.tsx");
-    expect(badges).toContain("Team A");
-    expect(badges).toContain("Team B");
-    expect(badges).toContain("Red");
-    expect(badges).toContain("Blue");
+    expect(row).toContain("teamALabel");
+    expect(row).toContain("teamBLabel");
     expect(row).toContain("Remove");
+    expect(row).not.toContain("Red");
+    expect(row).not.toContain("Blue");
     expect(detail).toContain("removeValorantGame");
   });
 
