@@ -79,6 +79,23 @@ export default function AdminEventAlbumsManager() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
+  const [posterSearch, setPosterSearch] = useState("");
+  const [posterAssignmentFilter, setPosterAssignmentFilter] = useState("all");
+  const [updatingPosterId, setUpdatingPosterId] = useState<string | null>(null);
+
+  const normalizedPosterSearch = posterSearch.trim().toLowerCase();
+  const filteredPosters = posters.filter((poster) => {
+    const matchesSearch = !normalizedPosterSearch || [
+      poster.title,
+      poster.imageAsset.originalName,
+      poster.tournament?.title,
+    ].some((value) => value?.toLowerCase().includes(normalizedPosterSearch));
+    const matchesAssignment = posterAssignmentFilter === "all"
+      || (posterAssignmentFilter === "assigned" && Boolean(poster.tournament))
+      || (posterAssignmentFilter === "unassigned" && !poster.tournament);
+    return matchesSearch && matchesAssignment;
+  });
+  const assignedPosterCount = posters.filter((poster) => poster.tournament).length;
 
   const loadAlbums = useCallback(async () => {
     const data = await adminRequest<{ albums: EventAlbum[]; pagination: Pagination }>(
@@ -322,6 +339,7 @@ export default function AdminEventAlbumsManager() {
   };
 
   const assignPoster = async (poster: Poster, tournamentId: string) => {
+    setUpdatingPosterId(poster.id);
     try {
       const data = await adminRequest<{ poster: Poster }>(`/api/posters/${poster.id}`, {
         method: "PATCH",
@@ -331,6 +349,8 @@ export default function AdminEventAlbumsManager() {
       showToast({ tone: "success", title: tournamentId ? "Artwork moved to tournament" : "Tournament link removed" });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to update tournament artwork.");
+    } finally {
+      setUpdatingPosterId(null);
     }
   };
 
@@ -426,15 +446,73 @@ export default function AdminEventAlbumsManager() {
       </div>
 
       <Card className="p-5 sm:p-6">
-        <div><h2 className="text-2xl text-white">Existing promotional artwork</h2><p className="mt-2 text-sm text-slate-400">Assign each existing poster or graphic to a tournament. It will then appear in that tournament’s Event Media section instead of the public photo gallery.</p></div>
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {posters.map((poster) => (
-            <div key={poster.id} className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 border border-white/10 bg-black/20 p-3">
-              <div className="relative aspect-[4/5] overflow-hidden bg-black"><Image src={resolveImageAssetUrl(poster.imageAsset)} alt={poster.title} fill sizes="88px" className="object-contain" /></div>
-              <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{poster.title}</p><Select className="mt-3 h-10 rounded-none text-xs" value={poster.tournament?.id || ""} onChange={(event) => void assignPoster(poster, event.target.value)}><option value="">Not assigned</option>{tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.title}</option>)}</Select></div>
-            </div>
-          ))}
+        <div className="flex flex-col gap-4 border-b border-white/8 pb-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <h2 className="text-2xl text-white">Existing promotional artwork</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">Choose where each poster appears. Assigned artwork is shown in that tournament’s Event Media section; unassigned artwork stays in the public poster gallery.</p>
+          </div>
+          <div className="flex shrink-0 gap-2 text-xs">
+            <span className="border border-purple-300/20 bg-purple-400/10 px-3 py-2 text-purple-100">{assignedPosterCount} assigned</span>
+            <span className="border border-white/10 bg-white/5 px-3 py-2 text-slate-300">{posters.length - assignedPosterCount} unassigned</span>
+          </div>
         </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_14rem]">
+          <Input
+            value={posterSearch}
+            onChange={(event) => setPosterSearch(event.target.value)}
+            placeholder="Search artwork, filename, or tournament"
+            aria-label="Search promotional artwork"
+          />
+          <Select
+            value={posterAssignmentFilter}
+            onChange={(event) => setPosterAssignmentFilter(event.target.value)}
+            aria-label="Filter promotional artwork by assignment"
+          >
+            <option value="all">All artwork</option>
+            <option value="assigned">Assigned</option>
+            <option value="unassigned">Unassigned</option>
+          </Select>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500">
+          <span>{filteredPosters.length} of {posters.length} items</span>
+          {(posterSearch || posterAssignmentFilter !== "all") ? <button type="button" className="text-purple-200 transition hover:text-white" onClick={() => { setPosterSearch(""); setPosterAssignmentFilter("all"); }}>Clear filters</button> : null}
+        </div>
+
+        {filteredPosters.length ? (
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {filteredPosters.map((poster) => {
+              const isUpdating = updatingPosterId === poster.id;
+              return (
+                <article key={poster.id} className="grid min-w-0 grid-cols-[104px_minmax(0,1fr)] gap-4 border border-white/10 bg-black/20 p-4 transition hover:border-white/20">
+                  <div className="relative aspect-[4/5] overflow-hidden border border-white/8 bg-black">
+                    <Image src={resolveImageAssetUrl(poster.imageAsset)} alt={poster.title} fill sizes="104px" className="object-contain" />
+                  </div>
+                  <div className="flex min-w-0 flex-col">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="line-clamp-2 text-sm font-semibold leading-5 text-white">{poster.title}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500">{poster.imageAsset.originalName || poster.imageAsset.title}</p>
+                      </div>
+                      <span className={`shrink-0 border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${poster.tournament ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-200" : "border-white/10 bg-white/5 text-slate-400"}`}>
+                        {isUpdating ? "Saving" : poster.tournament ? "Assigned" : "Unassigned"}
+                      </span>
+                    </div>
+                    <label htmlFor={`poster-tournament-${poster.id}`} className="mt-auto pt-4 text-xs font-medium text-slate-400">Assigned tournament</label>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Select id={`poster-tournament-${poster.id}`} className="h-10 rounded-none text-xs" value={poster.tournament?.id || ""} disabled={isUpdating} onChange={(event) => void assignPoster(poster, event.target.value)}>
+                        <option value="">Not assigned</option>
+                        {tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.title}</option>)}
+                      </Select>
+                      {poster.tournament ? <button type="button" disabled={isUpdating} onClick={() => void assignPoster(poster, "")} className="h-10 shrink-0 border border-white/10 px-3 text-xs text-slate-300 transition hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-50">Unassign</button> : null}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : <EmptyState title="No artwork found" description="Try another search or clear the assignment filter." />}
       </Card>
 
       <PostersContent adminOnly />
