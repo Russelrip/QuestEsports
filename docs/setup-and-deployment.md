@@ -335,6 +335,40 @@ npm run test:integration
 
 Do not point this workflow at production and do not run destructive reset commands (`prisma migrate reset`, `prisma db drop`, force-reset variants) against any shared or remote database. The frontend can run separately against `http://localhost:5001`; the mobile admin is out of scope for this workflow.
 
+## VALORANT Local Development Topology
+
+The VALORANT integration runs two services against **one dedicated Supabase test
+project** — never production or shared staging:
+
+```text
+Next.js frontend ......... http://localhost:3000
+Quest Express backend .... http://localhost:5001   (NEXT_PUBLIC_API_URL=http://localhost:5001)
+valorant-platform-backend. http://localhost:8000   (VALORANT_INTERNAL_BASE_URL=http://localhost:8000)
+Shared Supabase test project  (schema-specific credentials)
+```
+
+- Quest `DATABASE_URL`/`DIRECT_URL` connect to the `public` schema (Prisma-owned).
+- FastAPI `DATABASE_URL` connects to the `valorant` schema (plain-SQL ledger).
+- `valorant-platform-backend` is a sibling repo, never deployed from this repo.
+
+Prepare the shared test project once:
+
+1. In the Supabase SQL editor, create the VAL runtime role:
+   ```sql
+   CREATE ROLE val_runtime LOGIN PASSWORD '<generate a random password>';
+   ```
+   (The runner creates the `valorant` schema and grants/RLS policies to this role
+   automatically — see the FastAPI repo's `docs/runtime-access-posture.md`.)
+2. Quest runs as the project owner (or its own runtime role) on `public` with
+   RLS verified by `npm run prisma:security:verify`.
+3. Apply FastAPI migrations as the migrator:
+   ```bash
+   cd ../valorant-platform-backend
+   uv sync
+   uv run python -m scripts.apply_migrations --runtime-role val_runtime
+   ```
+4. Apply Quest Prisma migrations as usual (`npm run prisma:migrate:deploy`).
+
 ## Recommended Production Topology
 
 ### Option A: Two-process deployment behind a reverse proxy
