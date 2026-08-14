@@ -374,6 +374,34 @@ lives on a private network with an IP allowlist and binds to a private
 interface; the browser never talks to FastAPI. `VALORANT_INTERNAL_BASE_URL` is
 asserted to be an HTTPS origin by `backend/src/config/env.js` in production.
 
+### VALORANT local commands
+
+Run the two services in separate terminals against the shared test project:
+
+```bash
+# Terminal 1 — FastAPI (repo: ../valorant-platform-backend)
+cd ../valorant-platform-backend
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Terminal 2 — Quest backend
+cd backend
+npm run dev
+
+# Terminal 3 — Quest frontend
+cd frontend
+npm run dev
+```
+
+Smoke and tests:
+
+```bash
+cd backend
+npm run test:valorant:smoke          # health + auth checks against running services
+npm run test:valorant:e2e            # two-service E2E journey (see tests/valorant-e2e/README.md)
+```
+
+Expected smoke output: `VALORANT local smoke: PASS`.
+
 ## Recommended Production Topology
 
 ### Option A: Two-process deployment behind a reverse proxy
