@@ -98,7 +98,8 @@ Notes:
 | `current_tier` | `currentTier` | tier label (e.g. "Diamond 2") |
 | `elo` | `elo` | sort key (already DESC upstream) |
 | `rank_in_tier` | `rankInTier` | |
-| `peak_rank` (jsonb `{tier_name, season_short}`) | `peakRank`, `peakSeason` | |
+| `peak_rank` (string tier name) | `peakRank` | API returns a plain tier-name string, not the DB jsonb |
+| `peak_season` (string) | `peakSeason` | |
 | `discord_username` | `discordUsername` | search key |
 | `last_played_match` | `lastPlayed` | 2-week freshness already applied upstream |
 
