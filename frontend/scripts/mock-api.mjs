@@ -90,6 +90,11 @@ const server = createServer((request, response) => {
     }));
     return;
   }
+  if (request.method === "GET" && request.url === "/api/posters/poster-duplicate/image") {
+    response.setHeader("Content-Type", "image/png");
+    response.end(mobileTestAvatar);
+    return;
+  }
   if (
     request.method === "GET" &&
     new URL(request.url || "/", `http://127.0.0.1:${port}`).pathname ===

@@ -354,6 +354,20 @@ export default function AdminEventAlbumsManager() {
     }
   };
 
+  const removePosterEntry = async (poster: Poster) => {
+    if (!window.confirm(`Delete the artwork entry “${poster.title}”? The image file will be kept when another entry still uses it.`)) return;
+    setUpdatingPosterId(poster.id);
+    try {
+      await adminRequest(`/api/posters/${poster.id}`, { method: "DELETE" });
+      setPosters((current) => current.filter((item) => item.id !== poster.id));
+      showToast({ tone: "success", title: "Artwork entry deleted" });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to delete tournament artwork.");
+    } finally {
+      setUpdatingPosterId(null);
+    }
+  };
+
   return (
     <AdminShell title="Event Albums" description="Publish event photography albums and move promotional artwork into its tournament page.">
       {message ? <p className="border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{message}</p> : null}
@@ -507,6 +521,7 @@ export default function AdminEventAlbumsManager() {
                       </Select>
                       {poster.tournament ? <button type="button" disabled={isUpdating} onClick={() => void assignPoster(poster, "")} className="h-10 shrink-0 border border-white/10 px-3 text-xs text-slate-300 transition hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-50">Unassign</button> : null}
                     </div>
+                    <button type="button" disabled={isUpdating} onClick={() => void removePosterEntry(poster)} className="mt-2 self-end text-xs text-rose-300/80 transition hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50">Delete entry</button>
                   </div>
                 </article>
               );
