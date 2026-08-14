@@ -36,10 +36,9 @@ const authorizeTopics = async (requested, user) => {
 
 const getRealtimeEvents = async (req, res) => {
   if (!env.REALTIME_SSE_ENABLED) {
-    res.status(503).json({
-      success: false,
-      error: { code: "realtime_disabled", message: "Live updates are temporarily unavailable." },
-    });
+    // EventSource treats 204 as a terminal response and does not reconnect.
+    // Clients continue using their bounded polling fallback while SSE is disabled.
+    res.status(204).end();
     return;
   }
 
