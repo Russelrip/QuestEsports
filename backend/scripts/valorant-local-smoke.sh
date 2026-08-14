@@ -25,8 +25,15 @@ echo "3) Quest liveness (expect 200):"
 curl --fail --silent "$QUEST_BASE/api/health/live" > /dev/null
 echo "  ok"
 
-echo "4) Quest readiness (expect 200 or intentional 503 x-maintenance-mode):"
-curl --fail --silent "$QUEST_BASE/api/health/ready" > /dev/null
-echo "  ok"
+echo "4) Quest readiness (2xx pass; 503 = reachable but maintenance/degraded WARN; other = fail):"
+STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' "$QUEST_BASE/api/health/ready")"
+if [[ "$STATUS" =~ ^2[0-9][0-9]$ ]]; then
+  echo "  ok ($STATUS)"
+elif [[ "$STATUS" == "503" ]]; then
+  echo "  WARN ($STATUS): service reachable but in maintenance/degraded mode" >&2
+else
+  echo "Unexpected status for Quest readiness: $STATUS (expected 2xx, or 503 for maintenance)" >&2
+  exit 1
+fi
 
 echo "VALORANT local smoke: PASS"
