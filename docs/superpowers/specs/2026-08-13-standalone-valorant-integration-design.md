@@ -971,3 +971,9 @@ ADD COLUMN "rating_mode" TEXT;
 ## R3.7 Release-blocker evidence status (ledgers)
 
 All six release blockers from the deployment plan are **code-satisfied**; the runtime **evidence** is still prospective (none runnable in-session): two-schema production backup restore drill, four-role/RLS verification against the production Supabase project, the two-service E2E live run against a provisioned project (`npm run test:valorant:e2e`), live gitleaks run, and green CI on pushed branches.
+
+## R3.8 Post-ship fixes (Aug 14, discovered in local testing)
+
+- **Henrik contract drift** (FastAPI `6a1e0f3`): the live HenrikDev API now returns `metadata.queue` as an object `{id, name, mode_type}` (was a string) and Deathmatch `teams[].team_id` as a per-player UUID (was `"Red"`/`"Blue"`). The mapper now coerces `queue` to its `name` (a `field_validator`) and leaves non-side (UUID) team ids unchanged so `derive_scores` reports those sides absent. Affects the shared `HenrikMetadata` (history list + match detail).
+- **Discovery depth + timeout** (Quest `3d9e08d`): the UI's two-player search defaulted to `max_pages=1` (10 matches/player), which could not reach older matches, and the Quest backend's 10s connect timeout aborted the slower multi-page search. The UI now requests `max_pages=5` (the §5.2 bound) and the client `CONNECT_TIMEOUT_MS` is 60s.
+- Also landed before these: read-path `sub` = admin UUID on every request (`037142a`) and the first-class finalize envelope (`c0fe1f3`) — both already recorded in R3.2/R3.3.

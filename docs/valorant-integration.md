@@ -1,6 +1,6 @@
 # Quest ←→ VALORANT Integration (as-built)
 
-> **Status:** shipped. QuestEsports branch `chore/local-development-environment` head `037142a`; sibling repo `valorant-platform-backend` `main` head `5fe4ecc`. This document describes the **as-built** state across all four phases — FastAPI contract deltas, Quest backend integration, Quest admin UI, and deployment/verification. Design intent and the rev-2 deltas are recorded in `docs/superpowers/specs/2026-08-13-standalone-valorant-integration-design.md` (appended Revision 3); this doc is the self-contained reference. No secrets appear here — where a value is sensitive you get a placeholder.
+> **Status:** shipped. QuestEsports branch `chore/local-development-environment` head `3d9e08d`; sibling repo `valorant-platform-backend` `main` head `6a1e0f3`. This document describes the **as-built** state across all four phases — FastAPI contract deltas, Quest backend integration, Quest admin UI, and deployment/verification — plus the post-ship fixes and local-testing state (§9). Design intent and the rev-2 deltas are recorded in `docs/superpowers/specs/2026-08-13-standalone-valorant-integration-design.md` (appended Revision 3); this doc is the self-contained reference. No secrets appear here — where a value is sensitive you get a placeholder.
 
 ---
 
@@ -278,6 +278,25 @@ The E2E harness (`backend/tests/valorant-e2e/valorant-e2e.test.js`) boots the He
 4. Two-service E2E journey green on a provisioned project.
 5. Secret scanning green on both repos (live gitleaks run / CI evidence).
 6. Schema-scope CI guards green — **done in code** (`78b30ae`, `705bae3`); CI-green evidence pending push.
+
+---
+
+## 9. Post-ship fixes and local-testing state (Aug 14)
+
+Discovered during the first end-to-end local run against a dedicated Supabase test project — live-API/behavior fixes, not design drift:
+
+1. **Read-path `sub` was `null`** (`037142a`) — the Quest read handlers never threaded `req.user.id` into the service-token `sub` claim, so FastAPI rejected every admin read with 401 "service auth". Fixed: all 8 read paths now sign `sub` = the admin UUID.
+2. **Finalize envelope** (`c0fe1f3`) — the Quest finalize response is `data: { ...result }` (first-class), not `data.result`; the frontend wrapper/type/mocks were corrected.
+3. **Henrik contract drift** (`6a1e0f3`, FastAPI) — the live HenrikDev API now returns `metadata.queue` as an object `{id, name, mode_type}` (was a string), and Deathmatch `teams[].team_id` as a per-player UUID (was "Red"/"Blue"). Fixed: a `field_validator` coerces `queue` to its `name`; `_normalize_sides` maps only known side literals and leaves UUIDs untouched (so `derive_scores` reports those sides absent). Both affect the shared `HenrikMetadata` (list item + detail).
+4. **Discovery depth + timeout** (`3d9e08d`) — the UI's two-player search defaulted to `max_pages=1` (10 matches/player), which couldn't reach older matches (e.g. a BO3 six days back), and the Quest backend's 10s connect timeout aborted the slower multi-page search. Fixed: `DEFAULT_MAX_PAGES = 5` (spec max) in the discovery form and `CONNECT_TIMEOUT_MS = 60000` in the client.
+
+Local-testing state (as of this session):
+- Dedicated Supabase test project provisioned; both schemas migrated (`valorant` 14 migrations, `public` 50); `val_runtime` + `quest_runtime` roles created; RLS verified both ways (`verify_runtime_access` PASS / `--expect-denied` PASS).
+- FastAPI `.env` and Quest `backend/.env` point at the test project; the Henrik API key is wired into FastAPI.
+- Seeded: admin `admin@valorant.test` + two SavedTeams ("Test Team Alpha"/ALPHA, "Test Team Bravo"/BRAVO).
+- Smoke test (`npm run test:valorant:smoke`) PASS; both services + frontend boot and connect.
+- Discovery + explicit import verified live through the UI for `dimeth#short` ↔ `Logger#lh44` (a BO3 of three "Custom Game" matches on 2026-08-08).
+- Both branches now pushed: Quest `chore/local-development-environment` @ `3d9e08d`, FastAPI `main` @ `6a1e0f3`.
 
 ---
 
