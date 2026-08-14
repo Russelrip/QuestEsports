@@ -137,6 +137,15 @@ INSERT INTO "veto_rule_presets" ("id","name","format","version","steps","is_buil
 ('00000000-0000-4000-8000-000000000302','Quest Standard BO3','bo3',1,'[{"kind":"ban","actor":"A"},{"kind":"ban","actor":"B"},{"kind":"pick","actor":"A","seriesIndex":1},{"kind":"side","actor":"B","seriesIndex":1},{"kind":"pick","actor":"B","seriesIndex":2},{"kind":"side","actor":"A","seriesIndex":2},{"kind":"ban","actor":"A"},{"kind":"ban","actor":"B"},{"kind":"decider","actor":null,"seriesIndex":3},{"kind":"side","actor":"A","seriesIndex":3}]',true,CURRENT_TIMESTAMP),
 ('00000000-0000-4000-8000-000000000303','Quest Standard BO5','bo5',1,'[{"kind":"ban","actor":"A"},{"kind":"ban","actor":"B"},{"kind":"pick","actor":"A","seriesIndex":1},{"kind":"side","actor":"B","seriesIndex":1},{"kind":"pick","actor":"B","seriesIndex":2},{"kind":"side","actor":"A","seriesIndex":2},{"kind":"pick","actor":"A","seriesIndex":3},{"kind":"side","actor":"B","seriesIndex":3},{"kind":"pick","actor":"B","seriesIndex":4},{"kind":"side","actor":"A","seriesIndex":4},{"kind":"decider","actor":null,"seriesIndex":5},{"kind":"side","actor":"A","seriesIndex":5}]',true,CURRENT_TIMESTAMP);
 
-ALTER TABLE public."veto_maps", public."veto_map_pools", public."veto_map_pool_maps", public."veto_rule_presets", public."veto_room_templates", public."tournament_veto_configs", public."veto_rooms", public."veto_room_participants", public."veto_room_actions", public."veto_access_grants" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_maps" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_map_pools" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_map_pool_maps" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_rule_presets" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_room_templates" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."tournament_veto_configs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_rooms" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_room_participants" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_room_actions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."veto_access_grants" ENABLE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public."veto_maps", public."veto_map_pools", public."veto_map_pool_maps", public."veto_rule_presets", public."veto_room_templates", public."tournament_veto_configs", public."veto_rooms", public."veto_room_participants", public."veto_room_actions", public."veto_access_grants" FROM PUBLIC;
 DO $$ DECLARE role_name TEXT; BEGIN FOREACH role_name IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public."veto_maps", public."veto_map_pools", public."veto_map_pool_maps", public."veto_rule_presets", public."veto_room_templates", public."tournament_veto_configs", public."veto_rooms", public."veto_room_participants", public."veto_room_actions", public."veto_access_grants" FROM %I', role_name); END IF; END LOOP; END $$;
