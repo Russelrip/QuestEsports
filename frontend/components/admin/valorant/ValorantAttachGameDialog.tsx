@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
+import { useDialogFocus } from "@/components/admin/valorant/useDialogFocus";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ export default function ValorantAttachGameDialog({
   const [teamASide, setTeamASide] = useState<ValorantSide>("red");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const dialogRef = useDialogFocus({ onClose });
 
   if (match === null) return null;
 
@@ -55,6 +57,7 @@ export default function ValorantAttachGameDialog({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="Attach match to series"

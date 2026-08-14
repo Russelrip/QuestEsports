@@ -48,14 +48,14 @@ export default function ValorantSeriesManager() {
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  <th className="px-4 py-3">Format</th>
-                  <th className="px-4 py-3">Played at</th>
-                  <th className="px-4 py-3">Team A</th>
-                  <th className="px-4 py-3">Team B</th>
-                  <th className="px-4 py-3">Games</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Rating</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th scope="col" className="px-4 py-3">Format</th>
+                  <th scope="col" className="px-4 py-3">Played at</th>
+                  <th scope="col" className="px-4 py-3">Team A</th>
+                  <th scope="col" className="px-4 py-3">Team B</th>
+                  <th scope="col" className="px-4 py-3">Games</th>
+                  <th scope="col" className="px-4 py-3">Status</th>
+                  <th scope="col" className="px-4 py-3">Rating</th>
+                  <th scope="col" className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>

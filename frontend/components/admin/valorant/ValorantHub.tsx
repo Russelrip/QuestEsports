@@ -39,22 +39,14 @@ function HubCard({
   );
 }
 
+function HubSlot({ children }: { children: React.ReactNode }) {
+  return <Card className="p-6">{children}</Card>;
+}
+
 export default function ValorantHub() {
   const bindingsQuery = useValorantBindings();
   const seriesQuery = useValorantSeriesList();
   const reconciliationQuery = useValorantReconciliation();
-
-  const loading =
-    bindingsQuery.loading || seriesQuery.loading || reconciliationQuery.loading;
-
-  const error =
-    bindingsQuery.error || seriesQuery.error || reconciliationQuery.error;
-
-  const retryAll = () => {
-    void bindingsQuery.refetch();
-    void seriesQuery.refetch();
-    void reconciliationQuery.refetch();
-  };
 
   const activeBindings =
     bindingsQuery.data?.bindings.filter((binding) => binding.status === "active").length ?? 0;
@@ -68,16 +60,16 @@ export default function ValorantHub() {
       title="VALORANT"
       description="Run standalone VALORANT competitive series with Riot-sourced results and ELO ratings."
     >
-      {error ? (
-        <ValorantErrorAlert message={error} onRetry={retryAll} />
-      ) : loading ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <ValorantLoadingState />
-          <ValorantLoadingState />
-          <ValorantLoadingState />
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {bindingsQuery.error ? (
+          <HubSlot>
+            <ValorantErrorAlert message={bindingsQuery.error} onRetry={() => void bindingsQuery.refetch()} />
+          </HubSlot>
+        ) : bindingsQuery.loading ? (
+          <HubSlot>
+            <ValorantLoadingState />
+          </HubSlot>
+        ) : (
           <HubCard
             href="/admin/valorant/teams"
             title="Team Bindings"
@@ -88,11 +80,23 @@ export default function ValorantHub() {
               </Badge>
             }
           />
-          <HubCard
-            href="/admin/valorant/discover"
-            title="Match Discovery"
-            description="Search and import matches between two Riot IDs."
-          />
+        )}
+
+        <HubCard
+          href="/admin/valorant/discover"
+          title="Match Discovery"
+          description="Search and import matches between two Riot IDs."
+        />
+
+        {seriesQuery.error ? (
+          <HubSlot>
+            <ValorantErrorAlert message={seriesQuery.error} onRetry={() => void seriesQuery.refetch()} />
+          </HubSlot>
+        ) : seriesQuery.loading ? (
+          <HubSlot>
+            <ValorantLoadingState />
+          </HubSlot>
+        ) : (
           <HubCard
             href="/admin/valorant/series"
             title="Series"
@@ -100,11 +104,23 @@ export default function ValorantHub() {
             badge={<Badge>{series.length}</Badge>}
             subtitle={`${draftCount} draft${draftCount === 1 ? "" : "s"}`}
           />
-          <HubCard
-            href="/admin/valorant/rankings"
-            title="Rankings"
-            description="Current ELO standings and rating history."
-          />
+        )}
+
+        <HubCard
+          href="/admin/valorant/rankings"
+          title="Rankings"
+          description="Current ELO standings and rating history."
+        />
+
+        {reconciliationQuery.error ? (
+          <HubSlot>
+            <ValorantErrorAlert message={reconciliationQuery.error} onRetry={() => void reconciliationQuery.refetch()} />
+          </HubSlot>
+        ) : reconciliationQuery.loading ? (
+          <HubSlot>
+            <ValorantLoadingState />
+          </HubSlot>
+        ) : (
           <HubCard
             href="/admin/valorant/reconciliation"
             title="Reconciliation"
@@ -117,8 +133,8 @@ export default function ValorantHub() {
               ) : undefined
             }
           />
-        </div>
-      )}
+        )}
+      </div>
     </AdminShell>
   );
 }

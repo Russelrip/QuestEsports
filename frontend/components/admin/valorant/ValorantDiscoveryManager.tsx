@@ -8,6 +8,7 @@ import ValorantDiscoveryForm from "@/components/admin/valorant/ValorantDiscovery
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
+import { useDialogFocus } from "@/components/admin/valorant/useDialogFocus";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToastStore } from "@/hooks/useToastStore";
@@ -32,6 +33,8 @@ export default function ValorantDiscoveryManager() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importedConfirmation, setImportedConfirmation] = useState<string | null>(null);
+  const handleCloseReview = () => setSelected(null);
+  const reviewDialogRef = useDialogFocus({ onClose: handleCloseReview, open: selected !== null });
 
   const handleSearch = async (input: SearchInput) => {
     lastSearchRef.current = input;
@@ -112,20 +115,21 @@ export default function ValorantDiscoveryManager() {
 
       {selected ? (
         <div
+          ref={reviewDialogRef}
           role="dialog"
           aria-modal="true"
           aria-label="Review candidate match"
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
-          onClick={() => setSelected(null)}
+          onClick={handleCloseReview}
         >
           <div className="w-full max-w-2xl" onClick={(event) => event.stopPropagation()}>
             <ValorantCandidateReview
               candidate={selected}
-              onClose={() => setSelected(null)}
+              onClose={handleCloseReview}
               onImported={handleImported}
             />
             <div className="mt-3 flex justify-end">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setSelected(null)}>
+              <Button type="button" variant="ghost" size="sm" onClick={handleCloseReview}>
                 Close dialog
               </Button>
             </div>

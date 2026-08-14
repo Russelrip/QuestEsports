@@ -39,7 +39,7 @@ export default function ValorantOperationBanner({
 
   if (operation?.status === "failed") {
     return (
-      <Card role="status" className="border-red-400/25 bg-red-500/12 px-5 py-4">
+      <Card role="alert" className="border-red-400/25 bg-red-500/12 px-5 py-4">
         <h3 className="text-sm font-semibold text-red-100">Last action failed</h3>
         {operation.errorCode ? (
           <p className="mt-1 text-sm text-red-100/80">{operation.errorCode}</p>
