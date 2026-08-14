@@ -193,6 +193,10 @@ const env = {
     process.env.COMMERCE_MAINTENANCE_ENABLED,
     true,
   ),
+  DATA_HYGIENE_MAINTENANCE_ENABLED: normalizeBoolean(
+    process.env.DATA_HYGIENE_MAINTENANCE_ENABLED,
+    true,
+  ),
   SITE_MAINTENANCE_MODE: normalizeBoolean(
     process.env.SITE_MAINTENANCE_MODE,
     false,
@@ -280,6 +284,9 @@ const env = {
     1,
     100,
   ),
+  WEB_PUSH_PUBLIC_KEY: optional("WEB_PUSH_PUBLIC_KEY"),
+  WEB_PUSH_PRIVATE_KEY: optional("WEB_PUSH_PRIVATE_KEY"),
+  WEB_PUSH_SUBJECT: optional("WEB_PUSH_SUBJECT", "mailto:admin@questesports.lk"),
   MAIL_PROVIDER: optional("MAIL_PROVIDER", "smtp").toLowerCase(),
   RESEND_API_KEY: optional("RESEND_API_KEY"),
   SMTP_HOST: optional("SMTP_HOST"),

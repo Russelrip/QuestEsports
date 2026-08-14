@@ -2,10 +2,14 @@ const { asyncHandler } = require("../../lib/async-handler");
 const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const { publishRealtimeEvent } = require("../realtime/realtime.service");
 const service = require("./veto.service");
+const { notifyVetoTurn } = require("../match-rooms/match-room.service");
 
 const meta = () => ({ serverNow: new Date().toISOString() });
 const tokenFrom = (req) => String(req.headers["x-veto-token"] || "").trim();
-const publish = (room) => publishRealtimeEvent(`veto:${room.code}`, { roomCode: room.code, revision: room.revision, status: room.status });
+const publish = async (room) => {
+  publishRealtimeEvent(`veto:${room.code}`, { roomCode: room.code, revision: room.revision, status: room.status });
+  await notifyVetoTurn(room);
+};
 
 const audit = async (req, action, room, extra) => recordAudit({
   ...requestAuditContext(req), action, targetType: "VetoRoom", targetId: room.id,
@@ -24,7 +28,7 @@ const listRooms = asyncHandler(async (req, res) => res.status(200).json({ succes
 const createRoom = asyncHandler(async (req, res) => {
   const result = await service.createRoom({ user: req.user, body: req.body });
   await audit(req, "veto.room.created", result.room);
-  publish(result.room);
+  await publish(result.room);
   res.status(201).json({ success: true, data: result, meta: meta() });
 });
 const getAdminRoom = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.getAdminRoom({ user: req.user, roomId: req.params.roomId }), meta: meta() }));
@@ -34,7 +38,7 @@ const myRooms = asyncHandler(async (req, res) => res.status(200).json({ success:
 const runRoomCommand = (name, fn) => asyncHandler(async (req, res) => {
   const room = await fn();
   await audit(req, name, room, { command: name });
-  publish(room);
+  await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 
@@ -48,22 +52,22 @@ const cancelRoom = (req, res, next) => runRoomCommand("veto.room.cancelled", () 
 
 const readyRoom = asyncHandler(async (req, res) => {
   const room = await service.readyRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
-  publish(room);
+  await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const tossRoom = asyncHandler(async (req, res) => {
   const room = await service.tossRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
-  publish(room);
+  await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const chooseTeamA = asyncHandler(async (req, res) => {
   const room = await service.chooseTeamA({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
-  publish(room);
+  await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const submitAction = asyncHandler(async (req, res) => {
   const room = await service.submitAction({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
-  publish(room);
+  await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const rotateGrant = asyncHandler(async (req, res) => {
