@@ -181,7 +181,7 @@ const env = {
   VALORANT_SERVICE_AUDIENCE: optional("VALORANT_SERVICE_AUDIENCE", "valorant-platform"),
   VALORANT_TIMEOUT_MS: normalizePositiveInteger(
     process.env.VALORANT_TIMEOUT_MS,
-    10000,
+    60000,
   ),
   VALORANT_READ_RETRIES: normalizeIntegerInRange(
     "VALORANT_READ_RETRIES",

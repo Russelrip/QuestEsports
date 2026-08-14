@@ -723,6 +723,7 @@ test("setGameOrder sends the full absolute desired order and converges on retry"
   const updatedOrder = [];
   const prismaMock = {
     prisma: {
+      $transaction: async (callback) => callback(prismaMock.prisma),
       questValorantSeries: {
         findUnique: async () => ({ id: "quest-series-1", valorantSeriesUuid: "series-uuid-1", status: "draft" }),
       },
@@ -735,6 +736,11 @@ test("setGameOrder sends the full absolute desired order and converges on retry"
           { id: "g2-uuid", valorantGameUuid: "val-g2" },
           { id: "g1-uuid", valorantGameUuid: "val-g1" },
         ],
+        updateMany: async ({ where, data }) => {
+          assert.equal(where.questSeriesId, "quest-series-1");
+          assert.equal(data.gameNumber.increment, 10000);
+          return { count: 2 };
+        },
         update: async ({ where, data }) => {
           updatedOrder.push({ id: where.id, gameNumber: data.gameNumber });
           return {};

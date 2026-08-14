@@ -519,9 +519,17 @@ const setGameOrder = async ({ seriesId, games, actorUserId, requestId, ipAddress
       operationId: operation.operationId,
       idempotent: false,
     });
-    for (const { gameId, gameNumber } of games) {
-      await prisma.questValorantSeriesGame.update({ where: { id: gameId }, data: { gameNumber } });
-    }
+    await prisma.$transaction(async (tx) => {
+      // Shift existing numbers out of the way so the final assignment can't
+      // collide on @@unique([questSeriesId, gameNumber]) mid-loop.
+      await tx.questValorantSeriesGame.updateMany({
+        where: { questSeriesId: series.id },
+        data: { gameNumber: { increment: 10000 } },
+      });
+      for (const { gameId, gameNumber } of games) {
+        await tx.questValorantSeriesGame.update({ where: { id: gameId }, data: { gameNumber } });
+      }
+    });
   } catch (error) {
     await markOperationFailed(operation.id, error);
     throw error;

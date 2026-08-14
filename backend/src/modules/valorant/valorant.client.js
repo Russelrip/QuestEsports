@@ -79,7 +79,7 @@ const valorantRequest = async ({
     ...buildServiceAuthHeaders({ actorUserId, operationId, externalKey }),
     "Content-Type": "application/json",
   };
-  const readTimeoutMs = env.VALORANT_TIMEOUT_MS || 15000;
+  const readTimeoutMs = env.VALORANT_TIMEOUT_MS || 60000;
   const maxAttempts = idempotent ? 1 + env.VALORANT_READ_RETRIES : 1;
   const url = `${baseUrl}${path}`;
 

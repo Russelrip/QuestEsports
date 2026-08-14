@@ -110,7 +110,7 @@ test(
       VALORANT_SERVICE_KEY_ID: "e2e",
       VALORANT_SERVICE_ISSUER: "quest-esports",
       VALORANT_SERVICE_AUDIENCE: "valorant-platform",
-      VALORANT_TIMEOUT_MS: "10000",
+      VALORANT_TIMEOUT_MS: "60000",
       VALORANT_READ_RETRIES: "2",
     }, "quest", { cwd: path.join(QUEST_ROOT, "backend") });
     await waitFor(`${BASE.quest}/api/health/live`, "quest");

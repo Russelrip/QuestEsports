@@ -53,6 +53,17 @@ const loadEnvironment = (overrides) =>
     encoding: "utf8",
   });
 
+const printResolvedTimeout = (overrides) =>
+  spawnSync(
+    process.execPath,
+    ["-e", "process.stdout.write(String(require('./src/config/env').env.VALORANT_TIMEOUT_MS))"],
+    {
+      cwd: backendRoot,
+      env: { ...productionEnv, ...overrides },
+      encoding: "utf8",
+    },
+  );
+
 test("VALORANT internal base URL requires the service secret and key id", () => {
   const result = loadEnvironment({ VALORANT_INTERNAL_BASE_URL: "https://val.internal:8000" });
   assert.notEqual(result.status, 0);
@@ -90,6 +101,18 @@ test("VALORANT_READ_RETRIES is bounded to 0..5", () => {
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /must be an integer from 0 to 5/);
+});
+
+test("VALORANT_TIMEOUT_MS defaults to 60000 so cold discovers fit the read window", () => {
+  const result = printResolvedTimeout({ VALORANT_TIMEOUT_MS: "" });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "60000");
+});
+
+test("VALORANT_TIMEOUT_MS honors an explicit value", () => {
+  const result = printResolvedTimeout({ VALORANT_TIMEOUT_MS: "30000" });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "30000");
 });
 
 test("VALORANT_INTERNAL_BASE_URL is validated by the exported helper", () => {
