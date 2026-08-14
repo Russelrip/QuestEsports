@@ -33,7 +33,7 @@ const createResponse = (description) => ({ description });
 const createOperation = (
   tag,
   summary,
-  { authenticated = false, parameters = [] } = {},
+  { authenticated = false, parameters = [], additionalResponses = {} } = {},
 ) => ({
   tags: [tag],
   summary,
@@ -47,6 +47,7 @@ const createOperation = (
       ? { 401: createResponse("Authentication required") }
       : {}),
     400: createResponse("Invalid request"),
+    ...additionalResponses,
   },
 });
 
@@ -725,6 +726,11 @@ const additionalPaths = {
     get: createOperation(
       "Realtime",
       "Subscribe to public match and bracket invalidation events",
+      {
+        additionalResponses: {
+          204: createResponse("Realtime disabled; EventSource must not reconnect"),
+        },
+      },
     ),
   },
   "/api/v1/match-rooms/mine": {
