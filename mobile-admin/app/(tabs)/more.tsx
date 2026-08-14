@@ -9,6 +9,7 @@ import { Button, PageHeader, Screen } from "@/components/ui";
 import { colors, radius, spacing } from "@/theme";
 
 const resources = [
+  { kind: "veto-rooms", label: "Veto rooms", description: "Run tosses and map vetos at LAN events", icon: "shuffle-outline" as const, route: "/veto-rooms" as const },
   { kind: "expenses", label: "Expenses", description: "Tournament and event costs", icon: "receipt-outline" as const, route: "/expenses" as const },
   { kind: "tournaments", label: "Tournaments", description: "Events, capacity and brackets", icon: "trophy-outline" as const },
   { kind: "recruitment", label: "Recruitment", description: "Review Quest applications", icon: "person-add-outline" as const },

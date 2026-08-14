@@ -184,3 +184,34 @@ export type ApiEnvelope = {
   message?: string;
   [key: string]: unknown;
 };
+
+export type VetoStep = {
+  kind: "ban" | "pick" | "decider" | "side";
+  actor: "A" | "B" | null;
+  seriesIndex: number | null;
+};
+
+export type VetoRoom = {
+  id: string;
+  code: string;
+  title: string;
+  format: "bo1" | "bo3" | "bo5" | "custom";
+  status: "draft" | "open" | "toss_pending" | "toss_complete" | "in_progress" | "completed" | "cancelled";
+  revision: number;
+  controlMode: string;
+  teamOrderMethod: string;
+  toss: { method: "digital" | "manual"; callerSlot: 1 | 2; call: "heads" | "tails" | null; result: "heads" | "tails" | null; winnerSlot: 1 | 2 | null; teamASlot: 1 | 2 | null };
+  timer: { seconds: number | null; deadline: string | null };
+  participants: Array<{ id: string; slot: 1 | 2; displayName: string; seed?: number | null; accentColor: string; ready: boolean; joined: boolean; team: "A" | "B" | null }>;
+  maps: Array<{ slug: string; name: string; accentColor: string; artworkUrl?: string | null; available?: boolean }>;
+  steps: VetoStep[];
+  currentStep: number;
+  currentAction: VetoStep | null;
+  actions: Array<{ id: string; sequence: number; kind: string; actorSlot: number | null; mapSlug: string | null; mapName: string | null; side: string | null; payload: { seriesIndex?: number | null } }>;
+};
+
+export type VetoCatalog = {
+  pools: Array<{ id: string; name: string; version: number; maps: Array<{ slug: string; name: string }> }>;
+  presets: Array<{ id: string; name: string; format: VetoRoom["format"]; version: number; steps: VetoStep[] }>;
+  templates: Array<{ id: string; name: string; format: VetoRoom["format"]; mapPoolId: string; rulePresetId: string; settings: Record<string, unknown> }>;
+};
