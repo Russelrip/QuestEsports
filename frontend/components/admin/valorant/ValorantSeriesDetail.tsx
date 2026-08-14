@@ -340,7 +340,7 @@ export default function ValorantSeriesDetail({
             ) : discoverError ? (
               <ValorantErrorAlert message={discoverError} onRetry={() => void handleDiscover()} />
             ) : discoverCandidates.length > 0 ? (
-              <Card className="p-5">
+              <Card className="border-purple-400/25 bg-purple-400/5 p-5">
                 <h4 className="text-sm font-semibold text-white">Discovered matches</h4>
                 <p className="mt-1 text-xs text-slate-400">
                   Pick a match to attach as the next game in this series.
@@ -349,7 +349,7 @@ export default function ValorantSeriesDetail({
                   {discoverCandidates.map((candidate) => (
                     <li
                       key={candidate.henrikMatchId}
-                      className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 px-4 py-3"
+                      className="flex flex-wrap items-center gap-3 rounded-xl border border-purple-400/20 px-4 py-3"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-white">
