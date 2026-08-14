@@ -25,3 +25,30 @@ Maintenance mode is not a migration write freeze because background jobs and the
 Before enabling commerce after a release, smoke-test product quoting, order creation in the payment sandbox, payment notification reconciliation, reservation expiration, and bank-transfer proof access.
 
 The [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) guide contains timer verification, encryption/key custody, isolated drills, and production recovery. Never test restoration against the live Paris database or live upload roots.
+
+## VALORANT two-schema expand-first rules (Quest + valorant-platform-backend)
+
+The VALORANT integration runs both services against one Supabase project but
+keeps two owned schemas: Quest Prisma owns `public`; FastAPI's plain-SQL ledger
+owns `valorant`. Deployment follows the same expand-and-contract discipline:
+
+1. Quest Prisma migrations touch only `public`; FastAPI `supabase/migrations/*.sql`
+   touch only `valorant`. CI enforces both directions: `verify-prisma-schema-scope.js`
+   in Quest CI and the migration-scope grep guard in FastAPI CI.
+2. No cross-schema foreign keys. Quest stores every VALORANT UUID as opaque
+   `text`; referential integrity is application-level plus FastAPI-read
+   reconciliation.
+3. Each deploy wave adds columns/tables first, backfills data in a later
+   statement of the same wave, and enforces new constraints only in a
+   subsequent deploy. Never drop a column/table in the same deploy that
+   populates it.
+4. Rollback = revert the app deployment. Newly added columns must stay nullable
+   or defaulted so the previous app version remains compatible; the CD gate
+   (`BACKEND_MIGRATION_APPROVAL_SHA`/`BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA`)
+   applies to Quest, and FastAPI production migrations follow the same manual
+   approval + backup discipline.
+5. `prisma migrate reset` / `db drop` and the FastAPI reset harness remain
+   forbidden against shared/remote databases.
+6. Take and verify a restorable two-schema backup before any production
+   migration that touches either schema (`ops/backup-production.sh` now dumps
+   both `public` and `valorant`).

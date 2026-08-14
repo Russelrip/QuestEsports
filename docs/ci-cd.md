@@ -54,6 +54,12 @@ NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
+The VALORANT integration adds two schema-scope CI guards: Quest CI runs
+`node scripts/verify-prisma-schema-scope.js` (Prisma must never reference the
+`valorant` schema) and the `valorant-platform-backend` CI runs a grep guard
+(its migrations must never reference the Quest-owned `public` schema or create
+cross-schema foreign keys).
+
 ## Enabling Deployment
 
 Backend deployment is disabled by default. Enable it with this GitHub repository variable:
