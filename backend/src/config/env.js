@@ -190,6 +190,7 @@ const env = {
     0,
     5,
   ),
+  VALORANT_SL_API_URL: optional("VALORANT_SL_API_URL"),
   NODE_ENV: normalizeNodeEnv(process.env.NODE_ENV),
   LOG_LEVEL: optional("LOG_LEVEL", "info").toLowerCase(),
   SESSION_COOKIE_NAME: required("SESSION_COOKIE_NAME"),
