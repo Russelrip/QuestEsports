@@ -215,3 +215,47 @@ export type VetoCatalog = {
   presets: Array<{ id: string; name: string; format: VetoRoom["format"]; version: number; steps: VetoStep[] }>;
   templates: Array<{ id: string; name: string; format: VetoRoom["format"]; mapPoolId: string; rulePresetId: string; settings: Record<string, unknown> }>;
 };
+
+export type MatchRoomSummary = {
+  id: string;
+  code: string;
+  chatLocked: boolean;
+  messageCount: number;
+  openSupportCount: number;
+  match: {
+    id: string;
+    identifier: string;
+    status: string;
+    scheduledAt: string | null;
+    tournament: { id: string; slug: string; title: string; game: string };
+    participants: Array<{ slot: number; displayName: string }>;
+    veto: { id: string; code: string; status: string; format: string } | null;
+  };
+};
+
+export type MatchRoomDetail = {
+  id: string;
+  code: string;
+  chatLocked: boolean;
+  access: { role: "player" | "captain" | "staff"; teamSlot: number | null; mutedUntil: string | null };
+  match: MatchRoomSummary["match"] & { station: string | null };
+  members: Array<{ id: string; role: "player" | "captain" | "staff"; teamSlot: number | null; mutedUntil: string | null; user: { id: string; username: string; firstName: string; lastName: string } }>;
+};
+
+export type MatchRoomMessage = {
+  id: string;
+  kind: "player" | "staff" | "system";
+  body: string;
+  hidden: boolean;
+  hiddenReason: string | null;
+  sender: { id: string; username: string } | null;
+  createdAt: string;
+};
+
+export type MatchSupportRequest = {
+  id: string;
+  subject: string;
+  status: "open" | "resolved";
+  openedBy: { id: string; username: string };
+  messages: Array<{ id: string; body: string; sender: { id: string; username: string }; createdAt: string }>;
+};

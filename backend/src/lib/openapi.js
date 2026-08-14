@@ -102,6 +102,8 @@ const openApiDocument = {
     { name: "Media" },
     { name: "Teams" },
     { name: "Admin" },
+    { name: "Match Rooms" },
+    { name: "Notifications" },
   ],
   components: {
     securitySchemes: {
@@ -725,6 +727,54 @@ const additionalPaths = {
       "Subscribe to public match and bracket invalidation events",
     ),
   },
+  "/api/v1/match-rooms/mine": {
+    get: createOperation("Match Rooms", "List the signed-in user's match rooms", { authenticated: true }),
+  },
+  "/api/v1/match-rooms/{code}": {
+    get: createOperation("Match Rooms", "Get an authorized match-room snapshot", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/match-rooms/{code}/messages": {
+    get: createOperation("Match Rooms", "List paginated match-room messages", { authenticated: true, parameters: idParameter("code") }),
+    post: createOperation("Match Rooms", "Send a player or official match-room message", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/match-rooms/{code}/read": {
+    patch: createOperation("Match Rooms", "Advance the member's room read cursor", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/match-rooms/{code}/support": {
+    get: createOperation("Match Rooms", "List visible match-support requests", { authenticated: true, parameters: idParameter("code") }),
+    post: createOperation("Match Rooms", "Open a private match-support request", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/match-rooms/{code}/support/{requestId}/messages": {
+    post: createOperation("Match Rooms", "Reply to a match-support request", { authenticated: true, parameters: [...idParameter("code"), ...idParameter("requestId")] }),
+  },
+  "/api/v1/match-rooms/{code}/support/{requestId}/resolve": {
+    post: createOperation("Match Rooms", "Resolve a match-support request", { authenticated: true, parameters: [...idParameter("code"), ...idParameter("requestId")] }),
+  },
+  "/api/v1/match-rooms/{code}/messages/{messageId}/hide": {
+    post: createOperation("Match Rooms", "Hide a room message with an audit reason", { authenticated: true, parameters: [...idParameter("code"), ...idParameter("messageId")] }),
+  },
+  "/api/v1/match-rooms/{code}/members/{memberId}/mute": {
+    patch: createOperation("Match Rooms", "Mute or unmute a room member", { authenticated: true, parameters: [...idParameter("code"), ...idParameter("memberId")] }),
+  },
+  "/api/v1/match-rooms/{code}/chat-lock": {
+    patch: createOperation("Match Rooms", "Lock or unlock match-room chat", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/notifications": {
+    get: createOperation("Notifications", "List in-app notifications and delivery preferences", { authenticated: true }),
+  },
+  "/api/v1/notifications/read-all": {
+    patch: createOperation("Notifications", "Mark every in-app notification read", { authenticated: true }),
+  },
+  "/api/v1/notifications/{id}/read": {
+    patch: createOperation("Notifications", "Mark one in-app notification read", { authenticated: true, parameters: idParameter("id") }),
+  },
+  "/api/v1/notifications/push-subscriptions": {
+    post: createOperation("Notifications", "Register a browser push subscription", { authenticated: true }),
+    delete: createOperation("Notifications", "Revoke a browser push subscription", { authenticated: true }),
+  },
+  "/api/v1/notifications/preferences": {
+    patch: createOperation("Notifications", "Update match-notification preferences", { authenticated: true }),
+  },
   "/api/v1/veto-rooms/mine": {
     get: createOperation("Veto", "List the signed-in captain's active veto rooms", { authenticated: true }),
   },
@@ -875,6 +925,12 @@ const additionalPaths = {
       authenticated: true,
       parameters: idParameter("matchId"),
     }),
+  },
+  "/api/v1/admin/matches/{matchId}/room": {
+    post: createOperation("Match Rooms", "Create or resynchronize a match room", { authenticated: true, parameters: idParameter("matchId") }),
+  },
+  "/api/v1/admin/match-rooms": {
+    get: createOperation("Match Rooms", "List match rooms visible to staff", { authenticated: true }),
   },
   "/api/v1/admin/tournaments/{id}/staff": {
     get: createOperation("Permissions", "List tournament staff assignments", {

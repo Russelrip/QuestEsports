@@ -91,6 +91,18 @@ Tournament administrators and referees can use `/api/v1/admin/tournaments/:id/ma
 - Digital toss results are generated and persisted by the backend. Map availability, turn ownership, automatic deciders, side selection, rewinds, timers, and completion are also server-authoritative.
 - Access-link rotation returns the new plaintext token once; only its SHA-256 hash is stored. Veto endpoints are `no-store`, role links expire seven days after completion by default, and realtime events contain only the room code, revision, and status.
 
+### Match rooms and notifications
+
+- `GET /api/v1/match-rooms/mine` lists profile-linked rooms for accepted roster members, captains, and staff. `GET /api/v1/match-rooms/:code` requires the same account membership; shareable URLs never grant chat access by themselves.
+- Room chat uses cursor pagination, a five-message-per-ten-second limit, one read cursor per member, staff announcements, audited hiding, timed mutes, and chat locking. Completed, cancelled, and walkover rooms are read-only.
+- Captains control the embedded veto. Other accepted roster members receive viewer access, while assigned tournament staff retain veto and moderation controls.
+- Match support is visible to the opener, both captains, and authorized staff. Staff replies and resolution are available from the website and Android admin client.
+- `GET /api/v1/notifications` powers the notification bell. Match creation, rescheduling, status changes, veto turns, official messages, and support replies are deduplicated by event key. Routine match events never enqueue email.
+- Browser push is opt-in and activates when `WEB_PUSH_PUBLIC_KEY` and `WEB_PUSH_PRIVATE_KEY` are configured. Invalid subscriptions are revoked automatically.
+- Private SSE topics are authorized per connection: `user:{userId}` must match the session, and `match-room:{code}` requires room membership.
+
+Database retention can be inspected with `npm run data:hygiene` and applied only after a verified backup with `npm run data:hygiene:apply`. Eligible active rooms can be previewed and backfilled with `data:backfill-match-rooms` and `data:backfill-match-rooms:apply`. Typing, presence, duplicate veto history, and per-message read receipts are never persisted.
+
 ### Maintenance
 
 When site maintenance is enabled, normal API routes return `503 Service Unavailable` with `Retry-After`, `Cache-Control: no-store`, and `X-Maintenance-Mode: active` headers:

@@ -27,6 +27,7 @@ import { getInitials } from "@/lib/utils";
 import { buildApiUrl } from "@/lib/api";
 import { AccountDashboard, DashboardRegistration, fetchAccountDashboard } from "@/lib/account";
 import { type VetoRoom, vetoRequest } from "@/lib/veto";
+import { type MatchRoomSummary, roomRequest } from "@/lib/match-rooms";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required."),
@@ -93,6 +94,7 @@ export default function ProfileView() {
   const [dashboardError, setDashboardError] = useState("");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [vetoRooms, setVetoRooms] = useState<VetoRoom[]>([]);
+  const [matchRooms, setMatchRooms] = useState<MatchRoomSummary[]>([]);
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [showCreatedTeamNotice, setShowCreatedTeamNotice] = useState(false);
@@ -152,6 +154,7 @@ export default function ProfileView() {
     setDashboardLoading(true);
     fetchAccountDashboard().then(setDashboard).catch((error) => setDashboardError(error instanceof Error ? error.message : "Could not load dashboard.")).finally(() => setDashboardLoading(false));
     vetoRequest<VetoRoom[]>("/api/v1/veto-rooms/mine").then(setVetoRooms).catch(() => setVetoRooms([]));
+    roomRequest<MatchRoomSummary[]>("/api/v1/match-rooms/mine").then(setMatchRooms).catch(() => setMatchRooms([]));
   }, [user]);
 
   if (isLoading) {
@@ -371,7 +374,12 @@ export default function ProfileView() {
                 {dashboardLoading ? <LoadingState title="Loading dashboard" description="Fetching your registrations and orders." /> : dashboardError ? <p className="text-sm text-rose-300">{dashboardError}</p> : dashboard ? <>
                   <div className="grid gap-3 sm:grid-cols-3">{[["Active registrations", dashboard.currentRegistrations.length], ["Completed tournaments", dashboard.pastRegistrations.length], ["Teams you are in", dashboard.teams.length]].map(([label, value], index) => <div key={String(label)} className="relative overflow-hidden border border-white/8 bg-[#171923] p-5"><span className={`absolute inset-y-0 left-0 w-1 ${index === 0 ? "bg-purple-300" : index === 1 ? "bg-violet-400" : "bg-emerald-300"}`} /><p className="text-3xl font-semibold text-white">{value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">{label}</p></div>)}</div>
 
-                  {vetoRooms.length ? <section>
+                  {matchRooms.length ? <section>
+                    <div className="mb-5"><p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Competition rooms</p><h3 className="mt-2 border-l-2 border-cyan-300 pl-3 text-2xl text-white">Your Matches</h3></div>
+                    <div className="grid gap-3 md:grid-cols-2">{matchRooms.map((room) => <Link key={room.id} href={`/match-room/${room.code}`} className="border border-cyan-300/15 bg-cyan-400/[.055] p-5 transition hover:border-cyan-200/40"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-white">{room.match.participants.map((entry) => entry.displayName).join(" vs ")}</p><p className="mt-1 text-xs uppercase tracking-[.14em] text-slate-400">{room.match.tournament.title} · {room.match.status.replaceAll("_", " ")}</p></div><div className="flex gap-2"><Badge>{room.role}</Badge>{room.unreadMessages ? <Badge>{room.unreadMessages} new</Badge> : null}</div></div><p className="mt-4 text-sm font-semibold text-cyan-200">Open match room →</p></Link>)}</div>
+                  </section> : null}
+
+                  {vetoRooms.length && !matchRooms.length ? <section>
                     <div className="mb-5"><p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Pre-match rooms</p><h3 className="mt-2 border-l-2 border-cyan-300 pl-3 text-2xl text-white">Your Map Vetos</h3></div>
                     <div className="grid gap-3 md:grid-cols-2">{vetoRooms.map((room) => <Link key={room.id} href={`/veto/${room.code}`} className="border border-cyan-300/15 bg-cyan-400/[.055] p-5 transition hover:border-cyan-200/40"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-white">{room.title}</p><p className="mt-1 text-xs uppercase tracking-[.14em] text-slate-400">{room.format} · {room.status.replaceAll("_", " ")}</p></div><Badge>{room.access.slot ? `Slot ${room.access.slot}` : "Captain"}</Badge></div><p className="mt-4 text-sm font-semibold text-cyan-200">Join veto room →</p></Link>)}</div>
                   </section> : null}

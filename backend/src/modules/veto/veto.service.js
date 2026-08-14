@@ -144,11 +144,32 @@ const captainSlotForUser = async (room, user) => {
   return room.participants.find((entry) => entry.registrationId && ids.has(entry.registrationId))?.slot || null;
 };
 
+const participantSlotForUser = async (room, user) => {
+  if (!user) return null;
+  const registrationIds = room.participants.map((entry) => entry.registrationId).filter(Boolean);
+  if (!registrationIds.length) return null;
+  const registrations = await prisma.teamRegistration.findMany({
+    where: {
+      id: { in: registrationIds },
+      OR: [
+        { userId: user.id },
+        { savedTeam: { captainUserId: user.id } },
+        { members: { some: { userId: user.id, inviteStatus: "accepted" } } },
+        { savedTeam: { members: { some: { userId: user.id, inviteStatus: "accepted" } } } },
+      ],
+    },
+    select: { id: true },
+  });
+  const ids = new Set(registrations.map((entry) => entry.id));
+  return room.participants.find((entry) => entry.registrationId && ids.has(entry.registrationId))?.slot || null;
+};
+
 const resolveAccess = async ({ room, user, token }) => {
   if (await isStaffForTournament(user, room.tournamentId)) return { kind: "staff", slot: null };
   if (room.controlMode !== "link_only") {
     const slot = await captainSlotForUser(room, user);
     if (slot) return room.controlMode === "staff_only" ? { kind: "viewer", slot: null } : { kind: "team", slot };
+    if (await participantSlotForUser(room, user)) return { kind: "viewer", slot: null };
   }
   if (token) {
     const grant = await prisma.vetoAccessGrant.findFirst({

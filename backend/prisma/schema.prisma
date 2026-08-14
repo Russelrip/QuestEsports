@@ -234,6 +234,23 @@ enum VetoAccessRole {
   viewer
 }
 
+enum MatchRoomMemberRole {
+  player
+  captain
+  staff
+}
+
+enum MatchRoomMessageKind {
+  player
+  staff
+  system
+}
+
+enum MatchSupportStatus {
+  open
+  resolved
+}
+
 model DeploymentEnvironment {
   id          Int      @id @default(1)
   environment String   @unique
@@ -289,6 +306,15 @@ model User {
   assignedMatches         Match[]                     @relation("AssignedMatchStaff")
   auditLogs               AuditLog[]                  @relation("AuditActor")
   createdExpenses         EventExpense[]              @relation("ExpenseCreator")
+  matchRoomMemberships    MatchRoomMember[]
+  matchRoomMessages       MatchRoomMessage[]          @relation("MatchRoomMessageSender")
+  moderatedRoomMessages   MatchRoomMessage[]          @relation("MatchRoomMessageModerator")
+  openedSupportRequests   MatchSupportRequest[]       @relation("MatchSupportRequestOpener")
+  resolvedSupportRequests MatchSupportRequest[]       @relation("MatchSupportRequestResolver")
+  matchSupportMessages    MatchSupportMessage[]
+  notificationRecipients  NotificationRecipient[]
+  webPushSubscriptions    WebPushSubscription[]
+  notificationPreference  UserNotificationPreference?
 
   @@index([role])
   @@index([createdAt])
@@ -644,6 +670,7 @@ model Match {
   assignedStaff     User?              @relation("AssignedMatchStaff", fields: [assignedStaffId], references: [id], onDelete: SetNull)
   participants      MatchParticipant[]
   vetoRoom          VetoRoom?
+  matchRoom         MatchRoom?
 
   @@unique([tournamentId, source, externalId])
   @@index([tournamentId, status, scheduledAt])
@@ -1548,4 +1575,159 @@ model VetoAccessGrant {
   @@index([roomId, role, revokedAt])
   @@index([expiresAt])
   @@map("veto_access_grants")
+}
+
+model MatchRoom {
+  id            String                @id @default(uuid()) @db.Uuid
+  matchId       String                @unique @map("match_id") @db.Uuid
+  code          String                @unique
+  chatLockedAt  DateTime?             @map("chat_locked_at")
+  lastMessageAt DateTime?             @map("last_message_at")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+  match         Match                 @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  members       MatchRoomMember[]
+  messages      MatchRoomMessage[]
+  support       MatchSupportRequest[]
+  notifications Notification[]
+
+  @@index([lastMessageAt])
+  @@index([createdAt])
+  @@map("match_rooms")
+}
+
+model MatchRoomMember {
+  id                 String              @id @default(uuid()) @db.Uuid
+  roomId             String              @map("room_id") @db.Uuid
+  userId             String              @map("user_id") @db.Uuid
+  teamSlot           Int?                @map("team_slot")
+  role               MatchRoomMemberRole
+  joinedAt           DateTime            @default(now()) @map("joined_at")
+  lastReadAt         DateTime?           @map("last_read_at")
+  notificationsMuted Boolean             @default(false) @map("notifications_muted")
+  mutedUntil         DateTime?           @map("muted_until")
+  room               MatchRoom           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId, lastReadAt])
+  @@index([roomId, role])
+  @@map("match_room_members")
+}
+
+model MatchRoomMessage {
+  id             String               @id @default(uuid()) @db.Uuid
+  roomId         String               @map("room_id") @db.Uuid
+  senderUserId   String?              @map("sender_user_id") @db.Uuid
+  kind           MatchRoomMessageKind @default(player)
+  body           String
+  hiddenAt       DateTime?            @map("hidden_at")
+  hiddenByUserId String?              @map("hidden_by_user_id") @db.Uuid
+  hiddenReason   String?              @map("hidden_reason")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  room           MatchRoom            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender         User?                @relation("MatchRoomMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  hiddenBy       User?                @relation("MatchRoomMessageModerator", fields: [hiddenByUserId], references: [id], onDelete: SetNull)
+
+  @@index([roomId, createdAt])
+  @@index([senderUserId, createdAt])
+  @@map("match_room_messages")
+}
+
+model MatchSupportRequest {
+  id               String                @id @default(uuid()) @db.Uuid
+  roomId           String                @map("room_id") @db.Uuid
+  openedByUserId   String                @map("opened_by_user_id") @db.Uuid
+  subject          String
+  status           MatchSupportStatus    @default(open)
+  resolvedByUserId String?               @map("resolved_by_user_id") @db.Uuid
+  resolvedAt       DateTime?             @map("resolved_at")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  room             MatchRoom             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  openedBy         User                  @relation("MatchSupportRequestOpener", fields: [openedByUserId], references: [id], onDelete: Cascade)
+  resolvedBy       User?                 @relation("MatchSupportRequestResolver", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+  messages         MatchSupportMessage[]
+
+  @@index([roomId, status, createdAt])
+  @@index([openedByUserId, createdAt])
+  @@map("match_support_requests")
+}
+
+model MatchSupportMessage {
+  id           String              @id @default(uuid()) @db.Uuid
+  requestId    String              @map("request_id") @db.Uuid
+  senderUserId String              @map("sender_user_id") @db.Uuid
+  body         String
+  createdAt    DateTime            @default(now()) @map("created_at")
+  request      MatchSupportRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sender       User                @relation(fields: [senderUserId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+  @@index([senderUserId, createdAt])
+  @@map("match_support_messages")
+}
+
+model Notification {
+  id          String                  @id @default(uuid()) @db.Uuid
+  eventKey    String                  @unique @map("event_key")
+  type        String
+  title       String
+  body        String
+  actionUrl   String?                 @map("action_url")
+  matchRoomId String?                 @map("match_room_id") @db.Uuid
+  expiresAt   DateTime?               @map("expires_at")
+  createdAt   DateTime                @default(now()) @map("created_at")
+  matchRoom   MatchRoom?              @relation(fields: [matchRoomId], references: [id], onDelete: Cascade)
+  recipients  NotificationRecipient[]
+
+  @@index([matchRoomId, createdAt])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String       @id @default(uuid()) @db.Uuid
+  notificationId String       @map("notification_id") @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  seenAt         DateTime?    @map("seen_at")
+  readAt         DateTime?    @map("read_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId, readAt, createdAt])
+  @@map("notification_recipients")
+}
+
+model WebPushSubscription {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?   @map("user_agent")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([lastUsedAt])
+  @@map("web_push_subscriptions")
+}
+
+model UserNotificationPreference {
+  userId            String   @id @map("user_id") @db.Uuid
+  matchPushEnabled  Boolean  @default(true) @map("match_push_enabled")
+  soundEnabled      Boolean  @default(true) @map("sound_enabled")
+  matchEmailEnabled Boolean  @default(false) @map("match_email_enabled")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_notification_preferences")
 }

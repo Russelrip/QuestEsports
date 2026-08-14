@@ -12,6 +12,7 @@ import { useUiStore } from "@/hooks/useUiStore";
 import { cn, getInitials } from "@/lib/utils";
 import { buildApiUrl } from "@/lib/api";
 import { authNavItems, primaryNavItems, secondaryNavItems } from "@/lib/site";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 const isNavItemActive = (pathname: string, href: string) =>
   href === "/"
@@ -128,7 +129,7 @@ export default function Navbar() {
                 </Link>
               ))}
               {!isLoading && isAuthenticated && user ? (
-                <UserMenu user={user} logout={logout} isAdmin={user.role === "admin"} />
+                <><NotificationBell user={user} /><UserMenu user={user} logout={logout} isAdmin={user.role === "admin"} /></>
               ) : !isLoading ? (
                 authNavItems.map((item) => (
                   <Link
@@ -188,6 +189,7 @@ export default function Navbar() {
               <div className="mt-3 grid gap-2 border-t border-white/8 pt-3">
                 {!isLoading && isAuthenticated && user ? (
                   <div className="grid gap-2">
+                    <NotificationBell user={user} compact />
                     <Link href="/profile" prefetch={false} className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
                       <span className="flex size-9 items-center justify-center overflow-hidden rounded-xl bg-violet-700 text-xs font-bold">{user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt="" width={36} height={36} className="h-full w-full object-cover" /> : getInitials(user.firstName, user.lastName, user.username)}</span>{user.username}
                     </Link>
