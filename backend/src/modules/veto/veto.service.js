@@ -525,7 +525,17 @@ const chooseTeamA = async ({ code, user, token, body }) => {
   const choice = normalizeText(body.choice).toUpperCase();
   if (!["A", "B"].includes(choice)) throw new HttpError(400, "Choose Team A or Team B.");
   const teamASlot = choice === "A" ? room.tossWinnerSlot : (room.tossWinnerSlot === 1 ? 2 : 1);
-  await mutateRevision(prisma, room.id, parseRevision(body.expectedRevision), { teamASlot, status: "toss_complete" });
+  const now = new Date();
+  const turnDeadline = room.turnSeconds ? new Date(now.getTime() + room.turnSeconds * 1000) : null;
+  await prisma.$transaction(async (tx) => {
+    await mutateRevision(tx, room.id, parseRevision(body.expectedRevision), {
+      teamASlot,
+      status: "in_progress",
+      startedAt: now,
+      turnDeadline,
+    });
+    await syncMatchStatus(tx, room, ["veto_starting_soon", "veto_in_progress"], "veto_in_progress");
+  });
   return getRoom({ code: room.code, user, token });
 };
 

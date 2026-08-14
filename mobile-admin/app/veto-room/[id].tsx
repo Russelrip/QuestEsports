@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, Animated, Easing, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import QRCode from "react-native-qrcode-svg";
@@ -30,8 +30,11 @@ export default function VetoRoomControlScreen() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       previousToss.current = response.data.toss.result;
-      setRoom(response.data); setError("");
-    } catch (caught) { if (!quiet) setError(caught instanceof Error ? caught.message : "Could not load room."); }
+      setRoom(response.data);
+      setError("");
+    } catch (caught) {
+      if (!quiet) setError(caught instanceof Error ? caught.message : "Could not load room.");
+    }
   }, [coin, id]);
 
   useEffect(() => { void load(); }, [load]);
@@ -43,10 +46,13 @@ export default function VetoRoomControlScreen() {
     try {
       const latest = await apiRequest<{ success: boolean; data: VetoRoom }>(`/api/v1/admin/veto-rooms/${room.id}`);
       const response = await apiRequest<{ success: boolean; data: VetoRoom }>(`/api/v1/admin/veto-rooms/${room.id}/${command}`, { method: "POST", ...jsonBody({ expectedRevision: latest.data.revision, ...extra }) });
-      setRoom(response.data); setError("");
+      setRoom(response.data);
+      setError("");
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Action failed."); void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); }
-    finally { setBusy(""); }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Action failed.");
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally { setBusy(""); }
   };
 
   const roomAction = async (path: string, extra: Record<string, unknown>, key: string) => {
@@ -55,10 +61,20 @@ export default function VetoRoomControlScreen() {
     try {
       const latest = await apiRequest<{ success: boolean; data: VetoRoom }>(`/api/v1/admin/veto-rooms/${room.id}`);
       const response = await apiRequest<{ success: boolean; data: VetoRoom }>(`/api/v1/veto-rooms/${room.code}/${path}`, { method: "POST", ...jsonBody({ expectedRevision: latest.data.revision, ...extra }) });
-      setRoom(response.data); setError("");
+      setRoom(response.data);
+      setError("");
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Action failed."); void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); }
-    finally { setBusy(""); }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Action failed.");
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally { setBusy(""); }
+  };
+
+  const confirmRoomAction = ({ title, message, path, extra, key, destructive = false, note = "Players cannot undo this decision. Staff can rewind it if needed." }: { title: string; message: string; path: string; extra: Record<string, unknown>; key: string; destructive?: boolean; note?: string }) => {
+    Alert.alert(title, `${message}\n\n${note}`, [
+      { text: "Go back", style: "cancel" },
+      { text: "Confirm", style: destructive ? "destructive" : "default", onPress: () => void roomAction(path, extra, key) },
+    ]);
   };
 
   const rotateLink = async (role: "team_1" | "team_2" | "viewer") => {
@@ -67,7 +83,8 @@ export default function VetoRoomControlScreen() {
     try {
       const response = await apiRequest<{ success: boolean; data: { token: string } }>(`/api/v1/admin/veto-rooms/${room.id}/rotate-link`, { method: "POST", ...jsonBody({ role }) });
       const link = `${SITE_URL}/veto/${room.code}#access=${response.data.token}`;
-      setShareLink(link); setShareRole(humanize(role));
+      setShareLink(link);
+      setShareRole(humanize(role));
       await Share.share({ title: `${room.title} · ${humanize(role)}`, message: link, url: link });
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not create link."); }
     finally { setBusy(""); }
@@ -78,18 +95,53 @@ export default function VetoRoomControlScreen() {
   const current = room.currentAction;
   const selected = new Map(room.actions.filter((entry) => entry.mapSlug).map((entry) => [entry.mapSlug, entry]));
   const rotateY = coin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "1800deg"] });
+  const firstActor = room.steps.find((step) => step.actor)?.actor || "A";
+  const currentSlot = current?.actor === "A" ? room.toss.teamASlot : current?.actor === "B" && room.toss.teamASlot ? (room.toss.teamASlot === 1 ? 2 : 1) : null;
+  const currentParticipant = room.participants.find((entry) => entry.slot === currentSlot);
+  const actionInstruction = current?.kind === "ban" ? "Ban one map" : current?.kind === "pick" ? `Pick Map ${current.seriesIndex || ""}`.trim() : current?.kind === "side" ? "Choose starting side" : "Resolving decider";
 
   return <Screen>
     <PageHeader title={room.title} subtitle={`${room.format.toUpperCase()} · Room ${room.code}`} />
     <ScrollView contentContainerStyle={styles.content}>
       {error ? <ErrorNotice message={error} retry={() => void load()} /> : null}
-      <Card><View style={styles.rowBetween}><View style={styles.grow}><Text style={styles.eyebrow}>MATCH STATE</Text><Text style={styles.heading}>{humanize(room.status)}</Text></View><StatusBadge value={room.status} /></View><View style={styles.row}>{room.participants.map((team) => <View key={team.id} style={[styles.team, { borderTopColor: team.accentColor }]}><Text style={styles.teamName}>{team.displayName}</Text><Text style={styles.meta}>Slot {team.slot}{team.team ? ` · Team ${team.team}` : ""}</Text><Button label={team.ready ? "Ready" : "Set ready"} tone={team.ready ? "secondary" : "primary"} onPress={() => void roomAction("ready", { slot: team.slot, ready: !team.ready }, `ready-${team.slot}`)} /></View>)}</View></Card>
 
-      <Card><Text style={styles.eyebrow}>ROOM OPERATION</Text><View style={styles.actions}>{room.status === "draft" ? <Button label="Open room" icon="lock-open-outline" loading={busy === "open"} onPress={() => void adminCommand("open")} /> : null}{room.teamOrderMethod === "staff_assignment" && ["draft", "open"].includes(room.status) ? <View style={styles.row}><Button label="Slot 1 is A" tone="secondary" onPress={() => void adminCommand("assign-team-a", { teamASlot: 1 })} /><Button label="Slot 2 is A" tone="secondary" onPress={() => void adminCommand("assign-team-a", { teamASlot: 2 })} /></View> : null}{["open", "toss_complete"].includes(room.status) ? <Button label="Start" icon="play-outline" loading={busy === "start"} onPress={() => void adminCommand("start")} /> : null}{room.status === "open" ? <Button label="Force start" tone="secondary" onPress={() => void adminCommand("start", { force: true })} /> : null}{["in_progress", "completed"].includes(room.status) ? <Button label="Undo last step" tone="secondary" icon="arrow-undo-outline" onPress={() => void adminCommand("rewind", { targetStep: Math.max(0, room.currentStep - 1) })} /> : null}<Button label="Reset room" tone="secondary" icon="refresh-outline" onPress={() => void adminCommand("reset")} /><Button label="Cancel room" tone="danger" icon="close-circle-outline" onPress={() => void adminCommand("cancel")} /></View></Card>
+      <Card>
+        <View style={styles.rowBetween}><View style={styles.grow}><Text style={styles.eyebrow}>MATCH STATE</Text><Text style={styles.heading}>{humanize(room.status)}</Text></View><StatusBadge value={room.status} /></View>
+        <View style={styles.row}>{room.participants.map((team) => <View key={team.id} style={[styles.team, { borderTopColor: team.accentColor }]}><Text style={styles.teamName}>{team.displayName}</Text><Text style={styles.meta}>Slot {team.slot}{team.team ? ` · Team ${team.team} · ${team.team === firstActor ? "opens veto" : "waits"}` : ""}</Text><Button label={team.ready ? "Ready" : "Set ready"} tone={team.ready ? "secondary" : "primary"} onPress={() => void roomAction("ready", { slot: team.slot, ready: !team.ready }, `ready-${team.slot}`)} /></View>)}</View>
+      </Card>
 
-      {room.status === "toss_pending" || room.status === "toss_complete" ? <Card><Text style={styles.eyebrow}>COIN TOSS</Text><Animated.View style={[styles.coin, { transform: [{ rotateY }] }]}><Text style={styles.coinText}>{room.toss.result ? room.toss.result === "heads" ? "H" : "T" : "?"}</Text></Animated.View><Text style={styles.centerText}>{room.toss.result ? `${humanize(room.toss.result)} · Slot ${room.toss.winnerSlot} won` : `Slot ${room.toss.callerSlot} calls`}</Text>{!room.toss.result && room.toss.method === "digital" ? <View style={styles.row}><Button label="Heads" onPress={() => void roomAction("toss", { call: "heads" }, "heads")} /><Button label="Tails" onPress={() => void roomAction("toss", { call: "tails" }, "tails")} /></View> : null}{room.toss.winnerSlot && !room.toss.teamASlot ? <View style={styles.row}><Button label="Winner chooses A" onPress={() => void roomAction("team-a", { choice: "A" }, "choose-a")} /><Button label="Winner chooses B" onPress={() => void roomAction("team-a", { choice: "B" }, "choose-b")} /></View> : null}{!room.toss.result && room.toss.method === "manual" ? <View style={styles.stack}><Text style={styles.meta}>Record the physical result using the caller’s selection.</Text><View style={styles.row}><Button label="Heads / Heads" onPress={() => void adminCommand("manual-toss", { call: "heads", result: "heads" })} /><Button label="Heads / Tails" onPress={() => void adminCommand("manual-toss", { call: "heads", result: "tails" })} /></View><View style={styles.row}><Button label="Tails / Heads" tone="secondary" onPress={() => void adminCommand("manual-toss", { call: "tails", result: "heads" })} /><Button label="Tails / Tails" tone="secondary" onPress={() => void adminCommand("manual-toss", { call: "tails", result: "tails" })} /></View></View> : null}</Card> : null}
+      <Card>
+        <Text style={styles.eyebrow}>ROOM OPERATION</Text>
+        <View style={styles.actions}>
+          {room.status === "draft" ? <Button label="Open room" icon="lock-open-outline" loading={busy === "open"} onPress={() => void adminCommand("open")} /> : null}
+          {room.teamOrderMethod === "staff_assignment" && ["draft", "open"].includes(room.status) ? <View style={styles.row}><Button label="Slot 1 is A" tone="secondary" onPress={() => void adminCommand("assign-team-a", { teamASlot: 1 })} /><Button label="Slot 2 is A" tone="secondary" onPress={() => void adminCommand("assign-team-a", { teamASlot: 2 })} /></View> : null}
+          {room.status === "open" ? <Button label="Start toss / veto" icon="play-outline" loading={busy === "start"} onPress={() => void adminCommand("start")} /> : null}
+          {room.status === "toss_complete" ? <Button label="Start legacy veto" icon="play-outline" loading={busy === "start"} onPress={() => void adminCommand("start")} /> : null}
+          {room.status === "open" ? <Button label="Force start" tone="secondary" onPress={() => void adminCommand("start", { force: true })} /> : null}
+          {["in_progress", "completed"].includes(room.status) ? <Button label="Undo last step" tone="secondary" icon="arrow-undo-outline" onPress={() => void adminCommand("rewind", { targetStep: Math.max(0, room.currentStep - 1) })} /> : null}
+          <Button label="Reset room" tone="secondary" icon="refresh-outline" onPress={() => void adminCommand("reset")} />
+          <Button label="Cancel room" tone="danger" icon="close-circle-outline" onPress={() => void adminCommand("cancel")} />
+        </View>
+      </Card>
 
-      {room.status === "in_progress" ? <Card><Text style={styles.eyebrow}>CURRENT TURN</Text><Text style={styles.heading}>{current ? `${current.actor ? `Team ${current.actor}` : "System"} · ${humanize(current.kind)}` : "Resolving"}</Text>{current?.kind === "side" ? <View style={styles.row}><Button label="Attack" onPress={() => void roomAction("actions", { side: "attack" }, "attack")} /><Button label="Defense" onPress={() => void roomAction("actions", { side: "defense" }, "defense")} /></View> : <View style={styles.mapGrid}>{room.maps.map((map) => { const action = selected.get(map.slug); return <Pressable key={map.slug} disabled={Boolean(action) || !current || !["ban", "pick"].includes(current.kind)} onPress={() => void roomAction("actions", { mapSlug: map.slug }, map.slug)} style={[styles.map, { borderTopColor: map.accentColor }, action && styles.mapUsed]}><Text style={styles.mapName}>{map.name}</Text><Text style={styles.meta}>{action ? humanize(action.kind) : current ? `Tap to ${current.kind}` : "Available"}</Text></Pressable>; })}</View>}</Card> : null}
+      {room.status === "toss_pending" || room.status === "toss_complete" ? <Card>
+        <Text style={styles.eyebrow}>COIN TOSS</Text>
+        <Animated.View style={[styles.coin, { transform: [{ rotateY }] }]}><Text style={styles.coinText}>{room.toss.result ? room.toss.result === "heads" ? "H" : "T" : "?"}</Text></Animated.View>
+        <Text style={styles.centerText}>{room.toss.result ? `${humanize(room.toss.result)} · Slot ${room.toss.winnerSlot} won` : `Slot ${room.toss.callerSlot} calls`}</Text>
+        {!room.toss.result && room.toss.method === "digital" ? <View style={styles.row}><Button label="Heads" onPress={() => void roomAction("toss", { call: "heads" }, "heads")} /><Button label="Tails" onPress={() => void roomAction("toss", { call: "tails" }, "tails")} /></View> : null}
+        {room.toss.winnerSlot && !room.toss.teamASlot ? <View style={styles.stack}><Text style={styles.meta}>The veto starts immediately after the winner confirms a position.</Text><View style={styles.row}><Button label={`Team A · ${firstActor === "A" ? "opens veto" : "waits"}`} onPress={() => confirmRoomAction({ title: "Choose Team A?", message: `The toss winner will become Team A, ${firstActor === "A" ? "take the first veto action" : "wait for the first veto action"}, and the veto will start immediately.`, path: "team-a", extra: { choice: "A" }, key: "choose-a", note: "Staff can reset the room if this position was chosen incorrectly." })} /><Button label={`Team B · ${firstActor === "B" ? "opens veto" : "waits"}`} onPress={() => confirmRoomAction({ title: "Choose Team B?", message: `The toss winner will become Team B, ${firstActor === "B" ? "take the first veto action" : "wait for the first veto action"}, and the veto will start immediately.`, path: "team-a", extra: { choice: "B" }, key: "choose-b", note: "Staff can reset the room if this position was chosen incorrectly." })} /></View></View> : null}
+        {!room.toss.result && room.toss.method === "manual" ? <View style={styles.stack}><Text style={styles.meta}>Record the physical result using the caller's selection.</Text><View style={styles.row}><Button label="Heads / Heads" onPress={() => void adminCommand("manual-toss", { call: "heads", result: "heads" })} /><Button label="Heads / Tails" onPress={() => void adminCommand("manual-toss", { call: "heads", result: "tails" })} /></View><View style={styles.row}><Button label="Tails / Heads" tone="secondary" onPress={() => void adminCommand("manual-toss", { call: "tails", result: "heads" })} /><Button label="Tails / Tails" tone="secondary" onPress={() => void adminCommand("manual-toss", { call: "tails", result: "tails" })} /></View></View> : null}
+      </Card> : null}
+
+      {room.status === "in_progress" ? <Card>
+        <Text style={styles.eyebrow}>CURRENT TURN</Text>
+        <Text style={styles.heading}>{current ? `${currentParticipant?.displayName || (current.actor ? `Team ${current.actor}` : "System")} · ${actionInstruction}` : "Resolving"}</Text>
+        <Text style={styles.meta}>Every selection asks for confirmation before it is locked.</Text>
+        {current?.kind === "side" ? <View style={styles.row}><Button label="Attack" onPress={() => confirmRoomAction({ title: "Confirm Attack start?", message: "This locks Attack as the starting side for this map.", path: "actions", extra: { side: "attack" }, key: "attack" })} /><Button label="Defense" onPress={() => confirmRoomAction({ title: "Confirm Defense start?", message: "This locks Defense as the starting side for this map.", path: "actions", extra: { side: "defense" }, key: "defense" })} /></View> : <View style={styles.mapGrid}>{room.maps.map((map) => {
+          const action = selected.get(map.slug);
+          return <Pressable key={map.slug} disabled={Boolean(action) || !current || !["ban", "pick"].includes(current.kind)} onPress={() => current && confirmRoomAction({ title: `${humanize(current.kind)} ${map.name}?`, message: current.kind === "ban" ? `${map.name} will be removed from the veto.` : `${map.name} will be locked as Map ${current.seriesIndex || ""}.`, path: "actions", extra: { mapSlug: map.slug }, key: map.slug, destructive: current.kind === "ban" })} style={[styles.map, { borderTopColor: map.accentColor }, action && styles.mapUsed]}><Text style={styles.mapName}>{map.name}</Text><Text style={styles.meta}>{action ? humanize(action.kind) : current ? `Review ${current.kind}` : "Available"}</Text></Pressable>;
+        })}</View>}
+      </Card> : null}
 
       <Card><Text style={styles.eyebrow}>SHARE LINKS</Text><Text style={styles.meta}>Rotating creates a fresh private link and immediately opens the Android share sheet.</Text><View style={styles.actions}><Button label="Share Team 1" icon="share-outline" loading={busy === "team_1"} onPress={() => void rotateLink("team_1")} /><Button label="Share Team 2" icon="share-outline" loading={busy === "team_2"} onPress={() => void rotateLink("team_2")} /><Button label="Share viewer" tone="secondary" icon="eye-outline" loading={busy === "viewer"} onPress={() => void rotateLink("viewer")} /></View>{shareLink ? <View style={styles.qr}><Text style={styles.optionTitle}>{shareRole}</Text><View style={styles.qrPaper}><QRCode value={shareLink} size={190} /></View><Text selectable style={styles.link}>{shareLink}</Text></View> : null}</Card>
     </ScrollView>

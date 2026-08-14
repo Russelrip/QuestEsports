@@ -738,7 +738,7 @@ const additionalPaths = {
     post: createOperation("Veto", "Call and atomically resolve a digital Heads or Tails toss", { parameters: idParameter("code") }),
   },
   "/api/v1/veto-rooms/{code}/team-a": {
-    post: createOperation("Veto", "Let the toss winner choose Team A or Team B", { parameters: idParameter("code") }),
+    post: createOperation("Veto", "Let the toss winner choose Team A or Team B and start the veto", { parameters: idParameter("code") }),
   },
   "/api/v1/veto-rooms/{code}/actions": {
     post: createOperation("Veto", "Commit the current authorized ban, pick, or side choice", { parameters: idParameter("code") }),
