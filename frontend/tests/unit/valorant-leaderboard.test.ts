@@ -18,7 +18,7 @@ describe("VALORANT player leaderboard", () => {
     expect(component).toContain('"use client"');
     expect(component).toContain("Register your account");
     expect(component).toContain("Search by Discord username");
-    expect(component).toContain("Top 10");
+    expect(component).toContain("isTopTen");
     expect(component).toContain("Leaderboard unavailable");
     expect(component).not.toMatch(/api\.henrikdev|valorant-platform-backend|X-Admin-Key|VALORANT_SERVICE_SECRET|localhost:8000/);
   });

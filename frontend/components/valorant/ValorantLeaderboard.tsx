@@ -7,6 +7,7 @@ import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import EmptyState from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   VALORANT_SL_REGISTER_URL,
   type ValorantPlayerLeaderboardEntry,
@@ -37,25 +38,37 @@ const LeaderboardTableHeader = () => (
   </thead>
 );
 
-const LeaderboardRow = ({ entry, rank }: { entry: ValorantPlayerLeaderboardEntry; rank: number | null }) => (
-  <tr className="border-b border-white/5 last:border-0 transition hover:bg-white/5">
-    <td className="px-4 py-4 font-semibold text-white">{rank ?? "—"}</td>
-    <td className="px-4 py-4 text-slate-200">
-      <span className="font-medium text-white">{entry.name}#{entry.tag}</span>
-      <span className="ml-2 text-xs text-slate-500">{entry.discordUsername}</span>
-    </td>
-    <td className="px-4 py-4">
-      {entry.currentTier ? <Badge>{entry.currentTier}</Badge> : <span className="text-slate-500">—</span>}
-    </td>
-    <td className="px-4 py-4 whitespace-nowrap font-semibold text-white">{entry.elo ?? "—"}</td>
-    <td className="px-4 py-4 whitespace-nowrap text-slate-300">
-      {entry.peakRank ? `${entry.peakRank}${entry.peakSeason ? ` · ${entry.peakSeason}` : ""}` : "—"}
-    </td>
-    <td className="px-4 py-4 whitespace-nowrap text-right text-slate-400">
-      {entry.lastPlayed ? new Date(entry.lastPlayed).toLocaleDateString() : "—"}
-    </td>
-  </tr>
-);
+const LeaderboardRow = ({ entry, rank }: { entry: ValorantPlayerLeaderboardEntry; rank: number | null }) => {
+  const isTopTen = rank !== null && rank <= TOP_N;
+  const rankTone =
+    rank === 1 ? "text-amber-300"
+    : rank === 2 ? "text-zinc-300"
+    : rank === 3 ? "text-orange-300/90"
+    : null;
+
+  return (
+    <tr className={cn(
+      "border-b border-white/5 last:border-0 transition hover:bg-white/5",
+      isTopTen && "bg-fuchsia-400/[0.05]",
+    )}>
+      <td className={cn("px-4 py-4 font-semibold text-white", rankTone)}>{rank ?? "—"}</td>
+      <td className="px-4 py-4 text-slate-200">
+        <span className="font-medium text-white">{entry.name}#{entry.tag}</span>
+        <span className="ml-2 text-xs text-slate-500">{entry.discordUsername}</span>
+      </td>
+      <td className="px-4 py-4">
+        {entry.currentTier ? <Badge>{entry.currentTier}</Badge> : <span className="text-slate-500">—</span>}
+      </td>
+      <td className="px-4 py-4 whitespace-nowrap font-semibold text-white">{entry.elo ?? "—"}</td>
+      <td className="px-4 py-4 whitespace-nowrap text-slate-300">
+        {entry.peakRank ? `${entry.peakRank}${entry.peakSeason ? ` · ${entry.peakSeason}` : ""}` : "—"}
+      </td>
+      <td className="px-4 py-4 whitespace-nowrap text-right text-slate-400">
+        {entry.lastPlayed ? new Date(entry.lastPlayed).toLocaleDateString() : "—"}
+      </td>
+    </tr>
+  );
+};
 
 const SearchForm = ({
   search,
@@ -167,32 +180,12 @@ export default function ValorantLeaderboard({
     );
   }
 
-  const topEntries = entries.slice(0, TOP_N);
-
   return (
     <div className="space-y-6">
       <SearchForm search={search} setSearch={setSearch} onSubmit={submitSearch} />
 
       {entries.length > 0 ? (
         <>
-          {page === 1 && topEntries.length > 0 ? (
-            <section aria-label="Top 10 players">
-              <h2 className="text-lg font-semibold text-white">Top 10</h2>
-              <Card className="mt-3 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px] text-left text-sm">
-                    <LeaderboardTableHeader />
-                    <tbody>
-                      {topEntries.map((entry, index) => (
-                        <LeaderboardRow key={entry.puuid} entry={entry} rank={index + 1} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </section>
-          ) : null}
-
           <section aria-label="Full leaderboard">
             <Card className="overflow-hidden">
               <div className="overflow-x-auto">
