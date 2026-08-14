@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import AdminShell from "@/components/admin/AdminShell";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
@@ -31,10 +30,14 @@ export default function ValorantRankingsManager() {
   };
 
   return (
-    <AdminShell
-      title="VALORANT Rankings"
-      description="Admin-only standings and rating history. Quest never computes ELO — rankings come from the VALORANT platform."
-    >
+    <div className="grid min-w-0 gap-4 sm:gap-6">
+      <div>
+        <h3 className="text-lg font-semibold text-white">VALORANT Rankings</h3>
+        <p className="text-sm text-slate-400">
+          Admin-only standings and rating history. Quest never computes ELO — rankings come from the VALORANT platform.
+        </p>
+      </div>
+
       {error ? (
         <ValorantErrorAlert message={error} onRetry={retry} />
       ) : loading ? (
@@ -101,6 +104,6 @@ export default function ValorantRankingsManager() {
           ) : null}
         </>
       )}
-    </AdminShell>
+    </div>
   );
 }

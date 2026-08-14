@@ -1,2 +1,5 @@
-import ValorantHub from "@/components/admin/valorant/ValorantHub";
-export default function ValorantPage() { return <ValorantHub />; }
+import ValorantManagementPage from "@/components/admin/valorant/ValorantManagementPage";
+
+export default function AdminValorantPage() {
+  return <ValorantManagementPage />;
+}

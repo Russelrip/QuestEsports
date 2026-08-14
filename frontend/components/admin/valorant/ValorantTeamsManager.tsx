@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import AdminShell from "@/components/admin/AdminShell";
 import ValorantBindingForm from "@/components/admin/valorant/ValorantBindingForm";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
@@ -48,10 +47,14 @@ export default function ValorantTeamsManager() {
   };
 
   return (
-    <AdminShell
-      title="Team Bindings"
-      description="Link Quest SavedTeams to VALORANT platform teams. One active binding per team; detaching never deletes VALORANT data."
-    >
+    <div className="grid min-w-0 gap-4 sm:gap-6">
+      <div>
+        <h3 className="text-lg font-semibold text-white">Team Bindings</h3>
+        <p className="text-sm text-slate-400">
+          Link Quest SavedTeams to VALORANT platform teams. One active binding per team; detaching never deletes VALORANT data.
+        </p>
+      </div>
+
       {error ? (
         <ValorantErrorAlert
           message={error}
@@ -114,6 +117,6 @@ export default function ValorantTeamsManager() {
           )}
         </>
       )}
-    </AdminShell>
+    </div>
   );
 }

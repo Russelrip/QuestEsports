@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import AdminShell from "@/components/admin/AdminShell";
 import ValorantCandidateList from "@/components/admin/valorant/ValorantCandidateList";
 import ValorantCandidateReview from "@/components/admin/valorant/ValorantCandidateReview";
 import ValorantDiscoveryForm from "@/components/admin/valorant/ValorantDiscoveryForm";
@@ -72,10 +71,14 @@ export default function ValorantDiscoveryManager() {
   };
 
   return (
-    <AdminShell
-      title="Match Discovery"
-      description="Find matches two players have shared, review the candidates, and import the right one explicitly."
-    >
+    <div className="grid min-w-0 gap-4 sm:gap-6">
+      <div>
+        <h3 className="text-lg font-semibold text-white">Match Discovery</h3>
+        <p className="text-sm text-slate-400">
+          Find matches two players have shared, review the candidates, and import the right one explicitly.
+        </p>
+      </div>
+
       <ValorantDiscoveryForm onSearch={handleSearch} loading={loading} />
 
       <div className="min-w-0 overflow-x-auto">
@@ -136,6 +139,6 @@ export default function ValorantDiscoveryManager() {
           </div>
         </div>
       ) : null}
-    </AdminShell>
+    </div>
   );
 }

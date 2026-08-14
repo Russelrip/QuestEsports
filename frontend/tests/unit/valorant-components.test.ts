@@ -5,26 +5,23 @@ import { resolve } from "node:path";
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
 describe("VALORANT admin UI boundaries", () => {
-  it("registers the VALORANT navigation group with exactly the planned screens", () => {
+  it("registers the VALORANT navigation group as a single management entry", () => {
     const lib = read("lib/admin.ts");
     expect(lib).toContain('label: "VALORANT"');
-    for (const href of [
-      "/admin/valorant",
-      "/admin/valorant/teams",
-      "/admin/valorant/discover",
-      "/admin/valorant/series",
-      "/admin/valorant/rankings",
-      "/admin/valorant/reconciliation",
-    ]) {
-      expect(lib).toContain(`{ href: "${href}"`);
-    }
+    expect(lib).toContain('label: "Valorant Management"');
+    expect(lib).toContain('{ href: "/admin/valorant"');
+    expect(lib).not.toContain('href: "/admin/valorant/teams"');
+    expect(lib).not.toContain('href: "/admin/valorant/discover"');
+    expect(lib).not.toContain('href: "/admin/valorant/series"');
+    expect(lib).not.toContain('href: "/admin/valorant/rankings"');
+    expect(lib).not.toContain('href: "/admin/valorant/reconciliation"');
   });
 
   it("never references the FastAPI service or Henrik from the frontend", () => {
     const files = [
       "lib/valorant.ts",
       "lib/valorant-api.ts",
-      "components/admin/valorant/ValorantHub.tsx",
+      "components/admin/valorant/ValorantManagementPage.tsx",
       "components/admin/valorant/ValorantStatusBadge.tsx",
       "components/admin/valorant/ValorantOperationBanner.tsx",
       "components/admin/valorant/ValorantErrorAlert.tsx",
@@ -101,11 +98,12 @@ describe("VALORANT admin UI boundaries", () => {
     expect(form).toContain("Both teams must have an active VALORANT binding");
   });
 
-  it("series list shows status, format, teams, and links to create", () => {
+  it("series list shows status, format, teams, and in-tab navigation to create/view", () => {
     const manager = read("components/admin/valorant/ValorantSeriesManager.tsx");
     expect(manager).toContain("New series");
     expect(manager).toContain("ValorantStatusBadge");
-    expect(manager).toContain("/admin/valorant/series/new");
+    expect(manager).toContain("onCreateSeries");
+    expect(manager).toContain("onViewSeries");
     expect(manager).toContain("formatAdminCompactDateTime");
   });
 
@@ -222,6 +220,10 @@ describe("VALORANT admin UI boundaries", () => {
   });
 
   it("uses accessible, responsive primitives and stays inside the admin shell", () => {
+    const page = read("components/admin/valorant/ValorantManagementPage.tsx");
+    expect(page).toContain("<AdminShell");
+    expect(page).toContain('role="tablist"');
+    expect(page).toContain('role="tabpanel"');
     for (const file of [
       "ValorantTeamsManager.tsx",
       "ValorantDiscoveryManager.tsx",
@@ -229,11 +231,11 @@ describe("VALORANT admin UI boundaries", () => {
       "ValorantSeriesDetail.tsx",
       "ValorantRankingsManager.tsx",
       "ValorantReconciliationManager.tsx",
+      "ValorantManagementPage.tsx",
     ]) {
       const source = read(`components/admin/valorant/${file}`);
-      expect(source, file).toContain("<AdminShell");
       expect(source, file).toContain("min-w-0");
-      expect(source, file).toMatch(/overflow-x-auto|md:grid-cols-2|lg:grid-cols-2|xl:grid-cols-3/);
+      expect(source, file).toMatch(/overflow-x-auto|md:grid-cols-2|lg:grid-cols-2|xl:grid-cols-3|flex-wrap/);
     }
   });
 

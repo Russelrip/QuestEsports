@@ -1,6 +1,5 @@
 "use client";
 
-import AdminShell from "@/components/admin/AdminShell";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
@@ -37,10 +36,14 @@ export default function ValorantReconciliationManager() {
   const report = reportQuery.data?.report;
 
   return (
-    <AdminShell
-      title="Reconciliation"
-      description="Detect mismatches between Quest projections and the VALORANT platform. All checks are read-only."
-      actions={
+    <div className="grid min-w-0 gap-4 sm:gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white">Reconciliation</h3>
+          <p className="text-sm text-slate-400">
+            Detect mismatches between Quest projections and the VALORANT platform. All checks are read-only.
+          </p>
+        </div>
         <Button
           type="button"
           variant="secondary"
@@ -49,8 +52,8 @@ export default function ValorantReconciliationManager() {
         >
           Refresh report
         </Button>
-      }
-    >
+      </div>
+
       {reportQuery.error ? (
         <ValorantErrorAlert message={reportQuery.error} onRetry={() => void reportQuery.refetch()} />
       ) : reportQuery.loading || !report ? (
@@ -154,6 +157,6 @@ export default function ValorantReconciliationManager() {
           </p>
         </div>
       )}
-    </AdminShell>
+    </div>
   );
 }

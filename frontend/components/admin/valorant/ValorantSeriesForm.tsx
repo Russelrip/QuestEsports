@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import AdminShell from "@/components/admin/AdminShell";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,8 +22,13 @@ const bindingLabel = (binding: Binding) =>
     ? `${binding.savedTeam.name}${binding.savedTeam.teamTag ? ` (${binding.savedTeam.teamTag})` : ""}`
     : "Unnamed team";
 
-export default function ValorantSeriesForm() {
-  const router = useRouter();
+export default function ValorantSeriesForm({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (seriesId: string) => void;
+  onCancel?: () => void;
+}) {
   const showToast = useToastStore((state) => state.showToast);
   const bindingsQuery = useValorantBindings();
 
@@ -83,7 +86,7 @@ export default function ValorantSeriesForm() {
         anchorPlayerB: parsedB,
       });
       showToast({ title: "Draft series created", tone: "success" });
-      router.push(`/admin/valorant/series/${result.series.id}`);
+      onCreated(result.series.id);
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "Could not create the draft series.";
       setError(message);
@@ -94,15 +97,26 @@ export default function ValorantSeriesForm() {
   };
 
   return (
-    <AdminShell
-      title="New VALORANT Series"
-      description="Create a standalone BO1/BO3/BO5 draft series between two bound teams."
-    >
+    <div className="grid min-w-0 gap-4 sm:gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white">New VALORANT Series</h3>
+          <p className="text-sm text-slate-400">
+            Create a standalone BO1/BO3/BO5 draft series between two bound teams.
+          </p>
+        </div>
+        {onCancel ? (
+          <Button type="button" variant="ghost" onClick={onCancel}>
+            Back to series
+          </Button>
+        ) : null}
+      </div>
+
       {bindingsQuery.error ? (
         <ValorantErrorAlert message={bindingsQuery.error} onRetry={() => void bindingsQuery.refetch()} />
       ) : (
         <Card className="p-5 sm:p-6">
-          <h3 className="text-lg font-semibold text-white">Draft series</h3>
+          <h4 className="text-lg font-semibold text-white">Draft series</h4>
           {error ? <ValorantErrorAlert message={error} /> : null}
           {!bindingsQuery.loading && activeBindings.length < 2 ? (
             <p role="alert" className="mt-3 text-sm text-red-300">
@@ -274,6 +288,6 @@ export default function ValorantSeriesForm() {
           </form>
         </Card>
       )}
-    </AdminShell>
+    </div>
   );
 }

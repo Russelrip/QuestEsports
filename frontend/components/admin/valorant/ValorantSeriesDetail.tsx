@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import AdminShell from "@/components/admin/AdminShell";
 import ValorantAttachGameDialog from "@/components/admin/valorant/ValorantAttachGameDialog";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
@@ -37,10 +35,13 @@ const teamLabel = (series: QuestValorantSeries, side: "A" | "B") => {
   return savedTeam.teamTag ? `${savedTeam.name} (${savedTeam.teamTag})` : savedTeam.name;
 };
 
-export default function ValorantSeriesDetail() {
-  const params = useParams<{ id: string }>();
-  const seriesId = params?.id ?? "";
-  const router = useRouter();
+export default function ValorantSeriesDetail({
+  seriesId,
+  onBack,
+}: {
+  seriesId: string;
+  onBack?: () => void;
+}) {
   const showToast = useToastStore((state) => state.showToast);
 
   const detailQuery = useValorantSeriesDetail(seriesId);
@@ -57,28 +58,28 @@ export default function ValorantSeriesDetail() {
 
   if (detailQuery.loading) {
     return (
-      <AdminShell title="VALORANT Series" description="Loading the series detail.">
+      <div className="grid min-w-0 gap-4 sm:gap-6">
         <ValorantLoadingState />
-      </AdminShell>
+      </div>
     );
   }
 
   if (detailQuery.error) {
     return (
-      <AdminShell title="VALORANT Series" description="Loading the series detail.">
+      <div className="grid min-w-0 gap-4 sm:gap-6">
         <ValorantErrorAlert message={detailQuery.error} onRetry={() => void detailQuery.refetch()} />
-      </AdminShell>
+      </div>
     );
   }
 
   if (!series) {
     return (
-      <AdminShell title="VALORANT Series" description="Loading the series detail.">
+      <div className="grid min-w-0 gap-4 sm:gap-6">
         <ValorantEmptyState
           title="Series not found"
           description="The draft series could not be loaded."
         />
-      </AdminShell>
+      </div>
     );
   }
 
@@ -154,7 +155,7 @@ export default function ValorantSeriesDetail() {
     try {
       await deleteValorantSeries(seriesId);
       showToast({ title: "Draft series deleted", tone: "success" });
-      router.push("/admin/valorant/series");
+      onBack?.();
     } catch (deleteError) {
       setDeleteConfirming(false);
       const message =
@@ -178,10 +179,14 @@ export default function ValorantSeriesDetail() {
   };
 
   return (
-    <AdminShell
-      title={`${series.format.toUpperCase()} series`}
-      description={`${teamALabel} vs ${teamBLabel} · ${formatAdminCompactDateTime(series.playedAt)}`}
-      actions={
+    <div className="grid min-w-0 gap-4 sm:gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white">{series.format.toUpperCase()} series</h3>
+          <p className="text-sm text-slate-400">
+            {teamALabel} vs {teamBLabel} · {formatAdminCompactDateTime(series.playedAt)}
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <ValorantStatusBadge status={series.status} kind="series" />
           {isDraft ? (
@@ -214,120 +219,124 @@ export default function ValorantSeriesDetail() {
               Re-check status
             </Button>
           ) : null}
-        </div>
-      }
-    >
-      <div className="min-w-0 overflow-x-auto">
-        {isDraft && deleteConfirming ? (
-        <Card className="px-5 py-4 text-sm text-red-200">
-          Delete this draft series? Finalized history is never affected.
-        </Card>
-      ) : null}
-
-      <ValorantOperationBanner operation={series.lastOperation} inFlight={mutationBusy} />
-
-      {showRecheck ? (
-        <p role="status" className="text-xs text-slate-500">
-          Re-check status only reads the current state — it never retries automatically.
-        </p>
-      ) : null}
-
-      <section className="grid gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-white">Games</h3>
-          {isDraft ? (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setLibraryOpen((open) => !open)}
-            >
-              {libraryOpen ? "Close match library" : "Attach map"}
+          {onBack ? (
+            <Button type="button" variant="ghost" onClick={onBack}>
+              Back to series
             </Button>
           ) : null}
         </div>
+      </div>
 
-        {isDraft && games.length > 1 ? (
-          <ValorantReorderControl games={games} onReorder={handleReorder} />
+      <div className="min-w-0 overflow-x-auto">
+        {isDraft && deleteConfirming ? (
+          <Card className="px-5 py-4 text-sm text-red-200">
+            Delete this draft series? Finalized history is never affected.
+          </Card>
         ) : null}
 
-        {libraryOpen ? (
-          <ValorantMatchLibrary
-            onPick={(match) => {
-              setPickedMatch(match);
-            }}
-          />
+        <ValorantOperationBanner operation={series.lastOperation} inFlight={mutationBusy} />
+
+        {showRecheck ? (
+          <p role="status" className="text-xs text-slate-500">
+            Re-check status only reads the current state — it never retries automatically.
+          </p>
         ) : null}
 
-        {games.length === 0 ? (
-          <ValorantEmptyState
-            title="No games attached"
-            description="Attach imported matches to this series."
-          />
-        ) : (
-          <div className="grid gap-3">
-            {games.map((game) => (
-              <ValorantGameRow
-                key={game.id}
-                game={game}
-                teamALabel={teamALabel}
-                teamBLabel={teamBLabel}
-                removable={isDraft}
-                onRemove={() => void handleRemoveGame(game.id)}
-                removing={removingGameId === game.id}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {series.status === "finalized" ? (
-        <Card className="p-5">
-          <h3 className="text-lg font-semibold text-white">Committed result</h3>
-          <div className="mt-3 grid gap-2 text-sm text-slate-300">
-            <div>
-              <ValorantStatusBadge status={series.status} kind="series" />
-            </div>
-            <p>Rating mode: {ratingModeLabel(series.ratingMode ?? series.ratingModePreference)}</p>
-            <p>Finalized by: {series.finalizedById ?? "—"}</p>
-            <p>
-              VALORANT series:{" "}
-              {series.valorantSeriesUuid
-                ? `${series.valorantSeriesUuid.slice(0, 8)}…`
-                : "—"}
-            </p>
-            {finalizeResult ? (
-              <p>
-                Current ELO — Team A: {finalizeResult.teamACurrentElo} · Team B:{" "}
-                {finalizeResult.teamBCurrentElo}
-              </p>
+        <section className="grid gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h4 className="text-lg font-semibold text-white">Games</h4>
+            {isDraft ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setLibraryOpen((open) => !open)}
+              >
+                {libraryOpen ? "Close match library" : "Attach map"}
+              </Button>
             ) : null}
           </div>
-        </Card>
-      ) : (
-        <>
-          <ValorantPreviewPanel
-            preview={preview}
-            loading={previewQuery.loading}
-            error={previewQuery.error}
-            anchors={anchors}
-            winnerLabel={winnerLabel}
-            onRetry={() => void previewQuery.refetch()}
-          />
-          {isDraft ? (
-            <ValorantFinalizeForm
-              seriesId={seriesId}
-              teamALabel={series.bindingA.savedTeam?.name ?? "Team A"}
-              teamBLabel={series.bindingB.savedTeam?.name ?? "Team B"}
-              teamAId={series.bindingA.valorantTeamUuid}
-              teamBId={series.bindingB.valorantTeamUuid}
-              calculatedWinnerId={preview?.calculatedWinnerId ?? null}
-              onFinalized={handleFinalized}
-              onAlreadyFinalized={handleAlreadyFinalized}
+
+          {isDraft && games.length > 1 ? (
+            <ValorantReorderControl games={games} onReorder={handleReorder} />
+          ) : null}
+
+          {libraryOpen ? (
+            <ValorantMatchLibrary
+              onPick={(match) => {
+                setPickedMatch(match);
+              }}
             />
           ) : null}
-        </>
-      )}
 
+          {games.length === 0 ? (
+            <ValorantEmptyState
+              title="No games attached"
+              description="Attach imported matches to this series."
+            />
+          ) : (
+            <div className="grid gap-3">
+              {games.map((game) => (
+                <ValorantGameRow
+                  key={game.id}
+                  game={game}
+                  teamALabel={teamALabel}
+                  teamBLabel={teamBLabel}
+                  removable={isDraft}
+                  onRemove={() => void handleRemoveGame(game.id)}
+                  removing={removingGameId === game.id}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {series.status === "finalized" ? (
+          <Card className="p-5">
+            <h4 className="text-lg font-semibold text-white">Committed result</h4>
+            <div className="mt-3 grid gap-2 text-sm text-slate-300">
+              <div>
+                <ValorantStatusBadge status={series.status} kind="series" />
+              </div>
+              <p>Rating mode: {ratingModeLabel(series.ratingMode ?? series.ratingModePreference)}</p>
+              <p>Finalized by: {series.finalizedById ?? "—"}</p>
+              <p>
+                VALORANT series:{" "}
+                {series.valorantSeriesUuid
+                  ? `${series.valorantSeriesUuid.slice(0, 8)}…`
+                  : "—"}
+              </p>
+              {finalizeResult ? (
+                <p>
+                  Current ELO — Team A: {finalizeResult.teamACurrentElo} · Team B:{" "}
+                  {finalizeResult.teamBCurrentElo}
+                </p>
+              ) : null}
+            </div>
+          </Card>
+        ) : (
+          <>
+            <ValorantPreviewPanel
+              preview={preview}
+              loading={previewQuery.loading}
+              error={previewQuery.error}
+              anchors={anchors}
+              winnerLabel={winnerLabel}
+              onRetry={() => void previewQuery.refetch()}
+            />
+            {isDraft ? (
+              <ValorantFinalizeForm
+                seriesId={seriesId}
+                teamALabel={series.bindingA.savedTeam?.name ?? "Team A"}
+                teamBLabel={series.bindingB.savedTeam?.name ?? "Team B"}
+                teamAId={series.bindingA.valorantTeamUuid}
+                teamBId={series.bindingB.valorantTeamUuid}
+                calculatedWinnerId={preview?.calculatedWinnerId ?? null}
+                onFinalized={handleFinalized}
+                onAlreadyFinalized={handleAlreadyFinalized}
+              />
+            ) : null}
+          </>
+        )}
       </div>
 
       {pickedMatch ? (
@@ -340,6 +349,6 @@ export default function ValorantSeriesDetail() {
           onAttached={handleAttached}
         />
       ) : null}
-    </AdminShell>
+    </div>
   );
 }

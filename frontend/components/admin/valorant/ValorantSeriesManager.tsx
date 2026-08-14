@@ -1,12 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import AdminShell from "@/components/admin/AdminShell";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantLoadingState from "@/components/admin/valorant/ValorantLoadingState";
 import ValorantStatusBadge from "@/components/admin/valorant/ValorantStatusBadge";
-import { buttonClassName } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useValorantSeriesList } from "@/hooks/api/useValorant";
 import { formatAdminCompactDateTime } from "@/lib/admin";
@@ -18,21 +16,31 @@ const teamLabel = (series: QuestValorantSeries, side: "A" | "B") => {
   return savedTeam.teamTag ? `${savedTeam.name} (${savedTeam.teamTag})` : savedTeam.name;
 };
 
-export default function ValorantSeriesManager() {
+export default function ValorantSeriesManager({
+  onViewSeries,
+  onCreateSeries,
+}: {
+  onViewSeries: (seriesId: string) => void;
+  onCreateSeries: () => void;
+}) {
   const seriesQuery = useValorantSeriesList();
   const series = seriesQuery.data?.series ?? [];
   const { loading, error, refetch } = seriesQuery;
 
   return (
-    <AdminShell
-      title="VALORANT Series"
-      description="Create standalone BO1/BO3/BO5 draft series and manage their games."
-      actions={
-        <Link href="/admin/valorant/series/new" className={buttonClassName({})}>
+    <div className="grid min-w-0 gap-4 sm:gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white">VALORANT Series</h3>
+          <p className="text-sm text-slate-400">
+            Create standalone BO1/BO3/BO5 draft series and manage their games.
+          </p>
+        </div>
+        <Button type="button" onClick={onCreateSeries}>
           New series
-        </Link>
-      }
-    >
+        </Button>
+      </div>
+
       {error ? (
         <ValorantErrorAlert message={error} onRetry={() => void refetch()} />
       ) : loading ? (
@@ -79,12 +87,14 @@ export default function ValorantSeriesManager() {
                         : "—"}
                     </td>
                     <td className="px-4 py-4 text-right">
-                      <Link
-                        href={`/admin/valorant/series/${item.id}`}
-                        className={buttonClassName({ variant: "secondary", size: "sm" })}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => onViewSeries(item.id)}
                       >
                         View
-                      </Link>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -93,6 +103,6 @@ export default function ValorantSeriesManager() {
           </div>
         </Card>
       )}
-    </AdminShell>
+    </div>
   );
 }
