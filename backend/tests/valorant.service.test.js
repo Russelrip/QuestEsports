@@ -260,7 +260,7 @@ test("listTeams fetches the FastAPI team catalog and joins it onto each binding"
   }
 });
 
-test("discover proxies the two-player search and maps candidates without winningSide", async () => {
+test("discover proxies the two-player search and maps candidates (matchId pass-through, no winningSide)", async () => {
   const candidate = require("./fixtures/valorant/match-candidate.json");
   let capturedBody;
   const prismaMock = { prisma: {} };
@@ -281,7 +281,7 @@ test("discover proxies the two-player search and maps candidates without winning
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
     [prismaPath]: prismaMock,
     [clientPath]: clientMock,
-    [mapperPath]: { mapMatchCandidate: (c) => ({ henrikMatchId: c.match_id, map: c.map, isCompleted: c.is_completed, alreadyImported: c.already_imported }) },
+    [mapperPath]: { mapMatchCandidate: (c) => ({ matchId: c.match_id, henrikMatchId: c.henrik_match_id, map: c.map, isCompleted: c.is_completed, alreadyImported: c.already_imported }) },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
   });
@@ -298,7 +298,8 @@ test("discover proxies the two-player search and maps candidates without winning
     assert.equal(capturedBody.page_size, 10);
     assert.equal(capturedBody.max_pages, 1);
     assert.equal(result.candidates.length, 1);
-    assert.equal(result.candidates[0].henrikMatchId, candidate.match_id);
+    assert.equal(result.candidates[0].henrikMatchId, candidate.henrik_match_id);
+    assert.equal(result.candidates[0].matchId, candidate.match_id);
     assert.equal("winningSide" in result.candidates[0], false);
   } finally {
     restore();

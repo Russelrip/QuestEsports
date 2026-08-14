@@ -1,5 +1,6 @@
 {
-  "match_id": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
+  "match_id": null,
+  "henrik_match_id": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
   "affinity": "eu",
   "map": "Ascent",
   "started_at": "2026-08-01T14:30:00Z",

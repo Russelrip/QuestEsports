@@ -21,7 +21,8 @@ const mapMatchSummary = (match) => ({
 });
 
 const mapMatchCandidate = (candidate) => ({
-  henrikMatchId: candidate.match_id,
+  matchId: candidate.match_id,
+  henrikMatchId: candidate.henrik_match_id,
   affinity: candidate.affinity,
   map: candidate.map ?? null,
   startedAt: candidate.started_at ?? null,

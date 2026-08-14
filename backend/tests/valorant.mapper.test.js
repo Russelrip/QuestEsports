@@ -68,6 +68,7 @@ test("mapMatchCandidate keeps only the fields the current MatchCandidate returns
   const { module: mapper } = loadMapper();
   const mapped = mapper.mapMatchCandidate(candidate);
   assert.deepEqual(mapped, {
+    matchId: null,
     henrikMatchId: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
     affinity: "eu",
     map: "Ascent",
@@ -81,6 +82,26 @@ test("mapMatchCandidate keeps only the fields the current MatchCandidate returns
   });
   assert.equal("winningSide" in mapped, false);
   assert.equal("players" in mapped, false);
+});
+
+test("mapMatchCandidate maps the nullable VAL match_id to matchId when present", () => {
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapMatchCandidate({
+    match_id: "00000000-0000-4000-8000-00000000000e",
+    henrik_match_id: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
+    affinity: "eu",
+    map: "Ascent",
+    started_at: "2026-08-01T14:30:00Z",
+    mode: "Standard",
+    queue: "unrated",
+    is_completed: true,
+    red_score: 13,
+    blue_score: 8,
+    already_imported: true,
+  });
+  assert.equal(mapped.matchId, "00000000-0000-4000-8000-00000000000e");
+  assert.equal(mapped.alreadyImported, true);
+  assert.equal(mapped.henrikMatchId, "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567");
 });
 
 test("mapSeriesView maps a FastAPI draft series with games", () => {
