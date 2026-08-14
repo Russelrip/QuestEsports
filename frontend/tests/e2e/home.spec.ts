@@ -430,6 +430,7 @@ test("admin guard shows a retry state instead of redirecting when session lookup
 test("event album admin loads legacy poster tools once without a request loop", async ({ page }) => {
   let posterStudioRequests = 0;
   let imageLibraryRequests = 0;
+  let deletedPosterEntries = 0;
 
   await page.route("**/api/me", (route) => route.fulfill({
     contentType: "application/json",
@@ -461,14 +462,33 @@ test("event album admin loads legacy poster tools once without a request loop", 
   await page.route("**/api/posters?**", (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.get("pageSize") === "18") posterStudioRequests += 1;
+    const includeAdminArtwork = url.searchParams.get("pageSize") === "60";
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         success: true,
-        posters: [],
-        pagination: { page: 1, pageSize: Number(url.searchParams.get("pageSize")), total: 0, totalPages: 1 },
+        posters: includeAdminArtwork ? [{
+          id: "poster-duplicate",
+          title: "Duplicate artwork",
+          imageAsset: {
+            id: "asset-shared",
+            title: "Shared artwork",
+            originalName: "shared-artwork.jpg",
+            category: "poster",
+            contentType: "image/jpeg",
+            createdAt: "2026-08-01T00:00:00.000Z",
+            imageUrl: "/api/posters/poster-duplicate/image",
+          },
+          tournament: null,
+        }] : [],
+        pagination: { page: 1, pageSize: Number(url.searchParams.get("pageSize")), total: includeAdminArtwork ? 1 : 0, totalPages: 1 },
       }),
     });
+  });
+  await page.route("**/api/posters/poster-duplicate", (route) => {
+    if (route.request().method() !== "DELETE") return route.continue();
+    deletedPosterEntries += 1;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ success: true }) });
   });
   await page.route("**/api/images?**", (route) => {
     imageLibraryRequests += 1;
@@ -488,6 +508,10 @@ test("event album admin loads legacy poster tools once without a request loop", 
   await expect(page.getByRole("heading", { name: "Existing promotional artwork" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search promotional artwork" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Filter promotional artwork by assignment" })).toHaveValue("all");
+  page.on("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Delete entry" }).click();
+  await expect.poll(() => deletedPosterEntries).toBe(1);
+  await expect(page.getByText("Duplicate artwork")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await expect.poll(() => posterStudioRequests).toBe(1);
   await expect.poll(() => imageLibraryRequests).toBe(1);
