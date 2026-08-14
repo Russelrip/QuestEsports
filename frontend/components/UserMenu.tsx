@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import type { AuthUser } from "@/lib/auth";
 import { getInitials } from "@/lib/utils";
 import { buildApiUrl } from "@/lib/api";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 type UserMenuProps = {
   user: AuthUser;
@@ -20,18 +21,21 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
   const router = useRouter();
   const menuRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const initials = getInitials(user.firstName, user.lastName, user.username);
 
   useEffect(() => {
     const onPointer = (event: MouseEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
+        setNotificationsOpen(false);
       }
     };
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsOpen(false);
+        setNotificationsOpen(false);
       }
     };
 
@@ -44,11 +48,23 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
   }, []);
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative flex items-center gap-3" ref={menuRef}>
+      <NotificationBell
+        user={user}
+        alignToAccount
+        open={notificationsOpen}
+        onOpenChange={(nextOpen) => {
+          setNotificationsOpen(nextOpen);
+          if (nextOpen) setIsOpen(false);
+        }}
+      />
       <button
         type="button"
         className={`account-menu-trigger flex items-center gap-3 border px-3 py-2 text-left transition ${isOpen ? "border-white/10 bg-white/6" : "border-transparent bg-transparent hover:border-white/10 hover:bg-white/6"}`}
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={() => {
+          setNotificationsOpen(false);
+          setIsOpen((current) => !current);
+        }}
         aria-expanded={isOpen}
       >
         <span className="account-menu-avatar flex size-9 items-center justify-center overflow-hidden bg-violet-700 text-xs font-bold text-white">
