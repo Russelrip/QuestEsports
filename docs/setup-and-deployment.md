@@ -369,6 +369,11 @@ Prepare the shared test project once:
    ```
 4. Apply Quest Prisma migrations as usual (`npm run prisma:migrate:deploy`).
 
+Production topology: only Quest Express is reachable by the frontend. FastAPI
+lives on a private network with an IP allowlist and binds to a private
+interface; the browser never talks to FastAPI. `VALORANT_INTERNAL_BASE_URL` is
+asserted to be an HTTPS origin by `backend/src/config/env.js` in production.
+
 ## Recommended Production Topology
 
 ### Option A: Two-process deployment behind a reverse proxy
