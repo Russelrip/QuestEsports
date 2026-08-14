@@ -8,3 +8,11 @@ condition = "AND"
 regexTarget = "match"
 paths = ['''^docs/setup-and-deployment\.md$''']
 regexes = ['''(?i)replace[-_a-z0-9]*''']
+
+[[allowlists]]
+description = "Ignore committed .env.example templates (placeholders only)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^backend/\.env\.example$''']
+regexes = ['''(?i)replace[-_a-z0-9]*|user:password|REPLACE_ME|^[A-Z_]+=$''']
