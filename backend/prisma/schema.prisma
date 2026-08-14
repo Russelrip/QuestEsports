@@ -1297,6 +1297,7 @@ model SavedTeam {
   organizationRequested Boolean            @default(false) @map("organization_requested")
   organizationName      String?            @map("organization_name")
   logoName              String?            @map("logo_name")
+  game                  String?            @map("game")
   createdAt             DateTime           @default(now()) @map("created_at")
   updatedAt             DateTime           @updatedAt @map("updated_at")
   captainUser           User               @relation(fields: [captainUserId], references: [id], onDelete: Cascade)

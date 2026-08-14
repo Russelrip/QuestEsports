@@ -55,10 +55,15 @@ test("bindTeam writes an operation and stores the returned VALORANT team UUID on
   };
   const statuses = [];
   let operationId;
+  let savedTeamUpdates = [];
   const prismaMock = {
     prisma: {
       savedTeam: {
         findUnique: async ({ where }) => (where.id === savedTeam.id ? savedTeam : null),
+        update: async ({ where, data }) => {
+          savedTeamUpdates.push({ where, data });
+          return { ...savedTeam, ...data };
+        },
       },
       valorantTeamBinding: {
         findFirst: async () => null,
@@ -74,6 +79,7 @@ test("bindTeam writes an operation and stores the returned VALORANT team UUID on
           return { id: where.id, ...data };
         },
       },
+      $transaction: async (operations) => Promise.all(operations),
     },
   };
   const clientMock = {
@@ -101,6 +107,9 @@ test("bindTeam writes an operation and stores the returned VALORANT team UUID on
     assert.equal(binding.boundByUserId, "user-1");
     assert.ok(operationId);
     assert.deepEqual(statuses, ["in_flight", "succeeded"]);
+    assert.deepEqual(savedTeamUpdates, [
+      { where: { id: "saved-team-1" }, data: { game: "valorant" } },
+    ]);
   } finally {
     restore();
   }

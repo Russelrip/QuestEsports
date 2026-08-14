@@ -129,14 +129,20 @@ const bindTeam = async ({ savedTeamId, actorUserId, requestId, ipAddress }) => {
   }
 
   const team = mapTeamResponse(response.data);
-  const binding = await prisma.valorantTeamBinding.create({
-    data: {
-      savedTeamId,
-      valorantTeamUuid: team.id,
-      status: "active",
-      boundByUserId: actorUserId,
-    },
-  });
+  const [binding] = await prisma.$transaction([
+    prisma.valorantTeamBinding.create({
+      data: {
+        savedTeamId,
+        valorantTeamUuid: team.id,
+        status: "active",
+        boundByUserId: actorUserId,
+      },
+    }),
+    prisma.savedTeam.update({
+      where: { id: savedTeamId },
+      data: { game: "valorant" },
+    }),
+  ]);
   await markOperationSucceeded(operation.id, response);
   return binding;
 };
