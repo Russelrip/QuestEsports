@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Section } from "@/components/ui/section";
 import { apiFetch } from "@/lib/auth";
+import { getDownloadFilename } from "@/lib/download-filename";
 import { fetchPublicEventAlbum, type EventAlbum } from "@/lib/event-albums";
 import { resolveMediaUrl } from "@/lib/media";
 
@@ -154,15 +155,21 @@ export default function EventAlbumBrowser({
     setDownloadError("");
     try {
       const separator = selectedPhoto.imageAsset.imageUrl.includes("?") ? "&" : "?";
-      const response = await apiFetch(`${selectedPhoto.imageAsset.imageUrl}${separator}download=1`, {
+      const response = await apiFetch(`${selectedPhoto.imageAsset.imageUrl}${separator}download=original`, {
         timeoutMs: 60_000,
       });
       if (!response.ok) throw new Error("Unable to download this photo.");
-      const objectUrl = URL.createObjectURL(await response.blob());
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
       try {
         const link = document.createElement("a");
         link.href = objectUrl;
-        link.download = selectedPhoto.imageAsset.originalName || `${album.slug}-${selectedPhoto.id}.jpg`;
+        link.download = getDownloadFilename({
+          contentDisposition: response.headers.get("Content-Disposition"),
+          contentType: blob.type || response.headers.get("Content-Type"),
+          originalName: selectedPhoto.imageAsset.originalName,
+          fallbackName: `${album.slug}-${selectedPhoto.id}`,
+        });
         document.body.appendChild(link);
         link.click();
         link.remove();

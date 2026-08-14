@@ -42,6 +42,7 @@ app.use(
   cors({
     origin: env.CORS_ORIGINS,
     credentials: true,
+    exposedHeaders: ["Content-Disposition"],
   })
 );
 app.use(requireAllowedApiOrigin);
