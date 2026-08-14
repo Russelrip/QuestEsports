@@ -17,6 +17,7 @@ const staffControllerPath = path.join(__dirname, "../src/modules/permissions/sta
 const realtimeControllerPath = path.join(__dirname, "../src/modules/realtime/realtime.controller.js");
 const permissionMiddlewarePath = path.join(__dirname, "../src/modules/permissions/permission.middleware.js");
 const valorantControllerPath = path.join(__dirname, "../src/modules/valorant/valorant.controller.js");
+const valorantLeaderboardControllerPath = path.join(__dirname, "../src/modules/valorant-leaderboard/controller.js");
 
 const controllerHandler = (_req, _res, next) => next?.();
 const controllerMock = new Proxy({}, { get: () => controllerHandler });
@@ -46,6 +47,7 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
       requireMatchStaff: () => passMiddleware,
     },
     [valorantControllerPath]: controllerMock,
+    [valorantLeaderboardControllerPath]: controllerMock,
   });
 
   try {
@@ -97,6 +99,8 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
       "GET /admin/valorant/teams/:teamId/rating-history",
       "GET /admin/valorant/teams/:teamId/series",
       "GET /admin/valorant/reconciliation",
+      "GET /valorant/leaderboard",
+      "GET /valorant/leaderboard/search",
     ]) {
       assert.ok(routes.has(expected), `missing route ${expected}`);
     }

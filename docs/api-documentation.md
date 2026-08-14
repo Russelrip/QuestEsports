@@ -1138,3 +1138,14 @@ Paginated admin/media endpoints return:
 - Admin Excel exports are generated on demand and are not written to `backend/uploads/`.
 - Approved tournament team logos are exposed on public tournament detail responses and served through upload URLs.
 - Native brackets are public only after admin publication.
+
+## VALORANT Leaderboard (public)
+
+Public, unauthenticated read-only player leaderboard sourced from `valorantsl-new` (the Sri Lankan player leaderboard service). Routes live under `/api/v1/valorant/*`, are cached for 60 seconds, and proxy the `valorantsl-new` anonymous leaderboard API server-to-server. Registration remains in `valorantsl-new` — Quest does not host it. Spec: `docs/superpowers/specs/2026-08-14-valorant-player-leaderboard-design.md` §4.
+
+| Method | Quest route | Backing upstream call |
+|---|---|---|
+| `GET` | `/api/v1/valorant/leaderboard?page=&per_page=` | `GET /api/v1/leaderboard?page=&per_page=` |
+| `GET` | `/api/v1/valorant/leaderboard/search?q=` | `GET /api/v1/leaderboard/search/{discord_username}` |
+
+Responses follow the standard envelope `{ success: true, data: <payload>, meta: { serverNow } }`. The list payload is `{ entries, total, page, perPage, totalPages }`; each entry is `{ puuid, name, tag, discordUsername, currentTier, elo, rankInTier, peakRank, peakSeason, lastPlayed }`. The search payload is `{ entry: <entry | null> }`. When `VALORANT_SL_API_URL` is unset or upstream is unreachable, both routes return `503`.

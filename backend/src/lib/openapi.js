@@ -887,6 +887,12 @@ const additionalPaths = {
   "/api/v1/admin/valorant/reconciliation": {
     get: createOperation("valorant", "Get the VALORANT reconciliation report", { authenticated: true }),
   },
+  "/api/v1/valorant/leaderboard": {
+    get: createOperation("valorant", "List the public VALORANT player leaderboard (paginated, ELO-desc)"),
+  },
+  "/api/v1/valorant/leaderboard/search": {
+    get: createOperation("valorant", "Search the public VALORANT player leaderboard by Discord username"),
+  },
   "/api/contact": {
     post: createOperation("Contact", "Submit a contact message"),
   },

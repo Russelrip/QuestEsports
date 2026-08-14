@@ -3,6 +3,7 @@ const { env } = require("../config/env");
 const { asyncHandler } = require("../lib/async-handler");
 const { attachSession, requireAuth, requireAdmin } = require("../modules/auth/auth.middleware");
 const valorantController = require("../modules/valorant/valorant.controller");
+const valorantLeaderboardController = require("../modules/valorant-leaderboard/controller");
 const { cachePublicData } = require("../middleware/cache-control");
 const { cacheJson, invalidateCache } = require("../middleware/response-cache");
 const { getPublicTournamentBySlug } = require("../modules/tournaments/tournament.service");
@@ -25,6 +26,8 @@ const bracketResponseCache = cacheJson({
   tags: ["foundation"],
   allowCookies: true,
 });
+const leaderboardPublicCache = cachePublicData({ browserSeconds: 0, sharedSeconds: 60 });
+const leaderboardCache = cacheJson({ ttlSeconds: 60, tags: ["foundation"] });
 const tournamentAdmin = requireTournamentStaff({ roles: ["tournament_admin"], parameter: "id" });
 const tournamentStaff = requireTournamentStaff({ roles: ["tournament_admin", "referee"], parameter: "id" });
 
@@ -54,6 +57,9 @@ router.get("/tournaments/:slug/matches", publicCache, shortCache, matchControlle
 router.get("/matches", publicCache, shortCache, matchController.listMatches);
 router.get("/matches/next", matchController.nextMatch);
 router.get("/events", getRealtimeEvents);
+
+router.get("/valorant/leaderboard", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.getLeaderboard);
+router.get("/valorant/leaderboard/search", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.searchLeaderboard);
 
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);
