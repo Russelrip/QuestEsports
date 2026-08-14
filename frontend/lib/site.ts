@@ -452,6 +452,7 @@ export const buildBreadcrumbStructuredData = (
 export const primaryNavItems = [
   { href: "/", label: "Home" },
   { href: "/tournaments", label: "Tournaments" },
+  { href: "/valorant-leaderboard", label: "Valorant Leaderboard" },
   { href: "/match-videos", label: "Match Videos" },
   { href: "/gallery", label: "Gallery" },
 ] as const;
@@ -580,6 +581,8 @@ export const defaultPageDescriptions = {
   home: siteDescription,
   tournaments:
     "Discover upcoming Quest E-sports tournaments, prize pools, registration windows, and featured competitive gaming events.",
+  valorantLeaderboard:
+    "Sri Lanka's Valorant player leaderboard — the country's top-ranked players by ELO, with rank, tier, and peak rank.",
   tournamentRegistration:
     "Enter a Quest E-sports tournament using its configured solo or team registration form.",
   registration:
