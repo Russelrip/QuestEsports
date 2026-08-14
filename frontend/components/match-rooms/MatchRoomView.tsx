@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { buildApiUrl } from "@/lib/api";
 import { type MatchRoom, type RoomMessage, type SupportRequest, roomRequest } from "@/lib/match-rooms";
+import { subscribeToRealtimeUpdates } from "@/lib/realtime";
 import { cn, getInitials } from "@/lib/utils";
 
 type Tab = "overview" | "veto" | "chat" | "support";
@@ -65,12 +66,14 @@ export default function MatchRoomView({ code }: { code: string }) {
   useEffect(() => {
     if (!roomReady) return;
     void Promise.all([loadMessages(), loadSupport()]).catch(() => undefined);
-    const events = new EventSource(buildApiUrl(`/api/v1/events?topics=${encodeURIComponent(`match-room:${code}`)}`), { withCredentials: true });
-    events.addEventListener("update", () => void Promise.all([loadRoom(), loadMessages(), loadSupport()]).catch(() => undefined));
+    const closeRealtime = subscribeToRealtimeUpdates(
+      `match-room:${code}`,
+      () => void Promise.all([loadRoom(), loadMessages(), loadSupport()]).catch(() => undefined),
+    );
     const poll = window.setInterval(() => {
       if (document.visibilityState === "visible") void Promise.all([loadRoom(), loadMessages(), loadSupport()]).catch(() => undefined);
     }, 5_000);
-    return () => { events.close(); window.clearInterval(poll); };
+    return () => { closeRealtime(); window.clearInterval(poll); };
   }, [code, loadMessages, loadRoom, loadSupport, roomReady]);
   useEffect(() => {
     if (tab !== "chat" || !room) return;

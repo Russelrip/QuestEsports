@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuthUser } from "@/lib/auth";
 import { apiFetchJson } from "@/lib/auth";
-import { buildApiUrl } from "@/lib/api";
+import { subscribeToRealtimeUpdates } from "@/lib/realtime";
 
 type NotificationData = {
   items: Array<{ id: string; type: string; title: string; body: string; actionUrl: string | null; readAt: string | null; createdAt: string }>;
@@ -35,10 +35,9 @@ export default function NotificationBell({ user, compact = false }: { user: Auth
 
   useEffect(() => {
     void load();
-    const events = new EventSource(buildApiUrl(`/api/v1/events?topics=${encodeURIComponent(`user:${user.id}`)}`), { withCredentials: true });
-    events.addEventListener("update", () => void load());
+    const closeRealtime = subscribeToRealtimeUpdates(`user:${user.id}`, () => void load());
     const poll = window.setInterval(() => void load(), 60_000);
-    return () => { events.close(); window.clearInterval(poll); };
+    return () => { closeRealtime(); window.clearInterval(poll); };
   }, [load, user.id]);
   useEffect(() => {
     const close = (event: MouseEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
