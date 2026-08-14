@@ -7,6 +7,7 @@ import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import EmptyState from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Container } from "@/components/ui/container";
 import { cn } from "@/lib/utils";
 import {
   VALORANT_SL_REGISTER_URL,
@@ -157,7 +158,7 @@ export default function ValorantLeaderboard({
 
   if (query) {
     return (
-      <div className="space-y-6">
+      <Container className="space-y-6">
         <SearchForm search={search} setSearch={setSearch} onSubmit={submitSearch} />
         {searchResult ? (
           <Card className="overflow-hidden">
@@ -176,12 +177,12 @@ export default function ValorantLeaderboard({
             description={`No player matches "${query}". Searches match a player's exact Discord username.`}
           />
         )}
-      </div>
+      </Container>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <Container className="space-y-6">
       <SearchForm search={search} setSearch={setSearch} onSubmit={submitSearch} />
 
       {entries.length > 0 ? (
@@ -224,6 +225,6 @@ export default function ValorantLeaderboard({
           Register your account
         </a>
       </div>
-    </div>
+    </Container>
   );
 }
