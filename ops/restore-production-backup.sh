@@ -32,7 +32,7 @@ for name in DIRECT_URL UPLOAD_ROOT PRIVATE_UPLOAD_ROOT BACKUP_AGE_IDENTITY_FILE;
     exit 1
   fi
 done
-for command in age basename cat cut date dirname grep mkdir mktemp mv pg_restore realpath rm rsync sha256sum sleep tar; do
+for command in age basename cat cut date dirname grep mkdir mktemp mv pg_restore psql realpath rm rsync sha256sum sleep tar; do
   command -v "$command" >/dev/null || {
     echo "Required restore command is unavailable: $command" >&2
     exit 1
@@ -203,6 +203,11 @@ if ! pg_restore --dbname="$DIRECT_URL" \
   "$work_directory/database.dump"; then
   echo "Database restore failed; the exit guard will roll back both activated file trees." >&2
   exit 1
+fi
+
+echo "Restored schema table counts (public and valorant):"
+if ! psql "$DIRECT_URL" -tAc "SELECT 'public=' || count(*) FROM pg_tables WHERE schemaname = 'public' UNION ALL SELECT 'valorant=' || count(*) FROM pg_tables WHERE schemaname = 'valorant'"; then
+  echo "Table-count verification failed (restore may still have succeeded)" >&2
 fi
 
 public_activated=false

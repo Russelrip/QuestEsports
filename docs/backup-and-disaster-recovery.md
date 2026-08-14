@@ -262,6 +262,7 @@ The confirmation value acknowledges destructive behavior; it does not prove that
 
 After the script finishes:
 
+- Verify both schemas were restored: the archive's manifest `database_scope=application_public_and_valorant_schemas` and the restore script printed non-zero table counts for both `public` and `valorant`.
 - Count restored public tables and completed Prisma migrations.
 - Compare public/private file counts and byte totals with the source manifest or recorded production inventory.
 - Validate representative images and private proofs without exposing them.
@@ -282,7 +283,7 @@ A production restore requires an incident decision because it replaces applicati
    ```
 
 3. Preserve the current database and upload state when it is safe; evidence from the failed state may be needed for targeted recovery.
-4. Restore-test the selected archive on disposable infrastructure first.
+4. Restore-test the selected archive on disposable infrastructure first. Confirm the selected archive includes the `valorant` schema before restoring; a public-only archive restored over a project that already contains VALORANT data would drop it (`pg_restore --clean`).
 5. Prefer running the guarded restore from an isolated recovery host. Point `DIRECT_URL` at the approved database target and use empty recovery-host upload directories; keep the private identity off the production VPS. The script stages files before the transactional database restore and activates them only after it succeeds.
 6. If recovery was performed off-VPS, securely synchronize the verified recovered upload trees to the stopped VPS. Treat any deletion or directory replacement as destructive and verify exact absolute targets first. If the guarded script was run on the target host, record and retain the printed `.quest-previous-*` directories until business verification is complete, then remove them only under a separate approved cleanup.
 7. If a new Supabase project is used, update both production database URLs and rotate project/database credentials. Recreate required Supabase-managed settings separately.

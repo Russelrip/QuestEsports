@@ -380,7 +380,7 @@ The repository provides:
 - `ops/systemd/quest-esports-backup-freshness.service`
 - `ops/systemd/quest-esports-backup-freshness.timer`
 
-The backup includes a portable custom-format dump of the application-owned PostgreSQL `public` schema, public uploads, private payment evidence, and a manifest. Supabase-managed schemas and extensions are intentionally excluded because they are provisioned by Supabase and prevent portable restores on ordinary PostgreSQL. The archive is encrypted with an offline `age` recipient before upload through `rclone`. Keep the `age` private identity off the production VPS.
+The backup includes a portable custom-format dump of the application-owned PostgreSQL `public` and `valorant` schemas, public uploads, private payment evidence, and a manifest (which records `valorant_schema_included`). Supabase-managed schemas and extensions are intentionally excluded because they are provisioned by Supabase and prevent portable restores on ordinary PostgreSQL. The archive is encrypted with an offline `age` recipient before upload through `rclone`. Keep the `age` private identity off the production VPS.
 
 Install the prerequisites and configuration:
 

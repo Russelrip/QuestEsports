@@ -55,7 +55,7 @@ if [[ "$BACKUP_ROOT" == "/" || -L "$BACKUP_ROOT" ]]; then
   echo "BACKUP_ROOT must not be the filesystem root or a symbolic link." >&2
   exit 1
 fi
-for command in age basename cat chmod date find flock hostname mkdir mktemp pg_dump realpath rm rclone rsync sha256sum tar; do
+for command in age basename cat chmod date find flock hostname mkdir mktemp pg_dump psql realpath rm rclone rsync sha256sum tar; do
   command -v "$command" >/dev/null || {
     echo "Required backup command is unavailable: $command" >&2
     exit 1
@@ -96,6 +96,13 @@ checksum_path="$archive_path.sha256"
 work_directory="$(mktemp -d "$BACKUP_ROOT/.quest-backup-${timestamp}-XXXXXX")"
 trap 'rm -rf -- "$work_directory"' EXIT
 
+if ! valorant_probe="$(psql "$DIRECT_URL" -tAc "SELECT 1 FROM pg_namespace WHERE nspname = 'valorant'")"; then
+  echo "valorant schema probe failed" >&2
+  exit 1
+fi
+valorant_schema_exists=false
+[[ "$valorant_probe" == "1" ]] && valorant_schema_exists=true
+
 public_name="$(basename "$resolved_upload_root")"
 private_name="$(basename "$resolved_private_root")"
 mkdir -p "$work_directory/$public_name" "$work_directory/$private_name"
@@ -106,21 +113,40 @@ mkdir -p "$work_directory/$public_name" "$work_directory/$private_name"
 rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
 rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
 
-pg_dump "$DIRECT_URL" \
-  --format=custom \
-  --schema=public \
-  --no-owner \
-  --no-acl \
-  --file="$work_directory/database.dump"
+if [[ "$valorant_schema_exists" == true ]]; then
+  pg_dump "$DIRECT_URL" \
+    --format=custom \
+    --schema=public \
+    --schema=valorant \
+    --no-owner \
+    --no-acl \
+    --file="$work_directory/database.dump"
+else
+  # Transitional state: the VALORANT schema has not been migrated into this
+  # project yet; keep a public-only snapshot that is still restorable.
+  pg_dump "$DIRECT_URL" \
+    --format=custom \
+    --schema=public \
+    --no-owner \
+    --no-acl \
+    --file="$work_directory/database.dump"
+fi
 
 rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
 rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
+
+if [[ "$valorant_schema_exists" == true ]]; then
+  database_scope=application_public_and_valorant_schemas
+else
+  database_scope=application_public_schema_only
+fi
 
 cat > "$work_directory/manifest.txt" <<MANIFEST
 created_at_utc=$timestamp
 source_host=$hostname_value
 database_format=postgres_custom
-database_scope=application_public_schema_only
+database_scope=$database_scope
+valorant_schema_included=$valorant_schema_exists
 supabase_managed_schemas_included=false
 public_upload_root=$UPLOAD_ROOT
 private_upload_root=$PRIVATE_UPLOAD_ROOT
