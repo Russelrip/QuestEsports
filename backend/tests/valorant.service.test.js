@@ -235,7 +235,7 @@ test("listTeams fetches the FastAPI team catalog and joins it onto each binding"
   const clientMock = {
     valorantRequest: async ({ path, actorUserId, idempotent }) => {
       assert.equal(path, "/api/v1/teams");
-      assert.equal(actorUserId, null, "the admin team list read must be actor-less");
+      assert.equal(actorUserId, "user-1", "the admin team list read signs the acting admin as sub");
       assert.equal(idempotent, true);
       return { status: 200, data: fastapiTeams, requestId: "fastapi-req-20" };
     },
@@ -249,7 +249,7 @@ test("listTeams fetches the FastAPI team catalog and joins it onto each binding"
   });
 
   try {
-    const result = await service.listTeams();
+    const result = await service.listTeams({ actorUserId: "user-1" });
     assert.equal(result.length, 2);
     assert.equal(result[0].valorantTeam.id, "val-team-1", "joined team carries the FastAPI id");
     assert.equal(result[0].valorantTeam.name, "Quest Five");
@@ -873,7 +873,7 @@ test("getReconciliationReport classifies missing FastAPI series as orphaned via 
   });
 
   try {
-    const report = await service.getReconciliationReport();
+    const report = await service.getReconciliationReport({ actorUserId: "user-1" });
     assert.ok(report.orphaned.some((row) => row.id === "qs-2"));
     assert.ok(report.stuckOperations.length === 1);
   } finally {

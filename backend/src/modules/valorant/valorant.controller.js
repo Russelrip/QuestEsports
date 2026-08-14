@@ -25,7 +25,7 @@ const writeAudit = async (req, { targetType, targetId, afterData }) =>
   });
 
 const listTeams = asyncHandler(async (req, res) => {
-  const data = await valorantService.listTeams();
+  const data = await valorantService.listTeams({ actorUserId: req.user.id });
   res.status(200).json({ success: true, data: { bindings: data }, meta: { serverNow: new Date().toISOString() } });
 });
 
@@ -81,12 +81,12 @@ const importMatch = asyncHandler(async (req, res) => {
 });
 
 const getMatchByHenrikId = asyncHandler(async (req, res) => {
-  const match = await valorantService.getMatchByHenrikId({ henrikMatchId: req.params.henrikMatchId });
+  const match = await valorantService.getMatchByHenrikId({ henrikMatchId: req.params.henrikMatchId, actorUserId: req.user.id });
   res.status(200).json({ success: true, data: { match }, meta: { serverNow: new Date().toISOString() } });
 });
 
 const listMatches = asyncHandler(async (req, res) => {
-  const data = await valorantService.listMatches({ cursor: req.query.cursor, limit: req.query.limit });
+  const data = await valorantService.listMatches({ cursor: req.query.cursor, limit: req.query.limit, actorUserId: req.user.id });
   res.status(200).json({ success: true, data, meta: { serverNow: new Date().toISOString() } });
 });
 
@@ -155,7 +155,7 @@ const removeGame = asyncHandler(async (req, res) => {
 });
 
 const previewSeries = asyncHandler(async (req, res) => {
-  const preview = await valorantService.previewSeries({ seriesId: req.params.id });
+  const preview = await valorantService.previewSeries({ seriesId: req.params.id, actorUserId: req.user.id });
   res.status(200).json({ success: true, data: { preview }, meta: { serverNow: new Date().toISOString() } });
 });
 
@@ -177,22 +177,22 @@ const finalizeSeries = asyncHandler(async (req, res) => {
 });
 
 const getRankings = asyncHandler(async (req, res) => {
-  const rankings = await valorantService.getRankings();
+  const rankings = await valorantService.getRankings({ actorUserId: req.user.id });
   res.status(200).json({ success: true, data: { rankings }, meta: { serverNow: new Date().toISOString() } });
 });
 
 const getRatingHistory = asyncHandler(async (req, res) => {
-  const events = await valorantService.getRatingHistory({ teamId: req.params.teamId });
+  const events = await valorantService.getRatingHistory({ teamId: req.params.teamId, actorUserId: req.user.id });
   res.status(200).json({ success: true, data: { events }, meta: { serverNow: new Date().toISOString() } });
 });
 
 const getTeamSeries = asyncHandler(async (req, res) => {
-  const series = await valorantService.getTeamSeries({ teamId: req.params.teamId });
+  const series = await valorantService.getTeamSeries({ teamId: req.params.teamId, actorUserId: req.user.id });
   res.status(200).json({ success: true, data: { series }, meta: { serverNow: new Date().toISOString() } });
 });
 
 const getReconciliation = asyncHandler(async (req, res) => {
-  const report = await valorantService.getReconciliationReport();
+  const report = await valorantService.getReconciliationReport({ actorUserId: req.user.id });
   await writeAudit(req, { targetType: "valorant_reconciliation", targetId: null, afterData: { counts: { orphaned: report.orphaned.length, unprojected: report.unprojected.length, teamMissing: report.teamMissing.length, matchMissing: report.matchMissing.length, stuckOperations: report.stuckOperations.length } } });
   res.status(200).json({ success: true, data: { report }, meta: { serverNow: new Date().toISOString() } });
 });

@@ -71,13 +71,13 @@ const listBindings = async () =>
 // `{ bindings: [...] }` envelope intact and stays JSON-safe — a keyed-by-UUID
 // object would need its own response documentation, and a Map would not
 // survive res.json.
-const listTeams = async () => {
+const listTeams = async ({ actorUserId }) => {
   const [bindings, teamsResponse] = await Promise.all([
     listBindings(),
     valorantRequest({
       method: "GET",
       path: "/api/v1/teams",
-      actorUserId: null,
+      actorUserId,
       operationId: crypto.randomUUID(),
       idempotent: true,
     }),
@@ -248,25 +248,25 @@ const importMatch = async ({ henrikMatchId, affinity = "eu", actorUserId, reques
   return { match: mapMatchDetail(detail), created, projection };
 };
 
-const getMatchByHenrikId = async ({ henrikMatchId }) => {
+const getMatchByHenrikId = async ({ henrikMatchId, actorUserId }) => {
   const response = await valorantRequest({
     method: "GET",
     path: `/api/v1/matches/by-henrik-id/${encodeURIComponent(henrikMatchId)}`,
-    actorUserId: null,
+    actorUserId,
     operationId: crypto.randomUUID(),
     idempotent: true,
   });
   return mapMatchDetail(response.data);
 };
 
-const listMatches = async ({ cursor = null, limit = 25 } = {}) => {
+const listMatches = async ({ cursor = null, limit = 25, actorUserId } = {}) => {
   const query = new URLSearchParams();
   if (cursor) query.set("cursor", cursor);
   if (limit) query.set("limit", String(limit));
   const response = await valorantRequest({
     method: "GET",
     path: `/api/v1/matches${query.size ? `?${query}` : ""}`,
-    actorUserId: null,
+    actorUserId,
     operationId: crypto.randomUUID(),
     idempotent: true,
   });
@@ -537,12 +537,12 @@ const removeGame = async ({ seriesId, gameId, actorUserId, requestId, ipAddress 
   await markOperationSucceeded(operation.id, { status: 204, requestId: null, data: { gameId } });
 };
 
-const previewSeries = async ({ seriesId }) => {
+const previewSeries = async ({ seriesId, actorUserId }) => {
   const series = await requireSeriesWithUuid({ seriesId });
   const response = await valorantRequest({
     method: "GET",
     path: `/api/v1/series/${series.valorantSeriesUuid}/preview`,
-    actorUserId: null,
+    actorUserId,
     operationId: crypto.randomUUID(),
     idempotent: true,
   });
@@ -644,40 +644,40 @@ const reconcileSeries = async ({ seriesId, actorUserId, requestId, ipAddress }) 
   });
 };
 
-const getRankings = async () => {
+const getRankings = async ({ actorUserId }) => {
   const response = await valorantRequest({
     method: "GET",
     path: "/api/v1/rankings/teams",
-    actorUserId: null,
+    actorUserId,
     operationId: crypto.randomUUID(),
     idempotent: true,
   });
   return (response.data || []).map(mapRankingEntry);
 };
 
-const getRatingHistory = async ({ teamId }) => {
+const getRatingHistory = async ({ teamId, actorUserId }) => {
   const response = await valorantRequest({
     method: "GET",
     path: `/api/v1/teams/${encodeURIComponent(teamId)}/rating-history`,
-    actorUserId: null,
+    actorUserId,
     operationId: crypto.randomUUID(),
     idempotent: true,
   });
   return (response.data || []).map(mapRatingEvent);
 };
 
-const getTeamSeries = async ({ teamId }) => {
+const getTeamSeries = async ({ teamId, actorUserId }) => {
   const response = await valorantRequest({
     method: "GET",
     path: `/api/v1/teams/${encodeURIComponent(teamId)}/series`,
-    actorUserId: null,
+    actorUserId,
     operationId: crypto.randomUUID(),
     idempotent: true,
   });
   return (response.data || []).map(mapSeriesView);
 };
 
-const getReconciliationReport = async () => {
+const getReconciliationReport = async ({ actorUserId }) => {
   const [questSeries, bindings, matchProjections, stuckOperations] = await Promise.all([
     prisma.questValorantSeries.findMany({ select: { id: true, externalKey: true, valorantSeriesUuid: true, status: true } }),
     prisma.valorantTeamBinding.findMany({ select: { id: true, savedTeamId: true, valorantTeamUuid: true, status: true } }),
@@ -696,7 +696,7 @@ const getReconciliationReport = async () => {
     ? await valorantRequest({
         method: "GET",
         path: "/api/v1/series",
-        actorUserId: null,
+        actorUserId,
         operationId: crypto.randomUUID(),
         idempotent: true,
       })
@@ -721,7 +721,7 @@ const getReconciliationReport = async () => {
       await valorantRequest({
         method: "GET",
         path: `/api/v1/teams/${encodeURIComponent(binding.valorantTeamUuid)}`,
-        actorUserId: null,
+        actorUserId,
         operationId: crypto.randomUUID(),
         idempotent: true,
       });
@@ -736,7 +736,7 @@ const getReconciliationReport = async () => {
       await valorantRequest({
         method: "GET",
         path: `/api/v1/matches/${encodeURIComponent(projection.matchId)}`,
-        actorUserId: null,
+        actorUserId,
         operationId: crypto.randomUUID(),
         idempotent: true,
       });
