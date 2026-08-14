@@ -34,13 +34,20 @@ describe("VALORANT admin UI boundaries", () => {
     }
   });
 
-  it("bind form lists ALL SavedTeams from the admin directory and detach copy never implies deleting VALORANT history", () => {
+  it("bind form batch-binds unbound SavedTeams via checkboxes and the grid only shows active bindings", () => {
     const teamsManager = read("components/admin/valorant/ValorantTeamsManager.tsx");
     const bindingForm = read("components/admin/valorant/ValorantBindingForm.tsx");
     expect(teamsManager).toContain("useAdminTeams");
     expect(teamsManager).not.toContain("useTeams");
-    expect(bindingForm).toContain('label="Saved team to bind"');
-    expect(bindingForm).toContain("Bind to VALORANT");
+    expect(teamsManager).toContain('status === "active"');
+    expect(teamsManager).toContain(".filter(");
+    expect(bindingForm).toContain('type="checkbox"');
+    expect(bindingForm).toContain("Bind selected");
+    expect(bindingForm).toContain("bindValorantTeam");
+    expect(bindingForm).toContain("<fieldset");
+    expect(bindingForm).toContain("<legend");
+    expect(bindingForm).toContain("Saved team to bind");
+    expect(bindingForm).toContain("All of your SavedTeams are already bound.");
     expect(teamsManager).toContain("Detach binding");
     expect(teamsManager).toContain("Detaching never deletes VALORANT teams, series, or rating history.");
     expect(teamsManager).not.toContain("Re-activate");

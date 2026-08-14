@@ -23,6 +23,7 @@ export default function ValorantTeamsManager() {
   const [detaching, setDetaching] = useState(false);
 
   const bindings = bindingsQuery.data?.bindings ?? [];
+  const activeBindings = bindings.filter((b) => b.status === "active");
   const teams = teamsQuery.data ?? [];
   const loading = bindingsQuery.loading || teamsQuery.loading;
   const error = bindingsQuery.error || teamsQuery.error;
@@ -68,7 +69,7 @@ export default function ValorantTeamsManager() {
       ) : (
         <>
           <ValorantBindingForm teams={teams} bindings={bindings} onBound={async () => { await bindingsQuery.refetch(); }} />
-          {bindings.length === 0 ? (
+          {activeBindings.length === 0 ? (
             <ValorantEmptyState
               title="No bindings yet"
               description="Bind a SavedTeam to start running VALORANT series."
@@ -76,7 +77,7 @@ export default function ValorantTeamsManager() {
           ) : (
             <>
               <div className="grid gap-4 lg:grid-cols-2">
-                {bindings.map((binding) => (
+                {activeBindings.map((binding) => (
                   <Card key={binding.id} className="p-5">
                     <div className="flex min-w-0 items-start justify-between gap-4">
                       <div className="min-w-0">
