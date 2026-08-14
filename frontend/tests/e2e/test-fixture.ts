@@ -5,7 +5,7 @@ import { test as base, expect } from "@playwright/test";
 // has already closed. SSE authentication and delivery are covered by the API
 // integration suite; these tests continue to exercise notification loading.
 export const test = base.extend({
-  page: async ({ page }, use) => {
+  page: async ({ page }, providePage) => {
     await page.addInitScript(() => {
       class TestEventSource extends EventTarget {
         static readonly CONNECTING = 0;
@@ -38,7 +38,7 @@ export const test = base.extend({
       });
     });
 
-    await use(page);
+    await providePage(page);
   },
 });
 
