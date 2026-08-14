@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { buildApiUrl } from "@/lib/api";
+import { subscribeToRealtimeUpdates } from "@/lib/realtime";
 import { readVetoToken, type VetoAction, type VetoRoom, vetoRequest, vetoTokenHeaders } from "@/lib/veto";
 
 const label = (value: string) => value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -91,9 +92,8 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     const poll = window.setInterval(() => { if (document.visibilityState === "visible") void load(true); }, 5000);
-    const events = new EventSource(buildApiUrl(`/api/v1/events?topics=${encodeURIComponent(`veto:${code}`)}`), { withCredentials: true });
-    events.addEventListener("update", () => void load(true));
-    return () => { clearInterval(poll); events.close(); };
+    const closeRealtime = subscribeToRealtimeUpdates(`veto:${code}`, () => void load(true));
+    return () => { clearInterval(poll); closeRealtime(); };
   }, [code, load]);
   useEffect(() => setPendingDecision(null), [room?.revision]);
   useEffect(() => {
