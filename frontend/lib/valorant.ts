@@ -188,3 +188,27 @@ export const formatEloDelta = (before: string, after: string): string => {
   if (delta === 0) return "±0";
   return delta > 0 ? `+${delta}` : `${delta}`;
 };
+
+export type ValorantPlayerLeaderboardEntry = {
+  puuid: string;
+  name: string;
+  tag: string;
+  discordUsername: string;
+  currentTier: string | null;
+  elo: number | null;
+  rankInTier: number | null;
+  peakRank: string | null;
+  peakSeason: string | null;
+  lastPlayed: string | null;
+};
+
+export type ValorantPlayerLeaderboardPage = {
+  entries: ValorantPlayerLeaderboardEntry[];
+  total: number;
+  page: number;
+  perPage: number;
+  totalPages: number;
+};
+
+export const VALORANT_SL_REGISTER_URL =
+  process.env.NEXT_PUBLIC_VALORANT_SL_REGISTER_URL || "https://valorantsl.com/register";

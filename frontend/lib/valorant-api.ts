@@ -1,4 +1,5 @@
 import { adminRequest } from "./admin";
+import { fetchApiJson } from "./api";
 import { mapMatchSummary } from "./valorant";
 import type {
   Binding,
@@ -15,6 +16,8 @@ import type {
   SeriesViewLite,
   ValorantFormat,
   ValorantMatchSummary,
+  ValorantPlayerLeaderboardEntry,
+  ValorantPlayerLeaderboardPage,
   ValorantRatingMode,
   ValorantSide,
 } from "./valorant";
@@ -151,3 +154,31 @@ export const fetchValorantTeamSeries = (teamId: string) =>
 
 export const fetchValorantReconciliation = () =>
   valorantAdminRequest<{ report: ReconciliationReport }>("/api/v1/admin/valorant/reconciliation");
+
+export const fetchPublicValorantLeaderboard = async (
+  page = 1,
+  perPage = 50,
+): Promise<ValorantPlayerLeaderboardPage> => {
+  const params = new URLSearchParams();
+  params.set("page", String(page));
+  params.set("per_page", String(perPage));
+  const envelope = await fetchApiJson<{ data: ValorantPlayerLeaderboardPage }>(
+    `/api/v1/valorant/leaderboard?${params.toString()}`,
+    { next: { revalidate: 60 } },
+    "Leaderboard request failed.",
+  );
+  return envelope.data;
+};
+
+export const searchPublicValorantLeaderboard = async (
+  query: string,
+): Promise<ValorantPlayerLeaderboardEntry | null> => {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  const envelope = await fetchApiJson<{ data: { entry: ValorantPlayerLeaderboardEntry | null } }>(
+    `/api/v1/valorant/leaderboard/search?${params.toString()}`,
+    { next: { revalidate: 60 } },
+    "Leaderboard request failed.",
+  );
+  return envelope.data.entry;
+};

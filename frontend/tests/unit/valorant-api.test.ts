@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminRequest } from "../../lib/admin";
+import { fetchApiJson } from "../../lib/api";
 
 vi.mock("../../lib/admin", () => ({ adminRequest: vi.fn() }));
 const mockedRequest = vi.mocked(adminRequest);
+
+vi.mock("../../lib/api", () => ({ fetchApiJson: vi.fn() }));
+const mockedFetchApiJson = vi.mocked(fetchApiJson);
 
 const unwrap = <T>(payload: T) => ({ success: true as const, data: payload, meta: { serverNow: "2026-08-13T00:00:00Z" } });
 
@@ -144,5 +148,38 @@ describe("VALORANT admin API client", () => {
     expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/series/quest-series-1/games", {
       method: "POST", json: { gameNumber: 2, matchId: "val-match-1" },
     });
+  });
+});
+
+describe("VALORANT public leaderboard API client", () => {
+  it("fetches the paginated leaderboard via the public proxy", async () => {
+    mockedFetchApiJson.mockResolvedValueOnce({
+      success: true,
+      data: { entries: [], total: 0, page: 2, perPage: 25, totalPages: 1 },
+    } as never);
+    const { fetchPublicValorantLeaderboard } = await import("../../lib/valorant-api");
+    const result = await fetchPublicValorantLeaderboard(2, 25);
+    expect(result.entries).toEqual([]);
+    expect(result.perPage).toBe(25);
+    expect(mockedFetchApiJson).toHaveBeenCalledWith(
+      "/api/v1/valorant/leaderboard?page=2&per_page=25",
+      { next: { revalidate: 60 } },
+      "Leaderboard request failed.",
+    );
+  });
+
+  it("search unwraps the entry from the envelope", async () => {
+    mockedFetchApiJson.mockResolvedValueOnce({
+      success: true,
+      data: { entry: { puuid: "p-1", name: "Sahan", tag: "QST" } },
+    } as never);
+    const { searchPublicValorantLeaderboard } = await import("../../lib/valorant-api");
+    const result = await searchPublicValorantLeaderboard("sahan");
+    expect(result?.puuid).toBe("p-1");
+    expect(mockedFetchApiJson).toHaveBeenCalledWith(
+      "/api/v1/valorant/leaderboard/search?q=sahan",
+      { next: { revalidate: 60 } },
+      "Leaderboard request failed.",
+    );
   });
 });
