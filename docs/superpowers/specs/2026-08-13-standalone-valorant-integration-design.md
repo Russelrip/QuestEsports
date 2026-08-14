@@ -899,3 +899,75 @@ Each slice is independently shippable; later slices consume only the earlier sli
 - FastAPI models: `app/db/models/{team,series,series_game,match,match_player,player,rating_event}.py`; migrations `supabase/migrations/0001–0013` + runner `scripts/apply_migrations.py`.
 - FastAPI policy/rating: `app/domain/ratings/policy.py`, `app/services/rating_service.py`, `app/services/series_service.py`, `app/legacy/elo_calculator.py`.
 - FastAPI schemas: `app/schemas/{match_search,matches,series,teams}.py`; tests `tests/unit/*`, `tests/integration/*`, `tests/characterization/*`.
+
+---
+
+# Revision 3 (as-built)
+
+**Status:** Implemented and shipped across four phases (FastAPI contract → Quest backend → Quest admin UI → deployment/verification). This section is appended **after** the fact and records only the **deltas** between the rev-2 design above and what actually shipped. The rev-2 body above is the historical design and is **not** edited. No claim here should be read as design intent — everything below is verified against the shipped code and commit history.
+
+**Verification basis (read before trusting any claim):**
+- QuestEsports `chore/local-development-environment` @ `037142a` (head), Phase-2 `66c426a` → Phase-3 `296e66f` → Phase-4 `1ba6a86…1d882e1` → fixes `c0fe1f3`, `037142a`.
+- `valorant-platform-backend` `main` @ `5fe4ecc` (head), Phase-1 `882e30a` → deployment tasks `7b56ac4` (T1), `98742a1` (T2), `705bae3` (T6), `2389a69` (T7), `0abbe05` (T8), `5fe4ecc` (T9).
+- SDD ledgers: `.superpowers/sdd/2026-08-13-quest-valorant-admin-ui-plan/progress.md`, `.superpowers/sdd/2026-08-13-valorant-deployment-verification-plan/progress.md`.
+
+## R3.1 §4.3 model deltas — `QuestValorantSeries` gained `ratingMode` + anchor name/tag columns
+
+Shipped in Quest migration `backend/prisma/migrations/20260814050249_add_valorant_series_rating_and_anchors/migration.sql` (commit `296e66f`):
+
+```sql
+ALTER TABLE "quest_valorant_series" ADD COLUMN "anchor_player_a_name" TEXT,
+ADD COLUMN "anchor_player_a_tag" TEXT,
+ADD COLUMN "anchor_player_b_name" TEXT,
+ADD COLUMN "anchor_player_b_tag" TEXT,
+ADD COLUMN "rating_mode" TEXT;
+```
+
+- `ratingMode String?` (`rating_mode`) is persisted on the Quest row at **finalize** (`backend/src/modules/valorant/valorant.service.js` `finalizeSeries` updates `ratingMode` alongside `status = "finalized"`).
+- `anchorPlayerAName/ATag/BName/BTag` (all nullable) are persisted on the Quest series row at **create** (`valorant.service.js` `createSeries` stores `anchorPlayerAName/ATag/BName/BTag` from the normalized discovery inputs).
+- This resolves the rev-2 §4.3-vs-§9.3 contradiction **in favor of §9.3**: Quest keeps the anchor **name/tag** on its own series row; FastAPI resolves and persists the PUUIDs on its side (`series.anchor_a_puuid`/`anchor_b_puuid`, migration `0014_quest_integration.sql`).
+- The UI projection (`frontend/lib/valorant.ts` `QuestValorantSeries`) exposes `ratingMode` and the four anchor fields; the committed-series card shows the actual finalized `ratingMode` (not the draft `ratingModePreference`), and the preview anchor strip renders from the persisted anchors.
+- Related as-built addition not present in rev-2 §4.3: `QuestValorantSeriesGame` gained `valorantGameUuid String?` (`20260813210411_add_valorant_game_uuid`, Phase 2) to mirror the FastAPI `GameView.id` on attach.
+- Quest Prisma migration chain for the feature: `20260813202126_add_valorant_bindings_series_operations` → `20260813210411_add_valorant_game_uuid` → `20260813220931_add_valorant_detach_trigger_security_definer` (all Phase 2, `66c426a`) → `20260814050249_add_valorant_series_rating_and_anchors` (Phase 3, `296e66f`).
+
+## R3.2 §6.4 finalize envelope — `FinalizeResult` is FIRST-CLASS under `data`
+
+- The Quest `finalize` response surfaces `FinalizeResult` **first-class** under `data` — `res.json({ success: true, data: { ...result }, meta })` (`backend/src/modules/valorant/valorant.controller.js:176`), **not** nested under `data.result`. The controller carries a comment: "not nested under `data.result` — the controller test asserts".
+- `valorant.service.js` `finalizeSeries` returns `{ ...mapFinalizeResult(response.data), operationId: operation.operationId }`, so `data.operationId` is part of the result surface.
+- The Phase-3 frontend originally shipped the **wrong** shape: `valorantAdminRequest<{ result: FinalizeResult }>` (`lib/valorant-api.ts`) and a unit test mocking the same `{ result }` shape — a latent runtime bug (destructuring `const { result }` → `undefined` in `ValorantFinalizeForm.tsx`). It was caught by the Phase-4 E2E cross-phase review (deployment ledger Task 8) and corrected in commit `c0fe1f3` (wrapper generic, finalize form destructure, and unit-test mocks). The wrapper now types `valorantAdminRequest<FinalizeResult>` (first-class).
+- The two-service E2E harness asserts the correct shape: `finalize.body.events.length === 2` (deployment plan Task 8, commit `02dc19e`).
+
+## R3.3 §6.3 service token — `sub` is the admin actor id on EVERY request
+
+- As-built, `sub` in the signed token is the admin `users.id` on **every** Quest→FastAPI request — reads **and** writes. `backend/src/modules/valorant/valorant.auth.js` `buildServiceAuthHeaders({ actorUserId, operationId, externalKey })` puts `sub: actorUserId` into every signed token; the controller passes `req.user.id` into every service call.
+- **Defect fixed in `037142a`:** the initial Phase-2 read path passed `actorUserId: null` into `listTeams`, `getMatchByHenrikId`, `listMatches`, `previewSeries`, `getRankings`, `getRatingHistory`, `getTeamSeries`, `getReconciliationReport`, so those tokens carried `sub: null`. Commit `037142a` ("send admin actor id as service-token sub on read endpoints") threads `req.user.id` through all eight read handlers.
+- Token format as-built: `alg=HS256`, header `{alg, typ, kid}`; claims `{iss: "quest-esports", aud: "valorant-platform", sub, operation_id, iat, nbf = iat − 30s, exp = iat + 300s}` (Quest `TOKEN_TTL_SECONDS = 300`, `ALLOWED_CLOCK_SKEW_SECONDS = 30`).
+
+## R3.4 §7.4 RLS — option (a) implemented: explicit `val_runtime` policies via the migration runner
+
+- Rev-2 left a choice between (a) explicit per-table policies for the runtime role and (b) deliberate RLS-disabled + grants. **Option (a) shipped.**
+- `valorant-platform-backend/scripts/apply_migrations.py` `_apply_security_posture` (commit `7b56ac4`, deployment plan Task 1) now, when a runtime role is configured:
+  - `GRANT USAGE ON SCHEMA`, `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES`, `GRANT USAGE, SELECT ON ALL SEQUENCES`, plus matching `ALTER DEFAULT PRIVILEGES` to the runtime role;
+  - per application table, idempotently `DROP POLICY IF EXISTS {table}_runtime_all` then `CREATE POLICY {table}_runtime_all ON {table} FOR ALL TO {role} USING (true) WITH CHECK (true)`;
+  - `POLICY_EXCLUDED_TABLES = {"_migration_ledger"}` — the ledger is migrator-only and never gets a runtime policy.
+- The role is selected by the new `--runtime-role` CLI flag (or `DATABASE_RUNTIME_ROLE` env); the posture still runs when unset (owner-only development/test default). The policy is named `<table>_runtime_all`; the ledger comment in the shipped code reads "never granted to or protected for the runtime role" (RLS-without-policy blocks it; minor M2 in the ledger).
+- Verification: `scripts/verify_runtime_access.py` (positive probe + `--expect-denied`) and the `roles-rls` CI job (commit `98742a1`), which creates `val_runtime`/`quest_runtime`, applies migrations with `--runtime-role val_runtime`, asserts the VAL runtime can read/write `valorant`, and asserts the Quest runtime is denied.
+
+## R3.5 §7.6 backup — one consistent two-schema snapshot
+
+- `ops/backup-production.sh` (commit `1ba6a86`, deployment plan Task 5) probes for the `valorant` schema (`pg_namespace`); when present it dumps **both** `public` + `valorant` in a **single** custom-format snapshot (`--format=custom --schema=public --schema=valorant --no-owner --no-acl`), and the manifest records `database_scope=application_public_and_valorant_schemas` and `valorant_schema_included=true` (plus the pre-existing `supabase_managed_schemas_included=false`). Transitional public-only fallback keeps `database_scope=application_public_schema_only`.
+- `ops/restore-production-backup.sh` prints post-restore table counts for both `public` and `valorant`; fix round (ledger Ruling R3) made the restore verification **non-fatal** (it must not participate in the rollback/split-brain guard) and made the backup schema probe **loud-fail** rather than silently degrade to a public-only dump.
+
+## R3.6 Other ledger rulings / deferred items that materially shaped the design
+
+- **Reads are not audited operations** (Quest ledger D2): reads write neither `QuestValorantOperation` nor `AuditLog` rows — "every admin action" in §9.2 means **mutating** actions.
+- **Series-create retry dedupe** (Quest ledger D1): on whole-operation retry, the service reuses the `externalKey` stored on the operation ledger row (`quest_valorant_operations.external_key`) rather than generating a fresh one — combined with FastAPI `external_quest_series_id` create-or-get, a retried create converges.
+- **Import is projection-sync for MVP** (Quest ledger D3): match import is handled as an idempotent projection sync; no new `import` operation type was added.
+- **Schema-scope CI guard narrowed** (deployment ledger R5): the Quest `verify-prisma-schema-scope.js` guard was changed from `/\bvalorant\b/i` to schema-reference matching (`valorant\.|"valorant"`) to avoid false positives on the `valorant` game/slug seed data (commit `78b30ae`). The FastAPI migration-scope grep guard (`705bae3`) stays as-is.
+- **`QUEST_SERVICE_SHARED_SECRETS` is `kid=secret`** (deployment ledger Task-8 Critical): the format is `"kid1=secret1,kid2=secret2"` (equals-separated, `parse_secrets_map` in `app/api/service_token.py`); the E2E driver's original `e2e:${secret}` (colon) was corrected to `e2e=${secret}` before the harness could run.
+- **E2E timeout/unknown-outcome scenario not implemented** (deployment ledger Task-8 M2): the `E2E_DROP_FINALIZE_RESPONSE` opt-in test described in §11.4/plan Task 8 is a tracked follow-up, not shipped.
+- **§6.5 mapping as-built:** `backend/src/modules/valorant/valorant.client.js` `VALORANT_ERROR_MESSAGES` maps every rev-2 table row plus the observed `INTERNAL_ERROR`; `FastApiError` (definitive FastAPI code) vs `InternalServiceError` (transport/unknown, codes `valorant_unreachable`/`valorant_upstream_error`/`valorant_not_configured`) is the shipped classification. No assumed codes were added (fixture-tested).
+
+## R3.7 Release-blocker evidence status (ledgers)
+
+All six release blockers from the deployment plan are **code-satisfied**; the runtime **evidence** is still prospective (none runnable in-session): two-schema production backup restore drill, four-role/RLS verification against the production Supabase project, the two-service E2E live run against a provisioned project (`npm run test:valorant:e2e`), live gitleaks run, and green CI on pushed branches.
