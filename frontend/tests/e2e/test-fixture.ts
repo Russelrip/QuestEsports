@@ -1,4 +1,5 @@
 import { test as base, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 // Browser E2E tests use a short-lived HTTP mock. Stub persistent EventSource
 // connections so WebKit does not retain sockets from contexts that Playwright
@@ -44,3 +45,6 @@ export const test = base.extend({
 
 export { expect };
 export type { Page, Route } from "@playwright/test";
+
+export const openPage = (page: Page, url: string) =>
+  page.goto(url, { waitUntil: "domcontentloaded" });

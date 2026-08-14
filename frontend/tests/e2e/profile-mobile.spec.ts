@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "./test-fixture";
+import { expect, openPage, test, type Page } from "./test-fixture";
 
 const longText = "QuestPlayerWithAnExtremelyLongCompetitiveIdentityThatMustWrapWithoutBreakingTheViewport";
 const user = {
@@ -63,7 +63,7 @@ test("profile content fits narrow portrait and landscape viewports", async ({ pa
     { width: 844, height: 390 },
   ]) {
     await page.setViewportSize(viewport);
-    await page.goto("/profile");
+    await openPage(page, "/profile");
     await expect(page.getByRole("heading", { name: `${longText} Champion` })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 

@@ -1,7 +1,7 @@
-import { expect, test, type Route } from "./test-fixture";
+import { expect, openPage, test, type Route } from "./test-fixture";
 
 test("privacy policy page renders the app shell and policy content", async ({ page }) => {
-  await page.goto("/privacy-policy");
+  await openPage(page, "/privacy-policy");
 
   await expect(
     page.getByRole("banner").getByRole("link", { name: "Quest home" })
@@ -11,7 +11,7 @@ test("privacy policy page renders the app shell and policy content", async ({ pa
 });
 
 test("contact page includes both TikTok accounts, Gmail, and the WhatsApp community", async ({ page }) => {
-  await page.goto("/contact");
+  await openPage(page, "/contact");
 
   await expect(page.getByRole("link", { name: "@senumii" })).toHaveAttribute(
     "href",
@@ -51,7 +51,7 @@ test("contact page includes both TikTok accounts, Gmail, and the WhatsApp commun
 
 test("mobile layout stays within the viewport and opens navigation without page shift", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/privacy-policy");
+  await openPage(page, "/privacy-policy");
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
@@ -104,7 +104,7 @@ test("gallery album opens a full event photo inside a mobile viewport", async ({
   await page.route("**/api/uploads/**", fulfillTestImage);
   await page.route("**/api/event-albums/**/image*", fulfillTestImage);
 
-  await page.goto("/gallery");
+  await openPage(page, "/gallery");
   const albumLink = page.getByRole("link", { name: /Open Mobile Test Album, 1 photos?/ });
   await expect(albumLink).toHaveAttribute("href", "/gallery/mobile-test", { timeout: 15_000 });
   await albumLink.click();
@@ -130,14 +130,14 @@ test("gallery album opens a full event photo inside a mobile viewport", async ({
 });
 
 test("members page lists the named CODM leader without placeholder groups", async ({ page }) => {
-  await page.goto("/members");
+  await openPage(page, "/members");
   await expect(page.getByRole("heading", { name: "Ayodhya “LIEBE” Janz" })).toBeVisible();
   await expect(page.getByText("CODM Wing Leader")).toBeVisible();
   await expect(page.getByText("To Be Determined")).toHaveCount(0);
 });
 
 test("refund policy publishes customized product and tournament fee terms", async ({ page }) => {
-  await page.goto("/refund-policy");
+  await openPage(page, "/refund-policy");
   await expect(page.getByRole("heading", { name: "Refund & Return Policy" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customized merchandise" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Tournament registration fees" })).toBeVisible();
@@ -146,7 +146,7 @@ test("refund policy publishes customized product and tournament fee terms", asyn
 });
 
 test("production security policy permits only the configured PayHere form endpoints", async ({ page }) => {
-  const response = await page.goto("/privacy-policy");
+  const response = await openPage(page, "/privacy-policy");
   const policy = response?.headers()["content-security-policy"] || "";
   expect(policy).toContain("form-action 'self' https://sandbox.payhere.lk https://www.payhere.lk");
   expect(policy).not.toContain("form-action *");
@@ -172,7 +172,7 @@ test("Challonge public bracket is preloaded and reused without consuming REST re
     });
   });
 
-  await page.goto("/tournaments/challonge-test");
+  await openPage(page, "/tournaments/challonge-test");
   expect(bracketRequests).toBe(0);
   await expect(page.getByRole("heading", { name: "The tournament is over" })).toBeVisible();
   await expect(page.getByText("Quest Champions", { exact: true }).first()).toBeVisible();
@@ -204,13 +204,13 @@ test("recruitment deep links initialize all supported application types", async 
     body: JSON.stringify({ success: true, user: { id: "user-1", firstName: "Quest", lastName: "Player", email: "player@example.com", username: "questplayer", role: "user", emailVerified: true } }),
   }));
   for (const type of ["solo_player", "existing_team", "incomplete_team"]) {
-    await page.goto(`/join?type=${type}`);
+    await openPage(page, `/join?type=${type}`);
     await expect(page.getByLabel("Application Type")).toHaveValue(type);
   }
 });
 
 test("legacy generic tournament registration page is removed", async ({ page }) => {
-  const response = await page.goto("/tournament-registration");
+  const response = await openPage(page, "/tournament-registration");
   expect(response?.status()).toBe(404);
   await expect(page.getByRole("combobox", { name: /tournament/i })).toHaveCount(0);
 });
@@ -242,7 +242,7 @@ test("cart uses a server quote and clearly disables checkout without PayHere", a
     contentType: "application/json",
     body: JSON.stringify({ success: true, quote: { currency: "LKR", subtotal: 7000, deliveryFee: 500, total: 7500, items: [] } }),
   }));
-  await page.goto("/shop/cart");
+  await openPage(page, "/shop/cart");
   await expect(page.getByText("Total LKR 7500.00")).toBeVisible();
   await expect(page.getByText(/no order or stock reservation has been created/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Online payment unavailable" })).toBeDisabled();
@@ -306,7 +306,7 @@ test("private order status keeps the capability in the fragment and API header",
     });
   });
 
-  await page.goto(`/shop/order#token=${token}`);
+  await openPage(page, `/shop/order#token=${token}`);
   await expect(page.getByRole("heading", { name: "Payment confirmed" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Order summary" })).toBeVisible();
   await expect(page.getByText("Total LKR 7500.00")).toBeVisible();
@@ -340,7 +340,7 @@ test("failed logout keeps the authenticated UI and warns that the server session
     body: JSON.stringify({ success: false, message: "Logout failed." }),
   }));
 
-  await page.goto("/privacy-policy");
+  await openPage(page, "/privacy-policy");
   const desktopUserMenu = page.getByRole("button", { name: /questplayer/i });
   const usesDesktopMenu = (page.viewportSize()?.width || 0) >= 1024;
   if (usesDesktopMenu) {
@@ -366,7 +366,7 @@ test("admin guard shows a retry state instead of redirecting when session lookup
     body: JSON.stringify({ success: false, message: "Session service unavailable." }),
   }));
 
-  await page.goto("/admin");
+  await openPage(page, "/admin");
   await expect(page.getByRole("heading", { name: "Admin access could not be checked" })).toBeVisible();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
@@ -427,7 +427,7 @@ test("event album admin loads legacy poster tools once without a request loop", 
     });
   });
 
-  await page.goto("/admin/event-albums");
+  await openPage(page, "/admin/event-albums");
   await expect(page.getByRole("heading", { name: "Event Albums" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Create album" })).toBeVisible();
   await expect.poll(() => posterStudioRequests).toBe(1);
@@ -474,7 +474,7 @@ test("mobile admin teams use contained cards with accessible navigation and acti
     }),
   }));
 
-  await page.goto("/admin/teams");
+  await openPage(page, "/admin/teams");
   await expect(page.getByRole("heading", { name: "Teams", exact: true })).toBeVisible();
   await expect(page.getByText("Admin section")).toBeVisible();
   await expect(page.locator("table")).toBeHidden();
