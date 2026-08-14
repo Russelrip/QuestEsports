@@ -87,6 +87,7 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
       "GET /admin/valorant/series",
       "GET /admin/valorant/series/:id",
       "DELETE /admin/valorant/series/:id",
+      "GET /admin/valorant/series/:seriesId/matches",
       "POST /admin/valorant/series/:id/games",
       "PUT /admin/valorant/series/:id/games/order",
       "DELETE /admin/valorant/series/:id/games/:gameId",

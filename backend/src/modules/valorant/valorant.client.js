@@ -52,6 +52,7 @@ const VALORANT_ERROR_MESSAGES = {
   RATING_POLICY_REQUIRED: "Choose an explicit rating policy and reason",
   INVALID_SIDE_MAPPING: "Invalid side mapping",
   ANCHOR_MISMATCH: "Anchor player not verified on one side of a map — override required",
+  ANCHOR_NOT_IN_MATCH: "That match is not between the two anchored players.",
   BACKDATED_SERIES_REJECTED: "Cannot rate a series older than the latest rated series",
 };
 

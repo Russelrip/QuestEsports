@@ -1,6 +1,25 @@
 // FastAPI snake_case payloads -> Quest camelCase projections (spec §6.4).
 // Field names come from the recorded contract (app/schemas/*.py); never invent fields.
 
+// Match Library list item (GET /api/v1/matches summaries) plus the series
+// anchor side (GET /api/v1/series/{id}/matches): the same summary fields the
+// existing list surface returns, with anchorASide (red|blue|null) appended.
+const mapMatchSummary = (match) => ({
+  matchId: match.id,
+  henrikMatchId: match.henrik_match_id,
+  affinity: match.affinity,
+  platform: match.platform,
+  mapName: match.map_name,
+  mode: match.mode ?? null,
+  queue: match.queue ?? null,
+  startedAt: match.started_at,
+  isCompleted: match.is_completed,
+  redScore: match.red_score ?? null,
+  blueScore: match.blue_score ?? null,
+  winningSide: match.winning_side === "red" || match.winning_side === "blue" ? match.winning_side : null,
+  anchorASide: match.anchor_a_side === "red" || match.anchor_a_side === "blue" ? match.anchor_a_side : null,
+});
+
 const mapMatchCandidate = (candidate) => ({
   henrikMatchId: candidate.match_id,
   affinity: candidate.affinity,
@@ -130,6 +149,7 @@ const mapRankingEntry = (entry) => ({
 
 module.exports = {
   mapMatchCandidate,
+  mapMatchSummary,
   mapMatchDetail,
   mapGameView,
   mapSeriesView,

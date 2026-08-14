@@ -90,6 +90,11 @@ const listMatches = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data, meta: { serverNow: new Date().toISOString() } });
 });
 
+const listSeriesMatches = asyncHandler(async (req, res) => {
+  const matches = await valorantService.listSeriesMatches({ seriesId: req.params.seriesId, actorUserId: req.user.id });
+  res.status(200).json({ success: true, data: { matches }, meta: { serverNow: new Date().toISOString() } });
+});
+
 const createSeries = asyncHandler(async (req, res) => {
   requireBody(req.body, ["bindingTeamAId", "bindingTeamBId", "format", "playedAt", "anchorPlayerA", "anchorPlayerB"]);
   const playedAt = new Date(req.body.playedAt);
@@ -127,7 +132,9 @@ const deleteSeries = asyncHandler(async (req, res) => {
 });
 
 const attachGame = asyncHandler(async (req, res) => {
-  requireBody(req.body, ["gameNumber", "matchId", "teamASide"]);
+  // teamASide is optional — FastAPI derives the side from the anchors when
+  // omitted. Only gameNumber and matchId are required.
+  requireBody(req.body, ["gameNumber", "matchId"]);
   const game = await valorantService.attachGame({
     seriesId: req.params.id,
     gameNumber: req.body.gameNumber,
@@ -205,6 +212,7 @@ module.exports = {
   importMatch,
   getMatchByHenrikId,
   listMatches,
+  listSeriesMatches,
   createSeries,
   listSeries,
   getSeries,

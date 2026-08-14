@@ -857,6 +857,9 @@ const additionalPaths = {
     get: createOperation("valorant", "Get a Quest VALORANT series projection", { authenticated: true }),
     delete: createOperation("valorant", "Delete a draft VALORANT series", { authenticated: true }),
   },
+  "/api/v1/admin/valorant/series/{seriesId}/matches": {
+    get: createOperation("valorant", "List matches relevant to a series (anchor-aware, with anchor side)", { authenticated: true }),
+  },
   "/api/v1/admin/valorant/series/{id}/games": {
     post: createOperation("valorant", "Attach an imported match as a game with side mapping", { authenticated: true }),
   },

@@ -550,6 +550,164 @@ test("attachGame sends the VAL match UUID as match_id and mirrors the returned g
   }
 });
 
+test("listSeriesMatches proxies the series matches endpoint and maps each summary with anchorASide", async () => {
+  const rawMatches = [
+    {
+      id: "00000000-0000-4000-8000-00000000000e",
+      henrik_match_id: "abcdef0123456789",
+      affinity: "eu",
+      platform: "pc",
+      map_name: "Ascent",
+      mode: "Standard",
+      queue: "unrated",
+      started_at: "2026-08-01T14:30:00Z",
+      is_completed: true,
+      red_score: 13,
+      blue_score: 8,
+      winning_side: "red",
+      anchor_a_side: "red",
+    },
+    {
+      id: "00000000-0000-4000-8000-00000000000f",
+      henrik_match_id: "fedcba9876543210",
+      affinity: "eu",
+      platform: "pc",
+      map_name: "Bind",
+      started_at: "2026-08-01T15:00:00Z",
+      is_completed: false,
+      anchor_a_side: null,
+    },
+  ];
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async () => ({ id: "quest-series-1", valorantSeriesUuid: "series-uuid-1", status: "draft" }),
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ path, actorUserId, idempotent }) => {
+      assert.equal(path, "/api/v1/series/series-uuid-1/matches");
+      assert.equal(actorUserId, "user-1");
+      assert.equal(idempotent, true);
+      return { status: 200, data: { matches: rawMatches }, requestId: "fastapi-req-18" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapMatchSummary: (m) => ({ matchId: m.id, henrikMatchId: m.henrik_match_id, anchorASide: m.anchor_a_side }) },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const matches = await service.listSeriesMatches({ seriesId: "quest-series-1", actorUserId: "user-1" });
+    assert.equal(matches.length, 2);
+    assert.equal(matches[0].henrikMatchId, "abcdef0123456789");
+    assert.equal(matches[0].anchorASide, "red");
+    assert.equal(matches[1].anchorASide, null);
+  } finally {
+    restore();
+  }
+});
+
+test("listSeriesMatches 404s when the Quest series has no VALORANT series yet", async () => {
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async () => ({ id: "quest-series-1", status: "draft", valorantSeriesUuid: null }),
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => { throw new Error("must not call"); } },
+    [mapperPath]: {},
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+  try {
+    await assert.rejects(
+      service.listSeriesMatches({ seriesId: "quest-series-1", actorUserId: "user-1" }),
+      (error) => error instanceof HttpError && error.statusCode === 409,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("attachGame omits team_a_side from the request body when the caller omits it", async () => {
+  const gameView = {
+    id: "game-2",
+    game_number: 1,
+    match_id: "00000000-0000-4000-8000-00000000000e",
+    map_name: "Ascent",
+    team_a_side: "red",
+    team_b_side: "blue",
+    team_a_rounds: 13,
+    team_b_rounds: 8,
+    winner_team_id: "val-team-1",
+  };
+  let sentBody;
+  let operationRequestBodyHash;
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async () => ({ id: "quest-series-1", valorantSeriesUuid: "series-uuid-1", status: "draft" }),
+      },
+      questValorantOperation: {
+        create: async ({ data }) => {
+          operationRequestBodyHash = data.requestBodyHash;
+          return { id: "op-row-19", ...data };
+        },
+        update: async () => ({}),
+      },
+      questValorantSeriesGame: {
+        create: async ({ data }) => ({ id: "mirror-game-2", ...data }),
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ path, body }) => {
+      assert.equal(path, "/api/v1/series/series-uuid-1/games");
+      sentBody = body;
+      return { status: 201, data: gameView, requestId: "fastapi-req-19" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: {
+      mapGameView: (g) => ({ id: g.id, gameNumber: g.game_number, matchId: g.match_id, mapName: g.map_name, teamASide: g.team_a_side, teamBSide: g.team_b_side }),
+      mapSeriesView: () => ({}),
+    },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const mirrored = await service.attachGame({
+      seriesId: "quest-series-1",
+      gameNumber: 1,
+      matchId: "00000000-0000-4000-8000-00000000000e",
+      teamASide: undefined,
+      actorUserId: "user-1",
+      requestId: "req-19",
+      ipAddress: "127.0.0.1",
+    });
+    assert.deepEqual(sentBody, { match_id: "00000000-0000-4000-8000-00000000000e", game_number: 1 });
+    assert.equal(
+      operationRequestBodyHash,
+      crypto.createHash("sha256").update(JSON.stringify({ match_id: "00000000-0000-4000-8000-00000000000e", game_number: 1 })).digest("hex"),
+      "the operation records the exact body sent upstream (no team_a_side)",
+    );
+    assert.equal(mirrored.teamASide, "red", "the derived side still lands on the mirrored projection");
+  } finally {
+    restore();
+  }
+});
+
 test("setGameOrder sends the full absolute desired order and converges on retry", async () => {
   let orderBodies = 0;
   const updatedOrder = [];

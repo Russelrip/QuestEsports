@@ -123,6 +123,7 @@ router.post("/admin/valorant/series", valorantController.createSeries);
 router.get("/admin/valorant/series", valorantController.listSeries);
 router.get("/admin/valorant/series/:id", valorantController.getSeries);
 router.delete("/admin/valorant/series/:id", valorantController.deleteSeries);
+router.get("/admin/valorant/series/:seriesId/matches", valorantController.listSeriesMatches);
 router.post("/admin/valorant/series/:id/games", valorantController.attachGame);
 router.put("/admin/valorant/series/:id/games/order", valorantController.setGameOrder);
 router.delete("/admin/valorant/series/:id/games/:gameId", valorantController.removeGame);

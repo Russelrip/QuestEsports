@@ -8,6 +8,61 @@ const mapperPath = path.join(__dirname, "../src/modules/valorant/valorant.mapper
 
 const loadMapper = () => loadModuleWithMocks(mapperPath, {});
 
+test("mapMatchSummary mirrors the GET /matches summary plus anchorASide", () => {
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapMatchSummary({
+    id: "00000000-0000-4000-8000-00000000000e",
+    henrik_match_id: "abcdef0123456789",
+    affinity: "eu",
+    platform: "pc",
+    map_name: "Ascent",
+    mode: "Standard",
+    queue: "unrated",
+    started_at: "2026-08-01T14:30:00Z",
+    is_completed: true,
+    red_score: 13,
+    blue_score: 8,
+    winning_side: "red",
+    anchor_a_side: "red",
+  });
+  assert.deepEqual(mapped, {
+    matchId: "00000000-0000-4000-8000-00000000000e",
+    henrikMatchId: "abcdef0123456789",
+    affinity: "eu",
+    platform: "pc",
+    mapName: "Ascent",
+    mode: "Standard",
+    queue: "unrated",
+    startedAt: "2026-08-01T14:30:00Z",
+    isCompleted: true,
+    redScore: 13,
+    blueScore: 8,
+    winningSide: "red",
+    anchorASide: "red",
+  });
+});
+
+test("mapMatchSummary normalizes unknown sides to null", () => {
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapMatchSummary({
+    id: "00000000-0000-4000-8000-00000000000f",
+    henrik_match_id: "fedcba9876543210",
+    affinity: "eu",
+    platform: "pc",
+    map_name: "Bind",
+    started_at: "2026-08-01T15:00:00Z",
+    is_completed: false,
+    winning_side: "spectator",
+    anchor_a_side: null,
+  });
+  assert.equal(mapped.winningSide, null);
+  assert.equal(mapped.anchorASide, null);
+  assert.equal(mapped.redScore, null);
+  assert.equal(mapped.blueScore, null);
+  assert.equal(mapped.mode, null);
+  assert.equal(mapped.queue, null);
+});
+
 test("mapMatchCandidate keeps only the fields the current MatchCandidate returns", () => {
   const candidate = require("./fixtures/valorant/match-candidate.json");
   const { module: mapper } = loadMapper();

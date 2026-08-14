@@ -147,6 +147,24 @@ test("valorantRequest surfaces a documented 401 as FastApiError, not an internal
   }
 });
 
+test("valorantRequest maps ANCHOR_NOT_IN_MATCH to the admin-facing message", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse(409, {
+    error: { code: "ANCHOR_NOT_IN_MATCH", message: "not between anchors" },
+  });
+  try {
+    const { module: client } = loadClient();
+    await assert.rejects(
+      client.valorantRequest({ method: "GET", path: "/api/v1/series/x/matches", actorUserId: "user-1", operationId: "op-6b" }),
+      (error) => error instanceof client.FastApiError
+        && error.code === "ANCHOR_NOT_IN_MATCH"
+        && error.message === "That match is not between the two anchored players.",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("valorantRequest maps a body-read AbortError to InternalServiceError (no retry for mutations)", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({

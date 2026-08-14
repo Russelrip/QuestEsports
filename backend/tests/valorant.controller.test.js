@@ -105,6 +105,79 @@ test("finalizeSeries controller records the operation id in the audit afterData"
   }
 });
 
+test("listSeriesMatches returns the matches envelope under data.matches", async () => {
+  const serviceMock = {
+    listSeriesMatches: async ({ seriesId, actorUserId }) => {
+      assert.equal(seriesId, "quest-series-1");
+      assert.equal(actorUserId, "admin-1");
+      return [{ matchId: "m-1", anchorASide: "red" }];
+    },
+  };
+  const auditMock = { requestAuditContext: () => ({}), recordAudit: async () => {} };
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [auditPath]: auditMock,
+    [asyncHandlerPath]: { asyncHandler },
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const { res, nextErrors } = await callHandler(controller.listSeriesMatches, {
+      user: { id: "admin-1" },
+      requestId: "req-4",
+      ip: "127.0.0.1",
+      params: { seriesId: "quest-series-1" },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.success, true);
+    assert.equal(res.payload.data.matches[0].matchId, "m-1");
+    assert.equal(res.payload.data.matches[0].anchorASide, "red");
+    assert.ok(res.payload.meta.serverNow);
+    assert.deepEqual(nextErrors, []);
+  } finally {
+    restore();
+  }
+});
+
+test("attachGame controller accepts a request without teamASide (derived server-side)", async () => {
+  const audits = [];
+  const serviceMock = {
+    attachGame: async ({ seriesId, gameNumber, matchId, teamASide }) => ({
+      id: "game-1",
+      gameNumber,
+      matchId,
+      teamASide: teamASide ?? "red",
+      teamBSide: teamASide === "red" ? "blue" : "red",
+    }),
+  };
+  const auditMock = {
+    requestAuditContext: (req) => ({ actorUserId: req.user?.id, requestId: req.requestId, ipAddress: req.ip }),
+    recordAudit: async (entry) => audits.push(entry),
+  };
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [auditPath]: auditMock,
+    [asyncHandlerPath]: { asyncHandler },
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const { res, nextErrors } = await callHandler(controller.attachGame, {
+      user: { id: "admin-1" },
+      requestId: "req-5",
+      ip: "127.0.0.1",
+      params: { id: "quest-series-1" },
+      body: { gameNumber: 1, matchId: "m-1" },
+    });
+    assert.equal(res.statusCode, 201);
+    assert.equal(res.payload.data.game.teamASide, "red", "the derived side comes back from FastAPI");
+    assert.deepEqual(nextErrors, []);
+    assert.equal(audits.length, 1);
+  } finally {
+    restore();
+  }
+});
+
 test("controller propagates HttpError through next()", async () => {
   const serviceMock = {
     bindTeam: async () => { throw new HttpError(409, "already bound"); },

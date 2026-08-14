@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { valorantRequest, FastApiError } = require("./valorant.client");
-const { mapTeamResponse, mapMatchCandidate, mapMatchDetail, mapSeriesView, mapGameView, mapPreview, mapFinalizeResult, mapRankingEntry, mapRatingEvent } = require("./valorant.mapper");
+const { mapTeamResponse, mapMatchCandidate, mapMatchSummary, mapMatchDetail, mapSeriesView, mapGameView, mapPreview, mapFinalizeResult, mapRankingEntry, mapRatingEvent } = require("./valorant.mapper");
 const { normalizeRiotId, generateExternalKey, assertSupportedFormat } = require("./valorant.validation");
 
 const hashRequestBody = (body) =>
@@ -273,6 +273,20 @@ const listMatches = async ({ cursor = null, limit = 25, actorUserId } = {}) => {
   return response.data;
 };
 
+// Series-relevant matches (spec: GET /api/v1/series/{series_id}/matches):
+// every match between the two anchored players, each carrying the anchor side.
+const listSeriesMatches = async ({ seriesId, actorUserId }) => {
+  const series = await requireSeriesWithUuid({ seriesId });
+  const response = await valorantRequest({
+    method: "GET",
+    path: `/api/v1/series/${series.valorantSeriesUuid}/matches`,
+    actorUserId,
+    operationId: crypto.randomUUID(),
+    idempotent: true,
+  });
+  return (response.data.matches || []).map(mapMatchSummary);
+};
+
 const requireSeriesWithUuid = async ({ seriesId, status }) => {
   const series = await prisma.questValorantSeries.findUnique({
     where: { id: seriesId },
@@ -431,11 +445,14 @@ const deleteSeries = async ({ seriesId, actorUserId, requestId, ipAddress }) => 
 
 const attachGame = async ({ seriesId, gameNumber, matchId, teamASide, actorUserId, requestId, ipAddress }) => {
   const series = await requireSeriesWithUuid({ seriesId, status: "draft" });
+  // teamASide is optional: FastAPI derives the side mapping from the anchors
+  // when omitted. Keep passing it through verbatim when the caller provides it.
+  const attachBody = { match_id: matchId, game_number: gameNumber, ...(teamASide ? { team_a_side: teamASide } : {}) };
   const operation = await createOperation({
     type: "attach_game",
     questSeriesId: series.id,
     actorUserId,
-    requestBody: { match_id: matchId, game_number: gameNumber, team_a_side: teamASide },
+    requestBody: attachBody,
   });
   await prisma.questValorantOperation.update({ where: { id: operation.id }, data: { status: "in_flight" } });
   let response;
@@ -443,7 +460,7 @@ const attachGame = async ({ seriesId, gameNumber, matchId, teamASide, actorUserI
     response = await valorantRequest({
       method: "POST",
       path: `/api/v1/series/${series.valorantSeriesUuid}/games`,
-      body: { match_id: matchId, game_number: gameNumber, team_a_side: teamASide },
+      body: attachBody,
       actorUserId,
       operationId: operation.operationId,
       idempotent: false,
@@ -761,6 +778,7 @@ module.exports = {
   importMatch,
   getMatchByHenrikId,
   listMatches,
+  listSeriesMatches,
   upsertMatchProjection,
   requireSeriesWithUuid,
   createSeries,
