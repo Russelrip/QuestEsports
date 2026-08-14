@@ -90,6 +90,61 @@ test("mobile layout stays within the viewport and opens navigation without page 
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollPosition);
 });
 
+test("notifications stay grouped with the signed-in account on desktop and mobile", async ({ page }) => {
+  await page.route("**/api/me", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      user: {
+        id: "user-notifications",
+        firstName: "Quest",
+        lastName: "Player",
+        email: "player@example.com",
+        username: "questplayer",
+        role: "user",
+        emailVerified: true,
+      },
+    }),
+  }));
+
+  await openPage(page, "/privacy-policy");
+  const usesDesktopMenu = (page.viewportSize()?.width || 0) >= 1024;
+
+  if (usesDesktopMenu) {
+    const accountButton = page.getByRole("button", { name: /questplayer/i });
+    const notificationsButton = page.getByRole("button", { name: "0 unread notifications" });
+    await expect(accountButton).toBeVisible();
+    await expect(notificationsButton).toBeVisible();
+    await notificationsButton.click();
+
+    const notificationsPanel = page.getByText("Match updates stay in the app").locator("../../..");
+    await expect(notificationsPanel).toBeVisible();
+    const accountBox = await accountButton.boundingBox();
+    const panelBox = await notificationsPanel.boundingBox();
+    expect(accountBox).not.toBeNull();
+    expect(panelBox).not.toBeNull();
+    expect(Math.abs((accountBox?.x || 0) + (accountBox?.width || 0) - (panelBox?.x || 0) - (panelBox?.width || 0))).toBeLessThanOrEqual(2);
+
+    await accountButton.click();
+    await expect(notificationsPanel).toBeHidden();
+    await expect(page.getByRole("link", { name: "Profile", exact: true })).toBeVisible();
+  } else {
+    await page.getByRole("banner").getByRole("button", { name: "Open navigation" }).click();
+    const identity = page.getByRole("link", { name: /questplayer verified account/i });
+    const notificationsButton = page.getByRole("button", { name: "0 unread notifications" });
+    await expect(identity).toBeVisible();
+    await expect(notificationsButton).toBeVisible();
+    const identityBox = await identity.boundingBox();
+    const notificationsBox = await notificationsButton.boundingBox();
+    expect(identityBox).not.toBeNull();
+    expect(notificationsBox).not.toBeNull();
+    expect(notificationsBox?.y || 0).toBeGreaterThan((identityBox?.y || 0) + (identityBox?.height || 0));
+    await notificationsButton.click();
+    await expect(page.getByText("Match updates stay in the app")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+});
+
 test("gallery album opens a full event photo inside a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fulfillTestImage = (route: Route) =>
