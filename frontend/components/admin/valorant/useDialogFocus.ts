@@ -42,7 +42,22 @@ export function useDialogFocus({
         return;
       }
 
-      if (event.key !== "Tab" || focusable.length === 0) return;
+      if (event.key !== "Tab") return;
+
+      const container = containerRef.current;
+      if (!container) return;
+
+      const focusable = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      if (!container.contains(document.activeElement)) {
+        event.preventDefault();
+        focusable[0].focus();
+        return;
+      }
 
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
