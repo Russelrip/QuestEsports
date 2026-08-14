@@ -28,7 +28,7 @@ describe("VALORANT admin API client", () => {
   });
 
   it("sends the exact finalize body with nullable winner and reason", async () => {
-    mockedRequest.mockResolvedValueOnce(unwrap({ result: { seriesId: "s-1", status: "finalized", operationId: "op-1" } }));
+    mockedRequest.mockResolvedValueOnce(unwrap({ seriesId: "s-1", status: "finalized", operationId: "op-1" }));
     const { finalizeValorantSeries } = await import("../../lib/valorant-api");
     await finalizeValorantSeries("quest-series-1", { ratingMode: "normal", officialWinnerTeamId: null, overrideReason: null });
     expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/series/quest-series-1/finalize", {
@@ -84,7 +84,7 @@ describe("VALORANT admin API client", () => {
   });
 
   it("sends a manual-override body with winner and reason", async () => {
-    mockedRequest.mockResolvedValueOnce(unwrap({ result: { seriesId: "s-1", status: "finalized", operationId: "op-2" } }));
+    mockedRequest.mockResolvedValueOnce(unwrap({ seriesId: "s-1", status: "finalized", operationId: "op-2" }));
     const { finalizeValorantSeries } = await import("../../lib/valorant-api");
     await finalizeValorantSeries("s-1", { ratingMode: "manual_override", officialWinnerTeamId: "val-team-1", overrideReason: "Anchor mismatch override" });
     expect(mockedRequest).toHaveBeenCalledWith("/api/v1/admin/valorant/series/s-1/finalize", {

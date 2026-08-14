@@ -118,7 +118,7 @@ export const fetchValorantPreview = (seriesId: string) =>
 
 export const finalizeValorantSeries = (seriesId: string, input: {
   ratingMode: ValorantRatingMode; officialWinnerTeamId?: string | null; overrideReason?: string | null;
-}) => valorantAdminRequest<{ result: FinalizeResult }>(
+}) => valorantAdminRequest<FinalizeResult>(
   `/api/v1/admin/valorant/series/${encodeURIComponent(seriesId)}/finalize`,
   { method: "POST", json: input }
 );

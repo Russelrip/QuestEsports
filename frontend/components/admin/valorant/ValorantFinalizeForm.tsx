@@ -61,7 +61,7 @@ export default function ValorantFinalizeForm({
     setSubmitting(true);
     setError("");
     try {
-      const { result } = await finalizeValorantSeries(seriesId, {
+      const result = await finalizeValorantSeries(seriesId, {
         ratingMode,
         officialWinnerTeamId: officialWinnerTeamId ?? null,
         overrideReason: overrideReason.trim() || null,
