@@ -230,6 +230,47 @@ test("public album photo lookup is constrained to a published album", async () =
   }
 });
 
+test("public album downloads prefer the preserved original when downloads are allowed", async () => {
+  let optimizedReads = 0;
+  let originalReads = 0;
+  const prisma = {
+    albumPhoto: {
+      findFirst: async () => ({
+        imageAssetId: "asset-1",
+        imageAsset: { originalName: "photo.jpg" },
+        album: { allowDownloads: true },
+      }),
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [mediaServicePath]: {
+      createImageAssets: async () => [],
+      deleteUnusedImageAsset: async () => {},
+      getImageAssetById: async () => {
+        optimizedReads += 1;
+        return { contentType: "image/webp", data: Buffer.from("preview") };
+      },
+      getImageAssetDownloadById: async () => {
+        originalReads += 1;
+        return { contentType: "image/jpeg", data: Buffer.from("original") };
+      },
+    },
+  });
+  try {
+    const photo = await service.getPublicEventAlbumPhoto({
+      slug: "Quest Finals",
+      photoId: "photo-1",
+      preferOriginal: true,
+    });
+    assert.equal(originalReads, 1);
+    assert.equal(optimizedReads, 0);
+    assert.equal(photo.contentType, "image/jpeg");
+  } finally {
+    restore();
+  }
+});
+
 test("album photo retries skip filenames already stored in the album", async () => {
   const createdAt = new Date("2026-08-12T00:00:00.000Z");
   let createCalls = 0;

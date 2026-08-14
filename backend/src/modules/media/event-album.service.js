@@ -7,6 +7,7 @@ const {
   createImageAssets,
   deleteUnusedImageAsset,
   getImageAssetById,
+  getImageAssetDownloadById,
 } = require("./media.service");
 
 const IMAGE_ASSET_SELECT = {
@@ -376,7 +377,7 @@ const deleteEventAlbumPhoto = async (albumId, photoId) => {
   await cleanupAssets([photo.imageAssetId]);
 };
 
-const getPublicEventAlbumPhoto = async ({ slug, photoId }) => {
+const getPublicEventAlbumPhoto = async ({ slug, photoId, preferOriginal = false }) => {
   const normalizedSlug = normalizeSlug(slug);
   const photo = await prisma.albumPhoto.findFirst({
     where: {
@@ -390,8 +391,11 @@ const getPublicEventAlbumPhoto = async ({ slug, photoId }) => {
     },
   });
   if (!photo) throw new HttpError(404, "Album photo not found.");
+  const getImage = preferOriginal && photo.album.allowDownloads
+    ? getImageAssetDownloadById
+    : getImageAssetById;
   return {
-    ...(await getImageAssetById(photo.imageAssetId)),
+    ...(await getImage(photo.imageAssetId)),
     originalName: photo.imageAsset.originalName,
     allowDownloads: photo.album.allowDownloads,
   };

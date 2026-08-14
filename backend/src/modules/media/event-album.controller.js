@@ -1,7 +1,7 @@
-const path = require("path");
 const { createReadStream } = require("fs");
 const { pipeline } = require("stream/promises");
 const { asyncHandler } = require("../../lib/async-handler");
+const { prepareEventAlbumPhotoDownload } = require("./event-album-download");
 const {
   listPublicEventAlbums,
   listAdminEventAlbums,
@@ -17,14 +17,15 @@ const {
   getAdminEventAlbumPhoto,
 } = require("./event-album.service");
 
-const safeDownloadName = (value, contentType) => {
-  const parsed = path.parse(path.basename(String(value || "event-photo")));
-  const extension = contentType === "image/webp"
-    ? ".webp"
-    : contentType === "image/png"
-      ? ".png"
-      : ".jpg";
-  return `${parsed.name || "event-photo"}${extension}`.replace(/[\r\n"\\]/g, "-");
+const sendImage = async (res, image) => {
+  res.setHeader("Content-Type", image.contentType);
+  res.setHeader("Content-Length", image.size ?? image.data.length);
+  res.status(200);
+  if (image.path) {
+    await pipeline(createReadStream(image.path), res);
+    return;
+  }
+  res.send(image.data);
 };
 
 const getEventAlbums = asyncHandler(async (req, res) => {
@@ -43,25 +44,23 @@ const getEventAlbum = asyncHandler(async (req, res) => {
 });
 
 const streamEventAlbumPhoto = asyncHandler(async (req, res) => {
+  const wantsDownload = req.query.download === "1" || req.query.download === "original";
   const image = await getPublicEventAlbumPhoto({
     slug: req.params.slug,
     photoId: req.params.photoId,
+    preferOriginal: wantsDownload,
   });
-  res.setHeader("Content-Type", image.contentType);
-  res.setHeader("Content-Length", image.size ?? image.data.length);
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-  if (req.query.download === "1" && image.allowDownloads) {
+  if (wantsDownload && image.allowDownloads) {
+    const download = await prepareEventAlbumPhotoDownload(image);
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${safeDownloadName(image.originalName, image.contentType)}"`
+      `attachment; filename="${download.filename}"`
     );
-  }
-  res.status(200);
-  if (image.path) {
-    await pipeline(createReadStream(image.path), res);
+    await sendImage(res, download);
     return;
   }
-  res.send(image.data);
+  await sendImage(res, image);
 });
 
 const streamAdminEventAlbumPhoto = asyncHandler(async (req, res) => {
@@ -69,15 +68,8 @@ const streamAdminEventAlbumPhoto = asyncHandler(async (req, res) => {
     albumId: req.params.albumId,
     photoId: req.params.photoId,
   });
-  res.setHeader("Content-Type", image.contentType);
-  res.setHeader("Content-Length", image.size ?? image.data.length);
   res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
-  res.status(200);
-  if (image.path) {
-    await pipeline(createReadStream(image.path), res);
-    return;
-  }
-  res.send(image.data);
+  await sendImage(res, image);
 });
 
 const getAdminEventAlbums = asyncHandler(async (req, res) => {
