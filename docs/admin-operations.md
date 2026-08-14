@@ -356,3 +356,10 @@ Current email-producing workflows are documented in [Email System](./email-syste
 - Store exported files only where trusted operators can access them.
 - Back up PostgreSQL, `UPLOAD_ROOT`, and `PRIVATE_UPLOAD_ROOT` together; admin exports are recreated from database and upload metadata when needed.
 - Bank-transfer downloads and recruitment exports contain sensitive personal/payment evidence; do not keep them in shared download folders.
+
+## VALORANT Admin Verification
+
+The VALORANT admin flows (bindings, discovery, series build, preview/finalize,
+reconciliation, rankings) follow the checklist in
+[`docs/valorant-ui-verification.md`](./valorant-ui-verification.md), verified
+via Playwright MCP or a manual browser with scrubbed data.
