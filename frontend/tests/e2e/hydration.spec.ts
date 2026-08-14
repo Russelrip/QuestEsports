@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test-fixture";
 
 test("client navigation hydrates without browser errors", async ({ page }) => {
   const browserErrors: string[] = [];

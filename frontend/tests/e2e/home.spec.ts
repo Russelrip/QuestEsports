@@ -1,4 +1,4 @@
-import { expect, test, type Route } from "@playwright/test";
+import { expect, test, type Route } from "./test-fixture";
 
 test("privacy policy page renders the app shell and policy content", async ({ page }) => {
   await page.goto("/privacy-policy");
