@@ -508,8 +508,9 @@ test("event album admin loads legacy poster tools once without a request loop", 
   await expect(page.getByRole("heading", { name: "Existing promotional artwork" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search promotional artwork" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Filter promotional artwork by assignment" })).toHaveValue("all");
-  page.on("dialog", (dialog) => void dialog.accept());
   await page.getByRole("button", { name: "Delete entry" }).click();
+  await expect(page.getByRole("button", { name: "Confirm delete" })).toBeVisible();
+  await page.getByRole("button", { name: "Confirm delete" }).click();
   await expect.poll(() => deletedPosterEntries).toBe(1);
   await expect(page.getByText("Duplicate artwork")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
