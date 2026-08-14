@@ -725,6 +725,74 @@ const additionalPaths = {
       "Subscribe to public match and bracket invalidation events",
     ),
   },
+  "/api/v1/veto-rooms/mine": {
+    get: createOperation("Veto", "List the signed-in captain's active veto rooms", { authenticated: true }),
+  },
+  "/api/v1/veto-rooms/{code}": {
+    get: createOperation("Veto", "Get an authorized live or published veto room", { parameters: idParameter("code") }),
+  },
+  "/api/v1/veto-rooms/{code}/ready": {
+    post: createOperation("Veto", "Set team readiness using account or role-link authority", { parameters: idParameter("code") }),
+  },
+  "/api/v1/veto-rooms/{code}/toss": {
+    post: createOperation("Veto", "Call and atomically resolve a digital Heads or Tails toss", { parameters: idParameter("code") }),
+  },
+  "/api/v1/veto-rooms/{code}/team-a": {
+    post: createOperation("Veto", "Let the toss winner choose Team A or Team B", { parameters: idParameter("code") }),
+  },
+  "/api/v1/veto-rooms/{code}/actions": {
+    post: createOperation("Veto", "Commit the current authorized ban, pick, or side choice", { parameters: idParameter("code") }),
+  },
+  "/api/v1/admin/veto/catalog": {
+    get: createOperation("Veto", "List maps, versioned pools, presets, and room templates", { authenticated: true }),
+  },
+  "/api/v1/admin/veto/maps": {
+    post: createOperation("Veto", "Create a map in the veto catalog", { authenticated: true }),
+  },
+  "/api/v1/admin/veto/pools": {
+    post: createOperation("Veto", "Create a versioned map pool", { authenticated: true }),
+  },
+  "/api/v1/admin/veto/presets": {
+    post: createOperation("Veto", "Create a versioned veto rule preset", { authenticated: true }),
+  },
+  "/api/v1/admin/veto/templates": {
+    post: createOperation("Veto", "Save a reusable room template", { authenticated: true }),
+  },
+  "/api/v1/admin/tournaments/{id}/veto-config": {
+    get: createOperation("Veto", "Get a tournament's default veto configuration", { authenticated: true, parameters: idParameter("id") }),
+    put: createOperation("Veto", "Set a tournament's default veto configuration", { authenticated: true, parameters: idParameter("id") }),
+  },
+  "/api/v1/admin/veto-rooms": {
+    get: createOperation("Veto", "List veto rooms available to staff", { authenticated: true }),
+    post: createOperation("Veto", "Create a linked or standalone veto room", { authenticated: true }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}": {
+    get: createOperation("Veto", "Get a veto room for staff operation", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/start": {
+    post: createOperation("Veto", "Start or force-start the toss/veto lifecycle", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/open": {
+    post: createOperation("Veto", "Open a room for team readiness", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/assign-team-a": {
+    post: createOperation("Veto", "Manually assign Team A and Team B", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/manual-toss": {
+    post: createOperation("Veto", "Record the result of a physical coin toss", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/rewind": {
+    post: createOperation("Veto", "Audit and rewind the latest committed veto action", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/reset": {
+    post: createOperation("Veto", "Audit and reset a room to its pre-veto state", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/cancel": {
+    post: createOperation("Veto", "Cancel an active veto room", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/rotate-link": {
+    post: createOperation("Veto", "Rotate a private team or viewer access link", { authenticated: true, parameters: idParameter("roomId") }),
+  },
   "/api/v1/admin/tournaments/{id}/challonge": {
     get: createOperation("Challonge", "Get Challonge integration status", {
       authenticated: true,

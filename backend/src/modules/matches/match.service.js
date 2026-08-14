@@ -50,6 +50,24 @@ const matchInclude = {
   assignedStaff: {
     select: { id: true, username: true, firstName: true, lastName: true },
   },
+  vetoRoom: {
+    select: {
+      code: true,
+      status: true,
+      format: true,
+      publishResult: true,
+      tossCall: true,
+      tossResult: true,
+      tossWinnerSlot: true,
+      teamASlot: true,
+      completedAt: true,
+      actions: {
+        where: { invalidatedAt: null },
+        orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
+        select: { sequence: true, kind: true, actorSlot: true, mapSlug: true, mapName: true, side: true, payload: true },
+      },
+    },
+  },
 };
 
 const participantLogoUrl = (participant) => {
@@ -86,6 +104,21 @@ const mapMatch = (match) => ({
     result: participant.result,
     logoUrl: participantLogoUrl(participant),
   })),
+  veto: match.vetoRoom?.status === "completed" && match.vetoRoom.publishResult
+    ? {
+        code: match.vetoRoom.code,
+        status: match.vetoRoom.status,
+        format: match.vetoRoom.format,
+        toss: {
+          call: match.vetoRoom.tossCall,
+          result: match.vetoRoom.tossResult,
+          winnerSlot: match.vetoRoom.tossWinnerSlot,
+          teamASlot: match.vetoRoom.teamASlot,
+        },
+        actions: match.vetoRoom.actions,
+        completedAt: match.vetoRoom.completedAt,
+      }
+    : null,
   updatedAt: match.updatedAt,
 });
 

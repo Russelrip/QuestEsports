@@ -28,6 +28,7 @@ export const adminNavigationGroups = [
     label: "Competition",
     links: [
       { href: "/admin/tournaments", label: "Tournaments" },
+      { href: "/admin/veto-rooms", label: "Veto Rooms" },
       { href: "/admin/event-series", label: "Event Series" },
       { href: "/admin/games", label: "Games" },
       { href: "/admin/registrations", label: "Registrations" },

@@ -82,6 +82,15 @@ The mobile bearer token works with the existing protected admin endpoints; it is
 
 Tournament administrators and referees can use `/api/v1/admin/tournaments/:id/matches`. Super admins manage `/staff` assignments. Challonge configuration, manual sync, sanitized logs, and confirmed participant mapping are under `/api/v1/admin/tournaments/:id/challonge`. Complete contracts are published by `/api/openapi.json`.
 
+### Valorant veto rooms
+
+- `GET /api/v1/veto-rooms/:code` returns the authorized room snapshot. Private role links send their fragment token through `X-Veto-Token`; signed captains and staff use their normal session.
+- `POST /api/v1/veto-rooms/:code/ready`, `/toss`, `/team-a`, and `/actions` require `expectedRevision`. Stale or simultaneous changes return `409` and clients refetch the room.
+- `GET /api/v1/veto-rooms/mine` lists rooms where the signed-in user is the registered captain.
+- `/api/v1/admin/veto/catalog` exposes maps, versioned pools, rule presets, and reusable room templates. Staff room creation and lifecycle controls are under `/api/v1/admin/veto-rooms`.
+- Digital toss results are generated and persisted by the backend. Map availability, turn ownership, automatic deciders, side selection, rewinds, timers, and completion are also server-authoritative.
+- Access-link rotation returns the new plaintext token once; only its SHA-256 hash is stored. Veto endpoints are `no-store`, role links expire seven days after completion by default, and realtime events contain only the room code, revision, and status.
+
 ### Maintenance
 
 When site maintenance is enabled, normal API routes return `503 Service Unavailable` with `Retry-After`, `Cache-Control: no-store`, and `X-Maintenance-Mode: active` headers:
