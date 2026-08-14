@@ -262,17 +262,23 @@ test("HTTPS URL validation rejects malformed, insecure, credentialed, and non-or
   );
 });
 
-test("production requires the VALORANT service secret and key id", () => {
+test("production requires the VALORANT service secret and key id when an internal base URL is set", () => {
   const missingSecret = loadEnvironment({ VALORANT_SERVICE_SECRET: "" });
   assert.notEqual(missingSecret.status, 0);
-  assert.match(missingSecret.stderr, /VALORANT_SERVICE_SECRET is required outside tests/);
+  assert.match(
+    missingSecret.stderr,
+    /VALORANT_SERVICE_SECRET and VALORANT_SERVICE_KEY_ID are required when VALORANT_INTERNAL_BASE_URL is set/,
+  );
 
   const missingKid = loadEnvironment({
     VALORANT_SERVICE_SECRET: "x".repeat(64),
     VALORANT_SERVICE_KEY_ID: "",
   });
   assert.notEqual(missingKid.status, 0);
-  assert.match(missingKid.stderr, /VALORANT_SERVICE_KEY_ID is required outside tests/);
+  assert.match(
+    missingKid.stderr,
+    /VALORANT_SERVICE_SECRET and VALORANT_SERVICE_KEY_ID are required when VALORANT_INTERNAL_BASE_URL is set/,
+  );
 });
 
 test("production rejects an insecure VALORANT internal base URL", () => {
