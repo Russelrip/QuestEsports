@@ -174,3 +174,40 @@ jobs:
 
       - name: Validate Expo dependencies and configuration
         run: npm run doctor
+
+  valorant-e2e:
+    name: VALORANT two-service E2E
+    runs-on: ubuntu-latest
+    if: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: Russelrip/valorant-platform-backend
+          token: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}
+          path: valorant-platform-backend
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - uses: astral-sh/setup-uv@v3
+      - name: Prepare FastAPI deps and env
+        working-directory: valorant-platform-backend
+        run: uv sync --extra dev
+      - name: Run two-service E2E
+        working-directory: backend
+        run: >-
+          VALORANT_PLATFORM_REPO=$GITHUB_WORKSPACE/valorant-platform-backend
+          E2E_VAL_DATABASE_URL=${{ secrets.E2E_VAL_DATABASE_URL }}
+          E2E_QUEST_DATABASE_URL=${{ secrets.E2E_QUEST_DATABASE_URL }}
+          E2E_ADMIN_EMAIL=${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD=${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_SAVED_TEAM_A_ID=${{ secrets.E2E_SAVED_TEAM_A_ID }}
+          E2E_SAVED_TEAM_B_ID=${{ secrets.E2E_SAVED_TEAM_B_ID }}
+          E2E_PLAYER_A='${{ secrets.E2E_PLAYER_A }}'
+          E2E_PLAYER_B='${{ secrets.E2E_PLAYER_B }}'
+          E2E_MATCH_HENRIK_ID=${{ secrets.E2E_MATCH_HENRIK_ID }}
+          E2E_MATCH_UUIDS=${{ secrets.E2E_MATCH_UUIDS }}
+          E2E_ANCHOR_MISMATCH_SERIES=${{ secrets.E2E_ANCHOR_MISMATCH_SERIES }}
+          npm run test:valorant:e2e
