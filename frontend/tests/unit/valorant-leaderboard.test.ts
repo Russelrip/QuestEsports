@@ -19,7 +19,15 @@ describe("VALORANT player leaderboard", () => {
     expect(component).toContain("Register your account");
     expect(component).toContain("Search by Discord username");
     expect(component).toContain("Top 10");
+    expect(component).toContain("Leaderboard unavailable");
     expect(component).not.toMatch(/api\.henrikdev|valorant-platform-backend|X-Admin-Key|VALORANT_SERVICE_SECRET|localhost:8000/);
+  });
+
+  it("the page guards its fetches so an outage renders the unavailable state", () => {
+    const page = read("app/valorant-leaderboard/page.tsx");
+    expect(page).toMatch(/try\s*\{/);
+    expect(page).toContain("fetchPublicValorantLeaderboard");
+    expect(page).toContain("searchPublicValorantLeaderboard");
   });
 
   it("the page fetches the public proxy, not the admin endpoint", () => {
