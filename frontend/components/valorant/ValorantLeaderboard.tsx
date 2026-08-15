@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -9,10 +10,7 @@ import EmptyState from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Container } from "@/components/ui/container";
 import { cn } from "@/lib/utils";
-import {
-  VALORANT_SL_REGISTER_URL,
-  type ValorantPlayerLeaderboardEntry,
-} from "@/lib/valorant";
+import type { ValorantPlayerLeaderboardEntry } from "@/lib/valorant";
 
 type ValorantLeaderboardProps = {
   entries: ValorantPlayerLeaderboardEntry[];
@@ -216,14 +214,12 @@ export default function ValorantLeaderboard({
       )}
 
       <div className="flex justify-center pt-2">
-        <a
-          href={VALORANT_SL_REGISTER_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          href="/valorant-leaderboard/register"
           className={buttonClassName({ variant: "primary", size: "md" })}
         >
           Register your account
-        </a>
+        </Link>
       </div>
     </Container>
   );

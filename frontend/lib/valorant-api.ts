@@ -1,5 +1,5 @@
 import { adminRequest } from "./admin";
-import { fetchApiJson } from "./api";
+import { buildApiUrl, fetchApiJson } from "./api";
 import { mapMatchSummary } from "./valorant";
 import type {
   Binding,
@@ -15,11 +15,15 @@ import type {
   SeriesGame,
   SeriesPreview,
   SeriesViewLite,
+  ValorantCheckPuuidResult,
+  ValorantDiscordCallbackResult,
   ValorantFormat,
   ValorantMatchSummary,
   ValorantPlayerLeaderboardEntry,
   ValorantPlayerLeaderboardPage,
   ValorantRatingMode,
+  ValorantRegistrationPreview,
+  ValorantRegistrationSubmitResult,
   ValorantSide,
 } from "./valorant";
 
@@ -227,3 +231,69 @@ export const searchPublicValorantLeaderboard = async (
   );
   return envelope.data.entry;
 };
+
+// Registration flow helpers. These run in the browser, so they use plain fetch
+// against NEXT_PUBLIC_API_URL (no next.revalidate / ISR). Every helper throws
+// an Error carrying the HTTP `status` on a non-ok response so the registration
+// component can branch on 409/404/other before falling back to the message.
+const registrationRequest = async <T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> => {
+  const response = await fetch(buildApiUrl(path), options);
+  const payload = (await response
+    .json()
+    .catch(() => null)) as (T & { message?: string; error?: string }) | null;
+
+  if (!response.ok) {
+    const message =
+      payload?.message || payload?.error || `Request failed with status ${response.status}.`;
+    throw Object.assign(new Error(message), { status: response.status });
+  }
+
+  return payload as T;
+};
+
+export const requestDiscordLogin = () =>
+  registrationRequest<{ url: string }>(
+    "/api/v1/valorant/leaderboard/register/discord/login",
+  );
+
+export const requestDiscordCallback = (code: string) =>
+  registrationRequest<ValorantDiscordCallbackResult>(
+    `/api/v1/valorant/leaderboard/register/discord/callback?code=${encodeURIComponent(code)}`,
+  );
+
+export const checkPuuidRegistered = (puuid: string) =>
+  registrationRequest<ValorantCheckPuuidResult>(
+    "/api/v1/valorant/leaderboard/register/check-puuid",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ puuid }),
+    },
+  );
+
+export const previewValorantRegistration = (puuid: string) =>
+  registrationRequest<ValorantRegistrationPreview>(
+    "/api/v1/valorant/leaderboard/register/preview",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ puuid }),
+    },
+  );
+
+export const submitValorantRegistration = (input: {
+  discord_id: number;
+  discord_username: string;
+  puuid: string;
+}) =>
+  registrationRequest<ValorantRegistrationSubmitResult>(
+    "/api/v1/valorant/leaderboard/register/submit",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
