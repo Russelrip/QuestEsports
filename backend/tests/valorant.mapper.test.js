@@ -152,3 +152,36 @@ test("mapFinalizeResult maps the recorded FinalizeResult fixture", () => {
   assert.equal(mapped.teamACurrentElo, 1218);
   assert.equal(mapped.teamBCurrentElo, 1180);
 });
+
+test("mapRankingEntry maps elo from current_elo as a number", () => {
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapRankingEntry({
+    team_id: "00000000-0000-4000-8000-00000000000b",
+    rank: 1,
+    current_elo: "1031.0",
+    peak_elo: "1150.0",
+    series_wins: 12,
+    series_losses: 3,
+  });
+  assert.deepEqual(mapped, {
+    teamId: "00000000-0000-4000-8000-00000000000b",
+    rank: 1,
+    elo: 1031,
+    seriesWins: 12,
+    seriesLosses: 3,
+  });
+  assert.equal("peakElo" in mapped, false);
+});
+
+test("mapRankingEntry does not read a top-level elo field", () => {
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapRankingEntry({
+    team_id: "00000000-0000-4000-8000-00000000000c",
+    rank: 2,
+    elo: 999,
+    current_elo: "1111.0",
+    series_wins: 5,
+    series_losses: 7,
+  });
+  assert.equal(mapped.elo, 1111);
+});

@@ -143,7 +143,9 @@ const mapTeamResponse = (team) => ({
 const mapRankingEntry = (entry) => ({
   teamId: entry.team_id,
   rank: entry.rank,
-  elo: entry.elo,
+  // FastAPI RankingEntry exposes current_elo (Decimal); it may arrive as a
+  // JSON string like "1031.0", so coerce with Number() for the frontend.
+  elo: Number(entry.current_elo),
   seriesWins: entry.series_wins,
   seriesLosses: entry.series_losses,
 });
