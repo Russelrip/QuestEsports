@@ -83,6 +83,7 @@ export type ManualSeriesInput = {
   winnerTeamId: string;
   teamAMapsWon: number;
   teamBMapsWon: number;
+  tournamentId?: string | null;
 };
 export type RankingEntry = { teamId: string; rank: number; elo: number; seriesWins: number; seriesLosses: number };
 export type SeriesViewLite = {

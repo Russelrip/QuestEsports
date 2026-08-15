@@ -268,6 +268,7 @@ test("createManualSeries controller passes camelCase body, records the audit, an
         winnerTeamId: "binding-winner",
         teamAMapsWon: 2,
         teamBMapsWon: 1,
+        tournamentId: "tournament-1",
       },
     });
     assert.equal(res.statusCode, 200);
@@ -280,6 +281,7 @@ test("createManualSeries controller passes camelCase body, records the audit, an
     assert.equal(received[0].bindingTeamAId, "binding-a");
     assert.equal(received[0].winnerTeamId, "binding-winner");
     assert.equal(received[0].ratingMode, "manual_override");
+    assert.equal(received[0].tournamentId, "tournament-1", "the optional tournamentId passes through to the service");
     assert.ok(received[0].playedAt instanceof Date, "the controller parses playedAt into a Date");
     assert.equal(received[0].actorUserId, "admin-1");
     assert.equal(audits.length, 1);

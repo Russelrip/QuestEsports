@@ -190,6 +190,7 @@ export default function ValorantSeriesForm({
           winnerTeamId: winnerIsA ? bindingTeamAId : bindingTeamBId,
           teamAMapsWon,
           teamBMapsWon,
+          tournamentId: tournamentId || null,
         });
         showToast({ title: "Manual series finalized", tone: "success" });
         onCreated(result.series.id);

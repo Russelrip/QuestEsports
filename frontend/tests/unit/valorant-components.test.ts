@@ -122,12 +122,14 @@ describe("VALORANT admin UI boundaries", () => {
     expect(form).toContain("ratingMode: manualRatingMode");
     expect(form).not.toContain("ratingModePreference: manualRatingMode");
     expect(form).toContain("winnerTeamId: winnerIsA ? bindingTeamAId : bindingTeamBId");
+    expect(form).toContain("tournamentId: tournamentId || null");
     expect(form).toContain("onCreated(result.series.id)");
     // API + shared type wiring
     expect(api).toContain("/api/v1/admin/valorant/series/manual");
     expect(api).toContain("ManualSeriesInput");
     expect(api).toContain("method: \"POST\"");
     expect(lib).toContain("export type ManualSeriesInput");
+    expect(lib).toContain("tournamentId?: string | null");
   });
 
   it("series list shows status, format, teams, tournament column, and a client-side tournament filter", () => {

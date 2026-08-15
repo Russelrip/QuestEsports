@@ -134,6 +134,7 @@ const createManualSeries = asyncHandler(async (req, res) => {
     winnerTeamId: req.body.winnerTeamId,
     teamAMapsWon: req.body.teamAMapsWon,
     teamBMapsWon: req.body.teamBMapsWon,
+    tournamentId: req.body.tournamentId || null,
     actorUserId: req.user.id,
     requestId: req.requestId,
     ipAddress: req.ip,

@@ -615,6 +615,9 @@ test("createManualSeries writes a series_manual operation, sends snake_case body
   let operationId;
   const prismaMock = {
     prisma: {
+      tournament: {
+        findUnique: async ({ where }) => (where.id === "tournament-1" ? { id: "tournament-1" } : null),
+      },
       valorantTeamBinding: {
         findUnique: async ({ where }) => {
           const map = {
@@ -672,6 +675,7 @@ test("createManualSeries writes a series_manual operation, sends snake_case body
       winnerTeamId: "binding-a",
       teamAMapsWon: 2,
       teamBMapsWon: 1,
+      tournamentId: "tournament-1",
       actorUserId: "user-1",
       requestId: "req-manual",
       ipAddress: "127.0.0.1",
@@ -696,6 +700,7 @@ test("createManualSeries writes a series_manual operation, sends snake_case body
     assert.equal(createdSeriesData.ratingMode, "manual_override");
     assert.equal(createdSeriesData.finalizedById, "user-1");
     assert.equal(createdSeriesData.lastOperationId, "op-row-manual");
+    assert.equal(createdSeriesData.tournamentId, "tournament-1", "the projection stores the optional tournament");
     assert.equal(result.status, "finalized");
     assert.equal(result.series.id, "quest-series-manual");
     assert.equal(result.operationId, operationId, "the ledger operationId is echoed in the result");
@@ -747,6 +752,48 @@ test("createManualSeries rejects a winner binding outside the two series teams w
         ipAddress: "127.0.0.1",
       }),
       (error) => error instanceof HttpError && error.statusCode === 400,
+    );
+    assert.equal(clientCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("createManualSeries rejects an unknown tournamentId without calling FastAPI", async () => {
+  let clientCalls = 0;
+  const prismaMock = {
+    prisma: {
+      tournament: { findUnique: async () => null },
+      valorantTeamBinding: {},
+      questValorantOperation: {},
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => { clientCalls += 1; } },
+    [mapperPath]: { mapManualFinalizeResult: () => ({}) },
+    [validationPath]: { assertSupportedFormat: () => {}, generateExternalKey: () => "ext" },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    await assert.rejects(
+      service.createManualSeries({
+        bindingTeamAId: "binding-a",
+        bindingTeamBId: "binding-b",
+        format: "bo3",
+        playedAt: new Date("2026-08-15T18:00:00Z"),
+        ratingMode: "manual_override",
+        winnerTeamId: "binding-a",
+        teamAMapsWon: 2,
+        teamBMapsWon: 1,
+        tournamentId: "missing-tournament",
+        actorUserId: "user-1",
+        requestId: "req-manual-bad-tournament",
+        ipAddress: "127.0.0.1",
+      }),
+      (error) => error instanceof HttpError && error.statusCode === 404 && error.message === "Tournament not found.",
     );
     assert.equal(clientCalls, 0);
   } finally {

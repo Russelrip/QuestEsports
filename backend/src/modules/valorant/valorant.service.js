@@ -422,11 +422,17 @@ const createManualSeries = async ({
   winnerTeamId,
   teamAMapsWon,
   teamBMapsWon,
+  tournamentId = null,
   actorUserId,
   requestId,
   ipAddress,
 }) => {
   assertSupportedFormat(format);
+
+  if (tournamentId) {
+    const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } });
+    if (!tournament) throw new HttpError(404, "Tournament not found.");
+  }
 
   const bindingIds = [bindingTeamAId, bindingTeamBId, winnerTeamId];
   const [bindingA, bindingB, winnerBinding] = await Promise.all(
@@ -508,6 +514,7 @@ const createManualSeries = async ({
       valorantSeriesUuid: result.seriesId,
       finalizedById: actorUserId,
       lastOperationId: operation.id,
+      tournamentId,
     },
   });
   await markOperationSucceeded(operation.id, response);
