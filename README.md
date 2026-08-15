@@ -4,12 +4,12 @@ Quest Esports is a tournament, team, commerce, and event-operations platform. Th
 
 ## Applications
 
-| Workspace | Purpose | Local URL |
-| --- | --- | --- |
-| `frontend/` | Next.js public site, account area, and web admin | `http://localhost:3000` |
-| `backend/` | Express API, Prisma, jobs, uploads, and integrations | `http://localhost:5001` |
-| `mobile-admin/` | Private Expo/Android operations client | Expo development server |
-| `ops/` | Production backup, restore, retention, and recovery scripts | Not applicable |
+| Workspace         | Purpose                                                     | Local URL                 |
+| ----------------- | ----------------------------------------------------------- | ------------------------- |
+| `frontend/`     | Next.js public site, account area, and web admin            | `http://localhost:3000` |
+| `backend/`      | Express API, Prisma, jobs, uploads, and integrations        | `http://localhost:5001` |
+| `mobile-admin/` | Private Expo/Android operations client                      | Expo development server   |
+| `ops/`          | Production backup, restore, retention, and recovery scripts | Not applicable            |
 
 ## Requirements
 
@@ -200,18 +200,18 @@ Generated output, dependencies, uploads, local environment files, credentials, a
 
 Start at the [documentation index](./docs/README.md). Frequently used guides:
 
-| Task | Guide |
-| --- | --- |
-| Local setup or deployment | [Setup and Deployment](./docs/setup-and-deployment.md) |
-| Collaborator or staging setup | [Collaboration and Staging](./docs/collaboration-and-staging.md) |
-| Production operation or incident | [Production Operations Runbook](./docs/production-runbook.md) |
-| Release approval | [Pre-deployment Checklist](./docs/pre-deployment-checklist.md) |
-| CI/CD behavior | [CI/CD Pipeline](./docs/ci-cd.md) |
-| Database and files | [Database and Storage](./docs/database-and-storage.md) |
-| Admin workflows | [Admin Operations](./docs/admin-operations.md) |
-| Commerce and tournaments | [Commerce and Tournament Operations](./docs/commerce-and-tournament-operations.md) |
-| Backup or restore | [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md) |
-| Secret recovery | [Secret and Infrastructure Recovery](./docs/secret-and-infrastructure-recovery.md) |
+| Task                             | Guide                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------- |
+| Local setup or deployment        | [Setup and Deployment](./docs/setup-and-deployment.md)                             |
+| Collaborator or staging setup    | [Collaboration and Staging](./docs/collaboration-and-staging.md)                   |
+| Production operation or incident | [Production Operations Runbook](./docs/production-runbook.md)                      |
+| Release approval                 | [Pre-deployment Checklist](./docs/pre-deployment-checklist.md)                     |
+| CI/CD behavior                   | [CI/CD Pipeline](./docs/ci-cd.md)                                                  |
+| Database and files               | [Database and Storage](./docs/database-and-storage.md)                             |
+| Admin workflows                  | [Admin Operations](./docs/admin-operations.md)                                     |
+| Commerce and tournaments         | [Commerce and Tournament Operations](./docs/commerce-and-tournament-operations.md) |
+| Backup or restore                | [Backup and Disaster Recovery](./docs/backup-and-disaster-recovery.md)             |
+| Secret recovery                  | [Secret and Infrastructure Recovery](./docs/secret-and-infrastructure-recovery.md) |
 
 ## Collaboration and Deployment
 
@@ -219,4 +219,4 @@ Contributors work on branches and submit pull requests. CODEOWNERS requests revi
 
 Because this private personal repository is on GitHub Free, branch protection is not enforceable. Production backend deployment is therefore manual and restricted in the workflow to the repository owner. A collaborator must never receive production database, VPS, payment, OAuth, mail, or signing credentials.
 
-See [Collaboration and Staging](./docs/collaboration-and-staging.md) before granting access.
+See [Collaboration and Staging](./docs/collaboration-and-staging.md) before granting access. -Russel
