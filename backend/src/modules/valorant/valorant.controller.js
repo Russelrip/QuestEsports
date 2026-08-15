@@ -107,6 +107,7 @@ const createSeries = asyncHandler(async (req, res) => {
     ratingModePreference: req.body.ratingModePreference || null,
     anchorPlayerA: req.body.anchorPlayerA,
     anchorPlayerB: req.body.anchorPlayerB,
+    tournamentId: req.body.tournamentId || null,
     actorUserId: req.user.id,
     requestId: req.requestId,
     ipAddress: req.ip,

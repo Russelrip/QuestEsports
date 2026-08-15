@@ -492,6 +492,206 @@ test("createSeries writes an operation, sends external_quest_series_id and ancho
   }
 });
 
+test("createSeries stores the optional tournamentId on the projection", async () => {
+  const seriesView = {
+    id: "00000000-0000-4000-8000-00000000000b",
+    team_a_id: "val-team-1",
+    team_b_id: "val-team-2",
+    format: "bo3",
+    importance: "regular",
+    status: "draft",
+    team_a_maps_won: 0,
+    team_b_maps_won: 0,
+    games: [],
+  };
+  let tournamentLookups = 0;
+  let createdData;
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findUnique: async ({ where }) => {
+          tournamentLookups += 1;
+          return where.id === "tournament-1" ? { id: "tournament-1" } : null;
+        },
+      },
+      valorantTeamBinding: {
+        findUnique: async ({ where }) => {
+          const map = {
+            "binding-a": { id: "binding-a", status: "active", valorantTeamUuid: "val-team-1" },
+            "binding-b": { id: "binding-b", status: "active", valorantTeamUuid: "val-team-2" },
+          };
+          return map[where.id] || null;
+        },
+      },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "op-row-10b", ...data }),
+        update: async () => ({}),
+      },
+      questValorantSeries: {
+        create: async ({ data }) => {
+          createdData = data;
+          return { id: "quest-series-1", ...data };
+        },
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async () => ({ status: 201, data: seriesView, requestId: "fastapi-req-10b" }),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapSeriesView: (s) => ({ id: s.id, teamAId: s.team_a_id, teamBId: s.team_b_id, status: s.status, games: [] }) },
+    [validationPath]: { assertSupportedFormat: () => {}, generateExternalKey: () => "quest-ext-key-1", normalizeRiotId: (r) => r },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const series = await service.createSeries({
+      bindingTeamAId: "binding-a",
+      bindingTeamBId: "binding-b",
+      format: "bo3",
+      playedAt: new Date("2026-08-02T18:00:00Z"),
+      anchorPlayerA: { name: "TenZ", tag: "SEN" },
+      anchorPlayerB: { name: "Demon1", tag: "NA" },
+      tournamentId: "tournament-1",
+      actorUserId: "user-1",
+      requestId: "req-10b",
+      ipAddress: "127.0.0.1",
+    });
+    assert.equal(tournamentLookups, 1, "an existing tournament is verified once");
+    assert.equal(createdData.tournamentId, "tournament-1", "the create projection stores the tournament");
+    assert.equal(series.tournamentId, "tournament-1");
+  } finally {
+    restore();
+  }
+});
+
+test("createSeries rejects an unknown tournamentId without calling FastAPI", async () => {
+  const prismaMock = {
+    prisma: {
+      tournament: { findUnique: async () => null },
+      valorantTeamBinding: {},
+      questValorantOperation: {},
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => { throw new Error("must not call"); } },
+    [mapperPath]: {},
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    await assert.rejects(
+      service.createSeries({
+        bindingTeamAId: "binding-a",
+        bindingTeamBId: "binding-b",
+        format: "bo3",
+        playedAt: new Date("2026-08-02T18:00:00Z"),
+        anchorPlayerA: { name: "TenZ", tag: "SEN" },
+        anchorPlayerB: { name: "Demon1", tag: "NA" },
+        tournamentId: "missing-tournament",
+        actorUserId: "user-1",
+        requestId: "req-10c",
+        ipAddress: "127.0.0.1",
+      }),
+      (error) => error instanceof HttpError && error.statusCode === 404 && error.message === "Tournament not found.",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("listSeries includes the linked tournament as { id, title }", async () => {
+  let capturedInclude;
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findMany: async ({ include }) => {
+          capturedInclude = include;
+          return [
+            {
+              id: "quest-series-1",
+              externalKey: "ext-1",
+              status: "draft",
+              bindingA: { savedTeam: { id: "st-1", name: "A" } },
+              bindingB: { savedTeam: { id: "st-2", name: "B" } },
+              games: [],
+              tournament: { id: "tournament-1", title: "Quest LAN 2026" },
+            },
+            {
+              id: "quest-series-2",
+              externalKey: "ext-2",
+              status: "draft",
+              bindingA: { savedTeam: { id: "st-3", name: "C" } },
+              bindingB: { savedTeam: { id: "st-4", name: "D" } },
+              games: [],
+              tournament: null,
+            },
+          ];
+        },
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => { throw new Error("must not call"); } },
+    [mapperPath]: {},
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const series = await service.listSeries();
+    assert.deepEqual(capturedInclude.tournament, { select: { id: true, title: true } });
+    assert.deepEqual(series[0].tournament, { id: "tournament-1", title: "Quest LAN 2026" });
+    assert.equal(series[1].tournament, null, "standalone series carry a null tournament");
+  } finally {
+    restore();
+  }
+});
+
+test("getSeries includes the linked tournament as { id, title }", async () => {
+  let capturedInclude;
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async ({ include }) => {
+          capturedInclude = include;
+          return {
+            id: "quest-series-1",
+            externalKey: "ext-1",
+            status: "draft",
+            bindingA: { savedTeam: { id: "st-1", name: "A", teamTag: null } },
+            bindingB: { savedTeam: { id: "st-2", name: "B", teamTag: null } },
+            games: [],
+            lastOperation: null,
+            tournament: { id: "tournament-1", title: "Quest LAN 2026" },
+          };
+        },
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => { throw new Error("must not call"); } },
+    [mapperPath]: {},
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const series = await service.getSeries({ seriesId: "quest-series-1" });
+    assert.deepEqual(capturedInclude.tournament, { select: { id: true, title: true } });
+    assert.deepEqual(series.tournament, { id: "tournament-1", title: "Quest LAN 2026" });
+  } finally {
+    restore();
+  }
+});
+
 test("attachGame sends the VAL match UUID as match_id and mirrors the returned game", async () => {
   const gameView = {
     id: "game-1",

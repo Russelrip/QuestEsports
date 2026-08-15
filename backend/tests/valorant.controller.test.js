@@ -139,6 +139,56 @@ test("listSeriesMatches returns the matches envelope under data.matches", async 
   }
 });
 
+test("createSeries controller passes the optional tournamentId through (null when omitted)", async () => {
+  const received = [];
+  const serviceMock = {
+    createSeries: async (args) => {
+      received.push(args);
+      return { id: "quest-series-1", externalKey: "ext-1", format: "bo3" };
+    },
+  };
+  const auditMock = {
+    requestAuditContext: (req) => ({ actorUserId: req.user?.id, requestId: req.requestId, ipAddress: req.ip }),
+    recordAudit: async () => {},
+  };
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [auditPath]: auditMock,
+    [asyncHandlerPath]: { asyncHandler },
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const baseBody = {
+      bindingTeamAId: "binding-a",
+      bindingTeamBId: "binding-b",
+      format: "bo3",
+      playedAt: "2026-08-02T18:00:00Z",
+      anchorPlayerA: { name: "TenZ", tag: "SEN" },
+      anchorPlayerB: { name: "Demon1", tag: "NA" },
+    };
+    const { res, nextErrors } = await callHandler(controller.createSeries, {
+      user: { id: "admin-1" },
+      requestId: "req-6",
+      ip: "127.0.0.1",
+      body: { ...baseBody, tournamentId: "tournament-1" },
+    });
+    assert.equal(res.statusCode, 201);
+    assert.equal(received[0].tournamentId, "tournament-1", "the controller forwards an explicit tournamentId");
+    assert.deepEqual(nextErrors, []);
+
+    await callHandler(controller.createSeries, {
+      user: { id: "admin-1" },
+      requestId: "req-6b",
+      ip: "127.0.0.1",
+      body: baseBody,
+    });
+    assert.equal(received[1].tournamentId, null, "a standalone series omits the tournament");
+  } finally {
+    restore();
+  }
+});
+
 test("attachGame controller accepts a request without teamASide (derived server-side)", async () => {
   const audits = [];
   const serviceMock = {

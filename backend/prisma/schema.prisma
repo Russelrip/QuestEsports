@@ -546,6 +546,7 @@ model Tournament {
   matches                    Match[]
   challongeIntegration       ChallongeIntegration?
   expenses                   EventExpense[]
+  valorantSeries             QuestValorantSeries[]
 
   @@index([isActive])
   @@index([isPublished, status, startDate])
@@ -1211,18 +1212,21 @@ model QuestValorantSeries {
   valorantSeriesUuid   String?                 @map("valorant_series_uuid")
   finalizedById        String?                 @map("finalized_by_id") @db.Uuid
   lastOperationId      String?                 @unique @map("last_operation_id") @db.Uuid
+  tournamentId         String?                 @map("tournament_id") @db.Uuid
   createdAt            DateTime                @default(now()) @map("created_at")
   updatedAt            DateTime                @updatedAt @map("updated_at")
   bindingA             ValorantTeamBinding     @relation("ValorantBindingA", fields: [bindingAId], references: [id], onDelete: Restrict)
   bindingB             ValorantTeamBinding     @relation("ValorantBindingB", fields: [bindingBId], references: [id], onDelete: Restrict)
   finalizedBy          User?                   @relation("ValorantSeriesFinalizer", fields: [finalizedById], references: [id], onDelete: SetNull)
   lastOperation        QuestValorantOperation? @relation("ValorantSeriesLastOperation", fields: [lastOperationId], references: [id], onDelete: SetNull)
+  tournament           Tournament?             @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
   games                QuestValorantSeriesGame[]
   operations           QuestValorantOperation[]
 
   @@index([bindingAId])
   @@index([bindingBId])
   @@index([status])
+  @@index([tournamentId])
   @@index([valorantSeriesUuid])
   @@map("quest_valorant_series")
 }

@@ -316,6 +316,7 @@ const createSeries = async ({
   ratingModePreference = null,
   anchorPlayerA,
   anchorPlayerB,
+  tournamentId = null,
   actorUserId,
   requestId,
   ipAddress,
@@ -323,6 +324,11 @@ const createSeries = async ({
   assertSupportedFormat(format);
   const anchorA = normalizeRiotId(anchorPlayerA);
   const anchorB = normalizeRiotId(anchorPlayerB);
+
+  if (tournamentId) {
+    const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } });
+    if (!tournament) throw new HttpError(404, "Tournament not found.");
+  }
 
   const [bindingA, bindingB] = await Promise.all([
     prisma.valorantTeamBinding.findUnique({ where: { id: bindingTeamAId }, select: { id: true, status: true, valorantTeamUuid: true } }),
@@ -394,6 +400,7 @@ const createSeries = async ({
       status: "draft",
       valorantSeriesUuid: seriesView.id,
       lastOperationId: operation.id,
+      tournamentId,
     },
   });
   await markOperationSucceeded(operation.id, response);
@@ -408,6 +415,7 @@ const getSeries = async ({ seriesId }) => {
       bindingB: { include: { savedTeam: { select: { id: true, name: true, teamTag: true } } } },
       games: { orderBy: { gameNumber: "asc" } },
       lastOperation: true,
+      tournament: { select: { id: true, title: true } },
     },
   });
   if (!series) throw new HttpError(404, "Series not found.");
@@ -420,6 +428,7 @@ const listSeries = async () =>
       bindingA: { include: { savedTeam: { select: { id: true, name: true } } } },
       bindingB: { include: { savedTeam: { select: { id: true, name: true } } } },
       games: { select: { id: true, gameNumber: true, matchId: true, mapName: true } },
+      tournament: { select: { id: true, title: true } },
     },
     orderBy: { createdAt: "desc" },
   });
