@@ -228,6 +228,106 @@ test("attachGame controller accepts a request without teamASide (derived server-
   }
 });
 
+test("createManualSeries controller passes camelCase body, records the audit, and surfaces FinalizeResult fields under data", async () => {
+  const audits = [];
+  const received = [];
+  const serviceMock = {
+    createManualSeries: async (args) => {
+      received.push(args);
+      return {
+        seriesId: "quest-series-manual",
+        status: "finalized",
+        ratingMode: args.ratingMode,
+        operationId: "op-manual",
+        series: { id: "quest-series-manual", externalKey: "ext-manual", status: "finalized" },
+      };
+    },
+  };
+  const auditMock = {
+    requestAuditContext: (req) => ({ actorUserId: req.user?.id, requestId: req.requestId, ipAddress: req.ip }),
+    recordAudit: async (entry) => audits.push(entry),
+  };
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [auditPath]: auditMock,
+    [asyncHandlerPath]: { asyncHandler },
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const { res, nextErrors } = await callHandler(controller.createManualSeries, {
+      user: { id: "admin-1" },
+      requestId: "req-manual",
+      ip: "127.0.0.1",
+      body: {
+        bindingTeamAId: "binding-a",
+        bindingTeamBId: "binding-b",
+        format: "bo3",
+        playedAt: "2026-08-15T18:00:00Z",
+        ratingMode: "manual_override",
+        winnerTeamId: "binding-winner",
+        teamAMapsWon: 2,
+        teamBMapsWon: 1,
+      },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.success, true);
+    assert.equal(res.payload.data.status, "finalized");
+    assert.equal(res.payload.data.ratingMode, "manual_override");
+    assert.equal(res.payload.data.series.id, "quest-series-manual");
+    assert.ok(res.payload.meta.serverNow);
+    assert.deepEqual(nextErrors, []);
+    assert.equal(received[0].bindingTeamAId, "binding-a");
+    assert.equal(received[0].winnerTeamId, "binding-winner");
+    assert.equal(received[0].ratingMode, "manual_override");
+    assert.ok(received[0].playedAt instanceof Date, "the controller parses playedAt into a Date");
+    assert.equal(received[0].actorUserId, "admin-1");
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].targetType, "valorant_series");
+    assert.equal(audits[0].afterData.action, "create_manual");
+    assert.equal(audits[0].afterData.operationId, "op-manual");
+  } finally {
+    restore();
+  }
+});
+
+test("createManualSeries controller rejects an invalid playedAt without calling the service", async () => {
+  let serviceCalls = 0;
+  const serviceMock = {
+    createManualSeries: async () => { serviceCalls += 1; },
+  };
+  const auditMock = { requestAuditContext: () => ({}), recordAudit: async () => {} };
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [auditPath]: auditMock,
+    [asyncHandlerPath]: { asyncHandler },
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const { nextErrors } = await callHandler(controller.createManualSeries, {
+      user: { id: "admin-1" },
+      requestId: "req-manual-bad",
+      ip: "127.0.0.1",
+      body: {
+        bindingTeamAId: "binding-a",
+        bindingTeamBId: "binding-b",
+        format: "bo3",
+        playedAt: "not-a-date",
+        ratingMode: "manual_override",
+        winnerTeamId: "binding-winner",
+        teamAMapsWon: 2,
+        teamBMapsWon: 1,
+      },
+    });
+    assert.ok(nextErrors[0] instanceof HttpError);
+    assert.equal(nextErrors[0].statusCode, 400);
+    assert.equal(serviceCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("controller propagates HttpError through next()", async () => {
   const serviceMock = {
     bindTeam: async () => { throw new HttpError(409, "already bound"); },

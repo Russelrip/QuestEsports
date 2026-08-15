@@ -126,6 +126,7 @@ router.post("/admin/valorant/matches/import", valorantController.importMatch);
 router.get("/admin/valorant/matches/by-henrik-id/:henrikMatchId", valorantController.getMatchByHenrikId);
 router.get("/admin/valorant/matches", valorantController.listMatches);
 router.post("/admin/valorant/series", valorantController.createSeries);
+router.post("/admin/valorant/series/manual", valorantController.createManualSeries);
 router.get("/admin/valorant/series", valorantController.listSeries);
 router.get("/admin/valorant/series/:id", valorantController.getSeries);
 router.delete("/admin/valorant/series/:id", valorantController.deleteSeries);

@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { valorantRequest, FastApiError } = require("./valorant.client");
-const { mapTeamResponse, mapMatchCandidate, mapMatchSummary, mapMatchDetail, mapSeriesView, mapGameView, mapPreview, mapFinalizeResult, mapRankingEntry, mapRatingEvent } = require("./valorant.mapper");
+const { mapTeamResponse, mapMatchCandidate, mapMatchSummary, mapMatchDetail, mapSeriesView, mapGameView, mapPreview, mapFinalizeResult, mapManualFinalizeResult, mapRankingEntry, mapRatingEvent } = require("./valorant.mapper");
 const { normalizeRiotId, generateExternalKey, assertSupportedFormat } = require("./valorant.validation");
 
 const hashRequestBody = (body) =>
@@ -407,6 +407,113 @@ const createSeries = async ({
   return series;
 };
 
+// Manual-result series: creates AND finalizes a VALORANT series in one upstream
+// call (FastAPI POST /api/v1/series/manual). No games, no anchors — the winner
+// and map counts are supplied directly. The operation ledger carries the Quest
+// external key so the manual call is idempotent, and the Quest projection is
+// created already-finalized so it surfaces in the series list and
+// reconciliation.
+const createManualSeries = async ({
+  bindingTeamAId,
+  bindingTeamBId,
+  format,
+  playedAt,
+  ratingMode,
+  winnerTeamId,
+  teamAMapsWon,
+  teamBMapsWon,
+  actorUserId,
+  requestId,
+  ipAddress,
+}) => {
+  assertSupportedFormat(format);
+
+  const bindingIds = [bindingTeamAId, bindingTeamBId, winnerTeamId];
+  const [bindingA, bindingB, winnerBinding] = await Promise.all(
+    bindingIds.map((bindingId) =>
+      prisma.valorantTeamBinding.findUnique({
+        where: { id: bindingId },
+        select: { id: true, status: true, valorantTeamUuid: true },
+      }),
+    ),
+  );
+  if (!bindingA || !bindingB || !winnerBinding) throw new HttpError(404, "VALORANT binding not found.");
+  if (bindingA.status !== "active" || bindingB.status !== "active" || winnerBinding.status !== "active") {
+    throw new HttpError(409, "Both teams must have active VALORANT bindings.");
+  }
+  if (bindingA.id === bindingB.id) {
+    throw new HttpError(400, "The two series teams must be different bindings.");
+  }
+  if (winnerBinding.id !== bindingA.id && winnerBinding.id !== bindingB.id) {
+    throw new HttpError(400, "The winner team must be one of the two series teams.");
+  }
+
+  const externalKey = generateExternalKey();
+  const operation = await createOperation({
+    type: "series_manual",
+    externalKey,
+    actorUserId,
+    requestBody: {
+      team_a_id: bindingA.valorantTeamUuid,
+      team_b_id: bindingB.valorantTeamUuid,
+      format,
+      played_at: playedAt.toISOString(),
+      rating_mode: ratingMode,
+      winner_team_id: winnerBinding.valorantTeamUuid,
+      team_a_maps_won: teamAMapsWon,
+      team_b_maps_won: teamBMapsWon,
+    },
+  });
+  await prisma.questValorantOperation.update({
+    where: { id: operation.id },
+    data: { status: "in_flight" },
+  });
+
+  let response;
+  try {
+    response = await valorantRequest({
+      method: "POST",
+      path: "/api/v1/series/manual",
+      body: {
+        team_a_id: bindingA.valorantTeamUuid,
+        team_b_id: bindingB.valorantTeamUuid,
+        format,
+        played_at: playedAt.toISOString(),
+        rating_mode: ratingMode,
+        winner_team_id: winnerBinding.valorantTeamUuid,
+        team_a_maps_won: teamAMapsWon,
+        team_b_maps_won: teamBMapsWon,
+        external_quest_series_id: externalKey,
+      },
+      actorUserId,
+      operationId: operation.operationId,
+      externalKey,
+      idempotent: true,
+    });
+  } catch (error) {
+    await markOperationFailed(operation.id, error);
+    throw error;
+  }
+
+  const result = mapManualFinalizeResult(response.data);
+  const series = await prisma.questValorantSeries.create({
+    data: {
+      externalKey,
+      bindingAId: bindingA.id,
+      bindingBId: bindingB.id,
+      format,
+      playedAt,
+      ratingMode,
+      status: "finalized",
+      valorantSeriesUuid: result.seriesId,
+      finalizedById: actorUserId,
+      lastOperationId: operation.id,
+    },
+  });
+  await markOperationSucceeded(operation.id, response);
+  return { ...result, series, operationId: operation.operationId };
+};
+
 const getSeries = async ({ seriesId }) => {
   const series = await prisma.questValorantSeries.findUnique({
     where: { id: seriesId },
@@ -805,6 +912,7 @@ module.exports = {
   upsertMatchProjection,
   requireSeriesWithUuid,
   createSeries,
+  createManualSeries,
   getSeries,
   listSeries,
   deleteSeries,

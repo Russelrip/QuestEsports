@@ -853,6 +853,9 @@ const additionalPaths = {
     post: createOperation("valorant", "Create a draft VALORANT series with anchors and external key", { authenticated: true }),
     get: createOperation("valorant", "List Quest VALORANT series projections", { authenticated: true }),
   },
+  "/api/v1/admin/valorant/series/manual": {
+    post: createOperation("valorant", "Create and finalize a manual-result VALORANT series (no games; idempotent by external key)", { authenticated: true }),
+  },
   "/api/v1/admin/valorant/series/{id}": {
     get: createOperation("valorant", "Get a Quest VALORANT series projection", { authenticated: true }),
     delete: createOperation("valorant", "Delete a draft VALORANT series", { authenticated: true }),

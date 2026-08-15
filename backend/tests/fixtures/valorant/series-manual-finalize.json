@@ -1,0 +1,31 @@
+{
+  "series_id": "00000000-0000-4000-8000-00000000000a",
+  "status": "finalized",
+  "calculated_winner_id": "00000000-0000-4000-8000-00000000000b",
+  "official_winner_id": "00000000-0000-4000-8000-00000000000b",
+  "winner_override_reason": "manual result entered by admin",
+  "rating_mode": "manual_override",
+  "events": [
+    {
+      "id": "00000000-0000-4000-8000-00000000000c",
+      "run_id": "00000000-0000-4000-8000-00000000000d",
+      "series_id": "00000000-0000-4000-8000-00000000000a",
+      "team_id": "00000000-0000-4000-8000-00000000000b",
+      "opponent_team_id": "00000000-0000-4000-8000-00000000000e",
+      "elo_before": "1200.00",
+      "elo_after": "1218.00",
+      "elo_change": "18.00",
+      "result": "win",
+      "sequence": 1,
+      "k_factor": "32.00",
+      "expected_score": "0.5",
+      "performance_multiplier": null,
+      "importance_multiplier": "1.00",
+      "upset_bonus": null,
+      "calculation_details": { "mode": "manual_override" },
+      "created_at": "2026-08-15T18:00:00Z"
+    }
+  ],
+  "team_a_current_elo": 1218,
+  "team_b_current_elo": 1180
+}

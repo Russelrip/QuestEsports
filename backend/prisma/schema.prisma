@@ -29,6 +29,7 @@ enum ValorantSeriesStatus {
 enum ValorantOperationType {
   team_bind
   series_create
+  series_manual
   attach_game
   set_game_order
   remove_game

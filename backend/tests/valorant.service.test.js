@@ -605,6 +605,155 @@ test("createSeries rejects an unknown tournamentId without calling FastAPI", asy
   }
 });
 
+test("createManualSeries writes a series_manual operation, sends snake_case body, and stores a finalized projection", async () => {
+  const fixture = require("./fixtures/valorant/series-manual-finalize.json");
+  const statuses = [];
+  let sentBody;
+  let sentKey;
+  let createdSeriesData;
+  let operationExternalKey;
+  let operationId;
+  const prismaMock = {
+    prisma: {
+      valorantTeamBinding: {
+        findUnique: async ({ where }) => {
+          const map = {
+            "binding-a": { id: "binding-a", status: "active", valorantTeamUuid: "val-team-1" },
+            "binding-b": { id: "binding-b", status: "active", valorantTeamUuid: "val-team-2" },
+            
+          };
+          return map[where.id] || null;
+        },
+      },
+      questValorantOperation: {
+        create: async ({ data }) => {
+          operationExternalKey = data.externalKey;
+          operationId = data.operationId;
+          return { id: "op-row-manual", ...data };
+        },
+        update: async ({ data }) => {
+          statuses.push(data.status);
+          return { id: "op-row-manual", ...data };
+        },
+      },
+      questValorantSeries: {
+        create: async ({ data }) => {
+          createdSeriesData = data;
+          return { id: "quest-series-manual", ...data };
+        },
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ path, body, externalKey, idempotent }) => {
+      assert.equal(path, "/api/v1/series/manual");
+      assert.equal(idempotent, true);
+      sentBody = body;
+      sentKey = externalKey;
+      return { status: 200, data: fixture, requestId: "fastapi-req-manual" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapManualFinalizeResult: (r) => ({ seriesId: r.series_id, status: r.status, ratingMode: r.rating_mode }) },
+    [validationPath]: { assertSupportedFormat: () => {}, generateExternalKey: () => "quest-ext-manual-1" },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const result = await service.createManualSeries({
+      bindingTeamAId: "binding-a",
+      bindingTeamBId: "binding-b",
+      format: "bo3",
+      playedAt: new Date("2026-08-15T18:00:00Z"),
+      ratingMode: "manual_override",
+      winnerTeamId: "binding-a",
+      teamAMapsWon: 2,
+      teamBMapsWon: 1,
+      actorUserId: "user-1",
+      requestId: "req-manual",
+      ipAddress: "127.0.0.1",
+    });
+    assert.equal(operationExternalKey, "quest-ext-manual-1", "the operation ledger carries the external key");
+    assert.equal(sentKey, "quest-ext-manual-1");
+    assert.equal(sentBody.external_quest_series_id, "quest-ext-manual-1");
+    assert.deepEqual(sentBody, {
+      team_a_id: "val-team-1",
+      team_b_id: "val-team-2",
+      format: "bo3",
+      played_at: "2026-08-15T18:00:00.000Z",
+      rating_mode: "manual_override",
+      winner_team_id: "val-team-1",
+      team_a_maps_won: 2,
+      team_b_maps_won: 1,
+      external_quest_series_id: "quest-ext-manual-1",
+    });
+    assert.equal(createdSeriesData.status, "finalized", "the projection is stored already-finalized");
+    assert.equal(createdSeriesData.externalKey, "quest-ext-manual-1");
+    assert.equal(createdSeriesData.valorantSeriesUuid, fixture.series_id);
+    assert.equal(createdSeriesData.ratingMode, "manual_override");
+    assert.equal(createdSeriesData.finalizedById, "user-1");
+    assert.equal(createdSeriesData.lastOperationId, "op-row-manual");
+    assert.equal(result.status, "finalized");
+    assert.equal(result.series.id, "quest-series-manual");
+    assert.equal(result.operationId, operationId, "the ledger operationId is echoed in the result");
+    assert.deepEqual(statuses, ["in_flight", "succeeded"]);
+  } finally {
+    restore();
+  }
+});
+
+test("createManualSeries rejects a winner binding outside the two series teams without calling FastAPI", async () => {
+  let clientCalls = 0;
+  const prismaMock = {
+    prisma: {
+      valorantTeamBinding: {
+        findUnique: async ({ where }) => {
+          const map = {
+            "binding-a": { id: "binding-a", status: "active", valorantTeamUuid: "val-team-1" },
+            "binding-b": { id: "binding-b", status: "active", valorantTeamUuid: "val-team-2" },
+            "binding-other": { id: "binding-other", status: "active", valorantTeamUuid: "val-team-3" },
+          };
+          return map[where.id] || null;
+        },
+      },
+      questValorantOperation: {},
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => { clientCalls += 1; } },
+    [mapperPath]: { mapManualFinalizeResult: () => ({}) },
+    [validationPath]: { assertSupportedFormat: () => {}, generateExternalKey: () => "ext" },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    await assert.rejects(
+      service.createManualSeries({
+        bindingTeamAId: "binding-a",
+        bindingTeamBId: "binding-b",
+        format: "bo3",
+        playedAt: new Date("2026-08-15T18:00:00Z"),
+        ratingMode: "manual_override",
+        winnerTeamId: "binding-other",
+        teamAMapsWon: 2,
+        teamBMapsWon: 1,
+        actorUserId: "user-1",
+        requestId: "req-manual-bad",
+        ipAddress: "127.0.0.1",
+      }),
+      (error) => error instanceof HttpError && error.statusCode === 400,
+    );
+    assert.equal(clientCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("listSeries includes the linked tournament as { id, title }", async () => {
   let capturedInclude;
   const prismaMock = {

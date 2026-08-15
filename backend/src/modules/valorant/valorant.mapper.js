@@ -127,6 +127,14 @@ const mapFinalizeResult = (result) => ({
   teamBCurrentElo: result.team_b_current_elo,
 });
 
+// Manual-result series (POST /api/v1/series/manual): the FastAPI response is the
+// same FinalizeResult shape as a normal finalize, so the mapped fields are the
+// same. Kept as a named mapper so any manual-result-specific fields added to
+// the upstream contract land here without touching the finalize path.
+const mapManualFinalizeResult = (result) => ({
+  ...mapFinalizeResult(result),
+});
+
 const mapTeamResponse = (team) => ({
   id: team.id,
   name: team.name,
@@ -159,6 +167,7 @@ module.exports = {
   mapPreview,
   mapRatingEvent,
   mapFinalizeResult,
+  mapManualFinalizeResult,
   mapTeamResponse,
   mapRankingEntry,
 };

@@ -121,6 +121,33 @@ const listSeries = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: { series: data }, meta: { serverNow: new Date().toISOString() } });
 });
 
+const createManualSeries = asyncHandler(async (req, res) => {
+  requireBody(req.body, ["bindingTeamAId", "bindingTeamBId", "format", "playedAt", "ratingMode", "winnerTeamId", "teamAMapsWon", "teamBMapsWon"]);
+  const playedAt = new Date(req.body.playedAt);
+  if (Number.isNaN(playedAt.getTime())) throw new HttpError(400, "Invalid playedAt.");
+  const result = await valorantService.createManualSeries({
+    bindingTeamAId: req.body.bindingTeamAId,
+    bindingTeamBId: req.body.bindingTeamBId,
+    format: req.body.format,
+    playedAt,
+    ratingMode: req.body.ratingMode,
+    winnerTeamId: req.body.winnerTeamId,
+    teamAMapsWon: req.body.teamAMapsWon,
+    teamBMapsWon: req.body.teamBMapsWon,
+    actorUserId: req.user.id,
+    requestId: req.requestId,
+    ipAddress: req.ip,
+  });
+  await writeAudit(req, {
+    targetType: "valorant_series",
+    targetId: result.series.id,
+    afterData: { action: "create_manual", externalKey: result.series.externalKey, operationId: result.operationId || null },
+  });
+  // FinalizeResult fields are surfaced first-class under `data` (same envelope
+  // as finalizeSeries), with the Quest series projection alongside it.
+  res.status(200).json({ success: true, data: { ...result }, meta: { serverNow: new Date().toISOString() } });
+});
+
 const getSeries = asyncHandler(async (req, res) => {
   const series = await valorantService.getSeries({ seriesId: req.params.id });
   res.status(200).json({ success: true, data: { series }, meta: { serverNow: new Date().toISOString() } });
@@ -215,6 +242,7 @@ module.exports = {
   listMatches,
   listSeriesMatches,
   createSeries,
+  createManualSeries,
   listSeries,
   getSeries,
   deleteSeries,

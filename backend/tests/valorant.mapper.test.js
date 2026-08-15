@@ -153,6 +153,22 @@ test("mapFinalizeResult maps the recorded FinalizeResult fixture", () => {
   assert.equal(mapped.teamBCurrentElo, 1180);
 });
 
+test("mapManualFinalizeResult maps the manual-result FinalizeResult shape", () => {
+  const fixture = require("./fixtures/valorant/series-manual-finalize.json");
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapManualFinalizeResult(fixture);
+  assert.equal(mapped.seriesId, fixture.series_id);
+  assert.equal(mapped.status, "finalized");
+  assert.equal(mapped.ratingMode, "manual_override");
+  assert.equal(mapped.winnerOverrideReason, "manual result entered by admin");
+  assert.equal(mapped.calculatedWinnerId, fixture.calculated_winner_id);
+  assert.equal(mapped.officialWinnerId, fixture.official_winner_id);
+  assert.equal(mapped.events.length, 1);
+  assert.equal(mapped.events[0].calculationDetails.mode, "manual_override");
+  assert.equal(mapped.teamACurrentElo, 1218);
+  assert.equal(mapped.teamBCurrentElo, 1180);
+});
+
 test("mapRankingEntry maps elo from current_elo as a number", () => {
   const { module: mapper } = loadMapper();
   const mapped = mapper.mapRankingEntry({
