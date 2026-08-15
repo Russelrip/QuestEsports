@@ -243,7 +243,9 @@ const registrationRequest = async <T>(
   const response = await fetch(buildApiUrl(path), options);
   const payload = (await response
     .json()
-    .catch(() => null)) as (T & { message?: string; error?: { message?: string } }) | null;
+    .catch(() => null)) as
+    | { data?: T; message?: string; error?: { message?: string } }
+    | null;
 
   if (!response.ok) {
     const message =
@@ -253,7 +255,7 @@ const registrationRequest = async <T>(
     throw Object.assign(new Error(message), { status: response.status });
   }
 
-  return payload as T;
+  return payload?.data as T;
 };
 
 export const requestDiscordLogin = () =>
