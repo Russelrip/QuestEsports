@@ -5,6 +5,7 @@ import type {
   Binding,
   DiscoverResponse,
   FinalizeResult,
+  ManualSeriesInput,
   MatchDetail,
   QuestValorantSeries,
   RankingEntry,
@@ -122,6 +123,12 @@ export const createValorantSeries = (input: {
 
 export const fetchValorantSeriesList = () =>
   valorantAdminRequest<{ series: QuestValorantSeries[] }>("/api/v1/admin/valorant/series");
+
+export const createManualValorantSeries = (input: ManualSeriesInput) =>
+  valorantAdminRequest<FinalizeResult & { series: QuestValorantSeries; operationId?: string | null }>(
+    "/api/v1/admin/valorant/series/manual",
+    { method: "POST", json: input }
+  );
 
 export const fetchValorantSeries = (seriesId: string) =>
   valorantAdminRequest<{ series: QuestValorantSeries }>(

@@ -74,6 +74,16 @@ export type FinalizeResult = {
   winnerOverrideReason: string | null; ratingMode: ValorantRatingMode | null;
   events: RatingEvent[]; teamACurrentElo: number; teamBCurrentElo: number; operationId: string;
 };
+export type ManualSeriesInput = {
+  bindingTeamAId: string;
+  bindingTeamBId: string;
+  format: ValorantFormat;
+  playedAt: string;
+  ratingMode: ValorantRatingMode;
+  winnerTeamId: string;
+  teamAMapsWon: number;
+  teamBMapsWon: number;
+};
 export type RankingEntry = { teamId: string; rank: number; elo: number; seriesWins: number; seriesLosses: number };
 export type SeriesViewLite = {
   id: string; teamAId: string; teamBId: string; format: ValorantFormat; status: string;

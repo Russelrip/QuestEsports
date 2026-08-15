@@ -96,6 +96,40 @@ describe("VALORANT admin UI boundaries", () => {
     expect(form).toContain("Both teams must have an active VALORANT binding");
   });
 
+  it("series form's manual-result mode wires the winner + maps-won inputs to createManualValorantSeries", () => {
+    const form = read("components/admin/valorant/ValorantSeriesForm.tsx");
+    const api = read("lib/valorant-api.ts");
+    const lib = read("lib/valorant.ts");
+    // Manual/discovered series-type toggle (Discovered stays the default)
+    expect(form).toContain('name="seriesType"');
+    expect(form).toContain('value="discovered"');
+    expect(form).toContain('value="manual"');
+    expect(form).toContain("Manual result");
+    expect(form).toContain("seriesType === \"discovered\"");
+    // Winner radio + per-team maps-won number inputs
+    expect(form).toContain('name="winner"');
+    expect(form).toContain("Team A maps won");
+    expect(form).toContain("Team B maps won");
+    expect(form).toContain('id="team-a-maps-won"');
+    expect(form).toContain('id="team-b-maps-won"');
+    // Client-side result validation (winner takes more maps; pair matches the format)
+    expect(form).toContain("mapsNeededToWin");
+    expect(form).toContain("manualResultValid");
+    expect(form).toContain("manualResultHint");
+    // Manual submit finalizes immediately: ratingMode (not ratingModePreference)
+    // and the winning binding id
+    expect(form).toContain("createManualValorantSeries");
+    expect(form).toContain("ratingMode: manualRatingMode");
+    expect(form).not.toContain("ratingModePreference: manualRatingMode");
+    expect(form).toContain("winnerTeamId: winnerIsA ? bindingTeamAId : bindingTeamBId");
+    expect(form).toContain("onCreated(result.series.id)");
+    // API + shared type wiring
+    expect(api).toContain("/api/v1/admin/valorant/series/manual");
+    expect(api).toContain("ManualSeriesInput");
+    expect(api).toContain("method: \"POST\"");
+    expect(lib).toContain("export type ManualSeriesInput");
+  });
+
   it("series list shows status, format, teams, tournament column, and a client-side tournament filter", () => {
     const manager = read("components/admin/valorant/ValorantSeriesManager.tsx");
     expect(manager).toContain("New series");
