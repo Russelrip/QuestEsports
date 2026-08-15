@@ -105,7 +105,9 @@ describe("VALORANT admin UI boundaries", () => {
     const detail = read("components/admin/valorant/ValorantSeriesDetail.tsx");
     expect(control).toContain("validateDesiredOrder");
     expect(control).toContain("Save order");
-    expect(control).toContain('aria-label="Map number');
+    expect(control).toContain("mapName");
+    expect(control).toContain("Unknown map");
+    expect(control).toContain('aria-label="Map position');
     expect(detail).toContain("setValorantGameOrder");
   });
 

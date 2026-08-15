@@ -46,11 +46,11 @@ export default function ValorantReorderControl({
         {games.map((game) => (
           <div key={game.id} className="grid min-w-0 gap-2">
             <label htmlFor={`map-number-${game.id}`} className="text-xs font-medium text-slate-400">
-              Game {game.gameNumber}
+              {game.mapName ?? "Unknown map"}
             </label>
             <Select
               id={`map-number-${game.id}`}
-              aria-label="Map number"
+              aria-label="Map position"
               value={numbers[game.id]}
               onChange={(event) =>
                 setNumbers((current) => ({
