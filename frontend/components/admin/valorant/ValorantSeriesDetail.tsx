@@ -37,6 +37,17 @@ const teamLabel = (series: QuestValorantSeries, side: "A" | "B") => {
   return savedTeam.teamTag ? `${savedTeam.name} (${savedTeam.teamTag})` : savedTeam.name;
 };
 
+// Winning score is highlighted so "who won" is visible at a glance; the
+// highlighted score IS the indicator, so no side labels are used.
+const scoreHighlightClasses = (red: number | null, blue: number | null) => {
+  if (red !== null && blue !== null && red !== blue) {
+    return red > blue
+      ? { red: "font-semibold text-emerald-300", blue: "text-slate-500" }
+      : { red: "text-slate-500", blue: "font-semibold text-emerald-300" };
+  }
+  return { red: "", blue: "" };
+};
+
 export default function ValorantSeriesDetail({
   seriesId,
   onBack,
@@ -346,35 +357,47 @@ export default function ValorantSeriesDetail({
                   Pick a match to attach as the next game in this series.
                 </p>
                 <ul className="mt-3 grid gap-2">
-                  {discoverCandidates.map((candidate) => (
-                    <li
-                      key={candidate.henrikMatchId}
-                      className="flex flex-wrap items-center gap-3 rounded-xl border border-purple-400/20 px-4 py-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-white">
-                          {candidate.map ?? "Unknown map"}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {formatAdminCompactDateTime(candidate.startedAt)}
-                        </p>
-                      </div>
-                      <p className="whitespace-nowrap font-mono text-sm text-slate-300">
-                        {candidate.redScore ?? "–"}–{candidate.blueScore ?? "–"}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        disabled={attachingCandidateId !== null}
-                        onClick={() => void handleAttachCandidate(candidate)}
+                  {discoverCandidates.map((candidate) => {
+                    const scoreClasses = scoreHighlightClasses(
+                      candidate.redScore,
+                      candidate.blueScore,
+                    );
+                    return (
+                      <li
+                        key={candidate.henrikMatchId}
+                        className="flex flex-wrap items-center gap-3 rounded-xl border border-purple-400/20 px-4 py-3"
                       >
-                        {attachingCandidateId === candidate.henrikMatchId
-                          ? "Attaching…"
-                          : "Attach"}
-                      </Button>
-                    </li>
-                  ))}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-white">
+                            {candidate.map ?? "Unknown map"}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {formatAdminCompactDateTime(candidate.startedAt)}
+                          </p>
+                        </div>
+                        <p className="whitespace-nowrap font-mono text-sm text-slate-300">
+                          <span className={scoreClasses.red}>
+                            {candidate.redScore ?? "–"}
+                          </span>
+                          –
+                          <span className={scoreClasses.blue}>
+                            {candidate.blueScore ?? "–"}
+                          </span>
+                        </p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={attachingCandidateId !== null}
+                          onClick={() => void handleAttachCandidate(candidate)}
+                        >
+                          {attachingCandidateId === candidate.henrikMatchId
+                            ? "Attaching…"
+                            : "Attach"}
+                        </Button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </Card>
             ) : (
