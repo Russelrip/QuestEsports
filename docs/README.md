@@ -13,6 +13,9 @@ Use the guide that matches the work being performed. The root [README](../README
 
 ## Setup and Architecture
 
+- [Developer Guide](developer-guide.md) — supported contributor workflow, package commands, and verification.
+- [Environment Reference](environment-reference.md) — environment variable ownership, applicability, and safe placeholders.
+- [VALORANT Local Development](valorant-local-development.md) — dedicated-test topology and two-service integration workflow.
 - [Setup and Deployment](./setup-and-deployment.md) — local setup, environment configuration, VPS deployment, and reverse proxy guidance.
 - [Collaboration and Staging](./collaboration-and-staging.md) — contributor workflow, staging isolation, and credential boundaries.
 - [CI/CD](./ci-cd.md) — GitHub Actions, manual production deployment, migration approval, and troubleshooting.

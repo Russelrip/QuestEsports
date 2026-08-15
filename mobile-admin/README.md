@@ -6,7 +6,7 @@ Quest Admin is the private Android operations client for Quest E-sports. It uses
 
 - Admin username/password login issues a mobile session after the credentials and admin role are validated.
 - Google and Discord login can issue a mobile session after the provider identity resolves to an existing admin account.
-- Social sign-in returns a two-minute, single-use grant through the verified `https://api.questesports.lk/mobile-admin-oauth` Android App Link. The grant is bound to an app-generated PKCE verifier, and the reusable bearer token is issued only through the follow-up API exchange.
+- Local social sign-in uses the custom-scheme redirect `questadmin://oauth`. Production social sign-in returns a two-minute, single-use grant through the verified `https://api.questesports.lk/mobile-admin-oauth` Android App Link. The grant is bound to an app-generated PKCE verifier, and the reusable bearer token is issued only through the follow-up API exchange.
 - The APK stores that token with Expo SecureStore backed by Android Keystore.
 - No password, GitHub token, signing key, or private API credential is bundled into the APK.
 
@@ -22,7 +22,7 @@ Open the Tickets tab, select the event at the gate, and grant camera access. Eac
 
 ## Local development
 
-Requirements: Node.js 24, Android Studio/SDK, and a reachable backend.
+Requirements: Node.js 24 guidance, Android Studio/SDK, and a reachable backend. This package has no `engines` field; use the project Node 24 version used by the other packages and workflows.
 
 ```powershell
 Copy-Item .env.example .env.local
@@ -31,7 +31,38 @@ npm run typecheck
 npm run android
 ```
 
-For a physical device using a local API, set `EXPO_PUBLIC_API_URL` to the computer's LAN HTTPS address. Production defaults to `https://api.questesports.lk`.
+Before local launch, set the local values in `mobile-admin/.env.local`:
+
+```env
+EXPO_PUBLIC_API_URL=http://localhost:5001
+EXPO_PUBLIC_SITE_URL=http://localhost:3000
+EXPO_PUBLIC_OAUTH_REDIRECT_URL=questadmin://oauth
+```
+
+Android `localhost` is device- or emulator-local; it does not automatically
+refer to the development computer. For an Android emulator, forward the local
+API and site ports where supported:
+
+```powershell
+adb reverse tcp:5001 tcp:5001
+adb reverse tcp:3000 tcp:3000
+```
+
+With that forwarding, the local values above can use `localhost`. For a
+physical device, replace `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_SITE_URL` with
+reachable HTTPS development origins. Configure the backend `API_PUBLIC_URL`,
+`APP_URL`, and `CORS_ORIGIN` to the matching origins, and register the exact
+Google and Discord backend callback URLs from the setup guide with each
+provider. Keep `MOBILE_ADMIN_OAUTH_REDIRECT_URL` and
+`EXPO_PUBLIC_OAUTH_REDIRECT_URL` set to the local custom scheme
+`questadmin://oauth`; the provider callback returns to the backend, which then
+hands the one-time grant to that app scheme. Do not copy production API,
+provider, certificate, or App Link values into local configuration.
+
+Production uses the verified HTTPS App Link
+`https://api.questesports.lk/mobile-admin-oauth`, not the custom scheme.
+
+See the [Developer Guide](../docs/developer-guide.md) and [Environment Reference](../docs/environment-reference.md) for local configuration and release guidance.
 
 ## Private APK releases
 

@@ -4,7 +4,7 @@ Next.js application for the public website, account area, tournament registratio
 
 ## Requirements
 
-- Node.js 24 LTS
+- Node.js 24.x (declared in `package.json`)
 - A reachable Quest Esports backend
 
 ## Setup
@@ -48,7 +48,7 @@ SITE_MAINTENANCE_MODE=false
 - Account: profile, sessions, saved teams, registrations, orders, and applications
 - Admin: users, tournaments, series, teams, registrations, recruitment, products, orders, payments, tickets, rulebooks, games, and contact messages
 
-Complete backend contracts are in [API Documentation](../docs/api-documentation.md).
+Complete backend contracts are in [API Documentation](../docs/api-documentation.md). Use the [Developer Guide](../docs/developer-guide.md) for the contributor workflow, [Environment Reference](../docs/environment-reference.md) for configuration, and [VALORANT Local Development](../docs/valorant-local-development.md) for the optional integration topology.
 
 ## Security and Rendering Notes
 
@@ -66,8 +66,11 @@ See [Authentication Flow](../docs/authentication-flow.md), [Search Console and S
 npm run lint
 npm run typecheck
 npm test
-npm run build
-npm run test:e2e
+npm run test:e2e:local
 ```
 
-Playwright uses a deterministic local mock API and capped worker counts for stable critical journeys. Performance-budget overrides require an approved, recorded reason.
+`npm run test:e2e:local` builds with `NEXT_PUBLIC_API_URL=http://127.0.0.1:5011`
+and `PLAYWRIGHT_MOCK_API_PORT=5011` before starting the deterministic local mock
+API and Playwright. Use direct `npm run test:e2e` only against an existing build
+created with those same mock values. Performance-budget overrides require an
+approved, recorded reason.

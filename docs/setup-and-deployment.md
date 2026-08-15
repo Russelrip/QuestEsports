@@ -1,10 +1,10 @@
 # Setup And Deployment Guide
 
-This guide covers local setup, environment configuration, and a practical production deployment approach for the current codebase.
+This guide covers local setup, environment configuration, and a practical production deployment approach for the current codebase. Use the [Developer Guide](developer-guide.md) for contributor workflows, the [Environment Reference](environment-reference.md) for the variable inventory, and [VALORANT Local Development](valorant-local-development.md) for the dedicated-test integration workflow.
 
 ## Requirements
 
-- Node.js 24 LTS
+- Node.js 24.x (backend and frontend declare `24.x`; mobile-admin follows project Node 24 guidance without a package `engines` field)
 - npm 10+
 - PostgreSQL 15+ recommended
 - Resend API credentials (or SMTP credentials) for real email delivery
@@ -17,14 +17,14 @@ Backend:
 
 ```bash
 cd backend
-npm install
+npm ci
 ```
 
 Frontend:
 
 ```bash
 cd frontend
-npm install
+npm ci
 ```
 
 ### 2. Configure environment variables
@@ -70,7 +70,6 @@ MOBILE_ADMIN_OAUTH_REDIRECT_URL=questadmin://oauth
 MOBILE_ADMIN_ANDROID_CERT_SHA256=
 UPLOAD_ROOT=
 PRIVATE_UPLOAD_ROOT=
-PAYMENT_PROOF_PDF_ENABLED=false
 BANK_TRANSFER_PROOF_RETENTION_DAYS=365
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -101,15 +100,27 @@ SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 
 The maintenance variables are server-only. Keep them identical in the frontend and backend environments, and leave the switch false during normal operation.
 
-### 3. Apply Prisma migrations
+### 3. Apply committed Prisma migrations
 
 ```bash
 cd backend
-npm run prisma:migrate
 npm run prisma:generate
+npm run prisma:migrate:deploy
 ```
 
-Use `npm run prisma:migrate` only for local development. For production deployments, use `npm run prisma:migrate:deploy`.
+Use `npm run prisma:migrate:deploy` for committed migrations in shared
+development, staging, CI, and production.
+
+### Intentional local schema/migration creation
+
+Use `npm run prisma:migrate` only when the local schema change is intentionally
+creating a new development migration:
+
+```bash
+cd backend
+npm run prisma:generate
+npm run prisma:migrate
+```
 
 Use a direct PostgreSQL URL for `DIRECT_URL` when the deployment host supports Supabase's IPv6 direct endpoint. On IPv4-only hosts, use Supavisor session mode on port `5432` for `DIRECT_URL`. Transaction mode on port `6543` is not suitable for Prisma migrations.
 
@@ -132,9 +143,14 @@ npm run dev
 ### 5. Verify startup
 
 - Frontend loads on `http://localhost:3000`
-- Backend health is available at `http://localhost:5001/api/health`
+- Liveness is available at `http://localhost:5001/api/health/live`
+- Readiness is available at `http://localhost:5001/api/health` and its alias `http://localhost:5001/api/health/ready`
 - Backend OpenAPI JSON is available at `http://localhost:5001/api/openapi.json`
 - Backend and frontend are started separately; there is no root workspace dev command.
+
+The liveness endpoint checks that the process can answer. Both readiness
+aliases check the database and storage and may return `503` during maintenance
+or dependency failure.
 
 ## First Admin User
 
@@ -218,17 +234,43 @@ Local redirect URIs:
 
 - Google: `http://localhost:5001/api/auth/google/callback`
 - Discord: `http://localhost:5001/api/auth/discord/callback`
+- Mobile admin: `questadmin://oauth` (custom scheme)
 
 Production redirect URIs:
 
 - Google: `https://api.questesports.lk/api/auth/google/callback`
 - Discord: `https://api.questesports.lk/api/auth/discord/callback`
+- Mobile admin: `https://api.questesports.lk/mobile-admin-oauth` (verified HTTPS Android App Link)
 
 Notes:
 
 - The provider dashboard redirect must match your backend callback URL exactly.
 - `APP_URL` must point to the frontend origin, not the API origin, because the backend redirects the browser back to the frontend after OAuth completes.
+- The mobile custom scheme is for local development only. Production mobile OAuth must use the verified HTTPS App Link and matching release certificate fingerprint.
 - Do not use placeholder strings such as `your_google_client_id` or `your_discord_client_id`; leave values blank until real credentials are available.
+
+### Android local OAuth transport
+
+Android `localhost` is the emulator or physical device itself, not the
+development computer. For an Android emulator using a backend on the host,
+forward the local ports where supported:
+
+```bash
+adb reverse tcp:5001 tcp:5001
+adb reverse tcp:3000 tcp:3000
+```
+
+Use `EXPO_PUBLIC_API_URL=http://localhost:5001` with that forwarding and keep
+the local final redirect `EXPO_PUBLIC_OAUTH_REDIRECT_URL=questadmin://oauth`.
+Set the backend `API_PUBLIC_URL` to the same local API origin,
+`MOBILE_ADMIN_OAUTH_REDIRECT_URL=questadmin://oauth`, and register the exact
+Google/Discord callback URLs from the local list above with each provider.
+For a physical device, use a reachable HTTPS development API and site origin
+instead of `localhost`, set `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_SITE_URL` to
+those origins, set the backend `API_PUBLIC_URL`, `APP_URL`, and `CORS_ORIGIN`
+to the matching origins, and register the resulting HTTPS backend callback
+URLs with the providers. The app's final redirect remains `questadmin://oauth`;
+do not substitute the production App Link in local configuration.
 
 ## Upload Storage
 
@@ -240,7 +282,7 @@ Locally, the backend writes public files below `backend/uploads/`:
 - `backend/uploads/tournament-schedules`
 - `backend/uploads/avatars`
 
-Bank-transfer receipts are stored separately under the local private fallback and are never exposed through `/api/uploads`.
+Bank-transfer receipts are stored separately under the local private fallback and are never exposed through `/api/uploads`. Payment-proof image handling supports PNG, JPEG, and WebP screenshots; there is no PDF payment-proof configuration.
 
 Production requirement:
 
@@ -288,8 +330,7 @@ For frontend changes, run:
 cd frontend
 npm run lint
 npm test
-npm run build
-npm run test:e2e
+npm run test:e2e:local
 ```
 
 Playwright critical journeys run in CI. Manual production checks remain necessary for provider callbacks, email delivery, private uploads, DNS, cookies, and live payment behavior.
@@ -373,6 +414,11 @@ Production topology: only Quest Express is reachable by the frontend. FastAPI
 lives on a private network with an IP allowlist and binds to a private
 interface; the browser never talks to FastAPI. `VALORANT_INTERNAL_BASE_URL` is
 asserted to be an HTTPS origin by `backend/src/config/env.js` in production.
+
+The external FastAPI checkout, credentials, runtime role, and production
+network placement are owner-maintained facts; verify them before operating a
+production integration. See [VALORANT Local Development](valorant-local-development.md)
+for the reproducible local topology.
 
 ### VALORANT local commands
 
@@ -458,7 +504,6 @@ MOBILE_ADMIN_OAUTH_REDIRECT_URL=https://api.questesports.lk/mobile-admin-oauth
 MOBILE_ADMIN_ANDROID_CERT_SHA256=COLON_SEPARATED_RELEASE_CERTIFICATE_SHA256
 UPLOAD_ROOT=/srv/quest-esports/uploads
 PRIVATE_UPLOAD_ROOT=/srv/quest-esports/private
-PAYMENT_PROOF_PDF_ENABLED=false
 BANK_TRANSFER_PROOF_RETENTION_DAYS=365
 PAYHERE_MODE=sandbox
 PAYHERE_MERCHANT_ID=
@@ -477,13 +522,13 @@ DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback
 Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
-- The current French VPS uses the Paris Supavisor session pooler on port `5432` for both database URLs because the direct Supabase endpoint is IPv6.
+- The repository records the current French VPS as using the Paris Supavisor session pooler on port `5432` for both database URLs because the direct Supabase endpoint is IPv6. Verify the live host, region, and pooler configuration with the owner; checked-in documentation cannot prove current infrastructure state.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
 - Mobile administrator OAuth requires the verified API-origin App Link and the colon-separated SHA-256 fingerprint of the release signing certificate.
 - `AUTH_ENCRYPTION_KEY` must be exactly 64 hexadecimal characters; do not rotate an existing key without a data migration plan.
 - Production requires `MAIL_DELIVERY_REQUIRED=true` and complete settings for the selected provider.
 - PayHere merchant values must be all configured or all blank. When blank, free and bank-transfer tournament registration remain available, but PayHere registration and merchandise checkout are disabled.
-- Keep `PAYMENT_PROOF_PDF_ENABLED=false` unless uploaded PDFs pass through a maintained malware-scanning/sanitization pipeline. Image receipts are decoded and re-encoded before storage.
+- Payment evidence accepts PNG, JPEG, and WebP screenshots; image receipts are decoded and re-encoded before storage.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
 - `REQUIRE_API_ORIGIN=true` blocks API requests without an allowed `Origin` or `Referer`; use `CORS_ORIGIN=https://questesports.lk` for the public site domain.
 - The Supabase Data API is unused and should be disabled for the Paris project. `npm run prisma:security:verify` confirms all public tables use RLS and Data API roles have no table privileges.
@@ -557,7 +602,7 @@ Production notes:
 1. Provision PostgreSQL.
 2. Provision persistent public and private storage outside the Git checkout (`UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT`).
 3. Set environment variables.
-4. Install dependencies with `npm install`.
+4. Install dependencies with `npm ci`.
 5. Run `npm run prisma:generate`.
 6. Run `npm run prisma:migrate:deploy`.
 7. Run the service with `npm start`.
@@ -566,7 +611,7 @@ Production notes:
 
 1. Set `NEXT_PUBLIC_API_URL`.
 2. Set `NEXT_PUBLIC_SITE_URL`.
-3. Install dependencies with `npm install`.
+3. Install dependencies with `npm ci`.
 4. Run `npm run lint`, `npm test`, and `npm run build`.
 5. Start with `npm run start`.
 
@@ -591,7 +636,7 @@ npm run prisma:migrate:deploy
 pm2 restart quest-backend --update-env
 pm2 save
 '
-curl --fail http://127.0.0.1:5001/api/health
+curl --fail http://127.0.0.1:5001/api/health/live
 ```
 
 If your frontend is hosted somewhere else, such as Vercel, you do not need to build or restart `frontend/` on this VPS.
@@ -602,7 +647,8 @@ For initial provisioning, Actions secrets, host-key pinning, PM2 systemd setup, 
 
 Check all of the following:
 
-- `GET /api/health` returns `200`
+- `GET /api/health/live` returns `200` for liveness
+- `GET /api/health` or `GET /api/health/ready` returns `200` for readiness when database and storage are available; `503` is expected during maintenance or dependency failure
 - signup works
 - login sets a session cookie
 - active sessions appear under `/api/sessions`

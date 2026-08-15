@@ -6,6 +6,9 @@ against `http://localhost:3000` with both services running (see
 data; never capture real Riot IDs or real matches. Save screenshots to the
 operational record, not the repository.
 
+For the local environment, service startup order, and test-project safety
+rules, see the [VALORANT local-development guide](./valorant-local-development.md).
+
 ## Flows (each recorded as passed/failed with a screenshot)
 
 1. **Team binding** — `/admin/valorant`: pick an existing SavedTeam, bind it,

@@ -1,5 +1,9 @@
 # Two-service VALORANT E2E
 
+See the [VALORANT local-development guide](../../../docs/valorant-local-development.md)
+for topology, prerequisites, startup, diagnostics, and cleanup. This document
+is the E2E-specific environment contract.
+
 Boots the Henrik fixture mock (:18000), `valorant-platform-backend` (:8000) and
 Quest Express (:5001) against one dedicated Supabase test project, then drives
 the design §11.4 journey through Quest admin routes. Requires:

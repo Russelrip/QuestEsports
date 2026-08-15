@@ -1,6 +1,6 @@
 # CI/CD Pipeline
 
-This repository uses GitHub Actions for continuous integration and owner-approved backend, frontend, and Android production releases. Disable Vercel's automatic production deployment from `main`; the protected frontend workflow promotes only the exact CI-passed commit after checking backend API compatibility.
+This repository uses GitHub Actions for continuous integration and owner-approved backend, frontend, and Android production releases. Disable Vercel's automatic production deployment from `main`; the protected frontend workflow promotes only the exact CI-passed commit after checking backend API compatibility. See the [Developer Guide](developer-guide.md), [Environment Reference](environment-reference.md), and [VALORANT Local Development](valorant-local-development.md) for contributor and integration details.
 
 ## Workflows
 
@@ -10,19 +10,31 @@ This repository uses GitHub Actions for continuous integration and owner-approve
 - `.github/workflows/deploy-frontend.yml` deploys an explicitly supplied, CI-passed `main` SHA after the production backend reports API compatibility version 2 or newer.
 - `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
 
+Backend CD is a manual, repository-owner-only job gated by
+`BACKEND_DEPLOY_ENABLED=true`, the exact deployment SHA, and a successful CI
+run for that SHA; it installs dependencies and runs backend tests before SSH
+deployment. Frontend deployment is owner-only and gated by
+`FRONTEND_DEPLOY_ENABLED=true`, the full `main` SHA, successful CI, and live
+API-compatibility checks. APK release is gated by an owner-created version tag
+pointing to the tested `main` commit and runs audit, typecheck, tests, Expo
+doctor, Android prebuild, and signing.
+
 The APK workflow references the `android-release` Environment and accepts only an owner-created tag pointing at the current `main` commit after CI passed that exact SHA. Where the GitHub plan supports required reviewers for private repositories, require repository-owner approval before exposing `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. GitHub Free private repositories cannot use that as a security boundary; keep releases offline or move deployment automation to an owner-only repository before granting another account write access. Keep the original keystore in encrypted offline custody; all future updates must use the same signing certificate.
 
 ## CI Checks
 
-Backend:
+Backend CI uses Node 24 and PostgreSQL 16, then runs:
 
 ```bash
 cd backend
 npm ci
+npm audit --omit=dev --audit-level=moderate
 npm run prisma:generate
 npm run prisma:migrate:deploy
 npm run prisma:migrate:status
 npx prisma migrate diff --exit-code --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma
+node scripts/verify-prisma-schema-scope.js
+npm run prisma:security:verify
 npm run test:coverage
 npm run lint
 ```
@@ -34,24 +46,48 @@ Frontend:
 ```bash
 cd frontend
 npm ci
+npm audit --audit-level=high
 npm run lint
+npm run typecheck
 npm test
 npm run build
+npx playwright install --with-deps chromium firefox webkit
 npm run test:e2e
 ```
 
-CI audits frontend production dependencies, runs Vitest unit tests, builds Next.js,
-installs Chromium, and runs the Playwright critical journeys under
-`frontend/tests/e2e` with two workers. From a fresh local checkout,
+CI audits frontend dependencies (including development dependencies), runs
+ESLint, the strict TypeScript check, Vitest unit tests, and the Next.js build,
+installs Chromium, Firefox, and WebKit, and runs the Playwright critical
+journeys under `frontend/tests/e2e` with one worker in CI. From a fresh local checkout,
 `npm run test:e2e:local` builds before starting Playwright.
-Playwright starts a deterministic local mock API on port 5001 so frontend CI
+Playwright starts a deterministic local mock API on port 5011 so frontend CI
 does not depend on an external backend process.
+
+### Mobile-admin CI
+
+The `mobile-admin` job runs on every CI workflow with Node 24. It installs with
+`npm ci`, runs `npm run audit:ci`, unit tests, TypeScript typecheck, and
+Expo Doctor validation. The workflow supplies the configured API and site
+environment values for configuration validation; this job does not build or
+publish an APK.
+
+### Optional VALORANT two-service E2E
+
+The `valorant-e2e` job is optional. When
+`secrets.VALORANT_PLATFORM_ACCESS_TOKEN` is unset, it prints a skip message and
+does not check out or start the sibling service. When the token is present, it
+checks out `valorant-platform-backend`, installs its development dependencies
+with `uv sync --extra dev`, and runs `npm run test:valorant:e2e` from `backend/`
+with the dedicated-test `VALORANT_PLATFORM_REPO` and `E2E_*` contract. The job
+uses owner-maintained test credentials and data only; it is not a production
+integration test.
 
 The frontend CI build uses these non-production values:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:5001
+NEXT_PUBLIC_API_URL=http://127.0.0.1:5011
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+PLAYWRIGHT_MOCK_API_PORT=5011
 ```
 
 The VALORANT integration adds two schema-scope CI guards: Quest CI runs
@@ -59,6 +95,11 @@ The VALORANT integration adds two schema-scope CI guards: Quest CI runs
 `valorant` schema) and the `valorant-platform-backend` CI runs a grep guard
 (its migrations must never reference the Quest-owned `public` schema or create
 cross-schema foreign keys).
+
+Deployment health semantics are consistent across the workflows: `/api/health/live`
+is liveness, while `/api/health` and `/api/health/ready` are readiness aliases
+that check database and storage and may return `503` during maintenance or
+dependency failure. `/api/openapi.json` is the API schema endpoint.
 
 ## Enabling Deployment
 
@@ -190,7 +231,7 @@ pm2 save
 
 When a migration file changed, deployment additionally requires `BACKEND_MIGRATION_APPROVAL_SHA` to equal the exact 40-character `DEPLOY_SHA`. Before applying that migration, CD runs `ops/backup-production.sh`; any missing backup prerequisite, encryption failure, or off-site upload failure aborts deployment. Set this secret only after reviewing the migration and clear it after the successful release. Use a required repository-owner reviewer for the `production` Environment only when the plan enforces that protection for private repositories; otherwise perform migration deployment from an owner-only system.
 
-Backup success in CD proves archive creation and remote presence; it does not replace an isolated restore drill. Follow [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) for quarterly restoration, key custody, and full environment recovery.
+Backup success in CD proves archive creation and remote presence; it does not replace an isolated restore drill. Follow [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) for quarterly restoration, key custody, and full environment recovery. The live production host, region, backup destination, and restore-drill status require owner verification; checked-in workflow files cannot prove those runtime facts.
 
 CD also queries the production `_prisma_migrations` table after installing the target release. A pending database migration requires the same approval and backup even when the VPS checkout was advanced by an earlier interrupted deployment. Every successful deployment records `.quest-successful-deploy-sha`; all non-zero exits use an `EXIT` rollback handler, including deliberate approval failures that do not trigger Bash's `ERR` trap.
 

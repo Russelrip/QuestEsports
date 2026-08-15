@@ -48,8 +48,7 @@ cd ../frontend
 npm ci
 npm run lint
 npm test
-npm run build
-npm run test:e2e
+npm run test:e2e:local
 ```
 
 Do not approve production deployment until remote logging/alert delivery, database backup recency,

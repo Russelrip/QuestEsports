@@ -13,7 +13,7 @@ Quest Esports is a tournament, team, commerce, and event-operations platform. Th
 
 ## Requirements
 
-- Node.js 24 LTS
+- Node.js 24.x (backend and frontend declare `24.x`; mobile-admin follows the project Node 24 guidance and has no `engines` field)
 - npm 10 or newer
 - PostgreSQL 15 or newer, or a Supabase PostgreSQL project
 - Android Studio/SDK only when working on `mobile-admin/`
@@ -56,6 +56,10 @@ npm run prisma:security:verify
 
 Use `npm run prisma:migrate` only when creating a new local development migration. Never edit a migration already applied to a shared environment.
 
+For ordinary local development, run `npm run prisma:generate` first and then
+`npm run prisma:migrate` when a new migration is intended. CI, staging, and
+production use `npm run prisma:migrate:deploy` for committed migrations.
+
 ### 4. Start the web applications
 
 Run these in separate terminals:
@@ -75,8 +79,12 @@ Useful endpoints:
 - Frontend: `http://localhost:3000`
 - API: `http://localhost:5001`
 - Liveness: `http://localhost:5001/api/health/live`
-- Readiness: `http://localhost:5001/api/health/ready`
+- Readiness: `http://localhost:5001/api/health` or `http://localhost:5001/api/health/ready`
 - OpenAPI: `http://localhost:5001/api/openapi.json`
+
+`/api/health/live` is the process liveness check. `/api/health` and
+`/api/health/ready` are readiness aliases that check the database and storage
+and can return `503` during maintenance or dependency failure.
 
 ## Verification
 
@@ -96,8 +104,7 @@ Set-Location frontend
 npm run lint
 npm run typecheck
 npm test
-npm run build
-npm run test:e2e
+npm run test:e2e:local
 ```
 
 Mobile admin:
@@ -109,7 +116,9 @@ npm test
 npm run doctor
 ```
 
-CI runs the supported release checks with Node 24. Real-database integration tests require an isolated test database and `RUN_DATABASE_INTEGRATION_TESTS=true`.
+CI runs the supported release checks with Node 24. Real-database integration
+tests require an isolated test database; `npm run test:integration` sets its
+internal `RUN_DATABASE_INTEGRATION_TESTS` flag automatically.
 
 ## Local Backend Testing Workflow
 
@@ -202,6 +211,9 @@ Start at the [documentation index](./docs/README.md). Frequently used guides:
 
 | Task                             | Guide                                                                             |
 | -------------------------------- | --------------------------------------------------------------------------------- |
+| Developer workflow               | [Developer Guide](docs/developer-guide.md)                                        |
+| Environment variables            | [Environment Reference](docs/environment-reference.md)                            |
+| VALORANT local development       | [VALORANT Local Development](docs/valorant-local-development.md)                  |
 | Local setup or deployment        | [Setup and Deployment](./docs/setup-and-deployment.md)                             |
 | Collaborator or staging setup    | [Collaboration and Staging](./docs/collaboration-and-staging.md)                   |
 | Production operation or incident | [Production Operations Runbook](./docs/production-runbook.md)                      |

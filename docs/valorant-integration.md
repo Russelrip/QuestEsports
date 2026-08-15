@@ -184,6 +184,9 @@ All flows live on the single **Valorant Management** page (`/admin/valorant`) â€
 
 ## 6. Local development
 
+For prerequisites, environment setup, startup order, diagnostics, and cleanup,
+see the [VALORANT local-development guide](./valorant-local-development.md).
+
 Two services + one frontend against the **same dedicated Supabase test project** (never production/staging):
 
 ```text
@@ -219,7 +222,9 @@ npm run dev
    cd ../valorant-platform-backend
    uv run python -m scripts.apply_migrations --runtime-role val_runtime
    ```
-3. Apply Quest Prisma migrations as usual: `npm run prisma:migrate:deploy` (or `npx prisma migrate dev` in dev).
+3. Apply committed Quest Prisma migrations with `npm run prisma:migrate:deploy`.
+   Use `npx prisma migrate dev` only for intentional local schema/migration
+   creation, never to apply committed migrations to this shared test project.
 
 **Local env shape** (values are placeholders â€” generate real ones locally; `.env` stays untracked, `.env.example` carries shape only):
 

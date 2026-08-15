@@ -276,7 +276,7 @@ Use this checklist for manual QA, user acceptance testing (UAT), pre-release aud
 
 - [ ] REG-027 The reserved slot number, tiered fee, currency, bank details, deadline, and review guidance are correct.
 - [ ] REG-028 Fee-tier boundary slots receive the correct server-calculated amount.
-- [ ] REG-029 JPEG/PNG/WebP proof upload succeeds within limits; PDF remains blocked unless explicitly enabled and secured.
+- [ ] REG-029 JPEG/PNG/WebP proof upload succeeds within limits; current handling is image-only and has no configuration flag enabling PDF proofs.
 - [ ] REG-030 Oversized, corrupt, unsupported, and duplicate normalized proofs are rejected safely.
 - [ ] REG-031 Private proof URLs/files cannot be accessed through public upload routes or by another user.
 - [ ] REG-032 Proof submission changes status correctly and appears to admin with the right transaction.
@@ -643,7 +643,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] OPS-008 Server clock/timezone and database timestamps are synchronized; user-facing Sri Lankan times are correct.
 - [ ] OPS-009 Logs correlate requests/jobs/payment events without leaking secrets or personal data.
 - [ ] OPS-010 Alerting covers API health, elevated errors, database/storage exhaustion, job failure, mail failure, and payment callback failure.
-- [x] OPS-011 The latest scheduled backup has both encrypted archive and checksum on the off-site remote, and the systemd timer/service have no recent failures.
+- [ ] OPS-011 Owner evidence confirms the latest scheduled backup has both encrypted archive and checksum on the off-site remote, and the systemd timer/service have no recent failures.
 - [ ] OPS-012 Backup failure/staleness pages an operator, and approved off-site retention is enforced without deleting the newest verified recovery points.
 - [ ] OPS-013 Full-site maintenance returns the branded frontend `503` and structured backend `503`, includes retry/no-cache/noindex headers, preserves liveness and the PayHere callback, and follows frontend-first enable/backend-first disable ordering.
 - [ ] OPS-014 A true write-freeze drill stops the deploy-owned PM2 backend without saving the stopped process list, and recovery restores readiness before the frontend maintenance page is disabled.
@@ -657,7 +657,7 @@ Perform intrusive tests only with authorization and in staging.
 - [x] REL-005 Frontend `npm run test:e2e` passes against the intended test build/environment.
 - [x] REL-006 New/fixed critical journeys have regression coverage or a documented reason why manual testing is sufficient.
 - [ ] REL-007 Production database migration has been rehearsed on a recent backup or production-like dataset.
-- [x] REL-008 Backup restore has been tested for database, public uploads, and private proofs.
+- [ ] REL-008 Owner evidence confirms an isolated backup restore has been tested for database, public uploads, and private proofs.
 - [ ] REL-009 Rollback procedure is understood and remains compatible with forward-only database migrations.
 - [ ] REL-010 PayHere sandbox launch matrix passes: paid, failed, cancelled, duplicate callback, mismatch, late callback, refund, and chargeback where enabled.
 - [ ] REL-011 Final legal/business approval exists for privacy, terms, refund/return policy, prices, fees, bank details, and public contact information.

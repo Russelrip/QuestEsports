@@ -1,6 +1,7 @@
 # Backup and Disaster Recovery
 
-Last verified: July 29, 2026
+Repository record date: July 29, 2026. Live backup, destination, timer, and
+restore-drill status require owner verification.
 
 This is the source of truth for Quest Esports production backup, restore testing, and disaster recovery. The [Production Operations Runbook](./production-runbook.md) covers the surrounding VPS and deployment procedures.
 
@@ -16,7 +17,7 @@ This is the source of truth for Quest Esports production backup, restore testing
 
 Visitor maintenance mode alone is not a write freeze: background jobs and the PayHere notification callback intentionally continue. A restore or destructive recovery requires stopping the PM2 backend process as described below.
 
-## Current production recovery status
+## Repository-recorded production recovery status
 
 | Component | Current state |
 | --- | --- |
@@ -25,14 +26,17 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 | Public uploads | `/srv/quest-esports/uploads` |
 | Private uploads | `/srv/quest-esports/private` |
 | Backup staging | `/srv/quest-esports/backups`, seven-day local retention |
-| Active off-site destination | `quest-backups-custom:quest-esports-v2/production` |
-| Historical destination | `quest-backups:quest-esports/production` |
+| Active off-site destination | Repository-recorded target `quest-backups-custom:quest-esports-v2/production`; owner verification required |
+| Historical destination | Repository-recorded target `quest-backups:quest-esports/production`; owner verification required |
 | Encryption | `age` public-recipient encryption; private identity kept offline |
-| Automation | `quest-esports-backup.service` and `quest-esports-backup.timer` |
+| Automation | Repository provides `quest-esports-backup.service` and `quest-esports-backup.timer`; owner must verify installation and state |
 | Schedule | Daily at 02:15 UTC with up to 15 minutes randomized delay; missed runs are persistent |
-| Last full restore drill | Passed on 2026-07-29 |
+| Restore-drill status | Not proven by checked-in files; owner verification and an isolated drill are required |
 
-The active Drive remote uses a QuestEsports-owned Google OAuth desktop client, the least-privilege `drive.file` scope, and an **In production** publishing status. The older shared-client remote is retained only for historical archives until their approved retention period ends.
+The checked-in record describes the active Drive remote as using a
+QuestEsports-owned Google OAuth desktop client, the least-privilege `drive.file`
+scope, and an **In production** publishing status. These are owner-verification
+items, not proof of the live remote or token state.
 
 ## Recovery objectives and limitations
 
@@ -46,7 +50,7 @@ The active Drive remote uses a QuestEsports-owned Google OAuth desktop client, t
 
 Each `quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc` contains:
 
-- `database.dump`: PostgreSQL custom-format dump of the application-owned `public` schema.
+- `database.dump`: PostgreSQL custom-format dump of the application-owned `public` schema and, when the `valorant` schema exists, the application-owned `valorant` schema too. The manifest records the selected database scope.
 - `manifest.txt`: creation time, source host, dump format, source upload paths, and the two-pass file snapshot strategy.
 - The entire public upload directory.
 - The entire private upload directory, including protected payment evidence.
@@ -217,7 +221,7 @@ Set-Location D:\Work\Projects\QuestEsports
 .\ops\test-paris-database-backup-windows.ps1
 ```
 
-This workflow validates an encrypted public-schema dump in disposable PostgreSQL 17. It does not contain VPS uploads and does not replace the full off-site backup.
+This workflow validates an encrypted application-database snapshot in disposable PostgreSQL 17. The Windows snapshot contains the application `public` schema only, does not contain VPS uploads, and does not replace the full off-site backup or a full `public` plus `valorant` recovery archive.
 
 ## Recovery decision matrix
 
@@ -226,7 +230,7 @@ This workflow validates an encrypted public-schema dump in disposable PostgreSQL
 | One missing upload | Recover the matching file from an archive on an isolated host, verify it, then copy only that file back |
 | Upload tree corruption | Stop writes, restore both upload roots from one consistent archive, and verify database/file references |
 | Accidental application-table change | Restore the archive into disposable PostgreSQL first, inspect the required rows, then choose targeted SQL recovery or an approved full restore |
-| Paris database loss | Create a compatible PostgreSQL/Supabase target, restore the application `public` schema, update secrets, run migrations/security checks, then switch the backend |
+| Paris database loss | Create a compatible PostgreSQL/Supabase target, restore the application schemas recorded by the archive manifest (`public` and `valorant` when included), update secrets, run migrations/security checks, then switch the backend |
 | VPS loss with database intact | Rebuild the VPS from Git and the secret store, restore public/private uploads, reinstall PM2/Nginx/systemd/rclone, then verify health |
 | Complete environment loss | Rebuild database and VPS, restore database/uploads, restore external configuration from its separate secret recovery process, then update DNS and verify every integration |
 | OAuth token revoked | Re-authorize the dedicated rclone remote and run a manual plus systemd backup test; do not change archive encryption keys |
@@ -262,7 +266,7 @@ The confirmation value acknowledges destructive behavior; it does not prove that
 
 After the script finishes:
 
-- Verify both schemas were restored: the archive's manifest `database_scope=application_public_and_valorant_schemas` and the restore script printed non-zero table counts for both `public` and `valorant`.
+- Verify the archive's manifest database scope. For `database_scope=application_public_and_valorant_schemas`, confirm the restore script printed non-zero table counts for both `public` and `valorant`; for `database_scope=application_public_schema_only`, confirm the public-only scope is intentional for the target.
 - Count restored public tables and completed Prisma migrations.
 - Compare public/private file counts and byte totals with the source manifest or recorded production inventory.
 - Validate representative images and private proofs without exposing them.
@@ -283,8 +287,8 @@ A production restore requires an incident decision because it replaces applicati
    ```
 
 3. Preserve the current database and upload state when it is safe; evidence from the failed state may be needed for targeted recovery.
-4. Restore-test the selected archive on disposable infrastructure first. Confirm the selected archive includes the `valorant` schema before restoring; a public-only archive restored over a project that already contains VALORANT data would drop it (`pg_restore --clean`).
-5. Prefer running the guarded restore from an isolated recovery host. Point `DIRECT_URL` at the approved database target and use empty recovery-host upload directories; keep the private identity off the production VPS. The script stages files before the transactional database restore and activates them only after it succeeds.
+4. Restore-test the selected archive on disposable infrastructure first. Confirm the manifest database scope before restoring; an archive without `valorant` must not be used as a replacement for a project that already contains VALORANT data because `pg_restore --clean` can remove objects outside the archive.
+5. Prefer running the guarded restore from an isolated recovery host. Point `DIRECT_URL` at the approved database target and use empty recovery-host upload directories; keep the private identity off the production VPS. The script stages both upload trees, activates them before the transactional `pg_restore`, and its exit guard rolls them back if activation or database restore fails.
 6. If recovery was performed off-VPS, securely synchronize the verified recovered upload trees to the stopped VPS. Treat any deletion or directory replacement as destructive and verify exact absolute targets first. If the guarded script was run on the target host, record and retain the printed `.quest-previous-*` directories until business verification is complete, then remove them only under a separate approved cleanup.
 7. If a new Supabase project is used, update both production database URLs and rotate project/database credentials. Recreate required Supabase-managed settings separately.
 8. On the VPS, restore ownership and permissions:
@@ -334,11 +338,14 @@ Restore uploads and database before admitting user writes. Then run the full pro
 | Drive storage grows continuously | Protected retention values and dry-run output | Use `ops/prune-production-backups.sh`; do not bypass its minimum-point guard or confirmation |
 | Backup fails without an alert | Failure unit installation, webhook setting, and direct notifier test | Install/reload the template, add the protected webhook, test one alert, then rerun the backup service |
 
-## Verified drill record
+## Restore-drill record requirements
 
-The first full off-site drill completed on 2026-07-29 using `quest-production-20260729T133809Z.tar.gz.enc` from the historical destination. Its SHA-256 matched. Disposable PostgreSQL 17 restored 35 public tables and 33 completed migrations. All 41 public files and 10 private files matched their SHA-256 inventories. Production was never a restore target.
-
-The drill exposed and corrected a missing `pg_restore --dbname` option in the guarded restore script, and a regression test now covers it. After the dedicated OAuth switch, manual archive `quest-production-20260729T154756Z.tar.gz.enc` and its checksum were confirmed on the active destination, and the restricted systemd service returned `Result=success` and status 0. The later overlap lock, two-pass upload snapshot, remote-content check, full preflight, single-transaction restore, and atomic file activation changes pass repository tests but require a new isolated end-to-end drill before they may be described as production restore-verified.
+Checked-in files do not prove that a current full off-site restore drill has
+been completed. The owner must select an archive, verify its checksum and
+destination, run the isolated procedure above, and record the results below.
+Do not describe recovery as restore-verified until that drill has been
+completed against the current scripts and archive format. Production must never
+be the restore target.
 
 Record future drills using this minimum template:
 

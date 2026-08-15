@@ -4,7 +4,7 @@ Express 5 API for authentication, tournaments, teams, commerce, event tickets, a
 
 ## Requirements
 
-- Node.js 24 LTS
+- Node.js 24.x (declared in `package.json`)
 - npm 10 or newer
 - PostgreSQL 15 or newer
 
@@ -14,13 +14,22 @@ Express 5 API for authentication, tournaments, teams, commerce, event tickets, a
 Copy-Item .env.example .env
 npm ci
 npm run prisma:generate
-npm run prisma:migrate
+npm run prisma:migrate:deploy
 npm run dev
+```
+
+The setup block applies committed migrations with
+`npm run prisma:migrate:deploy`. For intentional local schema and migration
+creation, use this separate flow instead:
+
+```powershell
+npm run prisma:generate
+npm run prisma:migrate
 ```
 
 The API defaults to `http://localhost:5001`.
 
-Required environment values are `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME`. Remote production database URLs must explicitly use `sslmode=require`, `verify-ca`, or `verify-full`. Normal development outside automated tests also needs a unique 64-character hexadecimal `AUTH_ENCRYPTION_KEY`. Use [.env.example](./.env.example) as the key reference and [Setup and Deployment](../docs/setup-and-deployment.md) for production requirements.
+Required environment values are `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME`. Remote production database URLs must explicitly use `sslmode=require`, `verify-ca`, or `verify-full`. Normal development outside automated tests also needs a unique 64-character hexadecimal `AUTH_ENCRYPTION_KEY`. Use [.env.example](./.env.example) as the key reference, [Environment Reference](../docs/environment-reference.md) for the variable inventory, and [Setup and Deployment](../docs/setup-and-deployment.md) for production requirements.
 
 Do not point local development at production. Shared staging environments should use their own database, encryption key, OAuth applications, mail configuration, and upload roots.
 
@@ -50,8 +59,12 @@ Legacy media import/migration commands remain available for controlled recovery 
 
 - API root: `http://localhost:5001/api`
 - Liveness: `http://localhost:5001/api/health/live`
-- Readiness: `http://localhost:5001/api/health/ready`
+- Readiness: `http://localhost:5001/api/health` or `http://localhost:5001/api/health/ready`
 - OpenAPI JSON: `http://localhost:5001/api/openapi.json`
+
+`/api/health/live` is liveness only. `/api/health` and `/api/health/ready`
+are readiness aliases that check database and storage dependencies and may
+return `503` during maintenance or dependency failure.
 
 Route families cover authentication, sessions, tournaments, registrations, teams, event series, recruitment, contact messages, media, products, payments, tickets, brackets, matches, and admin operations. See [API Documentation](../docs/api-documentation.md) for contracts.
 
@@ -63,7 +76,7 @@ Route families cover authentication, sessions, tournaments, registrations, teams
 - Public response caching defaults to bounded in-memory storage; multi-process deployments require the shared Upstash cache.
 - Readiness verifies PostgreSQL and write access to both configured upload roots.
 
-See [Database and Storage](../docs/database-and-storage.md) before changing schema, uploads, retention, or media behavior.
+See [Database and Storage](../docs/database-and-storage.md) before changing schema, uploads, retention, or media behavior. Start with the [Developer Guide](../docs/developer-guide.md), [Environment Reference](../docs/environment-reference.md), or [VALORANT Local Development](../docs/valorant-local-development.md) for contributor-specific workflows.
 
 ## Security Boundaries
 
@@ -84,4 +97,7 @@ npm test
 npm run test:coverage
 ```
 
-Set `RUN_DATABASE_INTEGRATION_TESTS=true` only with an isolated test database. Run k6 profiles only against local or dedicated test infrastructure, never production.
+Run `npm run test:integration` only with an isolated test database; its owning
+script sets the internal `RUN_DATABASE_INTEGRATION_TESTS` flag automatically.
+Run k6 profiles only against local or dedicated test infrastructure, never
+production.

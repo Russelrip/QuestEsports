@@ -671,7 +671,7 @@ The public token is an order-access credential and must not be logged or shared.
 
 Payment status requires ownership of the registration/order or the matching merchandise capability in `X-Order-Token`. Order capabilities are never accepted in an API path or query string. The PayHere notification is form-encoded, rate limited, signature/merchant/order/amount/currency validated, idempotent, and authoritative.
 
-Bank-transfer proof upload requires a verified account that owns the registration. It accepts one normalized image by default; PDF is accepted only when explicitly enabled. Proof files are private and are never available through `/api/uploads`.
+Bank-transfer proof upload requires a verified account that owns the registration. Current handling accepts one normalized JPEG, PNG, or WebP image; there is no configuration flag enabling PDF proofs. Proof files are private and are never available through `/api/uploads`.
 
 ## Admin Endpoints
 

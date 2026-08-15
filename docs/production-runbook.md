@@ -1,8 +1,14 @@
 # Production Operations Runbook
 
-This is the operational source of truth for the current Quest Esports production deployment. It covers the Ubuntu VPS backend, Vercel frontend, Supabase PostgreSQL database, GitHub Actions deployment, persistent uploads, service recovery, and reboots. Use [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) as the authoritative backup, restore-drill, key-custody, and full-disaster procedure.
+This is the operational source of truth for the current Quest Esports production deployment. It covers the Ubuntu VPS backend, Vercel frontend, Supabase PostgreSQL database, GitHub Actions deployment, persistent uploads, service recovery, and reboots. Use [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) as the authoritative backup, restore-drill, key-custody, and full-disaster procedure. For contributor setup and variables, use the [Developer Guide](developer-guide.md) and [Environment Reference](environment-reference.md); the [VALORANT Local Development](valorant-local-development.md) guide is the local integration source.
 
 ## Current Topology
+
+The values below are the repository-recorded production target/current-state
+claims, not live monitoring evidence. The owner must verify the production
+host, deployment region, database region, storage paths, backup destination,
+and service state before each operational change; checked-in files alone cannot
+prove those facts.
 
 - Frontend: Vercel at `https://questesports.lk`, with the configured deployment region in Singapore and normal Vercel edge delivery
 - Backend: Ubuntu 24.04 VPS in France at `https://api.questesports.lk`
@@ -148,7 +154,7 @@ sudo -u deploy -H bash -lc '
 HEALTHY=false
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
   if curl --fail --silent --show-error --max-time 5 \
-    http://127.0.0.1:5001/api/health >/dev/null; then
+    http://127.0.0.1:5001/api/health/live >/dev/null; then
     HEALTHY=true
     break
   fi
@@ -156,11 +162,28 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 [ "$HEALTHY" = true ] || rollback_to_root
+
+READY=false
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if curl --fail --silent --show-error --max-time 5 \
+    http://127.0.0.1:5001/api/health/ready >/dev/null; then
+    READY=true
+    break
+  fi
+  sleep 2
+done
+
+[ "$READY" = true ] || rollback_to_root
 pm2 delete quest-backend
 pm2 save --force
 ```
 
-Only after the health check passes should the old root entry be removed. Then install the `deploy` systemd unit, stop the manually started deploy daemon once, and let systemd resurrect the saved list:
+Only after both liveness and a `200` readiness response (database and storage
+available) pass should the old root entry be removed. During maintenance,
+readiness intentionally returns `503`; this procedure therefore rolls back to
+the root-owned process instead of claiming a safe handover. Then install the
+`deploy` systemd unit, stop the manually started deploy daemon once, and let
+systemd resurrect the saved list:
 
 ```bash
 pm2 startup systemd -u deploy --hp /home/deploy
@@ -276,12 +299,20 @@ Do not run `pm2 save` while it is stopped, or the stopped state can survive a re
 
 ## Verification
 
+Health endpoint semantics are fixed: `/api/health/live` is liveness only;
+`/api/health` and `/api/health/ready` are readiness aliases that check the
+database and storage and may return `503` during maintenance or dependency
+failure. `/api/openapi.json` is the API schema endpoint. During maintenance,
+liveness remains available while both readiness aliases intentionally return
+the maintenance `503`.
+
 Run Linux commands from the VPS, not Windows PowerShell:
 
 ```bash
 sudo -u deploy -H git -C /var/www/QuestEsports rev-parse --short HEAD
 systemctl is-active pm2-deploy
 sudo -u deploy -H pm2 list
+curl --fail --silent --show-error http://127.0.0.1:5001/api/health/live
 curl --fail --silent --show-error http://127.0.0.1:5001/api/health
 curl --fail --silent --show-error https://api.questesports.lk/api/health
 curl --fail --silent --show-error https://questesports.lk/sitemap.xml > /dev/null
@@ -421,9 +452,14 @@ journalctl -u quest-esports-backup.service --since today --no-pager
 
 The backup is not considered successful until rclone content verification succeeds for both the encrypted archive and checksum on the off-site remote. Review retention first in dry-run mode with `ops/prune-production-backups.sh`; actual deletion additionally requires `RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION` and refuses to cross the configured minimum recovery-point floor. Follow [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md) for the separate environment/rclone/infrastructure package that the normal archive intentionally excludes.
 
-Production was first verified on 2026-07-29 with a manual encrypted full backup, a successful restricted systemd service run, and the daily timer enabled. The original archive `quest-production-20260729T133147Z.tar.gz.enc` remains on the historical `quest-backups:quest-esports/production` destination.
+The repository contains a historical record dated 2026-07-29 describing a
+manual encrypted full backup, a restricted systemd service run, and the daily
+timer as enabled. That record is not current runtime proof; the owner must
+verify the archive, destination, and timer state before relying on them. The
+record names `quest-production-20260729T133147Z.tar.gz.enc` on the historical
+`quest-backups:quest-esports/production` destination.
 
-The active destination was then moved to the dedicated-client remote `quest-backups-custom:quest-esports-v2/production`. Manual archive `quest-production-20260729T154756Z.tar.gz.enc` and its checksum were confirmed off-site, and a subsequent `quest-esports-backup.service` run returned `Result=success`, `ExecMainStatus=0`, and `ActiveState=inactive`. The daily timer remained enabled. Keep the historical remote until its older encrypted archives have expired under the approved retention policy.
+The active destination was then documented as moved to the dedicated-client remote `quest-backups-custom:quest-esports-v2/production`. Manual archive `quest-production-20260729T154756Z.tar.gz.enc` and its checksum were documented as confirmed off-site, and a subsequent `quest-esports-backup.service` run was documented as returning `Result=success`, `ExecMainStatus=0`, and `ActiveState=inactive`. The daily timer was documented as enabled. These are historical records, not proof of current remote contents or timer state; the owner must verify them before relying on the destination.
 
 ### Local Paris database snapshot on Windows
 
@@ -453,9 +489,21 @@ RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
 
 Do not point a restore drill at Paris production. Record the archive timestamp, restored table counts, sample asset checks, and elapsed recovery time. Run a drill after setup and at least quarterly.
 
-The first full drill completed on 2026-07-29 using `quest-production-20260729T133809Z.tar.gz.enc`. The checksum matched, PostgreSQL 17 restored 35 public tables and 33 completed migration records, and SHA-256 manifests matched all 41 public and 10 private restored files. The drill also caught and corrected the restore script's missing `pg_restore --dbname` option before any production restore was attempted.
+The repository contains a historical record describing a full drill dated
+2026-07-29 using `quest-production-20260729T133809Z.tar.gz.enc`. It records a
+matching checksum, PostgreSQL 17 restoring 35 public tables and 33 completed
+migration records, and SHA-256 matches for 41 public and 10 private restored
+files. The record also describes a corrected `pg_restore --dbname` option.
+This is not current recovery proof; the owner must verify the record and repeat
+an isolated drill before treating recovery as proven.
 
-The retiring shared-client risk was closed on 2026-07-29. The active remote uses the QuestEsports-owned Google OAuth desktop client, `drive.file`, and an app publishing status of **In production**. Both a manual archive/checksum upload and the restricted systemd service passed after the switch. The old shared-client remote is not the scheduled destination and is retained only for access to historical encrypted archives.
+The repository contains a historical record dated 2026-07-29 describing the
+retiring shared-client risk as closed and the active remote as using the
+QuestEsports-owned Google OAuth desktop client, `drive.file`, and an app
+publishing status of **In production**. It also records a manual
+archive/checksum upload and restricted systemd service run after the switch.
+These records are not current proof of remote, token, or service state; the
+owner must verify them before relying on the destination.
 
 ### Supabase Data API
 

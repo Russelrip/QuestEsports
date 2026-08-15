@@ -287,7 +287,7 @@ Private storage is created under `PRIVATE_UPLOAD_ROOT`:
 - File bytes: private filesystem with file mode `600`
 - DB reference: `BankTransferProof.storedFilename`
 - Access: authenticated admin download endpoint only; never a public static route
-- Images are signature-checked and normalized; PDF is disabled by default
+- JPEG, PNG, and WebP images are signature-checked and normalized; current handling is image-only and has no PDF enablement flag
 
 ### Native brackets
 
