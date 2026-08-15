@@ -105,7 +105,20 @@ export const fetchValorantSeriesMatches = (seriesId: string) =>
 export const createValorantSeries = (input: {
   bindingTeamAId: string; bindingTeamBId: string; format: ValorantFormat; playedAt: string;
   ratingModePreference?: ValorantRatingMode | null; anchorPlayerA: RiotId; anchorPlayerB: RiotId;
-}) => valorantAdminRequest<{ series: QuestValorantSeries }>("/api/v1/admin/valorant/series", { method: "POST", json: input });
+  tournamentId?: string | null;
+}) => valorantAdminRequest<{ series: QuestValorantSeries }>("/api/v1/admin/valorant/series", {
+  method: "POST",
+  json: {
+    bindingTeamAId: input.bindingTeamAId,
+    bindingTeamBId: input.bindingTeamBId,
+    format: input.format,
+    playedAt: input.playedAt,
+    ratingModePreference: input.ratingModePreference,
+    anchorPlayerA: input.anchorPlayerA,
+    anchorPlayerB: input.anchorPlayerB,
+    ...(input.tournamentId ? { tournamentId: input.tournamentId } : {}),
+  },
+});
 
 export const fetchValorantSeriesList = () =>
   valorantAdminRequest<{ series: QuestValorantSeries[] }>("/api/v1/admin/valorant/series");

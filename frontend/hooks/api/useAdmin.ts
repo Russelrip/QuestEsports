@@ -133,3 +133,32 @@ export function useAdminTournaments(search: string, status: string, visibility: 
     );
   });
 }
+
+export type TournamentTitleOption = {
+  id: string;
+  title: string;
+};
+
+const ADMIN_TOURNAMENT_OPTIONS_PAGE_SIZE = 100;
+
+// Lightweight id+title list of every tournament for dropdowns (e.g. attaching a
+// VALORANT series to a tournament). Pages through the admin tournaments endpoint
+// so the full list is available, not just the first page.
+const fetchAllAdminTournamentOptions = async (): Promise<TournamentTitleOption[]> => {
+  const options: TournamentTitleOption[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const result = await adminRequest<{ tournaments: TournamentTitleOption[]; pagination: Pagination }>(
+      `/api/admin/tournaments?page=${page}&pageSize=${ADMIN_TOURNAMENT_OPTIONS_PAGE_SIZE}`
+    );
+    options.push(...result.tournaments.map(({ id, title }) => ({ id, title })));
+    totalPages = result.pagination.totalPages;
+    page += 1;
+  } while (page <= totalPages);
+  return options;
+};
+
+export function useAdminTournamentOptions() {
+  return useApiQuery(["admin-tournament-options"], fetchAllAdminTournamentOptions);
+}

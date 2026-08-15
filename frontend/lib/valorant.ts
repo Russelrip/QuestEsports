@@ -49,6 +49,7 @@ export type QuestValorantSeries = {
   valorantSeriesUuid: string | null; finalizedById: string | null; lastOperationId: string | null;
   bindingA: Binding; bindingB: Binding; games: SeriesGame[];
   lastOperation: QuestValorantOperation | null;
+  tournament?: { id: string; title: string } | null;
 };
 export type QuestValorantOperation = {
   id: string; operationId: string; type: string; externalKey: string | null; questSeriesId: string | null;

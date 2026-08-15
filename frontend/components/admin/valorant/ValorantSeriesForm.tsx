@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useAdminTournamentOptions } from "@/hooks/api/useAdmin";
 import { useValorantBindings } from "@/hooks/api/useValorant";
 import { useToastStore } from "@/hooks/useToastStore";
 import { isoToSriLankaDateTimeLocal, sriLankaDateTimeLocalToIso } from "@/lib/date-time";
@@ -35,12 +36,14 @@ export default function ValorantSeriesForm({
 }) {
   const showToast = useToastStore((state) => state.showToast);
   const bindingsQuery = useValorantBindings();
+  const tournamentsQuery = useAdminTournamentOptions();
 
   const [bindingTeamAId, setBindingTeamAId] = useState("");
   const [bindingTeamBId, setBindingTeamBId] = useState("");
   const [format, setFormat] = useState<ValorantFormat>("bo3");
   const [playedAt, setPlayedAt] = useState(() => isoToSriLankaDateTimeLocal(new Date().toISOString()));
   const [ratingModePreference, setRatingModePreference] = useState<ValorantRatingMode>("normal");
+  const [tournamentId, setTournamentId] = useState("");
   const [anchorMemberAId, setAnchorMemberAId] = useState("");
   const [anchorMemberBId, setAnchorMemberBId] = useState("");
   const [teamAMembers, setTeamAMembers] = useState<AdminTeamMember[]>([]);
@@ -53,6 +56,7 @@ export default function ValorantSeriesForm({
 
   const activeBindings = (bindingsQuery.data?.bindings ?? []).filter((binding) => binding.status === "active");
   const teamBOptions = activeBindings.filter((binding) => binding.id !== bindingTeamAId);
+  const tournamentOptions = tournamentsQuery.data ?? [];
 
   const teamAMembersWithRiotId = teamAMembers.filter((member) => member.riotId && member.riotId.trim() !== "");
   const teamBMembersWithRiotId = teamBMembers.filter((member) => member.riotId && member.riotId.trim() !== "");
@@ -160,6 +164,7 @@ export default function ValorantSeriesForm({
         ratingModePreference,
         anchorPlayerA: anchorA,
         anchorPlayerB: anchorB,
+        tournamentId: tournamentId || null,
       });
       showToast({ title: "Draft series created", tone: "success" });
       onCreated(result.series.id);
@@ -292,6 +297,29 @@ export default function ValorantSeriesForm({
               ) : (
                 <p className="text-xs text-slate-500">Sri Lanka local time.</p>
               )}
+            </div>
+
+            <div className="grid min-w-0 gap-2">
+              <label htmlFor="series-tournament" className="text-sm font-medium text-slate-300">
+                Tournament
+              </label>
+              <Select
+                id="series-tournament"
+                aria-label="Tournament"
+                value={tournamentId}
+                onChange={(event) => setTournamentId(event.target.value)}
+                disabled={submitting}
+              >
+                <option value="">No tournament</option>
+                {tournamentOptions.map((tournament) => (
+                  <option key={tournament.id} value={tournament.id}>
+                    {tournament.title}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-slate-500">
+                Optional — a series can be created standalone and linked to a tournament later.
+              </p>
             </div>
 
             <div className="grid min-w-0 gap-2">

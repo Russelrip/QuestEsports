@@ -86,18 +86,28 @@ describe("VALORANT admin UI boundaries", () => {
     expect(form).toContain("parseStoredRiotId");
     expect(form).toContain("anchorPlayerA: anchorA");
     expect(form).toContain("anchorPlayerB: anchorB");
+    expect(form).toContain('id="series-tournament"');
+    expect(form).toContain("No tournament");
+    expect(form).toContain("tournamentId");
+    expect(form).toContain("tournamentId: tournamentId || null");
+    expect(form).toContain("useAdminTournamentOptions");
     expect(form).not.toContain("parseRiotIdInput");
     expect(form).not.toContain("Name#Tag");
     expect(form).toContain("Both teams must have an active VALORANT binding");
   });
 
-  it("series list shows status, format, teams, and in-tab navigation to create/view", () => {
+  it("series list shows status, format, teams, tournament column, and a client-side tournament filter", () => {
     const manager = read("components/admin/valorant/ValorantSeriesManager.tsx");
     expect(manager).toContain("New series");
     expect(manager).toContain("ValorantStatusBadge");
     expect(manager).toContain("onCreateSeries");
     expect(manager).toContain("onViewSeries");
     expect(manager).toContain("formatAdminCompactDateTime");
+    expect(manager).toContain('>Tournament</th>');
+    expect(manager).toContain('item.tournament?.title ?? "—"');
+    expect(manager).toContain('aria-label="Filter by tournament"');
+    expect(manager).toContain("All tournaments");
+    expect(manager).toContain("filteredSeries");
   });
 
   it("reorder control submits the full absolute desired order and validates a permutation", () => {
