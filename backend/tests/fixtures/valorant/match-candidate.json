@@ -1,0 +1,13 @@
+{
+  "match_id": null,
+  "henrik_match_id": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
+  "affinity": "eu",
+  "map": "Ascent",
+  "started_at": "2026-08-01T14:30:00Z",
+  "mode": "Standard",
+  "queue": "unrated",
+  "is_completed": true,
+  "red_score": 13,
+  "blue_score": 8,
+  "already_imported": false
+}

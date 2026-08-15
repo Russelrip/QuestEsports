@@ -294,6 +294,114 @@ npm run test:e2e
 
 Playwright critical journeys run in CI. Manual production checks remain necessary for provider callbacks, email delivery, private uploads, DNS, cookies, and live payment behavior.
 
+## Local Backend Testing Workflow
+
+This workflow verifies backend changes against a dedicated test database without touching shared environments.
+
+Requirements:
+
+- Node.js 24 LTS and npm 10+
+- a dedicated Supabase PostgreSQL project used only for local testing — never a production or shared staging database
+- credentials for that test project only; never production credentials
+
+### 1. Create the local environment file
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+`backend/.env` is git-ignored and stays on your machine. Set `DATABASE_URL` and `DIRECT_URL` to the dedicated test project. Supabase requires TLS, so keep `sslmode=require` (or `verify-ca`/`verify-full`) on both URLs.
+
+### 2. Prepare the test database
+
+```bash
+cd backend
+npm ci
+npm run prisma:generate
+npm run prisma:migrate:deploy
+npm run prisma:migrate:status
+npm run prisma:security:verify
+```
+
+### 3. Run the backend checks
+
+```bash
+npm run lint
+npm test
+npm run test:integration
+```
+
+`npm run test:integration` runs the real-database integration suite against the test project configured in `backend/.env`.
+
+Do not point this workflow at production and do not run destructive reset commands (`prisma migrate reset`, `prisma db drop`, force-reset variants) against any shared or remote database. The frontend can run separately against `http://localhost:5001`; the mobile admin is out of scope for this workflow.
+
+## VALORANT Local Development Topology
+
+The VALORANT integration runs two services against **one dedicated Supabase test
+project** — never production or shared staging:
+
+```text
+Next.js frontend ......... http://localhost:3000
+Quest Express backend .... http://localhost:5001   (NEXT_PUBLIC_API_URL=http://localhost:5001)
+valorant-platform-backend. http://localhost:8000   (VALORANT_INTERNAL_BASE_URL=http://localhost:8000)
+Shared Supabase test project  (schema-specific credentials)
+```
+
+- Quest `DATABASE_URL`/`DIRECT_URL` connect to the `public` schema (Prisma-owned).
+- FastAPI `DATABASE_URL` connects to the `valorant` schema (plain-SQL ledger).
+- `valorant-platform-backend` is a sibling repo, never deployed from this repo.
+
+Prepare the shared test project once:
+
+1. In the Supabase SQL editor, create the VAL runtime role:
+   ```sql
+   CREATE ROLE val_runtime LOGIN PASSWORD '<generate a random password>';
+   ```
+   (The runner creates the `valorant` schema and grants/RLS policies to this role
+   automatically — see the FastAPI repo's `docs/runtime-access-posture.md`.)
+2. Quest runs as the project owner (or its own runtime role) on `public` with
+   RLS verified by `npm run prisma:security:verify`.
+3. Apply FastAPI migrations as the migrator:
+   ```bash
+   cd ../valorant-platform-backend
+   uv sync
+   uv run python -m scripts.apply_migrations --runtime-role val_runtime
+   ```
+4. Apply Quest Prisma migrations as usual (`npm run prisma:migrate:deploy`).
+
+Production topology: only Quest Express is reachable by the frontend. FastAPI
+lives on a private network with an IP allowlist and binds to a private
+interface; the browser never talks to FastAPI. `VALORANT_INTERNAL_BASE_URL` is
+asserted to be an HTTPS origin by `backend/src/config/env.js` in production.
+
+### VALORANT local commands
+
+Run the two services in separate terminals against the shared test project:
+
+```bash
+# Terminal 1 — FastAPI (repo: ../valorant-platform-backend)
+cd ../valorant-platform-backend
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Terminal 2 — Quest backend
+cd backend
+npm run dev
+
+# Terminal 3 — Quest frontend
+cd frontend
+npm run dev
+```
+
+Smoke and tests:
+
+```bash
+cd backend
+npm run test:valorant:smoke          # health + auth checks against running services
+npm run test:valorant:e2e            # two-service E2E journey (see tests/valorant-e2e/README.md)
+```
+
+Expected smoke output: `VALORANT local smoke: PASS`.
+
 ## Recommended Production Topology
 
 ### Option A: Two-process deployment behind a reverse proxy

@@ -407,6 +407,7 @@ test("deleteSavedTeam preserves a logo referenced by an unrelated tournament reg
           count: async () => 0,
         },
         teamRegistration: { count: async () => 1 },
+        valorantTeamBinding: { findFirst: async () => null },
       },
     },
     [uploadModulePath]: {
@@ -923,6 +924,38 @@ test("ensureTeamRegistrationSaved retries a transient database-pool timeout", as
     assert.equal(transactionAttempts, 2);
     assert.equal(transactionOptions.maxWait, 15_000);
     assert.equal(transactionOptions.timeout, 30_000);
+  } finally {
+    restore();
+  }
+});
+
+test("deleteSavedTeam rejects 409 when the team has an active VALORANT binding", async () => {
+  const team = { id: "saved-team-1", logoName: null, _count: { registrations: 0 } };
+  const prismaMock = {
+    prisma: {
+      savedTeam: {
+        findFirst: async () => team,
+        delete: async () => { throw new Error("must not reach delete"); },
+      },
+      valorantTeamBinding: {
+        findFirst: async ({ where }) => (where.savedTeamId === team.id && where.status === "active" ? { id: "binding-1" } : null),
+      },
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [mailModulePath]: { sendTeamInviteEmail: async () => {} },
+  });
+
+  try {
+    await assert.rejects(
+      teamService.deleteSavedTeam({ teamId: "saved-team-1", user: { id: "user-1" } }),
+      (error) => error.name === "HttpError" && error.statusCode === 409 && /VALORANT binding/.test(error.message),
+    );
   } finally {
     restore();
   }

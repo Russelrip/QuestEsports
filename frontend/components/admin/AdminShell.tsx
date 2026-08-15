@@ -81,7 +81,7 @@ export default function AdminShell({
               </nav>
             </details>
 
-            <nav className="hidden gap-5 border-y border-white/10 bg-[#0d0c13]/80 px-5 py-5 md:grid md:grid-cols-2 xl:grid-cols-[0.65fr_1.6fr_1.35fr_1fr]" aria-label="Admin navigation">
+            <nav className="hidden gap-5 border-y border-white/10 bg-[#0d0c13]/80 px-5 py-5 md:grid md:grid-cols-2 xl:grid-cols-[0.65fr_1.5fr_1.15fr_0.9fr_1fr]" aria-label="Admin navigation">
               {adminNavigationGroups.map((group) => (
                 <div key={group.label}>
                   <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{group.label}</p>

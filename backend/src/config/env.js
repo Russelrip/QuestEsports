@@ -174,6 +174,24 @@ const env = {
   API_PROCESS_COUNT: normalizePositiveInteger(process.env.API_PROCESS_COUNT, 1),
   UPSTASH_REDIS_REST_URL: optional("UPSTASH_REDIS_REST_URL"),
   UPSTASH_REDIS_REST_TOKEN: optional("UPSTASH_REDIS_REST_TOKEN"),
+  VALORANT_INTERNAL_BASE_URL: optional("VALORANT_INTERNAL_BASE_URL"),
+  VALORANT_SERVICE_SECRET: optional("VALORANT_SERVICE_SECRET"),
+  VALORANT_SERVICE_KEY_ID: optional("VALORANT_SERVICE_KEY_ID"),
+  VALORANT_SERVICE_ISSUER: optional("VALORANT_SERVICE_ISSUER", "quest-esports"),
+  VALORANT_SERVICE_AUDIENCE: optional("VALORANT_SERVICE_AUDIENCE", "valorant-platform"),
+  VALORANT_TIMEOUT_MS: normalizePositiveInteger(
+    process.env.VALORANT_TIMEOUT_MS,
+    60000,
+  ),
+  VALORANT_READ_RETRIES: normalizeIntegerInRange(
+    "VALORANT_READ_RETRIES",
+    process.env.VALORANT_READ_RETRIES,
+    2,
+    0,
+    5,
+  ),
+  QUEST_LEADERBOARD_SYSTEM_ACTOR: optional("QUEST_LEADERBOARD_SYSTEM_ACTOR"),
+  VALORANT_SL_API_URL: optional("VALORANT_SL_API_URL"),
   NODE_ENV: normalizeNodeEnv(process.env.NODE_ENV),
   LOG_LEVEL: optional("LOG_LEVEL", "info").toLowerCase(),
   SESSION_COOKIE_NAME: required("SESSION_COOKIE_NAME"),
@@ -406,6 +424,19 @@ if (env.NODE_ENV !== "test" && !env.AUTH_ENCRYPTION_KEY) {
   throw new Error(
     "AUTH_ENCRYPTION_KEY is required outside tests for sensitive-data encryption and OAuth state signing.",
   );
+}
+
+if (env.NODE_ENV !== "test" && env.VALORANT_INTERNAL_BASE_URL) {
+  if (!env.VALORANT_SERVICE_SECRET || !env.VALORANT_SERVICE_KEY_ID) {
+    throw new Error(
+      "VALORANT_SERVICE_SECRET and VALORANT_SERVICE_KEY_ID are required when VALORANT_INTERNAL_BASE_URL is set.",
+    );
+  }
+  if (env.NODE_ENV === "production") {
+    assertHttpsUrl("VALORANT_INTERNAL_BASE_URL", env.VALORANT_INTERNAL_BASE_URL, {
+      originOnly: true,
+    });
+  }
 }
 
 if (

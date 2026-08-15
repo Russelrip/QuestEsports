@@ -30,6 +30,35 @@ const appendIfPresent = (params: URLSearchParams, key: string, value: string) =>
   }
 };
 
+export type AdminTeamOption = {
+  id: string;
+  name: string;
+  teamTag: string | null;
+};
+
+const ADMIN_TEAMS_PAGE_SIZE = 50;
+
+// Fetch every SavedTeam via the admin directory endpoint (not the profile-scoped
+// /api/teams/profile) so admins can pick from ALL saved teams, not just their own.
+const fetchAllAdminTeams = async (): Promise<AdminTeamOption[]> => {
+  const teams: AdminTeamOption[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const result = await adminRequest<{ teams: AdminTeamOption[]; pagination: Pagination }>(
+      `/api/admin/teams?page=${page}&pageSize=${ADMIN_TEAMS_PAGE_SIZE}`
+    );
+    teams.push(...result.teams);
+    totalPages = result.pagination.totalPages;
+    page += 1;
+  } while (page <= totalPages);
+  return teams;
+};
+
+export function useAdminTeams() {
+  return useApiQuery(["admin-teams", "all"], fetchAllAdminTeams);
+}
+
 export function useAdminUsers(search: string, roleFilter: string, page: number) {
   return useApiQuery(["admin-users", search, roleFilter, page], async () => {
     const params = createAdminSearchParams(page, 10);
@@ -103,4 +132,33 @@ export function useAdminTournaments(search: string, status: string, visibility: 
       `/api/admin/tournaments${suffix}`
     );
   });
+}
+
+export type TournamentTitleOption = {
+  id: string;
+  title: string;
+};
+
+const ADMIN_TOURNAMENT_OPTIONS_PAGE_SIZE = 100;
+
+// Lightweight id+title list of every tournament for dropdowns (e.g. attaching a
+// VALORANT series to a tournament). Pages through the admin tournaments endpoint
+// so the full list is available, not just the first page.
+const fetchAllAdminTournamentOptions = async (): Promise<TournamentTitleOption[]> => {
+  const options: TournamentTitleOption[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const result = await adminRequest<{ tournaments: TournamentTitleOption[]; pagination: Pagination }>(
+      `/api/admin/tournaments?page=${page}&pageSize=${ADMIN_TOURNAMENT_OPTIONS_PAGE_SIZE}`
+    );
+    options.push(...result.tournaments.map(({ id, title }) => ({ id, title })));
+    totalPages = result.pagination.totalPages;
+    page += 1;
+  } while (page <= totalPages);
+  return options;
+};
+
+export function useAdminTournamentOptions() {
+  return useApiQuery(["admin-tournament-options"], fetchAllAdminTournamentOptions);
 }

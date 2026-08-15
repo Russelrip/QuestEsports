@@ -57,6 +57,16 @@ const apiRemotePattern = parsedApiUrl
   : null;
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      { source: "/admin/valorant/teams", destination: "/admin/valorant", permanent: false },
+      { source: "/admin/valorant/discover", destination: "/admin/valorant", permanent: false },
+      { source: "/admin/valorant/series/new", destination: "/admin/valorant", permanent: false },
+      { source: "/admin/valorant/series/:path*", destination: "/admin/valorant", permanent: false },
+      { source: "/admin/valorant/rankings", destination: "/admin/valorant", permanent: false },
+      { source: "/admin/valorant/reconciliation", destination: "/admin/valorant", permanent: false },
+    ];
+  },
   images: {
     dangerouslyAllowLocalIP:
       !isProduction || (allowInsecureLoopbackUrls && apiUsesLocalNetwork),

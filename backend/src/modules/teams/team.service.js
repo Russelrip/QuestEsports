@@ -659,6 +659,17 @@ const deleteSavedTeam = async ({ teamId, user }) => {
     );
   }
 
+  const activeBinding = await prisma.valorantTeamBinding.findFirst({
+    where: { savedTeamId: team.id, status: "active" },
+    select: { id: true },
+  });
+  if (activeBinding) {
+    throw new HttpError(
+      409,
+      "This team cannot be deleted because it has an active VALORANT binding. Detach the VALORANT binding first."
+    );
+  }
+
   await prisma.savedTeam.delete({ where: { id: team.id } });
   if (team.logoName) {
     await removeTeamLogoIfUnreferenced({

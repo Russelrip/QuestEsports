@@ -958,6 +958,92 @@ const additionalPaths = {
       },
     ),
   },
+  "/api/v1/admin/valorant/teams": {
+    get: createOperation("valorant", "List VALORANT team bindings with their FastAPI teams", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/teams/bind": {
+    post: createOperation("valorant", "Bind a SavedTeam to a VALORANT team (create-or-get by quest_saved_team_id)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/teams/{bindingId}/detach": {
+    delete: createOperation("valorant", "Detach a VALORANT team binding (Quest-local, never touches VALORANT data)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/discover": {
+    post: createOperation("valorant", "Run a two-player VALORANT match search", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/matches/import": {
+    post: createOperation("valorant", "Import a selected Henrik match (idempotent, created=true/false)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/matches/by-henrik-id/{henrikMatchId}": {
+    get: createOperation("valorant", "Get a match detail by Henrik match id", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/matches": {
+    get: createOperation("valorant", "List VALORANT matches", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series": {
+    post: createOperation("valorant", "Create a draft VALORANT series with anchors and external key", { authenticated: true }),
+    get: createOperation("valorant", "List Quest VALORANT series projections", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/manual": {
+    post: createOperation("valorant", "Create and finalize a manual-result VALORANT series (no games; idempotent by external key)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/{id}": {
+    get: createOperation("valorant", "Get a Quest VALORANT series projection", { authenticated: true }),
+    delete: createOperation("valorant", "Delete a draft VALORANT series", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/{seriesId}": {
+    patch: createOperation("valorant", "Update a draft VALORANT series playedAt", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/{seriesId}/matches": {
+    get: createOperation("valorant", "List matches relevant to a series (anchor-aware, with anchor side)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/{id}/games": {
+    post: createOperation("valorant", "Attach an imported match as a game with side mapping", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/{id}/games/order": {
+    put: createOperation("valorant", "Set the absolute desired game order (draft only, idempotent)", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/{id}/games/{gameId}": {
+    delete: createOperation("valorant", "Remove a game from a draft series", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/{id}/preview": {
+    get: createOperation("valorant", "Preview a series validity and calculated winner", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/series/{id}/finalize": {
+    post: createOperation("valorant", "Finalize a series with a rating mode and optional override", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/rankings": {
+    get: createOperation("valorant", "List VALORANT team rankings", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/teams/{teamId}/rating-history": {
+    get: createOperation("valorant", "Get a VALORANT team rating history", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/teams/{teamId}/series": {
+    get: createOperation("valorant", "List a VALORANT team's series", { authenticated: true }),
+  },
+  "/api/v1/admin/valorant/reconciliation": {
+    get: createOperation("valorant", "Get the VALORANT reconciliation report", { authenticated: true }),
+  },
+  "/api/v1/valorant/leaderboard": {
+    get: createOperation("valorant", "List the public VALORANT player leaderboard (paginated, ELO-desc)"),
+  },
+  "/api/v1/valorant/leaderboard/search": {
+    get: createOperation("valorant", "Search the public VALORANT player leaderboard by Discord username"),
+  },
+  "/api/v1/valorant/leaderboard/register/discord/login": {
+    get: createOperation("valorant", "Get the Discord OAuth login URL for leaderboard registration"),
+  },
+  "/api/v1/valorant/leaderboard/register/discord/callback": {
+    get: createOperation("valorant", "Complete the Discord OAuth callback for leaderboard registration"),
+  },
+  "/api/v1/valorant/leaderboard/register/check-puuid": {
+    post: createOperation("valorant", "Check whether a PUUID is already registered for the leaderboard"),
+  },
+  "/api/v1/valorant/leaderboard/register/preview": {
+    post: createOperation("valorant", "Preview leaderboard registration for a PUUID"),
+  },
+  "/api/v1/valorant/leaderboard/register/submit": {
+    post: createOperation("valorant", "Submit leaderboard registration for a PUUID"),
+  },
   "/api/contact": {
     post: createOperation("Contact", "Submit a contact message"),
   },

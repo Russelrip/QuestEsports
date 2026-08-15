@@ -4,7 +4,7 @@ These scripts support encrypted backup and recovery for Quest Esports production
 
 | File | Purpose |
 | --- | --- |
-| `backup-production.sh` | Locks against overlap, snapshots both upload roots around a PostgreSQL `public`-schema dump, encrypts with `age`, uploads with rclone, verifies remote content, and prunes old local encrypted files |
+| `backup-production.sh` | Locks against overlap, snapshots both upload roots around a PostgreSQL dump of `public` and `valorant` schemas, encrypts with `age`, uploads with rclone, verifies remote content, and prunes old local encrypted files |
 | `restore-production-backup.sh` | Preflights/stages both file trees, activates them under an exit rollback guard, restores PostgreSQL in one transaction, and retains replaced trees after success; destructive and confirmation-gated |
 | `prune-production-backups.sh` | Dry-run-by-default off-site retention with an age threshold, explicit confirmation, and a minimum-recovery-point guard |
 | `notify-backup-failure.sh` | Sends a minimal Discord-compatible webhook alert without including secrets or backup URLs |

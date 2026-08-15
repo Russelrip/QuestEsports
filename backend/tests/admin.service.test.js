@@ -478,6 +478,7 @@ test("deleteAdminSavedTeam removes the saved team and an unreferenced logo", asy
     teamRegistration: {
       count: async () => 0,
     },
+    valorantTeamBinding: { findFirst: async () => null },
   }, {
     removeUploadFiles: async (uploads) => {
       removedUploads.push(...uploads);
@@ -510,6 +511,7 @@ test("deleteAdminSavedTeam preserves logos used by tournament registrations", as
         return 1;
       },
     },
+    valorantTeamBinding: { findFirst: async () => null },
   }, {
     removeUploadFiles: async (uploads) => {
       removedUploads.push(...uploads);
@@ -1474,6 +1476,29 @@ test("correctTeamRegistrationRoster rejects missing or unverified Quest accounts
         ],
       }),
       (error) => error.statusCode === 409 && /verified Quest account/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("deleteAdminSavedTeam rejects 409 when the team has an active VALORANT binding", async () => {
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({ id: "saved-team-1", logoName: null }),
+      deleteMany: async () => { throw new Error("must not reach deleteMany"); },
+    },
+    savedTeamMember: {},
+    valorantTeamBinding: {
+      findFirst: async ({ where }) => (where.savedTeamId === "saved-team-1" && where.status === "active" ? { id: "binding-1" } : null),
+    },
+    $transaction: async (callback) => callback({}),
+  });
+
+  try {
+    await assert.rejects(
+      adminService.deleteAdminSavedTeam("saved-team-1"),
+      (error) => error.name === "HttpError" && error.statusCode === 409 && /VALORANT binding/.test(error.message),
     );
   } finally {
     restore();

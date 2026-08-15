@@ -55,6 +55,10 @@ export const adminNavigationGroups = [
       { href: "/admin/payments", label: "Payments" },
     ],
   },
+  {
+    label: "VALORANT",
+    links: [{ href: "/admin/valorant", label: "Valorant Management" }],
+  },
 ] as const;
 
 export type Pagination = {

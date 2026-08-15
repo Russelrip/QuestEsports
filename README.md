@@ -111,6 +111,47 @@ npm run doctor
 
 CI runs the supported release checks with Node 24. Real-database integration tests require an isolated test database and `RUN_DATABASE_INTEGRATION_TESTS=true`.
 
+## Local Backend Testing Workflow
+
+This workflow verifies backend changes against a dedicated test database without touching shared environments.
+
+Requirements:
+
+- Node.js 24 LTS and npm 10 or newer
+- a dedicated Supabase PostgreSQL project used only for local testing — never a production or shared staging database
+- credentials for that test project only; never production credentials
+
+### 1. Create the local environment file
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+```
+
+`backend/.env` is git-ignored and stays on your machine. Set `DATABASE_URL` and `DIRECT_URL` to the dedicated test project. Supabase requires TLS, so keep `sslmode=require` (or `verify-ca`/`verify-full`) on both URLs.
+
+### 2. Prepare the test database
+
+```powershell
+Set-Location backend
+npm ci
+npm run prisma:generate
+npm run prisma:migrate:deploy
+npm run prisma:migrate:status
+npm run prisma:security:verify
+```
+
+### 3. Run the backend checks
+
+```powershell
+npm run lint
+npm test
+npm run test:integration
+```
+
+`npm run test:integration` runs the real-database integration suite against the test project configured in `backend/.env`.
+
+Do not point this workflow at production and do not run destructive reset commands (`prisma migrate reset`, `prisma db drop`, force-reset variants) against any shared or remote database. The frontend can run separately against `http://localhost:5001`; the mobile admin is out of scope for this workflow.
+
 ## Platform Scope
 
 The platform currently supports:

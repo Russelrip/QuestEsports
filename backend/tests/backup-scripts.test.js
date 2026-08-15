@@ -69,3 +69,26 @@ test("remote retention counts and deletes only complete recovery pairs", () => {
   assert.match(retentionScript, /rclone deletefile "\$remote\/\$archive_name\.sha256"/);
   assert.match(retentionScript, /RETENTION_CONFIRMATION/);
 });
+
+test("production backup dumps both schemas when the valorant schema exists", () => {
+  const backupScript = fs.readFileSync(
+    path.join(__dirname, "../../ops/backup-production.sh"),
+    "utf8",
+  );
+
+  assert.match(backupScript, /pg_namespace/);
+  assert.match(backupScript, /valorant_schema_exists/);
+  assert.match(backupScript, /--schema=public \\\n\s+--schema=valorant/);
+  assert.match(backupScript, /database_scope=application_public_and_valorant_schemas/);
+  assert.match(backupScript, /valorant_schema_included=\$valorant_schema_exists/);
+});
+
+test("production restore reports restored table counts for both schemas", () => {
+  const restoreScript = fs.readFileSync(
+    path.join(__dirname, "../../ops/restore-production-backup.sh"),
+    "utf8",
+  );
+
+  assert.match(restoreScript, /SELECT 'public=' \|\| count\(\*\)/);
+  assert.match(restoreScript, /SELECT 'valorant=' \|\| count\(\*\)/);
+});
