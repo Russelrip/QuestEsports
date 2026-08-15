@@ -178,24 +178,38 @@ jobs:
   valorant-e2e:
     name: VALORANT two-service E2E
     runs-on: ubuntu-latest
-    if: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
+    env:
+      VALORANT_PLATFORM_ACCESS_TOKEN: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Skip VALORANT E2E when platform token is unset
+        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN == '' }}
+        run: echo "VALORANT_PLATFORM_ACCESS_TOKEN not set; skipping VALORANT two-service E2E."
+      - name: Check out repository
+        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Check out valorant-platform-backend
+        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          repository: Russelrip/valorant-platform-backend
+          repository: naheedroomy/valorant-platform-backend
           token: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}
           path: valorant-platform-backend
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - name: Set up Node.js
+        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: backend/package-lock.json
-      - uses: astral-sh/setup-uv@v3
+      - name: Set up uv
+        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
+        uses: astral-sh/setup-uv@v3
       - name: Prepare FastAPI deps and env
+        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
         working-directory: valorant-platform-backend
         run: uv sync --extra dev
       - name: Run two-service E2E
+        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
         working-directory: backend
         run: >-
           VALORANT_PLATFORM_REPO=$GITHUB_WORKSPACE/valorant-platform-backend
