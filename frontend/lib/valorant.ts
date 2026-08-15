@@ -238,10 +238,10 @@ export type ValorantPlayerLeaderboardPage = {
 export type ValorantRegistrationDiscordUser = {
   discord_id: number;
   discord_username: string;
-  discord_discriminator: string;
+  discord_discriminator: string | null;
   discord_avatar: string | null;
   discord_email: string | null;
-  access_token: string;
+  access_token: string | null;
 };
 
 export type ValorantRegistrationPreview = {
@@ -279,7 +279,7 @@ export type ValorantDiscordCallbackResult = {
     puuid: string;
     name: string;
     tag: string;
-    current_rank: string;
+    current_rank: string | null;
   } | null;
 };
 

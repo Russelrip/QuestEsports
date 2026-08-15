@@ -23,6 +23,17 @@ import {
 
 const DISCORD_USER_STORAGE_KEY = "discord_user";
 
+const readStoredDiscordUser = (): ValorantRegistrationDiscordUser | null => {
+  const stored = sessionStorage.getItem(DISCORD_USER_STORAGE_KEY);
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored) as ValorantRegistrationDiscordUser;
+  } catch {
+    sessionStorage.removeItem(DISCORD_USER_STORAGE_KEY);
+    return null;
+  }
+};
+
 const STEPS = ["Discord", "PUUID", "Confirm"];
 
 const EXAMPLE_PUUID_JSON = `{
@@ -121,13 +132,10 @@ export default function ValorantRegistration() {
 
   // Restore a previously connected Discord user from sessionStorage.
   useEffect(() => {
-    const stored = sessionStorage.getItem(DISCORD_USER_STORAGE_KEY);
-    if (!stored) return;
-    try {
-      setDiscordUser(JSON.parse(stored) as ValorantRegistrationDiscordUser);
+    const restored = readStoredDiscordUser();
+    if (restored) {
+      setDiscordUser(restored);
       setStep(1);
-    } catch {
-      sessionStorage.removeItem(DISCORD_USER_STORAGE_KEY);
     }
   }, []);
 
@@ -150,6 +158,22 @@ export default function ValorantRegistration() {
         setError("No user data received from Discord");
       }
     } catch (callbackError) {
+      const status =
+        callbackError instanceof Error && "status" in callbackError
+          ? (callbackError as { status?: number }).status
+          : undefined;
+      if (status === 409) {
+        // The OAuth code was already consumed — a replayed/duplicate callback
+        // (e.g. React StrictMode double-mount or a refresh of the ?code= URL).
+        // The winning request already stored the Discord user, so silently
+        // restore it and clear the URL instead of alarming the user.
+        const restored = readStoredDiscordUser();
+        if (restored) {
+          setDiscordUser(restored);
+          setStep(1);
+        }
+        return;
+      }
       setError(messageForRegistrationError(callbackError, "Failed to authenticate with Discord"));
     } finally {
       setLoading(false);

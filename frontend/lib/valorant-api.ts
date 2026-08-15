@@ -243,11 +243,13 @@ const registrationRequest = async <T>(
   const response = await fetch(buildApiUrl(path), options);
   const payload = (await response
     .json()
-    .catch(() => null)) as (T & { message?: string; error?: string }) | null;
+    .catch(() => null)) as (T & { message?: string; error?: { message?: string } }) | null;
 
   if (!response.ok) {
     const message =
-      payload?.message || payload?.error || `Request failed with status ${response.status}.`;
+      payload?.message ||
+      payload?.error?.message ||
+      `Request failed with status ${response.status}.`;
     throw Object.assign(new Error(message), { status: response.status });
   }
 
