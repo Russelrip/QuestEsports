@@ -81,6 +81,18 @@ export default function ValorantSeriesForm({
   const sameTeam = Boolean(bindingTeamAId) && bindingTeamAId === bindingTeamBId;
 
   const isManual = seriesType === "manual";
+
+  // Manual series require an explicit played-at time — entering manual mode
+  // clears the "now" convenience default. Discovered mode keeps the default.
+  const handleSeriesTypeChange = (next: "discovered" | "manual") => {
+    setSeriesType(next);
+    if (next === "manual") {
+      setPlayedAt("");
+    } else if (playedAt.trim() === "") {
+      setPlayedAt(isoToSriLankaDateTimeLocal(new Date().toISOString()));
+    }
+  };
+
   const mapsNeededToWin = Math.ceil(mapsForFormat(format) / 2);
   const mapsDecisive = teamAMapsWon !== teamBMapsWon;
   const mapsReachWin = Math.max(teamAMapsWon, teamBMapsWon) === mapsNeededToWin;
@@ -264,7 +276,7 @@ export default function ValorantSeriesForm({
                     name="seriesType"
                     value="discovered"
                     checked={seriesType === "discovered"}
-                    onChange={() => setSeriesType("discovered")}
+                    onChange={() => handleSeriesTypeChange("discovered")}
                     disabled={submitting}
                   />
                   Discovered
@@ -275,7 +287,7 @@ export default function ValorantSeriesForm({
                     name="seriesType"
                     value="manual"
                     checked={seriesType === "manual"}
-                    onChange={() => setSeriesType("manual")}
+                    onChange={() => handleSeriesTypeChange("manual")}
                     disabled={submitting}
                   />
                   Manual result

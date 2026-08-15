@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ValorantEmptyState from "@/components/admin/valorant/ValorantEmptyState";
 import ValorantErrorAlert from "@/components/admin/valorant/ValorantErrorAlert";
 import ValorantFinalizeForm from "@/components/admin/valorant/ValorantFinalizeForm";
@@ -12,9 +12,11 @@ import ValorantReorderControl from "@/components/admin/valorant/ValorantReorderC
 import ValorantStatusBadge from "@/components/admin/valorant/ValorantStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { useValorantPreview, useValorantSeriesDetail } from "@/hooks/api/useValorant";
 import { useToastStore } from "@/hooks/useToastStore";
 import { formatAdminCompactDateTime } from "@/lib/admin";
+import { isoToSriLankaDateTimeLocal, sriLankaDateTimeLocalToIso } from "@/lib/date-time";
 import {
   nextGameNumber,
   ratingModeLabel,
@@ -29,6 +31,7 @@ import {
   importValorantMatch,
   removeValorantGame,
   setValorantGameOrder,
+  updateValorantSeriesPlayedAt,
 } from "@/lib/valorant-api";
 
 const teamLabel = (series: QuestValorantSeries, side: "A" | "B") => {
@@ -70,6 +73,14 @@ export default function ValorantSeriesDetail({
   const [removingGameId, setRemovingGameId] = useState<string | null>(null);
   const [deleteConfirming, setDeleteConfirming] = useState(false);
   const [finalizeResult, setFinalizeResult] = useState<FinalizeResult | null>(null);
+  const [editedPlayedAt, setEditedPlayedAt] = useState("");
+  const [savingPlayedAt, setSavingPlayedAt] = useState(false);
+
+  // Keep the date control in sync whenever the loaded series changes (initial
+  // load and refetch after saving).
+  useEffect(() => {
+    setEditedPlayedAt(series?.playedAt ? isoToSriLankaDateTimeLocal(series.playedAt) : "");
+  }, [series?.playedAt]);
 
   if (detailQuery.loading) {
     return (
@@ -151,6 +162,23 @@ export default function ValorantSeriesDetail({
     } finally {
       setRemovingGameId(null);
       setMutationBusy(false);
+    }
+  };
+
+  const handleSavePlayedAt = async () => {
+    if (editedPlayedAt.trim() === "" || savingPlayedAt) return;
+    setSavingPlayedAt(true);
+    try {
+      await updateValorantSeriesPlayedAt(seriesId, sriLankaDateTimeLocalToIso(editedPlayedAt));
+      await detailQuery.refetch();
+      await previewQuery.refetch();
+      showToast({ title: "Series date saved", tone: "success" });
+    } catch (saveError) {
+      const message =
+        saveError instanceof Error ? saveError.message : "Could not update the series date.";
+      showToast({ title: message, tone: "error" });
+    } finally {
+      setSavingPlayedAt(false);
     }
   };
 
@@ -249,6 +277,32 @@ export default function ValorantSeriesDetail({
           <p className="text-sm text-slate-400">
             {teamALabel} vs {teamBLabel} · {formatAdminCompactDateTime(series.playedAt)}
           </p>
+          {isDraft ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <label htmlFor="edit-played-at" className="text-sm font-medium text-slate-300">
+                Played at
+              </label>
+              <div className="w-full min-w-0 sm:w-56">
+                <Input
+                  id="edit-played-at"
+                  type="datetime-local"
+                  aria-label="Edit series played-at date"
+                  value={editedPlayedAt}
+                  onChange={(event) => setEditedPlayedAt(event.target.value)}
+                  disabled={savingPlayedAt}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={savingPlayedAt || editedPlayedAt.trim() === ""}
+                onClick={() => void handleSavePlayedAt()}
+              >
+                {savingPlayedAt ? "Saving…" : "Save date"}
+              </Button>
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <ValorantStatusBadge status={series.status} kind="series" />

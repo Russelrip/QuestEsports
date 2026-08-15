@@ -141,6 +141,12 @@ export const deleteValorantSeries = (seriesId: string) =>
     { method: "DELETE" }
   );
 
+export const updateValorantSeriesPlayedAt = (seriesId: string, playedAt: string) =>
+  valorantAdminRequest<{ series: QuestValorantSeries }>(
+    `/api/v1/admin/valorant/series/${encodeURIComponent(seriesId)}`,
+    { method: "PATCH", json: { playedAt } }
+  );
+
 export const attachValorantGame = (seriesId: string, input: { gameNumber: number; matchId: string; teamASide?: ValorantSide }) =>
   valorantAdminRequest<{ game: SeriesGame }>(
     `/api/v1/admin/valorant/series/${encodeURIComponent(seriesId)}/games`,
