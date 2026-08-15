@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const { mock } = require("node:test");
 
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
@@ -310,5 +311,67 @@ test("throws 503 on transport failure for registration POSTs", async () => {
     await assert.rejects(client.checkPuuid("p-1"), (e) => e.statusCode === 503);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("propagates a 401 wrapped in detail.error with its real status and message", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    upstreamErrorResponse(401, {
+      detail: {
+        error: { code: "INVALID_SERVICE_TOKEN", message: "Invalid service token.", request_id: "req-3" },
+      },
+    });
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    await assert.rejects(
+      client.getDiscordLogin(),
+      (e) => e.statusCode === 401 && e.message === "Invalid service token.",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("registration requests use the 60s timeout; leaderboard GETs keep the 5s timeout", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  const originalFetch = globalThis.fetch;
+  let leaderboardAborted = false;
+  let registrationAborted = false;
+  globalThis.fetch = async (url, options) =>
+    new Promise((resolve, reject) => {
+      const isLeaderboard = url.includes("/api/v1/leaderboard");
+      options.signal.addEventListener("abort", () => {
+        if (isLeaderboard) {
+          leaderboardAborted = true;
+        } else {
+          registrationAborted = true;
+        }
+        reject(new Error("The operation was aborted."));
+      });
+    });
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    const leaderboardPromise = client.getLeaderboard({ page: 1, perPage: 50 });
+    const registrationPromise = client.previewRegistration("p-1");
+
+    assert.equal(leaderboardAborted, false);
+    assert.equal(registrationAborted, false);
+
+    // Past the leaderboard's 5s timeout but well short of 60s: only the
+    // leaderboard request is aborted.
+    await mock.timers.tick(5001);
+    assert.equal(leaderboardAborted, true);
+    assert.equal(registrationAborted, false);
+    await assert.rejects(leaderboardPromise, (e) => e.statusCode === 503);
+
+    // Past the registration's 60s timeout: the registration request is
+    // aborted too.
+    await mock.timers.tick(60000);
+    assert.equal(registrationAborted, true);
+    await assert.rejects(registrationPromise, (e) => e.statusCode === 503);
+  } finally {
+    globalThis.fetch = originalFetch;
+    mock.timers.reset();
   }
 });

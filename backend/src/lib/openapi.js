@@ -899,6 +899,21 @@ const additionalPaths = {
   "/api/v1/valorant/leaderboard/search": {
     get: createOperation("valorant", "Search the public VALORANT player leaderboard by Discord username"),
   },
+  "/api/v1/valorant/leaderboard/register/discord/login": {
+    get: createOperation("valorant", "Get the Discord OAuth login URL for leaderboard registration"),
+  },
+  "/api/v1/valorant/leaderboard/register/discord/callback": {
+    get: createOperation("valorant", "Complete the Discord OAuth callback for leaderboard registration"),
+  },
+  "/api/v1/valorant/leaderboard/register/check-puuid": {
+    post: createOperation("valorant", "Check whether a PUUID is already registered for the leaderboard"),
+  },
+  "/api/v1/valorant/leaderboard/register/preview": {
+    post: createOperation("valorant", "Preview leaderboard registration for a PUUID"),
+  },
+  "/api/v1/valorant/leaderboard/register/submit": {
+    post: createOperation("valorant", "Submit leaderboard registration for a PUUID"),
+  },
   "/api/contact": {
     post: createOperation("Contact", "Submit a contact message"),
   },
