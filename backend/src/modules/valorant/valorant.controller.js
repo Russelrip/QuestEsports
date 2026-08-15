@@ -168,6 +168,25 @@ const deleteSeries = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: { message: "Draft series deleted." }, meta: { serverNow: new Date().toISOString() } });
 });
 
+const updateSeriesPlayedAt = asyncHandler(async (req, res) => {
+  requireBody(req.body, ["playedAt"]);
+  const playedAt = new Date(req.body.playedAt);
+  if (Number.isNaN(playedAt.getTime())) throw new HttpError(400, "Invalid playedAt.");
+  const result = await valorantService.updateSeriesPlayedAt({
+    seriesId: req.params.seriesId,
+    playedAt,
+    actorUserId: req.user.id,
+    requestId: req.requestId,
+    ipAddress: req.ip,
+  });
+  await writeAudit(req, {
+    targetType: "valorant_series",
+    targetId: req.params.seriesId,
+    afterData: { action: "update_played_at", playedAt: playedAt.toISOString(), valorantSeriesUuid: result.series.id },
+  });
+  res.status(200).json({ success: true, data: { series: result.series, projection: result.projection }, meta: { serverNow: new Date().toISOString() } });
+});
+
 const attachGame = asyncHandler(async (req, res) => {
   // teamASide is optional — FastAPI derives the side from the anchors when
   // omitted. Only gameNumber and matchId are required.
@@ -255,6 +274,7 @@ module.exports = {
   listSeries,
   getSeries,
   deleteSeries,
+  updateSeriesPlayedAt,
   attachGame,
   setGameOrder,
   removeGame,

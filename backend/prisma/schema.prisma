@@ -30,6 +30,7 @@ enum ValorantOperationType {
   team_bind
   series_create
   series_manual
+  series_update
   attach_game
   set_game_order
   remove_game

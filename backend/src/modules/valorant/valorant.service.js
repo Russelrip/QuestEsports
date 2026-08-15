@@ -584,6 +584,41 @@ const deleteSeries = async ({ seriesId, actorUserId, requestId, ipAddress }) => 
   await markOperationSucceeded(operation.id, { status: 204, requestId: null, data: { seriesId: series.id } });
 };
 
+// Draft-series playedAt update (FastAPI PATCH /api/v1/series/{series_uuid}
+// accepts { played_at } and returns the updated SeriesView). The Quest
+// projection is written to match after the upstream PATCH commits.
+const updateSeriesPlayedAt = async ({ seriesId, playedAt, actorUserId, requestId, ipAddress }) => {
+  const series = await requireSeriesWithUuid({ seriesId, status: "draft" });
+  const operation = await createOperation({
+    type: "series_update",
+    questSeriesId: series.id,
+    actorUserId,
+    requestBody: { played_at: playedAt.toISOString() },
+  });
+  await prisma.questValorantOperation.update({ where: { id: operation.id }, data: { status: "in_flight" } });
+  let response;
+  try {
+    response = await valorantRequest({
+      method: "PATCH",
+      path: `/api/v1/series/${series.valorantSeriesUuid}`,
+      body: { played_at: playedAt.toISOString() },
+      actorUserId,
+      operationId: operation.operationId,
+      idempotent: false,
+    });
+  } catch (error) {
+    await markOperationFailed(operation.id, error);
+    throw error;
+  }
+  const seriesView = mapSeriesView(response.data);
+  const projection = await prisma.questValorantSeries.update({
+    where: { id: series.id },
+    data: { playedAt, lastOperationId: operation.id },
+  });
+  await markOperationSucceeded(operation.id, response);
+  return { series: seriesView, projection };
+};
+
 const attachGame = async ({ seriesId, gameNumber, matchId, teamASide, actorUserId, requestId, ipAddress }) => {
   const series = await requireSeriesWithUuid({ seriesId, status: "draft" });
   // teamASide is optional: FastAPI derives the side mapping from the anchors
@@ -935,6 +970,7 @@ module.exports = {
   getSeries,
   listSeries,
   deleteSeries,
+  updateSeriesPlayedAt,
   attachGame,
   setGameOrder,
   removeGame,

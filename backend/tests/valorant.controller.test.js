@@ -367,6 +367,86 @@ test("createManualSeries controller rejects an unsupported ratingMode with 400 w
   }
 });
 
+test("updateSeriesPlayedAt controller passes camelCase playedAt, records the audit, and returns the SeriesView envelope", async () => {
+  const audits = [];
+  const received = [];
+  const serviceMock = {
+    updateSeriesPlayedAt: async (args) => {
+      received.push(args);
+      return {
+        series: { id: "series-uuid-1", status: "draft", playedAt: args.playedAt.toISOString() },
+        projection: { id: "quest-series-1", playedAt: args.playedAt },
+      };
+    },
+  };
+  const auditMock = {
+    requestAuditContext: (req) => ({ actorUserId: req.user?.id, requestId: req.requestId, ipAddress: req.ip }),
+    recordAudit: async (entry) => audits.push(entry),
+  };
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [auditPath]: auditMock,
+    [asyncHandlerPath]: { asyncHandler },
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const { res, nextErrors } = await callHandler(controller.updateSeriesPlayedAt, {
+      user: { id: "admin-1" },
+      requestId: "req-patch-1",
+      ip: "127.0.0.1",
+      params: { seriesId: "quest-series-1" },
+      body: { playedAt: "2026-08-16T18:00:00Z" },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.success, true);
+    assert.equal(res.payload.data.series.id, "series-uuid-1");
+    assert.equal(res.payload.data.series.playedAt, "2026-08-16T18:00:00.000Z");
+    assert.equal(res.payload.data.projection.id, "quest-series-1");
+    assert.ok(res.payload.meta.serverNow);
+    assert.deepEqual(nextErrors, []);
+    assert.equal(received[0].seriesId, "quest-series-1");
+    assert.ok(received[0].playedAt instanceof Date, "the controller parses playedAt into a Date");
+    assert.equal(received[0].actorUserId, "admin-1");
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].targetType, "valorant_series");
+    assert.equal(audits[0].targetId, "quest-series-1");
+    assert.equal(audits[0].afterData.action, "update_played_at");
+    assert.equal(audits[0].afterData.playedAt, "2026-08-16T18:00:00.000Z");
+  } finally {
+    restore();
+  }
+});
+
+test("updateSeriesPlayedAt controller rejects an invalid playedAt with 400 without calling the service", async () => {
+  let serviceCalls = 0;
+  const serviceMock = {
+    updateSeriesPlayedAt: async () => { serviceCalls += 1; },
+  };
+  const auditMock = { requestAuditContext: () => ({}), recordAudit: async () => {} };
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [auditPath]: auditMock,
+    [asyncHandlerPath]: { asyncHandler },
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const { nextErrors } = await callHandler(controller.updateSeriesPlayedAt, {
+      user: { id: "admin-1" },
+      requestId: "req-patch-bad",
+      ip: "127.0.0.1",
+      params: { seriesId: "quest-series-1" },
+      body: { playedAt: "not-a-date" },
+    });
+    assert.ok(nextErrors[0] instanceof HttpError);
+    assert.equal(nextErrors[0].statusCode, 400);
+    assert.equal(serviceCalls, 0, "the invalid playedAt is rejected before the service is called");
+  } finally {
+    restore();
+  }
+});
+
 test("controller propagates HttpError through next()", async () => {
   const serviceMock = {
     bindTeam: async () => { throw new HttpError(409, "already bound"); },

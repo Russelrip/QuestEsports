@@ -1469,3 +1469,102 @@ test("getReconciliationReport classifies missing FastAPI series as orphaned via 
     restore();
   }
 });
+
+test("updateSeriesPlayedAt PATCHes FastAPI with the ISO played_at and mirrors the updated projection", async () => {
+  const playedAt = new Date("2026-08-16T18:00:00.000Z");
+  const statuses = [];
+  let operationType;
+  let projectionUpdate;
+  const seriesView = {
+    id: "series-uuid-1",
+    team_a_id: "val-team-a",
+    team_b_id: "val-team-b",
+    format: "bo3",
+    importance: "regular",
+    status: "draft",
+    team_a_maps_won: 0,
+    team_b_maps_won: 0,
+    played_at: "2026-08-16T18:00:00.000Z",
+  };
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async () => ({ id: "quest-series-1", valorantSeriesUuid: "series-uuid-1", status: "draft" }),
+        update: async ({ where, data }) => {
+          projectionUpdate = { where, data };
+          return { id: "quest-series-1", ...data };
+        },
+      },
+      questValorantOperation: {
+        create: async ({ data }) => {
+          operationType = data.type;
+          return { id: "op-row-20", ...data };
+        },
+        update: async ({ data }) => {
+          statuses.push(data.status);
+          return { id: "op-row-20", ...data };
+        },
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ method, path, body, idempotent }) => {
+      assert.equal(method, "PATCH");
+      assert.equal(path, "/api/v1/series/series-uuid-1");
+      assert.deepEqual(body, { played_at: "2026-08-16T18:00:00.000Z" });
+      assert.equal(idempotent, false);
+      return { status: 200, data: seriesView, requestId: "fastapi-req-20" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapSeriesView: (s) => ({ id: s.id, status: s.status, playedAt: s.played_at }) },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const result = await service.updateSeriesPlayedAt({
+      seriesId: "quest-series-1",
+      playedAt,
+      actorUserId: "user-1",
+      requestId: "req-20",
+      ipAddress: "127.0.0.1",
+    });
+    assert.equal(operationType, "series_update");
+    assert.equal(result.series.playedAt, "2026-08-16T18:00:00.000Z", "the mapped SeriesView carries the new playedAt");
+    assert.equal(projectionUpdate.where.id, "quest-series-1");
+    assert.equal(projectionUpdate.data.playedAt, playedAt, "the Quest projection is updated to the same playedAt");
+    assert.equal(projectionUpdate.data.lastOperationId, "op-row-20");
+    assert.equal(result.projection.playedAt, playedAt);
+    assert.deepEqual(statuses, ["in_flight", "succeeded"]);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSeriesPlayedAt 409s when the Quest series has no VALORANT series yet", async () => {
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async () => ({ id: "quest-series-1", status: "draft", valorantSeriesUuid: null }),
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => { throw new Error("must not call"); } },
+    [mapperPath]: {},
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+  try {
+    await assert.rejects(
+      service.updateSeriesPlayedAt({ seriesId: "quest-series-1", playedAt: new Date(), actorUserId: "user-1", requestId: "req-21", ipAddress: "127.0.0.1" }),
+      (error) => error instanceof HttpError && error.statusCode === 409,
+    );
+  } finally {
+    restore();
+  }
+});
