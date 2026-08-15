@@ -514,21 +514,57 @@ const createManualSeries = async ({
   }
 
   const result = mapManualFinalizeResult(response.data);
-  const series = await prisma.questValorantSeries.create({
-    data: {
-      externalKey,
-      bindingAId: bindingA.id,
-      bindingBId: bindingB.id,
-      format,
-      playedAt,
-      ratingMode,
-      status: "finalized",
-      valorantSeriesUuid: result.seriesId,
-      finalizedById: actorUserId,
-      lastOperationId: operation.id,
-      tournamentId,
-    },
+  // The projection write must converge (create-or-get): on a retry after the
+  // upstream commit (response lost, or a double-submit raced to FastAPI), the
+  // deterministic externalKey is the same, so the projection row already exists.
+  // Reuse it instead of letting the unique-constraint create throw P2002 → 409 —
+  // the upstream create-or-get already guaranteed single ELO application. The
+  // P2002 fallback also closes the concurrent race where both requests pass the
+  // findUnique above before either create commits (matches the coalescing
+  // pattern in src/lib/jobs.js).
+  let series = await prisma.questValorantSeries.findUnique({
+    where: { externalKey },
   });
+  if (!series) {
+    try {
+      series = await prisma.questValorantSeries.create({
+        data: {
+          externalKey,
+          bindingAId: bindingA.id,
+          bindingBId: bindingB.id,
+          format,
+          playedAt,
+          ratingMode,
+          status: "finalized",
+          valorantSeriesUuid: result.seriesId,
+          finalizedById: actorUserId,
+          lastOperationId: operation.id,
+          tournamentId,
+        },
+      });
+    } catch (error) {
+      if (error?.code === "P2002") {
+        // Lost the concurrent create race — the winner's row is now committed;
+        // fall through to the re-find below and return the converged row.
+        series = await prisma.questValorantSeries.findUnique({
+          where: { externalKey },
+        });
+      } else {
+        // Any other projection-write failure must not leave the operation stuck
+        // `in_flight` (same class as updateSeriesPlayedAt's PATCH-path fix).
+        await markOperationFailed(operation.id, error);
+        throw error;
+      }
+    }
+  }
+  if (!series) {
+    // Defensive: a P2002 implies the winner's row committed, but if the re-find
+    // still returns nothing, don't mark the operation succeeded with a null
+    // series (the controller would throw on result.series.id after the fact).
+    const error = new Error("Projection row missing after manual series create.");
+    await markOperationFailed(operation.id, error);
+    throw error;
+  }
   await markOperationSucceeded(operation.id, response);
   return { ...result, series, operationId: operation.operationId };
 };
@@ -611,10 +647,20 @@ const updateSeriesPlayedAt = async ({ seriesId, playedAt, actorUserId, requestId
     throw error;
   }
   const seriesView = mapSeriesView(response.data);
-  const projection = await prisma.questValorantSeries.update({
-    where: { id: series.id },
-    data: { playedAt, lastOperationId: operation.id },
-  });
+  let projection;
+  try {
+    projection = await prisma.questValorantSeries.update({
+      where: { id: series.id },
+      data: { playedAt, lastOperationId: operation.id },
+    });
+  } catch (error) {
+    // The upstream PATCH already committed (idempotent by value) — a projection
+    // write failure must not leave the operation stuck `in_flight`. Mark it
+    // reconciliation_required (markOperationFailed on a non-FastAPI error) so the
+    // retry can converge safely.
+    await markOperationFailed(operation.id, error);
+    throw error;
+  }
   await markOperationSucceeded(operation.id, response);
   return { series: seriesView, projection };
 };

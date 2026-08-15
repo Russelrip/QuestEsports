@@ -441,7 +441,7 @@ export default function ValorantSeriesForm({
                 </div>
                 <p className="text-xs text-slate-500">Applied immediately — the manual series finalizes on creation.</p>
                 <p className="text-xs text-slate-500">
-                  Historical results apply ELO immediately in entry order — run a rankings rebuild after importing a batch for chronological correctness.
+                  Historical results apply ELO immediately and permanently in entry order — run `rebuild_rankings` after importing a batch to reorder them chronologically.
                 </p>
               </div>
             ) : (

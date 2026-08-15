@@ -640,6 +640,7 @@ test("createManualSeries derives a deterministic external key (same payload → 
         },
       },
       questValorantSeries: {
+        findUnique: async () => null,
         create: async ({ data }) => {
           createdSeriesData = data;
           return { id: "quest-series-manual", ...data };
@@ -724,6 +725,361 @@ test("createManualSeries derives a deterministic external key (same payload → 
     assert.equal(result.series.id, "quest-series-manual");
     assert.equal(result.operationId, operationIds[0], "the ledger operationId is echoed in the result");
     assert.deepEqual(statuses, ["in_flight", "succeeded", "in_flight", "succeeded"]);
+  } finally {
+    restore();
+  }
+});
+
+test("createManualSeries converges on retry when the projection already exists (reuses the row, marks the operation succeeded)", async () => {
+  const fixture = require("./fixtures/valorant/series-manual-finalize.json");
+  const statuses = [];
+  let createCalls = 0;
+  const realValidation = require(validationPath);
+  const args = {
+    bindingTeamAId: "binding-a",
+    bindingTeamBId: "binding-b",
+    format: "bo3",
+    playedAt: new Date("2026-08-15T18:00:00Z"),
+    ratingMode: "manual_override",
+    winnerTeamId: "binding-a",
+    teamAMapsWon: 2,
+    teamBMapsWon: 1,
+    actorUserId: "user-1",
+    requestId: "req-manual-retry",
+    ipAddress: "127.0.0.1",
+  };
+  const expectedKey = realValidation.deriveManualSeriesExternalKey({
+    teamAUuid: "val-team-1",
+    teamBUuid: "val-team-2",
+    format: "bo3",
+    playedAt: new Date("2026-08-15T18:00:00Z"),
+    ratingMode: "manual_override",
+    winnerUuid: "val-team-1",
+    teamAMapsWon: 2,
+    teamBMapsWon: 1,
+  });
+  const existingRow = {
+    id: "quest-series-manual",
+    externalKey: expectedKey,
+    bindingAId: "binding-a",
+    bindingBId: "binding-b",
+    format: "bo3",
+    playedAt: new Date("2026-08-15T18:00:00Z"),
+    ratingMode: "manual_override",
+    status: "finalized",
+    valorantSeriesUuid: fixture.series_id,
+    finalizedById: "user-1",
+    lastOperationId: "op-row-manual-original",
+    tournamentId: null,
+  };
+  const prismaMock = {
+    prisma: {
+      tournament: { findUnique: async () => null },
+      valorantTeamBinding: {
+        findUnique: async ({ where }) => {
+          const map = {
+            "binding-a": { id: "binding-a", status: "active", valorantTeamUuid: "val-team-1" },
+            "binding-b": { id: "binding-b", status: "active", valorantTeamUuid: "val-team-2" },
+          };
+          return map[where.id] || null;
+        },
+      },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "op-row-manual-retry", ...data }),
+        update: async ({ data }) => {
+          statuses.push(data.status);
+          return { id: "op-row-manual-retry", ...data };
+        },
+      },
+      questValorantSeries: {
+        findUnique: async ({ where }) => {
+          assert.equal(where.externalKey, expectedKey, "the retry looks up the projection by the deterministic external key");
+          return existingRow;
+        },
+        create: async () => {
+          createCalls += 1;
+          throw new Error("must not create when the projection already exists");
+        },
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ path, idempotent }) => {
+      assert.equal(path, "/api/v1/series/manual");
+      assert.equal(idempotent, true);
+      return { status: 200, data: fixture, requestId: "fastapi-req-manual-retry" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapManualFinalizeResult: (r) => ({ seriesId: r.series_id, status: r.status, ratingMode: r.rating_mode }) },
+    [validationPath]: { ...realValidation, assertSupportedFormat: () => {} },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const result = await service.createManualSeries(args);
+    assert.equal(createCalls, 0, "the retry reuses the existing projection instead of re-creating it");
+    assert.equal(result.series.id, "quest-series-manual", "the converged projection row is returned");
+    assert.equal(result.series.externalKey, expectedKey);
+    assert.equal(result.series.status, "finalized");
+    assert.equal(result.series.lastOperationId, "op-row-manual-original", "the original projection row is untouched");
+    assert.deepEqual(statuses, ["in_flight", "succeeded"], "the retry marks the operation succeeded with the converged state");
+  } finally {
+    restore();
+  }
+});
+
+test("createManualSeries converges when a concurrent double-submit loses the create race (P2002 → re-find → succeeded)", async () => {
+  const fixture = require("./fixtures/valorant/series-manual-finalize.json");
+  const statuses = [];
+  let createCalls = 0;
+  let findUniqueCalls = 0;
+  const realValidation = require(validationPath);
+  const args = {
+    bindingTeamAId: "binding-a",
+    bindingTeamBId: "binding-b",
+    format: "bo3",
+    playedAt: new Date("2026-08-15T18:00:00Z"),
+    ratingMode: "manual_override",
+    winnerTeamId: "binding-a",
+    teamAMapsWon: 2,
+    teamBMapsWon: 1,
+    actorUserId: "user-1",
+    requestId: "req-manual-race",
+    ipAddress: "127.0.0.1",
+  };
+  const expectedKey = realValidation.deriveManualSeriesExternalKey({
+    teamAUuid: "val-team-1",
+    teamBUuid: "val-team-2",
+    format: "bo3",
+    playedAt: new Date("2026-08-15T18:00:00Z"),
+    ratingMode: "manual_override",
+    winnerUuid: "val-team-1",
+    teamAMapsWon: 2,
+    teamBMapsWon: 1,
+  });
+  const existingRow = {
+    id: "quest-series-manual",
+    externalKey: expectedKey,
+    bindingAId: "binding-a",
+    bindingBId: "binding-b",
+    format: "bo3",
+    playedAt: new Date("2026-08-15T18:00:00Z"),
+    ratingMode: "manual_override",
+    status: "finalized",
+    valorantSeriesUuid: fixture.series_id,
+    finalizedById: "user-1",
+    lastOperationId: "op-row-manual-winner",
+    tournamentId: null,
+  };
+  const prismaMock = {
+    prisma: {
+      tournament: { findUnique: async () => null },
+      valorantTeamBinding: {
+        findUnique: async ({ where }) => {
+          const map = {
+            "binding-a": { id: "binding-a", status: "active", valorantTeamUuid: "val-team-1" },
+            "binding-b": { id: "binding-b", status: "active", valorantTeamUuid: "val-team-2" },
+          };
+          return map[where.id] || null;
+        },
+      },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "op-row-manual-race", ...data }),
+        update: async ({ data }) => {
+          statuses.push(data.status);
+          return { id: "op-row-manual-race", ...data };
+        },
+      },
+      questValorantSeries: {
+        findUnique: async ({ where }) => {
+          assert.equal(where.externalKey, expectedKey, "both the pre-check and the post-P2002 re-find use the deterministic external key");
+          findUniqueCalls += 1;
+          // First lookup (pre-create) sees nothing; the winner's row is visible
+          // only after the losing create hits the unique constraint.
+          return findUniqueCalls === 1 ? null : existingRow;
+        },
+        create: async () => {
+          createCalls += 1;
+          const error = new Error("Unique constraint failed on the fields: (`external_key`)");
+          error.code = "P2002";
+          throw error;
+        },
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ path, idempotent }) => {
+      assert.equal(path, "/api/v1/series/manual");
+      assert.equal(idempotent, true);
+      return { status: 200, data: fixture, requestId: "fastapi-req-manual-race" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapManualFinalizeResult: (r) => ({ seriesId: r.series_id, status: r.status, ratingMode: r.rating_mode }) },
+    [validationPath]: { ...realValidation, assertSupportedFormat: () => {} },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const result = await service.createManualSeries(args);
+    assert.equal(createCalls, 1, "the losing request attempted exactly one create");
+    assert.equal(result.series.id, "quest-series-manual", "the winner's committed projection row is returned");
+    assert.equal(result.series.externalKey, expectedKey);
+    assert.equal(result.series.status, "finalized");
+    assert.equal(result.series.lastOperationId, "op-row-manual-winner", "the winner's row is untouched");
+    assert.deepEqual(statuses, ["in_flight", "succeeded"], "the loser still marks its operation succeeded with the converged state");
+  } finally {
+    restore();
+  }
+});
+
+test("createManualSeries marks the operation reconciliation_required when the projection create fails with a non-P2002 error", async () => {
+  const fixture = require("./fixtures/valorant/series-manual-finalize.json");
+  const statuses = [];
+  const realValidation = require(validationPath);
+  const args = {
+    bindingTeamAId: "binding-a",
+    bindingTeamBId: "binding-b",
+    format: "bo3",
+    playedAt: new Date("2026-08-15T18:00:00Z"),
+    ratingMode: "manual_override",
+    winnerTeamId: "binding-a",
+    teamAMapsWon: 2,
+    teamBMapsWon: 1,
+    actorUserId: "user-1",
+    requestId: "req-manual-non-p2002",
+    ipAddress: "127.0.0.1",
+  };
+  const prismaMock = {
+    prisma: {
+      tournament: { findUnique: async () => null },
+      valorantTeamBinding: {
+        findUnique: async ({ where }) => {
+          const map = {
+            "binding-a": { id: "binding-a", status: "active", valorantTeamUuid: "val-team-1" },
+            "binding-b": { id: "binding-b", status: "active", valorantTeamUuid: "val-team-2" },
+          };
+          return map[where.id] || null;
+        },
+      },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "op-row-manual-non-p2002", ...data }),
+        update: async ({ data }) => {
+          statuses.push(data.status);
+          return { id: "op-row-manual-non-p2002", ...data };
+        },
+      },
+      questValorantSeries: {
+        findUnique: async () => null,
+        create: async () => {
+          const error = new Error("Record to update not found.");
+          error.code = "P2025";
+          throw error;
+        },
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ path, idempotent }) => {
+      assert.equal(path, "/api/v1/series/manual");
+      assert.equal(idempotent, true);
+      return { status: 200, data: fixture, requestId: "fastapi-req-manual-non-p2002" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapManualFinalizeResult: (r) => ({ seriesId: r.series_id, status: r.status, ratingMode: r.rating_mode }) },
+    [validationPath]: { ...realValidation, assertSupportedFormat: () => {} },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    await assert.rejects(service.createManualSeries(args), (error) => error.code === "P2025");
+    assert.deepEqual(statuses, ["in_flight", "reconciliation_required"], "a non-P2002 projection-write failure marks the operation reconciliation_required");
+  } finally {
+    restore();
+  }
+});
+
+test("createManualSeries marks the operation reconciliation_required and throws when the P2002 re-find still finds no projection", async () => {
+  const fixture = require("./fixtures/valorant/series-manual-finalize.json");
+  const statuses = [];
+  let findUniqueCalls = 0;
+  const realValidation = require(validationPath);
+  const args = {
+    bindingTeamAId: "binding-a",
+    bindingTeamBId: "binding-b",
+    format: "bo3",
+    playedAt: new Date("2026-08-15T18:00:00Z"),
+    ratingMode: "manual_override",
+    winnerTeamId: "binding-a",
+    teamAMapsWon: 2,
+    teamBMapsWon: 1,
+    actorUserId: "user-1",
+    requestId: "req-manual-null-refind",
+    ipAddress: "127.0.0.1",
+  };
+  const prismaMock = {
+    prisma: {
+      tournament: { findUnique: async () => null },
+      valorantTeamBinding: {
+        findUnique: async ({ where }) => {
+          const map = {
+            "binding-a": { id: "binding-a", status: "active", valorantTeamUuid: "val-team-1" },
+            "binding-b": { id: "binding-b", status: "active", valorantTeamUuid: "val-team-2" },
+          };
+          return map[where.id] || null;
+        },
+      },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "op-row-manual-null-refind", ...data }),
+        update: async ({ data }) => {
+          statuses.push(data.status);
+          return { id: "op-row-manual-null-refind", ...data };
+        },
+      },
+      questValorantSeries: {
+        findUnique: async () => {
+          findUniqueCalls += 1;
+          return null;
+        },
+        create: async () => {
+          const error = new Error("Unique constraint failed on the fields: (`external_key`)");
+          error.code = "P2002";
+          throw error;
+        },
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ path, idempotent }) => {
+      assert.equal(path, "/api/v1/series/manual");
+      assert.equal(idempotent, true);
+      return { status: 200, data: fixture, requestId: "fastapi-req-manual-null-refind" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapManualFinalizeResult: (r) => ({ seriesId: r.series_id, status: r.status, ratingMode: r.rating_mode }) },
+    [validationPath]: { ...realValidation, assertSupportedFormat: () => {} },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    await assert.rejects(service.createManualSeries(args), /Projection row missing after manual series create\./);
+    assert.equal(findUniqueCalls, 2, "the pre-check and the post-P2002 re-find both ran");
+    assert.deepEqual(statuses, ["in_flight", "reconciliation_required"], "the operation is not marked succeeded with a null projection");
   } finally {
     restore();
   }
@@ -1539,6 +1895,51 @@ test("updateSeriesPlayedAt PATCHes FastAPI with the ISO played_at and mirrors th
     assert.equal(projectionUpdate.data.lastOperationId, "op-row-20");
     assert.equal(result.projection.playedAt, playedAt);
     assert.deepEqual(statuses, ["in_flight", "succeeded"]);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSeriesPlayedAt marks the operation reconciliation_required when the projection update fails after the upstream PATCH committed", async () => {
+  const statuses = [];
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async () => ({ id: "quest-series-1", valorantSeriesUuid: "series-uuid-1", status: "draft" }),
+        update: async () => {
+          throw new Error("db unavailable");
+        },
+      },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "op-row-21", ...data }),
+        update: async ({ data }) => {
+          statuses.push(data.status);
+          return { id: "op-row-21", ...data };
+        },
+      },
+    },
+  };
+  const clientMock = {
+    valorantRequest: async ({ method, path }) => {
+      assert.equal(method, "PATCH");
+      assert.equal(path, "/api/v1/series/series-uuid-1");
+      return { status: 200, data: { id: "series-uuid-1", status: "draft", played_at: "2026-08-16T18:00:00.000Z" }, requestId: "fastapi-req-21" };
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: clientMock,
+    [mapperPath]: { mapSeriesView: (s) => ({ id: s.id, status: s.status }) },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    await assert.rejects(
+      service.updateSeriesPlayedAt({ seriesId: "quest-series-1", playedAt: new Date("2026-08-16T18:00:00.000Z"), actorUserId: "user-1", requestId: "req-21", ipAddress: "127.0.0.1" }),
+      /db unavailable/,
+    );
+    assert.deepEqual(statuses, ["in_flight", "reconciliation_required"], "the operation is not left stuck in_flight after the projection write fails");
   } finally {
     restore();
   }
