@@ -18,10 +18,11 @@ const files = [];
 const offenders = [];
 for (const file of files) {
   const content = fs.readFileSync(file, "utf8");
-  // Schema references only: qualified `valorant.` access or the quoted
-  // identifier `"valorant"` (incl. `@@schema("valorant")`). The bare word is
-  // legitimate Quest data (`'valorant'` game values, `ValorantBinding*` enums).
-  if (/valorant\s*\.|"valorant"/i.test(content)) {
+  // Schema references only: qualified `valorant.` access or a Prisma
+  // `@@schema("valorant")` directive. The bare word and `@default("valorant")`
+  // are legitimate Quest data (the 'valorant' game slug, `ValorantBinding*`
+  // enums) and must not trip the guard.
+  if (/valorant\s*\.|@@schema\s*\(\s*"valorant"\s*\)/i.test(content)) {
     offenders.push(`${path.relative(prismaDir, file)}: references the valorant schema`);
   }
 }
