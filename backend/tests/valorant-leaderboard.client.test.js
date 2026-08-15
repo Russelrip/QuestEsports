@@ -134,3 +134,181 @@ test("throws 404 when upstream reports an out-of-range page", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+const upstreamErrorResponse = (status, body) => ({
+  ok: false,
+  status,
+  json: async () => body,
+});
+
+test("getDiscordLogin hits GET /api/v1/auth/discord/login with signed headers and returns the url payload", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl;
+  let capturedOptions;
+  globalThis.fetch = async (url, options) => {
+    capturedUrl = url;
+    capturedOptions = options;
+    return jsonResponse(200, { url: "https://discord.com/api/oauth2/authorize?client_id=1" });
+  };
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    const result = await client.getDiscordLogin();
+    assert.equal(capturedUrl, `${INTERNAL_BASE_URL}/api/v1/auth/discord/login`);
+    assert.equal(capturedOptions.method, "GET");
+    assert.match(capturedOptions.headers.Authorization, /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    assert.equal(
+      decodeJwtPayload(capturedOptions.headers.Authorization.replace(/^Bearer /, "")).sub,
+      SYSTEM_ACTOR,
+    );
+    assert.equal(typeof capturedOptions.headers["X-Quest-Operation-Id"], "string");
+    assert.equal(result.url, "https://discord.com/api/oauth2/authorize?client_id=1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getDiscordCallback passes the code as a URL-encoded query param", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl;
+  globalThis.fetch = async (url) => {
+    capturedUrl = url;
+    return jsonResponse(200, { user: { discord_id: "123", discord_username: "sahan" }, exists: true, existing_data: null });
+  };
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    const result = await client.getDiscordCallback("abc&def");
+    assert.equal(capturedUrl, `${INTERNAL_BASE_URL}/api/v1/auth/discord/callback?code=abc%26def`);
+    assert.equal(result.exists, true);
+    assert.equal(result.user.discord_username, "sahan");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("checkPuuid POSTs { puuid } to /api/v1/auth/check-puuid with JSON headers", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl;
+  let capturedOptions;
+  globalThis.fetch = async (url, options) => {
+    capturedUrl = url;
+    capturedOptions = options;
+    return jsonResponse(200, { exists: true, user: { name: "Sahan", tag: "QST", discord_username: "sahan" } });
+  };
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    const result = await client.checkPuuid("p-1");
+    assert.equal(capturedUrl, `${INTERNAL_BASE_URL}/api/v1/auth/check-puuid`);
+    assert.equal(capturedOptions.method, "POST");
+    assert.equal(capturedOptions.headers["Content-Type"], "application/json");
+    assert.deepEqual(JSON.parse(capturedOptions.body), { puuid: "p-1" });
+    assert.equal(typeof capturedOptions.headers["X-Quest-Operation-Id"], "string");
+    assert.equal(result.exists, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("previewRegistration POSTs { puuid } to /api/v1/register/preview and passes snake_case through", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl;
+  let capturedOptions;
+  globalThis.fetch = async (url, options) => {
+    capturedUrl = url;
+    capturedOptions = options;
+    return jsonResponse(200, {
+      puuid: "p-1",
+      name: "Sahan",
+      tag: "QST",
+      current_rank: "Radiant",
+      elo: 2000,
+      peak_rank: "Radiant",
+      peak_season: "e10a1",
+      last_played: "2026-08-15T00:00:00Z",
+    });
+  };
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    const result = await client.previewRegistration("p-1");
+    assert.equal(capturedUrl, `${INTERNAL_BASE_URL}/api/v1/register/preview`);
+    assert.equal(capturedOptions.method, "POST");
+    assert.deepEqual(JSON.parse(capturedOptions.body), { puuid: "p-1" });
+    assert.equal(result.peak_season, "e10a1");
+    assert.equal(result.current_rank, "Radiant");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("submitRegistration POSTs the raw input to /api/v1/register/submit", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl;
+  let capturedOptions;
+  const input = { discord_id: "123", discord_username: "sahan", puuid: "p-1" };
+  globalThis.fetch = async (url, options) => {
+    capturedUrl = url;
+    capturedOptions = options;
+    return jsonResponse(200, { success: true, message: "Registered", player: { puuid: "p-1" } });
+  };
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    const result = await client.submitRegistration(input);
+    assert.equal(capturedUrl, `${INTERNAL_BASE_URL}/api/v1/register/submit`);
+    assert.equal(capturedOptions.method, "POST");
+    assert.equal(capturedOptions.headers["Content-Type"], "application/json");
+    assert.deepEqual(JSON.parse(capturedOptions.body), input);
+    assert.equal(result.success, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("propagates a 409 upstream error as HttpError with the upstream status and message", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    upstreamErrorResponse(409, {
+      error: {
+        code: "ALREADY_REGISTERED",
+        message: "Player already registered for this season.",
+        request_id: "req-123",
+      },
+    });
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    await assert.rejects(
+      client.submitRegistration({ discord_id: "1", discord_username: "sahan", puuid: "p-1" }),
+      (e) => {
+        assert.ok(e instanceof Error);
+        assert.equal(e.statusCode, 409);
+        assert.equal(e.message, "Player already registered for this season.");
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("falls back to the upstream error code when message is missing", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => upstreamErrorResponse(404, { error: { code: "PLAYER_NOT_FOUND", request_id: "req-2" } });
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    await assert.rejects(
+      client.previewRegistration("p-missing"),
+      (e) => e.statusCode === 404 && e.message === "PLAYER_NOT_FOUND",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("throws 503 on transport failure for registration POSTs", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError("fetch failed"); };
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    await assert.rejects(client.checkPuuid("p-1"), (e) => e.statusCode === 503);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

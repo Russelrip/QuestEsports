@@ -61,6 +61,14 @@ router.get("/events", getRealtimeEvents);
 router.get("/valorant/leaderboard", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.getLeaderboard);
 router.get("/valorant/leaderboard/search", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.searchLeaderboard);
 
+// Quest-hosted leaderboard registration/auth proxy (HMAC service-token
+// upstream). No cache middleware — these are stateful/live calls.
+router.get("/valorant/leaderboard/register/discord/login", valorantLeaderboardController.getDiscordLogin);
+router.get("/valorant/leaderboard/register/discord/callback", valorantLeaderboardController.getDiscordCallback);
+router.post("/valorant/leaderboard/register/check-puuid", valorantLeaderboardController.checkPuuid);
+router.post("/valorant/leaderboard/register/preview", valorantLeaderboardController.previewRegistration);
+router.post("/valorant/leaderboard/register/submit", valorantLeaderboardController.submitRegistration);
+
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);
 router.post("/admin/tournaments/:id/challonge/sync", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.syncIntegration);

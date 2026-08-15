@@ -1,4 +1,12 @@
-const { getLeaderboard, searchLeaderboard } = require("./client");
+const {
+  getLeaderboard,
+  searchLeaderboard,
+  getDiscordLogin: fetchDiscordLogin,
+  getDiscordCallback: fetchDiscordCallback,
+  checkPuuid: fetchCheckPuuid,
+  previewRegistration: fetchPreviewRegistration,
+  submitRegistration: fetchSubmitRegistration,
+} = require("./client");
 
 // valorantsl-new LeaderboardEntry (snake_case) -> Quest projection (camelCase).
 // Field names come from valorantsl-new backend/app/models/user.py LeaderboardEntry.
@@ -31,4 +39,24 @@ const searchLeaderboardPlayer = async (query) => {
   return raw ? mapLeaderboardEntry(raw) : null;
 };
 
-module.exports = { listLeaderboard, searchLeaderboardPlayer };
+// Registration/auth flow: pass the upstream payload through UNCHANGED
+// (snake_case — the Quest frontend consumes it as-is for this flow).
+const getDiscordLogin = async () => fetchDiscordLogin();
+
+const getDiscordCallback = async (code) => fetchDiscordCallback(code);
+
+const checkPuuid = async (puuid) => fetchCheckPuuid(puuid);
+
+const previewRegistration = async (puuid) => fetchPreviewRegistration(puuid);
+
+const submitRegistration = async (input) => fetchSubmitRegistration(input);
+
+module.exports = {
+  listLeaderboard,
+  searchLeaderboardPlayer,
+  getDiscordLogin,
+  getDiscordCallback,
+  checkPuuid,
+  previewRegistration,
+  submitRegistration,
+};
