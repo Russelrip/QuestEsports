@@ -3,7 +3,7 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { valorantRequest, FastApiError } = require("./valorant.client");
 const { mapTeamResponse, mapMatchCandidate, mapMatchSummary, mapMatchDetail, mapSeriesView, mapGameView, mapPreview, mapFinalizeResult, mapManualFinalizeResult, mapRankingEntry, mapRatingEvent } = require("./valorant.mapper");
-const { normalizeRiotId, generateExternalKey, assertSupportedFormat } = require("./valorant.validation");
+const { normalizeRiotId, generateExternalKey, assertSupportedFormat, deriveManualSeriesExternalKey } = require("./valorant.validation");
 
 const hashRequestBody = (body) =>
   crypto.createHash("sha256").update(JSON.stringify(body || {})).digest("hex");
@@ -409,10 +409,13 @@ const createSeries = async ({
 
 // Manual-result series: creates AND finalizes a VALORANT series in one upstream
 // call (FastAPI POST /api/v1/series/manual). No games, no anchors — the winner
-// and map counts are supplied directly. The operation ledger carries the Quest
-// external key so the manual call is idempotent, and the Quest projection is
-// created already-finalized so it surfaces in the series list and
-// reconciliation.
+// and map counts are supplied directly. The external key is DERIVED
+// deterministically from the payload (see deriveManualSeriesExternalKey), so a
+// retry — double-submit, or FastAPI committed before the projection was
+// written — reuses the same `external_quest_series_id` and FastAPI create-or-get
+// returns the existing series without re-applying ELO. The operation ledger
+// carries that key so the manual call is idempotent, and the Quest projection is
+// created already-finalized so it surfaces in the series list and reconciliation.
 const createManualSeries = async ({
   bindingTeamAId,
   bindingTeamBId,
@@ -454,7 +457,16 @@ const createManualSeries = async ({
     throw new HttpError(400, "The winner team must be one of the two series teams.");
   }
 
-  const externalKey = generateExternalKey();
+  const externalKey = deriveManualSeriesExternalKey({
+    teamAUuid: bindingA.valorantTeamUuid,
+    teamBUuid: bindingB.valorantTeamUuid,
+    format,
+    playedAt,
+    ratingMode,
+    winnerUuid: winnerBinding.valorantTeamUuid,
+    teamAMapsWon,
+    teamBMapsWon,
+  });
   const operation = await createOperation({
     type: "series_manual",
     externalKey,

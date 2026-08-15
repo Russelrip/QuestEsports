@@ -428,6 +428,9 @@ export default function ValorantSeriesForm({
                   </label>
                 </div>
                 <p className="text-xs text-slate-500">Applied immediately — the manual series finalizes on creation.</p>
+                <p className="text-xs text-slate-500">
+                  Historical results apply ELO immediately in entry order — run a rankings rebuild after importing a batch for chronological correctness.
+                </p>
               </div>
             ) : (
               <div className="grid min-w-0 gap-2">

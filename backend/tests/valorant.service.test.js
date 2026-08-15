@@ -605,14 +605,14 @@ test("createSeries rejects an unknown tournamentId without calling FastAPI", asy
   }
 });
 
-test("createManualSeries writes a series_manual operation, sends snake_case body, and stores a finalized projection", async () => {
+test("createManualSeries derives a deterministic external key (same payload → same key) and stores a finalized projection", async () => {
   const fixture = require("./fixtures/valorant/series-manual-finalize.json");
   const statuses = [];
   let sentBody;
   let sentKey;
   let createdSeriesData;
-  let operationExternalKey;
-  let operationId;
+  const externalKeys = [];
+  const operationIds = [];
   const prismaMock = {
     prisma: {
       tournament: {
@@ -630,8 +630,8 @@ test("createManualSeries writes a series_manual operation, sends snake_case body
       },
       questValorantOperation: {
         create: async ({ data }) => {
-          operationExternalKey = data.externalKey;
-          operationId = data.operationId;
+          externalKeys.push(data.externalKey);
+          operationIds.push(data.operationId);
           return { id: "op-row-manual", ...data };
         },
         update: async ({ data }) => {
@@ -656,17 +656,20 @@ test("createManualSeries writes a series_manual operation, sends snake_case body
       return { status: 200, data: fixture, requestId: "fastapi-req-manual" };
     },
   };
+  // Use the real validation module (spread) so the manual-series external key is
+  // genuinely derived from the payload rather than stubbed.
+  const realValidation = require(validationPath);
   const { module: service, restore } = loadModuleWithMocks(servicePath, {
     [prismaPath]: prismaMock,
     [clientPath]: clientMock,
     [mapperPath]: { mapManualFinalizeResult: (r) => ({ seriesId: r.series_id, status: r.status, ratingMode: r.rating_mode }) },
-    [validationPath]: { assertSupportedFormat: () => {}, generateExternalKey: () => "quest-ext-manual-1" },
+    [validationPath]: { ...realValidation, assertSupportedFormat: () => {} },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
   });
 
   try {
-    const result = await service.createManualSeries({
+    const args = {
       bindingTeamAId: "binding-a",
       bindingTeamBId: "binding-b",
       format: "bo3",
@@ -679,10 +682,26 @@ test("createManualSeries writes a series_manual operation, sends snake_case body
       actorUserId: "user-1",
       requestId: "req-manual",
       ipAddress: "127.0.0.1",
+    };
+    const expectedKey = realValidation.deriveManualSeriesExternalKey({
+      teamAUuid: "val-team-1",
+      teamBUuid: "val-team-2",
+      format: "bo3",
+      playedAt: new Date("2026-08-15T18:00:00Z"),
+      ratingMode: "manual_override",
+      winnerUuid: "val-team-1",
+      teamAMapsWon: 2,
+      teamBMapsWon: 1,
     });
-    assert.equal(operationExternalKey, "quest-ext-manual-1", "the operation ledger carries the external key");
-    assert.equal(sentKey, "quest-ext-manual-1");
-    assert.equal(sentBody.external_quest_series_id, "quest-ext-manual-1");
+
+    const result = await service.createManualSeries(args);
+    assert.equal(externalKeys[0], expectedKey, "the external key is derived deterministically from the payload");
+    // A retry with the identical payload must converge on the same key so
+    // FastAPI create-or-get returns the existing series without double ELO.
+    await service.createManualSeries(args);
+    assert.equal(externalKeys[1], externalKeys[0], "same payload → same external key (retries converge)");
+    assert.equal(sentKey, externalKeys[0], "the idempotency key sent upstream matches the derived key");
+    assert.equal(sentBody.external_quest_series_id, externalKeys[0]);
     assert.deepEqual(sentBody, {
       team_a_id: "val-team-1",
       team_b_id: "val-team-2",
@@ -692,10 +711,10 @@ test("createManualSeries writes a series_manual operation, sends snake_case body
       winner_team_id: "val-team-1",
       team_a_maps_won: 2,
       team_b_maps_won: 1,
-      external_quest_series_id: "quest-ext-manual-1",
+      external_quest_series_id: externalKeys[0],
     });
     assert.equal(createdSeriesData.status, "finalized", "the projection is stored already-finalized");
-    assert.equal(createdSeriesData.externalKey, "quest-ext-manual-1");
+    assert.equal(createdSeriesData.externalKey, externalKeys[0]);
     assert.equal(createdSeriesData.valorantSeriesUuid, fixture.series_id);
     assert.equal(createdSeriesData.ratingMode, "manual_override");
     assert.equal(createdSeriesData.finalizedById, "user-1");
@@ -703,8 +722,8 @@ test("createManualSeries writes a series_manual operation, sends snake_case body
     assert.equal(createdSeriesData.tournamentId, "tournament-1", "the projection stores the optional tournament");
     assert.equal(result.status, "finalized");
     assert.equal(result.series.id, "quest-series-manual");
-    assert.equal(result.operationId, operationId, "the ledger operationId is echoed in the result");
-    assert.deepEqual(statuses, ["in_flight", "succeeded"]);
+    assert.equal(result.operationId, operationIds[0], "the ledger operationId is echoed in the result");
+    assert.deepEqual(statuses, ["in_flight", "succeeded", "in_flight", "succeeded"]);
   } finally {
     restore();
   }

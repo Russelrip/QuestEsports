@@ -264,7 +264,7 @@ test("createManualSeries controller passes camelCase body, records the audit, an
         bindingTeamBId: "binding-b",
         format: "bo3",
         playedAt: "2026-08-15T18:00:00Z",
-        ratingMode: "manual_override",
+        ratingMode: "normal",
         winnerTeamId: "binding-winner",
         teamAMapsWon: 2,
         teamBMapsWon: 1,
@@ -274,13 +274,13 @@ test("createManualSeries controller passes camelCase body, records the audit, an
     assert.equal(res.statusCode, 200);
     assert.equal(res.payload.success, true);
     assert.equal(res.payload.data.status, "finalized");
-    assert.equal(res.payload.data.ratingMode, "manual_override");
+    assert.equal(res.payload.data.ratingMode, "normal");
     assert.equal(res.payload.data.series.id, "quest-series-manual");
     assert.ok(res.payload.meta.serverNow);
     assert.deepEqual(nextErrors, []);
     assert.equal(received[0].bindingTeamAId, "binding-a");
     assert.equal(received[0].winnerTeamId, "binding-winner");
-    assert.equal(received[0].ratingMode, "manual_override");
+    assert.equal(received[0].ratingMode, "normal");
     assert.equal(received[0].tournamentId, "tournament-1", "the optional tournamentId passes through to the service");
     assert.ok(received[0].playedAt instanceof Date, "the controller parses playedAt into a Date");
     assert.equal(received[0].actorUserId, "admin-1");
@@ -325,6 +325,43 @@ test("createManualSeries controller rejects an invalid playedAt without calling 
     assert.ok(nextErrors[0] instanceof HttpError);
     assert.equal(nextErrors[0].statusCode, 400);
     assert.equal(serviceCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("createManualSeries controller rejects an unsupported ratingMode with 400 without calling the service", async () => {
+  let serviceCalls = 0;
+  const serviceMock = {
+    createManualSeries: async () => { serviceCalls += 1; },
+  };
+  const auditMock = { requestAuditContext: () => ({}), recordAudit: async () => {} };
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [servicePath]: serviceMock,
+    [auditPath]: auditMock,
+    [asyncHandlerPath]: { asyncHandler },
+    [httpErrorPath]: { HttpError },
+  });
+
+  try {
+    const { nextErrors } = await callHandler(controller.createManualSeries, {
+      user: { id: "admin-1" },
+      requestId: "req-manual-bad-rating",
+      ip: "127.0.0.1",
+      body: {
+        bindingTeamAId: "binding-a",
+        bindingTeamBId: "binding-b",
+        format: "bo3",
+        playedAt: "2026-08-15T18:00:00Z",
+        ratingMode: "manual_override",
+        winnerTeamId: "binding-winner",
+        teamAMapsWon: 2,
+        teamBMapsWon: 1,
+      },
+    });
+    assert.ok(nextErrors[0] instanceof HttpError);
+    assert.equal(nextErrors[0].statusCode, 400);
+    assert.equal(serviceCalls, 0, "the invalid ratingMode is rejected before the service is called");
   } finally {
     restore();
   }

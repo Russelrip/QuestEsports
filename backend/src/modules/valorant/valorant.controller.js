@@ -15,6 +15,11 @@ const requireBody = (body, names) => {
   }
 };
 
+// FastAPI's manual-series endpoint only accepts these two rating modes
+// (ManualSeriesRequest.rating_mode: Literal["normal", "unrated"]); anything else
+// would surface as a 502-mapped upstream 422, so reject it here as a 400.
+const MANUAL_SERIES_RATING_MODES = new Set(["normal", "unrated"]);
+
 const writeAudit = async (req, { targetType, targetId, afterData }) =>
   recordAudit({
     ...requestAuditContext(req),
@@ -123,6 +128,9 @@ const listSeries = asyncHandler(async (req, res) => {
 
 const createManualSeries = asyncHandler(async (req, res) => {
   requireBody(req.body, ["bindingTeamAId", "bindingTeamBId", "format", "playedAt", "ratingMode", "winnerTeamId", "teamAMapsWon", "teamBMapsWon"]);
+  if (!MANUAL_SERIES_RATING_MODES.has(req.body.ratingMode)) {
+    throw new HttpError(400, 'Invalid ratingMode — expected "normal" or "unrated".');
+  }
   const playedAt = new Date(req.body.playedAt);
   if (Number.isNaN(playedAt.getTime())) throw new HttpError(400, "Invalid playedAt.");
   const result = await valorantService.createManualSeries({
