@@ -6,7 +6,10 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { removeUploadsQuietly } = require("../../lib/upload-cleanup");
 const {
+  buildEventAlbumOriginalFilename,
   detectImageType,
+  eventAlbumOriginalDirectory,
+  persistEventAlbumPhotoUpload,
   persistPosterImageUpload,
   posterImageDirectory,
 } = require("../../middleware/upload");
@@ -200,6 +203,52 @@ const readStoredImageAsset = async (asset) => {
   }
 };
 
+const readOriginalEventAlbumImageAsset = async (asset) => {
+  const originalFilename = buildEventAlbumOriginalFilename(
+    asset.storedFilename,
+    asset.originalName
+  );
+  if (!originalFilename) {
+    return null;
+  }
+
+  const filePath = path.join(eventAlbumOriginalDirectory, originalFilename);
+  if (!isPathInsideDirectory(eventAlbumOriginalDirectory, filePath)) {
+    throw new HttpError(404, "Image not found.");
+  }
+
+  try {
+    const handle = await fs.open(path.resolve(filePath), "r");
+    let header;
+    let stats;
+    try {
+      header = Buffer.alloc(12);
+      const readResult = await handle.read(header, 0, header.length, 0);
+      header = header.subarray(0, readResult.bytesRead);
+      stats = await handle.stat();
+    } finally {
+      await handle.close();
+    }
+    const detectedType = detectImageType(header);
+    if (!detectedType || !stats.isFile()) {
+      throw new HttpError(404, "Image not found.");
+    }
+    return {
+      contentType: CONTENT_TYPE_BY_IMAGE_TYPE[detectedType] || asset.contentType,
+      path: path.resolve(filePath),
+      size: stats.size,
+    };
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw error;
+    }
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+};
+
 const getBinaryImageAsset = async (asset) => {
   const storedImage = await readStoredImageAsset(asset);
 
@@ -231,10 +280,13 @@ const createImageAssets = async ({ body, files }) => {
   }
 
   const persistedFiles = [];
+  const persistImageUpload = category === "photo"
+    ? persistEventAlbumPhotoUpload
+    : persistPosterImageUpload;
 
   try {
     for (const [index, file] of files.entries()) {
-      const persistedImage = await persistPosterImageUpload(file);
+      const persistedImage = await persistImageUpload(file);
 
       if (!persistedImage) {
         throw new HttpError(400, "Upload at least one image.");
@@ -248,10 +300,12 @@ const createImageAssets = async ({ body, files }) => {
     }
   } catch (error) {
     await removeUploadsQuietly(
-      persistedFiles.map(({ persistedImage }) => ({
-        directory: posterImageDirectory,
-        filename: persistedImage.filename,
-      })),
+      persistedFiles.flatMap(({ persistedImage }) => [
+        { directory: posterImageDirectory, filename: persistedImage.filename },
+        ...(persistedImage.originalFilename
+          ? [{ directory: eventAlbumOriginalDirectory, filename: persistedImage.originalFilename }]
+          : []),
+      ]),
       { operation: "createImageAssetsPersistenceRollback" }
     );
     throw error;
@@ -278,10 +332,12 @@ const createImageAssets = async ({ body, files }) => {
     );
   } catch (error) {
     await removeUploadsQuietly(
-      persistedFiles.map(({ persistedImage }) => ({
-        directory: posterImageDirectory,
-        filename: persistedImage.filename,
-      })),
+      persistedFiles.flatMap(({ persistedImage }) => [
+        { directory: posterImageDirectory, filename: persistedImage.filename },
+        ...(persistedImage.originalFilename
+          ? [{ directory: eventAlbumOriginalDirectory, filename: persistedImage.originalFilename }]
+          : []),
+      ]),
       {
         operation: "createImageAssets",
       }
@@ -297,6 +353,7 @@ const deleteUnusedImageAsset = async (imageId) => {
     where: { id: imageId },
     select: {
       id: true,
+      originalName: true,
       storedFilename: true,
       _count: { select: { posters: true, productImages: true, albumPhotos: true } },
     },
@@ -307,8 +364,17 @@ const deleteUnusedImageAsset = async (imageId) => {
   }
   await prisma.imageAsset.delete({ where: { id: imageId } });
   if (asset.storedFilename) {
+    const originalFilename = buildEventAlbumOriginalFilename(
+      asset.storedFilename,
+      asset.originalName
+    );
     await removeUploadsQuietly(
-      [{ directory: posterImageDirectory, filename: asset.storedFilename }],
+      [
+        { directory: posterImageDirectory, filename: asset.storedFilename },
+        ...(originalFilename
+          ? [{ directory: eventAlbumOriginalDirectory, filename: originalFilename }]
+          : []),
+      ],
       { operation: "deleteUnusedImageAsset", imageId }
     );
   }
@@ -368,6 +434,11 @@ const getImageAssetRecordById = async (imageId) => {
 const getImageAssetById = async (imageId) => {
   const asset = await getImageAssetRecordById(imageId);
   return getBinaryImageAsset(asset);
+};
+
+const getImageAssetDownloadById = async (imageId) => {
+  const asset = await getImageAssetRecordById(imageId);
+  return (await readOriginalEventAlbumImageAsset(asset)) || getBinaryImageAsset(asset);
 };
 
 const getImageAssetMetadata = async (imageId) => {
@@ -648,6 +719,7 @@ module.exports = {
   deleteUnusedImageAsset,
   listImageAssets,
   getImageAssetById,
+  getImageAssetDownloadById,
   getImageAssetMetadata,
   getPosterImageAssetByPosterId,
   createPoster,

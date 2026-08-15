@@ -7,6 +7,7 @@ const {
   createImageAssets,
   deleteUnusedImageAsset,
   getImageAssetById,
+  getImageAssetDownloadById,
 } = require("./media.service");
 
 const IMAGE_ASSET_SELECT = {
@@ -46,11 +47,11 @@ const parseOptionalDate = (value) => {
   return parsed;
 };
 
-const buildAlbumPhotoImageUrl = (albumSlug, photoId) =>
-  `/api/event-albums/${encodeURIComponent(albumSlug)}/photos/${photoId}/image`;
+const buildAlbumPhotoImageUrl = (albumSlug, photoId, version) =>
+  `/api/event-albums/${encodeURIComponent(albumSlug)}/photos/${photoId}/image?v=${encodeURIComponent(version)}`;
 
-const buildAdminAlbumPhotoImageUrl = (albumId, photoId) =>
-  `/api/admin/event-albums/${albumId}/photos/${photoId}/image`;
+const buildAdminAlbumPhotoImageUrl = (albumId, photoId, version) =>
+  `/api/admin/event-albums/${albumId}/photos/${photoId}/image?v=${encodeURIComponent(version)}`;
 
 const mapPhoto = (photo, album, admin = false) => ({
   id: photo.id,
@@ -67,8 +68,8 @@ const mapPhoto = (photo, album, admin = false) => ({
     byteSize: photo.imageAsset.byteSize,
     createdAt: photo.imageAsset.createdAt,
     imageUrl: admin
-      ? buildAdminAlbumPhotoImageUrl(album.id, photo.id)
-      : buildAlbumPhotoImageUrl(album.slug, photo.id),
+      ? buildAdminAlbumPhotoImageUrl(album.id, photo.id, photo.imageAsset.storedFilename || photo.imageAsset.id)
+      : buildAlbumPhotoImageUrl(album.slug, photo.id, photo.imageAsset.storedFilename || photo.imageAsset.id),
   },
 });
 
@@ -162,15 +163,39 @@ const listAdminEventAlbums = async (query = {}) => {
   });
 };
 
-const getPublicEventAlbumBySlug = async (slug) => {
+const getPublicEventAlbumBySlug = async (slug, query = {}) => {
   const normalizedSlug = normalizeSlug(slug);
   if (!normalizedSlug) throw new HttpError(400, "Album slug is required.");
+  const shouldPaginatePhotos = query.photoPage !== undefined || query.photoPageSize !== undefined;
+  const photoPagination = shouldPaginatePhotos
+    ? buildPagination({ page: query.photoPage, pageSize: query.photoPageSize || 30 })
+    : null;
   const album = await prisma.eventAlbum.findFirst({
     where: { slug: normalizedSlug, isPublished: true },
-    include: albumDetailInclude,
+    include: photoPagination
+      ? {
+          ...albumDetailInclude,
+          photos: {
+            ...albumDetailInclude.photos,
+            skip: (photoPagination.page - 1) * photoPagination.pageSize,
+            take: photoPagination.pageSize,
+          },
+        }
+      : albumDetailInclude,
   });
   if (!album) throw new HttpError(404, "Event album not found.");
-  return mapAlbum(album);
+  const mapped = mapAlbum(album);
+  return photoPagination
+    ? {
+        ...mapped,
+        photoPagination: buildPagedResponse({
+          items: [],
+          total: mapped.photoCount,
+          page: photoPagination.page,
+          pageSize: photoPagination.pageSize,
+        }).pagination,
+      }
+    : mapped;
 };
 
 const getAdminEventAlbumById = async (albumId) => {
@@ -352,7 +377,7 @@ const deleteEventAlbumPhoto = async (albumId, photoId) => {
   await cleanupAssets([photo.imageAssetId]);
 };
 
-const getPublicEventAlbumPhoto = async ({ slug, photoId }) => {
+const getPublicEventAlbumPhoto = async ({ slug, photoId, preferOriginal = false }) => {
   const normalizedSlug = normalizeSlug(slug);
   const photo = await prisma.albumPhoto.findFirst({
     where: {
@@ -366,8 +391,11 @@ const getPublicEventAlbumPhoto = async ({ slug, photoId }) => {
     },
   });
   if (!photo) throw new HttpError(404, "Album photo not found.");
+  const getImage = preferOriginal && photo.album.allowDownloads
+    ? getImageAssetDownloadById
+    : getImageAssetById;
   return {
-    ...(await getImageAssetById(photo.imageAssetId)),
+    ...(await getImage(photo.imageAssetId)),
     originalName: photo.imageAsset.originalName,
     allowDownloads: photo.album.allowDownloads,
   };

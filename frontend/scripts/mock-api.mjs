@@ -23,7 +23,7 @@ const eventAlbumPhoto = {
     contentType: "image/png",
     byteSize: mobileTestAvatar.length,
     createdAt: "2026-08-12T00:00:00.000Z",
-    imageUrl: "/api/event-albums/mobile-test/photos/photo-mobile-test/image",
+    imageUrl: "/api/event-albums/mobile-test/photos/photo-mobile-test/image?v=image-mobile-test",
   },
 };
 const eventAlbum = {
@@ -39,6 +39,7 @@ const eventAlbum = {
   updatedAt: "2026-08-12T00:00:00.000Z",
   photoCount: 1,
   photos: [eventAlbumPhoto],
+  photoPagination: { page: 1, pageSize: 30, total: 1, totalPages: 1 },
   tournament: null,
 };
 const collections = new Map([
@@ -70,6 +71,42 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ success: true }));
     return;
   }
+  if (
+    request.method === "GET" &&
+    request.url === "/api/v1/notifications?limit=30"
+  ) {
+    response.end(JSON.stringify({
+      success: true,
+      data: {
+        items: [],
+        unreadCount: 0,
+        push: { enabled: false, publicKey: null },
+        preference: {
+          matchPushEnabled: true,
+          soundEnabled: true,
+          matchEmailEnabled: false,
+        },
+      },
+    }));
+    return;
+  }
+  if (request.method === "GET" && request.url === "/api/posters/poster-duplicate/image") {
+    response.setHeader("Content-Type", "image/png");
+    response.end(mobileTestAvatar);
+    return;
+  }
+  if (
+    request.method === "GET" &&
+    new URL(request.url || "/", `http://127.0.0.1:${port}`).pathname ===
+      "/api/v1/events"
+  ) {
+    // A 204 tells EventSource not to reconnect. This keeps browser tests
+    // deterministic while the real API owns the long-lived SSE connection.
+    response.statusCode = 204;
+    response.removeHeader("Content-Type");
+    response.end();
+    return;
+  }
   if (request.url === "/__mock-api/status") {
     response.end(JSON.stringify({ success: true, unexpectedRequests }));
     return;
@@ -91,7 +128,10 @@ const server = createServer((request, response) => {
     response.end(mobileTestAvatar);
     return;
   }
-  if (request.method === "GET" && request.url === "/api/event-albums/mobile-test") {
+  if (
+    request.method === "GET" &&
+    new URL(request.url || "/", `http://127.0.0.1:${port}`).pathname === "/api/event-albums/mobile-test"
+  ) {
     response.end(JSON.stringify({ success: true, album: eventAlbum }));
     return;
   }

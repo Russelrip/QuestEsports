@@ -3,6 +3,7 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { normalizeText } = require("../../lib/validation");
+const { ensureMatchRoom, notifyMatchChange } = require("../match-rooms/match-room.service");
 
 const MATCH_STATUSES = new Set([
   "not_scheduled",
@@ -50,6 +51,24 @@ const matchInclude = {
   assignedStaff: {
     select: { id: true, username: true, firstName: true, lastName: true },
   },
+  vetoRoom: {
+    select: {
+      code: true,
+      status: true,
+      format: true,
+      publishResult: true,
+      tossCall: true,
+      tossResult: true,
+      tossWinnerSlot: true,
+      teamASlot: true,
+      completedAt: true,
+      actions: {
+        where: { invalidatedAt: null },
+        orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
+        select: { sequence: true, kind: true, actorSlot: true, mapSlug: true, mapName: true, side: true, payload: true },
+      },
+    },
+  },
 };
 
 const participantLogoUrl = (participant) => {
@@ -86,6 +105,21 @@ const mapMatch = (match) => ({
     result: participant.result,
     logoUrl: participantLogoUrl(participant),
   })),
+  veto: match.vetoRoom?.status === "completed" && match.vetoRoom.publishResult
+    ? {
+        code: match.vetoRoom.code,
+        status: match.vetoRoom.status,
+        format: match.vetoRoom.format,
+        toss: {
+          call: match.vetoRoom.tossCall,
+          result: match.vetoRoom.tossResult,
+          winnerSlot: match.vetoRoom.tossWinnerSlot,
+          teamASlot: match.vetoRoom.teamASlot,
+        },
+        actions: match.vetoRoom.actions,
+        completedAt: match.vetoRoom.completedAt,
+      }
+    : null,
   updatedAt: match.updatedAt,
 });
 
@@ -297,6 +331,7 @@ const createMatch = async ({ tournamentId, body }) => {
     },
     include: matchInclude,
   });
+  await ensureMatchRoom({ matchId: match.id });
   return mapMatch(match);
 };
 
@@ -334,6 +369,27 @@ const updateMatch = async ({ matchId, body }) => {
   }
 
   const updated = await prisma.match.update({ where: { id: matchId }, data, include: matchInclude });
+  await ensureMatchRoom({ matchId });
+  const version = updated.updatedAt.toISOString();
+  const label = updated.identifier || updated.externalId || updated.id.slice(0, 8);
+  if (updated.status !== existing.status) {
+    await notifyMatchChange({
+      matchId,
+      type: "match_status_changed",
+      eventVersion: `${version}:status`,
+      title: "Match status updated",
+      body: `${label} is now ${updated.status.replaceAll("_", " ")}.`,
+    });
+  }
+  if (String(updated.scheduledAt || "") !== String(existing.scheduledAt || "")) {
+    await notifyMatchChange({
+      matchId,
+      type: "match_rescheduled",
+      eventVersion: `${version}:schedule`,
+      title: "Match time updated",
+      body: updated.scheduledAt ? `${label} has a new scheduled time.` : `${label} is awaiting a new scheduled time.`,
+    });
+  }
   return { before: mapMatch(existing), after: mapMatch(updated), tournamentId: existing.tournamentId };
 };
 

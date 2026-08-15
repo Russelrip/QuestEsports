@@ -20,6 +20,7 @@ const privateUploadRoot = env.PRIVATE_UPLOAD_ROOT
   ? path.resolve(env.PRIVATE_UPLOAD_ROOT)
   : path.resolve(uploadRoot, "../private");
 const bankTransferProofDirectory = path.join(privateUploadRoot, "bank-transfer-proofs");
+const eventAlbumOriginalDirectory = path.join(privateUploadRoot, "event-album-originals");
 const TEAM_LOGO_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const PAYMENT_PROOF_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ADMIN_UPLOAD_MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -65,6 +66,7 @@ const ensureUploadDirectories = async () => {
   await fs.mkdir(gameAssetDirectory, { recursive: true });
   await fs.mkdir(sponsorLogoDirectory, { recursive: true });
   await fs.mkdir(bankTransferProofDirectory, { recursive: true, mode: 0o700 });
+  await fs.mkdir(eventAlbumOriginalDirectory, { recursive: true, mode: 0o700 });
 };
 
 const checkUploadReadiness = async () => {
@@ -173,6 +175,8 @@ const normalizeImageUpload = async ({
   file,
   invalidMessage,
   maxDimension = 4096,
+  outputFormat,
+  quality = 88,
 }) => {
   const validated = validateImageUpload({ file, invalidMessage });
   try {
@@ -188,14 +192,18 @@ const normalizeImageUpload = async ({
         withoutEnlargement: true,
       });
     let buffer;
-    if (validated.detectedType === "jpeg") {
-      buffer = await pipeline.jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    if (outputFormat === "webp") {
+      buffer = await pipeline.webp({ quality, effort: 5 }).toBuffer();
+    } else if (validated.detectedType === "jpeg") {
+      buffer = await pipeline.jpeg({ quality, mozjpeg: true }).toBuffer();
     } else if (validated.detectedType === "png") {
       buffer = await pipeline.png({ compressionLevel: 9 }).toBuffer();
     } else {
-      buffer = await pipeline.webp({ quality: 88 }).toBuffer();
+      buffer = await pipeline.webp({ quality }).toBuffer();
     }
-    return { ...validated, buffer };
+    return outputFormat === "webp"
+      ? { ...validated, contentType: "image/webp", extension: ".webp", buffer }
+      : { ...validated, buffer };
   } catch {
     throw new HttpError(400, invalidMessage);
   }
@@ -203,6 +211,16 @@ const normalizeImageUpload = async ({
 
 const buildSafeUploadFilename = (extension) =>
   `${Date.now()}-${crypto.randomUUID()}${extension}`;
+
+const buildEventAlbumOriginalFilename = (storedFilename, originalName) => {
+  const storedBaseName = path.parse(path.basename(String(storedFilename || ""))).name;
+  const originalExtension = path.extname(String(originalName || "")).toLowerCase();
+  const canonicalExtension = originalExtension === ".jpeg" ? ".jpg" : originalExtension;
+  if (!storedBaseName || ![".jpg", ".png", ".webp"].includes(canonicalExtension)) {
+    return null;
+  }
+  return `${storedBaseName}.original${canonicalExtension}`;
+};
 
 const isPathInsideDirectory = (directory, targetPath) => {
   const relativePath = path.relative(path.resolve(directory), path.resolve(targetPath));
@@ -357,7 +375,14 @@ const paymentProofUpload = multer({
   },
 });
 
-const persistValidatedUpload = async ({ file, directory, invalidMessage, maxDimension }) => {
+const persistValidatedUpload = async ({
+  file,
+  directory,
+  invalidMessage,
+  maxDimension,
+  outputFormat,
+  quality,
+}) => {
   if (!file?.buffer) {
     return null;
   }
@@ -366,6 +391,8 @@ const persistValidatedUpload = async ({ file, directory, invalidMessage, maxDime
     file,
     invalidMessage,
     maxDimension,
+    outputFormat,
+    quality,
   });
   const filename = buildSafeUploadFilename(extension);
   const filePath = path.join(directory, filename);
@@ -400,6 +427,9 @@ const persistTournamentBannerUpload = (file) =>
     file,
     directory: tournamentBannerDirectory,
     invalidMessage: "Only JPEG, PNG, and WebP tournament banners are allowed.",
+    maxDimension: 2400,
+    outputFormat: "webp",
+    quality: 82,
   });
 
 const persistPosterImageUpload = (file) =>
@@ -446,6 +476,50 @@ const persistTournamentScheduleUpload = async (file) => {
   };
 };
 
+const persistEventAlbumPhotoUpload = async (file) => {
+  if (!file?.buffer) {
+    return null;
+  }
+
+  const invalidMessage = "Only JPEG, PNG, and WebP event photos are allowed.";
+  const validated = validateImageUpload({ file, invalidMessage });
+  const preview = await normalizeImageUpload({
+    file,
+    invalidMessage,
+    maxDimension: 2560,
+    outputFormat: "webp",
+    quality: 82,
+  });
+  const filename = buildSafeUploadFilename(preview.extension);
+  const originalFilename = buildEventAlbumOriginalFilename(filename, file.originalname);
+  if (!originalFilename) {
+    throw new HttpError(400, invalidMessage);
+  }
+
+  const uploads = [
+    { directory: posterImageDirectory, filename },
+    { directory: eventAlbumOriginalDirectory, filename: originalFilename },
+  ];
+  try {
+    await Promise.all([
+      fs.writeFile(path.join(posterImageDirectory, filename), preview.buffer),
+      fs.writeFile(path.join(eventAlbumOriginalDirectory, originalFilename), file.buffer, { mode: 0o600 }),
+    ]);
+  } catch (error) {
+    await removeUploadFiles(uploads).catch(() => undefined);
+    throw error;
+  }
+
+  return {
+    filename,
+    contentType: preview.contentType,
+    byteSize: preview.buffer.length,
+    originalFilename,
+    originalContentType: validated.contentType,
+    originalByteSize: file.buffer.length,
+  };
+};
+
 const persistBankTransferProofUpload = async (file) => {
   if (!file?.buffer) {
     throw new HttpError(400, "Choose a payment receipt to upload.");
@@ -456,6 +530,7 @@ const persistBankTransferProofUpload = async (file) => {
     invalidMessage: "The uploaded payment proof is not a valid JPEG, PNG, or WebP image.",
     maxDimension: 4096,
   });
+
   const { buffer, contentType, extension } = normalized;
 
   const filename = buildSafeUploadFilename(extension);
@@ -492,10 +567,12 @@ module.exports = {
   persistAvatarUpload,
   persistTournamentBannerUpload,
   persistPosterImageUpload,
+  persistEventAlbumPhotoUpload,
   persistGameAssetUpload,
   persistSponsorLogoUpload,
   persistTournamentScheduleUpload,
   persistBankTransferProofUpload,
+  buildEventAlbumOriginalFilename,
   removeUploadFile,
   removeUploadFiles,
   teamLogoDirectory,
@@ -506,4 +583,5 @@ module.exports = {
   gameAssetDirectory,
   sponsorLogoDirectory,
   bankTransferProofDirectory,
+  eventAlbumOriginalDirectory,
 };

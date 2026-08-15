@@ -23,12 +23,18 @@
     "mail:verify": "node scripts/verify-mail-config.js",
     "media:import-legacy-posters": "node scripts/import-legacy-posters.js",
     "media:migrate-image-assets": "node scripts/migrate-image-assets.js",
+    "media:optimize-tournament-banners": "node scripts/optimize-tournament-banners.js",
+    "media:optimize-event-album-photos": "node scripts/optimize-event-album-photos.js",
     "load:test": "k6 run performance/k6-api.js",
     "load:stress:db": "k6 run performance/k6-db-stress.js",
     "alerts:test:discord": "node scripts/verify-discord-alert.js",
     "data:copy-public-to-staging": "node scripts/copy-public-data-to-staging.js",
     "data:copy-public-to-staging:apply": "node scripts/copy-public-data-to-staging.js --apply",
-    "data:copy-public-to-staging:prune": "node scripts/copy-public-data-to-staging.js --apply --prune"
+    "data:copy-public-to-staging:prune": "node scripts/copy-public-data-to-staging.js --apply --prune",
+    "data:hygiene": "node scripts/data-hygiene.js",
+    "data:hygiene:apply": "node scripts/data-hygiene.js --apply",
+    "data:backfill-match-rooms": "node scripts/backfill-match-rooms.js",
+    "data:backfill-match-rooms:apply": "node scripts/backfill-match-rooms.js --apply"
   },
   "keywords": [],
   "author": "",
@@ -50,7 +56,8 @@
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
     "read-excel-file": "^9.0.10",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "eslint": "^9.39.5",

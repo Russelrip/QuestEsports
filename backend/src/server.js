@@ -7,6 +7,7 @@ const {
 } = require("./lib/commerce-maintenance");
 const { logger } = require("./lib/logger");
 const { flushObservabilityTransport } = require("./lib/observability-transport");
+const { startDataHygieneMaintenance, stopDataHygieneMaintenance } = require("./lib/data-hygiene-maintenance");
 const { env } = require("./config/env");
 const { ensureUploadDirectories } = require("./middleware/upload");
 const {
@@ -74,13 +75,14 @@ const shutdown = async (signal, exitCode = 0) => {
       stopJobWorker(),
       stopCommerceMaintenance(),
       stopChallongeScheduler(),
+      stopDataHygieneMaintenance(),
     ]);
 
     for (const [index, result] of drainResults.entries()) {
       if (result.status === "rejected") {
         shutdownFailed = true;
         logger.error("Shutdown drain task failed", {
-          task: ["http", "job_worker", "commerce_maintenance", "challonge_scheduler"][index],
+          task: ["http", "job_worker", "commerce_maintenance", "challonge_scheduler", "data_hygiene"][index],
           error: result.reason,
           signal,
         });
@@ -119,6 +121,7 @@ const start = async () => {
   startJobWorker();
   startCommerceMaintenance();
   startChallongeScheduler();
+  startDataHygieneMaintenance();
 
   server = app.listen(env.PORT);
 

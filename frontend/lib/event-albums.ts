@@ -22,6 +22,7 @@ export type EventAlbum = {
   updatedAt: string;
   photoCount: number;
   photos: EventAlbumPhoto[];
+  photoPagination?: MediaPagination;
   tournament?: {
     id: string;
     slug: string;
@@ -34,7 +35,7 @@ export type EventAlbum = {
 export const fetchPublicEventAlbums = async (searchParams?: URLSearchParams) => {
   const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
   const response = await fetchWithTimeout(`${resolveMediaUrl("/api/event-albums")}${suffix}`, {
-    cache: "no-store",
+    next: { revalidate: 60, tags: ["event-albums"] },
     headers: withServerOriginHeader(),
   });
   return parseApiResponse<{ albums: EventAlbum[]; pagination: MediaPagination; totalPhotos: number }>(
@@ -43,10 +44,17 @@ export const fetchPublicEventAlbums = async (searchParams?: URLSearchParams) => 
   );
 };
 
-export const fetchPublicEventAlbum = async (slug: string) => {
+export const fetchPublicEventAlbum = async (
+  slug: string,
+  photoOptions: { page?: number; pageSize?: number } = { page: 1, pageSize: 30 },
+) => {
+  const searchParams = new URLSearchParams();
+  if (photoOptions.page) searchParams.set("photoPage", String(photoOptions.page));
+  if (photoOptions.pageSize) searchParams.set("photoPageSize", String(photoOptions.pageSize));
+  const suffix = searchParams.size ? `?${searchParams.toString()}` : "";
   const response = await fetchWithTimeout(
-    resolveMediaUrl(`/api/event-albums/${encodeURIComponent(slug)}`),
-    { cache: "no-store", headers: withServerOriginHeader() },
+    resolveMediaUrl(`/api/event-albums/${encodeURIComponent(slug)}${suffix}`),
+    { next: { revalidate: 60, tags: [`event-album-${slug}`] }, headers: withServerOriginHeader() },
   );
   return parseApiResponse<{ album: EventAlbum }>(response, "Unable to load this event album.").then(
     (payload) => payload.album,

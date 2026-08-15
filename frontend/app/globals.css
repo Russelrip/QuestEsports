@@ -167,18 +167,12 @@ main {
   overflow-x: clip;
 }
 
-.page-enter,
 .menu-enter,
 .popover-enter,
 .toast-enter,
 .modal-backdrop-enter,
 .modal-panel-enter {
   animation: ui-fade-in 0.24s ease-out;
-}
-
-.page-enter {
-  animation-name: page-fade-in;
-  animation-duration: 0.3s;
 }
 
 .menu-enter,
@@ -432,16 +426,49 @@ legend {
   from { opacity: 0; }
 }
 
-@keyframes page-fade-in {
-  from { opacity: 0; transform: translate3d(0, 12px, 0); }
-}
-
 @keyframes menu-fade-in {
   from { opacity: 0; transform: translate3d(0, -8px, 0); }
 }
 
 @keyframes panel-fade-in {
   from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.985); }
+}
+
+@keyframes veto-coin-flip {
+  0% { transform: rotateY(0deg) rotateX(8deg) scale(.92); }
+  45% { transform: rotateY(900deg) rotateX(22deg) scale(1.18); }
+  100% { transform: rotateY(1800deg) rotateX(0deg) scale(1); }
+}
+
+@keyframes veto-card-settle {
+  0% { transform: translateY(-10px) scale(1.035); filter: brightness(1.35); }
+  100% { transform: translateY(0) scale(1); filter: brightness(1); }
+}
+
+.veto-coin {
+  display: grid;
+  place-items: center;
+  width: 8rem;
+  height: 8rem;
+  margin-inline: auto;
+  border: 2px solid rgb(233 213 255 / .65);
+  border-radius: 9999px;
+  background: radial-gradient(circle at 32% 25%, #f5d0fe, #a855f7 45%, #3b0764 80%);
+  color: white;
+  font-size: 2.5rem;
+  font-weight: 950;
+  box-shadow: inset 0 0 0 8px rgb(255 255 255 / .08), 0 0 50px rgb(168 85 247 / .28);
+  transform-style: preserve-3d;
+}
+
+.veto-coin--flipping { animation: veto-coin-flip 1.2s cubic-bezier(.2,.75,.2,1) both; }
+.veto-map-card--picked, .veto-map-card--banned { animation: veto-card-settle .38s ease-out both; }
+.veto-map-card--banned img { filter: grayscale(1) brightness(.45); }
+.veto-map-card--banned::after { content: "X"; position: absolute; inset: 50% auto auto 50%; z-index: 4; translate: -50% -50%; color: rgb(251 113 133 / .8); font-size: 5rem; font-weight: 800; line-height: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .veto-coin--flipping, .veto-map-card--picked, .veto-map-card--banned { animation: none; }
+  .veto-map-card { transition-duration: 0.01ms !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

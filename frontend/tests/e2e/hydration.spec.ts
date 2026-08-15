@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, openPage, test } from "./test-fixture";
 
 test("client navigation hydrates without browser errors", async ({ page }) => {
   const browserErrors: string[] = [];
@@ -10,7 +10,7 @@ test("client navigation hydrates without browser errors", async ({ page }) => {
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/privacy-policy");
+  await openPage(page, "/privacy-policy");
   const menuButton = page.getByRole("banner").getByRole("button", { name: /navigation/ });
   await menuButton.click();
   expect(browserErrors).toEqual([]);

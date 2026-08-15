@@ -45,6 +45,45 @@ test("createImageAssets rolls back successful files when another persistence fai
   }
 });
 
+test("createImageAssets uses the web-ready event photo profile for photo assets", async () => {
+  const servicePath = path.join(__dirname, "../src/modules/media/media.service.js");
+  let eventPhotoUploads = 0;
+  let posterUploads = 0;
+  const prisma = {
+    imageAsset: {
+      create: async ({ data }) => ({ ...data, createdAt: new Date("2026-08-13T00:00:00.000Z") }),
+    },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const { module: mediaService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {
+      persistEventAlbumPhotoUpload: async () => {
+        eventPhotoUploads += 1;
+        return { filename: "photo.webp", contentType: "image/webp", byteSize: 120 };
+      },
+      persistPosterImageUpload: async () => {
+        posterUploads += 1;
+        return { filename: "poster.png", contentType: "image/png", byteSize: 500 };
+      },
+      posterImageDirectory: "uploads/poster-images",
+    },
+  });
+
+  try {
+    const [asset] = await mediaService.createImageAssets({
+      body: { title: "Event photo", category: "photo" },
+      files: [{ originalname: "camera-original.jpg" }],
+    });
+    assert.equal(eventPhotoUploads, 1);
+    assert.equal(posterUploads, 0);
+    assert.equal(asset.contentType, "image/webp");
+    assert.equal(asset.byteSize, 120);
+  } finally {
+    restore();
+  }
+});
+
 test("saveAdminGameCategory removes artwork when logo persistence fails", async () => {
   const servicePath = path.join(__dirname, "../src/modules/games/game-category.service.js");
   const removed = [];

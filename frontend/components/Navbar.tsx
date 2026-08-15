@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import UserMenu from "@/components/UserMenu";
 import { Button, buttonClassName } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { useUiStore } from "@/hooks/useUiStore";
 import { cn, getInitials } from "@/lib/utils";
 import { buildApiUrl } from "@/lib/api";
 import { authNavItems, primaryNavItems, secondaryNavItems } from "@/lib/site";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 const isNavItemActive = (pathname: string, href: string) =>
   href === "/"
@@ -22,6 +23,7 @@ const isNavItemActive = (pathname: string, href: string) =>
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, isAuthenticated, logout, isLoading } = useAuth();
   const { mobileNavOpen, setMobileNavOpen, toggleMobileNav } = useUiStore();
 
@@ -75,6 +77,8 @@ export default function Navbar() {
                   key={item.href}
                   href={item.href}
                   prefetch={false}
+                  onMouseEnter={() => router.prefetch(item.href)}
+                  onFocus={() => router.prefetch(item.href)}
                   className={cn(
                     "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
                     isNavItemActive(pathname, item.href) && "text-white"
@@ -89,6 +93,8 @@ export default function Navbar() {
               <Link
                 href="/"
                 prefetch={false}
+                onMouseEnter={() => router.prefetch("/")}
+                onFocus={() => router.prefetch("/")}
                 className="flex flex-col items-center gap-1"
                 aria-label="Quest home"
               >
@@ -112,6 +118,8 @@ export default function Navbar() {
                   key={item.href}
                   href={item.href}
                   prefetch={false}
+                  onMouseEnter={() => router.prefetch(item.href)}
+                  onFocus={() => router.prefetch(item.href)}
                   className={cn(
                     "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
                     isNavItemActive(pathname, item.href) && "text-white"
@@ -128,6 +136,8 @@ export default function Navbar() {
                     key={item.href}
                     href={item.href}
                     prefetch={false}
+                    onMouseEnter={() => router.prefetch(item.href)}
+                    onFocus={() => router.prefetch(item.href)}
                     className={buttonClassName({
                       variant: "ghost",
                       size: "sm",
@@ -180,8 +190,13 @@ export default function Navbar() {
                 {!isLoading && isAuthenticated && user ? (
                   <div className="grid gap-2">
                     <Link href="/profile" prefetch={false} className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
-                      <span className="flex size-9 items-center justify-center overflow-hidden rounded-xl bg-violet-700 text-xs font-bold">{user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt="" width={36} height={36} className="h-full w-full object-cover" /> : getInitials(user.firstName, user.lastName, user.username)}</span>{user.username}
+                      <span className="flex size-9 items-center justify-center overflow-hidden rounded-xl bg-violet-700 text-xs font-bold">{user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt="" width={36} height={36} className="h-full w-full object-cover" /> : getInitials(user.firstName, user.lastName, user.username)}</span>
+                      <span>
+                        <span className="block font-semibold">{user.username}</span>
+                        <span className="block text-xs text-slate-400">{user.emailVerified ? "Verified account" : "Verification pending"}</span>
+                      </span>
                     </Link>
+                    <NotificationBell user={user} compact />
                     {user.role === "admin" ? (
                       <Link href="/admin" prefetch={false} className="rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
                         Admin Panel

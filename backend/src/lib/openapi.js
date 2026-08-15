@@ -33,7 +33,7 @@ const createResponse = (description) => ({ description });
 const createOperation = (
   tag,
   summary,
-  { authenticated = false, parameters = [] } = {},
+  { authenticated = false, parameters = [], additionalResponses = {} } = {},
 ) => ({
   tags: [tag],
   summary,
@@ -47,6 +47,7 @@ const createOperation = (
       ? { 401: createResponse("Authentication required") }
       : {}),
     400: createResponse("Invalid request"),
+    ...additionalResponses,
   },
 });
 
@@ -102,6 +103,8 @@ const openApiDocument = {
     { name: "Media" },
     { name: "Teams" },
     { name: "Admin" },
+    { name: "Match Rooms" },
+    { name: "Notifications" },
   ],
   components: {
     securitySchemes: {
@@ -723,7 +726,128 @@ const additionalPaths = {
     get: createOperation(
       "Realtime",
       "Subscribe to public match and bracket invalidation events",
+      {
+        additionalResponses: {
+          204: createResponse("Realtime disabled; EventSource must not reconnect"),
+        },
+      },
     ),
+  },
+  "/api/v1/match-rooms/mine": {
+    get: createOperation("Match Rooms", "List the signed-in user's match rooms", { authenticated: true }),
+  },
+  "/api/v1/match-rooms/{code}": {
+    get: createOperation("Match Rooms", "Get an authorized match-room snapshot", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/match-rooms/{code}/messages": {
+    get: createOperation("Match Rooms", "List paginated match-room messages", { authenticated: true, parameters: idParameter("code") }),
+    post: createOperation("Match Rooms", "Send a player or official match-room message", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/match-rooms/{code}/read": {
+    patch: createOperation("Match Rooms", "Advance the member's room read cursor", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/match-rooms/{code}/support": {
+    get: createOperation("Match Rooms", "List visible match-support requests", { authenticated: true, parameters: idParameter("code") }),
+    post: createOperation("Match Rooms", "Open a private match-support request", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/match-rooms/{code}/support/{requestId}/messages": {
+    post: createOperation("Match Rooms", "Reply to a match-support request", { authenticated: true, parameters: [...idParameter("code"), ...idParameter("requestId")] }),
+  },
+  "/api/v1/match-rooms/{code}/support/{requestId}/resolve": {
+    post: createOperation("Match Rooms", "Resolve a match-support request", { authenticated: true, parameters: [...idParameter("code"), ...idParameter("requestId")] }),
+  },
+  "/api/v1/match-rooms/{code}/messages/{messageId}/hide": {
+    post: createOperation("Match Rooms", "Hide a room message with an audit reason", { authenticated: true, parameters: [...idParameter("code"), ...idParameter("messageId")] }),
+  },
+  "/api/v1/match-rooms/{code}/members/{memberId}/mute": {
+    patch: createOperation("Match Rooms", "Mute or unmute a room member", { authenticated: true, parameters: [...idParameter("code"), ...idParameter("memberId")] }),
+  },
+  "/api/v1/match-rooms/{code}/chat-lock": {
+    patch: createOperation("Match Rooms", "Lock or unlock match-room chat", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/notifications": {
+    get: createOperation("Notifications", "List in-app notifications and delivery preferences", { authenticated: true }),
+  },
+  "/api/v1/notifications/read-all": {
+    patch: createOperation("Notifications", "Mark every in-app notification read", { authenticated: true }),
+  },
+  "/api/v1/notifications/{id}/read": {
+    patch: createOperation("Notifications", "Mark one in-app notification read", { authenticated: true, parameters: idParameter("id") }),
+  },
+  "/api/v1/notifications/push-subscriptions": {
+    post: createOperation("Notifications", "Register a browser push subscription", { authenticated: true }),
+    delete: createOperation("Notifications", "Revoke a browser push subscription", { authenticated: true }),
+  },
+  "/api/v1/notifications/preferences": {
+    patch: createOperation("Notifications", "Update match-notification preferences", { authenticated: true }),
+  },
+  "/api/v1/veto-rooms/mine": {
+    get: createOperation("Veto", "List the signed-in captain's active veto rooms", { authenticated: true }),
+  },
+  "/api/v1/veto-rooms/{code}": {
+    get: createOperation("Veto", "Get an authorized live or published veto room", { parameters: idParameter("code") }),
+  },
+  "/api/v1/veto-rooms/{code}/ready": {
+    post: createOperation("Veto", "Set team readiness using account or role-link authority", { parameters: idParameter("code") }),
+  },
+  "/api/v1/veto-rooms/{code}/toss": {
+    post: createOperation("Veto", "Call and atomically resolve a digital Heads or Tails toss", { parameters: idParameter("code") }),
+  },
+  "/api/v1/veto-rooms/{code}/team-a": {
+    post: createOperation("Veto", "Let the toss winner choose Team A or Team B and start the veto", { parameters: idParameter("code") }),
+  },
+  "/api/v1/veto-rooms/{code}/actions": {
+    post: createOperation("Veto", "Commit the current authorized ban, pick, or side choice", { parameters: idParameter("code") }),
+  },
+  "/api/v1/admin/veto/catalog": {
+    get: createOperation("Veto", "List maps, versioned pools, presets, and room templates", { authenticated: true }),
+  },
+  "/api/v1/admin/veto/maps": {
+    post: createOperation("Veto", "Create a map in the veto catalog", { authenticated: true }),
+  },
+  "/api/v1/admin/veto/pools": {
+    post: createOperation("Veto", "Create a versioned map pool", { authenticated: true }),
+  },
+  "/api/v1/admin/veto/presets": {
+    post: createOperation("Veto", "Create a versioned veto rule preset", { authenticated: true }),
+  },
+  "/api/v1/admin/veto/templates": {
+    post: createOperation("Veto", "Save a reusable room template", { authenticated: true }),
+  },
+  "/api/v1/admin/tournaments/{id}/veto-config": {
+    get: createOperation("Veto", "Get a tournament's default veto configuration", { authenticated: true, parameters: idParameter("id") }),
+    put: createOperation("Veto", "Set a tournament's default veto configuration", { authenticated: true, parameters: idParameter("id") }),
+  },
+  "/api/v1/admin/veto-rooms": {
+    get: createOperation("Veto", "List veto rooms available to staff", { authenticated: true }),
+    post: createOperation("Veto", "Create a linked or standalone veto room", { authenticated: true }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}": {
+    get: createOperation("Veto", "Get a veto room for staff operation", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/start": {
+    post: createOperation("Veto", "Start or force-start the toss/veto lifecycle", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/open": {
+    post: createOperation("Veto", "Open a room for team readiness", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/assign-team-a": {
+    post: createOperation("Veto", "Manually assign Team A and Team B", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/manual-toss": {
+    post: createOperation("Veto", "Record the result of a physical coin toss", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/rewind": {
+    post: createOperation("Veto", "Audit and rewind the latest committed veto action", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/reset": {
+    post: createOperation("Veto", "Audit and reset a room to its pre-veto state", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/cancel": {
+    post: createOperation("Veto", "Cancel an active veto room", { authenticated: true, parameters: idParameter("roomId") }),
+  },
+  "/api/v1/admin/veto-rooms/{roomId}/rotate-link": {
+    post: createOperation("Veto", "Rotate a private team or viewer access link", { authenticated: true, parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/tournaments/{id}/challonge": {
     get: createOperation("Challonge", "Get Challonge integration status", {
@@ -807,6 +931,12 @@ const additionalPaths = {
       authenticated: true,
       parameters: idParameter("matchId"),
     }),
+  },
+  "/api/v1/admin/matches/{matchId}/room": {
+    post: createOperation("Match Rooms", "Create or resynchronize a match room", { authenticated: true, parameters: idParameter("matchId") }),
+  },
+  "/api/v1/admin/match-rooms": {
+    get: createOperation("Match Rooms", "List match rooms visible to staff", { authenticated: true }),
   },
   "/api/v1/admin/tournaments/{id}/staff": {
     get: createOperation("Permissions", "List tournament staff assignments", {

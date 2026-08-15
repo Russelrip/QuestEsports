@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import Image, { type ImageProps } from "next/image";
 import { useState } from "react";
 import { resolveMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -11,12 +11,16 @@ export default function TournamentBannerImage({
   className,
   rounded = true,
   showFallbackTitle = true,
+  preload = false,
+  loading = "lazy",
 }: {
   bannerUrl: string | null;
   title: string;
   className?: string;
   rounded?: boolean;
   showFallbackTitle?: boolean;
+  preload?: boolean;
+  loading?: ImageProps["loading"];
 }) {
   const [hasError, setHasError] = useState(false);
 
@@ -48,6 +52,8 @@ export default function TournamentBannerImage({
       width={1200}
       height={800}
       sizes="(min-width: 1280px) 420px, (min-width: 1024px) 380px, 100vw"
+      preload={preload}
+      loading={preload ? undefined : loading}
       className={cn(rounded && "rounded-[24px]", className)}
       onError={() => setHasError(true)}
     />

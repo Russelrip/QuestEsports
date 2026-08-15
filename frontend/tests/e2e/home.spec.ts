@@ -1,7 +1,7 @@
-import { expect, test, type Route } from "@playwright/test";
+import { expect, openPage, test, type Route } from "./test-fixture";
 
 test("privacy policy page renders the app shell and policy content", async ({ page }) => {
-  await page.goto("/privacy-policy");
+  await openPage(page, "/privacy-policy");
 
   await expect(
     page.getByRole("banner").getByRole("link", { name: "Quest home" })
@@ -11,7 +11,7 @@ test("privacy policy page renders the app shell and policy content", async ({ pa
 });
 
 test("contact page includes both TikTok accounts, Gmail, and the WhatsApp community", async ({ page }) => {
-  await page.goto("/contact");
+  await openPage(page, "/contact");
 
   await expect(page.getByRole("link", { name: "@senumii" })).toHaveAttribute(
     "href",
@@ -51,7 +51,7 @@ test("contact page includes both TikTok accounts, Gmail, and the WhatsApp commun
 
 test("mobile layout stays within the viewport and opens navigation without page shift", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/privacy-policy");
+  await openPage(page, "/privacy-policy");
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
@@ -90,6 +90,61 @@ test("mobile layout stays within the viewport and opens navigation without page 
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollPosition);
 });
 
+test("notifications stay grouped with the signed-in account on desktop and mobile", async ({ page }) => {
+  await page.route("**/api/me", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      user: {
+        id: "user-notifications",
+        firstName: "Quest",
+        lastName: "Player",
+        email: "player@example.com",
+        username: "questplayer",
+        role: "user",
+        emailVerified: true,
+      },
+    }),
+  }));
+
+  await openPage(page, "/privacy-policy");
+  const usesDesktopMenu = (page.viewportSize()?.width || 0) >= 1024;
+
+  if (usesDesktopMenu) {
+    const accountButton = page.getByRole("button", { name: /questplayer/i });
+    const notificationsButton = page.getByRole("button", { name: "0 unread notifications" });
+    await expect(accountButton).toBeVisible();
+    await expect(notificationsButton).toBeVisible();
+    await notificationsButton.click();
+
+    const notificationsPanel = page.getByText("Match updates stay in the app").locator("../../..");
+    await expect(notificationsPanel).toBeVisible();
+    const accountBox = await accountButton.boundingBox();
+    const panelBox = await notificationsPanel.boundingBox();
+    expect(accountBox).not.toBeNull();
+    expect(panelBox).not.toBeNull();
+    expect(Math.abs((accountBox?.x || 0) + (accountBox?.width || 0) - (panelBox?.x || 0) - (panelBox?.width || 0))).toBeLessThanOrEqual(2);
+
+    await accountButton.click();
+    await expect(notificationsPanel).toBeHidden();
+    await expect(page.getByRole("link", { name: "Profile", exact: true })).toBeVisible();
+  } else {
+    await page.getByRole("banner").getByRole("button", { name: "Open navigation" }).click();
+    const identity = page.getByRole("link", { name: /questplayer verified account/i });
+    const notificationsButton = page.getByRole("button", { name: "0 unread notifications" });
+    await expect(identity).toBeVisible();
+    await expect(notificationsButton).toBeVisible();
+    const identityBox = await identity.boundingBox();
+    const notificationsBox = await notificationsButton.boundingBox();
+    expect(identityBox).not.toBeNull();
+    expect(notificationsBox).not.toBeNull();
+    expect(notificationsBox?.y || 0).toBeGreaterThan((identityBox?.y || 0) + (identityBox?.height || 0));
+    await notificationsButton.click();
+    await expect(page.getByText("Match updates stay in the app")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+});
+
 test("gallery album opens a full event photo inside a mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fulfillTestImage = (route: Route) =>
@@ -104,7 +159,7 @@ test("gallery album opens a full event photo inside a mobile viewport", async ({
   await page.route("**/api/uploads/**", fulfillTestImage);
   await page.route("**/api/event-albums/**/image*", fulfillTestImage);
 
-  await page.goto("/gallery");
+  await openPage(page, "/gallery");
   const albumLink = page.getByRole("link", { name: /Open Mobile Test Album, 1 photos?/ });
   await expect(albumLink).toHaveAttribute("href", "/gallery/mobile-test", { timeout: 15_000 });
   await albumLink.click();
@@ -130,14 +185,14 @@ test("gallery album opens a full event photo inside a mobile viewport", async ({
 });
 
 test("members page lists the named CODM leader without placeholder groups", async ({ page }) => {
-  await page.goto("/members");
+  await openPage(page, "/members");
   await expect(page.getByRole("heading", { name: "Ayodhya “LIEBE” Janz" })).toBeVisible();
   await expect(page.getByText("CODM Wing Leader")).toBeVisible();
   await expect(page.getByText("To Be Determined")).toHaveCount(0);
 });
 
 test("refund policy publishes customized product and tournament fee terms", async ({ page }) => {
-  await page.goto("/refund-policy");
+  await openPage(page, "/refund-policy");
   await expect(page.getByRole("heading", { name: "Refund & Return Policy" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customized merchandise" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Tournament registration fees" })).toBeVisible();
@@ -146,7 +201,7 @@ test("refund policy publishes customized product and tournament fee terms", asyn
 });
 
 test("production security policy permits only the configured PayHere form endpoints", async ({ page }) => {
-  const response = await page.goto("/privacy-policy");
+  const response = await openPage(page, "/privacy-policy");
   const policy = response?.headers()["content-security-policy"] || "";
   expect(policy).toContain("form-action 'self' https://sandbox.payhere.lk https://www.payhere.lk");
   expect(policy).not.toContain("form-action *");
@@ -172,7 +227,7 @@ test("Challonge public bracket is preloaded and reused without consuming REST re
     });
   });
 
-  await page.goto("/tournaments/challonge-test");
+  await openPage(page, "/tournaments/challonge-test");
   expect(bracketRequests).toBe(0);
   await expect(page.getByRole("heading", { name: "The tournament is over" })).toBeVisible();
   await expect(page.getByText("Quest Champions", { exact: true }).first()).toBeVisible();
@@ -204,13 +259,13 @@ test("recruitment deep links initialize all supported application types", async 
     body: JSON.stringify({ success: true, user: { id: "user-1", firstName: "Quest", lastName: "Player", email: "player@example.com", username: "questplayer", role: "user", emailVerified: true } }),
   }));
   for (const type of ["solo_player", "existing_team", "incomplete_team"]) {
-    await page.goto(`/join?type=${type}`);
+    await openPage(page, `/join?type=${type}`);
     await expect(page.getByLabel("Application Type")).toHaveValue(type);
   }
 });
 
 test("legacy generic tournament registration page is removed", async ({ page }) => {
-  const response = await page.goto("/tournament-registration");
+  const response = await openPage(page, "/tournament-registration");
   expect(response?.status()).toBe(404);
   await expect(page.getByRole("combobox", { name: /tournament/i })).toHaveCount(0);
 });
@@ -242,7 +297,7 @@ test("cart uses a server quote and clearly disables checkout without PayHere", a
     contentType: "application/json",
     body: JSON.stringify({ success: true, quote: { currency: "LKR", subtotal: 7000, deliveryFee: 500, total: 7500, items: [] } }),
   }));
-  await page.goto("/shop/cart");
+  await openPage(page, "/shop/cart");
   await expect(page.getByText("Total LKR 7500.00")).toBeVisible();
   await expect(page.getByText(/no order or stock reservation has been created/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Online payment unavailable" })).toBeDisabled();
@@ -306,7 +361,7 @@ test("private order status keeps the capability in the fragment and API header",
     });
   });
 
-  await page.goto(`/shop/order#token=${token}`);
+  await openPage(page, `/shop/order#token=${token}`);
   await expect(page.getByRole("heading", { name: "Payment confirmed" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Order summary" })).toBeVisible();
   await expect(page.getByText("Total LKR 7500.00")).toBeVisible();
@@ -340,7 +395,7 @@ test("failed logout keeps the authenticated UI and warns that the server session
     body: JSON.stringify({ success: false, message: "Logout failed." }),
   }));
 
-  await page.goto("/privacy-policy");
+  await openPage(page, "/privacy-policy");
   const desktopUserMenu = page.getByRole("button", { name: /questplayer/i });
   const usesDesktopMenu = (page.viewportSize()?.width || 0) >= 1024;
   if (usesDesktopMenu) {
@@ -366,7 +421,7 @@ test("admin guard shows a retry state instead of redirecting when session lookup
     body: JSON.stringify({ success: false, message: "Session service unavailable." }),
   }));
 
-  await page.goto("/admin");
+  await openPage(page, "/admin");
   await expect(page.getByRole("heading", { name: "Admin access could not be checked" })).toBeVisible();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
@@ -375,6 +430,7 @@ test("admin guard shows a retry state instead of redirecting when session lookup
 test("event album admin loads legacy poster tools once without a request loop", async ({ page }) => {
   let posterStudioRequests = 0;
   let imageLibraryRequests = 0;
+  let deletedPosterEntries = 0;
 
   await page.route("**/api/me", (route) => route.fulfill({
     contentType: "application/json",
@@ -406,14 +462,33 @@ test("event album admin loads legacy poster tools once without a request loop", 
   await page.route("**/api/posters?**", (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.get("pageSize") === "18") posterStudioRequests += 1;
+    const includeAdminArtwork = url.searchParams.get("pageSize") === "60";
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         success: true,
-        posters: [],
-        pagination: { page: 1, pageSize: Number(url.searchParams.get("pageSize")), total: 0, totalPages: 1 },
+        posters: includeAdminArtwork ? [{
+          id: "poster-duplicate",
+          title: "Duplicate artwork",
+          imageAsset: {
+            id: "asset-shared",
+            title: "Shared artwork",
+            originalName: "shared-artwork.jpg",
+            category: "poster",
+            contentType: "image/jpeg",
+            createdAt: "2026-08-01T00:00:00.000Z",
+            imageUrl: "/api/posters/poster-duplicate/image",
+          },
+          tournament: null,
+        }] : [],
+        pagination: { page: 1, pageSize: Number(url.searchParams.get("pageSize")), total: includeAdminArtwork ? 1 : 0, totalPages: 1 },
       }),
     });
+  });
+  await page.route("**/api/posters/poster-duplicate", (route) => {
+    if (route.request().method() !== "DELETE") return route.continue();
+    deletedPosterEntries += 1;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ success: true }) });
   });
   await page.route("**/api/images?**", (route) => {
     imageLibraryRequests += 1;
@@ -427,9 +502,18 @@ test("event album admin loads legacy poster tools once without a request loop", 
     });
   });
 
-  await page.goto("/admin/event-albums");
+  await openPage(page, "/admin/event-albums");
   await expect(page.getByRole("heading", { name: "Event Albums" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Create album" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Existing promotional artwork" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Search promotional artwork" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Filter promotional artwork by assignment" })).toHaveValue("all");
+  await page.getByRole("button", { name: "Delete entry" }).click();
+  await expect(page.getByRole("button", { name: "Confirm delete" })).toBeVisible();
+  await page.getByRole("button", { name: "Confirm delete" }).click();
+  await expect.poll(() => deletedPosterEntries).toBe(1);
+  await expect(page.getByText("Duplicate artwork")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await expect.poll(() => posterStudioRequests).toBe(1);
   await expect.poll(() => imageLibraryRequests).toBe(1);
   await page.waitForTimeout(750);
@@ -474,7 +558,7 @@ test("mobile admin teams use contained cards with accessible navigation and acti
     }),
   }));
 
-  await page.goto("/admin/teams");
+  await openPage(page, "/admin/teams");
   await expect(page.getByRole("heading", { name: "Teams", exact: true })).toBeVisible();
   await expect(page.getByText("Admin section")).toBeVisible();
   await expect(page.locator("table")).toBeHidden();
