@@ -1,20 +1,22 @@
 # CI/CD Pipeline
 
-This repository uses GitHub Actions for continuous integration and owner-approved backend, frontend, and Android production releases. Disable Vercel's automatic production deployment from `main`; the protected frontend workflow promotes only the exact CI-passed commit after checking backend API compatibility. See the [Developer Guide](developer-guide.md), [Environment Reference](environment-reference.md), and [VALORANT Local Development](valorant-local-development.md) for contributor and integration details.
+This repository uses GitHub Actions for continuous integration and owner-controlled backend, frontend, and Android production releases. The normal production flow is `main` push -> CI -> backend CD -> frontend deployment. Disable Vercel's automatic production deployment from `main`; the protected frontend workflow promotes only the exact successful upstream SHA after checking backend API compatibility. See the [Developer Guide](developer-guide.md), [Environment Reference](environment-reference.md), and [VALORANT Local Development](valorant-local-development.md) for contributor and integration details.
 
 ## Workflows
 
 - `.github/workflows/ci.yml` runs on pull requests to `main` and pushes to `main`.
 - `.github/workflows/secret-scan.yml` scans pull requests and pushes to `main` for committed credentials.
-- `.github/workflows/cd.yml` can only be started manually from the GitHub Actions tab and only deploys when the actor is the repository owner.
-- `.github/workflows/deploy-frontend.yml` deploys an explicitly supplied, CI-passed `main` SHA after the production backend reports API compatibility version 2 or newer.
+- `.github/workflows/cd.yml` automatically runs after a successful `CI` workflow for a push to `main`; it also retains manual dispatch for emergency/manual redeploys. It only deploys when the actor is the repository owner.
+- `.github/workflows/deploy-frontend.yml` automatically runs after a successful backend CD for `main`, promoting that workflow's exact successful upstream SHA after the production backend reports API compatibility version 2 or newer. It also retains manual dispatch for emergency/manual redeploys.
 - `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
 
-Backend CD is a manual, repository-owner-only job gated by
-`BACKEND_DEPLOY_ENABLED=true`, the exact deployment SHA, and a successful CI
+Backend CD is an automatic, repository-owner-only job gated by
+`BACKEND_DEPLOY_ENABLED=true`, the exact successful CI SHA, and a successful CI
 run for that SHA; it installs dependencies and runs backend tests before SSH
-deployment. Frontend deployment is owner-only and gated by
-`FRONTEND_DEPLOY_ENABLED=true`, the full `main` SHA, successful CI, and live
+deployment. A CI failure prevents both backend CD and frontend deployment. A
+backend CD failure prevents the frontend workflow from running. Frontend
+deployment is owner-only and gated by `FRONTEND_DEPLOY_ENABLED=true`, the full
+`main` SHA from the successful backend CD, successful CI, and live
 API-compatibility checks. APK release is gated by an owner-created version tag
 pointing to the tested `main` commit and runs audit, typecheck, tests, Expo
 doctor, Android prebuild, and signing.
@@ -111,7 +113,7 @@ Backend deployment is disabled by default. Enable it with this GitHub repository
 BACKEND_DEPLOY_ENABLED=true
 ```
 
-For frontend releases, set `FRONTEND_DEPLOY_ENABLED=true`, set `PRODUCTION_API_URL`, and configure `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID`. Use a `frontend-production` Environment with a required repository-owner reviewer only when the plan supports that protection for private repositories. Otherwise keep production credentials out of any repository writable by collaborators and deploy from an owner-only repository or locally. Run **Deploy frontend** with the full approved `main` SHA only after the backend for that release is healthy.
+For frontend releases, set `FRONTEND_DEPLOY_ENABLED=true`, set `PRODUCTION_API_URL`, and configure `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID`. Use a `frontend-production` Environment with a required repository-owner reviewer only when the plan supports that protection for private repositories. Otherwise keep production credentials out of any repository writable by collaborators and deploy from an owner-only repository or locally. The automatic **Deploy frontend** workflow uses the exact successful backend CD SHA after the backend for that release is healthy; retain manual dispatch for emergency/manual redeploys.
 
 ## Backend Deployment Secrets
 
@@ -215,7 +217,7 @@ systemctl enable pm2-deploy
 
 Verify `systemctl is-active pm2-deploy` and `sudo -u deploy -H pm2 list`. See the [Production Operations Runbook](./production-runbook.md#pm2-and-automatic-boot) for migrating an existing root-owned PM2 process and recovering from `Result: protocol`.
 
-After a successful CI run, the repository owner may manually deploy the workflow-dispatch ref's commit (normally `main`). The workflow does not enforce that the dispatched ref is `main`; it verifies only that the exact dispatched commit has a successful CI run. On deploy, the workflow runs:
+After a successful CI run, the automatic CD workflow deploys the exact successful `main` CI commit. The repository owner may also manually deploy a workflow-dispatch ref (normally `main`) for an emergency/manual redeploy; the workflow does not enforce that the dispatched ref is `main`, and verifies only that the exact dispatched commit has a successful CI run. On deploy, the workflow runs:
 
 ```bash
 git fetch origin "$DEPLOY_SHA"
@@ -231,7 +233,7 @@ pm2 save
 
 `npm ci` runs the backend `postinstall` hook, which generates the Prisma client. The workflow refuses root deployments and dirty checkouts, validates `.env` permissions and `node_modules` ownership, runs lint and migrations, and then verifies process liveness plus application readiness. In normal operation it also reads tournaments, products, and commerce capabilities. During an approved maintenance window it accepts readiness only when the response is `503` with `X-Maintenance-Mode: active`, and skips public data reads that are intentionally blocked. Any other installation, restart, or health failure restores the previous application commit and restarts it. Database migrations are intentionally not reversed, so production migrations must remain backward-compatible (expand first, deploy code, contract only in a later release).
 
-When a migration file changed, deployment additionally requires `BACKEND_MIGRATION_APPROVAL_SHA` to equal the exact 40-character `DEPLOY_SHA`. Before applying that migration, CD runs `ops/backup-production.sh`; any missing backup prerequisite, encryption failure, or off-site upload failure aborts deployment. Set this secret only after reviewing the migration and clear it after the successful release. Use a required repository-owner reviewer for the `production` Environment only when the plan enforces that protection for private repositories; otherwise perform migration deployment from an owner-only system.
+When a migration file changed, deployment additionally requires `BACKEND_MIGRATION_APPROVAL_SHA` to equal the exact 40-character `DEPLOY_SHA`. Destructive or backward-incompatible migrations also require the existing `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` gate to equal that same SHA. Before applying either migration, CD runs `ops/backup-production.sh`; any missing backup prerequisite, encryption failure, or off-site upload failure aborts deployment. Set these approval secrets only after reviewing the migration and clear them after the successful release. Use a required repository-owner reviewer for the `production` Environment only when the plan enforces that protection for private repositories; otherwise perform migration deployment from an owner-only system.
 
 Backup success in CD proves archive creation and remote presence; it does not replace an isolated restore drill. Follow [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) for quarterly restoration, key custody, and full environment recovery. The live production host, region, backup destination, and restore-drill status require owner verification; checked-in workflow files cannot prove those runtime facts.
 
@@ -253,9 +255,9 @@ Rerun the failed workflow after the write check succeeds. Run future `npm` and P
 
 Initial liveness retries may log connection failures while Node starts. A successful job means liveness returned `200` and either readiness plus public smoke reads passed normally, or readiness returned the explicit maintenance `503` header during an approved window. PM2 then saves the process list.
 
-## Manual Deployment
+## Emergency And Manual Redeployment
 
-To redeploy the selected workflow-dispatch ref (normally `main`) without pushing a new commit:
+The automatic flow is preferred. To redeploy the selected workflow-dispatch ref (normally `main`) without pushing a new commit:
 
 1. Open GitHub Actions.
 2. Select `CD`.
@@ -263,7 +265,7 @@ To redeploy the selected workflow-dispatch ref (normally `main`) without pushing
 
 The workflow deploys the exact workflow-dispatch commit only after confirming that the same commit has a successful `CI` run. It does not enforce that the dispatched ref is `main`; the owner must dispatch from `main` to preserve the documented main-only promotion intent. The production environment approval and deploy enablement variables still apply.
 
-The owner-only manual trigger is intentional because GitHub Free does not provide branch-protection enforcement for this private personal repository. See [Collaboration And Staging](./collaboration-and-staging.md) before granting collaborator access.
+The owner-only manual triggers are retained for emergency/manual redeploys. GitHub Free does not provide branch-protection enforcement for this private personal repository. See [Collaboration And Staging](./collaboration-and-staging.md) before granting collaborator access.
 
 ## Troubleshooting And Verification
 

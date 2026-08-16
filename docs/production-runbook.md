@@ -19,7 +19,7 @@ prove those facts.
 - Email: Amazon SES in Tokyo (`ap-northeast-1`) when `MAIL_PROVIDER=smtp`; SMTP credentials are region-specific
 - Public uploads: `/srv/quest-esports/uploads`
 - Private payment evidence: `/srv/quest-esports/private`
-- CI/CD: GitHub Actions; CI gates CD on `main`
+- CI/CD: GitHub Actions; the normal flow is `main` push -> CI -> backend CD -> frontend deployment
 
 The Paris database became production on July 29, 2026. The previous Tokyo project is a temporary rollback copy, not a second writable production database. Keep it unchanged only until the Paris backup and restore drill succeeds, then delete it and rotate its database credentials.
 
@@ -96,7 +96,25 @@ BACKEND_SSH_HOST_KEY=<pinned known_hosts line>
 BACKEND_APP_DIR=/var/www/QuestEsports
 BACKEND_PM2_PROCESS=quest-backend
 BACKEND_HEALTHCHECK_URL=http://127.0.0.1:5001/api/health
+BACKEND_MIGRATION_APPROVAL_SHA=<exact approved migration commit SHA>
+BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA=<exact approved destructive migration commit SHA, when required>
 ```
+
+Frontend deployment uses these repository/environment settings:
+
+```text
+FRONTEND_DEPLOY_ENABLED=true
+PRODUCTION_API_URL=https://api.questesports.lk
+VERCEL_TOKEN=<Vercel deployment token>
+VERCEL_ORG_ID=<Vercel organization ID>
+VERCEL_PROJECT_ID=<Vercel project ID>
+```
+
+The automatic workflows promote the exact successful upstream SHA: backend CD
+uses the successful `CI` run's `main` commit, and frontend deployment uses the
+successful backend CD run's same commit. A failed CI run prevents backend and
+frontend deployment; a failed backend CD run prevents frontend deployment.
+Both workflows retain manual dispatch for emergency/manual redeploys.
 
 Generate the pinned host line only from a trusted VPS session:
 
@@ -218,11 +236,12 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 
 1. Push to `main`.
 2. CI runs backend audit, migrations against PostgreSQL 16, migration/schema verification, coverage, lint, frontend audit/lint/unit tests/build, and Playwright.
-3. After CI succeeds, CD deploys the exact CI commit SHA.
-4. If migrations changed, set the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to that exact 40-character commit SHA. CD refuses any other value and creates an encrypted off-site backup before applying the migration.
+3. After CI succeeds, automatic backend CD deploys the exact successful CI commit SHA.
+4. If migrations changed, set the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to that exact 40-character commit SHA. Destructive or backward-incompatible migrations also require `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` to equal that SHA. CD refuses any other value and creates an encrypted off-site backup before applying the migration.
 5. CD installs backend dependencies, generates Prisma, lints, applies production migrations, verifies RLS/Data API privileges, restarts PM2, checks health plus public tournament/product/capability reads, and saves the process list.
+6. After backend CD succeeds, automatic frontend deployment promotes that same exact SHA after validating the successful CI run and live API compatibility.
 
-Manual redeploy: GitHub `Actions -> CD -> Run workflow`. The manual job redeploys the exact workflow-dispatch commit and refuses to continue unless that exact commit has a successful `CI` run. It does not enforce that the dispatched ref is `main`; dispatch from `main` to preserve the documented main-only promotion intent.
+Emergency/manual redeploy: GitHub `Actions -> CD -> Run workflow` or `Actions -> Deploy frontend -> Run workflow`. Each manual job redeploys the exact supplied commit and refuses to continue unless the required successful upstream checks pass. The CD workflow does not enforce that a manually dispatched ref is `main`; dispatch from `main` to preserve the documented main-only promotion intent.
 
 The `repair_database_ssl` input is a narrowly scoped recovery option for an older VPS `.env` whose `DATABASE_URL` or `DIRECT_URL` predates the explicit TLS requirement. It updates only those two URL entries to `sslmode=require`, preserves `.env` permissions, and never prints credentials. Leave it disabled during normal deployments. After a successful repair deployment, future deployments validate the stored values without changing them.
 
