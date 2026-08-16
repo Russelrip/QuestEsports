@@ -35,6 +35,7 @@ Delivery is an at-least-once external side effect: a worker can lose its databas
 | Password reset request | The existing account email | Eligible `POST /api/forgot-password` | `Reset your Quest Esports password` | `${APP_URL}/reset-password?token=...` | 20 minutes |
 | Email change confirmation | The requested new email address | Successful authenticated `POST /api/email-change/request` | `Confirm your new Quest Esports email` | `${APP_URL}/confirm-email-change?token=...` | 24 hours |
 | Team invitation | Every non-captain roster member who is not already accepted | Successful tournament registration | `Quest Esports team invitation` | `${APP_URL}/team-invite?token=...` | 72 hours |
+| Registration received | The captain/registrant email | Successful new or retried tournament registration submission | `Your Quest Esports registration was received` | None | No token |
 | Security alert | The account's current primary email | A supported account-security event | Event-specific | Profile link by default | No token |
 
 All templates include HTML and plain-text versions. User-provided values are escaped before being inserted into HTML.
@@ -85,7 +86,7 @@ The current implementation does not send a separate email-change warning to the 
 
 ### Team invitations
 
-Team invitations are created as part of a successful tournament registration. The registration synchronizes the captain's saved team roster and queues invitations for non-captain members who are not already accepted.
+Team invitations are created as part of a successful tournament registration. The registration synchronizes the captain's saved team roster and queues invitations for non-captain members who are not already accepted, including a selected coach. Coaches use the same invitation and acceptance flow as players.
 
 The captain is linked to their account, recorded as accepted, and does not receive an invite. Existing accepted roster members with linked accounts also do not receive another invite. Pending invite links expire after 72 hours.
 
@@ -102,6 +103,10 @@ POST /api/team-invite/respond
 ```
 
 Responding requires a logged-in, verified account whose email matches the invited address. Acceptance links the account to both the actual tournament-registration member and the reusable saved-team member. Registration verification becomes `verified` when every member accepts, `flagged` if anyone declines, and remains `pending` while responses are outstanding.
+
+### Registration received
+
+After a new or retried tournament registration submission succeeds, the captain/registrant receives a queued confirmation email. It confirms that the submission was received. When any non-captain member, including a coach, has a pending invitation, the message explicitly says that the roster is not final and does not confirm a final slot or payment.
 
 ### Security alerts
 
@@ -123,7 +128,6 @@ The following areas collect or display email addresses but do not currently send
 
 - contact-form submissions are stored for the admin contact inbox
 - recruitment applications are stored for admin review
-- tournament registration does not send a captain confirmation email
 - tournament registration status changes do not notify the captain
 - tournament registration deletion does not notify the captain or roster members
 - recruitment status changes and recruitment deletion do not notify the applicant

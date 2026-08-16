@@ -8,6 +8,10 @@ const servicePath = path.join(__dirname, "../src/modules/tournaments/registratio
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
 const teamServicePath = path.join(__dirname, "../src/modules/teams/team.service.js");
+const registrationMailModulePath = path.join(
+  __dirname,
+  "../src/lib/mail/sendRegistrationReceivedEmail.js"
+);
 const paymentServicePath = path.join(__dirname, "../src/modules/payments/payment.service.js");
 const bankTransferServicePath = path.join(
   __dirname,
@@ -219,6 +223,8 @@ test("roster validation explains that the captain counts as an active player", a
 
 test("paid direct team registration saves the team and dispatches player invites immediately", async () => {
   const syncedTeams = [];
+  const sentInvites = [];
+  const sentRegistrationConfirmations = [];
   let createdRegistration;
   let createdMembers;
   let registrationTransactionActive = false;
@@ -280,10 +286,29 @@ test("paid direct team registration saves the team and dispatches player invites
     [teamServicePath]: {
       ensureTeamRegistrationSaved: async (registrationId) => {
         assert.equal(registrationTransactionActive, false);
+        const coach = createdMembers?.find((member) => member.role === "COACH");
+        if (coach) {
+          coach.inviteStatus = "pending";
+          coach.inviteTokenHash = "coach-token-hash";
+          coach.inviteSentAt = new Date();
+          coach.inviteExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+          sentInvites.push({ email: coach.email });
+        }
         syncedTeams.push(registrationId);
       },
-      syncSavedTeamFromRegistration: async () => [],
-      sendTeamInvites: async () => undefined,
+      syncSavedTeamFromRegistration: async () => [{
+        email: "coach@example.com",
+        recipientName: "Coach Example",
+        teamName: "Updated Quest",
+        captainName: "Quest Captain",
+        tournamentTitle: "Quest Cup",
+        rawToken: "coach-token",
+      }],
+      sendTeamInvites: async (invites) => sentInvites.push(...invites),
+    },
+    [registrationMailModulePath]: {
+      sendRegistrationReceivedEmail: async (confirmation) =>
+        sentRegistrationConfirmations.push(confirmation),
     },
     [paymentServicePath]: {
       assertPayHereConfigured: () => undefined,
@@ -322,7 +347,7 @@ test("paid direct team registration saves the team and dispatches player invites
     assert.equal(createdRegistration.verificationStatus, "pending");
     assert.equal(result.awaitingTeamVerification, true);
     assert.equal(result.readyForPayment, false);
-    assert.equal(result.pendingInviteCount, 1);
+    assert.equal(result.pendingInviteCount, 2);
     assert.equal(result.checkout, null);
     assert.equal(result.paymentOrderId, null);
     assert.equal(createdRegistration.captainRiotId, "Captain#002");
@@ -330,13 +355,80 @@ test("paid direct team registration saves the team and dispatches player invites
     assert.equal(createdMembers[2].role, "COACH");
     assert.equal(createdMembers[2].memberOrder, 1);
     assert.equal(createdMembers[2].phone, "0772222222");
-    assert.equal(createdMembers[2].inviteStatus, "accepted");
-    assert.equal(createdMembers[2].inviteTokenHash, null);
-    assert.equal(createdMembers[2].inviteSentAt, null);
-    assert.equal(createdMembers[2].inviteExpiresAt, null);
+    assert.equal(createdMembers[2].inviteStatus, "pending");
+    assert.ok(createdMembers[2].inviteTokenHash);
+    assert.ok(createdMembers[2].inviteSentAt instanceof Date);
+    assert.ok(createdMembers[2].inviteExpiresAt instanceof Date);
+    assert.equal(sentInvites.length, 1);
+    assert.equal(sentInvites[0].email, "coach@example.com");
+    assert.equal(sentRegistrationConfirmations.length, 1);
+    assert.equal(sentRegistrationConfirmations[0].email, user.email);
+    assert.equal(sentRegistrationConfirmations[0].pendingMemberCount, 2);
     assert.equal(syncedTeams.length, 1);
     assert.equal(syncedTeams[0], createdRegistration.id);
     assert.equal(tournamentLookupAttempts, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("a pending coach blocks team verification and payment", async () => {
+  const pendingRegistration = {
+    id: "registration-coach-pending",
+    entryType: "team",
+    teamName: "Coach Pending",
+    status: "pending",
+    paymentStatus: "unpaid",
+    verificationStatus: "pending",
+    captainPhone: "0771111111",
+    country: "Sri Lanka",
+    reservedUntil: null,
+    members: [
+      { role: "CAPTAIN", inviteStatus: "accepted" },
+      { role: "COACH", inviteStatus: "pending" },
+    ],
+    payments: [],
+  };
+  const tx = {
+    tournament: { findUnique: async () => tournament },
+    teamRegistration: {
+      findUnique: async () => pendingRegistration,
+      count: async () => 0,
+      findFirst: async () => null,
+      update: async ({ data }) => ({ ...pendingRegistration, ...data }),
+    },
+    paymentTransaction: {
+      updateMany: async () => ({ count: 0 }),
+      create: async ({ data }) => ({ ...data, status: "created" }),
+    },
+  };
+  const prisma = {
+    tournament: { findFirst: async () => tournament },
+    teamRegistration: { findFirst: async () => pendingRegistration },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
+    },
+    [paymentServicePath]: {
+      assertPayHereConfigured: () => undefined,
+      createPayHereCheckout: ({ transaction }) => ({ orderId: transaction.providerOrderId }),
+    },
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    const result = await registrationService.createConfiguredRegistration({
+        slug: tournament.slug,
+        body: { resumePayment: true },
+        user,
+      });
+    assert.equal(result.awaitingTeamVerification, true);
+    assert.equal(result.readyForPayment, false);
+    assert.equal(result.paymentOrderId, null);
   } finally {
     restore();
   }
@@ -436,6 +528,7 @@ test("captain-only direct registration repairs stale verification and starts pay
 
 test("createConfiguredRegistration lets an active payment reservation retry after registration closes", async () => {
   const removedUploads = [];
+  const sentRegistrationConfirmations = [];
   let registrationUpdate;
   let memberRows;
   const retryTournament = { ...tournament, status: "upcoming" };
@@ -495,6 +588,10 @@ test("createConfiguredRegistration lets an active payment reservation retry afte
       syncSavedTeamFromRegistration: async () => [],
       sendTeamInvites: async () => undefined,
     },
+    [registrationMailModulePath]: {
+      sendRegistrationReceivedEmail: async (confirmation) =>
+        sentRegistrationConfirmations.push(confirmation),
+    },
     [paymentServicePath]: {
       assertPayHereConfigured: () => undefined,
       createPayHereCheckout: ({ transaction }) => ({ orderId: transaction.providerOrderId }),
@@ -524,6 +621,8 @@ test("createConfiguredRegistration lets an active payment reservation retry afte
     assert.equal(memberRows[0].name, "Updated Captain");
     assert.deepEqual(removedUploads, ["old-logo.png"]);
     assert.match(result.paymentOrderId, /^TOUR-/);
+    assert.equal(sentRegistrationConfirmations.length, 1);
+    assert.equal(sentRegistrationConfirmations[0].registrationId, existing.id);
   } finally {
     restore();
   }

@@ -3,6 +3,7 @@ const {
   buildResetPasswordEmail,
   buildEmailChangeEmail,
   buildTeamInviteEmail,
+  buildRegistrationReceivedEmail,
   buildSecurityAlertEmail,
   buildTicketOrderEmail,
 } = require("./templates");
@@ -15,6 +16,7 @@ const EMAIL_TEMPLATE_TYPES = {
   resetPassword: "resetPassword",
   emailChange: "emailChange",
   teamInvite: "teamInvite",
+  registrationReceived: "registrationReceived",
   securityAlert: "securityAlert",
   ticketOrder: "ticketOrder",
 };
@@ -88,6 +90,21 @@ const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
             captainName: payload.captainName,
             tournamentTitle: payload.tournamentTitle,
             inviteUrl: buildActionUrl("/team-invite", getRawToken(payload)),
+          }),
+      });
+    case EMAIL_TEMPLATE_TYPES.registrationReceived:
+      return sendMail({
+        deliveryId: jobId,
+        email: payload.email,
+        subject: "Your Quest E-sports registration was received",
+        skippedLogMessage:
+          "Registration received email skipped because mail delivery is not configured.",
+        templateBuilder: () =>
+          buildRegistrationReceivedEmail({
+            recipientName: payload.recipientName,
+            teamName: payload.teamName,
+            tournamentTitle: payload.tournamentTitle,
+            pendingMemberCount: payload.pendingMemberCount,
           }),
       });
     case EMAIL_TEMPLATE_TYPES.securityAlert:

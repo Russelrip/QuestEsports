@@ -243,6 +243,105 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
   }
 });
 
+test("registration coach sync persists a pending invite and dispatches the normal team invite", async () => {
+  const savedMembers = [];
+  const registrationUpdates = [];
+  const teamRegistrationUpdates = [];
+  const team = {
+    id: "saved-team-1",
+    captainUserId: "user-1",
+    name: "Quest Five",
+    members: [],
+  };
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const tx = {
+    savedTeam: {
+      findUnique: async () => null,
+      create: async () => team,
+      update: async () => undefined,
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async ({ data }) => {
+        savedMembers.push(...data);
+        return { count: data.length };
+      },
+    },
+    teamRegistration: {
+      update: async ({ data }) => {
+        teamRegistrationUpdates.push(data);
+        return undefined;
+      },
+    },
+    registrationMember: {
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return undefined;
+      },
+      findMany: async () => [
+        { inviteStatus: "accepted" },
+        { inviteStatus: "pending" },
+      ],
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [mailModulePath]: {},
+  });
+
+  try {
+    const invites = await teamService.syncSavedTeamFromRegistration({
+      tx,
+      registrationId: "registration-1",
+      user,
+      teamName: "Quest Five",
+      country: "Sri Lanka",
+      teamTag: "QF",
+      organizationRequested: false,
+      logoName: null,
+      tournamentTitle: "Quest Cup",
+      members: [
+        {
+          role: "CAPTAIN",
+          order: 0,
+          name: "Quest Captain",
+          email: "captain@example.com",
+          discord: "captain",
+          riotId: "Captain#001",
+        },
+        {
+          role: "COACH",
+          order: 1,
+          name: "Team Coach",
+          email: "coach@example.com",
+          discord: "coach",
+          riotId: "Coach#001",
+        },
+      ],
+    });
+
+    const coach = savedMembers.find((member) => member.role === "COACH");
+    assert.equal(coach.inviteStatus, "pending");
+    assert.ok(coach.inviteTokenHash);
+    assert.ok(coach.inviteSentAt instanceof Date);
+    assert.ok(coach.inviteExpiresAt instanceof Date);
+    assert.equal(registrationUpdates[1].inviteStatus, "pending");
+    assert.ok(registrationUpdates[1].inviteTokenHash);
+    assert.equal(invites.length, 1);
+    assert.equal(invites[0].email, "coach@example.com");
+    assert.equal(teamRegistrationUpdates[0].savedTeamId, "saved-team-1");
+  } finally {
+    restore();
+  }
+});
+
 test("resendSavedTeamInvite renews pending or declined invites and enforces its cooldown", async () => {
   const now = new Date("2026-07-17T10:00:00.000Z");
   const sentInvites = [];
@@ -776,7 +875,7 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
       ],
     });
 
-    assert.equal(inviteDispatches.length, 1);
+    assert.equal(inviteDispatches.length, 2);
     assert.equal(savedMemberCreateCalls.length, 1);
 
     const [captainRecord, playerRecord, coachRecord] = savedMemberCreateCalls[0].data;
@@ -789,8 +888,10 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     assert.ok(playerRecord.inviteExpiresAt instanceof Date);
     assert.equal(coachRecord.role, "COACH");
     assert.equal(coachRecord.memberOrder, 1);
-    assert.equal(coachRecord.inviteStatus, "accepted");
-    assert.equal(coachRecord.inviteTokenHash, null);
+    assert.equal(coachRecord.inviteStatus, "pending");
+    assert.ok(coachRecord.inviteTokenHash);
+    assert.ok(coachRecord.inviteSentAt instanceof Date);
+    assert.ok(coachRecord.inviteExpiresAt instanceof Date);
 
     const expiryDeltaMs =
       playerRecord.inviteExpiresAt.getTime() - playerRecord.inviteSentAt.getTime();
@@ -804,9 +905,12 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
       registrationMemberUpdateCalls[1].data.inviteTokenHash,
       playerRecord.inviteTokenHash
     );
-    assert.equal(registrationMemberUpdateCalls[2].data.inviteStatus, "accepted");
-    assert.equal(registrationMemberUpdateCalls[2].data.inviteTokenHash, null);
-    assert.equal(inviteDispatches.length, 1);
+    assert.equal(registrationMemberUpdateCalls[2].data.inviteStatus, "pending");
+    assert.equal(
+      registrationMemberUpdateCalls[2].data.inviteTokenHash,
+      coachRecord.inviteTokenHash
+    );
+    assert.equal(inviteDispatches.length, 2);
     assert.deepEqual(teamRegistrationUpdateCalls[0].data, {
       savedTeamId: "saved-team-1",
     });

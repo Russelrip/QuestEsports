@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { logger } = require("../../lib/logger");
 const { isValidEmail, normalizeEmail, normalizeText } = require("../../lib/validation");
 const { persistTeamLogoUpload, teamLogoDirectory } = require("../../middleware/upload");
 const {
@@ -25,6 +26,7 @@ const {
   removeUploadsQuietly,
 } = require("../../lib/upload-cleanup");
 const { normalizeCoachSubmission, parseCoachInput } = require("./coach.validation");
+const { sendRegistrationReceivedEmail } = require("../../lib/mail/sendRegistrationReceivedEmail");
 
 const normalizeBoolean = (value) => [true, "true", "1", "on"].includes(value);
 const VALORANT_RIOT_ID_PATTERN = /^[^#\r\n]{3,16}#[A-Za-z0-9]{3,5}$/;
@@ -172,15 +174,41 @@ const mapRegistrationResult = (registration) => ({
 });
 
 const getRosterVerificationStatus = (members = [], fallback = "pending") => {
-  const competingMembers = members.filter((member) => member.role !== "COACH");
-  if (competingMembers.some((member) => member.inviteStatus === "declined")) return "flagged";
+  const rosterMembers = members.filter((member) => member.role !== "CAPTAIN");
+  if (rosterMembers.some((member) => member.inviteStatus === "declined")) return "flagged";
   if (
-    competingMembers.length > 0 &&
-    competingMembers.every((member) => member.inviteStatus === "accepted")
+    members.length > 0 &&
+    rosterMembers.every((member) => member.inviteStatus === "accepted")
   ) {
     return "verified";
   }
   return fallback;
+};
+
+const queueRegistrationReceivedEmail = async ({
+  registrationId,
+  email,
+  recipientName,
+  teamName,
+  tournamentTitle,
+  pendingMemberCount,
+}) => {
+  try {
+    await sendRegistrationReceivedEmail({
+      registrationId,
+      email,
+      recipientName,
+      teamName,
+      tournamentTitle,
+      pendingMemberCount,
+    });
+  } catch (error) {
+    logger.error("Failed to queue tournament registration received email.", {
+      registrationId,
+      email,
+      error,
+    });
+  }
 };
 
 const buildCheckout = ({ payment, tournament, user, body }) =>
@@ -632,7 +660,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       existing.verificationStatus
     );
     const pendingInviteCount = existingMembers.filter(
-      (member) => member.role !== "COACH" && member.inviteStatus === "pending"
+      (member) => member.role !== "CAPTAIN" && member.inviteStatus === "pending"
     ).length;
 
     if (tournament.entryType === "team") {
@@ -862,11 +890,8 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             discord: member.discord,
             riotId: member.riotId,
             additionalData: member.additionalData || {},
-            inviteStatus: member.role === "CAPTAIN" || member.role === "COACH" ? "accepted" : "pending",
-            ...(member.role === "COACH"
-              ? { inviteTokenHash: null, inviteSentAt: null, inviteExpiresAt: null }
-              : {}),
-            inviteRespondedAt: member.role === "CAPTAIN" || member.role === "COACH" ? new Date() : null,
+            inviteStatus: member.role === "CAPTAIN" ? "accepted" : "pending",
+            inviteRespondedAt: member.role === "CAPTAIN" ? new Date() : null,
           })),
         });
         if (tournament.entryType === "team") {
@@ -924,6 +949,14 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       });
     }
     await sendTeamInvites(retryInviteDispatches);
+    await queueRegistrationReceivedEmail({
+      registrationId: existing.id,
+      email: user.email,
+      recipientName: fullName,
+      teamName: displayName,
+      tournamentTitle: retried.tournament.title,
+      pendingMemberCount: persistedMembers.filter((member) => member.role !== "CAPTAIN").length,
+    });
     return {
       registration: mapRegistrationResult(retried.registration),
       paymentOrderId: providerOrderId,
@@ -1005,7 +1038,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           paymentStatus: feeAmount > 0
             ? requiresTeamVerification ? "unpaid" : "pending"
             : "paid",
-          verificationStatus: members.every((member) => member.role === "CAPTAIN")
+          verificationStatus: persistedMembers.every((member) => member.role === "CAPTAIN")
             ? "verified"
             : "pending",
           rulebookAccepted,
@@ -1033,11 +1066,8 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           discord: member.discord,
           riotId: member.riotId,
           additionalData: member.additionalData || {},
-          inviteStatus: member.role === "CAPTAIN" || member.role === "COACH" ? "accepted" : "pending",
-          ...(member.role === "COACH"
-            ? { inviteTokenHash: null, inviteSentAt: null, inviteExpiresAt: null }
-            : {}),
-          inviteRespondedAt: member.role === "CAPTAIN" || member.role === "COACH" ? new Date() : null,
+          inviteStatus: member.role === "CAPTAIN" ? "accepted" : "pending",
+          inviteRespondedAt: member.role === "CAPTAIN" ? new Date() : null,
         })),
       });
 
@@ -1073,6 +1103,15 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     await ensureTeamRegistrationSaved(registrationId);
   }
 
+  await queueRegistrationReceivedEmail({
+    registrationId,
+    email: user.email,
+    recipientName: fullName,
+    teamName: displayName,
+    tournamentTitle: result.tournament.title,
+    pendingMemberCount: persistedMembers.filter((member) => member.role !== "CAPTAIN").length,
+  });
+
   return {
     registration: mapRegistrationResult(result.registration),
     paymentOrderId: providerOrderId,
@@ -1086,15 +1125,15 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           tournament: result.tournament,
         })
       : null,
-    awaitingTeamVerification: requiresTeamVerification && members.some(
-      (member) => member.role !== "CAPTAIN" && member.role !== "COACH"
+    awaitingTeamVerification: requiresTeamVerification && persistedMembers.some(
+      (member) => member.role !== "CAPTAIN"
     ),
-    readyForPayment: requiresTeamVerification && members.every(
-      (member) => member.role === "CAPTAIN" || member.role === "COACH"
+    readyForPayment: requiresTeamVerification && persistedMembers.every(
+      (member) => member.role === "CAPTAIN"
     ),
     pendingInviteCount: requiresTeamVerification
-      ? members.filter(
-          (member) => member.role !== "CAPTAIN" && member.role !== "COACH"
+      ? persistedMembers.filter(
+          (member) => member.role !== "CAPTAIN"
         ).length
       : 0,
   };

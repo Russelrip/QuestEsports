@@ -838,12 +838,12 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
 
 const refreshRegistrationVerificationStatus = async ({ tx, registrationId }) => {
   const members = await tx.registrationMember.findMany({
-    where: { registrationId, role: { not: "COACH" } },
+    where: { registrationId, role: { not: "CAPTAIN" } },
     select: { inviteStatus: true },
   });
   const verificationStatus = members.some((member) => member.inviteStatus === "declined")
     ? "flagged"
-    : members.length > 0 && members.every((member) => member.inviteStatus === "accepted")
+    : members.every((member) => member.inviteStatus === "accepted")
       ? "verified"
       : "pending";
 
@@ -1185,39 +1185,6 @@ const syncSavedTeamFromRegistration = async ({
         existingMember.inviteExpiresAt > inviteSentAt
           ? existingMember
           : null;
-
-      if (member.role === "COACH") {
-        registrationMemberUpdates.push({
-          role: member.role,
-          memberOrder: member.order,
-          data: {
-            userId: null,
-            inviteStatus: "accepted",
-            inviteTokenHash: null,
-            inviteSentAt: null,
-            inviteExpiresAt: null,
-            inviteRespondedAt: new Date(),
-          },
-        });
-
-        return {
-          id: crypto.randomUUID(),
-          teamId: team.id,
-          userId: null,
-          role: member.role,
-          memberOrder: member.order,
-          name: member.name,
-          email,
-          emailNormalized: email,
-          discord: member.discord,
-          riotId: member.riotId,
-          inviteStatus: "accepted",
-          inviteTokenHash: null,
-          inviteSentAt: null,
-          inviteExpiresAt: null,
-          inviteRespondedAt: new Date(),
-        };
-      }
 
       if (member.role === "CAPTAIN" || acceptedMember) {
         const linkedUserId = member.role === "CAPTAIN" ? user.id : acceptedMember.userId;

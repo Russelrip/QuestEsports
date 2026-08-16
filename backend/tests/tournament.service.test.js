@@ -70,7 +70,7 @@ test("admin tournament listing rejects unsupported status filters", async () => 
   }
 });
 
-test("registration status repairs stale captain-only verification and includes its payment route", async () => {
+test("registration status includes coach invitations in verification and payment gating", async () => {
   let repairedRegistrationId = null;
   const prisma = {
     tournament: {
@@ -113,8 +113,8 @@ test("registration status repairs stale captain-only verification and includes i
       user: { id: "user-1", email: "captain@example.com" },
     });
     assert.equal(result.isRegistered, true);
-    assert.equal(result.registration.verificationStatus, "verified");
-    assert.equal(result.registration.pendingInviteCount, 0);
+    assert.equal(result.registration.verificationStatus, "flagged");
+    assert.equal(result.registration.pendingInviteCount, 1);
     assert.equal(result.registration.assignedSlotNumber, 7);
     assert.equal(repairedRegistrationId, "registration-1");
     assert.deepEqual(result.registration.payment, {

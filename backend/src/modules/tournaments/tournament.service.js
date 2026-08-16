@@ -1592,7 +1592,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
       reservedUntil: true,
       assignedSlotNumber: true,
       members: {
-        select: { inviteStatus: true },
+        select: { role: true, inviteStatus: true },
       },
       payments: {
         orderBy: { createdAt: "desc" },
@@ -1623,14 +1623,14 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
   }
 
   const registrationMembers = existingRegistration?.members || [];
-  const competingRegistrationMembers = registrationMembers.filter(
-    (member) => member.role !== "COACH"
+  const rosterRegistrationMembers = registrationMembers.filter(
+    (member) => member.role !== "CAPTAIN"
   );
-  const effectiveVerificationStatus = competingRegistrationMembers.some(
+  const effectiveVerificationStatus = rosterRegistrationMembers.some(
     (member) => member.inviteStatus === "declined"
   )
     ? "flagged"
-    : competingRegistrationMembers.length > 0 && competingRegistrationMembers.every(
+    : registrationMembers.length > 0 && rosterRegistrationMembers.every(
         (member) => member.inviteStatus === "accepted"
       )
       ? "verified"
@@ -1645,7 +1645,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
           paymentStatus: existingRegistration.paymentStatus,
           verificationStatus: effectiveVerificationStatus,
           pendingInviteCount: registrationMembers.filter(
-            (member) => member.role !== "COACH" && member.inviteStatus === "pending"
+            (member) => member.role !== "CAPTAIN" && member.inviteStatus === "pending"
           ).length,
           reservedUntil: existingRegistration.reservedUntil,
           assignedSlotNumber: existingRegistration.assignedSlotNumber,

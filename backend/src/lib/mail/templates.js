@@ -115,6 +115,27 @@ const buildTeamInviteEmail = ({
       "Open the invite to accept or decline your place on the roster. If you were not expecting this, you can safely ignore the email.",
   });
 
+const buildRegistrationReceivedEmail = ({
+  recipientName,
+  teamName,
+  tournamentTitle,
+  pendingMemberCount = 0,
+}) => {
+  const registrationLabel = teamName
+    ? `${teamName}${tournamentTitle ? ` for ${tournamentTitle}` : ""}`
+    : tournamentTitle || "your tournament";
+  const pendingMessage = pendingMemberCount > 0
+    ? ` ${pendingMemberCount} team member invitation${pendingMemberCount === 1 ? " is" : "s are"} still pending, so the roster is not final.`
+    : "";
+
+  return renderEmailLayout({
+    title: "Your tournament registration was received",
+    intro: buildGreeting(recipientName, `we received ${registrationLabel}.`),
+    outro:
+      `This email confirms that your registration was received; it does not confirm a final tournament slot or payment.${pendingMessage}`,
+  });
+};
+
 const buildSecurityAlertEmail = ({
   firstName,
   title,
@@ -151,6 +172,7 @@ module.exports = {
   buildResetPasswordEmail,
   buildEmailChangeEmail,
   buildTeamInviteEmail,
+  buildRegistrationReceivedEmail,
   buildSecurityAlertEmail,
   buildTicketOrderEmail,
 };

@@ -398,13 +398,13 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           {rosterPending ? "Roster confirmation required" : "Roster confirmed"}
         </p>
         <h2 className="mt-4 text-3xl text-white">
-          {rosterPending ? "Payment is locked until every player accepts" : `Your team is ready for ${tournament.title}`}
+          {rosterPending ? "Payment is locked until every roster member accepts" : `Your team is ready for ${tournament.title}`}
         </h2>
         <p className="mt-4 text-sm leading-7 text-slate-300">
           {existingRegistration.verificationStatus === "flagged"
-            ? "A player declined the invitation. Open the saved team and send that player’s invitation again before continuing."
+            ? "A roster member declined the invitation. Open the saved team and send that roster member’s invitation again before continuing."
             : rosterPending
-              ? `${existingRegistration.pendingInviteCount} player invitation${existingRegistration.pendingInviteCount === 1 ? " is" : "s are"} still pending. No payment or slot reservation will be created until the full roster is confirmed.`
+              ? `${existingRegistration.pendingInviteCount} roster invitation${existingRegistration.pendingInviteCount === 1 ? " is" : "s are"} still pending. No payment or slot reservation will be created until the full roster is confirmed.`
               : "Every roster member has accepted. You can now reserve the slot and continue to payment."}
         </p>
         {existingRegistration.reservedUntil && existingRegistration.paymentStatus === "pending" ? (
