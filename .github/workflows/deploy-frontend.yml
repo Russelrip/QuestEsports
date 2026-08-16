@@ -74,9 +74,11 @@ jobs:
           npm test
 
       - name: Build exact Vercel artifact
+        working-directory: .
         run: |
           npx --yes vercel@58.9.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
           npx --yes vercel@58.9.0 build --prod --token="$VERCEL_TOKEN"
 
       - name: Promote tested artifact
+        working-directory: .
         run: npx --yes vercel@58.9.0 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
