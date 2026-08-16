@@ -19,8 +19,8 @@ import { markTournamentRegistered } from "@/lib/registered-tournaments";
 import type { SavedTeam } from "@/lib/teams";
 import {
   emptyCoachDraft,
+  getCoachPayload,
   getCoachValidationMessage,
-  isCoachEmpty,
   type CoachDraft,
 } from "@/lib/tournament-coach";
 import type { Tournament, TournamentRegistrationField } from "@/lib/tournaments";
@@ -98,6 +98,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const [entryData, setEntryData] = useState<Record<string, string>>({});
   const [captainAdditionalData, setCaptainAdditionalData] = useState<Record<string, string>>({});
   const [coach, setCoach] = useState<CoachDraft>(() => ({ ...emptyCoachDraft }));
+  const [coachSelected, setCoachSelected] = useState(false);
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -119,7 +120,9 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const activePlayerCount = 1 + members.filter((member) => member.role === "PLAYER").length;
   const substituteCount = members.filter((member) => member.role === "SUBSTITUTE").length;
   const coachEnabled = Boolean(tournament.allowCoach);
-  const coachIssue = coachEnabled ? getCoachValidationMessage(coach, Boolean(tournament.coachRequired)) : "";
+  const coachIsRequired = Boolean(tournament.coachRequired);
+  const coachIsSelected = coachEnabled && (coachIsRequired || coachSelected);
+  const coachIssue = coachIsSelected ? getCoachValidationMessage(coach, coachIsRequired, true) : "";
   const rosterIssue = getRosterValidationMessage({
     activePlayerCount,
     substituteCount,
@@ -207,6 +210,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       discord: savedCoach.discord || "",
       gameId: savedCoach.riotId || "",
     } : { ...emptyCoachDraft });
+    setCoachSelected(Boolean(savedCoach));
     setPendingSavedTeam(null);
     setError("");
   };
@@ -269,7 +273,8 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
     body.append("additionalData", JSON.stringify(submittedEntryData));
     body.append("captainAdditionalData", JSON.stringify(submittedCaptainData));
     body.append("members", JSON.stringify(submittedMembers));
-    if (coachEnabled && !isCoachEmpty(coach)) body.append("coach", JSON.stringify(coach));
+    const coachPayload = getCoachPayload(coach, coachEnabled, coachIsSelected);
+    if (coachPayload) body.append("coach", JSON.stringify(coachPayload));
     if (teamLogo) body.append("teamLogo", teamLogo);
 
     try {
@@ -539,7 +544,28 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         </Card>
       ) : null}
 
-      {coachEnabled ? <Card className="p-6 sm:p-8"><fieldset className="grid gap-5 sm:grid-cols-2"><legend className="mb-4 text-xl text-white sm:col-span-2">TEAM COACH — OPTIONAL</legend><FormField label="Full Name" required={Boolean(tournament.coachRequired)}><Input required={Boolean(tournament.coachRequired)} value={coach.name} onChange={(event) => setCoach((current) => ({ ...current, name: event.target.value }))} /></FormField><FormField label="Email" required={Boolean(tournament.coachRequired)}><Input type="email" required={Boolean(tournament.coachRequired)} value={coach.email} onChange={(event) => setCoach((current) => ({ ...current, email: event.target.value }))} /></FormField><FormField label="Contact Number" required={Boolean(tournament.coachRequired)}><Input required={Boolean(tournament.coachRequired)} value={coach.phone} onChange={(event) => setCoach((current) => ({ ...current, phone: event.target.value }))} /></FormField><FormField label="Discord Username" required={Boolean(tournament.coachRequired)}><Input required={Boolean(tournament.coachRequired)} value={coach.discord} onChange={(event) => setCoach((current) => ({ ...current, discord: event.target.value }))} /></FormField><FormField label="Riot ID/IGN" required={Boolean(tournament.coachRequired)}><Input required={Boolean(tournament.coachRequired)} value={coach.gameId} onChange={(event) => setCoach((current) => ({ ...current, gameId: event.target.value }))} /></FormField></fieldset></Card> : null}
+      {coachEnabled ? <Card className="p-6 sm:p-8">
+        {!coachIsRequired ? <label className="mb-5 flex items-start gap-3 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={coachSelected}
+            onChange={(event) => {
+              const selected = event.target.checked;
+              setCoachSelected(selected);
+              if (!selected) setCoach({ ...emptyCoachDraft });
+            }}
+          />
+          <span><span className="block text-base text-white">Add a coach</span><span className="mt-1 block text-slate-400">Include a coach’s contact details with this registration.</span></span>
+        </label> : null}
+        {coachIsSelected ? <fieldset className="grid gap-5 sm:grid-cols-2">
+          <legend className="mb-4 text-xl text-white sm:col-span-2">TEAM COACH{coachIsRequired ? " — REQUIRED" : ""}</legend>
+          <FormField label="Full Name" required><Input required value={coach.name} onChange={(event) => setCoach((current) => ({ ...current, name: event.target.value }))} /></FormField>
+          <FormField label="Email" required><Input type="email" required value={coach.email} onChange={(event) => setCoach((current) => ({ ...current, email: event.target.value }))} /></FormField>
+          <FormField label="Contact Number" required><Input required value={coach.phone} onChange={(event) => setCoach((current) => ({ ...current, phone: event.target.value }))} /></FormField>
+          <FormField label="Discord Username" required><Input required value={coach.discord} onChange={(event) => setCoach((current) => ({ ...current, discord: event.target.value }))} /></FormField>
+          <FormField label="Riot ID/IGN" required><Input required value={coach.gameId} onChange={(event) => setCoach((current) => ({ ...current, gameId: event.target.value }))} /></FormField>
+        </fieldset> : null}
+      </Card> : null}
 
       <Card className="grid gap-4 p-6 sm:p-8">
         <label className="flex gap-3 text-sm text-slate-300"><input type="checkbox" required checked={form.rulebookAccepted} onChange={(event) => setForm((current) => ({ ...current, rulebookAccepted: event.target.checked }))} /><span>I have read and accept the tournament rulebook and competition rules.</span></label>

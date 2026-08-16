@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyCoachDraft,
+  getCoachPayload,
   getCoachValidationMessage,
   isCoachEmpty,
 } from "../../lib/tournament-coach";
@@ -31,5 +32,33 @@ describe("tournament coach validation", () => {
       discord: "coach#1234",
       gameId: "CoachIGN",
     }, true)).toBe("");
+  });
+
+  it("requires a complete coach when an optional coach is selected", () => {
+    expect(getCoachValidationMessage(emptyCoachDraft, false, true)).toBe(
+      "Complete all coach details."
+    );
+    expect(getCoachValidationMessage({ ...emptyCoachDraft, name: "Coach" }, false, true)).toBe(
+      "Complete all coach details."
+    );
+  });
+
+  it("does not create a coach payload unless the allowed opt-in is complete", () => {
+    expect(getCoachPayload(emptyCoachDraft, false, true)).toBeNull();
+    expect(getCoachPayload(emptyCoachDraft, true, false)).toBeNull();
+    expect(getCoachPayload({ ...emptyCoachDraft, name: "Coach" }, true, true)).toBeNull();
+    expect(getCoachPayload({
+      name: " Coach ",
+      email: "coach@example.com",
+      phone: "+94770000000",
+      discord: "coach#1234",
+      gameId: "CoachIGN",
+    }, true, true)).toEqual({
+      name: "Coach",
+      email: "coach@example.com",
+      phone: "+94770000000",
+      discord: "coach#1234",
+      gameId: "CoachIGN",
+    });
   });
 });

@@ -37,3 +37,5 @@ service_account*.json
 *.pfx
 rclone.conf
 quest-esports.conf
+.vercel
+.env*
