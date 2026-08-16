@@ -177,6 +177,7 @@ function SponsorsPanel({ tournament }: { tournament: Tournament }) {
               alt={sponsor.name}
               width={160}
               height={80}
+              unoptimized
               className="h-16 w-36 object-contain"
             />
           ) : (
