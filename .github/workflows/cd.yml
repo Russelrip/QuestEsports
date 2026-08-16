@@ -38,6 +38,13 @@ on:
         required: false
         default: false
         type: boolean
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   actions: read
@@ -56,13 +63,13 @@ jobs:
     name: Deploy backend
     runs-on: ubuntu-latest
     environment: production
-    if: ${{ vars.BACKEND_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner }}
+    if: ${{ vars.BACKEND_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')) }}
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci
       DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci
       SESSION_COOKIE_NAME: quest_session
-      DEPLOY_SHA: ${{ github.sha }}
+      DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
     defaults:
       run:
         working-directory: backend
@@ -125,13 +132,13 @@ jobs:
           MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_MIGRATION_APPROVAL_SHA }}
           DESTRUCTIVE_MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA }}
           MOBILE_ANDROID_CERT_SHA256: ${{ secrets.MOBILE_ADMIN_ANDROID_CERT_SHA256 }}
-          REPAIR_LEGACY_MEDIA: ${{ inputs.repair_legacy_media }}
-          OPTIMIZE_TOURNAMENT_BANNERS: ${{ inputs.optimize_tournament_banners }}
-          OPTIMIZE_EVENT_ALBUM_PHOTOS: ${{ inputs.optimize_event_album_photos }}
-          INITIALIZE_MATCH_ROOMS: ${{ inputs.initialize_match_rooms }}
-          REPAIR_DATABASE_SSL: ${{ inputs.repair_database_ssl }}
-          REPAIR_MOBILE_ANDROID_FINGERPRINT: ${{ inputs.repair_mobile_android_fingerprint }}
-          REPAIR_MOBILE_OAUTH_REDIRECT: ${{ inputs.repair_mobile_oauth_redirect }}
+          REPAIR_LEGACY_MEDIA: ${{ inputs.repair_legacy_media || false }}
+          OPTIMIZE_TOURNAMENT_BANNERS: ${{ inputs.optimize_tournament_banners || false }}
+          OPTIMIZE_EVENT_ALBUM_PHOTOS: ${{ inputs.optimize_event_album_photos || false }}
+          INITIALIZE_MATCH_ROOMS: ${{ inputs.initialize_match_rooms || false }}
+          REPAIR_DATABASE_SSL: ${{ inputs.repair_database_ssl || false }}
+          REPAIR_MOBILE_ANDROID_FINGERPRINT: ${{ inputs.repair_mobile_android_fingerprint || false }}
+          REPAIR_MOBILE_OAUTH_REDIRECT: ${{ inputs.repair_mobile_oauth_redirect || false }}
           DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
         run: |
           if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
