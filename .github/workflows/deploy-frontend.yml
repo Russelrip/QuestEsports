@@ -75,6 +75,9 @@ jobs:
 
       - name: Build exact Vercel artifact
         working-directory: .
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.PRODUCTION_API_URL }}
+          NEXT_PUBLIC_SITE_URL: https://questesports.lk
         run: |
           npx --yes vercel@58.9.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
           npx --yes vercel@58.9.0 build --prod --token="$VERCEL_TOKEN"
