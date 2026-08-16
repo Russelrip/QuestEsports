@@ -43,7 +43,7 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$DEPLOY_SHA"
           SUCCESSFUL_RUNS="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow CI --commit "$DEPLOY_SHA" --status success --limit 1 --json databaseId --jq 'length')"
           test "$SUCCESSFUL_RUNS" = "1"
-          CAPABILITIES="$(curl --fail --silent --show-error --max-time 10 "$PRODUCTION_API_URL/api/capabilities")"
+          CAPABILITIES="$(curl --fail --silent --show-error --max-time 10 -H "Origin: https://questesports.lk" "$PRODUCTION_API_URL/api/capabilities")"
           test "$(printf '%s' "$CAPABILITIES" | jq -r '.apiCompatibilityVersion')" -ge 2
 
       - name: Check out approved source
