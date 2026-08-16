@@ -51,6 +51,7 @@ export default function TournamentBannerImage({
       alt={title}
       width={1200}
       height={800}
+      unoptimized
       sizes="(min-width: 1280px) 420px, (min-width: 1024px) 380px, 100vw"
       preload={preload}
       loading={preload ? undefined : loading}
