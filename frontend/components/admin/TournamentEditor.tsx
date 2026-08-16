@@ -332,6 +332,10 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <FormField label="Prize Pool" htmlFor="prizePool" required>
                 <Input id="prizePool" value={formValues.prizePool} onChange={(event) => updateField("prizePool", event.target.value)} required />
               </FormField>
+              <div className="grid gap-3 self-end pb-1 text-sm text-slate-300">
+                <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.allowCoach} onChange={(event) => { const allowCoach = event.target.checked; updateField("allowCoach", allowCoach); if (!allowCoach) updateField("coachRequired", false); }} /> Allow a coach</label>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.coachRequired} disabled={!formValues.allowCoach} onChange={(event) => updateField("coachRequired", event.target.checked)} /> Coach required</label>
+              </div>
               <FormField label="Payment Method" htmlFor="paymentMethod" required>
                 <Select
                   id="paymentMethod"

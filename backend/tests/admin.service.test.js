@@ -156,7 +156,79 @@ test("exportTeamRegistrations creates an Excel workbook with registration and ro
                 inviteRespondedAt: null,
                 user: null,
               },
+              {
+                id: "member-3",
+                role: "PLAYER",
+                memberOrder: 2,
+                name: "Player Three",
+                email: "player3@example.com",
+                discord: "player3",
+                riotId: "Player3#001",
+                inviteStatus: "accepted",
+                inviteRespondedAt: null,
+                user: null,
+              },
+              {
+                id: "member-4",
+                role: "PLAYER",
+                memberOrder: 3,
+                name: "Player Four",
+                email: "player4@example.com",
+                discord: "player4",
+                riotId: "Player4#001",
+                inviteStatus: "accepted",
+                inviteRespondedAt: null,
+                user: null,
+              },
+              {
+                id: "member-5",
+                role: "PLAYER",
+                memberOrder: 4,
+                name: "Player Five",
+                email: "player5@example.com",
+                discord: "player5",
+                riotId: "Player5#001",
+                inviteStatus: "accepted",
+                inviteRespondedAt: null,
+                user: null,
+              },
+              {
+                id: "coach-1",
+                role: "COACH",
+                memberOrder: 1,
+                name: "Team Coach",
+                email: "coach@example.com",
+                phone: "0771111111",
+                discord: "team-coach",
+                riotId: "Coach#001",
+                inviteStatus: "accepted",
+                inviteRespondedAt: null,
+                user: null,
+              },
             ],
+          },
+          {
+            id: "registration-legacy",
+            teamName: "Legacy Team",
+            status: "approved",
+            paymentStatus: "paid",
+            verificationStatus: "verified",
+            createdAt: new Date("2026-07-02T10:00:00.000Z"),
+            contactEmail: "legacy@example.com",
+            teamLogoName: null,
+            tournament: {
+              id: "tournament-1",
+              slug: "quest-cup",
+              title: "Quest Cup",
+              status: "registration_open",
+              isPublished: true,
+            },
+            captainName: "Legacy Captain",
+            captainEmail: "legacy-captain@example.com",
+            captainPhone: "",
+            captainDiscord: "",
+            captainRiotId: "",
+            members: [],
           },
         ];
       },
@@ -178,9 +250,26 @@ test("exportTeamRegistrations creates an Excel workbook with registration and ro
     assert.equal(findManyCalls[0].take, 5001);
     assert.equal(registrationsSheet.getRow(2).getCell(1).value, "Quest Cup");
     assert.equal(registrationsSheet.getRow(2).getCell(3).value, "Quest Five");
-    assert.equal(registrationsSheet.getRow(2).getCell(17).value, 1);
+    assert.equal(registrationsSheet.getRow(2).getCell(15).value, "Team Coach");
+    assert.equal(registrationsSheet.getRow(2).getCell(16).value, "coach@example.com");
+    assert.equal(registrationsSheet.getRow(2).getCell(17).value, "0771111111");
+    assert.equal(registrationsSheet.getRow(2).getCell(18).value, "team-coach");
+    assert.equal(registrationsSheet.getRow(2).getCell(19).value, "Coach#001");
+    assert.equal(registrationsSheet.getRow(2).getCell(21).value, 5);
+    for (const column of [15, 16, 17, 18, 19]) {
+      assert.equal(registrationsSheet.getRow(3).getCell(column).value || "", "");
+    }
+    assert.equal(rosterSheet.rowCount, 6);
     assert.equal(rosterSheet.getRow(2).getCell(7).value, "Team Captain");
     assert.equal(rosterSheet.getRow(3).getCell(11).value, "pending");
+    assert.equal(rosterSheet.getRow(6).getCell(7).value, "Player Five");
+    assert.equal(rosterSheet.getRow(7).getCell(7).value, null);
+    assert.equal(
+      Array.from({ length: rosterSheet.rowCount - 1 }, (_, index) =>
+        rosterSheet.getRow(index + 2).getCell(7).value
+      ).includes("Team Coach"),
+      false
+    );
   } finally {
     restore();
   }
@@ -1031,7 +1120,7 @@ test("listTeamRegistrations returns paginated summaries without loading rosters"
   const findManyCalls = [];
   const prisma = {
     teamRegistration: {
-      count: async () => 1,
+      count: async () => 2,
       findMany: async (args) => {
         findManyCalls.push(args);
         return [{
@@ -1045,6 +1134,20 @@ test("listTeamRegistrations returns paginated summaries without loading rosters"
           captainName: "Team Captain",
           captainEmail: "captain@example.com",
           tournament: { id: "tournament-1", slug: "quest-cup", title: "Quest Cup", status: "registration_open", isPublished: true },
+          members: [{ name: "Team Coach", riotId: "Coach#001" }],
+          _count: { members: 5 },
+        }, {
+          id: "registration-legacy",
+          entryType: "team",
+          teamName: "Legacy Team",
+          status: "approved",
+          paymentStatus: "paid",
+          verificationStatus: "verified",
+          createdAt: new Date("2026-07-19T10:00:00.000Z"),
+          captainName: "Legacy Captain",
+          captainEmail: "legacy@example.com",
+          tournament: { id: "tournament-1", slug: "quest-cup", title: "Quest Cup", status: "registration_open", isPublished: true },
+          members: [],
           _count: { members: 5 },
         }];
       },
@@ -1055,9 +1158,17 @@ test("listTeamRegistrations returns paginated summaries without loading rosters"
   const { module: adminService, restore } = loadAdminService(prisma);
   try {
     const result = await adminService.listTeamRegistrations({ page: "1", pageSize: "10" });
-    assert.equal(findManyCalls[0].select.members, undefined);
+    assert.deepEqual(findManyCalls[0].select.members, {
+      where: { role: "COACH" },
+      select: { name: true, riotId: true },
+      take: 1,
+    });
     assert.equal(result.items[0].memberCount, 5);
     assert.equal(result.items[0].captain.email, "captain@example.com");
+    assert.equal(result.items[0].coachName, "Team Coach");
+    assert.equal(result.items[0].coachRiotId, "Coach#001");
+    assert.equal(result.items[1].coachName, null);
+    assert.equal(result.items[1].coachRiotId, null);
     assert.equal(result.items[0].members, undefined);
   } finally {
     restore();
@@ -1503,4 +1614,227 @@ test("deleteAdminSavedTeam rejects 409 when the team has an active VALORANT bind
   } finally {
     restore();
   }
+});
+
+test("admin registration details expose the coach separately from competing members", async () => {
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: {
+      findUnique: async () => ({
+        id: "registration-1",
+        entryType: "team",
+        teamName: "Quest Five",
+        additionalData: {},
+        reservedUntil: null,
+        country: "Sri Lanka",
+        teamTag: "Q5",
+        organizationRequested: false,
+        status: "approved",
+        paymentStatus: "paid",
+        verificationStatus: "verified",
+        adminSlotReservation: null,
+        createdAt: new Date(),
+        contactEmail: "captain@example.com",
+        teamLogoName: null,
+        tournament: { id: "tournament-1", allowCoach: true, coachRequired: false },
+        captainName: "Captain",
+        captainEmail: "captain@example.com",
+        captainPhone: "0770000000",
+        captainDiscord: "captain",
+        captainRiotId: "Captain#001",
+        members: [
+          { id: "captain-1", role: "CAPTAIN", memberOrder: 0, name: "Captain", email: "captain@example.com", phone: "0770000000", discord: "captain", riotId: "Captain#001", additionalData: {}, inviteStatus: "accepted", inviteRespondedAt: null, user: null },
+          { id: "coach-1", role: "COACH", memberOrder: 1, name: "Coach", email: "coach@example.com", phone: "0771111111", discord: "coach", riotId: "Coach#001", additionalData: {}, inviteStatus: "accepted", inviteRespondedAt: null, user: null },
+        ],
+      }),
+    },
+  });
+
+  try {
+    const result = await adminService.getAdminTeamRegistrationById("registration-1");
+    assert.deepEqual(result.coach, {
+      name: "Coach",
+      email: "coach@example.com",
+      phone: "0771111111",
+      discord: "coach",
+      riotId: "Coach#001",
+    });
+    assert.deepEqual(result.members.map(({ role }) => role), ["CAPTAIN"]);
+  } finally {
+    restore();
+  }
+});
+
+test("admin registration summaries count only competing roster members", async () => {
+  const findManyCalls = [];
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: {
+      count: async () => 1,
+      findMany: async (args) => {
+        findManyCalls.push(args);
+        return [{
+          id: "registration-1",
+          entryType: "team",
+          teamName: "Quest Five",
+          status: "approved",
+          paymentStatus: "paid",
+          verificationStatus: "verified",
+          createdAt: new Date(),
+          captainName: "Captain",
+          captainEmail: "captain@example.com",
+          tournament: {},
+          _count: { members: 5 },
+        }];
+      },
+    },
+    tournament: { findMany: async () => [] },
+    $transaction: async (operations) => Promise.all(operations),
+  });
+
+  try {
+    const result = await adminService.listTeamRegistrations();
+    assert.deepEqual(findManyCalls[0].select._count, {
+      select: { members: { where: { role: { not: "COACH" } } } },
+    });
+    assert.equal(result.items[0].memberCount, 5);
+  } finally {
+    restore();
+  }
+});
+
+test("correctTeamRegistrationRoster adds, edits, removes, and preserves the admin coach", async () => {
+  const createCalls = [];
+  let transactionLookup = 0;
+  const captain = {
+    id: "captain-1",
+    role: "CAPTAIN",
+    memberOrder: 0,
+    name: "Captain",
+    email: "captain@example.com",
+    emailNormalized: "captain@example.com",
+    discord: "captain",
+    riotId: "Captain#001",
+    additionalData: {},
+    inviteStatus: "accepted",
+  };
+  const coach = {
+    id: "coach-1",
+    role: "COACH",
+    memberOrder: 1,
+    name: "Old Coach",
+    email: "old-coach@example.com",
+    emailNormalized: "old-coach@example.com",
+    phone: "0771111111",
+    discord: "old-coach",
+    riotId: "OldCoach#001",
+    additionalData: {},
+    inviteStatus: "accepted",
+    inviteRespondedAt: new Date(),
+  };
+  const makeRegistration = (members) => ({
+    id: "registration-1",
+    tournamentId: "tournament-1",
+    entryType: "team",
+    savedTeamId: null,
+    captainEmail: "captain@example.com",
+    captainPhone: "0770000000",
+    contactEmail: "captain@example.com",
+    additionalData: {},
+    tournament: {
+      id: "tournament-1",
+      title: "Quest Cup",
+      game: "Valorant",
+      registrationFields: [],
+      minRosterSize: 1,
+      maxRosterSize: 1,
+      maxSubstitutes: 0,
+      allowCoach: true,
+      coachRequired: false,
+    },
+    members,
+    savedTeam: null,
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => makeRegistration(transactionLookup++ === 0 ? [captain] : [captain, coach]),
+      update: async () => undefined,
+    },
+    user: {
+      findMany: async () => [{ id: "captain-user", email: "captain@example.com", emailNormalized: "captain@example.com", emailVerified: true, phone: "0770000000" }],
+    },
+    registrationMember: {
+      findMany: async () => [],
+      deleteMany: async () => undefined,
+      createMany: async (args) => createCalls.push(args),
+    },
+  };
+  const detail = {
+    id: "registration-1",
+    entryType: "team",
+    teamName: "Quest Five",
+    additionalData: {},
+    reservedUntil: null,
+    country: null,
+    teamTag: null,
+    organizationRequested: false,
+    status: "approved",
+    paymentStatus: "paid",
+    verificationStatus: "verified",
+    adminSlotReservation: null,
+    createdAt: new Date(),
+    contactEmail: "captain@example.com",
+    teamLogoName: null,
+    tournament: { id: "tournament-1" },
+    captainName: "Captain",
+    captainEmail: "captain@example.com",
+    captainPhone: "0770000000",
+    captainDiscord: "captain",
+    captainRiotId: "Captain#001",
+    members: [captain, coach],
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+    teamRegistration: { findUnique: async () => detail },
+  });
+
+  const members = [{ role: "CAPTAIN", name: "Captain", email: "captain@example.com", discord: "captain", gameId: "Captain#001" }];
+  try {
+    await adminService.correctTeamRegistrationRoster("registration-1", {
+      members,
+      coach: { name: " New Coach ", email: "new-coach@example.com", phone: "0772222222", discord: "new-coach", gameId: "NewCoach#001" },
+    });
+    await adminService.correctTeamRegistrationRoster("registration-1", { members });
+    await adminService.correctTeamRegistrationRoster("registration-1", { members, coach: null });
+
+    assert.equal(createCalls[0].data.find((member) => member.role === "COACH").email, "new-coach@example.com");
+    assert.equal(createCalls[1].data.find((member) => member.role === "COACH").email, "old-coach@example.com");
+    assert.equal(createCalls[2].data.some((member) => member.role === "COACH"), false);
+    assert.equal(createCalls[0].data.find((member) => member.role === "COACH").inviteStatus, "accepted");
+    assert.equal(createCalls[0].data.find((member) => member.role === "COACH").userId, null);
+  } finally {
+    restore();
+  }
+});
+
+test("correctTeamRegistrationRoster rejects coach data when disabled and removal when required", async () => {
+  const captain = { id: "captain-1", role: "CAPTAIN", memberOrder: 0, name: "Captain", email: "captain@example.com", emailNormalized: "captain@example.com", discord: "captain", riotId: "Captain#001", additionalData: {}, inviteStatus: "accepted" };
+  const run = async (tournament, body) => {
+    const { module: adminService, restore } = loadAdminService({
+      $transaction: async (work) => work({
+        teamRegistration: {
+          findUnique: async () => ({ id: "registration-1", tournamentId: "tournament-1", entryType: "team", captainEmail: captain.email, captainPhone: "0770000000", additionalData: {}, members: [captain], savedTeam: null, tournament }),
+        },
+      }),
+    });
+    try {
+      await assert.rejects(adminService.correctTeamRegistrationRoster("registration-1", body), (error) => error.statusCode === 400);
+    } finally {
+      restore();
+    }
+  };
+  const members = [{ role: "CAPTAIN", name: "Captain", email: "captain@example.com", discord: "captain", gameId: "Captain#001" }];
+  await run({ game: "Valorant", registrationFields: [], minRosterSize: 1, maxRosterSize: 1, maxSubstitutes: 0, allowCoach: false, coachRequired: false }, {
+    members,
+    coach: { name: "Coach", email: "coach@example.com", phone: "0771111111", discord: "coach", gameId: "Coach#001" },
+  });
+  await run({ game: "Valorant", registrationFields: [], minRosterSize: 1, maxRosterSize: 1, maxSubstitutes: 0, allowCoach: true, coachRequired: true }, { members, coach: null });
 });

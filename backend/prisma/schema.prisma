@@ -575,6 +575,8 @@ model Tournament {
   minRosterSize              Int                         @default(1) @map("min_roster_size")
   maxRosterSize              Int                         @default(5) @map("max_roster_size")
   maxSubstitutes             Int                         @default(0) @map("max_substitutes")
+  allowCoach                 Boolean                     @default(false) @map("allow_coach")
+  coachRequired              Boolean                     @default(false) @map("coach_required")
   registrationFields         Json                        @default("[]") @map("registration_fields")
   paymentMethod              TournamentPaymentMethod     @default(free) @map("payment_method")
   registrationFeeAmount      Decimal                     @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)
@@ -1223,6 +1225,7 @@ model RegistrationMember {
   memberOrder       Int                    @map("member_order")
   name              String
   email             String?
+  phone             String?
   emailNormalized   String?                @map("email_normalized")
   discord           String?
   riotId            String?                @map("riot_id")

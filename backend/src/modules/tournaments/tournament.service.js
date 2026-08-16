@@ -121,6 +121,7 @@ const adminRegistrationSummarySelect = {
   paymentStatus: true,
   verificationStatus: true,
   createdAt: true,
+  _count: { select: { members: { where: { role: { not: "COACH" } } } } },
 };
 const tournamentAssetFields = [
   {
@@ -539,6 +540,8 @@ const mapTournament = (tournament) => {
     minRosterSize: tournamentWithRegistrationCount.minRosterSize || tournamentWithRegistrationCount.teamSize,
     maxRosterSize: tournamentWithRegistrationCount.maxRosterSize || tournamentWithRegistrationCount.teamSize,
     maxSubstitutes: tournamentWithRegistrationCount.maxSubstitutes || 0,
+    allowCoach: Boolean(tournamentWithRegistrationCount.allowCoach),
+    coachRequired: Boolean(tournamentWithRegistrationCount.coachRequired),
     registrationFields: tournamentWithRegistrationCount.registrationFields || [],
     paymentMethod: tournamentWithRegistrationCount.paymentMethod ||
       (Number(tournamentWithRegistrationCount.registrationFeeAmount || 0) > 0
@@ -638,6 +641,9 @@ const mapTournamentWithRegistrations = (
     paymentStatus: registration.paymentStatus,
     verificationStatus: registration.verificationStatus,
     createdAt: registration.createdAt,
+    memberCount: Array.isArray(registration.members)
+      ? registration.members.filter((member) => member.role !== "COACH").length
+      : registration._count?.members ?? 0,
     captain: {
       name: registration.captainName,
       email: registration.captainEmail,
@@ -702,7 +708,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
     teamName: registration.teamName,
     logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
     shortCode: buildShortCode(registration.teamName),
-    memberCount: registration.members?.length || 0,
+    memberCount: (registration.members || []).filter((member) => member.role !== "COACH").length,
     status: registration.status,
     captainName: registration.captainName,
     })),
@@ -720,7 +726,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
         : null,
     captainName: registration.captainName,
     shortCode: buildShortCode(registration.teamName),
-    memberCount: registration.members?.length || 0,
+    memberCount: (registration.members || []).filter((member) => member.role !== "COACH").length,
   })),
 });
 
@@ -756,7 +762,7 @@ const sortPublicTournaments = (tournaments) =>
     return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
   });
 
-const parseTournamentPayload = ({ body, existingTournament }) => {
+const normalizeTournamentInput = ({ body, existingTournament }) => {
   const title = normalizeText(body.title);
   const titleFallback = existingTournament?.title || "";
   const slug =
@@ -802,6 +808,12 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     normalizeInteger(body.maxSubstitutes) ??
     existingTournament?.maxSubstitutes ??
     0;
+  const allowCoach = normalizeBooleanFlag(
+    body.allowCoach ?? existingTournament?.allowCoach
+  );
+  const coachRequired = normalizeBooleanFlag(
+    body.coachRequired ?? existingTournament?.coachRequired
+  );
   const reservationMinutes =
     normalizeInteger(body.reservationMinutes) ??
     existingTournament?.reservationMinutes ??
@@ -926,6 +938,10 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     bankTransferReviewMinutes < 1
   ) {
     throw new HttpError(400, "Roster limits and reservation time must be valid.");
+  }
+
+  if (coachRequired && !allowCoach) {
+    throw new HttpError(400, "Coach requirement requires coaches to be allowed.");
   }
 
   if (!Number.isFinite(registrationFeeAmount) || registrationFeeAmount < 0) {
@@ -1070,6 +1086,8 @@ const parseTournamentPayload = ({ body, existingTournament }) => {
     minRosterSize,
     maxRosterSize,
     maxSubstitutes,
+    allowCoach,
+    coachRequired,
     registrationFields: normalizedRegistrationFields,
     paymentMethod,
     registrationFeeAmount,
@@ -1166,7 +1184,7 @@ const getPublicTournamentBySlug = async (slug) => {
           status: true,
           user: { select: { avatarImageName: true } },
           members: {
-            select: { id: true },
+            select: { id: true, role: true },
           },
         },
       },
@@ -1385,7 +1403,7 @@ const buildTournamentAssetUpdates = async ({ body, files }) => {
 };
 
 const createAdminTournament = async ({ body, files }) => {
-  const payload = parseTournamentPayload({ body });
+  const payload = normalizeTournamentInput({ body });
   await ensureSlugAvailable(payload.slug);
   await ensureRulebookMatchesTournamentGame(payload);
   const assetUpdates = await buildTournamentAssetUpdates({ body, files });
@@ -1420,7 +1438,7 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  const payload = parseTournamentPayload({ body, existingTournament });
+  const payload = normalizeTournamentInput({ body, existingTournament });
   await ensureSlugAvailable(payload.slug, tournamentId);
   await ensureRulebookMatchesTournamentGame(payload);
   const assetUpdates = await buildTournamentAssetUpdates({
@@ -1605,11 +1623,14 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
   }
 
   const registrationMembers = existingRegistration?.members || [];
-  const effectiveVerificationStatus = registrationMembers.some(
+  const competingRegistrationMembers = registrationMembers.filter(
+    (member) => member.role !== "COACH"
+  );
+  const effectiveVerificationStatus = competingRegistrationMembers.some(
     (member) => member.inviteStatus === "declined"
   )
     ? "flagged"
-    : registrationMembers.length > 0 && registrationMembers.every(
+    : competingRegistrationMembers.length > 0 && competingRegistrationMembers.every(
         (member) => member.inviteStatus === "accepted"
       )
       ? "verified"
@@ -1624,7 +1645,7 @@ const getTournamentRegistrationStatus = async ({ slug, user }) => {
           paymentStatus: existingRegistration.paymentStatus,
           verificationStatus: effectiveVerificationStatus,
           pendingInviteCount: registrationMembers.filter(
-            (member) => member.inviteStatus === "pending"
+            (member) => member.role !== "COACH" && member.inviteStatus === "pending"
           ).length,
           reservedUntil: existingRegistration.reservedUntil,
           assignedSlotNumber: existingRegistration.assignedSlotNumber,
@@ -1651,7 +1672,10 @@ module.exports = {
   deleteAdminTournament,
   getTournamentRegistrationStatus,
   parseOptionalDateValue,
+  normalizeTournamentInput,
   mapTournament,
+  mapTournamentWithRegistrations,
+  mapTournamentWithPublicTeams,
   buildRegistrationCountInclude,
   normalizeChallongeUrl,
   buildChallongeEmbedUrl,

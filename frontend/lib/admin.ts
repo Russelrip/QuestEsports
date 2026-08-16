@@ -109,9 +109,11 @@ export type TournamentOption = {
   minRosterSize?: number;
   maxRosterSize?: number;
   maxSubstitutes?: number;
+  allowCoach?: boolean;
+  coachRequired?: boolean;
 };
 
-type RegistrationMember = {
+export type RegistrationMember = {
   id: string;
   role: string;
   order: number;
@@ -161,6 +163,13 @@ export type TeamRegistration = {
     discord: string;
     riotId: string;
   };
+  coach: {
+    name: string;
+    email: string;
+    phone: string;
+    discord: string;
+    riotId: string;
+  } | null;
   members: RegistrationMember[];
 };
 
@@ -176,6 +185,8 @@ export type TeamRegistrationSummary = Pick<
   | "tournament"
 > & {
   captain: Pick<TeamRegistration["captain"], "name" | "email">;
+  coachName: string | null;
+  coachRiotId: string | null;
   memberCount: number;
 };
 
@@ -439,6 +450,8 @@ export type TournamentFormValues = {
   minRosterSize: string;
   maxRosterSize: string;
   maxSubstitutes: string;
+  allowCoach: boolean;
+  coachRequired: boolean;
   registrationFields: string;
   paymentMethod: Tournament["paymentMethod"];
   registrationFeeAmount: string;
@@ -527,6 +540,8 @@ export const initialTournamentFormValues: TournamentFormValues = {
   minRosterSize: "5",
   maxRosterSize: "5",
   maxSubstitutes: "2",
+  allowCoach: false,
+  coachRequired: false,
   registrationFields: "[]",
   paymentMethod: "free",
   registrationFeeAmount: "0",

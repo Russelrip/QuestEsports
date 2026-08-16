@@ -228,6 +228,8 @@ export type Tournament = {
   minRosterSize: number;
   maxRosterSize: number;
   maxSubstitutes: number;
+  allowCoach: boolean;
+  coachRequired: boolean;
   registrationFields: TournamentRegistrationField[];
   paymentMethod: TournamentPaymentMethod;
   registrationFee: { amount: number; currency: string };

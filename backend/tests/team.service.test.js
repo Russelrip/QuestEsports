@@ -764,13 +764,22 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
           discord: "player2#0002",
           riotId: "player2-riot",
         },
+        {
+          role: "COACH",
+          order: 1,
+          name: "Coach Example",
+          email: "coach@example.com",
+          phone: "0771111111",
+          discord: "coach#0003",
+          riotId: "coach-riot",
+        },
       ],
     });
 
     assert.equal(inviteDispatches.length, 1);
     assert.equal(savedMemberCreateCalls.length, 1);
 
-    const [captainRecord, playerRecord] = savedMemberCreateCalls[0].data;
+    const [captainRecord, playerRecord, coachRecord] = savedMemberCreateCalls[0].data;
     assert.equal(captainRecord.userId, "user-1");
     assert.equal(captainRecord.inviteStatus, "accepted");
     assert.equal(playerRecord.userId, undefined);
@@ -778,12 +787,16 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     assert.ok(playerRecord.inviteTokenHash);
     assert.ok(playerRecord.inviteSentAt instanceof Date);
     assert.ok(playerRecord.inviteExpiresAt instanceof Date);
+    assert.equal(coachRecord.role, "COACH");
+    assert.equal(coachRecord.memberOrder, 1);
+    assert.equal(coachRecord.inviteStatus, "accepted");
+    assert.equal(coachRecord.inviteTokenHash, null);
 
     const expiryDeltaMs =
       playerRecord.inviteExpiresAt.getTime() - playerRecord.inviteSentAt.getTime();
     assert.equal(expiryDeltaMs, 72 * 60 * 60 * 1000);
 
-    assert.equal(registrationMemberUpdateCalls.length, 2);
+    assert.equal(registrationMemberUpdateCalls.length, 3);
     assert.equal(registrationMemberUpdateCalls[0].data.userId, "user-1");
     assert.equal(registrationMemberUpdateCalls[0].data.inviteStatus, "accepted");
     assert.equal(registrationMemberUpdateCalls[1].data.inviteStatus, "pending");
@@ -791,6 +804,9 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
       registrationMemberUpdateCalls[1].data.inviteTokenHash,
       playerRecord.inviteTokenHash
     );
+    assert.equal(registrationMemberUpdateCalls[2].data.inviteStatus, "accepted");
+    assert.equal(registrationMemberUpdateCalls[2].data.inviteTokenHash, null);
+    assert.equal(inviteDispatches.length, 1);
     assert.deepEqual(teamRegistrationUpdateCalls[0].data, {
       savedTeamId: "saved-team-1",
     });

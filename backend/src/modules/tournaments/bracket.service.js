@@ -243,7 +243,7 @@ const listApprovedBracketSeeds = async (tournamentId) => {
         select: { logoName: true },
       },
       members: {
-        select: { id: true },
+        select: { id: true, role: true },
       },
     },
   });
@@ -254,7 +254,7 @@ const listApprovedBracketSeeds = async (tournamentId) => {
     name: registration.teamName,
     shortCode: buildShortCode(registration.teamName),
     logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
-    memberCount: registration.members.length,
+    memberCount: registration.members.filter((member) => member.role !== "COACH").length,
   }));
 };
 

@@ -17,6 +17,12 @@ import { ApiRequestError, readApiResponse } from "@/lib/api";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
 import { markTournamentRegistered } from "@/lib/registered-tournaments";
 import type { SavedTeam } from "@/lib/teams";
+import {
+  emptyCoachDraft,
+  getCoachValidationMessage,
+  isCoachEmpty,
+  type CoachDraft,
+} from "@/lib/tournament-coach";
 import type { Tournament, TournamentRegistrationField } from "@/lib/tournaments";
 
 type MemberDraft = {
@@ -91,6 +97,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const [members, setMembers] = useState<MemberDraft[]>(() => Array.from({ length: minimumAdditionalPlayers }, emptyMember));
   const [entryData, setEntryData] = useState<Record<string, string>>({});
   const [captainAdditionalData, setCaptainAdditionalData] = useState<Record<string, string>>({});
+  const [coach, setCoach] = useState<CoachDraft>(() => ({ ...emptyCoachDraft }));
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -111,6 +118,8 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const maximumAdditionalPlayers = Math.max(0, (tournament.maxRosterSize || tournament.teamSize || 1) + (tournament.maxSubstitutes || 0) - 1);
   const activePlayerCount = 1 + members.filter((member) => member.role === "PLAYER").length;
   const substituteCount = members.filter((member) => member.role === "SUBSTITUTE").length;
+  const coachEnabled = Boolean(tournament.allowCoach);
+  const coachIssue = coachEnabled ? getCoachValidationMessage(coach, Boolean(tournament.coachRequired)) : "";
   const rosterIssue = getRosterValidationMessage({
     activePlayerCount,
     substituteCount,
@@ -190,6 +199,14 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
         additionalData: {},
       })));
+    const savedCoach = team.members.find((member) => member.role === "COACH");
+    setCoach(savedCoach ? {
+      name: savedCoach.name,
+      email: savedCoach.email,
+      phone: "",
+      discord: savedCoach.discord || "",
+      gameId: savedCoach.riotId || "",
+    } : { ...emptyCoachDraft });
     setPendingSavedTeam(null);
     setError("");
   };
@@ -228,6 +245,10 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       setError(rosterIssue);
       return;
     }
+    if (coachIssue) {
+      setError(coachIssue);
+      return;
+    }
     setLoading(true);
     setError("");
     setSuccess("");
@@ -248,6 +269,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
     body.append("additionalData", JSON.stringify(submittedEntryData));
     body.append("captainAdditionalData", JSON.stringify(submittedCaptainData));
     body.append("members", JSON.stringify(submittedMembers));
+    if (coachEnabled && !isCoachEmpty(coach)) body.append("coach", JSON.stringify(coach));
     if (teamLogo) body.append("teamLogo", teamLogo);
 
     try {
@@ -516,6 +538,8 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           </div>
         </Card>
       ) : null}
+
+      {coachEnabled ? <Card className="p-6 sm:p-8"><fieldset className="grid gap-5 sm:grid-cols-2"><legend className="mb-4 text-xl text-white sm:col-span-2">TEAM COACH — OPTIONAL</legend><FormField label="Full Name" required={Boolean(tournament.coachRequired)}><Input required={Boolean(tournament.coachRequired)} value={coach.name} onChange={(event) => setCoach((current) => ({ ...current, name: event.target.value }))} /></FormField><FormField label="Email" required={Boolean(tournament.coachRequired)}><Input type="email" required={Boolean(tournament.coachRequired)} value={coach.email} onChange={(event) => setCoach((current) => ({ ...current, email: event.target.value }))} /></FormField><FormField label="Contact Number" required={Boolean(tournament.coachRequired)}><Input required={Boolean(tournament.coachRequired)} value={coach.phone} onChange={(event) => setCoach((current) => ({ ...current, phone: event.target.value }))} /></FormField><FormField label="Discord Username" required={Boolean(tournament.coachRequired)}><Input required={Boolean(tournament.coachRequired)} value={coach.discord} onChange={(event) => setCoach((current) => ({ ...current, discord: event.target.value }))} /></FormField><FormField label="Riot ID/IGN" required={Boolean(tournament.coachRequired)}><Input required={Boolean(tournament.coachRequired)} value={coach.gameId} onChange={(event) => setCoach((current) => ({ ...current, gameId: event.target.value }))} /></FormField></fieldset></Card> : null}
 
       <Card className="grid gap-4 p-6 sm:p-8">
         <label className="flex gap-3 text-sm text-slate-300"><input type="checkbox" required checked={form.rulebookAccepted} onChange={(event) => setForm((current) => ({ ...current, rulebookAccepted: event.target.checked }))} /><span>I have read and accept the tournament rulebook and competition rules.</span></label>

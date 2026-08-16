@@ -223,7 +223,12 @@ test("paid direct team registration saves the team and dispatches player invites
   let createdMembers;
   let registrationTransactionActive = false;
   let tournamentLookupAttempts = 0;
-  const valorantTournament = { ...tournament, game: "Valorant" };
+  const valorantTournament = {
+    ...tournament,
+    game: "Valorant",
+    allowCoach: true,
+    coachRequired: false,
+  };
   const tx = {
     tournament: { findUnique: async () => valorantTournament },
     teamRegistration: {
@@ -302,6 +307,13 @@ test("paid direct team registration saves the team and dispatches player invites
           gameId: "PlayerTwo#456",
           role: "PLAYER",
         }]),
+        coach: JSON.stringify({
+          name: "Coach Example",
+          email: "coach@example.com",
+          phone: "0772222222",
+          discord: "coach-example",
+          gameId: "CoachName#123",
+        }),
       },
       user,
     });
@@ -309,10 +321,19 @@ test("paid direct team registration saves the team and dispatches player invites
     assert.equal(createdRegistration.paymentStatus, "unpaid");
     assert.equal(createdRegistration.verificationStatus, "pending");
     assert.equal(result.awaitingTeamVerification, true);
+    assert.equal(result.readyForPayment, false);
+    assert.equal(result.pendingInviteCount, 1);
     assert.equal(result.checkout, null);
     assert.equal(result.paymentOrderId, null);
     assert.equal(createdRegistration.captainRiotId, "Captain#002");
     assert.equal(createdMembers[1].riotId, "PlayerTwo#456");
+    assert.equal(createdMembers[2].role, "COACH");
+    assert.equal(createdMembers[2].memberOrder, 1);
+    assert.equal(createdMembers[2].phone, "0772222222");
+    assert.equal(createdMembers[2].inviteStatus, "accepted");
+    assert.equal(createdMembers[2].inviteTokenHash, null);
+    assert.equal(createdMembers[2].inviteSentAt, null);
+    assert.equal(createdMembers[2].inviteExpiresAt, null);
     assert.equal(syncedTeams.length, 1);
     assert.equal(syncedTeams[0], createdRegistration.id);
     assert.equal(tournamentLookupAttempts, 2);

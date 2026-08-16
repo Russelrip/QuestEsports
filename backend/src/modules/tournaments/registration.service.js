@@ -24,6 +24,7 @@ const {
   removeTeamLogoIfUnreferenced,
   removeUploadsQuietly,
 } = require("../../lib/upload-cleanup");
+const { normalizeCoachSubmission, parseCoachInput } = require("./coach.validation");
 
 const normalizeBoolean = (value) => [true, "true", "1", "on"].includes(value);
 const VALORANT_RIOT_ID_PATTERN = /^[^#\r\n]{3,16}#[A-Za-z0-9]{3,5}$/;
@@ -144,6 +145,14 @@ const validateGameIdentities = ({ game, members }) => {
   }
 };
 
+const assertCoachInputAllowed = ({ tournament, body }) => {
+  const coachInput = parseCoachInput(body);
+  if (coachInput && !tournament.allowCoach) {
+    throw new HttpError(400, "This tournament does not accept coach details.");
+  }
+  return coachInput;
+};
+
 const mapRegistrationResult = (registration) => ({
   id: registration.id,
   entryType: registration.entryType,
@@ -163,8 +172,12 @@ const mapRegistrationResult = (registration) => ({
 });
 
 const getRosterVerificationStatus = (members = [], fallback = "pending") => {
-  if (members.some((member) => member.inviteStatus === "declined")) return "flagged";
-  if (members.length > 0 && members.every((member) => member.inviteStatus === "accepted")) {
+  const competingMembers = members.filter((member) => member.role !== "COACH");
+  if (competingMembers.some((member) => member.inviteStatus === "declined")) return "flagged";
+  if (
+    competingMembers.length > 0 &&
+    competingMembers.every((member) => member.inviteStatus === "accepted")
+  ) {
     return "verified";
   }
   return fallback;
@@ -255,7 +268,7 @@ const startExistingRegistrationPayment = async ({
       where: { id: existing.id },
       include: {
         members: {
-          select: { inviteStatus: true },
+          select: { role: true, inviteStatus: true },
         },
       },
     });
@@ -437,6 +450,7 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     {},
     "Captain registration data"
   );
+  const coach = normalizeCoachSubmission({ tournament, body });
   let requestedMembers = parseJson(body.members, [], "Roster members");
   if (!Array.isArray(requestedMembers)) throw new HttpError(400, "Roster members must be a list.");
 
@@ -548,6 +562,7 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     configuredEntryData: configured.entryData,
     primaryGameId,
     members: registrationMembers,
+    coach,
   };
 };
 
@@ -566,6 +581,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
   );
   if (!tournament) throw new HttpError(404, "Tournament not found.");
   const now = new Date();
+
+  // Existing registrations have early payment-verification paths, so reject
+  // disabled coach input before any of those paths can start a transaction.
+  assertCoachInputAllowed({ tournament, body });
 
   const feeAmount = Number(tournament.registrationFeeAmount || 0);
   const paymentMethod = feeAmount > 0 ? tournament.paymentMethod || "payhere" : "free";
@@ -586,7 +605,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       },
       include: {
         members: {
-          select: { inviteStatus: true },
+          select: { role: true, inviteStatus: true },
         },
         payments: {
           orderBy: { createdAt: "desc" },
@@ -613,7 +632,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       existing.verificationStatus
     );
     const pendingInviteCount = existingMembers.filter(
-      (member) => member.inviteStatus === "pending"
+      (member) => member.role !== "COACH" && member.inviteStatus === "pending"
     ).length;
 
     if (tournament.entryType === "team") {
@@ -730,7 +749,23 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     configuredEntryData,
     primaryGameId,
     members,
+    coach,
   } = submission;
+  const persistedMembers = coach
+    ? [
+        ...members,
+        {
+          role: "COACH",
+          order: 1,
+          name: coach.name,
+          email: coach.email,
+          phone: coach.phone,
+          discord: coach.discord,
+          riotId: coach.riotId,
+          additionalData: {},
+        },
+      ]
+    : members;
 
   if (existing) {
     const providerOrderId = buildPaymentOrderId(paymentMethod);
@@ -814,7 +849,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         });
         await tx.registrationMember.deleteMany({ where: { registrationId: existing.id } });
         await tx.registrationMember.createMany({
-          data: members.map((member) => ({
+          data: persistedMembers.map((member) => ({
             id: crypto.randomUUID(),
             registrationId: existing.id,
             userId: member.role === "CAPTAIN" ? user.id : null,
@@ -823,11 +858,15 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             name: member.name,
             email: member.email,
             emailNormalized: member.email,
+            phone: member.phone || null,
             discord: member.discord,
             riotId: member.riotId,
             additionalData: member.additionalData || {},
-            inviteStatus: member.role === "CAPTAIN" ? "accepted" : "pending",
-            inviteRespondedAt: member.role === "CAPTAIN" ? new Date() : null,
+            inviteStatus: member.role === "CAPTAIN" || member.role === "COACH" ? "accepted" : "pending",
+            ...(member.role === "COACH"
+              ? { inviteTokenHash: null, inviteSentAt: null, inviteExpiresAt: null }
+              : {}),
+            inviteRespondedAt: member.role === "CAPTAIN" || member.role === "COACH" ? new Date() : null,
           })),
         });
         if (tournament.entryType === "team") {
@@ -840,7 +879,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             teamTag,
             organizationRequested: normalizeBoolean(body.organizationRequested),
             logoName: persistedRetryLogo?.filename || existing.teamLogoName || null,
-            members,
+            members: persistedMembers,
             tournamentTitle: currentTournament.title,
           });
         }
@@ -981,7 +1020,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         },
       });
       await tx.registrationMember.createMany({
-        data: members.map((member) => ({
+        data: persistedMembers.map((member) => ({
           id: crypto.randomUUID(),
           registrationId,
           userId: member.role === "CAPTAIN" ? user.id : null,
@@ -990,11 +1029,15 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           name: member.name,
           email: member.email,
           emailNormalized: member.email,
+          phone: member.phone || null,
           discord: member.discord,
           riotId: member.riotId,
           additionalData: member.additionalData || {},
-          inviteStatus: member.role === "CAPTAIN" ? "accepted" : "pending",
-          inviteRespondedAt: member.role === "CAPTAIN" ? new Date() : null,
+          inviteStatus: member.role === "CAPTAIN" || member.role === "COACH" ? "accepted" : "pending",
+          ...(member.role === "COACH"
+            ? { inviteTokenHash: null, inviteSentAt: null, inviteExpiresAt: null }
+            : {}),
+          inviteRespondedAt: member.role === "CAPTAIN" || member.role === "COACH" ? new Date() : null,
         })),
       });
 
@@ -1044,13 +1087,15 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         })
       : null,
     awaitingTeamVerification: requiresTeamVerification && members.some(
-      (member) => member.role !== "CAPTAIN"
+      (member) => member.role !== "CAPTAIN" && member.role !== "COACH"
     ),
     readyForPayment: requiresTeamVerification && members.every(
-      (member) => member.role === "CAPTAIN"
+      (member) => member.role === "CAPTAIN" || member.role === "COACH"
     ),
     pendingInviteCount: requiresTeamVerification
-      ? members.filter((member) => member.role !== "CAPTAIN").length
+      ? members.filter(
+          (member) => member.role !== "CAPTAIN" && member.role !== "COACH"
+        ).length
       : 0,
   };
 };
@@ -1100,6 +1145,8 @@ const cancelUnpaidRegistration = async ({ slug, user }) => {
 module.exports = {
   createConfiguredRegistration,
   cancelUnpaidRegistration,
+  normalizeRegistrationSubmission,
+  normalizeCoachSubmission,
   validateConfiguredFields,
   validateGameIdentities,
   buildPaymentOrderId,

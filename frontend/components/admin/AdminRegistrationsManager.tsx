@@ -19,6 +19,7 @@ import {
   type TeamRegistration,
   type TeamRegistrationSummary,
 } from "@/lib/admin";
+import { getCoachValidationMessage, type CoachDraft } from "@/lib/tournament-coach";
 
 type RosterDraftMember = {
   key: string;
@@ -28,6 +29,14 @@ type RosterDraftMember = {
   email: string;
   discord: string;
   gameId: string;
+};
+
+type RegistrationCoach = {
+  name: string;
+  email: string;
+  phone: string;
+  discord: string;
+  riotId: string;
 };
 
 const createRosterDraftMember = (
@@ -248,6 +257,11 @@ export default function AdminRegistrationsManager() {
                         <div className="mt-4 min-w-0 text-sm">
                           <p className="break-words text-slate-300">{registration.captain.name}</p>
                           <p className="break-all text-xs text-slate-500">{registration.captain.email}</p>
+                          {registration.coachName ? (
+                            <p className="mt-2 break-words text-xs text-slate-500">
+                              Coach: {registration.coachRiotId || registration.coachName}
+                            </p>
+                          ) : null}
                         </div>
                         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                           <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Approval</dt><dd className="mt-1"><StatusText value={registration.status} /></dd></div>
@@ -318,6 +332,11 @@ export default function AdminRegistrationsManager() {
                               <p className="text-xs text-slate-500">
                                 {registration.captain.email}
                               </p>
+                              {registration.coachName ? (
+                                <p className="mt-2 text-xs text-slate-500">
+                                  Coach: {registration.coachRiotId || registration.coachName}
+                                </p>
+                              ) : null}
                             </td>
                             <td className="px-5 py-4">
                               <StatusText value={registration.status} />
@@ -403,6 +422,8 @@ function RegistrationDetail({
     {},
   );
   const [rosterMembers, setRosterMembers] = useState<RosterDraftMember[]>([]);
+  const [coachDraft, setCoachDraft] = useState<CoachDraft | null>(null);
+  const [coachRemoved, setCoachRemoved] = useState(false);
   const [syncSavedTeam, setSyncSavedTeam] = useState(false);
   const showToast = useToastStore((state) => state.showToast);
 
@@ -436,7 +457,81 @@ function RegistrationDetail({
       })),
     );
     setSyncSavedTeam(registration.savedTeamLinked);
+    setCoachDraft(
+      registration.coach
+        ? {
+            name: registration.coach.name || "",
+            email: registration.coach.email || "",
+            phone: registration.coach.phone || "",
+            discord: registration.coach.discord || "",
+            gameId: registration.coach.riotId || "",
+          }
+        : null,
+    );
+    setCoachRemoved(false);
   }, [registration]);
+
+  const coachPayload = (): RegistrationCoach | null => {
+    if (coachRemoved) return null;
+    if (coachDraft && !Object.values(coachDraft).every((value) => !value.trim())) {
+      return {
+        name: coachDraft.name.trim(),
+        email: coachDraft.email.trim(),
+        phone: coachDraft.phone.trim(),
+        discord: coachDraft.discord.trim(),
+        riotId: coachDraft.gameId.trim(),
+      };
+    }
+    return registration?.coach || null;
+  };
+
+  const coachValidationMessage = () => {
+    if (!coachDraft) return "";
+    return getCoachValidationMessage(
+      coachDraft,
+      Boolean(registration?.tournament.coachRequired),
+    );
+  };
+
+  const patchRoster = async (
+    coach: RegistrationCoach | null,
+    busyKey: string,
+    successTitle: string,
+  ) => {
+    if (!registration) return;
+    setBusyAction(busyKey);
+    try {
+      await adminRequest(
+        `/api/admin/team-registrations/${registration.id}/roster`,
+        {
+          method: "PATCH",
+          json: {
+            syncSavedTeam,
+            coach,
+            members: rosterMembers.map((member) => ({
+              id: member.id,
+              role: member.role,
+              name: member.name,
+              email: member.email,
+              discord: member.discord,
+              gameId: member.gameId,
+            })),
+          },
+        },
+      );
+      showToast({ tone: "success", title: successTitle });
+      await onChanged();
+    } catch (nextError) {
+      showToast({
+        tone: "error",
+        title: "Unable to update registration roster",
+        description:
+          nextError instanceof Error ? nextError.message : "Request failed.",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  };
 
   const updateRosterMember = (
     key: string,
@@ -452,6 +547,11 @@ function RegistrationDetail({
 
   const saveRosterCorrection = async () => {
     if (!registration) return;
+    const coachError = coachValidationMessage();
+    if (coachError) {
+      showToast({ tone: "error", title: coachError });
+      return;
+    }
     const captainCount = rosterMembers.filter(
       (member) => member.role === "CAPTAIN",
     ).length;
@@ -475,37 +575,26 @@ function RegistrationDetail({
     )
       return;
 
-    setBusyAction("roster");
-    try {
-      await adminRequest(
-        `/api/admin/team-registrations/${registration.id}/roster`,
-        {
-          method: "PATCH",
-          json: {
-            syncSavedTeam,
-            members: rosterMembers.map((member) => ({
-              id: member.id,
-              role: member.role,
-              name: member.name,
-              email: member.email,
-              discord: member.discord,
-              gameId: member.gameId,
-            })),
-          },
-        },
-      );
-      showToast({ tone: "success", title: "Registration roster corrected" });
-      await onChanged();
-    } catch (nextError) {
-      showToast({
-        tone: "error",
-        title: "Unable to correct roster",
-        description:
-          nextError instanceof Error ? nextError.message : "Request failed.",
-      });
-    } finally {
-      setBusyAction(null);
+    await patchRoster(
+      coachPayload(),
+      "roster",
+      "Registration roster corrected",
+    );
+  };
+
+  const saveCoach = async () => {
+    const coachError = coachValidationMessage();
+    if (coachError) {
+      showToast({ tone: "error", title: coachError });
+      return;
     }
+    await patchRoster(coachPayload(), "coach", "Registration coach updated");
+  };
+
+  const removeCoach = async () => {
+    if (!registration || !window.confirm(`Remove the coach from ${registration.teamName}?`)) return;
+    setCoachRemoved(true);
+    await patchRoster(null, "coach", "Registration coach removed");
   };
 
   const updateRegistration = async (
@@ -791,6 +880,69 @@ function RegistrationDetail({
             title="Registration fields"
             values={registration.additionalData}
           />
+
+          {registration.tournament.allowCoach ? (
+            <div className="mt-7 border border-cyan-300/20 bg-cyan-400/[0.06] p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold uppercase tracking-wide text-cyan-100">
+                    Coach
+                  </h4>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Coaches are managed separately from the numbered player roster and do not require a Quest account.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={busyAction !== null || !registration.coach}
+                    variant="danger"
+                    onClick={() => void removeCoach()}
+                  >
+                    Remove coach
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={busyAction !== null}
+                    onClick={() => void saveCoach()}
+                  >
+                    {busyAction === "coach" ? "Saving..." : "Save coach"}
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {([
+                  ["name", "Full name", "text"],
+                  ["email", "Email", "email"],
+                  ["phone", "Contact number", "tel"],
+                  ["discord", "Discord", "text"],
+                  ["gameId", "Riot ID / IGN", "text"],
+                ] as const).map(([field, label, type]) => (
+                  <label key={field} className="grid gap-1 text-sm text-slate-300">
+                    {label}
+                    <Input
+                      type={type}
+                      value={coachDraft?.[field] || ""}
+                      onChange={(event) => {
+                        setCoachRemoved(false);
+                        setCoachDraft((current) => ({
+                          name: current?.name || "",
+                          email: current?.email || "",
+                          phone: current?.phone || "",
+                          discord: current?.discord || "",
+                          gameId: current?.gameId || "",
+                          [field]: event.target.value,
+                        }));
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+              {registration.tournament.coachRequired ? (
+                <p className="mt-3 text-xs text-cyan-100/70">A coach is required for this tournament.</p>
+              ) : null}
+            </div>
+          ) : null}
 
           {registration.entryType !== "solo" ? (
             <div className="mt-7 border border-amber-300/20 bg-amber-400/[0.06] p-4 sm:p-5">

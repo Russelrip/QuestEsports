@@ -49,6 +49,8 @@ export const mapTournamentToFormValues = (
   minRosterSize: String(tournament.minRosterSize || tournament.teamSize),
   maxRosterSize: String(tournament.maxRosterSize || tournament.teamSize),
   maxSubstitutes: String(tournament.maxSubstitutes || 0),
+  allowCoach: Boolean(tournament.allowCoach),
+  coachRequired: Boolean(tournament.allowCoach && tournament.coachRequired),
   registrationFields: JSON.stringify(tournament.registrationFields || [], null, 2),
   paymentMethod: tournament.paymentMethod ||
     (tournament.registrationFee?.amount > 0 ? "payhere" : "free"),

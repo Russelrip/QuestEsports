@@ -16,9 +16,9 @@ test("generateTournamentBracket uses approved teams and pads non-power-of-two fi
       },
       teamRegistration: {
         findMany: async () => [
-          { id: "r1", teamName: "Alpha Team", teamLogoName: "alpha.png", members: [{ id: "m1" }], createdAt: new Date() },
-          { id: "r2", teamName: "Beta Team", teamLogoName: null, members: [{ id: "m2" }], createdAt: new Date() },
-          { id: "r3", teamName: "Gamma Team", teamLogoName: null, members: [{ id: "m3" }], createdAt: new Date() },
+          { id: "r1", teamName: "Alpha Team", teamLogoName: "alpha.png", members: [{ id: "m1", role: "CAPTAIN" }, { id: "coach-1", role: "COACH" }], createdAt: new Date() },
+          { id: "r2", teamName: "Beta Team", teamLogoName: null, members: [{ id: "m2", role: "CAPTAIN" }], createdAt: new Date() },
+          { id: "r3", teamName: "Gamma Team", teamLogoName: null, members: [{ id: "m3", role: "CAPTAIN" }], createdAt: new Date() },
         ],
       },
       tournamentBracket: {
@@ -42,6 +42,7 @@ test("generateTournamentBracket uses approved teams and pads non-power-of-two fi
     const bracket = await bracketService.generateTournamentBracket("tournament-1");
 
     assert.equal(bracket.seedData.length, 3);
+    assert.equal(bracket.seedData[0].memberCount, 1);
     assert.equal(savedBracketData.participant.length, 3);
     assert.equal(savedBracketData.match.length > 0, true);
     assert.equal(savedBracketData.match.some((match) => match.opponent1 === null || match.opponent2 === null), true);

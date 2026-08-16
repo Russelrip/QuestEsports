@@ -43,6 +43,7 @@ const {
 const { getBankTransferAmountForSlot } = require("../payments/bank-transfer.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { buildShortCode } = require("../tournaments/bracket.service");
+const { normalizeCoachSubmission } = require("../tournaments/coach.validation");
 
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
@@ -74,6 +75,8 @@ const TOURNAMENT_SUMMARY_SELECT = {
   minRosterSize: true,
   maxRosterSize: true,
   maxSubstitutes: true,
+  allowCoach: true,
+  coachRequired: true,
 };
 
 const TEAM_REGISTRATION_INCLUDE = {
@@ -115,7 +118,12 @@ const TEAM_REGISTRATION_SUMMARY_SELECT = {
   captainName: true,
   captainEmail: true,
   tournament: { select: TOURNAMENT_SUMMARY_SELECT },
-  _count: { select: { members: true } },
+  members: {
+    where: { role: "COACH" },
+    select: { name: true, riotId: true },
+    take: 1,
+  },
+  _count: { select: { members: { where: { role: { not: "COACH" } } } } },
 };
 
 const mapContactMessage = (message) => ({
@@ -149,6 +157,16 @@ const mapRegistrationMember = (member) => ({
     : null,
 });
 
+const mapRegistrationCoach = (member) => member
+  ? {
+      name: member.name,
+      email: member.email,
+      phone: member.phone,
+      discord: member.discord,
+      riotId: member.riotId,
+    }
+  : null;
+
 const mapTeamRegistration = (registration) => ({
   id: registration.id,
   entryType: registration.entryType || "team",
@@ -181,8 +199,10 @@ const mapTeamRegistration = (registration) => ({
     discord: registration.captainDiscord,
     riotId: registration.captainRiotId,
   },
+  coach: mapRegistrationCoach(registration.members.find((member) => member.role === "COACH")),
   members: registration.members
     .slice()
+    .filter((member) => member.role !== "COACH")
     .sort((left, right) => left.memberOrder - right.memberOrder)
     .map(mapRegistrationMember),
 });
@@ -200,6 +220,8 @@ const mapTeamRegistrationSummary = (registration) => ({
     name: registration.captainName,
     email: registration.captainEmail,
   },
+  coachName: registration.members?.[0]?.name || null,
+  coachRiotId: registration.members?.[0]?.riotId || null,
   memberCount: registration._count.members,
 });
 
@@ -826,6 +848,33 @@ const updateTeamRegistrationGameIds = async (registrationId, body = {}) => {
 
 const ADMIN_ROSTER_ROLES = new Set(["CAPTAIN", "PLAYER", "SUBSTITUTE"]);
 
+const hasOwnProperty = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+
+const mapCoachDraft = (member) => member
+  ? {
+      name: member.name,
+      email: member.email,
+      phone: member.phone,
+      discord: member.discord,
+      riotId: member.riotId,
+    }
+  : null;
+
+const normalizeAdminCoach = ({ body, tournament, currentCoach }) => {
+  if (!hasOwnProperty(body, "coach")) {
+    if (tournament.coachRequired && !currentCoach) {
+      throw new HttpError(400, "A complete coach is required for this tournament.");
+    }
+    return mapCoachDraft(currentCoach);
+  }
+
+  if (body.coach === null) {
+    return normalizeCoachSubmission({ tournament, body, coachInput: null });
+  }
+
+  return normalizeCoachSubmission({ tournament, body, coachInput: body.coach });
+};
+
 const normalizeAdminRosterMembers = (body = {}) => {
   const requestedMembers = Array.isArray(body.members) ? body.members : [];
   if (requestedMembers.length < 1 || requestedMembers.length > 20) {
@@ -891,6 +940,8 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
             minRosterSize: true,
             maxRosterSize: true,
             maxSubstitutes: true,
+            allowCoach: true,
+            coachRequired: true,
           },
         },
         members: { orderBy: [{ role: "asc" }, { memberOrder: "asc" }] },
@@ -912,6 +963,12 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
 
     const currentCaptain = registration.members.find((member) => member.role === "CAPTAIN");
     if (!currentCaptain) throw new HttpError(409, "This registration does not have a valid captain roster record.");
+    const currentCoach = registration.members.find((member) => member.role === "COACH");
+    const requestedCoach = normalizeAdminCoach({
+      body,
+      tournament: registration.tournament,
+      currentCoach,
+    });
     const requestedCaptain = requestedMembers.find((member) => member.role === "CAPTAIN");
     const currentCaptainEmail = normalizeEmail(registration.captainEmail || currentCaptain.email);
     const captainChanged = requestedCaptain.email !== currentCaptainEmail;
@@ -1025,6 +1082,34 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
         inviteRespondedAt: existingMember?.inviteRespondedAt || respondedAt,
       };
     });
+    if (requestedCoach) {
+      const coachData = syncGameIdentityData({
+        additionalData: currentCoach?.additionalData,
+        registrationFields,
+        scope: "member",
+        game: registration.tournament.game,
+        gameId: requestedCoach.riotId,
+      });
+      nextMembers.push({
+        id: crypto.randomUUID(),
+        registrationId,
+        userId: null,
+        role: "COACH",
+        memberOrder: 1,
+        name: requestedCoach.name,
+        email: requestedCoach.email,
+        emailNormalized: requestedCoach.email,
+        phone: requestedCoach.phone,
+        discord: requestedCoach.discord,
+        riotId: requestedCoach.riotId,
+        additionalData: coachData.data,
+        inviteStatus: "accepted",
+        inviteTokenHash: null,
+        inviteSentAt: null,
+        inviteExpiresAt: null,
+        inviteRespondedAt: currentCoach?.inviteRespondedAt || respondedAt,
+      });
+    }
 
     const before = registration.members.map((member) => ({
       id: member.id,
@@ -1162,6 +1247,11 @@ const exportTeamRegistrations = async (query = {}) => {
     captainPhone: registration.captain.phone,
     captainDiscord: registration.captain.discord,
     captainRiotId: registration.captain.riotId,
+    coachName: registration.coach?.name || "",
+    coachEmail: registration.coach?.email || "",
+    coachContact: registration.coach?.phone || "",
+    coachDiscord: registration.coach?.discord || "",
+    coachRiotId: registration.coach?.riotId || "",
     contactEmail: registration.contactEmail,
     rosterCount: registration.members.length,
     acceptedMembers: registration.members.filter((member) => member.inviteStatus === "accepted").length,
@@ -1169,22 +1259,24 @@ const exportTeamRegistrations = async (query = {}) => {
     logoUrl: registration.logoUrl || "",
   }));
   const memberRows = mappedRegistrations.flatMap((registration) =>
-    registration.members.map((member) => ({
-      tournamentTitle: registration.tournament?.title || "",
-      tournamentSlug: registration.tournament?.slug || "",
-      teamName: registration.teamName,
-      registrationId: registration.id,
-      role: member.role,
-      order: member.order,
-      name: member.name,
-      email: member.email || "",
-      discord: member.discord || "",
-      riotId: member.riotId || "",
-      inviteStatus: member.inviteStatus,
-      inviteRespondedAt: formatExportTimestamp(member.inviteRespondedAt),
-      accountUsername: member.account?.username || "",
-      accountEmail: member.account?.email || "",
-    }))
+    registration.members
+      .filter((member) => member.role !== "COACH")
+      .map((member) => ({
+        tournamentTitle: registration.tournament?.title || "",
+        tournamentSlug: registration.tournament?.slug || "",
+        teamName: registration.teamName,
+        registrationId: registration.id,
+        role: member.role,
+        order: member.order,
+        name: member.name,
+        email: member.email || "",
+        discord: member.discord || "",
+        riotId: member.riotId || "",
+        inviteStatus: member.inviteStatus,
+        inviteRespondedAt: formatExportTimestamp(member.inviteRespondedAt),
+        accountUsername: member.account?.username || "",
+        accountEmail: member.account?.email || "",
+      }))
   );
 
   const buffer = await buildExcelWorkbookBuffer({
@@ -1210,6 +1302,11 @@ const exportTeamRegistrations = async (query = {}) => {
           { header: "Captain Phone", key: "captainPhone", width: 18 },
           { header: "Captain Discord", key: "captainDiscord", width: 22 },
           { header: "Captain Riot ID", key: "captainRiotId", width: 22 },
+          { header: "Coach Name", key: "coachName", width: 24 },
+          { header: "Coach Email", key: "coachEmail", width: 28 },
+          { header: "Coach Contact", key: "coachContact", width: 18 },
+          { header: "Coach Discord", key: "coachDiscord", width: 22 },
+          { header: "Coach Riot ID", key: "coachRiotId", width: 22 },
           { header: "Contact Email", key: "contactEmail", width: 28 },
           { header: "Roster Count", key: "rosterCount", width: 14 },
           { header: "Accepted Members", key: "acceptedMembers", width: 18 },

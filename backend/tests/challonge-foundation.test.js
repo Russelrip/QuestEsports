@@ -87,7 +87,8 @@ test("foundation migration is additive and backfills links as disabled", () => {
   const migration = fs.readFileSync(path.join(__dirname, "../prisma/migrations/20260731100000_add_foundation_live_matches_and_challonge/migration.sql"), "utf8");
   for (const table of ["tournament_staff_assignments", "matches", "match_participants", "challonge_integrations", "challonge_participant_links", "challonge_sync_logs", "audit_logs"]) assert.match(migration, new RegExp(`CREATE TABLE "${table}"`));
   assert.match(migration, /INSERT INTO "challonge_integrations"/);
-  assert.match(migration, /\n  false,\n/);
+  const normalizedMigration = migration.replace(/\r\n/g, "\n");
+  assert.match(normalizedMigration, /\n  false,\n/);
   assert.doesNotMatch(migration, /DROP TABLE/);
 });
 

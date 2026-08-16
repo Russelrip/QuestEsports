@@ -8,6 +8,9 @@ const servicePath = path.join(__dirname, "../src/modules/tournaments/tournament.
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
 const teamServiceModulePath = path.join(__dirname, "../src/modules/teams/team.service.js");
+const paymentServiceModulePath = path.join(__dirname, "../src/modules/payments/payment.service.js");
+const bracketServiceModulePath = path.join(__dirname, "../src/modules/tournaments/bracket.service.js");
+const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
 
 const buildAdminTournamentBody = (overrides = {}) => ({
   title: "Quest Date Cup",
@@ -79,7 +82,11 @@ test("registration status repairs stale captain-only verification and includes i
         status: "pending",
         paymentStatus: "pending",
         verificationStatus: "pending",
-        members: [{ inviteStatus: "accepted" }],
+        members: [
+          { role: "CAPTAIN", inviteStatus: "accepted" },
+          { role: "COACH", inviteStatus: "declined" },
+          { role: "COACH", inviteStatus: "pending" },
+        ],
         reservedUntil: new Date("2099-08-01T10:00:00.000Z"),
         assignedSlotNumber: 7,
         payments: [{
@@ -107,6 +114,7 @@ test("registration status repairs stale captain-only verification and includes i
     });
     assert.equal(result.isRegistered, true);
     assert.equal(result.registration.verificationStatus, "verified");
+    assert.equal(result.registration.pendingInviteCount, 0);
     assert.equal(result.registration.assignedSlotNumber, 7);
     assert.equal(repairedRegistrationId, "registration-1");
     assert.deepEqual(result.registration.payment, {
@@ -171,6 +179,214 @@ test("admin tournaments can store optional descriptions and TBA/TBD dates", asyn
     assert.equal(tournament.startDateStatus, "tba");
     assert.equal(tournament.endDateStatus, "tbd");
     assert.equal(tournament.registrationDeadlineStatus, "tba");
+  } finally {
+    restore();
+  }
+});
+
+test("coach settings normalize missing and boolean flags", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [loggerModulePath]: {},
+  });
+
+  try {
+    const defaults = tournamentService.normalizeTournamentInput({
+      body: buildAdminTournamentBody(),
+    });
+    assert.equal(defaults.allowCoach, false);
+    assert.equal(defaults.coachRequired, false);
+
+    const enabled = tournamentService.normalizeTournamentInput({
+      body: buildAdminTournamentBody({ allowCoach: "true", coachRequired: "on" }),
+    });
+    assert.equal(enabled.allowCoach, true);
+    assert.equal(enabled.coachRequired, true);
+
+    const disabled = tournamentService.normalizeTournamentInput({
+      body: buildAdminTournamentBody({ allowCoach: "false", coachRequired: "false" }),
+    });
+    assert.equal(disabled.allowCoach, false);
+    assert.equal(disabled.coachRequired, false);
+
+    assert.throws(
+      () => tournamentService.normalizeTournamentInput({
+        body: buildAdminTournamentBody({ allowCoach: "false", coachRequired: "true" }),
+      }),
+      /Coach requirement requires coaches to be allowed/
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("public tournament output maps coach settings", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [loggerModulePath]: {},
+  });
+
+  try {
+    const tournament = tournamentService.mapTournament({
+      id: "tournament-1",
+      slug: "coach-cup",
+      title: "Coach Cup",
+      game: "valorant",
+      shortDescription: "Short",
+      fullDescription: "Full",
+      format: "Single elimination",
+      registrationMode: "open_entry",
+      entryType: "team",
+      teamSize: 5,
+      minRosterSize: 5,
+      maxRosterSize: 5,
+      maxSubstitutes: 0,
+      allowCoach: true,
+      coachRequired: true,
+      maxTeams: 16,
+      status: "registration_open",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      sponsors: [],
+    });
+
+    assert.equal(tournament.allowCoach, true);
+    assert.equal(tournament.coachRequired, true);
+  } finally {
+    restore();
+  }
+});
+
+test("admin tournament registration counts exclude coach rows", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [loggerModulePath]: {},
+  });
+
+  try {
+    const result = tournamentService.mapTournamentWithRegistrations(
+      { id: "tournament-1", status: "registration_open", maxTeams: 16 },
+      [{
+        id: "registration-1",
+        teamName: "Quest Five",
+        status: "approved",
+        paymentStatus: "paid",
+        verificationStatus: "verified",
+        createdAt: new Date(),
+        captainName: "Captain",
+        captainEmail: "captain@example.com",
+        members: [
+          { role: "CAPTAIN" },
+          { role: "PLAYER" },
+          { role: "PLAYER" },
+          { role: "COACH" },
+        ],
+        _count: { members: 99 },
+      }, {
+        id: "registration-legacy",
+        teamName: "Legacy Team",
+        status: "approved",
+        paymentStatus: "paid",
+        verificationStatus: "verified",
+        createdAt: new Date(),
+        captainName: "Legacy Captain",
+        captainEmail: "legacy@example.com",
+        _count: { members: 7 },
+      }]
+    );
+
+    assert.equal(result.registrations[0].memberCount, 3);
+    assert.equal(result.registrations[1].memberCount, 7);
+  } finally {
+    restore();
+  }
+});
+
+test("coach settings persist through admin create and update responses", async () => {
+  let createdData;
+  let updatedData;
+  const existingTournament = {
+    id: "tournament-1",
+    ...buildAdminTournamentBody(),
+    allowCoach: false,
+    coachRequired: false,
+  };
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findFirst: async () => null,
+        findUnique: async () => existingTournament,
+        create: async ({ data }) => {
+          createdData = data;
+          return {
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+            sponsors: [],
+          };
+        },
+        update: async ({ data }) => {
+          updatedData = data;
+          return {
+            ...existingTournament,
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+            sponsors: [],
+          };
+        },
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+      removeUploadFiles: async () => undefined,
+    },
+    [teamServiceModulePath]: {
+      syncSavedTeamFromRegistration: async () => [],
+      sendTeamInvites: async () => undefined,
+    },
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [loggerModulePath]: {},
+  });
+
+  try {
+    const created = await tournamentService.createAdminTournament({
+      body: buildAdminTournamentBody({ allowCoach: "true", coachRequired: "true" }),
+      files: {},
+    });
+    assert.equal(createdData.allowCoach, true);
+    assert.equal(createdData.coachRequired, true);
+    assert.equal(created.allowCoach, true);
+    assert.equal(created.coachRequired, true);
+
+    const updated = await tournamentService.updateAdminTournament({
+      tournamentId: existingTournament.id,
+      body: buildAdminTournamentBody({ allowCoach: "false", coachRequired: "false" }),
+      files: {},
+    });
+    assert.equal(updatedData.allowCoach, false);
+    assert.equal(updatedData.coachRequired, false);
+    assert.equal(updated.allowCoach, false);
+    assert.equal(updated.coachRequired, false);
   } finally {
     restore();
   }
@@ -462,7 +678,14 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
               savedTeam: { logoName: "current-logo.webp" },
               status: "approved",
               paymentStatus: "paid",
-              members: [{ id: "member-1" }, { id: "member-2" }, { id: "member-3" }],
+              members: [
+                { id: "member-1", role: "CAPTAIN" },
+                { id: "member-2", role: "PLAYER" },
+                { id: "member-3", role: "PLAYER" },
+                { id: "member-4", role: "PLAYER" },
+                { id: "member-5", role: "PLAYER" },
+                { id: "coach-1", role: "COACH" },
+              ],
             },
           ],
         }),
@@ -492,7 +715,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
         teamName: "Quest Five",
         logoUrl: "/api/uploads/team-logos/current-logo.webp",
         shortCode: "QF",
-        memberCount: 3,
+        memberCount: 5,
         status: "approved",
         captainName: "Captain Quest",
       },
