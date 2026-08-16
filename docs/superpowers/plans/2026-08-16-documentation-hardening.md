@@ -1,6 +1,6 @@
 # Documentation Hardening Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make the repository’s developer, deployment, operations, and admin documentation consistent, navigable, and safe to follow.
 
@@ -41,14 +41,14 @@ execution record rather than an open work queue.
 - Produces two stable guides linked by later navigation updates.
 - Uses package scripts and checked-in workflow commands as the source of truth.
 
-- [ ] **Step 1: Inventory the developer workflow facts**
+- [x] **Step 1: Inventory the developer workflow facts**
 
   Record the existing branch/PR rules from `.github/pull_request_template.md` and
   `docs/collaboration-and-staging.md`, then map the supported commands from the
   three package manifests. Do not copy deployment-only commands into the local
   quick-start section.
 
-- [ ] **Step 2: Write the developer guide**
+- [x] **Step 2: Write the developer guide**
 
   Create `docs/developer-guide.md` with these sections: prerequisites (Node 24,
   npm, PostgreSQL and project-specific tools), repository layout, branch and PR
@@ -62,7 +62,7 @@ execution record rather than an open work queue.
   Explain that CI’s frontend mock API uses port 5011 while the normal backend
   development server uses the port documented by the frontend/backend guides.
 
-- [ ] **Step 3: Write the environment reference**
+- [x] **Step 3: Write the environment reference**
 
   Create `docs/environment-reference.md`. Organize variables into backend,
   frontend, mobile-admin, CI/release, and VALORANT integration/E2E groups.
@@ -73,7 +73,7 @@ execution record rather than an open work queue.
   Do not reproduce real values from runbooks. Link to the setup/deployment guide
   for provisioning and to the operational runbook for runtime changes.
 
-- [ ] **Step 4: Check the two new documents in isolation**
+- [x] **Step 4: Check the two new documents in isolation**
 
   Verify every command appears in the owning package manifest or workflow, every
   referenced existing file exists, and the environment table contains no secret-
@@ -94,14 +94,14 @@ execution record rather than an open work queue.
 - Must preserve the existing service boundary: the external FastAPI backend is
   not silently treated as part of this repository.
 
-- [ ] **Step 1: Extract checked-in integration facts**
+- [x] **Step 1: Extract checked-in integration facts**
 
   Read the smoke script, E2E README/test, integration guide, and package scripts.
   List only the repository-verifiable endpoint, port, variable, authentication,
   database, and command facts. Mark external repository checkout/version and
   provisioning details as owner-maintained when not present in checked-in files.
 
-- [ ] **Step 2: Write the local-development guide**
+- [x] **Step 2: Write the local-development guide**
 
   Create `docs/valorant-local-development.md` with prerequisites, two-process
   topology, external backend checkout boundary, environment variables,
@@ -110,13 +110,13 @@ execution record rather than an open work queue.
   failure diagnosis, and cleanup. Include an explicit warning not to point E2E
   writes at production data.
 
-- [ ] **Step 3: Add cross-links without duplicating contracts**
+- [x] **Step 3: Add cross-links without duplicating contracts**
 
   Add short links from the existing VALORANT integration and E2E documents to
   the new guide. Keep API schemas, role behavior, and verification details in
   their current owning documents.
 
-- [ ] **Step 4: Verify the integration guide**
+- [x] **Step 4: Verify the integration guide**
 
   Check that each command and variable is present in the smoke script, E2E test,
   package manifest, or existing checked-in example, and that all new links point
@@ -136,13 +136,13 @@ execution record rather than an open work queue.
 - Examples must make confirmation tokens, environment-file overrides, and
   destructive/disposable target requirements visible.
 
-- [ ] **Step 1: Map each script’s actual arguments and safety gates**
+- [x] **Step 1: Map each script’s actual arguments and safety gates**
 
   Confirm the exact usage, environment-file variable, dry-run default, and
   confirmation token from each script. Treat script headers and argument parsing
   as authoritative; do not infer flags from filenames.
 
-- [ ] **Step 2: Add safe command examples**
+- [x] **Step 2: Add safe command examples**
 
   Expand `ops/README.md` with separate examples for backup, freshness check,
   pruning (dry-run first, confirmation required for deletion), restore to a
@@ -151,13 +151,13 @@ execution record rather than an open work queue.
   each as read-only, dry-run, destructive, or disposable-target-only. Use
   placeholders such as `/absolute/path/...` and never production credentials.
 
-- [ ] **Step 3: Add recovery-status boundaries**
+- [x] **Step 3: Add recovery-status boundaries**
 
   Link to the recovery runbook and state that newer backup/restore safety changes
   still require a fresh isolated drill unless a checked-in record proves one.
   Do not claim that a production restore drill was performed.
 
-- [ ] **Step 4: Verify operational examples**
+- [x] **Step 4: Verify operational examples**
 
   Compare every example with the script’s parser and confirmation checks. Run
   only non-mutating help/dry-run or static checks where supported; do not invoke
@@ -182,7 +182,7 @@ execution record rather than an open work queue.
 - Consumes the guides from Tasks 1–3.
 - Produces the repository’s canonical entry-point navigation and terminology.
 
-- [ ] **Step 1: Normalize installation and migration instructions**
+- [x] **Step 1: Normalize installation and migration instructions**
 
   Use `npm ci` for clean/reproducible installs. Explain any intentional use of
   `npm install`. Use the verified local Prisma sequence (`npm run
@@ -190,35 +190,35 @@ execution record rather than an open work queue.
   creation is intended) and distinguish it from CI/production
   `npm run prisma:migrate:deploy`.
 
-- [ ] **Step 2: Normalize health-check guidance**
+- [x] **Step 2: Normalize health-check guidance**
 
   Document `/api/health/live` as the liveness check and `/api/health` plus
   `/api/health/ready` as readiness aliases, including that readiness checks
   database/storage and may return 503 during maintenance or dependency failure.
   Keep `/api/openapi.json` as the API schema endpoint where relevant.
 
-- [ ] **Step 3: Normalize mobile OAuth and runtime guidance**
+- [x] **Step 3: Normalize mobile OAuth and runtime guidance**
 
   Clearly distinguish local custom-scheme redirect behavior from production
   HTTPS App Link behavior. State that backend and frontend declare Node 24 while
   mobile-admin currently has no package `engines` field and follows the project’s
   Node 24 guidance rather than claiming package-enforced support.
 
-- [ ] **Step 4: Update navigation and CI/CD accuracy**
+- [x] **Step 4: Update navigation and CI/CD accuracy**
 
   Add the new guides to the root/docs indexes and relevant subsystem READMEs.
   Correct CI/CD summaries to reflect the checked-in workflow gates, including
   backend tests in CD, frontend mock port 5011, SHA/owner/enablement gates, and
   APK release requirements. Avoid duplicating full workflow files.
 
-- [ ] **Step 5: Add verification-pending notes**
+- [x] **Step 5: Add verification-pending notes**
 
   In deployment/recovery material, label current host/region/backup-destination
   facts and restore-drill status as owner-verification items where repository
   evidence is insufficient. Preserve useful procedures and link to the new
   references.
 
-- [ ] **Step 6: Check all modified links and terminology**
+- [x] **Step 6: Check all modified links and terminology**
 
   Confirm new guide links resolve from root, docs index, and subsystem docs;
   remove stale references only when the replacement is present; and scan for
@@ -233,31 +233,31 @@ execution record rather than an open work queue.
 - Read: all modified Markdown files and their referenced source files
 - Test: repository-provided lint/check commands that are safe and relevant
 
-- [ ] **Step 1: Validate Markdown links and file references**
+- [x] **Step 1: Validate Markdown links and file references**
 
   Run a repository-appropriate link checker if one exists. Otherwise use a
   small read-only script or PowerShell check to resolve relative Markdown links
   from each modified document and report missing targets.
 
-- [ ] **Step 2: Validate command and endpoint claims**
+- [x] **Step 2: Validate command and endpoint claims**
 
   Compare docs against package scripts, workflow commands, and
   `backend/src/app.js`. Confirm there are no unsupported script names, health
   semantics, or environment-variable names in the new guides.
 
-- [ ] **Step 3: Scan safety and completeness**
+- [x] **Step 3: Scan safety and completeness**
 
   Search modified docs for credential-like values, private keys, accidental real
   tokens, `TBD`, `TODO`, and broken placeholder syntax. Confirm destructive ops
   examples include warnings and confirmation/disposable-target requirements.
 
-- [ ] **Step 4: Run safe project checks**
+- [x] **Step 4: Run safe project checks**
 
   Run available Markdown formatting/lint checks and the relevant package lint or
   type checks only if they do not mutate production systems. Record any checks
   that cannot run because they require external services or secrets.
 
-- [ ] **Step 5: Review the final diff**
+- [x] **Step 5: Review the final diff**
 
   Inspect `git diff --check` and the complete diff for scope creep, duplicated
   conflicting instructions, and accidental edits outside documentation. Leave

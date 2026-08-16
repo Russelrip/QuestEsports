@@ -39,7 +39,7 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `SESSION_COOKIE_NAME` | Yes | Backend | L/D/CI/P | Public/non-secret | `quest_session` | Restart backend; existing sessions may need logout |
 | `SESSION_TTL_DAYS` | No — defaults to `1` | Backend | L/D/CI/P | Public/non-secret | `1` | Restart backend |
 | `REMEMBER_ME_SESSION_TTL_DAYS` | No — defaults to `30` | Backend | L/D/CI/P | Public/non-secret | `30` | Restart backend |
-| `AUTH_ENCRYPTION_KEY` | Conditional | Backend/security owner | L/D/P; not required by automated test defaults | Secret | `<64 hexadecimal characters>` | Restart backend; changing an existing key requires an approved data migration plan |
+| `AUTH_ENCRYPTION_KEY` | Yes for non-test backend | Backend/security owner | L/D/P; not required by automated test defaults | Secret | `<64 hexadecimal characters>` | Restart backend; changing an existing key requires an approved data migration plan |
 | `TRUST_PROXY` | Conditional | Backend/deployment owner | D/P | Public/non-secret | `false` locally; `<proxy setting>` otherwise | Restart backend |
 | `REQUIRE_API_ORIGIN` | Conditional | Backend/security owner | L/D/P | Public/non-secret | `false` locally; `true` in production | Restart backend |
 
@@ -164,7 +164,7 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 
 | Variable | Required? | Owner | Applies | Classification | Safe placeholder/default | Restart/redeploy impact |
 | --- | --- | --- | --- | --- | --- | --- |
-| `RUN_DATABASE_INTEGRATION_TESTS` | No — owning script sets it | Backend test script | CI/test | Generated control | Automatically set to `true` by `npm run test:integration`; do not set before invoking the script | Per test process |
+| `RUN_DATABASE_INTEGRATION_TESTS` | No — owning script or CI sets it | Backend test script / GitHub Actions | CI/test | Generated control | Automatically set to `true` by `npm run test:integration` and by CI; do not set before invoking the script | Per test process |
 | `CI` | No — workflow sets it | GitHub Actions | CI | Generated control | `true` in workflows; local direct runs may omit it | Per process |
 | `NODE_VERSION` | No — workflow sets it | GitHub Actions | CI | Generated control | `24` | Per workflow |
 | `ALLOW_INSECURE_LOOPBACK_URLS` | No — CI-only workflow setting | Frontend CI | CI | Generated control | `true` for loopback mock URLs only | Per build |
@@ -220,13 +220,13 @@ operators can distinguish required enablement from generated workflow values.
 | `DEPLOY_SHA` | No — generated from `github.sha` by backend CD | GitHub Actions | CI | Generated control | `<full 40-character commit SHA>` | Per deployment workflow |
 | `deploy_sha` | Yes for a frontend deploy dispatch | Repository owner | CI/P | Public workflow input | `<full 40-character main commit SHA>` | Per deployment workflow |
 | `BACKEND_SSH_HOST` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<pinned backend host>` | Per deployment |
-| `BACKEND_SSH_PORT` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `22` | Per deployment |
+| `BACKEND_SSH_PORT` | No — workflow defaults to `22` | Repository owner | CI/P | Secret/environment value | `22` | Per deployment |
 | `BACKEND_SSH_USER` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `deploy` | Per deployment |
 | `BACKEND_SSH_PRIVATE_KEY` | Yes when backend CD enabled | Repository owner | CI/P | Secret | `<deploy SSH private key>` | Per deployment |
 | `BACKEND_SSH_HOST_KEY` | Yes when backend CD enabled | Repository owner | CI/P | Secret | `<pinned known_hosts line>` | Per deployment |
 | `BACKEND_APP_DIR` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<backend checkout path>` | Per deployment |
-| `BACKEND_PM2_PROCESS` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `quest-backend` | Per deployment |
-| `BACKEND_HEALTHCHECK_URL` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `http://127.0.0.1:5001/api/health` | Per deployment |
+| `BACKEND_PM2_PROCESS` | No — workflow defaults to `quest-backend` | Repository owner | CI/P | Secret/environment value | `quest-backend` | Per deployment |
+| `BACKEND_HEALTHCHECK_URL` | No — workflow defaults to `http://127.0.0.1:5001/api/health` | Repository owner | CI/P | Secret/environment value | `http://127.0.0.1:5001/api/health` | Per deployment |
 | `BACKEND_MIGRATION_APPROVAL_SHA` | Conditional; required for pending/changed migrations | Repository owner | CI/P | Secret | `<40-character approved commit SHA>` | Per deployment |
 | `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` | Conditional; required for destructive migrations | Repository owner | CI/P | Secret | `<40-character approved commit SHA>` | Per deployment |
 | `FRONTEND_DEPLOY_ENABLED` | Conditional; required to enable frontend deploy | Repository owner | CI/P | Public control | `false` | Per deployment workflow |

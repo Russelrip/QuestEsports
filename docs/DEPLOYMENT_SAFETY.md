@@ -1,6 +1,6 @@
 # Deployment and migration safety
 
-Production deployments are promoted only from a successful `CI` run on `main`. The deploy workflow uses that exact tested commit and rejects newly introduced destructive migration statements. A commit that changes migration SQL also requires the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to equal that exact 40-character commit SHA and must complete an encrypted off-site backup before migration.
+Production deployments are promoted only from a successful `CI` run on the exact dispatched commit (normally `main`). The deploy workflow uses that exact tested commit and rejects newly introduced destructive migration statements. It does not enforce that the dispatched ref is `main`; the owner must dispatch from `main` to preserve the documented main-only promotion intent. A commit that changes migration SQL also requires the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to equal that exact 40-character commit SHA and must complete an encrypted off-site backup before migration.
 
 The gate checks both Git migration changes and migrations actually pending in production. This prevents a previously interrupted checkout from making a pending migration appear already deployed. A successful-deploy SHA marker is written only after migration, security verification, restart, health checks, and smoke checks succeed.
 

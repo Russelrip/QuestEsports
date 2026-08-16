@@ -80,7 +80,9 @@ checks out `valorant-platform-backend`, installs its development dependencies
 with `uv sync --extra dev`, and runs `npm run test:valorant:e2e` from `backend/`
 with the dedicated-test `VALORANT_PLATFORM_REPO` and `E2E_*` contract. The job
 uses owner-maintained test credentials and data only; it is not a production
-integration test.
+integration test. Note: the workflow does not install backend npm dependencies
+before the E2E run and interpolates secrets into shell source; treat the enabled
+job as an owner/verification item rather than an asserted passing path.
 
 The frontend CI build uses these non-production values:
 
@@ -213,7 +215,7 @@ systemctl enable pm2-deploy
 
 Verify `systemctl is-active pm2-deploy` and `sudo -u deploy -H pm2 list`. See the [Production Operations Runbook](./production-runbook.md#pm2-and-automatic-boot) for migrating an existing root-owned PM2 process and recovering from `Result: protocol`.
 
-After a successful CI run, the repository owner may manually deploy the current `main` commit. On deploy, the workflow runs:
+After a successful CI run, the repository owner may manually deploy the workflow-dispatch ref's commit (normally `main`). The workflow does not enforce that the dispatched ref is `main`; it verifies only that the exact dispatched commit has a successful CI run. On deploy, the workflow runs:
 
 ```bash
 git fetch origin "$DEPLOY_SHA"
@@ -253,13 +255,13 @@ Initial liveness retries may log connection failures while Node starts. A succes
 
 ## Manual Deployment
 
-To redeploy the current `main` branch without pushing a new commit:
+To redeploy the selected workflow-dispatch ref (normally `main`) without pushing a new commit:
 
 1. Open GitHub Actions.
 2. Select `CD`.
 3. Choose `Run workflow`.
 
-The workflow deploys the current `main` commit only after confirming that the same commit has a successful `CI` run. The production environment approval and deploy enablement variables still apply.
+The workflow deploys the exact workflow-dispatch commit only after confirming that the same commit has a successful `CI` run. It does not enforce that the dispatched ref is `main`; the owner must dispatch from `main` to preserve the documented main-only promotion intent. The production environment approval and deploy enablement variables still apply.
 
 The owner-only manual trigger is intentional because GitHub Free does not provide branch-protection enforcement for this private personal repository. See [Collaboration And Staging](./collaboration-and-staging.md) before granting collaborator access.
 

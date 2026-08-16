@@ -223,7 +223,7 @@ npm run dev
    uv run python -m scripts.apply_migrations --runtime-role val_runtime
    ```
 3. Apply committed Quest Prisma migrations with `npm run prisma:migrate:deploy`.
-   Use `npx prisma migrate dev` only for intentional local schema/migration
+   Use `npm run prisma:migrate` only for intentional local schema/migration
    creation, never to apply committed migrations to this shared test project.
 
 **Local env shape** (values are placeholders — generate real ones locally; `.env` stays untracked, `.env.example` carries shape only):

@@ -222,7 +222,7 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 4. If migrations changed, set the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to that exact 40-character commit SHA. CD refuses any other value and creates an encrypted off-site backup before applying the migration.
 5. CD installs backend dependencies, generates Prisma, lints, applies production migrations, verifies RLS/Data API privileges, restarts PM2, checks health plus public tournament/product/capability reads, and saves the process list.
 
-Manual redeploy: GitHub `Actions -> CD -> Run workflow`. The manual job redeploys the current `main` commit and refuses to continue unless that exact commit has a successful `CI` run.
+Manual redeploy: GitHub `Actions -> CD -> Run workflow`. The manual job redeploys the exact workflow-dispatch commit and refuses to continue unless that exact commit has a successful `CI` run. It does not enforce that the dispatched ref is `main`; dispatch from `main` to preserve the documented main-only promotion intent.
 
 The `repair_database_ssl` input is a narrowly scoped recovery option for an older VPS `.env` whose `DATABASE_URL` or `DIRECT_URL` predates the explicit TLS requirement. It updates only those two URL entries to `sslmode=require`, preserves `.env` permissions, and never prints credentials. Leave it disabled during normal deployments. After a successful repair deployment, future deployments validate the stored values without changing them.
 

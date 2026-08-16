@@ -627,7 +627,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] SEC-021 Analytics/monitoring do not capture passwords, tokens, payment proof, full identity data, or unnecessary personal information.
 - [ ] SEC-022 Privacy policy matches actual cookies, analytics, account data, recruitment data, uploads, payment processing, retention, and contact process.
 - [ ] SEC-023 Dependency, secret, and source scans contain no unresolved release-blocking findings.
-- [x] SEC-024 Database and upload backups are encrypted, restorable, access-controlled, and include required public/private asset roots.
+- [ ] SEC-024 Database and upload backups are encrypted, restorable, access-controlled, and include required public/private asset roots.
 - [ ] SEC-025 Every public table has RLS enabled and `anon`, `authenticated`, and `service_role` have no table privileges when the Data API is unused; `npm run prisma:security:verify` passes.
 - [ ] SEC-026 Production `.env`, OAuth/rclone material, platform keys, and infrastructure configuration have a separate encrypted, access-controlled, restore-tested recovery copy.
 
@@ -637,7 +637,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] OPS-002 Common success, validation, authentication, authorization, not-found, conflict, rate-limit, and server-error shapes are consistent.
 - [ ] OPS-003 Production environment variables use correct frontend/API URLs, allowed origins, cookie name, database, storage, mail, proxy, and payment settings.
 - [ ] OPS-004 Database migration status is clean and the deployed schema matches the application version.
-- [x] OPS-005 Public and private upload roots are durable, outside disposable release directories, and included in backup/restore procedures.
+- [ ] OPS-005 Public and private upload roots are durable, outside disposable release directories, and included in backup/restore procedures.
 - [ ] OPS-006 Proxy/client IP configuration produces correct secure-cookie, origin, audit, and rate-limit behavior.
 - [ ] OPS-007 Commerce capability and cleanup flags disable only their intended commerce behavior while free and bank-transfer registration remain correct; they do not activate full-site maintenance.
 - [ ] OPS-008 Server clock/timezone and database timestamps are synchronized; user-facing Sri Lankan times are correct.
@@ -662,7 +662,7 @@ Perform intrusive tests only with authorization and in staging.
 - [ ] REL-010 PayHere sandbox launch matrix passes: paid, failed, cancelled, duplicate callback, mismatch, late callback, refund, and chargeback where enabled.
 - [ ] REL-011 Final legal/business approval exists for privacy, terms, refund/return policy, prices, fees, bank details, and public contact information.
 - [ ] REL-012 All S1/S2 defects are closed; remaining defects have accepted owner, severity, workaround, and target date.
-- [x] REL-013 Smoke test is repeated immediately after deployment on the production URL.
+- [ ] REL-013 Smoke test is repeated immediately after deployment on the production URL.
 - [ ] REL-014 Monitoring/logs are watched through the first real signup, verification, tournament registration, upload, order, and payment callback.
 
 ## Bug report template
@@ -695,7 +695,7 @@ Retest result and build:
 
 | Result | Count |
 | --- | ---: |
-| Passed | 11 verified release/operations checks |
+| Passed | 6 verified release/operations checks |
 | Failed | 0 known |
 | Blocked / not tested | 453 staging/manual checks |
 | S1 open | 0 known |
