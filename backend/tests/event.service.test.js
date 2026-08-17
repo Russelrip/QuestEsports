@@ -112,9 +112,13 @@ test("event service aliases retain the old event-series response model", async (
 
 test("event service archive unpublishes safely even when children exist", async () => {
   let updateArgs;
+  let archiveLookupArgs;
   const prisma = {
     eventSeries: {
-      findUnique: async () => seriesRecord({ tournaments: [{ id: "child" }] }),
+      findUnique: async (args) => {
+        archiveLookupArgs = args;
+        return seriesRecord({ tournaments: [{ id: "child", title: "Child Game", isPublished: true }] });
+      },
       update: async (args) => { updateArgs = args; return seriesRecord({ isPublished: false }); },
     },
   };
@@ -123,6 +127,7 @@ test("event service archive unpublishes safely even when children exist", async 
     const result = await service.archiveAdminSeries("event-1");
     assert.equal(result.isPublished, false);
     assert.deepEqual(updateArgs, { where: { id: "event-1" }, data: { isPublished: false } });
+    assert.ok(archiveLookupArgs.include.tournaments.include, "archive must load the full child projection");
   } finally {
     restore();
   }

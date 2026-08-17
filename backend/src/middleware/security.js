@@ -20,6 +20,7 @@ const SAFE_PUBLIC_API_PATHS = [
   /^\/api\/event-albums(?:\/[^/]+(?:\/photos\/[^/]+\/image)?)?$/,
   /^\/api\/rulebooks(?:\/[^/]+)?$/,
   /^\/api\/event-series(?:\/[^/]+)?$/,
+  /^\/api\/events(?:\/[^/]+)?$/,
   /^\/api\/game-categories(?:\/[^/]+)?$/,
   /^\/api\/products(?:\/[^/]+)?$/,
   /^\/api\/ticket-events(?:\/[^/]+)?$/,

@@ -272,7 +272,7 @@ const saveAdminSeries = async ({ seriesId, body = {}, file, files } = {}) => {
 const archiveAdminSeries = async (seriesId) => {
   const existing = await prisma.eventSeries.findUnique({
     where: { id: seriesId },
-    include: { tournaments: { select: { id: true } } },
+    include: { tournaments: buildSeriesTournamentInclude({ includeDrafts: true }) },
   });
   if (!existing) throw new HttpError(404, "Event series not found.");
   const series = await prisma.eventSeries.update({
