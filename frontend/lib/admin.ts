@@ -115,6 +115,11 @@ export const adminEventActionLabels = {
   attachExisting: "Attach existing",
   viewPublic: "View public event",
 } as const;
+export const applyAdminEventMediaSelection = (values: AdminEventFormValues, field: "heroImage" | "bannerImage", file: File | null): AdminEventFormValues => ({
+  ...values,
+  [field]: file,
+  [field === "heroImage" ? "removeHeroImage" : "removeBannerImage"]: false,
+});
 
 export type AdminUser = {
   id: string;
