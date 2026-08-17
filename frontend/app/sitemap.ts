@@ -10,6 +10,7 @@ import { fetchProducts } from "@/lib/shop";
 import { fetchTicketedEvents } from "@/lib/tickets";
 import { fetchPublicEventAlbums } from "@/lib/event-albums";
 import {
+  fetchPublicEvents,
   fetchPublicEventSeries,
   fetchPublicTournaments,
 } from "@/lib/tournaments";
@@ -23,17 +24,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Keep each content source independent so one unavailable API endpoint does not
   // remove every other dynamic URL from the generated sitemap.
-  const [tournaments, series, rulebooks, products, ticketedEvents, eventAlbums] =
-    await Promise.all([
-      fetchPublicTournaments().catch(() => []),
-      fetchPublicEventSeries().catch(() => []),
-      fetchRulebooks().catch(() => []),
-      fetchProducts().catch(() => []),
-      fetchTicketedEvents().catch(() => []),
-      fetchPublicEventAlbums(new URLSearchParams({ page: "1", pageSize: "50" }))
-        .then((result) => result.albums)
-        .catch(() => []),
-    ]);
+  const [
+    tournaments,
+    series,
+    events,
+    rulebooks,
+    products,
+    ticketedEvents,
+    eventAlbums,
+  ] = await Promise.all([
+    fetchPublicTournaments().catch(() => []),
+    fetchPublicEventSeries().catch(() => []),
+    fetchPublicEvents().catch(() => []),
+    fetchRulebooks().catch(() => []),
+    fetchProducts().catch(() => []),
+    fetchTicketedEvents().catch(() => []),
+    fetchPublicEventAlbums(new URLSearchParams({ page: "1", pageSize: "50" }))
+      .then((result) => result.albums)
+      .catch(() => []),
+  ]);
 
   const tournamentEntries: MetadataRoute.Sitemap = tournaments.map(
     (tournament) => ({
@@ -46,6 +55,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .filter((eventSeries) => eventSeries.isPublished)
     .map((eventSeries) => ({
       url: absoluteUrl(`/tournaments/series/${eventSeries.slug}`),
+    }));
+
+  const eventEntries: MetadataRoute.Sitemap = events
+    .filter((event) => event.isPublished)
+    .map((event) => ({
+      url: absoluteUrl(`/events/${event.slug}`),
     }));
 
   const rulebookEntries: MetadataRoute.Sitemap = rulebooks.map((rulebook) => ({
@@ -72,6 +87,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...staticEntries,
     ...tournamentEntries,
     ...seriesEntries,
+    ...eventEntries,
     ...rulebookEntries,
     ...productEntries,
     ...ticketEntries,
