@@ -1,5 +1,7 @@
 const buildActiveRegistrationWhere = ({ now = new Date(), approvedOnly = false } = {}) => ({
-  ...(approvedOnly ? { status: "approved" } : { status: { not: "rejected" } }),
+  ...(approvedOnly
+    ? { status: "approved" }
+    : { status: { notIn: ["rejected", "waitlisted"] } }),
   OR: [
     { paymentStatus: "paid" },
     {
@@ -10,7 +12,7 @@ const buildActiveRegistrationWhere = ({ now = new Date(), approvedOnly = false }
 });
 
 const isRegistrationActive = (registration, now = new Date()) =>
-  registration.status !== "rejected" &&
+  !["rejected", "waitlisted"].includes(registration.status) &&
   (registration.paymentStatus === "paid" ||
     (registration.paymentStatus === "pending" &&
       registration.reservedUntil &&
@@ -21,6 +23,7 @@ const allocateLowestAvailableSlot = async ({
   tournamentId,
   maxTeams,
   excludeRegistrationId,
+  now = new Date(),
 }) => {
   const [activeRegistrations, adminHolds] = await Promise.all([
     tx.teamRegistration.findMany({
@@ -28,7 +31,7 @@ const allocateLowestAvailableSlot = async ({
         tournamentId,
         ...(excludeRegistrationId ? { id: { not: excludeRegistrationId } } : {}),
         assignedSlotNumber: { not: null },
-        ...buildActiveRegistrationWhere(),
+        ...buildActiveRegistrationWhere({ now }),
       },
       select: { assignedSlotNumber: true },
     }),
@@ -82,10 +85,33 @@ const countTournamentCapacityUsage = async ({ tx, tournamentId, excludeRegistrat
   return registrationCount + adminHoldCount - activeHeldRegistrationCount;
 };
 
+const getNextWaitlistPosition = async ({ tx, tournamentId }) => {
+  const latest = await tx.teamRegistration.findFirst({
+    where: { tournamentId, status: "waitlisted" },
+    orderBy: { waitlistPosition: "desc" },
+    select: { waitlistPosition: true },
+  });
+  return (latest?.waitlistPosition || 0) + 1;
+};
+
+const compactWaitlistPositions = async ({ tx, tournamentId, position }) => {
+  if (!Number.isInteger(position)) return;
+  await tx.teamRegistration.updateMany({
+    where: {
+      tournamentId,
+      status: "waitlisted",
+      waitlistPosition: { gt: position },
+    },
+    data: { waitlistPosition: { decrement: 1 } },
+  });
+};
+
 module.exports = {
   allocateLowestAvailableSlot,
   buildActiveRegistrationWhere,
   isRegistrationActive,
   countTournamentCapacityUsage,
+  getNextWaitlistPosition,
+  compactWaitlistPositions,
 };
 const { HttpError } = require("../../lib/http-error");

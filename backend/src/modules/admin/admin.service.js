@@ -39,13 +39,16 @@ const { mapUserForResponse, validateUserBasics } = require("../auth/auth.service
 const {
   allocateLowestAvailableSlot,
   countTournamentCapacityUsage,
+  compactWaitlistPositions,
+  getNextWaitlistPosition,
 } = require("../tournaments/registration-eligibility");
+const { getRegistrationPublicReference } = require("../tournaments/registration-state");
 const { getBankTransferAmountForSlot } = require("../payments/bank-transfer.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { buildShortCode } = require("../tournaments/bracket.service");
 const { normalizeCoachSubmission } = require("../tournaments/coach.validation");
 
-const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected"]);
+const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected", "waitlisted"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
 const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
 const RECRUITMENT_STATUSES = new Set(["pending", "reviewed", "accepted", "rejected"]);
@@ -114,6 +117,8 @@ const TEAM_REGISTRATION_SUMMARY_SELECT = {
   status: true,
   paymentStatus: true,
   verificationStatus: true,
+  waitlistPosition: true,
+  publicReference: true,
   createdAt: true,
   captainName: true,
   captainEmail: true,
@@ -179,6 +184,8 @@ const mapTeamRegistration = (registration) => ({
   status: registration.status,
   paymentStatus: registration.paymentStatus,
   verificationStatus: registration.verificationStatus,
+  waitlistPosition: registration.waitlistPosition || null,
+  publicReference: getRegistrationPublicReference(registration),
   adminSlotReservation: registration.adminSlotReservation
     ? {
         ...registration.adminSlotReservation,
@@ -214,6 +221,8 @@ const mapTeamRegistrationSummary = (registration) => ({
   status: registration.status,
   paymentStatus: registration.paymentStatus,
   verificationStatus: registration.verificationStatus,
+  waitlistPosition: registration.waitlistPosition || null,
+  publicReference: getRegistrationPublicReference(registration),
   createdAt: registration.createdAt,
   tournament: registration.tournament,
   captain: {
@@ -1552,8 +1561,10 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
   const currentRegistration = await prisma.teamRegistration.findUnique({
     where: { id: registrationId },
     select: {
+      status: true,
+      waitlistPosition: true,
       paymentStatus: true,
-      tournament: { select: { registrationFeeAmount: true } },
+      tournament: { select: { registrationFeeAmount: true, waitlistEnabled: true } },
     },
   });
   if (!currentRegistration) throw new HttpError(404, "Registration not found.");
@@ -1570,6 +1581,16 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
       if (!current) throw new HttpError(404, "Registration not found.");
       if (current.status === "rejected") {
         throw new HttpError(409, "Restore the rejected registration to pending before overriding payment.");
+      }
+      if (current.status === "waitlisted") {
+        const first = await tx.teamRegistration.findFirst({
+          where: { tournamentId: current.tournamentId, status: "waitlisted" },
+          orderBy: { waitlistPosition: "asc" },
+          select: { id: true },
+        });
+        if (first?.id !== current.id) {
+          throw new HttpError(409, "Only the first waitlisted registration can be promoted.");
+        }
       }
 
       let assignedSlotNumber = current.assignedSlotNumber || current.adminSlotReservation?.assignedSlotNumber;
@@ -1610,6 +1631,13 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
       if (current.adminSlotReservation) {
         await tx.adminSlotReservation.delete({ where: { registrationId: current.id } });
       }
+      if (current.status === "waitlisted") {
+        await compactWaitlistPositions({
+          tx,
+          tournamentId: current.tournamentId,
+          position: current.waitlistPosition,
+        });
+      }
       return tx.teamRegistration.update({
         where: { id: current.id },
         data: {
@@ -1624,7 +1652,16 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
       });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     await activatePaidTeamRegistration(registration.id);
-    return mapTeamRegistration(registration);
+    const mapped = mapTeamRegistration(registration);
+    Object.defineProperty(mapped, "transition", {
+      value: {
+        from: currentRegistration.status,
+        to: "approved",
+        reason: normalizeText(body.reason) || null,
+      },
+      enumerable: false,
+    });
+    return mapped;
   }
 
   if (nextStatus) {
@@ -1637,6 +1674,9 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
       currentRegistration.paymentStatus !== "paid"
     ) {
       throw new HttpError(409, "Paid registrations must be provider-confirmed before approval.");
+    }
+    if (nextStatus === "waitlisted" && !currentRegistration.tournament.waitlistEnabled) {
+      throw new HttpError(409, "Waitlisting is not enabled for this tournament.");
     }
     updateData.status = nextStatus;
   }
@@ -1662,13 +1702,106 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
     );
   }
 
-  const registration = await prisma.teamRegistration.update({
-    where: { id: registrationId },
-    data: updateData,
-    include: TEAM_REGISTRATION_INCLUDE,
-  });
+  let registration;
+  if (nextStatus === "waitlisted") {
+    registration = await prisma.$transaction(async (tx) => {
+      const current = await tx.teamRegistration.findUnique({
+        where: { id: registrationId },
+        include: { tournament: true },
+      });
+      if (!current) throw new HttpError(404, "Registration not found.");
+      if (!current.tournament.waitlistEnabled) {
+        throw new HttpError(409, "Waitlisting is not enabled for this tournament.");
+      }
+      const waitlistPosition = current.status === "waitlisted" && current.waitlistPosition
+        ? current.waitlistPosition
+        : await getNextWaitlistPosition({ tx, tournamentId: current.tournamentId });
+      return tx.teamRegistration.update({
+        where: { id: registrationId },
+        data: {
+          ...updateData,
+          status: "waitlisted",
+          waitlistPosition,
+          assignedSlotNumber: null,
+          reservedUntil: null,
+          paymentStatus: current.paymentStatus === "paid" ? current.paymentStatus : "unpaid",
+        },
+        include: TEAM_REGISTRATION_INCLUDE,
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } else if (
+    nextStatus &&
+    ["pending", "approved", "rejected"].includes(nextStatus) &&
+    currentRegistration.status === "waitlisted"
+  ) {
+    registration = await prisma.$transaction(async (tx) => {
+      const current = await tx.teamRegistration.findUnique({
+        where: { id: registrationId },
+        include: { tournament: true, adminSlotReservation: true },
+      });
+      if (!current) throw new HttpError(404, "Registration not found.");
 
-  return mapTeamRegistration(registration);
+      let data = { ...updateData };
+      if (current.status === "waitlisted") {
+        if (nextStatus !== "rejected") {
+          const first = await tx.teamRegistration.findFirst({
+            where: { tournamentId: current.tournamentId, status: "waitlisted" },
+            orderBy: { waitlistPosition: "asc" },
+            select: { id: true },
+          });
+          if (first?.id !== current.id) {
+            throw new HttpError(409, "Only the first waitlisted registration can be promoted.");
+          }
+          const used = await countTournamentCapacityUsage({
+            tx,
+            tournamentId: current.tournamentId,
+            excludeRegistrationId: current.id,
+          });
+          if (used >= current.tournament.maxTeams) {
+            throw new HttpError(409, "The tournament has no slot available.");
+          }
+          data.assignedSlotNumber = await allocateLowestAvailableSlot({
+            tx,
+            tournamentId: current.tournamentId,
+            maxTeams: current.tournament.maxTeams,
+            excludeRegistrationId: current.id,
+          });
+          data.waitlistPosition = null;
+        } else {
+          data.waitlistPosition = null;
+        }
+        await compactWaitlistPositions({
+          tx,
+          tournamentId: current.tournamentId,
+          position: current.waitlistPosition,
+        });
+      }
+      return tx.teamRegistration.update({
+        where: { id: registrationId },
+        data,
+        include: TEAM_REGISTRATION_INCLUDE,
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } else {
+    registration = await prisma.teamRegistration.update({
+      where: { id: registrationId },
+      data: updateData,
+      include: TEAM_REGISTRATION_INCLUDE,
+    });
+  }
+
+  const mapped = mapTeamRegistration(registration);
+  Object.defineProperty(mapped, "transition", {
+    value: nextStatus
+      ? {
+          from: currentRegistration.status,
+          to: nextStatus,
+          reason: normalizeText(body.reason) || null,
+        }
+      : null,
+    enumerable: false,
+  });
+  return mapped;
 };
 
 const deleteTeamRegistration = async (registrationId) => {

@@ -20,7 +20,13 @@ const {
   allocateLowestAvailableSlot,
   buildActiveRegistrationWhere,
   countTournamentCapacityUsage,
+  getNextWaitlistPosition,
 } = require("./registration-eligibility");
+const {
+  buildPublicReference,
+  getRegistrationPublicReference,
+  getTournamentRegistrationState,
+} = require("./registration-state");
 const {
   removeTeamLogoIfUnreferenced,
   removeUploadsQuietly,
@@ -38,6 +44,7 @@ const RETRYABLE_REGISTRATION_TRANSACTION_ERROR_CODES = new Set([
   "P2028",
   "P2034",
   "P2037",
+  "P2002",
 ]);
 const waitBeforeTransactionRetry = (attempt) =>
   new Promise((resolve) => setTimeout(resolve, attempt * 100));
@@ -166,6 +173,8 @@ const mapRegistrationResult = (registration) => ({
   paymentStatus: registration.paymentStatus,
   verificationStatus: registration.verificationStatus,
   assignedSlotNumber: registration.assignedSlotNumber,
+  waitlistPosition: registration.waitlistPosition || null,
+  publicReference: getRegistrationPublicReference(registration),
   quotedFeeAmount: registration.quotedFeeAmount
     ? Number(registration.quotedFeeAmount)
     : null,
@@ -420,12 +429,8 @@ const startExistingRegistrationPayment = async ({
 };
 
 const assertRegistrationStillOpen = (tournament, now, statusCode = 400) => {
-  if (
-    !tournament?.isPublished ||
-    tournament.status !== "registration_open" ||
-    (tournament.registrationOpenAt && tournament.registrationOpenAt > now) ||
-    (tournament.registrationDeadline && tournament.registrationDeadline < now)
-  ) {
+  const state = getTournamentRegistrationState({ tournament, now, capacityUsed: -1 });
+  if (state.state !== "registration_open" && state.state !== "waitlist_open") {
     throw new HttpError(statusCode, "Registration is closed for this tournament.");
   }
 };
@@ -644,6 +649,17 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     })
   );
   if (existing) {
+    if (existing.status === "waitlisted") {
+      return {
+        registration: mapRegistrationResult(existing),
+        paymentOrderId: null,
+        checkout: null,
+        bankTransfer: null,
+        awaitingTeamVerification: false,
+        readyForPayment: false,
+        waitlisted: true,
+      };
+    }
     if (existing.paymentStatus === "paid" || feeAmount === 0) {
       throw new HttpError(409, "You are already registered for this tournament.");
     }
@@ -822,8 +838,39 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           now: retryNow,
           allowActivePaymentReservation: Boolean(hasActiveReservation),
         });
-        const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id, excludeRegistrationId: existing.id });
-        if (activeCount >= currentTournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
+        const activeCount = await countTournamentCapacityUsage({
+          tx,
+          tournamentId: currentTournament.id,
+          excludeRegistrationId: existing.id,
+          now: retryNow,
+        });
+        const registrationState = hasActiveReservation
+          ? { canRegister: activeCount < currentTournament.maxTeams, canWaitlist: false }
+          : getTournamentRegistrationState({
+              tournament: currentTournament,
+              capacityUsed: activeCount,
+              now: retryNow,
+            });
+        if (!registrationState.canRegister) {
+          if (!registrationState.canWaitlist) {
+            throw new HttpError(409, "Registration slots are full.");
+          }
+          const waitlistPosition = await getNextWaitlistPosition({
+            tx,
+            tournamentId: currentTournament.id,
+          });
+          const waitlisted = await tx.teamRegistration.update({
+            where: { id: existing.id },
+            data: {
+              status: "waitlisted",
+              paymentStatus: "unpaid",
+              reservedUntil: null,
+              assignedSlotNumber: null,
+              waitlistPosition,
+            },
+          });
+          return { payment: null, registration: waitlisted, tournament: currentTournament, waitlisted: true };
+        }
         const {
           assignedSlotNumber,
           quotedFeeAmount,
@@ -959,17 +1006,20 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     });
     return {
       registration: mapRegistrationResult(retried.registration),
-      paymentOrderId: providerOrderId,
-      checkout: paymentMethod === "payhere"
+      paymentOrderId: retried.payment ? providerOrderId : null,
+      checkout: retried.payment && paymentMethod === "payhere"
         ? buildCheckout({ payment: retried.payment, tournament: retried.tournament, user, body })
         : null,
-      bankTransfer: paymentMethod === "bank_transfer"
+      bankTransfer: retried.payment && paymentMethod === "bank_transfer"
         ? buildBankTransferInstructions({
             transaction: retried.payment,
             registration: retried.registration,
             tournament: retried.tournament,
           })
         : null,
+      awaitingTeamVerification: false,
+      readyForPayment: false,
+      waitlisted: Boolean(retried.waitlisted),
     };
   }
 
@@ -989,17 +1039,33 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         tournament,
         now: new Date(),
       });
-      const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id });
-      if (activeCount >= currentTournament.maxTeams) throw new HttpError(409, "Registration slots are full.");
+      const transactionNow = new Date();
+      const activeCount = await countTournamentCapacityUsage({
+        tx,
+        tournamentId: currentTournament.id,
+        now: transactionNow,
+      });
+      const registrationState = getTournamentRegistrationState({
+        tournament: currentTournament,
+        capacityUsed: activeCount,
+        now: transactionNow,
+      });
+      if (!registrationState.canRegister && !registrationState.canWaitlist) {
+        throw new HttpError(409, "Registration slots are full.");
+      }
+      const isWaitlisted = registrationState.canWaitlist;
+      const waitlistPosition = isWaitlisted
+        ? await getNextWaitlistPosition({ tx, tournamentId: currentTournament.id })
+        : null;
 
-      const assignedSlotNumber = paymentMethod === "bank_transfer" && !requiresTeamVerification
+      const assignedSlotNumber = !isWaitlisted && paymentMethod === "bank_transfer" && !requiresTeamVerification
         ? await allocateLowestAvailableSlot({
             tx,
             tournamentId: currentTournament.id,
             maxTeams: currentTournament.maxTeams,
           })
         : null;
-      const quotedFeeAmount = paymentMethod === "bank_transfer" && !requiresTeamVerification
+      const quotedFeeAmount = !isWaitlisted && paymentMethod === "bank_transfer" && !requiresTeamVerification
         ? getBankTransferAmountForSlot(currentTournament, assignedSlotNumber)
         : feeAmount;
 
@@ -1035,7 +1101,8 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           captainRiotId: primaryGameId,
           contactEmail,
           teamLogoName: persistedLogo?.filename || null,
-          paymentStatus: feeAmount > 0
+          status: isWaitlisted ? "waitlisted" : "pending",
+          paymentStatus: isWaitlisted ? "unpaid" : feeAmount > 0
             ? requiresTeamVerification ? "unpaid" : "pending"
             : "paid",
           verificationStatus: persistedMembers.every((member) => member.role === "CAPTAIN")
@@ -1049,7 +1116,9 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           quotedFeeCurrency: feeAmount > 0 && !requiresTeamVerification
             ? currentTournament.registrationFeeCurrency
             : null,
-          reservedUntil,
+          reservedUntil: isWaitlisted ? null : reservedUntil,
+          waitlistPosition,
+          publicReference: buildPublicReference(),
         },
       });
       await tx.registrationMember.createMany({
@@ -1071,7 +1140,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         })),
       });
 
-      const payment = feeAmount > 0 && !requiresTeamVerification
+      const payment = !isWaitlisted && feeAmount > 0 && !requiresTeamVerification
         ? await tx.paymentTransaction.create({
             data: {
               id: crypto.randomUUID(),
@@ -1085,7 +1154,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             },
           })
         : null;
-      return { registration, payment, tournament: currentTournament };
+      return { registration, payment, tournament: currentTournament, waitlisted: isWaitlisted };
     });
   } catch (error) {
     if (persistedLogo) {
@@ -1125,10 +1194,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           tournament: result.tournament,
         })
       : null,
-    awaitingTeamVerification: requiresTeamVerification && persistedMembers.some(
+    awaitingTeamVerification: !result.waitlisted && requiresTeamVerification && persistedMembers.some(
       (member) => member.role !== "CAPTAIN"
     ),
-    readyForPayment: requiresTeamVerification && persistedMembers.every(
+    readyForPayment: !result.waitlisted && requiresTeamVerification && persistedMembers.every(
       (member) => member.role === "CAPTAIN"
     ),
     pendingInviteCount: requiresTeamVerification

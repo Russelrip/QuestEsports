@@ -190,6 +190,20 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
     req.user.id
   );
 
+  if (registration.transition) {
+    await recordAudit({
+      ...requestAuditContext(req),
+      action: "team_registration.status_changed",
+      targetType: "TeamRegistration",
+      targetId: req.params.registrationId,
+      beforeData: { status: registration.transition.from },
+      afterData: {
+        status: registration.transition.to,
+        reason: registration.transition.reason,
+      },
+    });
+  }
+
   res.status(200).json({
     success: true,
     message: "Registration updated successfully.",
