@@ -562,6 +562,7 @@ const mapTournament = (tournament) => {
     bankTransferReviewMinutes:
       tournamentWithRegistrationCount.bankTransferReviewMinutes || 1440,
     maxTeams: tournamentWithRegistrationCount.maxTeams,
+    waitlistEnabled: Boolean(tournamentWithRegistrationCount.waitlistEnabled),
     registrationCount: tournamentWithRegistrationCount.registrationCount,
     capacityUsed: tournamentWithRegistrationCount.capacityUsed,
     prizePool: tournamentWithRegistrationCount.prizePool,
@@ -788,12 +789,15 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
   const entryType = normalizeText(
     body.entryType || existingTournament?.entryType || "team"
   ).toLowerCase();
-  const seriesId = normalizeText(body.seriesId) || null;
+  const seriesId = normalizeText(body.seriesId ?? existingTournament?.seriesId) || null;
   const seriesOrder =
     normalizeInteger(body.seriesOrder) ?? existingTournament?.seriesOrder ?? 100;
   const prizePool = normalizeText(body.prizePool);
   const teamSize = normalizeInteger(body.teamSize);
   const maxTeams = normalizeInteger(body.maxTeams);
+  const waitlistEnabled = normalizeBooleanFlag(
+    body.waitlistEnabled ?? existingTournament?.waitlistEnabled
+  );
   const minRosterSize =
     normalizeInteger(body.minRosterSize) ??
     existingTournament?.minRosterSize ??
@@ -1100,6 +1104,7 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
     bankAccountName,
     bankAccountNumber,
     maxTeams,
+    waitlistEnabled,
     prizePool,
     status,
     isPublished: normalizeBooleanFlag(body.isPublished),
@@ -1479,6 +1484,24 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
   return mapAdminTournament(tournament);
 };
 
+const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder }) => {
+  const existingTournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+  });
+  if (!existingTournament) throw new HttpError(404, "Tournament not found.");
+
+  const normalizedOrder = normalizeInteger(seriesOrder);
+  const tournament = await prisma.tournament.update({
+    where: { id: tournamentId },
+    data: {
+      seriesId,
+      ...(normalizedOrder === null ? {} : { seriesOrder: normalizedOrder }),
+    },
+    include: buildRegistrationCountInclude(),
+  });
+  return mapAdminTournament(tournament);
+};
+
 const deleteAdminTournament = async (tournamentId) => {
   const existingTournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
@@ -1668,6 +1691,7 @@ module.exports = {
   listAdminTournaments,
   getAdminTournamentById,
   createAdminTournament,
+  attachTournamentToSeries,
   updateAdminTournament,
   deleteAdminTournament,
   getTournamentRegistrationStatus,
