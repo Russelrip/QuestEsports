@@ -132,3 +132,21 @@ test("event service archive unpublishes safely even when children exist", async 
     restore();
   }
 });
+
+test("event PATCH parsing clears explicit optional values but preserves absent fields", async () => {
+  const { module: service, restore } = buildMocks({});
+  try {
+    const existing = seriesRecord();
+    const cleared = service.parseSeries({ shortName: "", websiteUrl: null, startDate: "" }, existing);
+    assert.equal(cleared.shortName, null);
+    assert.equal(cleared.websiteUrl, null);
+    assert.equal(cleared.startDate, null);
+    const preserved = service.parseSeries({}, existing);
+    assert.equal(preserved.shortName, existing.shortName);
+    assert.equal(preserved.websiteUrl, existing.websiteUrl);
+    assert.equal(preserved.startDate.getTime(), existing.startDate.getTime());
+    assert.throws(() => service.parseSeries({ title: "" }, existing), /Title, slug, and description are required/);
+  } finally {
+    restore();
+  }
+});

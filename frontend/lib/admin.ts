@@ -94,15 +94,27 @@ export const initialAdminEventFormValues: AdminEventFormValues = {
   heroImage: null, bannerImage: null, removeHeroImage: false, removeBannerImage: false,
 };
 export const buildAdminEventFormData = (values: AdminEventFormValues) => {
+  assertFileWithinUploadLimit(values.heroImage, ADMIN_UPLOAD_MAX_FILE_SIZE, "Event hero image");
+  assertFileWithinUploadLimit(values.bannerImage, ADMIN_UPLOAD_MAX_FILE_SIZE, "Event banner image");
   const body = new FormData();
   const dateFields = new Set(["startDate", "endDate", "registrationOpenAt", "registrationCloseAt"]);
   Object.entries(values).forEach(([key, value]) => {
-    if (value !== null && value !== "") body.append(key, value instanceof File ? value : dateFields.has(key) ? sriLankaDateTimeLocalToIso(String(value)) : String(value));
+    if (value === undefined || (value === null && (key === "heroImage" || key === "bannerImage"))) return;
+    body.append(key, value instanceof File ? value : dateFields.has(key) && value ? sriLankaDateTimeLocalToIso(String(value)) : String(value ?? ""));
   });
   return body;
 };
 export const getAdminEventStatusLabel = (status?: AdminEvent["eventStatus"]) => ({ draft: "Draft", upcoming: "Upcoming", open: "Open", closed: "Closed", completed: "Completed" }[status || "closed"]);
 export const getAdminEventArchiveLabel = (title: string) => `Archive ${title}`;
+export const adminEventActionLabels = {
+  save: "Save event",
+  create: "Create event",
+  publish: "Publish event",
+  unpublish: "Unpublish event",
+  addTournament: "Add tournament",
+  attachExisting: "Attach existing",
+  viewPublic: "View public event",
+} as const;
 
 export type AdminUser = {
   id: string;

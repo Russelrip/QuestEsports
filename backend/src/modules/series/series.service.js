@@ -154,10 +154,13 @@ const getPublicEventBySlug = getPublicSeriesBySlug;
 const listAdminSeries = () => listSeries({ includeDrafts: true });
 const listAdminEvents = listAdminSeries;
 
+const hasField = (body, field) => Object.prototype.hasOwnProperty.call(body, field);
+const patchValue = (body, field, existing) => hasField(body, field) ? body[field] : existing;
+
 const parseSeries = (body = {}, existing) => {
-  const title = normalizeText(body.title ?? existing?.title);
-  const slug = normalizeSlug(body.slug ?? title ?? existing?.slug);
-  const description = normalizeText(body.description ?? existing?.description);
+  const title = normalizeText(patchValue(body, "title", existing?.title));
+  const slug = normalizeSlug(patchValue(body, "slug", existing?.slug));
+  const description = normalizeText(patchValue(body, "description", existing?.description));
   const displayOrder = normalizeInteger(body.displayOrder) ?? existing?.displayOrder ?? 100;
   const isPublished = Object.prototype.hasOwnProperty.call(body, "isPublished")
     ? normalizeBooleanFlag(body.isPublished)
@@ -174,27 +177,27 @@ const parseSeries = (body = {}, existing) => {
     title,
     slug,
     description,
-    shortName: normalizeText(body.shortName ?? existing?.shortName) || null,
-    subtitle: normalizeText(body.subtitle ?? existing?.subtitle) || null,
-    shortDescription: normalizeText(body.shortDescription ?? existing?.shortDescription) || null,
-    startDate: normalizeOptionalDate(body.startDate ?? existing?.startDate, "Start date"),
-    endDate: normalizeOptionalDate(body.endDate ?? existing?.endDate, "End date"),
+    shortName: normalizeText(patchValue(body, "shortName", existing?.shortName)) || null,
+    subtitle: normalizeText(patchValue(body, "subtitle", existing?.subtitle)) || null,
+    shortDescription: normalizeText(patchValue(body, "shortDescription", existing?.shortDescription)) || null,
+    startDate: normalizeOptionalDate(patchValue(body, "startDate", existing?.startDate), "Start date"),
+    endDate: normalizeOptionalDate(patchValue(body, "endDate", existing?.endDate), "End date"),
     registrationOpenAt: normalizeOptionalDate(
-      body.registrationOpenAt ?? existing?.registrationOpenAt,
+      patchValue(body, "registrationOpenAt", existing?.registrationOpenAt),
       "Registration open date"
     ),
     registrationCloseAt: normalizeOptionalDate(
-      body.registrationCloseAt ?? existing?.registrationCloseAt,
+      patchValue(body, "registrationCloseAt", existing?.registrationCloseAt),
       "Registration close date"
     ),
-    venue: normalizeText(body.venue ?? existing?.venue) || null,
-    location: normalizeText(body.location ?? existing?.location) || null,
-    country: normalizeText(body.country ?? existing?.country) || null,
-    organizer: normalizeText(body.organizer ?? existing?.organizer) || null,
-    websiteUrl: normalizeEventUrl(body.websiteUrl ?? existing?.websiteUrl, "Website URL"),
-    discordUrl: normalizeEventUrl(body.discordUrl ?? existing?.discordUrl, "Discord URL"),
+    venue: normalizeText(patchValue(body, "venue", existing?.venue)) || null,
+    location: normalizeText(patchValue(body, "location", existing?.location)) || null,
+    country: normalizeText(patchValue(body, "country", existing?.country)) || null,
+    organizer: normalizeText(patchValue(body, "organizer", existing?.organizer)) || null,
+    websiteUrl: normalizeEventUrl(patchValue(body, "websiteUrl", existing?.websiteUrl), "Website URL"),
+    discordUrl: normalizeEventUrl(patchValue(body, "discordUrl", existing?.discordUrl), "Discord URL"),
     registrationStatusOverride:
-      normalizeText(body.registrationStatusOverride ?? existing?.registrationStatusOverride).toLowerCase() || null,
+      normalizeText(patchValue(body, "registrationStatusOverride", existing?.registrationStatusOverride)).toLowerCase() || null,
     displayOrder,
     isPublished,
     featured,
@@ -328,4 +331,5 @@ module.exports = {
   listAdminEvents,
   archiveAdminSeries,
   saveAdminSeriesTournament,
+  parseSeries,
 };
