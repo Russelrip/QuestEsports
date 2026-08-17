@@ -118,10 +118,39 @@ export type EventSeries = {
   title: string;
   description: string;
   heroUrl: string | null;
+  bannerUrl?: string | null;
+  shortName?: string | null;
+  subtitle?: string | null;
+  shortDescription?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  registrationOpenAt?: string | null;
+  registrationCloseAt?: string | null;
+  venue?: string | null;
+  location?: string | null;
+  country?: string | null;
+  organizer?: string | null;
+  websiteUrl?: string | null;
+  discordUrl?: string | null;
+  eventStatus?: "draft" | "upcoming" | "open" | "closed" | "completed";
+  aggregate?: EventAggregate;
+  games?: number;
+  teamsRegistered?: number;
+  playersRegistered?: number;
+  availableSlots?: number;
+  registrationState?: "open" | "upcoming" | "closed" | "completed";
   displayOrder: number;
   isPublished: boolean;
   tournaments: Tournament[];
   ticketEvent?: TicketedEvent | null;
+};
+
+export type EventAggregate = {
+  games: number;
+  teamsRegistered: number;
+  playersRegistered: number;
+  availableSlots: number;
+  registrationState: "open" | "upcoming" | "closed" | "completed";
 };
 
 export type BracketParticipant = {
@@ -330,6 +359,11 @@ export const fetchPublicEventSeries = async () => {
   return data.series;
 };
 
+export const fetchPublicEvents = async () => {
+  const data = await fetchJson<{ events: EventSeries[] }>("/api/events");
+  return data.events;
+};
+
 export const fetchPublicGameCategories = async () => {
   const data = await fetchJson<{ categories: GameCategory[] }>("/api/game-categories");
   return data.categories;
@@ -340,6 +374,13 @@ export const fetchPublicEventSeriesBySlug = async (slug: string) => {
     `/api/event-series/${encodeURIComponent(slug)}`
   );
   return data.series;
+};
+
+export const fetchPublicEventBySlug = async (slug: string) => {
+  const data = await fetchJson<{ event: EventSeries }>(
+    `/api/events/${encodeURIComponent(slug)}`
+  );
+  return data.event;
 };
 
 export const fetchPublicTournamentBySlug = async (slug: string) => {

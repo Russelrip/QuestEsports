@@ -130,7 +130,7 @@ export default function TournamentsContent({ tournaments, series = [], categorie
       return rightDate - leftDate;
     });
   const standaloneTournaments = [...active, ...past];
-  const filteredSeries = series.filter((item) => item.tournaments.some(matches));
+  const filteredSeries = series.filter((item) => item.isPublished && item.tournaments.length > 1 && item.tournaments.some(matches));
 
   useEffect(() => {
     const scroller = gameScrollerRef.current;
@@ -182,7 +182,7 @@ export default function TournamentsContent({ tournaments, series = [], categorie
     {filteredSeries.length ? <div className="mb-9 grid gap-5 md:grid-cols-2">{filteredSeries.map((item, index) => {
       const available = item.tournaments.find((tournament) => tournament.isRegistrationOpen);
       const preview = available || item.tournaments[0];
-      return <Link key={item.id} href={`/tournaments/series/${item.slug}`} prefetch={false} className={`group relative aspect-[4/3] overflow-hidden rounded-[30px] border bg-[#0d0c13] ${preview && !preview.isRegistrationOpen ? "border-rose-500/45" : "border-white/10"}`}>
+      return <Link key={item.id} href={`/events/${item.slug}`} prefetch={false} className={`group relative aspect-[4/3] overflow-hidden rounded-[30px] border bg-[#0d0c13] ${preview && !preview.isRegistrationOpen ? "border-rose-500/45" : "border-white/10"}`}>
         <TournamentBannerImage
           bannerUrl={item.heroUrl || preview?.bannerUrl}
           title={item.title}
@@ -191,7 +191,7 @@ export default function TournamentsContent({ tournaments, series = [], categorie
           className="absolute inset-0 h-full w-full object-contain"
         />
         <span className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent" />
-        <span className="absolute inset-x-5 bottom-5"><span className="text-xs uppercase tracking-[0.22em] text-purple-200">Event Series · {preview?.game || "Multiple games"}</span><span className="mt-2 block text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{item.title}</span><span className="mt-3 flex flex-wrap items-center gap-3 text-sm"><b className="text-white">{preview?.prizePool || "Prize TBA"}</b><b className={available ? "text-emerald-300" : "text-rose-300"}>{available ? "Registration Open · Register" : "View Details"}</b></span></span>
+        <span className="absolute inset-x-5 bottom-5"><span className="text-xs uppercase tracking-[0.22em] text-purple-200">Event · {item.tournaments.length} games</span><span className="mt-2 block text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{item.title}</span><span className="mt-3 flex flex-wrap items-center gap-3 text-sm"><b className="text-white">{preview?.prizePool || "Prize TBA"}</b><b className={available ? "text-emerald-300" : "text-slate-300"}>{available ? "Registration Open · Explore" : "View event"}</b></span></span>
       </Link>;
     })}</div> : null}
 
