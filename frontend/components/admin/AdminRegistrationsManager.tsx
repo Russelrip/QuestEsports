@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { AdminTableSkeleton } from "@/components/ui/skeleton";
-import { useAdminRegistrations } from "@/hooks/api/useAdmin";
+import { useAdminEventRegistrations, useAdminRegistrations } from "@/hooks/api/useAdmin";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
 import {
@@ -50,9 +50,10 @@ const createRosterDraftMember = (
   gameId: "",
 });
 
-export default function AdminRegistrationsManager() {
+export default function AdminRegistrationsManager({ eventId, eventTitle }: { eventId?: string; eventTitle?: string } = {}) {
   const [search, setSearch] = useState("");
   const [tournament, setTournament] = useState("");
+  const [game, setGame] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [downloading, setDownloading] = useState(false);
@@ -63,16 +64,29 @@ export default function AdminRegistrationsManager() {
   const [detailError, setDetailError] = useState("");
   const debouncedSearch = useDebouncedValue(search);
   const debouncedTournament = useDebouncedValue(tournament);
+  const debouncedGame = useDebouncedValue(game);
   const debouncedStatus = useDebouncedValue(status);
-  const { data, error, loading, refetch } = useAdminRegistrations(
+  const globalQuery = useAdminRegistrations(
     debouncedSearch,
     debouncedTournament,
     debouncedStatus,
     page,
+    !eventId,
   );
+  const eventQuery = useAdminEventRegistrations(
+    eventId || "",
+    debouncedSearch,
+    debouncedTournament,
+    debouncedGame,
+    debouncedStatus,
+    page,
+    Boolean(eventId),
+  );
+  const { data, error, loading, refetch } = eventId ? eventQuery : globalQuery;
   const showToast = useToastStore((state) => state.showToast);
   const registrations = data?.registrations || [];
   const tournaments = data?.tournaments || [];
+  const games = Array.from(new Set(tournaments.map((item) => item.game).filter(Boolean))) as string[];
   const pagination = data?.pagination;
   const registrationGroups = registrations.reduce<
     Array<{
@@ -125,7 +139,9 @@ export default function AdminRegistrationsManager() {
     const params = new URLSearchParams();
     if (search.trim()) params.set("search", search.trim());
     if (tournament.trim()) params.set("tournament", tournament.trim());
+    if (game.trim()) params.set("game", game.trim());
     if (status.trim()) params.set("status", status.trim());
+    if (eventId) params.set("eventId", eventId);
     const query = params.toString();
     return `/api/admin/team-registrations/export${query ? `?${query}` : ""}`;
   };
@@ -181,7 +197,7 @@ export default function AdminRegistrationsManager() {
                   Full rosters load only when you open a registration.
                 </p>
               </div>
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-5">
                 <Input
                   value={search}
                   onChange={(event) => {
@@ -204,6 +220,18 @@ export default function AdminRegistrationsManager() {
                     </option>
                   ))}
                 </Select>
+                {eventId ? (
+                  <Select
+                    value={game}
+                    onChange={(event) => {
+                      setGame(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">All Games</option>
+                    {games.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </Select>
+                ) : null}
                 <Select
                   value={status}
                   onChange={(event) => {
@@ -215,6 +243,7 @@ export default function AdminRegistrationsManager() {
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
+                  <option value="waitlisted">Waitlisted</option>
                 </Select>
                 <Button
                   type="button"
@@ -253,6 +282,7 @@ export default function AdminRegistrationsManager() {
                         <div className="min-w-0">
                           <h4 className="break-words font-semibold text-white">{registration.teamName}</h4>
                           <p className="mt-1 text-xs text-slate-500">{formatAdminCompactDateTime(registration.createdAt)}</p>
+                          <p className="mt-1 text-xs text-purple-200">{eventTitle || "Event not assigned"} · {registration.tournament.game || "Game not set"}</p>
                         </div>
                         <div className="mt-4 min-w-0 text-sm">
                           <p className="break-words text-slate-300">{registration.captain.name}</p>
@@ -268,6 +298,7 @@ export default function AdminRegistrationsManager() {
                           <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Payment</dt><dd className="mt-1"><StatusText value={registration.paymentStatus} /></dd></div>
                           <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Verification</dt><dd className="mt-1"><StatusText value={registration.verificationStatus} /></dd></div>
                           <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Roster</dt><dd className="mt-1 font-semibold text-white">{registration.memberCount}</dd></div>
+                          <div><dt className="text-[10px] uppercase tracking-wider text-slate-500">Reference</dt><dd className="mt-1 break-all font-semibold text-white">{registration.publicReference || "—"}</dd></div>
                         </dl>
                         <Button type="button" className="mt-4 w-full" variant="secondary" onClick={() => setSelectedId(registration.id)}>
                           View & manage
@@ -282,6 +313,7 @@ export default function AdminRegistrationsManager() {
                   <thead className="border-b border-white/10 bg-white/[0.03] text-[11px] uppercase tracking-[0.16em] text-slate-500">
                     <tr>
                       <th className="px-5 py-4 font-semibold">Entry</th>
+                      <th className="px-5 py-4 font-semibold">Event / Game</th>
                       <th className="px-5 py-4 font-semibold">Tournament</th>
                       <th className="px-5 py-4 font-semibold">Captain</th>
                       <th className="px-5 py-4 font-semibold">Approval</th>
@@ -290,6 +322,7 @@ export default function AdminRegistrationsManager() {
                       <th className="px-5 py-4 text-center font-semibold">
                         Roster
                       </th>
+                      <th className="px-5 py-4 font-semibold">Reference</th>
                       <th className="px-5 py-4 text-right font-semibold">
                         Details
                       </th>
@@ -300,7 +333,7 @@ export default function AdminRegistrationsManager() {
                       <Fragment key={group.tournament.id}>
                         <tr className="border-y border-purple-300/15 bg-purple-400/[0.06]">
                           <td
-                            colSpan={8}
+                            colSpan={10}
                             className="px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-purple-100"
                           >
                             {group.tournament.title} · {group.entries.length}{" "}
@@ -321,6 +354,10 @@ export default function AdminRegistrationsManager() {
                                   registration.createdAt,
                                 )}
                               </p>
+                            </td>
+                            <td className="px-5 py-4 text-sm text-slate-300">
+                              <p>{eventTitle || "Event not assigned"}</p>
+                              <p className="mt-1 text-xs text-slate-500">{registration.tournament.game || "Game not set"}</p>
                             </td>
                             <td className="px-5 py-4 text-sm text-slate-300">
                               {registration.tournament.title}
@@ -351,6 +388,9 @@ export default function AdminRegistrationsManager() {
                             </td>
                             <td className="px-5 py-4 text-center text-sm font-semibold text-white">
                               {registration.memberCount}
+                            </td>
+                            <td className="px-5 py-4 text-sm text-slate-300">
+                              {registration.publicReference || "—"}
                             </td>
                             <td className="px-5 py-4 text-right">
                               <Button
@@ -802,6 +842,9 @@ function RegistrationDetail({
                   <option value="pending">Pending</option>
                   <option value="approved">Approved</option>
                   <option value="rejected">Rejected</option>
+                  {registration.tournament.waitlistEnabled || registration.status === "waitlisted" ? (
+                    <option value="waitlisted">Waitlisted</option>
+                  ) : null}
                 </Select>
               </label>
               <label className="mt-3 grid gap-2 text-sm text-slate-300">

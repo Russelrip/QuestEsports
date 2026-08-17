@@ -5,11 +5,16 @@ export type DashboardRegistration = {
   id: string;
   entryType: "team" | "solo";
   displayName: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "waitlisted";
   paymentStatus: "unpaid" | "pending" | "paid";
   verificationStatus: "pending" | "verified" | "flagged";
   createdAt: string;
   reservedUntil?: string | null;
+  event: {
+    id: string;
+    slug: string;
+    title: string;
+  } | null;
   tournament: {
     id: string;
     slug: string;

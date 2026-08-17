@@ -72,7 +72,7 @@ export function useAdminUsers(search: string, roleFilter: string, page: number) 
   });
 }
 
-export function useAdminRegistrations(search: string, tournament: string, status: string, page: number) {
+export function useAdminRegistrations(search: string, tournament: string, status: string, page: number, enabled = true) {
   return useApiQuery(["admin-registrations", search, tournament, status, page], async () => {
     const params = createAdminSearchParams(page, 10);
     appendIfPresent(params, "search", search);
@@ -84,7 +84,7 @@ export function useAdminRegistrations(search: string, tournament: string, status
       tournaments: TournamentOption[];
       pagination: Pagination;
     }>(`/api/admin/team-registrations?${params.toString()}`);
-  });
+  }, { enabled });
 }
 
 export function useAdminMessages(search: string, isRead: string, page: number) {
@@ -168,6 +168,25 @@ export function useAdminEvents() {
   return useApiQuery(["admin-events"], () => adminRequest<{ events: AdminEvent[] }>("/api/admin/events"));
 }
 
-export function useAdminEventRegistrations(eventId: string, enabled = true) {
-  return useApiQuery(["admin-event-registrations", eventId], () => adminRequest<{ registrations: TeamRegistrationSummary[] }>(`/api/admin/events/${eventId}/registrations`), { enabled });
+export function useAdminEventRegistrations(
+  eventId: string,
+  search = "",
+  tournament = "",
+  game = "",
+  status = "",
+  page = 1,
+  enabled = true,
+) {
+  return useApiQuery(["admin-event-registrations", eventId, search, tournament, game, status, page], async () => {
+    const params = createAdminSearchParams(page, 10);
+    appendIfPresent(params, "search", search);
+    appendIfPresent(params, "tournament", tournament);
+    appendIfPresent(params, "game", game);
+    appendIfPresent(params, "status", status);
+    return adminRequest<{
+      registrations: TeamRegistrationSummary[];
+      tournaments: TournamentOption[];
+      pagination: Pagination;
+    }>(`/api/admin/events/${eventId}/registrations?${params.toString()}`);
+  }, { enabled });
 }

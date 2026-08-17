@@ -116,8 +116,10 @@ const TOURNAMENT_SUMMARY_SELECT = {
   id: true,
   slug: true,
   title: true,
+  game: true,
   status: true,
   isPublished: true,
+  waitlistEnabled: true,
   minRosterSize: true,
   maxRosterSize: true,
   maxSubstitutes: true,
@@ -350,6 +352,8 @@ const mapRecruitmentApplication = (application) => ({
 });
 
 const buildRegistrationWhere = ({
+  eventId,
+  game,
   search,
   tournamentId,
   tournament,
@@ -357,24 +361,32 @@ const buildRegistrationWhere = ({
   paymentStatus,
   verificationStatus,
 }) => {
+  const normalizedEventId = normalizeText(eventId);
+  const normalizedGame = normalizeText(game);
   const normalizedSearch = normalizeText(search);
   const normalizedTournament = normalizeText(tournament);
   const normalizedStatus = normalizeText(status).toLowerCase();
   const normalizedPaymentStatus = normalizeText(paymentStatus).toLowerCase();
   const normalizedVerificationStatus = normalizeText(verificationStatus).toLowerCase();
 
+  const tournamentFilters = [
+    ...(normalizedEventId ? [{ seriesId: normalizedEventId }] : []),
+    ...(normalizedGame ? [{ game: { equals: normalizedGame, mode: "insensitive" } }] : []),
+    ...(normalizedTournament
+      ? [{
+          OR: [
+            { id: normalizedTournament },
+            { slug: normalizedTournament },
+            { title: { contains: normalizedTournament, mode: "insensitive" } },
+          ],
+        }]
+      : []),
+  ];
+
   return {
     ...(tournamentId ? { tournamentId } : {}),
-    ...(normalizedTournament
-      ? {
-          tournament: {
-            OR: [
-              { id: normalizedTournament },
-              { slug: normalizedTournament },
-              { title: { contains: normalizedTournament, mode: "insensitive" } },
-            ],
-          },
-        }
+    ...(tournamentFilters.length > 0
+      ? { tournament: tournamentFilters.length === 1 ? tournamentFilters[0] : { AND: tournamentFilters } }
       : {}),
     ...(REGISTRATION_STATUSES.has(normalizedStatus) ? { status: normalizedStatus } : {}),
     ...(PAYMENT_STATUSES.has(normalizedPaymentStatus)
@@ -794,6 +806,7 @@ const listTeamRegistrations = async (query = {}) => {
       select: TEAM_REGISTRATION_SUMMARY_SELECT,
     }),
     prisma.tournament.findMany({
+      ...(query.eventId ? { where: { seriesId: normalizeText(query.eventId) } } : {}),
       orderBy: { startDate: { sort: "desc", nulls: "last" } },
       select: TOURNAMENT_SUMMARY_SELECT,
     }),

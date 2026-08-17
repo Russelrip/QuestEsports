@@ -4,13 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { adminEventActionLabels, applyAdminEventMediaSelection, buildAdminEventFormData, getAdminEventArchiveLabel, getAdminEventStatusLabel, initialAdminEventFormValues } from "../../lib/admin";
 import { buildTournamentFormData, initialTournamentFormValues } from "../../lib/admin";
 
-const mocks = vi.hoisted(() => ({ events: null as unknown, push: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({ events: null as unknown, registrations: null as unknown, push: vi.fn(), toast: vi.fn() }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: { children: ReactNode }) => createElement("a", props, children) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/hooks/api/useAdmin", () => ({
   useAdminEvents: () => ({ data: mocks.events, loading: false, error: "", refetch: vi.fn() }),
+  useAdminRegistrations: () => ({ data: null, loading: false, error: "", refetch: vi.fn() }),
   useAdminTournamentOptions: () => ({ data: [] }),
-  useAdminEventRegistrations: () => ({ data: null, loading: false, error: "" }),
+  useAdminEventRegistrations: () => ({ data: mocks.registrations, loading: false, error: "" }),
 }));
 vi.mock("@/hooks/useToastStore", () => ({ useToastStore: (selector: (state: { showToast: typeof mocks.toast }) => unknown) => selector({ showToast: mocks.toast }) }));
 vi.mock("@/components/admin/AdminShell", () => ({ default: ({ children }: { children: ReactNode }) => createElement("main", null, children) }));
@@ -88,5 +89,18 @@ describe("admin event form", () => {
     expect(tournamentsHtml).toContain("Add tournament");
     expect(tournamentsHtml).toContain("Attach existing");
     expect(tournamentsHtml).toContain("disabled");
+  });
+  it("renders event registration filters and waitlist-aware management controls", () => {
+    mocks.events = { events: [{ ...renderedEvent, tournaments: [{ id: "tournament-1", slug: "valorant-cup", title: "Valorant Cup", game: "Valorant", status: "registration_open", isPublished: true, registrationCount: 1, maxTeams: 16 }] }] };
+    mocks.registrations = {
+      registrations: [{ id: "registration-1", entryType: "team", teamName: "Quest Five", status: "waitlisted", paymentStatus: "unpaid", verificationStatus: "pending", createdAt: "2026-08-17T10:00:00.000Z", tournament: { id: "tournament-1", slug: "valorant-cup", title: "Valorant Cup", game: "Valorant", status: "registration_open", isPublished: true, waitlistEnabled: true }, captain: { name: "Captain", email: "captain@example.com" }, memberCount: 5, coachName: null, coachRiotId: null }],
+      tournaments: [{ id: "tournament-1", slug: "valorant-cup", title: "Valorant Cup", game: "Valorant", status: "registration_open", isPublished: true, waitlistEnabled: true }],
+      pagination: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
+    };
+    const html = renderToStaticMarkup(createElement(AdminEventDashboard, { eventId: "event-1", initialTab: "Registrations" }));
+    expect(html).toContain("All Games");
+    expect(html).toContain("Search teams or captains");
+    expect(html).toContain("Waitlisted");
+    expect(html).toContain("View &amp; manage");
   });
 });

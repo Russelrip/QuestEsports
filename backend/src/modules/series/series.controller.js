@@ -1,4 +1,5 @@
 const { asyncHandler } = require("../../lib/async-handler");
+const { listTeamRegistrations } = require("../admin/admin.service");
 const service = require("./series.service");
 
 const getPublicSeries = asyncHandler(async (req, res) => {
@@ -23,6 +24,20 @@ const getAdminSeries = asyncHandler(async (req, res) => {
 
 const getAdminEvents = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, events: await service.listAdminEvents() });
+});
+
+const getEventRegistrations = asyncHandler(async (req, res) => {
+  const result = await listTeamRegistrations({
+    ...req.query,
+    eventId: req.params.eventId,
+  });
+
+  res.status(200).json({
+    success: true,
+    registrations: result.items,
+    tournaments: result.tournaments,
+    pagination: result.pagination,
+  });
 });
 
 const getEventFiles = (req) => ({
@@ -85,6 +100,7 @@ module.exports = {
   getPublicEventDetail,
   getAdminSeries,
   getAdminEvents,
+  getEventRegistrations,
   createSeries,
   updateSeries,
   createEvent,

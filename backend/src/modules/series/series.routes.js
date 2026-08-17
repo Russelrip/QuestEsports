@@ -17,6 +17,7 @@ const eventUpload = tournamentBannerUpload.fields([
 router.get("/events", publicSeriesCache, publicEventResponseCache, controller.getPublicEvents);
 router.get("/events/:slug", publicSeriesCache, publicEventResponseCache, controller.getPublicEventDetail);
 router.get("/admin/events", requireAdmin, controller.getAdminEvents);
+router.get("/admin/events/:eventId/registrations", requireAdmin, controller.getEventRegistrations);
 router.post(
   "/admin/events",
   requireAdmin,

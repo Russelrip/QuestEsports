@@ -149,6 +149,7 @@ export type TournamentOption = {
   id: string;
   slug: string;
   title: string;
+  game?: string;
   status: string;
   isPublished: boolean;
   minRosterSize?: number;
@@ -156,6 +157,7 @@ export type TournamentOption = {
   maxSubstitutes?: number;
   allowCoach?: boolean;
   coachRequired?: boolean;
+  waitlistEnabled?: boolean;
 };
 
 export type RegistrationMember = {
@@ -185,9 +187,10 @@ export type TeamRegistration = {
   country?: string | null;
   teamTag?: string | null;
   organizationRequested?: boolean;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "waitlisted";
   paymentStatus: "unpaid" | "pending" | "paid";
   verificationStatus: "pending" | "verified" | "flagged";
+  publicReference: string;
   adminSlotReservation?: {
     id: string;
     assignedSlotNumber: number;
@@ -229,6 +232,7 @@ export type TeamRegistrationSummary = Pick<
   | "createdAt"
   | "tournament"
 > & {
+  publicReference: string;
   captain: Pick<TeamRegistration["captain"], "name" | "email">;
   coachName: string | null;
   coachRiotId: string | null;

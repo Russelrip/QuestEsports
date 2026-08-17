@@ -71,7 +71,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
         <span className="absolute left-4 top-4 bg-black/75 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-purple-200 backdrop-blur">{entry.tournament.game}</span>
       </div>
       <div className="flex flex-1 flex-col p-5">
-        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{entry.entryType === "solo" ? "Solo registration" : entry.displayName}</p>
+        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{entry.entryType === "solo" ? "Solo registration" : entry.displayName}</p>{entry.event ? <p className="mt-2 text-xs uppercase tracking-[0.14em] text-purple-200">{entry.event.title} &middot; /{entry.event.slug}</p> : null}
         <h4 className="mt-2 line-clamp-2 min-h-12 text-lg font-bold uppercase leading-6 text-white">{entry.tournament.title}</h4>
         <dl className="mt-5 grid grid-cols-2 gap-4 border-y border-white/8 py-4">
           <div><dt className="text-[9px] uppercase tracking-[0.16em] text-slate-500">Event date</dt><dd className="mt-1.5 text-xs font-semibold text-white">{eventDate}</dd></div>

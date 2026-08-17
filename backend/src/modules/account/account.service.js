@@ -17,6 +17,13 @@ const mapRegistration = (registration) => ({
   verificationStatus: registration.verificationStatus,
   createdAt: registration.createdAt,
   reservedUntil: registration.reservedUntil,
+  event: registration.tournament.series
+    ? {
+        id: registration.tournament.series.id,
+        slug: registration.tournament.series.slug,
+        title: registration.tournament.series.title,
+      }
+    : null,
   tournament: {
     id: registration.tournament.id,
     slug: registration.tournament.slug,
@@ -71,6 +78,9 @@ const getAccountDashboard = async ({ user }) => {
             endDate: true,
             endDateStatus: true,
             bannerImageName: true,
+            series: {
+              select: { id: true, slug: true, title: true },
+            },
           },
         },
         payments: {
