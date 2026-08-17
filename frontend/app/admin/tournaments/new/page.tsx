@@ -7,6 +7,7 @@ export const metadata = buildNoIndexMetadata(
   "/admin/tournaments/new"
 );
 
-export default function AdminNewTournamentPage() {
-  return <TournamentEditor />;
+export default async function AdminNewTournamentPage({ searchParams }: { searchParams: Promise<{ seriesId?: string; seriesOrder?: string }> }) {
+  const query = await searchParams;
+  return <TournamentEditor initialSeriesId={query.seriesId} initialSeriesOrder={query.seriesOrder ? Number(query.seriesOrder) : undefined} />;
 }

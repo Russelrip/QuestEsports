@@ -259,6 +259,7 @@ export type Tournament = {
   maxSubstitutes: number;
   allowCoach: boolean;
   coachRequired: boolean;
+  waitlistEnabled: boolean;
   registrationFields: TournamentRegistrationField[];
   paymentMethod: TournamentPaymentMethod;
   registrationFee: { amount: number; currency: string };

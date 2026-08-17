@@ -3,6 +3,7 @@
 import {
   adminRequest,
   type AdminUser,
+  type AdminEvent,
   type ContactMessage,
   type Pagination,
   type RecruitmentApplication,
@@ -161,4 +162,12 @@ const fetchAllAdminTournamentOptions = async (): Promise<TournamentTitleOption[]
 
 export function useAdminTournamentOptions() {
   return useApiQuery(["admin-tournament-options"], fetchAllAdminTournamentOptions);
+}
+
+export function useAdminEvents() {
+  return useApiQuery(["admin-events"], () => adminRequest<{ events: AdminEvent[] }>("/api/admin/events"));
+}
+
+export function useAdminEventRegistrations(eventId: string, enabled = true) {
+  return useApiQuery(["admin-event-registrations", eventId], () => adminRequest<{ registrations: TeamRegistrationSummary[] }>(`/api/admin/events/${eventId}/registrations`), { enabled });
 }

@@ -28,6 +28,7 @@ export const adminNavigationGroups = [
     label: "Competition",
     links: [
       { href: "/admin/tournaments", label: "Tournaments" },
+      { href: "/admin/events", label: "Events" },
       { href: "/admin/match-rooms", label: "Match Rooms" },
       { href: "/admin/veto-rooms", label: "Veto Rooms" },
       { href: "/admin/event-series", label: "Event Series" },
@@ -75,6 +76,33 @@ export type AdminDashboardStats = {
   pendingRecruitmentApplications: number;
   unreadContactMessages: number;
 };
+
+export type AdminEventTournament = Pick<Tournament, "id" | "slug" | "title" | "game" | "status" | "isPublished" | "registrationCount" | "maxTeams" | "startDate" | "startDateStatus" | "seriesOrder"> & { registrationState?: string };
+export type AdminEvent = {
+  id: string; slug: string; title: string; description: string; shortName?: string | null; subtitle?: string | null; shortDescription?: string | null;
+  heroUrl: string | null; bannerUrl?: string | null; displayOrder: number; isPublished: boolean; featured?: boolean;
+  startDate?: string | null; endDate?: string | null; registrationOpenAt?: string | null; registrationCloseAt?: string | null;
+  venue?: string | null; location?: string | null; country?: string | null; organizer?: string | null; websiteUrl?: string | null; discordUrl?: string | null;
+  registrationStatusOverride?: string | null; eventStatus?: "draft" | "upcoming" | "open" | "closed" | "completed";
+  aggregate: { games: number; teamsRegistered: number; playersRegistered: number; availableSlots: number; registrationState: "open" | "upcoming" | "closed" | "completed" };
+  tournaments: AdminEventTournament[]; createdAt?: string; updatedAt?: string;
+};
+export type AdminEventFormValues = Omit<AdminEvent, "id" | "aggregate" | "tournaments" | "heroUrl" | "bannerUrl" | "createdAt" | "updatedAt" | "eventStatus"> & { heroImage: File | null; bannerImage: File | null; removeHeroImage: boolean; removeBannerImage: boolean };
+export const initialAdminEventFormValues: AdminEventFormValues = {
+  slug: "", title: "", description: "", shortName: "", subtitle: "", shortDescription: "", displayOrder: 100, isPublished: false, featured: false,
+  startDate: "", endDate: "", registrationOpenAt: "", registrationCloseAt: "", venue: "", location: "", country: "Sri Lanka", organizer: "Quest E-sports", websiteUrl: "", discordUrl: "", registrationStatusOverride: "",
+  heroImage: null, bannerImage: null, removeHeroImage: false, removeBannerImage: false,
+};
+export const buildAdminEventFormData = (values: AdminEventFormValues) => {
+  const body = new FormData();
+  const dateFields = new Set(["startDate", "endDate", "registrationOpenAt", "registrationCloseAt"]);
+  Object.entries(values).forEach(([key, value]) => {
+    if (value !== null && value !== "") body.append(key, value instanceof File ? value : dateFields.has(key) ? sriLankaDateTimeLocalToIso(String(value)) : String(value));
+  });
+  return body;
+};
+export const getAdminEventStatusLabel = (status?: AdminEvent["eventStatus"]) => ({ draft: "Draft", upcoming: "Upcoming", open: "Open", closed: "Closed", completed: "Completed" }[status || "closed"]);
+export const getAdminEventArchiveLabel = (title: string) => `Archive ${title}`;
 
 export type AdminUser = {
   id: string;
@@ -452,6 +480,7 @@ export type TournamentFormValues = {
   maxSubstitutes: string;
   allowCoach: boolean;
   coachRequired: boolean;
+  waitlistEnabled: boolean;
   registrationFields: string;
   paymentMethod: Tournament["paymentMethod"];
   registrationFeeAmount: string;
@@ -542,6 +571,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   maxSubstitutes: "2",
   allowCoach: false,
   coachRequired: false,
+  waitlistEnabled: false,
   registrationFields: "[]",
   paymentMethod: "free",
   registrationFeeAmount: "0",

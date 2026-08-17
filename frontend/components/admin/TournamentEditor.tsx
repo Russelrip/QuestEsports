@@ -63,7 +63,7 @@ function EditorSection({
   );
 }
 
-export default function TournamentEditor({ tournamentId }: { tournamentId?: string }) {
+export default function TournamentEditor({ tournamentId, initialSeriesId, initialSeriesOrder }: { tournamentId?: string; initialSeriesId?: string; initialSeriesOrder?: number }) {
   const router = useRouter();
   const isEdit = Boolean(tournamentId);
   const [formValues, setFormValues] = useState<TournamentFormValues>(initialTournamentFormValues);
@@ -95,6 +95,12 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
   const hydratedRef = useRef(false);
   const bannerImageInputRef = useRef<HTMLInputElement>(null);
   const showToast = useToastStore((state) => state.showToast);
+
+  useEffect(() => {
+    if (!tournamentId && initialSeriesId) {
+      setFormValues((current) => ({ ...current, seriesId: initialSeriesId, seriesOrder: String(initialSeriesOrder ?? current.seriesOrder) }));
+    }
+  }, [initialSeriesId, initialSeriesOrder, tournamentId]);
 
   useEffect(() => {
     const loadRulebooks = async () => {
@@ -335,6 +341,7 @@ export default function TournamentEditor({ tournamentId }: { tournamentId?: stri
               <div className="grid gap-3 self-end pb-1 text-sm text-slate-300">
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.allowCoach} onChange={(event) => { const allowCoach = event.target.checked; updateField("allowCoach", allowCoach); if (!allowCoach) updateField("coachRequired", false); }} /> Allow a coach</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.coachRequired} disabled={!formValues.allowCoach} onChange={(event) => updateField("coachRequired", event.target.checked)} /> Coach required</label>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.waitlistEnabled} onChange={(event) => updateField("waitlistEnabled", event.target.checked)} /> Enable waitlist when full</label>
               </div>
               <FormField label="Payment Method" htmlFor="paymentMethod" required>
                 <Select
