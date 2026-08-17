@@ -20,6 +20,10 @@ All admin routes require a valid session and `user.role === "admin"`.
 - `/admin/tournaments` for tournament setup and asset management
 - `/admin/tournaments/new` for creating tournaments
 - `/admin/tournaments/[id]/edit` for tournament editing and bracket management
+- `/admin/events` for the event library
+- `/admin/events/new` for creating an event identity
+- `/admin/events/[id]` for the event dashboard, child tournaments, settings,
+  aggregate overview, and event-scoped registrations
 - `/admin/event-series` for published event groupings and hero images
 - `/admin/registrations` for tournament registration review
 - `/admin/payments` for bank-transfer review and PayHere reconciliation
@@ -141,6 +145,81 @@ The duplicate-registration check and registration-status endpoint use `TeamRegis
 
 If a bracket has already been generated, deleting or rejecting a registration does not automatically rewrite existing bracket data. Regenerate the draft bracket before publishing if seeds changed.
 
+## Quest Ascension Event Workflow
+
+An event is an `EventSeries` identity with optional child tournament links; it
+does not replace the tournament editor or merge the child games into one
+registration. Use the event dashboard in this order:
+
+1. **Save Draft** — open `/admin/events/new`, enter the required title, slug,
+   and description, add dates/venue/media as available, and save with
+   publication off.
+2. **Add Tournament** — from the event's Tournaments tab choose **Add
+   tournament** to open the normal tournament editor with the event preselected.
+   Configure game, format, roster, capacity, registration window, payment,
+   waitlist, rulebook, schedule, and publication settings there. The event
+   endpoint can also attach an existing tournament by ID; attaching changes
+   only its nullable `seriesId` and optional `seriesOrder`.
+3. **Configure** — verify each child has the correct game and rules, capacity,
+   registration state, schedule, assets, and payment setup. A child remains a
+   normal tournament with its own registration page and capacity.
+4. **Publish** — publish the child tournaments that are ready, then return to
+   the event Settings tab and publish the event. The public `/events/:slug`
+   page shows only the published event and published children.
+
+The Overview tab shows `games`, `teamsRegistered`, `playersRegistered`, and
+`availableSlots` from the shared event aggregate. The event status is derived
+from child timing/publication state unless `registrationStatusOverride` is
+set. The Tournaments tab preserves each game's independent configuration; the
+Registrations tab is a filtered view, not a second registration store.
+
+Archiving uses `POST /api/admin/events/:eventId/archive` and sets the event's
+publication flag false. It hides the event page while leaving child tournaments,
+registrations, payments, and history intact. The delete operation is not an
+archive: the current service rejects deletion while child tournaments exist;
+only an empty event can be deleted. The database relation itself is nullable
+and uses `SetNull` if an event is removed by an approved data operation, so
+children are never cascaded into deletion.
+
+### Event-scoped registration review
+
+Select **Registrations** from an event dashboard to call:
+
+```text
+GET /api/admin/events/:eventId/registrations
+```
+
+Use `search`, `tournament`, `game`, `status`, `paymentStatus`,
+`verificationStatus`, `page`, and `pageSize` to keep games isolated while
+reviewing the event. The response contains lightweight summaries only; open a
+row to use the existing full admin registration detail and correction tools.
+The event filter is enforced in the database by the child tournament's
+`seriesId`, so a registration from another event cannot appear through a
+client-side filter mistake.
+
+### Capacity and waitlist operations
+
+Capacity is per child tournament and the event's `availableSlots` is the sum
+of each child's remaining capacity. Active capacity includes paid
+registrations and unexpired pending reservations plus private admin holds,
+minus an active registration already covered by its hold. Rejected and
+waitlisted registrations do not consume capacity; expired reservations are
+not active.
+
+When a full child has `waitlistEnabled`, new submissions receive status
+`waitlisted`, no payment reservation, no assigned slot, and the next
+per-tournament `waitlistPosition`. An administrator may move a waitlisted row
+to `pending` or `approved` only when it is position one and capacity has been
+rechecked in the serializable transaction. Promotion assigns the lowest free
+slot, clears and compacts positions, and sets free registrations paid; paid
+registrations still require provider-confirmed payment. Rejecting a waitlisted
+row also compacts the remaining queue. Do not manually edit waitlist positions
+or payment status.
+
+The `publicReference` (`QES-...`) shown to admins is an opaque support
+reference, not a secret. Public pages never expose captain/contact details,
+payment evidence, provider credentials, admin holds, or admin notes.
+
 ## Registration Excel Export
 
 Admins can download the currently filtered registration set from `/admin/registrations`.
@@ -235,7 +314,33 @@ Admin event-series endpoints:
 - `PATCH /api/admin/event-series/:seriesId`
 - `DELETE /api/admin/event-series/:seriesId`
 
-Create/update supports a hero image plus slug, title, description, display order, and publication state. Tournaments link to a series and use `seriesOrder`. Deleting a series detaches child tournaments rather than deleting them.
+Create/update supports a hero image plus slug, title, description, display
+order, and publication state. Tournaments link to a series and use
+`seriesOrder`. Prefer the `/admin/events` workflow for the expanded event
+identity and event-scoped registration view. Deleting a series with child
+tournaments is rejected; archive it instead. The optional database relation is
+still `SetNull` for controlled deletion/migration scenarios, and child
+tournaments are never cascaded into deletion.
+
+## Event migration and recovery checks
+
+The Quest Ascension schema rollout is isolated from application content work.
+Back up PostgreSQL and both upload roots before deployment, then in a dedicated
+database run Prisma generation, `migrate deploy`, migration status/security
+verification, the event schema tests, and public/admin event smoke checks.
+The committed migrations are additive:
+`20260817120000_extend_event_series_quest_ascension` adds nullable event fields,
+waitlist/public-reference fields and indexes; the following
+`20260817130000_add_waitlist_position_uniqueness` cleans stale positions and
+adds the per-tournament uniqueness constraint.
+
+Do not reset a shared database or hand-edit an applied migration. If the code
+release fails, roll back the application commit only; keep the forward schema
+because production migration rollback is not supported. A database rollback
+requires a write freeze and the verified isolated backup/restore procedure,
+followed by schema, asset, liveness, readiness, public event, and admin event
+checks before traffic is restored. This feature adds no environment
+configuration.
 
 ## Tournament And Event Expenses
 

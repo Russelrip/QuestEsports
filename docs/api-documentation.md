@@ -362,6 +362,112 @@ Body:
 
 ## Public Tournament Endpoints
 
+### Quest Ascension events
+
+Quest Ascension treats an `EventSeries` row as the public event identity. A
+`Tournament.seriesId` is nullable, so existing standalone tournaments remain
+valid; when present, the relation groups that tournament under the event. The
+legacy `/event-series` endpoints and the event aliases below read the same
+model and return equivalent public data.
+
+Public event endpoints do not require authentication:
+
+- `GET /api/events` — lists published events and their published child
+  tournaments.
+- `GET /api/events/:slug` — returns one published event, its ordered published
+  child tournaments, aggregate registration data, and a safe public ticket
+  event projection when one is linked.
+- `GET /api/event-series` and `GET /api/event-series/:slug` — compatibility
+  aliases for the same public event-series data.
+
+The event response envelope is `{ success: true, events: [...] }` for the
+list and `{ success: true, event: {...} }` for the detail route. A safe detail
+response has this shape (fields not shown on a child are available from the
+normal public tournament endpoint):
+
+```json
+{
+  "success": true,
+  "event": {
+    "id": "event-uuid",
+    "slug": "quest-ascension",
+    "title": "Quest Ascension",
+    "description": "A multi-game event",
+    "shortName": "QA",
+    "subtitle": "Rise together",
+    "shortDescription": "A multi-game esports event",
+    "heroUrl": "/api/uploads/tournament-banners/hero.webp",
+    "bannerUrl": "/api/uploads/tournament-banners/banner.webp",
+    "startDate": "2026-09-01T09:00:00.000Z",
+    "endDate": "2026-09-03T18:00:00.000Z",
+    "venue": "Colombo",
+    "location": "Sri Lanka",
+    "eventStatus": "open",
+    "aggregate": {
+      "games": 2,
+      "teamsRegistered": 12,
+      "playersRegistered": 60,
+      "availableSlots": 20,
+      "registrationState": "open"
+    },
+    "tournaments": [
+      {
+        "id": "tournament-uuid",
+        "slug": "quest-ascension-valorant",
+        "title": "Quest Ascension Valorant",
+        "game": "valorant",
+        "series": { "id": "event-uuid", "slug": "quest-ascension", "title": "Quest Ascension" },
+        "status": "registration_open",
+        "isPublished": true,
+        "startDate": "2026-09-01T09:00:00.000Z",
+        "startDateStatus": "scheduled",
+        "maxTeams": 16,
+        "registrationCount": 8,
+        "capacityUsed": 8,
+        "registrationState": "registration_open",
+        "isRegistrationOpen": true,
+        "isSlotsFull": false,
+        "bannerUrl": "/api/uploads/tournament-banners/valorant.webp"
+      }
+    ],
+    "ticketEvent": null
+  }
+}
+```
+
+Public event payloads intentionally contain no captain names or contact
+details, payment records or provider data, private payment instructions,
+admin holds, admin notes, roster members, or unpublished child tournaments.
+The event aggregate is a count projection, not a registration export. Public
+event requests are cached; do not use the cache as an authorization boundary.
+An unknown public slug returns `404` using the common error envelope. Admin
+event requests return `401` for a missing/invalid session and `403` for a
+non-admin session; validation failures return `400`, missing event/tournament
+resources return `404`, and conflicting links, capacity, or waitlist actions
+return `409`, all as `{ success: false, message, details? }`.
+
+### Event aggregate definitions
+
+- `games` is the number of visible child tournaments (`isPublished = true` for
+  public reads; drafts are included only in admin reads).
+- `teamsRegistered` counts active registrations across those children. Active
+  means status is not `rejected` or `waitlisted` and payment is `paid`, or is
+  `pending` with an unexpired reservation.
+- `playersRegistered` counts active `CAPTAIN`, `PLAYER`, and `SUBSTITUTE`
+  registration members; coaches are excluded.
+- `availableSlots` is the sum of each child's non-negative
+  `maxTeams - capacityUsed`. Capacity includes active registrations and admin
+  slot holds, less active registrations already covered by a hold.
+- `registrationState` is `open` when any child is currently open and has
+  capacity, `completed` when every child is completed or past its end date,
+  `upcoming` when a child is upcoming or has a future opening/start, and
+  `closed` otherwise. An event's `registrationStatusOverride`, when set by an
+  admin, is the displayed aggregate state.
+
+These definitions are shared by the public event page and the admin event
+dashboard. They deliberately do not count waitlisted rows as teams or used
+capacity.
+
 ### `GET /api/event-series`
 
 Returns published event series ordered for public tournament navigation.
@@ -858,6 +964,56 @@ Optional remove flags during update:
 - `PATCH /api/admin/event-series/:seriesId`
 - `DELETE /api/admin/event-series/:seriesId`
 
+### Events and event-scoped administration
+
+The Quest Ascension event routes are the preferred admin contract. Every route
+below requires a valid session with `role === "admin"`:
+
+- `GET /api/admin/events` — lists draft and published events, child tournament
+  summaries, and the aggregate projection.
+- `GET /api/admin/events/:eventId/registrations` — lists only registrations
+  whose tournament has that event's `seriesId`.
+- `POST /api/admin/events` — creates an event identity.
+- `PATCH /api/admin/events/:eventId` — updates event identity and publication
+  fields.
+- `POST /api/admin/events/:eventId/archive` — unpublishes the event without
+  deleting its child tournaments or registrations.
+- `POST /api/admin/events/:eventId/tournaments` — creates a child tournament
+  with the event forced as its `seriesId`, or attaches an existing tournament
+  when the multipart body contains `tournamentId` (and optionally
+  `seriesOrder`).
+
+Create and update event requests are `multipart/form-data`. Required fields are
+`title`, `slug`, and `description`; optional fields include `shortName`,
+`subtitle`, `shortDescription`, `startDate`, `endDate`, `registrationOpenAt`,
+`registrationCloseAt`, `venue`, `location`, `country`, `organizer`,
+`websiteUrl`, `discordUrl`, `registrationStatusOverride`, `displayOrder`,
+`featured`, and `isPublished`. The file fields are `heroImage` and
+`bannerImage`; updates also accept `removeHeroImage` and `removeBannerImage`.
+Invalid dates, URLs, duplicate slugs, and missing required identity fields
+return the common error envelope.
+
+An event registration list accepts `page`, `pageSize`, `search`, `tournament`,
+`game`, `status`, `paymentStatus`, and `verificationStatus`. Its summaries
+contain only the event-scoped tournament, team/display name, statuses,
+waitlist position, public reference, created time, captain name/email,
+optional coach name/Game ID, and member count. Payment evidence, payment
+objects, private admin holds/notes, and private upload names are excluded.
+The full registration detail remains available through the existing admin
+registration endpoint after an administrator selects a row.
+
+The shared registration status endpoint accepts `waitlisted` in addition to
+`pending`, `approved`, and `rejected`. A waitlist promotion is serialized: only
+the first waitlisted registration may move to `pending` or `approved`, and only
+when a real slot is available. Promotion assigns the lowest available slot,
+clears the waitlist position, and compacts later positions; a free tournament
+can become paid/approved, while paid approval still requires provider-confirmed
+payment. Rejecting a waitlisted row removes it and compacts the queue. A full
+tournament exposes `waitlist_open` only when `waitlistEnabled` is true.
+
+Registration public references are opaque `QES-...` identifiers. They are
+useful for support and exports but do not authorize access to a registration.
+
 ### Products and orders
 
 - `GET /api/admin/products`
@@ -1160,6 +1316,45 @@ Paginated admin/media endpoints return:
 - Admin Excel exports are generated on demand and are not written to `backend/uploads/`.
 - Approved tournament team logos are exposed on public tournament detail responses and served through upload URLs.
 - Native brackets are public only after admin publication.
+
+### Quest Ascension migration deployment and rollback
+
+The event schema change is additive and is deployed through the committed
+Prisma history. Apply `20260817120000_extend_event_series_quest_ascension`
+followed by `20260817130000_add_waitlist_position_uniqueness` with the normal
+`prisma generate` and `prisma migrate deploy` commands in `backend/`. The first
+migration adds nullable event presentation fields, the nullable tournament
+relation remains intact, adds `waitlisted`, waitlist metadata, and public
+references, and creates the supporting indexes. The second normalizes stale
+waitlist positions and enforces per-tournament uniqueness.
+
+Before a shared deployment, take the approved isolated database/upload backup;
+verify migration status, generated Prisma output, the event schema checks, and
+the public/admin event smoke paths against a dedicated database. Do not run a
+reset or edit an applied migration. No new environment configuration is
+required by this feature.
+
+Application rollback may restore the previous code commit and restart the API,
+but production migrations are not reversed. Keep the new columns and enum
+values backward-compatible with the previous release. If the database itself
+must be reverted, stop writes, use the verified isolated backup/restore
+procedure, and validate the restored database and both upload roots before
+returning traffic; never attempt an ad-hoc `DROP`/down migration in production.
+
+### Manual Quest Ascension documentation checklist
+
+- [ ] Confirm every public and admin event endpoint in `series.routes.js` is
+  listed above, including the event-series compatibility aliases.
+- [ ] Confirm the admin workflow covers Save Draft → Add Tournament →
+  Configure → Publish, existing-tournament linking, archive, and event-scoped
+  registration review.
+- [ ] Confirm aggregate definitions, nullable `seriesId`/`SetNull`, capacity,
+  waitlist promotion, opaque references, privacy exclusions, migration
+  deployment, isolated verification, and rollback behavior match the code.
+- [ ] Confirm the safe public JSON example contains child summaries and no
+  captain, payment, or admin-note fields.
+- [ ] Confirm this feature introduces no environment-variable documentation or
+  configuration requirement.
 
 ## VALORANT Leaderboard (public)
 
