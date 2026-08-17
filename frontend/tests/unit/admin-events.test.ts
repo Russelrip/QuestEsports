@@ -4,14 +4,27 @@ import { describe, expect, it, vi } from "vitest";
 import { adminEventActionLabels, applyAdminEventMediaSelection, buildAdminEventFormData, getAdminEventArchiveLabel, getAdminEventStatusLabel, initialAdminEventFormValues } from "../../lib/admin";
 import { buildTournamentFormData, initialTournamentFormValues } from "../../lib/admin";
 
-const mocks = vi.hoisted(() => ({ events: null as unknown, registrations: null as unknown, push: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  events: null as unknown,
+  registrations: null as unknown,
+  registrationState: { loading: false, error: "", refetch: vi.fn() },
+  queryCalls: [] as Array<{ key: unknown[]; queryFn: () => Promise<unknown>; options?: { enabled?: boolean } }>,
+  push: vi.fn(),
+  toast: vi.fn(),
+}));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: { children: ReactNode }) => createElement("a", props, children) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/hooks/api/useAdmin", () => ({
   useAdminEvents: () => ({ data: mocks.events, loading: false, error: "", refetch: vi.fn() }),
   useAdminRegistrations: () => ({ data: null, loading: false, error: "", refetch: vi.fn() }),
   useAdminTournamentOptions: () => ({ data: [] }),
-  useAdminEventRegistrations: () => ({ data: mocks.registrations, loading: false, error: "" }),
+  useAdminEventRegistrations: () => ({ data: mocks.registrations, ...mocks.registrationState }),
+}));
+vi.mock("@/hooks/api/useApiQuery", () => ({
+  useApiQuery: (key: unknown[], queryFn: () => Promise<unknown>, options?: { enabled?: boolean }) => {
+    mocks.queryCalls.push({ key, queryFn, options });
+    return { data: null, loading: options?.enabled !== false, error: "", refetch: vi.fn() };
+  },
 }));
 vi.mock("@/hooks/useToastStore", () => ({ useToastStore: (selector: (state: { showToast: typeof mocks.toast }) => unknown) => selector({ showToast: mocks.toast }) }));
 vi.mock("@/components/admin/AdminShell", () => ({ default: ({ children }: { children: ReactNode }) => createElement("main", null, children) }));
@@ -102,5 +115,53 @@ describe("admin event form", () => {
     expect(html).toContain("Search teams or captains");
     expect(html).toContain("Waitlisted");
     expect(html).toContain("View &amp; manage");
+  });
+  it("composes the event registration request with server-side filters and pagination", async () => {
+    mocks.queryCalls.length = 0;
+    const actual = await vi.importActual<typeof import("../../hooks/api/useAdmin")>("../../hooks/api/useAdmin");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      void input;
+      return new Response(JSON.stringify({ success: true, registrations: [], tournaments: [], pagination: { page: 3, pageSize: 10, total: 0, totalPages: 0 } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      actual.useAdminEventRegistrations("event-1", "captain", "valorant-cup", "Valorant", "waitlisted", 3);
+      const query = mocks.queryCalls.at(-1);
+      expect(query?.key).toEqual(["admin-event-registrations", "event-1", "captain", "valorant-cup", "Valorant", "waitlisted", 3]);
+      expect(query?.options).toEqual({ enabled: true });
+      await query?.queryFn();
+      const requestedUrl = String(fetchMock.mock.calls[0]?.[0]);
+      const request = new URL(requestedUrl, "http://localhost");
+      expect(request.pathname).toBe("/api/admin/events/event-1/registrations");
+      expect(Object.fromEntries(request.searchParams)).toEqual({ page: "3", pageSize: "10", search: "captain", tournament: "valorant-cup", game: "Valorant", status: "waitlisted" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("preserves loading, error, empty, and mobile-card states for event registrations", () => {
+    mocks.events = { events: [{ ...renderedEvent, tournaments: [{ id: "tournament-1", slug: "valorant-cup", title: "Valorant Cup", game: "Valorant", status: "registration_open", isPublished: true, registrationCount: 1, maxTeams: 16 }] }] };
+    mocks.registrationState = { loading: true, error: "", refetch: vi.fn() };
+    mocks.registrations = null;
+    expect(renderToStaticMarkup(createElement(AdminEventDashboard, { eventId: "event-1", initialTab: "Registrations" }))).toContain("Loading");
+
+    mocks.registrationState = { loading: false, error: "Registration service unavailable", refetch: vi.fn() };
+    expect(renderToStaticMarkup(createElement(AdminEventDashboard, { eventId: "event-1", initialTab: "Registrations" }))).toContain("Registration service unavailable");
+
+    mocks.registrationState = { loading: false, error: "", refetch: vi.fn() };
+    mocks.registrations = { registrations: [], tournaments: [], pagination: { page: 1, pageSize: 10, total: 0, totalPages: 0 } };
+    expect(renderToStaticMarkup(createElement(AdminEventDashboard, { eventId: "event-1", initialTab: "Registrations" }))).toContain("No registrations matched your filters.");
+
+    mocks.registrations = {
+      registrations: [{ id: "registration-mobile", entryType: "team", teamName: "Mobile Quest", status: "approved", paymentStatus: "paid", verificationStatus: "verified", publicReference: "QES-MOBILE", createdAt: "2026-08-17T10:00:00.000Z", tournament: { id: "tournament-1", slug: "valorant-cup", title: "Valorant Cup", game: "Valorant", status: "registration_open", isPublished: true, waitlistEnabled: true }, captain: { name: "Mobile Captain", email: "captain@example.com" }, memberCount: 5, coachName: null, coachRiotId: null }],
+      tournaments: [{ id: "tournament-1", slug: "valorant-cup", title: "Valorant Cup", game: "Valorant", status: "registration_open", isPublished: true, waitlistEnabled: true }],
+      pagination: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
+    };
+    const html = renderToStaticMarkup(createElement(AdminEventDashboard, { eventId: "event-1", initialTab: "Registrations" }));
+    expect(html).toContain("Mobile Quest");
+    expect(html).toContain("Mobile Captain");
+    expect(html).toContain("QES-MOBILE");
+    expect(html).toContain("View &amp; manage");
+    expect((html.match(/<article/g) || []).length).toBe(1);
   });
 });

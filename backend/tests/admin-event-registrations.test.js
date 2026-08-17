@@ -61,6 +61,88 @@ test("event registration filtering combines event, game, status, search, and dat
   }
 });
 
+test("event registration summaries map only safe fields and isolate returned items to the requested event", async () => {
+  const registrations = [
+    {
+      id: "registration-event-1",
+      entryType: "team",
+      teamName: "Event One Team",
+      status: "approved",
+      paymentStatus: "paid",
+      verificationStatus: "verified",
+      publicReference: "QES-EVENT1",
+      createdAt: new Date("2026-08-17T10:00:00.000Z"),
+      captainName: "Captain One",
+      captainEmail: "one@example.com",
+      tournament: { id: "tournament-event-1", slug: "event-one-valorant", title: "Event One Valorant", game: "Valorant", seriesId: "event-1" },
+      members: [{ name: "Coach One", riotId: "Coach#001" }],
+      _count: { members: 5 },
+      adminSlotReservation: { note: "Private note" },
+      paymentEvidence: { storedFilename: "private-proof.png" },
+      adminNotes: "Internal note",
+      payment: { provider: "bank_transfer", proof: "private" },
+    },
+    {
+      id: "registration-event-2",
+      entryType: "team",
+      teamName: "Event Two Team",
+      status: "pending",
+      paymentStatus: "unpaid",
+      verificationStatus: "pending",
+      publicReference: "QES-EVENT2",
+      createdAt: new Date("2026-08-17T09:00:00.000Z"),
+      captainName: "Captain Two",
+      captainEmail: "two@example.com",
+      tournament: { id: "tournament-event-2", slug: "event-two-valorant", title: "Event Two Valorant", game: "Valorant", seriesId: "event-2" },
+      members: [],
+      _count: { members: 5 },
+    },
+  ];
+  const eventTournaments = [{ id: "tournament-event-1", slug: "event-one-valorant", title: "Event One Valorant", game: "Valorant", status: "registration_open", isPublished: true, waitlistEnabled: true }];
+  const prisma = {
+    teamRegistration: {
+      count: async () => 1,
+      findMany: async ({ where }) => {
+        const eventFilter = where.tournament?.seriesId || where.tournament?.AND?.find((filter) => filter.seriesId)?.seriesId;
+        return registrations
+          .filter((registration) => registration.tournament.seriesId === eventFilter)
+          .map((registration) => ({ ...registration, tournament: eventTournaments[0] }));
+      },
+    },
+    tournament: { findMany: async ({ where }) => where.seriesId === "event-1" ? eventTournaments : [] },
+    $transaction: async (operations) => Promise.all(operations),
+  };
+  const { module: service, restore } = loadAdminService(prisma);
+
+  try {
+    const result = await service.listTeamRegistrations({ eventId: "event-1", page: "1", pageSize: "10" });
+    assert.deepEqual(result.items.map((item) => item.id), ["registration-event-1"]);
+    assert.deepEqual(result.tournaments.map((item) => item.id), ["tournament-event-1"]);
+    assert.deepEqual(result.items[0], {
+      id: "registration-event-1",
+      entryType: "team",
+      teamName: "Event One Team",
+      status: "approved",
+      paymentStatus: "paid",
+      verificationStatus: "verified",
+      waitlistPosition: null,
+      publicReference: "QES-EVENT1",
+      createdAt: new Date("2026-08-17T10:00:00.000Z"),
+      tournament: eventTournaments[0],
+      captain: { name: "Captain One", email: "one@example.com" },
+      coachName: "Coach One",
+      coachRiotId: "Coach#001",
+      memberCount: 5,
+    });
+    assert.equal("adminSlotReservation" in result.items[0], false);
+    assert.equal("paymentEvidence" in result.items[0], false);
+    assert.equal("adminNotes" in result.items[0], false);
+    assert.equal("payment" in result.items[0], false);
+  } finally {
+    restore();
+  }
+});
+
 test("event registration route remains admin-only and points at the series controller alias", () => {
   const routesPath = path.join(__dirname, "../src/modules/series/series.routes.js");
   const authPath = path.join(__dirname, "../src/modules/auth/auth.middleware.js");
