@@ -41,7 +41,7 @@
 - Modify: `backend/src/modules/tournaments/registration-eligibility.js` — exclude waitlisted entries from active capacity and expose centralized CTA state.
 - Modify: `backend/src/modules/tournaments/registration.service.js` — assign reference codes, preserve transaction safety, and join the waitlist when capacity is unavailable and enabled.
 - Modify: `backend/src/modules/admin/admin.service.js` and `admin.controller.js` — event filtering, waitlist transitions, audit records, and existing export/detail mappings.
-- Modify: `backend/src/modules/admin/admin.routes.js` — event-scoped registration route and existing admin middleware composition.
+- Modify: `backend/src/modules/series/series.controller.js` and `series.routes.js` — event-scoped registration route using the existing admin registration query service.
 - Modify: `backend/src/lib/openapi.js` — document new event aliases and waitlist/reference response fields.
 
 ### Public web
@@ -331,7 +331,7 @@ Tasks 2 and 3 may run in parallel after Task 1. Tasks 4 and 5 must wait for the 
 **Files:**
 - Modify: `backend/src/modules/admin/admin.service.js:buildRegistrationWhere,listTeamRegistrations,updateTeamRegistrationStatus`
 - Modify: `backend/src/modules/admin/admin.controller.js:142-194`
-- Modify: `backend/src/modules/admin/admin.routes.js:52-61`
+- Modify: `backend/src/modules/series/series.controller.js` and `series.routes.js`
 - Modify: `frontend/components/admin/AdminEventDashboard.tsx`
 - Modify: `frontend/components/admin/AdminRegistrationsManager.tsx:53-340`
 - Modify: `frontend/lib/admin.ts` and `frontend/hooks/api/useAdmin.ts`
@@ -351,7 +351,7 @@ Tasks 2 and 3 may run in parallel after Task 1. Tasks 4 and 5 must wait for the 
   npm test -- --test-name-pattern="event registration|event filter|admin registration"
   ```
 - [ ] **Step 3: Extend `buildRegistrationWhere` with `eventId`.** Filter through `tournament.seriesId`; preserve current tournament slug/search/status semantics and query pagination in the database.
-- [ ] **Step 4: Add the event-scoped route/controller alias.** Reuse `listTeamRegistrations`, existing `requireAdmin`, response mapping, and current export privacy rules. Do not expose admin notes or private fields in public event APIs.
+- [ ] **Step 4: Add the event-scoped route/controller alias to the EventSeries router.** Reuse `listTeamRegistrations`, existing `requireAdmin`, response mapping, and current export privacy rules. Keep existing registration status mutations in `admin.routes.js`; do not expose admin notes or private fields in public event APIs.
 - [ ] **Step 5: Add dashboard registration filters.** Use All Games/game/status/search controls, server-side debounce/pagination, current loading/error/empty states, and existing `RegistrationDetail` actions. Add waitlist/promote actions only for valid backend transitions.
 - [ ] **Step 6: Extend account registration cards with event title/slug.** Preserve separate child registration cards so one user/team can register in multiple games; do not make `eventId + userId` unique.
 - [ ] **Step 7: Run focused backend/frontend checks.**
