@@ -50,6 +50,10 @@ describe("event utils", () => {
       date: new Date("2026-09-01T10:00:00.000Z"),
     });
     expect(getCountdownTarget(event(), new Date("2026-09-01T10:00:00Z"))).toBeNull();
+    expect(getCountdownTarget(event({
+      startDate: "2026-08-16T10:00:00.000Z",
+      registrationOpenAt: "2026-08-20T10:00:00.000Z",
+    }), new Date("2026-08-17T00:00:00Z"))).toBeNull();
   });
 
   it("returns readable status labels and countdown text", () => {

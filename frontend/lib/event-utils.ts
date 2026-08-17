@@ -22,9 +22,11 @@ export const getEventStatus = (event: EventSeries) => {
 };
 
 export const getCountdownTarget = (event: EventSeries, now = new Date()) => {
+  const start = dateValue(event.startDate);
+  if (start && start <= now) return null;
+
   const opening = dateValue(event.registrationOpenAt);
   if (opening && opening > now) return { label: "Registration opens", date: opening };
-  const start = dateValue(event.startDate);
   if (start && start > now) return { label: "Event starts", date: start };
   return null;
 };
