@@ -686,3 +686,81 @@ test("createConfiguredRegistration removes a newly persisted retry logo when the
     restore();
   }
 });
+
+test("public waitlist retry releases a stale admin hold before clearing the slot", async () => {
+  const waitlistTournament = {
+    ...tournament,
+    entryType: "solo",
+    maxTeams: 0,
+    waitlistEnabled: true,
+  };
+  let currentRegistration = {
+    id: "registration-waitlist-retry",
+    entryType: "solo",
+    status: "pending",
+    paymentStatus: "unpaid",
+    verificationStatus: "verified",
+    waitlistPosition: null,
+    assignedSlotNumber: 1,
+    reservedUntil: null,
+    members: [],
+    payments: [{ provider: "payhere", status: "failed", providerOrderId: "old-order" }],
+  };
+  const deletedHolds = [];
+  let registrationUpdate;
+  const tx = {
+    tournament: { findUnique: async () => waitlistTournament },
+    teamRegistration: {
+      count: async () => 0,
+      findFirst: async () => null,
+      findUnique: async () => currentRegistration,
+      update: async ({ data }) => {
+        registrationUpdate = data;
+        currentRegistration = { ...currentRegistration, ...data };
+        return currentRegistration;
+      },
+    },
+    adminSlotReservation: {
+      findUnique: async () => ({ id: "hold-1", assignedSlotNumber: 1 }),
+      delete: async ({ where }) => deletedHolds.push(where),
+    },
+  };
+  const prisma = {
+    tournament: { findFirst: async () => waitlistTournament },
+    teamRegistration: { findFirst: async () => currentRegistration },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
+      sendTeamInvites: async () => undefined,
+    },
+    [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    const result = await registrationService.createConfiguredRegistration({
+      slug: waitlistTournament.slug,
+      body,
+      user,
+    });
+    assert.equal(result.waitlisted, true);
+    assert.deepEqual(deletedHolds, [{ id: "hold-1" }]);
+    assert.equal(registrationUpdate.assignedSlotNumber, null);
+    assert.equal(registrationUpdate.reservedUntil, null);
+    assert.equal(registrationUpdate.status, "waitlisted");
+    const second = await registrationService.createConfiguredRegistration({
+      slug: waitlistTournament.slug,
+      body,
+      user,
+    });
+    assert.equal(second.waitlisted, true);
+    assert.equal(deletedHolds.length, 1, "duplicate submission must not allocate or release again");
+  } finally {
+    restore();
+  }
+});
