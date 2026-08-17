@@ -12,6 +12,7 @@ const legacyImportModulePath = path.join(__dirname, "../src/modules/media/legacy
 const mediaServiceModulePath = path.join(__dirname, "../src/modules/media/media.service.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
 const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
+const teamServiceModulePath = path.join(__dirname, "../src/modules/teams/team.service.js");
 
 const loadAdminService = (prisma, uploadMock = {}) =>
   loadModuleWithMocks(servicePath, {
@@ -37,6 +38,9 @@ const loadAdminService = (prisma, uploadMock = {}) =>
         warn: () => {},
       },
     },
+    [teamServiceModulePath]: {
+      activatePaidTeamRegistration: async () => undefined,
+    },
   });
 
 const loadWorkbook = async (buffer) => {
@@ -44,6 +48,127 @@ const loadWorkbook = async (buffer) => {
   await workbook.xlsx.load(buffer);
   return workbook;
 };
+
+const registrationForStatusTest = (overrides = {}) => ({
+  id: "registration-1",
+  tournamentId: "tournament-1",
+  entryType: "team",
+  teamName: "Quest Five",
+  status: "pending",
+  paymentStatus: "paid",
+  verificationStatus: "verified",
+  waitlistPosition: null,
+  assignedSlotNumber: 1,
+  reservedUntil: null,
+  adminSlotReservation: null,
+  tournament: {
+    id: "tournament-1",
+    title: "Quest Cup",
+    maxTeams: 1,
+    registrationFeeAmount: 0,
+    registrationFeeCurrency: "LKR",
+    paymentMethod: "free",
+    waitlistEnabled: true,
+  },
+  members: [],
+  ...overrides,
+});
+
+test("admin waitlisting releases a stale slot hold and audits inside the transaction", async () => {
+  const deletedHolds = [];
+  const updates = [];
+  const audits = [];
+  const current = registrationForStatusTest({
+    paymentStatus: "pending",
+    adminSlotReservation: { id: "hold-1", assignedSlotNumber: 1 },
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      findFirst: async () => null,
+      update: async ({ data }) => {
+        updates.push(data);
+        return { ...current, ...data, adminSlotReservation: null };
+      },
+      updateMany: async () => ({ count: 0 }),
+    },
+    adminSlotReservation: {
+      delete: async ({ where }) => deletedHolds.push(where),
+    },
+    auditLog: { create: async ({ data }) => audits.push(data) },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "waitlisted", reason: "Capacity changed" },
+      "admin-1"
+    );
+    assert.equal(result.status, "waitlisted");
+    assert.equal(updates[0].assignedSlotNumber, null);
+    assert.equal(updates[0].reservedUntil, null);
+    assert.deepEqual(deletedHolds, [{ registrationId: "registration-1" }]);
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0].actorUserId, "admin-1");
+    assert.deepEqual(audits[0].afterData, { status: "waitlisted", reason: "Capacity changed" });
+  } finally {
+    restore();
+  }
+});
+
+test("free waitlist promotion becomes active and consumes the available slot", async () => {
+  const updates = [];
+  const compactions = [];
+  const audits = [];
+  const current = registrationForStatusTest({
+    status: "waitlisted",
+    paymentStatus: "unpaid",
+    waitlistPosition: 1,
+    assignedSlotNumber: null,
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      findFirst: async () => ({ id: "registration-1" }),
+      count: async () => 0,
+      findMany: async () => [],
+      update: async ({ data }) => {
+        updates.push(data);
+        return { ...current, ...data, tournament: current.tournament, members: [] };
+      },
+      updateMany: async (args) => {
+        compactions.push(args);
+        return { count: 1 };
+      },
+    },
+    adminSlotReservation: { findMany: async () => [] },
+    auditLog: { create: async ({ data }) => audits.push(data) },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "approved", reason: "Slot opened" },
+      "admin-1"
+    );
+    assert.equal(result.status, "approved");
+    assert.equal(result.paymentStatus, "paid");
+    assert.equal(result.assignedSlotNumber, 1);
+    assert.equal(updates[0].paymentStatus, "paid");
+    assert.equal(compactions.length, 1);
+    assert.equal(audits.length, 1);
+  } finally {
+    restore();
+  }
+});
 
 test("reserveAdminRegistrationSlot locks the lowest free slot and its bank-transfer fee", async () => {
   let createdHold;

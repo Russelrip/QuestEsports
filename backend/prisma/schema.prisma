@@ -907,6 +907,7 @@ model TeamRegistration {
   @@index([reservedUntil])
   @@index([tournamentId, assignedSlotNumber])
   @@index([tournamentId, status, waitlistPosition])
+  @@unique([tournamentId, waitlistPosition])
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([paymentStatus, verificationStatus])

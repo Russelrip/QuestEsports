@@ -187,22 +187,9 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
   const registration = await updateTeamRegistrationStatus(
     req.params.registrationId,
     req.body,
-    req.user.id
+    req.user.id,
+    requestAuditContext(req)
   );
-
-  if (registration.transition) {
-    await recordAudit({
-      ...requestAuditContext(req),
-      action: "team_registration.status_changed",
-      targetType: "TeamRegistration",
-      targetId: req.params.registrationId,
-      beforeData: { status: registration.transition.from },
-      afterData: {
-        status: registration.transition.to,
-        reason: registration.transition.reason,
-      },
-    });
-  }
 
   res.status(200).json({
     success: true,

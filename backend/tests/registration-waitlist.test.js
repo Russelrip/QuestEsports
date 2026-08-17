@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const {
   getTournamentRegistrationState,
@@ -71,4 +73,21 @@ test("waitlisted registrations are never active and historical references are st
   const first = getRegistrationPublicReference({ id: "legacy-registration" });
   assert.equal(first, getRegistrationPublicReference({ id: "legacy-registration" }));
   assert.match(first, /^QES-[A-Z0-9]{8}$/);
+});
+
+test("waitlist positions have additive nullable uniqueness and legacy normalization", () => {
+  const schema = fs.readFileSync(
+    path.join(__dirname, "../prisma/schema.prisma"),
+    "utf8"
+  );
+  const migration = fs.readFileSync(
+    path.join(
+      __dirname,
+      "../prisma/migrations/20260817130000_add_waitlist_position_uniqueness/migration.sql"
+    ),
+    "utf8"
+  );
+  assert.match(schema, /@@unique\(\[tournamentId, waitlistPosition\]\)/);
+  assert.match(migration, /CREATE UNIQUE INDEX/);
+  assert.match(migration, /ROW_NUMBER\(\) OVER/);
 });

@@ -53,6 +53,49 @@ const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
 const VERIFICATION_STATUSES = new Set(["pending", "verified", "flagged"]);
 const RECRUITMENT_STATUSES = new Set(["pending", "reviewed", "accepted", "rejected"]);
 const USER_ROLES = new Set(["user", "admin"]);
+const ADMIN_TRANSACTION_MAX_RETRIES = 3;
+const ADMIN_RETRYABLE_TRANSACTION_ERRORS = new Set(["P2002", "P2024", "P2028", "P2034", "P2037"]);
+
+const runAdminSerializable = async (work) => {
+  for (let attempt = 1; attempt <= ADMIN_TRANSACTION_MAX_RETRIES; attempt += 1) {
+    try {
+      return await prisma.$transaction(work, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error) {
+      if (
+        !ADMIN_RETRYABLE_TRANSACTION_ERRORS.has(error?.code) ||
+        attempt === ADMIN_TRANSACTION_MAX_RETRIES
+      ) {
+        throw error;
+      }
+    }
+  }
+  throw new Error("Admin registration transaction retry limit was exhausted.");
+};
+
+const recordRegistrationStatusAudit = async ({
+  tx,
+  actorUserId,
+  registrationId,
+  fromStatus,
+  toStatus,
+  reason,
+  requestId,
+  ipAddress,
+}) => tx.auditLog.create({
+  data: {
+    id: crypto.randomUUID(),
+    actorUserId: actorUserId || null,
+    action: "team_registration.status_changed",
+    targetType: "TeamRegistration",
+    targetId: registrationId,
+    beforeData: { status: fromStatus },
+    afterData: { status: toStatus, reason: reason || null },
+    requestId: requestId || null,
+    ipAddress: ipAddress || null,
+  },
+});
 
 const ADMIN_USER_SELECT = {
   id: true,
@@ -185,6 +228,7 @@ const mapTeamRegistration = (registration) => ({
   paymentStatus: registration.paymentStatus,
   verificationStatus: registration.verificationStatus,
   waitlistPosition: registration.waitlistPosition || null,
+  assignedSlotNumber: registration.assignedSlotNumber || null,
   publicReference: getRegistrationPublicReference(registration),
   adminSlotReservation: registration.adminSlotReservation
     ? {
@@ -1551,11 +1595,17 @@ const getRegistrationsByTournament = async (tournamentId, query = {}) => {
   };
 };
 
-const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) => {
+const updateTeamRegistrationStatus = async (
+  registrationId,
+  body,
+  adminUserId,
+  auditContext = {}
+) => {
   const nextStatus = normalizeText(body.status).toLowerCase();
   const nextPaymentStatus = normalizeText(body.paymentStatus).toLowerCase();
   const nextVerificationStatus = normalizeText(body.verificationStatus).toLowerCase();
   const adminOverridePayment = body.adminOverridePayment === true;
+  const reason = normalizeText(body.reason) || null;
   const updateData = {};
 
   const currentRegistration = await prisma.teamRegistration.findUnique({
@@ -1573,7 +1623,7 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
     if (nextStatus && nextStatus !== "approved") {
       throw new HttpError(400, "A payment override can only approve a registration.");
     }
-    const registration = await prisma.$transaction(async (tx) => {
+    const registration = await runAdminSerializable(async (tx) => {
       const current = await tx.teamRegistration.findUnique({
         where: { id: registrationId },
         include: { tournament: true, adminSlotReservation: true },
@@ -1582,7 +1632,8 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
       if (current.status === "rejected") {
         throw new HttpError(409, "Restore the rejected registration to pending before overriding payment.");
       }
-      if (current.status === "waitlisted") {
+      const wasWaitlisted = current.status === "waitlisted";
+      if (wasWaitlisted) {
         const first = await tx.teamRegistration.findFirst({
           where: { tournamentId: current.tournamentId, status: "waitlisted" },
           orderBy: { waitlistPosition: "asc" },
@@ -1631,14 +1682,7 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
       if (current.adminSlotReservation) {
         await tx.adminSlotReservation.delete({ where: { registrationId: current.id } });
       }
-      if (current.status === "waitlisted") {
-        await compactWaitlistPositions({
-          tx,
-          tournamentId: current.tournamentId,
-          position: current.waitlistPosition,
-        });
-      }
-      return tx.teamRegistration.update({
+      const updated = await tx.teamRegistration.update({
         where: { id: current.id },
         data: {
           status: "approved",
@@ -1647,21 +1691,30 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
           quotedFeeAmount,
           quotedFeeCurrency: current.adminSlotReservation?.quotedFeeCurrency || current.tournament.registrationFeeCurrency,
           reservedUntil: null,
+          waitlistPosition: wasWaitlisted ? null : current.waitlistPosition,
         },
         include: TEAM_REGISTRATION_INCLUDE,
       });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    await activatePaidTeamRegistration(registration.id);
-    const mapped = mapTeamRegistration(registration);
-    Object.defineProperty(mapped, "transition", {
-      value: {
-        from: currentRegistration.status,
-        to: "approved",
-        reason: normalizeText(body.reason) || null,
-      },
-      enumerable: false,
+      if (wasWaitlisted) {
+        await compactWaitlistPositions({
+          tx,
+          tournamentId: current.tournamentId,
+          position: current.waitlistPosition,
+        });
+      }
+      await recordRegistrationStatusAudit({
+        tx,
+        actorUserId: adminUserId,
+        registrationId: current.id,
+        fromStatus: current.status,
+        toStatus: "approved",
+        reason,
+        ...auditContext,
+      });
+      return updated;
     });
-    return mapped;
+    await activatePaidTeamRegistration(registration.id);
+    return mapTeamRegistration(registration);
   }
 
   if (nextStatus) {
@@ -1704,10 +1757,10 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
 
   let registration;
   if (nextStatus === "waitlisted") {
-    registration = await prisma.$transaction(async (tx) => {
+    registration = await runAdminSerializable(async (tx) => {
       const current = await tx.teamRegistration.findUnique({
         where: { id: registrationId },
-        include: { tournament: true },
+        include: { tournament: true, adminSlotReservation: true },
       });
       if (!current) throw new HttpError(404, "Registration not found.");
       if (!current.tournament.waitlistEnabled) {
@@ -1716,7 +1769,10 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
       const waitlistPosition = current.status === "waitlisted" && current.waitlistPosition
         ? current.waitlistPosition
         : await getNextWaitlistPosition({ tx, tournamentId: current.tournamentId });
-      return tx.teamRegistration.update({
+      if (current.adminSlotReservation) {
+        await tx.adminSlotReservation.delete({ where: { registrationId: current.id } });
+      }
+      const updated = await tx.teamRegistration.update({
         where: { id: registrationId },
         data: {
           ...updateData,
@@ -1724,17 +1780,26 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
           waitlistPosition,
           assignedSlotNumber: null,
           reservedUntil: null,
-          paymentStatus: current.paymentStatus === "paid" ? current.paymentStatus : "unpaid",
         },
         include: TEAM_REGISTRATION_INCLUDE,
       });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      await recordRegistrationStatusAudit({
+        tx,
+        actorUserId: adminUserId,
+        registrationId: current.id,
+        fromStatus: current.status,
+        toStatus: "waitlisted",
+        reason,
+        ...auditContext,
+      });
+      return updated;
+    });
   } else if (
     nextStatus &&
     ["pending", "approved", "rejected"].includes(nextStatus) &&
     currentRegistration.status === "waitlisted"
   ) {
-    registration = await prisma.$transaction(async (tx) => {
+    registration = await runAdminSerializable(async (tx) => {
       const current = await tx.teamRegistration.findUnique({
         where: { id: registrationId },
         include: { tournament: true, adminSlotReservation: true },
@@ -1767,41 +1832,70 @@ const updateTeamRegistrationStatus = async (registrationId, body, adminUserId) =
             excludeRegistrationId: current.id,
           });
           data.waitlistPosition = null;
+          if (Number(current.tournament.registrationFeeAmount || 0) === 0) {
+            data.paymentStatus = "paid";
+          }
         } else {
           data.waitlistPosition = null;
         }
+      }
+      const updated = await tx.teamRegistration.update({
+        where: { id: registrationId },
+        data,
+        include: TEAM_REGISTRATION_INCLUDE,
+      });
+      if (current.status === "waitlisted") {
         await compactWaitlistPositions({
           tx,
           tournamentId: current.tournamentId,
           position: current.waitlistPosition,
         });
       }
-      return tx.teamRegistration.update({
+      await recordRegistrationStatusAudit({
+        tx,
+        actorUserId: adminUserId,
+        registrationId: current.id,
+        fromStatus: current.status,
+        toStatus: nextStatus,
+        reason,
+        ...auditContext,
+      });
+      return updated;
+    });
+  } else {
+    if (nextStatus) {
+      registration = await runAdminSerializable(async (tx) => {
+        const current = await tx.teamRegistration.findUnique({
+          where: { id: registrationId },
+          select: { status: true },
+        });
+        if (!current) throw new HttpError(404, "Registration not found.");
+        const updated = await tx.teamRegistration.update({
+          where: { id: registrationId },
+          data: updateData,
+          include: TEAM_REGISTRATION_INCLUDE,
+        });
+        await recordRegistrationStatusAudit({
+          tx,
+          actorUserId: adminUserId,
+          registrationId,
+          fromStatus: current.status,
+          toStatus: nextStatus,
+          reason,
+          ...auditContext,
+        });
+        return updated;
+      });
+    } else {
+      registration = await prisma.teamRegistration.update({
         where: { id: registrationId },
-        data,
+        data: updateData,
         include: TEAM_REGISTRATION_INCLUDE,
       });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  } else {
-    registration = await prisma.teamRegistration.update({
-      where: { id: registrationId },
-      data: updateData,
-      include: TEAM_REGISTRATION_INCLUDE,
-    });
+    }
   }
 
-  const mapped = mapTeamRegistration(registration);
-  Object.defineProperty(mapped, "transition", {
-    value: nextStatus
-      ? {
-          from: currentRegistration.status,
-          to: nextStatus,
-          reason: normalizeText(body.reason) || null,
-        }
-      : null,
-    enumerable: false,
-  });
-  return mapped;
+  return mapTeamRegistration(registration);
 };
 
 const deleteTeamRegistration = async (registrationId) => {
