@@ -491,6 +491,15 @@ const openApiDocument = {
         },
       },
     },
+    "/api/events": createListResponse(
+      "Series",
+      "List published events",
+    ),
+    "/api/events/{slug}": {
+      get: createOperation("Series", "Get a published event and child tournaments", {
+        parameters: [createPathParameter("slug", { type: "string" })],
+      }),
+    },
     "/api/admin/tournaments": createListResponse(
       "Admin",
       "List tournaments for admins",
@@ -1250,6 +1259,48 @@ const additionalPaths = {
   "/api/admin/event-series": {
     post: createOperation("Admin", "Create an event series", {
       authenticated: true,
+    }),
+  },
+  "/api/admin/events": {
+    get: createOperation("Admin", "List events for admins", {
+      authenticated: true,
+    }),
+    post: createOperation("Admin", "Create an event", {
+      authenticated: true,
+    }),
+  },
+  "/api/admin/events/{eventId}": {
+    patch: createOperation("Admin", "Update an event", {
+      authenticated: true,
+      parameters: idParameter("eventId"),
+    }),
+  },
+  "/api/admin/events/{eventId}/registrations": {
+    get: createOperation("Admin", "List registrations for an event", {
+      authenticated: true,
+      parameters: [
+        ...idParameter("eventId"),
+        { $ref: "#/components/parameters/Page" },
+        { $ref: "#/components/parameters/PageSize" },
+        { $ref: "#/components/parameters/Search" },
+        createQueryParameter("tournament", { type: "string" }),
+        createQueryParameter("game", { type: "string" }),
+        createQueryParameter("status", { type: "string" }),
+        createQueryParameter("paymentStatus", { type: "string" }),
+        createQueryParameter("verificationStatus", { type: "string" }),
+      ],
+    }),
+  },
+  "/api/admin/events/{eventId}/archive": {
+    post: createOperation("Admin", "Archive an event", {
+      authenticated: true,
+      parameters: idParameter("eventId"),
+    }),
+  },
+  "/api/admin/events/{eventId}/tournaments": {
+    post: createOperation("Admin", "Add a tournament to an event", {
+      authenticated: true,
+      parameters: idParameter("eventId"),
     }),
   },
   "/api/admin/products": {
