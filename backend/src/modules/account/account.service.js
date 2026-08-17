@@ -17,6 +17,7 @@ const mapRegistration = (registration) => ({
   verificationStatus: registration.verificationStatus,
   createdAt: registration.createdAt,
   reservedUntil: registration.reservedUntil,
+  additionalData: registration.additionalData || {},
   event: registration.tournament.series
     ? {
         id: registration.tournament.series.id,

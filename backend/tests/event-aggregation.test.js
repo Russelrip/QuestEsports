@@ -80,3 +80,29 @@ test("event aggregate derives upcoming and completed states", async () => {
     }
   }
 });
+
+test("a full child with an open waitlist keeps the event registration state open", () => {
+  const now = new Date("2026-08-17T12:00:00.000Z");
+  const fullChild = {
+    maxTeams: 2,
+    status: "registration_open",
+    registrationOpenAt: null,
+    registrationDeadline: null,
+    waitlistEnabled: true,
+    _count: { teamRegistrations: 2, adminSlotReservations: 0 },
+    adminSlotReservations: [],
+  };
+  const { module: aggregation, restore } = loadModuleWithMocks(aggregationPath, {
+    [prismaPath]: { prisma: {} },
+  });
+
+  try {
+    assert.equal(aggregation.deriveRegistrationState([fullChild], now), "open");
+    assert.equal(
+      aggregation.deriveRegistrationState([{ ...fullChild, waitlistEnabled: false }], now),
+      "closed"
+    );
+  } finally {
+    restore();
+  }
+});

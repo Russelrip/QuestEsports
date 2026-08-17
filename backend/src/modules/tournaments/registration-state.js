@@ -33,13 +33,18 @@ const getTournamentRegistrationState = ({
   const currentTime = new Date(now).getTime();
   const opensAt = tournament.registrationOpenAt ? new Date(tournament.registrationOpenAt).getTime() : null;
   const closesAt = tournament.registrationDeadline ? new Date(tournament.registrationDeadline).getTime() : null;
-  const isOpen = override === "open" || (
+  const parentOpensAt = tournament.series?.registrationOpenAt ? new Date(tournament.series.registrationOpenAt).getTime() : null;
+  const parentClosesAt = tournament.series?.registrationCloseAt ? new Date(tournament.series.registrationCloseAt).getTime() : null;
+  const parentWindowOpen =
+    (!parentOpensAt || parentOpensAt <= currentTime) &&
+    (!parentClosesAt || parentClosesAt >= currentTime);
+  const isOpen = parentWindowOpen && (override === "open" || (
     override !== "closed" &&
     tournament.isPublished !== false &&
     tournament.status === "registration_open" &&
     (!opensAt || opensAt <= currentTime) &&
     (!closesAt || closesAt >= currentTime)
-  );
+  ));
 
   if (!isOpen) {
     return {

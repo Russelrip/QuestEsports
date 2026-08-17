@@ -31,7 +31,7 @@ type MemberDraft = {
   discord: string;
   gameId: string;
   role: "PLAYER" | "SUBSTITUTE";
-  additionalData: Record<string, string>;
+  additionalData: Record<string, string | boolean>;
 };
 
 type BankTransferReservation = {
@@ -95,8 +95,8 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   });
   const minimumAdditionalPlayers = Math.max(0, (tournament.minRosterSize || tournament.teamSize || 1) - 1);
   const [members, setMembers] = useState<MemberDraft[]>(() => Array.from({ length: minimumAdditionalPlayers }, emptyMember));
-  const [entryData, setEntryData] = useState<Record<string, string>>({});
-  const [captainAdditionalData, setCaptainAdditionalData] = useState<Record<string, string>>({});
+  const [entryData, setEntryData] = useState<Record<string, string | boolean>>({});
+  const [captainAdditionalData, setCaptainAdditionalData] = useState<Record<string, string | boolean>>({});
   const [coach, setCoach] = useState<CoachDraft>(() => ({ ...emptyCoachDraft }));
   const [coachSelected, setCoachSelected] = useState(false);
   const [teamLogo, setTeamLogo] = useState<File | null>(null);
@@ -663,13 +663,15 @@ function getGameIdentityConfig(game: string): GameIdentityConfig {
   };
 }
 
-function ConfiguredField({ field, value, onChange }: { field: TournamentRegistrationField; value: string; onChange: (value: string) => void }) {
+function ConfiguredField({ field, value, onChange }: { field: TournamentRegistrationField; value: string | boolean; onChange: (value: string | boolean) => void }) {
   return (
     <FormField label={field.label} required={field.required}>
-      {field.type === "select" ? (
-        <Select required={field.required} value={value} onChange={(event) => onChange(event.target.value)}><option value="">Select {field.label}</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select>
+      {field.type === "checkbox" ? (
+        <input type="checkbox" checked={value === true || value === "true"} required={field.required} onChange={(event) => onChange(event.target.checked)} className="mt-1 size-4 accent-purple-300" />
+      ) : field.type === "select" ? (
+        <Select required={field.required} value={String(value ?? "")} onChange={(event) => onChange(event.target.value)}><option value="">Select {field.label}</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</Select>
       ) : (
-        <Input type={field.type === "number" ? "number" : "text"} required={field.required} value={value} onChange={(event) => onChange(event.target.value)} />
+        <Input type={field.type === "number" ? "number" : field.type === "url" ? "url" : "text"} required={field.required} value={typeof value === "boolean" ? String(value) : value} onChange={(event) => onChange(event.target.value)} />
       )}
     </FormField>
   );

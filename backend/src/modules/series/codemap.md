@@ -30,8 +30,12 @@ cleanup, archive/delete guards, and child creation/linking.
 active captain/player/substitute members, and remaining child capacity. Active
 capacity is paid or unexpired pending registrations plus admin holds, less an
 active registration covered by its hold. Rejected and waitlisted rows do not
-count. `registrationState` is derived from child timing/capacity and can be
-replaced for display by `registrationStatusOverride`.
+count. `registrationState` is derived from child timing/capacity; an open child
+waitlist keeps the event aggregate open even when that child has no slots, and
+the state can be replaced for display by `registrationStatusOverride`. Event
+lists use the batched aggregate export when available and fall back to parallel single-event
+aggregation for legacy consumers/mocks. Parent registration windows constrain
+mapped child CTA/state without changing child storage.
 
 ## Integration boundaries
 

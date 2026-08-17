@@ -11,8 +11,11 @@ export type TournamentStatus =
 
 type TournamentRegistrationState =
   | "registration_open"
+  | "upcoming"
   | "registration_closed"
-  | "slots_full";
+  | "slots_full"
+  | "waitlist_open"
+  | "already_registered";
 
 type TournamentRegistrationMode = "open_entry" | "slot_based";
 type TournamentEntryType = "team" | "solo";
@@ -22,7 +25,7 @@ type TournamentDateStatus = "scheduled" | "tba" | "tbd";
 export type TournamentRegistrationField = {
   key: string;
   label: string;
-  type: "text" | "number" | "select";
+  type: "text" | "number" | "select" | "checkbox" | "url";
   scope: "entry" | "member";
   required: boolean;
   options: string[];
@@ -294,8 +297,11 @@ export type Tournament = {
   registeredParticipants?: RegisteredTournamentParticipant[];
   isCompleted: boolean;
   registrationState: TournamentRegistrationState;
+  registrationAction?: "register" | "waitlist" | "closed" | "registered" | "waitlisted";
+  registrationLabel?: string;
   isRegistrationOpen: boolean;
   isSlotsFull: boolean;
+  isWaitlistOpen?: boolean;
   isRegistrationClosed: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -313,15 +319,20 @@ export const getTournamentStatusLabel = (status: TournamentStatus) =>
   status.replace(/_/g, " ");
 
 export const canRegisterForTournament = (tournament: Tournament) =>
-  tournament.registrationState === "registration_open";
+  tournament.registrationState === "registration_open" || tournament.registrationState === "waitlist_open";
 
 export const getTournamentRegistrationLabel = (tournament: Tournament) => {
+  if (tournament.registrationState === "waitlist_open") return tournament.registrationLabel || "Join waitlist";
   if (tournament.registrationState === "slots_full") {
     return "Slots Full";
   }
 
   if (tournament.registrationState === "registration_closed") {
     return "Registration Closed";
+  }
+
+  if (tournament.registrationState === "upcoming") {
+    return "Registration opens soon";
   }
 
   return tournament.registrationMode === "slot_based"

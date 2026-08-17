@@ -50,7 +50,7 @@ const buildMocks = (prisma, aggregate = { games: 0, teamsRegistered: 0, playersR
   },
   [cleanupPath]: { removeUploadsQuietly: async () => undefined },
   [tournamentPath]: {
-    mapTournament: (tournament) => ({ id: tournament.id, title: tournament.title }),
+    mapTournament: (tournament, { parentWindow } = {}) => ({ id: tournament.id, title: tournament.title, parentWindow }),
     buildRegistrationCountInclude: () => ({ _count: { select: { teamRegistrations: true } } }),
     createAdminTournament: async () => ({ id: "created-tournament" }),
     attachTournamentToSeries: async () => ({ id: "attached-tournament" }),
@@ -83,7 +83,14 @@ test("event service filters unpublished children and keeps private registration 
     assert.equal(result[0].shortName, "QA");
     assert.equal(result[0].bannerUrl, "/api/uploads/tournament-banners/banner.webp");
     assert.equal(result[0].games, 1);
-    assert.deepEqual(result[0].tournaments, [{ id: "published", title: "Published Game" }]);
+    assert.deepEqual(result[0].tournaments, [{
+      id: "published",
+      title: "Published Game",
+      parentWindow: {
+        registrationOpenAt: seriesRecord().registrationOpenAt,
+        registrationCloseAt: seriesRecord().registrationCloseAt,
+      },
+    }]);
     assert.equal(JSON.stringify(result[0]).includes("captainEmail"), false);
   } finally {
     restore();

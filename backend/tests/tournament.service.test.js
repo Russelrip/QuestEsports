@@ -837,6 +837,41 @@ test("public slot count shows confirmed teams and does not count pending holds",
   }
 });
 
+test("parent event registration windows constrain child state even when the child override is open", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    const child = {
+      id: "child-1",
+      slug: "child-cup",
+      title: "Child Cup",
+      status: "registration_open",
+      maxTeams: 8,
+      isPublished: true,
+      series: { registrationStatusOverride: "open" },
+    };
+    assert.equal(
+      tournamentService.mapTournament(child, {
+        parentWindow: { registrationOpenAt: new Date(Date.now() - 60_000), registrationCloseAt: new Date(Date.now() - 1) },
+      }).registrationState,
+      "registration_closed"
+    );
+    assert.equal(
+      tournamentService.mapTournament(child, {
+        parentWindow: { registrationOpenAt: new Date(Date.now() + 60_000), registrationCloseAt: null },
+      }).registrationState,
+      "upcoming",
+      "a child open override cannot bypass a parent that has not opened"
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("public slot count does not present a private admin hold as a confirmed team", () => {
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },

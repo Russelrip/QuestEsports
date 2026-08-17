@@ -32,7 +32,7 @@ const deriveRegistrationState = (tournaments, now = new Date()) => {
     return tournament.status === "registration_open" &&
       !isFuture(tournament.registrationOpenAt, now) &&
       !isPast(tournament.registrationDeadline, now) &&
-      capacityUsed < (tournament.maxTeams || 0);
+      (capacityUsed < (tournament.maxTeams || 0) || tournament.waitlistEnabled);
   })) {
     return "open";
   }
@@ -62,6 +62,7 @@ const getEventAggregate = async ({ seriesId, includeDrafts = false }) => {
       status: true,
       registrationOpenAt: true,
       registrationDeadline: true,
+      waitlistEnabled: true,
       startDate: true,
       endDate: true,
       _count: {
@@ -108,8 +109,44 @@ const getEventAggregate = async ({ seriesId, includeDrafts = false }) => {
   };
 };
 
+const getEventAggregates = async ({ seriesIds, includeDrafts = false }) => {
+  if (!seriesIds.length) return new Map();
+  const tournamentWhere = { seriesId: { in: seriesIds }, ...(includeDrafts ? {} : { isPublished: true }) };
+  const tournaments = await prisma.tournament.findMany({
+    where: tournamentWhere,
+    select: {
+      id: true, seriesId: true, maxTeams: true, status: true, registrationOpenAt: true,
+      waitlistEnabled: true,
+      registrationDeadline: true, startDate: true, endDate: true,
+      _count: { select: { teamRegistrations: { where: buildActiveRegistrationWhere() }, adminSlotReservations: true } },
+      adminSlotReservations: { select: { registration: { select: { status: true, paymentStatus: true, reservedUntil: true } } } },
+    },
+  });
+  const grouped = new Map(seriesIds.map((id) => [id, []]));
+  tournaments.forEach((tournament) => grouped.get(tournament.seriesId)?.push(tournament));
+  const playerRows = prisma.registrationMember?.findMany
+    ? await prisma.registrationMember.findMany({
+        where: { role: { in: PLAYER_ROLES }, registration: { tournament: tournamentWhere, ...buildActiveRegistrationWhere() } },
+        select: { registration: { select: { tournament: { select: { seriesId: true } } } } },
+      })
+    : [];
+  const playerCounts = new Map(seriesIds.map((id) => [id, 0]));
+  playerRows.forEach((row) => { const id = row.registration?.tournament?.seriesId; if (id) playerCounts.set(id, (playerCounts.get(id) || 0) + 1); });
+  return new Map(seriesIds.map((seriesId) => {
+    const children = grouped.get(seriesId) || [];
+    return [seriesId, {
+      games: children.length,
+      teamsRegistered: children.reduce((total, child) => total + (child._count?.teamRegistrations || 0), 0),
+      playersRegistered: playerCounts.get(seriesId) || 0,
+      availableSlots: children.reduce((total, child) => total + Math.max(0, (child.maxTeams || 0) - getChildCapacity(child)), 0),
+      registrationState: deriveRegistrationState(children),
+    }];
+  }));
+};
+
 module.exports = {
   getEventAggregate,
+  getEventAggregates,
   deriveRegistrationState,
   getChildCapacity,
 };

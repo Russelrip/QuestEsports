@@ -372,6 +372,104 @@ test("paid direct team registration saves the team and dispatches player invites
   }
 });
 
+test("registration service enforces parent event windows on the initial lookup", async () => {
+  for (const [label, series] of [
+    ["before", { registrationOpenAt: new Date(Date.now() + 60_000), registrationCloseAt: null }],
+    ["after", { registrationOpenAt: null, registrationCloseAt: new Date(Date.now() - 60_000) }],
+  ]) {
+    let lookupArgs;
+    const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+      [prismaModulePath]: {
+        prisma: {
+          tournament: {
+            findFirst: async (args) => {
+              lookupArgs = args;
+              return { ...tournament, series };
+            },
+          },
+          teamRegistration: { findFirst: async () => null },
+        },
+      },
+      [uploadModulePath]: {},
+      [teamServicePath]: {},
+      [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+      [bankTransferServicePath]: {},
+    });
+
+    try {
+      await assert.rejects(
+        () => registrationService.createConfiguredRegistration({
+          slug: tournament.slug,
+          body,
+          user,
+        }),
+        (error) => error.statusCode === 409 && /closed/.test(error.message),
+        `${label} parent boundary should reject registration`
+      );
+      assert.deepEqual(lookupArgs.include.series.select, {
+        registrationOpenAt: true,
+        registrationCloseAt: true,
+        registrationStatusOverride: true,
+      });
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("registration service enforces a parent close observed by the transaction reload", async () => {
+  const initialSeries = {
+    registrationOpenAt: new Date(Date.now() - 60_000),
+    registrationCloseAt: new Date(Date.now() + 60_000),
+    registrationStatusOverride: null,
+  };
+  const closedSeries = {
+    registrationOpenAt: new Date(Date.now() - 120_000),
+    registrationCloseAt: new Date(Date.now() - 60_000),
+    registrationStatusOverride: null,
+  };
+  const existing = {
+    id: "registration-parent-close",
+    entryType: "team",
+    status: "pending",
+    paymentStatus: "pending",
+    verificationStatus: "verified",
+    members: [{ role: "CAPTAIN", inviteStatus: "accepted" }],
+    reservedUntil: new Date(Date.now() - 60_000),
+    payments: [{ provider: "payhere", status: "failed", providerOrderId: "old-order" }],
+  };
+  const currentTournament = { ...tournament, series: closedSeries };
+  const tx = {
+    tournament: { findUnique: async () => currentTournament },
+    teamRegistration: { findUnique: async () => existing },
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        tournament: { findFirst: async () => ({ ...tournament, series: initialSeries }) },
+        teamRegistration: { findFirst: async () => existing },
+        $transaction: async (work) => work(tx),
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [teamServicePath]: { ensureTeamRegistrationSaved: async () => undefined },
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      () => registrationService.createConfiguredRegistration({ slug: tournament.slug, body, user }),
+      (error) => error.statusCode === 409 && /closed/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("a pending coach blocks team verification and payment", async () => {
   const pendingRegistration = {
     id: "registration-coach-pending",
@@ -531,7 +629,15 @@ test("createConfiguredRegistration lets an active payment reservation retry afte
   const sentRegistrationConfirmations = [];
   let registrationUpdate;
   let memberRows;
-  const retryTournament = { ...tournament, status: "upcoming" };
+  const retryTournament = {
+    ...tournament,
+    status: "upcoming",
+    series: {
+      registrationOpenAt: new Date(Date.now() - 120_000),
+      registrationCloseAt: new Date(Date.now() - 60_000),
+      registrationStatusOverride: null,
+    },
+  };
   const existing = {
     id: "registration-1",
     teamLogoName: "old-logo.png",
@@ -713,7 +819,7 @@ test("public waitlist retry releases a stale admin hold before clearing the slot
     teamRegistration: {
       count: async () => 0,
       findFirst: async () => null,
-      findUnique: async () => currentRegistration,
+      findUnique: async () => ({ ...currentRegistration, status: "waitlisted", waitlistPosition: 4 }),
       update: async ({ data }) => {
         registrationUpdate = data;
         currentRegistration = { ...currentRegistration, ...data };
@@ -753,6 +859,7 @@ test("public waitlist retry releases a stale admin hold before clearing the slot
     assert.equal(registrationUpdate.assignedSlotNumber, null);
     assert.equal(registrationUpdate.reservedUntil, null);
     assert.equal(registrationUpdate.status, "waitlisted");
+    assert.equal(registrationUpdate.waitlistPosition, 4, "a waitlisted retry keeps its queue position");
     const second = await registrationService.createConfiguredRegistration({
       slug: waitlistTournament.slug,
       body,

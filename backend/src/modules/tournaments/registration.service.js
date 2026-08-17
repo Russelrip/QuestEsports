@@ -110,6 +110,20 @@ const validateConfiguredFields = ({ definitions, entryData, members }) => {
     if (normalized && field.type === "select" && !field.options.includes(normalized)) {
       throw new HttpError(400, `${field.label} has an invalid selection.`);
     }
+    if (normalized && field.type === "checkbox" && !["true", "false", "1", "0", "on", "off"].includes(normalized.toLowerCase())) {
+      throw new HttpError(400, `${field.label} must be checked or unchecked.`);
+    }
+    if (normalized && field.type === "checkbox" && field.required && !["true", "1", "on"].includes(normalized.toLowerCase())) {
+      throw new HttpError(400, `${field.label} must be accepted.`);
+    }
+    if (normalized && field.type === "url") {
+      let parsed;
+      try { parsed = new URL(normalized); } catch { parsed = null; }
+      if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
+        throw new HttpError(400, `${field.label} must be a valid HTTP or HTTPS URL.`);
+      }
+    }
+    if (field.type === "checkbox") return ["true", "1", "on"].includes(normalized.toLowerCase());
     return normalized;
   };
 
@@ -332,9 +346,6 @@ const startExistingRegistrationPayment = async ({
       tx,
       tournament,
       now: new Date(),
-      allowActivePaymentReservation:
-        currentRegistration.paymentStatus === "unpaid" &&
-        currentRegistration.verificationStatus === "verified",
     });
     const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id, excludeRegistrationId: existing.id });
     if (activeCount >= currentTournament.maxTeams) {
@@ -441,7 +452,18 @@ const getCurrentTournamentForRegistration = async ({
   now,
   allowActivePaymentReservation = false,
 }) => {
-  const current = await tx.tournament.findUnique({ where: { id: tournament.id } });
+  const current = await tx.tournament.findUnique({
+    where: { id: tournament.id },
+    include: {
+      series: {
+        select: {
+          registrationOpenAt: true,
+          registrationCloseAt: true,
+          registrationStatusOverride: true,
+        },
+      },
+    },
+  });
   const canFinishExistingReservation =
     allowActivePaymentReservation &&
     current?.isPublished &&
@@ -609,6 +631,13 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       where: { slug, isPublished: true },
       include: {
         _count: { select: { teamRegistrations: true } },
+        series: {
+          select: {
+            registrationOpenAt: true,
+            registrationCloseAt: true,
+            registrationStatusOverride: true,
+          },
+        },
       },
     })
   );
@@ -648,6 +677,13 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       },
     })
   );
+  const hasActivePaymentReservation =
+    existing?.paymentStatus === "pending" &&
+    existing.reservedUntil &&
+    existing.reservedUntil > now;
+  if (!hasActivePaymentReservation) {
+    assertRegistrationStillOpen(tournament, now, 409);
+  }
   if (existing) {
     if (existing.status === "waitlisted") {
       return {
@@ -771,10 +807,6 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     }
   }
 
-  const hasActivePaymentReservation =
-    existing?.paymentStatus === "pending" &&
-    existing.reservedUntil &&
-    existing.reservedUntil > now;
   if (!hasActivePaymentReservation) {
     assertRegistrationStillOpen(tournament, now);
   }
@@ -855,10 +887,11 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           if (!registrationState.canWaitlist) {
             throw new HttpError(409, "Registration slots are full.");
           }
-          const waitlistPosition = await getNextWaitlistPosition({
-            tx,
-            tournamentId: currentTournament.id,
-          });
+          const waitlistPosition = currentRegistration.status === "waitlisted" &&
+            Number.isInteger(currentRegistration.waitlistPosition) &&
+            currentRegistration.waitlistPosition > 0
+            ? currentRegistration.waitlistPosition
+            : await getNextWaitlistPosition({ tx, tournamentId: currentTournament.id });
           const adminHold = tx.adminSlotReservation?.findUnique
             ? await tx.adminSlotReservation.findUnique({
                 where: { registrationId: existing.id },

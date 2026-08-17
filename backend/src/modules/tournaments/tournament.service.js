@@ -40,6 +40,7 @@ const {
   isPayHereConfigured,
 } = require("../payments/payment.service");
 const { ensureTeamRegistrationSaved } = require("../teams/team.service");
+const { getTournamentRegistrationState } = require("./registration-state");
 
 const TOURNAMENT_STATUSES = new Set([
   "draft",
@@ -53,7 +54,7 @@ const REGISTRATION_MODES = new Set(["open_entry", "slot_based"]);
 const ENTRY_TYPES = new Set(["team", "solo"]);
 const PAYMENT_METHODS = new Set(["free", "payhere", "bank_transfer"]);
 const TOURNAMENT_DATE_STATUSES = new Set(["scheduled", "tba", "tbd"]);
-const REGISTRATION_FIELD_TYPES = new Set(["text", "number", "select"]);
+const REGISTRATION_FIELD_TYPES = new Set(["text", "number", "select", "checkbox", "url"]);
 const REGISTRATION_FIELD_SCOPES = new Set(["entry", "member"]);
 const buildRegistrationCountInclude = (now = new Date()) => ({
   _count: {
@@ -99,6 +100,9 @@ const buildRegistrationCountInclude = (now = new Date()) => ({
       id: true,
       slug: true,
       title: true,
+      registrationOpenAt: true,
+      registrationCloseAt: true,
+      registrationStatusOverride: true,
     },
   },
   gameCategory: true,
@@ -478,32 +482,27 @@ const withRegistrationCount = (tournament) => {
   };
 };
 
-const getRegistrationState = (tournament) => {
-  const now = new Date();
-  const registrationCount = tournament.capacityUsed ?? tournament.registrationCount ?? 0;
-
-  if (tournament.registrationOpenAt && tournament.registrationOpenAt > now) {
-    return "registration_closed";
-  }
-
-  if (registrationCount >= tournament.maxTeams) {
-    return "slots_full";
-  }
-
-  if (tournament.registrationDeadline && tournament.registrationDeadline < now) {
-    return "registration_closed";
-  }
-
-  if (tournament.status !== "registration_open") {
-    return "registration_closed";
-  }
-
-  return "registration_open";
-};
-
-const mapTournament = (tournament) => {
+const mapTournament = (tournament, { parentWindow } = {}) => {
   const tournamentWithRegistrationCount = withRegistrationCount(tournament);
-  const registrationState = getRegistrationState(tournamentWithRegistrationCount);
+  const state = getTournamentRegistrationState({
+    tournament: tournamentWithRegistrationCount,
+    capacityUsed: tournamentWithRegistrationCount.capacityUsed ?? tournamentWithRegistrationCount.registrationCount ?? 0,
+  });
+  const parentNotOpen = parentWindow?.registrationOpenAt && new Date(parentWindow.registrationOpenAt).getTime() > Date.now();
+  const parentClosed = parentWindow?.registrationCloseAt && new Date(parentWindow.registrationCloseAt).getTime() <= Date.now();
+  const registrationState = parentNotOpen ? "upcoming" : parentClosed ? "registration_closed" : state.state;
+  const registrationAction = registrationState === "registration_open"
+    ? "register"
+    : registrationState === "waitlist_open"
+      ? "waitlist"
+      : "closed";
+  const registrationLabel = registrationState === "registration_open"
+    ? state.label
+    : registrationState === "waitlist_open"
+      ? "Join waitlist"
+      : registrationState === "upcoming"
+        ? "Registration opens soon"
+        : "Registration closed";
 
   return {
     id: tournamentWithRegistrationCount.id,
@@ -563,6 +562,8 @@ const mapTournament = (tournament) => {
       tournamentWithRegistrationCount.bankTransferReviewMinutes || 1440,
     maxTeams: tournamentWithRegistrationCount.maxTeams,
     waitlistEnabled: Boolean(tournamentWithRegistrationCount.waitlistEnabled),
+    registrationAction,
+    registrationLabel,
     registrationCount: tournamentWithRegistrationCount.registrationCount,
     capacityUsed: tournamentWithRegistrationCount.capacityUsed,
     prizePool: tournamentWithRegistrationCount.prizePool,
@@ -614,6 +615,7 @@ const mapTournament = (tournament) => {
     isRegistrationOpen: registrationState === "registration_open",
     isSlotsFull: registrationState === "slots_full",
     isRegistrationClosed: registrationState === "registration_closed",
+    isWaitlistOpen: registrationState === "waitlist_open",
     createdAt: tournamentWithRegistrationCount.createdAt,
     updatedAt: tournamentWithRegistrationCount.updatedAt,
   };

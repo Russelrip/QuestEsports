@@ -19,7 +19,15 @@ const {
   attachTournamentToSeries,
 } = require("../tournaments/tournament.service");
 const { getPublicEventForSeries } = require("../tickets/ticket.service");
-const { getEventAggregate } = require("./event-aggregation");
+const eventAggregation = require("./event-aggregation");
+const { getEventAggregate } = eventAggregation;
+const getEventAggregates = eventAggregation.getEventAggregates || (async ({ seriesIds, includeDrafts = false }) => {
+  const entries = await Promise.all(seriesIds.map(async (seriesId) => [
+    seriesId,
+    await getEventAggregate({ seriesId, includeDrafts }),
+  ]));
+  return new Map(entries);
+});
 
 const normalizeBooleanFlag = (value) =>
   value === true || value === "true" || value === "on" || value === 1 || value === "1";
@@ -59,11 +67,18 @@ const mapSeries = (series, { aggregate, includeDrafts = false } = {}) => {
     availableSlots: 0,
     registrationState: "closed",
   };
+  const parentWindow = {
+    registrationOpenAt: series.registrationOpenAt,
+    registrationCloseAt: series.registrationCloseAt,
+  };
   const tournaments = (series.tournaments || [])
     .filter((tournament) => includeDrafts || tournament.isPublished !== false)
-    .map(mapTournament);
+    .map((tournament) => mapTournament(tournament, { parentWindow }));
 
-  const registrationState = series.registrationStatusOverride || eventAggregate.registrationState;
+  const now = Date.now();
+  const parentNotOpen = series.registrationOpenAt && new Date(series.registrationOpenAt).getTime() > now;
+  const parentClosed = series.registrationCloseAt && new Date(series.registrationCloseAt).getTime() <= now;
+  const registrationState = parentNotOpen ? "upcoming" : parentClosed ? "closed" : (series.registrationStatusOverride || eventAggregate.registrationState);
   const mappedAggregate = { ...eventAggregate, registrationState };
 
   return {
@@ -112,8 +127,8 @@ const buildSeriesTournamentInclude = ({ includeDrafts = false } = {}) => ({
   include: buildRegistrationCountInclude(),
 });
 
-const mapSeriesWithAggregate = async (series, includeDrafts) => mapSeries(series, {
-  aggregate: await getEventAggregate({ seriesId: series.id, includeDrafts }),
+const mapSeriesWithAggregate = async (series, includeDrafts, aggregate) => mapSeries(series, {
+  aggregate: aggregate || await getEventAggregate({ seriesId: series.id, includeDrafts }),
   includeDrafts,
 });
 
@@ -123,7 +138,8 @@ const listSeries = async ({ includeDrafts = false } = {}) => {
     orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }],
     include: { tournaments: buildSeriesTournamentInclude({ includeDrafts }) },
   });
-  return Promise.all(series.map((item) => mapSeriesWithAggregate(item, includeDrafts)));
+  const aggregates = await getEventAggregates({ seriesIds: series.map((item) => item.id), includeDrafts });
+  return series.map((item) => mapSeries(item, { aggregate: aggregates.get(item.id), includeDrafts }));
 };
 
 const listPublicSeries = () => listSeries();

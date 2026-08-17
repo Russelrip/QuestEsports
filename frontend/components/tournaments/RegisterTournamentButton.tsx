@@ -19,7 +19,7 @@ import { unmarkTournamentRegistered } from "@/lib/registered-tournaments";
 type RegistrationStatus = "loading" | "ready" | "registered";
 
 type ExistingRegistration = {
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "waitlisted";
   paymentStatus: "unpaid" | "pending" | "paid";
   verificationStatus: "pending" | "verified" | "flagged";
   pendingInviteCount: number;
@@ -218,7 +218,9 @@ export default function RegisterTournamentButton({
           ? slotLabel ? `Registered · ${slotLabel}` : "Registered"
           : isChecking
             ? "Checking..."
-            : tournament.registrationMode === "slot_based"
+            : tournament.registrationState === "waitlist_open"
+              ? getTournamentRegistrationLabel(tournament)
+              : tournament.registrationMode === "slot_based"
               ? "Reserve Slot"
               : "Register Now"}
       </Button>

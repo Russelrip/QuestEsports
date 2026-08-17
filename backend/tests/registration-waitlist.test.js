@@ -62,6 +62,30 @@ test("registration state distinguishes open, closed, full, waitlist, and existin
   }).state, "already_registered");
 });
 
+test("parent event registration windows gate an open child override", () => {
+  const now = new Date("2026-08-17T12:00:00.000Z");
+  const child = {
+    ...openTournament,
+    registrationStatusOverride: "open",
+    series: {
+      registrationOpenAt: new Date("2026-08-18T00:00:00.000Z"),
+      registrationCloseAt: new Date("2026-08-19T00:00:00.000Z"),
+    },
+  };
+
+  assert.equal(getTournamentRegistrationState({ tournament: child, now }).state, "registration_closed");
+  assert.equal(getTournamentRegistrationState({
+    tournament: {
+      ...child,
+      series: {
+        registrationOpenAt: new Date("2026-08-16T00:00:00.000Z"),
+        registrationCloseAt: new Date("2026-08-18T00:00:00.000Z"),
+      },
+    },
+    now,
+  }).state, "registration_open");
+});
+
 test("waitlisted registrations are never active and historical references are stable", () => {
   const where = buildActiveRegistrationWhere({ now: new Date("2026-08-17T12:00:00.000Z") });
   assert.deepEqual(where.status, { notIn: ["rejected", "waitlisted"] });

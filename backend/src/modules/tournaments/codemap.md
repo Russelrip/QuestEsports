@@ -23,7 +23,10 @@ not consume capacity. Admin holds are counted separately and can be consumed
 atomically. `registration-state.js` exposes register, full, closed, and
 waitlist-open actions. `registration.service.js` assigns monotonically
 increasing per-tournament waitlist positions and no slot/payment reservation
-to waitlisted submissions.
+to waitlisted submissions. Registration writes reload the child and related
+EventSeries window inside the transaction so parent open/close boundaries are
+authoritative; only an active payment reservation keeps the existing retry
+exception.
 
 Admin status changes run serializably. Only the first waitlisted row may be
 promoted when a slot is available; promotion assigns the lowest free slot,
