@@ -121,5 +121,11 @@ test("waitlist positions have additive nullable uniqueness and legacy normalizat
   assert.match(schema, /@@unique\(\[tournamentId, waitlistPosition\]\)/);
   assert.match(migration, /CREATE UNIQUE INDEX/);
   assert.match(migration, /ROW_NUMBER\(\) OVER/);
-  assert.match(additiveMigration, /status.*<> 'waitlisted'/s);
+  assert.match(migration, /status\s*<>\s*'waitlisted'/s);
+  assert.doesNotMatch(additiveMigration, /status\s*<>\s*'waitlisted'/s);
+  assert.ok(
+    additiveMigration.indexOf("ADD VALUE 'waitlisted'") <
+      additiveMigration.indexOf('CREATE INDEX'),
+    "the enum addition must precede the first migration's schema indexes"
+  );
 });
