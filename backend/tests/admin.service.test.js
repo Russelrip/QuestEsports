@@ -170,6 +170,119 @@ test("free waitlist promotion becomes active and consumes the available slot", a
   }
 });
 
+test("paid waitlist promotion rejects until provider payment is confirmed", async () => {
+  const current = registrationForStatusTest({
+    status: "waitlisted",
+    paymentStatus: "unpaid",
+    waitlistPosition: 1,
+    tournament: {
+      ...registrationForStatusTest().tournament,
+      registrationFeeAmount: 2500,
+    },
+  });
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+  });
+
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationStatus("registration-1", { status: "approved" }, "admin-1"),
+      (error) => error.statusCode === 409 && /provider-confirmed/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("rejecting a waitlisted registration clears its position before compaction and audit", async () => {
+  const updates = [];
+  const compactions = [];
+  const audits = [];
+  const current = registrationForStatusTest({
+    status: "waitlisted",
+    paymentStatus: "unpaid",
+    waitlistPosition: 2,
+    assignedSlotNumber: null,
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        updates.push(data);
+        return { ...current, ...data, members: [] };
+      },
+      updateMany: async (args) => {
+        compactions.push(args);
+        return { count: 1 };
+      },
+    },
+    auditLog: { create: async ({ data }) => audits.push(data) },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "rejected", reason: "No longer participating" },
+      "admin-1"
+    );
+    assert.equal(result.status, "rejected");
+    assert.equal(updates[0].waitlistPosition, null);
+    assert.equal(compactions.length, 1);
+    assert.equal(compactions[0].data.waitlistPosition.decrement, 1);
+    assert.equal(audits.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("waitlist status retries a unique-position conflict and rolls back when audit persistence fails", async () => {
+  const current = registrationForStatusTest({ status: "pending", waitlistPosition: null });
+  let transactionAttempts = 0;
+  let updateCalls = 0;
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      findFirst: async () => ({ waitlistPosition: 1 }),
+      update: async ({ data }) => {
+        updateCalls += 1;
+        return { ...current, ...data, members: [] };
+      },
+    },
+    auditLog: {
+      create: async () => {
+        throw new Error("audit failed");
+      },
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => {
+      transactionAttempts += 1;
+      if (transactionAttempts === 1) {
+        const error = new Error("position conflict");
+        error.code = "P2002";
+        throw error;
+      }
+      return work(tx);
+    },
+  });
+
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationStatus("registration-1", { status: "waitlisted" }, "admin-1"),
+      /audit failed/
+    );
+    assert.equal(transactionAttempts, 2);
+    assert.equal(updateCalls, 1);
+  } finally {
+    restore();
+  }
+});
+
 test("reserveAdminRegistrationSlot locks the lowest free slot and its bank-transfer fee", async () => {
   let createdHold;
   const tx = {

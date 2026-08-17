@@ -7,6 +7,77 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 const { HttpError } = require("../src/lib/http-error");
 
 const runDatabaseTests = process.env.RUN_DATABASE_INTEGRATION_TESTS === "true";
+const waitlistIntegrationSkip = runDatabaseTests
+  ? false
+  : "set RUN_DATABASE_INTEGRATION_TESTS=true with an isolated migrated database";
+
+test("real PostgreSQL serializes concurrent waitlist positions", {
+  skip: waitlistIntegrationSkip,
+}, async (t) => {
+  const { prisma } = require("../src/lib/prisma");
+  const suffix = crypto.randomUUID();
+  const tournamentId = crypto.randomUUID();
+  const registrationIds = [crypto.randomUUID(), crypto.randomUUID()];
+
+  try {
+    await prisma.$connect();
+    const indexes = await prisma.$queryRaw`
+      SELECT indexname
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = 'team_registrations_tournament_id_waitlist_position_key'
+    `;
+    if (indexes.length === 0) {
+      t.skip("waitlist uniqueness migration is not applied to the isolated database");
+      return;
+    }
+
+    await prisma.tournament.create({
+      data: {
+        id: tournamentId,
+        slug: `integration-waitlist-${suffix}`,
+        title: "Waitlist Integration Tournament",
+        game: "integration",
+        shortDescription: "Waitlist integration test",
+        fullDescription: "Waitlist integration test",
+        format: "5v5",
+        teamSize: 5,
+        maxTeams: 1,
+        prizePool: "Testing",
+        waitlistEnabled: true,
+      },
+    });
+
+    const createRegistration = (id, number) => prisma.teamRegistration.create({
+      data: {
+        id,
+        tournamentId,
+        teamName: `Concurrent Waitlist Team ${number} ${suffix}`,
+        captainName: `Concurrent Captain ${number}`,
+        captainEmail: `concurrent-${number}-${suffix}@example.com`,
+        captainPhone: "+94770000000",
+        captainDiscord: `concurrent-${number}-${suffix}`,
+        captainRiotId: `Concurrent${number}#TEST`,
+        contactEmail: `concurrent-contact-${number}-${suffix}@example.com`,
+        status: "waitlisted",
+        waitlistPosition: 1,
+      },
+    });
+    const results = await Promise.allSettled(
+      registrationIds.map((id, index) => createRegistration(id, index + 1))
+    );
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+    assert.equal(
+      results.find((result) => result.status === "rejected").reason?.code,
+      "P2002"
+    );
+  } finally {
+    await prisma.teamRegistration.deleteMany({ where: { id: { in: registrationIds } } });
+    await prisma.tournament.deleteMany({ where: { id: tournamentId } });
+    await prisma.$disconnect();
+  }
+});
 
 test("real Prisma client executes public tournament and commerce queries", {
   skip: !runDatabaseTests,

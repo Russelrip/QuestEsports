@@ -87,7 +87,15 @@ test("waitlist positions have additive nullable uniqueness and legacy normalizat
     ),
     "utf8"
   );
+  const additiveMigration = fs.readFileSync(
+    path.join(
+      __dirname,
+      "../prisma/migrations/20260817120000_extend_event_series_quest_ascension/migration.sql"
+    ),
+    "utf8"
+  );
   assert.match(schema, /@@unique\(\[tournamentId, waitlistPosition\]\)/);
   assert.match(migration, /CREATE UNIQUE INDEX/);
   assert.match(migration, /ROW_NUMBER\(\) OVER/);
+  assert.match(additiveMigration, /status.*<> 'waitlisted'/s);
 });

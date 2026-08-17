@@ -34,5 +34,13 @@ ON "event_series"("is_published", "featured", "display_order");
 CREATE UNIQUE INDEX "team_registrations_public_reference_key"
 ON "team_registrations"("public_reference");
 
+-- Waitlist positions are meaningful only while a registration is waitlisted.
+-- Clear stale metadata from legacy non-waitlisted rows before any later
+-- tournament/position uniqueness constraint is applied.
+UPDATE "team_registrations"
+SET "waitlist_position" = NULL
+WHERE "waitlist_position" IS NOT NULL
+  AND "status" <> 'waitlisted';
+
 CREATE INDEX "team_registrations_tournament_id_status_waitlist_position_idx"
 ON "team_registrations"("tournament_id", "status", "waitlist_position");

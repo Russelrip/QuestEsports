@@ -859,6 +859,14 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
             tx,
             tournamentId: currentTournament.id,
           });
+          const adminHold = tx.adminSlotReservation?.findUnique
+            ? await tx.adminSlotReservation.findUnique({
+                where: { registrationId: existing.id },
+              })
+            : null;
+          if (adminHold) {
+            await tx.adminSlotReservation.delete({ where: { id: adminHold.id } });
+          }
           const waitlisted = await tx.teamRegistration.update({
             where: { id: existing.id },
             data: {
