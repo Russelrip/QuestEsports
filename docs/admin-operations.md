@@ -189,10 +189,14 @@ Select **Registrations** from an event dashboard to call:
 GET /api/admin/events/:eventId/registrations
 ```
 
-Use `search`, `tournament`, `game`, `status`, `paymentStatus`,
-`verificationStatus`, `page`, and `pageSize` to keep games isolated while
-reviewing the event. The response contains lightweight summaries only; open a
-row to use the existing full admin registration detail and correction tools.
+The current event dashboard UI exposes `search`, `tournament`, `game`, and
+`status` controls, plus server-side `page`/`pageSize` pagination. These are the
+filters administrators can select in the event workspace today. The backend
+endpoint also accepts `paymentStatus` and `verificationStatus` query
+parameters for direct API clients or automation; they are not currently
+presented as event-dashboard controls. The response contains lightweight
+summaries only; open a row to use the existing full admin registration detail
+and correction tools.
 The event filter is enforced in the database by the child tournament's
 `seriesId`, so a registration from another event cannot appear through a
 client-side filter mistake.
