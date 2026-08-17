@@ -104,6 +104,7 @@ enum TeamRegistrationStatus {
   pending
   approved
   rejected
+  waitlisted
 }
 
 enum RegistrationPaymentStatus {
@@ -368,19 +369,36 @@ model User {
 }
 
 model EventSeries {
-  id            String       @id @default(uuid()) @db.Uuid
-  slug          String       @unique
-  title         String
-  description   String
-  heroImageName String?      @map("hero_image_name")
-  displayOrder  Int          @default(100) @map("display_order")
-  isPublished   Boolean      @default(false) @map("is_published")
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
-  tournaments   Tournament[]
-  ticketEvent   TicketEvent?
+  id                         String       @id @default(uuid()) @db.Uuid
+  slug                       String       @unique
+  title                      String
+  shortName                  String?      @map("short_name")
+  subtitle                   String?
+  description                String
+  shortDescription           String?      @map("short_description")
+  heroImageName              String?      @map("hero_image_name")
+  bannerImageName            String?      @map("banner_image_name")
+  startDate                  DateTime?    @map("start_date")
+  endDate                    DateTime?    @map("end_date")
+  registrationOpenAt         DateTime?    @map("registration_open_at")
+  registrationCloseAt        DateTime?    @map("registration_close_at")
+  venue                      String?
+  location                   String?
+  country                    String?
+  organizer                  String?
+  websiteUrl                 String?      @map("website_url")
+  discordUrl                 String?      @map("discord_url")
+  registrationStatusOverride String?      @map("registration_status_override")
+  displayOrder               Int          @default(100) @map("display_order")
+  isPublished                Boolean      @default(false) @map("is_published")
+  featured                   Boolean      @default(false)
+  createdAt                  DateTime     @default(now()) @map("created_at")
+  updatedAt                  DateTime     @updatedAt @map("updated_at")
+  tournaments                Tournament[]
+  ticketEvent                TicketEvent?
 
   @@index([isPublished, displayOrder])
+  @@index([isPublished, featured, displayOrder])
   @@map("event_series")
 }
 
@@ -584,6 +602,7 @@ model Tournament {
   registrationFeeTiers       Json                        @default("[]") @map("registration_fee_tiers")
   reservationMinutes         Int                         @default(1440) @map("reservation_minutes")
   bankTransferReviewMinutes  Int                         @default(1440) @map("bank_transfer_review_minutes")
+  waitlistEnabled            Boolean                     @default(false) @map("waitlist_enabled")
   bankName                   String?                     @map("bank_name")
   bankBranch                 String?                     @map("bank_branch")
   bankAccountName            String?                     @map("bank_account_name")
@@ -856,6 +875,8 @@ model TeamRegistration {
   captainRiotId          String                         @map("captain_riot_id")
   contactEmail           String                         @map("contact_email")
   teamLogoName           String?                        @map("team_logo_name")
+  waitlistPosition       Int?                           @map("waitlist_position")
+  publicReference        String?                        @unique @map("public_reference")
   status                 TeamRegistrationStatus         @default(pending)
   paymentStatus          RegistrationPaymentStatus      @default(unpaid) @map("payment_status")
   verificationStatus     RegistrationVerificationStatus @default(pending) @map("verification_status")
@@ -885,6 +906,7 @@ model TeamRegistration {
   @@index([userId, createdAt])
   @@index([reservedUntil])
   @@index([tournamentId, assignedSlotNumber])
+  @@index([tournamentId, status, waitlistPosition])
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([paymentStatus, verificationStatus])
