@@ -7,8 +7,8 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8"
 describe("VALORANT admin UI boundaries", () => {
   it("registers the VALORANT navigation group as a single management entry", () => {
     const lib = read("lib/admin.ts");
-    expect(lib).toContain('label: "VALORANT"');
-    expect(lib).toContain('label: "Valorant Management"');
+    expect(lib).toContain('label: "Game Operations"');
+    expect(lib).toContain('label: "Valorant"');
     expect(lib).toContain('{ href: "/admin/valorant"');
     expect(lib).not.toContain('href: "/admin/valorant/teams"');
     expect(lib).not.toContain('href: "/admin/valorant/discover"');

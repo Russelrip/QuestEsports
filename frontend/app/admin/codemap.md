@@ -6,6 +6,9 @@ Owns the no-index web-admin route tree. Admin layout/guard boundaries protect
 the dashboard; pages delegate data and mutations to client components and the
 backend admin API.
 
+All pages render inside the shared responsive `AdminShell`; public site chrome
+is intentionally not shown on this route tree.
+
 ## Event routes
 
 - `events/page.tsx` renders the event library at `/admin/events`.

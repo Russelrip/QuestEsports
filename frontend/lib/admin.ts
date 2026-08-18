@@ -15,7 +15,10 @@ import {
   sriLankaDateTimeLocalToIso,
 } from "@/lib/date-time";
 
-export const adminNavigationGroups = [
+export const adminNavigationGroups: ReadonlyArray<{
+  label: string;
+  links: ReadonlyArray<{ href: string; label: string }>;
+}> = [
   {
     label: "Workspace",
     links: [
@@ -29,16 +32,13 @@ export const adminNavigationGroups = [
     links: [
       { href: "/admin/tournaments", label: "Tournaments" },
       { href: "/admin/events", label: "Events" },
-      { href: "/admin/match-rooms", label: "Match Rooms" },
-      { href: "/admin/veto-rooms", label: "Veto Rooms" },
       { href: "/admin/event-series", label: "Event Series" },
-      { href: "/admin/games", label: "Games" },
       { href: "/admin/registrations", label: "Registrations" },
       { href: "/admin/rulebooks", label: "Rulebooks" },
     ],
   },
   {
-    label: "People & Support",
+    label: "People",
     links: [
       { href: "/admin/users", label: "Users" },
       { href: "/admin/teams", label: "Teams" },
@@ -57,8 +57,13 @@ export const adminNavigationGroups = [
     ],
   },
   {
-    label: "VALORANT",
-    links: [{ href: "/admin/valorant", label: "Valorant Management" }],
+    label: "Game Operations",
+    links: [
+      { href: "/admin/games", label: "Games" },
+      { href: "/admin/match-rooms", label: "Match Rooms" },
+      { href: "/admin/veto-rooms", label: "Veto Rooms" },
+      { href: "/admin/valorant", label: "Valorant" },
+    ],
   },
 ] as const;
 

@@ -6,6 +6,11 @@ Contains authenticated web-admin UI and shared admin controls. Event-specific
 flow is split between the event dashboard and the existing tournament/
 registration managers.
 
+`AdminShell` is the authenticated visual boundary for admin routes: it provides
+the grouped responsive sidebar/top-bar navigation, active route state, and
+account/sign-out controls. The root layout suppresses public header/footer
+chrome whenever this boundary is present.
+
 ## Event integration
 
 - `AdminEventsManager.tsx` lists admin event projections and links to the

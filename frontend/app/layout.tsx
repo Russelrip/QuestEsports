@@ -39,6 +39,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="page-shell">
         <style>{designTokenCssVariables}</style>
+        <style>{"body:has([data-admin-route]) > header, body:has([data-admin-route]) > footer { display: none; } body:has([data-admin-route]) > main { margin: 0; }"}</style>
         <AuthProvider>
           <Navbar />
           <main>{children}</main>

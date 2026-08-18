@@ -560,7 +560,10 @@ test("mobile admin teams use contained cards with accessible navigation and acti
 
   await openPage(page, "/admin/teams");
   await expect(page.getByRole("heading", { name: "Teams", exact: true })).toBeVisible();
-  await expect(page.getByText("Admin section")).toBeVisible();
+  await page.getByRole("button", { name: "Open admin navigation" }).click();
+  const adminNavigation = page.getByRole("dialog", { name: "Admin navigation" });
+  await expect(adminNavigation).toBeVisible();
+  await expect(adminNavigation.getByText("Workspace", { exact: true })).toBeVisible();
   await expect(page.locator("table")).toBeHidden();
   await expect(page.getByRole("button", { name: "View & edit" })).toBeVisible();
 

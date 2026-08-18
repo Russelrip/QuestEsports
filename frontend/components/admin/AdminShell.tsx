@@ -1,115 +1,87 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import AdminGuard from "@/components/admin/AdminGuard";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { Container } from "@/components/ui/container";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { cn } from "@/lib/utils";
 import { adminNavigationGroups } from "@/lib/admin";
 
-export default function AdminShell({
-  title,
-  description,
-  actions,
-  children,
-}: {
-  title: string;
-  description: string;
-  actions?: React.ReactNode;
-  children: React.ReactNode;
-}) {
+const Icon = ({ children }: { children: React.ReactNode }) => <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">{children}</svg>;
+
+export default function AdminShell({ title, description, actions, children }: { title: string; description: string; actions?: React.ReactNode; children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLinkActive = (href: string) =>
-    pathname === href || (href !== "/admin" && pathname.startsWith(`${href}/`));
-  const navigationLinks = adminNavigationGroups.reduce<Array<{ href: string; label: string }>>(
-    (links, group) => [...links, ...group.links],
-    []
+  const router = useRouter();
+  const { user, logout } = useAuth();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const hadOpenedDrawer = useRef(false);
+  const isLinkActive = (href: string) => pathname === href || (href !== "/admin" && pathname.startsWith(`${href}/`));
+  const links = adminNavigationGroups.flatMap((group) => group.links);
+  const activeLink = links.find((link) => isLinkActive(link.href));
+  const initials = user ? `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || user.username[0]?.toUpperCase() : "A";
+
+  useEffect(() => {
+    if (mobileOpen) {
+      hadOpenedDrawer.current = true;
+      const firstFocusable = drawerRef.current?.querySelector<HTMLElement>("a, button");
+      firstFocusable?.focus();
+      return;
+    }
+
+    if (hadOpenedDrawer.current) triggerRef.current?.focus();
+  }, [mobileOpen]);
+
+  const handleDrawerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setMobileOpen(false);
+      return;
+    }
+
+    if (event.key !== "Tab" || !drawerRef.current) return;
+    const focusable = Array.from(drawerRef.current.querySelectorAll<HTMLElement>("a, button"));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const navigation = (onNavigate?: () => void) => (
+    <nav className="grid gap-7" aria-label="Admin navigation">
+      {adminNavigationGroups.map((group) => <div key={group.label}>
+        <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">{group.label}</p>
+        <div className="grid gap-0.5">
+          {group.links.map((link) => { const active = isLinkActive(link.href); return <Link key={link.href} href={link.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("group flex min-h-10 items-center justify-between gap-3 rounded-lg px-3 text-sm font-medium text-slate-400 transition hover:bg-white/[0.06] hover:text-white", active && "bg-violet-500/15 text-white shadow-[inset_3px_0_0_#a78bfa]")}>{link.label}<Icon><path d="m7 4 5 6-5 6" /></Icon></Link>; })}
+        </div>
+      </div>)}
+    </nav>
   );
-  const activeLink = navigationLinks.find((link) => isLinkActive(link.href));
 
-  return (
-    <AdminGuard>
-      <section className="overflow-x-clip py-5 sm:py-12">
-        <Container>
-          <div className="grid min-w-0 gap-4 sm:gap-6">
-            <Card className="p-4 sm:p-8">
-              <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                <div className="min-w-0">
-                  <Badge className="border-purple-300/20 bg-purple-400/10 text-purple-100">Admin Dashboard</Badge>
-                  <h2 className="mt-4 break-words text-2xl text-white sm:text-4xl">{title}</h2>
-                  <p className="mt-3 max-w-3xl break-words text-sm text-slate-400">{description}</p>
-                </div>
-                {actions ? <div className="w-full shrink-0 [&>*]:w-full lg:w-auto lg:[&>*]:w-auto">{actions}</div> : null}
-              </div>
-            </Card>
+  const account = <div className="border-t border-white/10 pt-4">
+    <Link href="/profile" className="flex items-center gap-3 rounded-lg px-2 py-2 transition hover:bg-white/[0.06]"><span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-xs font-bold text-violet-200">{initials}</span><span className="min-w-0"><span className="block truncate text-sm font-semibold text-white">{user?.username || "Admin"}</span><span className="block truncate text-xs text-slate-500">{user?.email || "Administrator"}</span></span></Link>
+    <button type="button" onClick={async () => { if (await logout()) router.push("/"); }} className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-red-400/10 hover:text-red-200"><Icon><path d="M14 5H5v14h9M11 12h9m-3-3 3 3-3 3" /></Icon>Sign out</button>
+  </div>;
 
-            <details className="group border-y border-white/10 bg-[#0d0c13]/80 md:hidden">
-              <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 [&::-webkit-details-marker]:hidden">
-                <span className="min-w-0">
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Admin section</span>
-                  <span className="mt-1 block truncate text-sm font-semibold text-white">{activeLink?.label || "Navigation"}</span>
-                </span>
-                <svg viewBox="0 0 20 20" className="size-5 shrink-0 text-slate-400 transition group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                  <path d="m5 7.5 5 5 5-5" />
-                </svg>
-              </summary>
-              <nav className="grid gap-4 border-t border-white/10 px-3 py-4" aria-label="Admin navigation">
-                {adminNavigationGroups.map((group) => (
-                  <div key={group.label}>
-                    <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{group.label}</p>
-                    <div className="grid grid-cols-2 gap-1">
-                      {group.links.map((link) => {
-                        const isActive = isLinkActive(link.href);
-                        return (
-                          <Link
-                            key={link.href}
-                            href={link.href}
-                            className={cn(
-                              "min-w-0 border border-transparent px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white",
-                              isActive && "border-purple-300/20 bg-purple-400/10 text-white"
-                            )}
-                          >
-                            <span className="block truncate">{link.label}</span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </nav>
-            </details>
-
-            <nav className="hidden gap-5 border-y border-white/10 bg-[#0d0c13]/80 px-5 py-5 md:grid md:grid-cols-2 xl:grid-cols-[0.65fr_1.5fr_1.15fr_0.9fr_1fr]" aria-label="Admin navigation">
-              {adminNavigationGroups.map((group) => (
-                <div key={group.label}>
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{group.label}</p>
-                  <div className="flex flex-wrap gap-x-1 gap-y-1">
-                    {group.links.map((link) => {
-                      const isActive = isLinkActive(link.href);
-                      return (
-                        <Link
-                          key={link.href}
-                          href={link.href}
-                          className={cn(
-                            "border-b-2 border-transparent px-2 py-1.5 text-sm font-medium text-slate-400 transition hover:text-white",
-                            isActive && "border-purple-300 text-white"
-                          )}
-                        >
-                          {link.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </nav>
-
-            <div className="grid min-w-0 gap-4 sm:gap-6">{children}</div>
-          </div>
-        </Container>
-      </section>
-    </AdminGuard>
-  );
+  return <AdminGuard>
+    <div data-admin-shell className="flex min-h-dvh bg-[#08070d] text-slate-200">
+      <aside className="sticky top-0 hidden h-dvh w-72 shrink-0 flex-col border-r border-white/10 bg-[#0d0c14] px-5 py-6 lg:flex">
+        <Link href="/admin" className="mb-8 flex items-center gap-3 px-2"><span className="flex size-9 items-center justify-center rounded-xl bg-violet-500 font-black text-white">Q</span><span><span className="block text-sm font-bold tracking-wide text-white">QUEST ADMIN</span><span className="block text-[10px] uppercase tracking-[0.2em] text-slate-500">Operations console</span></span></Link>
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">{navigation()}</div>{account}
+      </aside>
+      <div className="min-w-0 flex-1">
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-white/10 bg-[#0d0c14]/95 px-4 backdrop-blur-xl lg:hidden"><Link href="/admin" className="flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-lg bg-violet-500 text-sm font-black text-white">Q</span><span className="text-sm font-bold tracking-wide text-white">QUEST ADMIN</span></Link><button ref={triggerRef} type="button" aria-label={mobileOpen ? "Close admin navigation" : "Open admin navigation"} aria-expanded={mobileOpen} aria-controls="admin-mobile-drawer" onClick={() => setMobileOpen((open) => !open)} className="rounded-lg p-2 text-slate-300 hover:bg-white/10"><Icon><path d={mobileOpen ? "m5 5 10 10M15 5 5 15" : "M3 5h14M3 10h14M3 15h14"} /></Icon></button></header>
+        {mobileOpen ? <div ref={drawerRef} id="admin-mobile-drawer" role="dialog" aria-modal="true" aria-label="Admin navigation" onKeyDown={handleDrawerKeyDown} className="fixed inset-x-0 bottom-0 top-16 z-20 overflow-y-auto border-b border-white/10 bg-[#0d0c14] px-4 py-6 lg:hidden">{navigation(() => setMobileOpen(false))}<div className="mt-8">{account}</div></div> : null}
+        <div className="mx-auto min-w-0 max-w-[1500px] p-4 sm:p-7 xl:p-10"><div className="mb-7 flex min-w-0 flex-col gap-4 border-b border-white/10 pb-7 sm:flex-row sm:items-end sm:justify-between"><div className="min-w-0"><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.24em] text-violet-300">{activeLink?.label || "Admin"}</p><h1 className="break-words text-3xl font-bold tracking-tight text-white sm:text-4xl">{title}</h1><p className="mt-2 max-w-3xl break-words text-sm leading-6 text-slate-400">{description}</p></div>{actions ? <div className="shrink-0 [&>*]:w-full sm:[&>*]:w-auto">{actions}</div> : null}</div><div className="grid min-w-0 gap-5">{children}</div></div>
+      </div>
+    </div>
+  </AdminGuard>;
 }
