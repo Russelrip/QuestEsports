@@ -596,6 +596,22 @@ const verifyUserPassword = async ({ currentUser, currentPassword }) => {
   return user;
 };
 
+const getUserLoginMethodState = async ({ userId, tx = prisma }) => {
+  const user = await tx.user.findUnique({
+    where: { id: userId },
+    select: { id: true, passwordHash: true },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    userId: user.id,
+    hasVerifiedPassword: Boolean(user.passwordHash),
+  };
+};
+
 const verifyEmailAddress = async ({ token }) => {
   const tokenHash = hashToken(token);
   const now = new Date();
@@ -1081,6 +1097,7 @@ module.exports = {
   requestPasswordReset,
   resetPassword,
   changePassword,
+  getUserLoginMethodState,
   mapUserForResponse,
   validateUserBasics,
 };

@@ -10,7 +10,11 @@ const {
   normalizeText,
   normalizeUsername,
 } = require("../../lib/validation");
-const { PUBLIC_USER_SELECT, mapUserForResponse } = require("./auth.service");
+const {
+  PUBLIC_USER_SELECT,
+  getUserLoginMethodState,
+  mapUserForResponse,
+} = require("./auth.service");
 
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_REQUEST_TIMEOUT_MS = 10 * 1000;
@@ -30,6 +34,8 @@ const fetchOAuth = async (url, options = {}) => {
 };
 const OAUTH_RANDOM_PASSWORD_BYTES = 24;
 const OAUTH_FLOW_COOKIE_PREFIX = `${env.SESSION_COOKIE_NAME}_oauth_`;
+const OAUTH_LINK_FLOW = "link";
+const consumedOAuthLinkStates = new Map();
 
 const OAUTH_PROVIDER_CONFIG = {
   google: {
@@ -139,20 +145,29 @@ const normalizeRedirectPath = (value) => {
   return normalizeSafeRedirectPath(value) || "/profile";
 };
 
-const createOAuthState = ({ provider, redirectTo, nonce, mobileCodeChallenge }) =>
+const createOAuthState = ({
+  provider,
+  redirectTo,
+  nonce,
+  mobileCodeChallenge,
+  flow,
+  userId,
+}) =>
   createSignedPayload({
     provider,
     redirectTo: normalizeRedirectPath(redirectTo),
     nonce,
     mobileCodeChallenge: mobileCodeChallenge || null,
+    ...(flow ? { flow, userId } : {}),
     timestamp: Date.now(),
   });
 
-const createOAuthFlowToken = ({ provider, nonce, codeVerifier }) =>
+const createOAuthFlowToken = ({ provider, nonce, codeVerifier, flow, userId }) =>
   createSignedPayload({
     provider,
     nonce,
     codeVerifier,
+    ...(flow ? { flow, userId } : {}),
     timestamp: Date.now(),
   });
 
@@ -184,6 +199,51 @@ const verifyOAuthState = ({ state, provider, flowToken }) => {
     redirectTo: normalizeRedirectPath(parsedState.redirectTo),
     codeVerifier: parsedFlow.codeVerifier,
     mobileCodeChallenge: parsedState.mobileCodeChallenge || null,
+  };
+};
+
+const verifyOAuthLinkState = ({ state, provider, flowToken, userId }) => {
+  const parsedState = parseSignedPayload(state, "Invalid OAuth link state.");
+  const parsedFlow = parseSignedPayload(flowToken, "Invalid OAuth link state.");
+  const normalizedUserId = String(userId || "").trim();
+
+  if (!normalizedUserId) {
+    throw new HttpError(401, "Authentication is required to link an OAuth account.");
+  }
+
+  if (
+    parsedState.provider !== provider ||
+    parsedFlow.provider !== provider ||
+    parsedState.flow !== OAUTH_LINK_FLOW ||
+    parsedFlow.flow !== OAUTH_LINK_FLOW
+  ) {
+    throw new HttpError(400, "Invalid OAuth link state.");
+  }
+
+  if (
+    parsedState.userId !== normalizedUserId ||
+    parsedFlow.userId !== normalizedUserId
+  ) {
+    throw new HttpError(403, "This OAuth link belongs to a different account.");
+  }
+
+  if (isExpired(parsedState.timestamp) || isExpired(parsedFlow.timestamp)) {
+    throw new HttpError(400, "OAuth link state has expired.");
+  }
+
+  if (
+    !parsedState.nonce ||
+    !parsedFlow.nonce ||
+    !parsedFlow.codeVerifier ||
+    parsedState.nonce !== parsedFlow.nonce
+  ) {
+    throw new HttpError(400, "Invalid OAuth link state.");
+  }
+
+  return {
+    redirectTo: normalizeRedirectPath(parsedState.redirectTo),
+    codeVerifier: parsedFlow.codeVerifier,
+    nonce: parsedState.nonce,
   };
 };
 
@@ -289,6 +349,61 @@ const createOAuthAuthorization = ({ provider, redirectTo, mobileCodeChallenge })
       expiresAt: new Date(Date.now() + STATE_MAX_AGE_MS),
     }),
   };
+};
+
+const createOAuthLinkAuthorization = ({ provider, userId, redirectTo }) => {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) {
+    throw new HttpError(401, "Authentication is required to link an OAuth account.");
+  }
+
+  const config = getProviderConfig(provider);
+  const nonce = crypto.randomBytes(18).toString("hex");
+  const codeVerifier = toBase64Url(crypto.randomBytes(32));
+  const codeChallenge = toBase64Url(
+    crypto.createHash("sha256").update(codeVerifier).digest()
+  );
+  const state = createOAuthState({
+    provider,
+    redirectTo,
+    nonce,
+    flow: OAUTH_LINK_FLOW,
+    userId: normalizedUserId,
+  });
+  const flowToken = createOAuthFlowToken({
+    provider,
+    nonce,
+    codeVerifier,
+    flow: OAUTH_LINK_FLOW,
+    userId: normalizedUserId,
+  });
+  const url = new URL(config.authorizeUrl);
+  url.searchParams.set("client_id", config.clientId);
+  url.searchParams.set("redirect_uri", config.callbackUrl);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", config.scope);
+  url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
+
+  if (provider === "discord") {
+    url.searchParams.set("prompt", "consent");
+  }
+
+  return {
+    authorizationUrl: url.toString(),
+    flowCookie: buildOAuthFlowCookie({
+      provider,
+      flowToken,
+      expiresAt: new Date(Date.now() + STATE_MAX_AGE_MS),
+    }),
+  };
+};
+
+const assertSupportedOAuthProvider = (provider) => {
+  if (!OAUTH_PROVIDER_CONFIG[provider]) {
+    throw new HttpError(400, "Unsupported OAuth provider.");
+  }
 };
 
 const exchangeCodeForToken = async ({ provider, code, codeVerifier }) => {
@@ -552,9 +667,177 @@ const handleOAuthCallback = async ({ provider, code, state, flowToken }) => {
   };
 };
 
+const createOAuthConflictError = () => {
+  const error = new HttpError(
+    409,
+    "That OAuth account is already linked to another user."
+  );
+  error.code = "OAUTH_ACCOUNT_CONFLICT";
+  return error;
+};
+
+const createOAuthLastLoginMethodError = () => {
+  const error = new HttpError(
+    400,
+    "You must keep a verified password or another linked OAuth provider."
+  );
+  error.code = "OAUTH_LAST_LOGIN_METHOD";
+  return error;
+};
+
+const createOAuthProviderNotLinkedError = () => {
+  const error = new HttpError(404, "That OAuth provider is not linked.");
+  error.code = "OAUTH_PROVIDER_NOT_LINKED";
+  return error;
+};
+
+const consumeOAuthLinkState = (nonce) => {
+  const now = Date.now();
+  for (const [storedNonce, expiresAt] of consumedOAuthLinkStates) {
+    if (expiresAt <= now) {
+      consumedOAuthLinkStates.delete(storedNonce);
+    }
+  }
+
+  if (consumedOAuthLinkStates.has(nonce)) {
+    throw new HttpError(400, "This OAuth link has already been used.");
+  }
+
+  consumedOAuthLinkStates.set(nonce, now + STATE_MAX_AGE_MS);
+};
+
+const listLinkedOAuthProviders = async (userId) => {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) {
+    throw new HttpError(401, "Authentication is required.");
+  }
+
+  const accounts = await prisma.oAuthAccount.findMany({
+    where: { userId: normalizedUserId },
+    select: { provider: true },
+  });
+  const linkedProviders = new Set(accounts.map((account) => account.provider));
+
+  return Object.keys(OAUTH_PROVIDER_CONFIG).map((provider) => ({
+    provider,
+    linked: linkedProviders.has(provider),
+  }));
+};
+
+const handleOAuthLinkCallback = async ({
+  provider,
+  code,
+  state,
+  flowToken,
+  userId,
+}) => {
+  if (!code) {
+    throw new HttpError(400, "OAuth code is missing.");
+  }
+
+  const normalizedUserId = String(userId || "").trim();
+
+  const { redirectTo, codeVerifier, nonce } = verifyOAuthLinkState({
+    state,
+    provider,
+    flowToken,
+    userId: normalizedUserId,
+  });
+  consumeOAuthLinkState(nonce);
+
+  const accessToken = await exchangeCodeForToken({
+    provider,
+    code,
+    codeVerifier,
+  });
+  const profile = await fetchProviderProfile({ provider, accessToken });
+  const existingAccount = await prisma.oAuthAccount.findUnique({
+    where: {
+      provider_providerUserId: {
+        provider,
+        providerUserId: profile.providerUserId,
+      },
+    },
+    select: { userId: true },
+  });
+
+  if (existingAccount && existingAccount.userId !== normalizedUserId) {
+    throw createOAuthConflictError();
+  }
+
+  if (!existingAccount) {
+    try {
+      await prisma.oAuthAccount.create({
+        data: {
+          id: crypto.randomUUID(),
+          userId: normalizedUserId,
+          provider,
+          providerUserId: profile.providerUserId,
+          email: profile.email,
+        },
+      });
+    } catch (error) {
+      if (error?.code === "P2002") {
+        throw createOAuthConflictError();
+      }
+      throw error;
+    }
+  }
+
+  return {
+    redirectTo,
+    providers: await listLinkedOAuthProviders(normalizedUserId),
+  };
+};
+
+const unlinkOAuthProvider = async ({ userId, provider }) => {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) {
+    throw new HttpError(401, "Authentication is required.");
+  }
+  assertSupportedOAuthProvider(provider);
+
+  await prisma.$transaction(async (tx) => {
+    const loginMethodState = await getUserLoginMethodState({
+      userId: normalizedUserId,
+      tx,
+    });
+    if (!loginMethodState) {
+      throw new HttpError(404, "User not found.");
+    }
+
+    const linkedAccount = await tx.oAuthAccount.findFirst({
+      where: { userId: normalizedUserId, provider },
+      select: { id: true },
+    });
+    if (!linkedAccount) {
+      throw createOAuthProviderNotLinkedError();
+    }
+
+    const [oauthCount, providerCount] = await Promise.all([
+      tx.oAuthAccount.count({ where: { userId: normalizedUserId } }),
+      tx.oAuthAccount.count({ where: { userId: normalizedUserId, provider } }),
+    ]);
+    const remainingOAuthCount = oauthCount - providerCount;
+    if (!loginMethodState.hasVerifiedPassword && remainingOAuthCount === 0) {
+      throw createOAuthLastLoginMethodError();
+    }
+
+    await tx.oAuthAccount.deleteMany({
+      where: { userId: normalizedUserId, provider },
+    });
+  });
+
+  return listLinkedOAuthProviders(normalizedUserId);
+};
+
 module.exports = {
   buildExpiredOAuthFlowCookie,
   createOAuthAuthorization,
+  createOAuthLinkAuthorization,
   getOAuthFlowToken,
   handleOAuthCallback,
+  handleOAuthLinkCallback,
+  listLinkedOAuthProviders,
+  unlinkOAuthProvider,
 };
