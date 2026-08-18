@@ -265,6 +265,7 @@ const buildLinkService = ({
         redirectTo: "/profile?tab=account",
       });
       return {
+        authorizationUrl: authorization.authorizationUrl,
         state: new URL(authorization.authorizationUrl).searchParams.get("state"),
         flowToken: module.getOAuthLinkFlowToken({
           provider: "google",
@@ -564,13 +565,20 @@ test("login callback rejects a link state payload", async () => {
 test("link token exchange uses the dedicated callback URL and the durable nonce claim", async () => {
   const { service, getLinkState, linkNonces, tokenRequestBodies, restore } = buildLinkService();
   try {
+    const linkState = await getLinkState();
     await service.handleOAuthLinkCallback({
       provider: "google",
       code: "code",
-      ...(await getLinkState()),
+      ...linkState,
       userId: "user-1",
     });
     assert.equal(linkNonces[0].consumedAt instanceof Date, true);
+    const authorizationUrl = new URL(linkState.authorizationUrl);
+    const codeVerifier = tokenRequestBodies[0].get("code_verifier");
+    assert.equal(
+      authorizationUrl.searchParams.get("code_challenge"),
+      crypto.createHash("sha256").update(codeVerifier).digest("base64url")
+    );
     assert.equal(
       tokenRequestBodies[0].get("redirect_uri"),
       "http://localhost:5001/api/auth/google/link/callback"
@@ -629,6 +637,26 @@ test("OAuth unlink retries serialization conflicts before applying the removal",
   try {
     await service.unlinkOAuthProvider({ userId: "user-1", provider: "google" });
     assert.equal(transactionOptions.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth unlink rejects after exhausting serialization retries", async () => {
+  const { service, transactionOptions, restore } = buildLinkService({
+    accounts: [
+      { id: "oauth-1", userId: "user-1", provider: "google" },
+      { id: "oauth-2", userId: "user-1", provider: "discord" },
+    ],
+    hasPassword: false,
+    transactionFailures: 3,
+  });
+  try {
+    await assert.rejects(
+      service.unlinkOAuthProvider({ userId: "user-1", provider: "google" }),
+      (error) => error.code === "P2034"
+    );
+    assert.equal(transactionOptions.length, 3);
   } finally {
     restore();
   }
