@@ -1,23 +1,45 @@
-import { describe, expect, it } from "vitest";
-import { supportComposerSchema } from "../../components/support/SupportComposer";
-import { statusLabel, statusTone } from "../../components/support/SupportConversationList";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import SupportComposer from "../../components/support/SupportComposer";
+import SupportConversationList from "../../components/support/SupportConversationList";
+import SupportInbox from "../../components/support/SupportInbox";
+import SupportThread from "../../components/support/SupportThread";
+import NotificationBell from "../../components/notifications/NotificationBell";
+import type { SupportConversation } from "../../lib/support";
 
-describe("support inbox UI contracts", () => {
-  it("requires a subject when sending a new conversation", () => {
-    const result = supportComposerSchema.safeParse({ subject: "", body: "I need help with my registration." });
-    expect(result.success).toBe(false);
-    if (!result.success) expect(result.error.issues[0]?.message).toBe("Subject is required.");
-  });
+const mocks = vi.hoisted(() => ({ apiFetchJson: vi.fn(), listSupportConversations: vi.fn(), getSupportConversation: vi.fn(), markSupportConversationRead: vi.fn(), createSupportConversation: vi.fn(), sendSupportMessage: vi.fn(), reopenSupportConversation: vi.fn(), resolveSupportConversation: vi.fn(), showToast: vi.fn(), auth: { user: { id: "user-1" }, isLoading: false } }));
+const { apiFetchJson, listSupportConversations, getSupportConversation, markSupportConversationRead, createSupportConversation, sendSupportMessage, reopenSupportConversation } = mocks;
 
-  it("renders grounded labels for unread conversation statuses", () => {
-    expect(statusLabel.PENDING_STAFF).toBe("With support");
-    expect(statusLabel.PENDING_USER).toBe("Your reply");
-    expect(statusTone.RESOLVED).toContain("slate");
-  });
+vi.mock("@/lib/auth", () => ({ apiFetchJson: mocks.apiFetchJson, apiFetch: vi.fn() }));
+vi.mock("@/lib/support", () => ({ listSupportConversations: mocks.listSupportConversations, getSupportConversation: mocks.getSupportConversation, markSupportConversationRead: mocks.markSupportConversationRead, createSupportConversation: mocks.createSupportConversation, sendSupportMessage: mocks.sendSupportMessage, reopenSupportConversation: mocks.reopenSupportConversation, resolveSupportConversation: mocks.resolveSupportConversation }));
+vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => mocks.auth }));
+vi.mock("@/hooks/useToastStore", () => ({ useToastStore: (selector: (state: { showToast: typeof mocks.showToast }) => unknown) => selector({ showToast: mocks.showToast }) }));
+vi.mock("@/lib/realtime", () => ({ subscribeToRealtimeUpdates: () => () => undefined }));
+vi.mock("next/link", () => ({ default: ({ children, ...props }: React.PropsWithChildren<{ href: string }>) => <a {...props}>{children}</a> }));
 
-  it("validates message length and accepts a complete message", () => {
-    expect(supportComposerSchema.safeParse({ subject: "Login issue", body: "The details of my issue are here." }).success).toBe(true);
-    expect(supportComposerSchema.safeParse({ subject: "Login issue", body: "" }).success).toBe(false);
-    expect(supportComposerSchema.safeParse({ subject: "x".repeat(161), body: "Details" }).success).toBe(false);
-  });
+const message = (id: string, senderUserId = "user-1", body = "I need help") => ({ id, conversationId: "conversation-1", senderUserId, body, createdAt: "2026-08-19T12:00:00.000Z", sender: { id: senderUserId, username: "player", firstName: senderUserId === "user-1" ? "Player" : "Staff", lastName: null, avatarUrl: null } });
+const conversation = (status: SupportConversation["status"] = "OPEN"): SupportConversation => ({ id: "conversation-1", ownerUserId: "user-1", subject: "Registration help", status, assignedStaffUserId: null, createdAt: "2026-08-19T11:00:00.000Z", updatedAt: "2026-08-19T12:00:00.000Z", resolvedAt: status === "RESOLVED" ? "2026-08-19T12:30:00.000Z" : null, owner: null, assignedStaff: null, unreadCount: 0, messages: [message("message-1")] });
+
+beforeEach(() => { vi.clearAllMocks(); listSupportConversations.mockResolvedValue({ items: [], nextCursor: null }); getSupportConversation.mockResolvedValue(conversation()); markSupportConversationRead.mockResolvedValue({ lastReadAt: "now", unreadCount: 0 }); });
+afterEach(() => cleanup());
+
+describe("support inbox rendered states", () => {
+  it("shows a helpful empty state", async () => { render(<SupportInbox />); expect(await screen.findByText(/No conversations yet/)).toBeInTheDocument(); expect(screen.getByText("Start a support conversation")).toBeInTheDocument(); });
+
+  it("renders unread counts and status labels", () => { render(<SupportConversationList selectedId="one" items={[{ ...conversation(), lastMessage: message("message-2", "staff-1", "We are checking this"), preview: "We are checking this", unreadCount: 2, status: "PENDING_USER" }]} />); expect(screen.getByText("Your reply")).toBeInTheDocument(); expect(screen.getByText("2")).toBeInTheDocument(); expect(screen.getByText("We are checking this")).toBeInTheDocument(); });
+
+  it("associates empty-composer errors with the subject input", async () => { const user = userEvent.setup(); render(<SupportComposer onSubmit={vi.fn()} />); await user.click(screen.getByRole("button", { name: "Send message" })); expect(await screen.findByText("Subject is required.")).toBeInTheDocument(); expect(screen.getByLabelText(/Subject/)).toHaveAttribute("aria-invalid", "true"); expect(screen.getByLabelText(/Subject/)).toHaveAttribute("aria-describedby", "supportSubject-error"); });
+
+  it("shows a retryable create failure without losing the message", async () => { const user = userEvent.setup(); createSupportConversation.mockRejectedValue(new Error("Network unavailable")); render(<SupportInbox />); await screen.findByText("Start a support conversation"); const subject = screen.getByLabelText(/Subject/); const body = screen.getByLabelText(/Message/); await user.type(subject, "Login issue"); await user.type(body, "Please help me sign in."); await user.click(screen.getByRole("button", { name: "Send message" })); expect(await screen.findByRole("alert")).toHaveTextContent("Network unavailable"); expect(subject).toHaveValue("Login issue"); expect(body).toHaveValue("Please help me sign in."); await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).not.toBeDisabled()); });
+
+  it("reopens a resolved thread and resets the reply input after success", async () => { const user = userEvent.setup(); const resolved = conversation("RESOLVED"); reopenSupportConversation.mockResolvedValue(conversation("OPEN")); sendSupportMessage.mockResolvedValue({ message: message("message-2"), status: "PENDING_STAFF" }); render(<SupportThread conversation={resolved} currentUserId="user-1" onChanged={vi.fn()} />); await user.click(screen.getByRole("button", { name: "Reopen" })); expect(await screen.findByText("Open")).toBeInTheDocument(); await user.type(screen.getByLabelText(/Message/), "Following up"); await user.click(screen.getAllByRole("button", { name: "Send message" }).at(-1)!); await waitFor(() => expect(screen.getByLabelText(/Message/)).toHaveValue("")); });
+
+  it("offers thread retry and keeps list errors separate", async () => { const user = userEvent.setup(); getSupportConversation.mockRejectedValueOnce(new Error("Thread unavailable")); render(<SupportInbox conversationId="conversation-1" />); expect(await screen.findByRole("alert")).toHaveTextContent("Thread unavailable"); getSupportConversation.mockResolvedValueOnce(conversation()); await user.click(screen.getByRole("button", { name: "Try again" })); expect(await screen.findByText("Registration help")).toBeInTheDocument(); });
+
+  it("refreshes summaries after marking a thread read", async () => { render(<SupportInbox conversationId="conversation-1" />); await waitFor(() => expect(markSupportConversationRead).toHaveBeenCalledWith("conversation-1")); await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2)); });
+});
+
+describe("support notifications", () => {
+  it("navigates support notifications to the conversation thread", async () => { const user = userEvent.setup(); apiFetchJson.mockResolvedValue({ response: new Response(null, { status: 200 }), data: { success: true, data: { items: [{ id: "notification-1", type: "support_message", title: "New support message", body: "A reply is waiting", actionUrl: "/support/conversation-1", readAt: null, createdAt: "2026-08-19T12:00:00.000Z" }], unreadCount: 1, push: { enabled: false, publicKey: null }, preference: { matchPushEnabled: true, soundEnabled: true, matchEmailEnabled: false } } } }); render(<NotificationBell user={{ id: "user-1", firstName: "Player", lastName: "One", email: "player@example.com", username: "player", role: "user", emailVerified: true }} />); await waitFor(() => expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument()); await user.click(screen.getByRole("button", { name: "1 unread notifications" })); expect(screen.getByRole("link", { name: /New support message/ })).toHaveAttribute("href", "/support/conversation-1"); });
 });
