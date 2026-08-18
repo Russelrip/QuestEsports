@@ -20,6 +20,11 @@ describe("VALORANT player leaderboard", () => {
     expect(component).toContain("Search by Discord username");
     expect(component).toContain("isTopTen");
     expect(component).toContain("Leaderboard unavailable");
+    expect(component).toContain("buildValorantTrackerProfileUrl");
+    expect(component).toContain('target="_blank"');
+    expect(component).toContain('rel="noopener noreferrer"');
+    expect(component).toContain("View");
+    expect(component).toContain("Tracker");
     expect(component).not.toMatch(/api\.henrikdev|valorant-platform-backend|X-Admin-Key|VALORANT_SERVICE_SECRET|localhost:8000/);
   });
 
