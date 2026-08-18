@@ -36,6 +36,7 @@ const buildAdminQuery = (filters: SupportQueueFilters = {}) => {
 export const listAdminSupportConversations = (filters?: SupportQueueFilters) =>
   request<{ items: SupportConversationSummary[]; nextCursor: string | null }>(`/api/v1/admin/support/conversations${buildAdminQuery(filters)}`);
 export const getAdminSupportConversation = (id: string) => request<SupportConversation>(`/api/v1/admin/support/conversations/${id}`);
+export const markAdminSupportConversationRead = (id: string) => request<{ lastReadAt: string; unreadCount: number }>(`/api/v1/admin/support/conversations/${id}/read`, { method: "PATCH", json: {} });
 export const assignSupportConversation = (id: string, assignedStaffUserId: string | null) =>
   request<SupportConversation>(`/api/v1/admin/support/conversations/${id}/assignment`, { method: "PATCH", json: { assignedStaffUserId } });
 export const sendAdminSupportMessage = (id: string, body: string) =>

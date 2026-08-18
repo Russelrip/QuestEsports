@@ -164,6 +164,16 @@ test("admin controllers pass staff actor context and never use client owner IDs"
   }]);
 });
 
+test("admin read controller marks the conversation read for the authenticated staff member", async () => {
+  const req = { user: { id: "admin-1" }, params: { conversationId: "conversation-1" }, body: { userId: "attacker" } };
+  const result = await callController("markAdminRead", req);
+  assert.deepEqual(result.calls[0], ["markConversationRead", {
+    conversationId: "conversation-1",
+    userId: "admin-1",
+    isStaff: true,
+  }]);
+});
+
 test("support routes require authentication and admin authorization for the queue", () => {
   const requireAuth = () => {};
   const requireAdmin = () => {};
@@ -191,6 +201,7 @@ test("support routes require authentication and admin authorization for the queu
       ["POST", "/support/conversations/:conversationId/reopen"],
       ["GET", "/admin/support/conversations"],
       ["GET", "/admin/support/conversations/:conversationId"],
+      ["PATCH", "/admin/support/conversations/:conversationId/read"],
       ["PATCH", "/admin/support/conversations/:conversationId/assignment"],
       ["POST", "/admin/support/conversations/:conversationId/messages"],
       ["PATCH", "/admin/support/conversations/:conversationId/status"],
@@ -198,7 +209,7 @@ test("support routes require authentication and admin authorization for the queu
       assert.ok(routes.some((route) => route.method === expected[0] && route.path === expected[1]), `missing route ${expected.join(" ")}`);
     }
     const adminRoutes = routes.filter((route) => route.path.startsWith("/admin/support/"));
-    assert.equal(adminRoutes.length, 5);
+    assert.equal(adminRoutes.length, 6);
     for (const route of adminRoutes) {
       assert.ok(route.handlers.includes(requireAuth));
       assert.ok(route.handlers.includes(requireAdmin));
@@ -222,7 +233,7 @@ test("actual admin middleware rejects non-admin requests for every admin route",
   try {
     const adminRoutes = router.stack
       .filter((layer) => layer.route && layer.route.path.startsWith("/admin/support/"));
-    assert.equal(adminRoutes.length, 5);
+    assert.equal(adminRoutes.length, 6);
     for (const layer of adminRoutes) {
       const handlers = layer.route.stack.map((entry) => entry.handle);
       assert.equal(handlers[0], actualAuth.requireAuth);

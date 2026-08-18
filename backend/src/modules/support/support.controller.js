@@ -105,6 +105,15 @@ const getAdminConversation = asyncHandler(async (req, res) => respond(
   }),
 ));
 
+const markAdminRead = asyncHandler(async (req, res) => respond(
+  res,
+  await service.markConversationRead({
+    conversationId: req.params.conversationId,
+    userId: req.user.id,
+    isStaff: true,
+  }),
+));
+
 const assignConversation = asyncHandler(async (req, res) => respond(
   res,
   await service.assignConversation({
@@ -145,6 +154,7 @@ module.exports = {
   reopenConversation,
   listAdminConversations,
   getAdminConversation,
+  markAdminRead,
   assignConversation,
   sendAdminMessage,
   updateAdminStatus,
