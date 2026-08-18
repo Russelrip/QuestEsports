@@ -12,6 +12,7 @@ const vetoController = require("../modules/veto/veto.controller");
 const matchRoomController = require("../modules/match-rooms/match-room.controller");
 const notificationController = require("../modules/notifications/notification.controller");
 const supportRoutes = require("../modules/support/support.routes");
+const authRoutes = require("../modules/auth/auth.routes");
 const challongeController = require("../modules/challonge/challonge.controller");
 const staffController = require("../modules/permissions/staff.controller");
 const { getRealtimeEvents } = require("../modules/realtime/realtime.controller");
@@ -37,6 +38,7 @@ const tournamentStaff = requireTournamentStaff({ roles: ["tournament_admin", "re
 
 router.use(attachSession);
 router.use(supportRoutes);
+router.use(authRoutes.oauthLinkRoutes);
 
 router.get("/home", publicCache, shortCache, matchController.homeFeed);
 router.get(

@@ -3,10 +3,12 @@ const {
   signup,
   startGoogleAuth,
   startDiscordAuth,
+  startProviderLink,
   startMobileGoogleAuth,
   startMobileDiscordAuth,
   googleCallback,
   discordCallback,
+  providerLinkCallback,
   login,
   mobileLogin,
   exchangeMobileOAuthGrant,
@@ -25,12 +27,15 @@ const {
   getSessions,
   revokeSession,
   revokeOtherSessions,
+  getLinkedProviders,
+  unlinkProvider,
 } = require("./auth.controller");
 const { requireAuth } = require("./auth.middleware");
 const { createRateLimiter, getClientIp } = require("../../middleware/rate-limit");
 const { normalizeEmail, normalizeUsername } = require("../../lib/validation");
 
 const router = express.Router();
+const oauthLinkRoutes = express.Router();
 const passwordLoginIpRateLimiter = createRateLimiter({
   name: "auth-login-password-ip",
   windowMs: 15 * 60 * 1000,
@@ -85,10 +90,30 @@ const resetPasswordRateLimiter = createRateLimiter({
   maxRequests: 5,
   message: "Too many password reset attempts. Please try again later.",
 });
+const registerOAuthLinkRoutes = (targetRouter) => {
+  targetRouter.get("/auth/oauth/providers", requireAuth, getLinkedProviders);
+  targetRouter.get(
+    "/auth/oauth/:provider/link",
+    requireAuth,
+    startProviderLink
+  );
+  targetRouter.get(
+    "/auth/oauth/:provider/link/callback",
+    requireAuth,
+    providerLinkCallback
+  );
+  targetRouter.delete(
+    "/auth/oauth/:provider",
+    requireAuth,
+    unlinkProvider
+  );
+};
 router.get("/auth/google/start", startGoogleAuth);
 router.get("/auth/google/callback", googleCallback);
 router.get("/auth/discord/start", startDiscordAuth);
 router.get("/auth/discord/callback", discordCallback);
+registerOAuthLinkRoutes(router);
+registerOAuthLinkRoutes(oauthLinkRoutes);
 router.get("/mobile/auth/oauth/google/start", startMobileGoogleAuth);
 router.get("/mobile/auth/oauth/discord/start", startMobileDiscordAuth);
 router.post("/signup", signupRateLimiter, signup);
@@ -131,3 +156,4 @@ router.get("/users/:userId", requireAuth, getProfile);
 router.patch("/users/:userId", requireAuth, updateProfile);
 
 module.exports = router;
+module.exports.oauthLinkRoutes = oauthLinkRoutes;
