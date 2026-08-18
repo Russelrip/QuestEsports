@@ -19,6 +19,14 @@ const audit = async (req, action, room, extra) => recordAudit({
 const catalog = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.listCatalog(req.query), meta: meta() }));
 const createPool = asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.createPool({ user: req.user, body: req.body }), meta: meta() }));
 const createMap = asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.createMap({ user: req.user, body: req.body }), meta: meta() }));
+const updateMap = asyncHandler(async (req, res) => {
+  const map = await service.updateMapAvailability({ user: req.user, mapId: req.params.id, isActive: req.body?.isActive });
+  await recordAudit({
+    ...requestAuditContext(req), action: "veto.map.availability.updated", targetType: "VetoMap", targetId: map.id,
+    afterData: { id: map.id, slug: map.slug, name: map.name, isActive: map.isActive },
+  });
+  res.status(200).json({ success: true, data: map, meta: meta() });
+});
 const createPreset = asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.createPreset({ user: req.user, body: req.body }), meta: meta() }));
 const createTemplate = asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.createTemplate({ user: req.user, body: req.body }), meta: meta() }));
 const tournamentConfig = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.getTournamentConfig({ user: req.user, tournamentId: req.params.id }), meta: meta() }));
@@ -77,7 +85,7 @@ const rotateGrant = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  catalog, createMap, createPool, createPreset, createTemplate, tournamentConfig, saveTournamentConfig,
+  catalog, createMap, updateMap, createPool, createPreset, createTemplate, tournamentConfig, saveTournamentConfig,
   listRooms, createRoom, getAdminRoom, getRoom, myRooms, openRoom, startRoom, assignTeamA,
   readyRoom, tossRoom, recordManualToss, chooseTeamA, submitAction, rewindRoom, resetRoom,
   cancelRoom, rotateGrant,

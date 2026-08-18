@@ -3,7 +3,7 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { normalizeText } = require("../../lib/validation");
 
-const FORMATS = new Set(["bo1", "bo3", "bo5", "custom"]);
+const FORMATS = new Set(["bo1", "bo3", "bo5", "premier", "custom"]);
 const CONTROL_MODES = new Set(["captain_or_link", "link_only", "staff_only"]);
 const ORDER_METHODS = new Set(["toss", "slot_order", "higher_seed", "lower_seed", "staff_assignment"]);
 const TOSS_METHODS = new Set(["digital", "manual"]);
@@ -64,11 +64,18 @@ const validateSteps = (steps, format = "custom", mapCount = 7) => {
   let played = 0;
   const selectedSeries = new Set();
   let deciderIndex = -1;
+  let premierBanCount = 0;
   const normalized = steps.map((raw, index) => {
     const kind = normalizeText(raw?.kind).toLowerCase();
     if (!["ban", "pick", "decider", "side"].includes(kind)) throw new HttpError(400, `Preset step ${index + 1} has an invalid action.`);
     const actor = raw.actor === null || raw.actor === undefined ? null : normalizeText(raw.actor).toUpperCase();
     if (kind !== "decider" && !["A", "B"].includes(actor)) throw new HttpError(400, `Preset step ${index + 1} needs Team A or Team B.`);
+    if (format === "premier" && kind === "ban") {
+      const expectedActor = premierBanCount % 2 === 0 ? "A" : "B";
+      if (actor !== expectedActor) throw new HttpError(400, `Premier ban ${premierBanCount + 1} must be made by Team ${expectedActor}.`);
+      premierBanCount += 1;
+    }
+    if (format === "premier" && kind === "side") throw new HttpError(400, "Premier format does not support side selection.");
     const seriesIndex = raw.seriesIndex === undefined || raw.seriesIndex === null ? null : Number(raw.seriesIndex);
     if (["pick", "decider", "side"].includes(kind) && (!Number.isInteger(seriesIndex) || seriesIndex < 1 || seriesIndex > 9)) {
       throw new HttpError(400, `Preset step ${index + 1} needs a valid series map number.`);
@@ -83,12 +90,14 @@ const validateSteps = (steps, format = "custom", mapCount = 7) => {
       if (deciderIndex !== -1) throw new HttpError(400, "A preset can contain only one automatic decider.");
       deciderIndex = index;
       if (consumed !== mapCount) throw new HttpError(400, "The automatic decider must leave exactly one map in the selected pool.");
-    } else if (deciderIndex !== -1 && ["ban", "pick"].includes(kind)) {
-      throw new HttpError(400, "No map can be banned or picked after the automatic decider.");
+    } else if (deciderIndex !== -1 && (format === "premier" || ["ban", "pick"].includes(kind))) {
+      throw new HttpError(400, format === "premier"
+        ? "No manual step can follow the automatic decider in Premier format."
+        : "No map can be banned or picked after the automatic decider.");
     }
     return { kind, actor: kind === "decider" ? null : actor, seriesIndex };
   });
-  const expectedPlayed = format === "bo1" ? 1 : format === "bo3" ? 3 : format === "bo5" ? 5 : played;
+  const expectedPlayed = format === "bo1" || format === "premier" ? 1 : format === "bo3" ? 3 : format === "bo5" ? 5 : played;
   if (played !== expectedPlayed) throw new HttpError(400, `${format.toUpperCase()} requires ${expectedPlayed} played map${expectedPlayed === 1 ? "" : "s"}.`);
   if (consumed > mapCount) throw new HttpError(400, "The preset consumes more maps than the selected pool contains.");
   if (format !== "custom" && [...selectedSeries].sort((a, b) => a - b).some((value, index) => value !== index + 1)) {
@@ -112,6 +121,18 @@ const builtInSteps = {
     ["pick", "B", 2], ["side", "A", 2], ["pick", "A", 3], ["side", "B", 3],
     ["pick", "B", 4], ["side", "A", 4], ["decider", null, 5], ["side", "A", 5],
   ],
+  premier: [
+    ["ban", "A"], ["ban", "B"], ["ban", "A"], ["ban", "B"], ["ban", "A"], ["ban", "B"],
+    ["decider", null, 1],
+  ],
+};
+
+const normalizeArtworkPath = (value) => {
+  const artworkUrl = normalizeText(value) || null;
+  if (artworkUrl !== null && !artworkUrl.startsWith("/api/uploads/") && !artworkUrl.startsWith("/images/")) {
+    throw new HttpError(400, "Map artwork must use a project-relative upload path.");
+  }
+  return artworkUrl;
 };
 
 const getBuiltInSteps = (format) => (builtInSteps[format] || []).map(([kind, actor, seriesIndex]) => ({ kind, actor, seriesIndex: seriesIndex || null }));
@@ -260,8 +281,8 @@ const getRoomRecord = async (where) => {
 const listCatalog = async ({ tournamentId } = {}) => {
   const scope = tournamentId ? { OR: [{ tournamentId: null }, { tournamentId }] } : { tournamentId: null };
   const [maps, pools, presets, templates] = await Promise.all([
-    prisma.vetoMap.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    prisma.vetoMapPool.findMany({ where: { ...scope, isArchived: false }, include: { maps: { include: { map: true }, orderBy: { displayOrder: "asc" } } }, orderBy: [{ isBuiltIn: "desc" }, { name: "asc" }, { version: "desc" }] }),
+    prisma.vetoMap.findMany({ orderBy: { name: "asc" } }),
+    prisma.vetoMapPool.findMany({ where: { ...scope, isArchived: false }, include: { maps: { where: { map: { isActive: true } }, include: { map: true }, orderBy: { displayOrder: "asc" } } }, orderBy: [{ isBuiltIn: "desc" }, { name: "asc" }, { version: "desc" }] }),
     prisma.vetoRulePreset.findMany({ where: { ...scope, isArchived: false }, orderBy: [{ isBuiltIn: "desc" }, { format: "asc" }, { name: "asc" }] }),
     prisma.vetoRoomTemplate.findMany({ where: { ...scope, isArchived: false }, include: { mapPool: true, rulePreset: true }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),
   ]);
@@ -281,8 +302,18 @@ const createPool = async ({ user, body }) => {
   const name = normalizeText(body.name).slice(0, 120);
   const mapIds = Array.isArray(body.mapIds) ? [...new Set(body.mapIds.map(normalizeText).filter(Boolean))] : [];
   if (!name || mapIds.length < 1) throw new HttpError(400, "Pool name and at least one map are required.");
+  const activeMaps = await prisma.vetoMap.findMany({ where: { id: { in: mapIds }, isActive: true }, select: { id: true } });
+  if (activeMaps.length !== mapIds.length) throw new HttpError(400, "Map pools can only include active maps.");
   const latest = await prisma.vetoMapPool.findFirst({ where: { name, tournamentId }, orderBy: { version: "desc" }, select: { version: true } });
   return prisma.vetoMapPool.create({ data: { name, tournamentId, version: (latest?.version || 0) + 1, maps: { create: mapIds.map((mapId, index) => ({ mapId, displayOrder: index })) } }, include: { maps: { include: { map: true }, orderBy: { displayOrder: "asc" } } } });
+};
+
+const updateMapAvailability = async ({ user, mapId, isActive }) => {
+  if (!user || user.role !== "admin") throw new HttpError(403, "Super admin access is required to update maps.");
+  if (typeof isActive !== "boolean") throw new HttpError(400, "isActive must be a boolean.");
+  const map = await prisma.vetoMap.findUnique({ where: { id: mapId } });
+  if (!map) throw new HttpError(404, "Veto map not found.");
+  return prisma.vetoMap.update({ where: { id: mapId }, data: { isActive } });
 };
 
 const createPreset = async ({ user, body }) => {
@@ -325,7 +356,7 @@ const createMap = async ({ user, body }) => {
   const name = normalizeText(body.name).slice(0, 100);
   const slug = normalizeText(body.slug || name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!name || !slug) throw new HttpError(400, "Map name is required.");
-  return prisma.vetoMap.create({ data: { name, slug, artworkUrl: normalizeText(body.artworkUrl) || null, accentColor: /^#[0-9a-f]{6}$/i.test(body.accentColor || "") ? body.accentColor : "#8b5cf6" } });
+  return prisma.vetoMap.create({ data: { name, slug, artworkUrl: normalizeArtworkPath(body.artworkUrl), accentColor: /^#[0-9a-f]{6}$/i.test(body.accentColor || "") ? body.accentColor : "#8b5cf6" } });
 };
 
 const getTournamentConfig = async ({ user, tournamentId }) => {
@@ -359,13 +390,13 @@ const createRoom = async ({ user, body }) => {
   }
   await requireRoomStaff(user, { tournamentId });
   const format = normalizeText(body.format).toLowerCase();
-  if (!FORMATS.has(format)) throw new HttpError(400, "Choose BO1, BO3, BO5, or Custom.");
+  if (!FORMATS.has(format)) throw new HttpError(400, "Choose BO1, BO3, BO5, Premier, or Custom.");
   let template = null;
   if (body.templateId) template = await prisma.vetoRoomTemplate.findUnique({ where: { id: body.templateId } });
   const mapPoolId = normalizeText(body.mapPoolId || template?.mapPoolId);
   const rulePresetId = normalizeText(body.rulePresetId || template?.rulePresetId);
   const [pool, preset] = await Promise.all([
-    prisma.vetoMapPool.findUnique({ where: { id: mapPoolId }, include: { maps: { include: { map: true }, orderBy: { displayOrder: "asc" } } } }),
+    prisma.vetoMapPool.findUnique({ where: { id: mapPoolId }, include: { maps: { where: { map: { isActive: true } }, include: { map: true }, orderBy: { displayOrder: "asc" } } } }),
     prisma.vetoRulePreset.findUnique({ where: { id: rulePresetId } }),
   ]);
   if (!pool || !preset) throw new HttpError(400, "Choose a valid map pool and rule preset.");
@@ -373,7 +404,15 @@ const createRoom = async ({ user, body }) => {
     throw new HttpError(403, "Pool and preset scope must match the room tournament.");
   }
   if (preset.format !== format && preset.format !== "custom") throw new HttpError(400, "The rule preset does not match the selected format.");
-  const steps = validateSteps(preset.steps, format, pool.maps.length);
+  let steps;
+  if (format === "premier") {
+    const isValorantPool = String(pool.game || "").toLowerCase() === "valorant"
+      && pool.maps.every(({ map }) => String(map.game || "").toLowerCase() === "valorant");
+    if (!isValorantPool || pool.maps.length !== 7) throw new HttpError(400, "Premier rooms require exactly seven active Valorant maps.");
+    steps = validateSteps(getBuiltInSteps("premier"), "premier", 7);
+  } else {
+    steps = validateSteps(preset.steps, format, pool.maps.length);
+  }
   const settings = normalizeSettings({ ...(template?.settings || {}), ...body });
   const sourceParticipants = Array.isArray(body.participants) && body.participants.length
     ? body.participants
@@ -677,6 +716,7 @@ module.exports = {
   mapRoom,
   listCatalog,
   createPool,
+  updateMapAvailability,
   createMap,
   createPreset,
   createTemplate,

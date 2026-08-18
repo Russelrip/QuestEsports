@@ -814,6 +814,9 @@ const additionalPaths = {
   "/api/v1/admin/veto/maps": {
     post: createOperation("Veto", "Create a map in the veto catalog", { authenticated: true }),
   },
+  "/api/v1/admin/veto/maps/{id}": {
+    patch: createOperation("Veto", "Enable or disable a map in the veto catalog", { authenticated: true, parameters: idParameter("id") }),
+  },
   "/api/v1/admin/veto/pools": {
     post: createOperation("Veto", "Create a versioned map pool", { authenticated: true }),
   },

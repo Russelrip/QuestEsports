@@ -88,8 +88,17 @@ Tournament administrators and referees can use `/api/v1/admin/tournaments/:id/ma
 - `POST /api/v1/veto-rooms/:code/ready`, `/toss`, `/team-a`, and `/actions` require `expectedRevision`. Stale or simultaneous changes return `409` and clients refetch the room.
 - `GET /api/v1/veto-rooms/mine` lists rooms where the signed-in user is the registered captain.
 - `/api/v1/admin/veto/catalog` exposes maps, versioned pools, rule presets, and reusable room templates. Staff room creation and lifecycle controls are under `/api/v1/admin/veto-rooms`.
-- Digital toss results are generated and persisted by the backend. Map availability, turn ownership, automatic deciders, side selection, rewinds, timers, and completion are also server-authoritative.
+- `PATCH /api/v1/admin/veto/maps/:id` accepts `{ "isActive": boolean }`, is admin-only, and changes the map pool used for future room setup only. It is the map availability endpoint; disabling a map does not modify an active room.
+- Access to an eligible Valorant match room idempotently provisions its linked `open` Premier veto room. The Premier sequence is Team A ban, Team B ban, Team A ban, Team B ban, Team A ban, Team B ban, followed by automatic locking of the sole remaining map. Premier has no Attack/Defense or other side-selection step.
+- `VetoMap.artworkUrl` is optional. At room creation, `VetoRoom.configSnapshot.maps` freezes each map's metadata, so later catalog availability changes cannot rewrite an active room snapshot.
+- Digital toss results are generated and persisted by the backend. Map availability, turn ownership, automatic deciders, side selection where applicable to legacy formats, rewinds, timers, and completion are server-authoritative.
 - Access-link rotation returns the new plaintext token once; only its SHA-256 hash is stored. Veto endpoints are `no-store`, role links expire seven days after completion by default, and realtime events contain only the room code, revision, and status.
+
+#### Map artwork policy
+
+Riot references for policy and VALORANT documentation are [Riot's General Policies](https://developer.riotgames.com/policies/general) and the [VALORANT developer documentation](https://developer.riotgames.com/docs/valorant). The community research reference consulted for map metadata is [valorant-api.com/v1/maps](https://valorant-api.com/v1/maps), not a Riot release catalog. Release-specific and community URLs are research references only and are not production hotlink sources.
+
+Production uses approved, project-hosted map assets only. `artworkUrl` therefore remains optional until an asset has approval and is hosted by the project; when no approved asset exists, the accent-gradient fallback is intentional.
 
 ### Match rooms and notifications
 

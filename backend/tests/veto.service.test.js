@@ -17,6 +17,39 @@ test("built-in veto formats expose complete deterministic series", () => {
       assert.doesNotThrow(() => service.validateSteps(steps, format, 7));
       assert.equal(steps.at(-1).kind, "side");
     }
+    assert.deepEqual(service.getBuiltInSteps("premier"), [
+      { kind: "ban", actor: "A", seriesIndex: null },
+      { kind: "ban", actor: "B", seriesIndex: null },
+      { kind: "ban", actor: "A", seriesIndex: null },
+      { kind: "ban", actor: "B", seriesIndex: null },
+      { kind: "ban", actor: "A", seriesIndex: null },
+      { kind: "ban", actor: "B", seriesIndex: null },
+      { kind: "decider", actor: null, seriesIndex: 1 },
+    ]);
+  } finally { restore(); }
+});
+
+test("Premier validation accepts seven maps and rejects post-decider or extra played maps", () => {
+  const { module: service, restore } = loadService();
+  try {
+    assert.doesNotThrow(() => service.validateSteps(service.getBuiltInSteps("premier"), "premier", 7));
+    const incorrectlyAlternated = service.getBuiltInSteps("premier");
+    incorrectlyAlternated[1].actor = "A";
+    assert.throws(() => service.validateSteps(incorrectlyAlternated, "premier", 7), /Premier ban 2 must be made by Team B/i);
+    assert.throws(() => service.validateSteps([
+      ...service.getBuiltInSteps("premier"),
+      { kind: "ban", actor: "A", seriesIndex: null },
+    ], "premier", 7), /manual step can follow/i);
+    assert.throws(() => service.validateSteps([
+      { kind: "ban", actor: "A" },
+      { kind: "ban", actor: "B" },
+      { kind: "ban", actor: "A" },
+      { kind: "ban", actor: "B" },
+      { kind: "ban", actor: "A" },
+      { kind: "ban", actor: "B" },
+      { kind: "pick", actor: "A", seriesIndex: 1 },
+      { kind: "pick", actor: "B", seriesIndex: 2 },
+    ], "premier", 7), /requires 1 played map/i);
   } finally { restore(); }
 });
 
@@ -106,4 +139,298 @@ test("the toss winner's position choice starts the veto immediately", async () =
     assert.equal(result.status, "in_progress");
     assert.equal(result.toss.teamASlot, 2);
   } finally { restore(); }
+});
+
+test("Premier automatically selects the last map and completes after six bans", async () => {
+  const maps = ["ascent", "bind", "breeze", "icebox", "lotus", "sunset", "haven"].map((slug) => ({ slug, name: slug }));
+  const room = {
+    id: "premier-room",
+    code: "premier-flow",
+    tournamentId: null,
+    matchId: null,
+    title: "Premier Match",
+    format: "premier",
+    status: "in_progress",
+    revision: 0,
+    controlMode: "captain_or_link",
+    teamOrderMethod: "slot_order",
+    tossMethod: "digital",
+    tossCallerSlot: 2,
+    tossCall: null,
+    tossResult: null,
+    tossWinnerSlot: null,
+    teamASlot: 1,
+    currentStep: 5,
+    turnSeconds: null,
+    turnDeadline: null,
+    viewerEnabled: false,
+    publishResult: false,
+    configSnapshot: { maps, steps: serviceSteps() },
+    participants: [],
+    actions: [0, 1, 2, 3, 4].map((index) => ({
+      sequence: index + 1,
+      kind: "ban",
+      actorSlot: index % 2 ? 2 : 1,
+      mapSlug: maps[index].slug,
+      mapName: maps[index].name,
+      side: null,
+      payload: { seriesIndex: null },
+      invalidatedAt: null,
+    })),
+    tournament: null,
+    match: null,
+    openedAt: new Date(),
+    startedAt: new Date(),
+    completedAt: null,
+    cancelledAt: null,
+    updatedAt: new Date(),
+  };
+  let createdAction = null;
+  let updateData = null;
+  const prisma = {
+    vetoRoom: {
+      findUnique: async () => room,
+      updateMany: async ({ data }) => {
+        Object.assign(room, data, { revision: room.revision + 1 });
+        return { count: 1 };
+      },
+      update: async ({ data }) => {
+        updateData = data;
+        Object.assign(room, data);
+        return room;
+      },
+    },
+    vetoRoomAction: {
+      create: async ({ data }) => {
+        createdAction = data;
+        return data;
+      },
+    },
+    vetoAccessGrant: { updateMany: async () => ({ count: 0 }) },
+    match: { updateMany: async () => ({ count: 0 }) },
+    $transaction: async (callback) => callback(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await service.submitAction({
+      code: room.code,
+      user: { id: "admin-1", role: "admin" },
+      token: "",
+      body: { mapSlug: maps[5].slug, expectedRevision: 0 },
+    });
+    assert.deepEqual(createdAction, {
+      roomId: room.id,
+      sequence: 7,
+      kind: "decider",
+      mapSlug: maps[6].slug,
+      mapName: maps[6].name,
+      payload: { seriesIndex: 1 },
+    });
+    assert.equal(updateData.currentStep, 7);
+    assert.equal(updateData.status, "completed");
+    assert.equal(result.status, "completed");
+    assert.equal(result.currentStep, 7);
+    assert.equal(result.actions.at(-1).kind, "decider");
+    assert.equal(result.actions.some((action) => action.kind === "side"), false);
+  } finally { restore(); }
+});
+
+function serviceSteps() {
+  return [
+    { kind: "ban", actor: "A", seriesIndex: null },
+    { kind: "ban", actor: "B", seriesIndex: null },
+    { kind: "ban", actor: "A", seriesIndex: null },
+    { kind: "ban", actor: "B", seriesIndex: null },
+    { kind: "ban", actor: "A", seriesIndex: null },
+    { kind: "ban", actor: "B", seriesIndex: null },
+    { kind: "decider", actor: null, seriesIndex: 1 },
+  ];
+}
+
+test("admin can enable and disable a map without touching rooms or snapshots", async () => {
+  const map = {
+    id: "map-1",
+    slug: "ascent",
+    name: "Ascent",
+    isActive: true,
+    artworkUrl: null,
+    accentColor: "#d6a568",
+  };
+  const roomSnapshot = { maps: [{ slug: "ascent", name: "Ascent" }] };
+  let updateArgs = null;
+  const prisma = {
+    vetoMap: {
+      findUnique: async () => map,
+      update: async (args) => {
+        updateArgs = args;
+        map.isActive = args.data.isActive;
+        return map;
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const disabled = await service.updateMapAvailability({ user: { id: "admin-1", role: "admin" }, mapId: map.id, isActive: false });
+    assert.equal(disabled.isActive, false);
+    assert.deepEqual(updateArgs, { where: { id: map.id }, data: { isActive: false } });
+    assert.deepEqual(roomSnapshot, { maps: [{ slug: "ascent", name: "Ascent" }] });
+    const enabled = await service.updateMapAvailability({ user: { id: "admin-1", role: "admin" }, mapId: map.id, isActive: true });
+    assert.equal(enabled.isActive, true);
+  } finally { restore(); }
+});
+
+test("createMap accepts project-relative artwork paths and rejects remote artwork", async () => {
+  const created = [];
+  const prisma = {
+    vetoMap: {
+      create: async ({ data }) => {
+        created.push(data);
+        return data;
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const uploadArtwork = await service.createMap({ user: { id: "admin-1", role: "admin" }, body: { name: "Ascent", artworkUrl: "  /api/uploads/maps/ascent.webp  " } });
+    const imageArtwork = await service.createMap({ user: { id: "admin-1", role: "admin" }, body: { name: "Bind", artworkUrl: "/images/maps/bind.webp" } });
+    const noArtwork = await service.createMap({ user: { id: "admin-1", role: "admin" }, body: { name: "Haven" } });
+    assert.equal(uploadArtwork.artworkUrl, "/api/uploads/maps/ascent.webp");
+    assert.equal(imageArtwork.artworkUrl, "/images/maps/bind.webp");
+    assert.equal(noArtwork.artworkUrl, null);
+
+    for (const artworkUrl of [
+      "http://example.com/ascent.webp",
+      "https://example.com/bind.webp",
+      "//example.com/haven.webp",
+      "data:image/png;base64,abc",
+      "maps/ascent.webp",
+      "/other-assets/ascent.webp",
+    ]) {
+      await assert.rejects(
+        () => service.createMap({ user: { id: "admin-1", role: "admin" }, body: { name: "Invalid Map", artworkUrl } }),
+        { statusCode: 400 },
+      );
+    }
+    assert.equal(created.length, 3);
+  } finally { restore(); }
+});
+
+test("manually created Premier rooms reject pools with anything other than seven active Valorant maps", async () => {
+  const maps = (count) => Array.from({ length: count }, (_, index) => ({
+    map: { slug: `map-${index + 1}`, name: `Map ${index + 1}`, game: "valorant", isActive: true },
+    displayOrder: index,
+  }));
+  let createCount = 0;
+  const prisma = {
+    vetoMapPool: { findUnique: async () => ({ id: "pool-1", name: "Premier pool", version: 1, game: "valorant", tournamentId: null, maps: maps(8) }) },
+    vetoRulePreset: { findUnique: async () => ({ id: "preset-1", name: "Premier", version: 1, format: "premier", tournamentId: null, steps: [] }) },
+    $transaction: async () => {
+      createCount += 1;
+      return null;
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    await assert.rejects(
+      () => service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { format: "premier", mapPoolId: "pool-1", rulePresetId: "preset-1" } }),
+      { statusCode: 400, message: "Premier rooms require exactly seven active Valorant maps." },
+    );
+    assert.equal(createCount, 0);
+  } finally { restore(); }
+});
+
+test("manually created Premier rooms accept exactly seven active Valorant maps and store the canonical sequence", async () => {
+  const maps = Array.from({ length: 7 }, (_, index) => ({
+    map: { slug: `map-${index + 1}`, name: `Map ${index + 1}`, game: "valorant", isActive: true },
+    displayOrder: index,
+  }));
+  let createArgs = null;
+  const prisma = {
+    vetoMapPool: { findUnique: async () => ({ id: "pool-1", name: "Premier pool", version: 1, game: "valorant", tournamentId: null, maps }) },
+    vetoRulePreset: { findUnique: async () => ({ id: "preset-1", name: "Premier", version: 1, format: "premier", tournamentId: null, steps: [{ kind: "ban", actor: "B" }] }) },
+    $transaction: async (callback) => callback({
+      vetoRoom: {
+        create: async ({ data }) => {
+          createArgs = { data };
+          return {
+            ...data,
+            participants: data.participants.create,
+            actions: [],
+            tournament: null,
+            match: null,
+          };
+        },
+      },
+    }),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { format: "premier", mapPoolId: "pool-1", rulePresetId: "preset-1" } });
+    assert.equal(result.room.format, "premier");
+    assert.deepEqual(createArgs.data.configSnapshot.steps, service.getBuiltInSteps("premier"));
+    assert.equal(createArgs.data.configSnapshot.maps.length, 7);
+  } finally { restore(); }
+});
+
+test("map availability rejects non-admins and non-boolean input", async () => {
+  let findCount = 0;
+  const prisma = { vetoMap: { findUnique: async () => { findCount += 1; return { id: "map-1" }; } } };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    await assert.rejects(() => service.updateMapAvailability({ user: { id: "staff-1", role: "user" }, mapId: "map-1", isActive: false }), { statusCode: 403 });
+    await assert.rejects(() => service.updateMapAvailability({ user: { id: "admin-1", role: "admin" }, mapId: "map-1", isActive: "false" }), { statusCode: 400 });
+    assert.equal(findCount, 0);
+  } finally { restore(); }
+});
+
+test("map availability returns 404 for an unknown map", async () => {
+  const prisma = { vetoMap: { findUnique: async () => null } };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    await assert.rejects(() => service.updateMapAvailability({ user: { id: "admin-1", role: "admin" }, mapId: "missing-map", isActive: false }), { statusCode: 404 });
+  } finally { restore(); }
+});
+
+test("catalog exposes inactive maps but only active maps in future pool choices", async () => {
+  const active = { id: "map-1", slug: "ascent", name: "Ascent", isActive: true };
+  const inactive = { id: "map-2", slug: "bind", name: "Bind", isActive: false };
+  let poolQuery = null;
+  const prisma = {
+    vetoMap: { findMany: async () => [active, inactive] },
+    vetoMapPool: { findMany: async (args) => { poolQuery = args; return [{ id: "pool-1", maps: [{ map: active }] }]; } },
+    vetoRulePreset: { findMany: async () => [] },
+    vetoRoomTemplate: { findMany: async () => [] },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const catalog = await service.listCatalog();
+    assert.deepEqual(catalog.maps, [active, inactive]);
+    assert.deepEqual(catalog.pools[0].maps, [active]);
+    assert.deepEqual(poolQuery.include.maps.where, { map: { isActive: true } });
+  } finally { restore(); }
+});
+
+test("new map pool versions reject inactive map IDs while preserving version lookup", async () => {
+  let latestQuery = null;
+  let createArgs = null;
+  const prisma = {
+    vetoMap: { findMany: async () => [{ id: "map-1" }] },
+    vetoMapPool: {
+      findFirst: async (args) => { latestQuery = args; return { version: 3 }; },
+      create: async (args) => { createArgs = args; return args.data; },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await service.createPool({ user: { id: "admin-1", role: "admin" }, body: { name: "Quest Standard 7", mapIds: ["map-1"], tournamentId: "tournament-1" } });
+    assert.equal(result.version, 4);
+    assert.deepEqual(latestQuery.where, { name: "Quest Standard 7", tournamentId: "tournament-1" });
+    assert.deepEqual(createArgs.data.maps.create, [{ mapId: "map-1", displayOrder: 0 }]);
+  } finally { restore(); }
+
+  const inactivePrisma = { vetoMap: { findMany: async () => [] } };
+  const inactiveLoaded = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma: inactivePrisma } });
+  try {
+    await assert.rejects(() => inactiveLoaded.module.createPool({ user: { id: "admin-1", role: "admin" }, body: { name: "New pool", mapIds: ["map-2"] } }), { statusCode: 400 });
+  } finally { inactiveLoaded.restore(); }
 });

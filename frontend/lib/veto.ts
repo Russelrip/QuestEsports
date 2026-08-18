@@ -12,6 +12,7 @@ export type VetoMap = {
   name: string;
   artworkUrl?: string | null;
   accentColor: string;
+  isActive?: boolean;
   available?: boolean;
 };
 
@@ -43,7 +44,7 @@ export type VetoRoom = {
   id: string;
   code: string;
   title: string;
-  format: "bo1" | "bo3" | "bo5" | "custom";
+  format: "bo1" | "bo3" | "bo5" | "custom" | "premier";
   status: "draft" | "open" | "toss_pending" | "toss_complete" | "in_progress" | "completed" | "cancelled";
   revision: number;
   controlMode: "captain_or_link" | "link_only" | "staff_only";

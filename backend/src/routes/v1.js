@@ -87,6 +87,7 @@ router.post("/veto-rooms/:code/actions", vetoController.submitAction);
 
 router.get("/admin/veto/catalog", requireAuth, vetoController.catalog);
 router.post("/admin/veto/maps", requireAuth, vetoController.createMap);
+router.patch("/admin/veto/maps/:id", requireAuth, vetoController.updateMap);
 router.post("/admin/veto/pools", requireAuth, vetoController.createPool);
 router.post("/admin/veto/presets", requireAuth, vetoController.createPreset);
 router.post("/admin/veto/templates", requireAuth, vetoController.createTemplate);

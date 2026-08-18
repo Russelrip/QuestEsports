@@ -4,6 +4,7 @@ const { prisma } = require("../../lib/prisma");
 const { normalizeText } = require("../../lib/validation");
 const { publishRealtimeEvent } = require("../realtime/realtime.service");
 const { createNotification } = require("../notifications/notification.service");
+const { getBuiltInSteps, validateSteps } = require("../veto/veto.service");
 
 const TERMINAL_MATCH_STATUSES = new Set(["completed", "cancelled", "walkover"]);
 const ACTIVE_SUPPORT_LIMIT = 3;
@@ -97,6 +98,177 @@ const collectRoomMembers = (match) => {
 };
 
 const matchRoomCode = () => crypto.randomBytes(9).toString("base64url").toLowerCase();
+const vetoRoomCode = () => crypto.randomBytes(7).toString("base64url").toLowerCase();
+
+const VETO_DEFAULT_SETTINGS = {
+  controlMode: "captain_or_link",
+  teamOrderMethod: "toss",
+  tossMethod: "digital",
+  tossCallerSlot: 2,
+  turnSeconds: null,
+  viewerEnabled: false,
+  publishResult: false,
+};
+
+const activePoolMaps = (pool) => (Array.isArray(pool?.maps) ? pool.maps : [])
+  .map((entry) => entry?.map || entry)
+  .filter((map) => map && map.isActive !== false)
+  .sort((left, right) => (left.displayOrder || 0) - (right.displayOrder || 0));
+
+const usablePremierPool = (pool, tournamentId) => {
+  if (!pool || pool.isArchived || (pool.tournamentId && pool.tournamentId !== tournamentId)) return false;
+  if (pool.game && String(pool.game).toLowerCase() !== "valorant") return false;
+  const maps = activePoolMaps(pool);
+  return maps.length === 7
+    && maps.every((map) => String(map.game || "").toLowerCase() === "valorant")
+    && new Set(maps.map((map) => map.slug)).size === 7;
+};
+
+const usablePremierPreset = (preset, tournamentId, mapCount = 7) => {
+  if (!preset || preset.isArchived || (preset.tournamentId && preset.tournamentId !== tournamentId)) return false;
+  if (preset.game && String(preset.game).toLowerCase() !== "valorant") return false;
+  if (String(preset.format || "").toLowerCase() !== "premier") return false;
+  try {
+    validateSteps(preset.steps, "premier", mapCount);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+};
+
+const vetoMapPoolInclude = {
+  maps: {
+    where: { map: { isActive: true } },
+    include: { map: true },
+    orderBy: { displayOrder: "asc" },
+  },
+};
+
+const getProvisioningConfig = async (tournamentId) => {
+  if (!prisma.tournamentVetoConfig?.findUnique) return null;
+  const config = await prisma.tournamentVetoConfig.findUnique({
+    where: { tournamentId },
+    include: {
+      defaultTemplate: {
+        include: {
+          mapPool: { include: vetoMapPoolInclude },
+          rulePreset: true,
+        },
+      },
+    },
+  });
+  if (!config?.defaultTemplate && config?.defaultTemplateId && prisma.vetoRoomTemplate?.findUnique) {
+    config.defaultTemplate = await prisma.vetoRoomTemplate.findUnique({
+      where: { id: config.defaultTemplateId },
+      include: { mapPool: { include: vetoMapPoolInclude }, rulePreset: true },
+    });
+  }
+  return config;
+};
+
+const getBuiltInPremierPool = async () => {
+  if (!prisma.vetoMapPool?.findFirst) return null;
+  return prisma.vetoMapPool.findFirst({
+    where: { tournamentId: null, game: "valorant", isBuiltIn: true, isArchived: false },
+    include: vetoMapPoolInclude,
+    orderBy: [{ version: "desc" }, { name: "asc" }],
+  });
+};
+
+const getBuiltInPremierPreset = async () => {
+  if (!prisma.vetoRulePreset?.findFirst) return null;
+  return prisma.vetoRulePreset.findFirst({
+    where: { tournamentId: null, game: "valorant", format: "premier", isBuiltIn: true, isArchived: false },
+    orderBy: [{ version: "desc" }, { name: "asc" }],
+  });
+};
+
+const ensureMatchVetoRoom = async ({ match, user }) => {
+  if (match?.vetoRoom) return match.vetoRoom;
+  if (!match?.id || TERMINAL_MATCH_STATUSES.has(match.status)) return null;
+  const game = match.game || match.tournament?.game;
+  if (String(game || "").toLowerCase() !== "valorant") return null;
+
+  const participants = [...(match.participants || [])].sort((left, right) => left.slot - right.slot);
+  if (participants.length !== 2) return null;
+
+  const tournamentId = match.tournamentId || match.tournament?.id || null;
+  const config = await getProvisioningConfig(tournamentId);
+  const template = config?.defaultTemplate;
+  let pool = template?.mapPool;
+  let preset = template?.rulePreset;
+  let maps = activePoolMaps(pool);
+  let steps = null;
+  let templateId = null;
+
+  if (template
+    && !template.isArchived
+    && String(template.format || "").toLowerCase() === "premier"
+    && usablePremierPool(pool, tournamentId)
+    && usablePremierPreset(preset, tournamentId, maps.length)) {
+    steps = validateSteps(getBuiltInSteps("premier"), "premier", maps.length);
+    templateId = template.id;
+  } else {
+    pool = await getBuiltInPremierPool();
+    preset = await getBuiltInPremierPreset();
+    maps = activePoolMaps(pool);
+    if (!usablePremierPool(pool, tournamentId) || !usablePremierPreset(preset, tournamentId, maps.length)) return null;
+    steps = validateSteps(getBuiltInSteps("premier"), "premier", maps.length);
+  }
+
+  const templateSettings = templateId && template?.settings && typeof template.settings === "object"
+    ? template.settings
+    : {};
+  const configSettings = config?.settings && typeof config.settings === "object" ? config.settings : {};
+  const settingOverrides = { ...configSettings, ...templateSettings };
+  const settings = Object.keys(VETO_DEFAULT_SETTINGS).reduce((result, key) => {
+    result[key] = Object.prototype.hasOwnProperty.call(settingOverrides, key)
+      ? settingOverrides[key]
+      : VETO_DEFAULT_SETTINGS[key];
+    return result;
+  }, {});
+  const now = new Date();
+  const data = {
+    code: vetoRoomCode(),
+    tournamentId,
+    matchId: match.id,
+    templateId,
+    mapPoolId: pool.id,
+    rulePresetId: preset.id,
+    title: `${participants[0].displayName} vs ${participants[1].displayName}`.slice(0, 180),
+    format: "premier",
+    ...settings,
+    status: "open",
+    createdById: user?.id || null,
+    preVetoMatchStatus: match.status || null,
+    openedAt: now,
+    configSnapshot: {
+      pool: { id: pool.id, name: pool.name, version: pool.version },
+      preset: { id: preset.id, name: preset.name, version: preset.version },
+      maps: maps.map((map) => ({ slug: map.slug, name: map.name, artworkUrl: map.artworkUrl, accentColor: map.accentColor })),
+      steps,
+      settings,
+    },
+    participants: {
+      create: participants.map((participant, index) => ({
+        slot: participant.slot || index + 1,
+        registrationId: participant.registrationId || null,
+        displayName: participant.displayName || `Team ${index + 1}`,
+        seed: participant.seed ?? null,
+        accentColor: ["#22d3ee", "#fb7185"][index],
+      })),
+    },
+  };
+
+  try {
+    return await prisma.vetoRoom.create({ data });
+  } catch (error) {
+    if (error?.code !== "P2002" || !prisma.vetoRoom?.findUnique) throw error;
+    const racedRoom = await prisma.vetoRoom.findUnique({ where: { matchId: match.id } });
+    if (racedRoom) return racedRoom;
+    throw error;
+  }
+};
 
 const ensureMatchRoom = async ({ matchId, force = false, notify = true }) => {
   const match = await prisma.match.findUnique({ where: { id: matchId }, include: rosterMatchInclude });
@@ -189,6 +361,11 @@ const accessRoom = async ({ code, user, staffOnly = false }) => {
   if (staffMembership) member = staffMembership;
   if (!member) throw new HttpError(403, "You are not a member of this match room.");
   if (staffOnly && member.role !== "staff") throw new HttpError(403, "Match staff access is required.");
+  await ensureMatchVetoRoom({ match: room.match, user });
+  room = await loadRoom(code);
+  if (!room) throw new HttpError(404, "Match room not found.");
+  member = room.members.find((entry) => entry.userId === user?.id) || null;
+  if (!member) throw new HttpError(403, "You are not a member of this match room.");
   return { room, member };
 };
 
@@ -615,6 +792,7 @@ const notifyVetoTurn = async (vetoRoom) => {
 module.exports = {
   collectRoomMembers,
   ensureMatchRoom,
+  ensureMatchVetoRoom,
   accessRoom,
   getRoom,
   listMyRooms,
