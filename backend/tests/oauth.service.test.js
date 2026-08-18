@@ -373,6 +373,10 @@ test("OAuth authorization uses S256 PKCE and binds callback state to its flow co
       "S256"
     );
     assert.ok(parsedAuthorizationUrl.searchParams.get("code_challenge"));
+    assert.match(
+      service.createOAuthAuthorization({ provider: "google", redirectTo: "/profile" }).flowCookie,
+      /Path=\/api\/auth/
+    );
 
     await assert.rejects(
       service.handleOAuthCallback({
@@ -543,9 +547,10 @@ test("OAuth link flow uses a dedicated callback URL and isolated cookie", async 
     const parsedUrl = new URL(authorization.authorizationUrl);
     assert.equal(
       new URL(parsedUrl.searchParams.get("redirect_uri")).pathname,
-      "/api/auth/google/link/callback"
+      "/api/v1/auth/oauth/google/link/callback"
     );
     assert.match(authorization.flowCookie, /quest_session_oauth_link_google=/);
+    assert.match(authorization.flowCookie, /Path=\/api\/v1\/auth/);
     assert.equal(
       service.getOAuthFlowToken({
         provider: "google",
@@ -601,7 +606,7 @@ test("link token exchange uses the dedicated callback URL and the durable nonce 
     );
     assert.equal(
       tokenRequestBodies[0].get("redirect_uri"),
-      "http://localhost:5001/api/auth/google/link/callback"
+      "http://localhost:5001/api/v1/auth/oauth/google/link/callback"
     );
   } finally {
     restore();

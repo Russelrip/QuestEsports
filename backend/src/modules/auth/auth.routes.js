@@ -112,7 +112,6 @@ router.get("/auth/google/start", startGoogleAuth);
 router.get("/auth/google/callback", googleCallback);
 router.get("/auth/discord/start", startDiscordAuth);
 router.get("/auth/discord/callback", discordCallback);
-registerOAuthLinkRoutes(router);
 registerOAuthLinkRoutes(oauthLinkRoutes);
 router.get("/mobile/auth/oauth/google/start", startMobileGoogleAuth);
 router.get("/mobile/auth/oauth/discord/start", startMobileDiscordAuth);

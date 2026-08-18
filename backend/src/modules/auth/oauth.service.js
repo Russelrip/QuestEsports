@@ -262,11 +262,9 @@ const verifyOAuthLinkState = ({ state, provider, flowToken, userId }) => {
 
 const getLinkCallbackUrl = (callbackUrl, provider) => {
   const parsed = new URL(callbackUrl);
-  if (/\/callback\/?$/.test(parsed.pathname)) {
-    parsed.pathname = parsed.pathname.replace(/\/callback\/?$/, "/link/callback");
-  } else {
-    parsed.pathname = `${parsed.pathname.replace(/\/$/, "")}/link/callback`;
-  }
+  parsed.pathname = `/api/v1/auth/oauth/${provider}/link/callback`;
+  parsed.search = "";
+  parsed.hash = "";
   return ensureAbsoluteUrl(parsed.toString(), `${provider} link callback URL`);
 };
 
@@ -305,7 +303,7 @@ const buildOAuthFlowCookie = ({ provider, flowToken, expiresAt, flow = "login" }
   const segments = [
     `${getOAuthFlowCookieName(provider, flow)}=${encodeURIComponent(flowToken)}`,
     "HttpOnly",
-    "Path=/api/auth",
+    `Path=${flow === OAUTH_LINK_FLOW ? "/api/v1/auth" : "/api/auth"}`,
     "SameSite=Lax",
     `Expires=${new Date(expiresAt).toUTCString()}`,
   ];

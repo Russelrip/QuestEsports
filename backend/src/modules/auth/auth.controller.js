@@ -331,17 +331,22 @@ const startOAuthLink = async ({ provider, req, res }) => {
   res.redirect(authorizationUrl);
 };
 
+const startGoogleLink = async (req, res) => {
+  await startOAuthLink({ provider: "google", req, res });
+};
+
+const startDiscordLink = async (req, res) => {
+  await startOAuthLink({ provider: "discord", req, res });
+};
+
+const startProviderLinkHandlers = {
+  google: startGoogleLink,
+  discord: startDiscordLink,
+};
+
 const startProviderLink = asyncHandler(async (req, res) => {
   const provider = assertSupportedOAuthProvider(req.params.provider);
-  await startOAuthLink({ provider, req, res });
-});
-
-const startGoogleLink = asyncHandler(async (req, res) => {
-  await startOAuthLink({ provider: "google", req, res });
-});
-
-const startDiscordLink = asyncHandler(async (req, res) => {
-  await startOAuthLink({ provider: "discord", req, res });
+  await startProviderLinkHandlers[provider](req, res);
 });
 
 const getOAuthLinkRedirect = (marker) =>
@@ -373,17 +378,22 @@ const completeOAuthLink = async ({ provider, req, res }) => {
   }
 };
 
+const googleLinkCallback = async (req, res) => {
+  await completeOAuthLink({ provider: "google", req, res });
+};
+
+const discordLinkCallback = async (req, res) => {
+  await completeOAuthLink({ provider: "discord", req, res });
+};
+
+const providerLinkCallbackHandlers = {
+  google: googleLinkCallback,
+  discord: discordLinkCallback,
+};
+
 const providerLinkCallback = asyncHandler(async (req, res) => {
   const provider = assertSupportedOAuthProvider(req.params.provider);
-  await completeOAuthLink({ provider, req, res });
-});
-
-const googleLinkCallback = asyncHandler(async (req, res) => {
-  await completeOAuthLink({ provider: "google", req, res });
-});
-
-const discordLinkCallback = asyncHandler(async (req, res) => {
-  await completeOAuthLink({ provider: "discord", req, res });
+  await providerLinkCallbackHandlers[provider](req, res);
 });
 
 const getLinkedProviders = asyncHandler(async (req, res) => {

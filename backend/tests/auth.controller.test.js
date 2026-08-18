@@ -537,3 +537,43 @@ test("OAuth account-link callback redirects conflicts without exposing provider 
     restore();
   }
 });
+
+test("OAuth unlink controller preserves safe last-login-method errors", async () => {
+  const lastLoginMethod = new Error(
+    "You must keep a verified password or another linked OAuth provider."
+  );
+  lastLoginMethod.statusCode = 400;
+  lastLoginMethod.code = "OAUTH_LAST_LOGIN_METHOD";
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {
+      unlinkOAuthProvider: async () => {
+        throw lastLoginMethod;
+      },
+    },
+    [sessionPath]: {},
+    [authServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      invoke(
+        controller.unlinkProvider,
+        {
+          user: { id: "user-1" },
+          params: { provider: "google" },
+          body: { userId: "other-user" },
+        },
+        buildResponse()
+      ),
+      (error) => {
+        assert.equal(error.code, "OAUTH_LAST_LOGIN_METHOD");
+        assert.equal(error.message.includes("provider token"), false);
+        return true;
+      }
+    );
+  } finally {
+    restore();
+  }
+});
