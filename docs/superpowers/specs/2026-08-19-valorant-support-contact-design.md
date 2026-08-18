@@ -61,15 +61,20 @@ Add an additive Prisma migration with the following concepts:
   - sender user
   - message body
   - created timestamp
-  - read state or read timestamp sufficient to calculate per-recipient unread
-    counts
+  - no embedded read state; unread state is tracked per user below
+- `SupportConversationRead`
+  - conversation
+  - user
+  - `lastReadAt`
+  - unique conversation/user pair
 
 Staff access is role-based, so a separate participant table is not required in
 v1. The owning user is the only non-staff participant. Store a nullable
 `senderUserId` with `onDelete: SetNull`, following the existing
 match-room message convention; no sender snapshot is required in v1. The
 conversation owner relation should follow the repository's existing user-owned
-record deletion convention.
+record deletion convention. `SupportConversationRead` is a read cursor rather
+than a participant record, allowing each user to have independent unread state.
 
 ### User flow
 
