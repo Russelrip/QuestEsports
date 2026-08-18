@@ -94,7 +94,8 @@ jobs:
 
   frontend:
     name: Frontend audit, test, and build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.61.1-noble
     defaults:
       run:
         working-directory: frontend
@@ -132,9 +133,6 @@ jobs:
 
       - name: Build frontend
         run: npm run build
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run frontend E2E tests
         run: npm run test:e2e
