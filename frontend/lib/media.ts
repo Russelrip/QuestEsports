@@ -329,6 +329,75 @@ export const videoSections = [
       },
     ] satisfies VideoItem[],
   },
+  {
+    title: "QUEST LEVEL UP SERIES - AUGUST",
+    paddingTop: "10px",
+    videos: [
+      {
+        title: "එක්සත් මිතුරු කැල vs Sigiri Baddies",
+        subtitle: "Quest Level Up Series AUG | Round 01 Match 01",
+        href: "https://www.youtube.com/live/LOhBDmMFMSE?si=beNVW3BFJ40guOw_",
+        youtubeId: "LOhBDmMFMSE",
+        alt: "එක්සත් මිතුරු කැල vs Sigiri Baddies | Quest Level Up Series AUG | Round 01 Match 01",
+      },
+      {
+        title: "COZMIC vs Team Nexus",
+        subtitle: "Quest Level Up Series AUG | Round 01 Match 02",
+        href: "https://www.youtube.com/live/wLmgQvJeg4I?si=72ZcM1VwZ48li5l1",
+        youtubeId: "wLmgQvJeg4I",
+        alt: "COZMIC vs Team Nexus | Quest Level Up Series AUG | Round 01 Match 02",
+      },
+      {
+        title: "OCG vs Vortex Legion",
+        subtitle: "Quest Level Up Series AUG | Round 02 Match 03",
+        href: "https://www.youtube.com/live/BWild20oHCI?si=bI-662vkHwFSFIny",
+        youtubeId: "BWild20oHCI",
+        alt: "OCG vs Vortex Legion | Quest Level Up Series AUG | Round 02 Match 03",
+      },
+      {
+        title: "Diddies Diddlers vs Kello Nathi Un",
+        subtitle: "Quest Level Up Series AUG | Round 02 Match 04 part 1",
+        href: "https://www.youtube.com/live/O0m-5g4_9Dk?si=uu_vs0FFpqou0_Yq",
+        youtubeId: "O0m-5g4_9Dk",
+        alt: "Diddies Diddlers vs Kello Nathi Un | Quest Level Up Series AUG | Round 02 Match 04 part 1",
+      },
+      {
+        title: "Sigiri Baddies vs Whiff Masters",
+        subtitle: "Quest Level Up Series AUG | Round 02 Match 05",
+        href: "https://www.youtube.com/live/RSD1Fe_C06g?si=14DLoVOLO7ZLW7XT",
+        youtubeId: "RSD1Fe_C06g",
+        alt: "Sigiri Baddies vs Whiff Masters | Quest Level Up Series AUG | Round 02 Match 05",
+      },
+      {
+        title: "OCG Academy vs Cozmic",
+        subtitle: "Quest Level Up Series AUG | Round 02 Match 06",
+        href: "https://www.youtube.com/live/eMpNoDizi6g?si=2leaL461t6NqZEHZ",
+        youtubeId: "eMpNoDizi6g",
+        alt: "OCG Academy vs Cozmic | Quest Level Up Series AUG | Round 02 Match 06",
+      },
+      {
+        title: "Sigiri Baddies vs OCG",
+        subtitle: "Quest Level Up Series AUG | SEMI FINALS MATCH 01",
+        href: "https://www.youtube.com/live/LVcJLX_AwOs?si=1A9hh5V9q4z4FuGl",
+        youtubeId: "LVcJLX_AwOs",
+        alt: "Sigiri Baddies vs OCG | Quest Level Up Series AUG | SEMI FINALS MATCH 01",
+      },
+      {
+        title: "COZMIC vs Kello Natti Un",
+        subtitle: "Quest Level Up Series AUG | SEMI FINALS MATCH 02",
+        href: "https://www.youtube.com/live/04DpiSfhqic?si=gXYZ39uYm7DYZB6f",
+        youtubeId: "04DpiSfhqic",
+        alt: "COZMIC vs Kello Natti Un | Quest Level Up Series AUG | SEMI FINALS MATCH 02",
+      },
+      {
+        title: "COZMIC vs Sigiri Baddies",
+        subtitle: "Quest Level Up Series AUG | GRAND FINALS",
+        href: "https://www.youtube.com/live/oTzh_ZMH7mA?si=D6wLgr61ROOFAwga",
+        youtubeId: "oTzh_ZMH7mA",
+        alt: "COZMIC vs Sigiri Baddies | Quest Level Up Series AUG | GRAND FINALS",
+      },
+    ] satisfies VideoItem[],
+  },
 ] as const;
 
 export type PublicUploadDirectory =
