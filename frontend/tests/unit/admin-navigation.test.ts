@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { adminNavigationGroups } from "../../lib/admin";
+import {
+  adminNavigationGroups,
+  getAdminPageHeaderContent,
+} from "../../lib/admin";
 
 describe("admin navigation", () => {
   it("uses the approved groups and keeps every admin destination reachable", () => {
@@ -11,44 +14,63 @@ describe("admin navigation", () => {
       "Game Operations",
     ]);
 
-    expect(adminNavigationGroups.find((group) => group.label === "Competition")?.links).toEqual([
-      { href: "/admin/tournaments", label: "Tournaments" },
-      { href: "/admin/events", label: "Events" },
-      { href: "/admin/event-series", label: "Event Series" },
-      { href: "/admin/registrations", label: "Registrations" },
-      { href: "/admin/rulebooks", label: "Rulebooks" },
-    ]);
-    expect(adminNavigationGroups.find((group) => group.label === "Game Operations")?.links).toEqual([
-      { href: "/admin/games", label: "Games" },
-      { href: "/admin/match-rooms", label: "Match Rooms" },
-      { href: "/admin/veto-rooms", label: "Veto Rooms" },
-      { href: "/admin/valorant", label: "Valorant" },
+    expect(adminNavigationGroups).toEqual([
+      {
+        label: "Workspace",
+        links: [
+          { href: "/admin", label: "Overview", icon: "dashboard" },
+          { href: "/admin/media", label: "Media", icon: "image" },
+          { href: "/admin/event-albums", label: "Albums", icon: "image" },
+        ],
+      },
+      {
+        label: "Competition",
+        links: [
+          { href: "/admin/tournaments", label: "Tournaments", icon: "trophy" },
+          { href: "/admin/events", label: "Events", icon: "calendar" },
+          { href: "/admin/event-series", label: "Event Series", icon: "layers" },
+          { href: "/admin/registrations", label: "Registrations", icon: "clipboard" },
+          { href: "/admin/rulebooks", label: "Rulebooks", icon: "book" },
+        ],
+      },
+      {
+        label: "People",
+        links: [
+          { href: "/admin/users", label: "Users", icon: "users" },
+          { href: "/admin/teams", label: "Teams", icon: "users" },
+          { href: "/admin/recruitment", label: "Recruitment", icon: "user-plus" },
+          { href: "/admin/contact-messages", label: "Messages", icon: "message" },
+        ],
+      },
+      {
+        label: "Commerce",
+        links: [
+          { href: "/admin/tickets", label: "Ticketing", icon: "ticket" },
+          { href: "/admin/expenses", label: "Expenses", icon: "receipt" },
+          { href: "/admin/products", label: "Products", icon: "package" },
+          { href: "/admin/orders", label: "Orders", icon: "shopping-bag" },
+          { href: "/admin/payments", label: "Payments", icon: "credit-card" },
+        ],
+      },
+      {
+        label: "Game Operations",
+        links: [
+          { href: "/admin/games", label: "Games", icon: "gamepad" },
+          { href: "/admin/match-rooms", label: "Match Rooms", icon: "monitor" },
+          { href: "/admin/veto-rooms", label: "Veto Rooms", icon: "swords" },
+          { href: "/admin/valorant", label: "Valorant", icon: "crosshair" },
+        ],
+      },
     ]);
 
     const links = adminNavigationGroups.flatMap((group) => group.links);
-    expect(links.map((link) => link.href)).toEqual([
-      "/admin",
-      "/admin/media",
-      "/admin/event-albums",
-      "/admin/tournaments",
-      "/admin/events",
-      "/admin/event-series",
-      "/admin/registrations",
-      "/admin/rulebooks",
-      "/admin/users",
-      "/admin/teams",
-      "/admin/recruitment",
-      "/admin/contact-messages",
-      "/admin/tickets",
-      "/admin/expenses",
-      "/admin/products",
-      "/admin/orders",
-      "/admin/payments",
-      "/admin/games",
-      "/admin/match-rooms",
-      "/admin/veto-rooms",
-      "/admin/valorant",
-    ]);
     expect(new Set(links.map((link) => link.href)).size).toBe(links.length);
+  });
+
+  it("keeps the page header renderable without an active-section eyebrow", () => {
+    expect(getAdminPageHeaderContent("Overview", "Manage Quest operations.")).toEqual({
+      title: "Overview",
+      description: "Manage Quest operations.",
+    });
   });
 });

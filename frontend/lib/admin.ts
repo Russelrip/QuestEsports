@@ -15,57 +15,74 @@ import {
   sriLankaDateTimeLocalToIso,
 } from "@/lib/date-time";
 
+export type AdminIconKey =
+  | "book" | "calendar" | "clipboard" | "crosshair" | "credit-card"
+  | "dashboard" | "gamepad" | "image" | "layers" | "message" | "monitor" | "package"
+  | "receipt" | "shopping-bag" | "swords" | "ticket" | "trophy"
+  | "user-plus" | "users";
+
+export type AdminNavigationLink = {
+  href: string;
+  label: string;
+  icon: AdminIconKey;
+};
+
 export const adminNavigationGroups: ReadonlyArray<{
   label: string;
-  links: ReadonlyArray<{ href: string; label: string }>;
+  links: ReadonlyArray<AdminNavigationLink>;
 }> = [
   {
     label: "Workspace",
     links: [
-      { href: "/admin", label: "Overview" },
-      { href: "/admin/media", label: "Media" },
-      { href: "/admin/event-albums", label: "Albums" },
+      { href: "/admin", label: "Overview", icon: "dashboard" },
+      { href: "/admin/media", label: "Media", icon: "image" },
+      { href: "/admin/event-albums", label: "Albums", icon: "image" },
     ],
   },
   {
     label: "Competition",
     links: [
-      { href: "/admin/tournaments", label: "Tournaments" },
-      { href: "/admin/events", label: "Events" },
-      { href: "/admin/event-series", label: "Event Series" },
-      { href: "/admin/registrations", label: "Registrations" },
-      { href: "/admin/rulebooks", label: "Rulebooks" },
+      { href: "/admin/tournaments", label: "Tournaments", icon: "trophy" },
+      { href: "/admin/events", label: "Events", icon: "calendar" },
+      { href: "/admin/event-series", label: "Event Series", icon: "layers" },
+      { href: "/admin/registrations", label: "Registrations", icon: "clipboard" },
+      { href: "/admin/rulebooks", label: "Rulebooks", icon: "book" },
     ],
   },
   {
     label: "People",
     links: [
-      { href: "/admin/users", label: "Users" },
-      { href: "/admin/teams", label: "Teams" },
-      { href: "/admin/recruitment", label: "Recruitment" },
-      { href: "/admin/contact-messages", label: "Messages" },
+      { href: "/admin/users", label: "Users", icon: "users" },
+      { href: "/admin/teams", label: "Teams", icon: "users" },
+      { href: "/admin/recruitment", label: "Recruitment", icon: "user-plus" },
+      { href: "/admin/contact-messages", label: "Messages", icon: "message" },
     ],
   },
   {
     label: "Commerce",
     links: [
-      { href: "/admin/tickets", label: "Ticketing" },
-      { href: "/admin/expenses", label: "Expenses" },
-      { href: "/admin/products", label: "Products" },
-      { href: "/admin/orders", label: "Orders" },
-      { href: "/admin/payments", label: "Payments" },
+      { href: "/admin/tickets", label: "Ticketing", icon: "ticket" },
+      { href: "/admin/expenses", label: "Expenses", icon: "receipt" },
+      { href: "/admin/products", label: "Products", icon: "package" },
+      { href: "/admin/orders", label: "Orders", icon: "shopping-bag" },
+      { href: "/admin/payments", label: "Payments", icon: "credit-card" },
     ],
   },
   {
     label: "Game Operations",
     links: [
-      { href: "/admin/games", label: "Games" },
-      { href: "/admin/match-rooms", label: "Match Rooms" },
-      { href: "/admin/veto-rooms", label: "Veto Rooms" },
-      { href: "/admin/valorant", label: "Valorant" },
+      { href: "/admin/games", label: "Games", icon: "gamepad" },
+      { href: "/admin/match-rooms", label: "Match Rooms", icon: "monitor" },
+      { href: "/admin/veto-rooms", label: "Veto Rooms", icon: "swords" },
+      { href: "/admin/valorant", label: "Valorant", icon: "crosshair" },
     ],
   },
 ] as const;
+
+export const getAdminPageHeaderContent = (title: string, description: string) => ({
+  title,
+  description,
+});
 
 export type Pagination = {
   page: number;
