@@ -21,9 +21,10 @@ const collectRouteOperations = () => {
   const routePattern = /router\.(get|post|put|patch|delete)\(\s*["']([^"']+)["']/g;
   const legacy = collectRouteFiles(modulesDirectory).flatMap((file) => {
     const source = fs.readFileSync(file, "utf8");
+    const prefix = file.endsWith(path.join("support", "support.routes.js")) ? "/api/v1" : "/api";
     return [...source.matchAll(routePattern)].map((match) => ({
       method: match[1],
-      path: normalizeExpressPath(match[2]),
+      path: normalizeExpressPath(match[2], prefix),
     }));
   });
   const v1Source = fs.readFileSync(path.join(__dirname, "../src/routes/v1.js"), "utf8");

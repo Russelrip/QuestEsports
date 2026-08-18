@@ -105,6 +105,7 @@ const openApiDocument = {
     { name: "Admin" },
     { name: "Match Rooms" },
     { name: "Notifications" },
+    { name: "Support" },
   ],
   components: {
     securitySchemes: {
@@ -773,6 +774,82 @@ const additionalPaths = {
   },
   "/api/v1/match-rooms/{code}/chat-lock": {
     patch: createOperation("Match Rooms", "Lock or unlock match-room chat", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/support/conversations": {
+    get: createOperation("Support", "List the signed-in user's support conversations", {
+      authenticated: true,
+      parameters: [
+        createQueryParameter("limit", { type: "integer", minimum: 1, maximum: 100 }),
+        createQueryParameter("cursor", { type: "string", format: "date-time" }),
+      ],
+    }),
+    post: createOperation("Support", "Create a support conversation", { authenticated: true }),
+  },
+  "/api/v1/support/conversations/{conversationId}": {
+    get: createOperation("Support", "Get an owned support conversation and its messages", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/support/conversations/{conversationId}/messages": {
+    post: createOperation("Support", "Reply to an owned support conversation", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/support/conversations/{conversationId}/read": {
+    patch: createOperation("Support", "Mark an owned support conversation read", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/support/conversations/{conversationId}/resolve": {
+    post: createOperation("Support", "Resolve an owned support conversation", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/support/conversations/{conversationId}/reopen": {
+    post: createOperation("Support", "Reopen an owned support conversation", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations": {
+    get: createOperation("Support", "List the staff support queue", {
+      authenticated: true,
+      parameters: [
+        createQueryParameter("status", { type: "string", enum: ["OPEN", "PENDING_USER", "PENDING_STAFF", "RESOLVED"] }),
+        createQueryParameter("assigned", { type: "string" }),
+        createQueryParameter("search", { type: "string" }),
+        createQueryParameter("limit", { type: "integer", minimum: 1, maximum: 100 }),
+        createQueryParameter("cursor", { type: "string", format: "date-time" }),
+      ],
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}": {
+    get: createOperation("Support", "Get any support conversation for staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/assignment": {
+    patch: createOperation("Support", "Assign or unassign a support conversation", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/messages": {
+    post: createOperation("Support", "Reply to a support conversation as staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/status": {
+    patch: createOperation("Support", "Change a support conversation status as staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
   },
   "/api/v1/notifications": {
     get: createOperation("Notifications", "List in-app notifications and delivery preferences", { authenticated: true }),

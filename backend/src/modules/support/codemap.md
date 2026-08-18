@@ -15,7 +15,12 @@ are documented in [`backend/prisma/codemap.md`](../../../prisma/codemap.md).
 
 ## Integration flow
 
-Later support services persist conversations and messages before invoking the
-existing notification and realtime infrastructure. Public guest contact
-submissions remain owned by the contact module and are not converted into
-support conversations.
+The authenticated support routes and controllers delegate all ownership,
+validation, persistence, and staff authorization-sensitive operations to the
+support service. User routes always pass the authenticated owner ID; admin
+queue routes require the existing admin middleware and pass the authenticated
+staff ID for read tracking. Public guest contact submissions remain owned by
+the contact module and are not converted into support conversations.
+
+The support service persists conversations and messages before invoking the
+existing notification and realtime infrastructure.
