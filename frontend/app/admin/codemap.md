@@ -19,3 +19,9 @@ series ID; attaching an existing tournament uses the event dashboard action.
 Event-scoped registration review stays isolated by event ID and child
 `seriesId`, while all sensitive roster/payment actions remain in the existing
 admin managers.
+
+## Support route
+
+- `support/page.tsx` renders the authenticated staff support queue at
+  `/admin/support`; filtering and thread mutations are delegated to the admin
+  support manager and versioned support API.

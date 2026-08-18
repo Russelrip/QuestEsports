@@ -21,3 +21,24 @@ export const sendSupportMessage = (id: string, body: string) => request<{ messag
 export const markSupportConversationRead = (id: string) => request<{ lastReadAt: string; unreadCount: number }>(`/api/v1/support/conversations/${id}/read`, { method: "PATCH", json: {} });
 export const resolveSupportConversation = (id: string) => request<SupportConversation>(`/api/v1/support/conversations/${id}/resolve`, { method: "POST", json: {} });
 export const reopenSupportConversation = (id: string) => request<SupportConversation>(`/api/v1/support/conversations/${id}/reopen`, { method: "POST", json: {} });
+
+export type SupportQueueFilters = { status?: SupportStatus; assigned?: "all" | "unassigned" | "mine"; search?: string };
+
+const buildAdminQuery = (filters: SupportQueueFilters = {}) => {
+  const query = new URLSearchParams();
+  if (filters.status) query.set("status", filters.status);
+  if (filters.assigned && filters.assigned !== "all") query.set("assigned", filters.assigned);
+  if (filters.search?.trim()) query.set("search", filters.search.trim());
+  const value = query.toString();
+  return value ? `?${value}` : "";
+};
+
+export const listAdminSupportConversations = (filters?: SupportQueueFilters) =>
+  request<{ items: SupportConversationSummary[]; nextCursor: string | null }>(`/api/v1/admin/support/conversations${buildAdminQuery(filters)}`);
+export const getAdminSupportConversation = (id: string) => request<SupportConversation>(`/api/v1/admin/support/conversations/${id}`);
+export const assignSupportConversation = (id: string, assignedStaffUserId: string | null) =>
+  request<SupportConversation>(`/api/v1/admin/support/conversations/${id}/assignment`, { method: "PATCH", json: { assignedStaffUserId } });
+export const sendAdminSupportMessage = (id: string, body: string) =>
+  request<{ message: SupportMessage; status: SupportStatus }>(`/api/v1/admin/support/conversations/${id}/messages`, { method: "POST", json: { body } });
+export const updateAdminSupportStatus = (id: string, status: SupportStatus) =>
+  request<SupportConversation>(`/api/v1/admin/support/conversations/${id}/status`, { method: "PATCH", json: { status } });

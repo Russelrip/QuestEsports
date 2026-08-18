@@ -44,6 +44,7 @@ export const adminNavigationGroups = [
       { href: "/admin/teams", label: "Teams" },
       { href: "/admin/recruitment", label: "Recruitment" },
       { href: "/admin/contact-messages", label: "Messages" },
+      { href: "/admin/support", label: "Support Queue" },
     ],
   },
   {
