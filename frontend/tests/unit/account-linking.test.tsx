@@ -2,9 +2,29 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AccountLinkingPanel from "../../components/auth/AccountLinkingPanel";
+import ProfileView from "../../components/auth/ProfileView";
 
-const mocks = vi.hoisted(() => ({ getLinkedProviders: vi.fn(), unlinkProvider: vi.fn(), getProviderLinkUrl: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getLinkedProviders: vi.fn(), unlinkProvider: vi.fn(), getProviderLinkUrl: vi.fn(),
+  apiFetchJson: vi.fn(), apiFetch: vi.fn(),
+  fetchAccountDashboard: vi.fn(),
+  router: { replace: vi.fn(), push: vi.fn() },
+  auth: { user: { id: "user-1", firstName: "Player", lastName: "One", username: "player", email: "player@example.com", emailVerified: true, role: "user" as const }, refreshUser: vi.fn(), logout: vi.fn(), isLoading: false },
+}));
 vi.mock("@/lib/account-linking", () => mocks);
+vi.mock("@/lib/auth", () => ({ apiFetchJson: mocks.apiFetchJson, apiFetch: mocks.apiFetch, getApiErrorMessage: (response: Response, data: { success?: boolean; message?: string }, fallback: string) => response.ok && data.success !== false ? "" : data.message || fallback }));
+vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => mocks.auth }));
+vi.mock("@/hooks/api/useTeams", () => ({ useTeams: () => ({ data: [], setData: vi.fn(), loading: false, error: "" }) }));
+vi.mock("@/lib/account", () => ({ fetchAccountDashboard: mocks.fetchAccountDashboard }));
+vi.mock("@/lib/veto", () => ({ vetoRequest: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/lib/match-rooms", () => ({ roomRequest: vi.fn().mockResolvedValue([]) }));
+vi.mock("next/navigation", () => ({ useRouter: () => mocks.router }));
+vi.mock("next/link", () => ({ default: ({ children, ...props }: React.PropsWithChildren<{ href: string }>) => <a {...props}>{children}</a> }));
+vi.mock("next/image", () => ({ default: ({ alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => { void alt; return <span {...props} />; } }));
+vi.mock("@/components/auth/ChangePasswordForm", () => ({ default: () => null }));
+vi.mock("@/components/auth/SessionList", () => ({ default: () => null }));
+vi.mock("@/components/auth/ResendVerificationButton", () => ({ default: () => null }));
+vi.mock("@/components/auth/TeamManagementPanel", () => ({ default: () => null, TeamSummaryGrid: () => null }));
 
 const linked = (google = false, discord = false) => [
   { provider: "google" as const, linked: google },
@@ -63,10 +83,38 @@ describe("AccountLinkingPanel", () => {
   });
 
   it("refreshes and reports the OAuth callback result", async () => {
-    window.history.pushState({}, "", "/profile?tab=account&oauth=linked");
+    window.history.pushState({ preserved: true }, "", "/profile?tab=account&oauth=linked&keep=1#account");
     render(<AccountLinkingPanel />);
     expect(await screen.findByRole("status")).toHaveTextContent("Account linked successfully");
     await waitFor(() => expect(mocks.getLinkedProviders).toHaveBeenCalled());
-    expect(window.location.search).toBe("?tab=account");
+    expect(window.location.search).toBe("?keep=1");
+    expect(window.location.hash).toBe("#account");
+    expect(window.history.state).toEqual({ preserved: true });
+  });
+
+  it("keeps controls unavailable after a failed initial load and enables retry", async () => {
+    const user = userEvent.setup();
+    mocks.getLinkedProviders.mockRejectedValueOnce(new Error("Provider status unavailable")).mockResolvedValueOnce(linked(false, true));
+    render(<AccountLinkingPanel />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Provider status unavailable");
+    expect(screen.queryByRole("button", { name: /Link|Unlink|Unavailable/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("button", { name: "Link Google" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unlink Discord" })).toBeInTheDocument();
+  });
+});
+
+describe("ProfileView OAuth callback integration", () => {
+  beforeEach(() => {
+    mocks.getLinkedProviders.mockResolvedValue(linked(true, false));
+    mocks.fetchAccountDashboard.mockResolvedValue({ currentRegistrations: [], pastRegistrations: [], teams: [], recruitmentApplications: [], orders: [] });
+  });
+
+  it.each(["linked", "error"] as const)("mounts the account panel for oauth=%s", async (result) => {
+    window.history.pushState({}, "", `/profile?tab=account&oauth=${result}`);
+    render(<ProfileView />);
+    expect(await screen.findByRole(result === "linked" ? "status" : "alert")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Linked accounts" })).toBeInTheDocument();
+    expect(window.location.search).toBe("");
   });
 });

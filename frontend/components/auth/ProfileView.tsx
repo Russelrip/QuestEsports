@@ -126,7 +126,9 @@ export default function ProfileView() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("tab") === "teams") {
+    if (params.get("tab") === "account") {
+      setActiveTab("account");
+    } else if (params.get("tab") === "teams") {
       setActiveTab("teams");
       setSelectedTeamId(params.get("team"));
       setShowCreatedTeamNotice(params.get("created") === "1");

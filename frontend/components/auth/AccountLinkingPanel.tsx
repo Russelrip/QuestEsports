@@ -19,7 +19,7 @@ const providerDetails: Record<OAuthProvider, { name: string; description: string
 type AccountLinkingPanelProps = { className?: string };
 
 export default function AccountLinkingPanel({ className = "" }: AccountLinkingPanelProps) {
-  const [providers, setProviders] = useState<LinkedProvider[]>([]);
+  const [providers, setProviders] = useState<LinkedProvider[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(null);
@@ -45,13 +45,14 @@ export default function AccountLinkingPanel({ className = "" }: AccountLinkingPa
     if (oauthResult === "error") setError("We could not link that account. It may already be linked to another Quest account.");
     if (oauthResult) {
       params.delete("oauth");
+      params.delete("tab");
       const query = params.toString();
-      window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
     }
     void refresh();
   }, [refresh]);
 
-  const isLinked = (provider: OAuthProvider) => providers.find((entry) => entry.provider === provider)?.linked ?? false;
+  const providerState = (provider: OAuthProvider) => providers?.find((entry) => entry.provider === provider);
 
   const link = (provider: OAuthProvider) => {
     setError("");
@@ -95,19 +96,21 @@ export default function AccountLinkingPanel({ className = "" }: AccountLinkingPa
       {error ? <p className="mt-5 border border-rose-300/20 bg-rose-400/8 p-3 text-sm leading-6 text-rose-100" role="alert">{error}</p> : null}
       {loadingError ? <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border border-rose-300/20 bg-rose-400/8 p-3 text-sm text-rose-100" role="alert"><span>{loadingError}</span><Button type="button" size="sm" variant="ghost" onClick={() => void refresh()}>Try again</Button></div> : null}
 
-      {loading ? <div className="mt-6"><LoadingState title="Loading linked accounts" description="Checking your Google and Discord connections." /></div> : (
+      {loading ? <div className="mt-6"><LoadingState title="Loading linked accounts" description="Checking your Google and Discord connections." /></div> : providers === null ? null : (
         <div className="mt-6 grid gap-3 md:grid-cols-2">
           {(["google", "discord"] as OAuthProvider[]).map((provider) => {
-            const linked = isLinked(provider);
+            const state = providerState(provider);
+            const linked = state?.linked === true;
+            const known = Boolean(state);
             const pending = pendingProvider === provider;
             const details = providerDetails[provider];
             return <article key={provider} className={`border p-5 transition ${linked ? "border-cyan-300/25 bg-cyan-400/[.055]" : "border-white/8 bg-white/[.02]"}`}>
               <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-full bg-white text-lg font-bold text-slate-950" aria-hidden="true">{details.mark}</span><div><h4 className="font-semibold text-white">{details.name}</h4><p className="mt-1 text-xs uppercase tracking-[0.15em] text-slate-500">{linked ? "Connected" : "Not connected"}</p></div></div>
-                <span className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${linked ? "text-cyan-200" : "text-slate-500"}`}>{linked ? "Linked" : "Available"}</span>
+                <div className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-full bg-white text-lg font-bold text-slate-950" aria-hidden="true">{details.mark}</span><div><h4 className="font-semibold text-white">{details.name}</h4><p className="mt-1 text-xs uppercase tracking-[0.15em] text-slate-500">{!known ? "Status unavailable" : linked ? "Connected" : "Not connected"}</p></div></div>
+                <span className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${linked ? "text-cyan-200" : "text-slate-500"}`}>{!known ? "Unavailable" : linked ? "Linked" : "Available"}</span>
               </div>
               <p className="mt-5 text-sm leading-6 text-slate-400">{details.description}</p>
-              {linked ? <Button type="button" variant="ghost" className="mt-4 w-full sm:w-auto" disabled={pending} onClick={() => void unlink(provider)}>{pending ? "Unlinking…" : `Unlink ${details.name}`}</Button> : <Button type="button" variant="secondary" className="mt-4 w-full sm:w-auto" onClick={() => link(provider)}>Link {details.name}</Button>}
+              {linked ? <Button type="button" variant="ghost" className="mt-4 w-full sm:w-auto" disabled={pending} onClick={() => void unlink(provider)}>{pending ? "Unlinking…" : `Unlink ${details.name}`}</Button> : <Button type="button" variant="secondary" className="mt-4 w-full sm:w-auto" disabled={!known} onClick={() => link(provider)}>{known ? `Link ${details.name}` : "Unavailable"}</Button>}
             </article>;
           })}
         </div>
