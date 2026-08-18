@@ -1,238 +1,128 @@
-import { expect, openPage, test, type Page, type Route } from "./test-fixture";
+import { expect, test } from "./test-fixture";
+import type { BrowserContext, APIRequestContext } from "@playwright/test";
 
-type Role = "user" | "admin";
-type SupportMessage = {
-  id: string;
-  conversationId: string;
-  senderUserId: string;
-  body: string;
-  createdAt: string;
-  sender: { id: string; username: string; firstName: string; lastName: string; avatarUrl: null };
+const apiUrl = process.env.SUPPORT_E2E_API_URL || process.env.NEXT_PUBLIC_API_URL;
+const frontendUrl = process.env.SUPPORT_E2E_FRONTEND_URL || process.env.PLAYWRIGHT_BASE_URL;
+const requiredEnvironment = {
+  DATABASE_URL: process.env.DATABASE_URL,
+  DIRECT_URL: process.env.DIRECT_URL,
+  SUPPORT_E2E_API_URL: apiUrl,
+  SUPPORT_E2E_FRONTEND_URL: frontendUrl,
+  SUPPORT_E2E_USER_EMAIL: process.env.SUPPORT_E2E_USER_EMAIL,
+  SUPPORT_E2E_USER_PASSWORD: process.env.SUPPORT_E2E_USER_PASSWORD,
+  E2E_ADMIN_EMAIL: process.env.E2E_ADMIN_EMAIL,
+  E2E_ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD,
 };
+const missingEnvironment = Object.entries(requiredEnvironment)
+  .filter(([, value]) => !value)
+  .map(([name]) => name);
 
-const users = {
-  user: {
-    id: "support-user",
-    firstName: "Asha",
-    lastName: "Player",
-    email: "asha@example.com",
-    username: "asha",
-    role: "user" as const,
-    emailVerified: true,
-  },
-  admin: {
-    id: "support-admin",
-    firstName: "Quest",
-    lastName: "Staff",
-    email: "staff@example.com",
-    username: "queststaff",
-    role: "admin" as const,
-    emailVerified: true,
-  },
-};
+const withOrigin = (origin: string) => ({ Origin: origin, Referer: `${origin}/support` });
 
-const supportUser = (user: (typeof users)[Role]) => ({
-  id: user.id,
-  username: user.username,
-  firstName: user.firstName,
-  lastName: user.lastName,
-  avatarUrl: null,
-});
-
-async function installSupportSessionFixture(page: Page) {
-  let role: Role = "user";
-  const state: {
-    conversation: {
-      id: string;
-      ownerUserId: string;
-      subject: string;
-      status: "OPEN" | "PENDING_USER" | "PENDING_STAFF" | "RESOLVED";
-      assignedStaffUserId: string | null;
-      createdAt: string;
-      updatedAt: string;
-      resolvedAt: string | null;
-      messages: SupportMessage[];
-    } | null;
-    adminReadRequests: number;
-    adminListUnreadCounts: number[];
-  } = {
-    conversation: null,
-    adminReadRequests: 0,
-    adminListUnreadCounts: [],
-  };
-
-  const respond = (route: Route, data: unknown, status = 200) =>
-    route.fulfill({
-      status,
-      contentType: "application/json",
-      body: JSON.stringify({ success: true, data, meta: { serverNow: "2026-08-19T12:00:00.000Z" } }),
-    });
-
-  const unreadCount = (viewerId: string) => state.conversation?.messages.filter((message) =>
-    message.senderUserId !== viewerId && (viewerId === users.admin.id ? state.adminReadRequests === 0 : !state.conversation?.resolvedAt)
-  ).length || 0;
-
-  const summary = (viewerId: string) => {
-    if (!state.conversation) return null;
-    const lastMessage = state.conversation.messages.at(-1) || null;
-    return {
-      ...state.conversation,
-      owner: supportUser(users.user),
-      assignedStaff: null,
-      lastMessage,
-      preview: lastMessage?.body || null,
-      unreadCount: unreadCount(viewerId),
-    };
-  };
-
-  await page.route("**/api/**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    const path = url.pathname;
-    const viewer = users[role];
-    const body = (() => {
-      try {
-        return request.postDataJSON() as Record<string, string>;
-      } catch {
-        return {};
-      }
-    })();
-
-    if (path === "/api/me" && request.method() === "GET") {
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ success: true, user: viewer }),
-      });
-      return;
-    }
-
-    if (path === "/api/v1/admin/support/conversations" && request.method() === "GET") {
-      const item = summary(users.admin.id);
-      if (item) state.adminListUnreadCounts.push(item.unreadCount);
-      await respond(route, { items: item ? [item] : [], nextCursor: null });
-      return;
-    }
-
-    if (path === "/api/v1/support/conversations" && request.method() === "GET") {
-      const item = role === "user" ? summary(users.user.id) : summary(users.admin.id);
-      if (role === "admin" && item) state.adminListUnreadCounts.push(item.unreadCount);
-      await respond(route, { items: item ? [item] : [], nextCursor: null });
-      return;
-    }
-
-    if (path === "/api/v1/support/conversations" && request.method() === "POST") {
-      const createdAt = "2026-08-19T12:01:00.000Z";
-      const conversationId = "support-conversation-1";
-      const message: SupportMessage = {
-        id: "support-message-1",
-        conversationId,
-        senderUserId: users.user.id,
-        body: body.body,
-        createdAt,
-        sender: supportUser(users.user),
-      };
-      state.conversation = {
-        id: conversationId,
-        ownerUserId: users.user.id,
-        subject: body.subject,
-        status: "OPEN",
-        assignedStaffUserId: null,
-        createdAt,
-        updatedAt: createdAt,
-        resolvedAt: null,
-        messages: [message],
-      };
-      await respond(route, { ...state.conversation, owner: supportUser(users.user), assignedStaff: null, unreadCount: 0 }, 201);
-      return;
-    }
-
-    const conversationMatch = path.match(/\/api\/v1\/(admin\/support\/|support\/)conversations\/([^/]+)(?:\/(read|messages|status|reopen|resolve))?$/);
-    if (conversationMatch && state.conversation?.id === conversationMatch[2]) {
-      const isAdmin = conversationMatch[1] === "admin/support/";
-      const action = conversationMatch[3];
-      if (isAdmin && role !== "admin") {
-        await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ success: false, message: "Forbidden" }) });
-        return;
-      }
-      if (!isAdmin && role !== "user") {
-        await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ success: false, message: "Forbidden" }) });
-        return;
-      }
-      if (!action && request.method() === "GET") {
-        await respond(route, { ...state.conversation, owner: supportUser(users.user), assignedStaff: null, unreadCount: unreadCount(viewer.id) });
-        return;
-      }
-      if (action === "read" && request.method() === "PATCH") {
-        if (isAdmin) state.adminReadRequests += 1;
-        await respond(route, { lastReadAt: "2026-08-19T12:05:00.000Z", unreadCount: 0 });
-        return;
-      }
-      if (action === "messages" && request.method() === "POST") {
-        const createdAt = "2026-08-19T12:06:00.000Z";
-        const message: SupportMessage = {
-          id: "support-message-2",
-          conversationId: state.conversation.id,
-          senderUserId: viewer.id,
-          body: body.body,
-          createdAt,
-          sender: supportUser(viewer),
-        };
-        state.conversation.messages.push(message);
-        state.conversation.status = isAdmin ? "PENDING_USER" : "PENDING_STAFF";
-        state.conversation.updatedAt = createdAt;
-        state.conversation.resolvedAt = null;
-        await respond(route, { message, status: state.conversation.status }, 201);
-        return;
-      }
-      if ((action === "status" && request.method() === "PATCH") || ((action === "reopen" || action === "resolve") && request.method() === "POST")) {
-        state.conversation.status = action === "reopen" || body.status === "OPEN" ? "OPEN" : "RESOLVED";
-        state.conversation.resolvedAt = state.conversation.status === "RESOLVED" ? "2026-08-19T12:07:00.000Z" : null;
-        state.conversation.updatedAt = "2026-08-19T12:07:00.000Z";
-        await respond(route, { ...state.conversation, owner: supportUser(users.user), assignedStaff: null, unreadCount: unreadCount(viewer.id) });
-        return;
-      }
-    }
-
-    await route.fallback();
+async function login(context: BrowserContext, email: string, password: string, origin: string) {
+  const response = await context.request.post(`${apiUrl}/api/login`, {
+    data: { emailOrUsername: email, password, remember: true },
+    headers: withOrigin(origin),
   });
-
-  return {
-    asAdmin() { role = "admin"; },
-    asUser() { role = "user"; },
-    state,
-  };
+  expect(response.ok(), await response.text()).toBe(true);
 }
 
-test("authenticated user and staff can complete a support conversation", async ({ page }) => {
-  const fixture = await installSupportSessionFixture(page);
+async function readJson(request: APIRequestContext, path: string, origin: string) {
+  const response = await request.get(`${apiUrl}${path}`, { headers: withOrigin(origin) });
+  expect(response.ok(), await response.text()).toBe(true);
+  return response.json() as Promise<{ success: true; data: { items: Array<{ id: string; type?: string; actionUrl?: string | null; body?: string; unreadCount?: number }>; unreadCount?: number } }>;
+}
 
-  await openPage(page, "/support");
-  await expect(page.getByRole("heading", { name: "Start a support conversation" })).toBeVisible();
-  await page.getByLabel("Subject").fill("Account access");
-  await page.getByLabel("Message").fill("I cannot sign in to my tournament account.");
-  await page.getByRole("button", { name: "Send message" }).click();
-  await expect(page.getByRole("heading", { level: 2, name: "Account access" })).toBeVisible();
-  await expect(page.getByText("I cannot sign in to my tournament account.").last()).toBeVisible();
+async function stubRealtimeBoundary(context: BrowserContext) {
+  await context.addInitScript(() => {
+    class TestEventSource extends EventTarget {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSED = 2;
+      readonly CONNECTING = TestEventSource.CONNECTING;
+      readonly OPEN = TestEventSource.OPEN;
+      readonly CLOSED = TestEventSource.CLOSED;
+      readonly readyState = TestEventSource.CLOSED;
+      readonly url: string;
+      readonly withCredentials: boolean;
+      onerror: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onopen: ((event: Event) => void) | null = null;
 
-  fixture.asAdmin();
-  await openPage(page, "/admin/support");
-  await expect(page.getByRole("heading", { name: "Support queue" })).toBeVisible();
-  await expect.poll(() => fixture.state.adminListUnreadCounts.at(-1)).toBe(1);
-  await page.getByRole("button", { name: /Account access/ }).click();
-  await expect(page.getByRole("heading", { level: 2, name: "Account access" })).toBeVisible();
-  await expect.poll(() => fixture.state.adminReadRequests).toBe(1);
-  await expect.poll(() => fixture.state.adminListUnreadCounts.at(-1)).toBe(0);
+      constructor(url: string | URL, init?: EventSourceInit) {
+        super();
+        this.url = String(url);
+        this.withCredentials = Boolean(init?.withCredentials);
+      }
 
-  await page.getByLabel("Reply to Asha Player").fill("Please reset your password and try again.");
-  await page.getByRole("button", { name: "Send reply" }).click();
-  await expect(page.getByText("Please reset your password and try again.").last()).toBeVisible();
-  await page.getByRole("button", { name: "Resolve" }).click();
-  await expect(page.locator("span").filter({ hasText: /^Resolved$/ }).last()).toBeVisible();
+      close() {}
+    }
 
-  fixture.asUser();
-  await openPage(page, "/support/support-conversation-1");
-  await expect(page.getByText("Please reset your password and try again.").last()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reopen" })).toBeVisible();
-  await page.getByRole("button", { name: "Reopen" }).click();
-  await expect(page.getByRole("button", { name: "Resolve" })).toBeVisible();
+    Object.defineProperty(window, "EventSource", {
+      configurable: true,
+      value: TestEventSource,
+      writable: true,
+    });
+  });
+}
+
+test("authenticated user and staff complete the persisted support flow", async ({ page, browser }) => {
+  test.skip(
+    missingEnvironment.length > 0,
+    `Missing required support E2E environment: ${missingEnvironment.join(", ")}`,
+  );
+
+  const adminContext = await browser.newContext({ baseURL: frontendUrl });
+  await stubRealtimeBoundary(adminContext);
+  const adminPage = await adminContext.newPage();
+
+  try {
+    await login(page.context(), requiredEnvironment.SUPPORT_E2E_USER_EMAIL!, requiredEnvironment.SUPPORT_E2E_USER_PASSWORD!, frontendUrl!);
+    await login(adminContext, requiredEnvironment.E2E_ADMIN_EMAIL!, requiredEnvironment.E2E_ADMIN_PASSWORD!, frontendUrl!);
+
+    await page.goto(`${frontendUrl}/support`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Start a support conversation" })).toBeVisible();
+    await page.getByLabel("Subject").fill("Account access");
+    await page.getByLabel("Message").fill("I cannot sign in to my tournament account.");
+    await page.getByRole("button", { name: "Send message" }).click();
+    await expect(page).toHaveURL(/\/support\/[^/?#]+$/);
+    const conversationId = new URL(page.url()).pathname.split("/").pop();
+    expect(conversationId).toBeTruthy();
+
+    const staffNotifications = await readJson(adminContext.request, "/api/v1/notifications?limit=30", frontendUrl!);
+    expect(staffNotifications.data.items.find((item) => item.type === "support_message" && item.body === "I cannot sign in to my tournament account.")?.actionUrl)
+      .toBe(`/admin/support?conversationId=${conversationId}`);
+
+    const queueBeforeRead = await readJson(adminContext.request, "/api/v1/admin/support/conversations", frontendUrl!);
+    expect(queueBeforeRead.data.items.find((item) => item.id === conversationId)?.unreadCount).toBe(1);
+
+    await adminPage.goto(`${frontendUrl}/admin/support?conversationId=${conversationId}`, { waitUntil: "domcontentloaded" });
+    await expect(adminPage.getByRole("heading", { level: 2, name: "Account access" })).toBeVisible();
+    await expect.poll(async () => {
+      const queue = await readJson(adminContext.request, "/api/v1/admin/support/conversations", frontendUrl!);
+      return queue.data.items.find((item) => item.id === conversationId)?.unreadCount;
+    }).toBe(0);
+
+    await adminPage.getByLabel(/Reply to/).fill("Please reset your password and try again.");
+    await adminPage.getByRole("button", { name: "Send reply" }).click();
+    await expect(adminPage.getByText("Please reset your password and try again.").last()).toBeVisible();
+
+    const userNotifications = await readJson(page.context().request, "/api/v1/notifications?limit=30", frontendUrl!);
+    expect(userNotifications.data.items.find((item) => item.type === "support_message" && item.body === "Please reset your password and try again.")?.actionUrl)
+      .toBe(`/support/${conversationId}`);
+
+    await adminPage.getByRole("button", { name: "Resolve" }).click();
+    await expect(adminPage.locator("span").filter({ hasText: /^Resolved$/ }).last()).toBeVisible();
+
+    const userUnreadBeforeOpen = await readJson(page.context().request, "/api/v1/support/conversations", frontendUrl!);
+    expect(userUnreadBeforeOpen.data.items.find((item) => item.id === conversationId)?.unreadCount).toBe(1);
+
+    await page.goto(`${frontendUrl}/support/${conversationId}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByText("Please reset your password and try again.").last()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reopen" })).toBeVisible();
+    await page.getByRole("button", { name: "Reopen" }).click();
+    await expect(page.getByRole("button", { name: "Resolve" })).toBeVisible();
+  } finally {
+    await adminContext.close();
+  }
 });

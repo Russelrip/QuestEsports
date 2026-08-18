@@ -262,6 +262,25 @@ test("status transitions resolve and reopen a scoped conversation", async () => 
   } finally { restore(); }
 });
 
+test("resolving a conversation does not advance its read cursor or clear unread messages", async () => {
+  const existing = conversation({ messages: [{ id: "m-unread", conversationId: "c1", senderUserId: "staff-1", body: "Reply", createdAt: new Date() }] });
+  const { module: service, restore } = loadService({
+    prisma: {
+      supportConversation: {
+        findFirst: async () => existing,
+        update: async ({ data }) => ({ ...existing, ...data }),
+      },
+      supportConversationRead: { findUnique: async () => null },
+      supportMessage: { count: async () => 1 },
+    },
+  });
+  try {
+    const resolved = await service.changeConversationStatus({ conversationId: "c1", actorUserId: "u1", status: "RESOLVED" });
+    assert.equal(resolved.status, "RESOLVED");
+    assert.equal(resolved.unreadCount, 1);
+  } finally { restore(); }
+});
+
 test("staff can successfully assign a conversation", async () => {
   const existing = conversation();
   const { module: service, restore } = loadService({
@@ -304,6 +323,27 @@ test("staff replies notify the owner with the required support realtime payload"
       topic: "user:u1",
       payload: { kind: "support", conversationId: "c1", messageId: "m3", status: "PENDING_USER", unreadCount: 1 },
     });
+  } finally { restore(); }
+});
+
+test("user messages notify staff with the admin conversation action URL", async () => {
+  const notifications = [];
+  const existing = conversation();
+  const { module: service, restore } = loadService({
+    prisma: {
+      supportConversation: {
+        findFirst: async () => existing,
+        update: async ({ data }) => ({ ...existing, ...data }),
+      },
+      supportMessage: { create: async ({ data }) => ({ id: "m-user", ...data, createdAt: new Date() }), count: async () => 1 },
+      supportConversationRead: { findUnique: async () => null },
+      user: { findMany: async () => [{ id: "staff-1", role: "admin" }] },
+    },
+    notifications,
+  });
+  try {
+    await service.sendMessage({ conversationId: "c1", senderUserId: "u1", body: "Any update?" });
+    assert.equal(notifications[0].actionUrl, "/admin/support?conversationId=c1");
   } finally { restore(); }
 });
 

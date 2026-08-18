@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AdminShell from "@/components/admin/AdminShell";
 import { Card } from "@/components/ui/card";
@@ -17,6 +18,8 @@ const date = (value: string) => new Intl.DateTimeFormat(undefined, { month: "sho
 
 export default function AdminSupportManager() {
   const { user, isLoading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
+  const queryConversationId = searchParams.get("conversationId");
   const [filters, setFilters] = useState<AdminQueueFilters>({ assigned: "all" });
   const [items, setItems] = useState<SupportConversationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -30,6 +33,7 @@ export default function AdminSupportManager() {
   const queueGeneration = useRef(0);
   const detailGeneration = useRef(0);
   const selectedIdRef = useRef<string | null>(null);
+  const openedQueryConversationRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const generation = ++queueGeneration.current;
@@ -80,6 +84,12 @@ export default function AdminSupportManager() {
   }, [load]);
 
   useEffect(() => { if (!authLoading && user) void load(); }, [authLoading, user, load]);
+
+  useEffect(() => {
+    if (authLoading || loading || !queryConversationId || openedQueryConversationRef.current === queryConversationId) return;
+    openedQueryConversationRef.current = queryConversationId;
+    void loadThread(queryConversationId);
+  }, [authLoading, loading, queryConversationId, loadThread]);
 
   const refresh = (targetId: string) => {
     if (selectedIdRef.current !== targetId) return;

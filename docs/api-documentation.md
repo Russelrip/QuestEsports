@@ -378,6 +378,11 @@ ID. Responses use the versioned envelope described above, with all timestamps in
 ISO-8601 UTC. Subjects are required and limited to 160 characters; message
 bodies are required and limited to 2,000 characters.
 
+`limit` defaults to 25. Values are parsed as integers, invalid/empty values use
+the default, and valid values are clamped to 1–100. `cursor` must be an
+ISO-8601 `updatedAt` value; malformed cursors return `400`. List results are
+ordered newest first and return one `nextCursor` when another page exists.
+
 ### User routes
 
 - `GET /api/v1/support/conversations` — lists the current user's conversations.
@@ -401,7 +406,9 @@ bodies are required and limited to 2,000 characters.
   response data is `{ lastReadAt, unreadCount: 0 }`. Read state is per user and
   does not modify message rows.
 - `POST /api/v1/support/conversations/:conversationId/resolve` — resolves an
-  owned conversation and sets `resolvedAt`.
+  owned conversation and sets `resolvedAt`. The `200` response data is the full
+  conversation projection with `status: "RESOLVED"` and the persisted
+  `resolvedAt` timestamp.
 - `POST /api/v1/support/conversations/:conversationId/reopen` — reopens an
   owned conversation, clears `resolvedAt`, and returns the full conversation.
   Users may only perform the explicit resolve/reopen transitions.
@@ -413,8 +420,11 @@ Staff reads use the authenticated staff ID for their independent unread cursor.
 
 - `GET /api/v1/admin/support/conversations` — lists the staff queue. Optional
   query parameters are `status` (`OPEN`, `PENDING_USER`, `PENDING_STAFF`, or
-  `RESOLVED`), `assigned` (`all`, `unassigned`, `mine`, `true`, `false`, or a
-  staff user ID), `search`, `limit` (1–100), and `cursor`. `data` is
+  `RESOLVED`), `assigned` (`all`, `unassigned`, `assigned`, `mine`, `true`,
+  `false`, or a staff user ID), `search`, `limit` (1–100), and `cursor`.
+  `assigned=assigned` means any non-null assignee; `mine` means the
+  authenticated admin's ID. `search` is a case-insensitive contains search over
+  the subject, owner username, or owner email. `data` is
   `{ items, nextCursor }` using the same summary shape as the user list.
 - `GET /api/v1/admin/support/conversations/:conversationId` — returns any
   support conversation and all messages for staff review.
@@ -434,12 +444,31 @@ Staff reads use the authenticated staff ID for their independent unread cursor.
   Resolving sets `resolvedAt`; reopening clears it. Returns the full
   conversation.
 
-Messages are committed before notification and realtime delivery is attempted.
-New messages create persisted `support_message` notifications for the recipient;
-delivery failures do not convert a successful message write into an error.
-Validation failures return `400`, missing/unauthorized owned conversations use
-the existing protected-route error behavior, and admin-only access is enforced by
-the backend rather than by the frontend controls.
+Unread counts are calculated per viewer from `SupportConversationRead.lastReadAt`:
+only messages from another user whose `createdAt` is later than that cursor are
+unread. Opening a thread calls the viewer's read endpoint and advances only that
+viewer cursor. Resolving, reopening, assigning, or changing status never advances
+the cursor, so resolving a conversation does not clear unread messages.
+
+Messages are committed before notification, realtime, or push delivery is
+attempted. A user-created message (including a user reply) notifies the assigned
+staff member and all other admin recipients with action URL
+`/admin/support?conversationId=:id`; a staff reply notifies the conversation
+owner with action URL `/support/:id`. The action URL is persisted in the
+`support_message` notification and is also the URL used by optional browser push.
+New messages publish private realtime updates to each recipient's `user:{userId}`
+topic. Read marking, assignment, resolve, reopen, and status-only updates do not
+create support-message notifications or realtime message events. Push is opt-in
+when `WEB_PUSH_PUBLIC_KEY` and `WEB_PUSH_PRIVATE_KEY` are configured; push and
+realtime failures are best effort and never turn a persisted message into a
+failed request. Support messages do not send email.
+
+Validation failures, including invalid status, missing body/subject, malformed
+cursor, or invalid assignment, return `400`. Missing authentication returns
+`401`; a non-admin attempting a staff route returns `403`; an authenticated user
+requesting another owner's conversation returns `403`; and a staff request for a
+missing conversation or assignee returns `404`. These authorization rules are
+enforced by the backend rather than by frontend controls.
 
 ## Public Tournament Endpoints
 

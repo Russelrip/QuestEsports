@@ -192,7 +192,9 @@ const publishMessageEffects = async ({ conversation, message, senderUserId, isSt
     type: "support_message",
     title: "New support message",
     body: message.body,
-    actionUrl: `/support/${conversation.id}`,
+    actionUrl: isStaff
+      ? `/support/${conversation.id}`
+      : `/admin/support?conversationId=${encodeURIComponent(conversation.id)}`,
     userIds: recipients,
     publishRealtime: false,
   };
