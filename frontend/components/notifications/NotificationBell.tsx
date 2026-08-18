@@ -15,6 +15,7 @@ type NotificationData = {
 
 type Envelope<T> = { success?: boolean; data?: T };
 const empty: NotificationData = { items: [], unreadCount: 0, push: { enabled: false, publicKey: null }, preference: { matchPushEnabled: true, soundEnabled: true, matchEmailEnabled: false } };
+const notificationHref = (item: NotificationData["items"][number]) => item.type === "support_message" && item.actionUrl?.startsWith("/support/") ? item.actionUrl : item.actionUrl || "/profile";
 
 type NotificationBellProps = {
   user: AuthUser;
@@ -50,7 +51,7 @@ export default function NotificationBell({
 
   const load = useCallback(async () => {
     const { response, data: envelope } = await apiFetchJson<Envelope<NotificationData>>("/api/v1/notifications?limit=30");
-    if (response.ok && envelope.data) setData(envelope.data);
+    if (response.ok && envelope.data) setData({ ...envelope.data, items: envelope.data.items.map((item) => ({ ...item, actionUrl: notificationHref(item) })) });
   }, []);
 
   useEffect(() => {
