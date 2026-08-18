@@ -13,6 +13,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import ChangePasswordForm from "@/components/auth/ChangePasswordForm";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import SessionList from "@/components/auth/SessionList";
+import AccountLinkingPanel from "@/components/auth/AccountLinkingPanel";
 import TeamManagementPanel, { TeamSummaryGrid } from "@/components/auth/TeamManagementPanel";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -494,6 +495,7 @@ export default function ProfileView() {
                     </Button>
                   </form>
                 </div>
+                <AccountLinkingPanel />
               </div>
             ) : activeTab === "security" ? (
               <div className="grid min-w-0 gap-6">
