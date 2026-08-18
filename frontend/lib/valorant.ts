@@ -149,6 +149,13 @@ export const parseStoredRiotId = (value: string): RiotId | null => {
 
 export const formatRiotId = (id: RiotId): string => `${id.name}#${id.tag}`;
 
+export const buildValorantTrackerProfileUrl = (name: string, tag: string): string | null => {
+  const trimmedName = String(name || "").trim();
+  const trimmedTag = String(tag || "").trim();
+  if (!trimmedName || !trimmedTag) return null;
+  return `https://tracker.gg/valorant/profile/riot/${encodeURIComponent(`${trimmedName}#${trimmedTag}`)}/overview`;
+};
+
 export const teamValuesFromSide = <T>(
   anchorASide: ValorantSide | null | undefined,
   onRed: T,
