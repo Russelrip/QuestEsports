@@ -42,8 +42,8 @@ const loadService = ({ prisma = {}, notifications = [], realtime = [], timeline 
       createNotification: async (input) => {
         events.push(["notification", input]);
         timeline.push("notification");
-        if (notificationError) throw notificationError;
         notifications.push(input);
+        if (notificationError) throw notificationError;
         return { id: "notification-1" };
       },
     },
@@ -310,6 +310,7 @@ test("staff replies notify the owner with the required support realtime payload"
 test("notification persistence and realtime failures are observable but do not reject saved messages", async () => {
   const loggerErrors = [];
   const loggerWarnings = [];
+  const notifications = [];
   let persisted = false;
   const existing = conversation();
   const { module: service, restore } = loadService({
@@ -327,6 +328,7 @@ test("notification persistence and realtime failures are observable but do not r
     },
     notificationError: new Error("notification database unavailable"),
     realtimeError: new Error("realtime unavailable"),
+    notifications,
     loggerErrors,
     loggerWarnings,
   });
@@ -336,6 +338,7 @@ test("notification persistence and realtime failures are observable but do not r
     assert.equal(persisted, true);
     assert.equal(loggerErrors[0].message, "Support notification persistence failed");
     assert.equal(loggerErrors[0].metadata.messageId, "m5");
+    assert.equal(notifications[0].publishRealtime, false);
     assert.equal(loggerWarnings[0].message, "Support realtime delivery failed");
   } finally { restore(); }
 });

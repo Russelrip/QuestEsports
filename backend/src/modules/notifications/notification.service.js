@@ -70,6 +70,7 @@ const createNotification = async ({
   userIds,
   expiresAt = null,
   sendPush = true,
+  publishRealtime = true,
 }) => {
   const recipients = normalizeUserIds(userIds);
   if (!recipients.length) return null;
@@ -97,9 +98,11 @@ const createNotification = async ({
     }
   }
   if (!notification) return null;
-  recipients.forEach((userId) => {
-    publishRealtimeEvent(`user:${userId}`, { kind: "notification", notificationId: notification.id });
-  });
+  if (publishRealtime) {
+    recipients.forEach((userId) => {
+      publishRealtimeEvent(`user:${userId}`, { kind: "notification", notificationId: notification.id });
+    });
+  }
   if (sendPush) void sendPushToUsers(recipients, notification).catch((error) => logger.warn("Web push batch failed", { error }));
   return notification;
 };

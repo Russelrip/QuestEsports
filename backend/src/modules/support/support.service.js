@@ -194,6 +194,7 @@ const publishMessageEffects = async ({ conversation, message, senderUserId, isSt
     body: message.body,
     actionUrl: `/support/${conversation.id}`,
     userIds: recipients,
+    publishRealtime: false,
   };
 
   try {
