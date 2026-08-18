@@ -68,7 +68,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
         }}
         aria-expanded={isOpen}
       >
-        <span className="account-menu-avatar flex size-9 items-center justify-center overflow-hidden bg-violet-700 text-xs font-bold text-white">
+        <span className="account-menu-avatar relative flex size-9 items-center justify-center overflow-hidden bg-violet-700 text-xs font-bold text-white">
           <span aria-hidden="true">{initials}</span>{avatarUrl ? <Image src={avatarUrl} alt="" width={36} height={36} unoptimized className="absolute h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}
         </span>
         <span>
