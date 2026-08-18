@@ -18,7 +18,7 @@ import {
   fetchPublicUploadFiles,
   applyLegacyImageFallback,
   resolveImageAssetUrl,
-  resolveMediaUrl,
+  resolveImageUrl,
   type ImageAsset,
   type MediaPagination,
   type PublicUploadFile,
@@ -261,7 +261,7 @@ export default function AdminMediaManager() {
 
   const copyStorageUrl = async (file: PublicUploadFile) => {
     try {
-      const url = new URL(resolveMediaUrl(file.imageUrl), window.location.origin).toString();
+      const url = new URL(resolveImageUrl(file.imageUrl) || window.location.origin, window.location.origin).toString();
       await navigator.clipboard.writeText(url);
       showToast({ tone: "success", title: "File URL copied" });
     } catch {
@@ -385,7 +385,7 @@ export default function AdminMediaManager() {
                 return (
                   <Card key={asset.id} className="overflow-hidden">
                     <button type="button" className="relative block aspect-[4/3] w-full bg-black/30" onClick={() => setSelected(asset)}>
-                      <img src={resolveImageAssetUrl(asset)} alt={asset.title} loading="lazy" className="h-full w-full object-contain" onError={(event) => applyLegacyImageFallback(event.currentTarget, asset)} />
+                      <img src={resolveImageAssetUrl(asset) || "/images/logo.png"} alt={asset.title} loading="lazy" className="h-full w-full object-contain" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, asset)) event.currentTarget.style.display = "none"; }} />
                     </button>
                     <div className="grid gap-3 p-4">
                       <div className="min-w-0">
@@ -460,7 +460,7 @@ export default function AdminMediaManager() {
                 return (
                   <Card key={key} className="overflow-hidden">
                     <button type="button" className="block aspect-[4/3] w-full bg-black/30" onClick={() => setSelectedStorageFile(file)}>
-                      <img src={resolveMediaUrl(file.imageUrl)} alt={file.filename} loading="lazy" className="h-full w-full object-contain" />
+                      <img src={resolveImageUrl(file.imageUrl) || "/images/logo.png"} alt={file.filename} loading="lazy" className="h-full w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} />
                     </button>
                     <div className="grid gap-3 p-4">
                       <div className="min-w-0">
@@ -493,7 +493,7 @@ export default function AdminMediaManager() {
       {selected ? (
         <MediaModal ariaLabel="Image details" onClose={() => setSelected(null)}>
           <div className="flex min-h-0 flex-1 items-center justify-center bg-black/35 p-2 sm:p-6">
-            <img src={resolveImageAssetUrl(selected)} alt={selected.title} className="max-h-full max-w-full object-contain" onError={(event) => applyLegacyImageFallback(event.currentTarget, selected)} />
+            <img src={resolveImageAssetUrl(selected) || "/images/logo.png"} alt={selected.title} className="max-h-full max-w-full object-contain" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, selected)) event.currentTarget.style.display = "none"; }} />
           </div>
           <div className="grid shrink-0 gap-3 pt-4 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="min-w-0">
@@ -517,7 +517,7 @@ export default function AdminMediaManager() {
       {selectedStorageFile ? (
         <MediaModal ariaLabel="Stored file preview" onClose={() => setSelectedStorageFile(null)}>
           <div className="flex min-h-0 flex-1 items-center justify-center bg-black/35 p-2 sm:p-6">
-            <img src={resolveMediaUrl(selectedStorageFile.imageUrl)} alt={selectedStorageFile.filename} className="max-h-full max-w-full object-contain" />
+            <img src={resolveImageUrl(selectedStorageFile.imageUrl) || "/images/logo.png"} alt={selectedStorageFile.filename} className="max-h-full max-w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} />
           </div>
           <div className="flex shrink-0 flex-col gap-3 pt-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">

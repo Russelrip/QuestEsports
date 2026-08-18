@@ -142,7 +142,7 @@ export default function AdminPosterStudio({
 
               {selectedDraftAsset ? (
                 <div className="overflow-hidden rounded-none border border-white/8 bg-white/5 p-3">
-                  <img src={resolveImageAssetUrl(selectedDraftAsset)} alt={selectedDraftAsset.title} className="w-full rounded-none object-cover" onError={(event) => applyLegacyImageFallback(event.currentTarget, selectedDraftAsset)} />
+                  <img src={resolveImageAssetUrl(selectedDraftAsset) || "/images/logo.png"} alt={selectedDraftAsset.title} className="w-full rounded-none object-cover" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, selectedDraftAsset)) event.currentTarget.style.display = "none"; }} />
                 </div>
               ) : (
                 <EmptyState description="Upload or select an image to preview the gallery entry." />

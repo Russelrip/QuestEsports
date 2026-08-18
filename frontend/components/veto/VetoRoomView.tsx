@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { buildApiUrl } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import { subscribeToRealtimeUpdates } from "@/lib/realtime";
 import { readVetoToken, type VetoAction, type VetoRoom, vetoRequest, vetoTokenHeaders } from "@/lib/veto";
 
@@ -229,8 +229,9 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
           const action = selectedBySlug.get(map.slug) as VetoAction | undefined;
           const available = !action;
           const selectable = available && actionAllowed && ["ban", "pick"].includes(room.currentAction?.kind || "");
+          const artworkUrl = resolveImageUrl(map.artworkUrl);
           return <button key={map.slug} type="button" disabled={!selectable || Boolean(busy)} onClick={() => room.currentAction && ["ban", "pick"].includes(room.currentAction.kind) && setPendingDecision({ kind: room.currentAction.kind as "ban" | "pick", mapSlug: map.slug, mapName: map.name, revision: room.revision, seriesIndex: room.currentAction.seriesIndex })} className={`veto-map-card group relative min-h-48 overflow-hidden border text-left transition ${action?.kind === "ban" ? "veto-map-card--banned border-rose-400/25" : action ? "veto-map-card--picked border-emerald-400/35" : selectable ? "border-purple-300/30 hover:-translate-y-1 hover:border-purple-200/70" : "border-white/10"}`} style={{ background: map.artworkUrl ? undefined : `radial-gradient(circle at 75% 15%, ${map.accentColor}55, transparent 35%), linear-gradient(145deg, #191b28, #090a10)` }}>
-            {map.artworkUrl ? <Image src={buildApiUrl(map.artworkUrl)} alt="" fill sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw" className="absolute inset-0 size-full object-cover opacity-70 transition duration-500 group-hover:scale-105" /> : null}<div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" /><div className="relative flex min-h-48 flex-col justify-end p-5"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">{action ? action.kind === "ban" ? "Banned" : action.kind === "decider" ? "Decider" : `Map ${action.payload.seriesIndex || ""}` : selectable ? `Select to ${room.currentAction?.kind}` : "Available"}</p><h3 className="mt-2 text-2xl font-black uppercase text-white">{map.name}</h3>{action?.side ? <span className="mt-3 w-fit bg-white/10 px-3 py-1 text-xs uppercase text-white">{action.side}</span> : null}</div>
+            {artworkUrl ? <Image src={artworkUrl} alt="" fill sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw" unoptimized className="absolute inset-0 size-full object-cover opacity-70 transition duration-500 group-hover:scale-105" onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }} /> : null}<div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-transparent" /><div className="relative flex min-h-48 flex-col justify-end p-5"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">{action ? action.kind === "ban" ? "Banned" : action.kind === "decider" ? "Decider" : `Map ${action.payload.seriesIndex || ""}` : selectable ? `Select to ${room.currentAction?.kind}` : "Available"}</p><h3 className="mt-2 text-2xl font-black uppercase text-white">{map.name}</h3>{action?.side ? <span className="mt-3 w-fit bg-white/10 px-3 py-1 text-xs uppercase text-white">{action.side}</span> : null}</div>
           </button>;
         })}
       </div>

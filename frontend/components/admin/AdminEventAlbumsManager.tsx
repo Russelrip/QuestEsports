@@ -19,7 +19,7 @@ import {
   excludeAlreadyUploadedFiles,
 } from "@/lib/event-album-upload";
 import type { EventAlbum } from "@/lib/event-albums";
-import { fetchPosters, resolveImageAssetUrl, resolveMediaUrl, type Poster } from "@/lib/media";
+import { fetchPosters, resolveImageAssetUrl, resolveImageUrl, type Poster } from "@/lib/media";
 import { ADMIN_UPLOAD_MAX_FILE_SIZE, assertFileWithinUploadLimit } from "@/lib/upload-limits";
 
 type AlbumForm = {
@@ -383,7 +383,7 @@ export default function AdminEventAlbumsManager() {
             {loading ? <p className="text-sm text-slate-400">Loading albums…</p> : albums.length ? albums.map((album) => (
               <button key={album.id} type="button" disabled={uploading} onClick={() => void selectAlbum(album)} className={`flex items-center gap-3 border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${selected?.id === album.id ? "border-purple-300/50 bg-purple-400/10" : "border-white/10 bg-black/20 hover:border-white/20"}`}>
                 <div className="relative size-16 shrink-0 overflow-hidden bg-black">
-                  {album.photos[0] ? <Image src={resolveMediaUrl(album.photos[0].imageAsset.imageUrl)} alt="" fill sizes="64px" className="object-cover" unoptimized /> : null}
+                  {album.photos[0] ? <Image src={resolveImageUrl(album.photos[0].imageAsset.imageUrl) || "/images/logo.png"} alt="" fill sizes="64px" className="object-cover" unoptimized onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }} /> : null}
                 </div>
                 <div className="min-w-0 flex-1"><p className="truncate font-semibold text-white">{album.title}</p><p className="mt-1 text-xs text-slate-500">{album.photoCount} photos · {album.isPublished ? "Published" : "Draft"}</p></div>
               </button>
@@ -451,7 +451,7 @@ export default function AdminEventAlbumsManager() {
               </form>
               {selected.photos.length ? <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{selected.photos.map((photo, index) => (
                 <div key={photo.id} className="overflow-hidden border border-white/10 bg-black/20">
-                  <div className="relative aspect-square"><Image src={resolveImageAssetUrl(photo.imageAsset)} alt={photo.caption || photo.imageAsset.title} fill sizes="200px" className="object-cover" unoptimized /></div>
+                  <div className="relative aspect-square"><Image src={resolveImageAssetUrl(photo.imageAsset) || "/images/logo.png"} alt={photo.caption || photo.imageAsset.title} fill sizes="200px" className="object-cover" unoptimized onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }} /></div>
                   <div className="grid grid-cols-3 gap-1 p-2"><Button type="button" size="sm" variant="ghost" disabled={uploading || index === 0} onClick={() => void movePhoto(photo.id, -1)} aria-label="Move photo earlier">←</Button><Button type="button" size="sm" variant="ghost" disabled={uploading || index === selected.photos.length - 1} onClick={() => void movePhoto(photo.id, 1)} aria-label="Move photo later">→</Button><Button type="button" size="sm" variant="danger" disabled={uploading} onClick={() => void removePhoto(photo.id)} aria-label="Delete photo">×</Button></div>
                 </div>
               ))}</div> : null}
@@ -502,7 +502,7 @@ export default function AdminEventAlbumsManager() {
               return (
                 <article key={poster.id} className="grid min-w-0 grid-cols-[104px_minmax(0,1fr)] gap-4 border border-white/10 bg-black/20 p-4 transition hover:border-white/20">
                   <div className="relative aspect-[4/5] overflow-hidden border border-white/8 bg-black">
-                    <Image src={resolveImageAssetUrl(poster.imageAsset)} alt={poster.title} fill sizes="104px" className="object-contain" />
+                    <Image src={resolveImageAssetUrl(poster.imageAsset) || "/images/logo.png"} alt={poster.title} fill sizes="104px" className="object-contain" unoptimized onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }} />
                   </div>
                   <div className="flex min-w-0 flex-col">
                     <div className="flex items-start justify-between gap-3">

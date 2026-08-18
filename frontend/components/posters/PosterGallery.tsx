@@ -6,7 +6,7 @@ import EmptyState from "@/components/ui/empty-state";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Poster, resolveImageAssetUrl, resolveLegacyImageFallbackUrl } from "@/lib/media";
+import { Poster, resolveImageUrl, resolveLegacyImageFallbackUrl } from "@/lib/media";
 
 const posterExternalLinks: Record<string, string> = {
   "VALORANT SHOWDOWN APPRECIATION POST":
@@ -17,17 +17,19 @@ const getPosterExternalLink = (poster: Poster) =>
   posterExternalLinks[poster.title.trim().toUpperCase()] || null;
 
 const PosterImage = ({ poster }: { poster: Poster }) => {
-  const [source, setSource] = useState(resolveImageAssetUrl(poster.imageAsset));
+  const [source, setSource] = useState(resolveImageUrl(poster.imageAsset.imageUrl));
   return (
     <Image
-      src={source}
+      src={source || "/images/logo.png"}
       alt={poster.title}
+      unoptimized
       fill
       sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
       className="h-full w-full object-contain transition duration-500 group-hover:scale-[1.015] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
       onError={() => {
         const fallback = resolveLegacyImageFallbackUrl(poster.imageAsset);
         if (fallback && source !== fallback) setSource(fallback);
+        else setSource(null);
       }}
     />
   );

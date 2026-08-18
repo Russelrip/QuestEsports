@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
-import { videoSections, type VideoItem } from "@/lib/media";
+import { resolveImageUrl, videoSections, type VideoItem } from "@/lib/media";
 
 function VideoSection({ title, videos }: { title: string; videos: VideoItem[] }) {
   return (
@@ -17,9 +17,11 @@ function VideoSection({ title, videos }: { title: string; videos: VideoItem[] })
             <a href={video.href} target="_blank" rel="noopener noreferrer" className="block">
               <div className="relative aspect-video">
                 <Image
-                  src={`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`}
+                  src={resolveImageUrl(`https://img.youtube.com/vi/${video.youtubeId}/hqdefault.jpg`) || "/images/logo.png"}
                   alt={video.alt}
                   fill
+                  unoptimized
+                  onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }}
                   sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
                   className="object-cover"
                 />

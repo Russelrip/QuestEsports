@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
 import { buttonClassName } from "@/components/ui/button";
-import { resolveMediaUrl } from "@/lib/media";
+import { resolveImageUrl } from "@/lib/media";
 import type { Product } from "@/lib/shop";
 
 export default function ShopContent({ products }: { products: Product[] }) {
@@ -19,10 +19,11 @@ export default function ShopContent({ products }: { products: Product[] }) {
         <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
           {products.map((product) => {
             const startingPrice = Math.min(...product.variants.filter((variant) => variant.isActive).map((variant) => variant.price));
+            const imageUrl = resolveImageUrl(product.images[0]?.imageUrl);
             return <Card key={product.id} className="group overflow-hidden">
               <Link href={`/shop/${product.slug}`} prefetch={false} className="block">
                 <div className="relative aspect-square overflow-hidden bg-[#09080e]">
-                  {product.images[0] ? <Image src={resolveMediaUrl(product.images[0].imageUrl)} alt={product.images[0].altText || product.name} fill sizes="(min-width:1280px) 33vw,(min-width:640px) 50vw,100vw" className="object-contain p-4 transition duration-500 group-hover:scale-[1.03]" /> : <div className="flex h-full items-center justify-center text-7xl text-white/80">Q</div>}
+                  {imageUrl ? <Image src={imageUrl} alt={product.images[0]?.altText || product.name} fill sizes="(min-width:1280px) 33vw,(min-width:640px) 50vw,100vw" unoptimized className="object-contain p-4 transition duration-500 group-hover:scale-[1.03]" onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }} /> : <div className="flex h-full items-center justify-center text-7xl text-white/80">Q</div>}
                   {product.madeToOrder ? <Badge className="absolute left-4 top-4">Made to order</Badge> : null}
                 </div>
                 <div className="p-5"><h3 className="text-2xl text-white">{product.name}</h3><p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-400">{product.description}</p><p className="mt-5 font-semibold text-purple-100">From {product.currency} {Number.isFinite(startingPrice) ? startingPrice.toFixed(2) : "—"}</p></div>

@@ -9,7 +9,7 @@ describe("uploaded tournament banner images", () => {
       "utf8",
     );
     const bannerImage = component.match(
-      /<Image\s+src=\{resolveMediaUrl\(bannerUrl\)\}[\s\S]*?\/>/,
+      /<Image\s+src=\{imageUrl\}[\s\S]*?\/>/,
     )?.[0];
 
     expect(bannerImage).toContain("unoptimized");

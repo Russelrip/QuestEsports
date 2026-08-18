@@ -6,7 +6,7 @@ import Image from "next/image";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
 import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
-import { buildApiUrl } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import type { EventSeries, GameCategory, Tournament } from "@/lib/tournaments";
 import { formatTournamentDate } from "@/lib/utils";
 
@@ -96,7 +96,7 @@ function normalizeGameSlug(value: string) {
 function getGameIcon(category: GameCategory) {
   const categorySlug = normalizeGameSlug(category.slug);
   const displayNameSlug = normalizeGameSlug(category.displayName);
-  return gameIconBySlug[categorySlug] || gameIconBySlug[displayNameSlug] || (category.artworkUrl ? buildApiUrl(category.artworkUrl) : null);
+  return gameIconBySlug[categorySlug] || gameIconBySlug[displayNameSlug] || resolveImageUrl(category.artworkUrl);
 }
 
 function getUniqueGameFilters(categories: GameCategory[]) {
@@ -165,8 +165,9 @@ export default function TournamentsContent({ tournaments, series = [], categorie
         {gameFilters.map((category) => {
           const icon = getGameIcon(category);
           const categorySlug = normalizeGameSlug(category.slug);
+          const isDynamicIcon = Boolean(category.artworkUrl && !gameIconBySlug[categorySlug] && !gameIconBySlug[normalizeGameSlug(category.displayName)]) || Boolean(icon?.startsWith("http"));
           return <button key={categorySlug} type="button" onClick={() => setGameFilter(categorySlug)} aria-label={`View ${category.displayName} tournaments`} title={category.displayName} className={`relative h-24 w-28 shrink-0 snap-start overflow-hidden rounded-none border bg-[#0d0c13] transition ${gameFilter === categorySlug ? "border-purple-300 shadow-[0_10px_30px_rgba(168,85,247,0.22)]" : "border-white/10 hover:border-purple-300/40"}`}>
-            {icon ? <Image src={icon} alt="" fill sizes="112px" draggable={false} className="object-cover" /> : <span className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{category.displayName}</span>}
+            {icon ? <Image src={icon} alt="" fill sizes="112px" draggable={false} unoptimized={isDynamicIcon} className="object-cover" onError={isDynamicIcon ? (event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } } : undefined} /> : <span className="flex h-full items-center justify-center px-3 text-center text-sm font-semibold text-white">{category.displayName}</span>}
             <span className="sr-only">{category.displayName}</span>
           </button>;
         })}

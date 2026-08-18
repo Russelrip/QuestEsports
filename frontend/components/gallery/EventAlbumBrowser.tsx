@@ -8,7 +8,7 @@ import { Section } from "@/components/ui/section";
 import { apiFetch } from "@/lib/auth";
 import { getDownloadFilename } from "@/lib/download-filename";
 import { fetchPublicEventAlbum, type EventAlbum } from "@/lib/event-albums";
-import { resolveMediaUrl } from "@/lib/media";
+import { resolveImageUrl } from "@/lib/media";
 
 const formatEventDate = (value?: string | null) => {
   if (!value) return null;
@@ -154,8 +154,12 @@ export default function EventAlbumBrowser({
     setDownloading(true);
     setDownloadError("");
     try {
-      const separator = selectedPhoto.imageAsset.imageUrl.includes("?") ? "&" : "?";
-      const response = await apiFetch(`${selectedPhoto.imageAsset.imageUrl}${separator}download=original`, {
+      const resolvedImageUrl = resolveImageUrl(selectedPhoto.imageAsset.imageUrl);
+      if (!resolvedImageUrl) throw new Error("Unable to download this photo.");
+
+      const downloadUrl = new URL(resolvedImageUrl, window.location.origin);
+      downloadUrl.searchParams.append("download", "original");
+      const response = await apiFetch(downloadUrl.toString(), {
         timeoutMs: 60_000,
       });
       if (!response.ok) throw new Error("Unable to download this photo.");
@@ -217,11 +221,20 @@ export default function EventAlbumBrowser({
               >
                 <span aria-hidden="true" className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,#0c0b10_25%,#1a1422_45%,#0c0b10_65%)] bg-[length:200%_100%]" />
                 <Image
-                  src={resolveMediaUrl(photo.imageAsset.imageUrl)}
+                  src={resolveImageUrl(photo.imageAsset.imageUrl) || "/images/logo.png"}
                   alt={photo.caption || photo.imageAsset.title || `${album.title} photo ${index + 1}`}
                   fill
                   sizes="(min-width: 1536px) 14vw, (min-width: 1280px) 17vw, (min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw"
                   className="object-cover transition duration-300 group-hover:scale-[1.035] group-hover:brightness-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  unoptimized
+                  onError={(event) => {
+                    const image = event.currentTarget;
+                    if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+                    else {
+                      image.dataset.fallbackApplied = "true";
+                      image.src = "/images/logo.png";
+                    }
+                  }}
                 />
               </button>
             ))}
@@ -278,12 +291,21 @@ export default function EventAlbumBrowser({
           <div className="relative min-h-0 flex-1" onClick={(event) => { if (event.target === event.currentTarget) closeLightbox(); }}>
             <Image
               key={selectedPhoto.id}
-              src={resolveMediaUrl(selectedPhoto.imageAsset.imageUrl)}
+              src={resolveImageUrl(selectedPhoto.imageAsset.imageUrl) || "/images/logo.png"}
               alt={selectedPhoto.caption || selectedPhoto.imageAsset.title || `${album.title} event photo`}
               fill
               priority
               sizes="100vw"
               className="select-none object-contain p-2 sm:p-5"
+              unoptimized
+              onError={(event) => {
+                const image = event.currentTarget;
+                if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+                else {
+                  image.dataset.fallbackApplied = "true";
+                  image.src = "/images/logo.png";
+                }
+              }}
             />
             {photos.length > 1 ? (
               <>

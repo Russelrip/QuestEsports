@@ -7,7 +7,7 @@ import { Button, buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { useCartStore } from "@/hooks/useCartStore";
-import { resolveMediaUrl } from "@/lib/media";
+import { resolveImageUrl } from "@/lib/media";
 import type { Product } from "@/lib/shop";
 
 export default function ProductDetailContent({ product }: { product: Product }) {
@@ -22,9 +22,14 @@ export default function ProductDetailContent({ product }: { product: Product }) 
     <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
       <div className="grid gap-4 sm:grid-cols-2">
         {(product.images.length > 0 ? product.images : [{ id: "placeholder", imageUrl: "", altText: product.name, displayOrder: 0 }]).map((image, index) => (
+          (() => {
+            const imageUrl = resolveImageUrl(image.imageUrl);
+            return (
           <Card key={image.id} className={`relative aspect-square overflow-hidden bg-[#09080e] ${index === 0 ? "sm:col-span-2" : ""}`}>
-            {image.imageUrl ? <Image src={resolveMediaUrl(image.imageUrl)} alt={image.altText || product.name} fill sizes="(min-width:1024px) 55vw,100vw" className="object-contain p-4" priority={index === 0} /> : <div className="flex h-full items-center justify-center text-8xl text-white">Q</div>}
+            {imageUrl ? <Image src={imageUrl} alt={image.altText || product.name} fill sizes="(min-width:1024px) 55vw,100vw" unoptimized className="object-contain p-4" priority={index === 0} onError={(event) => { const imageElement = event.currentTarget; if (imageElement.dataset.fallbackApplied === "true") imageElement.style.display = "none"; else { imageElement.dataset.fallbackApplied = "true"; imageElement.src = "/images/logo.png"; } }} /> : <div className="flex h-full items-center justify-center text-8xl text-white">Q</div>}
           </Card>
+            );
+          })()
         ))}
       </div>
       <div>

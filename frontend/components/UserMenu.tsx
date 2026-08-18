@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AuthUser } from "@/lib/auth";
 import { getInitials } from "@/lib/utils";
-import { buildApiUrl } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import NotificationBell from "@/components/notifications/NotificationBell";
 
 type UserMenuProps = {
@@ -23,6 +23,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
   const [isOpen, setIsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const initials = getInitials(user.firstName, user.lastName, user.username);
+  const avatarUrl = resolveImageUrl(user.avatarUrl);
 
   useEffect(() => {
     const onPointer = (event: MouseEvent) => {
@@ -68,7 +69,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
         aria-expanded={isOpen}
       >
         <span className="account-menu-avatar flex size-9 items-center justify-center overflow-hidden bg-violet-700 text-xs font-bold text-white">
-          {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt="" width={36} height={36} className="h-full w-full object-cover" /> : initials}
+          <span aria-hidden="true">{initials}</span>{avatarUrl ? <Image src={avatarUrl} alt="" width={36} height={36} unoptimized className="absolute h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}
         </span>
         <span>
           <span className="block text-sm font-semibold text-white">{user.username}</span>

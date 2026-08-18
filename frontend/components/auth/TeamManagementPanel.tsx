@@ -8,7 +8,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToastStore } from "@/hooks/useToastStore";
-import { buildApiUrl } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import { teamCountries } from "@/lib/countries";
 import {
   deleteSavedTeam,
@@ -48,6 +48,7 @@ export function TeamSummaryGrid({
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {teams.map((team) => {
+        const logoUrl = resolveImageUrl(team.logoUrl);
         const pendingInviteCount = team.members.filter(
           (member) => member.inviteStatus === "pending"
         ).length;
@@ -59,13 +60,16 @@ export function TeamSummaryGrid({
             className="group overflow-hidden border border-white/10 bg-[#12141d] text-left transition hover:-translate-y-1 hover:border-white/25 hover:shadow-[0_22px_55px_rgba(0,0,0,0.38)] motion-reduce:hover:translate-y-0"
           >
             <span className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_40%,rgba(192,132,252,0.16),transparent_34%),linear-gradient(135deg,#171126,#0a0d16)]">
-              {team.logoUrl ? (
+              <span aria-hidden="true" className="text-2xl font-bold text-white">{getInitials(team.name)}</span>
+              {logoUrl ? (
                 <Image
-                  src={buildApiUrl(team.logoUrl)}
+                  src={logoUrl}
                   alt={`${team.name} logo`}
                   fill
-                  className="object-cover"
+                  className="absolute object-cover"
                   sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
+                  unoptimized
+                  onError={(event) => { event.currentTarget.style.display = "none"; }}
                 />
               ) : (
                 <>

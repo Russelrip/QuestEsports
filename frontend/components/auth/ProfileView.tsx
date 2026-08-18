@@ -24,7 +24,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { useTeams } from "@/hooks/api/useTeams";
 import { useToastStore } from "@/hooks/useToastStore";
 import { getInitials } from "@/lib/utils";
-import { buildApiUrl } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import { AccountDashboard, DashboardRegistration, fetchAccountDashboard } from "@/lib/account";
 import { type VetoRoom, vetoRequest } from "@/lib/veto";
 import { type MatchRoomSummary, roomRequest } from "@/lib/match-rooms";
@@ -67,7 +67,8 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
 
     return <article key={entry.id} className="flex h-full min-w-0 flex-col overflow-hidden border border-white/10 bg-[#181a24] shadow-[0_18px_45px_rgba(0,0,0,0.2)]">
       <div className="relative aspect-[16/8] overflow-hidden bg-[#090b12]">
-        {entry.tournament.bannerUrl ? <Image src={buildApiUrl(entry.tournament.bannerUrl)} alt={`${entry.tournament.title} poster`} fill className="object-cover" sizes="(min-width: 1280px) 30vw, (min-width: 768px) 45vw, 100vw" /> : <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(168,85,247,0.28),transparent_36%),linear-gradient(135deg,#111827,#090b12)]" />}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(168,85,247,0.28),transparent_36%),linear-gradient(135deg,#111827,#090b12)]" />
+        {(() => { const bannerUrl = resolveImageUrl(entry.tournament.bannerUrl); return bannerUrl ? <Image src={bannerUrl} alt={`${entry.tournament.title} poster`} fill className="object-cover" sizes="(min-width: 1280px) 30vw, (min-width: 768px) 45vw, 100vw" unoptimized onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null; })()}
         <span className="absolute left-4 top-4 bg-black/75 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-purple-200 backdrop-blur">{entry.tournament.game}</span>
       </div>
       <div className="flex flex-1 flex-col p-5">
@@ -172,6 +173,7 @@ export default function ProfileView() {
   }
 
   const initials = getInitials(user.firstName, user.lastName, user.username);
+  const avatarUrl = resolveImageUrl(user.avatarUrl);
 
   const handleTeamUpdated = (updatedTeam: (typeof teams)[number]) => {
     setTeamsData((current) => (current || []).map((team) => team.id === updatedTeam.id ? updatedTeam : team));
@@ -295,7 +297,7 @@ export default function ProfileView() {
             <div className="relative flex min-w-0 flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:items-center sm:gap-5">
                 <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-violet-700 text-lg font-bold text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)]">
-                  {user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt={`${user.firstName} ${user.lastName}`} fill className="object-cover" sizes="80px" /> : initials}
+                  {initials}{avatarUrl ? <Image src={avatarUrl} alt={`${user.firstName} ${user.lastName}`} fill className="object-cover" sizes="80px" unoptimized onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}
                 </div>
                 <div className="profile-identity-text min-w-0 max-w-full">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-purple-200/75">Player overview</p>

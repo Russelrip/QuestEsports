@@ -10,7 +10,7 @@ import { Container } from "@/components/ui/container";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useUiStore } from "@/hooks/useUiStore";
 import { cn, getInitials } from "@/lib/utils";
-import { buildApiUrl } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import { authNavItems, primaryNavItems, secondaryNavItems } from "@/lib/site";
 import NotificationBell from "@/components/notifications/NotificationBell";
 
@@ -26,6 +26,7 @@ export default function Navbar() {
   const router = useRouter();
   const { user, isAuthenticated, logout, isLoading } = useAuth();
   const { mobileNavOpen, setMobileNavOpen, toggleMobileNav } = useUiStore();
+  const avatarUrl = resolveImageUrl(user?.avatarUrl);
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -190,7 +191,7 @@ export default function Navbar() {
                 {!isLoading && isAuthenticated && user ? (
                   <div className="grid gap-2">
                     <Link href="/profile" prefetch={false} className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
-                      <span className="flex size-9 items-center justify-center overflow-hidden rounded-xl bg-violet-700 text-xs font-bold">{user.avatarUrl ? <Image src={buildApiUrl(user.avatarUrl)} alt="" width={36} height={36} className="h-full w-full object-cover" /> : getInitials(user.firstName, user.lastName, user.username)}</span>
+                      <span className="relative flex size-9 items-center justify-center overflow-hidden rounded-xl bg-violet-700 text-xs font-bold">{getInitials(user.firstName, user.lastName, user.username)}{avatarUrl ? <Image src={avatarUrl} alt="" width={36} height={36} unoptimized className="absolute h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}</span>
                       <span>
                         <span className="block font-semibold">{user.username}</span>
                         <span className="block text-xs text-slate-400">{user.emailVerified ? "Verified account" : "Verification pending"}</span>

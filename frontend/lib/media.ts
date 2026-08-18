@@ -331,22 +331,154 @@ export const videoSections = [
   },
 ] as const;
 
-export const resolveMediaUrl = (path: string) => {
-  if (!path) {
-    return path;
+export type PublicUploadDirectory =
+  | "team-logos"
+  | "tournament-banners"
+  | "poster-images"
+  | "avatars"
+  | "game-assets"
+  | "sponsor-logos";
+
+const publicUploadDirectories = new Set<PublicUploadDirectory>([
+  "team-logos",
+  "tournament-banners",
+  "poster-images",
+  "avatars",
+  "game-assets",
+  "sponsor-logos",
+]);
+
+const isAbsoluteMediaUrl = (value: string) => /^(?:https?|data|blob):/i.test(value);
+
+const isValidAbsoluteMediaUrl = (value: string) => {
+  if (!isAbsoluteMediaUrl(value)) return false;
+
+  try {
+    const parsedUrl = new URL(value);
+    if (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") {
+      return /^https?:\/\//i.test(value) && Boolean(parsedUrl.hostname);
+    }
+    if (parsedUrl.protocol === "data:") {
+      return value.slice("data:".length).includes(",");
+    }
+    if (parsedUrl.protocol === "blob:") {
+      const sourceUrl = value.slice("blob:".length);
+      return Boolean(sourceUrl) && Boolean(new URL(sourceUrl));
+    }
+  } catch {
+    return false;
   }
 
-  if (
-    path.startsWith("http://") ||
-    path.startsWith("https://") ||
-    path.startsWith("data:") ||
-    path.startsWith("blob:")
-  ) {
-    return path;
-  }
-
-  return buildApiUrl(path);
+  return false;
 };
+
+const isInvalidMediaValue = (value: string) => {
+  const lowerValue = value.toLowerCase();
+  return (
+    lowerValue.includes("undefined") ||
+    lowerValue.includes("null") ||
+    lowerValue.includes("[object object]") ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  );
+};
+
+const isSafeUploadSegment = (segment: string) =>
+  segment !== "" && segment !== "." && segment !== ".." && !/[?#]/.test(segment);
+
+const resolvePublicUploadPath = (segments: string[]) => {
+  if (segments.length < 2) return null;
+  const [directory, ...filenameSegments] = segments;
+  if (
+    !publicUploadDirectories.has(directory as PublicUploadDirectory) ||
+    filenameSegments.length === 0 ||
+    filenameSegments.some((segment) => !isSafeUploadSegment(segment))
+  ) {
+    return null;
+  }
+
+  const publicPath = `/api/uploads/${directory}/${filenameSegments.join("/")}`;
+  return buildApiUrl(publicPath);
+};
+
+const filesystemPathPrefixes = [
+  "/app",
+  "/etc",
+  "/home",
+  "/mnt",
+  "/opt",
+  "/private",
+  "/root",
+  "/srv",
+  "/tmp",
+  "/usr",
+  "/users",
+  "/var",
+  "/volumes",
+  "/workspace",
+  "/library",
+];
+
+export const resolveImageUrl = (
+  value: unknown,
+  options?: { directory?: PublicUploadDirectory },
+): string | null => {
+  if (typeof value !== "string") return null;
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return null;
+  if (isAbsoluteMediaUrl(trimmedValue)) {
+    return isValidAbsoluteMediaUrl(trimmedValue) ? trimmedValue : null;
+  }
+  if (isInvalidMediaValue(trimmedValue)) return null;
+
+  if (options?.directory && !publicUploadDirectories.has(options.directory)) {
+    return null;
+  }
+
+  if (options?.directory) {
+    if (
+      trimmedValue.includes("/") ||
+      trimmedValue.includes("\\") ||
+      !isSafeUploadSegment(trimmedValue)
+    ) {
+      return null;
+    }
+    return resolvePublicUploadPath([options.directory, trimmedValue]);
+  }
+
+  if (/^[A-Za-z]:[\\/]/.test(trimmedValue) || trimmedValue.startsWith("\\\\")) {
+    return null;
+  }
+
+  if (trimmedValue.includes("\\")) return null;
+
+  const normalizedValue = trimmedValue.replace(/\/{2,}/g, "/");
+  const segments = normalizedValue.split("/").filter(Boolean);
+  const isApiUploadPath = segments[0] === "api" && segments[1] === "uploads";
+  const isUploadPath = segments[0] === "uploads";
+  const isLegacyUploadPath =
+    segments[0] === "srv" && segments[1] === "quest-esports" && segments[2] === "uploads";
+
+  if (isApiUploadPath || isUploadPath) {
+    return resolvePublicUploadPath(segments.slice(isApiUploadPath ? 2 : 1));
+  }
+
+  if (isLegacyUploadPath) {
+    return resolvePublicUploadPath(segments.slice(3));
+  }
+
+  const normalizedFilesystemValue = normalizedValue.toLowerCase();
+  if (filesystemPathPrefixes.some((prefix) => normalizedFilesystemValue === prefix || normalizedFilesystemValue.startsWith(`${prefix}/`))) {
+    return null;
+  }
+
+  if (!trimmedValue.startsWith("/")) return null;
+  return trimmedValue.startsWith("/api/") || trimmedValue === "/api"
+    ? buildApiUrl(trimmedValue)
+    : trimmedValue;
+};
+
+export const resolveMediaUrl = (path: string) => resolveImageUrl(path) ?? "";
 
 const legacyGalleryImageNames = new Set([
   "appreciationpost.jpg",

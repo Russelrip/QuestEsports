@@ -2,7 +2,7 @@
 
 import Image, { type ImageProps } from "next/image";
 import { useState } from "react";
-import { resolveMediaUrl } from "@/lib/media";
+import { resolveImageUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 export default function TournamentBannerImage({
@@ -23,8 +23,9 @@ export default function TournamentBannerImage({
   loading?: ImageProps["loading"];
 }) {
   const [hasError, setHasError] = useState(false);
+  const imageUrl = resolveImageUrl(bannerUrl);
 
-  if (!bannerUrl || hasError) {
+  if (!imageUrl || hasError) {
     return (
       <div
         className={cn(
@@ -47,7 +48,7 @@ export default function TournamentBannerImage({
 
   return (
     <Image
-      src={resolveMediaUrl(bannerUrl)}
+      src={imageUrl}
       alt={title}
       width={1200}
       height={800}

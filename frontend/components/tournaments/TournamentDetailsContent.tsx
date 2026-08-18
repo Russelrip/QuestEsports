@@ -9,7 +9,7 @@ import MediaModal from "@/components/posters/MediaModal";
 import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
-import { resolveMediaUrl } from "@/lib/media";
+import { resolveImageUrl } from "@/lib/media";
 import { formatSriLankaDateTime } from "@/lib/date-time";
 import {
   BracketMatch,
@@ -171,14 +171,23 @@ function SponsorsPanel({ tournament }: { tournament: Tournament }) {
       </div>
       <div className="grid min-h-32 grid-cols-2 bg-[#17223c] sm:min-h-40 sm:grid-cols-3">
         {tournament.sponsors.map((sponsor) => {
-          const logo = sponsor.logoUrl ? (
+          const logoUrl = resolveImageUrl(sponsor.logoUrl);
+          const logo = logoUrl ? (
             <Image
-              src={resolveMediaUrl(sponsor.logoUrl)}
+              src={logoUrl}
               alt={sponsor.name}
               width={160}
               height={80}
               unoptimized
               className="h-16 w-36 object-contain"
+              onError={(event) => {
+                const image = event.currentTarget;
+                if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+                else {
+                  image.dataset.fallbackApplied = "true";
+                  image.src = "/images/logo.png";
+                }
+              }}
             />
           ) : (
             <span className="text-2xl font-bold text-white">{sponsor.name.slice(0, 2).toUpperCase()}</span>
@@ -269,19 +278,36 @@ function TournamentMediaPanel({ media, tournamentTitle }: { media: TournamentEve
         <p className="mt-2 text-sm text-slate-400">Official posters, schedules, results, and promotional artwork.</p>
       </div>
       <div className="grid grid-cols-2 gap-px bg-white/10 lg:grid-cols-3">
-        {media.map((item) => (
+        {media.map((item) => {
+          const imageUrl = resolveImageUrl(item.imageUrl);
+          return (
           <button key={item.id} type="button" onClick={() => setSelected(item)} className="group min-w-0 bg-[#0b0a0f] text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-purple-300">
             <div className="relative aspect-[4/5] overflow-hidden">
-              <Image src={resolveMediaUrl(item.imageUrl)} alt={item.title} fill sizes="(min-width: 1024px) 20vw, 45vw" className="object-contain p-2 transition duration-300 group-hover:scale-[1.02] motion-reduce:transition-none" />
+              <Image src={imageUrl || "/images/logo.png"} alt={item.title} fill sizes="(min-width: 1024px) 20vw, 45vw" unoptimized className="object-contain p-2 transition duration-300 group-hover:scale-[1.02] motion-reduce:transition-none" onError={(event) => {
+                const image = event.currentTarget;
+                if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+                else {
+                  image.dataset.fallbackApplied = "true";
+                  image.src = "/images/logo.png";
+                }
+              }} />
             </div>
             <p className="truncate border-t border-white/10 px-3 py-3 text-xs font-semibold uppercase tracking-[0.05em] text-slate-200">{item.title}</p>
           </button>
-        ))}
+          );
+        })}
       </div>
       {selected ? (
         <MediaModal ariaLabel={`${selected.title} preview`} onClose={() => setSelected(null)}>
           <div className="relative min-h-0 flex-1">
-            <Image src={resolveMediaUrl(selected.imageUrl)} alt={selected.title} fill sizes="90vw" className="object-contain" />
+            <Image src={resolveImageUrl(selected.imageUrl) || "/images/logo.png"} alt={selected.title} fill sizes="90vw" unoptimized className="object-contain" onError={(event) => {
+              const image = event.currentTarget;
+              if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+              else {
+                image.dataset.fallbackApplied = "true";
+                image.src = "/images/logo.png";
+              }
+            }} />
           </div>
           <div className="mt-4 shrink-0">
             <p className="text-xl font-semibold text-white">{selected.title}</p>
@@ -303,11 +329,21 @@ function TournamentAlbumsPanel({ tournament }: { tournament: Tournament }) {
         {tournament.eventAlbums.map((album) => (
           <Link key={album.id} href={`/gallery/${album.slug}`} className="group overflow-hidden border border-white/10 bg-black/20 outline-none transition hover:border-purple-300/35 focus-visible:ring-2 focus-visible:ring-purple-300">
             <div className="grid aspect-[16/9] grid-cols-2 gap-px bg-white/10">
-              {album.photos.slice(0, 2).map((photo) => (
+              {album.photos.slice(0, 2).map((photo) => {
+                const imageUrl = resolveImageUrl(photo.imageUrl);
+                return (
                 <div key={photo.id} className="relative overflow-hidden bg-black">
-                  <Image src={resolveMediaUrl(photo.imageUrl)} alt={photo.caption || `${album.title} event photo`} fill sizes="(min-width: 640px) 25vw, 50vw" className="object-cover transition duration-300 group-hover:scale-[1.03] motion-reduce:transition-none" />
+                  <Image src={imageUrl || "/images/logo.png"} alt={photo.caption || `${album.title} event photo`} fill sizes="(min-width: 640px) 25vw, 50vw" unoptimized className="object-cover transition duration-300 group-hover:scale-[1.03] motion-reduce:transition-none" onError={(event) => {
+                    const image = event.currentTarget;
+                    if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+                    else {
+                      image.dataset.fallbackApplied = "true";
+                      image.src = "/images/logo.png";
+                    }
+                  }} />
                 </div>
-              ))}
+                );
+              })}
             </div>
             <div className="flex items-center justify-between gap-3 p-4">
               <p className="min-w-0 truncate font-semibold text-white">{album.title}</p>
@@ -321,6 +357,7 @@ function TournamentAlbumsPanel({ tournament }: { tournament: Tournament }) {
 }
 
 function CompletedTournamentShowcase({ tournament }: { tournament: Tournament }) {
+  const posterUrl = resolveImageUrl(tournament.showcase.posterUrl);
   const standings = new Map((tournament.resultSummary?.standings || []).map((standing) => [standing.rank, standing]));
   const champion = standings.get(1);
   const podium = [
@@ -350,20 +387,36 @@ function CompletedTournamentShowcase({ tournament }: { tournament: Tournament })
             )}
           </div>
         </div>
-        {tournament.showcase.posterUrl ? (
+        {posterUrl ? (
           <div className="relative min-h-72 border-t border-white/10 lg:border-l lg:border-t-0">
-            <Image src={resolveMediaUrl(tournament.showcase.posterUrl)} alt={`${tournament.title} completed tournament poster`} fill sizes="(min-width: 1024px) 40vw, 100vw" className="object-cover" />
+            <Image src={posterUrl} alt={`${tournament.title} completed tournament poster`} fill sizes="(min-width: 1024px) 40vw, 100vw" unoptimized className="object-cover" onError={(event) => {
+              const image = event.currentTarget;
+              if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+              else {
+                image.dataset.fallbackApplied = "true";
+                image.src = "/images/logo.png";
+              }
+            }} />
           </div>
         ) : null}
       </div>
 
       {podium.length ? (
         <div className="grid gap-px border-t border-white/10 bg-white/10 sm:grid-cols-3">
-          {podium.map((place) => (
+          {podium.map((place) => {
+            const imageUrl = resolveImageUrl(place.imageUrl);
+            return (
             <article key={place.rank} className="min-w-0 bg-[#121018]">
-              {place.imageUrl ? (
+              {imageUrl ? (
                 <div className="relative aspect-square overflow-hidden">
-                  <Image src={resolveMediaUrl(place.imageUrl)} alt={`${place.label}${place.standing ? ` - ${place.standing.name}` : ""}`} fill sizes="(min-width: 640px) 33vw, 100vw" className="object-cover" />
+                  <Image src={imageUrl} alt={`${place.label}${place.standing ? ` - ${place.standing.name}` : ""}`} fill sizes="(min-width: 640px) 33vw, 100vw" unoptimized className="object-cover" onError={(event) => {
+                    const image = event.currentTarget;
+                    if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+                    else {
+                      image.dataset.fallbackApplied = "true";
+                      image.src = "/images/logo.png";
+                    }
+                  }} />
                 </div>
               ) : null}
               <div className="flex min-w-0 items-center gap-3 p-4 sm:p-5">
@@ -374,7 +427,8 @@ function CompletedTournamentShowcase({ tournament }: { tournament: Tournament })
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       ) : null}
     </section>
@@ -382,9 +436,17 @@ function CompletedTournamentShowcase({ tournament }: { tournament: Tournament })
 }
 
 function ResultLogo({ name, logoUrl }: { name: string; logoUrl: string | null }) {
+  const resolvedLogoUrl = resolveImageUrl(logoUrl);
   return (
     <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden border border-amber-300/30 bg-black/30 sm:size-20">
-      {logoUrl ? <Image src={resolveMediaUrl(logoUrl)} alt="" fill sizes="80px" className="object-cover" /> : <span className="text-xl font-bold text-amber-100">{name.slice(0, 2).toUpperCase()}</span>}
+      {resolvedLogoUrl ? <Image src={resolvedLogoUrl} alt="" fill sizes="80px" unoptimized className="object-cover" onError={(event) => {
+        const image = event.currentTarget;
+        if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+        else {
+          image.dataset.fallbackApplied = "true";
+          image.src = "/images/logo.png";
+        }
+      }} /> : <span className="text-xl font-bold text-amber-100">{name.slice(0, 2).toUpperCase()}</span>}
     </div>
   );
 }
@@ -424,20 +486,26 @@ function TeamsPanel({
   onPageChange: (page: number) => void;
   isSolo: boolean;
 }) {
+  const [failedTeamIds, setFailedTeamIds] = useState<Record<string, boolean>>({});
   return (
     <section className="space-y-4">
       <h3 className="text-3xl text-white">{title}</h3>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {teams?.map((team) => (
+          (() => {
+            const imageUrl = resolveImageUrl(team.avatarUrl || team.logoUrl);
+            return (
           <div key={team.id} className="overflow-hidden border border-white/10 bg-[#12141d]">
             <div className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-[#171922]">
-              {team.avatarUrl || team.logoUrl ? (
+              {imageUrl && !failedTeamIds[team.id] ? (
                 <Image
-                  src={resolveMediaUrl(team.avatarUrl || team.logoUrl || "")}
+                  src={imageUrl}
                   alt={team.displayName}
                   fill
                   sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
+                  unoptimized
                   className="object-cover"
+                  onError={() => setFailedTeamIds((current) => ({ ...current, [team.id]: true }))}
                 />
               ) : (
                 <div className="relative flex size-24 items-center justify-center overflow-hidden border border-white/10 bg-[#20222c] text-2xl font-bold text-white">
@@ -449,6 +517,8 @@ function TeamsPanel({
               <p className="truncate text-center text-sm font-bold uppercase text-white">{team.displayName}</p>
             </div>
           </div>
+            );
+          })()
         ))}
       </div>
       <div className="flex flex-col gap-3 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">

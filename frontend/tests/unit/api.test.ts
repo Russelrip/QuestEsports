@@ -23,6 +23,24 @@ describe("API helpers", () => {
     );
   });
 
+  it("normalizes configured trailing slashes with URL parsing", () => {
+    process.env.NEXT_PUBLIC_API_URL = "https://api.example.com///";
+
+    expect(buildApiUrl("/api/health")).toBe("https://api.example.com/api/health");
+  });
+
+  it("does not use malformed configured API values as URL prefixes", () => {
+    for (const configuredApiUrl of [
+      "https://api.example.com/base",
+      "https://api.example.com?query=1",
+      "https://api.example.com#fragment",
+      "ftp://api.example.com",
+    ]) {
+      process.env.NEXT_PUBLIC_API_URL = configuredApiUrl;
+      expect(buildApiUrl("/api/health")).toBe("/api/health");
+    }
+  });
+
   it("does not expose HTML error pages as user-facing messages", async () => {
     const response = new Response("<html>gateway error</html>", {
       status: 502,

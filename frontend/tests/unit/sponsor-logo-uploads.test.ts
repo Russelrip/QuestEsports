@@ -14,10 +14,10 @@ describe("uploaded sponsor logos", () => {
     );
 
     const publicSponsorImage = publicComponent.match(
-      /<Image\s+src=\{resolveMediaUrl\(sponsor\.logoUrl\)\}[\s\S]*?\/>/,
+      /const logoUrl = resolveImageUrl\(sponsor\.logoUrl\);[\s\S]*?<Image[\s\S]*?\/>/,
     )?.[0];
     const adminSponsorImage = adminComponent.match(
-      /<Image\s+src=\{buildApiUrl\(item\.logoUrl\)\}[\s\S]*?\/>/,
+      /resolveImageUrl\(item\.logoUrl\)[\s\S]*?<Image[\s\S]*?\/>/,
     )?.[0];
 
     expect(publicSponsorImage).toContain("unoptimized");

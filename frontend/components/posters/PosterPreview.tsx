@@ -31,12 +31,13 @@ export default function PosterPreview({
   return (
     <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-none border border-white/10 bg-black/40">
       <Image
-        src={resolveImageAssetUrl(asset)}
+        src={resolveImageAssetUrl(asset) || "/images/logo.png"}
         alt={asset.title}
         fill
         sizes="(min-width: 1024px) 960px, calc(100vw - 2rem)"
         className="object-contain"
-        onError={(event) => applyLegacyImageFallback(event.currentTarget, asset)}
+        unoptimized
+        onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, asset)) event.currentTarget.style.display = "none"; }}
       />
       {showOverlay ? (
         <div className={`absolute inset-0 flex p-6 sm:p-8 ${alignmentClassName[draft.overlayAlign]}`}>

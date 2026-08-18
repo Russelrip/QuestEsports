@@ -20,18 +20,41 @@ export class ApiRequestError extends Error {
   }
 }
 
+const getConfiguredApiOrigin = () => {
+  const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!configuredApiUrl) return null;
+
+  // Permit harmless trailing slashes, but reject anything that is not an
+  // origin. In particular, do not let a path, query, fragment, credentials,
+  // or unsupported protocol become part of a request URL.
+  if (/[?#]/.test(configuredApiUrl)) return null;
+  const originCandidate = configuredApiUrl.replace(/\/+$/, "");
+
+  try {
+    const parsedUrl = new URL(originCandidate);
+    if (
+      !["http:", "https:"].includes(parsedUrl.protocol) ||
+      parsedUrl.username ||
+      parsedUrl.password ||
+      parsedUrl.pathname !== "/"
+    ) {
+      return null;
+    }
+    return parsedUrl.origin;
+  } catch {
+    return null;
+  }
+};
+
 export const buildApiUrl = (path: string) => {
   if (
-    path.startsWith("http://") ||
-    path.startsWith("https://") ||
-    path.startsWith("data:") ||
-    path.startsWith("blob:")
+    /^(?:https?|data|blob):/i.test(path)
   ) {
     return path;
   }
 
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "";
-  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+  const apiOrigin = getConfiguredApiOrigin();
+  return apiOrigin ? new URL(path, `${apiOrigin}/`).toString() : path;
 };
 
 const getServerSiteOrigin = () => {

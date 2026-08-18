@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
-import { resolveMediaUrl } from "@/lib/media";
+import { resolveImageUrl } from "@/lib/media";
 import type { EventAlbum } from "@/lib/event-albums";
 
 const formatAlbumDate = (value?: string | null) => {
@@ -51,11 +51,20 @@ export default function EventAlbumCard({ album }: { album: EventAlbum }) {
                   <>
                   <span aria-hidden="true" className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,#09080d_25%,#1a1422_45%,#09080d_65%)] bg-[length:200%_100%]" />
                   <Image
-                    src={resolveMediaUrl(photo.imageAsset.imageUrl)}
+                    src={resolveImageUrl(photo.imageAsset.imageUrl) || "/images/logo.png"}
                     alt={photo.caption || photo.imageAsset.title || `${album.title} event photo`}
                     fill
                     sizes="(min-width: 1280px) 17vw, (min-width: 768px) 30vw, 50vw"
+                    unoptimized
                     className="object-cover transition duration-500 group-hover:scale-[1.025] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                    onError={(event) => {
+                      const image = event.currentTarget;
+                      if (image.dataset.fallbackApplied === "true") image.style.display = "none";
+                      else {
+                        image.dataset.fallbackApplied = "true";
+                        image.src = "/images/logo.png";
+                      }
+                    }}
                   />
                   </>
                 ) : (

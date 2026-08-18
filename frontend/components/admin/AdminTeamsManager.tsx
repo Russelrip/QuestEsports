@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { AdminTableSkeleton } from "@/components/ui/skeleton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useToastStore } from "@/hooks/useToastStore";
-import { buildApiUrl } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import {
   adminRequest,
   getAdminPaginationSummary,
@@ -470,15 +470,19 @@ function MobileDetail({ label, value }: { label: string; value: string }) {
 }
 
 function TeamLogo({ team, size }: { team: TeamSummary; size: "small" | "large" }) {
+  const [hasError, setHasError] = useState(false);
   const dimensions = size === "large" ? "h-20 w-20" : "h-11 w-11";
-  return team.logoUrl ? (
+  const logoUrl = resolveImageUrl(team.logoUrl);
+  return logoUrl && !hasError ? (
     <div className={`relative shrink-0 overflow-hidden border border-white/10 bg-white/5 ${dimensions}`}>
       <Image
-        src={buildApiUrl(team.logoUrl)}
+        src={logoUrl}
         alt={`${team.name} logo`}
         fill
         sizes={size === "large" ? "80px" : "44px"}
         className="object-contain p-1"
+        unoptimized
+        onError={() => setHasError(true)}
       />
     </div>
   ) : (

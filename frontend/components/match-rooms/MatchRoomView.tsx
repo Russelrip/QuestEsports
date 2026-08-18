@@ -7,7 +7,7 @@ import VetoRoomView from "@/components/veto/VetoRoomView";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { buildApiUrl } from "@/lib/api";
+import { resolveImageUrl } from "@/lib/media";
 import { type MatchRoom, type RoomMessage, type SupportRequest, roomRequest } from "@/lib/match-rooms";
 import { subscribeToRealtimeUpdates } from "@/lib/realtime";
 import { cn, getInitials } from "@/lib/utils";
@@ -24,14 +24,17 @@ const formatDate = (value: string | null) => value
   ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
   : "To be announced";
 
-const MemberAvatar = ({ member }: { member: MatchRoom["members"][number] }) => (
+const MemberAvatar = ({ member }: { member: MatchRoom["members"][number] }) => {
+  const avatarUrl = resolveImageUrl(member.user.avatarUrl);
+  return (
   <div className="flex items-center gap-3">
     <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-violet-700 text-xs font-bold text-white">
-      {member.user.avatarUrl ? <Image src={buildApiUrl(member.user.avatarUrl)} alt="" width={40} height={40} className="h-full w-full object-cover" /> : getInitials(member.user.firstName, member.user.lastName, member.user.username)}
+      {getInitials(member.user.firstName, member.user.lastName, member.user.username)}{avatarUrl ? <Image src={avatarUrl} alt="" width={40} height={40} unoptimized className="absolute h-full w-full object-cover" onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }} /> : null}
     </span>
     <span className="min-w-0"><span className="block truncate text-sm font-semibold text-white">{member.user.username}</span><span className="block text-[10px] uppercase tracking-[.16em] text-slate-500">{member.role}</span></span>
   </div>
-);
+  );
+};
 
 export default function MatchRoomView({ code }: { code: string }) {
   const [room, setRoom] = useState<MatchRoom | null>(null);
@@ -108,7 +111,7 @@ export default function MatchRoomView({ code }: { code: string }) {
       {error ? <p className="mt-4 rounded-xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{error}</p> : null}
 
       <section className="mt-6">
-        {tab === "overview" ? <div className="grid gap-5 lg:grid-cols-2">{teams.map((team, index) => <Card key={index} className="p-6"><div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-[.18em] text-slate-500">Team {index + 1}</p><h2 className="mt-2 text-2xl text-white">{team.participant?.displayName || `Team ${index + 1}`}</h2></div>{team.participant?.logoUrl ? <Image src={buildApiUrl(team.participant.logoUrl)} alt="" width={56} height={56} className="size-14 object-contain" /> : null}</div><div className="mt-5 grid gap-3">{team.members.length ? team.members.map((member) => <div key={member.id} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[.03] p-3"><MemberAvatar member={member} />{room.access.role === "staff" && member.role !== "staff" ? <Button variant="ghost" size="sm" disabled={busy === `mute-${member.id}`} onClick={() => void run(`mute-${member.id}`, () => roomRequest(`/api/v1/match-rooms/${code}/members/${member.id}/mute`, { method: "PATCH", json: { mutedUntil: member.mutedUntil ? null : new Date(Date.now() + 15 * 60_000).toISOString() } }), loadRoom)}>{member.mutedUntil ? "Unmute" : "Mute 15m"}</Button> : null}</div>) : <p className="text-sm text-slate-500">Roster profiles will appear after invitations are accepted.</p>}</div></Card>)}</div> : null}
+        {tab === "overview" ? <div className="grid gap-5 lg:grid-cols-2">{teams.map((team, index) => { const participantLogoUrl = resolveImageUrl(team.participant?.logoUrl); return <Card key={index} className="p-6"><div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-[.18em] text-slate-500">Team {index + 1}</p><h2 className="mt-2 text-2xl text-white">{team.participant?.displayName || `Team ${index + 1}`}</h2></div>{participantLogoUrl ? <Image src={participantLogoUrl} alt="" width={56} height={56} unoptimized className="size-14 object-contain" onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }} /> : null}</div><div className="mt-5 grid gap-3">{team.members.length ? team.members.map((member) => <div key={member.id} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[.03] p-3"><MemberAvatar member={member} />{room.access.role === "staff" && member.role !== "staff" ? <Button variant="ghost" size="sm" disabled={busy === `mute-${member.id}`} onClick={() => void run(`mute-${member.id}`, () => roomRequest(`/api/v1/match-rooms/${code}/members/${member.id}/mute`, { method: "PATCH", json: { mutedUntil: member.mutedUntil ? null : new Date(Date.now() + 15 * 60_000).toISOString() } }), loadRoom)}>{member.mutedUntil ? "Unmute" : "Mute 15m"}</Button> : null}</div>) : <p className="text-sm text-slate-500">Roster profiles will appear after invitations are accepted.</p>}</div></Card>; })}</div> : null}
 
         {tab === "veto" ? room.match.veto ? <VetoRoomView code={room.match.veto.code} /> : <Card className="p-10 text-center"><h2 className="text-2xl text-white">Veto has not been created</h2><p className="mt-2 text-sm text-slate-400">Match staff will select the pool and format before the veto begins.</p></Card> : null}
 
