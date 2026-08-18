@@ -7,6 +7,8 @@ import {
   buildPageMetadata,
   buildProductStructuredData,
   buildTicketEventStructuredData,
+  contactLinks,
+  socialLinks,
 } from "../../lib/site";
 
 const ticketEvent: TicketedEvent = {
@@ -79,6 +81,45 @@ describe("site metadata helpers", () => {
   it("preserves valid absolute asset URLs", () => {
     expect(absoluteUrl("https://cdn.example.com/image.webp")).toBe(
       "https://cdn.example.com/image.webp",
+    );
+  });
+});
+
+describe("official social links", () => {
+  it("uses the questesports.lk Instagram and TikTok profiles", () => {
+    expect(socialLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Instagram",
+          href: "https://www.instagram.com/questesports.lk",
+        }),
+        expect.objectContaining({
+          label: "Quest E-sports on TikTok (@questesports.lk)",
+          href: "https://www.tiktok.com/@questesports.lk",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps the separate Senumi TikTok profile", () => {
+    expect(socialLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Senumi on TikTok",
+          href: "https://www.tiktok.com/@senumii",
+        }),
+      ]),
+    );
+  });
+
+  it("shows the updated official handles in contact links", () => {
+    expect(contactLinks[0].items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "@questesports.lk" }),
+        expect.objectContaining({
+          label: "Quest E-sports TikTok (@questesports.lk)",
+        }),
+      ]),
     );
   });
 });

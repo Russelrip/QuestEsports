@@ -279,9 +279,9 @@ export const organizationStructuredData = {
   sameAs: [
     "https://discord.gg/cxkM7dk9CM",
     "https://www.facebook.com/share/1HNNM3e9ub/?mibextid=wwXIfr",
-    "https://www.instagram.com/questesportslk/",
+    "https://www.instagram.com/questesports.lk",
     "https://www.tiktok.com/@senumii",
-    "https://www.tiktok.com/@questesportslk",
+    "https://www.tiktok.com/@questesports.lk",
   ],
   areaServed: "LK",
   knowsAbout: [
@@ -490,7 +490,7 @@ export const socialLinks = [
     icon: "/images/facebook.png",
   },
   {
-    href: "https://www.instagram.com/questesportslk/",
+    href: "https://www.instagram.com/questesports.lk",
     label: "Instagram",
     icon: "/images/instagram.png",
   },
@@ -500,8 +500,8 @@ export const socialLinks = [
     icon: "/images/tiktok.png",
   },
   {
-    href: "https://www.tiktok.com/@questesportslk",
-    label: "Quest E-sports on TikTok",
+    href: "https://www.tiktok.com/@questesports.lk",
+    label: "Quest E-sports on TikTok (@questesports.lk)",
     icon: "/images/tiktok.png",
   },
 ] as const;
@@ -526,8 +526,8 @@ export const contactLinks = [
         icon: "/images/facebook.png",
       },
       {
-        label: "@questesportslk",
-        href: "https://www.instagram.com/questesportslk/",
+        label: "@questesports.lk",
+        href: "https://www.instagram.com/questesports.lk",
         icon: "/images/instagram.png",
       },
       {
@@ -536,8 +536,8 @@ export const contactLinks = [
         icon: "/images/tiktok.png",
       },
       {
-        label: "Quest E-sports TikTok (@questesportslk)",
-        href: "https://www.tiktok.com/@questesportslk",
+        label: "Quest E-sports TikTok (@questesports.lk)",
+        href: "https://www.tiktok.com/@questesports.lk",
         icon: "/images/tiktok.png",
       },
     ],

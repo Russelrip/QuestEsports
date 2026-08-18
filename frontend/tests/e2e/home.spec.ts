@@ -18,8 +18,8 @@ test("contact page includes both TikTok accounts, Gmail, and the WhatsApp commun
     "https://www.tiktok.com/@senumii"
   );
   await expect(
-    page.getByRole("link", { name: "Quest E-sports TikTok (@questesportslk)" })
-  ).toHaveAttribute("href", "https://www.tiktok.com/@questesportslk");
+    page.getByRole("link", { name: "Quest E-sports TikTok (@questesports.lk)" })
+  ).toHaveAttribute("href", "https://www.tiktok.com/@questesports.lk");
   await expect(page.getByRole("link", { name: "questesports.lk@gmail.com" }).first()).toHaveAttribute(
     "href",
     "mailto:questesports.lk@gmail.com"
@@ -40,9 +40,9 @@ test("contact page includes both TikTok accounts, Gmail, and the WhatsApp commun
     "href",
     "https://www.tiktok.com/@senumii"
   );
-  await expect(footer.getByRole("link", { name: "Quest E-sports on TikTok" })).toHaveAttribute(
+  await expect(footer.getByRole("link", { name: "Quest E-sports on TikTok (@questesports.lk)" })).toHaveAttribute(
     "href",
-    "https://www.tiktok.com/@questesportslk"
+    "https://www.tiktok.com/@questesports.lk"
   );
   await expect(page.getByRole("link", { name: /Solo Player/ })).toHaveAttribute("href", "/join?type=solo_player");
   await expect(page.getByRole("link", { name: /Existing Team/ })).toHaveAttribute("href", "/join?type=existing_team");
