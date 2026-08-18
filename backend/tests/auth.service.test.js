@@ -300,6 +300,25 @@ test("mapUserForResponse preserves an avatar URL from an already-mapped session 
   }
 });
 
+test("getUserLoginMethodState does not treat an OAuth-only password hash as a set password", async () => {
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: {
+        findUnique: async () => ({ id: "user-1", passwordSetAt: null }),
+      },
+    },
+  });
+
+  try {
+    assert.deepEqual(
+      await authService.getUserLoginMethodState({ userId: "user-1" }),
+      { userId: "user-1", hasVerifiedPassword: false }
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("verification links are claimed atomically across concurrent requests", async () => {
   let tokenClaimed = false;
   const verificationRecord = {

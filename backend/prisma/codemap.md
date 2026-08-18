@@ -21,10 +21,16 @@ existing contact, match-room, notification, or OAuth tables.
   adds unique per-tournament waitlist-position enforcement.
 - `20260819120000_add_support_conversations` adds support conversation,
   message, and per-user read-cursor tables plus their status enum and indexes.
+- `20260819170000_add_oauth_link_safety` adds the explicit password-set marker
+  and durable, one-time OAuth link nonce records. Existing users without OAuth
+  accounts are conservatively marked from `created_at`; OAuth-linked users stay
+  unmarked until they set a password.
 
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
-delete guards protect children during normal admin operations.
+delete guards protect children during normal admin operations. OAuth link
+nonces are claimed atomically and password markers distinguish a real password
+login method from OAuth-only random password hashes.
 
 ## Deployment boundary
 

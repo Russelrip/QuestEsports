@@ -122,10 +122,19 @@ const getState = (service) => {
   };
 };
 
-const buildLinkService = ({ existingAccount = null, accounts = [], hasPassword = true } = {}) => {
+const buildLinkService = ({
+  existingAccount = null,
+  accounts = [],
+  hasPassword = true,
+  nonceStoreError = null,
+  transactionFailures = 0,
+} = {}) => {
   const linkedAccounts = [...accounts];
+  const linkNonces = [];
   const createCalls = [];
   const deleteCalls = [];
+  const tokenRequestBodies = [];
+  const transactionOptions = [];
   const oauthAccount = {
     findUnique: async () => existingAccount,
     findMany: async () => linkedAccounts.map((account) => ({ provider: account.provider })),
@@ -133,6 +142,26 @@ const buildLinkService = ({ existingAccount = null, accounts = [], hasPassword =
       createCalls.push({ data });
       linkedAccounts.push(data);
       return data;
+    },
+  };
+  const oauthLinkNonce = {
+    create: async ({ data }) => {
+      linkNonces.push(data);
+      return data;
+    },
+    updateMany: async ({ where, data }) => {
+      if (nonceStoreError) throw nonceStoreError;
+      const nonce = linkNonces.find(
+        (entry) =>
+          entry.nonce === where.nonce &&
+          entry.userId === where.userId &&
+          entry.provider === where.provider &&
+          !entry.consumedAt &&
+          entry.expiresAt > new Date()
+      );
+      if (!nonce) return { count: 0 };
+      nonce.consumedAt = data.consumedAt;
+      return { count: 1 };
     },
   };
   const tx = {
@@ -167,7 +196,17 @@ const buildLinkService = ({ existingAccount = null, accounts = [], hasPassword =
       [require.resolve("../src/lib/prisma")]: {
         prisma: {
           oAuthAccount: oauthAccount,
-          $transaction: async (callback) => callback(tx),
+          oAuthLinkNonce: oauthLinkNonce,
+          $transaction: async (callback, options) => {
+            transactionOptions.push(options);
+            if (transactionFailures > 0) {
+              transactionFailures -= 1;
+              const error = new Error("serialization conflict");
+              error.code = "P2034";
+              throw error;
+            }
+            return callback(tx);
+          },
         },
       },
       [require.resolve("../src/config/env")]: {
@@ -195,8 +234,9 @@ const buildLinkService = ({ existingAccount = null, accounts = [], hasPassword =
     }
   );
   const originalFetch = global.fetch;
-  global.fetch = async (url) => {
+  global.fetch = async (url, options = {}) => {
     if (String(url).includes("oauth2.googleapis.com/token")) {
+      tokenRequestBodies.push(new URLSearchParams(options.body));
       return { ok: true, status: 200, json: async () => ({ access_token: "access-token" }) };
     }
     return {
@@ -215,15 +255,18 @@ const buildLinkService = ({ existingAccount = null, accounts = [], hasPassword =
     service: module,
     createCalls,
     deleteCalls,
-    getLinkState: () => {
-      const authorization = module.createOAuthLinkAuthorization({
+    linkNonces,
+    tokenRequestBodies,
+    transactionOptions,
+    getLinkState: async () => {
+      const authorization = await module.createOAuthLinkAuthorization({
         provider: "google",
         userId: "user-1",
         redirectTo: "/profile?tab=account",
       });
       return {
         state: new URL(authorization.authorizationUrl).searchParams.get("state"),
-        flowToken: module.getOAuthFlowToken({
+        flowToken: module.getOAuthLinkFlowToken({
           provider: "google",
           cookieHeader: authorization.flowCookie,
         }),
@@ -358,7 +401,7 @@ test("OAuth authorization uses S256 PKCE and binds callback state to its flow co
 test("OAuth link authorization binds signed state and PKCE to the authenticated user", async () => {
   const { service, getLinkState, restore } = buildLinkService();
   try {
-    const { state, flowToken } = getLinkState();
+    const { state, flowToken } = await getLinkState();
 
     await assert.rejects(
       service.handleOAuthLinkCallback({
@@ -381,7 +424,7 @@ test("OAuth link callback creates an account and returns provider summaries", as
     const result = await service.handleOAuthLinkCallback({
       provider: "google",
       code: "code",
-      ...getLinkState(),
+      ...(await getLinkState()),
       userId: "user-1",
     });
     assert.equal(createCalls.length, 1);
@@ -405,7 +448,7 @@ test("link callback rejects a provider account owned by another user", async () 
       service.handleOAuthLinkCallback({
         provider: "google",
         code: "code",
-        ...getLinkState(),
+        ...(await getLinkState()),
         userId: "user-1",
       }),
       (error) => error.code === "OAUTH_ACCOUNT_CONFLICT"
@@ -419,12 +462,13 @@ test("link callback rejects a provider account owned by another user", async () 
 test("OAuth link callback rejects state and flow-cookie reuse", async () => {
   const { service, getLinkState, restore } = buildLinkService();
   try {
-    const linkState = getLinkState();
+    const linkState = await getLinkState();
     const request = { provider: "google", code: "code", ...linkState, userId: "user-1" };
     await service.handleOAuthLinkCallback(request);
     await assert.rejects(
       service.handleOAuthLinkCallback(request),
-      (error) => error.statusCode === 400 && /already been used/.test(error.message)
+      (error) =>
+        error.statusCode === 400 && /expired or was already used/.test(error.message)
     );
   } finally {
     restore();
@@ -462,6 +506,129 @@ test("unlinking an OAuth provider preserves another linked provider", async () =
       { provider: "google", linked: false },
       { provider: "discord", linked: true },
     ]);
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth link flow uses a dedicated callback URL and isolated cookie", async () => {
+  const { service, linkNonces, restore } = buildLinkService();
+  try {
+    const authorization = await service.createOAuthLinkAuthorization({
+      provider: "google",
+      userId: "user-1",
+      redirectTo: "/profile?tab=account",
+    });
+    const parsedUrl = new URL(authorization.authorizationUrl);
+    assert.equal(
+      new URL(parsedUrl.searchParams.get("redirect_uri")).pathname,
+      "/api/auth/google/link/callback"
+    );
+    assert.match(authorization.flowCookie, /quest_session_oauth_link_google=/);
+    assert.equal(
+      service.getOAuthFlowToken({
+        provider: "google",
+        cookieHeader: authorization.flowCookie,
+      }),
+      ""
+    );
+    assert.ok(
+      service.getOAuthLinkFlowToken({
+        provider: "google",
+        cookieHeader: authorization.flowCookie,
+      })
+    );
+    assert.equal(linkNonces.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("login callback rejects a link state payload", async () => {
+  const { service, getLinkState, restore } = buildLinkService();
+  try {
+    const linkState = await getLinkState();
+    await assert.rejects(
+      service.handleOAuthCallback({
+        provider: "google",
+        code: "code",
+        ...linkState,
+      }),
+      (error) => error.statusCode === 400 && error.message === "Invalid OAuth state."
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("link token exchange uses the dedicated callback URL and the durable nonce claim", async () => {
+  const { service, getLinkState, linkNonces, tokenRequestBodies, restore } = buildLinkService();
+  try {
+    await service.handleOAuthLinkCallback({
+      provider: "google",
+      code: "code",
+      ...(await getLinkState()),
+      userId: "user-1",
+    });
+    assert.equal(linkNonces[0].consumedAt instanceof Date, true);
+    assert.equal(
+      tokenRequestBodies[0].get("redirect_uri"),
+      "http://localhost:5001/api/auth/google/link/callback"
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth link nonce storage failures fail closed before token exchange", async () => {
+  const tokenStoreError = new Error("database unavailable");
+  const { service, getLinkState, tokenRequestBodies, restore } = buildLinkService({
+    nonceStoreError: tokenStoreError,
+  });
+  try {
+    await assert.rejects(
+      service.handleOAuthLinkCallback({
+        provider: "google",
+        code: "code",
+        ...(await getLinkState()),
+        userId: "user-1",
+      }),
+      (error) => error.statusCode === 503
+    );
+    assert.equal(tokenRequestBodies.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth unlink runs at serializable isolation", async () => {
+  const { service, transactionOptions, restore } = buildLinkService({
+    accounts: [
+      { id: "oauth-1", userId: "user-1", provider: "google" },
+      { id: "oauth-2", userId: "user-1", provider: "discord" },
+    ],
+    hasPassword: false,
+  });
+  try {
+    await service.unlinkOAuthProvider({ userId: "user-1", provider: "google" });
+    assert.equal(transactionOptions[0].isolationLevel, "Serializable");
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth unlink retries serialization conflicts before applying the removal", async () => {
+  const { service, transactionOptions, restore } = buildLinkService({
+    accounts: [
+      { id: "oauth-1", userId: "user-1", provider: "google" },
+      { id: "oauth-2", userId: "user-1", provider: "discord" },
+    ],
+    hasPassword: false,
+    transactionFailures: 1,
+  });
+  try {
+    await service.unlinkOAuthProvider({ userId: "user-1", provider: "google" });
+    assert.equal(transactionOptions.length, 2);
   } finally {
     restore();
   }

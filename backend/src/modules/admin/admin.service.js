@@ -589,6 +589,7 @@ const createAdminUser = async ({ body }) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const passwordSetAt = new Date();
 
   const user = await prisma.user.create({
     data: {
@@ -600,6 +601,7 @@ const createAdminUser = async ({ body }) => {
       username,
       usernameNormalized,
       passwordHash,
+      passwordSetAt,
       role,
       phone,
       discordTag,
@@ -687,8 +689,10 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
   }
 
   let nextPasswordHash = null;
+  let nextPasswordSetAt = null;
   if (password) {
     nextPasswordHash = await bcrypt.hash(password, 10);
+    nextPasswordSetAt = new Date();
   }
 
   const user = await prisma.$transaction(async (tx) => {
@@ -704,7 +708,9 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
         phone,
         discordTag,
         role,
-        ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {}),
+        ...(nextPasswordHash
+          ? { passwordHash: nextPasswordHash, passwordSetAt: nextPasswordSetAt }
+          : {}),
       },
       select: ADMIN_USER_SELECT,
     });

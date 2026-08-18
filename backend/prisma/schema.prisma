@@ -323,6 +323,7 @@ model User {
   username                String
   usernameNormalized      String                      @unique @map("username_normalized")
   passwordHash            String                      @map("password_hash")
+  passwordSetAt           DateTime?                   @map("password_set_at")
   emailVerified           Boolean                     @default(false) @map("email_verified")
   emailVerifiedAt         DateTime?                   @map("email_verified_at")
   role                    UserRole                    @default(user)
@@ -341,6 +342,7 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   mobileOAuthGrants       MobileOAuthGrant[]
   oauthAccounts           OAuthAccount[]
+  oauthLinkNonces          OAuthLinkNonce[]
   savedTeams              SavedTeam[]
   savedTeamMemberships    SavedTeamMember[]
   registrationMemberships RegistrationMember[]
@@ -549,6 +551,21 @@ model OAuthAccount {
   @@unique([provider, providerUserId])
   @@index([userId])
   @@map("oauth_accounts")
+}
+
+model OAuthLinkNonce {
+  id         String      @id @default(uuid()) @db.Uuid
+  nonce      String      @unique
+  userId     String      @map("user_id") @db.Uuid
+  provider   AuthProvider
+  expiresAt  DateTime    @map("expires_at")
+  consumedAt DateTime?   @map("consumed_at")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider])
+  @@index([expiresAt])
+  @@map("oauth_link_nonces")
 }
 
 model ContactSubmission {

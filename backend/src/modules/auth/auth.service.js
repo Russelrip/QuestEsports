@@ -341,6 +341,7 @@ const createSignup = async ({ body }) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const passwordSetAt = new Date();
   const verificationToken = createTokenPair({ hours: 24 });
 
   const user = await prisma.$transaction(async (tx) => {
@@ -354,6 +355,7 @@ const createSignup = async ({ body }) => {
         username,
         usernameNormalized,
         passwordHash,
+        passwordSetAt,
         role: "user",
         phone,
         discordTag,
@@ -415,6 +417,7 @@ const authenticateUser = async ({ body, requestMeta = {} }) => {
     select: {
       ...PUBLIC_USER_SELECT,
       passwordHash: true,
+      passwordSetAt: true,
       failedLoginCount: true,
       lockedUntil: true,
     },
@@ -599,7 +602,7 @@ const verifyUserPassword = async ({ currentUser, currentPassword }) => {
 const getUserLoginMethodState = async ({ userId, tx = prisma }) => {
   const user = await tx.user.findUnique({
     where: { id: userId },
-    select: { id: true, passwordHash: true },
+    select: { id: true, passwordSetAt: true },
   });
 
   if (!user) {
@@ -608,7 +611,7 @@ const getUserLoginMethodState = async ({ userId, tx = prisma }) => {
 
   return {
     userId: user.id,
-    hasVerifiedPassword: Boolean(user.passwordHash),
+    hasVerifiedPassword: Boolean(user.passwordSetAt),
   };
 };
 
@@ -984,12 +987,13 @@ const resetPassword = async ({ body }) => {
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
+  const passwordSetAt = new Date();
   const usedAt = new Date();
 
   await prisma.$transaction(async (tx) => {
     await tx.user.update({
       where: { id: resetRecord.userId },
-      data: { passwordHash },
+      data: { passwordHash, passwordSetAt },
     });
 
     await consumeUserToken({
@@ -1053,10 +1057,11 @@ const changePassword = async ({ currentUser, body, currentSessionId }) => {
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
+  const passwordSetAt = new Date();
   const updatedUser = await prisma.$transaction(async (tx) => {
     const nextUser = await tx.user.update({
       where: { id: currentUser.id },
-      data: { passwordHash },
+      data: { passwordHash, passwordSetAt },
       select: PUBLIC_USER_SELECT,
     });
 
