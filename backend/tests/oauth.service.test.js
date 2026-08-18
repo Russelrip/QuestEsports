@@ -129,6 +129,7 @@ const buildLinkService = ({
   nonceStoreError = null,
   transactionFailures = 0,
   onTransactionFailure = null,
+  transactionFailureAfterCallback = false,
 } = {}) => {
   const linkedAccounts = [...accounts];
   const linkNonces = [];
@@ -136,6 +137,7 @@ const buildLinkService = ({
   const deleteCalls = [];
   const tokenRequestBodies = [];
   const transactionOptions = [];
+  let loginMethodReads = 0;
   const oauthAccount = {
     findUnique: async () => existingAccount,
     findMany: async () => linkedAccounts.map((account) => ({ provider: account.provider })),
@@ -167,7 +169,10 @@ const buildLinkService = ({
   };
   const tx = {
     user: {
-      findUnique: async () => ({ id: "user-1", passwordHash: hasPassword ? "hash" : null }),
+      findUnique: async () => {
+        loginMethodReads += 1;
+        return { id: "user-1", passwordHash: hasPassword ? "hash" : null };
+      },
     },
     oAuthAccount: {
       findFirst: async ({ where }) =>
@@ -200,6 +205,18 @@ const buildLinkService = ({
           oAuthLinkNonce: oauthLinkNonce,
           $transaction: async (callback, options) => {
             transactionOptions.push(options);
+            if (transactionFailureAfterCallback && transactionFailures > 0) {
+              const transactionState = linkedAccounts.slice();
+              const deleteCallCount = deleteCalls.length;
+              transactionFailures -= 1;
+              await callback(tx);
+              linkedAccounts.splice(0, linkedAccounts.length, ...transactionState);
+              deleteCalls.splice(deleteCallCount);
+              onTransactionFailure?.(linkedAccounts);
+              const error = new Error("serialization conflict");
+              error.code = "P2034";
+              throw error;
+            }
             if (transactionFailures > 0) {
               transactionFailures -= 1;
               onTransactionFailure?.(linkedAccounts);
@@ -260,6 +277,7 @@ const buildLinkService = ({
     linkNonces,
     tokenRequestBodies,
     transactionOptions,
+    getLoginMethodReads: () => loginMethodReads,
     getLinkState: async () => {
       const authorization = await module.createOAuthLinkAuthorization({
         provider: "google",
@@ -645,13 +663,20 @@ test("OAuth unlink retries serialization conflicts before applying the removal",
 });
 
 test("OAuth unlink re-evaluates login methods after a serialization retry", async () => {
-  const { service, deleteCalls, transactionOptions, restore } = buildLinkService({
+  const {
+    service,
+    deleteCalls,
+    transactionOptions,
+    getLoginMethodReads,
+    restore,
+  } = buildLinkService({
     accounts: [
       { id: "oauth-1", userId: "user-1", provider: "google" },
       { id: "oauth-2", userId: "user-1", provider: "discord" },
     ],
     hasPassword: false,
     transactionFailures: 1,
+    transactionFailureAfterCallback: true,
     onTransactionFailure: (linkedAccounts) => {
       linkedAccounts.splice(
         linkedAccounts.findIndex((account) => account.provider === "discord"),
@@ -665,6 +690,7 @@ test("OAuth unlink re-evaluates login methods after a serialization retry", asyn
       (error) => error.code === "OAUTH_LAST_LOGIN_METHOD"
     );
     assert.equal(transactionOptions.length, 2);
+    assert.equal(getLoginMethodReads(), 2);
     assert.equal(deleteCalls.length, 0);
   } finally {
     restore();
