@@ -66,6 +66,13 @@ test("user controllers use the authenticated ID and ignore client owner IDs", as
     body: "Please help",
   }]);
   assert.equal(created.response.statusCode, 201);
+
+  const detail = await callController("getConversation", req);
+  assert.deepEqual(detail.calls[0], ["getConversation", {
+    conversationId: "conversation-1",
+    userId: "authenticated-user",
+    isStaff: false,
+  }]);
 });
 
 test("user message, read, and status controllers pass authenticated ownership context", async () => {
@@ -195,6 +202,43 @@ test("support routes require authentication and admin authorization for the queu
     for (const route of adminRoutes) {
       assert.ok(route.handlers.includes(requireAuth));
       assert.ok(route.handlers.includes(requireAdmin));
+    }
+    const userRoutes = routes.filter((route) => route.path.startsWith("/support/"));
+    assert.equal(userRoutes.length, 7);
+    for (const route of userRoutes) assert.ok(route.handlers.includes(requireAuth));
+  } finally {
+    restore();
+  }
+});
+
+test("actual admin middleware rejects non-admin requests for every admin route", async () => {
+  const actualAuth = require(authPath);
+  const controllerHandler = () => {};
+  const controller = new Proxy({}, { get: () => controllerHandler });
+  const { module: router, restore } = loadModuleWithMocks(routesPath, {
+    [authPath]: actualAuth,
+    [controllerPath]: controller,
+  });
+  try {
+    const adminRoutes = router.stack
+      .filter((layer) => layer.route && layer.route.path.startsWith("/admin/support/"));
+    assert.equal(adminRoutes.length, 5);
+    for (const layer of adminRoutes) {
+      const handlers = layer.route.stack.map((entry) => entry.handle);
+      assert.equal(handlers[0], actualAuth.requireAuth);
+      assert.equal(handlers[1], actualAuth.requireAdmin);
+      const errors = [];
+      const req = {
+        user: { id: "user-1", role: "user" },
+        method: Object.keys(layer.route.methods)[0].toUpperCase(),
+        originalUrl: layer.route.path,
+        ip: "127.0.0.1",
+      };
+      const next = (error) => { if (error) errors.push(error); };
+      handlers[0](req, {}, next);
+      handlers[1](req, {}, next);
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].statusCode, 403);
     }
   } finally {
     restore();
