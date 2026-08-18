@@ -30,7 +30,7 @@ async function login(context: BrowserContext, email: string, password: string, o
 async function readJson(request: APIRequestContext, path: string, origin: string) {
   const response = await request.get(`${apiUrl}${path}`, { headers: withOrigin(origin) });
   expect(response.ok(), await response.text()).toBe(true);
-  return response.json() as Promise<{ success: true; data: { items: Array<{ id: string; type?: string; actionUrl?: string | null; body?: string; unreadCount?: number }>; unreadCount?: number } }>;
+  return response.json() as Promise<{ success: true; data: { items: Array<{ id: string; subject?: string; type?: string; actionUrl?: string | null; body?: string; unreadCount?: number }>; unreadCount?: number } }>;
 }
 
 async function stubRealtimeBoundary(context: BrowserContext) {
@@ -66,11 +66,16 @@ async function stubRealtimeBoundary(context: BrowserContext) {
   });
 }
 
-test("authenticated user and staff complete the persisted support flow", async ({ page, browser }) => {
+test("authenticated user and staff complete the persisted support flow", async ({ page, browser }, testInfo) => {
   test.skip(
     missingEnvironment.length > 0,
     `Missing required support E2E environment: ${missingEnvironment.join(", ")}`,
   );
+
+  const projectMarker = testInfo.project.name;
+  const subject = `Account access [${projectMarker}]`;
+  const openingBody = `I cannot sign in to my tournament account. [${projectMarker}]`;
+  const replyBody = `Please reset your password and try again. [${projectMarker}]`;
 
   const adminContext = await browser.newContext({ baseURL: frontendUrl });
   await stubRealtimeBoundary(adminContext);
@@ -82,33 +87,36 @@ test("authenticated user and staff complete the persisted support flow", async (
 
     await page.goto(`${frontendUrl}/support`, { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Start a support conversation" })).toBeVisible();
-    await page.getByLabel("Subject").fill("Account access");
-    await page.getByLabel("Message").fill("I cannot sign in to my tournament account.");
+    await page.getByLabel("Subject").fill(subject);
+    await page.getByLabel("Message").fill(openingBody);
     await page.getByRole("button", { name: "Send message" }).click();
     await expect(page).toHaveURL(/\/support\/[^/?#]+$/);
     const conversationId = new URL(page.url()).pathname.split("/").pop();
     expect(conversationId).toBeTruthy();
 
     const staffNotifications = await readJson(adminContext.request, "/api/v1/notifications?limit=30", frontendUrl!);
-    expect(staffNotifications.data.items.find((item) => item.type === "support_message" && item.body === "I cannot sign in to my tournament account.")?.actionUrl)
+    expect(staffNotifications.data.items.find((item) => item.type === "support_message" && item.body === openingBody)?.actionUrl)
       .toBe(`/admin/support?conversationId=${conversationId}`);
 
     const queueBeforeRead = await readJson(adminContext.request, "/api/v1/admin/support/conversations", frontendUrl!);
-    expect(queueBeforeRead.data.items.find((item) => item.id === conversationId)?.unreadCount).toBe(1);
+    const queuedConversation = queueBeforeRead.data.items.find((item) => item.id === conversationId);
+    expect(queuedConversation?.subject).toBe(subject);
+    expect(queuedConversation?.subject).toContain(projectMarker);
+    expect(queuedConversation?.unreadCount).toBe(1);
 
     await adminPage.goto(`${frontendUrl}/admin/support?conversationId=${conversationId}`, { waitUntil: "domcontentloaded" });
-    await expect(adminPage.getByRole("heading", { level: 2, name: "Account access" })).toBeVisible();
+    await expect(adminPage.getByRole("heading", { level: 2, name: subject })).toBeVisible();
     await expect.poll(async () => {
       const queue = await readJson(adminContext.request, "/api/v1/admin/support/conversations", frontendUrl!);
       return queue.data.items.find((item) => item.id === conversationId)?.unreadCount;
     }).toBe(0);
 
-    await adminPage.getByLabel(/Reply to/).fill("Please reset your password and try again.");
+    await adminPage.getByLabel(/Reply to/).fill(replyBody);
     await adminPage.getByRole("button", { name: "Send reply" }).click();
-    await expect(adminPage.getByText("Please reset your password and try again.").last()).toBeVisible();
+    await expect(adminPage.getByText(replyBody).last()).toBeVisible();
 
     const userNotifications = await readJson(page.context().request, "/api/v1/notifications?limit=30", frontendUrl!);
-    expect(userNotifications.data.items.find((item) => item.type === "support_message" && item.body === "Please reset your password and try again.")?.actionUrl)
+    expect(userNotifications.data.items.find((item) => item.type === "support_message" && item.body === replyBody)?.actionUrl)
       .toBe(`/support/${conversationId}`);
 
     await adminPage.getByRole("button", { name: "Resolve" }).click();
@@ -118,7 +126,7 @@ test("authenticated user and staff complete the persisted support flow", async (
     expect(userUnreadBeforeOpen.data.items.find((item) => item.id === conversationId)?.unreadCount).toBe(1);
 
     await page.goto(`${frontendUrl}/support/${conversationId}`, { waitUntil: "domcontentloaded" });
-    await expect(page.getByText("Please reset your password and try again.").last()).toBeVisible();
+    await expect(page.getByText(replyBody).last()).toBeVisible();
     await expect(page.getByRole("button", { name: "Reopen" })).toBeVisible();
     await page.getByRole("button", { name: "Reopen" }).click();
     await expect(page.getByRole("button", { name: "Resolve" })).toBeVisible();
