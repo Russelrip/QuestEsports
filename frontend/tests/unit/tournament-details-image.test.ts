@@ -50,4 +50,18 @@ describe("tournament participant images", () => {
 
     expect(files.some((file) => /src=\{\s*buildApiUrl/.test(readFileSync(resolve(componentsRoot, file), "utf8")))).toBe(false);
   });
+
+  it("shows completed tournament posters in full within dark image frames", () => {
+    const component = readFileSync(
+      resolve(process.cwd(), "components/tournaments/TournamentDetailsContent.tsx"),
+      "utf8",
+    );
+    const showcase = component.match(/function CompletedTournamentShowcase[\s\S]*?function ResultLogo/)?.[0];
+
+    expect(showcase).toBeDefined();
+    expect(showcase).toContain('className="relative min-h-72 border-t border-white/10 bg-[#08070b]');
+    expect(showcase).toContain('className="object-contain"');
+    expect(showcase).toContain('className="relative aspect-square overflow-hidden bg-[#08070b]"');
+    expect(showcase?.match(/className="object-contain"/g)).toHaveLength(2);
+  });
 });

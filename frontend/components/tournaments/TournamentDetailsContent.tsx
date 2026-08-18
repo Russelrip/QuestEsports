@@ -388,8 +388,8 @@ function CompletedTournamentShowcase({ tournament }: { tournament: Tournament })
           </div>
         </div>
         {posterUrl ? (
-          <div className="relative min-h-72 border-t border-white/10 lg:border-l lg:border-t-0">
-            <Image src={posterUrl} alt={`${tournament.title} completed tournament poster`} fill sizes="(min-width: 1024px) 40vw, 100vw" unoptimized className="object-cover" onError={(event) => {
+          <div className="relative min-h-72 border-t border-white/10 bg-[#08070b] lg:border-l lg:border-t-0">
+            <Image src={posterUrl} alt={`${tournament.title} completed tournament poster`} fill sizes="(min-width: 1024px) 40vw, 100vw" unoptimized className="object-contain" onError={(event) => {
               const image = event.currentTarget;
               if (image.dataset.fallbackApplied === "true") image.style.display = "none";
               else {
@@ -408,8 +408,8 @@ function CompletedTournamentShowcase({ tournament }: { tournament: Tournament })
             return (
             <article key={place.rank} className="min-w-0 bg-[#121018]">
               {imageUrl ? (
-                <div className="relative aspect-square overflow-hidden">
-                  <Image src={imageUrl} alt={`${place.label}${place.standing ? ` - ${place.standing.name}` : ""}`} fill sizes="(min-width: 640px) 33vw, 100vw" unoptimized className="object-cover" onError={(event) => {
+                <div className="relative aspect-square overflow-hidden bg-[#08070b]">
+                  <Image src={imageUrl} alt={`${place.label}${place.standing ? ` - ${place.standing.name}` : ""}`} fill sizes="(min-width: 640px) 33vw, 100vw" unoptimized className="object-contain" onError={(event) => {
                     const image = event.currentTarget;
                     if (image.dataset.fallbackApplied === "true") image.style.display = "none";
                     else {
