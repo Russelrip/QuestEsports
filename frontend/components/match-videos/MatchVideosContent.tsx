@@ -21,7 +21,6 @@ function VideoSection({ title, videos }: { title: string; videos: VideoItem[] })
                   alt={video.alt}
                   fill
                   unoptimized
-                  onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }}
                   sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
                   className="object-cover"
                 />
