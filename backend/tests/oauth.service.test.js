@@ -128,6 +128,7 @@ const buildLinkService = ({
   hasPassword = true,
   nonceStoreError = null,
   transactionFailures = 0,
+  onTransactionFailure = null,
 } = {}) => {
   const linkedAccounts = [...accounts];
   const linkNonces = [];
@@ -201,6 +202,7 @@ const buildLinkService = ({
             transactionOptions.push(options);
             if (transactionFailures > 0) {
               transactionFailures -= 1;
+              onTransactionFailure?.(linkedAccounts);
               const error = new Error("serialization conflict");
               error.code = "P2034";
               throw error;
@@ -637,6 +639,33 @@ test("OAuth unlink retries serialization conflicts before applying the removal",
   try {
     await service.unlinkOAuthProvider({ userId: "user-1", provider: "google" });
     assert.equal(transactionOptions.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth unlink re-evaluates login methods after a serialization retry", async () => {
+  const { service, deleteCalls, transactionOptions, restore } = buildLinkService({
+    accounts: [
+      { id: "oauth-1", userId: "user-1", provider: "google" },
+      { id: "oauth-2", userId: "user-1", provider: "discord" },
+    ],
+    hasPassword: false,
+    transactionFailures: 1,
+    onTransactionFailure: (linkedAccounts) => {
+      linkedAccounts.splice(
+        linkedAccounts.findIndex((account) => account.provider === "discord"),
+        1
+      );
+    },
+  });
+  try {
+    await assert.rejects(
+      service.unlinkOAuthProvider({ userId: "user-1", provider: "google" }),
+      (error) => error.code === "OAUTH_LAST_LOGIN_METHOD"
+    );
+    assert.equal(transactionOptions.length, 2);
+    assert.equal(deleteCalls.length, 0);
   } finally {
     restore();
   }
