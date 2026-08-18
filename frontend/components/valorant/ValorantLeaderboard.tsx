@@ -10,7 +10,7 @@ import EmptyState from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Container } from "@/components/ui/container";
 import { cn } from "@/lib/utils";
-import type { ValorantPlayerLeaderboardEntry } from "@/lib/valorant";
+import { buildValorantTrackerProfileUrl, type ValorantPlayerLeaderboardEntry } from "@/lib/valorant";
 
 type ValorantLeaderboardProps = {
   entries: ValorantPlayerLeaderboardEntry[];
@@ -39,6 +39,7 @@ const LeaderboardTableHeader = () => (
 
 const LeaderboardRow = ({ entry, rank }: { entry: ValorantPlayerLeaderboardEntry; rank: number | null }) => {
   const isTopTen = rank !== null && rank <= TOP_N;
+  const trackerUrl = buildValorantTrackerProfileUrl(entry.name, entry.tag);
   const rankTone =
     rank === 1 ? "text-amber-300"
     : rank === 2 ? "text-zinc-300"
@@ -53,6 +54,18 @@ const LeaderboardRow = ({ entry, rank }: { entry: ValorantPlayerLeaderboardEntry
       <td className={cn("px-4 py-4 font-semibold text-white", rankTone)}>{rank ?? "—"}</td>
       <td className="px-4 py-4 text-slate-200">
         <span className="font-medium text-white">{entry.name}#{entry.tag}</span>
+        {trackerUrl ? (
+          <a
+            href={trackerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`View ${entry.name}#${entry.tag} on Tracker`}
+            title="View profile on Tracker"
+            className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded text-xs text-slate-400 transition hover:bg-white/10 hover:text-fuchsia-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          >
+            <span aria-hidden="true">↗</span>
+          </a>
+        ) : null}
         <span className="ml-2 text-xs text-slate-500">{entry.discordUsername}</span>
       </td>
       <td className="px-4 py-4">
