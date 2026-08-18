@@ -369,6 +369,78 @@ Body:
 }
 ```
 
+## Authenticated Support Conversations
+
+Support conversations are separate from guest contact submissions and match-room
+support requests. Every route below requires the current browser session; the
+owner is always taken from that session rather than from a client-supplied user
+ID. Responses use the versioned envelope described above, with all timestamps in
+ISO-8601 UTC. Subjects are required and limited to 160 characters; message
+bodies are required and limited to 2,000 characters.
+
+### User routes
+
+- `GET /api/v1/support/conversations` — lists the current user's conversations.
+  Optional query parameters are `limit` (1–100, default 25) and `cursor` (an
+  ISO-8601 `updatedAt` cursor). `data` is `{ items, nextCursor }`; each item
+  includes `id`, `ownerUserId`, `subject`, `status`, `assignedStaffUserId`,
+  `createdAt`, `updatedAt`, `resolvedAt`, owner/assigned-staff summaries,
+  `lastMessage`, `preview`, and the viewer-specific `unreadCount`.
+- `POST /api/v1/support/conversations` — creates a conversation and its first
+  message in one transaction. JSON body: `{ "subject": "...", "body": "..." }`.
+  Returns `201` with a full conversation in `data`, initially in `OPEN` status.
+- `GET /api/v1/support/conversations/:conversationId` — returns an owned
+  conversation and its messages in ascending creation order. Access to another
+  user's conversation is rejected.
+- `POST /api/v1/support/conversations/:conversationId/messages` — adds a user
+  reply. JSON body: `{ "body": "..." }`. Returns `201` with
+  `{ message, status }` in `data`; a user reply changes the conversation to
+  `PENDING_STAFF` and reopens a resolved conversation.
+- `PATCH /api/v1/support/conversations/:conversationId/read` — advances the
+  authenticated user's conversation read cursor. The JSON body is empty and the
+  response data is `{ lastReadAt, unreadCount: 0 }`. Read state is per user and
+  does not modify message rows.
+- `POST /api/v1/support/conversations/:conversationId/resolve` — resolves an
+  owned conversation and sets `resolvedAt`.
+- `POST /api/v1/support/conversations/:conversationId/reopen` — reopens an
+  owned conversation, clears `resolvedAt`, and returns the full conversation.
+  Users may only perform the explicit resolve/reopen transitions.
+
+### Staff routes
+
+All staff routes require `user.role === "admin"` in addition to authentication.
+Staff reads use the authenticated staff ID for their independent unread cursor.
+
+- `GET /api/v1/admin/support/conversations` — lists the staff queue. Optional
+  query parameters are `status` (`OPEN`, `PENDING_USER`, `PENDING_STAFF`, or
+  `RESOLVED`), `assigned` (`all`, `unassigned`, `mine`, `true`, `false`, or a
+  staff user ID), `search`, `limit` (1–100), and `cursor`. `data` is
+  `{ items, nextCursor }` using the same summary shape as the user list.
+- `GET /api/v1/admin/support/conversations/:conversationId` — returns any
+  support conversation and all messages for staff review.
+- `PATCH /api/v1/admin/support/conversations/:conversationId/read` — marks the
+  conversation read for the authenticated admin only. The response data is
+  `{ lastReadAt, unreadCount: 0 }`; it does not mark the owner's messages read
+  and does not affect another admin's cursor.
+- `PATCH /api/v1/admin/support/conversations/:conversationId/assignment` —
+  assigns or unassigns staff. JSON body:
+  `{ "assignedStaffUserId": "staff-user-id" }` or `{ "assignedStaffUserId": null }`.
+  The target must be an existing staff user; returns the full conversation.
+- `POST /api/v1/admin/support/conversations/:conversationId/messages` — adds
+  a staff reply. JSON body: `{ "body": "..." }`. Returns `201` with
+  `{ message, status }`; a staff reply changes status to `PENDING_USER`.
+- `PATCH /api/v1/admin/support/conversations/:conversationId/status` — changes
+  status using JSON body `{ "status": "OPEN|PENDING_USER|PENDING_STAFF|RESOLVED" }`.
+  Resolving sets `resolvedAt`; reopening clears it. Returns the full
+  conversation.
+
+Messages are committed before notification and realtime delivery is attempted.
+New messages create persisted `support_message` notifications for the recipient;
+delivery failures do not convert a successful message write into an error.
+Validation failures return `400`, missing/unauthorized owned conversations use
+the existing protected-route error behavior, and admin-only access is enforced by
+the backend rather than by the frontend controls.
+
 ## Public Tournament Endpoints
 
 ### Quest Ascension events
