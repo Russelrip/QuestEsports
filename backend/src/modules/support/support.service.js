@@ -1,4 +1,5 @@
 const { HttpError } = require("../../lib/http-error");
+const { logger } = require("../../lib/logger");
 const { prisma } = require("../../lib/prisma");
 const { normalizeText } = require("../../lib/validation");
 const { createNotification } = require("../notifications/notification.service");
@@ -69,6 +70,12 @@ const parseCursor = (cursor) => {
 
 const normalizeSubject = (subject) => normalizeText(subject).replace(/\s+/g, " ");
 const normalizeBody = (body) => normalizeText(body).replace(/\s+/g, " ");
+
+const requireUserId = (value, label = "userId") => {
+  const userId = normalizeText(value);
+  if (!userId) throw new HttpError(400, `${label} is required.`);
+  return userId;
+};
 
 const validateSubject = (subject) => {
   const value = normalizeSubject(subject);
@@ -191,7 +198,13 @@ const publishMessageEffects = async ({ conversation, message, senderUserId, isSt
 
   try {
     await createNotification(notification);
-  } catch {
+  } catch (error) {
+    logger.error("Support notification persistence failed", {
+      conversationId: conversation.id,
+      messageId: message.id,
+      recipientCount: recipients.length,
+      error,
+    });
     // A saved support message remains the source of truth if notification delivery fails.
   }
 
@@ -200,8 +213,14 @@ const publishMessageEffects = async ({ conversation, message, senderUserId, isSt
     try {
       const cursor = await readCursor(prisma, conversation.id, userId);
       count = await unreadCount(prisma, conversation.id, userId, cursor?.lastReadAt || null);
-    } catch {
+    } catch (error) {
       // Realtime is an optimization; clients can reconcile with the persisted thread.
+      logger.warn("Support realtime unread-count lookup failed", {
+        conversationId: conversation.id,
+        messageId: message.id,
+        userId,
+        error,
+      });
     }
     try {
       publishRealtimeEvent(`user:${userId}`, {
@@ -211,13 +230,20 @@ const publishMessageEffects = async ({ conversation, message, senderUserId, isSt
         status: conversation.status,
         unreadCount: count,
       });
-    } catch {
+    } catch (error) {
       // Do not turn a persisted message into a failed request when realtime is unavailable.
+      logger.warn("Support realtime delivery failed", {
+        conversationId: conversation.id,
+        messageId: message.id,
+        userId,
+        error,
+      });
     }
   }
 };
 
 const listUserConversations = async ({ userId, limit, cursor } = {}) => {
+  userId = requireUserId(userId);
   const take = parseLimit(limit);
   const cursorDate = parseCursor(cursor);
   return transaction(async (tx) => {
@@ -237,6 +263,7 @@ const listUserConversations = async ({ userId, limit, cursor } = {}) => {
 };
 
 const createConversation = async ({ ownerUserId, subject, body }) => {
+  ownerUserId = requireUserId(ownerUserId, "ownerUserId");
   const normalizedSubject = validateSubject(subject);
   const normalizedBody = validateBody(body);
   const conversation = await transaction((tx) => tx.supportConversation.create({
@@ -254,6 +281,7 @@ const createConversation = async ({ ownerUserId, subject, body }) => {
 };
 
 const getConversation = async ({ conversationId, userId, isStaff = false }) => {
+  userId = requireUserId(userId);
   return transaction(async (tx) => {
     const conversation = await findConversation(tx, { conversationId, userId, isStaff });
     if (!conversation) throw new HttpError(isStaff ? 404 : 403, "Support conversation not found.");
@@ -262,6 +290,7 @@ const getConversation = async ({ conversationId, userId, isStaff = false }) => {
 };
 
 const sendMessage = async ({ conversationId, senderUserId, body, isStaff = false }) => {
+  senderUserId = requireUserId(senderUserId, "senderUserId");
   const normalizedBody = validateBody(body);
   const result = await transaction(async (tx) => {
     const conversation = await findConversation(tx, {
@@ -297,6 +326,7 @@ const sendMessage = async ({ conversationId, senderUserId, body, isStaff = false
 };
 
 const markConversationRead = async ({ conversationId, userId, isStaff = false }) => {
+  userId = requireUserId(userId);
   const lastReadAt = new Date();
   const result = await transaction(async (tx) => {
     const conversation = await findConversation(tx, { conversationId, userId, isStaff, include: undefined });
@@ -311,6 +341,7 @@ const markConversationRead = async ({ conversationId, userId, isStaff = false })
 };
 
 const changeConversationStatus = async ({ conversationId, actorUserId, status, isStaff = false }) => {
+  actorUserId = requireUserId(actorUserId, "actorUserId");
   const normalizedStatus = ensureStatus(status);
   if (!isStaff && !["OPEN", "RESOLVED"].includes(normalizedStatus)) {
     throw new HttpError(403, "Users may only resolve or reopen their own support conversations.");
@@ -333,6 +364,7 @@ const changeConversationStatus = async ({ conversationId, actorUserId, status, i
 const isStaffRecord = (user) => ["admin", "staff"].includes(String(user?.role || "").toLowerCase());
 
 const assignConversation = async ({ conversationId, assignedStaffUserId = null, actorUserId }) => {
+  actorUserId = requireUserId(actorUserId, "actorUserId");
   if (!prisma.user?.findUnique) throw new HttpError(403, "Staff authorization is required.");
   const actor = await prisma.user.findUnique({ where: { id: actorUserId }, select: { id: true, role: true } });
   if (!isStaffRecord(actor)) throw new HttpError(403, "Staff authorization is required.");
@@ -356,7 +388,8 @@ const assignConversation = async ({ conversationId, assignedStaffUserId = null, 
   });
 };
 
-const listStaffConversations = async ({ status, assigned, search, limit, cursor } = {}) => {
+const listStaffConversations = async ({ status, assigned, search, limit, cursor, staffUserId } = {}) => {
+  staffUserId = requireUserId(staffUserId, "staffUserId");
   const take = parseLimit(limit);
   const cursorDate = parseCursor(cursor);
   const normalizedStatus = status ? ensureStatus(status) : null;
@@ -388,7 +421,7 @@ const listStaffConversations = async ({ status, assigned, search, limit, cursor 
     const hasMore = rows.length > take;
     const page = rows.slice(0, take);
     return {
-      items: await Promise.all(page.map((conversation) => mapSummary(conversation, null, tx))),
+      items: await Promise.all(page.map((conversation) => mapSummary(conversation, staffUserId, tx))),
       nextCursor: hasMore ? page.at(-1)?.updatedAt?.toISOString() || null : null,
     };
   });
