@@ -434,6 +434,24 @@ legend {
   from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.985); }
 }
 
+@keyframes gallery-photo-enter-next {
+  from { opacity: 0; transform: translate3d(2rem, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes gallery-photo-enter-previous {
+  from { opacity: 0; transform: translate3d(-2rem, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.gallery-photo-enter--next {
+  animation: gallery-photo-enter-next 400ms ease-out both;
+}
+
+.gallery-photo-enter--previous {
+  animation: gallery-photo-enter-previous 400ms ease-out both;
+}
+
 @keyframes veto-coin-flip {
   0% { transform: rotateY(0deg) rotateX(8deg) scale(.92); }
   45% { transform: rotateY(900deg) rotateX(22deg) scale(1.18); }
@@ -467,6 +485,8 @@ legend {
 .veto-map-card--banned::after { content: "X"; position: absolute; inset: 50% auto auto 50%; z-index: 4; translate: -50% -50%; color: rgb(251 113 133 / .8); font-size: 5rem; font-weight: 800; line-height: 1; }
 
 @media (prefers-reduced-motion: reduce) {
+  .gallery-photo-enter--next, .gallery-photo-enter--previous { animation: none; }
+
   .veto-coin--flipping, .veto-map-card--picked, .veto-map-card--banned { animation: none; }
   .veto-map-card { transition-duration: 0.01ms !important; }
 }

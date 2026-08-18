@@ -27,6 +27,8 @@ const updatePhotoQuery = (photoId?: string) => {
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 };
 
+type PhotoDirection = "next" | "previous";
+
 export default function EventAlbumBrowser({
   album,
   initialPhotoId,
@@ -45,11 +47,13 @@ export default function EventAlbumBrowser({
   const [loadError, setLoadError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  const [photoDirection, setPhotoDirection] = useState<PhotoDirection | null>(null);
   const touchStartX = useRef<number | null>(null);
   const selectedPhoto = selectedIndex >= 0 ? photos[selectedIndex] : null;
 
-  const selectPhoto = useCallback((index: number) => {
+  const selectPhoto = useCallback((index: number, direction?: PhotoDirection) => {
     const normalized = (index + photos.length) % photos.length;
+    setPhotoDirection(direction ?? null);
     setSelectedIndex(normalized);
     updatePhotoQuery(photos[normalized].id);
   }, [photos]);
@@ -77,6 +81,7 @@ export default function EventAlbumBrowser({
 
   const closeLightbox = useCallback(() => {
     setSelectedIndex(-1);
+    setPhotoDirection(null);
     setDownloadError("");
     updatePhotoQuery();
   }, []);
@@ -139,8 +144,8 @@ export default function EventAlbumBrowser({
     document.body.style.overflow = "hidden";
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") closeLightbox();
-      if (event.key === "ArrowLeft") selectPhoto(selectedIndex - 1);
-      if (event.key === "ArrowRight") selectPhoto(selectedIndex + 1);
+      if (event.key === "ArrowLeft") selectPhoto(selectedIndex - 1, "previous");
+      if (event.key === "ArrowRight") selectPhoto(selectedIndex + 1, "next");
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -267,7 +272,7 @@ export default function EventAlbumBrowser({
             const difference = (event.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
             touchStartX.current = null;
             if (Math.abs(difference) < 55) return;
-            selectPhoto(difference > 0 ? selectedIndex - 1 : selectedIndex + 1);
+            selectPhoto(difference > 0 ? selectedIndex - 1 : selectedIndex + 1, difference > 0 ? "previous" : "next");
           }}
         >
           <div className="flex min-h-16 items-center justify-between gap-4 border-b border-white/10 bg-black/80 px-4 sm:px-6">
@@ -296,7 +301,7 @@ export default function EventAlbumBrowser({
               fill
               priority
               sizes="100vw"
-              className="select-none object-contain p-2 sm:p-5"
+              className={`select-none object-contain p-2 sm:p-5 ${photoDirection ? `gallery-photo-enter gallery-photo-enter--${photoDirection}` : ""}`}
               unoptimized
               onError={(event) => {
                 const image = event.currentTarget;
@@ -309,8 +314,8 @@ export default function EventAlbumBrowser({
             />
             {photos.length > 1 ? (
               <>
-                <button type="button" onClick={() => selectPhoto(selectedIndex - 1)} className="absolute left-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center border border-white/15 bg-black/60 text-3xl text-white transition hover:bg-purple-500/60 sm:left-5 sm:size-14" aria-label="Previous photo">‹</button>
-                <button type="button" onClick={() => selectPhoto(selectedIndex + 1)} className="absolute right-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center border border-white/15 bg-black/60 text-3xl text-white transition hover:bg-purple-500/60 sm:right-5 sm:size-14" aria-label="Next photo">›</button>
+                <button type="button" onClick={() => selectPhoto(selectedIndex - 1, "previous")} className="absolute left-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center border border-white/15 bg-black/60 text-3xl text-white transition hover:bg-purple-500/60 sm:left-5 sm:size-14" aria-label="Previous photo">‹</button>
+                <button type="button" onClick={() => selectPhoto(selectedIndex + 1, "next")} className="absolute right-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center border border-white/15 bg-black/60 text-3xl text-white transition hover:bg-purple-500/60 sm:right-5 sm:size-14" aria-label="Next photo">›</button>
               </>
             ) : null}
           </div>
