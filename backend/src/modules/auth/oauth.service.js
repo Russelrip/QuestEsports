@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
+const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { env } = require("../../config/env");
 const { HttpError } = require("../../lib/http-error");
@@ -10,7 +11,11 @@ const {
   normalizeText,
   normalizeUsername,
 } = require("../../lib/validation");
-const { PUBLIC_USER_SELECT, mapUserForResponse } = require("./auth.service");
+const {
+  PUBLIC_USER_SELECT,
+  getUserLoginMethodState,
+  mapUserForResponse,
+} = require("./auth.service");
 
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_REQUEST_TIMEOUT_MS = 10 * 1000;
@@ -30,22 +35,47 @@ const fetchOAuth = async (url, options = {}) => {
 };
 const OAUTH_RANDOM_PASSWORD_BYTES = 24;
 const OAUTH_FLOW_COOKIE_PREFIX = `${env.SESSION_COOKIE_NAME}_oauth_`;
+const OAUTH_LINK_FLOW_COOKIE_PREFIX = `${env.SESSION_COOKIE_NAME}_oauth_link_`;
+const OAUTH_LINK_FLOW = "link";
+const OAUTH_TRANSACTION_MAX_RETRIES = 3;
+const OAUTH_RETRYABLE_TRANSACTION_ERRORS = new Set([
+  "P2002",
+  "P2024",
+  "P2028",
+  "P2034",
+  "P2037",
+]);
+
+const DEFAULT_OAUTH_ENDPOINTS = {
+  google: {
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    profileUrl: "https://openidconnect.googleapis.com/v1/userinfo",
+  },
+  discord: {
+    authorizeUrl: "https://discord.com/api/oauth2/authorize",
+    tokenUrl: "https://discord.com/api/oauth2/token",
+    profileUrl: "https://discord.com/api/users/@me",
+  },
+};
 
 const OAUTH_PROVIDER_CONFIG = {
   google: {
     clientId: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
     callbackUrl: env.GOOGLE_CALLBACK_URL,
-    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
-    tokenUrl: "https://oauth2.googleapis.com/token",
+    authorizeUrl: env.GOOGLE_OAUTH_AUTHORIZE_URL || DEFAULT_OAUTH_ENDPOINTS.google.authorizeUrl,
+    tokenUrl: env.GOOGLE_OAUTH_TOKEN_URL || DEFAULT_OAUTH_ENDPOINTS.google.tokenUrl,
+    profileUrl: env.GOOGLE_OAUTH_PROFILE_URL || DEFAULT_OAUTH_ENDPOINTS.google.profileUrl,
     scope: "openid email profile",
   },
   discord: {
     clientId: env.DISCORD_CLIENT_ID,
     clientSecret: env.DISCORD_CLIENT_SECRET,
     callbackUrl: env.DISCORD_CALLBACK_URL,
-    authorizeUrl: "https://discord.com/api/oauth2/authorize",
-    tokenUrl: "https://discord.com/api/oauth2/token",
+    authorizeUrl: env.DISCORD_OAUTH_AUTHORIZE_URL || DEFAULT_OAUTH_ENDPOINTS.discord.authorizeUrl,
+    tokenUrl: env.DISCORD_OAUTH_TOKEN_URL || DEFAULT_OAUTH_ENDPOINTS.discord.tokenUrl,
+    profileUrl: env.DISCORD_OAUTH_PROFILE_URL || DEFAULT_OAUTH_ENDPOINTS.discord.profileUrl,
     scope: "identify email",
   },
 };
@@ -139,20 +169,29 @@ const normalizeRedirectPath = (value) => {
   return normalizeSafeRedirectPath(value) || "/profile";
 };
 
-const createOAuthState = ({ provider, redirectTo, nonce, mobileCodeChallenge }) =>
+const createOAuthState = ({
+  provider,
+  redirectTo,
+  nonce,
+  mobileCodeChallenge,
+  flow,
+  userId,
+}) =>
   createSignedPayload({
     provider,
     redirectTo: normalizeRedirectPath(redirectTo),
     nonce,
     mobileCodeChallenge: mobileCodeChallenge || null,
+    ...(flow ? { flow, userId } : {}),
     timestamp: Date.now(),
   });
 
-const createOAuthFlowToken = ({ provider, nonce, codeVerifier }) =>
+const createOAuthFlowToken = ({ provider, nonce, codeVerifier, flow, userId }) =>
   createSignedPayload({
     provider,
     nonce,
     codeVerifier,
+    ...(flow ? { flow, userId } : {}),
     timestamp: Date.now(),
   });
 
@@ -165,6 +204,10 @@ const verifyOAuthState = ({ state, provider, flowToken }) => {
 
   if (parsedState.provider !== provider || parsedFlow.provider !== provider) {
     throw new HttpError(400, "OAuth provider mismatch.");
+  }
+
+  if (parsedState.flow || parsedFlow.flow) {
+    throw new HttpError(400, "Invalid OAuth state.");
   }
 
   if (isExpired(parsedState.timestamp) || isExpired(parsedFlow.timestamp)) {
@@ -187,7 +230,60 @@ const verifyOAuthState = ({ state, provider, flowToken }) => {
   };
 };
 
-const getProviderConfig = (provider) => {
+const verifyOAuthLinkState = ({ state, provider, flowToken, userId }) => {
+  const parsedState = parseSignedPayload(state, "Invalid OAuth link state.");
+  const parsedFlow = parseSignedPayload(flowToken, "Invalid OAuth link state.");
+  const normalizedUserId = String(userId || "").trim();
+
+  if (!normalizedUserId) {
+    throw new HttpError(401, "Authentication is required to link an OAuth account.");
+  }
+
+  if (
+    parsedState.provider !== provider ||
+    parsedFlow.provider !== provider ||
+    parsedState.flow !== OAUTH_LINK_FLOW ||
+    parsedFlow.flow !== OAUTH_LINK_FLOW
+  ) {
+    throw new HttpError(400, "Invalid OAuth link state.");
+  }
+
+  if (
+    parsedState.userId !== normalizedUserId ||
+    parsedFlow.userId !== normalizedUserId
+  ) {
+    throw new HttpError(403, "This OAuth link belongs to a different account.");
+  }
+
+  if (isExpired(parsedState.timestamp) || isExpired(parsedFlow.timestamp)) {
+    throw new HttpError(400, "OAuth link state has expired.");
+  }
+
+  if (
+    !parsedState.nonce ||
+    !parsedFlow.nonce ||
+    !parsedFlow.codeVerifier ||
+    parsedState.nonce !== parsedFlow.nonce
+  ) {
+    throw new HttpError(400, "Invalid OAuth link state.");
+  }
+
+  return {
+    redirectTo: normalizeRedirectPath(parsedState.redirectTo),
+    codeVerifier: parsedFlow.codeVerifier,
+    nonce: parsedState.nonce,
+  };
+};
+
+const getLinkCallbackUrl = (callbackUrl, provider) => {
+  const parsed = new URL(callbackUrl);
+  parsed.pathname = `/api/v1/auth/oauth/${provider}/link/callback`;
+  parsed.search = "";
+  parsed.hash = "";
+  return ensureAbsoluteUrl(parsed.toString(), `${provider} link callback URL`);
+};
+
+const getProviderConfig = (provider, { flow = "login" } = {}) => {
   const config = OAUTH_PROVIDER_CONFIG[provider];
   if (!config) {
     throw new HttpError(400, "Unsupported OAuth provider.");
@@ -201,23 +297,40 @@ const getProviderConfig = (provider) => {
     throw new HttpError(503, `${provider} login is not configured.`);
   }
 
+  const callbackUrl = ensureAbsoluteUrl(
+    config.callbackUrl,
+    `${provider} callback URL`
+  );
+  const authorizeUrl = ensureAbsoluteUrl(
+    config.authorizeUrl,
+    `${provider} authorization URL`
+  );
+  const tokenUrl = ensureAbsoluteUrl(config.tokenUrl, `${provider} token URL`);
+  const profileUrl = ensureAbsoluteUrl(
+    config.profileUrl,
+    `${provider} profile URL`
+  );
+
   return {
     ...config,
-    callbackUrl: ensureAbsoluteUrl(
-      config.callbackUrl,
-      `${provider} callback URL`
-    ),
+    authorizeUrl,
+    tokenUrl,
+    profileUrl,
+    callbackUrl:
+      flow === OAUTH_LINK_FLOW
+        ? getLinkCallbackUrl(callbackUrl, provider)
+        : callbackUrl,
   };
 };
 
-const getOAuthFlowCookieName = (provider) =>
-  `${OAUTH_FLOW_COOKIE_PREFIX}${provider}`;
+const getOAuthFlowCookieName = (provider, flow = "login") =>
+  `${flow === OAUTH_LINK_FLOW ? OAUTH_LINK_FLOW_COOKIE_PREFIX : OAUTH_FLOW_COOKIE_PREFIX}${provider}`;
 
-const buildOAuthFlowCookie = ({ provider, flowToken, expiresAt }) => {
+const buildOAuthFlowCookie = ({ provider, flowToken, expiresAt, flow = "login" }) => {
   const segments = [
-    `${getOAuthFlowCookieName(provider)}=${encodeURIComponent(flowToken)}`,
+    `${getOAuthFlowCookieName(provider, flow)}=${encodeURIComponent(flowToken)}`,
     "HttpOnly",
-    "Path=/api/auth",
+    `Path=${flow === OAUTH_LINK_FLOW ? "/api/v1/auth" : "/api/auth"}`,
     "SameSite=Lax",
     `Expires=${new Date(expiresAt).toUTCString()}`,
   ];
@@ -236,8 +349,22 @@ const buildExpiredOAuthFlowCookie = (provider) =>
     expiresAt: new Date(0),
   });
 
-const getOAuthFlowToken = ({ provider, cookieHeader }) => {
-  const cookieName = getOAuthFlowCookieName(provider);
+const buildExpiredOAuthLinkFlowCookie = (provider) =>
+  buildOAuthFlowCookie({
+    provider,
+    flow: OAUTH_LINK_FLOW,
+    flowToken: "",
+    expiresAt: new Date(0),
+  });
+
+const getOAuthFlowToken = ({
+  provider,
+  cookieHeader,
+  flow = "login",
+  link = false,
+}) => {
+  const resolvedFlow = link ? OAUTH_LINK_FLOW : flow;
+  const cookieName = getOAuthFlowCookieName(provider, resolvedFlow);
 
   for (const part of String(cookieHeader || "").split(";")) {
     const [rawName, ...rawValue] = part.trim().split("=");
@@ -252,6 +379,13 @@ const getOAuthFlowToken = ({ provider, cookieHeader }) => {
 
   return "";
 };
+
+const getOAuthLinkFlowToken = ({ provider, cookieHeader }) =>
+  getOAuthFlowToken({
+    provider,
+    cookieHeader,
+    flow: OAUTH_LINK_FLOW,
+  });
 
 const createOAuthAuthorization = ({ provider, redirectTo, mobileCodeChallenge }) => {
   const config = getProviderConfig(provider);
@@ -291,8 +425,80 @@ const createOAuthAuthorization = ({ provider, redirectTo, mobileCodeChallenge })
   };
 };
 
-const exchangeCodeForToken = async ({ provider, code, codeVerifier }) => {
-  const config = getProviderConfig(provider);
+const createOAuthLinkAuthorization = async ({ provider, userId, redirectTo }) => {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) {
+    throw new HttpError(401, "Authentication is required to link an OAuth account.");
+  }
+
+  const config = getProviderConfig(provider, { flow: OAUTH_LINK_FLOW });
+  const nonce = crypto.randomBytes(18).toString("hex");
+  const expiresAt = new Date(Date.now() + STATE_MAX_AGE_MS);
+  const codeVerifier = toBase64Url(crypto.randomBytes(32));
+  const codeChallenge = toBase64Url(
+    crypto.createHash("sha256").update(codeVerifier).digest()
+  );
+  const state = createOAuthState({
+    provider,
+    redirectTo,
+    nonce,
+    flow: OAUTH_LINK_FLOW,
+    userId: normalizedUserId,
+  });
+  const flowToken = createOAuthFlowToken({
+    provider,
+    nonce,
+    codeVerifier,
+    flow: OAUTH_LINK_FLOW,
+    userId: normalizedUserId,
+  });
+  const url = new URL(config.authorizeUrl);
+  url.searchParams.set("client_id", config.clientId);
+  url.searchParams.set("redirect_uri", config.callbackUrl);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", config.scope);
+  url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
+
+  if (provider === "discord") {
+    url.searchParams.set("prompt", "consent");
+  }
+
+  await prisma.oAuthLinkNonce.create({
+    data: {
+      id: crypto.randomUUID(),
+      nonce,
+      userId: normalizedUserId,
+      provider,
+      expiresAt,
+    },
+  });
+
+  return {
+    authorizationUrl: url.toString(),
+    flowCookie: buildOAuthFlowCookie({
+      provider,
+      flowToken,
+      expiresAt,
+      flow: OAUTH_LINK_FLOW,
+    }),
+  };
+};
+
+const assertSupportedOAuthProvider = (provider) => {
+  if (!OAUTH_PROVIDER_CONFIG[provider]) {
+    throw new HttpError(400, "Unsupported OAuth provider.");
+  }
+};
+
+const exchangeCodeForToken = async ({
+  provider,
+  code,
+  codeVerifier,
+  flow = "login",
+}) => {
+  const config = getProviderConfig(provider, { flow });
   const body = new URLSearchParams({
     client_id: config.clientId,
     client_secret: config.clientSecret,
@@ -323,7 +529,7 @@ const exchangeCodeForToken = async ({ provider, code, codeVerifier }) => {
 };
 
 const fetchGoogleProfile = async (accessToken) => {
-  const response = await fetchOAuth("https://openidconnect.googleapis.com/v1/userinfo", {
+  const response = await fetchOAuth(getProviderConfig("google").profileUrl, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -344,7 +550,7 @@ const fetchGoogleProfile = async (accessToken) => {
 };
 
 const fetchDiscordProfile = async (accessToken) => {
-  const response = await fetchOAuth("https://discord.com/api/users/@me", {
+  const response = await fetchOAuth(getProviderConfig("discord").profileUrl, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -552,9 +758,212 @@ const handleOAuthCallback = async ({ provider, code, state, flowToken }) => {
   };
 };
 
+const createOAuthConflictError = () => {
+  const error = new HttpError(
+    409,
+    "That OAuth account is already linked to another user."
+  );
+  error.code = "OAUTH_ACCOUNT_CONFLICT";
+  return error;
+};
+
+const createOAuthLastLoginMethodError = () => {
+  const error = new HttpError(
+    400,
+    "You must keep a verified password or another linked OAuth provider."
+  );
+  error.code = "OAUTH_LAST_LOGIN_METHOD";
+  return error;
+};
+
+const createOAuthProviderNotLinkedError = () => {
+  const error = new HttpError(404, "That OAuth provider is not linked.");
+  error.code = "OAUTH_PROVIDER_NOT_LINKED";
+  return error;
+};
+
+const claimOAuthLinkNonce = async ({ nonce, userId, provider }) => {
+  const consumedAt = new Date();
+  let claimed;
+  try {
+    claimed = await prisma.oAuthLinkNonce.updateMany({
+      where: {
+        nonce,
+        userId,
+        provider,
+        consumedAt: null,
+        expiresAt: { gt: consumedAt },
+      },
+      data: { consumedAt },
+    });
+  } catch (error) {
+    logger.error("OAuth link nonce claim failed.", { provider, userId, error });
+    throw new HttpError(503, "Unable to verify the OAuth link. Please try again.");
+  }
+
+  if (claimed.count !== 1) {
+    throw new HttpError(400, "This OAuth link has expired or was already used.");
+  }
+};
+
+const runOAuthSerializable = async (work) => {
+  for (let attempt = 1; attempt <= OAUTH_TRANSACTION_MAX_RETRIES; attempt += 1) {
+    try {
+      return await prisma.$transaction(work, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error) {
+      if (
+        !OAUTH_RETRYABLE_TRANSACTION_ERRORS.has(error?.code) ||
+        attempt === OAUTH_TRANSACTION_MAX_RETRIES
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("OAuth transaction retry limit was exhausted.");
+};
+
+const listLinkedOAuthProviders = async (userId) => {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) {
+    throw new HttpError(401, "Authentication is required.");
+  }
+
+  const accounts = await prisma.oAuthAccount.findMany({
+    where: { userId: normalizedUserId },
+    select: { provider: true },
+  });
+  const linkedProviders = new Set(accounts.map((account) => account.provider));
+
+  return Object.keys(OAUTH_PROVIDER_CONFIG).map((provider) => ({
+    provider,
+    linked: linkedProviders.has(provider),
+  }));
+};
+
+const handleOAuthLinkCallback = async ({
+  provider,
+  code,
+  state,
+  flowToken,
+  userId,
+}) => {
+  if (!code) {
+    throw new HttpError(400, "OAuth code is missing.");
+  }
+
+  const normalizedUserId = String(userId || "").trim();
+
+  const { redirectTo, codeVerifier, nonce } = verifyOAuthLinkState({
+    state,
+    provider,
+    flowToken,
+    userId: normalizedUserId,
+  });
+  await claimOAuthLinkNonce({
+    nonce,
+    userId: normalizedUserId,
+    provider,
+  });
+
+  const accessToken = await exchangeCodeForToken({
+    provider,
+    code,
+    codeVerifier,
+    flow: OAUTH_LINK_FLOW,
+  });
+  const profile = await fetchProviderProfile({ provider, accessToken });
+  const existingAccount = await prisma.oAuthAccount.findUnique({
+    where: {
+      provider_providerUserId: {
+        provider,
+        providerUserId: profile.providerUserId,
+      },
+    },
+    select: { userId: true },
+  });
+
+  if (existingAccount && existingAccount.userId !== normalizedUserId) {
+    throw createOAuthConflictError();
+  }
+
+  if (!existingAccount) {
+    try {
+      await prisma.oAuthAccount.create({
+        data: {
+          id: crypto.randomUUID(),
+          userId: normalizedUserId,
+          provider,
+          providerUserId: profile.providerUserId,
+          email: profile.email,
+        },
+      });
+    } catch (error) {
+      if (error?.code === "P2002") {
+        throw createOAuthConflictError();
+      }
+      throw error;
+    }
+  }
+
+  return {
+    redirectTo,
+    providers: await listLinkedOAuthProviders(normalizedUserId),
+  };
+};
+
+const unlinkOAuthProvider = async ({ userId, provider }) => {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) {
+    throw new HttpError(401, "Authentication is required.");
+  }
+  assertSupportedOAuthProvider(provider);
+
+  await runOAuthSerializable(async (tx) => {
+    const loginMethodState = await getUserLoginMethodState({
+      userId: normalizedUserId,
+      tx,
+    });
+    if (!loginMethodState) {
+      throw new HttpError(404, "User not found.");
+    }
+
+    const linkedAccount = await tx.oAuthAccount.findFirst({
+      where: { userId: normalizedUserId, provider },
+      select: { id: true },
+    });
+    if (!linkedAccount) {
+      throw createOAuthProviderNotLinkedError();
+    }
+
+    const [oauthCount, providerCount] = await Promise.all([
+      tx.oAuthAccount.count({ where: { userId: normalizedUserId } }),
+      tx.oAuthAccount.count({ where: { userId: normalizedUserId, provider } }),
+    ]);
+    const remainingOAuthCount = oauthCount - providerCount;
+    if (!loginMethodState.hasVerifiedPassword && remainingOAuthCount === 0) {
+      throw createOAuthLastLoginMethodError();
+    }
+
+    await tx.oAuthAccount.deleteMany({
+      where: { userId: normalizedUserId, provider },
+    });
+  });
+
+  return listLinkedOAuthProviders(normalizedUserId);
+};
+
 module.exports = {
   buildExpiredOAuthFlowCookie,
+  buildExpiredOAuthLinkFlowCookie,
   createOAuthAuthorization,
+  createOAuthLinkAuthorization,
   getOAuthFlowToken,
+  getOAuthLinkFlowToken,
   handleOAuthCallback,
+  handleOAuthLinkCallback,
+  listLinkedOAuthProviders,
+  unlinkOAuthProvider,
 };

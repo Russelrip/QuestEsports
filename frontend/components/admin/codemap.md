@@ -28,3 +28,12 @@ Admin requests use the authenticated browser session and never expose the
 private registration fields to public components. Event summary responses omit
 payment evidence, admin holds/notes, and private upload names; full sensitive
 records are loaded only in the existing admin detail workflow.
+
+## Support queue
+
+- `AdminSupportManager.tsx` owns queue loading, responsive selection, filters,
+  retry/empty states, and refresh-after-mutation behavior.
+- `support/AdminSupportThread.tsx` renders the staff conversation, reply,
+  resolve/reopen, and assignment controls; `SupportQueueFilters.tsx` keeps the
+  queue contract explicit and `SupportAssignmentControl.tsx` supports
+  self-assigning or unassigning a conversation.

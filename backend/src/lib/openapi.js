@@ -30,6 +30,50 @@ const createHeaderParameter = (
 });
 
 const createResponse = (description) => ({ description });
+const oauthProviderParameter = createPathParameter("provider", {
+  type: "string",
+  enum: ["google", "discord"],
+});
+const oauthRedirectResponse = (description) => ({
+  description,
+  headers: {
+    Location: {
+      required: true,
+      schema: { type: "string", format: "uri-reference" },
+    },
+    "Set-Cookie": {
+      required: true,
+      schema: { type: "string" },
+      description: "OAuth flow cookie or its expiry cookie; never a session cookie.",
+    },
+  },
+});
+const linkedProvidersSchema = {
+  type: "array",
+  items: {
+    type: "object",
+    required: ["provider", "linked"],
+    properties: {
+      provider: { type: "string", enum: ["google", "discord"] },
+      linked: { type: "boolean" },
+    },
+  },
+};
+const linkedProvidersResponse = {
+  description: "Current OAuth provider link state",
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        required: ["success", "providers"],
+        properties: {
+          success: { type: "boolean", const: true },
+          providers: linkedProvidersSchema,
+        },
+      },
+    },
+  },
+};
 const createOperation = (
   tag,
   summary,
@@ -105,6 +149,7 @@ const openApiDocument = {
     { name: "Admin" },
     { name: "Match Rooms" },
     { name: "Notifications" },
+    { name: "Support" },
   ],
   components: {
     securitySchemes: {
@@ -773,6 +818,148 @@ const additionalPaths = {
   },
   "/api/v1/match-rooms/{code}/chat-lock": {
     patch: createOperation("Match Rooms", "Lock or unlock match-room chat", { authenticated: true, parameters: idParameter("code") }),
+  },
+  "/api/v1/auth/oauth/providers": {
+    get: {
+      tags: ["Auth"],
+      summary: "List the signed-in user's linked OAuth providers",
+      security: [{ sessionCookie: [] }, { mobileBearer: [] }],
+      responses: {
+        200: linkedProvidersResponse,
+        401: createResponse("Authentication required"),
+      },
+    },
+  },
+  "/api/v1/auth/oauth/{provider}/link": {
+    get: {
+      tags: ["Auth"],
+      summary: "Start an authenticated OAuth account-link flow",
+      security: [{ sessionCookie: [] }, { mobileBearer: [] }],
+      parameters: [oauthProviderParameter],
+      responses: {
+        302: oauthRedirectResponse("Redirect to the OAuth provider authorization page"),
+        400: createResponse("Unsupported OAuth provider"),
+        401: createResponse("Authentication required"),
+        503: createResponse("OAuth provider is not configured"),
+      },
+    },
+  },
+  "/api/v1/auth/oauth/{provider}/link/callback": {
+    get: {
+      tags: ["Auth"],
+      summary: "Complete an authenticated OAuth account-link flow",
+      security: [{ sessionCookie: [] }, { mobileBearer: [] }],
+      parameters: [
+        oauthProviderParameter,
+        { ...createQueryParameter("code", { type: "string" }), required: true },
+        { ...createQueryParameter("state", { type: "string" }), required: true },
+      ],
+      responses: {
+        302: oauthRedirectResponse("Redirect to the profile account-linking result"),
+        400: createResponse("Unsupported OAuth provider"),
+        401: createResponse("Authentication required"),
+      },
+    },
+  },
+  "/api/v1/auth/oauth/{provider}": {
+    delete: {
+      tags: ["Auth"],
+      summary: "Unlink an OAuth provider from the signed-in account",
+      security: [{ sessionCookie: [] }, { mobileBearer: [] }],
+      parameters: [oauthProviderParameter],
+      responses: {
+        200: linkedProvidersResponse,
+        400: createResponse("Unsupported provider or last login method"),
+        401: createResponse("Authentication required"),
+        404: createResponse("OAuth provider is not linked"),
+        409: createResponse("OAuth provider conflict"),
+      },
+    },
+  },
+  "/api/v1/support/conversations": {
+    get: createOperation("Support", "List the signed-in user's support conversations", {
+      authenticated: true,
+      parameters: [
+        createQueryParameter("limit", { type: "integer", minimum: 1, maximum: 100 }),
+        createQueryParameter("cursor", { type: "string", format: "date-time" }),
+      ],
+    }),
+    post: createOperation("Support", "Create a support conversation", { authenticated: true }),
+  },
+  "/api/v1/support/conversations/{conversationId}": {
+    get: createOperation("Support", "Get an owned support conversation and its messages", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/support/conversations/{conversationId}/messages": {
+    post: createOperation("Support", "Reply to an owned support conversation", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/support/conversations/{conversationId}/read": {
+    patch: createOperation("Support", "Mark an owned support conversation read", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/support/conversations/{conversationId}/resolve": {
+    post: createOperation("Support", "Resolve an owned support conversation", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/support/conversations/{conversationId}/reopen": {
+    post: createOperation("Support", "Reopen an owned support conversation", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations": {
+    get: createOperation("Support", "List the staff support queue", {
+      authenticated: true,
+      parameters: [
+        createQueryParameter("status", { type: "string", enum: ["OPEN", "PENDING_USER", "PENDING_STAFF", "RESOLVED"] }),
+        createQueryParameter("assigned", { type: "string" }),
+        createQueryParameter("search", { type: "string" }),
+        createQueryParameter("limit", { type: "integer", minimum: 1, maximum: 100 }),
+        createQueryParameter("cursor", { type: "string", format: "date-time" }),
+      ],
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}": {
+    get: createOperation("Support", "Get any support conversation for staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/read": {
+    patch: {
+      ...createOperation("Support", "Mark a support conversation read for the signed-in staff member", {
+        authenticated: true,
+        parameters: idParameter("conversationId"),
+      }),
+      "x-required-role": "admin",
+    },
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/assignment": {
+    patch: createOperation("Support", "Assign or unassign a support conversation", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/messages": {
+    post: createOperation("Support", "Reply to a support conversation as staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/status": {
+    patch: createOperation("Support", "Change a support conversation status as staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
   },
   "/api/v1/notifications": {
     get: createOperation("Notifications", "List in-app notifications and delivery preferences", { authenticated: true }),

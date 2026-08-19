@@ -14,6 +14,7 @@
     "test": "vitest run tests/unit",
     "test:e2e": "playwright test",
     "test:e2e:local": "node scripts/run-e2e-local.mjs",
+    "test:e2e:oauth": "node scripts/run-oauth-e2e.mjs",
     "perf:check": "node scripts/measure-page-performance.mjs"
   },
   "dependencies": {
@@ -33,12 +34,16 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.5",
     "@types/node": "^24",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.2.11",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"

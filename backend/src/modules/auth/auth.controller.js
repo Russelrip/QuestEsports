@@ -4,9 +4,15 @@ const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const {
   buildExpiredOAuthFlowCookie,
+  buildExpiredOAuthLinkFlowCookie,
   createOAuthAuthorization,
+  createOAuthLinkAuthorization,
   getOAuthFlowToken,
+  getOAuthLinkFlowToken,
   handleOAuthCallback,
+  handleOAuthLinkCallback,
+  listLinkedOAuthProviders,
+  unlinkOAuthProvider,
 } = require("./oauth.service");
 const {
   createSession,
@@ -36,6 +42,8 @@ const {
 } = require("./auth.service");
 
 const MOBILE_ADMIN_OAUTH_REDIRECT = "/mobile-admin-oauth";
+const OAUTH_LINK_PROFILE_REDIRECT = "/profile?tab=account";
+const SUPPORTED_OAUTH_PROVIDERS = new Set(["google", "discord"]);
 
 const getAppRedirectUrl = (destination) => {
   const appUrl = String(env.APP_URL || "").trim();
@@ -45,6 +53,14 @@ const getAppRedirectUrl = (destination) => {
   }
 
   return new URL(destination, appUrl).toString();
+};
+
+const assertSupportedOAuthProvider = (provider) => {
+  const normalizedProvider = String(provider || "").trim().toLowerCase();
+  if (!SUPPORTED_OAUTH_PROVIDERS.has(normalizedProvider)) {
+    throw new HttpError(400, "Unsupported OAuth provider.");
+  }
+  return normalizedProvider;
 };
 
 const completeAuthenticatedLogin = async ({
@@ -304,6 +320,103 @@ const discordCallback = asyncHandler(async (req, res) => {
   });
 });
 
+const startOAuthLink = async ({ provider, req, res }) => {
+  const { authorizationUrl, flowCookie } = await createOAuthLinkAuthorization({
+    provider,
+    userId: req.user.id,
+    redirectTo: OAUTH_LINK_PROFILE_REDIRECT,
+  });
+
+  res.setHeader("Set-Cookie", flowCookie);
+  res.redirect(authorizationUrl);
+};
+
+const startGoogleLink = async (req, res) => {
+  await startOAuthLink({ provider: "google", req, res });
+};
+
+const startDiscordLink = async (req, res) => {
+  await startOAuthLink({ provider: "discord", req, res });
+};
+
+const startProviderLinkHandlers = {
+  google: startGoogleLink,
+  discord: startDiscordLink,
+};
+
+const startProviderLink = asyncHandler(async (req, res) => {
+  const provider = assertSupportedOAuthProvider(req.params.provider);
+  await startProviderLinkHandlers[provider](req, res);
+});
+
+const getOAuthLinkRedirect = (marker) =>
+  getAppRedirectUrl(`${OAUTH_LINK_PROFILE_REDIRECT}&oauth=${marker}`);
+
+const completeOAuthLink = async ({ provider, req, res }) => {
+  try {
+    await handleOAuthLinkCallback({
+      provider,
+      code: String(req.query.code || ""),
+      state: String(req.query.state || ""),
+      flowToken: getOAuthLinkFlowToken({
+        provider,
+        cookieHeader: req.headers.cookie,
+      }),
+      userId: req.user.id,
+    });
+
+    res.setHeader("Set-Cookie", buildExpiredOAuthLinkFlowCookie(provider));
+    res.redirect(getOAuthLinkRedirect("linked"));
+  } catch (error) {
+    logger.error("OAuth account link callback failed.", {
+      provider,
+      statusCode: error?.statusCode || 500,
+      code: error?.code || null,
+    });
+    res.setHeader("Set-Cookie", buildExpiredOAuthLinkFlowCookie(provider));
+    res.redirect(getOAuthLinkRedirect("error"));
+  }
+};
+
+const googleLinkCallback = async (req, res) => {
+  await completeOAuthLink({ provider: "google", req, res });
+};
+
+const discordLinkCallback = async (req, res) => {
+  await completeOAuthLink({ provider: "discord", req, res });
+};
+
+const providerLinkCallbackHandlers = {
+  google: googleLinkCallback,
+  discord: discordLinkCallback,
+};
+
+const providerLinkCallback = asyncHandler(async (req, res) => {
+  const provider = assertSupportedOAuthProvider(req.params.provider);
+  await providerLinkCallbackHandlers[provider](req, res);
+});
+
+const getLinkedProviders = asyncHandler(async (req, res) => {
+  const providers = await listLinkedOAuthProviders(req.user.id);
+  res.status(200).json({
+    success: true,
+    providers,
+  });
+});
+
+const unlinkProvider = asyncHandler(async (req, res) => {
+  const provider = assertSupportedOAuthProvider(req.params.provider);
+  const providers = await unlinkOAuthProvider({
+    userId: req.user.id,
+    provider,
+  });
+
+  res.status(200).json({
+    success: true,
+    providers,
+  });
+});
+
 const logout = asyncHandler(async (req, res) => {
   if (req.session?.token) {
     await deleteSessionByToken(req.session.token);
@@ -494,6 +607,14 @@ module.exports = {
   startMobileDiscordAuth,
   googleCallback,
   discordCallback,
+  startGoogleLink,
+  startDiscordLink,
+  startProviderLink,
+  googleLinkCallback,
+  discordLinkCallback,
+  providerLinkCallback,
+  getLinkedProviders,
+  unlinkProvider,
   login,
   mobileLogin,
   exchangeMobileOAuthGrant,

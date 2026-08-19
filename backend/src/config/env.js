@@ -1,9 +1,15 @@
-require("dotenv").config({
-  quiet:
-    Boolean(process.env.NODE_TEST_CONTEXT) ||
-    process.env.NODE_ENV === "test" ||
-    process.env.CI === "true",
-});
+const dotenvDisabledForTest =
+  String(process.env.NODE_ENV || "").trim().toLowerCase() === "test" &&
+  process.env.QUEST_DISABLE_DOTENV === "true";
+
+if (!dotenvDisabledForTest) {
+  require("dotenv").config({
+    quiet:
+      Boolean(process.env.NODE_TEST_CONTEXT) ||
+      process.env.NODE_ENV === "test" ||
+      process.env.CI === "true",
+  });
+}
 
 const { validatePostgresDatabaseUrl } = require("../lib/database-url");
 
@@ -35,6 +41,14 @@ const required = (name) => {
 
 const optional = (name, fallback = "") =>
   String(process.env[name] || fallback).trim();
+
+const oauthEndpoint = (name, fallback) => {
+  const override = optional(name);
+  if (override && normalizeNodeEnv(process.env.NODE_ENV) === "production") {
+    throw new Error(`${name} is only available outside production.`);
+  }
+  return override || fallback;
+};
 
 const assertHttpsUrl = (name, value, { originOnly = false } = {}) => {
   let parsed;
@@ -339,9 +353,33 @@ const env = {
   GOOGLE_CLIENT_ID: optional("GOOGLE_CLIENT_ID"),
   GOOGLE_CLIENT_SECRET: optional("GOOGLE_CLIENT_SECRET"),
   GOOGLE_CALLBACK_URL: optional("GOOGLE_CALLBACK_URL"),
+  GOOGLE_OAUTH_AUTHORIZE_URL: oauthEndpoint(
+    "GOOGLE_OAUTH_AUTHORIZE_URL",
+    "https://accounts.google.com/o/oauth2/v2/auth",
+  ),
+  GOOGLE_OAUTH_TOKEN_URL: oauthEndpoint(
+    "GOOGLE_OAUTH_TOKEN_URL",
+    "https://oauth2.googleapis.com/token",
+  ),
+  GOOGLE_OAUTH_PROFILE_URL: oauthEndpoint(
+    "GOOGLE_OAUTH_PROFILE_URL",
+    "https://openidconnect.googleapis.com/v1/userinfo",
+  ),
   DISCORD_CLIENT_ID: optional("DISCORD_CLIENT_ID"),
   DISCORD_CLIENT_SECRET: optional("DISCORD_CLIENT_SECRET"),
   DISCORD_CALLBACK_URL: optional("DISCORD_CALLBACK_URL"),
+  DISCORD_OAUTH_AUTHORIZE_URL: oauthEndpoint(
+    "DISCORD_OAUTH_AUTHORIZE_URL",
+    "https://discord.com/api/oauth2/authorize",
+  ),
+  DISCORD_OAUTH_TOKEN_URL: oauthEndpoint(
+    "DISCORD_OAUTH_TOKEN_URL",
+    "https://discord.com/api/oauth2/token",
+  ),
+  DISCORD_OAUTH_PROFILE_URL: oauthEndpoint(
+    "DISCORD_OAUTH_PROFILE_URL",
+    "https://discord.com/api/users/@me",
+  ),
   PAYHERE_MODE: optional("PAYHERE_MODE", "sandbox").toLowerCase(),
   PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION: normalizeBoolean(
     process.env.PAYHERE_ALLOW_SANDBOX_IN_PRODUCTION,

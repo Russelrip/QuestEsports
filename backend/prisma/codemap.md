@@ -6,6 +6,12 @@ Prisma owns the relational application schema and committed migration history.
 `schema.prisma` defines `EventSeries`, the nullable tournament series
 relation, child registration fields, waitlist metadata, and public references.
 
+The additive support-conversation schema defines authenticated user-owned
+support threads, staff assignment/status state, persisted messages, and
+per-user read cursors. The migration is committed but must be applied with
+`prisma migrate deploy` before support endpoints are enabled; it does not alter
+existing contact, match-room, notification, or OAuth tables.
+
 ## Quest Ascension migrations
 
 - `20260817120000_extend_event_series_quest_ascension` adds nullable event
@@ -15,10 +21,18 @@ relation, child registration fields, waitlist metadata, and public references.
   adds unique per-tournament waitlist-position enforcement.
 - `20260819130000_add_tournament_bracket_visibility` adds the additive,
   non-null `show_bracket_publicly` tournament setting with default `TRUE`.
+- `20260819120000_add_support_conversations` adds support conversation,
+  message, and per-user read-cursor tables plus their status enum and indexes.
+- `20260819170000_add_oauth_link_safety` adds the explicit password-set marker
+  and durable, one-time OAuth link nonce records. Existing users without OAuth
+  accounts are conservatively marked from `created_at`; OAuth-linked users stay
+  unmarked until they set a password.
 
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
-delete guards protect children during normal admin operations.
+delete guards protect children during normal admin operations. OAuth link
+nonces are claimed atomically and password markers distinguish a real password
+login method from OAuth-only random password hashes.
 
 ## Deployment boundary
 

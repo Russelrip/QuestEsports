@@ -223,6 +223,41 @@ Completes Google OAuth, creates a local session, and redirects to the frontend.
 
 Completes Discord OAuth, creates a local session, and redirects to the frontend.
 
+### Authenticated OAuth account linking
+
+Account linking is a separate flow from OAuth login and uses the canonical
+versioned routes below. Every route requires the current session; the callback
+does not create, replace, or refresh a session.
+
+- `GET /api/v1/auth/oauth/providers` requires the current session (cookie or
+  mobile bearer) and returns `200 { success: true, providers }`, where each
+  provider is explicitly `google` or `discord` and has a `linked` boolean.
+- `GET /api/v1/auth/oauth/:provider/link` requires the current session and a
+  provider path value of `google` or `discord`. It returns `302` with a
+  `Location` header and a link-flow `Set-Cookie` header; it never returns a
+  session cookie.
+- `GET /api/v1/auth/oauth/:provider/link/callback?code=...&state=...` requires
+  a `google` or `discord` provider path value, both required query parameters,
+  and the current session. It validates the session-bound OAuth state and PKCE
+  verifier, derives the provider identity from the provider response, and returns `302` with `Location` and an
+  expired link-flow `Set-Cookie` header to
+  `/profile?tab=account&oauth=linked` or `/profile?tab=account&oauth=error`.
+  An unsupported provider path returns JSON `400`; provider, state, code,
+  token-exchange, and ownership failures are represented by that safe `302`
+  error redirect.
+  The callback never creates, replaces, or refreshes the session cookie.
+- `DELETE /api/v1/auth/oauth/:provider` requires the current session and the
+  `google|discord` provider path enum. It returns `200 { success: true,
+  providers }` with the refreshed list. It rejects a removal that would leave
+  the user without a verified password and without another linked provider.
+
+The browser never submits a provider user ID. Provider identities already owned
+by another Quest account are rejected with the OAuth conflict error. OAuth
+authorization codes, access tokens, provider user IDs, and link state are not
+included in the profile redirect or API response. Link callbacks consume their
+state and use a link-specific flow cookie; the existing login routes and login
+callbacks remain separate.
+
 ### `POST /api/logout`
 
 Deletes the current session if present and clears the session cookie.
@@ -368,6 +403,109 @@ Body:
   "message": "Can we update our roster?"
 }
 ```
+
+## Authenticated Support Conversations
+
+Support conversations are separate from guest contact submissions and match-room
+support requests. Every route below requires the current browser session; the
+owner is always taken from that session rather than from a client-supplied user
+ID. Responses use the versioned envelope described above, with all timestamps in
+ISO-8601 UTC. Subjects are required and limited to 160 characters; message
+bodies are required and limited to 2,000 characters.
+
+`limit` defaults to 25. Values are parsed as integers, invalid/empty values use
+the default, and valid values are clamped to 1–100. `cursor` must be an
+ISO-8601 `updatedAt` value; malformed cursors return `400`. List results are
+ordered newest first and return one `nextCursor` when another page exists.
+
+### User routes
+
+- `GET /api/v1/support/conversations` — lists the current user's conversations.
+  Optional query parameters are `limit` (1–100, default 25) and `cursor` (an
+  ISO-8601 `updatedAt` cursor). `data` is `{ items, nextCursor }`; each item
+  includes `id`, `ownerUserId`, `subject`, `status`, `assignedStaffUserId`,
+  `createdAt`, `updatedAt`, `resolvedAt`, owner/assigned-staff summaries,
+  `lastMessage`, `preview`, and the viewer-specific `unreadCount`.
+- `POST /api/v1/support/conversations` — creates a conversation and its first
+  message in one transaction. JSON body: `{ "subject": "...", "body": "..." }`.
+  Returns `201` with a full conversation in `data`, initially in `OPEN` status.
+- `GET /api/v1/support/conversations/:conversationId` — returns an owned
+  conversation and its messages in ascending creation order. Access to another
+  user's conversation is rejected.
+- `POST /api/v1/support/conversations/:conversationId/messages` — adds a user
+  reply. JSON body: `{ "body": "..." }`. Returns `201` with
+  `{ message, status }` in `data`; a user reply changes the conversation to
+  `PENDING_STAFF` and reopens a resolved conversation.
+- `PATCH /api/v1/support/conversations/:conversationId/read` — advances the
+  authenticated user's conversation read cursor. The JSON body is empty and the
+  response data is `{ lastReadAt, unreadCount: 0 }`. Read state is per user and
+  does not modify message rows.
+- `POST /api/v1/support/conversations/:conversationId/resolve` — resolves an
+  owned conversation and sets `resolvedAt`. The `200` response data is the full
+  conversation projection with `status: "RESOLVED"` and the persisted
+  `resolvedAt` timestamp.
+- `POST /api/v1/support/conversations/:conversationId/reopen` — reopens an
+  owned conversation, clears `resolvedAt`, and returns the full conversation.
+  Users may only perform the explicit resolve/reopen transitions.
+
+### Staff routes
+
+All staff routes require `user.role === "admin"` in addition to authentication.
+Staff reads use the authenticated staff ID for their independent unread cursor.
+
+- `GET /api/v1/admin/support/conversations` — lists the staff queue. Optional
+  query parameters are `status` (`OPEN`, `PENDING_USER`, `PENDING_STAFF`, or
+  `RESOLVED`), `assigned` (`all`, `unassigned`, `assigned`, `mine`, `true`,
+  `false`, or a staff user ID), `search`, `limit` (1–100), and `cursor`.
+  `assigned=assigned` means any non-null assignee; `mine` means the
+  authenticated admin's ID. `search` is a case-insensitive contains search over
+  the subject, owner username, or owner email. `data` is
+  `{ items, nextCursor }` using the same summary shape as the user list.
+- `GET /api/v1/admin/support/conversations/:conversationId` — returns any
+  support conversation and all messages for staff review.
+- `PATCH /api/v1/admin/support/conversations/:conversationId/read` — marks the
+  conversation read for the authenticated admin only. This is the staff-read
+  operation documented in OpenAPI as an authenticated `PATCH` with the
+  `conversationId` path parameter. The response data is
+  `{ lastReadAt, unreadCount: 0 }`; it does not mark the owner's messages read
+  and does not affect another admin's cursor.
+- `PATCH /api/v1/admin/support/conversations/:conversationId/assignment` —
+  assigns or unassigns staff. JSON body:
+  `{ "assignedStaffUserId": "staff-user-id" }` or `{ "assignedStaffUserId": null }`.
+  The target must be an existing staff user; returns the full conversation.
+- `POST /api/v1/admin/support/conversations/:conversationId/messages` — adds
+  a staff reply. JSON body: `{ "body": "..." }`. Returns `201` with
+  `{ message, status }`; a staff reply changes status to `PENDING_USER`.
+- `PATCH /api/v1/admin/support/conversations/:conversationId/status` — changes
+  status using JSON body `{ "status": "OPEN|PENDING_USER|PENDING_STAFF|RESOLVED" }`.
+  Resolving sets `resolvedAt`; reopening clears it. Returns the full
+  conversation.
+
+Unread counts are calculated per viewer from `SupportConversationRead.lastReadAt`:
+only messages from another user whose `createdAt` is later than that cursor are
+unread. Opening a thread calls the viewer's read endpoint and advances only that
+viewer cursor. Resolving, reopening, assigning, or changing status never advances
+the cursor, so resolving a conversation does not clear unread messages.
+
+Messages are committed before notification, realtime, or push delivery is
+attempted. A user-created message (including a user reply) notifies the assigned
+staff member and all other admin recipients with action URL
+`/admin/support?conversationId=:id`; a staff reply notifies the conversation
+owner with action URL `/support/:id`. The action URL is persisted in the
+`support_message` notification and is also the URL used by optional browser push.
+New messages publish private realtime updates to each recipient's `user:{userId}`
+topic. Read marking, assignment, resolve, reopen, and status-only updates do not
+create support-message notifications or realtime message events. Push is opt-in
+when `WEB_PUSH_PUBLIC_KEY` and `WEB_PUSH_PRIVATE_KEY` are configured; push and
+realtime failures are best effort and never turn a persisted message into a
+failed request. Support messages do not send email.
+
+Validation failures, including invalid status, missing body/subject, malformed
+cursor, or invalid assignment, return `400`. Missing authentication returns
+`401`; a non-admin attempting a staff route returns `403`; an authenticated user
+requesting another owner's conversation returns `403`; and a staff request for a
+missing conversation or assignee returns `404`. These authorization rules are
+enforced by the backend rather than by frontend controls.
 
 ## Public Tournament Endpoints
 

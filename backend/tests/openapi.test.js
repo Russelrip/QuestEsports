@@ -21,9 +21,10 @@ const collectRouteOperations = () => {
   const routePattern = /router\.(get|post|put|patch|delete)\(\s*["']([^"']+)["']/g;
   const legacy = collectRouteFiles(modulesDirectory).flatMap((file) => {
     const source = fs.readFileSync(file, "utf8");
+    const prefix = file.endsWith(path.join("support", "support.routes.js")) ? "/api/v1" : "/api";
     return [...source.matchAll(routePattern)].map((match) => ({
       method: match[1],
-      path: normalizeExpressPath(match[2]),
+      path: normalizeExpressPath(match[2], prefix),
     }));
   });
   const v1Source = fs.readFileSync(path.join(__dirname, "../src/routes/v1.js"), "utf8");
@@ -48,4 +49,54 @@ test("OpenAPI declares the session-cookie authentication scheme", () => {
     name: process.env.SESSION_COOKIE_NAME,
     description: "HttpOnly session cookie issued by the login or OAuth flow.",
   });
+});
+
+test("OpenAPI declares the staff support read operation", () => {
+  const operation = openApiDocument.paths[
+    "/api/v1/admin/support/conversations/{conversationId}/read"
+  ]?.patch;
+
+  assert.ok(operation);
+  assert.deepEqual(operation.security, [
+    { sessionCookie: [] },
+    { mobileBearer: [] },
+  ]);
+  assert.deepEqual(operation.parameters, [
+    {
+      name: "conversationId",
+      in: "path",
+      required: true,
+      schema: { type: "string" },
+    },
+  ]);
+});
+
+test("OpenAPI declares canonical OAuth account-linking operations", () => {
+  const paths = openApiDocument.paths;
+
+  const providers = paths["/api/v1/auth/oauth/providers"]?.get;
+  const start = paths["/api/v1/auth/oauth/{provider}/link"]?.get;
+  const callback = paths["/api/v1/auth/oauth/{provider}/link/callback"]?.get;
+  const unlink = paths["/api/v1/auth/oauth/{provider}"]?.delete;
+
+  assert.ok(providers);
+  assert.ok(start);
+  assert.ok(callback);
+  assert.ok(unlink);
+  assert.deepEqual(start.parameters[0], {
+    name: "provider",
+    in: "path",
+    required: true,
+    schema: { type: "string", enum: ["google", "discord"] },
+  });
+  assert.deepEqual(callback.parameters.slice(1).map((parameter) => parameter.required), [true, true]);
+  assert.deepEqual(callback.security, [{ sessionCookie: [] }, { mobileBearer: [] }]);
+  assert.ok(callback.responses[302].headers.Location);
+  assert.ok(callback.responses[302].headers["Set-Cookie"]);
+  assert.ok(callback.responses[400]);
+  assert.ok(start.responses[302].headers.Location);
+  assert.ok(start.responses[302].headers["Set-Cookie"]);
+  assert.equal(start.responses[200], undefined);
+  assert.equal(unlink.responses[200].content["application/json"].schema.properties.providers.type, "array");
+  assert.ok(unlink.responses[409]);
 });

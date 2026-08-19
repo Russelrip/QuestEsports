@@ -20,6 +20,9 @@ The API routes and aggregate definitions are mapped in
 
 - `backend/` — Express API, domain modules, jobs, uploads, Prisma schema, and
   migrations.
+- [`backend/src/modules/support/`](backend/src/modules/support/codemap.md) —
+  authenticated support conversations, persisted messages, staff
+  assignment/status state, and per-user read cursors.
 - `frontend/` — Next.js public pages, account/registration flows, and web admin.
 - `mobile-admin/` — private Android operations client.
 - `docs/` — API, operational, deployment, recovery, and security contracts.

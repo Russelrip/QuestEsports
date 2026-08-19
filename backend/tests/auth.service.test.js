@@ -1,11 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const fs = require("node:fs");
 const crypto = require("node:crypto");
 
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const servicePath = path.join(__dirname, "../src/modules/auth/auth.service.js");
+const adminServicePath = path.join(__dirname, "../src/modules/admin/admin.service.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const tokensModulePath = path.join(__dirname, "../src/lib/tokens.js");
 const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
@@ -25,6 +27,29 @@ const securityEventModulePath = path.join(
   __dirname,
   "../src/lib/mail/sendSecurityEventEmail.js"
 );
+
+const loadAdminService = (prisma) => loadModuleWithMocks(adminServicePath, {
+  [require.resolve("../src/lib/prisma")]: { prisma },
+  [require.resolve("../src/modules/auth/auth.service")]: {
+    mapUserForResponse: (value) => value,
+    validateUserBasics: () => ({}),
+  },
+  [require.resolve("../src/modules/media/legacy-import.service")]: {
+    importLegacyPosters: async () => ({}),
+  },
+  [require.resolve("../src/modules/media/media.service")]: {
+    migrateImageAssetsToFilesystem: async () => ({}),
+  },
+  [require.resolve("../src/middleware/upload")]: {
+    removeUploadFiles: async () => undefined,
+    bankTransferProofDirectory: "private/bank-transfer-proofs",
+    teamLogoDirectory: "uploads/team-logos",
+  },
+  [require.resolve("../src/lib/logger")]: { logger: { warn: () => {} } },
+  [require.resolve("../src/modules/teams/team.service")]: {
+    activatePaidTeamRegistration: async () => undefined,
+  },
+});
 
 const user = {
   id: "user-1",
@@ -295,6 +320,208 @@ test("mapUserForResponse preserves an avatar URL from an already-mapped session 
       avatarUrl: "/api/uploads/avatars/player.webp",
     });
     assert.equal(mapped.avatarUrl, "/api/uploads/avatars/player.webp");
+  } finally {
+    restore();
+  }
+});
+
+test("createSignup writes passwordSetAt for a local-password account", async () => {
+  let createArgs;
+  const tx = {
+    user: {
+      create: async (args) => {
+        createArgs = args;
+        return { ...user, ...args.data, id: "new-user" };
+      },
+    },
+    verificationToken: {
+      updateMany: async () => ({ count: 0 }),
+      create: async () => undefined,
+    },
+  };
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: { findFirst: async () => null },
+      $transaction: async (callback) => callback(tx),
+    },
+  });
+
+  try {
+    await authService.createSignup({
+      body: {
+        firstName: "New",
+        lastName: "Player",
+        email: "new@example.com",
+        username: "new-player",
+        password: "correct-password",
+        confirmPassword: "correct-password",
+        terms: true,
+      },
+    });
+    assert.ok(createArgs.data.passwordSetAt instanceof Date);
+  } finally {
+    restore();
+  }
+});
+
+test("resetPassword writes a fresh passwordSetAt marker", async () => {
+  let updateArgs;
+  const tx = {
+    user: {
+      update: async (args) => {
+        updateArgs = args;
+        return { ...user, ...args.data };
+      },
+    },
+    passwordResetToken: {
+      updateMany: async () => ({ count: 1 }),
+    },
+    session: { deleteMany: async () => undefined },
+  };
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      passwordResetToken: {
+        findFirst: async () => ({ id: "reset-1", userId: user.id }),
+      },
+      $transaction: async (callback) => callback(tx),
+      user: { findUnique: async () => user },
+    },
+  });
+
+  try {
+    await authService.resetPassword({
+      body: { token: "reset-token", newPassword: "new-password" },
+    });
+    assert.ok(updateArgs.data.passwordSetAt instanceof Date);
+  } finally {
+    restore();
+  }
+});
+
+test("changePassword refreshes passwordSetAt", async () => {
+  let updateArgs;
+  const tx = {
+    user: {
+      update: async (args) => {
+        updateArgs = args;
+        return { ...user, ...args.data };
+      },
+    },
+    session: { deleteMany: async () => undefined },
+  };
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: { findUnique: async () => ({ ...user, passwordHash: "old-hash" }) },
+      $transaction: async (callback) => callback(tx),
+    },
+    additionalMocks: {
+      [require.resolve("bcryptjs")]: {
+        compare: async (password, hash) =>
+          password === "current-password" && hash === "old-hash",
+        hash: async () => "new-hash",
+      },
+    },
+  });
+
+  try {
+    await authService.changePassword({
+      currentUser: { id: user.id },
+      body: {
+        currentPassword: "current-password",
+        newPassword: "new-password",
+        confirmNewPassword: "new-password",
+      },
+    });
+    assert.ok(updateArgs.data.passwordSetAt instanceof Date);
+  } finally {
+    restore();
+  }
+});
+
+test("getUserLoginMethodState does not treat an OAuth-only password hash as a set password", async () => {
+  const { module: authService, restore } = loadAuthService({
+    prismaOverride: {
+      user: {
+        findUnique: async () => ({ id: "user-1", passwordSetAt: null }),
+      },
+    },
+  });
+
+  try {
+    assert.deepEqual(
+      await authService.getUserLoginMethodState({ userId: "user-1" }),
+      { userId: "user-1", hasVerifiedPassword: false }
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("password marker migration backfills local users but leaves OAuth-linked users null", () => {
+  const migration = fs.readFileSync(
+    path.join(
+      __dirname,
+      "../prisma/migrations/20260819170000_add_oauth_link_safety/migration.sql"
+    ),
+    "utf8"
+  );
+  assert.match(migration, /SET "password_set_at" = u\."created_at"/);
+  assert.match(migration, /WHERE NOT EXISTS \([\s\S]*oauth_accounts[\s\S]*oa\."user_id" = u\."id"/);
+  assert.doesNotMatch(migration, /SET "password_set_at" = .*oauth_accounts/);
+});
+
+test("admin create and password assignment write passwordSetAt", async () => {
+  const createCalls = [];
+  const updateCalls = [];
+  const tx = {
+    user: {
+      update: async (args) => {
+        updateCalls.push(args);
+        return { id: "admin-target", ...args.data };
+      },
+    },
+    session: { deleteMany: async () => undefined },
+  };
+  const prisma = {
+    user: {
+      findFirst: async () => null,
+      findUnique: async () => ({ id: "admin-target", role: "user" }),
+      create: async (args) => {
+        createCalls.push(args);
+        return { id: "created-admin", ...args.data };
+      },
+    },
+    $transaction: async (callback) => callback(tx),
+  };
+  const { module: adminService, restore } = loadAdminService(prisma);
+
+  try {
+    await adminService.createAdminUser({
+      body: {
+        firstName: "Created",
+        lastName: "Admin",
+        email: "created-admin@example.com",
+        username: "created-admin",
+        password: "password-123",
+        confirmPassword: "password-123",
+        role: "user",
+      },
+    });
+    await adminService.updateAdminUser({
+      userId: "admin-target",
+      currentUser: { id: "existing-admin" },
+      body: {
+        firstName: "Updated",
+        lastName: "Admin",
+        email: "target@example.com",
+        username: "target-admin",
+        password: "password-456",
+        confirmPassword: "password-456",
+        role: "user",
+      },
+    });
+    assert.ok(createCalls[0].data.passwordSetAt instanceof Date);
+    assert.ok(updateCalls[0].data.passwordSetAt instanceof Date);
   } finally {
     restore();
   }

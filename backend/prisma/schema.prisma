@@ -295,6 +295,13 @@ enum MatchSupportStatus {
   resolved
 }
 
+enum SupportConversationStatus {
+  OPEN
+  PENDING_USER
+  PENDING_STAFF
+  RESOLVED
+}
+
 model DeploymentEnvironment {
   id          Int      @id @default(1)
   environment String   @unique
@@ -316,6 +323,7 @@ model User {
   username                String
   usernameNormalized      String                      @unique @map("username_normalized")
   passwordHash            String                      @map("password_hash")
+  passwordSetAt           DateTime?                   @map("password_set_at")
   emailVerified           Boolean                     @default(false) @map("email_verified")
   emailVerifiedAt         DateTime?                   @map("email_verified_at")
   role                    UserRole                    @default(user)
@@ -334,6 +342,7 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   mobileOAuthGrants       MobileOAuthGrant[]
   oauthAccounts           OAuthAccount[]
+  oauthLinkNonces          OAuthLinkNonce[]
   savedTeams              SavedTeam[]
   savedTeamMemberships    SavedTeamMember[]
   registrationMemberships RegistrationMember[]
@@ -358,6 +367,10 @@ model User {
   openedSupportRequests   MatchSupportRequest[]       @relation("MatchSupportRequestOpener")
   resolvedSupportRequests MatchSupportRequest[]       @relation("MatchSupportRequestResolver")
   matchSupportMessages    MatchSupportMessage[]
+  ownedSupportConversations SupportConversation[]     @relation("SupportConversationOwner")
+  assignedSupportConversations SupportConversation[]  @relation("SupportConversationAssignee")
+  supportMessages          SupportMessage[]            @relation("SupportMessageSender")
+  supportConversationReads SupportConversationRead[]
   notificationRecipients  NotificationRecipient[]
   webPushSubscriptions    WebPushSubscription[]
   notificationPreference  UserNotificationPreference?
@@ -540,6 +553,21 @@ model OAuthAccount {
   @@map("oauth_accounts")
 }
 
+model OAuthLinkNonce {
+  id         String      @id @default(uuid()) @db.Uuid
+  nonce      String      @unique
+  userId     String      @map("user_id") @db.Uuid
+  provider   AuthProvider
+  expiresAt  DateTime    @map("expires_at")
+  consumedAt DateTime?   @map("consumed_at")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider])
+  @@index([expiresAt])
+  @@map("oauth_link_nonces")
+}
+
 model ContactSubmission {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -553,6 +581,52 @@ model ContactSubmission {
   @@index([createdAt])
   @@index([isRead, createdAt])
   @@map("contact_submissions")
+}
+
+model SupportConversation {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  ownerUserId         String                    @map("owner_user_id") @db.Uuid
+  subject             String
+  status              SupportConversationStatus @default(OPEN)
+  assignedStaffUserId String?                   @map("assigned_staff_user_id") @db.Uuid
+  createdAt           DateTime                  @default(now()) @map("created_at")
+  updatedAt           DateTime                  @updatedAt @map("updated_at")
+  resolvedAt          DateTime?                 @map("resolved_at")
+  owner               User                      @relation("SupportConversationOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  assignedStaff       User?                     @relation("SupportConversationAssignee", fields: [assignedStaffUserId], references: [id], onDelete: SetNull)
+  messages            SupportMessage[]
+  reads               SupportConversationRead[]
+
+  @@index([ownerUserId, status, updatedAt])
+  @@index([assignedStaffUserId, status, updatedAt])
+  @@map("support_conversations")
+}
+
+model SupportMessage {
+  id             String             @id @default(uuid()) @db.Uuid
+  conversationId String             @map("conversation_id") @db.Uuid
+  senderUserId   String?            @map("sender_user_id") @db.Uuid
+  body           String
+  createdAt      DateTime           @default(now()) @map("created_at")
+  conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User?              @relation("SupportMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([senderUserId, createdAt])
+  @@map("support_messages")
+}
+
+model SupportConversationRead {
+  id             String             @id @default(uuid()) @db.Uuid
+  conversationId String             @map("conversation_id") @db.Uuid
+  userId         String             @map("user_id") @db.Uuid
+  lastReadAt     DateTime           @map("last_read_at")
+  conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId, lastReadAt])
+  @@map("support_conversation_reads")
 }
 
 model Tournament {

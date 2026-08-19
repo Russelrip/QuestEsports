@@ -72,7 +72,7 @@ const errorHandler = (error, req, res, next) => {
     };
     if (isVersionedRequest(req)) {
       body.error = {
-        code: /^[a-z][a-z0-9_]{1,80}$/.test(sourceErrorCode || "")
+        code: /^[A-Za-z][A-Za-z0-9_]{1,80}$/.test(sourceErrorCode || "")
           ? sourceErrorCode
           : statusErrorCode(normalizedError.statusCode),
         message: normalizedError.message,

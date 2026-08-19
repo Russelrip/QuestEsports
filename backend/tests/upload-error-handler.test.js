@@ -107,6 +107,38 @@ test("errorHandler maps duck-typed upstream errors (FastApiError/InternalService
   }
 });
 
+test("errorHandler preserves custom uppercase HttpError codes on versioned requests", () => {
+  const { module: handlers, restore } = loadErrorHandler();
+
+  try {
+    const response = buildResponse();
+    const { HttpError } = require("../src/lib/http-error");
+    const error = new HttpError(
+      400,
+      "You must keep a verified password or another linked OAuth provider."
+    );
+    error.code = "OAUTH_LAST_LOGIN_METHOD";
+
+    handlers.errorHandler(
+      error,
+      {
+        requestId: "request-1",
+        method: "POST",
+        originalUrl: "/api/v1/auth/oauth/google/link",
+      },
+      response,
+      () => {}
+    );
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.message, error.message);
+    assert.equal(response.body.error.code, "OAUTH_LAST_LOGIN_METHOD");
+    assert.equal(response.body.error.message, error.message);
+  } finally {
+    restore();
+  }
+});
+
 test("errorHandler keeps the generic 500 envelope for unmapped errors carrying no numeric status", () => {
   const { module: handlers, restore } = loadErrorHandler();
 

@@ -361,3 +361,219 @@ test("mobile OAuth grant exchange issues an admin bearer session", async () => {
     restore();
   }
 });
+
+test("OAuth account-link handlers use the authenticated user and a fixed profile redirect", async () => {
+  const linkAuthorizationCalls = [];
+  const linkCallbackCalls = [];
+  const providerListCalls = [];
+  const unlinkCalls = [];
+  let sessionsCreated = 0;
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {
+      buildExpiredOAuthLinkFlowCookie: (provider) => `link-cookie-${provider}=; Expires=expired`,
+      createOAuthLinkAuthorization: async (args) => {
+        linkAuthorizationCalls.push(args);
+        return {
+          authorizationUrl: "https://provider.example.com/google",
+          flowCookie: "quest_session_oauth_link_google=signed-link; HttpOnly",
+        };
+      },
+      getOAuthLinkFlowToken: (args) => {
+        linkCallbackCalls.push({ type: "flow-token", args });
+        return "signed-link";
+      },
+      handleOAuthLinkCallback: async (args) => {
+        linkCallbackCalls.push({ type: "callback", args });
+        return { providers: [{ provider: "google", linked: true }] };
+      },
+      listLinkedOAuthProviders: async (userId) => {
+        providerListCalls.push(userId);
+        return [{ provider: "google", linked: true }];
+      },
+      unlinkOAuthProvider: async (args) => {
+        unlinkCalls.push(args);
+        return [{ provider: "google", linked: false }];
+      },
+    },
+    [sessionPath]: {
+      createSession: async () => {
+        sessionsCreated += 1;
+        return {};
+      },
+    },
+    [authServicePath]: {},
+  });
+
+  try {
+    const user = { id: "authenticated-user" };
+    const startResponse = buildResponse();
+    await invoke(controller.startGoogleLink, { user, params: {}, query: {} }, startResponse);
+    assert.deepEqual(linkAuthorizationCalls, [{
+      provider: "google",
+      userId: "authenticated-user",
+      redirectTo: "/profile?tab=account",
+    }]);
+    assert.equal(startResponse.getHeader("Set-Cookie"), "quest_session_oauth_link_google=signed-link; HttpOnly");
+
+    const callbackResponse = buildResponse();
+    await invoke(
+      controller.googleLinkCallback,
+      {
+        user,
+        headers: { cookie: "quest_session_oauth_link_google=signed-link" },
+        params: {},
+        query: { code: "oauth-code", state: "oauth-state" },
+      },
+      callbackResponse
+    );
+    assert.deepEqual(linkCallbackCalls, [
+      {
+        type: "flow-token",
+        args: {
+          provider: "google",
+          cookieHeader: "quest_session_oauth_link_google=signed-link",
+        },
+      },
+      {
+        type: "callback",
+        args: {
+          provider: "google",
+          code: "oauth-code",
+          state: "oauth-state",
+          flowToken: "signed-link",
+          userId: "authenticated-user",
+        },
+      },
+    ]);
+    assert.equal(
+      callbackResponse.getHeader("Set-Cookie"),
+      "link-cookie-google=; Expires=expired"
+    );
+    assert.equal(
+      callbackResponse.redirectUrl,
+      "https://app.example.com/profile?tab=account&oauth=linked"
+    );
+    assert.equal(sessionsCreated, 0);
+
+    const providersResponse = buildResponse();
+    await invoke(
+      controller.getLinkedProviders,
+      { user, body: { userId: "attacker-user" } },
+      providersResponse
+    );
+    assert.deepEqual(providerListCalls, ["authenticated-user"]);
+    assert.deepEqual(providersResponse.body, {
+      success: true,
+      providers: [{ provider: "google", linked: true }],
+    });
+
+    const unlinkResponse = buildResponse();
+    await invoke(
+      controller.unlinkProvider,
+      { user, params: { provider: "google" }, body: { userId: "attacker-user" } },
+      unlinkResponse
+    );
+    assert.deepEqual(unlinkCalls, [{
+      userId: "authenticated-user",
+      provider: "google",
+    }]);
+    assert.deepEqual(unlinkResponse.body, {
+      success: true,
+      providers: [{ provider: "google", linked: false }],
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth account-link callback redirects conflicts without exposing provider details", async () => {
+  let sessionsCreated = 0;
+  const conflict = new Error("provider token and identity should not be returned");
+  conflict.statusCode = 409;
+  conflict.code = "OAUTH_ACCOUNT_CONFLICT";
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {
+      buildExpiredOAuthLinkFlowCookie: () => "quest_session_oauth_link_discord=; Expires=expired",
+      getOAuthLinkFlowToken: () => "signed-link",
+      handleOAuthLinkCallback: async () => {
+        throw conflict;
+      },
+    },
+    [sessionPath]: {
+      createSession: async () => {
+        sessionsCreated += 1;
+        return {};
+      },
+    },
+    [authServicePath]: {},
+  });
+
+  try {
+    const response = buildResponse();
+    await invoke(
+      controller.discordLinkCallback,
+      {
+        user: { id: "user-1" },
+        headers: { cookie: "quest_session_oauth_link_discord=signed-link" },
+        params: {},
+        query: { code: "oauth-code", state: "oauth-state" },
+      },
+      response
+    );
+    assert.equal(
+      response.getHeader("Set-Cookie"),
+      "quest_session_oauth_link_discord=; Expires=expired"
+    );
+    assert.equal(
+      response.redirectUrl,
+      "https://app.example.com/profile?tab=account&oauth=error"
+    );
+    assert.equal(sessionsCreated, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("OAuth unlink controller preserves safe last-login-method errors", async () => {
+  const lastLoginMethod = new Error(
+    "You must keep a verified password or another linked OAuth provider."
+  );
+  lastLoginMethod.statusCode = 400;
+  lastLoginMethod.code = "OAUTH_LAST_LOGIN_METHOD";
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: { APP_URL: "https://app.example.com" } },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {
+      unlinkOAuthProvider: async () => {
+        throw lastLoginMethod;
+      },
+    },
+    [sessionPath]: {},
+    [authServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      invoke(
+        controller.unlinkProvider,
+        {
+          user: { id: "user-1" },
+          params: { provider: "google" },
+          body: { userId: "other-user" },
+        },
+        buildResponse()
+      ),
+      (error) => {
+        assert.equal(error.code, "OAUTH_LAST_LOGIN_METHOD");
+        assert.equal(error.message.includes("provider token"), false);
+        return true;
+      }
+    );
+  } finally {
+    restore();
+  }
+});

@@ -5,6 +5,7 @@ export function FormField({
   htmlFor,
   hint,
   error,
+  errorId,
   required,
   children,
   className,
@@ -13,6 +14,7 @@ export function FormField({
   htmlFor?: string;
   hint?: string;
   error?: string;
+  errorId?: string;
   required?: boolean;
   children: React.ReactNode;
   className?: string;
@@ -25,7 +27,7 @@ export function FormField({
       </label>
       {children}
       {hint ? <p className="text-xs text-slate-400">{hint}</p> : null}
-      {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+      {error ? <p id={errorId} role="alert" className="text-sm text-rose-300">{error}</p> : null}
     </div>
   );
 }
