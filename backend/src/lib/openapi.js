@@ -775,6 +775,37 @@ const additionalPaths = {
   "/api/v1/match-rooms/{code}/chat-lock": {
     patch: createOperation("Match Rooms", "Lock or unlock match-room chat", { authenticated: true, parameters: idParameter("code") }),
   },
+  "/api/v1/auth/oauth/providers": {
+    get: createOperation("Auth", "List the signed-in user's linked OAuth providers", { authenticated: true }),
+  },
+  "/api/v1/auth/oauth/{provider}/link": {
+    get: createOperation("Auth", "Start an authenticated OAuth account-link flow", {
+      authenticated: true,
+      parameters: idParameter("provider"),
+      additionalResponses: {
+        302: createResponse("Redirect to the OAuth provider authorization page"),
+      },
+    }),
+  },
+  "/api/v1/auth/oauth/{provider}/link/callback": {
+    get: createOperation("Auth", "Complete an authenticated OAuth account-link flow", {
+      authenticated: true,
+      parameters: [
+        ...idParameter("provider"),
+        createQueryParameter("code", { type: "string" }),
+        createQueryParameter("state", { type: "string" }),
+      ],
+      additionalResponses: {
+        302: createResponse("Redirect to the profile account-linking result"),
+      },
+    }),
+  },
+  "/api/v1/auth/oauth/{provider}": {
+    delete: createOperation("Auth", "Unlink an OAuth provider from the signed-in account", {
+      authenticated: true,
+      parameters: idParameter("provider"),
+    }),
+  },
   "/api/v1/support/conversations": {
     get: createOperation("Support", "List the signed-in user's support conversations", {
       authenticated: true,
@@ -829,6 +860,12 @@ const additionalPaths = {
   },
   "/api/v1/admin/support/conversations/{conversationId}": {
     get: createOperation("Support", "Get any support conversation for staff", {
+      authenticated: true,
+      parameters: idParameter("conversationId"),
+    }),
+  },
+  "/api/v1/admin/support/conversations/{conversationId}/read": {
+    patch: createOperation("Support", "Mark a support conversation read for the signed-in staff member", {
       authenticated: true,
       parameters: idParameter("conversationId"),
     }),

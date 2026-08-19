@@ -50,3 +50,32 @@ test("OpenAPI declares the session-cookie authentication scheme", () => {
     description: "HttpOnly session cookie issued by the login or OAuth flow.",
   });
 });
+
+test("OpenAPI declares the staff support read operation", () => {
+  const operation = openApiDocument.paths[
+    "/api/v1/admin/support/conversations/{conversationId}/read"
+  ]?.patch;
+
+  assert.ok(operation);
+  assert.deepEqual(operation.security, [
+    { sessionCookie: [] },
+    { mobileBearer: [] },
+  ]);
+  assert.deepEqual(operation.parameters, [
+    {
+      name: "conversationId",
+      in: "path",
+      required: true,
+      schema: { type: "string" },
+    },
+  ]);
+});
+
+test("OpenAPI declares canonical OAuth account-linking operations", () => {
+  const paths = openApiDocument.paths;
+
+  assert.ok(paths["/api/v1/auth/oauth/providers"]?.get);
+  assert.ok(paths["/api/v1/auth/oauth/{provider}/link"]?.get);
+  assert.ok(paths["/api/v1/auth/oauth/{provider}/link/callback"]?.get);
+  assert.ok(paths["/api/v1/auth/oauth/{provider}"]?.delete);
+});

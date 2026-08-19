@@ -223,6 +223,31 @@ Completes Google OAuth, creates a local session, and redirects to the frontend.
 
 Completes Discord OAuth, creates a local session, and redirects to the frontend.
 
+### Authenticated OAuth account linking
+
+Account linking is a separate flow from OAuth login and uses the canonical
+versioned routes below. Every route requires the current session; the callback
+does not create, replace, or refresh a session.
+
+- `GET /api/v1/auth/oauth/providers` returns `{ success: true, providers }`,
+  with the current Google and Discord link state.
+- `GET /api/v1/auth/oauth/:provider/link` starts a Google or Discord link and
+  redirects to that provider. The provider value must be `google` or `discord`.
+- `GET /api/v1/auth/oauth/:provider/link/callback?code=...&state=...` validates
+  the session-bound OAuth state and PKCE verifier, derives the provider
+  identity from the provider response, and redirects to
+  `/profile?tab=account&oauth=linked` or `/profile?tab=account&oauth=error`.
+- `DELETE /api/v1/auth/oauth/:provider` unlinks the provider and returns the
+  refreshed `providers` list. It rejects a removal that would leave the user
+  without a verified password and without another linked provider.
+
+The browser never submits a provider user ID. Provider identities already owned
+by another Quest account are rejected with the OAuth conflict error. OAuth
+authorization codes, access tokens, provider user IDs, and link state are not
+included in the profile redirect or API response. Link callbacks consume their
+state and use a link-specific flow cookie; the existing login routes and login
+callbacks remain separate.
+
 ### `POST /api/logout`
 
 Deletes the current session if present and clears the session cookie.
@@ -429,7 +454,9 @@ Staff reads use the authenticated staff ID for their independent unread cursor.
 - `GET /api/v1/admin/support/conversations/:conversationId` — returns any
   support conversation and all messages for staff review.
 - `PATCH /api/v1/admin/support/conversations/:conversationId/read` — marks the
-  conversation read for the authenticated admin only. The response data is
+  conversation read for the authenticated admin only. This is the staff-read
+  operation documented in OpenAPI as an authenticated `PATCH` with the
+  `conversationId` path parameter. The response data is
   `{ lastReadAt, unreadCount: 0 }`; it does not mark the owner's messages read
   and does not affect another admin's cursor.
 - `PATCH /api/v1/admin/support/conversations/:conversationId/assignment` —
