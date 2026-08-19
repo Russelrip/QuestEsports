@@ -569,6 +569,7 @@ const mapTournament = (tournament, { parentWindow } = {}) => {
     prizePool: tournamentWithRegistrationCount.prizePool,
     status: tournamentWithRegistrationCount.status,
     isPublished: tournamentWithRegistrationCount.isPublished,
+    showBracketPublicly: tournamentWithRegistrationCount.showBracketPublicly ?? true,
     bracketLink: tournamentWithRegistrationCount.bracketLink,
     challongeEmbedUrl: buildChallongeEmbedUrl(tournamentWithRegistrationCount.bracketLink),
     bracketSource: tournamentWithRegistrationCount.challongeIntegration?.enabled
@@ -819,6 +820,9 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
   );
   const coachRequired = normalizeBooleanFlag(
     body.coachRequired ?? existingTournament?.coachRequired
+  );
+  const showBracketPublicly = normalizeBooleanFlag(
+    body.showBracketPublicly ?? existingTournament?.showBracketPublicly ?? true
   );
   const reservationMinutes =
     normalizeInteger(body.reservationMinutes) ??
@@ -1110,6 +1114,7 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
     prizePool,
     status,
     isPublished: normalizeBooleanFlag(body.isPublished),
+    showBracketPublicly,
     isFeatured: normalizeBooleanFlag(body.isFeatured),
     bracketLink,
     contactLink,

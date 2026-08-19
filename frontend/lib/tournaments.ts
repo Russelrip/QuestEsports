@@ -280,6 +280,7 @@ export type Tournament = {
   prizePool: string;
   status: TournamentStatus;
   isPublished: boolean;
+  showBracketPublicly?: boolean;
   bracketLink: string | null;
   challongeEmbedUrl?: string | null;
   bracketSource?: "challonge" | "native" | "none";

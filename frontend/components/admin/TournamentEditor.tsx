@@ -461,6 +461,17 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
               <FormField label="Challonge Tournament Link" htmlFor="bracketLink" hint="HTTPS challonge.com tournament URLs only.">
                 <Input id="bracketLink" type="url" value={formValues.bracketLink} onChange={(event) => updateField("bracketLink", event.target.value)} />
               </FormField>
+              <div className="self-end pb-1 text-sm text-slate-300">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formValues.showBracketPublicly}
+                    onChange={(event) => updateField("showBracketPublicly", event.target.checked)}
+                  />
+                  Show bracket publicly
+                </label>
+                <p className="mt-2 text-xs text-slate-500">Only published native or Challonge brackets will appear on the public page.</p>
+              </div>
               <FormField label="Discord / Contact Link" htmlFor="contactLink">
                 <Input id="contactLink" type="url" value={formValues.contactLink} onChange={(event) => updateField("contactLink", event.target.value)} />
               </FormField>

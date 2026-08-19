@@ -524,6 +524,7 @@ export type TournamentFormValues = {
   allowCoach: boolean;
   coachRequired: boolean;
   waitlistEnabled: boolean;
+  showBracketPublicly: boolean;
   registrationFields: string;
   paymentMethod: Tournament["paymentMethod"];
   registrationFeeAmount: string;
@@ -630,6 +631,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   prizePool: "",
   status: "draft",
   isPublished: false,
+  showBracketPublicly: true,
   bracketLink: "",
   contactLink: "",
   isFeatured: false,

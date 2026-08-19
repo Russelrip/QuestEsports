@@ -68,6 +68,7 @@ export const mapTournamentToFormValues = (
   prizePool: tournament.prizePool,
   status: tournament.status,
   isPublished: tournament.isPublished,
+  showBracketPublicly: tournament.showBracketPublicly ?? true,
   bracketLink: tournament.bracketLink || "",
   contactLink: tournament.contactLink || "",
   isFeatured: tournament.isFeatured,

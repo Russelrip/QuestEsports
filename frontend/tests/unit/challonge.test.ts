@@ -9,7 +9,7 @@ describe("Challonge frontend boundary", () => {
     expect(component).toMatch(/<iframe/i);
     expect(component).toContain("challongeEmbedUrl");
     expect(component).toContain('loading="eager"');
-    expect(component).toContain('aria-hidden={activeTab !== "bracket"}');
+    expect(component).toContain('aria-hidden={safeActiveTab !== "bracket"}');
     expect(component).toContain("setLoadedChallongeUrl");
     expect(component).not.toContain('activeTab === "bracket" && tournament.challongeEmbedUrl');
     expect(component).not.toContain("fetchPublicTournamentBracket");
@@ -20,10 +20,26 @@ describe("Challonge frontend boundary", () => {
     expect(component).toContain("CompletedTournamentShowcase");
     expect(component).toContain("The tournament is over");
     expect(component).toContain("tournament.resultSummary?.standings");
+    expect(component).toContain("showBracketPublicly");
+    expect(component).not.toContain('(["overview", "rules", "schedule", "bracket", "participants"] as const)');
+    expect(component).not.toContain("The bracket will appear after it is published.");
     expect(frontendEnv).not.toContain("CHALLONGE_API_KEY");
     expect(frontendEnv).not.toContain("CHALLONGE_USERNAME");
     expect(frontendEnv).not.toContain("CHALLONGE_CLIENT_SECRET");
     expect(frontendEnv).not.toContain("CHALLONGE_CLIENT_ID");
+  });
+
+  it("only offers bracket navigation for publicly enabled published bracket sources", () => {
+    const component = readFileSync(resolve(process.cwd(), "components/tournaments/TournamentDetailsContent.tsx"), "utf8");
+    const nav = component.slice(component.indexOf("<nav"), component.indexOf("</nav>"));
+
+    expect(nav).toContain("showBracketPublicly");
+    expect(component).toContain("bracketSource");
+    expect(component).toContain('"native"');
+    expect(component).toContain("hasChallongeBracket");
+    expect(component).not.toContain('bracketSource === "challonge"');
+    expect(component).toMatch(/tournament\.registrationCount\s*>\s*0/);
+    expect(component).not.toContain("The bracket will appear after it is published.");
   });
 
   it("keeps Challonge admin controls contained on mobile", () => {

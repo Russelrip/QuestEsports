@@ -22,4 +22,17 @@ describe("tournament admin coach settings", () => {
     expect(disabled.get("allowCoach")).toBe("false");
     expect(disabled.get("coachRequired")).toBe("false");
   });
+
+  it("serializes the tournament-level public bracket visibility setting", () => {
+    expect(initialTournamentFormValues.showBracketPublicly).toBe(true);
+    expect(
+      buildTournamentFormData(initialTournamentFormValues).get("showBracketPublicly"),
+    ).toBe("true");
+
+    const hidden = {
+      ...initialTournamentFormValues,
+      showBracketPublicly: false,
+    };
+    expect(buildTournamentFormData(hidden).get("showBracketPublicly")).toBe("false");
+  });
 });

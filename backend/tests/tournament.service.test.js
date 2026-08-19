@@ -200,6 +200,13 @@ test("coach settings normalize missing and boolean flags", () => {
     });
     assert.equal(defaults.allowCoach, false);
     assert.equal(defaults.coachRequired, false);
+    assert.equal(defaults.showBracketPublicly, true);
+
+    const existingHidden = tournamentService.normalizeTournamentInput({
+      body: buildAdminTournamentBody(),
+      existingTournament: { ...buildAdminTournamentBody(), showBracketPublicly: false },
+    });
+    assert.equal(existingHidden.showBracketPublicly, false);
 
     const enabled = tournamentService.normalizeTournamentInput({
       body: buildAdminTournamentBody({ allowCoach: "true", coachRequired: "on" }),
@@ -208,10 +215,15 @@ test("coach settings normalize missing and boolean flags", () => {
     assert.equal(enabled.coachRequired, true);
 
     const disabled = tournamentService.normalizeTournamentInput({
-      body: buildAdminTournamentBody({ allowCoach: "false", coachRequired: "false" }),
+      body: buildAdminTournamentBody({
+        allowCoach: "false",
+        coachRequired: "false",
+        showBracketPublicly: "false",
+      }),
     });
     assert.equal(disabled.allowCoach, false);
     assert.equal(disabled.coachRequired, false);
+    assert.equal(disabled.showBracketPublicly, false);
 
     assert.throws(
       () => tournamentService.normalizeTournamentInput({
@@ -235,7 +247,7 @@ test("public tournament output maps coach settings", () => {
   });
 
   try {
-    const tournament = tournamentService.mapTournament({
+    const source = {
       id: "tournament-1",
       slug: "coach-cup",
       title: "Coach Cup",
@@ -251,15 +263,19 @@ test("public tournament output maps coach settings", () => {
       maxSubstitutes: 0,
       allowCoach: true,
       coachRequired: true,
+      showBracketPublicly: false,
       maxTeams: 16,
       status: "registration_open",
       createdAt: new Date(),
       updatedAt: new Date(),
       sponsors: [],
-    });
+    };
+    const tournament = tournamentService.mapTournament(source);
 
     assert.equal(tournament.allowCoach, true);
     assert.equal(tournament.coachRequired, true);
+    assert.equal(tournament.showBracketPublicly, false);
+    assert.equal(tournamentService.mapTournament({ ...source, showBracketPublicly: undefined }).showBracketPublicly, true);
   } finally {
     restore();
   }

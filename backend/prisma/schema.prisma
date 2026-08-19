@@ -611,6 +611,7 @@ model Tournament {
   prizePool                  String                      @map("prize_pool")
   status                     TournamentStatus            @default(draft)
   isPublished                Boolean                     @default(false) @map("is_published")
+  showBracketPublicly        Boolean                     @default(true) @map("show_bracket_publicly")
   bracketLink                String?                     @map("bracket_link")
   contactLink                String?                     @map("contact_link")
   isFeatured                 Boolean                     @default(false) @map("is_featured")

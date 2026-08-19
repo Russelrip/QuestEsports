@@ -36,7 +36,18 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
   const teamPage = teamPagination.tournamentId === tournament.id ? teamPagination.page : 1;
   const [activeTab, setActiveTab] = useState<"overview" | "rules" | "schedule" | "bracket" | "participants">("overview");
   const [loadedChallongeUrl, setLoadedChallongeUrl] = useState<string | null>(null);
-  const isChallongeBracketLoaded = loadedChallongeUrl === tournament.challongeEmbedUrl;
+  const hasNativeBracket = tournament.bracketSource === "native"
+    && Array.isArray(tournament.bracketData?.match)
+    && tournament.bracketData.match.length > 0;
+  const challongeEmbedUrl = tournament.challongeEmbedUrl;
+  const hasChallongeBracket = Boolean(challongeEmbedUrl) && tournament.registrationCount > 0;
+  const canShowBracket = (tournament.showBracketPublicly ?? true) && (hasNativeBracket || hasChallongeBracket);
+  const allTabs = ["overview", "rules", "schedule", "bracket", "participants"] as const;
+  const visibleTabs = allTabs.filter(
+    (tab) => tab !== "bracket" || canShowBracket
+  );
+  const safeActiveTab = canShowBracket || activeTab !== "bracket" ? activeTab : "overview";
+  const isChallongeBracketLoaded = loadedChallongeUrl === challongeEmbedUrl;
   const participants = tournament.registeredParticipants || [];
   const teamPageCount = Math.max(1, Math.ceil(participants.length / TEAMS_PER_PAGE));
   const visibleParticipants = participants.slice(
@@ -72,20 +83,22 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
         {tournament.isCompleted ? <CompletedTournamentShowcase tournament={tournament} /> : null}
 
         <nav className="relative flex gap-1 overflow-x-auto border border-white/10 bg-[#101118] p-1.5" aria-label="Tournament sections">
-          {(["overview", "rules", "schedule", "bracket", "participants"] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              aria-current={activeTab === tab ? "page" : undefined}
-              className={`relative whitespace-nowrap border px-5 py-3 text-xs font-semibold capitalize transition sm:px-7 ${activeTab === tab ? "border-purple-300 bg-purple-300 text-[#120a1d]" : "border-transparent text-slate-400 hover:border-white/10 hover:bg-white/5 hover:text-white"}`}
-            >
-              {tab}
-            </button>
-          ))}
+          {visibleTabs.map((tab) =>
+            tab === "bracket" && !(tournament.showBracketPublicly ?? true) ? null : (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                aria-current={safeActiveTab === tab ? "page" : undefined}
+                className={`relative whitespace-nowrap border px-5 py-3 text-xs font-semibold capitalize transition sm:px-7 ${safeActiveTab === tab ? "border-purple-300 bg-purple-300 text-[#120a1d]" : "border-transparent text-slate-400 hover:border-white/10 hover:bg-white/5 hover:text-white"}`}
+              >
+                {tab}
+              </button>
+            )
+          )}
         </nav>
 
-        {activeTab === "overview" ? (
+        {safeActiveTab === "overview" ? (
           <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="min-w-0 space-y-5">
               <Card className="p-5 sm:p-7">
@@ -105,7 +118,7 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
           </div>
         ) : null}
 
-        {activeTab === "participants" && participants.length > 0 ? (
+        {safeActiveTab === "participants" && participants.length > 0 ? (
           <TeamsPanel
             teams={visibleParticipants}
             totalTeams={participants.length}
@@ -115,14 +128,14 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
             pageCount={teamPageCount}
             onPageChange={(page) => setTeamPagination({ tournamentId: tournament.id, page })}
           />
-        ) : activeTab === "participants" ? (
+        ) : safeActiveTab === "participants" ? (
           <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Participants</h3><p className="mt-3 text-sm text-slate-400">Approved participants will appear here.</p></Card>
         ) : null}
 
-        {tournament.challongeEmbedUrl ? (
+        {canShowBracket && hasChallongeBracket && challongeEmbedUrl ? (
           <section
-            aria-hidden={activeTab !== "bracket"}
-            className={activeTab === "bracket" ? "space-y-5" : "hidden"}
+            aria-hidden={safeActiveTab !== "bracket"}
+            className={safeActiveTab === "bracket" ? "space-y-5" : "hidden"}
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-3xl text-white">Brackets</h3>
@@ -138,26 +151,24 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
                 </div>
               ) : null}
               <iframe
-                src={tournament.challongeEmbedUrl}
+                src={challongeEmbedUrl}
                 title={`${tournament.title} Challonge bracket`}
                 loading="eager"
                 referrerPolicy="strict-origin-when-cross-origin"
-                onLoad={() => setLoadedChallongeUrl(tournament.challongeEmbedUrl || null)}
+                onLoad={() => setLoadedChallongeUrl(challongeEmbedUrl)}
                 className={`block h-[760px] w-full border-0 transition-opacity duration-200 ${isChallongeBracketLoaded ? "opacity-100" : "opacity-0"}`}
               />
             </div>
           </section>
-        ) : activeTab === "bracket" && tournament.bracketData ? (
+        ) : canShowBracket && safeActiveTab === "bracket" && hasNativeBracket ? (
           <section className="space-y-5">
             <h3 className="text-3xl text-white">Brackets</h3>
-            <LiveBracketView bracketData={tournament.bracketData} />
+            <LiveBracketView bracketData={tournament.bracketData!} />
           </section>
-        ) : activeTab === "bracket" ? (
-          <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Bracket</h3><p className="mt-3 text-sm text-slate-400">The bracket will appear after it is published.</p></Card>
         ) : null}
 
-        {activeTab === "schedule" ? <SchedulePanel tournament={tournament} /> : null}
-        {activeTab === "rules" ? <RulesPanel tournament={tournament} /> : null}
+        {safeActiveTab === "schedule" ? <SchedulePanel tournament={tournament} /> : null}
+        {safeActiveTab === "rules" ? <RulesPanel tournament={tournament} /> : null}
       </div>
     </Section>
   );

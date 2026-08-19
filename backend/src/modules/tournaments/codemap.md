@@ -13,7 +13,10 @@ event deletion. `createAdminTournament` can create a child with a forced
 series ID; `attachTournamentToSeries` links an existing tournament without
 copying or deleting its registrations. `mapTournament` is the public-safe
 child projection used inside event responses; `mapAdminTournament` adds only
-admin configuration fields needed by the editor.
+admin configuration fields needed by the editor. `showBracketPublicly` is
+persisted per tournament and exposed by both mappings with a legacy `true`
+fallback; public bracket consumers require that setting plus a published,
+non-empty native or Challonge source.
 
 ## Capacity and waitlist flow
 

@@ -13,6 +13,8 @@ relation, child registration fields, waitlist metadata, and public references.
   `waitlisted`/`waitlistPosition`/`publicReference`, and supporting indexes.
 - `20260817130000_add_waitlist_position_uniqueness` clears stale positions and
   adds unique per-tournament waitlist-position enforcement.
+- `20260819130000_add_tournament_bracket_visibility` adds the additive,
+  non-null `show_bracket_publicly` tournament setting with default `TRUE`.
 
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
