@@ -40,6 +40,7 @@ describe("admin navigation", () => {
           { href: "/admin/teams", label: "Teams", icon: "users" },
           { href: "/admin/recruitment", label: "Recruitment", icon: "user-plus" },
           { href: "/admin/contact-messages", label: "Messages", icon: "message" },
+          { href: "/admin/support", label: "Support Queue", icon: "message" },
         ],
       },
       {
