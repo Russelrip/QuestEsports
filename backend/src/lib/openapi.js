@@ -30,6 +30,50 @@ const createHeaderParameter = (
 });
 
 const createResponse = (description) => ({ description });
+const oauthProviderParameter = createPathParameter("provider", {
+  type: "string",
+  enum: ["google", "discord"],
+});
+const oauthRedirectResponse = (description) => ({
+  description,
+  headers: {
+    Location: {
+      required: true,
+      schema: { type: "string", format: "uri-reference" },
+    },
+    "Set-Cookie": {
+      required: true,
+      schema: { type: "string" },
+      description: "OAuth flow cookie or its expiry cookie; never a session cookie.",
+    },
+  },
+});
+const linkedProvidersSchema = {
+  type: "array",
+  items: {
+    type: "object",
+    required: ["provider", "linked"],
+    properties: {
+      provider: { type: "string", enum: ["google", "discord"] },
+      linked: { type: "boolean" },
+    },
+  },
+};
+const linkedProvidersResponse = {
+  description: "Current OAuth provider link state",
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        required: ["success", "providers"],
+        properties: {
+          success: { type: "boolean", const: true },
+          providers: linkedProvidersSchema,
+        },
+      },
+    },
+  },
+};
 const createOperation = (
   tag,
   summary,
@@ -776,35 +820,61 @@ const additionalPaths = {
     patch: createOperation("Match Rooms", "Lock or unlock match-room chat", { authenticated: true, parameters: idParameter("code") }),
   },
   "/api/v1/auth/oauth/providers": {
-    get: createOperation("Auth", "List the signed-in user's linked OAuth providers", { authenticated: true }),
+    get: {
+      tags: ["Auth"],
+      summary: "List the signed-in user's linked OAuth providers",
+      security: [{ sessionCookie: [] }, { mobileBearer: [] }],
+      responses: {
+        200: linkedProvidersResponse,
+        401: createResponse("Authentication required"),
+      },
+    },
   },
   "/api/v1/auth/oauth/{provider}/link": {
-    get: createOperation("Auth", "Start an authenticated OAuth account-link flow", {
-      authenticated: true,
-      parameters: idParameter("provider"),
-      additionalResponses: {
-        302: createResponse("Redirect to the OAuth provider authorization page"),
+    get: {
+      tags: ["Auth"],
+      summary: "Start an authenticated OAuth account-link flow",
+      security: [{ sessionCookie: [] }, { mobileBearer: [] }],
+      parameters: [oauthProviderParameter],
+      responses: {
+        302: oauthRedirectResponse("Redirect to the OAuth provider authorization page"),
+        400: createResponse("Unsupported OAuth provider"),
+        401: createResponse("Authentication required"),
+        503: createResponse("OAuth provider is not configured"),
       },
-    }),
+    },
   },
   "/api/v1/auth/oauth/{provider}/link/callback": {
-    get: createOperation("Auth", "Complete an authenticated OAuth account-link flow", {
-      authenticated: true,
+    get: {
+      tags: ["Auth"],
+      summary: "Complete an authenticated OAuth account-link flow",
+      security: [{ sessionCookie: [] }, { mobileBearer: [] }],
       parameters: [
-        ...idParameter("provider"),
-        createQueryParameter("code", { type: "string" }),
-        createQueryParameter("state", { type: "string" }),
+        oauthProviderParameter,
+        { ...createQueryParameter("code", { type: "string" }), required: true },
+        { ...createQueryParameter("state", { type: "string" }), required: true },
       ],
-      additionalResponses: {
-        302: createResponse("Redirect to the profile account-linking result"),
+      responses: {
+        302: oauthRedirectResponse("Redirect to the profile account-linking result"),
+        400: createResponse("Unsupported OAuth provider"),
+        401: createResponse("Authentication required"),
       },
-    }),
+    },
   },
   "/api/v1/auth/oauth/{provider}": {
-    delete: createOperation("Auth", "Unlink an OAuth provider from the signed-in account", {
-      authenticated: true,
-      parameters: idParameter("provider"),
-    }),
+    delete: {
+      tags: ["Auth"],
+      summary: "Unlink an OAuth provider from the signed-in account",
+      security: [{ sessionCookie: [] }, { mobileBearer: [] }],
+      parameters: [oauthProviderParameter],
+      responses: {
+        200: linkedProvidersResponse,
+        400: createResponse("Unsupported provider or last login method"),
+        401: createResponse("Authentication required"),
+        404: createResponse("OAuth provider is not linked"),
+        409: createResponse("OAuth provider conflict"),
+      },
+    },
   },
   "/api/v1/support/conversations": {
     get: createOperation("Support", "List the signed-in user's support conversations", {
@@ -865,10 +935,13 @@ const additionalPaths = {
     }),
   },
   "/api/v1/admin/support/conversations/{conversationId}/read": {
-    patch: createOperation("Support", "Mark a support conversation read for the signed-in staff member", {
-      authenticated: true,
-      parameters: idParameter("conversationId"),
-    }),
+    patch: {
+      ...createOperation("Support", "Mark a support conversation read for the signed-in staff member", {
+        authenticated: true,
+        parameters: idParameter("conversationId"),
+      }),
+      "x-required-role": "admin",
+    },
   },
   "/api/v1/admin/support/conversations/{conversationId}/assignment": {
     patch: createOperation("Support", "Assign or unassign a support conversation", {

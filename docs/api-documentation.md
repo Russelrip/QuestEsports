@@ -229,17 +229,27 @@ Account linking is a separate flow from OAuth login and uses the canonical
 versioned routes below. Every route requires the current session; the callback
 does not create, replace, or refresh a session.
 
-- `GET /api/v1/auth/oauth/providers` returns `{ success: true, providers }`,
-  with the current Google and Discord link state.
-- `GET /api/v1/auth/oauth/:provider/link` starts a Google or Discord link and
-  redirects to that provider. The provider value must be `google` or `discord`.
-- `GET /api/v1/auth/oauth/:provider/link/callback?code=...&state=...` validates
-  the session-bound OAuth state and PKCE verifier, derives the provider
-  identity from the provider response, and redirects to
+- `GET /api/v1/auth/oauth/providers` requires the current session (cookie or
+  mobile bearer) and returns `200 { success: true, providers }`, where each
+  provider is explicitly `google` or `discord` and has a `linked` boolean.
+- `GET /api/v1/auth/oauth/:provider/link` requires the current session and a
+  provider path value of `google` or `discord`. It returns `302` with a
+  `Location` header and a link-flow `Set-Cookie` header; it never returns a
+  session cookie.
+- `GET /api/v1/auth/oauth/:provider/link/callback?code=...&state=...` requires
+  a `google` or `discord` provider path value, both required query parameters,
+  and the current session. It validates the session-bound OAuth state and PKCE
+  verifier, derives the provider identity from the provider response, and returns `302` with `Location` and an
+  expired link-flow `Set-Cookie` header to
   `/profile?tab=account&oauth=linked` or `/profile?tab=account&oauth=error`.
-- `DELETE /api/v1/auth/oauth/:provider` unlinks the provider and returns the
-  refreshed `providers` list. It rejects a removal that would leave the user
-  without a verified password and without another linked provider.
+  An unsupported provider path returns JSON `400`; provider, state, code,
+  token-exchange, and ownership failures are represented by that safe `302`
+  error redirect.
+  The callback never creates, replaces, or refreshes the session cookie.
+- `DELETE /api/v1/auth/oauth/:provider` requires the current session and the
+  `google|discord` provider path enum. It returns `200 { success: true,
+  providers }` with the refreshed list. It rejects a removal that would leave
+  the user without a verified password and without another linked provider.
 
 The browser never submits a provider user ID. Provider identities already owned
 by another Quest account are rejected with the OAuth conflict error. OAuth

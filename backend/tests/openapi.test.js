@@ -74,8 +74,29 @@ test("OpenAPI declares the staff support read operation", () => {
 test("OpenAPI declares canonical OAuth account-linking operations", () => {
   const paths = openApiDocument.paths;
 
-  assert.ok(paths["/api/v1/auth/oauth/providers"]?.get);
-  assert.ok(paths["/api/v1/auth/oauth/{provider}/link"]?.get);
-  assert.ok(paths["/api/v1/auth/oauth/{provider}/link/callback"]?.get);
-  assert.ok(paths["/api/v1/auth/oauth/{provider}"]?.delete);
+  const providers = paths["/api/v1/auth/oauth/providers"]?.get;
+  const start = paths["/api/v1/auth/oauth/{provider}/link"]?.get;
+  const callback = paths["/api/v1/auth/oauth/{provider}/link/callback"]?.get;
+  const unlink = paths["/api/v1/auth/oauth/{provider}"]?.delete;
+
+  assert.ok(providers);
+  assert.ok(start);
+  assert.ok(callback);
+  assert.ok(unlink);
+  assert.deepEqual(start.parameters[0], {
+    name: "provider",
+    in: "path",
+    required: true,
+    schema: { type: "string", enum: ["google", "discord"] },
+  });
+  assert.deepEqual(callback.parameters.slice(1).map((parameter) => parameter.required), [true, true]);
+  assert.deepEqual(callback.security, [{ sessionCookie: [] }, { mobileBearer: [] }]);
+  assert.ok(callback.responses[302].headers.Location);
+  assert.ok(callback.responses[302].headers["Set-Cookie"]);
+  assert.ok(callback.responses[400]);
+  assert.ok(start.responses[302].headers.Location);
+  assert.ok(start.responses[302].headers["Set-Cookie"]);
+  assert.equal(start.responses[200], undefined);
+  assert.equal(unlink.responses[200].content["application/json"].schema.properties.providers.type, "array");
+  assert.ok(unlink.responses[409]);
 });

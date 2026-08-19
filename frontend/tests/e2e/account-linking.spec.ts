@@ -1,29 +1,34 @@
-import { expect, test, type Page } from "./test-fixture";
-import type { BrowserContext } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import type { BrowserContext, TestInfo } from "@playwright/test";
 
 const apiUrl = process.env.OAUTH_E2E_API_URL || process.env.NEXT_PUBLIC_API_URL;
 const frontendUrl = process.env.OAUTH_E2E_FRONTEND_URL || process.env.PLAYWRIGHT_BASE_URL;
+const sessionCookieName = process.env.OAUTH_E2E_SESSION_COOKIE_NAME;
+
 const requiredEnvironment = {
-  DATABASE_URL: process.env.DATABASE_URL,
-  DIRECT_URL: process.env.DIRECT_URL,
   OAUTH_E2E_API_URL: apiUrl,
   OAUTH_E2E_FRONTEND_URL: frontendUrl,
+  OAUTH_E2E_RUN_ID: process.env.OAUTH_E2E_RUN_ID,
   OAUTH_E2E_LINK_EMAIL: process.env.OAUTH_E2E_LINK_EMAIL,
   OAUTH_E2E_LINK_PASSWORD: process.env.OAUTH_E2E_LINK_PASSWORD,
   OAUTH_E2E_COLLISION_EMAIL: process.env.OAUTH_E2E_COLLISION_EMAIL,
   OAUTH_E2E_COLLISION_PASSWORD: process.env.OAUTH_E2E_COLLISION_PASSWORD,
+  OAUTH_E2E_COLLISION_OWNER_EMAIL: process.env.OAUTH_E2E_COLLISION_OWNER_EMAIL,
+  OAUTH_E2E_COLLISION_OWNER_PASSWORD: process.env.OAUTH_E2E_COLLISION_OWNER_PASSWORD,
+  OAUTH_E2E_COLLISION_PROVIDER_USER_ID: process.env.OAUTH_E2E_COLLISION_PROVIDER_USER_ID,
   OAUTH_E2E_LAST_METHOD_COOKIE: process.env.OAUTH_E2E_LAST_METHOD_COOKIE,
   OAUTH_E2E_SAFE_UNLINK_EMAIL: process.env.OAUTH_E2E_SAFE_UNLINK_EMAIL,
   OAUTH_E2E_SAFE_UNLINK_PASSWORD: process.env.OAUTH_E2E_SAFE_UNLINK_PASSWORD,
-  OAUTH_E2E_SESSION_COOKIE_NAME: process.env.OAUTH_E2E_SESSION_COOKIE_NAME,
-  OAUTH_E2E_GOOGLE_CODE: process.env.OAUTH_E2E_GOOGLE_CODE,
-  OAUTH_E2E_DISCORD_COLLISION_CODE: process.env.OAUTH_E2E_DISCORD_COLLISION_CODE,
+  OAUTH_E2E_SESSION_COOKIE_NAME: sessionCookieName,
 };
 const missingEnvironment = Object.entries(requiredEnvironment)
   .filter(([, value]) => !value)
   .map(([name]) => name);
 
-const withOrigin = (origin: string) => ({ Origin: origin, Referer: `${origin}/profile?tab=account` });
+const withOrigin = (origin: string) => ({
+  Origin: origin,
+  Referer: `${origin}/profile?tab=account`,
+});
 
 async function login(context: BrowserContext, email: string, password: string) {
   const response = await context.request.post(`${apiUrl}/api/login`, {
@@ -33,49 +38,82 @@ async function login(context: BrowserContext, email: string, password: string) {
   expect(response.ok(), await response.text()).toBe(true);
 }
 
+async function getProviders(context: BrowserContext) {
+  const response = await context.request.get(`${apiUrl}/api/v1/auth/oauth/providers`, {
+    headers: withOrigin(frontendUrl!),
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  return (await response.json()).providers as Array<{ provider: string; linked: boolean }>;
+}
+
+async function unlinkIfLinked(context: BrowserContext, provider: "google" | "discord") {
+  const providers = await getProviders(context);
+  if (!providers.find((entry) => entry.provider === provider)?.linked) return;
+
+  const response = await context.request.delete(`${apiUrl}/api/v1/auth/oauth/${provider}`, {
+    headers: withOrigin(frontendUrl!),
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+}
+
+const providerName = (provider: "google" | "discord") =>
+  provider[0].toUpperCase() + provider.slice(1);
+
+async function linkThroughUi(page: Page, context: BrowserContext, provider: "google" | "discord") {
+  const providers = await getProviders(context);
+  if (providers.find((entry) => entry.provider === provider)?.linked) return;
+
+  await openAccount(page);
+  await page.getByRole("button", { name: `Link ${providerName(provider)}` }).click();
+  await expect(page.getByRole("status")).toContainText("Account linked successfully");
+  await expect(page.getByRole("button", { name: `Unlink ${providerName(provider)}` })).toBeVisible();
+  expect((await getProviders(context)).find((entry) => entry.provider === provider)?.linked).toBe(true);
+}
+
+async function logout(context: BrowserContext) {
+  await context.request.post(`${apiUrl}/api/logout`, {
+    headers: withOrigin(frontendUrl!),
+  });
+}
+
+async function runCleanup(actions: Array<() => Promise<void>>) {
+  let firstError: unknown;
+  for (const action of actions) {
+    try {
+      await action();
+    } catch (error) {
+      firstError ??= error;
+    }
+  }
+  return firstError;
+}
+
 async function installSessionCookie(context: BrowserContext, rawCookie: string) {
-  const separator = rawCookie.indexOf("=");
-  const value = separator < 0 ? rawCookie : rawCookie.slice(separator + 1);
+  const cookie = rawCookie.split(";", 1)[0];
+  const separator = cookie.indexOf("=");
+  const value = separator < 0 ? cookie : cookie.slice(separator + 1);
   await context.addCookies([{
-    name: process.env.OAUTH_E2E_SESSION_COOKIE_NAME!,
+    name: sessionCookieName!,
     value,
     url: apiUrl!,
   }]);
 }
 
-/**
- * This is the only browser boundary mocked by these tests. The profile page,
- * provider list, link callback, and unlink request all go to the real API.
- * The configured authorization codes are supplied by the provider test
- * fixture, so no provider identity, token, or account API is fabricated here.
- */
-async function mockProviderBoundary(context: BrowserContext, provider: "google" | "discord", code: string) {
-  const authorizationPattern = provider === "google"
-    ? "https://accounts.google.com/o/oauth2/v2/auth**"
-    : "https://discord.com/api/oauth2/authorize**";
-
-  await context.route(authorizationPattern, async (route) => {
-    const authorization = new URL(route.request().url());
-    const redirectUri = authorization.searchParams.get("redirect_uri");
-    const state = authorization.searchParams.get("state");
-    expect(redirectUri).toBeTruthy();
-    expect(state).toBeTruthy();
-
-    const callback = new URL(redirectUri!);
-    callback.searchParams.set("code", code);
-    callback.searchParams.set("state", state!);
-    await route.fulfill({
-      status: 200,
-      contentType: "text/html",
-      body: `<script>window.location.replace(${JSON.stringify(callback.href)});</script>`,
-    });
-  });
+async function sessionCookieValue(context: BrowserContext) {
+  const cookie = (await context.cookies(apiUrl!)).find(
+    (entry) => entry.name === sessionCookieName,
+  );
+  expect(cookie, `Expected ${sessionCookieName} session cookie`).toBeTruthy();
+  return cookie!.value;
 }
 
 async function openAccount(page: Page) {
   await page.goto(`${frontendUrl}/profile?tab=account`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Linked accounts" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Linked accounts", exact: true })).toBeVisible({ timeout: 15_000 });
 }
+
+const projectDescription = (testInfo: TestInfo) =>
+  `project=${testInfo.project.name}; run=${process.env.OAUTH_E2E_RUN_ID || "unknown"}`;
 
 test.describe("OAuth account linking", () => {
   test.beforeEach(() => {
@@ -85,43 +123,113 @@ test.describe("OAuth account linking", () => {
     );
   });
 
-  test("links Google through the real profile and account API", async ({ page }) => {
-    await login(page.context(), requiredEnvironment.OAUTH_E2E_LINK_EMAIL!, requiredEnvironment.OAUTH_E2E_LINK_PASSWORD!);
-    await mockProviderBoundary(page.context(), "google", requiredEnvironment.OAUTH_E2E_GOOGLE_CODE!);
-    await openAccount(page);
+  test("links a run-specific Google identity through the real provider boundary", async ({ page }, testInfo) => {
+    testInfo.annotations.push({ type: "oauth-e2e", description: projectDescription(testInfo) });
+    const context = page.context();
+    await login(context, requiredEnvironment.OAUTH_E2E_LINK_EMAIL!, requiredEnvironment.OAUTH_E2E_LINK_PASSWORD!);
+    const initiallyLinked = (await getProviders(context)).find((entry) => entry.provider === "google")?.linked === true;
+    let testError: unknown;
+    let cleanupError: unknown;
 
-    await page.getByRole("button", { name: "Link Google" }).click();
-    await expect(page.getByRole("status")).toContainText("Account linked successfully");
-    await expect(page.getByRole("button", { name: "Unlink Google" })).toBeVisible();
-    expect(page.url()).not.toMatch(/(?:code|state|providerId|access_token)=/i);
+    try {
+      expect(initiallyLinked).toBe(false);
+      const sessionBefore = await sessionCookieValue(context);
+      await openAccount(page);
+      await page.getByRole("button", { name: "Link Google" }).click();
+      await expect(page.getByRole("status")).toContainText("Account linked successfully");
+      await expect(page.getByRole("button", { name: "Unlink Google" })).toBeVisible();
+      expect(await sessionCookieValue(context)).toBe(sessionBefore);
+      expect(page.url()).not.toMatch(/(?:code|state|providerId|access_token)=/i);
+    } catch (error) {
+      testError = error;
+    } finally {
+      cleanupError = await runCleanup([
+        () => unlinkIfLinked(context, "google"),
+        () => logout(context),
+      ]);
+    }
+
+    if (testError !== undefined) throw testError;
+    if (cleanupError !== undefined) throw cleanupError;
   });
 
-  test("reports a Discord provider collision without changing the profile", async ({ page }) => {
-    await login(page.context(), requiredEnvironment.OAUTH_E2E_COLLISION_EMAIL!, requiredEnvironment.OAUTH_E2E_COLLISION_PASSWORD!);
-    await mockProviderBoundary(page.context(), "discord", requiredEnvironment.OAUTH_E2E_DISCORD_COLLISION_CODE!);
-    await openAccount(page);
+  test("rejects a Discord identity independently owned by another account", async ({ page, browser }, testInfo) => {
+    testInfo.annotations.push({ type: "oauth-e2e", description: projectDescription(testInfo) });
+    const targetContext = page.context();
+    const ownerContext = await browser.newContext();
+    const ownerPage = await ownerContext.newPage();
+    await login(targetContext, requiredEnvironment.OAUTH_E2E_COLLISION_EMAIL!, requiredEnvironment.OAUTH_E2E_COLLISION_PASSWORD!);
+    await login(ownerContext, requiredEnvironment.OAUTH_E2E_COLLISION_OWNER_EMAIL!, requiredEnvironment.OAUTH_E2E_COLLISION_OWNER_PASSWORD!);
+    const targetInitiallyLinked = (await getProviders(targetContext)).find((entry) => entry.provider === "discord")?.linked === true;
+    const ownerInitiallyLinked = (await getProviders(ownerContext)).find((entry) => entry.provider === "discord")?.linked === true;
+    let testError: unknown;
+    let cleanupError: unknown;
+    try {
+      expect(targetInitiallyLinked).toBe(false);
+      expect(ownerInitiallyLinked).toBe(false);
+      await linkThroughUi(ownerPage, ownerContext, "discord");
 
-    await page.getByRole("button", { name: "Link Discord" }).click();
-    await expect(page.getByRole("alert")).toContainText("could not link that account");
-    await expect(page.getByRole("button", { name: "Link Discord" })).toBeVisible();
-    expect(page.url()).not.toMatch(/(?:code|state|providerId|access_token)=/i);
+      await openAccount(page);
+      await page.getByRole("button", { name: "Link Discord" }).click();
+      await expect(page.getByRole("alert").filter({ hasText: "could not link that account" })).toContainText("could not link that account");
+      await expect(page.getByRole("button", { name: "Link Discord" })).toBeVisible();
+      expect((await getProviders(targetContext)).find((entry) => entry.provider === "discord")?.linked).toBe(false);
+      expect((await getProviders(ownerContext)).find((entry) => entry.provider === "discord")?.linked).toBe(true);
+      expect(page.url()).not.toMatch(/(?:code|state|providerId|access_token)=/i);
+    } catch (error) {
+      testError = error;
+    } finally {
+      cleanupError = await runCleanup([
+        () => unlinkIfLinked(ownerContext, "discord"),
+        () => unlinkIfLinked(targetContext, "discord"),
+        () => logout(targetContext),
+        () => logout(ownerContext),
+        () => ownerPage.close(),
+        () => ownerContext.close(),
+      ]);
+    }
+
+    if (testError !== undefined) throw testError;
+    if (cleanupError !== undefined) throw cleanupError;
   });
 
-  test("rejects unlinking the last OAuth login method", async ({ page }) => {
-    await installSessionCookie(page.context(), requiredEnvironment.OAUTH_E2E_LAST_METHOD_COOKIE!);
-    await openAccount(page);
+  test("rejects unlinking the separately seeded last OAuth login method", async ({ page }) => {
+    const context = page.context();
+    try {
+      await installSessionCookie(context, requiredEnvironment.OAUTH_E2E_LAST_METHOD_COOKIE!);
+      await openAccount(page);
 
-    await page.getByRole("button", { name: "Unlink Google" }).click();
-    await expect(page.getByRole("alert")).toContainText("Keep a verified password or another linked provider");
-    await expect(page.getByRole("button", { name: "Unlink Google" })).toBeVisible();
+      await page.getByRole("button", { name: "Unlink Google" }).click();
+      await expect(page.getByRole("alert").filter({ hasText: "Keep a verified password or another linked provider" })).toContainText("Keep a verified password or another linked provider");
+      await expect(page.getByRole("button", { name: "Unlink Google" })).toBeVisible();
+    } finally {
+      await context.close();
+    }
   });
 
   test("unlinks an OAuth provider when a verified password remains", async ({ page }) => {
-    await login(page.context(), requiredEnvironment.OAUTH_E2E_SAFE_UNLINK_EMAIL!, requiredEnvironment.OAUTH_E2E_SAFE_UNLINK_PASSWORD!);
-    await openAccount(page);
+    const context = page.context();
+    await login(context, requiredEnvironment.OAUTH_E2E_SAFE_UNLINK_EMAIL!, requiredEnvironment.OAUTH_E2E_SAFE_UNLINK_PASSWORD!);
+    const initiallyLinked = (await getProviders(context)).find((entry) => entry.provider === "google")?.linked === true;
+    let testError: unknown;
+    let cleanupError: unknown;
 
-    await page.getByRole("button", { name: "Unlink Google" }).click();
-    await expect(page.getByRole("status")).toContainText("Google has been unlinked");
-    await expect(page.getByRole("button", { name: "Link Google" })).toBeVisible();
+    try {
+      expect(initiallyLinked).toBe(false);
+      await linkThroughUi(page, context, "google");
+      await page.getByRole("button", { name: "Unlink Google" }).click();
+      await expect(page.getByRole("status")).toContainText("Google has been unlinked");
+      await expect(page.getByRole("button", { name: "Link Google" })).toBeVisible();
+    } catch (error) {
+      testError = error;
+    } finally {
+      cleanupError = await runCleanup([
+        () => unlinkIfLinked(context, "google"),
+        () => logout(context),
+      ]);
+    }
+
+    if (testError !== undefined) throw testError;
+    if (cleanupError !== undefined) throw cleanupError;
   });
 });

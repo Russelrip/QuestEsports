@@ -46,21 +46,36 @@ const OAUTH_RETRYABLE_TRANSACTION_ERRORS = new Set([
   "P2037",
 ]);
 
+const DEFAULT_OAUTH_ENDPOINTS = {
+  google: {
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    profileUrl: "https://openidconnect.googleapis.com/v1/userinfo",
+  },
+  discord: {
+    authorizeUrl: "https://discord.com/api/oauth2/authorize",
+    tokenUrl: "https://discord.com/api/oauth2/token",
+    profileUrl: "https://discord.com/api/users/@me",
+  },
+};
+
 const OAUTH_PROVIDER_CONFIG = {
   google: {
     clientId: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
     callbackUrl: env.GOOGLE_CALLBACK_URL,
-    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
-    tokenUrl: "https://oauth2.googleapis.com/token",
+    authorizeUrl: env.GOOGLE_OAUTH_AUTHORIZE_URL || DEFAULT_OAUTH_ENDPOINTS.google.authorizeUrl,
+    tokenUrl: env.GOOGLE_OAUTH_TOKEN_URL || DEFAULT_OAUTH_ENDPOINTS.google.tokenUrl,
+    profileUrl: env.GOOGLE_OAUTH_PROFILE_URL || DEFAULT_OAUTH_ENDPOINTS.google.profileUrl,
     scope: "openid email profile",
   },
   discord: {
     clientId: env.DISCORD_CLIENT_ID,
     clientSecret: env.DISCORD_CLIENT_SECRET,
     callbackUrl: env.DISCORD_CALLBACK_URL,
-    authorizeUrl: "https://discord.com/api/oauth2/authorize",
-    tokenUrl: "https://discord.com/api/oauth2/token",
+    authorizeUrl: env.DISCORD_OAUTH_AUTHORIZE_URL || DEFAULT_OAUTH_ENDPOINTS.discord.authorizeUrl,
+    tokenUrl: env.DISCORD_OAUTH_TOKEN_URL || DEFAULT_OAUTH_ENDPOINTS.discord.tokenUrl,
+    profileUrl: env.DISCORD_OAUTH_PROFILE_URL || DEFAULT_OAUTH_ENDPOINTS.discord.profileUrl,
     scope: "identify email",
   },
 };
@@ -286,9 +301,21 @@ const getProviderConfig = (provider, { flow = "login" } = {}) => {
     config.callbackUrl,
     `${provider} callback URL`
   );
+  const authorizeUrl = ensureAbsoluteUrl(
+    config.authorizeUrl,
+    `${provider} authorization URL`
+  );
+  const tokenUrl = ensureAbsoluteUrl(config.tokenUrl, `${provider} token URL`);
+  const profileUrl = ensureAbsoluteUrl(
+    config.profileUrl,
+    `${provider} profile URL`
+  );
 
   return {
     ...config,
+    authorizeUrl,
+    tokenUrl,
+    profileUrl,
     callbackUrl:
       flow === OAUTH_LINK_FLOW
         ? getLinkCallbackUrl(callbackUrl, provider)
@@ -502,7 +529,7 @@ const exchangeCodeForToken = async ({
 };
 
 const fetchGoogleProfile = async (accessToken) => {
-  const response = await fetchOAuth("https://openidconnect.googleapis.com/v1/userinfo", {
+  const response = await fetchOAuth(getProviderConfig("google").profileUrl, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -523,7 +550,7 @@ const fetchGoogleProfile = async (accessToken) => {
 };
 
 const fetchDiscordProfile = async (accessToken) => {
-  const response = await fetchOAuth("https://discord.com/api/users/@me", {
+  const response = await fetchOAuth(getProviderConfig("discord").profileUrl, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },

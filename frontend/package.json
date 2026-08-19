@@ -14,6 +14,7 @@
     "test": "vitest run tests/unit",
     "test:e2e": "playwright test",
     "test:e2e:local": "node scripts/run-e2e-local.mjs",
+    "test:e2e:oauth": "node scripts/run-oauth-e2e.mjs",
     "perf:check": "node scripts/measure-page-performance.mjs"
   },
   "dependencies": {

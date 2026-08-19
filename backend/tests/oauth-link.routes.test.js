@@ -284,7 +284,7 @@ test("mounted v1 OAuth link routes use canonical callback URLs and link-only coo
       });
       assert.equal(unlink.status, 400);
       const unlinkBody = await unlink.json();
-      assert.equal(unlinkBody.error.code, "invalid_request");
+      assert.equal(unlinkBody.error.code, "OAUTH_LAST_LOGIN_METHOD");
       assert.equal(unlinkBody.message, lastLoginMethod.message);
       assert.equal(unlinkBody.error.message.includes("provider token"), false);
     });
