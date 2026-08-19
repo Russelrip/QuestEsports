@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiFetchJson = vi.hoisted(() => vi.fn());
+const buildApiUrl = vi.hoisted(() => (path: string) => path);
+vi.mock("@/lib/api", () => ({ buildApiUrl }));
 vi.mock("@/lib/auth", () => ({
   apiFetchJson,
   getApiErrorMessage: (response: Response, data: { success?: boolean; message?: string }, fallback: string) => response.ok && data.success !== false ? "" : data.message || fallback,

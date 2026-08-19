@@ -1,0 +1,2 @@
+ALTER INDEX "support_conversations_assigned_staff_user_id_status_updated_at_idx"
+RENAME TO "support_conversations_assigned_staff_user_id_status_updated_idx";
