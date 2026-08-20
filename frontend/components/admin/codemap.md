@@ -23,6 +23,10 @@ chrome whenever this boundary is present.
   reusing full registration detail/correction controls.
 - `TournamentEditor.tsx` remains the source of truth for child game,
   capacity, waitlist, roster, payment, schedule, and publication settings.
+- Saved-team administration preserves persisted `COACH` members and nullable
+  coach phone data. Registration-facing saved-team selection hydrates a coach
+  draft separately from player/substitute roster drafts, while the backend
+  enforces the same-tournament coach/player conflict boundary.
 
 Admin requests use the authenticated browser session and never expose the
 private registration fields to public components. Event summary responses omit

@@ -8,6 +8,10 @@ const {
   allocateLowestAvailableSlot,
   countTournamentCapacityUsage,
 } = require("../tournaments/registration-eligibility");
+const {
+  assertNoCoachPlayerRoleConflict,
+  COACH_PLAYER_ROLE_CONFLICT_MESSAGE,
+} = require("../tournaments/role-conflict.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { sendTicketOrderEmail } = require("../../lib/mail/sendTicketOrderEmail");
 const {
@@ -354,6 +358,15 @@ const resolvePaidStatus = async ({ tx, current, now }) => {
     ) {
       return "review_required";
     }
+    if (registration.members?.length) {
+      await assertNoCoachPlayerRoleConflict({
+        tx,
+        tournamentId: registration.tournamentId,
+        members: registration.members,
+        excludeRegistrationId: registration.id,
+        now,
+      });
+    }
     const activeCount = await countTournamentCapacityUsage({
       tx,
       tournamentId: registration.tournamentId,
@@ -479,7 +492,10 @@ const processPayHereNotification = async (body) => {
       where: { id: transaction.id },
       include: {
         registration: {
-          include: { tournament: { select: { maxTeams: true } } },
+          include: {
+            members: true,
+            tournament: { select: { maxTeams: true } },
+          },
         },
         merchandiseOrder: true,
         ticketOrder: { include: { event: { select: { status: true } } } },
@@ -487,9 +503,20 @@ const processPayHereNotification = async (body) => {
     });
     const now = new Date();
     let appliedStatus = status;
+    let appliedStatusMessage = null;
     if (current.notificationDigest === digest) appliedStatus = current.status;
-    else if (status === "paid")
-      appliedStatus = await resolvePaidStatus({ tx, current, now });
+    else if (status === "paid") {
+      try {
+        appliedStatus = await resolvePaidStatus({ tx, current, now });
+      } catch (error) {
+        if (error?.statusCode !== 409 || error.message !== COACH_PLAYER_ROLE_CONFLICT_MESSAGE) {
+          throw error;
+        }
+        appliedStatus = "review_required";
+        appliedStatusMessage =
+          "Payment was received, but the registration has a coach/player role conflict and requires administrator review.";
+      }
+    }
     else if (current.status === "paid" && status !== "charged_back")
       appliedStatus = current.status;
     else if (TERMINAL_FAILURE_STATUSES.has(current.status))
@@ -517,9 +544,9 @@ const processPayHereNotification = async (body) => {
           String(body.payment_id || "").trim() || current.providerPaymentId,
         method: String(body.method || "").trim() || null,
         statusMessage:
-          appliedStatus === "review_required"
+          appliedStatusMessage || (appliedStatus === "review_required"
             ? "Payment was received after the reservation became unavailable and requires manual review or refund."
-            : String(body.status_message || "").trim() || null,
+            : String(body.status_message || "").trim() || null),
         notificationDigest: digest,
         paidAt:
           appliedStatus === "paid" ? current.paidAt || now : current.paidAt,
@@ -979,7 +1006,7 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
       where: { id: transactionId },
       include: {
         bankTransferProof: true,
-        registration: { include: { tournament: true } },
+        registration: { include: { members: true, tournament: true } },
       },
     });
     if (!current || current.purpose !== "tournament_registration") {
@@ -996,6 +1023,14 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
     }
     if (current.registration.paymentStatus === "paid") {
       throw new HttpError(409, "This registration is already paid.");
+    }
+    if (current.registration.members?.length) {
+      await assertNoCoachPlayerRoleConflict({
+        tx,
+        tournamentId: current.registration.tournamentId,
+        members: current.registration.members,
+        excludeRegistrationId: current.registration.id,
+      });
     }
 
     const used = await countTournamentCapacityUsage({
@@ -1084,7 +1119,10 @@ const reconcilePayHerePayment = async ({
       where: { id: transactionId },
       include: {
         registration: {
-          include: { tournament: { select: { maxTeams: true } } },
+          include: {
+            members: true,
+            tournament: { select: { maxTeams: true } },
+          },
         },
         merchandiseOrder: true,
         ticketOrder: { include: { event: { select: { status: true } } } },
@@ -1110,6 +1148,15 @@ const reconcilePayHerePayment = async ({
             409,
             "This registration can no longer be confirmed; refund the payment.",
           );
+        }
+        if (current.registration.members?.length) {
+          await assertNoCoachPlayerRoleConflict({
+            tx,
+            tournamentId: current.registration.tournamentId,
+            members: current.registration.members,
+            excludeRegistrationId: current.registration.id,
+            now,
+          });
         }
         const otherActiveCount = await countTournamentCapacityUsage({
           tx,

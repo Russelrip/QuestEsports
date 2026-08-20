@@ -103,16 +103,22 @@ test("admin approval confirms a reserved bank transfer and activates the team", 
       id: "registration-1",
       tournamentId: "tournament-1",
       reservedUntil: new Date(Date.now() + 60_000),
+      members: [{ role: "PLAYER", email: "player@example.com", riotId: "Player#001" }],
       tournament: { maxTeams: 10 },
     },
   };
+  let findUniqueArgs;
   const tx = {
     paymentTransaction: {
-      findUnique: async () => current,
+      findUnique: async (args) => {
+        findUniqueArgs = args;
+        return current;
+      },
       update: async ({ data }) => ({ ...current, ...data }),
     },
     teamRegistration: {
       count: async () => 9,
+      findMany: async () => [],
       update: async ({ data }) => { registrationUpdates.push(data); },
     },
     bankTransferProof: { update: async () => undefined },
@@ -131,6 +137,51 @@ test("admin approval confirms a reserved bank transfer and activates the team", 
     assert.equal(result.status, "paid");
     assert.deepEqual(registrationUpdates[0], { paymentStatus: "paid", reservedUntil: null });
     assert.equal(activatedId, "registration-1");
+    assert.equal(findUniqueArgs.include.registration.include.members, true);
+  } finally {
+    restore();
+  }
+});
+
+test("bank-transfer approval rejects an active same-tournament coach/player conflict", async () => {
+  const current = {
+    id: "payment-conflict",
+    provider: "bank_transfer",
+    status: "review_required",
+    registrationId: "registration-1",
+    bankTransferProof: { id: "proof-1" },
+    registration: {
+      id: "registration-1",
+      tournamentId: "tournament-1",
+      reservedUntil: new Date(Date.now() + 60_000),
+      members: [{ role: "PLAYER", email: "player@example.com", riotId: "Player#001" }],
+      tournament: { maxTeams: 10 },
+    },
+  };
+  const queryCalls = [];
+  const tx = {
+    paymentTransaction: { findUnique: async () => current },
+    teamRegistration: {
+      findMany: async (args) => {
+        queryCalls.push(args);
+        return [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Player#001" }] }];
+      },
+    },
+  };
+  const { module: service, restore } = load({
+    prisma: { $transaction: async (callback) => callback(tx) },
+  });
+  try {
+    await assert.rejects(
+      service.reviewBankTransfer({
+        transactionId: current.id,
+        decision: "approve",
+        admin: { id: "admin-1" },
+      }),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
+    assert.equal(queryCalls[0].where.tournamentId, "tournament-1");
+    assert.equal(queryCalls[0].where.id.not, "registration-1");
   } finally {
     restore();
   }

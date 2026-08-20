@@ -230,6 +230,77 @@ test("a complete coach does not change configured player roster counts", () => {
 
     assert.equal(submission.members.length, 5);
     assert.equal(submission.members.filter((member) => member.role === "PLAYER").length, 4);
+    assert.equal(submission.members.some((member) => member.role === "COACH"), false);
     assert.equal(submission.coach.name, "Coach Example");
+    assert.equal(submission.coach.phone, "0771111111");
+    assert.equal(submission.coach.discord, "coach-discord");
+    assert.equal(submission.coach.riotId, "CoachName#123");
+  } finally { restore(); }
+});
+
+test("a submitted coach cannot share a captain or player email or Riot ID", () => {
+  const { module: service, restore } = load();
+  const tournament = {
+    allowCoach: true,
+    coachRequired: false,
+    game: "Valorant",
+    entryType: "team",
+    minRosterSize: 1,
+    maxRosterSize: 2,
+    maxSubstitutes: 1,
+    registrationFields: [],
+  };
+
+  const makeBody = (coach, captainRiotId = "Captain#123") => ({
+    teamName: "Conflict Team",
+    phone: "0770000000",
+    discord: "captain-discord",
+    gameId: captainRiotId,
+    contactEmail: "captain@example.com",
+    rulebookAccepted: true,
+    falsityWarningAccepted: true,
+    members: JSON.stringify([{
+      name: "Player Two",
+      email: "player@example.com",
+      gameId: "PlayerTwo#123",
+      role: "PLAYER",
+    }]),
+    coach: JSON.stringify(coach),
+  });
+
+  try {
+    for (const [label, body] of [
+      [
+        "email",
+        makeBody({
+          name: "Coach Example",
+          email: " CAPTAIN@EXAMPLE.COM ",
+          phone: "0771111111",
+          discord: "coach-discord",
+          gameId: "CoachName#123",
+        }),
+      ],
+      [
+        "Riot ID",
+        makeBody({
+          name: "Coach Example",
+          email: "coach@example.com",
+          phone: "0771111111",
+          discord: "coach-discord",
+          gameId: " playerTWO#123 ",
+        }),
+      ],
+    ]) {
+      assert.throws(
+        () => service.normalizeRegistrationSubmission({
+          tournament,
+          user: { firstName: "Quest", lastName: "Captain", email: "captain@example.com" },
+          body,
+        }),
+        (error) => error.statusCode === 409 &&
+          error.message === "This person cannot be both a coach and a player in the same tournament.",
+        `${label} conflict should be rejected`
+      );
+    }
   } finally { restore(); }
 });

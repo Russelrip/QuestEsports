@@ -3,6 +3,7 @@ import {
   TEAM_LOGO_MAX_FILE_SIZE,
   assertFileWithinUploadLimit,
 } from "@/lib/upload-limits";
+import { emptyCoachDraft, type CoachDraft } from "@/lib/tournament-coach";
 
 export type SavedTeamMember = {
   id: string;
@@ -10,12 +11,54 @@ export type SavedTeamMember = {
   memberOrder: number;
   name: string;
   email: string;
+  phone?: string | null;
   discord?: string | null;
   riotId?: string | null;
   inviteStatus: "pending" | "accepted" | "declined";
   inviteSentAt?: string | null;
   inviteRespondedAt?: string | null;
 };
+
+export type SavedTeamRegistrationMemberDraft = {
+  name: string;
+  email: string;
+  discord: string;
+  gameId: string;
+  role: "PLAYER" | "SUBSTITUTE";
+  additionalData: Record<string, string | boolean>;
+};
+
+export function mapSavedTeamToRegistrationDraft(
+  team: Pick<SavedTeam, "members">,
+  omittedMemberId?: string
+): {
+  members: SavedTeamRegistrationMemberDraft[];
+  coach: CoachDraft;
+  coachSelected: boolean;
+} {
+  const savedCoach = team.members.find((member) => member.role === "COACH");
+
+  return {
+    members: team.members
+      .filter((member) => member.id !== omittedMemberId && member.role !== "CAPTAIN" && member.role !== "COACH")
+      .map((member) => ({
+        name: member.name,
+        email: member.email,
+        discord: member.discord || "",
+        gameId: member.riotId || "",
+        role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
+        additionalData: {},
+      })),
+    coach: savedCoach ? {
+      name: savedCoach.name,
+      email: savedCoach.email,
+      phone: savedCoach.phone || "",
+      discord: savedCoach.discord || "",
+      gameId: savedCoach.riotId || "",
+    } : { ...emptyCoachDraft },
+    coachSelected: Boolean(savedCoach),
+  };
+}
 
 export type SavedTeam = {
   id: string;
@@ -69,15 +112,15 @@ export async function fetchProfileTeams() {
 }
 
 export type CreateTeamMemberInput = {
+  role: "PLAYER" | "SUBSTITUTE" | "COACH";
   name: string;
   email: string;
-};
-
-export type ManageTeamMemberInput = CreateTeamMemberInput & {
-  role: "PLAYER" | "SUBSTITUTE" | "COACH";
+  phone?: string;
   discord?: string;
   riotId?: string;
 };
+
+export type ManageTeamMemberInput = CreateTeamMemberInput;
 
 export async function createSavedTeam(input: {
   name: string;

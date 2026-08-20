@@ -938,9 +938,10 @@ test("getAdminSavedTeamById loads the roster only for the selected team", async 
         organizationName: null,
         updatedAt: new Date("2026-07-20T10:00:00.000Z"),
         captainUser: { firstName: "Team", lastName: "Captain", username: "captain" },
-        _count: { members: 1 },
+        _count: { members: 2 },
         members: [
-          { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: "player", riotId: "Player#001", inviteStatus: "accepted" },
+          { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player", riotId: "Player#001", inviteStatus: "accepted" },
+          { id: "member-2", role: "COACH", name: "Team Coach", email: "coach@example.com", phone: null, discord: null, riotId: null, inviteStatus: "pending" },
         ],
       }),
     },
@@ -950,7 +951,8 @@ test("getAdminSavedTeamById loads the roster only for the selected team", async 
     const team = await adminService.getAdminSavedTeamById("saved-team-1");
     assert.equal(team.captainName, "Team Captain");
     assert.deepEqual(team.members, [
-      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", discord: "player", gameId: "Player#001", inviteStatus: "accepted" },
+      { id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player", gameId: "Player#001", inviteStatus: "accepted" },
+      { id: "member-2", role: "COACH", name: "Team Coach", email: "coach@example.com", phone: null, discord: null, gameId: null, inviteStatus: "pending" },
     ]);
   } finally {
     restore();
@@ -988,6 +990,7 @@ test("updateAdminSavedTeamOrganization stores a verified organization label", as
 
 test("updateAdminSavedTeam replaces its logo across linked tournament registrations", async () => {
   const savedTeamUpdates = [];
+  const savedTeamMemberUpdates = [];
   const registrationUpdates = [];
   const removedUploads = [];
   const team = {
@@ -1010,7 +1013,7 @@ test("updateAdminSavedTeam replaces its logo across linked tournament registrati
       update: async (args) => savedTeamUpdates.push(args),
     },
     savedTeamMember: {
-      update: async () => undefined,
+      update: async (args) => savedTeamMemberUpdates.push(args),
     },
     teamRegistration: {
       findMany: async () => [{ id: "registration-1", tournamentId: "tournament-1", teamName: "Quest Five" }],
@@ -1048,12 +1051,23 @@ test("updateAdminSavedTeam replaces its logo across linked tournament registrati
         teamTag: "Q5",
         country: "Sri Lanka",
         organizationName: "Independent",
-        members: JSON.stringify([{ id: "member-1", name: "Player One", email: "player@example.com", discord: "", gameId: "" }]),
+        members: JSON.stringify([{ id: "member-1", name: "Player One", email: "player@example.com", phone: "0770000000", discord: "player-discord", riotId: "PlayerName#123" }]),
       },
       { buffer: Buffer.from("logo") }
     );
 
     assert.equal(savedTeamUpdates[0].data.logoName, "new-logo.webp");
+    assert.deepEqual(savedTeamMemberUpdates, [{
+      where: { id: "member-1" },
+      data: {
+        name: "Player One",
+        email: "player@example.com",
+        emailNormalized: "player@example.com",
+        phone: "0770000000",
+        discord: "player-discord",
+        riotId: "PlayerName#123",
+      },
+    }]);
     assert.deepEqual(registrationUpdates, [{
       where: { savedTeamId: "saved-team-1" },
       data: { teamName: "Quest Five", teamLogoName: "new-logo.webp" },
@@ -1213,6 +1227,9 @@ test("transferAdminSavedTeamCaptain promotes an accepted member and removes the 
       {
         id: "registration-1",
         tournamentId: "tournament-1",
+        status: "approved",
+        paymentStatus: "paid",
+        reservedUntil: null,
         captainEmail: "former@example.com",
         additionalData: {},
         tournament: {
@@ -1275,6 +1292,7 @@ test("transferAdminSavedTeamCaptain promotes an accepted member and removes the 
     },
     teamRegistration: {
       findFirst: async () => null,
+      findMany: async () => [],
       update: async (args) => registrationUpdates.push(args),
     },
     registrationMember: {
@@ -1457,7 +1475,6 @@ test("getAdminTeamRegistrationById loads the selected registration roster", asyn
 test("updateTeamRegistrationGameIds updates the captain and every selected roster member", async () => {
   const registrationUpdates = [];
   const memberUpdates = [];
-  let lookupCount = 0;
   const detail = {
     id: "registration-1",
     entryType: "team",
@@ -1485,24 +1502,34 @@ test("updateTeamRegistrationGameIds updates the captain and every selected roste
       { id: "member-1", role: "PLAYER", memberOrder: 1, name: "Player One", email: "player@example.com", discord: null, riotId: "Player#002", additionalData: {}, inviteStatus: "accepted", inviteRespondedAt: new Date(), user: null },
     ],
   };
+  let transactionLookupCount = 0;
   const tx = {
-    teamRegistration: { update: async (args) => registrationUpdates.push(args) },
+    teamRegistration: {
+      findUnique: async () => {
+        transactionLookupCount += 1;
+        return {
+          id: "registration-1",
+          additionalData: { valorant_id: "Captain#001" },
+          tournament: { id: "tournament-1", game: "Valorant", registrationFields: [
+            { key: "valorant_id", label: "Valorant ID", scope: "entry" },
+            { key: "riot_id", label: "Riot ID", scope: "member" },
+          ] },
+          members: detail.members.map(({ id, role, email, riotId }) => ({
+            id,
+            role,
+            email,
+            emailNormalized: email,
+            riotId,
+            additionalData: { riot_id: "Old#001" },
+          })),
+        };
+      },
+      update: async (args) => registrationUpdates.push(args),
+    },
     registrationMember: { update: async (args) => memberUpdates.push(args) },
   };
   const { module: adminService, restore } = loadAdminService({
-    teamRegistration: {
-      findUnique: async () => lookupCount++ === 0
-        ? {
-            id: "registration-1",
-            additionalData: { valorant_id: "Captain#001" },
-            tournament: { game: "Valorant", registrationFields: [
-              { key: "valorant_id", label: "Valorant ID", scope: "entry" },
-              { key: "riot_id", label: "Riot ID", scope: "member" },
-            ] },
-            members: detail.members.map(({ id, role }) => ({ id, role, additionalData: { riot_id: "Old#001" } })),
-          }
-        : detail,
-    },
+    teamRegistration: { findUnique: async () => detail },
     $transaction: async (work) => work(tx),
   });
 
@@ -1524,6 +1551,307 @@ test("updateTeamRegistrationGameIds updates the captain and every selected roste
       { where: { id: "member-1" }, data: { riotId: "Player#002", additionalData: { riot_id: "Player#002" } } },
     ]);
     assert.equal(result.captain.riotId, "Captain#002");
+    assert.equal(transactionLookupCount, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("transferAdminSavedTeamCaptain validates each active post-transfer roster", async () => {
+  const sourceTeam = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    captainUserId: "captain-user",
+    captainUser: {
+      id: "captain-user",
+      firstName: "Former",
+      lastName: "Captain",
+      username: "former-captain",
+      email: "former@example.com",
+      emailNormalized: "former@example.com",
+    },
+    members: [
+      { id: "saved-captain", userId: "captain-user", role: "CAPTAIN", memberOrder: 0, name: "Former Captain", email: "former@example.com", emailNormalized: "former@example.com", discord: "former", riotId: "Former#001", inviteStatus: "accepted", user: null },
+      {
+        id: "saved-coach",
+        userId: "coach-user",
+        role: "COACH",
+        memberOrder: 1,
+        name: "New Captain",
+        email: "new@example.com",
+        emailNormalized: "new@example.com",
+        discord: "new-discord",
+        riotId: "New#002",
+        inviteStatus: "accepted",
+        user: { id: "coach-user", email: "new@example.com", emailNormalized: "new@example.com", emailVerified: true, phone: "0771234567", discordTag: "new-profile" },
+      },
+    ],
+    registrations: [{
+      id: "registration-1",
+      tournamentId: "tournament-1",
+      status: "approved",
+      paymentStatus: "paid",
+      reservedUntil: null,
+      captainEmail: "former@example.com",
+      additionalData: {},
+      tournament: { title: "Quest Cup", game: "Valorant", registrationFields: [] },
+      members: [
+        { id: "registration-captain", userId: "captain-user", role: "CAPTAIN", name: "Former Captain", email: "former@example.com", emailNormalized: "former@example.com", discord: "former", riotId: "Former#001", additionalData: {}, inviteStatus: "accepted" },
+        { id: "registration-coach", userId: "coach-user", role: "COACH", name: "New Captain", email: "new@example.com", emailNormalized: "new@example.com", discord: "new-discord", riotId: "New#002", additionalData: {}, inviteStatus: "accepted" },
+      ],
+    }],
+  };
+  const writes = [];
+  const tx = {
+    savedTeam: {
+      findUnique: async () => sourceTeam,
+      findFirst: async () => null,
+    },
+    teamRegistration: {
+      findFirst: async () => null,
+      findMany: async () => [
+        { members: [{ role: "COACH", email: "new@example.com", riotId: "Different#001" }] },
+        { members: [{ role: "COACH", email: "other-coach@example.com", riotId: "New#002" }] },
+      ],
+    },
+    savedTeamMember: {
+      delete: async () => writes.push("saved-delete"),
+      update: async () => writes.push("saved-update"),
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+  });
+  try {
+    await assert.rejects(
+      adminService.transferAdminSavedTeamCaptain({ teamId: "saved-team-1", memberId: "saved-coach" }),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
+    assert.deepEqual(writes, []);
+  } finally {
+    restore();
+  }
+});
+
+test("admin saved-team parsing rejects duplicate coach members", async () => {
+  const { module: adminService, restore } = loadAdminService({});
+  try {
+    await assert.rejects(
+      adminService.updateAdminSavedTeam("saved-team-1", {
+        name: "Quest Five",
+        members: [
+          { role: "COACH", name: "Coach One", email: "one@example.com" },
+          { role: "COACH", name: "Coach Two", email: "two@example.com" },
+        ],
+      }),
+      (error) => error.statusCode === 400 && /at most one coach/.test(error.message)
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("admin payment override rejects an active same-tournament coach/player conflict", async () => {
+  const current = registrationForStatusTest({
+    members: [{ role: "PLAYER", email: "player@example.com", riotId: "Player#001" }],
+  });
+  const queryCalls = [];
+  let findUniqueArgs;
+  const tx = {
+    teamRegistration: {
+      findUnique: async (args) => {
+        findUniqueArgs = args;
+        return current;
+      },
+      findMany: async (args) => {
+        queryCalls.push(args);
+        return [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Player#001" }] }];
+      },
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationStatus(
+        "registration-1",
+        { adminOverridePayment: true, status: "approved" },
+        "admin-1"
+      ),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
+    assert.equal(queryCalls[0].where.tournamentId, "tournament-1");
+    assert.deepEqual(queryCalls[0].where.status, { notIn: ["rejected", "waitlisted"] });
+    assert.equal(findUniqueArgs.include.members, true);
+  } finally {
+    restore();
+  }
+});
+
+test("waitlist promotion rejects an active same-tournament coach/player conflict", async () => {
+  const current = registrationForStatusTest({
+    status: "waitlisted",
+    paymentStatus: "unpaid",
+    waitlistPosition: 1,
+    assignedSlotNumber: null,
+    members: [{ role: "PLAYER", email: "player@example.com", riotId: "Player#001" }],
+  });
+  let findUniqueArgs;
+  const tx = {
+    teamRegistration: {
+      findUnique: async (args) => {
+        findUniqueArgs = args;
+        return current;
+      },
+      findFirst: async () => ({ id: "registration-1" }),
+      findMany: async () => [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Player#001" }] }],
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationStatus("registration-1", { status: "approved" }, "admin-1"),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
+    assert.equal(findUniqueArgs.include.members, true);
+  } finally {
+    restore();
+  }
+});
+
+test("admin rejection remains available when a registration has a coach/player conflict", async () => {
+  const current = registrationForStatusTest({
+    status: "pending",
+    members: [{ role: "PLAYER", email: "player@example.com", riotId: "Player#001" }],
+  });
+  let conflictQueryCount = 0;
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      findMany: async () => {
+        conflictQueryCount += 1;
+        return [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Player#001" }] }];
+      },
+      update: async ({ data }) => ({ ...current, ...data, members: current.members }),
+    },
+    auditLog: { create: async () => undefined },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "rejected" },
+      "admin-1"
+    );
+    assert.equal(result.status, "rejected");
+    assert.equal(conflictQueryCount, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("admin Game ID edits reject an active same-tournament coach/player conflict", async () => {
+  const queryCalls = [];
+  const current = {
+    id: "registration-1",
+    additionalData: {},
+    tournament: { id: "tournament-1", game: "Valorant", registrationFields: [] },
+    members: [{
+      id: "captain-1",
+      role: "CAPTAIN",
+      email: "captain@example.com",
+      emailNormalized: "captain@example.com",
+      riotId: "OldCaptain#001",
+      additionalData: {},
+    }],
+  };
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      findMany: async (args) => {
+        queryCalls.push(args);
+        return [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Captain#002" }] }];
+      },
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationGameIds("registration-1", {
+        captainGameId: "Captain#002",
+        members: [{ id: "captain-1", gameId: "Ignored#000" }],
+      }),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
+    assert.equal(queryCalls[0].where.tournamentId, "tournament-1");
+    assert.equal(queryCalls[0].where.id.not, "registration-1");
+    assert.deepEqual(queryCalls[0].where.status, { notIn: ["rejected", "waitlisted"] });
+  } finally {
+    restore();
+  }
+});
+
+test("admin roster correction rejects a local coach/player conflict", async () => {
+  const captain = {
+    id: "captain-1",
+    role: "CAPTAIN",
+    memberOrder: 0,
+    name: "Captain",
+    email: "captain@example.com",
+    emailNormalized: "captain@example.com",
+    discord: "captain",
+    riotId: "Captain#001",
+    additionalData: {},
+    inviteStatus: "accepted",
+  };
+  const registration = {
+    id: "registration-1",
+    tournamentId: "tournament-1",
+    entryType: "team",
+    captainEmail: captain.email,
+    captainPhone: "0770000000",
+    contactEmail: captain.email,
+    additionalData: {},
+    members: [captain],
+    savedTeam: null,
+    tournament: {
+      id: "tournament-1",
+      title: "Quest Cup",
+      game: "Valorant",
+      registrationFields: [],
+      minRosterSize: 1,
+      maxRosterSize: 1,
+      maxSubstitutes: 0,
+      allowCoach: true,
+      coachRequired: false,
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work({
+      teamRegistration: { findUnique: async () => registration, findMany: async () => [] },
+      user: { findMany: async () => [{ id: "captain-user", email: captain.email, emailNormalized: captain.email, emailVerified: true, phone: "0770000000" }] },
+      registrationMember: { findMany: async () => [], deleteMany: async () => undefined },
+    }),
+  });
+  try {
+    await assert.rejects(
+      adminService.correctTeamRegistrationRoster("registration-1", {
+        members: [{ role: "CAPTAIN", name: "Captain", email: captain.email, discord: "captain", gameId: "Captain#001" }],
+        coach: { name: "Coach", email: captain.email, phone: "0771111111", discord: "coach", gameId: "Coach#001" },
+      }),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
   } finally {
     restore();
   }
@@ -1535,6 +1863,8 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
   const savedTeamDeletes = [];
   const savedTeamCreates = [];
   const registrationUpdates = [];
+  const genericConflictQueries = [];
+  let transactionOptions;
   const currentMembers = [
     { id: "captain-1", role: "CAPTAIN", memberOrder: 0, name: "Captain", email: "captain@example.com", emailNormalized: "captain@example.com", discord: "captain", riotId: "Captain#001", additionalData: {}, inviteStatus: "accepted" },
     { id: "old-player", role: "PLAYER", memberOrder: 1, name: "Old Player", email: "old@example.com", emailNormalized: "old@example.com", discord: "old", riotId: "Old#001", additionalData: {}, inviteStatus: "accepted" },
@@ -1587,7 +1917,10 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
     },
     user: { findMany: async () => users },
     registrationMember: {
-      findMany: async () => [],
+      findMany: async (args) => {
+        genericConflictQueries.push(args);
+        return [];
+      },
       deleteMany: async (args) => registrationDeletes.push(args),
       createMany: async (args) => registrationCreates.push(args),
     },
@@ -1631,7 +1964,10 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
     members: currentMembers.map((member) => ({ ...member, inviteRespondedAt: new Date(), user: null })),
   };
   const { module: adminService, restore } = loadAdminService({
-    $transaction: async (work) => work(tx),
+    $transaction: async (work, options) => {
+      transactionOptions = options;
+      return work(tx);
+    },
     teamRegistration: { findUnique: async () => detail },
   });
 
@@ -1669,6 +2005,10 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
     } }]);
     assert.deepEqual(savedTeamDeletes, [{ where: { teamId: "saved-team-1" } }]);
     assert.equal(savedTeamCreates[0].data.length, 7);
+    assert.ok(savedTeamCreates[0].data.every((member) => member.phone === null));
+    assert.deepEqual(genericConflictQueries[0].where.role, { not: "COACH" });
+    assert.deepEqual(genericConflictQueries[0].where.registration.status, { notIn: ["rejected", "waitlisted"] });
+    assert.equal(transactionOptions.isolationLevel, "Serializable");
   } finally {
     restore();
   }
@@ -2045,6 +2385,8 @@ test("correctTeamRegistrationRoster adds, edits, removes, and preserves the admi
 
     assert.equal(createCalls[0].data.find((member) => member.role === "COACH").email, "new-coach@example.com");
     assert.equal(createCalls[1].data.find((member) => member.role === "COACH").email, "old-coach@example.com");
+    assert.equal(createCalls[0].data.find((member) => member.role === "COACH").phone, "0772222222");
+    assert.equal(createCalls[1].data.find((member) => member.role === "COACH").phone, "0771111111");
     assert.equal(createCalls[2].data.some((member) => member.role === "COACH"), false);
     assert.equal(createCalls[0].data.find((member) => member.role === "COACH").inviteStatus, "accepted");
     assert.equal(createCalls[0].data.find((member) => member.role === "COACH").userId, null);

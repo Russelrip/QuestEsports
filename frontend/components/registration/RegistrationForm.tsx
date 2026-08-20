@@ -19,7 +19,14 @@ import {
   createSavedTeam,
 } from "@/lib/teams";
 
-const emptyMember = (): CreateTeamMemberInput => ({ name: "", email: "" });
+const emptyMember = (): CreateTeamMemberInput => ({
+  role: "PLAYER",
+  name: "",
+  email: "",
+  phone: "",
+  discord: "",
+  riotId: "",
+});
 
 const formatFileSize = (bytes: number) =>
   bytes < 1024 * 1024
@@ -255,7 +262,7 @@ export default function RegistrationForm() {
                 >
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold text-white">
-                      Member {index + 2}
+                      {member.role === "COACH" ? "Coach" : `Member ${index + 2}`}
                     </p>
                     <button
                       type="button"
@@ -270,6 +277,19 @@ export default function RegistrationForm() {
                     </button>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField label="Role" required>
+                      <Select
+                        required
+                        value={member.role}
+                        onChange={(event) =>
+                          updateMember(index, "role", event.target.value)
+                        }
+                      >
+                        <option value="PLAYER">Player</option>
+                        <option value="SUBSTITUTE">Substitute</option>
+                        <option value="COACH">Coach</option>
+                      </Select>
+                    </FormField>
                     <FormField label="Name" required>
                       <Input
                         required
@@ -288,6 +308,37 @@ export default function RegistrationForm() {
                         value={member.email}
                         onChange={(event) =>
                           updateMember(index, "email", event.target.value)
+                        }
+                      />
+                    </FormField>
+                    <FormField label="Phone">
+                      <Input
+                        type="tel"
+                        maxLength={50}
+                        placeholder="Contact number"
+                        value={member.phone || ""}
+                        onChange={(event) =>
+                          updateMember(index, "phone", event.target.value)
+                        }
+                      />
+                    </FormField>
+                    <FormField label="Discord">
+                      <Input
+                        maxLength={100}
+                        placeholder="Discord username"
+                        value={member.discord || ""}
+                        onChange={(event) =>
+                          updateMember(index, "discord", event.target.value)
+                        }
+                      />
+                    </FormField>
+                    <FormField label="Riot ID / IGN">
+                      <Input
+                        maxLength={100}
+                        placeholder="Name#123"
+                        value={member.riotId || ""}
+                        onChange={(event) =>
+                          updateMember(index, "riotId", event.target.value)
                         }
                       />
                     </FormField>

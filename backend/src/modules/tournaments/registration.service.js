@@ -32,6 +32,10 @@ const {
   removeUploadsQuietly,
 } = require("../../lib/upload-cleanup");
 const { normalizeCoachSubmission, parseCoachInput } = require("./coach.validation");
+const {
+  assertNoLocalCoachPlayerRoleConflict,
+  assertNoCoachPlayerRoleConflict,
+} = require("./role-conflict.service");
 const { sendRegistrationReceivedEmail } = require("../../lib/mail/sendRegistrationReceivedEmail");
 
 const normalizeBoolean = (value) => [true, "true", "1", "on"].includes(value);
@@ -319,7 +323,13 @@ const startExistingRegistrationPayment = async ({
       where: { id: existing.id },
       include: {
         members: {
-          select: { role: true, inviteStatus: true },
+          select: {
+            role: true,
+            inviteStatus: true,
+            email: true,
+            emailNormalized: true,
+            riotId: true,
+          },
         },
       },
     });
@@ -346,6 +356,12 @@ const startExistingRegistrationPayment = async ({
       tx,
       tournament,
       now: new Date(),
+    });
+    await assertNoCoachPlayerRoleConflict({
+      tx,
+      tournamentId: currentTournament.id,
+      members: currentRegistration.members,
+      excludeRegistrationId: existing.id,
     });
     const activeCount = await countTournamentCapacityUsage({ tx, tournamentId: currentTournament.id, excludeRegistrationId: existing.id });
     if (activeCount >= currentTournament.maxTeams) {
@@ -444,6 +460,47 @@ const assertRegistrationStillOpen = (tournament, now, statusCode = 400) => {
   if (state.state !== "registration_open" && state.state !== "waitlist_open") {
     throw new HttpError(statusCode, "Registration is closed for this tournament.");
   }
+};
+
+const buildPersistedRegistrationMembers = ({ members, coach }) => coach
+  ? [
+      ...members,
+      {
+        role: "COACH",
+        order: 1,
+        name: coach.name,
+        email: coach.email,
+        phone: coach.phone,
+        discord: coach.discord,
+        riotId: coach.riotId,
+        additionalData: {},
+      },
+    ]
+  : members;
+
+const validateExistingRegistrationRoleConflict = async ({ registrationId, tournamentId }) => {
+  await runSerializable(async (tx) => {
+    const currentRegistration = await tx.teamRegistration.findUnique({
+      where: { id: registrationId },
+      include: {
+        members: {
+          select: {
+            role: true,
+            email: true,
+            emailNormalized: true,
+            riotId: true,
+          },
+        },
+      },
+    });
+    if (!currentRegistration) return;
+    await assertNoCoachPlayerRoleConflict({
+      tx,
+      tournamentId,
+      members: currentRegistration.members,
+      excludeRegistrationId: registrationId,
+    });
+  });
 };
 
 const getCurrentTournamentForRegistration = async ({
@@ -577,8 +634,6 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
       `This event requires ${requiredPlayers} active players, including the captain, and allows up to ${tournament.maxSubstitutes} substitutes. Your roster has ${playerCount} active players and ${substituteCount} substitutes.`
     );
   }
-  const emails = [normalizeEmail(user.email), ...normalizedMembers.map((member) => member.email)];
-  if (new Set(emails).size !== emails.length) throw new HttpError(400, "Roster emails must be unique.");
 
   const configured = validateConfiguredFields({
     definitions: registrationFields,
@@ -602,6 +657,11 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     { ...configuredCaptain, riotId: primaryGameId },
     ...configuredRosterMembers,
   ];
+  assertNoLocalCoachPlayerRoleConflict(
+    buildPersistedRegistrationMembers({ members: registrationMembers, coach })
+  );
+  const emails = [normalizeEmail(user.email), ...normalizedMembers.map((member) => member.email)];
+  if (new Set(emails).size !== emails.length) throw new HttpError(400, "Roster emails must be unique.");
   validateGameIdentities({ game: tournament.game, members: registrationMembers });
 
   return {
@@ -741,6 +801,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         existing.reservedUntil &&
         existing.reservedUntil > now;
       if (hasActivePayment) {
+        await validateExistingRegistrationRoleConflict({
+          registrationId: existing.id,
+          tournamentId: tournament.id,
+        });
         return {
           registration: mapRegistrationResult(existing),
           paymentOrderId: latestPayment.providerOrderId,
@@ -794,6 +858,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
       existing.reservedUntil &&
       existing.reservedUntil > now
     ) {
+      await validateExistingRegistrationRoleConflict({
+        registrationId: existing.id,
+        tournamentId: tournament.id,
+      });
       return {
         registration: mapRegistrationResult(existing),
         paymentOrderId: latestPayment.providerOrderId,
@@ -827,21 +895,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     members,
     coach,
   } = submission;
-  const persistedMembers = coach
-    ? [
-        ...members,
-        {
-          role: "COACH",
-          order: 1,
-          name: coach.name,
-          email: coach.email,
-          phone: coach.phone,
-          discord: coach.discord,
-          riotId: coach.riotId,
-          additionalData: {},
-        },
-      ]
-    : members;
+  const persistedMembers = buildPersistedRegistrationMembers({ members, coach });
 
   if (existing) {
     const providerOrderId = buildPaymentOrderId(paymentMethod);
@@ -869,6 +923,12 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           tournament,
           now: retryNow,
           allowActivePaymentReservation: Boolean(hasActiveReservation),
+        });
+        await assertNoCoachPlayerRoleConflict({
+          tx,
+          tournamentId: currentTournament.id,
+          members: persistedMembers,
+          excludeRegistrationId: existing.id,
         });
         const activeCount = await countTournamentCapacityUsage({
           tx,
@@ -1081,6 +1141,11 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         now: new Date(),
       });
       const transactionNow = new Date();
+      await assertNoCoachPlayerRoleConflict({
+        tx,
+        tournamentId: currentTournament.id,
+        members: persistedMembers,
+      });
       const activeCount = await countTournamentCapacityUsage({
         tx,
         tournamentId: currentTournament.id,

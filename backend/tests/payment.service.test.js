@@ -113,6 +113,69 @@ test("late successful notifications are routed to manual review", async () => {
   } finally { restore(); }
 });
 
+test("PayHere role conflicts preserve the signed payment as review_required with an audit", async () => {
+  const body = {
+    merchant_id: env.PAYHERE_MERCHANT_ID,
+    order_id: "order-role-conflict",
+    payment_id: "pay-role-conflict",
+    payhere_amount: "1000.00",
+    payhere_currency: "LKR",
+    status_code: "2",
+    method: "VISA",
+  };
+  body.md5sig = signature(body);
+  const current = {
+    id: "tx-role-conflict",
+    providerOrderId: body.order_id,
+    amount: 1000,
+    currency: "LKR",
+    status: "pending",
+    notificationDigest: null,
+    registrationId: "registration-1",
+    registration: {
+      id: "registration-1",
+      tournamentId: "tournament-1",
+      status: "pending",
+      paymentStatus: "pending",
+      reservedUntil: new Date(Date.now() + 60_000),
+      members: [{ role: "PLAYER", email: "player@example.com", riotId: "Player#001" }],
+      tournament: { maxTeams: 10 },
+    },
+    merchandiseOrderId: null,
+    ticketOrderId: null,
+  };
+  let updateData;
+  let auditData;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        updateData = data;
+        return { ...current, ...data };
+      },
+    },
+    teamRegistration: {
+      findMany: async () => [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Player#001" }] }],
+    },
+    paymentNotificationAudit: {
+      create: async ({ data }) => { auditData = data; },
+    },
+  };
+  const { module: service, restore } = load({
+    paymentTransaction: { findUnique: async () => current },
+    $transaction: async (callback) => callback(tx),
+  });
+  try {
+    const result = await service.processPayHereNotification(body);
+    assert.equal(result.status, "review_required");
+    assert.equal(updateData.status, "review_required");
+    assert.match(updateData.statusMessage, /coach\/player role conflict/);
+    assert.equal(auditData.appliedStatus, "review_required");
+  } finally {
+    restore();
+  }
+});
+
 test("paid ticket state and its confirmation job commit in one transaction", async () => {
   const body = {
     merchant_id: env.PAYHERE_MERCHANT_ID,
@@ -429,6 +492,56 @@ test("admins can reopen an expired PayHere tournament payment", async () => {
   }
 });
 
+test("expired payment reopening rejects an active same-tournament coach/player conflict", async () => {
+  const current = {
+    id: "payment-payhere-expired-conflict",
+    provider: "payhere",
+    purpose: "tournament_registration",
+    status: "expired",
+    amount: 2500,
+    bankTransferProof: null,
+    registration: {
+      id: "registration-1",
+      tournamentId: "tournament-1",
+      status: "pending",
+      paymentStatus: "unpaid",
+      members: [{ role: "PLAYER", email: "player@example.com", riotId: "Player#001" }],
+      tournament: {
+        maxTeams: 16,
+        reservationMinutes: 30,
+        bankTransferReviewMinutes: 1440,
+        registrationFeeCurrency: "LKR",
+      },
+    },
+  };
+  const queryCalls = [];
+  const tx = {
+    paymentTransaction: { findUnique: async () => current },
+    teamRegistration: {
+      findMany: async (args) => {
+        queryCalls.push(args);
+        return [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Player#001" }] }];
+      },
+    },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => callback(tx),
+  });
+  try {
+    await assert.rejects(
+      service.reopenExpiredTournamentPayment({
+        transactionId: current.id,
+        admin: { id: "admin-1" },
+      }),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
+    assert.equal(queryCalls[0].where.tournamentId, "tournament-1");
+    assert.equal(queryCalls[0].where.id.not, "registration-1");
+  } finally {
+    restore();
+  }
+});
+
 test("expired order maintenance cannot cancel an order that became paid", async () => {
   let inventoryQueries = 0;
   let paymentUpdates = 0;
@@ -537,6 +650,53 @@ test("manual PayHere acceptance refuses orders whose inventory was released", as
       }),
       (error) => error.statusCode === 409 && /inventory was released/.test(error.message)
     );
+  } finally {
+    restore();
+  }
+});
+
+test("late PayHere acceptance rejects an active same-tournament coach/player conflict", async () => {
+  const current = {
+    id: "tx-late-conflict",
+    provider: "payhere",
+    status: "review_required",
+    registrationId: "registration-1",
+    registration: {
+      id: "registration-1",
+      tournamentId: "tournament-1",
+      status: "pending",
+      paymentStatus: "unpaid",
+      members: [{ role: "PLAYER", email: "player@example.com", riotId: "Player#001" }],
+      tournament: { maxTeams: 16 },
+    },
+    merchandiseOrderId: null,
+    ticketOrderId: null,
+  };
+  const queryCalls = [];
+  const tx = {
+    paymentTransaction: { findUnique: async () => current },
+    teamRegistration: {
+      findMany: async (args) => {
+        queryCalls.push(args);
+        return [{ members: [{ role: "COACH", email: "coach@example.com", riotId: "Player#001" }] }];
+      },
+    },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => callback(tx),
+  });
+  try {
+    await assert.rejects(
+      service.reconcilePayHerePayment({
+        transactionId: current.id,
+        decision: "accept",
+        note: "Verified in PayHere.",
+        admin: { id: "admin-1" },
+      }),
+      (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
+    );
+    assert.equal(queryCalls[0].where.tournamentId, "tournament-1");
+    assert.equal(queryCalls[0].where.id.not, "registration-1");
   } finally {
     restore();
   }

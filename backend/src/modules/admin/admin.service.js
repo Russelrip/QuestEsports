@@ -41,12 +41,14 @@ const {
   countTournamentCapacityUsage,
   compactWaitlistPositions,
   getNextWaitlistPosition,
+  isRegistrationActive,
 } = require("../tournaments/registration-eligibility");
 const { getRegistrationPublicReference } = require("../tournaments/registration-state");
 const { getBankTransferAmountForSlot } = require("../payments/bank-transfer.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { buildShortCode } = require("../tournaments/bracket.service");
 const { normalizeCoachSubmission } = require("../tournaments/coach.validation");
+const { assertNoCoachPlayerRoleConflict } = require("../tournaments/role-conflict.service");
 
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected", "waitlisted"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
@@ -72,6 +74,11 @@ const runAdminSerializable = async (work) => {
     }
   }
   throw new Error("Admin registration transaction retry limit was exhausted.");
+};
+
+const assertAdminRoleConflict = async (args) => {
+  if (typeof args.tx?.teamRegistration?.findMany !== "function") return;
+  return assertNoCoachPlayerRoleConflict(args);
 };
 
 const recordRegistrationStatusAudit = async ({
@@ -860,26 +867,47 @@ const updateTeamRegistrationGameIds = async (registrationId, body = {}) => {
     throw new HttpError(400, "Each roster member can only be updated once.");
   }
 
-  const registration = await prisma.teamRegistration.findUnique({
-    where: { id: registrationId },
-    select: {
-      id: true,
-      additionalData: true,
-      tournament: { select: { game: true, registrationFields: true } },
-      members: { select: { id: true, role: true, additionalData: true } },
-    },
-  });
-  if (!registration) throw new HttpError(404, "Team registration not found.");
+  await runAdminSerializable(async (tx) => {
+    const registration = await tx.teamRegistration.findUnique({
+      where: { id: registrationId },
+      select: {
+        id: true,
+        additionalData: true,
+        tournament: { select: { id: true, game: true, registrationFields: true } },
+        members: {
+          select: {
+            id: true,
+            role: true,
+            additionalData: true,
+            email: true,
+            emailNormalized: true,
+            riotId: true,
+          },
+        },
+      },
+    });
+    if (!registration) throw new HttpError(404, "Team registration not found.");
 
-  const memberById = new Map(registration.members.map((member) => [member.id, member]));
-  if (normalizedMembers.length !== registration.members.length) {
-    throw new HttpError(400, "Submit a Game ID for every roster member.");
-  }
-  if (normalizedMembers.some((member) => !memberById.has(member.id))) {
-    throw new HttpError(400, "One or more roster members do not belong to this registration.");
-  }
+    const memberById = new Map(registration.members.map((member) => [member.id, member]));
+    if (normalizedMembers.length !== registration.members.length) {
+      throw new HttpError(400, "Submit a Game ID for every roster member.");
+    }
+    if (normalizedMembers.some((member) => !memberById.has(member.id))) {
+      throw new HttpError(400, "One or more roster members do not belong to this registration.");
+    }
 
-  await prisma.$transaction(async (tx) => {
+    await assertAdminRoleConflict({
+      tx,
+      tournamentId: registration.tournament.id,
+      members: registration.members.map((member) => ({
+        ...member,
+        riotId: member.role === "CAPTAIN"
+          ? captainGameId
+          : normalizedMembers.find((requested) => requested.id === member.id)?.gameId || member.riotId,
+      })),
+      excludeRegistrationId: registrationId,
+    });
+
     const entryData = syncGameIdentityData({
       additionalData: registration.additionalData,
       registrationFields: registration.tournament.registrationFields,
@@ -999,7 +1027,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
   const syncSavedTeam = body.syncSavedTeam === true;
   const respondedAt = new Date();
 
-  const correction = await prisma.$transaction(async (tx) => {
+  const correction = await runAdminSerializable(async (tx) => {
     const registration = await tx.teamRegistration.findUnique({
       where: { id: registrationId },
       include: {
@@ -1104,10 +1132,11 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       ? await tx.registrationMember.findMany({
           where: {
             registrationId: { not: registrationId },
+            role: { not: "COACH" },
             emailNormalized: { in: requestedEmails },
             registration: {
               tournamentId: registration.tournamentId,
-              status: { not: "rejected" },
+              status: { notIn: ["rejected", "waitlisted"] },
             },
           },
           select: { emailNormalized: true, registration: { select: { teamName: true } } },
@@ -1183,6 +1212,13 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       });
     }
 
+    await assertAdminRoleConflict({
+      tx,
+      tournamentId: registration.tournament.id,
+      members: nextMembers,
+      excludeRegistrationId: registrationId,
+    });
+
     const before = registration.members.map((member) => ({
       id: member.id,
       role: member.role,
@@ -1251,6 +1287,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
             name: member.name,
             email: member.email,
             emailNormalized: member.emailNormalized,
+            phone: member.phone ?? existingMember?.phone ?? null,
             discord: member.discord,
             riotId: member.riotId,
             inviteStatus: "accepted",
@@ -1281,7 +1318,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       savedTeamId: syncSavedTeam ? registration.savedTeam.id : null,
       captainChanged,
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 
   return {
     registration: await getAdminTeamRegistrationById(registrationId),
@@ -1645,12 +1682,18 @@ const updateTeamRegistrationStatus = async (
     const registration = await runAdminSerializable(async (tx) => {
       const current = await tx.teamRegistration.findUnique({
         where: { id: registrationId },
-        include: { tournament: true, adminSlotReservation: true },
+        include: { tournament: true, adminSlotReservation: true, members: true },
       });
       if (!current) throw new HttpError(404, "Registration not found.");
       if (current.status === "rejected") {
         throw new HttpError(409, "Restore the rejected registration to pending before overriding payment.");
       }
+      await assertAdminRoleConflict({
+        tx,
+        tournamentId: current.tournamentId,
+        members: current.members || [],
+        excludeRegistrationId: current.id,
+      });
       const wasWaitlisted = current.status === "waitlisted";
       if (wasWaitlisted) {
         const first = await tx.teamRegistration.findFirst({
@@ -1779,7 +1822,7 @@ const updateTeamRegistrationStatus = async (
     registration = await runAdminSerializable(async (tx) => {
       const current = await tx.teamRegistration.findUnique({
         where: { id: registrationId },
-        include: { tournament: true, adminSlotReservation: true },
+        include: { tournament: true, adminSlotReservation: true, members: true },
       });
       if (!current) throw new HttpError(404, "Registration not found.");
       if (!current.tournament.waitlistEnabled) {
@@ -1821,7 +1864,7 @@ const updateTeamRegistrationStatus = async (
     registration = await runAdminSerializable(async (tx) => {
       const current = await tx.teamRegistration.findUnique({
         where: { id: registrationId },
-        include: { tournament: true, adminSlotReservation: true },
+        include: { tournament: true, adminSlotReservation: true, members: true },
       });
       if (!current) throw new HttpError(404, "Registration not found.");
 
@@ -1836,6 +1879,12 @@ const updateTeamRegistrationStatus = async (
           if (first?.id !== current.id) {
             throw new HttpError(409, "Only the first waitlisted registration can be promoted.");
           }
+          await assertAdminRoleConflict({
+            tx,
+            tournamentId: current.tournamentId,
+            members: current.members || [],
+            excludeRegistrationId: current.id,
+          });
           const used = await countTournamentCapacityUsage({
             tx,
             tournamentId: current.tournamentId,
@@ -1886,9 +1935,17 @@ const updateTeamRegistrationStatus = async (
       registration = await runAdminSerializable(async (tx) => {
         const current = await tx.teamRegistration.findUnique({
           where: { id: registrationId },
-          select: { status: true },
+          select: { id: true, tournamentId: true, status: true, members: true },
         });
         if (!current) throw new HttpError(404, "Registration not found.");
+        if (nextStatus !== "rejected") {
+          await assertAdminRoleConflict({
+            tx,
+            tournamentId: current.tournamentId,
+            members: current.members || [],
+            excludeRegistrationId: current.id,
+          });
+        }
         const updated = await tx.teamRegistration.update({
           where: { id: registrationId },
           data: updateData,
@@ -1978,6 +2035,7 @@ const SAVED_TEAM_MEMBER_SELECT = {
   role: true,
   name: true,
   email: true,
+  phone: true,
   discord: true,
   riotId: true,
   inviteStatus: true,
@@ -2007,6 +2065,7 @@ const mapAdminSavedTeamDetail = (team) => ({
     role: member.role,
     name: member.name,
     email: member.email,
+    phone: member.phone ?? null,
     discord: member.discord,
     gameId: member.riotId,
     inviteStatus: member.inviteStatus,
@@ -2091,11 +2150,22 @@ const getAdminSavedTeamById = async (teamId) => {
 };
 
 const parseAdminTeamMembers = (value) => {
-  if (Array.isArray(value)) return value;
+  const validateMembers = (parsed) => {
+    const coachCount = parsed.filter(
+      (member) => normalizeText(member?.role).toUpperCase() === "COACH"
+    ).length;
+    if (coachCount > 1) {
+      throw new HttpError(400, "A saved team can include at most one coach.");
+    }
+    return parsed;
+  };
+  if (Array.isArray(value)) return validateMembers(value);
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed)) {
+      return validateMembers(parsed);
+    }
   } catch {
     // Use the same client-safe validation error for malformed multipart JSON.
   }
@@ -2166,20 +2236,30 @@ const updateAdminSavedTeam = async (teamId, body, file) => {
 
   const existing = await prisma.savedTeam.findUnique({
     where: { id: teamId },
-    select: { id: true, name: true, logoName: true, members: { select: { id: true } } },
+    select: { id: true, name: true, logoName: true, members: { select: { id: true, role: true } } },
   });
   if (!existing) throw new HttpError(404, "Team not found.");
   const memberIds = new Set(existing.members.map((member) => member.id));
+  const existingRolesById = new Map(existing.members.map((member) => [member.id, member.role]));
   const normalizedMembers = members.map((member) => ({
     id: normalizeText(member.id),
+    role: normalizeText(member.role).toUpperCase() || null,
     name: normalizeText(member.name),
     email: normalizeEmail(member.email),
+    phone: normalizeText(member.phone) || null,
     discord: normalizeText(member.discord) || null,
-    riotId: normalizeText(member.gameId) || null,
+    riotId: normalizeText(member.riotId || member.gameId) || null,
   }));
+  const coachCount = normalizedMembers.filter(
+    (member) => (member.role || existingRolesById.get(member.id)) === "COACH"
+  ).length;
+  if (coachCount > 1) throw new HttpError(400, "A saved team can include at most one coach.");
   if (normalizedMembers.some((member) => !memberIds.has(member.id))) throw new HttpError(400, "One or more roster members do not belong to this team.");
   if (normalizedMembers.some((member) => !member.name || member.name.length > 120)) throw new HttpError(400, "Each roster member needs a name of 120 characters or fewer.");
   if (normalizedMembers.some((member) => !isValidEmail(member.email) || member.email.length > 254)) throw new HttpError(400, "Each roster member needs a valid email address.");
+  if (normalizedMembers.some((member) => member.phone && member.phone.length > 50)) throw new HttpError(400, "Roster member phone must be 50 characters or fewer.");
+  if (normalizedMembers.some((member) => member.discord && member.discord.length > 100)) throw new HttpError(400, "Roster member Discord must be 100 characters or fewer.");
+  if (normalizedMembers.some((member) => member.riotId && member.riotId.length > 100)) throw new HttpError(400, "Roster member Riot ID must be 100 characters or fewer.");
   if (new Set(normalizedMembers.map((member) => member.email)).size !== normalizedMembers.length) throw new HttpError(400, "Roster member emails must be unique.");
 
   const persistedLogo = file ? await persistTeamLogoUpload(file) : null;
@@ -2198,7 +2278,7 @@ const updateAdminSavedTeam = async (teamId, body, file) => {
       for (const member of normalizedMembers) {
         await tx.savedTeamMember.update({
           where: { id: member.id },
-          data: { name: member.name, email: member.email, emailNormalized: member.email, discord: member.discord, riotId: member.riotId },
+          data: { name: member.name, email: member.email, emailNormalized: member.email, phone: member.phone, discord: member.discord, riotId: member.riotId },
         });
       }
 
@@ -2328,6 +2408,9 @@ const transferAdminSavedTeamCaptain = async ({ teamId, memberId }) => {
             select: {
               id: true,
               tournamentId: true,
+              status: true,
+              paymentStatus: true,
+              reservedUntil: true,
               captainEmail: true,
               additionalData: true,
               tournament: {
@@ -2428,6 +2511,32 @@ const transferAdminSavedTeamCaptain = async ({ teamId, memberId }) => {
         }
         return { registration, currentCaptain, nextCaptain, discord, riotId };
       });
+
+      for (const item of registrationTransfers) {
+        if (!isRegistrationActive(item.registration)) continue;
+        const { registration, currentCaptain, nextCaptain, discord, riotId } = item;
+        const proposedMembers = registration.members
+          .filter((member) => member.id !== currentCaptain.id)
+          .map((member) => member.id === nextCaptain.id
+            ? {
+                ...member,
+                userId: candidate.user.id,
+                role: "CAPTAIN",
+                memberOrder: 0,
+                name: nextCaptain.name || candidate.name,
+                email: candidate.user.email,
+                emailNormalized: newCaptainEmail,
+                discord,
+                riotId,
+              }
+            : member);
+        await assertAdminRoleConflict({
+          tx,
+          tournamentId: registration.tournamentId,
+          members: proposedMembers,
+          excludeRegistrationId: registration.id,
+        });
+      }
 
       await tx.savedTeamMember.delete({ where: { id: formerCaptain.id } });
       await tx.savedTeamMember.update({

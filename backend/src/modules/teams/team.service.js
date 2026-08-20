@@ -116,6 +116,7 @@ const mapSavedTeamMember = (member) => ({
   memberOrder: member.memberOrder,
   name: member.name,
   email: member.email,
+  phone: member.phone,
   discord: member.discord,
   riotId: member.riotId,
   inviteStatus: member.inviteStatus,
@@ -222,6 +223,8 @@ const listProfileTeams = async ({ user }) => {
   return teams.map((team) => mapSavedTeam(team, user.id));
 };
 
+const MANAGEABLE_TEAM_MEMBER_ROLES = new Set(["PLAYER", "SUBSTITUTE", "COACH"]);
+
 const parseStandaloneMembers = (value) => {
   let members;
 
@@ -235,17 +238,37 @@ const parseStandaloneMembers = (value) => {
     throw new HttpError(400, "A team can include up to 20 invited members.");
   }
 
-  const normalizedMembers = members.map((member) => ({
-    name: normalizeText(member?.name),
-    email: normalizeEmail(member?.email),
-  }));
+  const normalizedMembers = members.map((member) => {
+    const role = normalizeText(member?.role).toUpperCase() || "PLAYER";
+    if (!MANAGEABLE_TEAM_MEMBER_ROLES.has(role)) {
+      throw new HttpError(400, "Team members must be players, substitutes, or coaches.");
+    }
+
+    return {
+      role,
+      name: normalizeText(member?.name),
+      email: normalizeEmail(member?.email),
+      phone: normalizeText(member?.phone) || null,
+      discord: normalizeText(member?.discord) || null,
+      riotId: normalizeText(member?.riotId) || null,
+    };
+  });
+
+  if (normalizedMembers.filter((member) => member.role === "COACH").length > 1) {
+    throw new HttpError(400, "A saved team can include at most one coach.");
+  }
 
   if (
     normalizedMembers.some(
       (member) => !member.name || !isValidEmail(member.email)
+        || member.name.length > 100
+        || member.email.length > 254
+        || (member.phone && member.phone.length > 50)
+        || (member.discord && member.discord.length > 100)
+        || (member.riotId && member.riotId.length > 100)
     )
   ) {
-    throw new HttpError(400, "Each team member needs a name and valid email address.");
+    throw new HttpError(400, "Each team member needs valid roster details.");
   }
 
   const uniqueEmails = new Set(normalizedMembers.map((member) => member.email));
@@ -298,6 +321,7 @@ const createSavedTeam = async ({ user, body, file }) => {
         },
       });
 
+      const memberOrders = { PLAYER: 0, SUBSTITUTE: 0, COACH: 0 };
       const memberRecords = [
         {
           id: crypto.randomUUID(),
@@ -311,7 +335,8 @@ const createSavedTeam = async ({ user, body, file }) => {
           inviteStatus: "accepted",
           inviteRespondedAt: inviteSentAt,
         },
-        ...members.map((member, index) => {
+        ...members.map((member) => {
+          memberOrders[member.role] += 1;
           const token = createTokenPair({ hours: TEAM_INVITE_TTL_HOURS });
           inviteDispatches.push({
             email: member.email,
@@ -325,11 +350,14 @@ const createSavedTeam = async ({ user, body, file }) => {
           return {
             id: crypto.randomUUID(),
             teamId: createdTeam.id,
-            role: "PLAYER",
-            memberOrder: index + 1,
+            role: member.role,
+            memberOrder: memberOrders[member.role],
             name: member.name,
             email: member.email,
             emailNormalized: member.email,
+            phone: member.phone,
+            discord: member.discord,
+            riotId: member.riotId,
             inviteStatus: "pending",
             inviteTokenHash: token.tokenHash,
             inviteSentAt,
@@ -375,8 +403,6 @@ const createSavedTeam = async ({ user, body, file }) => {
   }
 };
 
-const MANAGEABLE_TEAM_MEMBER_ROLES = new Set(["PLAYER", "SUBSTITUTE", "COACH"]);
-
 const parseManagedMembers = (value) => {
   let members;
 
@@ -403,10 +429,15 @@ const parseManagedMembers = (value) => {
       memberOrder: roleCounts[role],
       name: normalizeText(member?.name),
       email: normalizeEmail(member?.email),
+      phone: normalizeText(member?.phone) || null,
       discord: normalizeText(member?.discord) || null,
       riotId: normalizeText(member?.riotId) || null,
     };
   });
+
+  if (roleCounts.COACH > 1) {
+    throw new HttpError(400, "A saved team can include at most one coach.");
+  }
 
   if (
     normalizedMembers.some(
@@ -415,6 +446,7 @@ const parseManagedMembers = (value) => {
         !isValidEmail(member.email) ||
         member.name.length > 100 ||
         member.email.length > 254 ||
+        (member.phone && member.phone.length > 50) ||
         (member.discord && member.discord.length > 100) ||
         (member.riotId && member.riotId.length > 100)
     )
@@ -532,74 +564,6 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
         await tx.savedTeamMember.createMany({ data: memberRecords });
       }
 
-      const unpaidRegistrations = tx.teamRegistration?.findMany
-        ? await tx.teamRegistration.findMany({
-        where: { savedTeamId: teamId, paymentStatus: "unpaid" },
-        include: { members: true },
-          })
-        : [];
-      for (const registration of unpaidRegistrations) {
-        const registrationMembers = registration.members.filter(
-          (member) => member.role !== "CAPTAIN"
-        );
-        const registrationPositions = new Set(
-          registrationMembers.map((member) => `${member.role}:${member.memberOrder}`)
-        );
-        const savedPositions = new Set(
-          memberRecords.map((member) => `${member.role}:${member.memberOrder}`)
-        );
-        if (
-          registrationPositions.size !== savedPositions.size ||
-          [...registrationPositions].some((position) => !savedPositions.has(position))
-        ) {
-          throw new HttpError(
-            409,
-            "This registered roster's player and substitute positions cannot be changed. Cancel the unpaid registration first to change the roster structure."
-          );
-        }
-
-        await tx.teamRegistration.update({
-          where: { id: registration.id },
-          data: {
-            teamName: name,
-            country,
-            teamTag,
-            organizationRequested,
-            teamLogoName: nextLogoName,
-            verificationStatus: "pending",
-          },
-        });
-        for (const member of memberRecords) {
-          await tx.registrationMember.update({
-            where: {
-              registrationId_role_memberOrder: {
-                registrationId: registration.id,
-                role: member.role,
-                memberOrder: member.memberOrder,
-              },
-            },
-            data: {
-              userId: member.userId || null,
-              name: member.name,
-              email: member.email,
-              emailNormalized: member.emailNormalized,
-              discord: member.discord,
-              riotId: member.riotId,
-              inviteStatus: member.inviteStatus,
-              // The saved-team invitation is authoritative for roster corrections.
-              // Reusing it across registrations would violate token uniqueness.
-              inviteTokenHash: null,
-              inviteSentAt: member.inviteSentAt,
-              inviteExpiresAt: member.inviteExpiresAt,
-              inviteRespondedAt: member.inviteRespondedAt || null,
-            },
-          });
-        }
-        await refreshRegistrationVerificationStatus({
-          tx,
-          registrationId: registration.id,
-        });
-      }
       return tx.savedTeam.findUnique({
         where: { id: teamId },
         include: {
@@ -1211,6 +1175,7 @@ const syncSavedTeamFromRegistration = async ({
           name: member.name,
           email,
           emailNormalized: email,
+          phone: member.phone || null,
           discord: member.discord,
           riotId: member.riotId,
           inviteStatus: "accepted",
@@ -1242,6 +1207,7 @@ const syncSavedTeamFromRegistration = async ({
           name: member.name,
           email,
           emailNormalized: email,
+          phone: member.phone || null,
           discord: member.discord,
           riotId: member.riotId,
           inviteStatus: "pending",
@@ -1281,6 +1247,7 @@ const syncSavedTeamFromRegistration = async ({
         name: member.name,
         email,
         emailNormalized: email,
+        phone: member.phone || null,
         discord: member.discord,
         riotId: member.riotId,
         inviteStatus: "pending",
@@ -1370,6 +1337,7 @@ const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) =>
     order: member.memberOrder,
     name: member.name,
     email: member.email,
+    phone: member.phone,
     discord: member.discord,
     riotId: member.riotId,
   }));

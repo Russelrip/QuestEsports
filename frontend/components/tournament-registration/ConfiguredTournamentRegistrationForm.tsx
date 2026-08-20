@@ -16,7 +16,7 @@ import { apiFetch } from "@/lib/auth";
 import { ApiRequestError, readApiResponse } from "@/lib/api";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
 import { markTournamentRegistered } from "@/lib/registered-tournaments";
-import type { SavedTeam } from "@/lib/teams";
+import { mapSavedTeamToRegistrationDraft, type SavedTeam } from "@/lib/teams";
 import {
   emptyCoachDraft,
   getCoachPayload,
@@ -73,6 +73,18 @@ type RegistrationSubmissionResponse = {
   pendingInviteCount?: number;
   registration?: ExistingRegistrationState | null;
 };
+
+export const COACH_PLAYER_CONFLICT_BACKEND_MESSAGE =
+  "This person cannot be both a coach and a player in the same tournament.";
+export const COACH_PLAYER_CONFLICT_MESSAGE =
+  `${COACH_PLAYER_CONFLICT_BACKEND_MESSAGE} Update the coach or player details before submitting again.`;
+
+export function getRegistrationSubmissionError(status: number, message?: string) {
+  if (status === 409 && message === COACH_PLAYER_CONFLICT_BACKEND_MESSAGE) {
+    return COACH_PLAYER_CONFLICT_MESSAGE;
+  }
+  return message || "Registration could not be submitted.";
+}
 
 const emptyMember = (): MemberDraft => ({ name: "", email: "", discord: "", gameId: "", role: "PLAYER", additionalData: {} });
 
@@ -185,6 +197,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   };
 
   const populateSavedTeam = (team: SavedTeam, omittedMemberId?: string) => {
+    const savedTeamDraft = mapSavedTeamToRegistrationDraft(team, omittedMemberId);
     setForm((current) => ({
       ...current,
       teamName: team.name,
@@ -192,25 +205,9 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       country: team.country || "Sri Lanka",
       organizationRequested: false,
     }));
-    setMembers(team.members
-      .filter((member) => member.id !== omittedMemberId && member.role !== "CAPTAIN" && member.role !== "COACH")
-      .map((member) => ({
-        name: member.name,
-        email: member.email,
-        discord: member.discord || "",
-        gameId: member.riotId || "",
-        role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
-        additionalData: {},
-      })));
-    const savedCoach = team.members.find((member) => member.role === "COACH");
-    setCoach(savedCoach ? {
-      name: savedCoach.name,
-      email: savedCoach.email,
-      phone: "",
-      discord: savedCoach.discord || "",
-      gameId: savedCoach.riotId || "",
-    } : { ...emptyCoachDraft });
-    setCoachSelected(Boolean(savedCoach));
+    setMembers(savedTeamDraft.members);
+    setCoach(savedTeamDraft.coach);
+    setCoachSelected(savedTeamDraft.coachSelected);
     setPendingSavedTeam(null);
     setError("");
   };
@@ -284,7 +281,9 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         timeoutMs: 60_000,
       });
       const data = await readApiResponse<RegistrationSubmissionResponse>(response, "Registration could not be submitted.");
-      if (!response.ok || !data.success) throw new Error(data.message || "Registration could not be submitted.");
+      if (!response.ok || !data.success) {
+        throw new ApiRequestError(getRegistrationSubmissionError(response.status, data.message), response.status);
+      }
       markTournamentRegistered(tournament.slug);
       if (data.awaitingTeamVerification || data.readyForPayment) {
         setExistingRegistration({
@@ -327,7 +326,9 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         timeoutMs: 60_000,
       });
       const data = await readApiResponse<RegistrationSubmissionResponse>(response, "Payment could not be started.");
-      if (!response.ok || !data.success) throw new Error(data.message || "Payment could not be started.");
+      if (!response.ok || !data.success) {
+        throw new ApiRequestError(getRegistrationSubmissionError(response.status, data.message), response.status);
+      }
       if (data.checkout) {
         submitPayHereCheckout(data.checkout);
         return;

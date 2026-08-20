@@ -12,6 +12,7 @@ const {
   persistBankTransferProofUpload,
 } = require("../../middleware/upload");
 const { countTournamentCapacityUsage } = require("../tournaments/registration-eligibility");
+const { assertNoCoachPlayerRoleConflict } = require("../tournaments/role-conflict.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { sendTicketOrderEmail } = require("../../lib/mail/sendTicketOrderEmail");
 
@@ -291,7 +292,7 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
       where: { id: transactionId },
       include: {
         bankTransferProof: true,
-        registration: { include: { tournament: true } },
+        registration: { include: { members: true, tournament: true } },
         ticketOrder: { include: { event: true } },
       },
     });
@@ -318,6 +319,12 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
         throw new HttpError(409, "The reservation expired. Reject it and ask the buyer to start again.");
       }
       if (current.registration) {
+        await assertNoCoachPlayerRoleConflict({
+          tx,
+          tournamentId: current.registration.tournamentId,
+          members: current.registration.members || [],
+          excludeRegistrationId: current.registration.id,
+        });
         const otherActiveCount = await countTournamentCapacityUsage({ tx, tournamentId: current.registration.tournamentId, excludeRegistrationId: current.registration.id, now });
         if (otherActiveCount >= current.registration.tournament.maxTeams) {
           throw new HttpError(409, "The tournament no longer has an available slot.");

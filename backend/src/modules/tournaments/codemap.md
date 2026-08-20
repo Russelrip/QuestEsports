@@ -37,6 +37,20 @@ clears the position, and compacts later rows. Rejection also compacts the
 queue. Payment status remains provider-controlled except for the deliberate
 free-registration/admin-waiver paths.
 
+## Saved-team registration flow
+
+Team registration may hydrate player/substitute drafts and a saved `COACH`
+member into the separate registration coach draft. The saved coach is not
+re-created as a player, and its nullable phone value is preserved when the
+registration payload is built. The shared `role-conflict.service.js` compares
+normalized email and nonblank case-insensitive Riot ID identities only within
+the same tournament, using the active-registration predicate and excluding the
+registration being retried. It is called transactionally by public create,
+retry, and payment-continuation flows; admin Game ID and roster/coach
+corrections; waitlist promotion and payment override; and payment reopening or
+late PayHere acceptance. Coaches remain outside active-player and substitute
+counts.
+
 ## Public privacy
 
 Published tournament/event projections include display metadata, registration

@@ -34,6 +34,7 @@ const emptyMember = (): EditableMember => ({
   role: "PLAYER",
   name: "",
   email: "",
+  phone: "",
   discord: "",
   riotId: "",
 });
@@ -135,6 +136,7 @@ export default function TeamManagementPanel({
           role: member.role === "SUBSTITUTE" || member.role === "COACH" ? member.role : "PLAYER",
           name: member.name,
           email: member.email,
+          phone: member.phone || "",
           discord: member.discord || "",
           riotId: member.riotId || "",
           inviteStatus: member.inviteStatus,
@@ -174,6 +176,7 @@ export default function TeamManagementPanel({
           role: member.role,
           name: member.name,
           email: member.email,
+          phone: member.phone,
           discord: member.discord,
           riotId: member.riotId,
         })),
@@ -307,6 +310,7 @@ export default function TeamManagementPanel({
                     <FormField label="Role"><Select value={member.role} onChange={(event) => updateMember(member.key, { role: event.target.value as EditableMember["role"] })}><option value="PLAYER">Player</option><option value="SUBSTITUTE">Substitute</option><option value="COACH">Coach</option></Select></FormField>
                     <FormField label="Name" required><Input required value={member.name} onChange={(event) => updateMember(member.key, { name: event.target.value })} /></FormField>
                     <FormField label="Email" required><Input required type="email" value={member.email} onChange={(event) => updateMember(member.key, { email: event.target.value })} /></FormField>
+                    <FormField label="Phone"><Input type="tel" maxLength={50} value={member.phone} onChange={(event) => updateMember(member.key, { phone: event.target.value })} /></FormField>
                     <FormField label="Discord"><Input value={member.discord} onChange={(event) => updateMember(member.key, { discord: event.target.value })} /></FormField>
                     <FormField label="IGN / Game ID"><Input value={member.riotId} placeholder="Exact in-game name or player ID" onChange={(event) => updateMember(member.key, { riotId: event.target.value })} /></FormField>
                   </div>

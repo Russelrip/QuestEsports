@@ -23,6 +23,12 @@ Event-scoped registration review stays isolated by event ID and child
 `seriesId`, while all sensitive roster/payment actions remain in the existing
 admin managers.
 
+Saved-team-backed registration flows carry a persisted `COACH` member into the
+coach draft separately from the player roster. The registration boundary
+surfaces the backend conflict response when one person is submitted as both a
+coach and player in the same tournament; the role check is enforced
+transactionally by the backend rather than by route UI alone.
+
 ## Support route
 
 - `support/page.tsx` renders the authenticated staff support queue at

@@ -27,6 +27,10 @@ existing contact, match-room, notification, or OAuth tables.
   and durable, one-time OAuth link nonce records. Existing users without OAuth
   accounts are conservatively marked from `created_at`; OAuth-linked users stay
   unmarked until they set a password.
+- `20260819190000_add_saved_team_member_phone` adds nullable phone data for
+  saved-team members. Saved teams may persist `COACH` members alongside player,
+  substitute, and captain roles; coach phone data remains nullable for legacy
+  and partially populated saved rosters.
 
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and

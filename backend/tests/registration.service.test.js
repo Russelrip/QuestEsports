@@ -239,6 +239,7 @@ test("paid direct team registration saves the team and dispatches player invites
     tournament: { findUnique: async () => valorantTournament },
     teamRegistration: {
       count: async () => 0,
+      findMany: async () => [],
       findFirst: async () => null,
       create: async ({ data }) => {
         createdRegistration = data;
@@ -554,6 +555,7 @@ test("captain-only direct registration repairs stale verification and starts pay
     teamRegistration: {
       findUnique: async () => verifiedRegistration,
       count: async () => 0,
+      findMany: async () => [],
       findFirst: async () => null,
       update: async ({ data }) => {
         registrationPaymentUpdate = data;
@@ -652,6 +654,7 @@ test("createConfiguredRegistration lets an active payment reservation retry afte
     teamRegistration: {
       findUnique: async () => existing,
       count: async () => 0,
+      findMany: async () => [],
       findFirst: async () => null,
       update: async ({ data }) => {
         registrationUpdate = data;
@@ -818,6 +821,7 @@ test("public waitlist retry releases a stale admin hold before clearing the slot
     tournament: { findUnique: async () => waitlistTournament },
     teamRegistration: {
       count: async () => 0,
+      findMany: async () => [],
       findFirst: async () => null,
       findUnique: async () => ({ ...currentRegistration, status: "waitlisted", waitlistPosition: 4 }),
       update: async ({ data }) => {
@@ -867,6 +871,530 @@ test("public waitlist retry releases a stale admin hold before clearing the slot
     });
     assert.equal(second.waitlisted, true);
     assert.equal(deletedHolds.length, 1, "duplicate submission must not allocate or release again");
+  } finally {
+    restore();
+  }
+});
+
+test("active same-tournament registrations enforce coach/player identity separation", async () => {
+  const conflictTournament = {
+    ...tournament,
+    registrationFeeAmount: 0,
+    game: "Valorant",
+    allowCoach: true,
+    coachRequired: false,
+  };
+  const cases = [
+    {
+      label: "existing coach blocks captain by email only",
+      existingMembers: [{ role: "COACH", email: " CAPTAIN@EXAMPLE.COM ", riotId: "OtherCoach#123" }],
+      registrationBody: body,
+    },
+    {
+      label: "existing coach blocks captain by Riot ID only",
+      existingMembers: [{ role: "COACH", email: "other-coach@example.com", riotId: " captain#002 " }],
+      registrationBody: body,
+    },
+    {
+      label: "existing player blocks submitted coach by email only",
+      existingMembers: [{ role: "PLAYER", email: "coach@example.com", riotId: "OtherPlayer#123" }],
+      registrationBody: {
+        ...body,
+        coach: JSON.stringify({
+          name: "Coach Example",
+          email: " COACH@EXAMPLE.COM ",
+          phone: "0772222222",
+          discord: "coach-discord",
+          gameId: "CoachName#456",
+        }),
+      },
+    },
+    {
+      label: "existing player blocks submitted coach by Riot ID only",
+      existingMembers: [{ role: "PLAYER", email: "other-player@example.com", riotId: "CoachName#123" }],
+      registrationBody: {
+        ...body,
+        coach: JSON.stringify({
+          name: "Coach Example",
+          email: "coach@example.com",
+          phone: "0772222222",
+          discord: "coach-discord",
+          gameId: " coachname#123 ",
+        }),
+      },
+    },
+  ];
+
+  for (const { label, existingMembers, registrationBody } of cases) {
+    const queryCalls = [];
+    const activeRows = [
+      {
+        id: "active-same-paid",
+        tournamentId: conflictTournament.id,
+        status: "approved",
+        paymentStatus: "paid",
+        reservedUntil: null,
+        members: existingMembers,
+      },
+      {
+        id: "active-same-pending",
+        tournamentId: conflictTournament.id,
+        status: "pending",
+        paymentStatus: "pending",
+        reservedUntil: new Date(Date.now() + 60_000),
+        members: existingMembers,
+      },
+      {
+        id: "rejected-same-tournament",
+        tournamentId: conflictTournament.id,
+        status: "rejected",
+        paymentStatus: "paid",
+        reservedUntil: null,
+        members: existingMembers,
+      },
+      {
+        id: "waitlisted-same-tournament",
+        tournamentId: conflictTournament.id,
+        status: "waitlisted",
+        paymentStatus: "paid",
+        reservedUntil: null,
+        members: existingMembers,
+      },
+      {
+        id: "expired-same-tournament",
+        tournamentId: conflictTournament.id,
+        status: "pending",
+        paymentStatus: "pending",
+        reservedUntil: new Date(Date.now() - 60_000),
+        members: existingMembers,
+      },
+      {
+        id: "active-different-tournament",
+        tournamentId: "different-tournament",
+        status: "approved",
+        paymentStatus: "paid",
+        reservedUntil: null,
+        members: existingMembers,
+      },
+    ];
+    const tx = {
+      tournament: { findUnique: async () => conflictTournament },
+      teamRegistration: {
+        count: async () => 0,
+        findMany: async (args) => {
+          queryCalls.push(args);
+          const now = new Date();
+          return activeRows.filter((row) =>
+            row.tournamentId === args.where.tournamentId &&
+            (!args.where.id?.not || row.id !== args.where.id.not) &&
+            !args.where.status.notIn.includes(row.status) &&
+            (row.paymentStatus === "paid" ||
+              (row.paymentStatus === "pending" && row.reservedUntil > now))
+          );
+        },
+        findFirst: async () => null,
+        create: async ({ data }) => ({ ...data, id: data.id }),
+      },
+      registrationMember: { createMany: async () => ({ count: 1 }) },
+    };
+    const prisma = {
+      tournament: { findFirst: async () => conflictTournament },
+      teamRegistration: { findFirst: async () => null },
+      $transaction: async (work) => work(tx),
+    };
+    const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+      [prismaModulePath]: { prisma },
+      [uploadModulePath]: { persistTeamLogoUpload: async () => null },
+      [teamServicePath]: { ensureTeamRegistrationSaved: async () => undefined },
+      [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+      [paymentServicePath]: {},
+      [bankTransferServicePath]: {},
+    });
+
+    try {
+      await assert.rejects(
+        () => registrationService.createConfiguredRegistration({
+          slug: conflictTournament.slug,
+          body: registrationBody,
+          user,
+        }),
+        (error) => error.statusCode === 409 &&
+          error.message === "This person cannot be both a coach and a player in the same tournament.",
+        label
+      );
+      assert.equal(queryCalls.length, 1);
+      assert.equal(queryCalls[0].where.tournamentId, conflictTournament.id);
+      assert.deepEqual(queryCalls[0].where.status, { notIn: ["rejected", "waitlisted"] });
+      assert.equal(queryCalls[0].where.OR[0].paymentStatus, "paid");
+      assert.equal(queryCalls[0].where.OR[1].paymentStatus, "pending");
+      assert.ok(queryCalls[0].where.OR[1].reservedUntil.gt instanceof Date);
+      assert.equal(queryCalls[0].where.id, undefined);
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("rejected and different-tournament registrations do not block coach/player reuse", async () => {
+  const reusableTournament = {
+    ...tournament,
+    registrationFeeAmount: 0,
+    game: "Valorant",
+    allowCoach: true,
+    coachRequired: false,
+  };
+  for (const [label, ignoredRow] of [
+    ["rejected registration", {
+      id: "rejected-registration",
+      tournamentId: reusableTournament.id,
+      status: "rejected",
+      paymentStatus: "paid",
+    }],
+    ["different tournament", {
+      id: "different-tournament-registration",
+      tournamentId: "different-tournament",
+      status: "approved",
+      paymentStatus: "paid",
+    }],
+  ]) {
+    let created = false;
+    const queryCalls = [];
+    const tx = {
+      tournament: { findUnique: async () => reusableTournament },
+      teamRegistration: {
+        count: async () => 0,
+        findMany: async (args) => {
+          queryCalls.push(args);
+          const now = new Date();
+          const row = { ...ignoredRow, members: [{ role: "PLAYER", email: "coach@example.com", riotId: "CoachName#123" }] };
+          return row.tournamentId === args.where.tournamentId &&
+            !args.where.status.notIn.includes(row.status) &&
+            (row.paymentStatus === "paid" ||
+              (row.paymentStatus === "pending" && row.reservedUntil > now))
+            ? [row]
+            : [];
+        },
+        findFirst: async () => null,
+        create: async ({ data }) => {
+          created = true;
+          return { ...data, id: data.id };
+        },
+      },
+      registrationMember: { createMany: async () => ({ count: 1 }) },
+    };
+    const prisma = {
+      tournament: { findFirst: async () => reusableTournament },
+      teamRegistration: { findFirst: async () => null },
+      $transaction: async (work) => work(tx),
+    };
+    const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+      [prismaModulePath]: { prisma },
+      [uploadModulePath]: { persistTeamLogoUpload: async () => null },
+      [teamServicePath]: { ensureTeamRegistrationSaved: async () => undefined },
+      [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+      [paymentServicePath]: {},
+      [bankTransferServicePath]: {},
+    });
+
+    try {
+      await registrationService.createConfiguredRegistration({
+        slug: reusableTournament.slug,
+        body: {
+          ...body,
+          coach: JSON.stringify({
+            name: "Coach Example",
+            email: "coach@example.com",
+            phone: "0772222222",
+            discord: "coach-discord",
+            gameId: "CoachName#123",
+          }),
+        },
+        user,
+      });
+      assert.equal(created, true, `${label} should not block reuse`);
+      assert.equal(queryCalls.length, 1);
+      assert.equal(queryCalls[0].where.tournamentId, reusableTournament.id);
+      assert.deepEqual(queryCalls[0].where.status, { notIn: ["rejected", "waitlisted"] });
+      assert.equal(queryCalls[0].where.OR[0].paymentStatus, "paid");
+      assert.equal(queryCalls[0].where.OR[1].paymentStatus, "pending");
+      assert.ok(queryCalls[0].where.OR[1].reservedUntil.gt instanceof Date);
+      assert.equal(ignoredRow.tournamentId === reusableTournament.id && ignoredRow.status === "rejected", label === "rejected registration");
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("retry and payment continuation recheck same-tournament role conflicts", async () => {
+  const conflictTournament = {
+    ...tournament,
+    registrationFeeAmount: 2500,
+    game: "Valorant",
+    allowCoach: true,
+    coachRequired: false,
+  };
+  const coachBody = {
+    ...body,
+    coach: JSON.stringify({
+      name: "Coach Example",
+      email: "coach@example.com",
+      phone: "0772222222",
+      discord: "coach-discord",
+      gameId: "CoachName#123",
+    }),
+  };
+  const cases = [
+    {
+      label: "unpaid retry",
+      existing: {
+        id: "retry-conflict",
+        status: "pending",
+        paymentStatus: "pending",
+        verificationStatus: "verified",
+        reservedUntil: new Date(Date.now() - 60_000),
+        members: [{ role: "CAPTAIN", inviteStatus: "accepted" }],
+        payments: [],
+      },
+      body: coachBody,
+      activeMembers: [{ role: "PLAYER", email: "coach@example.com", riotId: "CoachName#123" }],
+    },
+    {
+      label: "payment continuation",
+      existing: {
+        id: "payment-conflict",
+        status: "pending",
+        paymentStatus: "unpaid",
+        verificationStatus: "verified",
+        reservedUntil: null,
+        members: [{ role: "CAPTAIN", inviteStatus: "accepted" }],
+        payments: [{ provider: "payhere", status: "failed", providerOrderId: "old-order" }],
+      },
+      body: { resumePayment: true },
+      currentMembers: [
+        { role: "CAPTAIN", email: user.email, riotId: "Captain#002", inviteStatus: "accepted" },
+        { role: "PLAYER", email: "coach@example.com", riotId: "CoachName#123", inviteStatus: "accepted" },
+      ],
+      activeMembers: [{ role: "COACH", email: "other@example.com", riotId: "CoachName#123" }],
+    },
+  ];
+
+  for (const testCase of cases) {
+    const queryCalls = [];
+    const tx = {
+      tournament: { findUnique: async () => conflictTournament },
+      teamRegistration: {
+        findUnique: async () => ({
+          ...testCase.existing,
+          entryType: "team",
+          members: testCase.currentMembers || testCase.existing.members,
+        }),
+        findMany: async (args) => {
+          queryCalls.push(args);
+          const activeRows = [
+            {
+              id: testCase.existing.id,
+              tournamentId: conflictTournament.id,
+              status: "approved",
+              paymentStatus: "paid",
+              reservedUntil: null,
+              members: testCase.activeMembers,
+            },
+            {
+              id: `${testCase.existing.id}-other`,
+              tournamentId: conflictTournament.id,
+              status: "approved",
+              paymentStatus: "paid",
+              reservedUntil: null,
+              members: testCase.activeMembers,
+            },
+          ];
+          return activeRows
+            .filter((row) => row.id !== args.where.id.not)
+            .map((row) => ({ members: row.members }));
+        },
+        count: async () => 0,
+        findFirst: async () => null,
+      },
+    };
+    const prisma = {
+      tournament: { findFirst: async () => conflictTournament },
+      teamRegistration: { findFirst: async () => testCase.existing },
+      $transaction: async (work) => work(tx),
+    };
+    const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+      [prismaModulePath]: { prisma },
+      [uploadModulePath]: { persistTeamLogoUpload: async () => null },
+      [teamServicePath]: { ensureTeamRegistrationSaved: async () => undefined },
+      [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+      [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+      [bankTransferServicePath]: {},
+    });
+
+    try {
+      await assert.rejects(
+        () => registrationService.createConfiguredRegistration({
+          slug: conflictTournament.slug,
+          body: testCase.body,
+          user,
+        }),
+        (error) => error.statusCode === 409 &&
+          error.message === "This person cannot be both a coach and a player in the same tournament.",
+        testCase.label
+      );
+      assert.equal(queryCalls.length, 1, `${testCase.label} should query active registrations once`);
+      assert.equal(queryCalls[0].where.tournamentId, conflictTournament.id);
+      assert.equal(queryCalls[0].where.id.not, testCase.existing.id);
+      assert.deepEqual(queryCalls[0].where.status, { notIn: ["rejected", "waitlisted"] });
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("active bank-transfer continuation checks role conflicts before returning instructions", async () => {
+  const bankTournament = {
+    ...tournament,
+    paymentMethod: "bank_transfer",
+    game: "Valorant",
+    allowCoach: true,
+    coachRequired: false,
+  };
+  const reservedUntil = new Date(Date.now() + 5 * 60_000);
+  const existing = {
+    id: "bank-transfer-conflict",
+    status: "pending",
+    paymentStatus: "pending",
+    verificationStatus: "verified",
+    reservedUntil,
+    captainPhone: user.phone,
+    country: "Sri Lanka",
+    members: [{ role: "CAPTAIN", inviteStatus: "accepted" }],
+    payments: [{ provider: "bank_transfer", status: "pending", providerOrderId: "bank-order" }],
+  };
+  let instructionCalls = 0;
+  const currentRegistration = {
+    ...existing,
+    entryType: "team",
+    members: [{
+      role: "CAPTAIN",
+      email: user.email,
+      riotId: "Captain#002",
+      inviteStatus: "accepted",
+    }],
+  };
+  const tx = {
+    tournament: { findUnique: async () => bankTournament },
+    teamRegistration: {
+      findUnique: async () => currentRegistration,
+      findMany: async () => [{
+        members: [{ role: "COACH", email: user.email, riotId: "OtherCoach#123" }],
+      }],
+    },
+  };
+  const prisma = {
+    tournament: { findFirst: async () => bankTournament },
+    teamRegistration: { findFirst: async () => existing },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServicePath]: { ensureTeamRegistrationSaved: async () => undefined },
+    [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+    [paymentServicePath]: { assertBankTransferConfigured: () => undefined },
+    [bankTransferServicePath]: {
+      assertBankTransferConfigured: () => undefined,
+      buildBankTransferInstructions: () => {
+        instructionCalls += 1;
+        return {};
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      () => registrationService.createConfiguredRegistration({
+        slug: bankTournament.slug,
+        body,
+        user,
+      }),
+      (error) => error.statusCode === 409 &&
+        error.message === "This person cannot be both a coach and a player in the same tournament."
+    );
+    assert.equal(instructionCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("active explicit payment resume checks role conflicts before reusing the payment", async () => {
+  const payHereTournament = {
+    ...tournament,
+    game: "Valorant",
+    allowCoach: true,
+    coachRequired: false,
+  };
+  const existing = {
+    id: "payhere-resume-conflict",
+    status: "pending",
+    paymentStatus: "pending",
+    verificationStatus: "verified",
+    reservedUntil: new Date(Date.now() + 5 * 60_000),
+    captainPhone: user.phone,
+    country: "Sri Lanka",
+    members: [{ role: "CAPTAIN", inviteStatus: "accepted" }],
+    payments: [{ provider: "payhere", status: "pending", providerOrderId: "payhere-order" }],
+  };
+  let checkoutCalls = 0;
+  const tx = {
+    tournament: { findUnique: async () => payHereTournament },
+    teamRegistration: {
+      findUnique: async () => ({
+        ...existing,
+        entryType: "team",
+        members: [{
+          role: "CAPTAIN",
+          email: user.email,
+          riotId: "Captain#002",
+          inviteStatus: "accepted",
+        }],
+      }),
+      findMany: async () => [{
+        members: [{ role: "COACH", email: user.email, riotId: "OtherCoach#123" }],
+      }],
+    },
+  };
+  const prisma = {
+    tournament: { findFirst: async () => payHereTournament },
+    teamRegistration: { findFirst: async () => existing },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServicePath]: { ensureTeamRegistrationSaved: async () => undefined },
+    [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+    [paymentServicePath]: {
+      assertPayHereConfigured: () => undefined,
+      createPayHereCheckout: () => {
+        checkoutCalls += 1;
+        return {};
+      },
+    },
+    [bankTransferServicePath]: {},
+  });
+
+  try {
+    await assert.rejects(
+      () => registrationService.createConfiguredRegistration({
+        slug: payHereTournament.slug,
+        body: { resumePayment: true },
+        user,
+      }),
+      (error) => error.statusCode === 409 &&
+        error.message === "This person cannot be both a coach and a player in the same tournament."
+    );
+    assert.equal(checkoutCalls, 0);
   } finally {
     restore();
   }

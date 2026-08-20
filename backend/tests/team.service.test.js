@@ -89,19 +89,36 @@ test("createSavedTeam stores the captain and sends standalone member invites", a
         teamTag: "QF",
         organizationRequested: "true",
         members: JSON.stringify([
-          { name: "Player Two", email: "player2@example.com" },
+          { role: "PLAYER", name: "Player Two", email: "player2@example.com" },
+          {
+            role: "COACH",
+            name: "Team Coach",
+            email: "coach@example.com",
+            phone: "0770000000",
+            discord: "coach-discord",
+            riotId: "CoachName#123",
+          },
+          { role: "SUBSTITUTE", name: "Sub Player", email: "sub@example.com" },
         ]),
       },
     });
 
     assert.equal(team.name, "Quest Five");
-    assert.equal(createdMembers.length, 2);
+    assert.equal(createdMembers.length, 4);
     assert.equal(createdMembers[0].role, "CAPTAIN");
     assert.equal(createdMembers[0].inviteStatus, "accepted");
-    assert.equal(createdMembers[1].role, "PLAYER");
-    assert.equal(createdMembers[1].inviteStatus, "pending");
-    assert.ok(createdMembers[1].inviteTokenHash);
-    assert.equal(sentInvites.length, 1);
+    const createdPlayer = createdMembers.find((member) => member.role === "PLAYER");
+    const createdCoach = createdMembers.find((member) => member.role === "COACH");
+    const createdSubstitute = createdMembers.find((member) => member.role === "SUBSTITUTE");
+    assert.equal(createdPlayer.memberOrder, 1);
+    assert.equal(createdCoach.memberOrder, 1);
+    assert.equal(createdCoach.phone, "0770000000");
+    assert.equal(createdCoach.discord, "coach-discord");
+    assert.equal(createdCoach.riotId, "CoachName#123");
+    assert.equal(createdCoach.inviteStatus, "pending");
+    assert.ok(createdCoach.inviteTokenHash);
+    assert.equal(createdSubstitute.memberOrder, 1);
+    assert.equal(sentInvites.length, 3);
     assert.equal(sentInvites[0].tournamentTitle, null);
   } finally {
     restore();
@@ -111,6 +128,7 @@ test("createSavedTeam stores the captain and sends standalone member invites", a
 test("updateSavedTeam lets the captain replace roster details and preserves accepted members", async () => {
   const sentInvites = [];
   const createdMembers = [];
+  const registrationMemberUpdates = [];
   const user = {
     id: "user-1",
     firstName: "Quest",
@@ -182,6 +200,13 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
         return { count: data.length };
       },
     },
+    teamRegistration: {
+      findMany: async () => [{ id: "registration-1", savedTeamId: "saved-team-1", paymentStatus: "unpaid" }],
+      update: async () => undefined,
+    },
+    registrationMember: {
+      update: async (args) => registrationMemberUpdates.push(args),
+    },
   };
   let transactionAttempts = 0;
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
@@ -219,25 +244,78 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
         teamTag: "Q6",
         organizationRequested: "false",
         members: JSON.stringify([
-          { role: "PLAYER", name: "Accepted Player", email: "accepted@example.com" },
+          {
+            role: "COACH",
+            name: "Accepted Player",
+            email: "accepted@example.com",
+            phone: "0770000000",
+            discord: "coach-discord",
+            riotId: "CoachName#123",
+          },
           { role: "SUBSTITUTE", name: "Pending Player", email: "pending@example.com" },
-          { role: "COACH", name: "New Coach", email: "coach@example.com" },
+          { role: "PLAYER", name: "New Player", email: "coach@example.com" },
         ]),
       },
     });
 
     assert.equal(team.name, "Quest Six");
     assert.equal(createdMembers.length, 3);
+    assert.equal(createdMembers[0].id, "accepted-member");
     assert.equal(createdMembers[0].userId, "user-2");
+    assert.equal(createdMembers[0].role, "COACH");
+    assert.equal(createdMembers[0].phone, "0770000000");
+    assert.equal(createdMembers[0].discord, "coach-discord");
+    assert.equal(createdMembers[0].riotId, "CoachName#123");
     assert.equal(createdMembers[0].inviteStatus, "accepted");
     assert.equal(createdMembers[1].inviteStatus, "pending");
     assert.equal(createdMembers[1].inviteTokenHash, "existing-pending-token");
-    assert.equal(createdMembers[2].role, "COACH");
+    assert.equal(createdMembers[2].role, "PLAYER");
     assert.equal(createdMembers[2].inviteStatus, "pending");
     assert.ok(createdMembers[2].inviteTokenHash);
     assert.equal(sentInvites.length, 1);
     assert.equal(sentInvites[0].email, "coach@example.com");
     assert.equal(transactionAttempts, 2);
+    assert.equal(registrationMemberUpdates.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("saved-team parsers reject duplicate coach members", async () => {
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [mailModulePath]: {},
+  });
+  const duplicateCoaches = JSON.stringify([
+    { role: "COACH", name: "Coach One", email: "coach-one@example.com" },
+    { role: "COACH", name: "Coach Two", email: "coach-two@example.com" },
+  ]);
+  try {
+    await assert.rejects(
+      teamService.createSavedTeam({
+        user,
+        file: null,
+        body: { name: "Quest Five", country: "Sri Lanka", teamTag: "QF", members: duplicateCoaches },
+      }),
+      (error) => error.statusCode === 400 && /at most one coach/.test(error.message)
+    );
+    await assert.rejects(
+      teamService.updateSavedTeam({
+        teamId: "saved-team-1",
+        user,
+        file: null,
+        body: { name: "Quest Five", country: "Sri Lanka", teamTag: "QF", members: duplicateCoaches },
+      }),
+      (error) => error.statusCode === 400 && /at most one coach/.test(error.message)
+    );
   } finally {
     restore();
   }
@@ -328,6 +406,7 @@ test("registration coach sync persists a pending invite and dispatches the norma
     });
 
     const coach = savedMembers.find((member) => member.role === "COACH");
+    assert.equal(coach.phone, null);
     assert.equal(coach.inviteStatus, "pending");
     assert.ok(coach.inviteTokenHash);
     assert.ok(coach.inviteSentAt instanceof Date);
@@ -880,6 +959,7 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
 
     const [captainRecord, playerRecord, coachRecord] = savedMemberCreateCalls[0].data;
     assert.equal(captainRecord.userId, "user-1");
+    assert.equal(captainRecord.phone, null);
     assert.equal(captainRecord.inviteStatus, "accepted");
     assert.equal(playerRecord.userId, undefined);
     assert.equal(playerRecord.inviteStatus, "pending");
@@ -888,6 +968,7 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     assert.ok(playerRecord.inviteExpiresAt instanceof Date);
     assert.equal(coachRecord.role, "COACH");
     assert.equal(coachRecord.memberOrder, 1);
+    assert.equal(coachRecord.phone, "0771111111");
     assert.equal(coachRecord.inviteStatus, "pending");
     assert.ok(coachRecord.inviteTokenHash);
     assert.ok(coachRecord.inviteSentAt instanceof Date);
@@ -976,6 +1057,7 @@ test("syncSavedTeamFromRegistration preserves an active pending invite without e
     });
 
     assert.deepEqual(dispatches, []);
+    assert.equal(savedRows[0].phone, null);
     assert.equal(savedRows[0].inviteTokenHash, "existing-token-hash");
     assert.equal(registrationUpdates[0].inviteTokenHash, "existing-token-hash");
     assert.equal(registrationUpdates[0].inviteExpiresAt, inviteExpiresAt);

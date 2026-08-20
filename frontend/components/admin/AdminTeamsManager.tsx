@@ -26,6 +26,7 @@ type TeamMember = {
   role: "CAPTAIN" | "PLAYER" | "SUBSTITUTE" | "COACH";
   name: string;
   email: string;
+  phone: string | null;
   discord: string | null;
   gameId: string | null;
   inviteStatus: string;
@@ -424,6 +425,7 @@ function TeamEditor({ team, onChanged, onDeleted }: { team: TeamDetail; onChange
               <Field label="Player name"><Input value={member.name} onChange={(event) => updateMember(member.id, "name", event.target.value)} /></Field>
               <Field label="Role"><div className="flex h-12 items-center border border-white/10 bg-white/5 px-4 text-sm capitalize text-slate-300">{member.role.toLowerCase()}</div></Field>
               <Field label="Email"><Input type="email" value={member.email} onChange={(event) => updateMember(member.id, "email", event.target.value)} /></Field>
+              <Field label="Phone"><Input type="tel" value={member.phone || ""} onChange={(event) => updateMember(member.id, "phone", event.target.value)} /></Field>
               <Field label="Game ID"><Input value={member.gameId || ""} onChange={(event) => updateMember(member.id, "gameId", event.target.value)} placeholder="Player ID / Riot ID" /></Field>
               <Field label="Discord"><Input value={member.discord || ""} onChange={(event) => updateMember(member.id, "discord", event.target.value)} /></Field>
               <p className="break-words self-end pb-2 text-xs capitalize text-slate-500">Invite: {member.inviteStatus.replaceAll("_", " ")}</p>
