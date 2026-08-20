@@ -1151,6 +1151,13 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
     }
 
     const existingById = new Map(registration.members.map((member) => [member.id, member]));
+    const getInviteState = (existingMember) => ({
+      inviteStatus: existingMember?.inviteStatus || "accepted",
+      inviteTokenHash: existingMember?.inviteTokenHash ?? null,
+      inviteSentAt: existingMember?.inviteSentAt ?? null,
+      inviteExpiresAt: existingMember?.inviteExpiresAt ?? null,
+      inviteRespondedAt: existingMember ? existingMember.inviteRespondedAt ?? null : respondedAt,
+    });
     const registrationFields = Array.isArray(registration.tournament.registrationFields)
       ? registration.tournament.registrationFields
       : [];
@@ -1176,11 +1183,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
         discord: member.discord,
         riotId: member.riotId,
         additionalData: memberData.data,
-        inviteStatus: "accepted",
-        inviteTokenHash: null,
-        inviteSentAt: existingMember?.inviteSentAt || null,
-        inviteExpiresAt: null,
-        inviteRespondedAt: existingMember?.inviteRespondedAt || respondedAt,
+        ...getInviteState(existingMember),
       };
     });
     if (requestedCoach) {
@@ -1204,11 +1207,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
         discord: requestedCoach.discord,
         riotId: requestedCoach.riotId,
         additionalData: coachData.data,
-        inviteStatus: "accepted",
-        inviteTokenHash: null,
-        inviteSentAt: null,
-        inviteExpiresAt: null,
-        inviteRespondedAt: currentCoach?.inviteRespondedAt || respondedAt,
+        ...getInviteState(currentCoach),
       });
     }
 
@@ -1235,6 +1234,12 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       game: registration.tournament.game,
       gameId: nextCaptain.riotId,
     });
+    const rosterMembers = nextMembers.filter((member) => member.role !== "CAPTAIN");
+    const verificationStatus = rosterMembers.some((member) => member.inviteStatus === "declined")
+      ? "flagged"
+      : nextMembers.length > 0 && rosterMembers.every((member) => member.inviteStatus === "accepted")
+        ? "verified"
+        : "pending";
 
     await tx.registrationMember.deleteMany({ where: { registrationId } });
     await tx.registrationMember.createMany({ data: nextMembers });
@@ -1248,7 +1253,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
         captainDiscord: nextCaptain.discord,
         captainRiotId: nextCaptain.riotId,
         contactEmail: captainChanged ? nextCaptain.emailNormalized : registration.contactEmail,
-        verificationStatus: "verified",
+        verificationStatus,
         ...(entryData.changed ? { additionalData: entryData.data } : {}),
       },
     });
@@ -1278,6 +1283,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
       await tx.savedTeamMember.createMany({
         data: nextMembers.map((member) => {
           const existingMember = savedByEmail.get(member.emailNormalized);
+          const inviteState = getInviteState(existingMember || member);
           return {
             id: crypto.randomUUID(),
             teamId: registration.savedTeam.id,
@@ -1290,11 +1296,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
             phone: member.phone ?? existingMember?.phone ?? null,
             discord: member.discord,
             riotId: member.riotId,
-            inviteStatus: "accepted",
-            inviteTokenHash: null,
-            inviteSentAt: existingMember?.inviteSentAt || null,
-            inviteExpiresAt: null,
-            inviteRespondedAt: existingMember?.inviteRespondedAt || respondedAt,
+            ...inviteState,
           };
         }),
       });

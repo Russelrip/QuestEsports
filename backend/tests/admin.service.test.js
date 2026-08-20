@@ -2014,6 +2014,173 @@ test("correctTeamRegistrationRoster replaces a paid roster and its linked saved 
   }
 });
 
+test("correctTeamRegistrationRoster preserves pending and declined invites when syncing the saved team", async () => {
+  const registrationCreates = [];
+  const savedTeamCreates = [];
+  const registrationUpdates = [];
+  const captainRespondedAt = new Date("2026-08-01T10:00:00.000Z");
+  const pendingExpiresAt = new Date("2026-08-10T10:00:00.000Z");
+  const declinedRespondedAt = new Date("2026-08-02T10:00:00.000Z");
+  const currentMembers = [
+    {
+      id: "captain-1",
+      role: "CAPTAIN",
+      memberOrder: 0,
+      userId: "captain-user",
+      name: "Captain",
+      email: "captain@example.com",
+      emailNormalized: "captain@example.com",
+      discord: "captain",
+      riotId: "Captain#001",
+      additionalData: {},
+      inviteStatus: "accepted",
+      inviteTokenHash: null,
+      inviteExpiresAt: null,
+      inviteRespondedAt: captainRespondedAt,
+    },
+    {
+      id: "pending-1",
+      role: "PLAYER",
+      memberOrder: 1,
+      userId: null,
+      name: "Pending Player",
+      email: "pending@example.com",
+      emailNormalized: "pending@example.com",
+      discord: "pending",
+      riotId: "Pending#001",
+      additionalData: {},
+      inviteStatus: "pending",
+      inviteTokenHash: "pending-token-hash",
+      inviteSentAt: new Date("2026-08-01T09:00:00.000Z"),
+      inviteExpiresAt: pendingExpiresAt,
+      inviteRespondedAt: null,
+    },
+    {
+      id: "declined-1",
+      role: "PLAYER",
+      memberOrder: 2,
+      userId: null,
+      name: "Declined Player",
+      email: "declined@example.com",
+      emailNormalized: "declined@example.com",
+      discord: "declined",
+      riotId: "Declined#001",
+      additionalData: {},
+      inviteStatus: "declined",
+      inviteTokenHash: "declined-token-hash",
+      inviteSentAt: new Date("2026-08-01T09:30:00.000Z"),
+      inviteExpiresAt: null,
+      inviteRespondedAt: declinedRespondedAt,
+    },
+  ];
+  const requestedMembers = [
+    { id: "captain-1", role: "CAPTAIN", name: "Admin Captain", email: "captain@example.com", discord: "admin-captain", gameId: "AdminCaptain#001" },
+    { id: "pending-1", role: "PLAYER", name: "Corrected Pending", email: "pending@example.com", discord: "corrected-pending", gameId: "CorrectedPending#001" },
+    { id: "declined-1", role: "PLAYER", name: "Corrected Declined", email: "declined@example.com", discord: "corrected-declined", gameId: "CorrectedDeclined#001" },
+  ];
+  const users = requestedMembers.map((member, index) => ({
+    id: ["captain-user", "pending-user", "declined-user"][index],
+    email: member.email,
+    emailNormalized: member.email,
+    emailVerified: true,
+    phone: index === 0 ? "0770000000" : null,
+  }));
+  const registration = {
+    id: "registration-1",
+    tournamentId: "tournament-1",
+    savedTeamId: "saved-team-1",
+    entryType: "team",
+    captainEmail: "captain@example.com",
+    captainPhone: "0770000000",
+    contactEmail: "captain@example.com",
+    additionalData: {},
+    tournament: {
+      id: "tournament-1",
+      title: "Quest Cup",
+      game: "Valorant",
+      registrationFields: [],
+      minRosterSize: 3,
+      maxRosterSize: 3,
+      maxSubstitutes: 0,
+      allowCoach: false,
+      coachRequired: false,
+    },
+    members: currentMembers,
+    savedTeam: {
+      id: "saved-team-1",
+      name: "Quest Five",
+      members: currentMembers.map((member) => ({ ...member, teamId: "saved-team-1" })),
+      registrations: [{ id: "registration-1" }],
+    },
+  };
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => registration,
+      update: async (args) => registrationUpdates.push(args),
+    },
+    user: { findMany: async () => users },
+    registrationMember: {
+      findMany: async () => [],
+      deleteMany: async () => undefined,
+      createMany: async (args) => registrationCreates.push(args),
+    },
+    savedTeamMember: {
+      deleteMany: async () => undefined,
+      createMany: async (args) => savedTeamCreates.push(args),
+    },
+  };
+  const detail = {
+    id: "registration-1",
+    savedTeamId: "saved-team-1",
+    entryType: "team",
+    teamName: "Quest Five",
+    additionalData: {},
+    reservedUntil: null,
+    country: "Sri Lanka",
+    teamTag: "Q5",
+    organizationRequested: false,
+    status: "approved",
+    paymentStatus: "paid",
+    verificationStatus: "flagged",
+    createdAt: new Date("2026-08-01T08:00:00.000Z"),
+    contactEmail: "captain@example.com",
+    teamLogoName: null,
+    tournament: { id: "tournament-1", title: "Quest Cup" },
+    captainName: "Admin Captain",
+    captainEmail: "captain@example.com",
+    captainPhone: "0770000000",
+    captainDiscord: "admin-captain",
+    captainRiotId: "AdminCaptain#001",
+    members: currentMembers.map((member) => ({ ...member, user: null })),
+  };
+  const { module: adminService, restore } = loadAdminService({
+    $transaction: async (work) => work(tx),
+    teamRegistration: { findUnique: async () => detail },
+  });
+
+  try {
+    await adminService.correctTeamRegistrationRoster("registration-1", {
+      syncSavedTeam: true,
+      members: requestedMembers,
+    });
+
+    const registrationByEmail = new Map(registrationCreates[0].data.map((member) => [member.email, member]));
+    const savedTeamByEmail = new Map(savedTeamCreates[0].data.map((member) => [member.email, member]));
+    for (const members of [registrationByEmail, savedTeamByEmail]) {
+      assert.equal(members.get("pending@example.com").inviteStatus, "pending");
+      assert.equal(members.get("pending@example.com").inviteTokenHash, "pending-token-hash");
+      assert.equal(members.get("pending@example.com").inviteExpiresAt, pendingExpiresAt);
+      assert.equal(members.get("pending@example.com").inviteRespondedAt, null);
+      assert.equal(members.get("declined@example.com").inviteStatus, "declined");
+      assert.equal(members.get("declined@example.com").inviteTokenHash, "declined-token-hash");
+      assert.equal(members.get("declined@example.com").inviteRespondedAt, declinedRespondedAt);
+    }
+    assert.equal(registrationUpdates[0].data.verificationStatus, "flagged");
+  } finally {
+    restore();
+  }
+});
+
 test("correctTeamRegistrationRoster transfers captain ownership with the linked saved team", async () => {
   const registrationUpdates = [];
   const savedTeamUpdates = [];
