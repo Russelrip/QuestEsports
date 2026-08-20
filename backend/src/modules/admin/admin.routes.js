@@ -70,7 +70,7 @@ router.get("/admin/teams/:teamId", getSavedTeam);
 router.patch(
   "/admin/teams/:teamId",
   imageUpload.single("teamLogo"),
-  invalidateCache("tournaments"),
+  invalidateCache("tournaments", "foundation"),
   updateSavedTeam
 );
 router.patch("/admin/teams/:teamId/organization", updateSavedTeamOrganization);

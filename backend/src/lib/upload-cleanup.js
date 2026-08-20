@@ -1,10 +1,16 @@
 const { logger } = require("./logger");
+const { env } = require("../config/env");
 const { removeUploadFiles, teamLogoDirectory } = require("../middleware/upload");
 const {
   FILE_CLEANUP_JOB_NAME,
   TEAM_LOGO_CLEANUP_JOB_NAME,
   serializeCleanupUploads,
 } = require("./upload-cleanup-job");
+
+const TEAM_LOGO_CLEANUP_GRACE_MS = Math.max(
+  Number(env.CACHE_TTL_SECONDS || 0) * 1000,
+  60 * 60 * 1000
+);
 
 const removeUploadsQuietly = async (uploads, context = {}) => {
   try {
@@ -69,4 +75,37 @@ const removeTeamLogoIfUnreferenced = async ({ prisma, filename, context = {} }) 
   return true;
 };
 
-module.exports = { removeUploadsQuietly, removeTeamLogoIfUnreferenced };
+const scheduleTeamLogoCleanup = async ({ filename, context = {}, tx, database }) => {
+  if (!filename) return false;
+
+  const transactionDatabase = tx || database;
+  const availableAt = new Date(Date.now() + TEAM_LOGO_CLEANUP_GRACE_MS);
+  try {
+    const { enqueueJob } = require("./jobs");
+    await enqueueJob(
+      TEAM_LOGO_CLEANUP_JOB_NAME,
+      { filename },
+      {
+        ...(transactionDatabase ? { database: transactionDatabase } : {}),
+        availableAt,
+      }
+    );
+  } catch (error) {
+    logger.error("Failed to enqueue delayed team logo cleanup.", {
+      ...context,
+      filename,
+      error,
+    });
+    if (transactionDatabase) throw error;
+    return false;
+  }
+
+  return true;
+};
+
+module.exports = {
+  TEAM_LOGO_CLEANUP_GRACE_MS,
+  removeUploadsQuietly,
+  removeTeamLogoIfUnreferenced,
+  scheduleTeamLogoCleanup,
+};

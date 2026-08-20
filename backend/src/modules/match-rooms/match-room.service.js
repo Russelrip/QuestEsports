@@ -5,6 +5,10 @@ const { normalizeText } = require("../../lib/validation");
 const { publishRealtimeEvent } = require("../realtime/realtime.service");
 const { createNotification } = require("../notifications/notification.service");
 const { getBuiltInSteps, validateSteps } = require("../veto/veto.service");
+const {
+  resolveEffectiveTeamLogoName,
+  getTeamLogoUrl,
+} = require("../teams/team-logo");
 
 const TERMINAL_MATCH_STATUSES = new Set(["completed", "cancelled", "walkover"]);
 const ACTIVE_SUPPORT_LIMIT = 3;
@@ -41,7 +45,8 @@ const rosterMatchInclude = {
             include: { user: { select: userSelect } },
           },
           savedTeam: {
-            include: {
+            select: {
+              logoName: true,
               captainUser: { select: userSelect },
               members: {
                 where: { inviteStatus: "accepted", userId: { not: null } },
@@ -390,9 +395,7 @@ const mapRoom = (room, member) => ({
       displayName: participant.displayName,
       score: participant.score,
       result: participant.result,
-      logoUrl: participant.registration?.savedTeam?.logoName || participant.registration?.teamLogoName
-        ? `/api/uploads/team-logos/${participant.registration?.savedTeam?.logoName || participant.registration?.teamLogoName}`
-        : null,
+      logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(participant.registration)),
     })),
     veto: room.match.vetoRoom,
   },

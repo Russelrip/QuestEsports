@@ -6,8 +6,10 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const servicePath = path.join(__dirname, "../src/modules/teams/team.service.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
+const generatedPrismaModulePath = path.join(__dirname, "../src/generated/prisma/index.js");
 const mailModulePath = path.join(__dirname, "../src/lib/mail/sendTeamInviteEmail.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
+const uploadCleanupModulePath = path.join(__dirname, "../src/lib/upload-cleanup.js");
 
 const buildPendingInvite = () => ({
   id: "registration-member-1",
@@ -276,6 +278,422 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
     assert.equal(sentInvites[0].email, "coach@example.com");
     assert.equal(transactionAttempts, 2);
     assert.equal(registrationMemberUpdates.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam propagates a replacement logo to paid and unpaid registrations", async () => {
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: user.id,
+    name: "Quest Five",
+    logoName: "old-logo.png",
+    members: [{ id: "captain-member", role: "CAPTAIN", emailNormalized: user.email }],
+  };
+  const registrations = [
+    { id: "paid-registration", paymentStatus: "paid", teamLogoName: "old-logo.png" },
+    { id: "unpaid-registration", paymentStatus: "unpaid", teamLogoName: "old-logo.png" },
+  ];
+  let savedTeamData;
+  let registrationUpdate;
+  let scheduledLogo;
+  const tx = {
+    savedTeam: {
+      findUnique: async ({ select }) =>
+        select ? { logoName: "old-logo.png" } : {
+          ...existingTeam,
+          country: "Sri Lanka",
+          teamTag: "QF",
+          organizationRequested: false,
+          organizationName: null,
+          logoName: "new-logo.png",
+          captainUser: user,
+          members: [{ id: "captain-member", role: "CAPTAIN", memberOrder: 0, name: "Quest Captain", email: user.email, inviteStatus: "accepted" }],
+          _count: { registrations: 2 },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      update: async ({ data }) => {
+        savedTeamData = data;
+        return { ...existingTeam, ...data };
+      },
+    },
+    teamRegistration: {
+      updateMany: async ({ where, data }) => {
+        registrationUpdate = { where, data };
+        registrations.forEach((registration) => {
+          registration.teamLogoName = data.teamLogoName;
+        });
+        return { count: registrations.length };
+      },
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async () => ({ count: 0 }),
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: { findFirst: async () => existingTeam },
+        $transaction: async (callback) => callback(tx),
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => ({ filename: "new-logo.png" }),
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [uploadCleanupModulePath]: {
+      removeUploadsQuietly: async () => undefined,
+      scheduleTeamLogoCleanup: async ({ filename }) => {
+        scheduledLogo = filename;
+      },
+    },
+    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+  });
+
+  try {
+    await teamService.updateSavedTeam({
+      teamId: existingTeam.id,
+      user,
+      file: { originalname: "new-logo.png" },
+      body: {
+        name: "Quest Five",
+        country: "Sri Lanka",
+        teamTag: "QF",
+        members: "[]",
+      },
+    });
+
+    assert.equal(savedTeamData.logoName, "new-logo.png");
+    assert.deepEqual(registrationUpdate, {
+      where: { savedTeamId: existingTeam.id },
+      data: { teamLogoName: "new-logo.png" },
+    });
+    assert.equal(registrations[0].teamLogoName, "new-logo.png");
+    assert.equal(registrations[1].teamLogoName, "new-logo.png");
+    assert.equal(scheduledLogo, "old-logo.png");
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam removes a logo without resurrecting a stale snapshot", async () => {
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: user.id,
+    name: "Quest Five",
+    logoName: "stale-logo.png",
+    members: [{ id: "captain-member", role: "CAPTAIN", emailNormalized: user.email }],
+  };
+  const registrations = [{ teamLogoName: "current-logo.png" }];
+  let savedTeamData;
+  let scheduledLogo;
+  const tx = {
+    savedTeam: {
+      findUnique: async ({ select }) =>
+        select ? { logoName: "current-logo.png" } : {
+          ...existingTeam,
+          country: "Sri Lanka",
+          teamTag: "QF",
+          organizationRequested: false,
+          organizationName: null,
+          logoName: null,
+          captainUser: user,
+          members: [{ id: "captain-member", role: "CAPTAIN", memberOrder: 0, name: "Quest Captain", email: user.email, inviteStatus: "accepted" }],
+          _count: { registrations: 1 },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      update: async ({ data }) => {
+        savedTeamData = data;
+        return { ...existingTeam, ...data };
+      },
+    },
+    teamRegistration: {
+      updateMany: async ({ data }) => {
+        registrations.forEach((registration) => {
+          registration.teamLogoName = data.teamLogoName;
+        });
+      },
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async () => ({ count: 0 }),
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: { findFirst: async () => existingTeam },
+        $transaction: async (callback) => callback(tx),
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [uploadCleanupModulePath]: {
+      removeUploadsQuietly: async () => undefined,
+      scheduleTeamLogoCleanup: async ({ filename }) => {
+        scheduledLogo = filename;
+      },
+    },
+    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+  });
+
+  try {
+    await teamService.updateSavedTeam({
+      teamId: existingTeam.id,
+      user,
+      file: null,
+      body: {
+        name: "Quest Five",
+        country: "Sri Lanka",
+        teamTag: "QF",
+        removeLogo: "true",
+        members: "[]",
+      },
+    });
+
+    assert.equal(savedTeamData.logoName, null);
+    assert.equal(registrations[0].teamLogoName, null);
+    assert.equal(scheduledLogo, "current-logo.png");
+    assert.notEqual(savedTeamData.logoName, existingTeam.logoName);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam omits logoName and registration propagation for metadata-only edits", async () => {
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: user.id,
+    name: "Quest Five",
+    logoName: "existing-logo.png",
+    members: [{ id: "captain-member", role: "CAPTAIN", emailNormalized: user.email }],
+  };
+  let savedTeamData;
+  let logoReadCount = 0;
+  let registrationUpdateCount = 0;
+  const scheduledLogos = [];
+  const tx = {
+    savedTeam: {
+      findUnique: async ({ select }) => {
+        if (select) logoReadCount += 1;
+        return {
+          ...existingTeam,
+          country: "Sri Lanka",
+          teamTag: "QF",
+          organizationRequested: false,
+          organizationName: null,
+          captainUser: user,
+          members: [{ id: "captain-member", role: "CAPTAIN", memberOrder: 0, name: "Quest Captain", email: user.email, inviteStatus: "accepted" }],
+          _count: { registrations: 0 },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      },
+      update: async ({ data }) => {
+        savedTeamData = data;
+        return { ...existingTeam, ...data };
+      },
+    },
+    teamRegistration: {
+      updateMany: async () => {
+        registrationUpdateCount += 1;
+      },
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async () => ({ count: 0 }),
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: { findFirst: async () => existingTeam },
+        $transaction: async (callback) => callback(tx),
+      },
+    },
+    [uploadModulePath]: { persistTeamLogoUpload: async () => null },
+    [uploadCleanupModulePath]: {
+      scheduleTeamLogoCleanup: async ({ filename }) => scheduledLogos.push(filename),
+    },
+    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+  });
+
+  try {
+    await teamService.updateSavedTeam({
+      teamId: existingTeam.id,
+      user,
+      file: null,
+      body: {
+        name: "Quest Six",
+        country: "Sri Lanka",
+        teamTag: "Q6",
+        members: "[]",
+      },
+    });
+
+    assert.deepEqual(savedTeamData, {
+      name: "Quest Six",
+      country: "Sri Lanka",
+      teamTag: "Q6",
+      organizationRequested: false,
+    });
+    assert.equal(Object.hasOwn(savedTeamData, "logoName"), false);
+    assert.equal(logoReadCount, 0);
+    assert.equal(registrationUpdateCount, 0);
+    assert.deepEqual(scheduledLogos, []);
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam removes a newly persisted upload when the transaction fails", async () => {
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: user.id,
+    name: "Quest Five",
+    logoName: "old-logo.png",
+    members: [{ id: "captain-member", role: "CAPTAIN", emailNormalized: user.email }],
+  };
+  const removedUploads = [];
+  const scheduledLogos = [];
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: { findFirst: async () => existingTeam },
+        $transaction: async () => {
+          throw new Error("transaction failed");
+        },
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => ({ filename: "new-logo.png" }),
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [uploadCleanupModulePath]: {
+      removeUploadsQuietly: async (uploads) => removedUploads.push(...uploads),
+      scheduleTeamLogoCleanup: async ({ filename }) => scheduledLogos.push(filename),
+    },
+    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+  });
+
+  try {
+    await assert.rejects(
+      teamService.updateSavedTeam({
+        teamId: existingTeam.id,
+        user,
+        file: { originalname: "new-logo.png" },
+        body: {
+          name: "Quest Five",
+          country: "Sri Lanka",
+          teamTag: "QF",
+          members: "[]",
+        },
+      }),
+      (error) => error.message === "transaction failed"
+    );
+    assert.deepEqual(removedUploads, [
+      { directory: "uploads/team-logos", filename: "new-logo.png" },
+    ]);
+    assert.deepEqual(scheduledLogos, []);
+    assert.equal(existingTeam.logoName, "old-logo.png");
+  } finally {
+    restore();
+  }
+});
+
+test("updateSavedTeam preserves its P2002 conflict mapping", async () => {
+  const user = {
+    id: "user-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: user.id,
+    name: "Quest Five",
+    logoName: "old-logo.png",
+    members: [{ id: "captain-member", role: "CAPTAIN", emailNormalized: user.email }],
+  };
+  class TestPrismaClientKnownRequestError extends Error {}
+  const conflict = new TestPrismaClientKnownRequestError(
+    "Unique constraint failed.",
+  );
+  conflict.code = "P2002";
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [generatedPrismaModulePath]: {
+      Prisma: {
+        TransactionIsolationLevel: { Serializable: "Serializable" },
+        PrismaClientKnownRequestError: TestPrismaClientKnownRequestError,
+      },
+    },
+    [prismaModulePath]: {
+      prisma: {
+        savedTeam: { findFirst: async () => existingTeam },
+        $transaction: async (callback) => callback({
+          savedTeam: {
+            findUnique: async () => ({ logoName: existingTeam.logoName }),
+            update: async () => { throw conflict; },
+          },
+        }),
+      },
+    },
+    [uploadModulePath]: { persistTeamLogoUpload: async () => null },
+    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+  });
+
+  try {
+    await assert.rejects(
+      teamService.updateSavedTeam({
+        teamId: existingTeam.id,
+        user,
+        file: null,
+        body: {
+          name: "Quest Five",
+          country: "Sri Lanka",
+          teamTag: "QF",
+          members: "[]",
+        },
+      }),
+      (error) =>
+        error.statusCode === 409 &&
+        error.message === "A team or member already uses these details."
+    );
   } finally {
     restore();
   }
@@ -994,10 +1412,154 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     assert.equal(inviteDispatches.length, 2);
     assert.deepEqual(teamRegistrationUpdateCalls[0].data, {
       savedTeamId: "saved-team-1",
+      teamLogoName: null,
     });
     assert.deepEqual(teamRegistrationUpdateCalls.at(-1).data, {
       verificationStatus: "pending",
     });
+  } finally {
+    restore();
+  }
+});
+
+test("syncSavedTeamFromRegistration schedules a newly persisted retry logo for a canonical-null team", async () => {
+  const savedTeamUpdates = [];
+  const registrationUpdates = [];
+  const scheduledLogos = [];
+  const existingTeam = { id: "saved-team-1", logoName: null, members: [] };
+  const tx = {
+    savedTeam: {
+      findUnique: async () => existingTeam,
+      update: async (args) => savedTeamUpdates.push(args),
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async () => ({ count: 0 }),
+    },
+    teamRegistration: {
+      update: async (args) => registrationUpdates.push(args),
+    },
+    registrationMember: {
+      findMany: async () => [],
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [uploadCleanupModulePath]: {
+      scheduleTeamLogoCleanup: async ({ filename, tx: scheduledTx }) => {
+        scheduledLogos.push({ filename, tx: scheduledTx });
+      },
+    },
+  });
+
+  try {
+    await teamService.syncSavedTeamFromRegistration({
+      tx,
+      registrationId: "registration-1",
+      user: { id: "captain-1", firstName: "Quest", lastName: "Captain", username: "captain" },
+      teamName: "Quest Five",
+      logoName: "newly-persisted-retry.webp",
+      members: [],
+      tournamentTitle: "Quest Cup",
+    });
+
+    assert.equal(Object.hasOwn(savedTeamUpdates[0].data, "logoName"), false);
+    assert.deepEqual(registrationUpdates[0].data, {
+      savedTeamId: "saved-team-1",
+      teamLogoName: null,
+    });
+    assert.deepEqual(scheduledLogos, [{ filename: "newly-persisted-retry.webp", tx }]);
+  } finally {
+    restore();
+  }
+});
+
+test("syncSavedTeamFromRegistration keeps a newer canonical logo over an older retry snapshot", async () => {
+  const savedTeamUpdates = [];
+  const registrationUpdates = [];
+  const scheduledLogos = [];
+  const tx = {
+    savedTeam: {
+      findUnique: async () => ({ id: "saved-team-1", logoName: "current-logo.webp", members: [] }),
+      update: async (args) => savedTeamUpdates.push(args),
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async () => ({ count: 0 }),
+    },
+    teamRegistration: { update: async (args) => registrationUpdates.push(args) },
+    registrationMember: { findMany: async () => [] },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [uploadCleanupModulePath]: {
+      scheduleTeamLogoCleanup: async ({ filename, tx: scheduledTx }) => {
+        scheduledLogos.push({ filename, tx: scheduledTx });
+      },
+    },
+  });
+
+  try {
+    await teamService.syncSavedTeamFromRegistration({
+      tx,
+      registrationId: "registration-2",
+      user: { id: "captain-1", firstName: "Quest", lastName: "Captain", username: "captain" },
+      teamName: "Quest Five",
+      logoName: "old-retry.png",
+      members: [],
+      tournamentTitle: "Quest Cup",
+    });
+
+    assert.equal(Object.hasOwn(savedTeamUpdates[0].data, "logoName"), false);
+    assert.equal(registrationUpdates[0].data.teamLogoName, "current-logo.webp");
+    assert.deepEqual(scheduledLogos, [{ filename: "old-retry.png", tx }]);
+  } finally {
+    restore();
+  }
+});
+
+test("syncSavedTeamFromRegistration aborts relinking when retry-logo cleanup enqueue fails", async () => {
+  const registrationUpdates = [];
+  const tx = {
+    savedTeam: {
+      findUnique: async () => ({ id: "saved-team-1", logoName: null, members: [] }),
+      update: async () => undefined,
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async () => ({ count: 0 }),
+    },
+    teamRegistration: {
+      update: async (args) => registrationUpdates.push(args),
+    },
+    registrationMember: { findMany: async () => [] },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [uploadCleanupModulePath]: {
+      scheduleTeamLogoCleanup: async () => {
+        throw new Error("cleanup queue unavailable");
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      teamService.syncSavedTeamFromRegistration({
+        tx,
+        registrationId: "registration-3",
+        user: { id: "captain-1", firstName: "Quest", lastName: "Captain", username: "captain" },
+        teamName: "Quest Five",
+        logoName: "newly-persisted-retry.webp",
+        members: [],
+        tournamentTitle: "Quest Cup",
+      }),
+      /cleanup queue unavailable/
+    );
+    assert.deepEqual(registrationUpdates, []);
   } finally {
     restore();
   }

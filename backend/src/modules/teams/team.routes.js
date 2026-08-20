@@ -14,6 +14,7 @@ const {
   respondTeamInvite,
 } = require("./team.controller");
 const { imageUpload } = require("../../middleware/upload");
+const { invalidateCache } = require("../../middleware/response-cache");
 
 const router = express.Router();
 const teamInviteRateLimiter = createRateLimiter({
@@ -56,6 +57,7 @@ router.patch(
   requireVerifiedEmail,
   manageTeamRateLimiter,
   imageUpload.single("teamLogo"),
+  invalidateCache("tournaments", "foundation"),
   updateProfileTeam
 );
 router.delete(

@@ -305,8 +305,44 @@ test("finalizing Challonge also completes the Quest tournament", async (context)
 test("public linked brackets serve the last successful snapshot as stale data", async () => {
   const servicePath = path.join(__dirname, "../src/modules/challonge/challonge.service.js");
   const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
-  const snapshot = { tournament: { name: "Quest Open" }, participants: [], matches: [] };
-  const prisma = { tournament: { findFirst: async () => ({ bracketLink: "https://challonge.com/quest-open", bracket: { status: "published", bracketData: { native: true } }, challongeIntegration: { enabled: true, snapshotData: snapshot, lastSuccessAt: new Date("2026-01-01T00:00:00Z"), syncFrequency: "five_minutes", lastErrorCode: "challonge_timeout", lastErrorMessage: "Timed out" } }) } };
+  const snapshot = {
+    tournament: { name: "Quest Open" },
+    participants: [
+      { id: "participant-1", name: "Alpha", finalRank: null, seed: 1 },
+      { id: "participant-2", name: "Bravo", finalRank: null, seed: 2 },
+      { id: "participant-3", name: "Charlie", finalRank: null, seed: 3 },
+    ],
+    matches: [],
+  };
+  const prisma = { tournament: { findFirst: async () => ({
+    bracketLink: "https://challonge.com/quest-open",
+    bracket: { status: "published", bracketData: { native: true } },
+    challongeIntegration: {
+      enabled: true,
+      snapshotData: snapshot,
+      lastSuccessAt: new Date("2026-01-01T00:00:00Z"),
+      syncFrequency: "five_minutes",
+      lastErrorCode: "challonge_timeout",
+      lastErrorMessage: "Timed out",
+      participantLinks: [
+        {
+          externalParticipantId: "participant-1",
+          isConfirmed: true,
+          registration: { teamName: "Alpha Current", teamLogoName: "stale-alpha.png", savedTeam: { logoName: "current-alpha.webp" } },
+        },
+        {
+          externalParticipantId: "participant-2",
+          isConfirmed: true,
+          registration: { teamName: "Bravo Current", teamLogoName: "stale-bravo.png", savedTeam: { logoName: null } },
+        },
+        {
+          externalParticipantId: "participant-3",
+          isConfirmed: true,
+          registration: { teamName: "Charlie Legacy", teamLogoName: "historical-charlie.png", savedTeam: null },
+        },
+      ],
+    },
+  }) } };
   const { module: mockedService, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
   try {
     const result = await mockedService.getPublicBracket("quest-open");
@@ -314,7 +350,43 @@ test("public linked brackets serve the last successful snapshot as stale data", 
     assert.equal(result.status, "stale");
     assert.equal(result.data.tournament.name, snapshot.tournament.name);
     assert.equal(result.data.progression.completedMatches, 0);
+    assert.equal(result.data.participants[0].logoUrl, "/api/uploads/team-logos/current-alpha.webp");
+    assert.equal(result.data.participants[1].logoUrl, null);
+    assert.equal(result.data.participants[2].logoUrl, "/api/uploads/team-logos/historical-charlie.png");
     assert.deepEqual(result.error, { code: "challonge_timeout", message: "Timed out" });
+  } finally { restore(); }
+});
+
+test("public native brackets overlay live linked and unlinked registration logos", async () => {
+  const servicePath = path.join(__dirname, "../src/modules/challonge/challonge.service.js");
+  const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
+  const prisma = { tournament: { findFirst: async () => ({
+    bracketLink: "https://challonge.com/quest-open",
+    teamRegistrations: [
+      { id: "registration-1", teamLogoName: "stale-one.png", savedTeam: { logoName: "current-one.webp" } },
+      { id: "registration-2", teamLogoName: "stale-two.png", savedTeam: { logoName: null } },
+      { id: "registration-3", teamLogoName: "historical-three.png", savedTeam: null },
+    ],
+    bracket: {
+      status: "published",
+      lastUpdatedAt: new Date("2026-08-20T00:00:00Z"),
+      bracketData: {
+        participant: [
+          { id: 1, registrationId: "registration-1", logoUrl: "/old-one.png" },
+          { id: 2, registrationId: "registration-2", logoUrl: "/old-two.png" },
+          { id: 3, registrationId: "registration-3", logoUrl: "/old-three.png" },
+        ],
+      },
+    },
+    challongeIntegration: { enabled: false, participantLinks: [] },
+  }) } };
+  const { module: mockedService, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await mockedService.getPublicBracket("quest-open");
+    assert.equal(result.source, "native");
+    assert.equal(result.data.participant[0].logoUrl, "/api/uploads/team-logos/current-one.webp");
+    assert.equal(result.data.participant[1].logoUrl, null);
+    assert.equal(result.data.participant[2].logoUrl, "/api/uploads/team-logos/historical-three.png");
   } finally { restore(); }
 });
 

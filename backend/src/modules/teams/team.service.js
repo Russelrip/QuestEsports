@@ -11,6 +11,7 @@ const {
 const {
   removeUploadsQuietly,
   removeTeamLogoIfUnreferenced,
+  scheduleTeamLogoCleanup,
 } = require("../../lib/upload-cleanup");
 const {
   persistTeamLogoUpload,
@@ -495,7 +496,14 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
   }
 
   const persistedLogo = file ? await persistTeamLogoUpload(file) : null;
-  const nextLogoName = persistedLogo?.filename || (removeLogo ? null : existingTeam.logoName);
+  const logoMutationRequested = Boolean(file) || removeLogo;
+  const nextLogoName = file
+    ? persistedLogo.filename
+    : removeLogo
+      ? null
+      : existingTeam.logoName;
+  const savedTeamData = { name, country, teamTag, organizationRequested };
+  if (logoMutationRequested) savedTeamData.logoName = nextLogoName;
   const existingMembersByEmail = new Map(
     existingTeam.members.map((member) => [member.emailNormalized, member])
   );
@@ -546,17 +554,25 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
   });
 
   try {
-    const team = await runTeamSyncTransaction(async (tx) => {
+    const transactionResult = await runTeamSyncTransaction(async (tx) => {
+      const currentTeam = logoMutationRequested
+        ? await tx.savedTeam.findUnique({
+            where: { id: teamId },
+            select: { logoName: true },
+          })
+        : null;
+      const previousLogoName = currentTeam?.logoName ?? null;
+
       await tx.savedTeam.update({
         where: { id: teamId },
-        data: {
-          name,
-          country,
-          teamTag,
-          organizationRequested,
-          logoName: nextLogoName,
-        },
+        data: savedTeamData,
       });
+      if (logoMutationRequested) {
+        await tx.teamRegistration.updateMany({
+          where: { savedTeamId: teamId },
+          data: { teamLogoName: nextLogoName },
+        });
+      }
       await tx.savedTeamMember.deleteMany({
         where: { teamId, role: { not: "CAPTAIN" } },
       });
@@ -564,7 +580,15 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
         await tx.savedTeamMember.createMany({ data: memberRecords });
       }
 
-      return tx.savedTeam.findUnique({
+      if (previousLogoName && previousLogoName !== nextLogoName) {
+        await scheduleTeamLogoCleanup({
+          filename: previousLogoName,
+          tx,
+          context: { operation: "updateSavedTeam", teamId, userId: user.id },
+        });
+      }
+
+      const team = await tx.savedTeam.findUnique({
         where: { id: teamId },
         include: {
           captainUser: {
@@ -576,15 +600,11 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
           },
         },
       });
+
+      return { team, previousLogoName };
     });
 
-    if (existingTeam.logoName && existingTeam.logoName !== nextLogoName) {
-      await removeTeamLogoIfUnreferenced({
-        prisma,
-        filename: existingTeam.logoName,
-        context: { operation: "updateSavedTeam", teamId, userId: user.id },
-      });
-    }
+    const { team } = transactionResult;
     await sendTeamInvites(inviteDispatches);
     return mapSavedTeam(team, user.id);
   } catch (error) {
@@ -1104,10 +1124,11 @@ const syncSavedTeamFromRegistration = async ({
         country: country || null,
         teamTag: teamTag || null,
         organizationRequested: Boolean(organizationRequested),
-        ...(logoName ? { logoName } : {}),
       },
     });
   }
+
+  const effectiveLogoName = existingTeam ? existingTeam.logoName ?? null : logoName || null;
 
   const existingMembersByRosterPosition = new Map(
     (existingTeam?.members || [])
@@ -1258,9 +1279,21 @@ const syncSavedTeamFromRegistration = async ({
     }),
   });
 
+  if (existingTeam && logoName && logoName !== effectiveLogoName) {
+    await scheduleTeamLogoCleanup({
+      filename: logoName,
+      tx,
+      context: {
+        operation: "syncSavedTeamFromRegistration",
+        registrationId,
+        teamId: team.id,
+      },
+    });
+  }
+
   await tx.teamRegistration.update({
     where: { id: registrationId },
-    data: { savedTeamId: team.id },
+    data: { savedTeamId: team.id, teamLogoName: effectiveLogoName },
   });
 
   for (const member of registrationMemberUpdates) {

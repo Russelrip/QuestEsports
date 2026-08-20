@@ -6,6 +6,11 @@ const { logger } = require("../../lib/logger");
 const cache = require("../../lib/cache");
 const { normalizeText } = require("../../lib/validation");
 const { publishRealtimeEvent } = require("../realtime/realtime.service");
+const {
+  resolveEffectiveTeamLogoName,
+  getTeamLogoUrl,
+} = require("../teams/team-logo");
+const { overlayBracketLogos } = require("../tournaments/bracket.service");
 
 const SYNC_FREQUENCIES = new Set(["manual", "one_minute", "five_minutes"]);
 const buildSyncedTournamentUpdate = (snapshot) => ({
@@ -1122,8 +1127,7 @@ const updateParticipantMapping = async ({ tournamentId, participantId, body }) =
 };
 
 const registrationLogoUrl = (registration) => {
-  const filename = registration?.savedTeam?.logoName || registration?.teamLogoName;
-  return filename ? `/api/uploads/team-logos/${filename}` : null;
+  return getTeamLogoUrl(resolveEffectiveTeamLogoName(registration));
 };
 
 const buildPublicSnapshot = (snapshot, participantLinks = []) => {
@@ -1205,10 +1209,17 @@ const getPublicBracket = async (slug) => {
           participantLinks: {
             include: {
               registration: {
-                select: { teamName: true, teamLogoName: true, savedTeam: { select: { logoName: true } } },
+                select: { id: true, teamName: true, teamLogoName: true, savedTeam: { select: { logoName: true } } },
               },
             },
           },
+        },
+      },
+      teamRegistrations: {
+        select: {
+          id: true,
+          teamLogoName: true,
+          savedTeam: { select: { logoName: true } },
         },
       },
       bracket: true,
@@ -1216,6 +1227,14 @@ const getPublicBracket = async (slug) => {
   });
   if (!tournament) throw new HttpError(404, "Tournament not found.");
   const integration = tournament.challongeIntegration;
+  const nativeBracketData = tournament.bracket
+    ? overlayBracketLogos(tournament.bracket, [
+        ...(tournament.teamRegistrations || []),
+        ...(integration?.participantLinks || [])
+          .map((link) => link.registration)
+          .filter(Boolean),
+      ]).bracketData
+    : null;
   if (integration?.enabled) {
     const ageMs = integration.lastSuccessAt ? Date.now() - integration.lastSuccessAt.getTime() : Infinity;
     const staleAfterMs = (integration.syncFrequency === "one_minute" ? 3 : 10) * 60_000;
@@ -1227,7 +1246,7 @@ const getPublicBracket = async (slug) => {
         source: "native",
         requestedSource: "challonge",
         status: "fresh",
-        data: tournament.bracket.bracketData,
+        data: nativeBracketData,
         syncedAt: tournament.bracket.lastUpdatedAt,
         error: integration.lastErrorCode
           ? { code: integration.lastErrorCode, message: integration.lastErrorMessage }
@@ -1251,7 +1270,7 @@ const getPublicBracket = async (slug) => {
     return {
       source: "native",
       status: "fresh",
-      data: tournament.bracket.bracketData,
+      data: nativeBracketData,
       syncedAt: tournament.bracket.lastUpdatedAt,
       error: null,
       externalUrl: normalizeChallongePublicUrl(tournament.bracketLink),

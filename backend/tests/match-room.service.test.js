@@ -132,10 +132,42 @@ test("eligible Valorant matches receive an open Premier veto with copied partici
 
 test("match-room access provisions and returns the linked Premier veto", async () => {
   const linkedVeto = { id: "veto-1", code: "premier-room", status: "open", format: "premier", revision: 0 };
+  const logoParticipants = [
+    {
+      id: "participant-1",
+      slot: 1,
+      registrationId: "registration-1",
+      displayName: "Alpha",
+      seed: 3,
+      score: null,
+      result: null,
+      registration: {
+        user: null,
+        savedTeam: { logoName: "replacement.webp", captainUser: null, members: [] },
+        members: [],
+      },
+    },
+    {
+      id: "participant-2",
+      slot: 2,
+      registrationId: "registration-2",
+      displayName: "Bravo",
+      seed: 4,
+      score: null,
+      result: null,
+      registration: {
+        user: null,
+        teamLogoName: "stale.png",
+        savedTeam: { logoName: null, captainUser: null, members: [] },
+        members: [],
+      },
+    },
+  ];
   const match = premierMatch({
     assignedStaffId: "staff-1",
     assignedStaff: null,
     tournament: { id: "tournament-1", game: "Valorant", staffAssignments: [] },
+    participants: logoParticipants,
   });
   const room = {
     id: "match-room-1",
@@ -164,10 +196,7 @@ test("match-room access provisions and returns the linked Premier veto", async (
     ...match,
     assignedStaff: null,
     tournament: { id: "tournament-1", game: "Valorant", staffAssignments: [] },
-    participants: match.participants.map((participant, index) => ({
-      ...participant,
-      registration: index === 0 ? { user: { id: "staff-1" }, savedTeam: null, members: [] } : null,
-    })),
+    participants: logoParticipants,
   }) };
   prisma.matchRoom = {
     findUnique: async () => room,
@@ -184,6 +213,16 @@ test("match-room access provisions and returns the linked Premier veto", async (
     assert.equal(created, true);
     assert.deepEqual(result.match.veto, linkedVeto);
     assert.equal(result.access.role, "staff");
+    assert.equal(result.match.participants[0].logoUrl, "/api/uploads/team-logos/replacement.webp");
+    assert.equal(result.match.participants[1].logoUrl, null);
+    logoParticipants[1].registration = {
+      user: null,
+      teamLogoName: "historical.png",
+      savedTeam: null,
+      members: [],
+    };
+    const unlinkedResult = await service.getRoom({ code: room.code, user: { id: "staff-1", role: "player" } });
+    assert.equal(unlinkedResult.match.participants[1].logoUrl, "/api/uploads/team-logos/historical.png");
   } finally { restore(); }
 });
 

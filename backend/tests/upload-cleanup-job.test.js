@@ -42,6 +42,14 @@ test("file cleanup jobs serialize only configured directories and process them",
 
 test("team logo cleanup jobs preserve referenced files and delete unreferenced files", async () => {
   const removed = [];
+  const registrationQueries = [];
+  const registrations = [
+    {
+      id: "historical-registration",
+      savedTeamId: "different-team",
+      teamLogoName: "historical-snapshot.webp",
+    },
+  ];
   const { module: cleanupJob, restore } = loadModuleWithMocks(servicePath, {
     [uploadModulePath]: {
       removeUploadFiles: async (uploads) => removed.push(...uploads),
@@ -53,11 +61,49 @@ test("team logo cleanup jobs preserve referenced files and delete unreferenced f
     await cleanupJob.processTeamLogoCleanupJob(
       { filename: "shared.webp" },
       {
-        teamRegistration: { count: async () => 1 },
+        teamRegistration: {
+          count: async (query) => {
+            registrationQueries.push(query);
+            return 1;
+          },
+        },
         savedTeam: { count: async () => 0 },
       }
     );
     assert.deepEqual(removed, []);
+
+    await cleanupJob.processTeamLogoCleanupJob(
+      { filename: "saved-team-logo.webp" },
+      {
+        teamRegistration: {
+          count: async (query) => {
+            registrationQueries.push(query);
+            return 0;
+          },
+        },
+        savedTeam: { count: async () => 1 },
+      }
+    );
+    assert.deepEqual(removed, []);
+
+    await cleanupJob.processTeamLogoCleanupJob(
+      { filename: "historical-snapshot.webp" },
+      {
+        teamRegistration: {
+          count: async (query) => {
+            registrationQueries.push(query);
+            return registrations.filter(
+              (registration) => registration.teamLogoName === query.where.teamLogoName
+            ).length;
+          },
+        },
+        savedTeam: { count: async () => 0 },
+      }
+    );
+    assert.deepEqual(removed, []);
+    assert.deepEqual(registrationQueries[2], {
+      where: { teamLogoName: "historical-snapshot.webp" },
+    });
 
     await cleanupJob.processTeamLogoCleanupJob(
       { filename: "unused.webp" },

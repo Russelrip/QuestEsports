@@ -125,12 +125,14 @@ test("mapPublicBracket overlays current tournament registration names and logos"
         participant: [
           { id: 0, registrationId: "registration-1", name: "Old Alpha", shortCode: "OA", logoUrl: "/api/uploads/team-logos/old.png" },
           { id: 1, registrationId: "registration-2", name: "Old Beta", shortCode: "OB", logoUrl: null },
+          { id: 2, registrationId: "registration-3", name: "Old Gamma", shortCode: "OG", logoUrl: "/api/uploads/team-logos/old-gamma.png" },
         ],
         match: [],
       },
     }, [
       { id: "registration-1", teamName: "Thrownumi", teamLogoName: "old.png", savedTeam: { logoName: "new.webp" } },
       { id: "registration-2", teamName: "Beta Team", teamLogoName: "stale.png", savedTeam: { logoName: null } },
+      { id: "registration-3", teamName: "Gamma Team", teamLogoName: "historical.png", savedTeam: null },
     ]);
 
     assert.equal(result.bracketData.participant[0].name, "Thrownumi");
@@ -138,6 +140,56 @@ test("mapPublicBracket overlays current tournament registration names and logos"
     assert.equal(result.bracketData.participant[0].logoUrl, "/api/uploads/team-logos/new.webp");
     assert.equal(result.bracketData.participant[1].name, "Beta Team");
     assert.equal(result.bracketData.participant[1].logoUrl, null);
+    assert.equal(result.bracketData.participant[2].name, "Gamma Team");
+    assert.equal(result.bracketData.participant[2].logoUrl, "/api/uploads/team-logos/historical.png");
+  } finally {
+    restore();
+  }
+});
+
+test("native admin bracket responses overlay current logos without rewriting bracket data", async () => {
+  const rawBracket = {
+    id: "bracket-1",
+    tournamentId: "tournament-1",
+    format: "double_elimination",
+    status: "published",
+    seedData: [
+      { id: "registration-1", seed: 1, logoUrl: "/api/uploads/team-logos/old.png" },
+      { registrationId: "registration-2", seed: 2, logoUrl: "/api/uploads/team-logos/stale.png" },
+    ],
+    bracketData: {
+      participant: [
+        { id: 0, registrationId: "registration-1", logoUrl: "/api/uploads/team-logos/old.png" },
+        { id: 1, registrationId: "registration-2", logoUrl: "/api/uploads/team-logos/stale.png" },
+        { id: 2, registrationId: "registration-3", logoUrl: "/api/uploads/team-logos/history.png" },
+      ],
+      match: [{ id: 1, status: 4 }],
+    },
+    lastUpdatedAt: new Date("2026-08-20T00:00:00.000Z"),
+  };
+  const { module: bracketService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        tournamentBracket: { findUnique: async () => rawBracket },
+        teamRegistration: {
+          findMany: async () => [
+            { id: "registration-1", teamLogoName: "stale.png", savedTeam: { logoName: "new.png" } },
+            { id: "registration-2", teamLogoName: "stale.png", savedTeam: { logoName: null } },
+            { id: "registration-3", teamLogoName: "history.png", savedTeam: null },
+          ],
+        },
+      },
+    },
+  });
+
+  try {
+    const result = await bracketService.getAdminTournamentBracket("tournament-1");
+    assert.equal(result.seedData[0].logoUrl, "/api/uploads/team-logos/new.png");
+    assert.equal(result.seedData[1].logoUrl, null);
+    assert.equal(result.bracketData.participant[0].logoUrl, "/api/uploads/team-logos/new.png");
+    assert.equal(result.bracketData.participant[1].logoUrl, null);
+    assert.equal(result.bracketData.participant[2].logoUrl, "/api/uploads/team-logos/history.png");
+    assert.deepEqual(result.bracketData.match, rawBracket.bracketData.match);
   } finally {
     restore();
   }

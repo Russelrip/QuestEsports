@@ -7,6 +7,96 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
 const uploadCleanupModulePath = path.join(__dirname, "../src/lib/upload-cleanup.js");
+const jobsModulePath = path.join(__dirname, "../src/lib/jobs.js");
+const envModulePath = path.join(__dirname, "../src/config/env.js");
+const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
+
+test("scheduleTeamLogoCleanup queues committed logos after the grace period", async () => {
+  const enqueued = [];
+  const { module: cleanup, restore } = loadModuleWithMocks(uploadCleanupModulePath, {
+    [envModulePath]: { env: { CACHE_TTL_SECONDS: 7200 } },
+    [loggerModulePath]: { logger: { warn: () => {}, error: () => {} } },
+    [uploadModulePath]: {
+      removeUploadFiles: async () => undefined,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [jobsModulePath]: {
+      enqueueJob: async (name, payload, options) => {
+        enqueued.push({ name, payload, options });
+        return { accepted: true, availableAt: options.availableAt };
+      },
+    },
+  });
+
+  try {
+    const queuedAt = Date.now();
+    assert.equal(await cleanup.scheduleTeamLogoCleanup({ filename: "old-logo.webp" }), true);
+    assert.equal(await cleanup.scheduleTeamLogoCleanup({ filename: "" }), false);
+    assert.equal(enqueued.length, 1);
+    assert.equal(enqueued[0].name, "team_logo_cleanup");
+    assert.deepEqual(enqueued[0].payload, { filename: "old-logo.webp" });
+    assert.ok(
+      enqueued[0].options.availableAt.getTime() >=
+        queuedAt + cleanup.TEAM_LOGO_CLEANUP_GRACE_MS
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("scheduleTeamLogoCleanup does not delete immediately when queueing fails", async () => {
+  const removed = [];
+  const { module: cleanup, restore } = loadModuleWithMocks(uploadCleanupModulePath, {
+    [envModulePath]: { env: { CACHE_TTL_SECONDS: 0 } },
+    [loggerModulePath]: { logger: { warn: () => {}, error: () => {} } },
+    [uploadModulePath]: {
+      removeUploadFiles: async (uploads) => removed.push(...uploads),
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [jobsModulePath]: {
+      enqueueJob: async () => {
+        throw new Error("queue unavailable");
+      },
+    },
+  });
+
+  try {
+    assert.equal(await cleanup.scheduleTeamLogoCleanup({ filename: "old-logo.webp" }), false);
+    assert.deepEqual(removed, []);
+  } finally {
+    restore();
+  }
+});
+
+test("scheduleTeamLogoCleanup uses the transaction database and rethrows queue failures", async () => {
+  const enqueued = [];
+  const transactionDatabase = { backgroundJob: {} };
+  const { module: cleanup, restore } = loadModuleWithMocks(uploadCleanupModulePath, {
+    [envModulePath]: { env: { CACHE_TTL_SECONDS: 0 } },
+    [loggerModulePath]: { logger: { warn: () => {}, error: () => {} } },
+    [uploadModulePath]: {
+      removeUploadFiles: async () => undefined,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [jobsModulePath]: {
+      enqueueJob: async (name, payload, options) => {
+        enqueued.push({ name, payload, options });
+        throw new Error("queue unavailable");
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      cleanup.scheduleTeamLogoCleanup({ filename: "old-logo.webp", tx: transactionDatabase }),
+      /queue unavailable/
+    );
+    assert.equal(enqueued[0].options.database, transactionDatabase);
+    assert.ok(enqueued[0].options.availableAt instanceof Date);
+  } finally {
+    restore();
+  }
+});
 
 test("createImageAssets rolls back successful files when another persistence fails", async () => {
   const servicePath = path.join(__dirname, "../src/modules/media/media.service.js");

@@ -4,6 +4,10 @@ const { Status } = require("brackets-model");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { normalizeText } = require("../../lib/validation");
+const {
+  resolveEffectiveTeamLogoName,
+  getTeamLogoUrl,
+} = require("../teams/team-logo");
 const { buildActiveRegistrationWhere } = require("./registration-eligibility");
 
 const BRACKET_TABLES = ["participant", "stage", "group", "round", "match", "match_game"];
@@ -146,12 +150,6 @@ const parseIntegerValue = (value) => {
   return Number.isInteger(parsed) ? parsed : null;
 };
 
-const getTeamLogoUrl = (teamLogoName) =>
-  teamLogoName ? `/api/uploads/team-logos/${teamLogoName}` : null;
-
-const getCurrentTeamLogoName = (registration) =>
-  registration.savedTeam ? registration.savedTeam.logoName : registration.teamLogoName;
-
 const mapBracketRecord = (bracket) => {
   if (!bracket) {
     return null;
@@ -196,6 +194,35 @@ const buildBracketSummary = (bracketData, lastUpdatedAt) => {
   };
 };
 
+const overlayBracketLogos = (bracket, registrations = []) => {
+  if (!bracket || typeof bracket !== "object") return bracket;
+
+  const logosByRegistrationId = new Map(
+    registrations
+      .filter((registration) => registration?.id !== undefined && registration?.id !== null)
+      .map((registration) => [String(registration.id), getTeamLogoUrl(resolveEffectiveTeamLogoName(registration))])
+  );
+  const updateEntry = (entry, registrationId) =>
+    entry && typeof entry === "object" && logosByRegistrationId.has(String(registrationId))
+      ? { ...entry, logoUrl: logosByRegistrationId.get(String(registrationId)) }
+      : entry;
+
+  return {
+    ...bracket,
+    seedData: Array.isArray(bracket.seedData)
+      ? bracket.seedData.map((seed) => updateEntry(seed, seed?.registrationId ?? seed?.id))
+      : bracket.seedData,
+    bracketData: Array.isArray(bracket.bracketData?.participant)
+      ? {
+          ...bracket.bracketData,
+          participant: bracket.bracketData.participant.map((participant) =>
+            updateEntry(participant, participant?.registrationId)
+          ),
+        }
+      : bracket.bracketData,
+  };
+};
+
 const mapPublicBracket = (bracket, registrations = []) => {
   if (!bracket || bracket.status !== "published") {
     return {
@@ -210,7 +237,7 @@ const mapPublicBracket = (bracket, registrations = []) => {
       {
         name: registration.teamName,
         shortCode: buildShortCode(registration.teamName),
-        logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
+        logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(registration)),
       },
     ])
   );
@@ -253,7 +280,7 @@ const listApprovedBracketSeeds = async (tournamentId) => {
     seed: index + 1,
     name: registration.teamName,
     shortCode: buildShortCode(registration.teamName),
-    logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
+    logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(registration)),
     memberCount: registration.members.filter((member) => member.role !== "COACH").length,
   }));
 };
@@ -327,11 +354,21 @@ const generateTournamentBracket = async (tournamentId) => {
 };
 
 const getAdminTournamentBracket = async (tournamentId) => {
-  const bracket = await prisma.tournamentBracket.findUnique({
-    where: { tournamentId },
-  });
+  const [bracket, registrations] = await Promise.all([
+    prisma.tournamentBracket.findUnique({
+      where: { tournamentId },
+    }),
+    prisma.teamRegistration.findMany({
+      where: { tournamentId },
+      select: {
+        id: true,
+        teamLogoName: true,
+        savedTeam: { select: { logoName: true } },
+      },
+    }),
+  ]);
 
-  return mapBracketRecord(bracket);
+  return mapBracketRecord(bracket && overlayBracketLogos(bracket, registrations));
 };
 
 const updateTournamentBracketMatch = async (tournamentId, matchId, body) => {
@@ -422,6 +459,7 @@ module.exports = {
   getAdminTournamentBracket,
   listApprovedBracketSeeds,
   mapPublicBracket,
+  overlayBracketLogos,
   updateTournamentBracketMatch,
   publishTournamentBracket,
 };

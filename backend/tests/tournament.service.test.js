@@ -301,6 +301,8 @@ test("admin tournament registration counts exclude coach rows", () => {
         paymentStatus: "paid",
         verificationStatus: "verified",
         createdAt: new Date(),
+        teamLogoName: "stale-logo.png",
+        savedTeam: { logoName: "replacement-logo.webp" },
         captainName: "Captain",
         captainEmail: "captain@example.com",
         members: [
@@ -317,6 +319,8 @@ test("admin tournament registration counts exclude coach rows", () => {
         paymentStatus: "paid",
         verificationStatus: "verified",
         createdAt: new Date(),
+        teamLogoName: "historical-logo.png",
+        savedTeam: null,
         captainName: "Legacy Captain",
         captainEmail: "legacy@example.com",
         _count: { members: 7 },
@@ -325,6 +329,8 @@ test("admin tournament registration counts exclude coach rows", () => {
 
     assert.equal(result.registrations[0].memberCount, 3);
     assert.equal(result.registrations[1].memberCount, 7);
+    assert.equal(result.registrations[0].logoUrl, "/api/uploads/team-logos/replacement-logo.webp");
+    assert.equal(result.registrations[1].logoUrl, "/api/uploads/team-logos/historical-logo.png");
   } finally {
     restore();
   }
@@ -750,6 +756,48 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
     assert.equal(tournament.registrationCount, 1);
     assert.equal(tournament.capacityUsed, 2);
     assert.equal(capacityCountCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("admin tournament detail overlays live logos on its bracket field", () => {
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+  try {
+    const result = tournamentService.mapTournamentWithRegistrations({
+      id: "tournament-1",
+      slug: "quest-cup",
+      title: "Quest Cup",
+      game: "valorant",
+      status: "draft",
+      registrationMode: "open_entry",
+      teamSize: 5,
+      maxTeams: 16,
+      registrationFeeAmount: 0,
+      bracket: {
+        status: "published",
+        seedData: [{ id: "registration-1", logoUrl: "/old-seed.png" }],
+        bracketData: {
+          participant: [{ registrationId: "registration-1", logoUrl: "/old-participant.png" }],
+          match: [],
+        },
+      },
+    }, [{
+      id: "registration-1",
+      teamName: "Quest Five",
+      teamLogoName: "stale.png",
+      savedTeam: { logoName: "current.webp" },
+    }]);
+
+    assert.equal(result.bracket.seedData[0].logoUrl, "/api/uploads/team-logos/current.webp");
+    assert.equal(
+      result.bracket.bracketData.participant[0].logoUrl,
+      "/api/uploads/team-logos/current.webp"
+    );
   } finally {
     restore();
   }

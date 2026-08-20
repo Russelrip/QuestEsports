@@ -11,10 +11,11 @@ const authServiceModulePath = path.join(__dirname, "../src/modules/auth/auth.ser
 const legacyImportModulePath = path.join(__dirname, "../src/modules/media/legacy-import.service.js");
 const mediaServiceModulePath = path.join(__dirname, "../src/modules/media/media.service.js");
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
+const uploadCleanupModulePath = path.join(__dirname, "../src/lib/upload-cleanup.js");
 const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
 const teamServiceModulePath = path.join(__dirname, "../src/modules/teams/team.service.js");
 
-const loadAdminService = (prisma, uploadMock = {}) =>
+const loadAdminService = (prisma, uploadMock = {}, uploadCleanupMock = null) =>
   loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
     [authServiceModulePath]: {
@@ -33,9 +34,11 @@ const loadAdminService = (prisma, uploadMock = {}) =>
       teamLogoDirectory: "uploads/team-logos",
       ...uploadMock,
     },
+    ...(uploadCleanupMock ? { [uploadCleanupModulePath]: uploadCleanupMock } : {}),
     [loggerModulePath]: {
       logger: {
         warn: () => {},
+        error: () => {},
       },
     },
     [teamServiceModulePath]: {
@@ -992,6 +995,8 @@ test("updateAdminSavedTeam replaces its logo across linked tournament registrati
   const savedTeamUpdates = [];
   const savedTeamMemberUpdates = [];
   const registrationUpdates = [];
+  const bracketFindManyCalls = [];
+  const tournamentFindManyCalls = [];
   const removedUploads = [];
   const team = {
     id: "saved-team-1",
@@ -1010,20 +1015,30 @@ test("updateAdminSavedTeam replaces its logo across linked tournament registrati
   let savedTeamLookupCount = 0;
   const tx = {
     savedTeam: {
+      findUnique: async () => ({ logoName: "old-logo.png" }),
       update: async (args) => savedTeamUpdates.push(args),
     },
     savedTeamMember: {
       update: async (args) => savedTeamMemberUpdates.push(args),
     },
     teamRegistration: {
-      findMany: async () => [{ id: "registration-1", tournamentId: "tournament-1", teamName: "Quest Five" }],
+      findMany: async () => [
+        { id: "registration-paid", tournamentId: "tournament-1", teamName: "Quest Five", paymentStatus: "paid" },
+        { id: "registration-unpaid", tournamentId: "tournament-2", teamName: "Quest Five", paymentStatus: "unpaid" },
+      ],
       updateMany: async (args) => registrationUpdates.push(args),
     },
     tournamentBracket: {
-      findMany: async () => [],
+      findMany: async (args) => {
+        bracketFindManyCalls.push(args);
+        return [];
+      },
     },
     tournament: {
-      findMany: async () => [],
+      findMany: async (args) => {
+        tournamentFindManyCalls.push(args);
+        return [];
+      },
     },
   };
   const { module: adminService, restore } = loadAdminService({
@@ -1041,6 +1056,8 @@ test("updateAdminSavedTeam replaces its logo across linked tournament registrati
   }, {
     persistTeamLogoUpload: async () => ({ filename: "new-logo.webp" }),
     removeUploadFiles: async (uploads) => removedUploads.push(...uploads),
+  }, {
+    scheduleTeamLogoCleanup: async ({ filename }) => removedUploads.push({ scheduled: filename }),
   });
 
   try {
@@ -1072,8 +1089,244 @@ test("updateAdminSavedTeam replaces its logo across linked tournament registrati
       where: { savedTeamId: "saved-team-1" },
       data: { teamName: "Quest Five", teamLogoName: "new-logo.webp" },
     }]);
+    assert.deepEqual(bracketFindManyCalls, []);
+    assert.deepEqual(tournamentFindManyCalls, []);
     assert.equal(updated.logoUrl, "/api/uploads/team-logos/new-logo.webp");
-    assert.deepEqual(removedUploads, [{ directory: "uploads/team-logos", filename: "old-logo.png" }]);
+    assert.deepEqual(removedUploads, [{ scheduled: "old-logo.png" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("updateAdminSavedTeam removes its logo from the saved team and every linked registration", async () => {
+  const savedTeamUpdates = [];
+  const registrationUpdates = [];
+  const removedUploads = [];
+  const team = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    teamTag: "Q5",
+    logoName: "old-logo.png",
+    country: "Sri Lanka",
+    organizationName: null,
+    updatedAt: new Date("2026-07-20T10:00:00.000Z"),
+    captainUser: { firstName: "Team", lastName: "Captain", username: "captain" },
+    members: [{ id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: null, discord: null, riotId: null, inviteStatus: "accepted" }],
+    _count: { members: 1 },
+  };
+  let lookupCount = 0;
+  const tx = {
+    savedTeam: {
+      findUnique: async () => ({ logoName: "old-logo.png" }),
+      update: async (args) => savedTeamUpdates.push(args),
+    },
+    savedTeamMember: { update: async () => undefined },
+    teamRegistration: {
+      findMany: async () => [
+        { id: "registration-paid", tournamentId: "tournament-1", teamName: "Quest Five", paymentStatus: "paid" },
+        { id: "registration-unpaid", tournamentId: "tournament-2", teamName: "Quest Five", paymentStatus: "unpaid" },
+      ],
+      updateMany: async (args) => registrationUpdates.push(args),
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: {
+      findUnique: async () => ({ ...team, logoName: lookupCount++ === 0 ? "old-logo.png" : null }),
+      count: async () => 0,
+    },
+    teamRegistration: { count: async () => 0 },
+    $transaction: async (work) => work(tx),
+  }, {
+    removeUploadFiles: async (uploads) => removedUploads.push(...uploads),
+  }, {
+    scheduleTeamLogoCleanup: async ({ filename }) => removedUploads.push({ scheduled: filename }),
+  });
+
+  try {
+    const updated = await adminService.updateAdminSavedTeam(
+      "saved-team-1",
+      {
+        name: "Quest Five",
+        teamTag: "Q5",
+        country: "Sri Lanka",
+        organizationName: "Independent",
+        removeLogo: "true",
+        members: JSON.stringify([{ id: "member-1", name: "Player One", email: "player@example.com" }]),
+      }
+    );
+
+    assert.deepEqual(savedTeamUpdates[0].data, {
+      name: "Quest Five",
+      teamTag: "Q5",
+      country: "Sri Lanka",
+      organizationName: null,
+      logoName: null,
+    });
+    assert.deepEqual(registrationUpdates, [{
+      where: { savedTeamId: "saved-team-1" },
+      data: { teamName: "Quest Five", teamLogoName: null },
+    }]);
+    assert.equal(updated.logoUrl, null);
+    assert.deepEqual(removedUploads, [{ scheduled: "old-logo.png" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("updateAdminSavedTeam metadata-only edits omit logo writes", async () => {
+  const savedTeamUpdates = [];
+  const registrationUpdates = [];
+  const scheduledLogos = [];
+  const team = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    teamTag: "Q5",
+    logoName: "existing-logo.png",
+    country: "Sri Lanka",
+    organizationName: null,
+    updatedAt: new Date("2026-07-20T10:00:00.000Z"),
+    captainUser: { firstName: "Team", lastName: "Captain", username: "captain" },
+    members: [{ id: "member-1", role: "PLAYER", name: "Player One", email: "player@example.com", phone: null, discord: null, riotId: null, inviteStatus: "accepted" }],
+    _count: { members: 1 },
+  };
+  const tx = {
+    savedTeam: { update: async (args) => savedTeamUpdates.push(args) },
+    savedTeamMember: { update: async () => undefined },
+    teamRegistration: {
+      findMany: async () => [{ id: "registration-1", tournamentId: "tournament-1", teamName: "Quest Five" }],
+      updateMany: async (args) => registrationUpdates.push(args),
+    },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: { findUnique: async () => team },
+    $transaction: async (work) => work(tx),
+  }, {}, {
+    scheduleTeamLogoCleanup: async ({ filename }) => scheduledLogos.push(filename),
+  });
+
+  try {
+    await adminService.updateAdminSavedTeam("saved-team-1", {
+      name: "Quest Five",
+      teamTag: "Q5",
+      country: "Sri Lanka",
+      organizationName: "Quest Esports",
+      members: JSON.stringify([{ id: "member-1", name: "Player One", email: "player@example.com" }]),
+    });
+
+    assert.deepEqual(savedTeamUpdates[0].data, {
+      name: "Quest Five",
+      teamTag: "Q5",
+      country: "Sri Lanka",
+      organizationName: "Quest Esports",
+    });
+    assert.deepEqual(registrationUpdates, [{
+      where: { savedTeamId: "saved-team-1" },
+      data: { teamName: "Quest Five" },
+    }]);
+    assert.deepEqual(scheduledLogos, []);
+  } finally {
+    restore();
+  }
+});
+
+test("updateAdminSavedTeam removes a newly uploaded logo when its transaction fails", async () => {
+  const removedUploads = [];
+  const transactionError = Object.assign(new Error("duplicate team"), { code: "P2002" });
+  const team = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    teamTag: "Q5",
+    logoName: "old-logo.png",
+    country: "Sri Lanka",
+    organizationName: null,
+    members: [{ id: "member-1", role: "PLAYER" }],
+  };
+  const tx = {
+    savedTeam: {
+      findUnique: async () => ({ logoName: "old-logo.png" }),
+      update: async () => { throw transactionError; },
+    },
+    teamRegistration: { findMany: async () => [] },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: { findUnique: async () => team },
+    $transaction: async (work) => work(tx),
+  }, {
+    persistTeamLogoUpload: async () => ({ filename: "new-logo.webp" }),
+    removeUploadFiles: async (uploads) => removedUploads.push(...uploads),
+  }, {
+    removeUploadsQuietly: async (uploads) => removedUploads.push(...uploads),
+    scheduleTeamLogoCleanup: async ({ filename }) => removedUploads.push({ scheduled: filename }),
+  });
+
+  try {
+    await assert.rejects(
+      adminService.updateAdminSavedTeam(
+        "saved-team-1",
+        {
+          name: "Quest Five",
+          teamTag: "Q5",
+          country: "Sri Lanka",
+          organizationName: "Independent",
+          members: JSON.stringify([{ id: "member-1", name: "Player One", email: "player@example.com" }]),
+        },
+        { buffer: Buffer.from("logo") }
+      ),
+      (error) => error.statusCode === 409 && /already in use/.test(error.message)
+    );
+    assert.deepEqual(removedUploads, [{ directory: "uploads/team-logos", filename: "new-logo.webp" }]);
+    assert.equal(removedUploads.some((entry) => entry.scheduled), false);
+  } finally {
+    restore();
+  }
+});
+
+test("updateAdminSavedTeam rolls back a new upload when transactional cleanup enqueue fails", async () => {
+  const removedUploads = [];
+  const transactionError = new Error("queue unavailable");
+  const team = {
+    id: "saved-team-1",
+    name: "Quest Five",
+    teamTag: "Q5",
+    logoName: "old-logo.png",
+    country: "Sri Lanka",
+    organizationName: null,
+    members: [{ id: "member-1", role: "PLAYER" }],
+  };
+  const tx = {
+    savedTeam: {
+      findUnique: async () => ({ logoName: "old-logo.png" }),
+      update: async () => undefined,
+    },
+    teamRegistration: { findMany: async () => [] },
+    savedTeamMember: { update: async () => undefined },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    savedTeam: { findUnique: async () => team },
+    $transaction: async (work) => work(tx),
+  }, {
+    persistTeamLogoUpload: async () => ({ filename: "new-logo.webp" }),
+  }, {
+    removeUploadsQuietly: async (uploads) => removedUploads.push(...uploads),
+    scheduleTeamLogoCleanup: async () => { throw transactionError; },
+  });
+
+  try {
+    await assert.rejects(
+      adminService.updateAdminSavedTeam(
+        "saved-team-1",
+        {
+          name: "Quest Five",
+          teamTag: "Q5",
+          country: "Sri Lanka",
+          organizationName: "Independent",
+          members: JSON.stringify([{ id: "member-1", name: "Player One", email: "player@example.com" }]),
+        },
+        { buffer: Buffer.from("logo") }
+      ),
+      transactionError
+    );
+    assert.deepEqual(removedUploads, [{ directory: "uploads/team-logos", filename: "new-logo.webp" }]);
   } finally {
     restore();
   }
@@ -1449,7 +1702,8 @@ test("getAdminTeamRegistrationById loads the selected registration roster", asyn
         adminSlotReservation: null,
         createdAt: new Date("2026-07-20T10:00:00.000Z"),
         contactEmail: "captain@example.com",
-        teamLogoName: null,
+        teamLogoName: "stale-logo.png",
+        savedTeam: { logoName: null },
         tournament: { id: "tournament-1", slug: "quest-cup", title: "Quest Cup", status: "registration_open", isPublished: true },
         captainName: "Team Captain",
         captainEmail: "captain@example.com",
@@ -1467,6 +1721,7 @@ test("getAdminTeamRegistrationById loads the selected registration roster", asyn
     const result = await adminService.getAdminTeamRegistrationById("registration-1");
     assert.equal(result.members.length, 1);
     assert.equal(result.members[0].name, "Team Captain");
+    assert.equal(result.logoUrl, null);
   } finally {
     restore();
   }

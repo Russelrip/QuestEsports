@@ -7,6 +7,7 @@ const { decryptSecret } = require("../../lib/secret-box");
 const {
   removeUploadsQuietly,
   removeTeamLogoIfUnreferenced,
+  scheduleTeamLogoCleanup,
 } = require("../../lib/upload-cleanup");
 const {
   EXCEL_CONTENT_TYPE,
@@ -49,6 +50,10 @@ const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { buildShortCode } = require("../tournaments/bracket.service");
 const { normalizeCoachSubmission } = require("../tournaments/coach.validation");
 const { assertNoCoachPlayerRoleConflict } = require("../tournaments/role-conflict.service");
+const {
+  resolveEffectiveTeamLogoName,
+  getTeamLogoUrl,
+} = require("../teams/team-logo");
 
 const REGISTRATION_STATUSES = new Set(["pending", "approved", "rejected", "waitlisted"]);
 const PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
@@ -160,6 +165,7 @@ const TEAM_REGISTRATION_INCLUDE = {
       createdAt: true,
     },
   },
+  savedTeam: { select: { logoName: true } },
 };
 
 const TEAM_REGISTRATION_SUMMARY_SELECT = {
@@ -247,9 +253,7 @@ const mapTeamRegistration = (registration) => ({
     : null,
   createdAt: registration.createdAt,
   contactEmail: registration.contactEmail,
-  logoUrl: registration.teamLogoName
-    ? `/api/uploads/team-logos/${registration.teamLogoName}`
-    : null,
+  logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(registration)),
   tournament: registration.tournament,
   savedTeamLinked: Boolean(registration.savedTeamId),
   captain: {
@@ -2265,17 +2269,33 @@ const updateAdminSavedTeam = async (teamId, body, file) => {
   if (new Set(normalizedMembers.map((member) => member.email)).size !== normalizedMembers.length) throw new HttpError(400, "Roster member emails must be unique.");
 
   const persistedLogo = file ? await persistTeamLogoUpload(file) : null;
-  const nextLogoName = persistedLogo?.filename || (removeLogo ? null : existing.logoName);
+  const logoMutationRequested = Boolean(file) || removeLogo;
+  const nextLogoName = file
+    ? persistedLogo.filename
+    : removeLogo
+      ? null
+      : existing.logoName;
+  const savedTeamData = { name, teamTag, country, organizationName };
+  if (logoMutationRequested) savedTeamData.logoName = nextLogoName;
+  const registrationData = { teamName: name };
+  if (logoMutationRequested) registrationData.teamLogoName = nextLogoName;
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await runAdminSerializable(async (tx) => {
+      const currentTeam = logoMutationRequested
+        ? await tx.savedTeam.findUnique({
+            where: { id: teamId },
+            select: { logoName: true },
+          })
+        : null;
+      const previousLogoName = currentTeam?.logoName ?? null;
       const linkedRegistrations = await tx.teamRegistration.findMany({
         where: { savedTeamId: teamId },
         select: { id: true, tournamentId: true, teamName: true },
       });
       await tx.savedTeam.update({
         where: { id: teamId },
-        data: { name, teamTag, country, organizationName, logoName: nextLogoName },
+        data: savedTeamData,
       });
       for (const member of normalizedMembers) {
         await tx.savedTeamMember.update({
@@ -2287,55 +2307,54 @@ const updateAdminSavedTeam = async (teamId, body, file) => {
       if (linkedRegistrations.length > 0) {
         await tx.teamRegistration.updateMany({
           where: { savedTeamId: teamId },
-          data: {
-            teamName: name,
-            ...(nextLogoName !== existing.logoName ? { teamLogoName: nextLogoName } : {}),
-          },
+          data: registrationData,
         });
 
-        const registrationIds = new Set(linkedRegistrations.map((registration) => registration.id));
-        const tournamentIds = [...new Set(linkedRegistrations.map((registration) => registration.tournamentId))];
-        const previousNames = new Set([
-          existing.name,
-          ...linkedRegistrations.map((registration) => registration.teamName),
-        ].filter((previousName) => previousName && previousName !== name));
-        const brackets = await tx.tournamentBracket.findMany({
-          where: { tournamentId: { in: tournamentIds } },
-          select: { id: true, seedData: true, bracketData: true },
-        });
-        for (const bracket of brackets) {
-          const synced = syncBracketTeamName(bracket, registrationIds, name);
-          if (synced.changed) {
-            await tx.tournamentBracket.update({
-              where: { id: bracket.id },
-              data: { seedData: synced.seedData, bracketData: synced.bracketData },
-            });
+        if (existing.name !== name) {
+          const registrationIds = new Set(linkedRegistrations.map((registration) => registration.id));
+          const tournamentIds = [...new Set(linkedRegistrations.map((registration) => registration.tournamentId))];
+          const previousNames = new Set([
+            existing.name,
+            ...linkedRegistrations.map((registration) => registration.teamName),
+          ].filter((previousName) => previousName && previousName !== name));
+          const brackets = await tx.tournamentBracket.findMany({
+            where: { tournamentId: { in: tournamentIds } },
+            select: { id: true, seedData: true, bracketData: true },
+          });
+          for (const bracket of brackets) {
+            const synced = syncBracketTeamName(bracket, registrationIds, name);
+            if (synced.changed) {
+              await tx.tournamentBracket.update({
+                where: { id: bracket.id },
+                data: { seedData: synced.seedData, bracketData: synced.bracketData },
+              });
+            }
           }
-        }
 
-        const tournaments = await tx.tournament.findMany({
-          where: { id: { in: tournamentIds }, scheduleData: { not: Prisma.JsonNull } },
-          select: { id: true, scheduleData: true },
-        });
-        for (const tournament of tournaments) {
-          const synced = syncScheduleTeamName(tournament.scheduleData, previousNames, name);
-          if (synced.changed) {
-            await tx.tournament.update({
-              where: { id: tournament.id },
-              data: { scheduleData: synced.scheduleData },
-            });
+          const tournaments = await tx.tournament.findMany({
+            where: { id: { in: tournamentIds }, scheduleData: { not: Prisma.JsonNull } },
+            select: { id: true, scheduleData: true },
+          });
+          for (const tournament of tournaments) {
+            const synced = syncScheduleTeamName(tournament.scheduleData, previousNames, name);
+            if (synced.changed) {
+              await tx.tournament.update({
+                where: { id: tournament.id },
+                data: { scheduleData: synced.scheduleData },
+              });
+            }
           }
         }
       }
+      if (previousLogoName && previousLogoName !== nextLogoName) {
+        await scheduleTeamLogoCleanup({
+          filename: previousLogoName,
+          tx,
+          context: { operation: "updateAdminSavedTeam", teamId },
+        });
+      }
+      return { previousLogoName };
     });
-
-    if (existing.logoName && existing.logoName !== nextLogoName) {
-      await removeTeamLogoIfUnreferenced({
-        prisma,
-        filename: existing.logoName,
-        context: { operation: "updateAdminSavedTeam", teamId },
-      });
-    }
   } catch (error) {
     if (persistedLogo) {
       await removeUploadsQuietly(

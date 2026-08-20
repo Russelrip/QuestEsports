@@ -3,6 +3,10 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const { normalizeText } = require("../../lib/validation");
+const {
+  resolveEffectiveTeamLogoName,
+  getTeamLogoUrl,
+} = require("../teams/team-logo");
 const { ensureMatchRoom, notifyMatchChange } = require("../match-rooms/match-room.service");
 
 const MATCH_STATUSES = new Set([
@@ -72,8 +76,7 @@ const matchInclude = {
 };
 
 const participantLogoUrl = (participant) => {
-  const name = participant.registration?.savedTeam?.logoName || participant.registration?.teamLogoName;
-  return name ? `/api/uploads/team-logos/${name}` : null;
+  return getTeamLogoUrl(resolveEffectiveTeamLogoName(participant.registration));
 };
 
 const mapMatch = (match) => ({
@@ -489,12 +492,11 @@ const getHomeFeed = async () => {
       })),
     })),
     featuredCompetitors: featuredCompetitors.map((registration) => {
-      const logoName = registration.savedTeam?.logoName || registration.teamLogoName;
       return {
         id: registration.id,
         displayName: registration.entryType === "solo" ? registration.captainName : registration.teamName,
         entryType: registration.entryType,
-        logoUrl: logoName ? `/api/uploads/team-logos/${logoName}` : null,
+        logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(registration)),
         tournament: registration.tournament,
       };
     }),

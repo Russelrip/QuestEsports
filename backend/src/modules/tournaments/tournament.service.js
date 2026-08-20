@@ -30,6 +30,7 @@ const {
 const {
   buildShortCode,
   mapPublicBracket,
+  overlayBracketLogos,
 } = require("./bracket.service");
 const {
   buildActiveRegistrationWhere,
@@ -40,6 +41,10 @@ const {
   isPayHereConfigured,
 } = require("../payments/payment.service");
 const { ensureTeamRegistrationSaved } = require("../teams/team.service");
+const {
+  resolveEffectiveTeamLogoName,
+  getTeamLogoUrl,
+} = require("../teams/team-logo");
 const { getTournamentRegistrationState } = require("./registration-state");
 
 const TOURNAMENT_STATUSES = new Set([
@@ -256,12 +261,6 @@ const ensureSlugAvailable = async (slug, excludedTournamentId) => {
 
 const getTournamentBannerUrl = (bannerImageName) =>
   bannerImageName ? `/api/uploads/tournament-banners/${bannerImageName}` : null;
-
-const getTeamLogoUrl = (teamLogoName) =>
-  teamLogoName ? `/api/uploads/team-logos/${teamLogoName}` : null;
-
-const getCurrentTeamLogoName = (registration) =>
-  registration.savedTeam ? registration.savedTeam.logoName : registration.teamLogoName;
 
 const getShowcaseImageUrl = (imageName) =>
   imageName ? `/api/uploads/tournament-banners/${imageName}` : null;
@@ -633,14 +632,19 @@ const mapAdminTournament = (tournament) => ({
 const mapTournamentWithRegistrations = (
   tournament,
   registrations = tournament.teamRegistrations || []
-) => ({
-  ...mapAdminTournament(tournament),
-  bracket: tournament.bracket || null,
-  registrations: registrations.map((registration) => ({
+) => {
+  const liveBracket = tournament.bracket
+    ? overlayBracketLogos(tournament.bracket, registrations)
+    : null;
+
+  return {
+    ...mapAdminTournament(tournament),
+    bracket: liveBracket,
+    registrations: registrations.map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
     contactEmail: registration.contactEmail,
-    logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
+    logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(registration)),
     status: registration.status,
     paymentStatus: registration.paymentStatus,
     verificationStatus: registration.verificationStatus,
@@ -655,8 +659,9 @@ const mapTournamentWithRegistrations = (
       discord: registration.captainDiscord,
       riotId: registration.captainRiotId,
     },
-  })),
-});
+    })),
+  };
+};
 
 const mapCompletedChallongeResult = (integration) => {
   if (!integration?.enabled || !integration.snapshotData) return null;
@@ -678,7 +683,7 @@ const mapCompletedChallongeResult = (integration) => {
       name: registration?.teamName || link?.displayName || participant.name || "Participant",
       seed: Number.isInteger(participant.seed) ? participant.seed : null,
       logoUrl: registration
-        ? getTeamLogoUrl(getCurrentTeamLogoName(registration))
+        ? getTeamLogoUrl(resolveEffectiveTeamLogoName(registration))
         : null,
     };
   };
@@ -710,7 +715,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
     .map((registration) => ({
     id: registration.id,
     teamName: registration.teamName,
-    logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
+    logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(registration)),
     shortCode: buildShortCode(registration.teamName),
     memberCount: (registration.members || []).filter((member) => member.role !== "COACH").length,
     status: registration.status,
@@ -723,7 +728,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
       (registration.entryType || "team") === "solo"
         ? registration.captainName
         : registration.teamName,
-    logoUrl: getTeamLogoUrl(getCurrentTeamLogoName(registration)),
+    logoUrl: getTeamLogoUrl(resolveEffectiveTeamLogoName(registration)),
     avatarUrl:
       (registration.entryType || "team") === "solo" && registration.user?.avatarImageName
         ? `/api/uploads/avatars/${registration.user.avatarImageName}`
