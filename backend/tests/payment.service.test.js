@@ -86,6 +86,7 @@ test("duplicate notifications are idempotent", async () => {
   const { module: service, restore } = load(prisma);
   try {
     assert.equal(await service.processPayHereNotification(body), current);
+    assert.equal(current.__tournamentProjectionChanged, false);
     assert.equal(updateCalls, 0);
   } finally { restore(); }
 });
@@ -111,6 +112,85 @@ test("late successful notifications are routed to manual review", async () => {
     assert.equal(result.status, "review_required");
     assert.equal(appliedStatus, "review_required");
   } finally { restore(); }
+});
+
+test("review-required notification with no registration target write is not tournament-cache relevant", async () => {
+  const body = {
+    merchant_id: env.PAYHERE_MERCHANT_ID,
+    order_id: "order-review-only",
+    payment_id: "pay-review-only",
+    payhere_amount: "1000.00",
+    payhere_currency: "LKR",
+    status_code: "2",
+  };
+  body.md5sig = signature(body);
+  const current = {
+    id: "tx-review-only",
+    providerOrderId: body.order_id,
+    amount: 1000,
+    currency: "LKR",
+    status: "expired",
+    notificationDigest: null,
+    registrationId: "registration-1",
+    merchandiseOrderId: null,
+    ticketOrderId: null,
+  };
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => ({ ...current, ...data }),
+    },
+    paymentNotificationAudit: { create: async () => undefined },
+  };
+  const { module: service, restore } = load({
+    paymentTransaction: { findUnique: async () => current },
+    $transaction: async (callback) => callback(tx),
+  });
+  try {
+    const result = await service.processPayHereNotification(body);
+    assert.equal(result.status, "review_required");
+    assert.equal(result.__tournamentProjectionChanged, false);
+  } finally {
+    restore();
+  }
+});
+
+test("actual terminal registration target writes remain tournament-cache relevant", async () => {
+  const current = {
+    id: "tx-registration-transition",
+    provider: "payhere",
+    status: "review_required",
+    registrationId: "registration-1",
+    registration: { id: "registration-1", tournamentId: "tournament-1" },
+    merchandiseOrderId: null,
+    ticketOrderId: null,
+  };
+  let registrationUpdate;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => ({ ...current, ...data }),
+    },
+    teamRegistration: {
+      update: async (args) => { registrationUpdate = args; },
+    },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => callback(tx),
+  });
+  try {
+    const result = await service.reconcilePayHerePayment({
+      transactionId: current.id,
+      decision: "mark_refunded",
+      note: "Refunded after manual review.",
+      providerRefundId: "refund-registration",
+      admin: { id: "admin-1" },
+    });
+    assert.equal(registrationUpdate.where.id, "registration-1");
+    assert.equal(result.__tournamentProjectionChanged, true);
+  } finally {
+    restore();
+  }
 });
 
 test("PayHere role conflicts preserve the signed payment as review_required with an audit", async () => {
@@ -168,6 +248,7 @@ test("PayHere role conflicts preserve the signed payment as review_required with
   try {
     const result = await service.processPayHereNotification(body);
     assert.equal(result.status, "review_required");
+    assert.equal(result.__tournamentProjectionChanged, false);
     assert.equal(updateData.status, "review_required");
     assert.match(updateData.statusMessage, /coach\/player role conflict/);
     assert.equal(auditData.appliedStatus, "review_required");
@@ -242,6 +323,7 @@ test("paid ticket state and its confirmation job commit in one transaction", asy
   try {
     const result = await service.processPayHereNotification(body);
     assert.equal(result.status, "paid");
+    assert.equal(result.__tournamentProjectionChanged, false);
     assert.equal(emailCalls.length, 1);
     assert.equal(emailCalls[0].database, tx);
     assert.equal(emailCalls[0].rawToken, "public-token");
@@ -334,6 +416,7 @@ test("admin cash confirmation activates pending entrance tickets", async () => {
       admin: { id: "admin-1" },
     });
     assert.equal(result.status, "paid");
+    assert.equal(result.__tournamentProjectionChanged, false);
     assert.equal(emailCalls.length, 1);
   } finally {
     restore();
@@ -368,6 +451,7 @@ test("expired registration maintenance releases review-required bank transfers",
   try {
     const result = await service.expireStaleCommerceReservations({ now });
     assert.equal(result.expiredRegistrations, 1);
+    assert.equal(result.__tournamentProjectionChanged, true);
     assert.deepEqual(transactionUpdates[0].where.status.in, [
       "created",
       "pending",
@@ -432,6 +516,7 @@ test("payment status immediately expires a stale tournament reservation", async 
     assert.equal(result.registration.expiresAt, null);
     assert.equal(result.registration.contactLink, "https://discord.gg/quest");
     assert.match(result.statusMessage, /Contact an administrator/);
+    assert.equal(result.__tournamentProjectionChanged, true);
   } finally {
     restore();
   }

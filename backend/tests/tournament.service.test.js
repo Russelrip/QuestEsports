@@ -755,7 +755,105 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
     });
     assert.equal(tournament.registrationCount, 1);
     assert.equal(tournament.capacityUsed, 2);
+    assert.equal("participantPagination" in tournament, false);
     assert.equal(capacityCountCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("public tournament participant pagination is opt-in and keeps full registration totals", async () => {
+  let findOptions;
+  let countOptions;
+  let bracketFindOptions;
+  const registrations = [
+    { id: "registration-1", teamName: "Alpha", captainName: "A", status: "approved", paymentStatus: "paid", members: [] },
+    { id: "registration-2", teamName: "Bravo", captainName: "B", status: "approved", paymentStatus: "paid", members: [] },
+  ];
+  const prisma = {
+    teamRegistration: {
+      count: async (options) => { countOptions = options; return 25; },
+      findMany: async (options) => {
+        bracketFindOptions = options;
+        return [{
+          id: "registration-outside-page",
+          teamName: "Outside Page",
+          teamLogoName: "stale.png",
+          savedTeam: { logoName: "current.png" },
+        }];
+      },
+    },
+    tournament: {
+      findFirst: async (options) => {
+        findOptions = options;
+        return {
+          id: "tournament-1",
+          slug: "quest-cup",
+          title: "Quest Cup",
+          game: "valorant",
+          status: "registration_open",
+          isPublished: true,
+          registrationMode: "open_entry",
+          teamSize: 5,
+          maxTeams: 32,
+          prizePool: "LKR 100,000",
+          format: "Single elimination",
+          registrationFeeAmount: 0,
+          bracket: {
+            status: "published",
+            bracketData: {
+              participant: [{
+                registrationId: "registration-outside-page",
+                name: "Stale Name",
+                logoUrl: "/stale-logo.png",
+              }],
+              match: [],
+            },
+          },
+          _count: { teamRegistrations: 4, adminSlotReservations: 0 },
+          adminSlotReservations: [],
+          teamRegistrations: registrations,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    const tournament = await tournamentService.getPublicTournamentBySlug("quest-cup", {
+      participantPage: "2",
+      participantPageSize: "75",
+    });
+
+    assert.equal(findOptions.include.teamRegistrations.skip, 50);
+    assert.equal(findOptions.include.teamRegistrations.take, 50);
+    assert.deepEqual(findOptions.include.teamRegistrations.orderBy, [
+      { teamName: "asc" },
+      { id: "asc" },
+    ]);
+    assert.equal(countOptions.where.tournamentId, "tournament-1");
+    assert.equal(tournament.registrationCount, 25);
+    assert.equal(tournament.capacityUsed, 4);
+    assert.equal(bracketFindOptions.where.tournamentId, "tournament-1");
+    assert.deepEqual(tournament.bracketData.participant[0], {
+      registrationId: "registration-outside-page",
+      name: "Outside Page",
+      shortCode: "OP",
+      logoUrl: "/api/uploads/team-logos/current.png",
+    });
+    assert.deepEqual(tournament.participantPagination, {
+      page: 2,
+      pageSize: 50,
+      total: 25,
+      totalPages: 1,
+    });
+    assert.equal(tournament.registeredParticipants.length, 2);
   } finally {
     restore();
   }

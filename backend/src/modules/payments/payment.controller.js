@@ -15,8 +15,15 @@ const {
   reviewBankTransfer,
 } = require("./bank-transfer.service");
 
+const markTournamentPaymentCache = (res, payment) => {
+  if (payment?.__tournamentProjectionChanged === true) {
+    res.locals.cacheTags = ["tournaments", "foundation"];
+  }
+};
+
 const notifyPayHere = asyncHandler(async (req, res) => {
-  await processPayHereNotification(req.body);
+  const payment = await processPayHereNotification(req.body);
+  markTournamentPaymentCache(res, payment);
   res.status(200).send("OK");
 });
 
@@ -26,6 +33,7 @@ const readPaymentStatus = asyncHandler(async (req, res) => {
     userId: req.user?.id,
     publicToken: req.get("x-order-token"),
   });
+  markTournamentPaymentCache(res, payment);
   res.status(200).json({ success: true, payment });
 });
 
@@ -52,6 +60,7 @@ const uploadBankTransferProof = asyncHandler(async (req, res) => {
     publicToken: req.get("x-order-token"),
     file: req.file,
   });
+  markTournamentPaymentCache(res, result);
   res.status(201).json({
     success: true,
     message: "Payment proof submitted for verification.",
@@ -84,6 +93,7 @@ const reviewBankTransferPayment = asyncHandler(async (req, res) => {
     reason: req.body.reason,
     admin: req.user,
   });
+  markTournamentPaymentCache(res, payment);
   res.status(200).json({
     success: true,
     message:
@@ -102,6 +112,7 @@ const reconcilePayHerePaymentController = asyncHandler(async (req, res) => {
     providerRefundId: req.body.providerRefundId,
     admin: req.user,
   });
+  markTournamentPaymentCache(res, payment);
   res.status(200).json({
     success: true,
     message: payment.status === "paid"
@@ -133,6 +144,7 @@ const reopenExpiredPayment = asyncHandler(async (req, res) => {
     transactionId: req.params.transactionId,
     admin: req.user,
   });
+  res.locals.cacheTags = ["tournaments", "foundation"];
   res.status(200).json({
     success: true,
     message: "Expired payment reopened and its slot reserved.",

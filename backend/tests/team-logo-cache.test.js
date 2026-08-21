@@ -72,11 +72,11 @@ test("captain and admin team PATCH routes invalidate both local projection tags"
 
     assert.deepEqual(teamInvalidations, [["tournaments", "foundation"]]);
     assert.deepEqual(adminInvalidations, [
-      ["tournaments"],
-      ["tournaments"],
-      ["tournaments"],
-      ["tournaments"],
-      ["tournaments"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
       ["tournaments", "foundation"],
       ["tournaments"],
     ]);

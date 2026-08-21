@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import RegisterTournamentButton from "@/components/tournaments/RegisterTournamentButton";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
@@ -17,6 +17,7 @@ import {
   Tournament,
   TournamentEventMedia,
   TournamentBracketData,
+  fetchPublicTournamentBySlug,
   getTournamentRegistrationPresentation,
   getTournamentRegistrationModeLabel,
 } from "@/lib/tournaments";
@@ -35,6 +36,12 @@ const MATCH_STATUS_LABELS: Record<number, string> = {
 export default function TournamentDetailsContent({ tournament, paymentCancelled = false }: { tournament: Tournament; paymentCancelled?: boolean }) {
   const [teamPagination, setTeamPagination] = useState({ tournamentId: tournament.id, page: 1 });
   const teamPage = teamPagination.tournamentId === tournament.id ? teamPagination.page : 1;
+  const [participantData, setParticipantData] = useState({
+    tournamentId: tournament.id,
+    participants: tournament.registeredParticipants || [],
+    pagination: tournament.participantPagination,
+  });
+  const participantRequestId = useRef(0);
   const [activeTab, setActiveTab] = useState<"overview" | "rules" | "schedule" | "bracket" | "participants">("overview");
   const [loadedChallongeUrl, setLoadedChallongeUrl] = useState<string | null>(null);
   const hasNativeBracket = tournament.bracketSource === "native"
@@ -49,12 +56,43 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
   );
   const safeActiveTab = canShowBracket || activeTab !== "bracket" ? activeTab : "overview";
   const isChallongeBracketLoaded = loadedChallongeUrl === challongeEmbedUrl;
-  const participants = tournament.registeredParticipants || [];
-  const teamPageCount = Math.max(1, Math.ceil(participants.length / TEAMS_PER_PAGE));
-  const visibleParticipants = participants.slice(
-    (teamPage - 1) * TEAMS_PER_PAGE,
-    teamPage * TEAMS_PER_PAGE
-  );
+  const participants = participantData.tournamentId === tournament.id
+    ? participantData.participants
+    : tournament.registeredParticipants || [];
+  const participantPagination = participantData.tournamentId === tournament.id
+    ? participantData.pagination
+    : tournament.participantPagination;
+  const totalParticipants = participantPagination?.total ?? participants.length;
+  const teamPageCount = participantPagination?.totalPages
+    ?? Math.max(1, Math.ceil(participants.length / TEAMS_PER_PAGE));
+  const visibleParticipants = participantPagination
+    ? participants
+    : participants.slice((teamPage - 1) * TEAMS_PER_PAGE, teamPage * TEAMS_PER_PAGE);
+
+  const handleParticipantPageChange = async (page: number) => {
+    if (!participantPagination) {
+      setTeamPagination({ tournamentId: tournament.id, page });
+      return;
+    }
+
+    const requestId = ++participantRequestId.current;
+
+    try {
+      const nextTournament = await fetchPublicTournamentBySlug(tournament.slug, {
+        participantPage: page,
+        participantPageSize: TEAMS_PER_PAGE,
+      });
+      if (requestId !== participantRequestId.current) return;
+      setTeamPagination({ tournamentId: tournament.id, page });
+      setParticipantData({
+        tournamentId: tournament.id,
+        participants: nextTournament.registeredParticipants || [],
+        pagination: nextTournament.participantPagination,
+      });
+    } catch {
+      // Keep the current page and data if the participant request fails.
+    }
+  };
 
   return (
     <Section className="pt-5 sm:pt-7">
@@ -122,12 +160,12 @@ export default function TournamentDetailsContent({ tournament, paymentCancelled 
         {safeActiveTab === "participants" && participants.length > 0 ? (
           <TeamsPanel
             teams={visibleParticipants}
-            totalTeams={participants.length}
+            totalTeams={totalParticipants}
             title={tournament.entryType === "solo" ? "Registered Players" : "Registered Teams"}
             isSolo={tournament.entryType === "solo"}
             page={teamPage}
             pageCount={teamPageCount}
-            onPageChange={(page) => setTeamPagination({ tournamentId: tournament.id, page })}
+            onPageChange={handleParticipantPageChange}
           />
         ) : safeActiveTab === "participants" ? (
           <Card className="p-6 sm:p-8"><h3 className="text-3xl text-white">Participants</h3><p className="mt-3 text-sm text-slate-400">Approved participants will appear here.</p></Card>

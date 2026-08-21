@@ -109,3 +109,46 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
     restore();
   }
 });
+
+test("v1 tournament detail mutations invalidate both foundation and tournament caches", () => {
+  const invalidations = [];
+  const { restore } = loadModuleWithMocks(v1Path, {
+    [envPath]: { env: { CACHE_TTL_SECONDS: 300, CHALLONGE_BRACKET_CACHE_SECONDS: 30 } },
+    [authPath]: { attachSession: passMiddleware, requireAuth: passMiddleware, requireAdmin: requireAdminMock },
+    [asyncHandlerPath]: { asyncHandler: (handler) => handler },
+    [cacheControlPath]: { cachePublicData: () => passMiddleware },
+    [responseCachePath]: {
+      cacheJson: () => passMiddleware,
+      invalidateCache: (...tags) => {
+        invalidations.push(tags);
+        return passMiddleware;
+      },
+    },
+    [tournamentServicePath]: { getPublicTournamentBySlug: async () => ({}) },
+    [matchControllerPath]: controllerMock,
+    [challongeControllerPath]: controllerMock,
+    [staffControllerPath]: controllerMock,
+    [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
+    [permissionMiddlewarePath]: {
+      requireSuperAdmin: () => passMiddleware,
+      requireTournamentStaff: () => passMiddleware,
+      requireMatchStaff: () => passMiddleware,
+    },
+    [valorantControllerPath]: controllerMock,
+    [valorantLeaderboardControllerPath]: controllerMock,
+  });
+  try {
+    assert.deepEqual(invalidations.slice(0, 8), [
+      ["foundation"],
+      ["foundation"],
+      ["foundation", "tournaments"],
+      ["foundation", "tournaments"],
+      ["foundation", "tournaments"],
+      ["foundation", "tournaments"],
+      ["foundation", "tournaments"],
+      ["foundation", "tournaments"],
+    ]);
+  } finally {
+    restore();
+  }
+});

@@ -46,7 +46,7 @@ router.get(
   publicCache,
   shortCache,
   asyncHandler(async (req, res) => {
-    const tournament = await getPublicTournamentBySlug(req.params.slug);
+    const tournament = await getPublicTournamentBySlug(req.params.slug, req.query);
     const data = { ...tournament };
     delete data.bracketData;
     res.status(200).json({
@@ -128,25 +128,28 @@ router.post(
   "/admin/tournaments/:id/challonge/participants",
   requireAuth,
   tournamentAdmin,
+  invalidateCache("foundation", "tournaments"),
   challongeController.createParticipant
 );
 router.put(
   "/admin/tournaments/:id/challonge/participants/:participantId",
   requireAuth,
   tournamentAdmin,
+  invalidateCache("foundation", "tournaments"),
   challongeController.updateParticipant
 );
 router.delete(
   "/admin/tournaments/:id/challonge/participants/:participantId",
   requireAuth,
   tournamentAdmin,
+  invalidateCache("foundation", "tournaments"),
   challongeController.deleteParticipant
 );
 router.patch(
   "/admin/tournaments/:id/challonge/participant-mappings/:participantId",
   requireAuth,
   tournamentAdmin,
-  invalidateCache("foundation"),
+  invalidateCache("foundation", "tournaments"),
   challongeController.mapParticipant
 );
 router.put(
@@ -160,6 +163,7 @@ router.put(
   "/admin/tournaments/:id/challonge/matches/:matchId",
   requireAuth,
   tournamentAdmin,
+  invalidateCache("foundation", "tournaments"),
   challongeController.updateMatchResult
 );
 

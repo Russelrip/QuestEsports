@@ -6,13 +6,15 @@ import { Container } from "@/components/ui/container";
 import { buildNoIndexMetadata } from "@/lib/site";
 import { fetchPublicTournamentBySlug } from "@/lib/tournaments";
 
+const participantRequest = { participantPage: 1, participantPageSize: 10 };
+
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const tournament = await fetchPublicTournamentBySlug(slug).catch(() => null);
+  const tournament = await fetchPublicTournamentBySlug(slug, participantRequest).catch(() => null);
   return buildNoIndexMetadata(
     tournament ? `Register — ${tournament.title}` : "Tournament Registration",
     tournament ? `Register for ${tournament.title}.` : "Tournament registration page.",
@@ -26,7 +28,7 @@ export default async function TournamentRegisterPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const tournament = await fetchPublicTournamentBySlug(slug).catch(() => null);
+  const tournament = await fetchPublicTournamentBySlug(slug, participantRequest).catch(() => null);
   if (!tournament) notFound();
   return (
     <PageLayout

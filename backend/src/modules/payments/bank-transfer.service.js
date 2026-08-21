@@ -16,6 +16,17 @@ const { assertNoCoachPlayerRoleConflict } = require("../tournaments/role-conflic
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { sendTicketOrderEmail } = require("../../lib/mail/sendTicketOrderEmail");
 
+const markTournamentProjectionChange = (value, changed) => {
+  if (value && typeof value === "object") {
+    Object.defineProperty(value, "__tournamentProjectionChanged", {
+      value: Boolean(changed),
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return value;
+};
+
 const runSerializable = async (work) => {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
@@ -245,7 +256,10 @@ const submitBankTransferProof = async ({ providerOrderId, user, publicToken, fil
         { operation: "replaceBankTransferProof", transactionId: transaction.id }
       );
     }
-    return { proof: saved.proof, reviewUntil: saved.reviewUntil };
+    return markTournamentProjectionChange(
+      { proof: saved.proof, reviewUntil: saved.reviewUntil },
+      Boolean(transaction.registrationId),
+    );
   } catch (error) {
     await removeUploadsQuietly(
       [{ directory: bankTransferProofDirectory, filename: persisted.filename }],
@@ -306,13 +320,14 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
     if (!current.bankTransferProof) {
       throw new HttpError(409, "No payment proof has been submitted.");
     }
-    if (current.status === "paid") return current;
+    if (current.status === "paid") return markTournamentProjectionChange(current, false);
     if (current.status !== "review_required") {
       throw new HttpError(409, "This payment is not awaiting review.");
     }
 
     const now = new Date();
     if (normalizedDecision === "approve") {
+      let tournamentRegistrationChanged = false;
       const deadline =
         current.registration?.reservedUntil || current.ticketOrder?.expiresAt;
       if (!deadline || deadline <= now) {
@@ -338,6 +353,7 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
           where: { id: current.registration.id },
           data: { paymentStatus: "paid", reservedUntil: null },
         });
+        tournamentRegistrationChanged = true;
       } else {
         await tx.ticketOrder.update({
           where: { id: current.ticketOrder.id },
@@ -379,9 +395,10 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
           data: { confirmationEmailQueuedAt: now },
         });
       }
-      return payment;
+      return markTournamentProjectionChange(payment, tournamentRegistrationChanged);
     }
 
+    let tournamentRegistrationChanged = false;
     if (current.registration) {
       if (tx.adminSlotReservation?.deleteMany) {
         await tx.adminSlotReservation.deleteMany({
@@ -396,6 +413,7 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
           assignedSlotNumber: null,
         },
       });
+      tournamentRegistrationChanged = true;
     } else {
       await tx.ticketOrder.update({
         where: { id: current.ticketOrder.id },
@@ -417,7 +435,7 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
     return tx.paymentTransaction.update({
       where: { id: current.id },
       data: { status: "failed", statusMessage: normalizedReason },
-    });
+    }).then((payment) => markTournamentProjectionChange(payment, tournamentRegistrationChanged));
   });
 
   if (result.status === "paid" && result.registrationId) {

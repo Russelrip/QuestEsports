@@ -706,9 +706,15 @@ const mapCompletedChallongeResult = (integration) => {
   };
 };
 
-const mapTournamentWithPublicTeams = (tournament) => ({
+const mapTournamentWithPublicTeams = (
+  tournament,
+  { participantPagination, bracketRegistrations } = {},
+) => ({
   ...mapTournament(tournament),
-  ...mapPublicBracket(tournament.bracket, tournament.teamRegistrations),
+  ...mapPublicBracket(
+    tournament.bracket,
+    bracketRegistrations || tournament.teamRegistrations,
+  ),
   resultSummary: mapCompletedChallongeResult(tournament.challongeIntegration),
   registeredTeams: (tournament.teamRegistrations || [])
     .filter((registration) => (registration.entryType || "team") === "team")
@@ -737,6 +743,7 @@ const mapTournamentWithPublicTeams = (tournament) => ({
     shortCode: buildShortCode(registration.teamName),
     memberCount: (registration.members || []).filter((member) => member.role !== "COACH").length,
   })),
+  ...(participantPagination ? { participantPagination } : {}),
 });
 
 const sortPublicTournaments = (tournaments) =>
@@ -1172,13 +1179,18 @@ const listPublicTournaments = async ({ game } = {}) => {
   return sortPublicTournaments(tournaments.map(mapTournament));
 };
 
-const getPublicTournamentBySlug = async (slug) => {
+const getPublicTournamentBySlug = async (slug, query = {}) => {
   const normalizedSlug = normalizeSlug(slug);
 
   if (!normalizedSlug) {
     throw new HttpError(400, "Tournament slug is required.");
   }
 
+  const shouldPaginateParticipants =
+    query.participantPage !== undefined || query.participantPageSize !== undefined;
+  const participantPagination = shouldPaginateParticipants
+    ? buildPagination({ page: query.participantPage, pageSize: query.participantPageSize })
+    : null;
   const tournament = await prisma.tournament.findFirst({
     where: {
       slug: normalizedSlug,
@@ -1190,7 +1202,13 @@ const getPublicTournamentBySlug = async (slug) => {
         where: {
           ...buildActiveRegistrationWhere({ approvedOnly: true }),
         },
-        orderBy: [{ teamName: "asc" }],
+        orderBy: [{ teamName: "asc" }, { id: "asc" }],
+        ...(participantPagination
+          ? {
+              skip: (participantPagination.page - 1) * participantPagination.pageSize,
+              take: participantPagination.pageSize,
+            }
+          : {}),
         select: {
           id: true,
           teamName: true,
@@ -1262,7 +1280,44 @@ const getPublicTournamentBySlug = async (slug) => {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  return mapTournamentWithPublicTeams(tournament);
+  if (!participantPagination) {
+    return mapTournamentWithPublicTeams(tournament);
+  }
+
+  const total = await prisma.teamRegistration.count({
+    where: {
+      tournamentId: tournament.id,
+      ...buildActiveRegistrationWhere({ approvedOnly: true }),
+    },
+  });
+  const capacityUsed = withRegistrationCount(tournament).capacityUsed;
+  const bracketRegistrations = tournament.bracket?.status === "published"
+    ? await prisma.teamRegistration.findMany({
+        where: {
+          tournamentId: tournament.id,
+          ...buildActiveRegistrationWhere({ approvedOnly: true }),
+        },
+        select: {
+          id: true,
+          teamName: true,
+          teamLogoName: true,
+          savedTeam: { select: { logoName: true } },
+        },
+      })
+    : null;
+
+  return mapTournamentWithPublicTeams(
+    { ...tournament, registrationCount: total, capacityUsed },
+    {
+      participantPagination: {
+        page: participantPagination.page,
+        pageSize: participantPagination.pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / participantPagination.pageSize)),
+      },
+      bracketRegistrations,
+    },
+  );
 };
 
 const listAdminTournaments = async ({ page, pageSize, search, status, isPublished } = {}) => {

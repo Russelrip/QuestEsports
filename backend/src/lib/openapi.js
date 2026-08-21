@@ -401,7 +401,11 @@ const openApiDocument = {
         tags: ["Tournaments"],
         summary:
           "Get tournament detail, schedule, participants, and published bracket",
-        parameters: [createPathParameter("slug", { type: "string" })],
+        parameters: [
+          createPathParameter("slug", { type: "string" }),
+          createQueryParameter("participantPage", { type: "integer", minimum: 1 }),
+          createQueryParameter("participantPageSize", { type: "integer", minimum: 1, maximum: 50 }),
+        ],
         responses: { 200: createResponse("Tournament detail") },
       },
     },
@@ -752,7 +756,11 @@ const additionalPaths = {
   },
   "/api/v1/tournaments/{slug}": {
     get: createOperation("Foundation", "Get slim versioned tournament detail", {
-      parameters: idParameter("slug"),
+      parameters: [
+        ...idParameter("slug"),
+        createQueryParameter("participantPage", { type: "integer", minimum: 1 }),
+        createQueryParameter("participantPageSize", { type: "integer", minimum: 1, maximum: 50 }),
+      ],
     }),
   },
   "/api/v1/tournaments/{slug}/bracket": {

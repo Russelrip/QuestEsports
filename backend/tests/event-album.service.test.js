@@ -128,6 +128,45 @@ test("public event album detail can return a bounded photo page", async () => {
   }
 });
 
+test("public event album detail keeps legacy full photos when pagination is not requested", async () => {
+  let findOptions;
+  const prisma = {
+    eventAlbum: {
+      findFirst: async (options) => {
+        findOptions = options;
+        return {
+          id: "album-1",
+          slug: "quest-finals-2026",
+          title: "Quest Finals 2026",
+          isPublished: true,
+          allowDownloads: true,
+          _count: { photos: 2 },
+          photos: [
+            { id: "photo-1", position: 0, imageAsset: { id: "asset-1", createdAt: new Date() } },
+            { id: "photo-2", position: 1, imageAsset: { id: "asset-2", createdAt: new Date() } },
+          ],
+        };
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [mediaServicePath]: {
+      createImageAssets: async () => [],
+      deleteUnusedImageAsset: async () => {},
+      getImageAssetById: async () => null,
+    },
+  });
+  try {
+    const result = await service.getPublicEventAlbumBySlug("quest-finals-2026");
+    assert.equal(findOptions.include.photos.take, undefined);
+    assert.equal(result.photos.length, 2);
+    assert.equal("photoPagination" in result, false);
+  } finally {
+    restore();
+  }
+});
+
 test("album photo reordering requires every photo exactly once", async () => {
   const prisma = {
     albumPhoto: {

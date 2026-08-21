@@ -141,3 +141,52 @@ test("a response from an invalidated generation is never cached", async () => {
     restore();
   }
 });
+
+test("query-string variants use distinct response-cache keys", async () => {
+  const keys = [];
+  const { module: responseCache, restore } = loadModuleWithMocks(middlewarePath, {
+    [cachePath]: {
+      resolveKey: async (key) => {
+        keys.push(key);
+        return { key, tags: [], versions: [] };
+      },
+      getResolved: async () => null,
+      setResolved: async () => undefined,
+      invalidateTags: async () => undefined,
+    },
+  });
+  try {
+    const middleware = responseCache.cacheJson({ ttlSeconds: 60, tags: ["tournaments"] });
+    await middleware({ method: "GET", originalUrl: "/api/tournaments/quest?participantPage=1", headers: {} }, createResponse(), () => {});
+    await middleware({ method: "GET", originalUrl: "/api/tournaments/quest?participantPage=2", headers: {} }, createResponse(), () => {});
+    assert.deepEqual(keys, [
+      "response:/api/tournaments/quest?participantPage=1",
+      "response:/api/tournaments/quest?participantPage=2",
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("cache invalidation can resolve tags from the successful mutation response", () => {
+  const invalidatedTags = [];
+  const { module: responseCache, restore } = loadModuleWithMocks(middlewarePath, {
+    [cachePath]: {
+      invalidateTags: (tags) => invalidatedTags.push(tags),
+    },
+  });
+  try {
+    const middleware = responseCache.invalidateCache((_req, res) => res.locals?.cacheTags || []);
+    const successResponse = createResponse();
+    successResponse.locals = { cacheTags: ["tournaments", "foundation"] };
+    const skippedResponse = createResponse();
+    skippedResponse.locals = { cacheTags: [] };
+    middleware({}, successResponse, () => undefined);
+    middleware({}, skippedResponse, () => undefined);
+    successResponse.emit("finish");
+    skippedResponse.emit("finish");
+    assert.deepEqual(invalidatedTags, [["tournaments", "foundation"]]);
+  } finally {
+    restore();
+  }
+});

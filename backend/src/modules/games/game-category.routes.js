@@ -15,8 +15,8 @@ const categoryUploadSizeGuard = createUploadRequestSizeGuard(22 * 1024 * 1024);
 const publicCategoryCache = cachePublicData({ browserSeconds: 30, sharedSeconds: 60 });
 router.get("/game-categories", publicCategoryCache, cacheJson({ ttlSeconds: env.CACHE_TTL_SECONDS, tags: ["game-categories"] }), controller.getPublicCategories);
 router.get("/admin/game-categories", requireAdmin, controller.getAdminCategories);
-router.post("/admin/game-categories", requireAdmin, invalidateCache("game-categories"), categoryUploadSizeGuard, categoryUpload, controller.createCategory);
-router.patch("/admin/game-categories/:categoryId", requireAdmin, invalidateCache("game-categories"), categoryUploadSizeGuard, categoryUpload, controller.updateCategory);
-router.delete("/admin/game-categories/:categoryId", requireAdmin, invalidateCache("game-categories"), controller.deleteCategory);
+router.post("/admin/game-categories", requireAdmin, invalidateCache("game-categories", "tournaments", "foundation"), categoryUploadSizeGuard, categoryUpload, controller.createCategory);
+router.patch("/admin/game-categories/:categoryId", requireAdmin, invalidateCache("game-categories", "tournaments", "foundation"), categoryUploadSizeGuard, categoryUpload, controller.updateCategory);
+router.delete("/admin/game-categories/:categoryId", requireAdmin, invalidateCache("game-categories", "tournaments", "foundation"), controller.deleteCategory);
 
 module.exports = router;

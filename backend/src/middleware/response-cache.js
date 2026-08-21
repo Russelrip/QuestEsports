@@ -57,7 +57,12 @@ const cacheJson = ({ ttlSeconds, tags = [], allowCookies = false }) => async (re
 
 const invalidateCache = (...tags) => (req, res, next) => {
   res.on("finish", () => {
-    if (res.statusCode >= 200 && res.statusCode < 300) void cache.invalidateTags(tags);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      const resolvedTags = tags.flatMap((tag) =>
+        typeof tag === "function" ? tag(req, res) || [] : [tag]
+      );
+      if (resolvedTags.length > 0) void cache.invalidateTags(resolvedTags);
+    }
   });
   next();
 };

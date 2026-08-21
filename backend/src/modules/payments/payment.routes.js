@@ -16,6 +16,7 @@ const {
   reopenExpiredPayment,
 } = require("./payment.controller");
 const { createRateLimiter } = require("../../middleware/rate-limit");
+const { invalidateCache } = require("../../middleware/response-cache");
 
 const router = express.Router();
 const notificationLimiter = createRateLimiter({
@@ -30,11 +31,14 @@ const proofUploadLimiter = createRateLimiter({
   maxRequests: 10,
   message: "Too many payment proof uploads. Please try again later.",
 });
-router.post("/payments/payhere/notify", notificationLimiter, notifyPayHere);
-router.get("/payments/:orderId", readPaymentStatus);
+const invalidatePaymentProjectionCache = invalidateCache((_req, res) => res.locals?.cacheTags || []);
+
+router.post("/payments/payhere/notify", notificationLimiter, invalidatePaymentProjectionCache, notifyPayHere);
+router.get("/payments/:orderId", invalidatePaymentProjectionCache, readPaymentStatus);
 router.post(
   "/payments/:orderId/bank-transfer-proof",
   proofUploadLimiter,
+  invalidatePaymentProjectionCache,
   paymentProofUpload.single("proof"),
   uploadBankTransferProof
 );
@@ -48,17 +52,20 @@ router.get(
 router.patch(
   "/admin/payments/:transactionId/bank-transfer-review",
   requireAdmin,
+  invalidatePaymentProjectionCache,
   express.json(),
   reviewBankTransferPayment
 );
 router.post(
   "/admin/payments/:transactionId/reopen",
   requireAdmin,
+  invalidatePaymentProjectionCache,
   reopenExpiredPayment
 );
 router.patch(
   "/admin/payments/:transactionId/payhere-reconciliation",
   requireAdmin,
+  invalidatePaymentProjectionCache,
   express.json(),
   reconcilePayHerePayment
 );

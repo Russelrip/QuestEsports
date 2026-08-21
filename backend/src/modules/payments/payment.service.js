@@ -46,6 +46,16 @@ const RETRYABLE_PAYMENT_TRANSACTION_ERROR_CODES = new Set([
   "P2034",
   "P2037",
 ]);
+const markTournamentProjectionChange = (value, changed) => {
+  if (value && typeof value === "object") {
+    Object.defineProperty(value, "__tournamentProjectionChanged", {
+      value: Boolean(changed),
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return value;
+};
 const waitBeforeTransactionRetry = (attempt) =>
   new Promise((resolve) => setTimeout(resolve, attempt * 100));
 const runSerializable = async (work) => {
@@ -234,17 +244,20 @@ const applyTargetStatus = async ({
   previousStatus,
   status,
 }) => {
+  let tournamentRegistrationChanged = false;
   if (transaction.registrationId) {
     if (tx.adminSlotReservation?.deleteMany) {
-      await tx.adminSlotReservation.deleteMany({
+      const deleted = await tx.adminSlotReservation.deleteMany({
         where: { registrationId: transaction.registrationId },
       });
+      tournamentRegistrationChanged = Boolean(deleted?.count);
     }
     if (status === "paid") {
       await tx.teamRegistration.update({
         where: { id: transaction.registrationId },
         data: { paymentStatus: "paid", reservedUntil: null },
       });
+      tournamentRegistrationChanged = true;
     } else if (
       ["cancelled", "failed", "charged_back", "refunded"].includes(status)
     ) {
@@ -252,11 +265,13 @@ const applyTargetStatus = async ({
         where: { id: transaction.registrationId },
         data: { paymentStatus: "unpaid", reservedUntil: null },
       });
+      tournamentRegistrationChanged = true;
     } else if (status === "pending") {
       await tx.teamRegistration.update({
         where: { id: transaction.registrationId },
         data: { paymentStatus: "pending" },
       });
+      tournamentRegistrationChanged = true;
     }
   }
 
@@ -332,6 +347,8 @@ const applyTargetStatus = async ({
       });
     }
   }
+
+  return tournamentRegistrationChanged;
 };
 
 const getSafeNotificationPayload = (body) => ({
@@ -533,7 +550,7 @@ const processPayHereNotification = async (body) => {
           payload: getSafeNotificationPayload(body),
         },
       });
-      return current;
+      return markTournamentProjectionChange(current, false);
     }
 
     const updated = await tx.paymentTransaction.update({
@@ -552,7 +569,7 @@ const processPayHereNotification = async (body) => {
           appliedStatus === "paid" ? current.paidAt || now : current.paidAt,
       },
     });
-    await applyTargetStatus({
+    const targetChanged = await applyTargetStatus({
       tx,
       transaction: updated,
       previousStatus: current.status,
@@ -568,7 +585,7 @@ const processPayHereNotification = async (body) => {
         payload: getSafeNotificationPayload(body),
       },
     });
-    return updated;
+    return markTournamentProjectionChange(updated, targetChanged);
   });
   logger.info("PayHere notification reconciled", {
     orderId,
@@ -667,11 +684,11 @@ const expireStaleCommerceReservations = async ({
     if (expired) expiredTicketOrderCount += 1;
   }
 
-  return {
+  return markTournamentProjectionChange({
     expiredOrders: expiredOrderCount,
     expiredRegistrations: expiredRegistrationCount,
     expiredTicketOrders: expiredTicketOrderCount,
-  };
+  }, expiredRegistrationCount > 0);
 };
 
 const loadPaymentStatusTransaction = (providerOrderId) =>
@@ -716,6 +733,7 @@ const loadPaymentStatusTransaction = (providerOrderId) =>
 
 const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
   let transaction = await loadPaymentStatusTransaction(providerOrderId);
+  let tournamentProjectionChanged = false;
   if (!transaction) throw new HttpError(404, "Payment transaction not found.");
 
   const ownsRegistration = transaction.registration?.userId === userId;
@@ -734,9 +752,10 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
     transaction.registration.reservedUntil &&
     transaction.registration.reservedUntil <= new Date()
   ) {
-    await expireTournamentRegistrationReservation({
+    const expired = await expireTournamentRegistrationReservation({
       registrationId: transaction.registration.id,
     });
+    tournamentProjectionChanged = expired;
     transaction = await loadPaymentStatusTransaction(providerOrderId);
     if (!transaction)
       throw new HttpError(404, "Payment transaction not found.");
@@ -763,7 +782,7 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
     );
   }
 
-  return {
+  return markTournamentProjectionChange({
     orderId: transaction.providerOrderId,
     provider: transaction.provider,
     status: transaction.status,
@@ -793,7 +812,7 @@ const getPaymentStatus = async ({ providerOrderId, userId, publicToken }) => {
             ticketEvent: transaction.ticketOrder?.event,
           })
         : null,
-  };
+  }, tournamentProjectionChanged);
 };
 
 const ADMIN_PAYMENT_DETAIL_INCLUDE = {
@@ -1208,13 +1227,13 @@ const reconcilePayHerePayment = async ({
           providerRefundId: null,
         },
       });
-      await applyTargetStatus({
+      const targetChanged = await applyTargetStatus({
         tx,
         transaction: updated,
         previousStatus: current.status,
         status: "paid",
       });
-      return updated;
+      return markTournamentProjectionChange(updated, targetChanged);
     }
 
     const updated = await tx.paymentTransaction.update({
@@ -1228,13 +1247,13 @@ const reconcilePayHerePayment = async ({
         providerRefundId: normalizedRefundId,
       },
     });
-    await applyTargetStatus({
+    const targetChanged = await applyTargetStatus({
       tx,
       transaction: updated,
       previousStatus: current.status,
       status: "refunded",
     });
-    return updated;
+    return markTournamentProjectionChange(updated, targetChanged);
   });
 
   if (result.status === "paid" && result.registrationId) {
@@ -1275,7 +1294,7 @@ const reconcileCashTicketPayment = async ({
       throw new HttpError(404, "Cash entrance payment was not found.");
     }
     if (current.status === "paid" && normalizedDecision === "confirm")
-      return current;
+      return markTournamentProjectionChange(current, false);
     if (!["created", "pending"].includes(current.status))
       throw new HttpError(409, "This cash payment is no longer pending.");
 
@@ -1312,7 +1331,7 @@ const reconcileCashTicketPayment = async ({
       previousStatus: current.status,
       status,
     });
-    return updated;
+    return markTournamentProjectionChange(updated, false);
   });
 };
 

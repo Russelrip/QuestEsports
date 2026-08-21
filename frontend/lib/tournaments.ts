@@ -100,6 +100,13 @@ type RegisteredTournamentParticipant = {
   memberCount: number;
 };
 
+export type TournamentParticipantPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
 export type GameCategory = {
   id: string;
   slug: string;
@@ -301,6 +308,7 @@ export type Tournament = {
   resultSummary?: TournamentResultSummary | null;
   registeredTeams?: RegisteredTournamentTeam[];
   registeredParticipants?: RegisteredTournamentParticipant[];
+  participantPagination?: TournamentParticipantPagination;
   isCompleted: boolean;
   registrationState: TournamentRegistrationState;
   registrationAction?: "register" | "waitlist" | "closed" | "registered" | "waitlisted";
@@ -428,7 +436,24 @@ export const fetchPublicEventBySlug = async (slug: string) => {
   return data.event;
 };
 
-export const fetchPublicTournamentBySlug = async (slug: string) => {
-  const data = await fetchJson<{ tournament: Tournament }>(`/api/tournaments/${slug}`);
+export const fetchPublicTournamentBySlug = async (
+  slug: string,
+  options: { participantPage?: number; participantPageSize?: number } = {
+    participantPage: 1,
+    participantPageSize: 10,
+  },
+) => {
+  const page = Number.isInteger(options.participantPage) && options.participantPage! > 0
+    ? options.participantPage!
+    : 1;
+  const pageSize = Number.isInteger(options.participantPageSize) && options.participantPageSize! > 0
+    ? Math.min(options.participantPageSize!, 50)
+    : 10;
+  const params = new URLSearchParams();
+  params.set("participantPage", String(page));
+  params.set("participantPageSize", String(pageSize));
+  const data = await fetchJson<{ tournament: Tournament }>(
+    `/api/tournaments/${encodeURIComponent(slug)}?${params.toString()}`,
+  );
   return data.tournament;
 };

@@ -36,7 +36,7 @@ const {
 const router = express.Router();
 const eventAlbumCache = cacheJson({
   ttlSeconds: env.CACHE_TTL_SECONDS,
-  tags: ["event-albums", "tournaments"],
+  tags: ["event-albums", "tournaments", "foundation"],
   allowCookies: true,
 });
 const eventAlbumPublicCache = cachePublicData({ browserSeconds: 60, sharedSeconds: 300 });
@@ -74,25 +74,25 @@ router.get("/admin/event-albums/:albumId", requireAdmin, getAdminEventAlbum);
 router.post(
   "/admin/event-albums",
   requireAdmin,
-  invalidateCache("event-albums"),
+  invalidateCache("event-albums", "tournaments", "foundation"),
   createAdminEventAlbum
 );
 router.patch(
   "/admin/event-albums/:albumId",
   requireAdmin,
-  invalidateCache("event-albums"),
+  invalidateCache("event-albums", "tournaments", "foundation"),
   updateAdminEventAlbum
 );
 router.delete(
   "/admin/event-albums/:albumId",
   requireAdmin,
-  invalidateCache("event-albums"),
+  invalidateCache("event-albums", "tournaments", "foundation"),
   deleteAdminEventAlbum
 );
 router.post(
   "/admin/event-albums/:albumId/photos",
   requireAdmin,
-  invalidateCache("event-albums"),
+  invalidateCache("event-albums", "tournaments", "foundation"),
   createUploadRequestSizeGuard(25 * 1024 * 1024),
   dbImageUpload.array("photos", 10),
   uploadAdminEventAlbumPhotos
@@ -100,13 +100,13 @@ router.post(
 router.patch(
   "/admin/event-albums/:albumId/photos/reorder",
   requireAdmin,
-  invalidateCache("event-albums"),
+  invalidateCache("event-albums", "tournaments", "foundation"),
   reorderAdminEventAlbumPhotos
 );
 router.delete(
   "/admin/event-albums/:albumId/photos/:photoId",
   requireAdmin,
-  invalidateCache("event-albums"),
+  invalidateCache("event-albums", "tournaments", "foundation"),
   deleteAdminEventAlbumPhoto
 );
 

@@ -55,12 +55,12 @@ test("event album routes cache public reads and invalidate every successful muta
   try {
     assert.deepEqual(cacheConfigurations, [{
       ttlSeconds: 123,
-      tags: ["event-albums", "tournaments"],
+      tags: ["event-albums", "tournaments", "foundation"],
       allowCookies: true,
     }]);
     assert.deepEqual(publicCacheConfigurations, [{ browserSeconds: 60, sharedSeconds: 300 }]);
     assert.equal(invalidations.length, 6);
-    assert.ok(invalidations.every((tags) => tags.length === 1 && tags[0] === "event-albums"));
+    assert.ok(invalidations.every((tags) => tags.length === 3 && tags.join(",") === "event-albums,tournaments,foundation"));
 
     const routeMiddleware = new Map(
       router.stack

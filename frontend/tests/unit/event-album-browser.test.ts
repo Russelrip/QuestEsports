@@ -19,6 +19,15 @@ describe("event album downloads", () => {
   });
 });
 
+describe("event album pagination contract", () => {
+  it("keeps the first photo page opt-in and bounded while preserving no-query support", () => {
+    const client = readFileSync(resolve(process.cwd(), "lib/event-albums.ts"), "utf8");
+    expect(client).toContain("photoOptions: { page?: number; pageSize?: number } = { page: 1, pageSize: 30 }");
+    expect(client).toContain('searchParams.set("photoPage", String(photoOptions.page));');
+    expect(client).toContain('searchParams.set("photoPageSize", String(photoOptions.pageSize));');
+  });
+});
+
 describe("event album lightbox navigation", () => {
   it("uses direction-aware 400ms entry animations with a reduced-motion fallback", () => {
     const component = readFileSync(

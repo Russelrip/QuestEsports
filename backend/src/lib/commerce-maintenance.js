@@ -1,5 +1,6 @@
 const { env } = require("../config/env");
 const { logger } = require("./logger");
+const { invalidateTags } = require("./cache");
 const {
   expireStaleCommerceReservations,
   reconcileTicketOrderConfirmations,
@@ -20,6 +21,9 @@ const runCommerceMaintenance = async () => {
   activeRun = (async () => {
     try {
       const result = await expireStaleCommerceReservations();
+      if (result.__tournamentProjectionChanged === true) {
+        await invalidateTags(["tournaments", "foundation"]);
+      }
       const queuedTicketConfirmations =
         await reconcileTicketOrderConfirmations();
       const deletedBankTransferProofs =

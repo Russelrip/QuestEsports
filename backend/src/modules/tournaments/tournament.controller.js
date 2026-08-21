@@ -30,7 +30,7 @@ const getPublicTournaments = asyncHandler(async (req, res) => {
 });
 
 const getPublicTournament = asyncHandler(async (req, res) => {
-  const tournament = await getPublicTournamentBySlug(req.params.slug);
+  const tournament = await getPublicTournamentBySlug(req.params.slug, req.query);
 
   res.status(200).json({
     success: true,

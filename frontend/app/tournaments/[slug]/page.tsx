@@ -12,7 +12,9 @@ import {
 import { Tournament, fetchPublicTournamentBySlug } from "@/lib/tournaments";
 import { ApiRequestError } from "@/lib/api";
 
-const getTournament = cache(fetchPublicTournamentBySlug);
+const getTournament = cache((slug: string) =>
+  fetchPublicTournamentBySlug(slug, { participantPage: 1, participantPageSize: 10 }),
+);
 
 export async function generateMetadata({
   params,

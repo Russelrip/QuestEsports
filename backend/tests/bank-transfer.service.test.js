@@ -135,6 +135,7 @@ test("admin approval confirms a reserved bank transfer and activates the team", 
       admin: { id: "admin-1" },
     });
     assert.equal(result.status, "paid");
+    assert.equal(result.__tournamentProjectionChanged, true);
     assert.deepEqual(registrationUpdates[0], { paymentStatus: "paid", reservedUntil: null });
     assert.equal(activatedId, "registration-1");
     assert.equal(findUniqueArgs.include.registration.include.members, true);
@@ -225,6 +226,7 @@ test("admin rejection records a reason and releases the assigned slot", async ()
       admin: { id: "admin-1" },
     });
     assert.equal(result.status, "failed");
+    assert.equal(result.__tournamentProjectionChanged, true);
     assert.deepEqual(registrationUpdate, {
       paymentStatus: "unpaid",
       reservedUntil: null,
