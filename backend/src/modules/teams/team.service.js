@@ -1160,9 +1160,13 @@ const syncSavedTeamFromRegistration = async ({
         `${member.role}:${member.order}:${email}`
       );
       const acceptedMember =
-        existingMember?.inviteStatus === "accepted" && existingMember.userId
-          ? existingMember
-          : null;
+        member.inviteStatus === "accepted"
+          ? member
+          : member.inviteStatus === "declined"
+            ? null
+            : existingMember?.inviteStatus === "accepted" && existingMember.userId
+              ? existingMember
+              : null;
       const activePendingMember =
         existingMember?.inviteStatus === "pending" &&
         existingMember.inviteTokenHash &&
@@ -1172,7 +1176,7 @@ const syncSavedTeamFromRegistration = async ({
           : null;
 
       if (member.role === "CAPTAIN" || acceptedMember) {
-        const linkedUserId = member.role === "CAPTAIN" ? user.id : acceptedMember.userId;
+        const linkedUserId = member.role === "CAPTAIN" ? user.id : acceptedMember.userId || null;
         const inviteRespondedAt = acceptedMember?.inviteRespondedAt || new Date();
         registrationMemberUpdates.push({
           role: member.role,
@@ -1200,7 +1204,43 @@ const syncSavedTeamFromRegistration = async ({
           discord: member.discord,
           riotId: member.riotId,
           inviteStatus: "accepted",
+          inviteTokenHash: null,
           inviteSentAt: acceptedMember?.inviteSentAt || null,
+          inviteExpiresAt: null,
+          inviteRespondedAt,
+        };
+      }
+
+      if (member.inviteStatus === "declined") {
+        const inviteRespondedAt = member.inviteRespondedAt || new Date();
+        registrationMemberUpdates.push({
+          role: member.role,
+          memberOrder: member.order,
+          data: {
+            userId: null,
+            inviteStatus: "declined",
+            inviteTokenHash: null,
+            inviteSentAt: member.inviteSentAt || null,
+            inviteExpiresAt: null,
+            inviteRespondedAt,
+          },
+        });
+
+        return {
+          id: crypto.randomUUID(),
+          teamId: team.id,
+          userId: null,
+          role: member.role,
+          memberOrder: member.order,
+          name: member.name,
+          email,
+          emailNormalized: email,
+          phone: member.phone || null,
+          discord: member.discord,
+          riotId: member.riotId,
+          inviteStatus: "declined",
+          inviteTokenHash: null,
+          inviteSentAt: member.inviteSentAt || null,
           inviteExpiresAt: null,
           inviteRespondedAt,
         };
@@ -1373,11 +1413,16 @@ const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) =>
     phone: member.phone,
     discord: member.discord,
     riotId: member.riotId,
+    userId: member.userId,
+    inviteStatus: member.inviteStatus,
+    inviteSentAt: member.inviteSentAt,
+    inviteExpiresAt: member.inviteExpiresAt,
+    inviteRespondedAt: member.inviteRespondedAt,
   }));
   const inviteDispatches = await runTeamSyncTransaction(async (tx) => {
     const current = await tx.teamRegistration.findUnique({
       where: { id: registrationId },
-      select: { savedTeamId: true, paymentStatus: true },
+      select: { savedTeamId: true, paymentStatus: true, members: true },
     });
     if (
       !current ||
@@ -1393,7 +1438,22 @@ const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) =>
       teamTag: registration.teamTag,
       organizationRequested: registration.organizationRequested,
       logoName: registration.teamLogoName,
-      members,
+      members: Array.isArray(current.members)
+        ? current.members.map((member) => ({
+            role: member.role,
+            order: member.memberOrder,
+            name: member.name,
+            email: member.email,
+            phone: member.phone,
+            discord: member.discord,
+            riotId: member.riotId,
+            userId: member.userId,
+            inviteStatus: member.inviteStatus,
+            inviteSentAt: member.inviteSentAt,
+            inviteExpiresAt: member.inviteExpiresAt,
+            inviteRespondedAt: member.inviteRespondedAt,
+          }))
+        : members,
       tournamentTitle: registration.tournament.title,
     });
   });

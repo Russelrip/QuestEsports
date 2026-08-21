@@ -15,7 +15,7 @@ const uploadCleanupModulePath = path.join(__dirname, "../src/lib/upload-cleanup.
 const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
 const teamServiceModulePath = path.join(__dirname, "../src/modules/teams/team.service.js");
 
-const loadAdminService = (prisma, uploadMock = {}, uploadCleanupMock = null) =>
+const loadAdminService = (prisma, uploadMock = {}, uploadCleanupMock = null, teamServiceMock = {}) =>
   loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
     [authServiceModulePath]: {
@@ -43,6 +43,7 @@ const loadAdminService = (prisma, uploadMock = {}, uploadCleanupMock = null) =>
     },
     [teamServiceModulePath]: {
       activatePaidTeamRegistration: async () => undefined,
+      ...teamServiceMock,
     },
   });
 
@@ -149,6 +150,7 @@ test("free waitlist promotion becomes active and consumes the available slot", a
       },
     },
     adminSlotReservation: { findMany: async () => [] },
+    registrationMember: { updateMany: async () => ({ count: 0 }) },
     auditLog: { create: async ({ data }) => audits.push(data) },
   };
   const { module: adminService, restore } = loadAdminService({
@@ -168,6 +170,370 @@ test("free waitlist promotion becomes active and consumes the available slot", a
     assert.equal(updates[0].paymentStatus, "paid");
     assert.equal(compactions.length, 1);
     assert.equal(audits.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("admin approval accepts pending registration invites without changing non-pending members", async () => {
+  const memberUpdates = [];
+  const registrationUpdates = [];
+  const audits = [];
+  const current = registrationForStatusTest({
+    verificationStatus: "pending",
+    members: [
+      {
+        id: "pending-member",
+        role: "PLAYER",
+        inviteStatus: "pending",
+        inviteTokenHash: "pending-token",
+        inviteExpiresAt: new Date("2026-08-30T10:00:00.000Z"),
+        inviteRespondedAt: null,
+      },
+      {
+        id: "accepted-member",
+        role: "PLAYER",
+        inviteStatus: "accepted",
+        inviteTokenHash: null,
+        inviteExpiresAt: null,
+        inviteRespondedAt: new Date("2026-08-01T10:00:00.000Z"),
+      },
+      {
+        id: "declined-member",
+        role: "PLAYER",
+        inviteStatus: "declined",
+        inviteTokenHash: "declined-token",
+        inviteExpiresAt: null,
+        inviteRespondedAt: new Date("2026-08-02T10:00:00.000Z"),
+      },
+    ],
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return { ...current, ...data, members: current.members };
+      },
+    },
+    registrationMember: {
+      updateMany: async (args) => {
+        memberUpdates.push(args);
+        return { count: 1 };
+      },
+    },
+    auditLog: { create: async ({ data }) => audits.push(data) },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "approved", reason: "Roster approved" },
+      "admin-1"
+    );
+
+    assert.equal(result.status, "approved");
+    assert.deepEqual(memberUpdates[0].where, {
+      registrationId: "registration-1",
+      inviteStatus: "pending",
+    });
+    assert.equal(memberUpdates[0].data.inviteStatus, "accepted");
+    assert.ok(memberUpdates[0].data.inviteRespondedAt instanceof Date);
+    assert.equal(memberUpdates[0].data.inviteTokenHash, null);
+    assert.equal(memberUpdates[0].data.inviteExpiresAt, null);
+    assert.equal(registrationUpdates[0].verificationStatus, "flagged");
+    assert.equal(audits.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("admin approval consumes the matching pending saved-team invite in the same transaction", async () => {
+  const registrationMemberUpdates = [];
+  const savedTeamMemberUpdates = [];
+  const current = registrationForStatusTest({
+    savedTeamId: "saved-team-1",
+    verificationStatus: "pending",
+    members: [
+      {
+        id: "pending-member",
+        role: "PLAYER",
+        memberOrder: 2,
+        emailNormalized: "player2@example.com",
+        inviteStatus: "pending",
+        inviteTokenHash: "registration-token",
+        inviteExpiresAt: new Date("2026-08-30T10:00:00.000Z"),
+        inviteRespondedAt: null,
+      },
+      {
+        id: "accepted-member",
+        role: "PLAYER",
+        memberOrder: 1,
+        emailNormalized: "player1@example.com",
+        inviteStatus: "accepted",
+        inviteTokenHash: null,
+        inviteExpiresAt: null,
+        inviteRespondedAt: new Date("2026-08-01T10:00:00.000Z"),
+      },
+      {
+        id: "declined-member",
+        role: "PLAYER",
+        memberOrder: 3,
+        emailNormalized: "player3@example.com",
+        inviteStatus: "declined",
+        inviteTokenHash: "declined-token",
+        inviteExpiresAt: null,
+        inviteRespondedAt: new Date("2026-08-02T10:00:00.000Z"),
+      },
+    ],
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      update: async ({ data }) => ({ ...current, ...data, members: current.members }),
+    },
+    registrationMember: {
+      updateMany: async (args) => {
+        registrationMemberUpdates.push(args);
+        return { count: 1 };
+      },
+    },
+    savedTeamMember: {
+      updateMany: async (args) => {
+        savedTeamMemberUpdates.push(args);
+        return { count: 1 };
+      },
+    },
+    auditLog: { create: async () => undefined },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "approved", reason: "Roster approved" },
+      "admin-1"
+    );
+
+    assert.equal(registrationMemberUpdates.length, 1);
+    assert.equal(savedTeamMemberUpdates.length, 1);
+    assert.deepEqual(savedTeamMemberUpdates[0].where, {
+      teamId: "saved-team-1",
+      role: "PLAYER",
+      memberOrder: 2,
+      emailNormalized: "player2@example.com",
+      inviteStatus: "pending",
+    });
+    assert.equal(savedTeamMemberUpdates[0].data.inviteStatus, "accepted");
+    assert.equal(savedTeamMemberUpdates[0].data.inviteTokenHash, null);
+    assert.equal(savedTeamMemberUpdates[0].data.inviteExpiresAt, null);
+    assert.equal(
+      savedTeamMemberUpdates[0].data.inviteRespondedAt,
+      registrationMemberUpdates[0].data.inviteRespondedAt
+    );
+    assert.equal(Object.hasOwn(savedTeamMemberUpdates[0].data, "userId"), false);
+  } finally {
+    restore();
+  }
+});
+
+test("admin approval verifies a registration after accepting its pending invites", async () => {
+  const registrationUpdates = [];
+  const current = registrationForStatusTest({
+    verificationStatus: "pending",
+    members: [
+      {
+        id: "pending-member",
+        role: "PLAYER",
+        inviteStatus: "pending",
+      },
+      {
+        id: "accepted-member",
+        role: "PLAYER",
+        inviteStatus: "accepted",
+      },
+    ],
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return { ...current, ...data, members: current.members };
+      },
+    },
+    registrationMember: {
+      updateMany: async () => ({ count: 1 }),
+    },
+    auditLog: { create: async () => undefined },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "approved", reason: "Roster approved" },
+      "admin-1"
+    );
+
+    assert.equal(result.verificationStatus, "verified");
+    assert.equal(registrationUpdates[0].verificationStatus, "verified");
+  } finally {
+    restore();
+  }
+});
+
+test("admin approval recalculates verification when no invites are pending", async () => {
+  const registrationUpdates = [];
+  const current = registrationForStatusTest({
+    verificationStatus: "pending",
+    members: [
+      { id: "accepted-member", role: "PLAYER", inviteStatus: "accepted" },
+      { id: "accepted-substitute", role: "SUBSTITUTE", inviteStatus: "accepted" },
+    ],
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return { ...current, ...data, members: current.members };
+      },
+    },
+    registrationMember: {
+      updateMany: async () => {
+        throw new Error("no invite update should be needed");
+      },
+    },
+    auditLog: { create: async () => undefined },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "approved", reason: "Roster approved" },
+      "admin-1"
+    );
+
+    assert.equal(result.verificationStatus, "verified");
+    assert.equal(registrationUpdates[0].verificationStatus, "verified");
+  } finally {
+    restore();
+  }
+});
+
+test("admin approval flags a no-pending registration with a declined member", async () => {
+  const registrationUpdates = [];
+  const current = registrationForStatusTest({
+    verificationStatus: "verified",
+    members: [
+      { id: "accepted-member", role: "PLAYER", inviteStatus: "accepted" },
+      { id: "declined-member", role: "PLAYER", inviteStatus: "declined" },
+    ],
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return { ...current, ...data, members: current.members };
+      },
+    },
+    registrationMember: { updateMany: async () => ({ count: 0 }) },
+    auditLog: { create: async () => undefined },
+  };
+  const { module: adminService, restore } = loadAdminService({
+    teamRegistration: { findUnique: async () => current },
+    $transaction: async (work) => work(tx),
+  });
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { status: "approved" },
+      "admin-1"
+    );
+
+    assert.equal(result.verificationStatus, "flagged");
+    assert.equal(registrationUpdates[0].verificationStatus, "flagged");
+  } finally {
+    restore();
+  }
+});
+
+test("admin payment override accepts invites and activates the paid registration", async () => {
+  const memberUpdates = [];
+  const registrationUpdates = [];
+  const activations = [];
+  const current = registrationForStatusTest({
+    verificationStatus: "pending",
+    members: [{
+      id: "pending-member",
+      role: "PLAYER",
+      inviteStatus: "pending",
+      userId: null,
+      inviteTokenHash: "pending-token",
+      inviteExpiresAt: new Date("2026-08-30T10:00:00.000Z"),
+      inviteRespondedAt: null,
+    }],
+  });
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => current,
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return { ...current, ...data, members: current.members };
+      },
+    },
+    paymentTransaction: {
+      updateMany: async () => ({ count: 1 }),
+    },
+    registrationMember: {
+      updateMany: async (args) => {
+        memberUpdates.push(args);
+        return { count: 1 };
+      },
+    },
+    auditLog: { create: async () => undefined },
+  };
+  const { module: adminService, restore } = loadAdminService(
+    {
+      teamRegistration: { findUnique: async () => current },
+      $transaction: async (work) => work(tx),
+    },
+    {},
+    null,
+    {
+      activatePaidTeamRegistration: async (registrationId) => activations.push(registrationId),
+    }
+  );
+
+  try {
+    const result = await adminService.updateTeamRegistrationStatus(
+      "registration-1",
+      { adminOverridePayment: true, status: "approved", reason: "Payment waived" },
+      "admin-1"
+    );
+
+    assert.equal(result.status, "approved");
+    assert.equal(result.paymentStatus, "paid");
+    assert.equal(registrationUpdates[0].verificationStatus, "verified");
+    assert.equal(memberUpdates[0].data.inviteStatus, "accepted");
+    assert.deepEqual(activations, ["registration-1"]);
   } finally {
     restore();
   }

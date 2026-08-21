@@ -1628,6 +1628,231 @@ test("syncSavedTeamFromRegistration preserves an active pending invite without e
   }
 });
 
+test("syncSavedTeamFromRegistration preserves an unlinked accepted source member without inviting", async () => {
+  const savedRows = [];
+  const registrationUpdates = [];
+  const sentInvites = [];
+  const inviteRespondedAt = new Date("2026-08-20T10:00:00.000Z");
+  const tx = {
+    savedTeam: {
+      findUnique: async () => null,
+      create: async () => ({ id: "saved-team-1", members: [] }),
+      update: async () => undefined,
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async ({ data }) => {
+        savedRows.push(...data);
+        return { count: data.length };
+      },
+    },
+    registrationMember: {
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return data;
+      },
+      findMany: async () => registrationUpdates.map((data) => ({ inviteStatus: data.inviteStatus })),
+    },
+    teamRegistration: { update: async ({ data }) => data },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: {
+      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
+    },
+  });
+
+  try {
+    const dispatches = await teamService.syncSavedTeamFromRegistration({
+      tx,
+      registrationId: "registration-1",
+      user: { id: "captain-1", firstName: "Quest", lastName: "Captain" },
+      teamName: "Quest Five",
+      members: [
+        {
+          role: "CAPTAIN",
+          order: 0,
+          name: "Quest Captain",
+          email: "captain@example.com",
+        },
+        {
+          role: "PLAYER",
+          order: 1,
+          name: "Unlinked Player",
+          email: "player@example.com",
+          userId: null,
+          inviteStatus: "accepted",
+          inviteSentAt: new Date("2026-08-19T10:00:00.000Z"),
+          inviteExpiresAt: null,
+          inviteRespondedAt,
+          riotId: "Player#001",
+        },
+      ],
+      tournamentTitle: "Quest Cup",
+    });
+
+    const player = savedRows.find((member) => member.role === "PLAYER");
+    assert.equal(player.userId, null);
+    assert.equal(player.inviteStatus, "accepted");
+    assert.equal(player.inviteTokenHash, null);
+    assert.equal(player.inviteExpiresAt, null);
+    assert.equal(player.inviteRespondedAt, inviteRespondedAt);
+    assert.equal(registrationUpdates[1].userId, null);
+    assert.equal(registrationUpdates[1].inviteStatus, "accepted");
+    assert.deepEqual(dispatches, []);
+    assert.deepEqual(sentInvites, []);
+  } finally {
+    restore();
+  }
+});
+
+test("syncSavedTeamFromRegistration preserves a declined source member without re-inviting", async () => {
+  const savedRows = [];
+  const registrationUpdates = [];
+  const sentInvites = [];
+  const inviteRespondedAt = new Date("2026-08-20T11:00:00.000Z");
+  const tx = {
+    savedTeam: {
+      findUnique: async () => null,
+      create: async () => ({ id: "saved-team-1", members: [] }),
+      update: async () => undefined,
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async ({ data }) => {
+        savedRows.push(...data);
+        return { count: data.length };
+      },
+    },
+    registrationMember: {
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return data;
+      },
+      findMany: async () => registrationUpdates.map((data) => ({ inviteStatus: data.inviteStatus })),
+    },
+    teamRegistration: { update: async ({ data }) => data },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: {
+      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
+    },
+  });
+
+  try {
+    const dispatches = await teamService.syncSavedTeamFromRegistration({
+      tx,
+      registrationId: "registration-1",
+      user: { id: "captain-1", firstName: "Quest", lastName: "Captain" },
+      teamName: "Quest Five",
+      members: [{
+        role: "PLAYER",
+        order: 1,
+        name: "Declined Player",
+        email: "player@example.com",
+        userId: null,
+        inviteStatus: "declined",
+        inviteSentAt: new Date("2026-08-19T10:00:00.000Z"),
+        inviteExpiresAt: null,
+        inviteRespondedAt,
+      }],
+      tournamentTitle: "Quest Cup",
+    });
+
+    assert.equal(savedRows[0].userId, null);
+    assert.equal(savedRows[0].inviteStatus, "declined");
+    assert.equal(savedRows[0].inviteTokenHash, null);
+    assert.equal(savedRows[0].inviteExpiresAt, null);
+    assert.equal(savedRows[0].inviteRespondedAt, inviteRespondedAt);
+    assert.equal(registrationUpdates[0].userId, null);
+    assert.equal(registrationUpdates[0].inviteStatus, "declined");
+    assert.equal(registrationUpdates[0].inviteTokenHash, null);
+    assert.equal(registrationUpdates[0].inviteExpiresAt, null);
+    assert.equal(registrationUpdates[0].inviteRespondedAt, inviteRespondedAt);
+    assert.deepEqual(dispatches, []);
+    assert.deepEqual(sentInvites, []);
+  } finally {
+    restore();
+  }
+});
+
+test("syncSavedTeamFromRegistration gives an accepted source member precedence over a linked saved member", async () => {
+  const savedRows = [];
+  const registrationUpdates = [];
+  const existingRespondedAt = new Date("2026-08-19T10:00:00.000Z");
+  const sourceRespondedAt = new Date("2026-08-20T12:00:00.000Z");
+  const tx = {
+    savedTeam: {
+      findUnique: async () => ({
+        id: "saved-team-1",
+        members: [{
+          role: "PLAYER",
+          memberOrder: 1,
+          emailNormalized: "player@example.com",
+          userId: "different-linked-user",
+          inviteStatus: "accepted",
+          inviteSentAt: new Date("2026-08-18T10:00:00.000Z"),
+          inviteRespondedAt: existingRespondedAt,
+        }],
+      }),
+      update: async () => undefined,
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 1 }),
+      createMany: async ({ data }) => {
+        savedRows.push(...data);
+        return { count: data.length };
+      },
+    },
+    registrationMember: {
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return data;
+      },
+      findMany: async () => registrationUpdates.map((data) => ({ inviteStatus: data.inviteStatus })),
+    },
+    teamRegistration: { update: async ({ data }) => data },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+  });
+
+  try {
+    const dispatches = await teamService.syncSavedTeamFromRegistration({
+      tx,
+      registrationId: "registration-1",
+      user: { id: "captain-1", firstName: "Quest", lastName: "Captain" },
+      teamName: "Quest Five",
+      members: [{
+        role: "PLAYER",
+        order: 1,
+        name: "Accepted Player",
+        email: "player@example.com",
+        userId: null,
+        inviteStatus: "accepted",
+        inviteSentAt: new Date("2026-08-19T11:00:00.000Z"),
+        inviteExpiresAt: null,
+        inviteRespondedAt: sourceRespondedAt,
+      }],
+      tournamentTitle: "Quest Cup",
+    });
+
+    assert.equal(savedRows[0].userId, null);
+    assert.equal(savedRows[0].inviteStatus, "accepted");
+    assert.equal(savedRows[0].inviteTokenHash, null);
+    assert.equal(savedRows[0].inviteExpiresAt, null);
+    assert.equal(savedRows[0].inviteRespondedAt, sourceRespondedAt);
+    assert.equal(registrationUpdates[0].userId, null);
+    assert.equal(registrationUpdates[0].inviteStatus, "accepted");
+    assert.equal(registrationUpdates[0].inviteRespondedAt, sourceRespondedAt);
+    assert.deepEqual(dispatches, []);
+  } finally {
+    restore();
+  }
+});
+
 test("ensureTeamRegistrationSaved retries a transient database-pool timeout", async () => {
   let registrationLookupAttempts = 0;
   let transactionAttempts = 0;
@@ -1688,6 +1913,99 @@ test("ensureTeamRegistrationSaved retries a transient database-pool timeout", as
     assert.equal(transactionAttempts, 2);
     assert.equal(transactionOptions.maxWait, 15_000);
     assert.equal(transactionOptions.timeout, 30_000);
+  } finally {
+    restore();
+  }
+});
+
+test("activatePaidTeamRegistration uses the current transaction roster invite state", async () => {
+  const savedRows = [];
+  const registrationUpdates = [];
+  const initialRegistration = {
+    id: "registration-1",
+    entryType: "team",
+    paymentStatus: "paid",
+    savedTeamId: null,
+    teamName: "Quest Five",
+    country: "Sri Lanka",
+    teamTag: "Q5",
+    organizationRequested: false,
+    teamLogoName: null,
+    user: { id: "captain-1", firstName: "Quest", lastName: "Captain", username: "captain" },
+    tournament: { title: "Quest Cup" },
+    members: [{
+      role: "PLAYER",
+      memberOrder: 1,
+      name: "Player Two",
+      email: "player2@example.com",
+      inviteStatus: "pending",
+      inviteTokenHash: "stale-token",
+      inviteExpiresAt: new Date("2026-08-30T10:00:00.000Z"),
+    }],
+  };
+  const currentMembers = [{
+    role: "PLAYER",
+    memberOrder: 1,
+    name: "Player Two",
+    email: "player2@example.com",
+    inviteStatus: "accepted",
+    userId: null,
+    inviteTokenHash: null,
+    inviteExpiresAt: null,
+    inviteRespondedAt: new Date("2026-08-20T10:00:00.000Z"),
+  }];
+  const tx = {
+    teamRegistration: {
+      findUnique: async () => ({
+        savedTeamId: null,
+        paymentStatus: "paid",
+        members: currentMembers,
+      }),
+      update: async ({ data }) => {
+        registrationUpdates.push(data);
+        return data;
+      },
+    },
+    savedTeam: {
+      findUnique: async () => null,
+      create: async () => ({ id: "saved-team-1", members: [] }),
+      update: async () => undefined,
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async ({ data }) => {
+        savedRows.push(...data);
+        return { count: data.length };
+      },
+    },
+    registrationMember: {
+      update: async () => undefined,
+      findMany: async () => currentMembers,
+    },
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        teamRegistration: {
+          findUnique: async () => initialRegistration,
+        },
+        $transaction: async (work) => work(tx),
+      },
+    },
+    [mailModulePath]: {
+      sendTeamInviteEmail: async () => {
+        throw new Error("stale pending roster should not send an invite");
+      },
+    },
+  });
+
+  try {
+    await teamService.activatePaidTeamRegistration("registration-1");
+
+    assert.equal(savedRows.length, 1);
+    assert.equal(savedRows[0].inviteStatus, "accepted");
+    assert.equal(savedRows[0].inviteRespondedAt, currentMembers[0].inviteRespondedAt);
+    assert.equal(registrationUpdates[0].savedTeamId, "saved-team-1");
   } finally {
     restore();
   }

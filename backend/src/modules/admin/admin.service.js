@@ -109,6 +109,54 @@ const recordRegistrationStatusAudit = async ({
   },
 });
 
+const acceptPendingRegistrationInvites = async ({ tx, registrationId, savedTeamId, members }) => {
+  const pendingMembers = (members || []).filter((member) => member.inviteStatus === "pending");
+  if (pendingMembers.length > 0) {
+    const inviteRespondedAt = new Date();
+    await tx.registrationMember.updateMany({
+      where: { registrationId, inviteStatus: "pending" },
+      data: {
+        inviteStatus: "accepted",
+        inviteRespondedAt,
+        inviteTokenHash: null,
+        inviteExpiresAt: null,
+      },
+    });
+
+    if (savedTeamId && typeof tx.savedTeamMember?.updateMany === "function") {
+      for (const member of pendingMembers) {
+        await tx.savedTeamMember.updateMany({
+          where: {
+            teamId: savedTeamId,
+            role: member.role,
+            memberOrder: member.memberOrder,
+            emailNormalized: member.emailNormalized,
+            inviteStatus: "pending",
+          },
+          data: {
+            inviteStatus: "accepted",
+            inviteRespondedAt,
+            inviteTokenHash: null,
+            inviteExpiresAt: null,
+          },
+        });
+      }
+    }
+  }
+
+  const rosterMembers = (members || [])
+    .filter((member) => member.role !== "CAPTAIN")
+    .map((member) => ({
+      ...member,
+      inviteStatus: member.inviteStatus === "pending" ? "accepted" : member.inviteStatus,
+    }));
+  return rosterMembers.some((member) => member.inviteStatus === "declined")
+    ? "flagged"
+    : rosterMembers.every((member) => member.inviteStatus === "accepted")
+      ? "verified"
+      : "pending";
+};
+
 const ADMIN_USER_SELECT = {
   id: true,
   firstName: true,
@@ -1750,6 +1798,12 @@ const updateTeamRegistrationStatus = async (
       if (current.adminSlotReservation) {
         await tx.adminSlotReservation.delete({ where: { registrationId: current.id } });
       }
+      const approvalVerificationStatus = await acceptPendingRegistrationInvites({
+        tx,
+        registrationId: current.id,
+        savedTeamId: current.savedTeamId,
+        members: current.members,
+      });
       const updated = await tx.teamRegistration.update({
         where: { id: current.id },
         data: {
@@ -1760,6 +1814,7 @@ const updateTeamRegistrationStatus = async (
           quotedFeeCurrency: current.adminSlotReservation?.quotedFeeCurrency || current.tournament.registrationFeeCurrency,
           reservedUntil: null,
           waitlistPosition: wasWaitlisted ? null : current.waitlistPosition,
+          ...(approvalVerificationStatus ? { verificationStatus: approvalVerificationStatus } : {}),
         },
         include: TEAM_REGISTRATION_INCLUDE,
       });
@@ -1913,9 +1968,20 @@ const updateTeamRegistrationStatus = async (
           data.waitlistPosition = null;
         }
       }
+      const approvalVerificationStatus = nextStatus === "approved"
+        ? await acceptPendingRegistrationInvites({
+            tx,
+            registrationId: current.id,
+            savedTeamId: current.savedTeamId,
+            members: current.members,
+          })
+        : null;
       const updated = await tx.teamRegistration.update({
         where: { id: registrationId },
-        data,
+        data: {
+          ...data,
+          ...(approvalVerificationStatus ? { verificationStatus: approvalVerificationStatus } : {}),
+        },
         include: TEAM_REGISTRATION_INCLUDE,
       });
       if (current.status === "waitlisted") {
@@ -1941,7 +2007,7 @@ const updateTeamRegistrationStatus = async (
       registration = await runAdminSerializable(async (tx) => {
         const current = await tx.teamRegistration.findUnique({
           where: { id: registrationId },
-          select: { id: true, tournamentId: true, status: true, members: true },
+          select: { id: true, tournamentId: true, status: true, savedTeamId: true, members: true },
         });
         if (!current) throw new HttpError(404, "Registration not found.");
         if (nextStatus !== "rejected") {
@@ -1952,9 +2018,20 @@ const updateTeamRegistrationStatus = async (
             excludeRegistrationId: current.id,
           });
         }
+        const approvalVerificationStatus = nextStatus === "approved"
+          ? await acceptPendingRegistrationInvites({
+              tx,
+              registrationId: current.id,
+              savedTeamId: current.savedTeamId,
+              members: current.members,
+            })
+          : null;
         const updated = await tx.teamRegistration.update({
           where: { id: registrationId },
-          data: updateData,
+          data: {
+            ...updateData,
+            ...(approvalVerificationStatus ? { verificationStatus: approvalVerificationStatus } : {}),
+          },
           include: TEAM_REGISTRATION_INCLUDE,
         });
         await recordRegistrationStatusAudit({

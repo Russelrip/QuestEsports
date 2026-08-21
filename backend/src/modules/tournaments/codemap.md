@@ -34,7 +34,17 @@ exception.
 Admin status changes run serializably. Only the first waitlisted row may be
 promoted when a slot is available; promotion assigns the lowest free slot,
 clears the position, and compacts later rows. Rejection also compacts the
-queue. Payment status remains provider-controlled except for the deliberate
+queue. Approval, including waitlist promotion and admin payment override,
+atomically consumes every pending registration invite into the active roster
+by accepting it and clearing its invite token metadata; that accepted invite
+state is mirrored to the matching pending saved-team roster row when linked,
+without setting its user link. It is carried into paid profile synchronization
+without forcing an account link, and an explicit accepted source state takes
+precedence over a conflicting saved-member link. An explicit declined state is
+carried through as consumed without re-inviting, preserving its response
+timestamp and clearing token metadata.
+Verification is recalculated from any remaining non-captain invite states.
+Payment status remains provider-controlled except for the deliberate
 free-registration/admin-waiver paths.
 
 ## Saved-team registration flow
