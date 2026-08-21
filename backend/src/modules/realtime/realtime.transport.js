@@ -63,6 +63,13 @@ const createRealtimeTransport = ({
   const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/+$/, "");
   const channel = env.REALTIME_PUBSUB_CHANNEL;
   const authorization = `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}`;
+  const maxMessageBytes = env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES;
+  // Upstash emits one `data: message,<channel>,<payload>` line per frame. The
+  // record limit includes only this fixed framing overhead; payload validation
+  // below remains the authoritative serialized-envelope limit.
+  const maxSseRecordBytes =
+    maxMessageBytes +
+    Buffer.byteLength(`data: message,${channel},`, "utf8");
   const required = env.API_PROCESS_COUNT > 1;
 
   let running = false;
@@ -111,7 +118,7 @@ const createRealtimeTransport = ({
     if (frameType !== "message" || frameChannel !== channel) return;
 
     const payload = data.slice(secondComma + 1);
-    if (Buffer.byteLength(payload, "utf8") > env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES) return false;
+    if (Buffer.byteLength(payload, "utf8") > maxMessageBytes) return false;
     try {
       const envelope = JSON.parse(payload);
       try {
@@ -154,13 +161,13 @@ const createRealtimeTransport = ({
         while ((separator = buffer.search(/\r?\n\r?\n/)) >= 0) {
           const match = buffer.match(/\r?\n\r?\n/);
           const record = buffer.slice(0, separator);
-          if (Buffer.byteLength(record, "utf8") <= env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES) {
+          if (Buffer.byteLength(record, "utf8") <= maxSseRecordBytes) {
             if (parseRecord(record)) reconnectAttempt = 0;
           }
           buffer = buffer.slice(separator + match[0].length);
         }
 
-        if (Buffer.byteLength(buffer, "utf8") > env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES) {
+        if (Buffer.byteLength(buffer, "utf8") > maxSseRecordBytes) {
           buffer = "";
           discardingOversizedRecord = true;
         }
@@ -236,7 +243,7 @@ const createRealtimeTransport = ({
   const publish = async (envelope) => {
     const serialized = JSON.stringify(envelope);
     const messageBytes = Buffer.byteLength(serialized, "utf8");
-    if (messageBytes > env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES) {
+    if (messageBytes > maxMessageBytes) {
       throw new Error(
         `Realtime envelope exceeds REALTIME_PUBSUB_MAX_MESSAGE_BYTES (${env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES}).`,
       );

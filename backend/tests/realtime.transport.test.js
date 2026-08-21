@@ -132,6 +132,41 @@ test("subscribe parses only matching message frames and reconnects after EOF", a
   assert.equal(transport.getStatus().connected, false);
 });
 
+test("an envelope at the serialized byte limit round-trips through publish and subscribe", async () => {
+  const emptyEnvelopeSize = Buffer.byteLength(JSON.stringify({ payload: "" }), "utf8");
+  const exactEnvelope = {
+    payload: "x".repeat(1024 - emptyEnvelopeSize),
+  };
+  const serialized = JSON.stringify(exactEnvelope);
+  assert.equal(Buffer.byteLength(serialized, "utf8"), 1024);
+
+  const publishTransport = createRealtimeTransport({
+    fetchImpl: async (url) => {
+      assert.match(url, new RegExp(encodeURIComponent(serialized)));
+      return response(200, {});
+    },
+  });
+  await publishTransport.publish(exactEnvelope);
+
+  const received = [];
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(`data: message,quest-realtime,${serialized}\n\n`),
+      );
+      controller.close();
+    },
+  });
+  const subscribeTransport = createRealtimeTransport({
+    fetchImpl: async () => response(200, { body: stream }),
+  });
+  await subscribeTransport.start((value) => received.push(value));
+  await wait(10);
+  await subscribeTransport.stop();
+
+  assert.deepEqual(received, [exactEnvelope]);
+});
+
 test("reconnect backoff increases after repeated EOFs and stays bounded", async () => {
   const originalSetTimeout = global.setTimeout;
   const requestedDelays = [];
