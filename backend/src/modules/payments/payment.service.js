@@ -14,6 +14,7 @@ const {
 } = require("../tournaments/role-conflict.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { sendTicketOrderEmail } = require("../../lib/mail/sendTicketOrderEmail");
+const { assertPaymentMutationAuditContext, recordPaymentMutationAudit } = require("./payment.audit");
 const {
   buildBankTransferInstructions,
   getBankTransferAmountForSlot,
@@ -597,8 +598,10 @@ const processPayHereNotification = async (body) => {
   });
   if (result.status === "paid" && result.registrationId) {
     await activatePaidTeamRegistration(result.registrationId).catch((error) => {
-      logger.error("Paid tournament registration team activation failed", {
+      logger.error("Paid tournament registration team activation requires reconciliation", {
+        transactionId: result.id,
         registrationId: result.registrationId,
+        reconciliationRequired: true,
         error,
       });
     });
@@ -1019,8 +1022,12 @@ const getAdminPaymentTransaction = async (transactionId) => {
   return mapAdminPaymentDetail(transaction);
 };
 
-const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
-  runSerializable(async (tx) => {
+const reopenExpiredTournamentPayment = async ({ transactionId, admin, audit }) => {
+  assertPaymentMutationAuditContext(audit, {
+    action: "payment.reopened",
+    decision: "reopen",
+  });
+  return runSerializable(async (tx) => {
     const current = await tx.paymentTransaction.findUnique({
       where: { id: transactionId },
       include: {
@@ -1092,7 +1099,7 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
         reservedUntil,
       },
     });
-    return tx.paymentTransaction.update({
+    const payment = await tx.paymentTransaction.update({
       where: { id: current.id },
       data: {
         status: hasProof ? "review_required" : "pending",
@@ -1106,7 +1113,10 @@ const reopenExpiredTournamentPayment = async ({ transactionId, admin }) =>
         reconciliationNote: "Expired tournament payment reopened.",
       },
     });
+    await recordPaymentMutationAudit(tx, payment, audit);
+    return payment;
   });
+};
 
 const reconcilePayHerePayment = async ({
   transactionId,
@@ -1114,6 +1124,7 @@ const reconcilePayHerePayment = async ({
   note,
   providerRefundId,
   admin,
+  audit,
 }) => {
   const normalizedDecision = String(decision || "")
     .trim()
@@ -1127,6 +1138,10 @@ const reconcilePayHerePayment = async ({
   if (!["accept", "mark_refunded"].includes(normalizedDecision)) {
     throw new HttpError(400, "Choose accept or mark_refunded.");
   }
+  assertPaymentMutationAuditContext(audit, {
+    action: "payment.payhere.reconciled",
+    decision: normalizedDecision,
+  });
   if (!normalizedNote)
     throw new HttpError(400, "A reconciliation note is required.");
   if (normalizedDecision === "mark_refunded" && !normalizedRefundId) {
@@ -1233,7 +1248,9 @@ const reconcilePayHerePayment = async ({
         previousStatus: current.status,
         status: "paid",
       });
-      return markTournamentProjectionChange(updated, targetChanged);
+      const payment = markTournamentProjectionChange(updated, targetChanged);
+      await recordPaymentMutationAudit(tx, payment, audit);
+      return payment;
     }
 
     const updated = await tx.paymentTransaction.update({
@@ -1253,11 +1270,23 @@ const reconcilePayHerePayment = async ({
       previousStatus: current.status,
       status: "refunded",
     });
-    return markTournamentProjectionChange(updated, targetChanged);
+    const payment = markTournamentProjectionChange(updated, targetChanged);
+    await recordPaymentMutationAudit(tx, payment, audit);
+    return payment;
   });
 
   if (result.status === "paid" && result.registrationId) {
-    await activatePaidTeamRegistration(result.registrationId);
+    try {
+      await activatePaidTeamRegistration(result.registrationId);
+    } catch (error) {
+      logger.error("Paid tournament registration team activation requires reconciliation", {
+        transactionId: result.id,
+        registrationId: result.registrationId,
+        reconciliationRequired: true,
+        error,
+      });
+      throw error;
+    }
   }
   logger.info("PayHere payment manually reconciled", {
     transactionId: result.id,
@@ -1272,11 +1301,16 @@ const reconcileCashTicketPayment = async ({
   decision,
   note,
   admin,
+  audit,
 }) => {
   const normalizedDecision = String(decision || "").trim().toLowerCase();
   const normalizedNote = String(note || "").trim().slice(0, 1000);
   if (!["confirm", "cancel"].includes(normalizedDecision))
     throw new HttpError(400, "Choose confirm or cancel.");
+  assertPaymentMutationAuditContext(audit, {
+    action: "payment.cash.reconciled",
+    decision: normalizedDecision,
+  });
   if (!normalizedNote)
     throw new HttpError(400, "A cash reconciliation note is required.");
 
@@ -1331,7 +1365,9 @@ const reconcileCashTicketPayment = async ({
       previousStatus: current.status,
       status,
     });
-    return markTournamentProjectionChange(updated, false);
+    const payment = markTournamentProjectionChange(updated, false);
+    await recordPaymentMutationAudit(tx, payment, audit);
+    return payment;
   });
 };
 

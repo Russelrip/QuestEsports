@@ -15,6 +15,7 @@ const { countTournamentCapacityUsage } = require("../tournaments/registration-el
 const { assertNoCoachPlayerRoleConflict } = require("../tournaments/role-conflict.service");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { sendTicketOrderEmail } = require("../../lib/mail/sendTicketOrderEmail");
+const { assertPaymentMutationAuditContext, recordPaymentMutationAudit } = require("./payment.audit");
 
 const markTournamentProjectionChange = (value, changed) => {
   if (value && typeof value === "object") {
@@ -291,15 +292,16 @@ const getBankTransferProofFile = async (transactionId) => {
   }
 };
 
-const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) => {
+const reviewBankTransfer = async ({ transactionId, decision, reason, admin, audit }) => {
   const normalizedDecision = String(decision || "").trim().toLowerCase();
   const normalizedReason = String(reason || "").trim().slice(0, 500);
   if (!["approve", "reject"].includes(normalizedDecision)) {
     throw new HttpError(400, "Choose approve or reject.");
   }
-  if (normalizedDecision === "reject" && !normalizedReason) {
-    throw new HttpError(400, "Provide a reason when rejecting payment proof.");
-  }
+  assertPaymentMutationAuditContext(audit, {
+    action: "payment.bank_transfer.reviewed",
+    decision: normalizedDecision,
+  });
 
   const result = await runSerializable(async (tx) => {
     const current = await tx.paymentTransaction.findUnique({
@@ -317,10 +319,15 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
     ) {
       throw new HttpError(404, "Bank-transfer payment was not found.");
     }
+    if (current.status === "paid") {
+      return markTournamentProjectionChange(current, false);
+    }
+    if (normalizedDecision === "reject" && !normalizedReason) {
+      throw new HttpError(400, "Provide a reason when rejecting payment proof.");
+    }
     if (!current.bankTransferProof) {
       throw new HttpError(409, "No payment proof has been submitted.");
     }
-    if (current.status === "paid") return markTournamentProjectionChange(current, false);
     if (current.status !== "review_required") {
       throw new HttpError(409, "This payment is not awaiting review.");
     }
@@ -395,7 +402,9 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
           data: { confirmationEmailQueuedAt: now },
         });
       }
-      return markTournamentProjectionChange(payment, tournamentRegistrationChanged);
+      const result = markTournamentProjectionChange(payment, tournamentRegistrationChanged);
+      await recordPaymentMutationAudit(tx, result, audit);
+      return result;
     }
 
     let tournamentRegistrationChanged = false;
@@ -432,10 +441,13 @@ const reviewBankTransfer = async ({ transactionId, decision, reason, admin }) =>
         rejectionReason: normalizedReason,
       },
     });
-    return tx.paymentTransaction.update({
+    const payment = await tx.paymentTransaction.update({
       where: { id: current.id },
       data: { status: "failed", statusMessage: normalizedReason },
-    }).then((payment) => markTournamentProjectionChange(payment, tournamentRegistrationChanged));
+    });
+    const result = markTournamentProjectionChange(payment, tournamentRegistrationChanged);
+    await recordPaymentMutationAudit(tx, result, audit);
+    return result;
   });
 
   if (result.status === "paid" && result.registrationId) {

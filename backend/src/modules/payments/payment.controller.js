@@ -21,6 +21,15 @@ const markTournamentPaymentCache = (res, payment) => {
   }
 };
 
+const paymentAudit = (req, action, decision, reasonCode) => ({
+  ...requestAuditContext(req),
+  action,
+  decision,
+  reasonCode,
+});
+
+const normalizedDecision = (value) => String(value || "").trim().toLowerCase();
+
 const notifyPayHere = asyncHandler(async (req, res) => {
   const payment = await processPayHereNotification(req.body);
   markTournamentPaymentCache(res, payment);
@@ -92,6 +101,7 @@ const reviewBankTransferPayment = asyncHandler(async (req, res) => {
     decision: req.body.decision,
     reason: req.body.reason,
     admin: req.user,
+    audit: paymentAudit(req, "payment.bank_transfer.reviewed", normalizedDecision(req.body.decision), normalizedDecision(req.body.decision) === "approve" ? "approved" : "rejected"),
   });
   markTournamentPaymentCache(res, payment);
   res.status(200).json({
@@ -111,6 +121,7 @@ const reconcilePayHerePaymentController = asyncHandler(async (req, res) => {
     note: req.body.note,
     providerRefundId: req.body.providerRefundId,
     admin: req.user,
+    audit: paymentAudit(req, "payment.payhere.reconciled", normalizedDecision(req.body.decision), normalizedDecision(req.body.decision) === "accept" ? "accepted" : "refunded"),
   });
   markTournamentPaymentCache(res, payment);
   res.status(200).json({
@@ -128,6 +139,7 @@ const reconcileCashTicketPaymentController = asyncHandler(async (req, res) => {
     decision: req.body.decision,
     note: req.body.note,
     admin: req.user,
+    audit: paymentAudit(req, "payment.cash.reconciled", normalizedDecision(req.body.decision), normalizedDecision(req.body.decision) === "confirm" ? "confirmed" : "cancelled"),
   });
   res.status(200).json({
     success: true,
@@ -143,6 +155,7 @@ const reopenExpiredPayment = asyncHandler(async (req, res) => {
   const payment = await reopenExpiredTournamentPayment({
     transactionId: req.params.transactionId,
     admin: req.user,
+    audit: paymentAudit(req, "payment.reopened", "reopen", "expired_payment_reopened"),
   });
   res.locals.cacheTags = ["tournaments", "foundation"];
   res.status(200).json({

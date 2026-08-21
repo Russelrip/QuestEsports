@@ -1,0 +1,366 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
+const path = require("node:path");
+const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
+
+const backend = path.join(__dirname, "../src");
+const v1Path = path.join(backend, "routes/v1.js");
+const envPath = path.join(backend, "config/env.js");
+const authPath = path.join(backend, "modules/auth/auth.middleware.js");
+const asyncHandlerPath = path.join(backend, "lib/async-handler.js");
+const prismaPath = path.join(backend, "lib/prisma.js");
+const cacheControlPath = path.join(backend, "middleware/cache-control.js");
+const responseCachePath = path.join(backend, "middleware/response-cache.js");
+const tournamentServicePath = path.join(backend, "modules/tournaments/tournament.service.js");
+const matchControllerPath = path.join(backend, "modules/matches/match.controller.js");
+const vetoControllerPath = path.join(backend, "modules/veto/veto.controller.js");
+const vetoServicePath = path.join(backend, "modules/veto/veto.service.js");
+const auditPath = path.join(backend, "lib/audit.js");
+const realtimeServicePath = path.join(backend, "modules/realtime/realtime.service.js");
+const matchRoomServicePath = path.join(backend, "modules/match-rooms/match-room.service.js");
+const matchRoomControllerPath = path.join(backend, "modules/match-rooms/match-room.controller.js");
+const notificationControllerPath = path.join(backend, "modules/notifications/notification.controller.js");
+const supportRoutesPath = path.join(backend, "modules/support/support.routes.js");
+const authRoutesPath = path.join(backend, "modules/auth/auth.routes.js");
+const challongeControllerPath = path.join(backend, "modules/challonge/challonge.controller.js");
+const staffControllerPath = path.join(backend, "modules/permissions/staff.controller.js");
+const realtimeControllerPath = path.join(backend, "modules/realtime/realtime.controller.js");
+const permissionMiddlewarePath = path.join(backend, "modules/permissions/permission.middleware.js");
+const valorantControllerPath = path.join(backend, "modules/valorant/valorant.controller.js");
+const valorantLeaderboardControllerPath = path.join(backend, "modules/valorant-leaderboard/controller.js");
+
+const pass = (_req, _res, next) => next();
+const controller = new Proxy({}, { get: () => pass });
+const route = (router, method, pathname) => router.stack.find((layer) => layer.route?.path === pathname && layer.route.methods[method]);
+
+const runRoute = async (layer, req) => {
+  const errors = [];
+  let finish;
+  const res = {
+    status: () => res,
+    json: (body) => { req.responseBody = body; finish?.(); return res; },
+    send: () => { finish?.(); return res; },
+    locals: {},
+  };
+  let index = 0;
+  await new Promise((resolve) => {
+    finish = resolve;
+    const next = (error) => {
+      if (error || index >= layer.route.stack.length) {
+        if (error) errors.push(error);
+        resolve();
+        return;
+      }
+      const handler = layer.route.stack[index++].handle;
+      Promise.resolve(handler(req, res, next)).catch(next);
+    };
+    next();
+  });
+  return errors[0] || null;
+};
+
+test("admin veto mutations enforce scoped staff access without guarding public code routes", async () => {
+  const prisma = {
+    vetoRoom: {
+      findUnique: async ({ where }) => where.id === "room-1" ? { id: "room-1", tournamentId: "tournament-1" } : null,
+    },
+    match: {
+      findUnique: async ({ where }) => where.id === "match-1" ? { tournamentId: "tournament-1" } : null,
+    },
+    tournamentStaffAssignment: {
+      findFirst: async ({ where }) => {
+        if (where.userId === "other-tournament-staff" && where.tournamentId === "tournament-2") return { id: "assignment-other" };
+        if (where.tournamentId !== "tournament-1") return null;
+        if (where.userId === "staff-1" && where.role.in.includes("tournament_admin")) return { id: "assignment-1" };
+        if (where.userId === "referee-1" && where.role.in.includes("referee")) return { id: "assignment-2" };
+        return null;
+      },
+    },
+  };
+  const serviceCalls = [];
+  const vetoRoom = { id: "room-1", code: "room-code", status: "open", revision: 1 };
+  const vetoController = loadModuleWithMocks(vetoControllerPath, {
+    [vetoServicePath]: {
+      openRoom: async () => { serviceCalls.push(["openRoom"]); return vetoRoom; },
+      assignTeamA: async () => { serviceCalls.push(["assignTeamA"]); return vetoRoom; },
+      createRoom: async ({ body }) => { serviceCalls.push(["createRoom", body]); return { room: vetoRoom }; },
+      createMap: async () => ({ id: "map-1" }),
+      updateMapAvailability: async () => ({ id: "map-1", slug: "ascent", name: "Ascent", isActive: true }),
+      createPool: async () => ({ id: "pool-1" }),
+      createPreset: async () => ({ id: "preset-1" }),
+      createTemplate: async () => ({ id: "template-1" }),
+      saveTournamentConfig: async () => ({ tournamentId: "tournament-1" }),
+      readyRoom: async ({ user, token }) => { serviceCalls.push(["readyRoom", user, token]); return vetoRoom; },
+      submitAction: async ({ user, token }) => { serviceCalls.push(["submitAction", user, token]); return vetoRoom; },
+      chooseTeamA: async ({ user, token }) => { serviceCalls.push(["chooseTeamA", user, token]); return vetoRoom; },
+    },
+    [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
+    [realtimeServicePath]: { publishRealtimeEvent: () => undefined },
+    [matchRoomServicePath]: { notifyVetoTurn: async () => undefined },
+  });
+  const permission = loadModuleWithMocks(permissionMiddlewarePath, { [prismaPath]: { prisma } });
+  const loaded = loadModuleWithMocks(v1Path, {
+    [envPath]: { env: { CACHE_TTL_SECONDS: 300, CHALLONGE_BRACKET_CACHE_SECONDS: 30 } },
+    [authPath]: {
+      attachSession: pass,
+      requireAuth: (req, res, next) => req.user ? next() : next(Object.assign(new Error("auth"), { statusCode: 401 })),
+      requireAdmin: (req, res, next) => req.user?.role === "admin"
+        ? next()
+        : next(Object.assign(new Error("admin"), { statusCode: 403 })),
+    },
+    [asyncHandlerPath]: { asyncHandler: (handler) => handler },
+    [cacheControlPath]: { cachePublicData: () => pass },
+    [responseCachePath]: { cacheJson: () => pass, invalidateCache: () => pass },
+    [tournamentServicePath]: { getPublicTournamentBySlug: async () => ({}) },
+    [matchControllerPath]: controller,
+    [vetoControllerPath]: vetoController.module,
+    [matchRoomControllerPath]: controller,
+    [notificationControllerPath]: controller,
+    [supportRoutesPath]: pass,
+    [authRoutesPath]: { oauthLinkRoutes: pass },
+    [challongeControllerPath]: controller,
+    [staffControllerPath]: controller,
+    [realtimeControllerPath]: { getRealtimeEvents: pass },
+    [permissionMiddlewarePath]: permission.module,
+    [valorantControllerPath]: controller,
+    [valorantLeaderboardControllerPath]: controller,
+  });
+
+  try {
+    const adminRoomMutation = route(loaded.module, "post", "/admin/veto-rooms/:roomId/open");
+    assert.ok(adminRoomMutation);
+    const unauthorized = await runRoute(adminRoomMutation, {
+      user: { id: "not-staff", role: "user" },
+      params: { roomId: "room-1" },
+      body: {},
+    });
+    assert.equal(unauthorized?.statusCode, 403);
+
+    const validStaff = await runRoute(adminRoomMutation, {
+      user: { id: "staff-1", role: "referee" },
+      params: { roomId: "room-1" },
+      body: {},
+    });
+    assert.equal(validStaff, null);
+
+    const wrongTournamentStaff = await runRoute(adminRoomMutation, {
+      user: { id: "other-tournament-staff", role: "referee" },
+      params: { roomId: "room-1" },
+      body: {},
+    });
+    assert.equal(wrongTournamentStaff?.statusCode, 403);
+
+    const unauthenticated = await runRoute(adminRoomMutation, {
+      user: null,
+      params: { roomId: "room-1" },
+      body: {},
+    });
+    assert.equal(unauthenticated?.message, "auth");
+
+    const referee = await runRoute(adminRoomMutation, {
+      user: { id: "referee-1", role: "user" },
+      params: { roomId: "room-1" },
+      body: {},
+    });
+    assert.equal(referee, null);
+
+    const assignmentMutation = route(loaded.module, "post", "/admin/veto-rooms/:roomId/assign-team-a");
+    assert.equal((await runRoute(assignmentMutation, {
+      user: { id: "not-staff", role: "user" },
+      params: { roomId: "room-1" },
+      body: {},
+    }))?.statusCode, 403);
+    assert.equal(await runRoute(assignmentMutation, {
+      user: { id: "referee-1", role: "referee" },
+      params: { roomId: "room-1" },
+      body: {},
+    }), null);
+
+    const mapMutation = route(loaded.module, "post", "/admin/veto/maps");
+    assert.ok(mapMutation);
+    assert.equal((await runRoute(mapMutation, { user: { id: "staff-1", role: "user" }, params: {}, body: {} }))?.statusCode, 403);
+    assert.equal(await runRoute(mapMutation, { user: { id: "admin-1", role: "admin" }, params: {}, body: {} }), null);
+
+    const poolMutation = route(loaded.module, "post", "/admin/veto/pools");
+    const presetMutation = route(loaded.module, "post", "/admin/veto/presets");
+    const templateMutation = route(loaded.module, "post", "/admin/veto/templates");
+    const configMutation = route(loaded.module, "put", "/admin/tournaments/:id/veto-config");
+    for (const [mutation, req, expected] of [
+      [poolMutation, { user: { id: "not-staff", role: "user" }, params: {}, body: { tournamentId: "tournament-1" } }, 403],
+      [presetMutation, { user: { id: "not-staff", role: "user" }, params: {}, body: { tournamentId: "tournament-1" } }, 403],
+      [templateMutation, { user: { id: "not-staff", role: "user" }, params: {}, body: { tournamentId: "tournament-1" } }, 403],
+      [poolMutation, { user: { id: "not-staff", role: "user" }, params: {}, body: {} }, 403],
+      [presetMutation, { user: { id: "not-staff", role: "user" }, params: {}, body: {} }, 403],
+      [templateMutation, { user: { id: "not-staff", role: "user" }, params: {}, body: {} }, 403],
+      [configMutation, { user: { id: "not-staff", role: "user" }, params: { id: "tournament-1" }, body: {} }, 403],
+    ]) {
+      assert.ok(mutation);
+      assert.equal((await runRoute(mutation, req))?.statusCode, expected);
+    }
+    assert.equal(await runRoute(poolMutation, { user: { id: "staff-1", role: "user" }, params: {}, body: { tournamentId: "tournament-1" } }), null);
+    assert.equal(await runRoute(presetMutation, { user: { id: "staff-1", role: "user" }, params: {}, body: { tournamentId: "tournament-1" } }), null);
+    assert.equal(await runRoute(templateMutation, { user: { id: "staff-1", role: "user" }, params: {}, body: { tournamentId: "tournament-1" } }), null);
+    assert.equal(await runRoute(configMutation, { user: { id: "staff-1", role: "user" }, params: { id: "tournament-1" }, body: {} }), null);
+    for (const mutation of [poolMutation, presetMutation, templateMutation]) {
+      assert.equal(await runRoute(mutation, { user: { id: "admin-1", role: "admin" }, params: {}, body: {} }), null);
+    }
+    assert.equal((await runRoute(poolMutation, { user: { id: "referee-1", role: "referee" }, params: {}, body: { tournamentId: "tournament-1" } }))?.statusCode, 403);
+    assert.equal((await runRoute(configMutation, { user: { id: "referee-1", role: "referee" }, params: { id: "tournament-1" }, body: {} }))?.statusCode, 403);
+
+    const conflictingCreate = route(loaded.module, "post", "/admin/veto-rooms");
+    assert.equal(await runRoute(conflictingCreate, {
+      user: { id: "staff-1", role: "user" },
+      params: {},
+      body: { tournamentId: "tournament-1" },
+    }), null);
+    serviceCalls.length = 0;
+    const conflict = await runRoute(conflictingCreate, {
+      user: { id: "staff-1", role: "user" },
+      params: {},
+      body: { matchId: "match-1", tournamentId: "other-tournament" },
+    });
+    assert.equal(conflict?.statusCode, 400);
+    assert.equal(serviceCalls.some(([name]) => name === "createRoom"), false);
+    const adminConflict = await runRoute(conflictingCreate, {
+      user: { id: "admin-1", role: "admin" },
+      params: {},
+      body: { matchId: "match-1", tournamentId: "other-tournament" },
+    });
+    assert.equal(adminConflict?.statusCode, 400);
+
+    assert.ok(route(loaded.module, "get", "/veto-rooms/:code"));
+    assert.ok(route(loaded.module, "post", "/veto-rooms/:code/ready"));
+    assert.ok(route(loaded.module, "post", "/veto-rooms/:code/toss"));
+    assert.ok(route(loaded.module, "post", "/veto-rooms/:code/team-a"));
+    assert.ok(route(loaded.module, "post", "/veto-rooms/:code/actions"));
+  } finally {
+    loaded.restore();
+    vetoController.restore();
+    permission.restore();
+  }
+});
+
+test("public veto code routes use real captain, grant, and published-room access resolution", async () => {
+  const tokenHash = (token) => crypto.createHash("sha256").update(token).digest("hex");
+  const room = (overrides = {}) => ({
+    id: `room-${overrides.code || "access"}`,
+    code: overrides.code || "access-room",
+    tournamentId: "tournament-1",
+    title: "Access Room",
+    format: "bo1",
+    status: "open",
+    revision: 1,
+    controlMode: "captain_or_link",
+    teamOrderMethod: "toss",
+    tossMethod: "digital",
+    tossCallerSlot: 2,
+    tossCall: null,
+    tossResult: null,
+    tossWinnerSlot: null,
+    teamASlot: null,
+    currentStep: 0,
+    turnSeconds: null,
+    turnDeadline: null,
+    viewerEnabled: true,
+    publishResult: false,
+    participants: [],
+    actions: [],
+    configSnapshot: { maps: [], steps: [] },
+    tournament: null,
+    match: null,
+    openedAt: null,
+    startedAt: null,
+    completedAt: null,
+    cancelledAt: null,
+    updatedAt: new Date(),
+    ...overrides,
+  });
+  const rooms = [
+    room({
+      code: "captain-room",
+      participants: [{ id: "participant-1", slot: 1, registrationId: "registration-1", displayName: "Captain Team", seed: 1, accentColor: "#22d3ee", readyAt: null, joinedAt: null }],
+    }),
+    room({ code: "token-room", controlMode: "link_only" }),
+    room({ code: "public-room", status: "completed", publishResult: true }),
+  ];
+  const prisma = {
+    vetoRoom: {
+      findUnique: async ({ where }) => rooms.find((entry) => where.code ? entry.code === where.code : entry.id === where.id) || null,
+    },
+    tournamentStaffAssignment: { findFirst: async () => null },
+    teamRegistration: {
+      findMany: async ({ where }) => where.OR?.some((entry) => entry.userId === "captain-1") ? [{ id: "registration-1" }] : [],
+    },
+    vetoAccessGrant: {
+      findFirst: async ({ where }) => where.tokenHash === tokenHash("valid-grant")
+        ? { id: "grant-1", role: "team_1", expiresAt: new Date(Date.now() + 60_000) }
+        : where.tokenHash === tokenHash("expired-grant")
+          ? { id: "grant-expired", role: "team_1", expiresAt: new Date(Date.now() - 60_000) }
+        : null,
+      update: async () => undefined,
+    },
+  };
+  const actualService = loadModuleWithMocks(vetoServicePath, { [prismaPath]: { prisma } });
+  const actualController = loadModuleWithMocks(vetoControllerPath, {
+    [vetoServicePath]: actualService.module,
+    [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
+    [realtimeServicePath]: { publishRealtimeEvent: () => undefined },
+    [matchRoomServicePath]: { notifyVetoTurn: async () => undefined },
+  });
+  const permission = loadModuleWithMocks(permissionMiddlewarePath, { [prismaPath]: { prisma } });
+  const loaded = loadModuleWithMocks(v1Path, {
+    [envPath]: { env: { CACHE_TTL_SECONDS: 300, CHALLONGE_BRACKET_CACHE_SECONDS: 30 } },
+    [authPath]: {
+      attachSession: pass,
+      requireAuth: (req, res, next) => req.user ? next() : next(Object.assign(new Error("auth"), { statusCode: 401 })),
+      requireAdmin: (req, res, next) => req.user?.role === "admin"
+        ? next()
+        : next(Object.assign(new Error("admin"), { statusCode: 403 })),
+    },
+    [asyncHandlerPath]: { asyncHandler: (handler) => handler },
+    [cacheControlPath]: { cachePublicData: () => pass },
+    [responseCachePath]: { cacheJson: () => pass, invalidateCache: () => pass },
+    [tournamentServicePath]: { getPublicTournamentBySlug: async () => ({}) },
+    [matchControllerPath]: controller,
+    [vetoControllerPath]: actualController.module,
+    [matchRoomControllerPath]: controller,
+    [notificationControllerPath]: controller,
+    [supportRoutesPath]: pass,
+    [authRoutesPath]: { oauthLinkRoutes: pass },
+    [challongeControllerPath]: controller,
+    [staffControllerPath]: controller,
+    [realtimeControllerPath]: { getRealtimeEvents: pass },
+    [permissionMiddlewarePath]: permission.module,
+    [valorantControllerPath]: controller,
+    [valorantLeaderboardControllerPath]: controller,
+  });
+
+  try {
+    const getRoom = route(loaded.module, "get", "/veto-rooms/:code");
+    const captainRequest = { user: { id: "captain-1", role: "user" }, params: { code: "captain-room" }, headers: {} };
+    assert.equal(await runRoute(getRoom, captainRequest), null);
+    assert.equal(captainRequest.responseBody.data.access.kind, "team");
+    assert.equal(captainRequest.responseBody.data.access.slot, 1);
+
+    const grantRequest = { user: null, params: { code: "token-room" }, headers: { "x-veto-token": "valid-grant" } };
+    assert.equal(await runRoute(getRoom, grantRequest), null);
+    assert.equal(grantRequest.responseBody.data.access.kind, "team");
+    assert.equal(grantRequest.responseBody.data.access.slot, 1);
+
+    const publicRequest = { user: null, params: { code: "public-room" }, headers: {} };
+    assert.equal(await runRoute(getRoom, publicRequest), null);
+    assert.equal(publicRequest.responseBody.data.access.kind, "public");
+
+    const expiredGrantRequest = { user: null, params: { code: "token-room" }, headers: { "x-veto-token": "expired-grant" } };
+    assert.equal((await runRoute(getRoom, expiredGrantRequest))?.statusCode, 401);
+
+    const unauthenticatedRequest = { user: null, params: { code: "captain-room" }, headers: {} };
+    assert.equal((await runRoute(getRoom, unauthenticatedRequest))?.statusCode, 401);
+  } finally {
+    loaded.restore();
+    permission.restore();
+    actualController.restore();
+    actualService.restore();
+  }
+});

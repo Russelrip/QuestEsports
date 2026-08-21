@@ -9,13 +9,30 @@ const envPath = path.join(__dirname, "../src/config/env.js");
 const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
 const teamServicePath = path.join(__dirname, "../src/modules/teams/team.service.js");
 const ticketEmailPath = path.join(__dirname, "../src/lib/mail/sendTicketOrderEmail.js");
+const auditPath = path.join(__dirname, "../src/lib/audit.js");
+const loggerPath = path.join(__dirname, "../src/lib/logger.js");
+const auditContext = {
+  actorUserId: "admin-1",
+  requestId: "request-1",
+  ipAddress: "198.51.100.7",
+  action: "payment.payhere.reconciled",
+  decision: "mark_refunded",
+  reasonCode: "refunded",
+};
+const paymentAudit = (action, decision, reasonCode) => ({
+  ...auditContext,
+  action,
+  decision,
+  reasonCode,
+});
 const md5 = (value) => crypto.createHash("md5").update(String(value)).digest("hex");
 const env = { PAYHERE_MERCHANT_ID: "1210000", PAYHERE_MERCHANT_SECRET: "secret", PAYHERE_NOTIFY_URL: "https://example.com/api/payments/payhere/notify", APP_URL: "https://example.com", PAYHERE_MODE: "sandbox" };
 const signature = (body) => md5(`${body.merchant_id}${body.order_id}${body.payhere_amount}${body.payhere_currency}${body.status_code}${md5(env.PAYHERE_MERCHANT_SECRET).toUpperCase()}`).toUpperCase();
-const load = (prisma = {}, additionalMocks = {}) => loadModuleWithMocks(servicePath, {
+const load = (prisma = {}, additionalMocks = {}, activatePaidTeamRegistration = async () => undefined) => loadModuleWithMocks(servicePath, {
   [envPath]: { env },
   [prismaPath]: { prisma },
-  [teamServicePath]: { activatePaidTeamRegistration: async () => undefined },
+  [teamServicePath]: { activatePaidTeamRegistration },
+  [auditPath]: { recordAuditInTransaction: async (tx, data) => tx.auditLog?.create ? tx.auditLog.create({ data }) : undefined },
   ...additionalMocks,
 });
 
@@ -185,6 +202,7 @@ test("actual terminal registration target writes remain tournament-cache relevan
       note: "Refunded after manual review.",
       providerRefundId: "refund-registration",
       admin: { id: "admin-1" },
+      audit: auditContext,
     });
     assert.equal(registrationUpdate.where.id, "registration-1");
     assert.equal(result.__tournamentProjectionChanged, true);
@@ -252,6 +270,282 @@ test("PayHere role conflicts preserve the signed payment as review_required with
     assert.equal(updateData.status, "review_required");
     assert.match(updateData.statusMessage, /coach\/player role conflict/);
     assert.equal(auditData.appliedStatus, "review_required");
+  } finally {
+    restore();
+  }
+});
+
+test("PayHere reconciliation rolls back local writes when its transaction-scoped audit fails", async () => {
+  const current = {
+    id: "tx-audit-atomic",
+    provider: "payhere",
+    status: "review_required",
+    registrationId: null,
+    merchandiseOrderId: null,
+    ticketOrderId: null,
+  };
+  let updateCalls = 0;
+  let rolledBack = false;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => { updateCalls += 1; return { ...current, ...data }; },
+    },
+    auditLog: { create: async () => { throw new Error("audit unavailable"); } },
+  };
+  const prisma = {
+    $transaction: async (callback) => {
+      try { return await callback(tx); } catch (error) { rolledBack = true; throw error; }
+    },
+  };
+  const { module: service, restore } = load(prisma, {
+  });
+  try {
+    await assert.rejects(service.reconcilePayHerePayment({
+      transactionId: current.id,
+      decision: "accept",
+      note: "secret buyer@example.test provider-ref signature-secret",
+      admin: { id: "admin-1" },
+      audit: {
+        actorUserId: "admin-1",
+        requestId: "request-1",
+        ipAddress: "198.51.100.7",
+        action: "payment.payhere.reconciled",
+        decision: "accept",
+        reasonCode: "accepted",
+      },
+    }), /audit unavailable/);
+    assert.equal(updateCalls, 1);
+    assert.equal(rolledBack, true);
+  } finally {
+    restore();
+  }
+});
+
+test("invalid PayHere and cash decisions retain 400 validation without state or audit mutation", async () => {
+  let transactionCalls = 0;
+  let auditCalls = 0;
+  const { module: service, restore } = load({
+    $transaction: async () => {
+      transactionCalls += 1;
+    },
+  }, {
+    [auditPath]: {
+      recordAuditInTransaction: async () => {
+        auditCalls += 1;
+      },
+    },
+  });
+  try {
+    await assert.rejects(
+      service.reconcilePayHerePayment({
+        transactionId: "invalid-payhere-decision",
+        decision: "accept-without-review",
+        note: "valid note",
+        admin: { id: "admin-1" },
+        audit: { ...auditContext, decision: "accept-without-review", reasonCode: "accepted" },
+      }),
+      (error) => error.statusCode === 400 && /Choose accept or mark_refunded/.test(error.message),
+    );
+    await assert.rejects(
+      service.reconcileCashTicketPayment({
+        transactionId: "invalid-cash-decision",
+        decision: "confirm-without-review",
+        note: "valid note",
+        admin: { id: "admin-1" },
+        audit: { ...auditContext, action: "payment.cash.reconciled", decision: "confirm-without-review", reasonCode: "confirmed" },
+      }),
+      (error) => error.statusCode === 400 && /Choose confirm or cancel/.test(error.message),
+    );
+    assert.equal(transactionCalls, 0);
+    assert.equal(auditCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("PayHere audit metadata must match the requested reconciliation decision", async () => {
+  let transactionCalls = 0;
+  let auditCalls = 0;
+  const { module: service, restore } = load({
+    $transaction: async () => {
+      transactionCalls += 1;
+    },
+  }, {
+    [auditPath]: {
+      recordAuditInTransaction: async () => {
+        auditCalls += 1;
+      },
+    },
+  });
+  try {
+    await assert.rejects(
+      service.reconcilePayHerePayment({
+        transactionId: "mismatched-payhere-audit",
+        decision: "accept",
+        note: "valid acceptance note",
+        admin: { id: "admin-1" },
+        audit: { ...auditContext, decision: "mark_refunded", reasonCode: "refunded" },
+      }),
+      (error) => error.statusCode === 500 && /audit context is required/.test(error.message),
+    );
+    assert.equal(transactionCalls, 0);
+    assert.equal(auditCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("privileged payment services reject missing audit context before transaction work", async () => {
+  let transactionCalls = 0;
+  const { module: service, restore } = load({
+    $transaction: async () => { transactionCalls += 1; },
+  });
+  try {
+    await assert.rejects(service.reconcilePayHerePayment({
+      transactionId: "tx-missing-audit",
+      decision: "accept",
+      note: "valid note",
+      admin: { id: "admin-1" },
+    }), /audit context is required/);
+    assert.equal(transactionCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("cash reconciliation rolls back local writes when its transaction-scoped audit fails", async () => {
+  const current = {
+    id: "cash-audit-atomic",
+    provider: "cash",
+    purpose: "ticket_order",
+    status: "pending",
+    ticketOrderId: null,
+    ticketOrder: { capacityReleasedAt: null, expiresAt: new Date(Date.now() + 60_000), event: { status: "on_sale" } },
+  };
+  let updateCalls = 0;
+  let rolledBack = false;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => { updateCalls += 1; return { ...current, ...data }; },
+    },
+    auditLog: { create: async () => { throw new Error("audit unavailable"); } },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => {
+      try { return await callback(tx); } catch (error) { rolledBack = true; throw error; }
+    },
+  });
+  try {
+    await assert.rejects(service.reconcileCashTicketPayment({
+      transactionId: current.id,
+      decision: "cancel",
+      note: "valid cancellation note",
+      admin: { id: "admin-1" },
+      audit: { ...auditContext, action: "payment.cash.reconciled", decision: "cancel", reasonCode: "cancelled" },
+    }), /audit unavailable/);
+    assert.equal(updateCalls, 1);
+    assert.equal(rolledBack, true);
+  } finally {
+    restore();
+  }
+});
+
+test("payment reopen rolls back local writes when its transaction-scoped audit fails", async () => {
+  const current = {
+    id: "reopen-audit-atomic",
+    provider: "payhere",
+    purpose: "tournament_registration",
+    status: "expired",
+    amount: 1000,
+    bankTransferProof: null,
+    registration: {
+      id: "registration-reopen",
+      status: "pending",
+      paymentStatus: "pending",
+      tournamentId: "tournament-1",
+      members: [],
+      tournament: { maxTeams: 10, reservationMinutes: 15, registrationFeeCurrency: "LKR" },
+    },
+  };
+  let paymentUpdates = 0;
+  let rolledBack = false;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => { paymentUpdates += 1; return { ...current, ...data }; },
+    },
+    teamRegistration: {
+      count: async () => 0,
+      update: async () => undefined,
+    },
+    auditLog: { create: async () => { throw new Error("audit unavailable"); } },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => {
+      try { return await callback(tx); } catch (error) { rolledBack = true; throw error; }
+    },
+  });
+  try {
+    await assert.rejects(service.reopenExpiredTournamentPayment({
+      transactionId: current.id,
+      admin: { id: "admin-1" },
+      audit: { ...auditContext, action: "payment.reopened", decision: "reopen", reasonCode: "expired_payment_reopened" },
+    }), /audit unavailable/);
+    assert.equal(paymentUpdates, 1);
+    assert.equal(rolledBack, true);
+  } finally {
+    restore();
+  }
+});
+
+test("PayHere activation failure leaves the committed audit and emits reconciliation diagnostics", async () => {
+  const current = {
+    id: "tx-activation-failure",
+    provider: "payhere",
+    status: "review_required",
+    registrationId: "registration-activation",
+    registration: {
+      id: "registration-activation",
+      status: "pending",
+      members: [],
+      tournamentId: "tournament-1",
+      tournament: { maxTeams: 10 },
+    },
+    merchandiseOrderId: null,
+    ticketOrderId: null,
+  };
+  let auditData = null;
+  let logged = null;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => ({ ...current, ...data }),
+    },
+    auditLog: { create: async (_args) => { auditData = _args.data; return _args.data; } },
+    teamRegistration: {
+      count: async () => 0,
+      update: async () => undefined,
+    },
+  };
+  const { module: service, restore } = load({
+    $transaction: async (callback) => callback(tx),
+  }, {
+    [loggerPath]: { logger: { error: (_message, data) => { logged = data; }, info: () => undefined } },
+  }, async () => { throw new Error("activation unavailable"); });
+  try {
+    await assert.rejects(service.reconcilePayHerePayment({
+      transactionId: current.id,
+      decision: "accept",
+      note: "valid acceptance note",
+      admin: { id: "admin-1" },
+      audit: { ...auditContext, action: "payment.payhere.reconciled", decision: "accept", reasonCode: "accepted" },
+    }), /activation unavailable/);
+    assert.equal(auditData.afterData.status, "paid");
+    assert.equal(auditData.afterData.decision, "accept");
+    assert.equal(logged.reconciliationRequired, true);
+    assert.equal(logged.transactionId, current.id);
   } finally {
     restore();
   }
@@ -414,6 +708,7 @@ test("admin cash confirmation activates pending entrance tickets", async () => {
       decision: "confirm",
       note: "Collected at Gate A",
       admin: { id: "admin-1" },
+      audit: paymentAudit("payment.cash.reconciled", "confirm", "confirmed"),
     });
     assert.equal(result.status, "paid");
     assert.equal(result.__tournamentProjectionChanged, false);
@@ -567,6 +862,7 @@ test("admins can reopen an expired PayHere tournament payment", async () => {
     await service.reopenExpiredTournamentPayment({
       transactionId: current.id,
       admin: { id: "admin-1" },
+      audit: paymentAudit("payment.reopened", "reopen", "expired_payment_reopened"),
     });
     assert.equal(registrationUpdate.paymentStatus, "pending");
     assert.equal(registrationUpdate.assignedSlotNumber, null);
@@ -617,6 +913,7 @@ test("expired payment reopening rejects an active same-tournament coach/player c
       service.reopenExpiredTournamentPayment({
         transactionId: current.id,
         admin: { id: "admin-1" },
+        audit: paymentAudit("payment.reopened", "reopen", "expired_payment_reopened"),
       }),
       (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
     );
@@ -701,6 +998,7 @@ test("manual PayHere reconciliation records an externally completed refund", asy
       note: "Refund completed in PayHere after the order expired.",
       providerRefundId: "refund-123",
       admin: { id: "admin-1" },
+      audit: paymentAudit("payment.payhere.reconciled", "mark_refunded", "refunded"),
     });
     assert.equal(result.status, "refunded");
     assert.equal(paymentUpdate.providerRefundId, "refund-123");
@@ -732,6 +1030,7 @@ test("manual PayHere acceptance refuses orders whose inventory was released", as
         decision: "accept",
         note: "Verified in PayHere.",
         admin: { id: "admin-1" },
+        audit: paymentAudit("payment.payhere.reconciled", "accept", "accepted"),
       }),
       (error) => error.statusCode === 409 && /inventory was released/.test(error.message)
     );
@@ -777,6 +1076,7 @@ test("late PayHere acceptance rejects an active same-tournament coach/player con
         decision: "accept",
         note: "Verified in PayHere.",
         admin: { id: "admin-1" },
+        audit: paymentAudit("payment.payhere.reconciled", "accept", "accepted"),
       }),
       (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
     );

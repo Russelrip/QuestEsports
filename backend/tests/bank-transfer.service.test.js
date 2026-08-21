@@ -10,12 +10,25 @@ const teamPath = path.join(__dirname, "../src/modules/teams/team.service.js");
 const generatedPath = path.join(__dirname, "../src/generated/prisma/index.js");
 const loggerPath = path.join(__dirname, "../src/lib/logger.js");
 const uploadCleanupPath = path.join(__dirname, "../src/lib/upload-cleanup.js");
+const auditPath = path.join(__dirname, "../src/lib/audit.js");
+const auditContext = {
+  actorUserId: "admin-1",
+  requestId: "request-1",
+  ipAddress: "198.51.100.7",
+};
+const bankAudit = (decision, reasonCode) => ({
+  ...auditContext,
+  action: "payment.bank_transfer.reviewed",
+  decision,
+  reasonCode,
+});
 
 const load = ({
   prisma = {},
   activatePaidTeamRegistration = async () => undefined,
   persistBankTransferProofUpload = async () => undefined,
   removeUploadFile = async () => undefined,
+  additionalMocks = {},
 } = {}) =>
   loadModuleWithMocks(servicePath, {
     [prismaPath]: { prisma },
@@ -39,6 +52,8 @@ const load = ({
       Prisma: { TransactionIsolationLevel: { Serializable: "Serializable" } },
     },
     [loggerPath]: { logger: { error: () => undefined } },
+    [auditPath]: { recordAuditInTransaction: async (tx, data) => tx.auditLog?.create ? tx.auditLog.create({ data }) : undefined },
+    ...additionalMocks,
   });
 
 test("bank-transfer fee tiers quote the exact assigned slot price", () => {
@@ -133,6 +148,7 @@ test("admin approval confirms a reserved bank transfer and activates the team", 
       transactionId: current.id,
       decision: "approve",
       admin: { id: "admin-1" },
+      audit: bankAudit("approve", "approved"),
     });
     assert.equal(result.status, "paid");
     assert.equal(result.__tournamentProjectionChanged, true);
@@ -178,6 +194,7 @@ test("bank-transfer approval rejects an active same-tournament coach/player conf
         transactionId: current.id,
         decision: "approve",
         admin: { id: "admin-1" },
+        audit: bankAudit("approve", "approved"),
       }),
       (error) => error.statusCode === 409 && /both a coach and a player/.test(error.message)
     );
@@ -224,6 +241,7 @@ test("admin rejection records a reason and releases the assigned slot", async ()
       decision: "reject",
       reason: "Reference was not found in the bank account.",
       admin: { id: "admin-1" },
+      audit: bankAudit("reject", "rejected"),
     });
     assert.equal(result.status, "failed");
     assert.equal(result.__tournamentProjectionChanged, true);
@@ -233,6 +251,135 @@ test("admin rejection records a reason and releases the assigned slot", async ()
       assignedSlotNumber: null,
     });
     assert.equal(proofUpdate.rejectionReason, "Reference was not found in the bank account.");
+  } finally {
+    restore();
+  }
+});
+
+test("invalid bank-transfer decisions retain 400 validation without state or audit mutation", async () => {
+  let transactionCalls = 0;
+  let auditCalls = 0;
+  const { module: service, restore } = load({
+    prisma: {
+      $transaction: async () => {
+        transactionCalls += 1;
+      },
+    },
+    additionalMocks: {
+      [auditPath]: {
+        recordAuditInTransaction: async () => {
+          auditCalls += 1;
+        },
+      },
+    },
+  });
+  try {
+    await assert.rejects(
+      service.reviewBankTransfer({
+        transactionId: "invalid-bank-decision",
+        decision: "approve-without-review",
+        admin: { id: "admin-1" },
+        audit: bankAudit("approve-without-review", "approved"),
+      }),
+      (error) => error.statusCode === 400 && /Choose approve or reject/.test(error.message),
+    );
+    assert.equal(transactionCalls, 0);
+    assert.equal(auditCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("bank-transfer review rolls back local writes when its transaction-scoped audit fails", async () => {
+  const current = {
+    id: "payment-audit-atomic",
+    provider: "bank_transfer",
+    status: "review_required",
+    registrationId: "registration-1",
+    bankTransferProof: { id: "proof-1" },
+    registration: {
+      id: "registration-1",
+      tournamentId: "tournament-1",
+      reservedUntil: new Date(Date.now() + 60_000),
+      members: [],
+      tournament: { maxTeams: 10 },
+    },
+  };
+  let paymentUpdates = 0;
+  let rolledBack = false;
+  const tx = {
+    paymentTransaction: {
+      findUnique: async () => current,
+      update: async ({ data }) => { paymentUpdates += 1; return { ...current, ...data }; },
+    },
+    teamRegistration: {
+      count: async () => 0,
+      findMany: async () => [],
+      update: async () => undefined,
+    },
+    bankTransferProof: { update: async () => undefined },
+  };
+  const prisma = {
+    $transaction: async (callback) => {
+      try { return await callback(tx); } catch (error) { rolledBack = true; throw error; }
+    },
+  };
+  const { module: service, restore } = load({
+    prisma,
+    additionalMocks: { [auditPath]: { recordAuditInTransaction: async () => { throw new Error("audit unavailable"); } } },
+  });
+  try {
+    await assert.rejects(service.reviewBankTransfer({
+      transactionId: current.id,
+      decision: "approve",
+      reason: "secret buyer@example.test provider-ref signature-secret",
+      admin: { id: "admin-1" },
+      audit: {
+        actorUserId: "admin-1",
+        requestId: "request-1",
+        ipAddress: "198.51.100.7",
+        action: "payment.bank_transfer.reviewed",
+        decision: "approve",
+        reasonCode: "approved",
+      },
+    }), /audit unavailable/);
+    assert.equal(paymentUpdates, 1);
+    assert.equal(rolledBack, true);
+  } finally {
+    restore();
+  }
+});
+
+test("already-paid bank review is an idempotent no-op without a misleading audit", async () => {
+  const current = {
+    id: "payment-already-paid",
+    provider: "bank_transfer",
+    status: "paid",
+    registrationId: "registration-paid",
+    bankTransferProof: { id: "proof-paid" },
+    registration: { id: "registration-paid" },
+  };
+  const auditCalls = [];
+  const { module: service, restore } = load({
+    prisma: { $transaction: async (callback) => callback({ paymentTransaction: { findUnique: async () => current } }) },
+    additionalMocks: { [auditPath]: { recordAuditInTransaction: async (_tx, data) => auditCalls.push(data) } },
+  });
+  try {
+    const approved = await service.reviewBankTransfer({
+      transactionId: current.id,
+      decision: "approve",
+      admin: { id: "admin-1" },
+      audit: bankAudit("approve", "approved"),
+    });
+    const rejected = await service.reviewBankTransfer({
+      transactionId: current.id,
+      decision: "reject",
+      admin: { id: "admin-1" },
+      audit: bankAudit("reject", "rejected"),
+    });
+    assert.equal(approved.status, "paid");
+    assert.equal(rejected.status, "paid");
+    assert.equal(auditCalls.length, 0);
   } finally {
     restore();
   }

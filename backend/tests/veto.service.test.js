@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
@@ -73,6 +74,166 @@ test("preset validation rejects non-deterministic and over-sized definitions", (
       { kind: "pick", actor: "A", seriesIndex: 3 },
     ], "bo3", 7), /selected more than once/i);
   } finally { restore(); }
+});
+
+test("veto access rejects wrong tournament staff, wrong team captains, and expired grants", async () => {
+  const room = {
+    id: "access-room",
+    code: "access-room",
+    tournamentId: "tournament-1",
+    status: "open",
+    controlMode: "staff_only",
+    publishResult: false,
+    participants: [{ registrationId: "registration-1", slot: 1 }],
+    actions: [],
+    configSnapshot: { maps: [], steps: [] },
+  };
+  const prisma = {
+    vetoRoom: { findUnique: async () => room },
+    tournamentStaffAssignment: {
+      findFirst: async ({ where }) => {
+        if (where.tournamentId === "tournament-1" && where.userId === "staff-admin" && where.role.in.includes("tournament_admin")) return { id: "assignment-admin" };
+        if (where.tournamentId === "tournament-2" && where.userId === "wrong-tournament-staff") return { id: "assignment-other" };
+        return null;
+      },
+    },
+    teamRegistration: { findMany: async () => [] },
+    vetoAccessGrant: { findFirst: async () => ({ expiresAt: new Date(Date.now() - 1000), role: "team_1" }) },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    await assert.rejects(service.getRoom({ code: room.code, user: { id: "wrong-tournament-staff" }, token: "" }), (error) => error.statusCode === 403);
+    room.controlMode = "captain_or_link";
+    await assert.rejects(service.getRoom({ code: room.code, user: { id: "wrong-team" }, token: "" }), (error) => error.statusCode === 403);
+    room.controlMode = "link_only";
+    await assert.rejects(service.getRoom({ code: room.code, user: null, token: "expired-grant" }), (error) => error.statusCode === 401);
+  } finally {
+    restore();
+  }
+});
+
+test("veto access permits captain accounts, valid grants, and published completed rooms", async () => {
+  const validToken = "valid-grant";
+  const validTokenHash = crypto.createHash("sha256").update(validToken).digest("hex");
+  const room = {
+    id: "access-success-room",
+    code: "access-success",
+    tournamentId: "tournament-1",
+    title: "Captain Room",
+    format: "bo1",
+    status: "open",
+    revision: 1,
+    controlMode: "captain_or_link",
+    teamOrderMethod: "toss",
+    tossMethod: "digital",
+    tossCallerSlot: 2,
+    tossCall: null,
+    tossResult: null,
+    tossWinnerSlot: null,
+    teamASlot: null,
+    currentStep: 0,
+    turnSeconds: null,
+    turnDeadline: null,
+    viewerEnabled: true,
+    publishResult: false,
+    participants: [{ id: "participant-1", slot: 1, registrationId: "registration-1", displayName: "Captain Team", seed: 1, accentColor: "#22d3ee", readyAt: null, joinedAt: null }],
+    actions: [],
+    configSnapshot: { maps: [], steps: [] },
+    tournament: null,
+    match: null,
+    openedAt: null,
+    startedAt: null,
+    completedAt: null,
+    cancelledAt: null,
+    updatedAt: new Date(),
+  };
+  const prisma = {
+    vetoRoom: { findUnique: async () => room },
+    tournamentStaffAssignment: {
+      findFirst: async ({ where }) => where.tournamentId === "tournament-1"
+        && where.userId === "staff-admin"
+        && where.role.in.includes("tournament_admin")
+        ? { id: "assignment-admin" }
+        : null,
+    },
+    teamRegistration: { findMany: async ({ where }) => where.OR?.some((entry) => entry.userId === "captain-1") ? [{ id: "registration-1" }] : [] },
+    vetoAccessGrant: {
+      findFirst: async ({ where }) => where.tokenHash === validTokenHash
+        ? { id: "grant-1", role: "team_1", expiresAt: new Date(Date.now() + 60_000) }
+        : null,
+      update: async () => undefined,
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const tournamentAdmin = await service.getRoom({ code: room.code, user: { id: "staff-admin" }, token: "" });
+    assert.equal(tournamentAdmin.access.kind, "staff");
+    const captain = await service.getRoom({ code: room.code, user: { id: "captain-1" }, token: "" });
+    assert.equal(captain.access.kind, "team");
+    assert.equal(captain.access.slot, 1);
+
+    room.controlMode = "link_only";
+    const grant = await service.getRoom({ code: room.code, user: null, token: validToken });
+    assert.equal(grant.access.kind, "team");
+    assert.equal(grant.access.slot, 1);
+
+    room.status = "completed";
+    room.publishResult = true;
+    const published = await service.getRoom({ code: room.code, user: null, token: "" });
+    assert.equal(published.access.kind, "public");
+  } finally {
+    restore();
+  }
+});
+
+test("an authorized slot-2 captain cannot submit slot-1's current veto action", async () => {
+  const room = {
+    id: "wrong-turn-room",
+    code: "wrong-turn",
+    tournamentId: "tournament-1",
+    status: "in_progress",
+    revision: 0,
+    controlMode: "captain_or_link",
+    teamASlot: 1,
+    currentStep: 0,
+    configSnapshot: {
+      maps: [{ slug: "ascent", name: "Ascent" }],
+      steps: [{ kind: "ban", actor: "A", seriesIndex: null }],
+    },
+    participants: [
+      { registrationId: "registration-1", slot: 1 },
+      { registrationId: "registration-2", slot: 2 },
+    ],
+    actions: [],
+  };
+  let transactionCalls = 0;
+  const prisma = {
+    vetoRoom: { findUnique: async () => room },
+    tournamentStaffAssignment: { findFirst: async () => null },
+    teamRegistration: {
+      findMany: async ({ where }) => where.OR?.some((entry) => entry.userId === "captain-2")
+        ? [{ id: "registration-2" }]
+        : [],
+    },
+    $transaction: async () => {
+      transactionCalls += 1;
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    await assert.rejects(
+      service.submitAction({
+        code: room.code,
+        user: { id: "captain-2" },
+        token: "",
+        body: { mapSlug: "ascent", expectedRevision: 0 },
+      }),
+      (error) => error.statusCode === 403 && /not your team’s turn/.test(error.message),
+    );
+    assert.equal(transactionCalls, 0);
+  } finally {
+    restore();
+  }
 });
 
 test("the toss winner's position choice starts the veto immediately", async () => {
@@ -433,4 +594,53 @@ test("new map pool versions reject inactive map IDs while preserving version loo
   try {
     await assert.rejects(() => inactiveLoaded.module.createPool({ user: { id: "admin-1", role: "admin" }, body: { name: "New pool", mapIds: ["map-2"] } }), { statusCode: 400 });
   } finally { inactiveLoaded.restore(); }
+});
+
+test("veto catalog writes enforce global super-admin and tournament-admin roles in the service", async () => {
+  const writes = [];
+  const prisma = {
+    tournamentStaffAssignment: {
+      findFirst: async ({ where }) => where.userId === "tournament-admin"
+        && where.tournamentId === "tournament-1"
+        && where.role.in.includes("tournament_admin")
+        ? { id: "assignment-1" }
+        : null,
+    },
+    vetoMap: {
+      findMany: async () => [{ id: "map-1" }],
+    },
+    vetoMapPool: {
+      findFirst: async () => ({ version: 1 }),
+      create: async ({ data }) => { writes.push(["pool", data]); return data; },
+      findUnique: async ({ where }) => where.id === "global-pool" ? { tournamentId: null } : null,
+    },
+    vetoRulePreset: {
+      findFirst: async () => ({ version: 1 }),
+      create: async ({ data }) => { writes.push(["preset", data]); return data; },
+      findUnique: async ({ where }) => where.id === "global-preset" ? { tournamentId: null, format: "bo1" } : null,
+    },
+    vetoRoomTemplate: {
+      findFirst: async () => ({ version: 1 }),
+      create: async ({ data }) => { writes.push(["template", data]); return data; },
+    },
+    tournamentVetoConfig: {
+      upsert: async ({ create }) => { writes.push(["config", create]); return create; },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const globalBody = { name: "Global Catalog", mapIds: ["map-1"] };
+    await assert.rejects(() => service.createPool({ user: { id: "user-1", role: "user" }, body: globalBody }), { statusCode: 403 });
+    await assert.rejects(() => service.createPreset({ user: { id: "user-1", role: "user" }, body: { name: "Global Preset", format: "bo1", steps: service.getBuiltInSteps("bo1") } }), { statusCode: 403 });
+    await assert.rejects(() => service.createTemplate({ user: { id: "user-1", role: "user" }, body: { name: "Global Template", format: "bo1", mapPoolId: "global-pool", rulePresetId: "global-preset" } }), { statusCode: 403 });
+
+    await service.createPool({ user: { id: "admin-1", role: "admin" }, body: globalBody });
+    await service.createPreset({ user: { id: "admin-1", role: "admin" }, body: { name: "Global Preset", format: "bo1", steps: service.getBuiltInSteps("bo1") } });
+    await service.createTemplate({ user: { id: "admin-1", role: "admin" }, body: { name: "Global Template", format: "bo1", mapPoolId: "global-pool", rulePresetId: "global-preset" } });
+
+    await assert.rejects(() => service.createPool({ user: { id: "referee-1", role: "referee" }, body: { ...globalBody, tournamentId: "tournament-1" } }), { statusCode: 403 });
+    await assert.rejects(() => service.saveTournamentConfig({ user: { id: "referee-1", role: "referee" }, tournamentId: "tournament-1", body: {} }), { statusCode: 403 });
+    await service.saveTournamentConfig({ user: { id: "tournament-admin", role: "user" }, tournamentId: "tournament-1", body: {} });
+    assert.deepEqual(writes.map(([kind]) => kind), ["pool", "preset", "template", "config"]);
+  } finally { restore(); }
 });

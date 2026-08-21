@@ -7,7 +7,7 @@ const sanitizeAuditData = (value) => {
   return redact(value);
 };
 
-const recordAudit = async ({
+const persistAudit = async (database, {
   actorUserId,
   action,
   targetType,
@@ -16,31 +16,35 @@ const recordAudit = async ({
   afterData,
   requestId,
   ipAddress,
-}) => {
+}) => database.auditLog.create({
+  data: {
+    id: crypto.randomUUID(),
+    actorUserId: actorUserId || null,
+    action,
+    targetType,
+    targetId: targetId ? String(targetId) : null,
+    beforeData: sanitizeAuditData(beforeData),
+    afterData: sanitizeAuditData(afterData),
+    requestId: requestId || null,
+    ipAddress: ipAddress || null,
+  },
+});
+
+const recordAudit = async (data) => {
   try {
-    return await prisma.auditLog.create({
-      data: {
-        id: crypto.randomUUID(),
-        actorUserId: actorUserId || null,
-        action,
-        targetType,
-        targetId: targetId ? String(targetId) : null,
-        beforeData: sanitizeAuditData(beforeData),
-        afterData: sanitizeAuditData(afterData),
-        requestId: requestId || null,
-        ipAddress: ipAddress || null,
-      },
-    });
+    return await persistAudit(prisma, data);
   } catch (error) {
     logger.error("Audit log persistence failed", {
-      action,
-      targetType,
-      targetId,
+      action: data.action,
+      targetType: data.targetType,
+      targetId: data.targetId,
       error,
     });
     throw error;
   }
 };
+
+const recordAuditInTransaction = (database, data) => persistAudit(database, data);
 
 const requestAuditContext = (req) => ({
   actorUserId: req.user?.id || null,
@@ -50,5 +54,6 @@ const requestAuditContext = (req) => ({
 
 module.exports = {
   recordAudit,
+  recordAuditInTransaction,
   requestAuditContext,
 };
