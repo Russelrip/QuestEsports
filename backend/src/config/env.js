@@ -188,6 +188,35 @@ const env = {
   API_PROCESS_COUNT: normalizePositiveInteger(process.env.API_PROCESS_COUNT, 1),
   UPSTASH_REDIS_REST_URL: optional("UPSTASH_REDIS_REST_URL"),
   UPSTASH_REDIS_REST_TOKEN: optional("UPSTASH_REDIS_REST_TOKEN"),
+  REALTIME_PUBSUB_CHANNEL: optional(
+    "REALTIME_PUBSUB_CHANNEL",
+    "quest-realtime",
+  ),
+  REALTIME_WORKER_ID: optional(
+    "REALTIME_WORKER_ID",
+    `worker-${process.pid}`,
+  ),
+  REALTIME_PUBSUB_MAX_MESSAGE_BYTES: normalizeIntegerInRange(
+    "REALTIME_PUBSUB_MAX_MESSAGE_BYTES",
+    process.env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES,
+    65536,
+    1,
+    1048576,
+  ),
+  REALTIME_PUBSUB_RECONNECT_BASE_MS: normalizeIntegerInRange(
+    "REALTIME_PUBSUB_RECONNECT_BASE_MS",
+    process.env.REALTIME_PUBSUB_RECONNECT_BASE_MS,
+    250,
+    1,
+    60000,
+  ),
+  REALTIME_PUBSUB_RECONNECT_MAX_MS: normalizeIntegerInRange(
+    "REALTIME_PUBSUB_RECONNECT_MAX_MS",
+    process.env.REALTIME_PUBSUB_RECONNECT_MAX_MS,
+    10000,
+    1,
+    300000,
+  ),
   VALORANT_INTERNAL_BASE_URL: optional("VALORANT_INTERNAL_BASE_URL"),
   VALORANT_SERVICE_SECRET: optional("VALORANT_SERVICE_SECRET"),
   VALORANT_SERVICE_KEY_ID: optional("VALORANT_SERVICE_KEY_ID"),
@@ -421,13 +450,17 @@ if (
     "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required for the Upstash cache.",
   );
 }
-if (
-  env.NODE_ENV === "production" &&
-  env.API_PROCESS_COUNT > 1 &&
-  env.CACHE_DRIVER !== "upstash"
-) {
+if (env.API_PROCESS_COUNT > 1 && env.CACHE_DRIVER !== "upstash") {
   throw new Error(
     "CACHE_DRIVER=upstash is required when API_PROCESS_COUNT is greater than 1.",
+  );
+}
+if (
+  env.REALTIME_PUBSUB_RECONNECT_MAX_MS <
+  env.REALTIME_PUBSUB_RECONNECT_BASE_MS
+) {
+  throw new Error(
+    "REALTIME_PUBSUB_RECONNECT_MAX_MS must be greater than or equal to REALTIME_PUBSUB_RECONNECT_BASE_MS.",
   );
 }
 

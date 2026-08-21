@@ -114,6 +114,27 @@ test("production rejects process-local caching when multiple API processes are d
   assert.match(result.stderr, /CACHE_DRIVER=upstash/);
 });
 
+test("clustered API processes require shared Upstash realtime configuration", () => {
+  const result = loadEnvironment({
+    API_PROCESS_COUNT: "2",
+    CACHE_DRIVER: "memory",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /CACHE_DRIVER=upstash/);
+});
+
+test("realtime settings reject non-positive limits and reconnect delays", () => {
+  for (const name of [
+    "REALTIME_PUBSUB_MAX_MESSAGE_BYTES",
+    "REALTIME_PUBSUB_RECONNECT_BASE_MS",
+    "REALTIME_PUBSUB_RECONNECT_MAX_MS",
+  ]) {
+    const result = loadEnvironment({ [name]: "0" });
+    assert.notEqual(result.status, 0, name);
+    assert.match(result.stderr, new RegExp(`${name} must be an integer from 1 to`));
+  }
+});
+
 test("configured production PayHere requires live mode unless sandbox is explicit", () => {
   const configured = {
     PAYHERE_MERCHANT_ID: "merchant",
