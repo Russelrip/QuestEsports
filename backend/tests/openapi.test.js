@@ -51,6 +51,59 @@ test("OpenAPI declares the session-cookie authentication scheme", () => {
   });
 });
 
+test("OpenAPI documents scoped authorization and the catalog tournament selector", () => {
+  const paths = openApiDocument.paths;
+  const catalog = paths["/api/v1/admin/veto/catalog"]?.get;
+  const roomOpen = paths["/api/v1/admin/veto-rooms/{roomId}/open"]?.post;
+  const matchUpdate = paths["/api/v1/admin/matches/{matchId}"]?.patch;
+  const staffList = paths["/api/v1/admin/tournaments/{id}/staff"]?.get;
+  const staffRemove = paths["/api/v1/admin/tournaments/{id}/staff/{assignmentId}"]?.delete;
+
+  assert.deepEqual(catalog["x-required-permission-scopes"], ["veto.catalog.config"]);
+  assert.ok(catalog.responses[403]);
+  assert.deepEqual(catalog.parameters, [{
+    name: "tournamentId",
+    in: "query",
+    schema: { type: "string" },
+    description: "Optional; omit it for global catalog reads, or provide it to scope the catalog to a tournament.",
+  }]);
+  assert.deepEqual(roomOpen["x-required-permission-scopes"], ["veto.operations"]);
+  assert.ok(roomOpen.responses[403]);
+  assert.deepEqual(matchUpdate["x-required-permission-scopes"], ["match.operations"]);
+  assert.ok(matchUpdate.responses[403]);
+  for (const operation of [staffList, staffRemove]) {
+    assert.deepEqual(operation["x-required-permission-scopes"], ["staff.roster.management"]);
+    assert.equal(operation["x-required-global-role"], "admin");
+    assert.equal(
+      operation.description,
+      "Requires the global admin role and the staff.roster.management scope; a tournament_admin assignment alone is insufficient.",
+    );
+    assert.ok(operation.responses[403]);
+  }
+});
+
+test("OpenAPI documents tournament-read authorization for private staff reads", () => {
+  const paths = openApiDocument.paths;
+  const tournamentMatches = paths["/api/v1/admin/tournaments/{id}/matches"];
+  const vetoRooms = paths["/api/v1/admin/veto-rooms"]?.get;
+  const vetoRoom = paths["/api/v1/admin/veto-rooms/{roomId}"]?.get;
+  const matchRooms = paths["/api/v1/admin/match-rooms"]?.get;
+
+  assert.deepEqual(tournamentMatches.get["x-required-permission-scopes"], ["tournament.read"]);
+  assert.deepEqual(tournamentMatches.post["x-required-permission-scopes"], ["match.operations"]);
+  assert.deepEqual(vetoRooms["x-required-permission-scopes"], ["tournament.read"]);
+  assert.deepEqual(vetoRooms.parameters, [{
+    name: "tournamentId",
+    in: "query",
+    schema: { type: "string" },
+    description: "Optional; without it, the service returns rooms for the authenticated staff assignments.",
+  }]);
+  assert.deepEqual(vetoRoom["x-required-permission-scopes"], ["tournament.read"]);
+  assert.deepEqual(matchRooms["x-required-permission-scopes"], ["tournament.read"]);
+  assert.equal(matchRooms.summary, "List match rooms visible to tournament staff or directly assigned match staff");
+  for (const operation of [tournamentMatches.get, vetoRooms, vetoRoom, matchRooms]) assert.ok(operation.responses[403]);
+});
+
 test("OpenAPI declares the staff support read operation", () => {
   const operation = openApiDocument.paths[
     "/api/v1/admin/support/conversations/{conversationId}/read"

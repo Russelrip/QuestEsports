@@ -62,14 +62,26 @@ const runRoute = async (layer, req) => {
 
 test("admin veto mutations enforce scoped staff access without guarding public code routes", async () => {
   const prisma = {
+    tournament: {
+      findUnique: async ({ where }) => where.id === "missing-tournament" ? null : ({ id: where.id }),
+    },
     vetoRoom: {
-      findUnique: async ({ where }) => where.id === "room-1" ? { id: "room-1", tournamentId: "tournament-1" } : null,
+      findUnique: async ({ where }) => where.id === "room-1"
+        ? { id: "room-1", tournamentId: "tournament-1" }
+        : where.id === "room-standalone"
+          ? { id: "room-standalone", tournamentId: null }
+          : null,
     },
     match: {
       findUnique: async ({ where }) => where.id === "match-1" ? { tournamentId: "tournament-1" } : null,
     },
+    matchRoom: {
+      findFirst: async ({ where }) => where.match?.assignedStaffId === "direct-staff-1" ? { id: "room-direct" } : null,
+    },
     tournamentStaffAssignment: {
       findFirst: async ({ where }) => {
+        if (!where.tournamentId && where.userId === "staff-1" && where.role.in.includes("tournament_admin")) return { id: "assignment-1" };
+        if (!where.tournamentId && where.userId === "referee-1" && where.role.in.includes("referee")) return { id: "assignment-2" };
         if (where.userId === "other-tournament-staff" && where.tournamentId === "tournament-2") return { id: "assignment-other" };
         if (where.tournamentId !== "tournament-1") return null;
         if (where.userId === "staff-1" && where.role.in.includes("tournament_admin")) return { id: "assignment-1" };
@@ -85,6 +97,9 @@ test("admin veto mutations enforce scoped staff access without guarding public c
       openRoom: async () => { serviceCalls.push(["openRoom"]); return vetoRoom; },
       assignTeamA: async () => { serviceCalls.push(["assignTeamA"]); return vetoRoom; },
       createRoom: async ({ body }) => { serviceCalls.push(["createRoom", body]); return { room: vetoRoom }; },
+      listRooms: async () => [],
+      listCatalog: async () => ({ maps: [], pools: [], presets: [], templates: [] }),
+      getAdminRoom: async () => vetoRoom,
       createMap: async () => ({ id: "map-1" }),
       updateMapAvailability: async () => ({ id: "map-1", slug: "ascent", name: "Ascent", isActive: true }),
       createPool: async () => ({ id: "pool-1" }),
@@ -176,6 +191,54 @@ test("admin veto mutations enforce scoped staff access without guarding public c
       params: { roomId: "room-1" },
       body: {},
     }), null);
+
+    const tournamentMatchRead = route(loaded.module, "get", "/admin/tournaments/:id/matches");
+    assert.equal(await runRoute(tournamentMatchRead, {
+      user: { id: "referee-1", role: "user" }, params: { id: "tournament-1" }, body: {},
+    }), null);
+    assert.equal((await runRoute(tournamentMatchRead, {
+      user: { id: "referee-1", role: "user" }, params: { id: "tournament-1" }, query: { tournamentId: "tournament-2" }, body: {},
+    }))?.statusCode, 400);
+    const vetoRoomListRead = route(loaded.module, "get", "/admin/veto-rooms");
+    assert.equal(await runRoute(vetoRoomListRead, {
+      user: { id: "referee-1", role: "user" }, params: {}, query: {}, body: {},
+    }), null);
+    assert.equal(await runRoute(vetoRoomListRead, {
+      user: { id: "referee-1", role: "user" }, params: {}, query: { tournamentId: "tournament-1" }, body: {},
+    }), null);
+    assert.equal((await runRoute(vetoRoomListRead, {
+      user: { id: "admin-1", role: "admin" }, params: {}, query: { tournamentId: "missing-tournament" }, body: {},
+    }))?.statusCode, 404);
+    const vetoRoomRead = route(loaded.module, "get", "/admin/veto-rooms/:roomId");
+    assert.equal(await runRoute(vetoRoomRead, {
+      user: { id: "referee-1", role: "user" }, params: { roomId: "room-1" }, body: {},
+    }), null);
+    assert.equal((await runRoute(vetoRoomRead, {
+      user: { id: "admin-1", role: "admin" }, params: { roomId: "room-standalone" }, query: { tournamentId: "tournament-1" }, body: {},
+    }))?.statusCode, 400);
+    const matchRoomRead = route(loaded.module, "get", "/admin/match-rooms");
+    assert.equal(await runRoute(matchRoomRead, {
+      user: { id: "referee-1", role: "user" }, params: {}, query: {}, body: {},
+    }), null);
+    assert.equal(await runRoute(matchRoomRead, {
+      user: { id: "direct-staff-1", role: "user" }, params: {}, query: {}, body: {},
+    }), null);
+    assert.equal(await runRoute(matchRoomRead, {
+      user: { id: "admin-1", role: "admin" }, params: {}, query: {}, body: {},
+    }), null);
+    assert.equal((await runRoute(matchRoomRead, {
+      user: { id: "unrelated-user", role: "user" }, params: {}, query: {}, body: {},
+    }))?.statusCode, 403);
+    const catalogRead = route(loaded.module, "get", "/admin/veto/catalog");
+    assert.equal(await runRoute(catalogRead, {
+      user: { id: "staff-1", role: "user" }, params: {}, query: {}, body: {},
+    }), null);
+    assert.equal(await runRoute(catalogRead, {
+      user: { id: "staff-1", role: "user" }, params: {}, query: { tournamentId: "tournament-1" }, body: {},
+    }), null);
+    assert.equal((await runRoute(catalogRead, {
+      user: { id: "not-staff", role: "user" }, params: {}, query: {}, body: {},
+    }))?.statusCode, 403);
 
     const mapMutation = route(loaded.module, "post", "/admin/veto/maps");
     assert.ok(mapMutation);

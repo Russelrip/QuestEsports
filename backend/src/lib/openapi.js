@@ -1,13 +1,15 @@
 const { env } = require("../config/env");
 const { monitoringStatus } = require("./monitoring");
 const { suggestedJobBackends } = require("./jobs");
+const { PERMISSION_SCOPES } = require("../modules/permissions/permission.middleware");
 
 const apiBaseUrl = env.API_PUBLIC_URL || `http://localhost:${env.PORT}`;
 
-const createQueryParameter = (name, schema) => ({
+const createQueryParameter = (name, schema, description) => ({
   name,
   in: "query",
   schema,
+  ...(description ? { description } : {}),
 });
 
 const createPathParameter = (name, schema) => ({
@@ -77,11 +79,21 @@ const linkedProvidersResponse = {
 const createOperation = (
   tag,
   summary,
-  { authenticated = false, parameters = [], additionalResponses = {} } = {},
+  {
+    authenticated = false,
+    parameters = [],
+    additionalResponses = {},
+    permissionScopes = [],
+    requiredGlobalRole,
+    permissionDescription,
+  } = {},
 ) => ({
   tags: [tag],
   summary,
+  ...(permissionDescription ? { description: permissionDescription } : {}),
   parameters,
+  ...(permissionScopes.length ? { "x-required-permission-scopes": permissionScopes } : {}),
+  ...(requiredGlobalRole ? { "x-required-global-role": requiredGlobalRole } : {}),
   ...(authenticated
     ? { security: [{ sessionCookie: [] }, { mobileBearer: [] }] }
     : {}),
@@ -90,6 +102,7 @@ const createOperation = (
     ...(authenticated
       ? { 401: createResponse("Authentication required") }
       : {}),
+    ...(permissionScopes.length ? { 403: createResponse("Insufficient permission scope") } : {}),
     400: createResponse("Invalid request"),
     ...additionalResponses,
   },
@@ -1004,7 +1017,15 @@ const additionalPaths = {
     post: createOperation("Veto", "Commit the current authorized ban, pick, or side choice", { parameters: idParameter("code") }),
   },
   "/api/v1/admin/veto/catalog": {
-    get: createOperation("Veto", "List maps, versioned pools, presets, and room templates", { authenticated: true }),
+    get: createOperation("Veto", "List maps, versioned pools, presets, and room templates", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.VETO_CATALOG_CONFIG],
+      parameters: [createQueryParameter(
+        "tournamentId",
+        { type: "string" },
+        "Optional; omit it for global catalog reads, or provide it to scope the catalog to a tournament.",
+      )],
+    }),
   },
   "/api/v1/admin/veto/maps": {
     post: createOperation("Veto", "Create a map in the veto catalog", { authenticated: true }),
@@ -1013,68 +1034,104 @@ const additionalPaths = {
     patch: createOperation("Veto", "Enable or disable a map in the veto catalog", { authenticated: true, parameters: idParameter("id") }),
   },
   "/api/v1/admin/veto/pools": {
-    post: createOperation("Veto", "Create a versioned map pool", { authenticated: true }),
+    post: createOperation("Veto", "Create a versioned map pool", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.VETO_CATALOG_CONFIG],
+    }),
   },
   "/api/v1/admin/veto/presets": {
-    post: createOperation("Veto", "Create a versioned veto rule preset", { authenticated: true }),
+    post: createOperation("Veto", "Create a versioned veto rule preset", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.VETO_CATALOG_CONFIG],
+    }),
   },
   "/api/v1/admin/veto/templates": {
-    post: createOperation("Veto", "Save a reusable room template", { authenticated: true }),
+    post: createOperation("Veto", "Save a reusable room template", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.VETO_CATALOG_CONFIG],
+    }),
   },
   "/api/v1/admin/tournaments/{id}/veto-config": {
-    get: createOperation("Veto", "Get a tournament's default veto configuration", { authenticated: true, parameters: idParameter("id") }),
-    put: createOperation("Veto", "Set a tournament's default veto configuration", { authenticated: true, parameters: idParameter("id") }),
+    get: createOperation("Veto", "Get a tournament's default veto configuration", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.VETO_CATALOG_CONFIG],
+      parameters: idParameter("id"),
+    }),
+    put: createOperation("Veto", "Set a tournament's default veto configuration", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.VETO_CATALOG_CONFIG],
+      parameters: idParameter("id"),
+    }),
   },
   "/api/v1/admin/veto-rooms": {
-    get: createOperation("Veto", "List veto rooms available to staff", { authenticated: true }),
-    post: createOperation("Veto", "Create a linked or standalone veto room", { authenticated: true }),
+    get: createOperation("Veto", "List veto rooms available to staff", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_READ],
+      parameters: [createQueryParameter(
+        "tournamentId",
+        { type: "string" },
+        "Optional; without it, the service returns rooms for the authenticated staff assignments.",
+      )],
+    }),
+    post: createOperation("Veto", "Create a linked or standalone veto room", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS],
+    }),
   },
   "/api/v1/admin/veto-rooms/{roomId}": {
-    get: createOperation("Veto", "Get a veto room for staff operation", { authenticated: true, parameters: idParameter("roomId") }),
+    get: createOperation("Veto", "Get a veto room for staff operation", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_READ],
+      parameters: idParameter("roomId"),
+    }),
   },
   "/api/v1/admin/veto-rooms/{roomId}/start": {
-    post: createOperation("Veto", "Start or force-start the toss/veto lifecycle", { authenticated: true, parameters: idParameter("roomId") }),
+    post: createOperation("Veto", "Start or force-start the toss/veto lifecycle", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/veto-rooms/{roomId}/open": {
-    post: createOperation("Veto", "Open a room for team readiness", { authenticated: true, parameters: idParameter("roomId") }),
+    post: createOperation("Veto", "Open a room for team readiness", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/veto-rooms/{roomId}/assign-team-a": {
-    post: createOperation("Veto", "Manually assign Team A and Team B", { authenticated: true, parameters: idParameter("roomId") }),
+    post: createOperation("Veto", "Manually assign Team A and Team B", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/veto-rooms/{roomId}/manual-toss": {
-    post: createOperation("Veto", "Record the result of a physical coin toss", { authenticated: true, parameters: idParameter("roomId") }),
+    post: createOperation("Veto", "Record the result of a physical coin toss", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/veto-rooms/{roomId}/rewind": {
-    post: createOperation("Veto", "Audit and rewind the latest committed veto action", { authenticated: true, parameters: idParameter("roomId") }),
+    post: createOperation("Veto", "Audit and rewind the latest committed veto action", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/veto-rooms/{roomId}/reset": {
-    post: createOperation("Veto", "Audit and reset a room to its pre-veto state", { authenticated: true, parameters: idParameter("roomId") }),
+    post: createOperation("Veto", "Audit and reset a room to its pre-veto state", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/veto-rooms/{roomId}/cancel": {
-    post: createOperation("Veto", "Cancel an active veto room", { authenticated: true, parameters: idParameter("roomId") }),
+    post: createOperation("Veto", "Cancel an active veto room", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/veto-rooms/{roomId}/rotate-link": {
-    post: createOperation("Veto", "Rotate a private team or viewer access link", { authenticated: true, parameters: idParameter("roomId") }),
+    post: createOperation("Veto", "Rotate a private team or viewer access link", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.VETO_OPERATIONS], parameters: idParameter("roomId") }),
   },
   "/api/v1/admin/tournaments/{id}/challonge": {
     get: createOperation("Challonge", "Get Challonge integration status", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION],
       parameters: idParameter("id"),
     }),
     patch: createOperation("Challonge", "Configure a Challonge integration", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION],
       parameters: idParameter("id"),
     }),
   },
   "/api/v1/admin/tournaments/{id}/challonge/sync": {
     post: createOperation("Challonge", "Synchronize a Challonge tournament", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION],
       parameters: idParameter("id"),
     }),
   },
   "/api/v1/admin/tournaments/{id}/challonge/logs": {
     get: createOperation("Challonge", "List sanitized synchronization logs", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION],
       parameters: idParameter("id"),
     }),
   },
@@ -1082,12 +1139,13 @@ const additionalPaths = {
     post: createOperation(
       "Challonge",
       "Create a participant in a connected Challonge tournament",
-      { authenticated: true, parameters: idParameter("id") },
+      { authenticated: true, permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION], parameters: idParameter("id") },
     ),
   },
   "/api/v1/admin/tournaments/{id}/challonge/participants/{participantId}": {
     put: createOperation("Challonge", "Update a participant in Challonge", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION],
       parameters: [...idParameter("id"), ...idParameter("participantId")],
     }),
     delete: createOperation(
@@ -1095,6 +1153,7 @@ const additionalPaths = {
       "Delete or deactivate a participant in Challonge",
       {
         authenticated: true,
+        permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION],
         parameters: [...idParameter("id"), ...idParameter("participantId")],
       },
     ),
@@ -1106,6 +1165,7 @@ const additionalPaths = {
         "Confirm an external participant mapping",
         {
           authenticated: true,
+          permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION],
           parameters: [...idParameter("id"), ...idParameter("participantId")],
         },
       ),
@@ -1114,44 +1174,57 @@ const additionalPaths = {
     put: createOperation(
       "Challonge",
       "Change the connected Challonge tournament state",
-      { authenticated: true, parameters: idParameter("id") },
+      { authenticated: true, permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION], parameters: idParameter("id") },
     ),
   },
   "/api/v1/admin/tournaments/{id}/challonge/matches/{matchId}": {
     put: createOperation("Challonge", "Report a Challonge match result", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_ADMINISTRATION],
       parameters: [...idParameter("id"), ...idParameter("matchId")],
     }),
   },
   "/api/v1/admin/tournaments/{id}/matches": {
     get: createOperation("Matches", "List tournament matches for staff", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_READ],
       parameters: idParameter("id"),
     }),
     post: createOperation("Matches", "Create a Quest-managed match", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.MATCH_OPERATIONS],
       parameters: idParameter("id"),
     }),
   },
   "/api/v1/admin/matches/{matchId}": {
     patch: createOperation("Matches", "Update Quest-owned match operations", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.MATCH_OPERATIONS],
       parameters: idParameter("matchId"),
     }),
   },
   "/api/v1/admin/matches/{matchId}/room": {
-    post: createOperation("Match Rooms", "Create or resynchronize a match room", { authenticated: true, parameters: idParameter("matchId") }),
+    post: createOperation("Match Rooms", "Create or resynchronize a match room", { authenticated: true, permissionScopes: [PERMISSION_SCOPES.MATCH_OPERATIONS], parameters: idParameter("matchId") }),
   },
   "/api/v1/admin/match-rooms": {
-    get: createOperation("Match Rooms", "List match rooms visible to staff", { authenticated: true }),
+    get: createOperation("Match Rooms", "List match rooms visible to tournament staff or directly assigned match staff", {
+      authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.TOURNAMENT_READ],
+    }),
   },
   "/api/v1/admin/tournaments/{id}/staff": {
     get: createOperation("Permissions", "List tournament staff assignments", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.STAFF_ROSTER_MANAGEMENT],
+      requiredGlobalRole: "admin",
+      permissionDescription: "Requires the global admin role and the staff.roster.management scope; a tournament_admin assignment alone is insufficient.",
       parameters: idParameter("id"),
     }),
     post: createOperation("Permissions", "Assign tournament staff", {
       authenticated: true,
+      permissionScopes: [PERMISSION_SCOPES.STAFF_ROSTER_MANAGEMENT],
+      requiredGlobalRole: "admin",
+      permissionDescription: "Requires the global admin role and the staff.roster.management scope; a tournament_admin assignment alone is insufficient.",
       parameters: idParameter("id"),
     }),
   },
@@ -1161,6 +1234,9 @@ const additionalPaths = {
       "Remove a tournament staff assignment",
       {
         authenticated: true,
+        permissionScopes: [PERMISSION_SCOPES.STAFF_ROSTER_MANAGEMENT],
+        requiredGlobalRole: "admin",
+        permissionDescription: "Requires the global admin role and the staff.roster.management scope; a tournament_admin assignment alone is insufficient.",
         parameters: [...idParameter("id"), ...idParameter("assignmentId")],
       },
     ),

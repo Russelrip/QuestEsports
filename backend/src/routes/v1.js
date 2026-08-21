@@ -18,11 +18,11 @@ const staffController = require("../modules/permissions/staff.controller");
 const { getRealtimeEvents } = require("../modules/realtime/realtime.controller");
 const {
   requireSuperAdmin,
-  requireTournamentStaff,
-  requireMatchStaff,
-  requireVetoRoomStaff,
-  requireVetoTournamentStaff,
+  requirePermission,
+  PERMISSION_SCOPES,
 } = require("../modules/permissions/permission.middleware");
+
+const scopes = PERMISSION_SCOPES;
 
 const router = express.Router();
 const publicCache = cachePublicData();
@@ -35,8 +35,22 @@ const bracketResponseCache = cacheJson({
 });
 const leaderboardPublicCache = cachePublicData({ browserSeconds: 0, sharedSeconds: 60 });
 const leaderboardCache = cacheJson({ ttlSeconds: 60, tags: ["foundation"] });
-const tournamentAdmin = requireTournamentStaff({ roles: ["tournament_admin"], parameter: "id" });
-const tournamentStaff = requireTournamentStaff({ roles: ["tournament_admin", "referee"], parameter: "id" });
+const tournamentResource = {
+  parameter: "id",
+  matchParameter: null,
+  matchBodyField: null,
+  matchQueryField: null,
+  roomParameter: null,
+  roomBodyField: null,
+  roomQueryField: null,
+};
+const tournamentAdmin = requirePermission(scopes.TOURNAMENT_ADMINISTRATION, tournamentResource);
+const tournamentRead = requirePermission(scopes.TOURNAMENT_READ, tournamentResource);
+const tournamentStaff = requirePermission(scopes.MATCH_OPERATIONS, tournamentResource);
+const staffRosterManagement = requirePermission(scopes.STAFF_ROSTER_MANAGEMENT, tournamentResource);
+const unscopedTournamentRead = requirePermission(scopes.TOURNAMENT_READ, { queryField: "tournamentId", allowUnscoped: true });
+const roomTournamentRead = requirePermission(scopes.TOURNAMENT_READ);
+const unscopedMatchRoomRead = requirePermission(scopes.TOURNAMENT_READ, { allowUnscoped: true, allowDirectMatchAssignment: true });
 
 router.use(attachSession);
 router.use(supportRoutes);
@@ -93,25 +107,25 @@ router.post("/veto-rooms/:code/toss", vetoController.tossRoom);
 router.post("/veto-rooms/:code/team-a", vetoController.chooseTeamA);
 router.post("/veto-rooms/:code/actions", vetoController.submitAction);
 
-router.get("/admin/veto/catalog", requireAuth, vetoController.catalog);
+router.get("/admin/veto/catalog", requireAuth, requirePermission(scopes.VETO_CATALOG_CONFIG, { queryField: "tournamentId", allowUnscoped: true }), vetoController.catalog);
 router.post("/admin/veto/maps", requireAuth, requireAdmin, vetoController.createMap);
 router.patch("/admin/veto/maps/:id", requireAuth, requireAdmin, vetoController.updateMap);
-router.post("/admin/veto/pools", requireAuth, requireVetoTournamentStaff({ roles: ["tournament_admin"] }), vetoController.createPool);
-router.post("/admin/veto/presets", requireAuth, requireVetoTournamentStaff({ roles: ["tournament_admin"] }), vetoController.createPreset);
-router.post("/admin/veto/templates", requireAuth, requireVetoTournamentStaff({ roles: ["tournament_admin"] }), vetoController.createTemplate);
-router.get("/admin/tournaments/:id/veto-config", requireAuth, vetoController.tournamentConfig);
-router.put("/admin/tournaments/:id/veto-config", requireAuth, requireVetoTournamentStaff({ roles: ["tournament_admin"], parameter: "id" }), vetoController.saveTournamentConfig);
-router.get("/admin/veto-rooms", requireAuth, vetoController.listRooms);
-router.post("/admin/veto-rooms", requireAuth, requireVetoTournamentStaff(), vetoController.createRoom);
-router.get("/admin/veto-rooms/:roomId", requireAuth, vetoController.getAdminRoom);
-router.post("/admin/veto-rooms/:roomId/open", requireAuth, requireVetoRoomStaff(), vetoController.openRoom);
-router.post("/admin/veto-rooms/:roomId/start", requireAuth, requireVetoRoomStaff(), vetoController.startRoom);
-router.post("/admin/veto-rooms/:roomId/assign-team-a", requireAuth, requireVetoRoomStaff(), vetoController.assignTeamA);
-router.post("/admin/veto-rooms/:roomId/manual-toss", requireAuth, requireVetoRoomStaff(), vetoController.recordManualToss);
-router.post("/admin/veto-rooms/:roomId/rewind", requireAuth, requireVetoRoomStaff(), vetoController.rewindRoom);
-router.post("/admin/veto-rooms/:roomId/reset", requireAuth, requireVetoRoomStaff(), vetoController.resetRoom);
-router.post("/admin/veto-rooms/:roomId/cancel", requireAuth, requireVetoRoomStaff(), vetoController.cancelRoom);
-router.post("/admin/veto-rooms/:roomId/rotate-link", requireAuth, requireVetoRoomStaff(), vetoController.rotateGrant);
+router.post("/admin/veto/pools", requireAuth, requirePermission(scopes.VETO_CATALOG_CONFIG), vetoController.createPool);
+router.post("/admin/veto/presets", requireAuth, requirePermission(scopes.VETO_CATALOG_CONFIG), vetoController.createPreset);
+router.post("/admin/veto/templates", requireAuth, requirePermission(scopes.VETO_CATALOG_CONFIG), vetoController.createTemplate);
+router.get("/admin/tournaments/:id/veto-config", requireAuth, requirePermission(scopes.VETO_CATALOG_CONFIG, { parameter: "id" }), vetoController.tournamentConfig);
+router.put("/admin/tournaments/:id/veto-config", requireAuth, requirePermission(scopes.VETO_CATALOG_CONFIG, { parameter: "id" }), vetoController.saveTournamentConfig);
+router.get("/admin/veto-rooms", requireAuth, unscopedTournamentRead, vetoController.listRooms);
+router.post("/admin/veto-rooms", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.createRoom);
+router.get("/admin/veto-rooms/:roomId", requireAuth, roomTournamentRead, vetoController.getAdminRoom);
+router.post("/admin/veto-rooms/:roomId/open", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.openRoom);
+router.post("/admin/veto-rooms/:roomId/start", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.startRoom);
+router.post("/admin/veto-rooms/:roomId/assign-team-a", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.assignTeamA);
+router.post("/admin/veto-rooms/:roomId/manual-toss", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.recordManualToss);
+router.post("/admin/veto-rooms/:roomId/rewind", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.rewindRoom);
+router.post("/admin/veto-rooms/:roomId/reset", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.resetRoom);
+router.post("/admin/veto-rooms/:roomId/cancel", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.cancelRoom);
+router.post("/admin/veto-rooms/:roomId/rotate-link", requireAuth, requirePermission(scopes.VETO_OPERATIONS), vetoController.rotateGrant);
 
 router.get("/valorant/leaderboard", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.getLeaderboard);
 router.get("/valorant/leaderboard/search", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.searchLeaderboard);
@@ -171,18 +185,19 @@ router.put(
   challongeController.updateMatchResult
 );
 
-router.get("/admin/tournaments/:id/matches", requireAuth, tournamentStaff, matchController.listAdminTournamentMatches);
+router.get("/admin/tournaments/:id/matches", requireAuth, tournamentRead, matchController.listAdminTournamentMatches);
 router.post("/admin/tournaments/:id/matches", requireAuth, tournamentStaff, invalidateCache("foundation"), matchController.createAdminMatch);
-router.patch("/admin/matches/:matchId", requireAuth, requireMatchStaff(), invalidateCache("foundation"), matchController.updateAdminMatch);
-router.post("/admin/matches/:matchId/room", requireAuth, requireMatchStaff(), matchRoomController.sync);
-router.get("/admin/match-rooms", requireAuth, matchRoomController.staffRooms);
+router.patch("/admin/matches/:matchId", requireAuth, requirePermission(scopes.MATCH_OPERATIONS), invalidateCache("foundation"), matchController.updateAdminMatch);
+router.post("/admin/matches/:matchId/room", requireAuth, requirePermission(scopes.MATCH_OPERATIONS), matchRoomController.sync);
+router.get("/admin/match-rooms", requireAuth, unscopedMatchRoomRead, matchRoomController.staffRooms);
 
-router.get("/admin/tournaments/:id/staff", requireAuth, requireSuperAdmin, staffController.listStaff);
-router.post("/admin/tournaments/:id/staff", requireAuth, requireSuperAdmin, staffController.assignStaff);
+router.get("/admin/tournaments/:id/staff", requireAuth, requireSuperAdmin, staffRosterManagement, staffController.listStaff);
+router.post("/admin/tournaments/:id/staff", requireAuth, requireSuperAdmin, staffRosterManagement, staffController.assignStaff);
 router.delete(
   "/admin/tournaments/:id/staff/:assignmentId",
   requireAuth,
   requireSuperAdmin,
+  staffRosterManagement,
   staffController.removeStaff
 );
 

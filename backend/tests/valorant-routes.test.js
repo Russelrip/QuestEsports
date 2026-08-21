@@ -28,6 +28,15 @@ const passMiddleware = (_req, _res, next) => next();
 // preserves the intent ("a router.use('/admin/valorant', requireAdmin) guard
 // must exist") on Express 5.2.
 const requireAdminMock = (_req, _res, next) => next();
+const permissionScopesMock = {
+  TOURNAMENT_READ: "tournament.read",
+  TOURNAMENT_ADMINISTRATION: "tournament.administration",
+  STAFF_ROSTER_MANAGEMENT: "staff.roster.management",
+  MATCH_OPERATIONS: "match.operations",
+  VETO_OPERATIONS: "veto.operations",
+  VETO_CATALOG_CONFIG: "veto.catalog.config",
+};
+const requirePermissionMock = () => passMiddleware;
 
 test("v1 router guards /admin/valorant with requireAdmin and declares every proxy route", () => {
   const { module: router, restore } = loadModuleWithMocks(v1Path, {
@@ -43,10 +52,8 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
     [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => passMiddleware,
-      requireTournamentStaff: () => passMiddleware,
-      requireMatchStaff: () => passMiddleware,
-      requireVetoRoomStaff: () => passMiddleware,
-      requireVetoTournamentStaff: () => passMiddleware,
+      requirePermission: requirePermissionMock,
+      PERMISSION_SCOPES: permissionScopesMock,
     },
     [valorantControllerPath]: controllerMock,
     [valorantLeaderboardControllerPath]: controllerMock,
@@ -133,10 +140,8 @@ test("v1 tournament detail mutations invalidate both foundation and tournament c
     [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => passMiddleware,
-      requireTournamentStaff: () => passMiddleware,
-      requireMatchStaff: () => passMiddleware,
-      requireVetoRoomStaff: () => passMiddleware,
-      requireVetoTournamentStaff: () => passMiddleware,
+      requirePermission: requirePermissionMock,
+      PERMISSION_SCOPES: permissionScopesMock,
     },
     [valorantControllerPath]: controllerMock,
     [valorantLeaderboardControllerPath]: controllerMock,
