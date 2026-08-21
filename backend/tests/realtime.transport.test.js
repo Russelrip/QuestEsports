@@ -49,6 +49,31 @@ test("publish rejects HTTP and JSON error responses", async () => {
   await assert.rejects(() => transport.publish(envelope), /rate limited/);
 });
 
+test("publish rejects a successful JSON response that contains an error", async () => {
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => response(200, { error: "command rejected" }),
+  });
+
+  await assert.rejects(() => transport.publish(envelope), /command rejected/);
+});
+
+test("publish reads a non-JSON error response once and preserves its message", async () => {
+  let reads = 0;
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => ({
+      ok: false,
+      status: 502,
+      text: async () => {
+        reads += 1;
+        return "upstream unavailable";
+      },
+    }),
+  });
+
+  await assert.rejects(() => transport.publish(envelope), /upstream unavailable/);
+  assert.equal(reads, 1);
+});
+
 test("publish rejects envelopes larger than the configured byte limit", async () => {
   const transport = createRealtimeTransport({
     fetchImpl: async () => response(200),
@@ -105,6 +130,67 @@ test("subscribe parses only matching message frames and reconnects after EOF", a
   await wait(20);
   assert.equal(calls.length, callCount);
   assert.equal(transport.getStatus().connected, false);
+});
+
+test("reconnect backoff increases after repeated EOFs and stays bounded", async () => {
+  const originalSetTimeout = global.setTimeout;
+  const requestedDelays = [];
+  const calls = [];
+  const emptyStream = () =>
+    new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    });
+  const transport = createRealtimeTransport({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, ...options });
+      return response(200, { body: emptyStream() });
+    },
+    random: () => 1,
+  });
+
+  global.setTimeout = (callback, delay, ...args) => {
+    requestedDelays.push(delay);
+    return originalSetTimeout(callback, delay, ...args);
+  };
+  try {
+    await transport.start(() => {});
+    await new Promise((resolve) => originalSetTimeout(resolve, 60));
+  } finally {
+    await transport.stop();
+    global.setTimeout = originalSetTimeout;
+  }
+
+  assert.ok(calls.length >= 4);
+  assert.deepEqual(requestedDelays.slice(0, 4), [5, 10, 10, 10]);
+  assert.equal(Math.max(...requestedDelays), 10);
+});
+
+test("oversized unterminated SSE records are discarded incrementally", async () => {
+  const received = [];
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("data: message,quest-realtime,"));
+      controller.enqueue(new TextEncoder().encode("x".repeat(2000)));
+      controller.enqueue(
+        new TextEncoder().encode(
+          "\n\n" +
+            "data: message,quest-realtime,{\"version\":1,\"eventId\":\"after-oversized\"}\n\n",
+        ),
+      );
+      controller.close();
+    },
+  });
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => response(200, { body: stream }),
+  });
+
+  await transport.start((value) => received.push(value));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await transport.stop();
+
+  assert.deepEqual(received, [{ version: 1, eventId: "after-oversized" }]);
 });
 
 test("start and stop are idempotent and stop aborts an active subscription", async () => {

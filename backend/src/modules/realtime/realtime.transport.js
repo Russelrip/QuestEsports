@@ -11,26 +11,39 @@ const asErrorText = (value) => {
   }
 };
 
-const responseError = async (response, operation) => {
-  let details = "";
+const readResponseBody = async (response) => {
+  if (typeof response.text === "function") {
+    try {
+      const raw = await response.text();
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    } catch {
+      return null;
+    }
+  }
   if (typeof response.json === "function") {
     try {
-      details = asErrorText(await response.json());
+      return await response.json();
     } catch {
-      // The REST API may return an empty or non-JSON error body.
+      return null;
     }
   }
-  if (!details && typeof response.text === "function") {
-    try {
-      details = await response.text();
-    } catch {
-      // Keep the HTTP status as the useful error when the body is unavailable.
-    }
-  }
+  return null;
+};
+
+const responseError = (response, operation, body) => {
+  const details = body == null ? "" : asErrorText(body);
   return new Error(
     `Upstash ${operation} failed with HTTP ${response.status}${details ? `: ${details}` : ""}`,
   );
 };
+
+const hasErrorPayload = (body) =>
+  body && typeof body === "object" && Object.prototype.hasOwnProperty.call(body, "error");
 
 const toIsoString = (value) => {
   if (value instanceof Date) return value.toISOString();
@@ -98,13 +111,18 @@ const createRealtimeTransport = ({
     if (frameType !== "message" || frameChannel !== channel) return;
 
     const payload = data.slice(secondComma + 1);
-    if (Buffer.byteLength(payload, "utf8") > env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES) {
-      return;
-    }
+    if (Buffer.byteLength(payload, "utf8") > env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES) return false;
     try {
-      onEnvelope(JSON.parse(payload));
+      const envelope = JSON.parse(payload);
+      try {
+        onEnvelope(envelope);
+      } catch (error) {
+        log("warn", "Realtime envelope callback failed", error);
+      }
+      return true;
     } catch (error) {
       log("warn", "Ignoring malformed realtime Pub/Sub payload", error);
+      return false;
     }
   };
 
@@ -116,20 +134,50 @@ const createRealtimeTransport = ({
     activeReader = reader;
     const decoder = new TextDecoder();
     let buffer = "";
+    let discardingOversizedRecord = false;
+
+    const consumeText = (text) => {
+      let remainder = text;
+      while (remainder) {
+        if (discardingOversizedRecord) {
+          const separator = remainder.search(/\r?\n\r?\n/);
+          if (separator < 0) return;
+          const match = remainder.match(/\r?\n\r?\n/);
+          remainder = remainder.slice(separator + match[0].length);
+          discardingOversizedRecord = false;
+          continue;
+        }
+
+        buffer += remainder;
+        remainder = "";
+        let separator;
+        while ((separator = buffer.search(/\r?\n\r?\n/)) >= 0) {
+          const match = buffer.match(/\r?\n\r?\n/);
+          const record = buffer.slice(0, separator);
+          if (Buffer.byteLength(record, "utf8") <= env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES) {
+            if (parseRecord(record)) reconnectAttempt = 0;
+          }
+          buffer = buffer.slice(separator + match[0].length);
+        }
+
+        if (Buffer.byteLength(buffer, "utf8") > env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES) {
+          buffer = "";
+          discardingOversizedRecord = true;
+        }
+      }
+    };
 
     try {
       while (running) {
         const result = await reader.read();
         if (result.done) break;
-        buffer += decoder.decode(result.value, { stream: true });
-        let separator;
-        while ((separator = buffer.search(/\r?\n\r?\n/)) >= 0) {
-          const match = buffer.match(/\r?\n\r?\n/);
-          parseRecord(buffer.slice(0, separator));
-          buffer = buffer.slice(separator + match[0].length);
-        }
+        consumeText(
+          typeof result.value === "string"
+            ? result.value
+            : decoder.decode(result.value, { stream: true }),
+        );
       }
-      buffer += decoder.decode();
+      consumeText(decoder.decode());
     } finally {
       activeReader = null;
       if (typeof reader.releaseLock === "function") reader.releaseLock();
@@ -172,9 +220,9 @@ const createRealtimeTransport = ({
       );
       if (!running) return;
       if (!response.ok) {
-        throw await responseError(response, "subscribe");
+        const body = await readResponseBody(response);
+        throw responseError(response, "subscribe", body);
       }
-      reconnectAttempt = 0;
       reportStatus(true, "connected");
       await consumeStream(response.body);
       if (running) scheduleReconnect("eof");
@@ -202,7 +250,11 @@ const createRealtimeTransport = ({
         signal: AbortSignal.timeout(env.CACHE_CONNECTION_TIMEOUT_MS),
       },
     );
-    if (!response.ok) throw await responseError(response, "publish");
+    const body = await readResponseBody(response);
+    if (!response.ok) throw responseError(response, "publish", body);
+    if (hasErrorPayload(body)) {
+      throw new Error(`Upstash publish returned an error: ${asErrorText(body.error)}`);
+    }
   };
 
   const start = async (envelopeHandler = noop, statusHandler = noop) => {
