@@ -1,7 +1,7 @@
 # Cluster-Safe Realtime Delivery Design
 
-**Date:** 2026-08-22  
-**Plan task:** V2-P1-002  
+**Date:** 2026-08-22
+**Plan task:** V2-P1-002
 **Status:** Approved for implementation planning
 
 ## Context
