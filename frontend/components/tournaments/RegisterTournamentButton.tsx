@@ -10,13 +10,13 @@ import { apiFetch } from "@/lib/auth";
 import { readApiResponse } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import {
-  Tournament,
+  type Tournament,
+  type PersonalRegistrationState,
   canRegisterForTournament,
+  getRegistrationButtonLabel,
   getTournamentRegistrationLabel,
 } from "@/lib/tournaments";
 import { unmarkTournamentRegistered } from "@/lib/registered-tournaments";
-
-type RegistrationStatus = "loading" | "ready" | "registered";
 
 type ExistingRegistration = {
   status: "pending" | "approved" | "rejected" | "waitlisted";
@@ -43,7 +43,7 @@ export default function RegisterTournamentButton({
 }) {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
-  const [status, setStatus] = useState<RegistrationStatus>("loading");
+  const [status, setStatus] = useState<PersonalRegistrationState>("loading");
   const [registration, setRegistration] = useState<ExistingRegistration | null>(null);
   const [error, setError] = useState("");
   const [deadlineReached, setDeadlineReached] = useState(false);
@@ -216,13 +216,7 @@ export default function RegisterTournamentButton({
             ? "Continue to Payment"
           : isRegistered
           ? slotLabel ? `Registered · ${slotLabel}` : "Registered"
-          : isChecking
-            ? "Checking..."
-            : tournament.registrationState === "waitlist_open"
-              ? getTournamentRegistrationLabel(tournament)
-              : tournament.registrationMode === "slot_based"
-              ? "Reserve Slot"
-              : "Register Now"}
+          : getRegistrationButtonLabel(tournament, status)}
       </Button>
       {pendingBankTransfer ? (
         <div className="mt-2 max-w-sm">

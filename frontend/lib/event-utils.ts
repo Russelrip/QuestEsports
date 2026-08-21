@@ -1,6 +1,6 @@
-import type { EventSeries } from "./tournaments";
+import type { EventSeries, EventStatus } from "./tournaments";
 
-type EventStatusKey = NonNullable<EventSeries["eventStatus"]>;
+type EventStatusKey = EventStatus;
 
 const statusLabels: Record<EventStatusKey, string> = {
   draft: "Coming soon",

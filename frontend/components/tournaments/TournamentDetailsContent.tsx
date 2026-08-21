@@ -17,6 +17,7 @@ import {
   Tournament,
   TournamentEventMedia,
   TournamentBracketData,
+  getTournamentRegistrationPresentation,
   getTournamentRegistrationModeLabel,
 } from "@/lib/tournaments";
 
@@ -228,6 +229,7 @@ function SponsorsPanel({ tournament }: { tournament: Tournament }) {
 }
 
 function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
+  const registrationPresentation = getTournamentRegistrationPresentation(tournament);
   const rows = [
     { label: "Game", value: tournament.gameCategory?.displayName || toTitleCase(tournament.game) },
     { label: "Play type", value: tournament.format },
@@ -269,8 +271,8 @@ function TournamentOverviewSidebar({ tournament }: { tournament: Tournament }) {
           </div>
         ) : (
           <>
-        <p className={`mb-3 text-xs font-semibold ${tournament.isRegistrationOpen ? "text-emerald-300" : "text-rose-300"}`}>
-          {toTitleCase(tournament.registrationState.replace(/_/g, " "))}
+        <p className={`mb-3 text-xs font-semibold ${registrationPresentation.isActionable ? "text-emerald-300" : "text-rose-300"}`}>
+          {registrationPresentation.label}
         </p>
         <RegisterTournamentButton tournament={tournament} closedAsButton className="w-full [&_button]:w-full" />
           </>

@@ -9,7 +9,11 @@ export type TournamentStatus =
   | "completed"
   | "cancelled";
 
-type TournamentRegistrationState =
+export type EventStatus = "draft" | "upcoming" | "open" | "closed" | "completed";
+
+export type EventRegistrationState = "open" | "upcoming" | "closed" | "completed";
+
+export type TournamentRegistrationState =
   | "registration_open"
   | "upcoming"
   | "registration_closed"
@@ -18,6 +22,7 @@ type TournamentRegistrationState =
   | "already_registered";
 
 type TournamentRegistrationMode = "open_entry" | "slot_based";
+export type PersonalRegistrationState = "loading" | "ready" | "registered";
 type TournamentEntryType = "team" | "solo";
 type TournamentPaymentMethod = "free" | "payhere" | "bank_transfer";
 type TournamentDateStatus = "scheduled" | "tba" | "tbd";
@@ -135,13 +140,13 @@ export type EventSeries = {
   organizer?: string | null;
   websiteUrl?: string | null;
   discordUrl?: string | null;
-  eventStatus?: "draft" | "upcoming" | "open" | "closed" | "completed";
+  eventStatus?: EventStatus;
   aggregate?: EventAggregate;
   games?: number;
   teamsRegistered?: number;
   playersRegistered?: number;
   availableSlots?: number;
-  registrationState?: "open" | "upcoming" | "closed" | "completed";
+  registrationState?: EventRegistrationState;
   displayOrder: number;
   isPublished: boolean;
   tournaments: Tournament[];
@@ -153,7 +158,7 @@ export type EventAggregate = {
   teamsRegistered: number;
   playersRegistered: number;
   availableSlots: number;
-  registrationState: "open" | "upcoming" | "closed" | "completed";
+  registrationState: EventRegistrationState;
 };
 
 export type BracketParticipant = {
@@ -319,26 +324,53 @@ const fetchJson = async <T>(path: string): Promise<T> => {
 export const getTournamentStatusLabel = (status: TournamentStatus) =>
   status.replace(/_/g, " ");
 
+export const getTournamentRegistrationPresentation = (tournament: Tournament) => {
+  const state = tournament.registrationState;
+  const isWaitlist = state === "waitlist_open";
+  const isActionable = state === "registration_open" || isWaitlist;
+  return {
+    state,
+    isWaitlist,
+    isActionable,
+    registrationHref: isActionable
+      ? `/tournaments/${tournament.slug}/register`
+      : `/tournaments/${tournament.slug}`,
+    label: getTournamentRegistrationLabel(tournament),
+  };
+};
+
 export const canRegisterForTournament = (tournament: Tournament) =>
-  tournament.registrationState === "registration_open" || tournament.registrationState === "waitlist_open";
+  getTournamentRegistrationPresentation(tournament).isActionable;
 
 export const getTournamentRegistrationLabel = (tournament: Tournament) => {
-  if (tournament.registrationState === "waitlist_open") return tournament.registrationLabel || "Join waitlist";
-  if (tournament.registrationState === "slots_full") {
-    return "Slots Full";
+  switch (tournament.registrationState) {
+    case "waitlist_open":
+      return tournament.registrationLabel || "Join waitlist";
+    case "slots_full":
+      return "Slots Full";
+    case "registration_closed":
+      return "Registration Closed";
+    case "already_registered":
+      return "Already Registered";
+    case "upcoming":
+      return "Registration opens soon";
+    case "registration_open":
+      return tournament.registrationMode === "slot_based"
+        ? "Slots Available"
+        : "Registration Open";
   }
+};
 
-  if (tournament.registrationState === "registration_closed") {
-    return "Registration Closed";
-  }
-
-  if (tournament.registrationState === "upcoming") {
-    return "Registration opens soon";
-  }
-
-  return tournament.registrationMode === "slot_based"
-    ? "Slots Available"
-    : "Registration Open";
+export const getRegistrationButtonLabel = (
+  tournament: Tournament,
+  personalState: PersonalRegistrationState,
+) => {
+  if (personalState === "loading") return "Checking...";
+  if (personalState === "registered") return "Registered";
+  const presentation = getTournamentRegistrationPresentation(tournament);
+  if (!presentation.isActionable) return presentation.label;
+  if (presentation.isWaitlist) return presentation.label;
+  return tournament.registrationMode === "slot_based" ? "Reserve Slot" : "Register Now";
 };
 
 export const getTournamentRegistrationModeLabel = (tournament: Tournament) =>
