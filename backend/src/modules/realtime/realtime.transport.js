@@ -214,6 +214,7 @@ const createRealtimeTransport = ({
     runGeneration,
     connectionDeadline,
     onAcknowledged,
+    onDisconnected = noop,
   ) => {
     if (!body || typeof body.getReader !== "function") {
       throw new Error("Upstash subscribe response did not include a readable stream.");
@@ -225,6 +226,20 @@ const createRealtimeTransport = ({
     let discardingOversizedRecord = false;
     let acknowledged = false;
     let pendingReadTask = null;
+    let disconnectedReported = false;
+
+    const reportDisconnected = (reason, error) => {
+      if (
+        disconnectedReported ||
+        !acknowledged ||
+        !running ||
+        runGeneration !== generation
+      ) {
+        return;
+      }
+      disconnectedReported = true;
+      onDisconnected(reason, error);
+    };
 
     const consumeText = (text) => {
       let remainder = text;
@@ -271,7 +286,10 @@ const createRealtimeTransport = ({
           ? await readTask
           : await Promise.race([readTask, connectionDeadline]);
         pendingReadTask = null;
-        if (result.done) break;
+        if (result.done) {
+          reportDisconnected("eof");
+          break;
+        }
         if (!running || runGeneration !== generation) break;
         consumeText(
           typeof result.value === "string"
@@ -283,6 +301,9 @@ const createRealtimeTransport = ({
       if (!acknowledged) {
         throw new Error("Upstash subscribe stream did not provide a valid acknowledgement.");
       }
+    } catch (error) {
+      reportDisconnected("error", error);
+      throw error;
     } finally {
       // A cancelled reader can resolve its cancellation promise before the
       // read promise settles. Keep the physical subscription task pending for
@@ -304,9 +325,9 @@ const createRealtimeTransport = ({
     }
   };
 
-  const scheduleReconnect = (runGeneration, reason, error) => {
+  const scheduleReconnect = (runGeneration, reason, error, alreadyReported = false) => {
     if (!running || runGeneration !== generation || reconnectTimer) return;
-    reportFailure(reason, error);
+    if (!alreadyReported) reportFailure(reason, error);
     const baseDelay = Math.min(
       env.REALTIME_PUBSUB_RECONNECT_MAX_MS,
       env.REALTIME_PUBSUB_RECONNECT_BASE_MS * 2 ** reconnectAttempt,
@@ -325,6 +346,11 @@ const createRealtimeTransport = ({
 
   const subscribe = async (runGeneration) => {
     if (!running || runGeneration !== generation) return;
+    let disconnectedReported = false;
+    const reportDisconnected = (reason, error) => {
+      disconnectedReported = true;
+      reportFailure(reason, error);
+    };
     const controller = new AbortController();
     let connectionDeadlineExceeded = false;
     let rejectConnectionDeadline;
@@ -342,8 +368,7 @@ const createRealtimeTransport = ({
         // A deadline means the transport cannot prove that the upstream
         // subscription stopped. Do not enter reconnect mode while that
         // physical task is still outstanding.
-        running = false;
-        generation += 1;
+        disconnectedReported = true;
         reportFailure("connection-timeout", timeoutError);
       }
       rejectConnectionDeadline(timeoutError);
@@ -402,17 +427,25 @@ const createRealtimeTransport = ({
           clearConnectionTimer();
           if (running && runGeneration === generation) reportStatus(true, "connected");
         },
+        reportDisconnected,
       );
-      if (running && runGeneration === generation) scheduleReconnect(runGeneration, "eof");
+      if (running && runGeneration === generation) {
+        scheduleReconnect(runGeneration, "eof", undefined, disconnectedReported);
+      }
     } catch (error) {
+      let settledError = error;
       if (connectionDeadlineExceeded && fetchTask && !response) {
         // AbortSignal is advisory for fetch implementations. Await the late
         // response and its body cancellation here; this task is the barrier
         // that prevents a replacement physical subscription from starting.
-        response = await fetchTask;
-        activeResponse = response;
-        activeBody = response?.body;
-        await getActiveCancellationTask();
+        try {
+          response = await fetchTask;
+          activeResponse = response;
+          activeBody = response?.body;
+          await getActiveCancellationTask();
+        } catch (lateError) {
+          settledError = lateError;
+        }
       }
       if (response && activeResponse === response) {
         await getActiveCancellationTask();
@@ -420,9 +453,15 @@ const createRealtimeTransport = ({
       if (responseBodyTask) {
         // A timed-out error-body read is also physical work. Cancellation can
         // unblock it, but the barrier must not clear before the read settles.
-        await responseBodyTask;
+        try {
+          await responseBodyTask;
+        } catch (bodyError) {
+          settledError = bodyError;
+        }
       }
-      if (running && runGeneration === generation) scheduleReconnect(runGeneration, "error", error);
+      if (running && runGeneration === generation) {
+        scheduleReconnect(runGeneration, "error", settledError, disconnectedReported);
+      }
     } finally {
       clearConnectionTimer();
       if (activeController === controller) activeController = null;

@@ -205,10 +205,7 @@ test("drains active SSE clients so shutdown does not wait for heartbeats", async
 });
 
 test("a delayed room authorization cannot open an SSE stream after shutdown starts", async () => {
-  let releaseAccess;
-  const accessPending = new Promise((resolve) => {
-    releaseAccess = resolve;
-  });
+  const accessPending = new Promise(() => {});
   let opened = 0;
   const { module: controller, restore } = createRealtimeController({
     accessRoom: () => accessPending,
@@ -227,12 +224,35 @@ test("a delayed room authorization cannot open an SSE stream after shutdown star
     const pendingRequest = controller.getRealtimeEvents(request, response);
     await Promise.resolve();
     controller.drainRealtimeConnections();
-    releaseAccess();
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.ended, true);
     await pendingRequest;
     assert.equal(opened, 0);
     assert.equal(response.statusCode, 503);
     assert.equal(response.ended, true);
     assert.equal(response.body.error.code, "realtime_unavailable");
+  } finally {
+    restore();
+  }
+});
+
+test("request abort terminates delayed topic authorization without waiting for access", async () => {
+  const accessPending = new Promise(() => {});
+  const { module: controller, restore } = createRealtimeController({
+    accessRoom: () => accessPending,
+  });
+  const request = createRequest({
+    query: { topics: "match-room:room-1" },
+    user: { id: "user-1" },
+  });
+  const response = createResponse();
+
+  try {
+    const pendingRequest = controller.getRealtimeEvents(request, response);
+    await Promise.resolve();
+    request.emit("aborted");
+    assert.equal(response.ended, true);
+    await pendingRequest;
   } finally {
     restore();
   }

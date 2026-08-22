@@ -57,9 +57,12 @@ Do not point local development at production. Shared staging environments should
 
 Use `CACHE_DRIVER=upstash` whenever `API_PROCESS_COUNT` is greater than one.
 `API_PROCESS_COUNT` must equal the PM2 API worker count; all workers in one
-environment must share the same `REALTIME_PUBSUB_CHANNEL`, while staging and
-production must use different channel names. The default channel is
-`quest-realtime-${NODE_ENV}`. When `REALTIME_WORKER_ID` is configured,
+environment must share the same explicit `REALTIME_CHANNEL`, while every
+deployment environment sharing an Upstash database must use a different,
+deployment-unique channel. For a single-process local deployment using the
+default memory cache, realtime uses the in-memory transport and the config
+fallback is `quest-realtime-local`; no shared channel is required. When
+`REALTIME_WORKER_ID` is configured,
 use the same base on every worker; otherwise config supplies a process-derived
 fallback.
 The effective worker identity is `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`,

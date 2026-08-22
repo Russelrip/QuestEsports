@@ -52,9 +52,12 @@ JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
 API_PROCESS_COUNT=1
 CACHE_DRIVER=memory
-# Use one exact channel on every worker in an environment and different
-# channels for staging and production when sharing an Upstash database.
-REALTIME_PUBSUB_CHANNEL=quest-realtime-development
+# Required for shared/clustered Upstash realtime. Use one exact,
+# deployment-unique channel on every worker in this environment, and a
+# different channel for every other environment sharing the Upstash database.
+# A single-process CACHE_DRIVER=memory deployment uses the local in-memory
+# default (`quest-realtime-local`) and does not need this variable.
+REALTIME_CHANNEL=
 REALTIME_SSE_ENABLED=false
 LOG_DRAIN_URL=
 LOG_DRAIN_TOKEN=

@@ -9,7 +9,9 @@ const {
 const { accessRoom } = require("../match-rooms/match-room.service");
 
 const activeSseConnections = new Set();
+const activeAuthorizationFinalizers = new Set();
 let realtimeDraining = false;
+const AUTHORIZATION_CANCELLED = Symbol("realtime-authorization-cancelled");
 
 const isRequestClosed = (req) =>
   req.aborted === true || req.destroyed === true || req.socket?.destroyed === true;
@@ -41,9 +43,24 @@ const parseTopics = (value) =>
       .slice(0, 20)
   );
 
-const authorizeTopics = async (requested, user) => {
+const authorizeTopics = async (requested, user, cancellation = null) => {
+  const throwIfCancelled = () => {
+    if (cancellation?.cancelled) throw AUTHORIZATION_CANCELLED;
+  };
+  const awaitAuthorization = async (task) => {
+    const authorizationTask = Promise.resolve().then(task);
+    authorizationTask.catch(() => {});
+    const result = await Promise.race([
+      authorizationTask,
+      cancellation?.promise,
+    ].filter(Boolean));
+    if (result === AUTHORIZATION_CANCELLED) throw AUTHORIZATION_CANCELLED;
+    return result;
+  };
+
   const authorized = new Set();
   for (const topic of requested) {
+    throwIfCancelled();
     if (topic.startsWith("user:")) {
       if (!user || topic !== `user:${user.id}`) throw new HttpError(403, "You cannot subscribe to this user stream.");
       authorized.add(topic);
@@ -53,7 +70,11 @@ const authorizeTopics = async (requested, user) => {
       if (!user) throw new HttpError(401, "Sign in to subscribe to a match room.");
       const code = topic.slice("match-room:".length);
       if (!code) throw new HttpError(400, "A match-room code is required.");
-      await accessRoom({ code, user });
+      await awaitAuthorization(() => accessRoom({
+        code,
+        user,
+        signal: cancellation?.signal,
+      }));
       authorized.add(topic);
       continue;
     }
@@ -81,7 +102,50 @@ const getRealtimeEvents = async (req, res) => {
     return;
   }
 
-  const topics = await authorizeTopics(parseTopics(req.query.topics), req.user);
+  if (isRequestClosed(req)) return;
+
+  const authorizationController = new AbortController();
+  let authorizationSettled = false;
+  let authorizationCancelled = false;
+  let resolveAuthorizationCancellation;
+  const authorizationCancellation = new Promise((resolve) => {
+    resolveAuthorizationCancellation = resolve;
+  });
+  const finalizeAuthorization = (reason = "aborted") => {
+    if (authorizationSettled || authorizationCancelled) return;
+    authorizationCancelled = true;
+    activeAuthorizationFinalizers.delete(finalizeAuthorization);
+    authorizationController.abort();
+    resolveAuthorizationCancellation(AUTHORIZATION_CANCELLED);
+    if (reason === "drain") respondRealtimeUnavailable(res);
+    else if (!res.writableEnded) res.end?.();
+  };
+  activeAuthorizationFinalizers.add(finalizeAuthorization);
+  req.on("close", () => finalizeAuthorization("aborted"));
+  req.on("aborted", () => finalizeAuthorization("aborted"));
+
+  let topics;
+  try {
+    topics = await authorizeTopics(
+      parseTopics(req.query.topics),
+      req.user,
+      {
+        signal: authorizationController.signal,
+        promise: authorizationCancellation,
+        get cancelled() {
+          return authorizationCancelled;
+        },
+      },
+    );
+  } catch (error) {
+    if (error === AUTHORIZATION_CANCELLED || authorizationCancelled) return;
+    throw error;
+  } finally {
+    authorizationSettled = true;
+    activeAuthorizationFinalizers.delete(finalizeAuthorization);
+  }
+
+  if (authorizationCancelled) return;
   if (realtimeDraining) {
     respondRealtimeUnavailable(res);
     return;
@@ -181,9 +245,11 @@ const getRealtimeEvents = async (req, res) => {
 
 const drainRealtimeConnections = () => {
   realtimeDraining = true;
+  const authorizations = [...activeAuthorizationFinalizers];
   const connections = [...activeSseConnections];
+  for (const finalize of authorizations) finalize("drain");
   for (const close of connections) close();
-  return connections.length;
+  return authorizations.length + connections.length;
 };
 
 module.exports = { getRealtimeEvents, drainRealtimeConnections };
