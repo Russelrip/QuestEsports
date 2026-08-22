@@ -61,6 +61,7 @@ const PAYMENT_METHODS = new Set(["free", "payhere", "bank_transfer"]);
 const TOURNAMENT_DATE_STATUSES = new Set(["scheduled", "tba", "tbd"]);
 const REGISTRATION_FIELD_TYPES = new Set(["text", "number", "select", "checkbox", "url"]);
 const REGISTRATION_FIELD_SCOPES = new Set(["entry", "member"]);
+const PUBLIC_PARTICIPANT_PAGE_SIZE = 50;
 const buildRegistrationCountInclude = (now = new Date()) => ({
   _count: {
     select: {
@@ -1186,11 +1187,12 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
     throw new HttpError(400, "Tournament slug is required.");
   }
 
-  const shouldPaginateParticipants =
+  const hasParticipantPaginationQuery =
     query.participantPage !== undefined || query.participantPageSize !== undefined;
-  const participantPagination = shouldPaginateParticipants
-    ? buildPagination({ page: query.participantPage, pageSize: query.participantPageSize })
-    : null;
+  const participantPagination = buildPagination({
+    page: query.participantPage,
+    pageSize: query.participantPageSize || PUBLIC_PARTICIPANT_PAGE_SIZE,
+  });
   const tournament = await prisma.tournament.findFirst({
     where: {
       slug: normalizedSlug,
@@ -1203,12 +1205,8 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
           ...buildActiveRegistrationWhere({ approvedOnly: true }),
         },
         orderBy: [{ teamName: "asc" }, { id: "asc" }],
-        ...(participantPagination
-          ? {
-              skip: (participantPagination.page - 1) * participantPagination.pageSize,
-              take: participantPagination.pageSize,
-            }
-          : {}),
+        skip: (participantPagination.page - 1) * participantPagination.pageSize,
+        take: participantPagination.pageSize,
         select: {
           id: true,
           teamName: true,
@@ -1280,7 +1278,7 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  if (!participantPagination) {
+  if (!hasParticipantPaginationQuery) {
     return mapTournamentWithPublicTeams(tournament);
   }
 

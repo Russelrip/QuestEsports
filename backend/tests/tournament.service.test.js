@@ -762,7 +762,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
   }
 });
 
-test("public tournament participant pagination is opt-in and keeps full registration totals", async () => {
+test("public tournament participant pagination keeps full registration totals", async () => {
   let findOptions;
   let countOptions;
   let bracketFindOptions;
@@ -854,6 +854,45 @@ test("public tournament participant pagination is opt-in and keeps full registra
       totalPages: 1,
     });
     assert.equal(tournament.registeredParticipants.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("public tournament detail bounds the default participant projection", async () => {
+  let findOptions;
+  const prisma = {
+    tournament: {
+      findFirst: async (options) => {
+        findOptions = options;
+        return {
+          id: "tournament-1",
+          slug: "quest-cup",
+          title: "Quest Cup",
+          game: "valorant",
+          status: "registration_open",
+          isPublished: true,
+          teamRegistrations: [],
+          _count: { teamRegistrations: 0, adminSlotReservations: 0 },
+          adminSlotReservations: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    const tournament = await tournamentService.getPublicTournamentBySlug("quest-cup");
+
+    assert.equal(findOptions.include.teamRegistrations.skip, 0);
+    assert.equal(findOptions.include.teamRegistrations.take, 50);
+    assert.equal("participantPagination" in tournament, false);
   } finally {
     restore();
   }

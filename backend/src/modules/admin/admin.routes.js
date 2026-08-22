@@ -54,7 +54,7 @@ router.get("/admin/team-registrations/export", downloadTeamRegistrations);
 router.get("/admin/team-registrations/:registrationId", getTeamRegistration);
 router.get("/admin/tournaments/:tournamentId/registrations", getTournamentRegistrations);
 router.patch("/admin/team-registrations/:registrationId/status", invalidateCache("tournaments", "foundation"), updateRegistrationStatus);
-router.patch("/admin/team-registrations/:registrationId/game-ids", updateRegistrationGameIds);
+router.patch("/admin/team-registrations/:registrationId/game-ids", invalidateCache("tournaments", "foundation"), updateRegistrationGameIds);
 router.patch("/admin/team-registrations/:registrationId/roster", invalidateCache("tournaments", "foundation"), correctRegistrationRoster);
 router.delete("/admin/team-registrations/:registrationId", invalidateCache("tournaments", "foundation"), removeRegistration);
 router.post("/admin/team-registrations/:registrationId/slot-reservation", invalidateCache("tournaments", "foundation"), reserveRegistrationSlot);
@@ -73,12 +73,12 @@ router.patch(
   invalidateCache("tournaments", "foundation"),
   updateSavedTeam
 );
-router.patch("/admin/teams/:teamId/organization", updateSavedTeamOrganization);
+router.patch("/admin/teams/:teamId/organization", invalidateCache("tournaments", "foundation"), updateSavedTeamOrganization);
 router.post(
   "/admin/teams/:teamId/captain-transfer",
-  invalidateCache("tournaments"),
+  invalidateCache("tournaments", "foundation"),
   transferSavedTeamCaptain
 );
-router.delete("/admin/teams/:teamId", removeSavedTeam);
+router.delete("/admin/teams/:teamId", invalidateCache("tournaments", "foundation"), removeSavedTeam);
 
 module.exports = router;

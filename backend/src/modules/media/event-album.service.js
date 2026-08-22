@@ -33,6 +33,7 @@ const TOURNAMENT_SELECT = {
 const PHOTO_INCLUDE = {
   imageAsset: { select: IMAGE_ASSET_SELECT },
 };
+const PUBLIC_ALBUM_PHOTO_PAGE_SIZE = 30;
 
 const normalizeBoolean = (value, fallback = false) => {
   if (value === undefined || value === null || value === "") return fallback;
@@ -166,26 +167,25 @@ const listAdminEventAlbums = async (query = {}) => {
 const getPublicEventAlbumBySlug = async (slug, query = {}) => {
   const normalizedSlug = normalizeSlug(slug);
   if (!normalizedSlug) throw new HttpError(400, "Album slug is required.");
-  const shouldPaginatePhotos = query.photoPage !== undefined || query.photoPageSize !== undefined;
-  const photoPagination = shouldPaginatePhotos
-    ? buildPagination({ page: query.photoPage, pageSize: query.photoPageSize || 30 })
-    : null;
+  const hasPhotoPaginationQuery = query.photoPage !== undefined || query.photoPageSize !== undefined;
+  const photoPagination = buildPagination({
+    page: query.photoPage,
+    pageSize: query.photoPageSize || PUBLIC_ALBUM_PHOTO_PAGE_SIZE,
+  });
   const album = await prisma.eventAlbum.findFirst({
     where: { slug: normalizedSlug, isPublished: true },
-    include: photoPagination
-      ? {
-          ...albumDetailInclude,
-          photos: {
-            ...albumDetailInclude.photos,
-            skip: (photoPagination.page - 1) * photoPagination.pageSize,
-            take: photoPagination.pageSize,
-          },
-        }
-      : albumDetailInclude,
+    include: {
+      ...albumDetailInclude,
+      photos: {
+        ...albumDetailInclude.photos,
+        skip: (photoPagination.page - 1) * photoPagination.pageSize,
+        take: photoPagination.pageSize,
+      },
+    },
   });
   if (!album) throw new HttpError(404, "Event album not found.");
   const mapped = mapAlbum(album);
-  return photoPagination
+  return hasPhotoPaginationQuery
     ? {
         ...mapped,
         photoPagination: buildPagedResponse({

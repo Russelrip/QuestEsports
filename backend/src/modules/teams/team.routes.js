@@ -49,6 +49,7 @@ router.post(
   requireVerifiedEmail,
   createTeamRateLimiter,
   imageUpload.single("teamLogo"),
+  invalidateCache("tournaments", "foundation"),
   createProfileTeam
 );
 router.patch(
@@ -65,6 +66,7 @@ router.delete(
   requireAuth,
   requireVerifiedEmail,
   manageTeamRateLimiter,
+  invalidateCache("tournaments", "foundation"),
   deleteProfileTeam
 );
 router.post(
@@ -80,6 +82,7 @@ router.post(
   requireAuth,
   requireVerifiedEmail,
   teamInviteRateLimiter,
+  invalidateCache("tournaments", "foundation"),
   respondTeamInvite
 );
 

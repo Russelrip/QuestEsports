@@ -59,8 +59,13 @@ test("event album routes cache public reads and invalidate every successful muta
       allowCookies: true,
     }]);
     assert.deepEqual(publicCacheConfigurations, [{ browserSeconds: 60, sharedSeconds: 300 }]);
-    assert.equal(invalidations.length, 6);
-    assert.ok(invalidations.every((tags) => tags.length === 3 && tags.join(",") === "event-albums,tournaments,foundation"));
+    assert.equal(invalidations.length, 9);
+    assert.deepEqual(invalidations.slice(0, 3), [
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+    ]);
+    assert.ok(invalidations.slice(3).every((tags) => tags.length === 3 && tags.join(",") === "event-albums,tournaments,foundation"));
 
     const routeMiddleware = new Map(
       router.stack
@@ -81,6 +86,9 @@ test("event album routes cache public reads and invalidate every successful muta
         routeMiddleware.get("GET /event-albums/:slug").indexOf("eventAlbumCacheMiddleware"),
     );
     for (const route of [
+      "POST /posters",
+      "PATCH /posters/:posterId",
+      "DELETE /posters/:posterId",
       "POST /admin/event-albums",
       "PATCH /admin/event-albums/:albumId",
       "DELETE /admin/event-albums/:albumId",

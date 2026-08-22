@@ -128,7 +128,7 @@ test("public event album detail can return a bounded photo page", async () => {
   }
 });
 
-test("public event album detail keeps legacy full photos when pagination is not requested", async () => {
+test("public event album detail bounds the default photo projection", async () => {
   let findOptions;
   const prisma = {
     eventAlbum: {
@@ -159,7 +159,8 @@ test("public event album detail keeps legacy full photos when pagination is not 
   });
   try {
     const result = await service.getPublicEventAlbumBySlug("quest-finals-2026");
-    assert.equal(findOptions.include.photos.take, undefined);
+    assert.equal(findOptions.include.photos.skip, 0);
+    assert.equal(findOptions.include.photos.take, 30);
     assert.equal(result.photos.length, 2);
     assert.equal("photoPagination" in result, false);
   } finally {

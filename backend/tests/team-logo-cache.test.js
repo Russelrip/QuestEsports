@@ -28,7 +28,7 @@ const routeMiddleware = (router) => new Map(
     ]),
 );
 
-test("captain and admin team PATCH routes invalidate both local projection tags", () => {
+test("team and admin team mutations invalidate both local projection tags", () => {
   const teamInvalidations = [];
   const adminInvalidations = [];
   const teamInvalidationMiddleware = (_req, _res, next) => next();
@@ -70,7 +70,12 @@ test("captain and admin team PATCH routes invalidate both local projection tags"
     const captainPatch = teamRoutes.get("PATCH /teams/:teamId");
     const adminPatch = adminRoutes.get("PATCH /admin/teams/:teamId");
 
-    assert.deepEqual(teamInvalidations, [["tournaments", "foundation"]]);
+    assert.deepEqual(teamInvalidations, [
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+    ]);
     assert.deepEqual(adminInvalidations, [
       ["tournaments", "foundation"],
       ["tournaments", "foundation"],
@@ -78,7 +83,10 @@ test("captain and admin team PATCH routes invalidate both local projection tags"
       ["tournaments", "foundation"],
       ["tournaments", "foundation"],
       ["tournaments", "foundation"],
-      ["tournaments"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
     ]);
     assert.ok(captainPatch.includes(teamInvalidationMiddleware));
     assert.ok(adminPatch.includes(adminInvalidationMiddleware));
@@ -93,6 +101,36 @@ test("captain and admin team PATCH routes invalidate both local projection tags"
   } finally {
     adminLoaded.restore();
     teamLoaded.restore();
+  }
+});
+
+test("team mutation routes all carry foundation invalidation middleware", () => {
+  const invalidationMiddleware = (_req, _res, next) => next();
+  const invalidations = [];
+  const rateLimiter = () => passThrough;
+  const uploadMiddleware = { single: () => passThrough };
+  const { restore } = loadModuleWithMocks(teamRoutesPath, {
+    [authMiddlewarePath]: { requireAuth: passThrough, requireVerifiedEmail: passThrough },
+    [rateLimitPath]: { createRateLimiter: rateLimiter },
+    [uploadPath]: { imageUpload: uploadMiddleware },
+    [responseCachePath]: {
+      invalidateCache: (...tags) => {
+        invalidations.push(tags);
+        return invalidationMiddleware;
+      },
+    },
+    [teamControllerPath]: controllerMock,
+  });
+
+  try {
+    assert.deepEqual(invalidations, [
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+      ["tournaments", "foundation"],
+    ]);
+  } finally {
+    restore();
   }
 });
 

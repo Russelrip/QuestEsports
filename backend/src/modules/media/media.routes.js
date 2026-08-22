@@ -60,9 +60,9 @@ router.post(
   uploadImages
 );
 router.delete("/images/:imageId", requireAdmin, deleteImage);
-router.post("/posters", requireAdmin, createPosterEntry);
-router.patch("/posters/:posterId", requireAdmin, updatePoster);
-router.delete("/posters/:posterId", requireAdmin, deletePoster);
+router.post("/posters", requireAdmin, invalidateCache("tournaments", "foundation"), createPosterEntry);
+router.patch("/posters/:posterId", requireAdmin, invalidateCache("tournaments", "foundation"), updatePoster);
+router.delete("/posters/:posterId", requireAdmin, invalidateCache("tournaments", "foundation"), deletePoster);
 
 router.get("/admin/event-albums", requireAdmin, getAdminEventAlbums);
 router.get(
