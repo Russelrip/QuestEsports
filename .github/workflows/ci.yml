@@ -23,6 +23,7 @@ jobs:
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -95,6 +96,7 @@ jobs:
   frontend:
     name: Frontend audit, test, and build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: mcr.microsoft.com/playwright:v1.61.1-noble
     defaults:
       run:
@@ -141,6 +143,7 @@ jobs:
   mobile-admin:
     name: Mobile admin validation
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: mobile-admin
@@ -177,6 +180,7 @@ jobs:
   valorant-e2e:
     name: VALORANT two-service E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       VALORANT_PLATFORM_ACCESS_TOKEN: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}
     steps:

@@ -1,4 +1,5 @@
 const test = require("node:test");
+const { afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 
 process.env.UPSTASH_REDIS_REST_URL = "https://redis.example.com";
@@ -9,7 +10,7 @@ process.env.REALTIME_PUBSUB_RECONNECT_BASE_MS = "5";
 process.env.REALTIME_PUBSUB_RECONNECT_MAX_MS = "10";
 process.env.CACHE_CONNECTION_TIMEOUT_MS = "25";
 
-const { createRealtimeTransport } = require("../src/modules/realtime/realtime.transport");
+const { createRealtimeTransport: createTransport } = require("../src/modules/realtime/realtime.transport");
 
 const envelope = { version: 1, eventId: "e1", topic: "matches" };
 
@@ -21,6 +22,39 @@ const response = (status, body = {}) => ({
 });
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+const until = async (predicate, timeoutMs = 2000) => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (predicate()) return;
+    if (Date.now() >= deadline) throw new Error("Condition was not met before its timeout.");
+    await wait(1);
+  }
+};
+
+// A transport that is still running keeps rescheduling its reconnect timer,
+// which holds this process open indefinitely. Without this net one failed
+// assertion stops the whole `node --test` run from ever exiting -- it turns a
+// single test failure into a hung CI job. Track every transport and stop it
+// after each test whatever the outcome.
+const liveTransports = new Set();
+const createRealtimeTransport = (options) => {
+  const transport = createTransport(options);
+  liveTransports.add(transport);
+  return transport;
+};
+
+afterEach(async () => {
+  const pending = [...liveTransports];
+  liveTransports.clear();
+  // stop() clears its timers and marks itself stopped synchronously, before its
+  // first await, so bounding the wait here can never leave a timer behind and
+  // can never let this hook hang.
+  await Promise.all(pending.map((transport) => Promise.race([
+    transport.stop().catch(() => {}),
+    wait(500),
+  ])));
+});
 
 test("publish uses the Upstash REST command array body and bearer token", async () => {
   const calls = [];
@@ -524,7 +558,7 @@ test("stop-to-start waits for a physically hanging subscription cancellation", a
   const restarting = transport.start(() => {}).then(() => {
     restarted = true;
   });
-  await wait(35);
+  await until(() => restarted);
   assert.equal(calls, 1);
   assert.equal(restarted, true);
 
@@ -561,7 +595,10 @@ test("a timed-out fetch cannot overlap a replacement until its late body settles
   });
 
   await transport.start(() => {});
-  await wait(35);
+  // Comfortably past CACHE_CONNECTION_TIMEOUT_MS (25ms). These are all
+  // "nothing further happened" assertions, so a longer wait is strictly
+  // stronger and survives a loaded CI runner.
+  await wait(60);
   assert.equal(calls, 1);
   assert.equal(maximumActiveSubscriptions, 1);
   assert.equal(transport.getStatus().connected, false);
@@ -575,11 +612,12 @@ test("a timed-out fetch cannot overlap a replacement until its late body settles
       }),
     },
   });
-  await wait(10);
+  await wait(30);
   assert.equal(calls, 1);
   releaseLateBody();
-  await wait(15);
-  assert.equal(calls, 2);
+  // The replacement is scheduled on a reconnect timer; poll for it instead of
+  // guessing a delay that a loaded runner will exceed.
+  await until(() => calls === 2);
   assert.equal(maximumActiveSubscriptions, 1);
   await transport.stop();
 });
@@ -598,7 +636,7 @@ test("a late response with rejected body cancellation poisons the replacement ba
   });
 
   await transport.start(() => {});
-  await wait(35);
+  await wait(60);
   releaseLateFetch({
     ok: true,
     status: 200,
