@@ -150,7 +150,13 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ success: false, message: "Product not found." }));
     return;
   }
-  if (request.method === "GET" && request.url === "/api/tournaments/challonge-test") {
+  // `fetchPublicTournamentBySlug` always appends participant pagination, so
+  // this fixture must match on the pathname like the other handlers above.
+  if (
+    request.method === "GET" &&
+    new URL(request.url || "/", `http://127.0.0.1:${port}`).pathname ===
+      "/api/tournaments/challonge-test"
+  ) {
     response.end(JSON.stringify({
       success: true,
       tournament: {
