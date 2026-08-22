@@ -311,12 +311,7 @@ export type Tournament = {
   participantPagination?: TournamentParticipantPagination;
   isCompleted: boolean;
   registrationState: TournamentRegistrationState;
-  registrationAction?: "register" | "waitlist" | "closed" | "registered" | "waitlisted";
   registrationLabel?: string;
-  isRegistrationOpen: boolean;
-  isSlotsFull: boolean;
-  isWaitlistOpen?: boolean;
-  isRegistrationClosed: boolean;
   createdAt?: string;
   updatedAt?: string;
 };

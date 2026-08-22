@@ -1,4 +1,8 @@
-import type { EventSeries, EventStatus } from "./tournaments";
+import {
+  getTournamentRegistrationPresentation,
+  type EventSeries,
+  type EventStatus,
+} from "./tournaments";
 
 type EventStatusKey = EventStatus;
 
@@ -19,6 +23,18 @@ const dateValue = (value: string | null | undefined) => {
 export const getEventStatus = (event: EventSeries) => {
   const key = event.isPublished ? event.eventStatus || event.registrationState || "closed" : "draft";
   return { key, label: statusLabels[key] };
+};
+
+export const getEventCardPresentation = (event: EventSeries) => {
+  const child = event.tournaments.find(
+    (tournament) => getTournamentRegistrationPresentation(tournament).isActionable,
+  ) ?? event.tournaments[0] ?? null;
+
+  return {
+    eventStatus: getEventStatus(event),
+    child,
+    childRegistration: child ? getTournamentRegistrationPresentation(child) : null,
+  };
 };
 
 export const getCountdownTarget = (event: EventSeries, now = new Date()) => {

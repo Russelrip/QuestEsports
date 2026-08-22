@@ -6,8 +6,9 @@ import Image from "next/image";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
 import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
+import { getEventCardPresentation } from "@/lib/event-utils";
 import { resolveImageUrl } from "@/lib/media";
-import type { EventSeries, GameCategory, Tournament } from "@/lib/tournaments";
+import { getTournamentRegistrationPresentation, type EventSeries, type GameCategory, type Tournament } from "@/lib/tournaments";
 import { formatTournamentDate } from "@/lib/utils";
 
 const gameIconBySlug: Record<string, string> = {
@@ -181,9 +182,9 @@ export default function TournamentsContent({ tournaments, series = [], categorie
     </div>
 
     {filteredSeries.length ? <div className="mb-9 grid gap-5 md:grid-cols-2">{filteredSeries.map((item, index) => {
-      const available = item.tournaments.find((tournament) => tournament.isRegistrationOpen);
-      const preview = available || item.tournaments[0];
-      return <Link key={item.id} href={`/events/${item.slug}`} prefetch={false} className={`group relative aspect-[4/3] overflow-hidden rounded-[30px] border bg-[#0d0c13] ${preview && !preview.isRegistrationOpen ? "border-rose-500/45" : "border-white/10"}`}>
+      const eventPresentation = getEventCardPresentation(item);
+      const preview = eventPresentation.child;
+      return <Link key={item.id} href={`/events/${item.slug}`} prefetch={false} className={`group relative aspect-[4/3] overflow-hidden rounded-[30px] border bg-[#0d0c13] ${eventPresentation.eventStatus.key === "closed" ? "border-rose-500/45" : "border-white/10"}`}>
         <TournamentBannerImage
           bannerUrl={item.heroUrl || preview?.bannerUrl}
           title={item.title}
@@ -192,7 +193,7 @@ export default function TournamentsContent({ tournaments, series = [], categorie
           className="absolute inset-0 h-full w-full object-contain"
         />
         <span className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent" />
-        <span className="absolute inset-x-5 bottom-5"><span className="text-xs uppercase tracking-[0.22em] text-purple-200">Event · {item.tournaments.length} games</span><span className="mt-2 block text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{item.title}</span><span className="mt-3 flex flex-wrap items-center gap-3 text-sm"><b className="text-white">{preview?.prizePool || "Prize TBA"}</b><b className={available ? "text-emerald-300" : "text-slate-300"}>{available ? "Registration Open · Explore" : "View event"}</b></span></span>
+        <span className="absolute inset-x-5 bottom-5"><span className="text-xs uppercase tracking-[0.22em] text-purple-200">Event · {item.tournaments.length} games</span><span className="mt-2 block text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{item.title}</span><span className="mt-3 flex flex-wrap items-center gap-3 text-sm"><b className="text-white">{preview?.prizePool || "Prize TBA"}</b><b className={eventPresentation.eventStatus.key === "open" ? "text-emerald-300" : "text-slate-300"}>{eventPresentation.eventStatus.label} · Explore</b></span></span>
       </Link>;
     })}</div> : null}
 
@@ -201,16 +202,11 @@ export default function TournamentsContent({ tournaments, series = [], categorie
 }
 
 function TournamentCard({ tournament, preload = false, eager = false }: { tournament: Tournament; preload?: boolean; eager?: boolean }) {
-  const statusLabel = tournament.isCompleted
-    ? "Completed"
-    : tournament.isRegistrationOpen
-      ? "Registration Open"
-      : tournament.isSlotsFull
-        ? "Slots Full"
-        : "Registration Closed";
+  const registrationPresentation = getTournamentRegistrationPresentation(tournament);
+  const statusLabel = tournament.isCompleted ? "Completed" : registrationPresentation.label;
   const statusClassName = tournament.isCompleted
     ? "text-rose-400"
-    : tournament.isRegistrationOpen
+    : registrationPresentation.isActionable
       ? "text-emerald-300"
       : "text-slate-300";
 

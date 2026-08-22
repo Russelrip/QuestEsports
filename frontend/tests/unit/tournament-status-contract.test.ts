@@ -5,7 +5,7 @@ import {
   getTournamentRegistrationPresentation,
 } from "@/lib/tournaments";
 import type { EventSeries, Tournament } from "@/lib/tournaments";
-import { getEventStatus } from "@/lib/event-utils";
+import { getEventCardPresentation, getEventStatus } from "@/lib/event-utils";
 
 const tournament = (overrides: Partial<Tournament> = {}): Tournament => ({
   id: "tournament-1",
@@ -67,10 +67,6 @@ const tournament = (overrides: Partial<Tournament> = {}): Tournament => ({
   eventAlbums: [],
   isCompleted: false,
   registrationState: "registration_closed",
-  isRegistrationOpen: true,
-  isSlotsFull: true,
-  isWaitlistOpen: true,
-  isRegistrationClosed: false,
   ...overrides,
 });
 
@@ -138,6 +134,19 @@ describe("tournament status contract", () => {
 
     expect(getEventStatus(currentEvent)).toEqual({ key: "closed", label: "Registration closed" });
     expect(getTournamentRegistrationPresentation(child)).toMatchObject({
+      state: "registration_open",
+      isActionable: true,
+    });
+  });
+
+  it("keeps event-card labels aggregate-scoped when a child is open", () => {
+    const presentation = getEventCardPresentation(event({
+      eventStatus: "closed",
+      tournaments: [tournament({ registrationState: "registration_open" })],
+    }));
+
+    expect(presentation.eventStatus).toEqual({ key: "closed", label: "Registration closed" });
+    expect(presentation.childRegistration).toMatchObject({
       state: "registration_open",
       isActionable: true,
     });

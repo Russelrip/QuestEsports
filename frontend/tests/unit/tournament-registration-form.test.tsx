@@ -103,9 +103,6 @@ const tournament = {
   eventAlbums: [],
   isCompleted: false,
   registrationState: "registration_open",
-  isRegistrationOpen: true,
-  isSlotsFull: false,
-  isRegistrationClosed: false,
 } as Tournament;
 
 const savedTeam = {

@@ -7,6 +7,7 @@ import { formatTournamentDateRange } from "@/lib/utils";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
+  getTournamentRegistrationPresentation,
   type Tournament,
 } from "@/lib/tournaments";
 
@@ -35,7 +36,7 @@ export default async function FeaturedTournaments() {
       <div className="mx-auto grid max-w-[76rem] gap-5 lg:grid-cols-3">
         {featuredTournaments.length > 0 ? (
           featuredTournaments.map((tournament) => (
-            <Card key={tournament.id} className={`group mx-auto flex h-full w-full max-w-[25rem] flex-col overflow-hidden rounded-none ${tournament.isRegistrationOpen ? "" : "border-rose-500/45"}`}>
+            <Card key={tournament.id} className={`group mx-auto flex h-full w-full max-w-[25rem] flex-col overflow-hidden rounded-none ${getTournamentRegistrationPresentation(tournament).isActionable ? "" : "border-rose-500/45"}`}>
               <Link href={`/tournaments/${tournament.slug}`} prefetch={false} className="relative block aspect-[4/3] overflow-hidden bg-[#09080e] p-3">
                   <TournamentBannerImage
                     bannerUrl={tournament.bannerUrl}
