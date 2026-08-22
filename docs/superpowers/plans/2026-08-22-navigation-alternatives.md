@@ -159,13 +159,16 @@ misleading chevron a correct job.
 
 **Worth doing first, regardless of which option is chosen:**
 
-- Delete the `/tickets` clause in `isNavItemActive` once Tickets has its own
-  entry.
-- Make `Footer.tsx` derive from `lib/site.ts` instead of keeping its own lists.
-- Remove the per-row chevron from `AdminNavigationItem`.
-
-These three are cheap, independent of the restructuring decision, and each one
-removes a known defect.
+- ~~Make `Footer.tsx` derive from `lib/site.ts` instead of keeping its own
+  lists.~~ Done, and Tickets now has a footer link.
+- ~~Remove the per-row chevron from `AdminNavigationItem`.~~ Done.
+- **Blocked:** delete the `/tickets` clause in `isNavItemActive`. This was
+  conditioned on Tickets having its own header entry, and it cannot get one
+  yet. Measured at 1024px, the eight-item bar already renders 899px of content
+  inside an 896px row; a ninth item pushes the document to a 15px horizontal
+  overflow. The clause stays, with a comment pointing at the restructure, until
+  a header option is chosen. This is the sharpest evidence for problem 1: the
+  bar is not nearly full, it is already 3px over.
 
 ## Already implemented in this pass
 
@@ -184,3 +187,9 @@ removes a known defect.
   now draw from one set.
 - [`frontend/tests/unit/navigation-icons.test.ts`](../../../frontend/tests/unit/navigation-icons.test.ts)
   asserts every public and admin nav entry resolves to a non-empty icon path.
+- The admin rows lost their trailing chevron, and `Footer.tsx` now derives both
+  of its link lists from `lib/site.ts`.
+
+Shipped to production on 2026-08-22 as `5ffcd2b` and `38e181f`. Header row
+widths were compared against the live site before and after: identical at
+1024px and 1280px, with the header 4px shorter once the wordmark came out.
