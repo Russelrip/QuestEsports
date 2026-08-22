@@ -45,7 +45,12 @@ const markOperationFailed = async (operationId, error) => {
   }
   return prisma.questValorantOperation.update({
     where: { id: operationId },
-    data: { status: "reconciliation_required" },
+    data: {
+      status: "reconciliation_required",
+      responseCode: error?.status ?? null,
+      fastapiRequestId: error?.requestId ?? null,
+      responseSummary: error?.responseSummary || undefined,
+    },
   });
 };
 
@@ -943,8 +948,16 @@ const finalizeSeries = async ({
   if (resultTransactionError) {
     const error = resultTransactionError;
     await markOperationReconciliationRequired(operation.id, error, {
+      responseCode: response.status ?? null,
+      fastapiRequestId: response.requestId ?? null,
       upstreamCommitted: true,
       operationId: operation.operationId,
+      finalize: {
+        responseCode: response.status ?? null,
+        requestId: response.requestId ?? null,
+        responseSummary: response.data,
+      },
+      reconciliation: null,
       externalResult: response.data,
       responseMappingError: mappingError?.message || null,
     });

@@ -58,7 +58,7 @@ Added or completed audit events for:
 | Roster correction | admin service/controller | Yes | Yes | sanitized roster before/after | Critical |
 | Payment reconciliation/reopen | payment services | Yes | Yes | status + decision/reason | Critical |
 | Bank-transfer proof review | bank-transfer service | Yes | Yes | status + decision/reason | Critical |
-| Private proof submission/download | payment controller | Yes | Submission legacy post-write; download read audit | metadata only | High |
+| Private proof submission/download | payment controller | Yes | Proof download audit is mandatory; proof submission telemetry is optional post-write | metadata only | High |
 | Veto rewind/reset | veto service/controller | Yes | Yes | step/status + reason | Critical |
 | Veto team/toss/action mutations | veto controller | Yes for staff overrides | State transaction for staff overrides; captain self-service does not require audit | room outcome, no grant token | High |
 | VALORANT mutations | VALORANT controller + operation ledger | Yes | Operation/remote contract | operation/status metadata | High |
@@ -66,7 +66,7 @@ Added or completed audit events for:
 | Tournament/bracket admin mutations | tournament controller | Yes | Audited tournament mutation transaction; bracket match/publication transaction | status/visibility metadata | High |
 | Slot reservation | admin controller | Yes | Existing service transaction plus audit boundary | expiry/registration | High |
 | Ticket admin mutations | ticket controller | Yes | Ticket mutation transaction | status/result metadata | High |
-| OAuth link/unlink | auth controller | Yes | OAuth state/link mutation transaction; optional post-mutation audit callback | provider/result only | High |
+| OAuth link/unlink | auth controller | Yes | OAuth link state/account mutation is not one transaction with optional telemetry; optional post-mutation audit callback | provider/result only | High |
 
 ## Test-first regressions
 
@@ -361,7 +361,7 @@ the service rather than attempting a misleading post-commit result audit.
 | Registration roster edit | sanitized member before/after, saved-team/captain flags | serializable admin transaction | fail closed | admin roster correction cases |
 | Registration slot reserve/release | slot, fee/currency, reservation before/after | existing reservation transaction | fail closed | reservation service/route coverage |
 | Payment bank review/reconciliation/reopen | status, decision, reason code | payment transaction | fail closed | payment and bank-transfer rollback tests |
-| Bank proof submit/download | content type/size or download metadata only; no contents/signatures | optional controller audit | preserves committed user flow | bank-transfer proof lifecycle tests |
+| Bank proof submit/download | content type/size or download metadata only; no contents/signatures | mandatory download audit; optional submission telemetry | preserves committed user flow | bank-transfer proof lifecycle tests |
 | Veto rewind/reset | original/requested/actual step, status, reason | veto state transaction | fail closed for staff override | veto service/route authorization suite |
 | Veto staff action | prior step/action and committed action/result | veto state transaction | fail closed | veto mutation suite |
 | Veto captain readiness/toss/choice/action | service authorization remains authoritative; no required post audit | no optional audit failure in flow | preserves valid captain flow | veto wrong-team/grant/toss/action tests |
@@ -377,7 +377,7 @@ the service rather than attempting a misleading post-commit result audit.
 | Media/poster/image mutations | asset/poster identity/count/status; no file bytes | controller audit boundary | existing upload rollback semantics | media library/event album/upload suites |
 | Saved-team/captain/staff mutations | existing safe identity/status evidence | existing controller audit boundaries | existing flows preserved | admin/staff/team suites |
 | Match-room staff moderation/support/lock/sync | room/message/member/request outcome; no private body contents | existing controller audit boundary | existing status semantics | match-room service tests |
-| OAuth link/unlink and mobile OAuth safety | provider/link state only; grants/session/codes never recorded | optional post-mutation controller audit; OAuth state/link mutation remains transaction-scoped | preserves self-service flow when optional audit persistence fails | OAuth service/controller/route coverage; no dedicated fault-injected outage assertion |
+| OAuth link/unlink and mobile OAuth safety | provider/link state only; grants/session/codes never recorded | OAuth link state/account mutation is not one transaction with optional telemetry; optional post-mutation controller audit | preserves self-service flow when optional audit persistence fails | OAuth service/controller/route coverage; no dedicated fault-injected outage assertion |
 | CSRF/origin protections | no mutation audit added; security middleware decision | middleware | existing 401/403 behavior preserved | `security.test.js` CSRF/origin cases |
 | Rate limits | no sensitive request payload logged/audited | rate-limit middleware | existing 429 behavior preserved | `rate-limit.test.js` |
 | Log/audit leakage | sanitizer/redactor coverage for sessions, grants, signatures, secrets, ciphertext, PUUIDs, buffers/private uploads | shared helper/logger | sensitive values replaced | `audit.test.js`, observability/security suites |

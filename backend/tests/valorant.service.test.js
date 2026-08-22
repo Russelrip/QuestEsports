@@ -1775,6 +1775,53 @@ test("finalizeSeries marks reconciliation when result audit fails after the exte
   }
 });
 
+test("finalizeSeries preserves successful upstream metadata when the local result transaction fails", async () => {
+  const operationUpdates = [];
+  const prisma = {
+    questValorantSeries: {
+      findUnique: async () => ({ id: "series-local-failure", status: "draft", valorantSeriesUuid: "external-local-failure" }),
+    },
+    questValorantOperation: {
+      create: async ({ data }) => ({ id: "operation-local-failure", ...data }),
+      update: async ({ data }) => { operationUpdates.push(data); return data; },
+    },
+    $transaction: async () => { throw new Error("local finalize transaction unavailable"); },
+  };
+  const upstreamResult = { status: "finalized", series_id: "external-local-failure" };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [clientPath]: {
+      valorantRequest: async () => ({ status: 201, data: upstreamResult, requestId: "finalize-success-request" }),
+    },
+    [mapperPath]: { mapFinalizeResult: (value) => ({ status: value.status }) },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAudit: async () => undefined,
+      recordAuditInTransaction: async () => undefined,
+    },
+  });
+
+  try {
+    await assert.rejects(
+      service.finalizeSeries({ seriesId: "series-local-failure", ratingMode: "normal", actorUserId: "user-1", requestId: "req-local-failure", ipAddress: "127.0.0.1" }),
+      (error) => error.code === "VALORANT_AUDIT_RECONCILIATION_REQUIRED" && error.statusCode === 503,
+    );
+    const operation = operationUpdates.at(-1);
+    assert.equal(operation.status, "reconciliation_required");
+    assert.equal(operation.responseCode, 201, "the successful finalize status remains primary evidence");
+    assert.equal(operation.fastapiRequestId, "finalize-success-request", "the successful finalize request ID remains primary evidence");
+    assert.deepEqual(operation.responseSummary.finalize, {
+      responseCode: 201,
+      requestId: "finalize-success-request",
+      responseSummary: upstreamResult,
+    });
+    assert.equal(operation.responseSummary.reconciliation, null, "no reconciliation GET evidence is implied");
+  } finally {
+    restore();
+  }
+});
+
 test("finalizeSeries audits raw committed output and resolves the operation when response mapping fails", async () => {
   const statuses = [];
   const audits = [];
@@ -2147,8 +2194,10 @@ test("draft reconciliation records evidence but does not finalize the local proj
     assert.equal(operationUpdates.at(-1).responseCode, 409);
     assert.equal(operationUpdates.at(-1).fastapiRequestId, "draft-finalize-request");
     assert.equal(operationUpdates.at(-1).responseSummary.finalize.responseCode, 409);
+    assert.equal(operationUpdates.at(-1).responseSummary.finalize.requestId, "draft-finalize-request");
     assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.responseCode, 200);
     assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.requestId, "draft-read");
+    assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.data.status, "draft");
   } finally { restore(); }
 });
 
