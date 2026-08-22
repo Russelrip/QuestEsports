@@ -18,10 +18,13 @@ const field = (modelName, fieldName) => {
   return result;
 };
 
-const runDatabaseIntegrationTests = process.env.RUN_DATABASE_INTEGRATION_TESTS === "true";
-const databaseIntegrationSkip = runDatabaseIntegrationTests
-  ? false
-  : "set RUN_DATABASE_INTEGRATION_TESTS=true with an isolated migrated database";
+const { resolveDatabaseIntegrationTarget } = require("./helpers/database-integration-guard");
+
+// This case writes real rows, so the guard refuses any non-loopback database
+// unless it is explicitly opted into.
+const databaseTarget = resolveDatabaseIntegrationTarget();
+const runDatabaseIntegrationTests = databaseTarget.run;
+const databaseIntegrationSkip = runDatabaseIntegrationTests ? false : databaseTarget.reason;
 
 test("event schema exposes the additive EventSeries publication fields", () => {
   for (const name of [

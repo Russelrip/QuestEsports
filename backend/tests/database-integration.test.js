@@ -6,10 +6,13 @@ const path = require("node:path");
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 const { HttpError } = require("../src/lib/http-error");
 
-const runDatabaseTests = process.env.RUN_DATABASE_INTEGRATION_TESTS === "true";
-const waitlistIntegrationSkip = runDatabaseTests
-  ? false
-  : "set RUN_DATABASE_INTEGRATION_TESTS=true with an isolated migrated database";
+const { resolveDatabaseIntegrationTarget } = require("./helpers/database-integration-guard");
+
+// These cases write real rows, so the guard refuses any non-loopback database
+// unless it is explicitly opted into.
+const databaseTarget = resolveDatabaseIntegrationTarget();
+const runDatabaseTests = databaseTarget.run;
+const waitlistIntegrationSkip = runDatabaseTests ? false : databaseTarget.reason;
 
 test("real PostgreSQL serializes concurrent waitlist positions", {
   skip: waitlistIntegrationSkip,
