@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 process.env.UPSTASH_REDIS_REST_URL = "https://redis.example.com";
 process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
-process.env.REALTIME_PUBSUB_CHANNEL = "quest-realtime";
+process.env.REALTIME_CHANNEL = "quest-realtime";
 process.env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES = "1024";
 process.env.REALTIME_PUBSUB_RECONNECT_BASE_MS = "5";
 process.env.REALTIME_PUBSUB_RECONNECT_MAX_MS = "10";
@@ -537,10 +537,63 @@ test("stop-to-start waits for a physically hanging subscription cancellation", a
   });
   await wait(35);
   assert.equal(calls, 1);
-  assert.equal(restarted, false);
+  assert.equal(restarted, true);
 
   releaseFirstCancellation();
   await restarting;
+  assert.equal(calls, 1);
+  assert.equal(maximumActiveSubscriptions, 1);
+  await transport.start(() => {});
+  await wait(0);
+  assert.equal(calls, 2);
+  assert.equal(maximumActiveSubscriptions, 1);
+  await transport.stop();
+});
+
+test("a timed-out fetch cannot overlap a replacement until its late body settles", async () => {
+  let calls = 0;
+  let activeSubscriptions = 0;
+  let maximumActiveSubscriptions = 0;
+  let releaseLateFetch;
+  const lateFetch = new Promise((resolve) => {
+    releaseLateFetch = resolve;
+  });
+  let releaseLateBody;
+  const lateBodySettlement = new Promise((resolve) => {
+    releaseLateBody = resolve;
+  });
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => {
+      calls += 1;
+      activeSubscriptions += 1;
+      maximumActiveSubscriptions = Math.max(maximumActiveSubscriptions, activeSubscriptions);
+      return lateFetch;
+    },
+  });
+
+  await transport.start(() => {});
+  await wait(35);
+  assert.equal(calls, 1);
+  assert.equal(maximumActiveSubscriptions, 1);
+  assert.equal(transport.getStatus().connected, false);
+
+  releaseLateFetch({
+    ok: true,
+    status: 200,
+    body: {
+      cancel: () => lateBodySettlement.finally(() => {
+        activeSubscriptions -= 1;
+      }),
+    },
+  });
+  await wait(10);
+  assert.equal(calls, 1);
+  releaseLateBody();
+  await wait(15);
+  assert.equal(calls, 1);
+  assert.equal(maximumActiveSubscriptions, 1);
+  await transport.start(() => {});
+  await wait(0);
   assert.equal(calls, 2);
   assert.equal(maximumActiveSubscriptions, 1);
   await transport.stop();

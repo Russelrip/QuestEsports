@@ -59,9 +59,11 @@ Use [backend/.env.example](../backend/.env.example) for the full variable list a
 For a multi-worker API, set `CACHE_DRIVER=upstash`, set
 `API_PROCESS_COUNT` to the exact PM2 API worker count, and configure
 `UPSTASH_REDIS_REST_URL` plus `UPSTASH_REDIS_REST_TOKEN` on every worker. All
-workers in one environment must use the same `REALTIME_PUBSUB_CHANNEL`, and
+workers in one environment must use the same explicit `REALTIME_CHANNEL`, and
 staging and production must use different channel names when they share an
-Upstash database. If omitted, the default is `quest-realtime-${NODE_ENV}`. When
+Upstash database. Startup rejects a missing channel in clustered/shared
+Upstash mode; only one local memory process receives the safe
+`quest-realtime-local` default. When
 `REALTIME_WORKER_ID` is configured, use the same base on every worker; otherwise
 config supplies a process-derived fallback. The implementation creates each
 effective identity as `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`, so
@@ -93,8 +95,8 @@ configured base ID, not the effective ID:
 ```bash
 sudo -u deploy -H pm2 list
 sudo -u deploy -H pm2 describe quest-backend | grep -E 'instances|exec mode|status'
-sudo -u deploy -H pm2 env 0 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME_PUBSUB_CHANNEL|REALTIME_WORKER_ID)='
-sudo -u deploy -H pm2 env 1 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME_PUBSUB_CHANNEL|REALTIME_WORKER_ID)='
+sudo -u deploy -H pm2 env 0 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME_CHANNEL|REALTIME_WORKER_ID)='
+sudo -u deploy -H pm2 env 1 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME_CHANNEL|REALTIME_WORKER_ID)='
 ```
 
 For the two-worker target, expect two `online` instances, `API_PROCESS_COUNT=2`,

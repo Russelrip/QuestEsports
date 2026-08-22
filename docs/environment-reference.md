@@ -74,7 +74,7 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `REALTIME_SSE_ENABLED` | No | Backend | L/D/P | Public/non-secret | `false` | Restart backend |
 | `REALTIME_SSE_MAX_CONNECTIONS` | No — defaults to `100` | Backend | L/D/P | Public/non-secret | `100` | Restart backend |
 | `REALTIME_SSE_MAX_CONNECTIONS_PER_IP` | No — defaults to `5` | Backend | L/D/P | Public/non-secret | `5` | Restart backend |
-| `REALTIME_PUBSUB_CHANNEL` | Required and identical on every API worker in a cluster; must differ between environments sharing an Upstash database | Backend/deployment owner | D/P | Public/non-secret | `quest-realtime-${NODE_ENV}` | Restart backend |
+| `REALTIME_CHANNEL` | Required and identical on every API worker in clustered/shared Upstash mode; must differ between environments sharing an Upstash database | Backend/deployment owner | D/P | Public/non-secret | `quest-realtime-local` only for one local memory process; `<deployment-unique channel>` for shared mode | Restart backend |
 | `REALTIME_WORKER_ID` | No — defaults to a process-derived worker base; set a stable base when deployment identity requires it | Backend/deployment owner | D/P | Public/non-secret | blank; config fallback is `worker-${process.pid}` | Restart backend |
 | `REALTIME_PUBSUB_MAX_MESSAGE_BYTES` | No — defaults to `65536` | Backend | L/D/P | Public/non-secret | `65536` | Restart backend |
 | `REALTIME_PUBSUB_RECONNECT_BASE_MS` | No — defaults to `250` | Backend | L/D/P | Public/non-secret | `250` | Restart backend |
@@ -90,9 +90,11 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 For two or more API workers, set `CACHE_DRIVER=upstash` and provide both
 `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. `API_PROCESS_COUNT`
 must match the PM2/API worker count. Every worker uses the same
-`REALTIME_PUBSUB_CHANNEL` within its environment, but staging and production
-must use different channels when they share an Upstash database. If the
-channel is omitted, configuration defaults it to `quest-realtime-${NODE_ENV}`.
+explicit `REALTIME_CHANNEL` within its environment, but staging and production
+must use different channels when they share an Upstash database. Clustered or
+shared Upstash mode fails startup when `REALTIME_CHANNEL` is omitted; only a
+single-process memory deployment receives the safe `quest-realtime-local`
+default.
 If `REALTIME_WORKER_ID` is configured,
 use the same base on every worker; otherwise the configuration supplies a
 process-derived fallback. The implementation creates the effective identity as

@@ -53,10 +53,10 @@ const loadEnvironment = (overrides) =>
 const readRealtimeChannel = (overrides) =>
   spawnSync(
     process.execPath,
-    ["-e", "process.stdout.write(require('./src/config/env').env.REALTIME_PUBSUB_CHANNEL)"],
+    ["-e", "process.stdout.write(require('./src/config/env').env.REALTIME_CHANNEL)"],
     {
       cwd: backendRoot,
-      env: { ...productionEnv, REALTIME_PUBSUB_CHANNEL: "", ...overrides },
+      env: { ...productionEnv, REALTIME_CHANNEL: "", ...overrides },
       encoding: "utf8",
     },
   );
@@ -134,15 +134,40 @@ test("clustered API processes require shared Upstash realtime configuration", ()
   assert.match(result.stderr, /CACHE_DRIVER=upstash/);
 });
 
-test("realtime channel defaults are isolated by deployment environment", () => {
-  const staging = readRealtimeChannel({ NODE_ENV: "development" });
-  const production = readRealtimeChannel({ NODE_ENV: "production" });
+test("single-process memory mode uses a safe local realtime channel default", () => {
+  const local = readRealtimeChannel({ NODE_ENV: "production", CACHE_DRIVER: "memory" });
 
-  assert.equal(staging.status, 0, staging.stderr);
-  assert.equal(production.status, 0, production.stderr);
-  assert.equal(staging.stdout, "quest-realtime-development");
-  assert.equal(production.stdout, "quest-realtime-production");
-  assert.notEqual(staging.stdout, production.stdout);
+  assert.equal(local.status, 0, local.stderr);
+  assert.equal(local.stdout, "quest-realtime-local");
+});
+
+test("clustered or shared Upstash mode requires an explicit realtime channel", () => {
+  const clustered = readRealtimeChannel({
+    API_PROCESS_COUNT: "2",
+    CACHE_DRIVER: "upstash",
+    UPSTASH_REDIS_REST_URL: "https://redis.example.com",
+    UPSTASH_REDIS_REST_TOKEN: "test-token",
+  });
+  const shared = readRealtimeChannel({
+    API_PROCESS_COUNT: "1",
+    CACHE_DRIVER: "upstash",
+    UPSTASH_REDIS_REST_URL: "https://redis.example.com",
+    UPSTASH_REDIS_REST_TOKEN: "test-token",
+  });
+  const configured = readRealtimeChannel({
+    API_PROCESS_COUNT: "2",
+    CACHE_DRIVER: "upstash",
+    UPSTASH_REDIS_REST_URL: "https://redis.example.com",
+    UPSTASH_REDIS_REST_TOKEN: "test-token",
+    REALTIME_CHANNEL: "quest-realtime-staging",
+  });
+
+  assert.notEqual(clustered.status, 0);
+  assert.match(clustered.stderr, /REALTIME_CHANNEL is required/);
+  assert.notEqual(shared.status, 0);
+  assert.match(shared.stderr, /REALTIME_CHANNEL is required/);
+  assert.equal(configured.status, 0, configured.stderr);
+  assert.equal(configured.stdout, "quest-realtime-staging");
 });
 
 test("realtime settings reject non-positive limits and reconnect delays", () => {

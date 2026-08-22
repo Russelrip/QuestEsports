@@ -86,6 +86,16 @@ const normalizeNodeEnv = (value) => {
 };
 
 const configuredNodeEnv = normalizeNodeEnv(process.env.NODE_ENV);
+const configuredCacheDriver = optional("CACHE_DRIVER", "memory").toLowerCase();
+const configuredApiProcessCount = normalizePositiveInteger(
+  process.env.API_PROCESS_COUNT,
+  1,
+);
+const configuredRealtimeChannel = optional("REALTIME_CHANNEL");
+const defaultRealtimeChannel =
+  configuredApiProcessCount === 1 && configuredCacheDriver === "memory"
+    ? "quest-realtime-local"
+    : "";
 
 const normalizeTrustProxy = (value) => {
   const normalized = String(value || "")
@@ -173,7 +183,7 @@ const env = {
   ),
   DATABASE_URL: required("DATABASE_URL"),
   DIRECT_URL: required("DIRECT_URL"),
-  CACHE_DRIVER: optional("CACHE_DRIVER", "memory").toLowerCase(),
+  CACHE_DRIVER: configuredCacheDriver,
   CACHE_TTL_SECONDS: normalizePositiveInteger(
     process.env.CACHE_TTL_SECONDS,
     300,
@@ -187,13 +197,10 @@ const env = {
     2000,
   ),
   CACHE_KEY_PREFIX: optional("CACHE_KEY_PREFIX", "quest-esports"),
-  API_PROCESS_COUNT: normalizePositiveInteger(process.env.API_PROCESS_COUNT, 1),
+  API_PROCESS_COUNT: configuredApiProcessCount,
   UPSTASH_REDIS_REST_URL: optional("UPSTASH_REDIS_REST_URL"),
   UPSTASH_REDIS_REST_TOKEN: optional("UPSTASH_REDIS_REST_TOKEN"),
-  REALTIME_PUBSUB_CHANNEL: optional(
-    "REALTIME_PUBSUB_CHANNEL",
-    `quest-realtime-${configuredNodeEnv}`,
-  ),
+  REALTIME_CHANNEL: configuredRealtimeChannel || defaultRealtimeChannel,
   REALTIME_WORKER_ID: optional(
     "REALTIME_WORKER_ID",
     `worker-${process.pid}`,
@@ -455,6 +462,14 @@ if (
 if (env.API_PROCESS_COUNT > 1 && env.CACHE_DRIVER !== "upstash") {
   throw new Error(
     "CACHE_DRIVER=upstash is required when API_PROCESS_COUNT is greater than 1.",
+  );
+}
+if (
+  (env.API_PROCESS_COUNT > 1 || env.CACHE_DRIVER === "upstash") &&
+  !configuredRealtimeChannel
+) {
+  throw new Error(
+    "REALTIME_CHANNEL is required for clustered or shared Upstash realtime mode and must be unique per deployment environment.",
   );
 }
 if (

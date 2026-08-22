@@ -51,6 +51,7 @@ const createResponse = () => {
     },
     json(value) {
       this.body = value;
+      this.ended = true;
       return this;
     },
   };
@@ -220,14 +221,18 @@ test("a delayed room authorization cannot open an SSE stream after shutdown star
     query: { topics: "match-room:room-1" },
     user: { id: "user-1" },
   });
+  const response = createResponse();
 
   try {
-    const pendingRequest = controller.getRealtimeEvents(request, createResponse());
+    const pendingRequest = controller.getRealtimeEvents(request, response);
     await Promise.resolve();
     controller.drainRealtimeConnections();
     releaseAccess();
     await pendingRequest;
     assert.equal(opened, 0);
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.ended, true);
+    assert.equal(response.body.error.code, "realtime_unavailable");
   } finally {
     restore();
   }

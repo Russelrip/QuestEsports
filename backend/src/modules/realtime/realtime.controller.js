@@ -14,6 +14,24 @@ let realtimeDraining = false;
 const isRequestClosed = (req) =>
   req.aborted === true || req.destroyed === true || req.socket?.destroyed === true;
 
+const respondRealtimeUnavailable = (res) => {
+  if (res.writableEnded) return;
+  if (typeof res.set === "function") res.set("Retry-After", "5");
+  else res.setHeader?.("Retry-After", "5");
+  if (typeof res.status === "function" && typeof res.json === "function") {
+    res.status(503).json({
+      success: false,
+      error: {
+        code: "realtime_unavailable",
+        message: "Realtime updates are temporarily unavailable. Please retry.",
+      },
+    });
+    return;
+  }
+  res.statusCode = 503;
+  res.end?.();
+};
+
 const parseTopics = (value) =>
   new Set(
     String(value || "matches,brackets")
@@ -46,7 +64,10 @@ const authorizeTopics = async (requested, user) => {
 };
 
 const getRealtimeEvents = async (req, res) => {
-  if (realtimeDraining) return;
+  if (realtimeDraining) {
+    respondRealtimeUnavailable(res);
+    return;
+  }
 
   if (!env.REALTIME_SSE_ENABLED) {
     // EventSource treats 204 as a terminal response and does not reconnect.
@@ -56,33 +77,24 @@ const getRealtimeEvents = async (req, res) => {
   }
 
   if (typeof isRealtimeTransportReady === "function" && !isRealtimeTransportReady()) {
-    if (typeof res.set === "function") res.set("Retry-After", "5");
-    else res.setHeader?.("Retry-After", "5");
-    res.status(503).json({
-      success: false,
-      error: {
-        code: "realtime_unavailable",
-        message: "Realtime updates are temporarily unavailable. Please retry.",
-      },
-    });
+    respondRealtimeUnavailable(res);
     return;
   }
 
   const topics = await authorizeTopics(parseTopics(req.query.topics), req.user);
-  if (realtimeDraining || isRequestClosed(req)) return;
-  if (typeof isRealtimeTransportReady === "function" && !isRealtimeTransportReady()) {
-    if (typeof res.set === "function") res.set("Retry-After", "5");
-    else res.setHeader?.("Retry-After", "5");
-    res.status(503).json({
-      success: false,
-      error: {
-        code: "realtime_unavailable",
-        message: "Realtime updates are temporarily unavailable. Please retry.",
-      },
-    });
+  if (realtimeDraining) {
+    respondRealtimeUnavailable(res);
     return;
   }
-  if (realtimeDraining) return;
+  if (isRequestClosed(req)) return;
+  if (typeof isRealtimeTransportReady === "function" && !isRealtimeTransportReady()) {
+    respondRealtimeUnavailable(res);
+    return;
+  }
+  if (realtimeDraining) {
+    respondRealtimeUnavailable(res);
+    return;
+  }
   // Reconciliation is a public, payload-only invalidation signal. Include it
   // in the same filter set so shared transport recovery reaches every stream
   // without broadening any private topic authorization.
