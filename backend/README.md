@@ -53,6 +53,40 @@ Do not point local development at production. Shared staging environments should
 | `npm run load:test` | Run the standard k6 API profile |
 | `npm run load:stress:db` | Run the database-focused k6 profile |
 
+## Clustered realtime
+
+Use `CACHE_DRIVER=upstash` whenever `API_PROCESS_COUNT` is greater than one.
+`API_PROCESS_COUNT` must equal the PM2 API worker count; all workers must share
+the same `REALTIME_PUBSUB_CHANNEL`, while each separately configured worker
+needs a unique `REALTIME_WORKER_ID`. Set both `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` on every worker. The memory cache is valid only for a
+single API process.
+
+The transport subscribes with the exact Upstash REST request
+`POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}` and publishes with
+`POST {UPSTASH_REDIS_REST_URL}/publish/{channel}/{message}`. The subscribe
+response is SSE and both requests use `Authorization: Bearer
+{UPSTASH_REDIS_REST_TOKEN}`.
+
+Run the optional staging exercise only when all seven variables below are set;
+the command never silently skips configuration:
+
+```powershell
+$env:REALTIME_CLUSTER_WORKER_A_URL="https://api-a.example.com"
+$env:REALTIME_CLUSTER_WORKER_B_URL="https://api-b.example.com"
+$env:REALTIME_CLUSTER_COOKIE="quest_session=<staging-cookie>"
+$env:REALTIME_CLUSTER_TOPIC="matches"
+$env:REALTIME_CLUSTER_MUTATION_URL="https://api-a.example.com/api/v1/matches/<id>"
+$env:REALTIME_CLUSTER_MUTATION_METHOD="PATCH"
+$env:REALTIME_CLUSTER_MUTATION_BODY='{"status":"verified"}'
+node scripts/realtime-cluster-smoke.js
+```
+
+The smoke test uses native `fetch` and SSE-compatible streaming, checks both
+workers, reconnect readiness, and broad private-topic rejection, and exits
+non-zero with diagnostics on any failure. Do not place a real cookie in shell
+history or documentation.
+
 Legacy media import/migration commands remain available for controlled recovery work. Back up PostgreSQL and uploads before using them.
 
 ## API and Health

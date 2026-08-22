@@ -27,14 +27,14 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `CORS_ORIGIN` | Conditional — production must resolve to HTTPS origins | Backend/web owner | L/D/P | Public/non-secret | `http://localhost:3000` locally; `<approved origin>` otherwise | Restart backend |
 | `DATABASE_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | `postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require` | Restart backend; migration-sensitive |
 | `DIRECT_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | `postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require` | Restart backend; migration-sensitive |
-| `CACHE_DRIVER` | No — defaults to memory | Backend | L/D/CI/P | Public/non-secret | `memory` | Restart backend |
+| `CACHE_DRIVER` | No — defaults to memory; required `upstash` when `API_PROCESS_COUNT>1` | Backend | L/D/CI/P | Public/non-secret | `memory` for one process; `upstash` for a cluster | Restart backend |
 | `CACHE_TTL_SECONDS` | No — defaults to `300` | Backend | L/D/CI/P | Public/non-secret | `300` | Restart backend |
 | `CACHE_MAX_ENTRIES` | No — defaults to `1000` | Backend | L/D/CI/P | Public/non-secret | `1000` | Restart backend |
 | `CACHE_CONNECTION_TIMEOUT_MS` | No — defaults to `2000` | Backend | L/D/CI/P | Public/non-secret | `2000` | Restart backend |
 | `CACHE_KEY_PREFIX` | No — defaults to `quest-esports` | Backend | L/D/CI/P | Public/non-secret | `quest-esports` | Restart backend |
-| `API_PROCESS_COUNT` | No — defaults to `1` | Backend/deployment owner | L/D/P | Public/non-secret | `1` | Restart backend |
-| `UPSTASH_REDIS_REST_URL` | Conditional | Backend/cache owner | D/P | Secret | `<Upstash REST URL>` when `CACHE_DRIVER=upstash` | Restart backend |
-| `UPSTASH_REDIS_REST_TOKEN` | Conditional | Backend/cache owner | D/P | Secret | `<Upstash REST token>` when `CACHE_DRIVER=upstash` | Restart backend |
+| `API_PROCESS_COUNT` | No — defaults to `1`; must equal the number of API workers | Backend/deployment owner | L/D/P | Public/non-secret | `1` | Restart backend |
+| `UPSTASH_REDIS_REST_URL` | Required when `CACHE_DRIVER=upstash` | Backend/cache owner | D/P | Secret | `<Upstash REST URL>` | Restart backend |
+| `UPSTASH_REDIS_REST_TOKEN` | Required when `CACHE_DRIVER=upstash` | Backend/cache owner | D/P | Secret | `<Upstash REST token>` | Restart backend |
 | `LOG_LEVEL` | No — defaults to `info` | Backend | L/D/CI/P | Public/non-secret | `info` | Restart backend |
 | `SESSION_COOKIE_NAME` | Yes | Backend | L/D/CI/P | Public/non-secret | `quest_session` | Restart backend; existing sessions may need logout |
 | `SESSION_TTL_DAYS` | No — defaults to `1` | Backend | L/D/CI/P | Public/non-secret | `1` | Restart backend |
@@ -74,11 +74,35 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `REALTIME_SSE_ENABLED` | No | Backend | L/D/P | Public/non-secret | `false` | Restart backend |
 | `REALTIME_SSE_MAX_CONNECTIONS` | No — defaults to `100` | Backend | L/D/P | Public/non-secret | `100` | Restart backend |
 | `REALTIME_SSE_MAX_CONNECTIONS_PER_IP` | No — defaults to `5` | Backend | L/D/P | Public/non-secret | `5` | Restart backend |
+| `REALTIME_PUBSUB_CHANNEL` | Required and identical on every API worker in a cluster | Backend/deployment owner | D/P | Public/non-secret | `quest-realtime` | Restart backend |
+| `REALTIME_WORKER_ID` | Required as a distinct worker base ID for each separately configured API worker | Backend/deployment owner | D/P | Public/non-secret | `<unique-worker-id>` | Restart backend |
+| `REALTIME_PUBSUB_MAX_MESSAGE_BYTES` | No — defaults to `65536` | Backend | L/D/P | Public/non-secret | `65536` | Restart backend |
 | `LOG_DRAIN_URL` | No | Backend/operations owner | D/P | Secret | `<structured log drain URL>` | Restart backend |
 | `LOG_DRAIN_TOKEN` | Conditional | Backend/operations owner | D/P | Secret | `<log drain token>` when a drain requires it | Restart backend |
 | `MONITORING_WEBHOOK_URL` | No | Backend/operations owner | D/P | Secret | `<monitoring webhook URL>` | Restart backend |
 | `MONITORING_WEBHOOK_TOKEN` | Conditional | Backend/operations owner | D/P | Secret | `<monitoring webhook token>` when required | Restart backend |
 | `DISCORD_ALERT_WEBHOOK_URL` | No | Backend/operations owner | D/P | Secret | `<private Discord webhook URL>` | Restart backend |
+
+### Clustered realtime requirements
+
+For two or more API workers, set `CACHE_DRIVER=upstash` and provide both
+`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. `API_PROCESS_COUNT`
+must match the PM2/API worker count. Every worker uses the same
+`REALTIME_PUBSUB_CHANNEL` prefix/channel, while `REALTIME_WORKER_ID` must
+identify that worker uniquely. Do not run a multi-worker deployment with the
+memory cache or with a missing shared transport credential.
+
+The shared transport uses these exact Upstash REST routes, with the channel and
+message URL-encoded:
+
+```text
+POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}   # SSE subscription
+POST {UPSTASH_REDIS_REST_URL}/publish/{channel}/{message}
+```
+
+Both requests require `Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}`.
+The subscribe response is `text/event-stream`; the publish request carries the
+serialized realtime envelope in the `{message}` path segment.
 
 ## Backend — mail and web push
 

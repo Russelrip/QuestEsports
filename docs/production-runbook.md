@@ -54,6 +54,93 @@ The PKCE migration intentionally leaves `mobile_oauth_grants.code_challenge` nul
 
 Use [backend/.env.example](../backend/.env.example) for the full variable list and the [Setup and Deployment Guide](./setup-and-deployment.md) for production examples.
 
+## Clustered Realtime Operations
+
+For a multi-worker API, set `CACHE_DRIVER=upstash`, set
+`API_PROCESS_COUNT` to the exact PM2 API worker count, and configure
+`UPSTASH_REDIS_REST_URL` plus `UPSTASH_REDIS_REST_TOKEN` on every worker. All
+workers must use the same `REALTIME_PUBSUB_CHANNEL` and a unique
+`REALTIME_WORKER_ID`. The shared transport uses the exact Upstash REST routes
+below (with channel and message URL-encoded):
+
+```text
+POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}   # text/event-stream
+POST {UPSTASH_REDIS_REST_URL}/publish/{channel}/{message}
+Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}
+```
+
+### Verify PM2 worker count and transport configuration
+
+Run these checks as `deploy` after every clustered deployment. The PM2 instance
+count, `API_PROCESS_COUNT`, and shared channel must agree; never infer this
+from the number of healthy HTTP responses alone:
+
+```bash
+sudo -u deploy -H pm2 list
+sudo -u deploy -H pm2 describe quest-backend | grep -E 'instances|exec mode|status'
+sudo -u deploy -H pm2 env 0 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME_PUBSUB_CHANNEL|REALTIME_WORKER_ID)='
+sudo -u deploy -H pm2 env 1 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME_PUBSUB_CHANNEL|REALTIME_WORKER_ID)='
+```
+
+For the two-worker target, expect two `online` instances, `API_PROCESS_COUNT=2`,
+`CACHE_DRIVER=upstash`, and the same channel on both instances. Worker IDs must
+be distinct at runtime. The PM2 launch equivalent is:
+
+```bash
+sudo -u deploy -H bash -lc '
+  cd /var/www/QuestEsports/backend
+  pm2 delete quest-backend || true
+  pm2 start src/server.js --name quest-backend -i 2 --time --update-env
+  pm2 save
+'
+```
+
+### Verify SSE heartbeat and proxy timeouts
+
+The API emits an SSE comment heartbeat every 25 seconds. Nginx (or the
+equivalent load balancer) must disable response buffering and use read/send
+timeouts longer than that heartbeat:
+
+```nginx
+proxy_buffering off;
+proxy_read_timeout 60s;
+proxy_send_timeout 60s;
+```
+
+Verify the effective proxy configuration and a live stream without waiting for
+an application mutation:
+
+```bash
+sudo nginx -T | grep -E 'proxy_buffering|proxy_read_timeout|proxy_send_timeout'
+curl --fail --silent --show-error -N --max-time 35 \
+  -H 'Accept: text/event-stream' \
+  -H 'Origin: https://questesports.lk' \
+  'https://api.questesports.lk/api/v1/events?topics=matches'
+```
+
+The stream should return `event: ready` promptly and remain open long enough to
+observe a `: heartbeat` comment. If it closes near 25 seconds, fix the proxy
+before enabling more than one worker. The optional staging exercise is
+`node scripts/realtime-cluster-smoke.js` from `backend/`; it requires all seven
+`REALTIME_CLUSTER_*` variables documented in [backend/README.md](../backend/README.md).
+
+### Realtime rollback
+
+If the shared transport or proxy is unhealthy, first disable SSE and restart
+the API workers. Clients receive the intentional `204` response and use their
+bounded polling fallback:
+
+```bash
+sudo -u deploy -H sed -i 's/^REALTIME_SSE_ENABLED=.*/REALTIME_SSE_ENABLED=false/' /var/www/QuestEsports/backend/.env
+sudo -u deploy -H pm2 restart quest-backend --update-env
+```
+
+If the cluster itself must be removed, scale to one worker and use the memory
+cache. Set `API_PROCESS_COUNT=1`, `CACHE_DRIVER=memory`, and optionally leave
+`REALTIME_SSE_ENABLED=true` for local-process SSE; then restart and verify one
+online instance. Re-enable the shared transport only after the two-worker
+count, Upstash routes, heartbeat, and smoke checks pass again.
+
 ### Preserving existing encrypted data when normalizing the auth key
 
 Older deployments accepted an arbitrary `AUTH_ENCRYPTION_KEY` and derived the AES key with SHA-256. Do not replace that value with a random key if encrypted recruitment NIC or queued-token data already exists. Convert the existing value to its SHA-256 hexadecimal representation; the derived encryption bytes remain identical:
