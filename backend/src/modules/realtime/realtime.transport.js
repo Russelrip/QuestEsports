@@ -90,7 +90,9 @@ const createRealtimeTransport = ({
   let activeCancellationReader = null;
   let activeCancellationBody = null;
   let subscriptionTask = null;
+  let subscriptionBarrier = null;
   let stopTask = null;
+  let startTask = null;
   let generation = 0;
   let onEnvelope = noop;
   let onStatus = noop;
@@ -144,12 +146,10 @@ const createRealtimeTransport = ({
     );
   };
 
-  const cancelActiveSubscription = async (
-    timeoutMs = env.CACHE_CONNECTION_TIMEOUT_MS,
-  ) => {
+  const getActiveCancellationTask = () => {
     const reader = activeReader;
     const body = activeBody;
-    if (!reader && !body) return false;
+    if (!reader && !body) return null;
     if (
       activeCancellationTask &&
       activeCancellationReader === reader &&
@@ -166,13 +166,17 @@ const createRealtimeTransport = ({
       if (body && typeof body.cancel === "function") {
         cancellations.push(Promise.resolve().then(() => body.cancel()));
       }
-      return awaitBounded(Promise.allSettled(cancellations), timeoutMs);
+      return Promise.allSettled(cancellations);
     })();
     activeCancellationTask = task;
     activeCancellationReader = reader;
     activeCancellationBody = body;
     return task;
   };
+
+  const cancelActiveSubscription = async (
+    timeoutMs = env.CACHE_CONNECTION_TIMEOUT_MS,
+  ) => awaitBounded(getActiveCancellationTask(), timeoutMs);
 
   const awaitSubscriptionSettlement = async (
     task,
@@ -198,7 +202,7 @@ const createRealtimeTransport = ({
     const frameChannel = data.slice(firstComma + 1, secondComma);
     if (frameType === "subscribe") {
       const count = data.slice(secondComma + 1);
-      if (frameChannel !== channel || !/^\d+$/.test(count)) return "invalid-ack";
+      if (frameChannel !== channel || count !== "1") return "invalid-ack";
       return "ack";
     }
     if (frameType !== "message" || frameChannel !== channel) return;
@@ -391,19 +395,25 @@ const createRealtimeTransport = ({
           .catch(noop);
       }
       if (response && activeResponse === response) {
-        await cancelActiveSubscription();
+        await getActiveCancellationTask();
       }
       if (running && runGeneration === generation) scheduleReconnect(runGeneration, "error", error);
     } finally {
       clearConnectionTimer();
       if (activeController === controller) activeController = null;
-      if (activeResponse && activeResponse === response) {
+      const ownsResponse = activeResponse === response;
+      const cleanupTask =
+        ownsResponse && activeCancellationBody === activeBody ? activeCancellationTask : null;
+      if (ownsResponse) {
         activeResponse = null;
         activeBody = null;
       }
-      if (activeCancellationReader === activeReader && activeCancellationBody === activeBody) {
+      if (cleanupTask && activeCancellationTask === cleanupTask) {
         activeCancellationTask = null;
+        activeCancellationReader = null;
+        activeCancellationBody = null;
       }
+      if (cleanupTask) await cleanupTask;
     }
   };
 
@@ -411,12 +421,16 @@ const createRealtimeTransport = ({
     if (!running || runGeneration !== generation) return;
     const task = subscribe(runGeneration);
     subscriptionTask = task;
+    const barrier = task.then(noop, noop);
+    subscriptionBarrier = barrier;
     task.then(
       () => {
         if (subscriptionTask === task) subscriptionTask = null;
+        if (subscriptionBarrier === barrier) subscriptionBarrier = null;
       },
       () => {
         if (subscriptionTask === task) subscriptionTask = null;
+        if (subscriptionBarrier === barrier) subscriptionBarrier = null;
       },
     );
   };
@@ -451,11 +465,22 @@ const createRealtimeTransport = ({
 
   const start = async (envelopeHandler = noop, statusHandler = noop) => {
     if (running) return;
-    onEnvelope = typeof envelopeHandler === "function" ? envelopeHandler : noop;
-    onStatus = typeof statusHandler === "function" ? statusHandler : noop;
-    running = true;
-    generation += 1;
-    beginSubscription(generation);
+    if (startTask) return startTask;
+    startTask = (async () => {
+      if (stopTask) await stopTask;
+      if (subscriptionBarrier) await subscriptionBarrier;
+      if (running) return;
+      onEnvelope = typeof envelopeHandler === "function" ? envelopeHandler : noop;
+      onStatus = typeof statusHandler === "function" ? statusHandler : noop;
+      running = true;
+      generation += 1;
+      beginSubscription(generation);
+    })();
+    try {
+      await startTask;
+    } finally {
+      startTask = null;
+    }
   };
 
   const stop = async () => {
@@ -464,6 +489,7 @@ const createRealtimeTransport = ({
     stopTask = (async () => {
       const deadline = Date.now() + env.CACHE_CONNECTION_TIMEOUT_MS;
       const priorTask = subscriptionTask;
+      const priorBarrier = subscriptionBarrier;
       running = false;
       generation += 1;
       if (subscriptionTask === priorTask) subscriptionTask = null;
@@ -485,7 +511,7 @@ const createRealtimeTransport = ({
         cancelActiveSubscription(cancellationBudget),
         cancellationBudget,
       );
-      await awaitSubscriptionSettlement(priorTask, remaining());
+      await awaitSubscriptionSettlement(priorBarrier || priorTask, remaining());
       reportStatus(false, "stopped");
     })();
     try {

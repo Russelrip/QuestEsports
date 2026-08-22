@@ -203,6 +203,36 @@ test("drains active SSE clients so shutdown does not wait for heartbeats", async
   }
 });
 
+test("a delayed room authorization cannot open an SSE stream after shutdown starts", async () => {
+  let releaseAccess;
+  const accessPending = new Promise((resolve) => {
+    releaseAccess = resolve;
+  });
+  let opened = 0;
+  const { module: controller, restore } = createRealtimeController({
+    accessRoom: () => accessPending,
+    openRealtimeConnection: () => {
+      opened += 1;
+      return true;
+    },
+  });
+  const request = createRequest({
+    query: { topics: "match-room:room-1" },
+    user: { id: "user-1" },
+  });
+
+  try {
+    const pendingRequest = controller.getRealtimeEvents(request, createResponse());
+    await Promise.resolve();
+    controller.drainRealtimeConnections();
+    releaseAccess();
+    await pendingRequest;
+    assert.equal(opened, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("authorizes user and match-room private topics", async () => {
   let accessCode;
   let opened = 0;
@@ -239,6 +269,38 @@ test("authorizes user and match-room private topics", async () => {
     assert.equal(accessCode, "room-1");
     assert.equal(opened, 1);
     privateRequest.emit("close");
+  } finally {
+    restore();
+  }
+});
+
+test("anonymous clients cannot use the broad veto topic but exact veto rooms remain isolated", async () => {
+  let listener;
+  const { module: controller, restore } = createRealtimeController({
+    subscribeToRealtimeEvents(callback) {
+      listener = callback;
+      return () => {};
+    },
+  });
+
+  try {
+    await assert.rejects(
+      controller.getRealtimeEvents(
+        createRequest({ query: { topics: "veto" } }),
+        createResponse(),
+      ),
+      (error) => error.statusCode === 403,
+    );
+
+    const request = createRequest({ query: { topics: "veto:room-1" } });
+    const response = createResponse();
+    await controller.getRealtimeEvents(request, response);
+    const readyWrite = response.writes.length;
+    listener({ id: "allowed", topic: "veto:room-1", payload: {} });
+    listener({ id: "blocked", topic: "veto:room-2", payload: {} });
+    assert.equal(response.writes.length, readyWrite + 1);
+    assert.match(response.writes.at(-1), /^id: allowed\nevent: update\n/);
+    request.emit("close");
   } finally {
     restore();
   }

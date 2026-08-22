@@ -151,7 +151,7 @@ test("subscribe does not become ready for an invalid or missing acknowledgement"
   const stream = new ReadableStream({
     start(controller) {
       controller.enqueue(
-        new TextEncoder().encode("data: subscribe,other-channel,1\n\n"),
+        new TextEncoder().encode("data: subscribe,quest-realtime,0\n\n"),
       );
       controller.close();
     },
@@ -469,7 +469,9 @@ test("a stopped subscription cannot affect a later start", async () => {
 
   await transport.start(() => {});
   await transport.stop();
-  await transport.start(() => {});
+  const restarting = transport.start(() => {});
+  await wait(0);
+  assert.equal(calls, 1);
   resolveFirst(response(200, {
     body: new ReadableStream({
       start(controller) {
@@ -477,11 +479,71 @@ test("a stopped subscription cannot affect a later start", async () => {
       },
     }),
   }));
+  await restarting;
   await wait(10);
 
   assert.equal(calls, 2);
   await transport.stop();
   assert.equal(secondRequestOptions.signal.aborted, true);
+});
+
+test("stop-to-start waits for a physically hanging subscription cancellation", async () => {
+  let calls = 0;
+  let activeSubscriptions = 0;
+  let maximumActiveSubscriptions = 0;
+  let releaseFirstCancellation;
+  const firstCancellation = new Promise((resolve) => {
+    releaseFirstCancellation = resolve;
+  });
+  let firstReadResolve;
+  const firstRead = new Promise((resolve) => {
+    firstReadResolve = resolve;
+  });
+  const createBody = ({ hanging }) => {
+    const reader = {
+      read: () => hanging ? firstRead : new Promise(() => {}),
+      cancel: () => hanging
+        ? firstCancellation.then(() => firstReadResolve({ done: true }))
+        : Promise.resolve().then(() => firstReadResolve?.({ done: true })),
+      releaseLock() {},
+    };
+    return {
+      getReader: () => reader,
+      cancel: () => hanging ? firstCancellation : Promise.resolve(),
+    };
+  };
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => {
+      calls += 1;
+      activeSubscriptions += 1;
+      maximumActiveSubscriptions = Math.max(maximumActiveSubscriptions, activeSubscriptions);
+      const hanging = calls === 1;
+      const body = createBody({ hanging });
+      const originalCancel = body.cancel;
+      body.cancel = () => Promise.resolve(originalCancel()).finally(() => {
+        activeSubscriptions -= 1;
+      });
+      return response(200, { body });
+    },
+  });
+
+  await transport.start(() => {});
+  await wait(0);
+  await transport.stop();
+
+  let restarted = false;
+  const restarting = transport.start(() => {}).then(() => {
+    restarted = true;
+  });
+  await wait(35);
+  assert.equal(calls, 1);
+  assert.equal(restarted, false);
+
+  releaseFirstCancellation();
+  await restarting;
+  assert.equal(calls, 2);
+  assert.equal(maximumActiveSubscriptions, 1);
+  await transport.stop();
 });
 
 test("stop cancels a never-ending response that resolves after the subscription is stale", async () => {

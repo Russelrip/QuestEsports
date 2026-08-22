@@ -9,6 +9,7 @@ const {
 const { accessRoom } = require("../match-rooms/match-room.service");
 
 const activeSseConnections = new Set();
+let realtimeDraining = false;
 
 const isRequestClosed = (req) =>
   req.aborted === true || req.destroyed === true || req.socket?.destroyed === true;
@@ -38,13 +39,15 @@ const authorizeTopics = async (requested, user) => {
       authorized.add(topic);
       continue;
     }
-    if (topic === "user" || topic === "match-room") throw new HttpError(403, "Broad private realtime topics are not allowed.");
+    if (topic === "user" || topic === "match-room" || topic === "veto") throw new HttpError(403, "Broad private realtime topics are not allowed.");
     authorized.add(topic);
   }
   return authorized;
 };
 
 const getRealtimeEvents = async (req, res) => {
+  if (realtimeDraining) return;
+
   if (!env.REALTIME_SSE_ENABLED) {
     // EventSource treats 204 as a terminal response and does not reconnect.
     // Clients continue using their bounded polling fallback while SSE is disabled.
@@ -66,7 +69,7 @@ const getRealtimeEvents = async (req, res) => {
   }
 
   const topics = await authorizeTopics(parseTopics(req.query.topics), req.user);
-  if (isRequestClosed(req)) return;
+  if (realtimeDraining || isRequestClosed(req)) return;
   if (typeof isRealtimeTransportReady === "function" && !isRealtimeTransportReady()) {
     if (typeof res.set === "function") res.set("Retry-After", "5");
     else res.setHeader?.("Retry-After", "5");
@@ -79,6 +82,7 @@ const getRealtimeEvents = async (req, res) => {
     });
     return;
   }
+  if (realtimeDraining) return;
   // Reconciliation is a public, payload-only invalidation signal. Include it
   // in the same filter set so shared transport recovery reaches every stream
   // without broadening any private topic authorization.
@@ -164,6 +168,7 @@ const getRealtimeEvents = async (req, res) => {
 };
 
 const drainRealtimeConnections = () => {
+  realtimeDraining = true;
   const connections = [...activeSseConnections];
   for (const close of connections) close();
   return connections.length;
