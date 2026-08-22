@@ -74,9 +74,27 @@ export default function Navbar() {
     <header className="sticky top-0 z-50 border-b border-white/8 bg-[rgba(5,3,11,0.96)] sm:bg-[rgba(5,3,11,0.82)] sm:backdrop-blur-xl">
       <Container className="relative py-2 sm:py-3">
         <div className="px-4 py-3 sm:px-6 lg:px-8">
-          <div className="flex min-h-12 items-center lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-8">
-            <div className="hidden items-center gap-7 lg:flex lg:justify-self-start xl:gap-10">
-              {primaryNavItems.map((item) => (
+          <div className="flex min-h-12 items-center gap-4 lg:gap-6">
+            <Link
+              href="/"
+              prefetch={false}
+              onMouseEnter={() => router.prefetch("/")}
+              onFocus={() => router.prefetch("/")}
+              className="flex shrink-0 items-center"
+              aria-label="Quest home"
+            >
+              <Image
+                src="/images/logo.png"
+                alt=""
+                width={48}
+                height={48}
+                priority
+                className="h-11 w-11 sm:h-12 sm:w-12"
+              />
+            </Link>
+
+            <nav className="hidden min-w-0 flex-1 items-center gap-4 lg:flex xl:gap-6 2xl:gap-8">
+              {[...primaryNavItems, ...secondaryNavItems].map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -84,51 +102,16 @@ export default function Navbar() {
                   onMouseEnter={() => router.prefetch(item.href)}
                   onFocus={() => router.prefetch(item.href)}
                   className={cn(
-                    "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
+                    "whitespace-nowrap py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
                     isNavItemActive(pathname, item.href) && "text-white"
                   )}
                 >
                   {item.label}
                 </Link>
               ))}
-            </div>
+            </nav>
 
-            <div className="flex min-w-0 items-center justify-start lg:justify-self-center">
-              <Link
-                href="/"
-                prefetch={false}
-                onMouseEnter={() => router.prefetch("/")}
-                onFocus={() => router.prefetch("/")}
-                className="flex items-center"
-                aria-label="Quest home"
-              >
-                <Image
-                  src="/images/logo.png"
-                  alt=""
-                  width={48}
-                  height={48}
-                  priority
-                  className="h-11 w-11 sm:h-12 sm:w-12"
-                />
-              </Link>
-            </div>
-
-            <div className="hidden items-center justify-end gap-6 lg:flex lg:justify-self-end xl:gap-8">
-              {secondaryNavItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  prefetch={false}
-                  onMouseEnter={() => router.prefetch(item.href)}
-                  onFocus={() => router.prefetch(item.href)}
-                  className={cn(
-                    "px-1 py-2 text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white",
-                    isNavItemActive(pathname, item.href) && "text-white"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
+            <div className="hidden shrink-0 items-center justify-end gap-3 lg:flex">
               {!isLoading && isAuthenticated && user ? (
                 <UserMenu user={user} logout={logout} isAdmin={user.role === "admin"} />
               ) : !isLoading ? (

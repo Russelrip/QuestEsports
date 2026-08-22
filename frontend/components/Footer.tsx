@@ -4,6 +4,7 @@ import { Container } from "@/components/ui/container";
 import {
   primaryNavItems,
   secondaryNavItems,
+  siteNavLabel,
   socialLinks,
   whatsappContacts,
 } from "@/lib/site";
@@ -23,10 +24,12 @@ const usefulLinks = [
   { href: "/refund-policy", label: "Refund Policy" },
 ];
 
+// The footer has room to spell destinations out, so it prefers the descriptive
+// name where the header settles for a compact one.
 function FooterLinkList({
   links,
 }: {
-  links: readonly { href: string; label: string }[];
+  links: readonly { href: string; label: string; fullLabel?: string }[];
 }) {
   return (
     <nav className="mt-5 grid">
@@ -36,7 +39,7 @@ function FooterLinkList({
           href={item.href}
           className="border-b border-white/8 py-2.5 text-xs uppercase tracking-[0.12em] text-slate-400 transition hover:text-white"
         >
-          {item.label}
+          {siteNavLabel(item)}
         </Link>
       ))}
     </nav>

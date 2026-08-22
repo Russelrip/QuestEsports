@@ -452,15 +452,27 @@ export const buildBreadcrumbStructuredData = (
 
 export type SiteNavItem = {
   href: string;
+  /** Compact name for the header bar and the mobile sheet, where width is scarce. */
   label: string;
+  /** Descriptive name for surfaces with room to spell it out, such as the footer. */
+  fullLabel?: string;
   icon: NavIconKey;
 };
+
+/** The most descriptive name a surface can afford to show. */
+export const siteNavLabel = (item: { label: string; fullLabel?: string }) =>
+  item.fullLabel ?? item.label;
 
 export const primaryNavItems: ReadonlyArray<SiteNavItem> = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/tournaments", label: "Tournaments", icon: "trophy" },
-  { href: "/valorant-leaderboard", label: "Valorant Leaderboard", icon: "chart" },
-  { href: "/match-videos", label: "Match Videos", icon: "video" },
+  {
+    href: "/valorant-leaderboard",
+    label: "Leaderboard",
+    fullLabel: "Valorant Leaderboard",
+    icon: "chart",
+  },
+  { href: "/match-videos", label: "Videos", fullLabel: "Match Videos", icon: "video" },
   { href: "/gallery", label: "Gallery", icon: "image" },
 ];
 
