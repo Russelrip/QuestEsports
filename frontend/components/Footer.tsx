@@ -1,23 +1,27 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Container } from "@/components/ui/container";
-import { socialLinks, whatsappContacts } from "@/lib/site";
+import {
+  primaryNavItems,
+  secondaryNavItems,
+  socialLinks,
+  whatsappContacts,
+} from "@/lib/site";
 
-const mainMenuLinks = [
-  { href: "/", label: "Home" },
-  { href: "/tournaments", label: "Tournaments" },
-  { href: "/match-videos", label: "Match Videos" },
-  { href: "/gallery", label: "Gallery" },
-] as const;
+// The footer mirrors the header rather than keeping its own copy, so a
+// destination added to lib/site.ts cannot go missing down here.
+const mainMenuLinks = primaryNavItems;
 
+// Everything the header carries on the right, plus the destinations that only
+// ever live in the footer.
 const usefulLinks = [
-  { href: "/members", label: "Members" },
+  ...secondaryNavItems,
+  { href: "/tickets", label: "Tickets" },
   { href: "/join", label: "Join Quest" },
-  { href: "/shop", label: "Shop" },
   { href: "/terms-of-service", label: "Terms of Service" },
   { href: "/privacy-policy", label: "Privacy Policy" },
   { href: "/refund-policy", label: "Refund Policy" },
-] as const;
+];
 
 function FooterLinkList({
   links,
