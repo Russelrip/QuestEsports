@@ -504,6 +504,9 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
       : existingTeam.logoName;
   const savedTeamData = { name, country, teamTag, organizationRequested };
   if (logoMutationRequested) savedTeamData.logoName = nextLogoName;
+  // Record an explicit removal so the null logo reads as deliberate and a later
+  // registration upload cannot resurrect it.
+  if (logoMutationRequested && nextLogoName === null) savedTeamData.logoClearedAt = new Date();
   const existingMembersByEmail = new Map(
     existingTeam.members.map((member) => [member.emailNormalized, member])
   );
@@ -1117,6 +1120,17 @@ const syncSavedTeamFromRegistration = async ({
       },
     }));
 
+  // A linked saved team is authoritative for its logo, but a null logo means
+  // two different things. `logoClearedAt` separates them: a team that has never
+  // had a logo adopts the one a registration supplies, so a captain's upload is
+  // actually displayed instead of being discarded and deleted below. A removal
+  // the captain or an admin actually made stays canonical, so a stale
+  // registration snapshot can never resurrect it, and an existing logo is never
+  // overwritten.
+  const existingLogoName = existingTeam?.logoName || null;
+  const hasNeverHadLogo = Boolean(existingTeam) && !existingLogoName && !existingTeam.logoClearedAt;
+  const adoptedLogoName = hasNeverHadLogo ? logoName || null : null;
+
   if (existingTeam) {
     await tx.savedTeam.update({
       where: { id: existingTeam.id },
@@ -1124,11 +1138,14 @@ const syncSavedTeamFromRegistration = async ({
         country: country || null,
         teamTag: teamTag || null,
         organizationRequested: Boolean(organizationRequested),
+        ...(adoptedLogoName ? { logoName: adoptedLogoName } : {}),
       },
     });
   }
 
-  const effectiveLogoName = existingTeam ? existingTeam.logoName ?? null : logoName || null;
+  const effectiveLogoName = existingTeam
+    ? existingLogoName || adoptedLogoName
+    : logoName || null;
 
   const existingMembersByRosterPosition = new Map(
     (existingTeam?.members || [])

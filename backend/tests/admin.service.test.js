@@ -1575,13 +1575,17 @@ test("updateAdminSavedTeam removes its logo from the saved team and every linked
       }
     );
 
-    assert.deepEqual(savedTeamUpdates[0].data, {
+    const { logoClearedAt, ...savedTeamFields } = savedTeamUpdates[0].data;
+    assert.deepEqual(savedTeamFields, {
       name: "Quest Five",
       teamTag: "Q5",
       country: "Sri Lanka",
       organizationName: null,
       logoName: null,
     });
+    // The removal is timestamped so the null logo reads as deliberate and a
+    // later registration upload cannot resurrect it.
+    assert.ok(logoClearedAt instanceof Date);
     assert.deepEqual(registrationUpdates, [{
       where: { savedTeamId: "saved-team-1" },
       data: { teamName: "Quest Five", teamLogoName: null },

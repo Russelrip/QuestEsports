@@ -31,6 +31,13 @@ existing contact, match-room, notification, or OAuth tables.
   saved-team members. Saved teams may persist `COACH` members alongside player,
   substitute, and captain roles; coach phone data remains nullable for legacy
   and partially populated saved rosters.
+- `20260822150000_add_saved_team_logo_cleared_at` adds the nullable
+  `saved_teams.logo_cleared_at` marker. `logo_name` alone cannot say why a team
+  has no logo, so this column separates a team that has never had one — which
+  may adopt a logo supplied by a registration — from a deliberate removal, which
+  stays authoritative so a stale registration snapshot cannot resurrect it. The
+  column is additive and intentionally not backfilled: existing logo-less teams
+  read as never having had a logo.
 
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and

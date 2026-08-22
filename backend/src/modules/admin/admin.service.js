@@ -2420,6 +2420,9 @@ const updateAdminSavedTeam = async (teamId, body, file) => {
       : existing.logoName;
   const savedTeamData = { name, teamTag, country, organizationName };
   if (logoMutationRequested) savedTeamData.logoName = nextLogoName;
+  // Record an explicit removal so the null logo reads as deliberate and a later
+  // registration upload cannot resurrect it.
+  if (logoMutationRequested && nextLogoName === null) savedTeamData.logoClearedAt = new Date();
   const registrationData = { teamName: name };
   if (logoMutationRequested) registrationData.teamLogoName = nextLogoName;
 

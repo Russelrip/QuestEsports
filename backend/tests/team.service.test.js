@@ -1422,11 +1422,19 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
   }
 });
 
-test("syncSavedTeamFromRegistration schedules a newly persisted retry logo for a canonical-null team", async () => {
+test("syncSavedTeamFromRegistration schedules a newly persisted retry logo for a deliberately cleared team", async () => {
   const savedTeamUpdates = [];
   const registrationUpdates = [];
   const scheduledLogos = [];
-  const existingTeam = { id: "saved-team-1", logoName: null, members: [] };
+  // `logoClearedAt` marks a removal the captain or an admin actually made, so
+  // the null logo is canonical and a later registration upload must not
+  // resurrect it.
+  const existingTeam = {
+    id: "saved-team-1",
+    logoName: null,
+    logoClearedAt: new Date("2026-08-01T00:00:00.000Z"),
+    members: [],
+  };
   const tx = {
     savedTeam: {
       findUnique: async () => existingTeam,
@@ -1524,7 +1532,14 @@ test("syncSavedTeamFromRegistration aborts relinking when retry-logo cleanup enq
   const registrationUpdates = [];
   const tx = {
     savedTeam: {
-      findUnique: async () => ({ id: "saved-team-1", logoName: null, members: [] }),
+      // A deliberately cleared team, so the retry logo is still discarded and
+      // its cleanup is the step under test.
+      findUnique: async () => ({
+        id: "saved-team-1",
+        logoName: null,
+        logoClearedAt: new Date("2026-08-01T00:00:00.000Z"),
+        members: [],
+      }),
       update: async () => undefined,
     },
     savedTeamMember: {
@@ -2038,6 +2053,192 @@ test("deleteSavedTeam rejects 409 when the team has an active VALORANT binding",
       teamService.deleteSavedTeam({ teamId: "saved-team-1", user: { id: "user-1" } }),
       (error) => error.name === "HttpError" && error.statusCode === 409 && /VALORANT binding/.test(error.message),
     );
+  } finally {
+    restore();
+  }
+});
+
+const buildAdoptionHarness = (existingTeam) => {
+  const savedTeamUpdates = [];
+  const registrationUpdates = [];
+  const scheduledLogos = [];
+  const createdTeams = [];
+  const tx = {
+    savedTeam: {
+      findUnique: async () => existingTeam,
+      create: async ({ data }) => { createdTeams.push(data); return { ...data, members: [] }; },
+      update: async (args) => { savedTeamUpdates.push(args); return { ...existingTeam, ...args.data }; },
+    },
+    savedTeamMember: {
+      deleteMany: async () => ({ count: 0 }),
+      createMany: async () => ({ count: 0 }),
+    },
+    teamRegistration: { update: async (args) => registrationUpdates.push(args) },
+    registrationMember: { findMany: async () => [] },
+  };
+  const logoUpdate = () => registrationUpdates
+    .map((entry) => entry.data)
+    .find((data) => Object.prototype.hasOwnProperty.call(data, "teamLogoName"));
+  return { tx, savedTeamUpdates, registrationUpdates, scheduledLogos, createdTeams, logoUpdate };
+};
+
+const loadAdoptionService = (harness) => loadModuleWithMocks(servicePath, {
+  [prismaModulePath]: { prisma: {} },
+  [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  [uploadCleanupModulePath]: {
+    scheduleTeamLogoCleanup: async ({ filename }) => { harness.scheduledLogos.push(filename); },
+  },
+});
+
+const adoptionSyncArguments = (harness, logoName) => ({
+  tx: harness.tx,
+  registrationId: "registration-1",
+  user: { id: "captain-1", firstName: "Quest", lastName: "Captain", username: "captain" },
+  teamName: "Quest Five",
+  logoName,
+  members: [],
+  tournamentTitle: "Quest Cup",
+});
+
+test("a saved team that has never had a logo adopts the one a registration supplies", async () => {
+  const harness = buildAdoptionHarness({
+    id: "saved-team-1",
+    logoName: null,
+    logoClearedAt: null,
+    members: [],
+  });
+  const { module: teamService, restore } = loadAdoptionService(harness);
+
+  try {
+    await teamService.syncSavedTeamFromRegistration(adoptionSyncArguments(harness, "first-logo.webp"));
+
+    assert.equal(
+      harness.savedTeamUpdates[0].data.logoName,
+      "first-logo.webp",
+      "the team adopts the logo so every linked projection can render it",
+    );
+    assert.equal(harness.logoUpdate().teamLogoName, "first-logo.webp");
+    assert.deepEqual(harness.scheduledLogos, [], "an adopted logo is never scheduled for deletion");
+  } finally {
+    restore();
+  }
+});
+
+test("a saved team with its own logo keeps it and discards the registration upload", async () => {
+  const harness = buildAdoptionHarness({
+    id: "saved-team-1",
+    logoName: "team-logo.webp",
+    logoClearedAt: null,
+    members: [],
+  });
+  const { module: teamService, restore } = loadAdoptionService(harness);
+
+  try {
+    await teamService.syncSavedTeamFromRegistration(adoptionSyncArguments(harness, "upload.webp"));
+
+    assert.equal(
+      Object.hasOwn(harness.savedTeamUpdates[0].data, "logoName"),
+      false,
+      "an existing saved team logo is authoritative and is never overwritten",
+    );
+    assert.equal(harness.logoUpdate().teamLogoName, "team-logo.webp");
+    assert.deepEqual(harness.scheduledLogos, ["upload.webp"]);
+  } finally {
+    restore();
+  }
+});
+
+test("a never-logoed team with no registration upload stays logo-less", async () => {
+  const harness = buildAdoptionHarness({
+    id: "saved-team-1",
+    logoName: null,
+    logoClearedAt: null,
+    members: [],
+  });
+  const { module: teamService, restore } = loadAdoptionService(harness);
+
+  try {
+    await teamService.syncSavedTeamFromRegistration(adoptionSyncArguments(harness, null));
+
+    assert.equal(Object.hasOwn(harness.savedTeamUpdates[0].data, "logoName"), false);
+    assert.equal(harness.logoUpdate().teamLogoName, null);
+    assert.deepEqual(harness.scheduledLogos, []);
+  } finally {
+    restore();
+  }
+});
+
+test("removing a saved team logo records the removal so it cannot be resurrected", async () => {
+  const savedTeamUpdates = [];
+  const existingTeam = {
+    id: "saved-team-1",
+    captainUserId: "captain-1",
+    name: "Quest Five",
+    logoName: "team-logo.webp",
+    logoClearedAt: null,
+    members: [],
+    registrations: [],
+  };
+  const captain = {
+    id: "captain-1",
+    firstName: "Quest",
+    lastName: "Captain",
+    username: "captain",
+    email: "captain@example.com",
+  };
+  const tx = {
+    savedTeam: {
+      findUnique: async ({ select }) => (select ? { logoName: "team-logo.webp" } : {
+        ...existingTeam,
+        country: "Sri Lanka",
+        teamTag: "Q5",
+        organizationRequested: false,
+        organizationName: null,
+        logoName: null,
+        captainUser: captain,
+        members: [{ id: "captain-member", role: "CAPTAIN", memberOrder: 0, name: "Quest Captain", email: captain.email, inviteStatus: "accepted" }],
+        _count: { registrations: 0 },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+      update: async ({ data }) => { savedTeamUpdates.push(data); return { ...existingTeam, ...data }; },
+    },
+    savedTeamMember: { deleteMany: async () => ({ count: 0 }), createMany: async () => ({ count: 0 }) },
+    teamRegistration: { updateMany: async () => ({ count: 0 }) },
+  };
+  const prisma = {
+    savedTeam: { findFirst: async () => existingTeam },
+    $transaction: async (callback) => callback(tx),
+  };
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [uploadModulePath]: {},
+    [uploadCleanupModulePath]: {
+      scheduleTeamLogoCleanup: async () => undefined,
+      removeUploadsQuietly: async () => undefined,
+    },
+  });
+
+  try {
+    await teamService.updateSavedTeam({
+      user: captain,
+      teamId: "saved-team-1",
+      body: {
+        name: "Quest Five",
+        country: "Sri Lanka",
+        teamTag: "Q5",
+        organizationRequested: "false",
+        removeLogo: "true",
+        members: JSON.stringify([]),
+      },
+      file: null,
+    });
+
+    const cleared = savedTeamUpdates.find((data) => Object.prototype.hasOwnProperty.call(data, "logoName"));
+    assert.ok(cleared, "the logo removal is persisted");
+    assert.equal(cleared.logoName, null);
+    assert.ok(cleared.logoClearedAt instanceof Date, "the removal is timestamped so it reads as deliberate");
   } finally {
     restore();
   }
