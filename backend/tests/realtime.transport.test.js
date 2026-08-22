@@ -21,7 +21,7 @@ const response = (status, body = {}) => ({
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-test("publish uses the Upstash REST publish endpoint and bearer token", async () => {
+test("publish uses the Upstash REST command body and bearer token", async () => {
   const calls = [];
   const transport = createRealtimeTransport({
     fetchImpl: async (url, options) => {
@@ -34,10 +34,12 @@ test("publish uses the Upstash REST publish endpoint and bearer token", async ()
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, "POST");
-  assert.match(calls[0].url, /\/publish\/[^/]+\/[^/]+$/);
+  assert.equal(calls[0].url, "https://redis.example.com");
   assert.equal(calls[0].headers.Authorization, "Bearer test-token");
-  assert.match(calls[0].url, new RegExp(encodeURIComponent("quest-realtime")));
-  assert.match(calls[0].url, new RegExp(encodeURIComponent(JSON.stringify(envelope))));
+  assert.equal(calls[0].headers["Content-Type"], "application/json");
+  assert.deepEqual(JSON.parse(calls[0].body), {
+    command: ["PUBLISH", "quest-realtime", JSON.stringify(envelope)],
+  });
   assert.ok(calls[0].signal);
 });
 
@@ -141,8 +143,11 @@ test("an envelope at the serialized byte limit round-trips through publish and s
   assert.equal(Buffer.byteLength(serialized, "utf8"), 1024);
 
   const publishTransport = createRealtimeTransport({
-    fetchImpl: async (url) => {
-      assert.match(url, new RegExp(encodeURIComponent(serialized)));
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://redis.example.com");
+      assert.deepEqual(JSON.parse(options.body), {
+        command: ["PUBLISH", "quest-realtime", serialized],
+      });
       return response(200, {});
     },
   });
@@ -258,4 +263,81 @@ test("start and stop are idempotent and stop aborts an active subscription", asy
   await transport.stop();
 
   assert.equal(requestOptions.signal.aborted, true);
+});
+
+test("subscribe aborts when the connection deadline expires and clears it after headers arrive", async () => {
+  let timeoutCallback;
+  let clearCalls = 0;
+  let requestOptions;
+  const transport = createRealtimeTransport({
+    fetchImpl: async (_url, options) => {
+      requestOptions = options;
+      return new Promise(() => {});
+    },
+    setConnectionTimeoutImpl: (callback) => {
+      timeoutCallback = callback;
+      return { timeout: true };
+    },
+    clearConnectionTimeoutImpl: () => {
+      clearCalls += 1;
+    },
+  });
+
+  await transport.start(() => {});
+  timeoutCallback();
+  assert.equal(requestOptions.signal.aborted, true);
+  await transport.stop();
+  assert.equal(clearCalls, 1);
+
+  let establishedClearCalls = 0;
+  const establishedTransport = createRealtimeTransport({
+    fetchImpl: async () => response(200, {
+      body: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+    }),
+    setConnectionTimeoutImpl: (callback) => ({ callback }),
+    clearConnectionTimeoutImpl: () => {
+      establishedClearCalls += 1;
+    },
+  });
+  await establishedTransport.start(() => {});
+  await wait(10);
+  await establishedTransport.stop();
+  assert.ok(establishedClearCalls >= 1);
+});
+
+test("a stopped subscription cannot affect a later start", async () => {
+  let resolveFirst;
+  let secondRequestOptions;
+  let calls = 0;
+  const firstResponse = new Promise((resolve) => {
+    resolveFirst = resolve;
+  });
+  const transport = createRealtimeTransport({
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      if (calls === 1) return firstResponse;
+      secondRequestOptions = options;
+      return new Promise(() => {});
+    },
+  });
+
+  await transport.start(() => {});
+  await transport.stop();
+  await transport.start(() => {});
+  resolveFirst(response(200, {
+    body: new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    }),
+  }));
+  await wait(10);
+
+  assert.equal(calls, 2);
+  await transport.stop();
+  assert.equal(secondRequestOptions.signal.aborted, true);
 });

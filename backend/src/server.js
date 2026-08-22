@@ -18,6 +18,7 @@ const {
   startRealtimeTransport,
   stopRealtimeTransport,
 } = require("./modules/realtime/realtime.service");
+const { drainRealtimeConnections } = require("./modules/realtime/realtime.controller");
 
 let isShuttingDown = false;
 let server = null;
@@ -64,6 +65,7 @@ const shutdown = async (signal, exitCode = 0) => {
   let httpCloseError = null;
   let shutdownFailed = false;
   try {
+    drainRealtimeConnections();
     const closeHttp = !server || !isServerListening || !server.listening
       ? Promise.resolve()
       : new Promise((resolve) => {

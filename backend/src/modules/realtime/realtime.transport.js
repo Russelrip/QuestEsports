@@ -57,6 +57,8 @@ const createRealtimeTransport = ({
   random = Math.random,
   setTimeoutImpl = setTimeout,
   clearTimeoutImpl = clearTimeout,
+  setConnectionTimeoutImpl = setTimeout,
+  clearConnectionTimeoutImpl = clearTimeout,
 } = {}) => {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required for realtime transport.");
@@ -81,6 +83,9 @@ const createRealtimeTransport = ({
   let reconnectAttempt = 0;
   let activeController = null;
   let activeReader = null;
+  let activeConnectionTimer = null;
+  let subscriptionTask = null;
+  let generation = 0;
   let onEnvelope = noop;
   let onStatus = noop;
 
@@ -135,7 +140,7 @@ const createRealtimeTransport = ({
     }
   };
 
-  const consumeStream = async (body) => {
+  const consumeStream = async (body, runGeneration) => {
     if (!body || typeof body.getReader !== "function") {
       throw new Error("Upstash subscribe response did not include a readable stream.");
     }
@@ -177,24 +182,25 @@ const createRealtimeTransport = ({
     };
 
     try {
-      while (running) {
+      while (running && runGeneration === generation) {
         const result = await reader.read();
         if (result.done) break;
+        if (!running || runGeneration !== generation) break;
         consumeText(
           typeof result.value === "string"
             ? result.value
             : decoder.decode(result.value, { stream: true }),
         );
       }
-      consumeText(decoder.decode());
+      if (running && runGeneration === generation) consumeText(decoder.decode());
     } finally {
-      activeReader = null;
+      if (activeReader === reader) activeReader = null;
       if (typeof reader.releaseLock === "function") reader.releaseLock();
     }
   };
 
-  const scheduleReconnect = (reason, error) => {
-    if (!running || reconnectTimer) return;
+  const scheduleReconnect = (runGeneration, reason, error) => {
+    if (!running || runGeneration !== generation || reconnectTimer) return;
     reportFailure(reason, error);
     const baseDelay = Math.min(
       env.REALTIME_PUBSUB_RECONNECT_MAX_MS,
@@ -208,13 +214,22 @@ const createRealtimeTransport = ({
     reconnectAttempt += 1;
     reconnectTimer = setTimeoutImpl(() => {
       reconnectTimer = null;
-      if (running) subscribe();
+      if (running && runGeneration === generation) beginSubscription(runGeneration);
     }, delay);
   };
 
-  const subscribe = async () => {
-    if (!running) return;
-    activeController = new AbortController();
+  const subscribe = async (runGeneration) => {
+    if (!running || runGeneration !== generation) return;
+    const controller = new AbortController();
+    let connectionTimer = setConnectionTimeoutImpl(() => controller.abort(), env.CACHE_CONNECTION_TIMEOUT_MS);
+    activeConnectionTimer = connectionTimer;
+    activeController = controller;
+    const clearConnectionTimer = () => {
+      if (!connectionTimer) return;
+      clearConnectionTimeoutImpl(connectionTimer);
+      if (activeConnectionTimer === connectionTimer) activeConnectionTimer = null;
+      connectionTimer = null;
+    };
     try {
       const response = await fetchImpl(
         `${baseUrl}/subscribe/${encodeURIComponent(channel)}`,
@@ -224,22 +239,38 @@ const createRealtimeTransport = ({
             Authorization: authorization,
             Accept: "text/event-stream",
           },
-          signal: activeController.signal,
+          signal: controller.signal,
         },
       );
-      if (!running) return;
+      clearConnectionTimer();
+      if (!running || runGeneration !== generation) return;
       if (!response.ok) {
         const body = await readResponseBody(response);
         throw responseError(response, "subscribe", body);
       }
       reportStatus(true, "connected");
-      await consumeStream(response.body);
-      if (running) scheduleReconnect("eof");
+      await consumeStream(response.body, runGeneration);
+      if (running && runGeneration === generation) scheduleReconnect(runGeneration, "eof");
     } catch (error) {
-      if (running) scheduleReconnect("error", error);
+      if (running && runGeneration === generation) scheduleReconnect(runGeneration, "error", error);
     } finally {
-      activeController = null;
+      clearConnectionTimer();
+      if (activeController === controller) activeController = null;
     }
+  };
+
+  const beginSubscription = (runGeneration) => {
+    if (!running || runGeneration !== generation) return;
+    const task = subscribe(runGeneration);
+    subscriptionTask = task;
+    task.then(
+      () => {
+        if (subscriptionTask === task) subscriptionTask = null;
+      },
+      () => {
+        if (subscriptionTask === task) subscriptionTask = null;
+      },
+    );
   };
 
   const publish = async (envelope) => {
@@ -252,10 +283,14 @@ const createRealtimeTransport = ({
     }
 
     const response = await fetchImpl(
-      `${baseUrl}/publish/${encodeURIComponent(channel)}/${encodeURIComponent(serialized)}`,
+      baseUrl,
       {
         method: "POST",
-        headers: { Authorization: authorization },
+        headers: {
+          Authorization: authorization,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ command: ["PUBLISH", channel, serialized] }),
         signal: AbortSignal.timeout(env.CACHE_CONNECTION_TIMEOUT_MS),
       },
     );
@@ -271,15 +306,22 @@ const createRealtimeTransport = ({
     onEnvelope = typeof envelopeHandler === "function" ? envelopeHandler : noop;
     onStatus = typeof statusHandler === "function" ? statusHandler : noop;
     running = true;
-    subscribe();
+    generation += 1;
+    beginSubscription(generation);
   };
 
   const stop = async () => {
-    if (!running && !reconnectTimer && !activeController) return;
+    if (!running && !reconnectTimer && !activeController && !subscriptionTask) return;
     running = false;
+    generation += 1;
+    subscriptionTask = null;
     if (reconnectTimer) {
       clearTimeoutImpl(reconnectTimer);
       reconnectTimer = null;
+    }
+    if (activeConnectionTimer) {
+      clearConnectionTimeoutImpl(activeConnectionTimer);
+      activeConnectionTimer = null;
     }
     if (activeController) activeController.abort();
     if (activeReader && typeof activeReader.cancel === "function") {

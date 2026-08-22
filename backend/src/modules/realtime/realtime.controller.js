@@ -8,6 +8,8 @@ const {
 } = require("./realtime.service");
 const { accessRoom } = require("../match-rooms/match-room.service");
 
+const activeSseConnections = new Set();
+
 const parseTopics = (value) =>
   new Set(
     String(value || "matches,brackets")
@@ -105,11 +107,13 @@ const getRealtimeEvents = async (req, res) => {
   const close = () => {
     if (closed) return;
     closed = true;
+    activeSseConnections.delete(close);
     if (heartbeat) clearInterval(heartbeat);
     removeSubscription();
     closeRealtimeConnection(clientKey);
     if (!res.writableEnded) res.end();
   };
+  activeSseConnections.add(close);
   const eventListener = (event) => {
     const rootTopic = event.topic.split(":")[0];
     if (topics.size && !topics.has(event.topic) && !topics.has(rootTopic)) return;
@@ -132,4 +136,10 @@ const getRealtimeEvents = async (req, res) => {
   })}\n\n`);
 };
 
-module.exports = { getRealtimeEvents };
+const drainRealtimeConnections = () => {
+  const connections = [...activeSseConnections];
+  for (const close of connections) close();
+  return connections.length;
+};
+
+module.exports = { getRealtimeEvents, drainRealtimeConnections };

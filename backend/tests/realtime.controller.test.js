@@ -180,6 +180,29 @@ test("preserves exact and root topic filtering and cleanup", async () => {
   }
 });
 
+test("drains active SSE clients so shutdown does not wait for heartbeats", async () => {
+  let unsubscribeCalls = 0;
+  const { module: controller, restore } = createRealtimeController({
+    subscribeToRealtimeEvents() {
+      return () => {
+        unsubscribeCalls += 1;
+      };
+    },
+  });
+  const response = createResponse();
+
+  try {
+    await controller.getRealtimeEvents(createRequest(), response);
+    assert.equal(response.ended, false);
+    assert.equal(controller.drainRealtimeConnections(), 1);
+    assert.equal(response.ended, true);
+    assert.equal(unsubscribeCalls, 1);
+  } finally {
+    controller.drainRealtimeConnections();
+    restore();
+  }
+});
+
 test("authorizes user and match-room private topics", async () => {
   let accessCode;
   let opened = 0;
