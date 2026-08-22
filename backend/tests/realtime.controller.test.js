@@ -280,3 +280,33 @@ test("returns retriable 503 when clustered shared transport is unavailable", asy
     restore();
   }
 });
+
+test("rechecks transport readiness after async topic authorization", async () => {
+  let ready = true;
+  let opened = false;
+  const { module: controller, restore } = createRealtimeController({
+    isRealtimeTransportReady: () => ready,
+    accessRoom: async () => {
+      ready = false;
+    },
+    openRealtimeConnection: () => {
+      opened = true;
+      return true;
+    },
+  });
+  const response = createResponse();
+
+  try {
+    await controller.getRealtimeEvents(
+      createRequest({ query: { topics: "match-room:room-1" }, user: { id: "user-1" } }),
+      response,
+    );
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.headers["Retry-After"], "5");
+    assert.equal(response.body.error.code, "realtime_unavailable");
+    assert.equal(response.writes.length, 0);
+    assert.equal(opened, false);
+  } finally {
+    restore();
+  }
+});

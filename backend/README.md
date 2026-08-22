@@ -68,11 +68,19 @@ The memory cache is valid only for a single API process.
 verify the process PID/UUID suffix and confirm that two workers report distinct
 effective identities.
 
-The transport subscribes with the exact Upstash REST request
-`POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}` and publishes with
-`POST {UPSTASH_REDIS_REST_URL}/publish/{channel}/{message}`. The subscribe
-response is SSE and both requests use `Authorization: Bearer
-{UPSTASH_REDIS_REST_TOKEN}`.
+The transport subscribes with `POST
+{UPSTASH_REDIS_REST_URL}/subscribe/{channel}` and publishes using the Upstash
+single-command REST protocol: `POST {UPSTASH_REDIS_REST_URL}` with
+`Content-Type: application/json` and this exact command-array body:
+
+```json
+["PUBLISH", "{channel}", "{serialized realtime envelope}"]
+```
+
+Both requests use `Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}`; the
+subscribe response is SSE. Set `REALTIME_PUBSUB_RECONNECT_BASE_MS` and
+`REALTIME_PUBSUB_RECONNECT_MAX_MS` to control the subscriber's bounded
+exponential reconnect delay (defaults `250` ms and `10000` ms).
 
 Run the optional staging exercise only when all seven variables below are set;
 the command never silently skips configuration:

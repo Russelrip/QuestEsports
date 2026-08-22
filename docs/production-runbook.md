@@ -62,14 +62,21 @@ For a multi-worker API, set `CACHE_DRIVER=upstash`, set
 workers must use the same `REALTIME_PUBSUB_CHANNEL` and configured
 `REALTIME_WORKER_ID` base. The implementation creates each effective identity
 as `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`, so a shared PM2 base
-still produces distinct runtime identities. The shared transport uses the
-exact Upstash REST routes below (with channel and message URL-encoded):
+still produces distinct runtime identities. The shared transport uses the exact
+Upstash REST requests below. The publish request uses Upstash's single-command
+protocol; the command array is the JSON body, not an object wrapper:
 
 ```text
 POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}   # text/event-stream
-POST {UPSTASH_REDIS_REST_URL}/publish/{channel}/{message}
+POST {UPSTASH_REDIS_REST_URL}                       # application/json
 Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}
+["PUBLISH", "{channel}", "{serialized realtime envelope}"]
 ```
+
+`REALTIME_PUBSUB_RECONNECT_BASE_MS` and
+`REALTIME_PUBSUB_RECONNECT_MAX_MS` bound the subscriber's exponential
+reconnect delay; they default to `250` ms and `10000` ms. Keep these values
+consistent across workers when changing the deployment defaults.
 
 ### Verify PM2 worker count and transport configuration
 

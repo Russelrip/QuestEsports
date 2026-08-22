@@ -63,6 +63,18 @@ const getRealtimeEvents = async (req, res) => {
   }
 
   const topics = await authorizeTopics(parseTopics(req.query.topics), req.user);
+  if (typeof isRealtimeTransportReady === "function" && !isRealtimeTransportReady()) {
+    if (typeof res.set === "function") res.set("Retry-After", "5");
+    else res.setHeader?.("Retry-After", "5");
+    res.status(503).json({
+      success: false,
+      error: {
+        code: "realtime_unavailable",
+        message: "Realtime updates are temporarily unavailable. Please retry.",
+      },
+    });
+    return;
+  }
   // Reconciliation is a public, payload-only invalidation signal. Include it
   // in the same filter set so shared transport recovery reaches every stream
   // without broadening any private topic authorization.

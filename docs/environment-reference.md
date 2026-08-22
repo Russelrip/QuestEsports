@@ -77,6 +77,8 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `REALTIME_PUBSUB_CHANNEL` | Required and identical on every API worker in a cluster | Backend/deployment owner | D/P | Public/non-secret | `quest-realtime` | Restart backend |
 | `REALTIME_WORKER_ID` | Required stable worker base ID; effective identity adds process PID and UUID | Backend/deployment owner | D/P | Public/non-secret | `<cluster-worker-base-id>` | Restart backend |
 | `REALTIME_PUBSUB_MAX_MESSAGE_BYTES` | No — defaults to `65536` | Backend | L/D/P | Public/non-secret | `65536` | Restart backend |
+| `REALTIME_PUBSUB_RECONNECT_BASE_MS` | No — defaults to `250` | Backend | L/D/P | Public/non-secret | `250` | Restart backend |
+| `REALTIME_PUBSUB_RECONNECT_MAX_MS` | No — defaults to `10000` | Backend | L/D/P | Public/non-secret | `10000` | Restart backend |
 | `LOG_DRAIN_URL` | No | Backend/operations owner | D/P | Secret | `<structured log drain URL>` | Restart backend |
 | `LOG_DRAIN_TOKEN` | Conditional | Backend/operations owner | D/P | Secret | `<log drain token>` when a drain requires it | Restart backend |
 | `MONITORING_WEBHOOK_URL` | No | Backend/operations owner | D/P | Secret | `<monitoring webhook URL>` | Restart backend |
@@ -99,17 +101,18 @@ transport credential.
 `realtime.workerId`. `pm2 env` verifies only the configured base; deployment
 verification must compare the live health values from both workers.
 
-The shared transport uses these exact Upstash REST routes, with the channel and
-message URL-encoded:
+The shared transport uses these exact Upstash REST requests:
 
 ```text
 POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}   # SSE subscription
-POST {UPSTASH_REDIS_REST_URL}/publish/{channel}/{message}
+POST {UPSTASH_REDIS_REST_URL}                       # single-command publish
+Content-Type: application/json
+["PUBLISH", "{channel}", "{serialized realtime envelope}"]
 ```
 
-Both requests require `Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}`.
-The subscribe response is `text/event-stream`; the publish request carries the
-serialized realtime envelope in the `{message}` path segment.
+Both requests require `Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}`; the
+subscribe response is `text/event-stream`. The reconnect base/max variables
+bound the subscriber's exponential reconnect delay.
 
 The optional cluster smoke test is server-to-server and intentionally omits
 synthetic `Origin` and `Referer` headers. It must target a staging security

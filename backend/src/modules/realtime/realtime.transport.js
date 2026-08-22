@@ -290,7 +290,7 @@ const createRealtimeTransport = ({
           Authorization: authorization,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ command: ["PUBLISH", channel, serialized] }),
+        body: JSON.stringify(["PUBLISH", channel, serialized]),
         signal: AbortSignal.timeout(env.CACHE_CONNECTION_TIMEOUT_MS),
       },
     );

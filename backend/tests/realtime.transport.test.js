@@ -21,7 +21,7 @@ const response = (status, body = {}) => ({
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-test("publish uses the Upstash REST command body and bearer token", async () => {
+test("publish uses the Upstash REST command array body and bearer token", async () => {
   const calls = [];
   const transport = createRealtimeTransport({
     fetchImpl: async (url, options) => {
@@ -37,9 +37,11 @@ test("publish uses the Upstash REST command body and bearer token", async () => 
   assert.equal(calls[0].url, "https://redis.example.com");
   assert.equal(calls[0].headers.Authorization, "Bearer test-token");
   assert.equal(calls[0].headers["Content-Type"], "application/json");
-  assert.deepEqual(JSON.parse(calls[0].body), {
-    command: ["PUBLISH", "quest-realtime", JSON.stringify(envelope)],
-  });
+  assert.deepEqual(JSON.parse(calls[0].body), [
+    "PUBLISH",
+    "quest-realtime",
+    JSON.stringify(envelope),
+  ]);
   assert.ok(calls[0].signal);
 });
 
@@ -145,9 +147,11 @@ test("an envelope at the serialized byte limit round-trips through publish and s
   const publishTransport = createRealtimeTransport({
     fetchImpl: async (url, options) => {
       assert.equal(url, "https://redis.example.com");
-      assert.deepEqual(JSON.parse(options.body), {
-        command: ["PUBLISH", "quest-realtime", serialized],
-      });
+      assert.deepEqual(JSON.parse(options.body), [
+        "PUBLISH",
+        "quest-realtime",
+        serialized,
+      ]);
       return response(200, {});
     },
   });
