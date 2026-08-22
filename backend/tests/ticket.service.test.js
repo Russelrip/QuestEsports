@@ -255,3 +255,47 @@ test("ticket QR payloads are signed and reject tampering or old versions", () =>
     restore();
   }
 });
+
+test("a reissued ticket audits its QR version through the durable-audit sanitizer", async () => {
+  const ticket = {
+    id: "a6a67b53-e59c-4f12-9de8-b9f0b38cd3b5",
+    ticketNumber: "QES-A6A67B53E59C",
+    tokenVersion: 3,
+    eventId: "event-1",
+    status: "valid",
+    checkedInAt: null,
+    order: { status: "paid" },
+  };
+  const auditRows = [];
+  const tx = {
+    ticket: {
+      findUnique: async () => ticket,
+      update: async ({ data }) => ({ ...ticket, tokenVersion: ticket.tokenVersion + (data.tokenVersion?.increment || 0) }),
+    },
+    auditLog: { create: async ({ data }) => { auditRows.push(data); return data; } },
+  };
+  const prisma = { $transaction: async (callback) => callback(tx) };
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.reissueTicket({
+      ticketId: ticket.id,
+      auditContext: {
+        actorUserId: "3f1d4f4a-1f2e-4a0b-9c4d-2b7e5c8a9d10",
+        requestId: "request-reissue",
+        ipAddress: "127.0.0.1",
+      },
+    });
+    assert.equal(auditRows.length, 1);
+    assert.equal(auditRows[0].action, "ticket.reissued");
+    // The sanitizer redacts any key that reads as a credential, so the
+    // non-secret reissue counter must be recorded under a name that survives
+    // it — otherwise the row carries no before/after evidence at all, because
+    // a reissue leaves the status unchanged.
+    assert.equal(auditRows[0].beforeData.qrVersion, 3);
+    assert.equal(auditRows[0].afterData.qrVersion, 4);
+    assert.notEqual(auditRows[0].beforeData.qrVersion, "[REDACTED]");
+    assert.notEqual(auditRows[0].afterData.qrVersion, "[REDACTED]");
+  } finally {
+    restore();
+  }
+});

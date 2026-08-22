@@ -1160,8 +1160,12 @@ const reissueTicket = async ({ ticketId, auditContext = {} }) => prisma.$transac
       action: "ticket.reissued",
       targetType: "Ticket",
       targetId: ticketId,
-      beforeData: { status: ticket.status, tokenVersion: ticket.tokenVersion },
-      afterData: { status: updated.status, tokenVersion: updated.tokenVersion },
+      // `qrVersion` is the ticket's non-secret reissue counter. It is named
+      // away from "token" deliberately: the durable-audit sanitizer redacts
+      // every key that reads as a credential, and a reissue leaves `status`
+      // unchanged, so this counter is the row's only before/after evidence.
+      beforeData: { status: ticket.status, qrVersion: ticket.tokenVersion },
+      afterData: { status: updated.status, qrVersion: updated.tokenVersion },
     });
   }
   return mapTicket(updated);
