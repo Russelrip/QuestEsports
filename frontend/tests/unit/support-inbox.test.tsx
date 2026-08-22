@@ -133,6 +133,34 @@ describe("support inbox rendered states", () => {
     expect(screen.queryByText("Stale user conversation")).not.toBeInTheDocument();
     mocks.auth.user = { id: "user-1" };
   });
+
+  it("clears the inbox and thread immediately when the authenticated user changes", async () => {
+    let resolveNextList!: (value: { items: SupportConversationSummary[]; nextCursor: null }) => void;
+    let resolveNextThread!: (value: SupportConversation) => void;
+    const pendingList = new Promise<{ items: SupportConversationSummary[]; nextCursor: null }>((resolve) => { resolveNextList = resolve; });
+    const pendingThread = new Promise<SupportConversation>((resolve) => { resolveNextThread = resolve; });
+    const oldItem = { ...conversation("OPEN", "conversation-1", "Old user conversation"), lastMessage: null, preview: null };
+
+    listSupportConversations.mockReset();
+    listSupportConversations.mockResolvedValueOnce({ items: [oldItem], nextCursor: null }).mockResolvedValueOnce({ items: [oldItem], nextCursor: null }).mockImplementation(() => pendingList);
+    getSupportConversation.mockReset();
+    getSupportConversation.mockResolvedValueOnce(conversation("OPEN", "conversation-1", "Old user conversation")).mockImplementation(() => pendingThread);
+
+    const view = render(<SupportInbox conversationId="conversation-1" />);
+    expect((await screen.findAllByText("Old user conversation")).length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByText("I need help")).toBeInTheDocument();
+
+    mocks.auth.user = { id: "user-2" };
+    view.rerender(<SupportInbox conversationId="conversation-1" />);
+
+    expect(screen.getByText("Loading your conversations…")).toBeInTheDocument();
+    expect(screen.queryByText("Old user conversation")).not.toBeInTheDocument();
+    expect(screen.queryByText("I need help")).not.toBeInTheDocument();
+
+    resolveNextList({ items: [], nextCursor: null });
+    resolveNextThread(conversation("OPEN", "conversation-2", "New user conversation"));
+    mocks.auth.user = { id: "user-1" };
+  });
 });
 
 describe("support notifications", () => {
