@@ -6,6 +6,7 @@ const valorantController = require("../modules/valorant/valorant.controller");
 const valorantLeaderboardController = require("../modules/valorant-leaderboard/controller");
 const { cachePublicData } = require("../middleware/cache-control");
 const { cacheJson, invalidateCache } = require("../middleware/response-cache");
+const { createRateLimiter } = require("../middleware/rate-limit");
 const { getPublicTournamentBySlug } = require("../modules/tournaments/tournament.service");
 const matchController = require("../modules/matches/match.controller");
 const vetoController = require("../modules/veto/veto.controller");
@@ -37,6 +38,25 @@ const bracketResponseCache = cacheJson({
 });
 const leaderboardPublicCache = cachePublicData({ browserSeconds: 0, sharedSeconds: 60 });
 const leaderboardCache = cacheJson({ ttlSeconds: 60, tags: ["foundation"] });
+// The leaderboard registration proxy is the only PUBLIC path into the
+// Henrik-backed upstream (`valorant-platform-backend`), and it stays public on
+// purpose: this is the community VALORANT-SL signup, which authenticates with
+// Discord and does not require a Quest account. Authentication would break it,
+// so the abuse surface — burning the shared upstream Henrik budget, and
+// enumerating which PUUIDs/Discord accounts are registered — is closed with
+// per-IP limits instead.
+const leaderboardRegisterLookupLimiter = createRateLimiter({
+  name: "valorant-leaderboard-register-lookup",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 30,
+  message: "Too many VALORANT lookups. Please try again in a few minutes.",
+});
+const leaderboardRegisterSubmitLimiter = createRateLimiter({
+  name: "valorant-leaderboard-register-submit",
+  windowMs: 60 * 60 * 1000,
+  maxRequests: 10,
+  message: "Too many registration attempts. Please try again later.",
+});
 const tournamentResource = {
   parameter: "id",
   matchParameter: null,
@@ -137,11 +157,11 @@ router.get("/valorant/leaderboard/search", leaderboardPublicCache, leaderboardCa
 
 // Quest-hosted leaderboard registration/auth proxy (HMAC service-token
 // upstream). No cache middleware — these are stateful/live calls.
-router.get("/valorant/leaderboard/register/discord/login", valorantLeaderboardController.getDiscordLogin);
-router.get("/valorant/leaderboard/register/discord/callback", valorantLeaderboardController.getDiscordCallback);
-router.post("/valorant/leaderboard/register/check-puuid", valorantLeaderboardController.checkPuuid);
-router.post("/valorant/leaderboard/register/preview", valorantLeaderboardController.previewRegistration);
-router.post("/valorant/leaderboard/register/submit", valorantLeaderboardController.submitRegistration);
+router.get("/valorant/leaderboard/register/discord/login", leaderboardRegisterLookupLimiter, valorantLeaderboardController.getDiscordLogin);
+router.get("/valorant/leaderboard/register/discord/callback", leaderboardRegisterLookupLimiter, valorantLeaderboardController.getDiscordCallback);
+router.post("/valorant/leaderboard/register/check-puuid", leaderboardRegisterLookupLimiter, valorantLeaderboardController.checkPuuid);
+router.post("/valorant/leaderboard/register/preview", leaderboardRegisterLookupLimiter, valorantLeaderboardController.previewRegistration);
+router.post("/valorant/leaderboard/register/submit", leaderboardRegisterSubmitLimiter, valorantLeaderboardController.submitRegistration);
 
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);

@@ -18,6 +18,7 @@ const realtimeControllerPath = path.join(__dirname, "../src/modules/realtime/rea
 const permissionMiddlewarePath = path.join(__dirname, "../src/modules/permissions/permission.middleware.js");
 const valorantControllerPath = path.join(__dirname, "../src/modules/valorant/valorant.controller.js");
 const valorantLeaderboardControllerPath = path.join(__dirname, "../src/modules/valorant-leaderboard/controller.js");
+const rateLimitPath = path.join(__dirname, "../src/middleware/rate-limit.js");
 
 const controllerHandler = (_req, _res, next) => next?.();
 const controllerMock = new Proxy({}, { get: () => controllerHandler });
@@ -161,6 +162,95 @@ test("v1 tournament detail mutations invalidate both foundation and tournament c
       ["foundation", "tournaments"],
       ["foundation", "tournaments"],
     ]);
+  } finally {
+    restore();
+  }
+});
+
+
+// Section 1 (2026-08-23 identity plan): the five /valorant/leaderboard/register/*
+// routes are the only PUBLIC path into the Henrik-backed upstream, and they
+// stay public — the community signup authenticates with Discord, not with a
+// Quest account. They must therefore carry a per-IP limiter so an anonymous
+// caller cannot burn the shared upstream budget or enumerate registered
+// PUUID/Discord accounts.
+test("v1 rate limits every public VALORANT leaderboard registration proxy route", () => {
+  const limiters = new Map();
+  const configs = [];
+  const { module: router, restore } = loadModuleWithMocks(v1Path, {
+    [envPath]: { env: { CACHE_TTL_SECONDS: 300, CHALLONGE_BRACKET_CACHE_SECONDS: 30 } },
+    [authPath]: { attachSession: passMiddleware, requireAuth: passMiddleware, requireAdmin: requireAdminMock },
+    [asyncHandlerPath]: { asyncHandler: (handler) => handler },
+    [cacheControlPath]: { cachePublicData: () => passMiddleware },
+    [responseCachePath]: { cacheJson: () => passMiddleware, invalidateCache: () => passMiddleware },
+    [rateLimitPath]: {
+      createRateLimiter: (config) => {
+        configs.push(config);
+        const limiter = function rateLimiter(_req, _res, next) { next(); };
+        limiters.set(config.name, limiter);
+        return limiter;
+      },
+      getClientIp: () => "127.0.0.1",
+    },
+    [tournamentServicePath]: { getPublicTournamentBySlug: async () => ({}) },
+    [matchControllerPath]: controllerMock,
+    [challongeControllerPath]: controllerMock,
+    [staffControllerPath]: controllerMock,
+    [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
+    [permissionMiddlewarePath]: {
+      requireSuperAdmin: () => passMiddleware,
+      requirePermission: requirePermissionMock,
+      requireVetoRoomCode: passMiddleware,
+      requireVetoRoomCredential: passMiddleware,
+      PERMISSION_SCOPES: permissionScopesMock,
+    },
+    [valorantControllerPath]: controllerMock,
+    [valorantLeaderboardControllerPath]: controllerMock,
+  });
+
+  try {
+    const lookupLimiter = limiters.get("valorant-leaderboard-register-lookup");
+    const submitLimiter = limiters.get("valorant-leaderboard-register-submit");
+    assert.ok(lookupLimiter, "a lookup limiter must be created");
+    assert.ok(submitLimiter, "a submit limiter must be created");
+
+    const routeFor = (path) =>
+      router.stack.find((layer) => layer.route && layer.route.path === path);
+
+    const guarded = [
+      ["/valorant/leaderboard/register/discord/login", lookupLimiter],
+      ["/valorant/leaderboard/register/discord/callback", lookupLimiter],
+      ["/valorant/leaderboard/register/check-puuid", lookupLimiter],
+      ["/valorant/leaderboard/register/preview", lookupLimiter],
+      ["/valorant/leaderboard/register/submit", submitLimiter],
+    ];
+
+    for (const [routePath, limiter] of guarded) {
+      const layer = routeFor(routePath);
+      assert.ok(layer, `missing route ${routePath}`);
+      assert.equal(
+        layer.route.stack.some((entry) => entry.handle === limiter),
+        true,
+        `${routePath} must be rate limited`,
+      );
+      // The limiter has to run before the controller, or the upstream call
+      // happens regardless of the limit.
+      assert.equal(
+        layer.route.stack.findIndex((entry) => entry.handle === limiter),
+        0,
+        `${routePath} must apply its limiter first`,
+      );
+    }
+
+    // Submitting writes upstream, so it must be the stricter of the two.
+    const lookupConfig = configs.find((config) => config.name === "valorant-leaderboard-register-lookup");
+    const submitConfig = configs.find((config) => config.name === "valorant-leaderboard-register-submit");
+    assert.ok(submitConfig.maxRequests < lookupConfig.maxRequests);
+    for (const config of [lookupConfig, submitConfig]) {
+      assert.ok(config.windowMs > 0 && config.maxRequests > 0);
+      assert.equal(typeof config.message, "string");
+      assert.ok(config.message.length > 0);
+    }
   } finally {
     restore();
   }
