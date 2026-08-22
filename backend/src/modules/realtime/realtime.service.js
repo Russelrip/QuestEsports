@@ -179,6 +179,7 @@ const closeRealtimeConnection = (clientKey) => {
 };
 
 const getRealtimeStatus = () => ({
+  workerId,
   activeConnections,
   activeClients: connectionsByClient.size,
   publishedEvents,

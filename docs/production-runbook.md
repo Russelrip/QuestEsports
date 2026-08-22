@@ -87,33 +87,32 @@ sudo -u deploy -H pm2 env 1 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME
 
 For the two-worker target, expect two `online` instances, `API_PROCESS_COUNT=2`,
 `CACHE_DRIVER=upstash`, and the same channel and configured base on both
-instances. Verify the effective identity prefixes (base plus actual process
-PID) with this runtime check; the final UUID is generated inside each API
-process at startup and is intentionally not exposed as a credential or
-configuration value:
+instances. `pm2 env` verifies only the configured base ID. Verify the actual
+effective IDs exposed by each worker's live health endpoint instead:
 
 ```bash
-sudo -u deploy -H pm2 jlist | node -e '
-  let input = "";
-  process.stdin.on("data", (chunk) => { input += chunk; });
-  process.stdin.on("end", () => {
-    const workers = JSON.parse(input).filter((app) => app.name === "quest-backend");
-    if (workers.length !== 2) throw new Error(`expected 2 quest-backend workers, got ${workers.length}`);
-    const prefixes = workers.map((app) => {
-      const base = app.pm2_env?.env?.REALTIME_WORKER_ID;
-      if (!base || !Number.isInteger(app.pid) || app.pid <= 0) throw new Error("missing worker base ID or PID");
-      return `${base}:${app.pid}`;
-    });
-    if (new Set(prefixes).size !== prefixes.length) throw new Error("duplicate effective realtime identity prefix");
-    console.log(prefixes.map((prefix) => `${prefix}:<randomUUID>`).join("\n"));
-  });
-'
+WORKER_A_HEALTH_URL=https://api-a.example.com/api/health/live
+WORKER_B_HEALTH_URL=https://api-b.example.com/api/health/live
+A_ID="$(curl --fail --silent --show-error "$WORKER_A_HEALTH_URL" | node -e '
+  const body = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const id = body?.realtime?.workerId;
+  if (typeof id !== "string" || !id) process.exit(1);
+  process.stdout.write(id);
+')"
+B_ID="$(curl --fail --silent --show-error "$WORKER_B_HEALTH_URL" | node -e '
+  const body = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  const id = body?.realtime?.workerId;
+  if (typeof id !== "string" || !id) process.exit(1);
+  process.stdout.write(id);
+')"
+test "$A_ID" != "$B_ID"
+printf 'worker A effective realtime.workerId=%s (prefix=%s)\n' "$A_ID" "${A_ID%:*}"
+printf 'worker B effective realtime.workerId=%s (prefix=%s)\n' "$B_ID" "${B_ID%:*}"
 ```
 
-The output is the implementation's effective identity shape, with the
-per-process UUID shown as a placeholder; it checks the runtime PID component
-and confirms that each PM2 worker has a distinct effective prefix. The PM2
-launch equivalent is:
+The health payload is the runtime source of truth for the complete effective
+`REALTIME_WORKER_ID:process.pid:randomUUID()` value. The PM2 launch equivalent
+is:
 
 ```bash
 sudo -u deploy -H bash -lc '

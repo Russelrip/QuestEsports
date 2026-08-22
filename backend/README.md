@@ -63,6 +63,11 @@ so PM2 workers sharing the base still have distinct runtime identities. Set
 both `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` on every worker.
 The memory cache is valid only for a single API process.
 
+`GET /api/health/live` exposes the non-secret effective
+`realtime.workerId` value. Use that live payload, rather than `pm2 env`, to
+verify the process PID/UUID suffix and confirm that two workers report distinct
+effective identities.
+
 The transport subscribes with the exact Upstash REST request
 `POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}` and publishes with
 `POST {UPSTASH_REDIS_REST_URL}/publish/{channel}/{message}`. The subscribe

@@ -117,6 +117,8 @@ test("cluster smoke uses server-to-server headers and checks a concrete foreign 
   assert.doesNotMatch(smokeSource, /\bOrigin\s*:/);
   assert.match(smokeSource, /user:__realtime_other_user__/);
   assert.match(smokeSource, /const assertTopicDenied = async \(workerUrl, cookie, topic\)/);
+  assert.match(smokeSource, /\/api\/health\/live/);
+  assert.match(smokeSource, /realtime\?\.workerId/);
 });
 
 test("two isolated workers deliver local-first and remote events exactly once", async () => {
@@ -140,6 +142,11 @@ test("two isolated workers deliver local-first and remote events exactly once", 
   try {
     await isolatedA.module.startRealtimeTransport();
     await isolatedB.module.startRealtimeTransport();
+    const statusA = isolatedA.module.getRealtimeStatus();
+    const statusB = isolatedB.module.getRealtimeStatus();
+    assert.match(statusA.workerId, /^worker-a:\d+:[0-9a-f-]{36}$/);
+    assert.match(statusB.workerId, /^worker-b:\d+:[0-9a-f-]{36}$/);
+    assert.notEqual(statusA.workerId, statusB.workerId);
     const localEvent = isolatedA.module.publishRealtimeEvent("matches", {
       matchId: "match-1",
     });

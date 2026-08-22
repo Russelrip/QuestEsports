@@ -95,6 +95,10 @@ base is safe because process PID and startup UUID distinguish workers. Do not
 run a multi-worker deployment with the memory cache or with a missing shared
 transport credential.
 
+`GET /api/health/live` returns the non-secret effective value at
+`realtime.workerId`. `pm2 env` verifies only the configured base; deployment
+verification must compare the live health values from both workers.
+
 The shared transport uses these exact Upstash REST routes, with the channel and
 message URL-encoded:
 

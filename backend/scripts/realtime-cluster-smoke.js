@@ -38,6 +38,30 @@ const responseText = async (response) => {
   }
 };
 
+const fetchEffectiveWorkerId = async (label, workerUrl) => {
+  const response = await fetch(withApiPath(workerUrl, "/api/health/live"), {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `${label} health check returned HTTP ${response.status}: ${await responseText(response)}`,
+    );
+  }
+
+  let body;
+  try {
+    body = await response.json();
+  } catch (error) {
+    throw new Error(`${label} health check returned invalid JSON: ${error.message}`);
+  }
+  const workerId = body?.realtime?.workerId;
+  if (typeof workerId !== "string" || !workerId.trim()) {
+    throw new Error(`${label} health payload did not include realtime.workerId.`);
+  }
+  return workerId;
+};
+
 class SseClient {
   constructor(label, workerUrl, topic, cookie) {
     this.label = label;
@@ -207,6 +231,14 @@ const assertPrivateTopicIsolation = async (workerUrl, cookie) => {
 
 const main = async () => {
   const config = requiredEnvironment();
+  const workerIds = await Promise.all([
+    fetchEffectiveWorkerId("worker A", config.REALTIME_CLUSTER_WORKER_A_URL),
+    fetchEffectiveWorkerId("worker B", config.REALTIME_CLUSTER_WORKER_B_URL),
+  ]);
+  if (workerIds[0] === workerIds[1]) {
+    throw new Error(`Health checks reported duplicate effective realtime worker IDs: ${workerIds[0]}`);
+  }
+  const workerPrefixes = workerIds.map((workerId) => workerId.split(":").slice(0, 2).join(":"));
   const clients = [
     new SseClient(
       "worker A",
@@ -268,6 +300,8 @@ const main = async () => {
     );
 
     console.log("Realtime cluster smoke: PASS");
+    console.log(`- observed effective worker IDs: A=${workerIds[0]} B=${workerIds[1]}`);
+    console.log(`- observed worker ID prefixes: A=${workerPrefixes[0]} B=${workerPrefixes[1]}`);
     console.log("- both workers emitted ready and observed the configured mutation refresh");
     console.log("- reconnect emitted ready");
     console.log("- foreign user:__realtime_other_user__ and broad private topics returned 403 on both workers");
