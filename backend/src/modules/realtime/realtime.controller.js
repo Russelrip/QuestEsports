@@ -1,6 +1,11 @@
 const { env } = require("../../config/env");
 const { HttpError } = require("../../lib/http-error");
-const { subscribeToRealtimeEvents, openRealtimeConnection, closeRealtimeConnection } = require("./realtime.service");
+const {
+  subscribeToRealtimeEvents,
+  openRealtimeConnection,
+  closeRealtimeConnection,
+  isRealtimeTransportReady,
+} = require("./realtime.service");
 const { accessRoom } = require("../match-rooms/match-room.service");
 
 const parseTopics = (value) =>
@@ -42,7 +47,24 @@ const getRealtimeEvents = async (req, res) => {
     return;
   }
 
+  if (typeof isRealtimeTransportReady === "function" && !isRealtimeTransportReady()) {
+    if (typeof res.set === "function") res.set("Retry-After", "5");
+    else res.setHeader?.("Retry-After", "5");
+    res.status(503).json({
+      success: false,
+      error: {
+        code: "realtime_unavailable",
+        message: "Realtime updates are temporarily unavailable. Please retry.",
+      },
+    });
+    return;
+  }
+
   const topics = await authorizeTopics(parseTopics(req.query.topics), req.user);
+  // Reconciliation is a public, payload-only invalidation signal. Include it
+  // in the same filter set so shared transport recovery reaches every stream
+  // without broadening any private topic authorization.
+  topics.add("reconciliation");
   const clientKey = String(req.ip || req.socket?.remoteAddress || "unknown");
   const opened = openRealtimeConnection(clientKey, {
     maxTotal: env.REALTIME_SSE_MAX_CONNECTIONS,
@@ -70,28 +92,44 @@ const getRealtimeEvents = async (req, res) => {
       return false;
     }
   };
-  safeWrite(`retry: 5000\nevent: ready\ndata: ${JSON.stringify({ serverNow: new Date().toISOString() })}\n\n`);
-
-  const unsubscribe = subscribeToRealtimeEvents((event) => {
-    const rootTopic = event.topic.split(":")[0];
-    if (topics.size && !topics.has(event.topic) && !topics.has(rootTopic)) return;
-    if (!safeWrite(`id: ${event.id}\nevent: update\ndata: ${JSON.stringify(event)}\n\n`)) close();
-  });
-  const heartbeat = setInterval(() => {
-    if (!safeWrite(": heartbeat\n\n")) close();
-  }, 25_000);
 
   let closed = false;
+  let heartbeat = null;
+  let unsubscribe = () => {};
+  let subscriptionReady = false;
+  const removeSubscription = () => {
+    if (!subscriptionReady) return;
+    subscriptionReady = false;
+    unsubscribe();
+  };
   const close = () => {
     if (closed) return;
     closed = true;
-    clearInterval(heartbeat);
-    unsubscribe();
+    if (heartbeat) clearInterval(heartbeat);
+    removeSubscription();
     closeRealtimeConnection(clientKey);
     if (!res.writableEnded) res.end();
   };
+  const eventListener = (event) => {
+    const rootTopic = event.topic.split(":")[0];
+    if (topics.size && !topics.has(event.topic) && !topics.has(rootTopic)) return;
+    if (!safeWrite(`id: ${event.id}\nevent: update\ndata: ${JSON.stringify(event)}\n\n`)) close();
+  };
+  const registeredUnsubscribe = subscribeToRealtimeEvents(eventListener);
+  unsubscribe = typeof registeredUnsubscribe === "function" ? registeredUnsubscribe : () => {};
+  subscriptionReady = true;
+  if (closed) removeSubscription();
+  if (closed) return;
+  heartbeat = setInterval(() => {
+    if (!safeWrite(": heartbeat\n\n")) close();
+  }, 25_000);
+
   req.on("close", close);
   req.on("aborted", close);
+  safeWrite(`retry: 5000\nevent: ready\ndata: ${JSON.stringify({
+    serverNow: new Date().toISOString(),
+    reconcile: true,
+  })}\n\n`);
 };
 
 module.exports = { getRealtimeEvents };

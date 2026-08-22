@@ -51,6 +51,21 @@ test("OpenAPI declares the session-cookie authentication scheme", () => {
   });
 });
 
+test("OpenAPI documents public/private realtime topics and transient recovery semantics", () => {
+  const operation = openApiDocument.paths["/api/v1/events"]?.get;
+
+  assert.ok(operation);
+  assert.equal(operation.parameters[0].name, "topics");
+  assert.equal(operation.parameters[0].schema.default, "matches,brackets");
+  assert.deepEqual(operation.security, [{ sessionCookie: [] }, {}]);
+  assert.match(operation.description, /authorized user:\{userId\}/);
+  assert.match(operation.description, /no durable replay/);
+  assert.ok(operation.responses[403]);
+  assert.ok(operation.responses[429]);
+  assert.ok(operation.responses[503]);
+  assert.equal(operation.responses[200].content["text/event-stream"].schema.type, "string");
+});
+
 test("OpenAPI documents scoped authorization and the catalog tournament selector", () => {
   const paths = openApiDocument.paths;
   const catalog = paths["/api/v1/admin/veto/catalog"]?.get;

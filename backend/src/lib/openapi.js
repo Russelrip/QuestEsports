@@ -798,15 +798,35 @@ const additionalPaths = {
     ),
   },
   "/api/v1/events": {
-    get: createOperation(
-      "Realtime",
-      "Subscribe to public match and bracket invalidation events",
-      {
-        additionalResponses: {
-          204: createResponse("Realtime disabled; EventSource must not reconnect"),
+    get: {
+      tags: ["Realtime"],
+      summary: "Subscribe to public and authorized private invalidation events",
+      description:
+        "Subscribe to public topics such as matches and brackets, or to authorized user:{userId} and match-room:{code} topics. Events are invalidation hints that trigger a refresh of persisted state; shared transport recovery also sends a public reconciliation update. This endpoint provides no durable replay.",
+      security: [{ sessionCookie: [] }, {}],
+      parameters: [
+        createQueryParameter(
+          "topics",
+          { type: "string", default: "matches,brackets" },
+          "Comma-separated public topics or authorized private topics (user:{userId} and match-room:{code}). Exact topics and their public roots are supported.",
+        ),
+      ],
+      responses: {
+        200: {
+          description: "SSE stream of invalidation hints",
+          content: {
+            "text/event-stream": {
+              schema: { type: "string" },
+            },
+          },
         },
+        204: createResponse("Realtime disabled; EventSource must not reconnect"),
+        401: createResponse("Authentication required for private match-room topics"),
+        403: createResponse("The requested private topic is not authorized"),
+        429: createResponse("Too many live-update connections"),
+        503: createResponse("Clustered realtime transport is unavailable; retry later"),
       },
-    ),
+    },
   },
   "/api/v1/match-rooms/mine": {
     get: createOperation("Match Rooms", "List the signed-in user's match rooms", { authenticated: true }),
