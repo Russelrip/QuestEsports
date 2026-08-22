@@ -6,7 +6,7 @@ import SupportConversationList from "../../components/support/SupportConversatio
 import SupportInbox from "../../components/support/SupportInbox";
 import SupportThread from "../../components/support/SupportThread";
 import NotificationBell from "../../components/notifications/NotificationBell";
-import type { SupportConversation } from "../../lib/support";
+import type { SupportConversation, SupportConversationSummary } from "../../lib/support";
 
 const mocks = vi.hoisted(() => ({ apiFetchJson: vi.fn(), listSupportConversations: vi.fn(), getSupportConversation: vi.fn(), markSupportConversationRead: vi.fn(), createSupportConversation: vi.fn(), sendSupportMessage: vi.fn(), reopenSupportConversation: vi.fn(), resolveSupportConversation: vi.fn(), showToast: vi.fn(), auth: { user: { id: "user-1" }, isLoading: false } }));
 const { apiFetchJson, listSupportConversations, getSupportConversation, markSupportConversationRead, createSupportConversation, sendSupportMessage, reopenSupportConversation } = mocks;
@@ -18,10 +18,10 @@ vi.mock("@/hooks/useToastStore", () => ({ useToastStore: (selector: (state: { sh
 vi.mock("@/lib/realtime", () => ({ subscribeToRealtimeUpdates: () => () => undefined }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.PropsWithChildren<{ href: string }>) => <a {...props}>{children}</a> }));
 
-const message = (id: string, senderUserId = "user-1", body = "I need help") => ({ id, conversationId: "conversation-1", senderUserId, body, createdAt: "2026-08-19T12:00:00.000Z", sender: { id: senderUserId, username: "player", firstName: senderUserId === "user-1" ? "Player" : "Staff", lastName: null, avatarUrl: null } });
-const conversation = (status: SupportConversation["status"] = "OPEN"): SupportConversation => ({ id: "conversation-1", ownerUserId: "user-1", subject: "Registration help", status, assignedStaffUserId: null, createdAt: "2026-08-19T11:00:00.000Z", updatedAt: "2026-08-19T12:00:00.000Z", resolvedAt: status === "RESOLVED" ? "2026-08-19T12:30:00.000Z" : null, owner: null, assignedStaff: null, unreadCount: 0, messages: [message("message-1")] });
+const message = (id: string, senderUserId = "user-1", body = "I need help", conversationId = "conversation-1") => ({ id, conversationId, senderUserId, body, createdAt: "2026-08-19T12:00:00.000Z", sender: { id: senderUserId, username: "player", firstName: senderUserId === "user-1" ? "Player" : "Staff", lastName: null, avatarUrl: null } });
+const conversation = (status: SupportConversation["status"] = "OPEN", id = "conversation-1", subject = "Registration help"): SupportConversation => ({ id, ownerUserId: "user-1", subject, status, assignedStaffUserId: null, createdAt: "2026-08-19T11:00:00.000Z", updatedAt: "2026-08-19T12:00:00.000Z", resolvedAt: status === "RESOLVED" ? "2026-08-19T12:30:00.000Z" : null, owner: null, assignedStaff: null, unreadCount: 0, messages: [message("message-1", "user-1", "I need help", id)] });
 
-beforeEach(() => { vi.clearAllMocks(); listSupportConversations.mockResolvedValue({ items: [], nextCursor: null }); getSupportConversation.mockResolvedValue(conversation()); markSupportConversationRead.mockResolvedValue({ lastReadAt: "now", unreadCount: 0 }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.auth.user = { id: "user-1" }; listSupportConversations.mockResolvedValue({ items: [], nextCursor: null }); getSupportConversation.mockResolvedValue(conversation()); markSupportConversationRead.mockResolvedValue({ lastReadAt: "now", unreadCount: 0 }); });
 afterEach(() => cleanup());
 
 describe("support inbox rendered states", () => {
@@ -75,6 +75,46 @@ describe("support inbox rendered states", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("ignores a stale thread response after the selected conversation changes", async () => {
+    let resolveFirst!: (value: SupportConversation) => void;
+    const firstResponse = new Promise<SupportConversation>((resolve) => { resolveFirst = resolve; });
+    const nextConversation = conversation("OPEN", "conversation-2", "New conversation");
+    getSupportConversation.mockReset();
+    getSupportConversation.mockImplementationOnce(() => firstResponse).mockResolvedValueOnce(nextConversation);
+
+    const view = render(<SupportInbox conversationId="conversation-1" />);
+    await waitFor(() => expect(getSupportConversation).toHaveBeenCalledWith("conversation-1"));
+    view.rerender(<SupportInbox conversationId="conversation-2" />);
+    await waitFor(() => expect(getSupportConversation).toHaveBeenCalledWith("conversation-2"));
+    expect(await screen.findByText("New conversation")).toBeInTheDocument();
+
+    resolveFirst(conversation("OPEN", "conversation-1", "Stale conversation"));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByText("New conversation")).toBeInTheDocument();
+    expect(screen.queryByText("Stale conversation")).not.toBeInTheDocument();
+  });
+
+  it("ignores a stale list response after the authenticated user changes", async () => {
+    let resolveFirst!: (value: { items: SupportConversationSummary[]; nextCursor: null }) => void;
+    const firstResponse = new Promise<{ items: SupportConversationSummary[]; nextCursor: null }>((resolve) => { resolveFirst = resolve; });
+    const nextItems = [{ ...conversation("OPEN", "conversation-2", "User two conversation"), lastMessage: null, preview: null }];
+    listSupportConversations.mockReset();
+    listSupportConversations.mockImplementationOnce(() => firstResponse).mockResolvedValueOnce({ items: nextItems, nextCursor: null });
+
+    const view = render(<SupportInbox />);
+    await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(1));
+    mocks.auth.user = { id: "user-2" };
+    view.rerender(<SupportInbox />);
+    await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("User two conversation")).toBeInTheDocument();
+
+    resolveFirst({ items: [{ ...conversation("OPEN", "conversation-1", "Stale user conversation"), lastMessage: null, preview: null }], nextCursor: null });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByText("User two conversation")).toBeInTheDocument();
+    expect(screen.queryByText("Stale user conversation")).not.toBeInTheDocument();
+    mocks.auth.user = { id: "user-1" };
   });
 });
 
