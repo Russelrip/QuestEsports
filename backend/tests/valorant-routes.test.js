@@ -19,6 +19,7 @@ const permissionMiddlewarePath = path.join(__dirname, "../src/modules/permission
 const valorantControllerPath = path.join(__dirname, "../src/modules/valorant/valorant.controller.js");
 const valorantLeaderboardControllerPath = path.join(__dirname, "../src/modules/valorant-leaderboard/controller.js");
 const rateLimitPath = path.join(__dirname, "../src/middleware/rate-limit.js");
+const gameAccountControllerPath = path.join(__dirname, "../src/modules/game-accounts/game-account.controller.js");
 
 const controllerHandler = (_req, _res, next) => next?.();
 const controllerMock = new Proxy({}, { get: () => controllerHandler });
@@ -251,6 +252,65 @@ test("v1 rate limits every public VALORANT leaderboard registration proxy route"
       assert.equal(typeof config.message, "string");
       assert.ok(config.message.length > 0);
     }
+  } finally {
+    restore();
+  }
+});
+
+
+// Section 3 (2026-08-23 identity plan): Riot resolution reaches the shared
+// upstream Henrik budget, so it must sit behind a session AND a limiter. The
+// route is a lookup — it stores nothing — but an unbounded authenticated caller
+// could still exhaust the provider or probe which PUUIDs are claimed.
+test("v1 puts Riot ID resolution behind a session and a limiter", () => {
+  const limiters = new Map();
+  const requireAuthMock = (_req, _res, next) => next();
+  const { module: router, restore } = loadModuleWithMocks(v1Path, {
+    [envPath]: { env: { CACHE_TTL_SECONDS: 300, CHALLONGE_BRACKET_CACHE_SECONDS: 30 } },
+    [authPath]: { attachSession: passMiddleware, requireAuth: requireAuthMock, requireAdmin: requireAdminMock },
+    [asyncHandlerPath]: { asyncHandler: (handler) => handler },
+    [cacheControlPath]: { cachePublicData: () => passMiddleware },
+    [responseCachePath]: { cacheJson: () => passMiddleware, invalidateCache: () => passMiddleware },
+    [rateLimitPath]: {
+      createRateLimiter: (config) => {
+        const limiter = function rateLimiter(_req, _res, next) { next(); };
+        limiters.set(config.name, limiter);
+        return limiter;
+      },
+      getClientIp: () => "127.0.0.1",
+    },
+    [tournamentServicePath]: { getPublicTournamentBySlug: async () => ({}) },
+    [matchControllerPath]: controllerMock,
+    [challongeControllerPath]: controllerMock,
+    [staffControllerPath]: controllerMock,
+    [realtimeControllerPath]: { getRealtimeEvents: controllerHandler },
+    [permissionMiddlewarePath]: {
+      requireSuperAdmin: () => passMiddleware,
+      requirePermission: requirePermissionMock,
+      requireVetoRoomCode: passMiddleware,
+      requireVetoRoomCredential: passMiddleware,
+      PERMISSION_SCOPES: permissionScopesMock,
+    },
+    [valorantControllerPath]: controllerMock,
+    [valorantLeaderboardControllerPath]: controllerMock,
+    [gameAccountControllerPath]: controllerMock,
+  });
+
+  try {
+    const layer = router.stack.find(
+      (entry) => entry.route && entry.route.path === "/game-accounts/valorant/resolve",
+    );
+    assert.ok(layer, "the resolve route must be declared");
+    assert.ok(layer.route.methods.post, "resolve must be a POST");
+
+    const handles = layer.route.stack.map((entry) => entry.handle);
+    assert.ok(handles.includes(requireAuthMock), "resolve must require a session");
+    const limiter = limiters.get("game-account-resolve");
+    assert.ok(limiter, "resolve must have its own limiter");
+    assert.ok(handles.includes(limiter), "resolve must be rate limited");
+    // Both guards must precede the handler, or the upstream call happens anyway.
+    assert.ok(handles.indexOf(requireAuthMock) < handles.length - 1);
+    assert.ok(handles.indexOf(limiter) < handles.length - 1);
   } finally {
     restore();
   }

@@ -4,6 +4,7 @@ const { asyncHandler } = require("../lib/async-handler");
 const { attachSession, requireAuth, requireAdmin } = require("../modules/auth/auth.middleware");
 const valorantController = require("../modules/valorant/valorant.controller");
 const valorantLeaderboardController = require("../modules/valorant-leaderboard/controller");
+const gameAccountController = require("../modules/game-accounts/game-account.controller");
 const { cachePublicData } = require("../middleware/cache-control");
 const { cacheJson, invalidateCache } = require("../middleware/response-cache");
 const { createRateLimiter } = require("../middleware/rate-limit");
@@ -56,6 +57,15 @@ const leaderboardRegisterSubmitLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   maxRequests: 10,
   message: "Too many registration attempts. Please try again later.",
+});
+// Riot ID resolution is debounced in the UI and cached for five minutes, but it
+// still reaches the shared upstream Henrik budget, so a signed-in caller gets a
+// bounded number of distinct lookups.
+const gameAccountResolveLimiter = createRateLimiter({
+  name: "game-account-resolve",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 40,
+  message: "Too many account lookups. Please try again in a few minutes.",
 });
 const tournamentResource = {
   parameter: "id",
@@ -162,6 +172,11 @@ router.get("/valorant/leaderboard/register/discord/callback", leaderboardRegiste
 router.post("/valorant/leaderboard/register/check-puuid", leaderboardRegisterLookupLimiter, valorantLeaderboardController.checkPuuid);
 router.post("/valorant/leaderboard/register/preview", leaderboardRegisterLookupLimiter, valorantLeaderboardController.previewRegistration);
 router.post("/valorant/leaderboard/register/submit", leaderboardRegisterSubmitLimiter, valorantLeaderboardController.submitRegistration);
+
+// Quest player identity. Resolution proves a Riot account EXISTS; it never
+// proves the signed-in user owns it, so it is a lookup behind the session and
+// is stored by nothing here.
+router.post("/game-accounts/valorant/resolve", requireAuth, gameAccountResolveLimiter, gameAccountController.resolveValorant);
 
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);

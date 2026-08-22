@@ -1350,6 +1350,13 @@ const additionalPaths = {
   "/api/v1/valorant/leaderboard/register/submit": {
     post: createOperation("valorant", "Submit leaderboard registration for a PUUID"),
   },
+  "/api/v1/game-accounts/valorant/resolve": {
+    post: createOperation(
+      "Game accounts",
+      "Resolve a Riot ID to its stable identifier and current display identity",
+      { authenticated: true },
+    ),
+  },
   "/api/contact": {
     post: createOperation("Contact", "Submit a contact message"),
   },
