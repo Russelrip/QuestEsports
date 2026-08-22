@@ -6,6 +6,7 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const servicePath = path.join(__dirname, "../src/modules/tournaments/bracket.service.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
+const auditModulePath = path.join(__dirname, "../src/lib/audit.js");
 
 test("generateTournamentBracket uses approved teams and pads non-power-of-two fields with BYEs", async () => {
   let savedBracketData = null;
@@ -46,6 +47,50 @@ test("generateTournamentBracket uses approved teams and pads non-power-of-two fi
     assert.equal(savedBracketData.participant.length, 3);
     assert.equal(savedBracketData.match.length > 0, true);
     assert.equal(savedBracketData.match.some((match) => match.opponent1 === null || match.opponent2 === null), true);
+  } finally {
+    restore();
+  }
+});
+
+test("bracket regeneration audits the actual existing before snapshot", async () => {
+  const audits = [];
+  const existing = {
+    id: "bracket-1",
+    tournamentId: "tournament-1",
+    status: "published",
+    seedData: [{ id: "old-seed" }, { id: "old-seed-2" }],
+    generatedAt: new Date("2026-05-28T00:00:00.000Z"),
+    publishedAt: new Date("2026-05-28T01:00:00.000Z"),
+  };
+  const prisma = {
+    tournament: { findUnique: async () => ({ id: "tournament-1", title: "Quest Cup" }) },
+    teamRegistration: {
+      findMany: async () => [
+        { id: "r1", teamName: "Alpha", teamLogoName: null, members: [], createdAt: new Date() },
+        { id: "r2", teamName: "Beta", teamLogoName: null, members: [], createdAt: new Date() },
+      ],
+    },
+    tournamentBracket: {
+      findUnique: async () => existing,
+      upsert: async ({ update }) => ({ ...existing, ...update, status: "draft" }),
+    },
+  };
+  prisma.$transaction = async (work) => work({
+    ...prisma,
+    auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
+  });
+  const { module: bracketService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [auditModulePath]: { recordAuditInTransaction: async (tx, entry) => tx.auditLog.create({ data: entry }) },
+  });
+
+  try {
+    await bracketService.generateTournamentBracket("tournament-1", {
+      actorUserId: "admin-1", requestId: "req-bracket", ipAddress: "127.0.0.1",
+    });
+    assert.equal(audits[0].beforeData.status, "published");
+    assert.equal(audits[0].beforeData.seedCount, 2);
+    assert.equal(audits[0].beforeData.publishedAt.toISOString(), "2026-05-28T01:00:00.000Z");
   } finally {
     restore();
   }

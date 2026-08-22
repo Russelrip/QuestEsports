@@ -1818,9 +1818,10 @@ test("finalizeSeries audits raw committed output and resolves the operation when
   }
 });
 
-test("finalizeSeries marks the operation failed and reconciles on SERIES_ALREADY_FINALIZED", async () => {
+test("finalizeSeries reconciles and audits the original operation on SERIES_ALREADY_FINALIZED", async () => {
   const fixture = require("./fixtures/valorant/series-finalize.json");
   const statuses = [];
+  const audits = [];
   let adoptionCalls = 0;
   const prismaMock = {
     prisma: {
@@ -1862,7 +1863,10 @@ test("finalizeSeries marks the operation failed and reconciles on SERIES_ALREADY
     },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
-    [auditPath]: { recordAudit: async () => undefined, recordAuditInTransaction: async () => undefined },
+    [auditPath]: {
+      recordAudit: async (entry) => audits.push(entry),
+      recordAuditInTransaction: async (_tx, entry) => audits.push(entry),
+    },
   });
 
   try {
@@ -1870,9 +1874,61 @@ test("finalizeSeries marks the operation failed and reconciles on SERIES_ALREADY
       service.finalizeSeries({ seriesId: "quest-series-1", ratingMode: "normal", actorUserId: "user-1", requestId: "req-15", ipAddress: "127.0.0.1" }),
       (error) => error instanceof FastApiError && error.code === "SERIES_ALREADY_FINALIZED",
     );
-    assert.ok(statuses.includes("failed"));
+    assert.ok(statuses.includes("succeeded"));
     assert.equal(callCount, 2, "finalize attempt + one reconcile read, no blind retry");
     assert.equal(adoptionCalls, 1, "the committed finalized state is adopted");
+    assert.deepEqual(audits.map((entry) => entry.action), [
+      "valorant.series.finalize.intent",
+      "valorant.series.finalize.result",
+    ]);
+    assert.equal(audits[1].afterData.reconciled, true);
+    assert.equal(audits[1].afterData.externalStatus, "finalized");
+  } finally {
+    restore();
+  }
+});
+
+test("SERIES_ALREADY_FINALIZED with malformed reconciliation output is audited and marked resolved", async () => {
+  const statuses = [];
+  const audits = [];
+  const prisma = {
+    questValorantSeries: {
+      findUnique: async () => ({ id: "series-malformed", status: "draft", valorantSeriesUuid: "external-malformed" }),
+      update: async ({ data }) => ({ id: "series-malformed", ...data }),
+    },
+    questValorantOperation: {
+      create: async ({ data }) => ({ id: "operation-malformed", operationId: "operation-malformed-id", ...data }),
+      update: async ({ data }) => { statuses.push(data.status); return data; },
+    },
+  };
+  prisma.$transaction = async (work) => work({ ...prisma, auditLog: { create: async () => undefined } });
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [clientPath]: {
+      valorantRequest: async ({ path }) => path.endsWith("/finalize")
+        ? Promise.reject(new FastApiError("already finalized", { code: "SERIES_ALREADY_FINALIZED", status: 409 }))
+        : { status: 200, data: { malformed: true }, requestId: "reconcile-malformed" },
+    },
+    [mapperPath]: {
+      mapFinalizeResult: () => ({ status: "finalized" }),
+      mapSeriesView: () => { throw new Error("malformed reconciliation response"); },
+    },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAudit: async (entry) => audits.push(entry),
+      recordAuditInTransaction: async (_tx, entry) => audits.push(entry),
+    },
+  });
+  try {
+    await assert.rejects(
+      service.finalizeSeries({ seriesId: "series-malformed", ratingMode: "normal", actorUserId: "user-1", requestId: "req-malformed", ipAddress: "127.0.0.1" }),
+      (error) => error.code === "VALORANT_FINALIZE_RESPONSE_MAPPING_FAILED" && error.statusCode === 503,
+    );
+    assert.deepEqual(statuses, ["in_flight", "succeeded"]);
+    assert.equal(audits.at(-1).action, "valorant.series.finalize.result");
+    assert.equal(audits.at(-1).afterData.reconciled, true);
+    assert.deepEqual(audits.at(-1).afterData.externalResult, { malformed: true });
   } finally {
     restore();
   }

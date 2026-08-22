@@ -1506,7 +1506,13 @@ const createAdminTournament = async ({ body, files, auditContext = {} }) => {
           action: "tournament.created",
           targetType: "Tournament",
           targetId: created.id,
-          afterData: { slug: created.slug, status: created.status, isPublished: created.isPublished },
+          afterData: {
+            slug: created.slug,
+            status: created.status,
+            isPublished: created.isPublished,
+            seriesId: created.seriesId,
+            seriesOrder: created.seriesOrder,
+          },
         });
         return created;
       })
@@ -1586,11 +1592,6 @@ const updateAdminTournament = async ({ tournamentId, body, files, auditContext =
 };
 
 const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder, auditContext = {} }) => {
-  const existingTournament = await prisma.tournament.findUnique({
-    where: { id: tournamentId },
-  });
-  if (!existingTournament) throw new HttpError(404, "Tournament not found.");
-
   const normalizedOrder = normalizeInteger(seriesOrder);
   const persist = (database) => database.tournament.update({
     where: { id: tournamentId },
@@ -1602,6 +1603,8 @@ const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder, a
   });
   const tournament = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
     ? await prisma.$transaction(async (tx) => {
+      const existingTournament = await tx.tournament.findUnique({ where: { id: tournamentId } });
+      if (!existingTournament) throw new HttpError(404, "Tournament not found.");
       const updated = await persist(tx);
       await recordAuditInTransaction(tx, {
         ...auditContext,
@@ -1613,7 +1616,11 @@ const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder, a
       });
       return updated;
     })
-    : await persist(prisma);
+    : await prisma.$transaction(async (tx) => {
+      const existingTournament = await tx.tournament.findUnique({ where: { id: tournamentId } });
+      if (!existingTournament) throw new HttpError(404, "Tournament not found.");
+      return persist(tx);
+    });
   return mapAdminTournament(tournament);
 };
 

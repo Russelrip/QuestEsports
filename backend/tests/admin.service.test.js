@@ -1092,6 +1092,7 @@ test("deleteTeamRegistration rolls back the mutation when its critical audit fai
     },
     $transaction: async (work) => work({
       teamRegistration: {
+        findUnique: async () => ({ teamLogoName: "logo.png", payments: [] }),
         deleteMany: async () => { deleteCalls += 1; return { count: 1 }; },
       },
       auditLog: { create: async () => { throw new Error("audit unavailable"); } },
@@ -1108,6 +1109,28 @@ test("deleteTeamRegistration rolls back the mutation when its critical audit fai
     );
     assert.equal(deleteCalls, 1);
     assert.equal(cleanupCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("deleteTeamRegistration records an explicit deleted-after snapshot", async () => {
+  const audits = [];
+  const prisma = {
+    $transaction: async (work) => work({
+      teamRegistration: {
+        findUnique: async () => ({ teamLogoName: null, payments: [] }),
+        deleteMany: async () => ({ count: 1 }),
+      },
+      auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
+    }),
+  };
+  const { module: adminService, restore } = loadAdminService(prisma, { removeUploadFiles: async () => undefined });
+  try {
+    await adminService.deleteTeamRegistration("registration-deleted", {
+      actorUserId: "admin-1", requestId: "req-deleted", ipAddress: "127.0.0.1",
+    });
+    assert.deepEqual(audits[0].afterData, { deleted: true });
   } finally {
     restore();
   }

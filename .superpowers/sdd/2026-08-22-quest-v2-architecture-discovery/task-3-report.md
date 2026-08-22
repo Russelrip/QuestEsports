@@ -141,6 +141,59 @@ Validation completed for this round:
   diagnostic logs were emitted by exercised integration cases.
 - `npm run lint`: passed with 27 pre-existing warnings and no errors.
 
+## Fix round 3 — P0-003 review findings
+
+Implemented on top of commit `e0c6190`. Scope remains backend audit helper,
+affected mutation services/controllers/routes/tests, and this report only; no
+schema, migration, frontend, plan, or production-data changes were made.
+
+### Findings closed
+
+- `SERIES_ALREADY_FINALIZED` now reconciles the original operation instead of
+  marking it failed. The reconciliation read, including finalized adoption,
+  malformed mapping, upstream read failure, and unconfirmed status, records
+  transaction-scoped result/reconciliation evidence and updates the original
+  operation coherently. A committed finalized projection with malformed output
+  is audited from the raw response and returns a truthful 503 mapping error;
+  audit/transaction failure remains reconciliation-required and fail-closed.
+- Public veto readiness, digital toss, and Team A choice now accept request
+  audit context. Staff bypasses conditionally audit actual before/after state
+  inside the mutation transaction; captain/self-service calls do not require
+  audit telemetry and preserve their prior success/error behavior.
+- Registration deletion and child-tournament attachment now read their
+  deletion/relationship snapshots inside the mutation transaction. Cleanup and
+  audit evidence use that transaction state. Registration deletion explicitly
+  records `afterData: { deleted: true }`.
+- Child tournament creation audit evidence now includes `seriesId` and
+  `seriesOrder`.
+- Bracket regeneration regression coverage verifies the existing published
+  bracket status, seed count, and publication timestamp are used as the actual
+  before snapshot.
+
+### Fix-round regression matrix
+
+| Area | Proven regression coverage |
+|---|---|
+| Finalize reconciliation | original operation result audit/adoption, malformed reconciliation mapping, audit failure, timeout, and no-blind-retry tests |
+| Registration deletion | same-transaction failure rollback and explicit deleted-after evidence tests |
+| Child tournament | create/attach request audit context, relationship before/after evidence, and transaction path tests |
+| Bracket | regeneration actual-before snapshot test |
+| Veto | staff public choice audit failure plus existing captain authorization/self-service tests |
+| Tickets/tournaments/registration | existing transaction rollback, evidence, verification, slot, and mutation suites |
+| OAuth/bank proof | existing optional-audit failure semantics tests |
+
+### Fix-round validation
+
+- Focused affected-module suite: passed, 155/155 tests.
+- `npm test`: passed, 697 passed and 9 skipped.
+- `npm run test:coverage`: passed, 77.47% lines, 68.64% branches, 76.04%
+  functions.
+- `npm run lint`: passed with 25 existing warnings and no errors.
+- `npm run test:integration`: not clean in this environment; 6/7 passed on
+  two attempts. The pre-existing background-worker concurrency case failed its
+  `processed === 1` assertion after PostgreSQL write-conflict diagnostics;
+  the other six integration cases passed. No integration code was changed.
+
 ## Concerns and follow-up
 
 - Some legacy non-critical controller mutations still persist their audit row

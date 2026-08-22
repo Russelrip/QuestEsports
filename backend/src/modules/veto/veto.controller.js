@@ -78,17 +78,17 @@ const resetRoom = (req, res, next) => runRoomCommand("veto.room.reset", () => se
 const cancelRoom = (req, res, next) => runRoomCommand("veto.room.cancelled", () => service.cancelRoom({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }), { transactionAudited: true })(req, res, next);
 
 const readyRoom = asyncHandler(async (req, res) => {
-  const room = await service.readyRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
+  const room = await service.readyRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body, auditContext: requestAuditContext(req) });
   await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const tossRoom = asyncHandler(async (req, res) => {
-  const room = await service.tossRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
+  const room = await service.tossRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body, auditContext: requestAuditContext(req) });
   await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const chooseTeamA = asyncHandler(async (req, res) => {
-  const room = await service.chooseTeamA({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
+  const room = await service.chooseTeamA({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body, auditContext: requestAuditContext(req) });
   await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });

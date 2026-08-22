@@ -2113,45 +2113,42 @@ const updateTeamRegistrationStatus = async (
 };
 
 const deleteTeamRegistration = async (registrationId, auditContext = {}) => {
-  const registration = await prisma.teamRegistration.findUnique({
-    where: { id: registrationId },
-    select: {
-      teamLogoName: true,
-      payments: {
-        select: {
-          bankTransferProof: {
-            select: { storedFilename: true },
-          },
+  const registrationSnapshot = {
+    teamLogoName: true,
+    payments: {
+      select: {
+        bankTransferProof: {
+          select: { storedFilename: true },
         },
       },
     },
-  });
-
-  if (!registration) {
-    throw new HttpError(404, "Team registration not found.");
-  }
-
-  const deleted = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
-    ? await prisma.$transaction(async (tx) => {
-      const result = await tx.teamRegistration.deleteMany({ where: { id: registrationId } });
-      if (result.count === 0) throw new HttpError(404, "Team registration not found.");
+  };
+  const transaction = typeof prisma.$transaction === "function"
+    ? prisma.$transaction.bind(prisma)
+    : async (work) => work(prisma);
+  const { registration } = await transaction(async (tx) => {
+    const current = await tx.teamRegistration.findUnique({
+      where: { id: registrationId },
+      select: registrationSnapshot,
+    });
+    if (!current) throw new HttpError(404, "Team registration not found.");
+    const result = await tx.teamRegistration.deleteMany({ where: { id: registrationId } });
+    if (result.count === 0) throw new HttpError(404, "Team registration not found.");
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
       await recordAuditInTransaction(tx, {
         ...auditContext,
         action: "team_registration.deleted",
         targetType: "TeamRegistration",
         targetId: registrationId,
         beforeData: {
-          teamLogoName: registration.teamLogoName,
-          paymentProofCount: registration.payments.filter((payment) => payment.bankTransferProof?.storedFilename).length,
+          teamLogoName: current.teamLogoName,
+          paymentProofCount: current.payments.filter((payment) => payment.bankTransferProof?.storedFilename).length,
         },
+        afterData: { deleted: true },
       });
-      return result;
-    })
-    : await prisma.teamRegistration.deleteMany({ where: { id: registrationId } });
-
-  if (deleted.count === 0) {
-    throw new HttpError(404, "Team registration not found.");
-  }
+    }
+    return { deleted: result, registration: current };
+  });
 
   const uploads = registration.payments
     .map((payment) => payment.bankTransferProof?.storedFilename)

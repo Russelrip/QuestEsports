@@ -523,7 +523,7 @@ const openRoom = async ({ user, roomId, revision, auditContext = {} }) => {
   return getAdminRoom({ user, roomId });
 };
 
-const readyRoom = async ({ code, user, token, body }) => {
+const readyRoom = async ({ code, user, token, body, auditContext = {} }) => {
   const room = await getRoomRecord({ code: normalizeText(code).toLowerCase() });
   const access = await resolveAccess({ room, user, token });
   let slot = access.slot;
@@ -531,8 +531,18 @@ const readyRoom = async ({ code, user, token, body }) => {
   if (!slot || !["open", "toss_pending", "toss_complete"].includes(room.status)) throw new HttpError(409, "This team cannot change readiness now.");
   const revision = parseRevision(body.expectedRevision);
   await prisma.$transaction(async (tx) => {
+    const participant = access.kind === "staff" && hasAuditContext(auditContext)
+      ? await tx.vetoRoomParticipant.findUnique({ where: { roomId_slot: { roomId: room.id, slot } } })
+      : null;
     await mutateRevision(tx, room.id, revision, {});
-    await tx.vetoRoomParticipant.update({ where: { roomId_slot: { roomId: room.id, slot } }, data: { readyAt: body.ready === false ? null : new Date(), joinedAt: new Date() } });
+    const readyAt = body.ready === false ? null : new Date();
+    const joinedAt = new Date();
+    await tx.vetoRoomParticipant.update({ where: { roomId_slot: { roomId: room.id, slot } }, data: { readyAt, joinedAt } });
+    if (participant) {
+      await auditRoomMutation(tx, auditContext, "veto.readiness.updated", room,
+        { slot, readyAt: participant.readyAt, joinedAt: participant.joinedAt, revision },
+        { slot, readyAt, joinedAt, revision: revision + 1 });
+    }
   });
   return getRoom({ code: room.code, user, token });
 };
@@ -579,7 +589,7 @@ const assignTeamA = async ({ user, roomId, body, auditContext = {} }) => {
   return getAdminRoom({ user, roomId });
 };
 
-const tossRoom = async ({ code, user, token, body }) => {
+const tossRoom = async ({ code, user, token, body, auditContext = {} }) => {
   const room = await getRoomRecord({ code: normalizeText(code).toLowerCase() });
   const access = await resolveAccess({ room, user, token });
   if (room.status !== "toss_pending" || room.teamOrderMethod !== "toss") throw new HttpError(409, "The toss is not accepting a call.");
@@ -589,7 +599,15 @@ const tossRoom = async ({ code, user, token, body }) => {
   if (!["heads", "tails"].includes(call)) throw new HttpError(400, "Choose Heads or Tails.");
   const result = crypto.randomInt(0, 2) === 0 ? "heads" : "tails";
   const winnerSlot = result === call ? room.tossCallerSlot : (room.tossCallerSlot === 1 ? 2 : 1);
-  await mutateRevision(prisma, room.id, parseRevision(body.expectedRevision), { tossCall: call, tossResult: result, tossWinnerSlot: winnerSlot });
+  const revision = parseRevision(body.expectedRevision);
+  await prisma.$transaction(async (tx) => {
+    await mutateRevision(tx, room.id, revision, { tossCall: call, tossResult: result, tossWinnerSlot: winnerSlot });
+    if (access.kind === "staff" && hasAuditContext(auditContext)) {
+      await auditRoomMutation(tx, auditContext, "veto.toss.called", room,
+        { status: room.status, tossCall: room.tossCall, tossResult: room.tossResult, tossWinnerSlot: room.tossWinnerSlot, revision },
+        { status: room.status, tossCall: call, tossResult: result, tossWinnerSlot: winnerSlot, revision: revision + 1 });
+    }
+  });
   return getRoom({ code: room.code, user, token });
 };
 
@@ -608,7 +626,7 @@ const recordManualToss = async ({ user, roomId, body, auditContext = {} }) => {
   return getAdminRoom({ user, roomId });
 };
 
-const chooseTeamA = async ({ code, user, token, body }) => {
+const chooseTeamA = async ({ code, user, token, body, auditContext = {} }) => {
   const room = await getRoomRecord({ code: normalizeText(code).toLowerCase() });
   const access = await resolveAccess({ room, user, token });
   if (room.status !== "toss_pending" || !room.tossWinnerSlot) throw new HttpError(409, "Complete the toss before choosing Team A.");
@@ -616,16 +634,22 @@ const chooseTeamA = async ({ code, user, token, body }) => {
   const choice = normalizeText(body.choice).toUpperCase();
   if (!["A", "B"].includes(choice)) throw new HttpError(400, "Choose Team A or Team B.");
   const teamASlot = choice === "A" ? room.tossWinnerSlot : (room.tossWinnerSlot === 1 ? 2 : 1);
+  const revision = parseRevision(body.expectedRevision);
   const now = new Date();
   const turnDeadline = room.turnSeconds ? new Date(now.getTime() + room.turnSeconds * 1000) : null;
   await prisma.$transaction(async (tx) => {
-    await mutateRevision(tx, room.id, parseRevision(body.expectedRevision), {
+    await mutateRevision(tx, room.id, revision, {
       teamASlot,
       status: "in_progress",
       startedAt: now,
       turnDeadline,
     });
     await syncMatchStatus(tx, room, ["veto_starting_soon", "veto_in_progress"], "veto_in_progress");
+    if (access.kind === "staff" && hasAuditContext(auditContext)) {
+      await auditRoomMutation(tx, auditContext, "veto.team_order.chosen", room,
+        { status: room.status, teamASlot: room.teamASlot, revision },
+        { status: "in_progress", teamASlot, revision: revision + 1 });
+    }
   });
   return getRoom({ code: room.code, user, token });
 };

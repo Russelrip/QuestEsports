@@ -11,6 +11,7 @@ const teamServiceModulePath = path.join(__dirname, "../src/modules/teams/team.se
 const paymentServiceModulePath = path.join(__dirname, "../src/modules/payments/payment.service.js");
 const bracketServiceModulePath = path.join(__dirname, "../src/modules/tournaments/bracket.service.js");
 const loggerModulePath = path.join(__dirname, "../src/lib/logger.js");
+const auditModulePath = path.join(__dirname, "../src/lib/audit.js");
 
 const buildAdminTournamentBody = (overrides = {}) => ({
   title: "Quest Date Cup",
@@ -409,6 +410,55 @@ test("coach settings persist through admin create and update responses", async (
     assert.equal(updatedData.coachRequired, false);
     assert.equal(updated.allowCoach, false);
     assert.equal(updated.coachRequired, false);
+  } finally {
+    restore();
+  }
+});
+
+test("child tournament create and attachment audit series relationship evidence transactionally", async () => {
+  const audits = [];
+  const existing = { id: "tournament-1", ...buildAdminTournamentBody(), seriesId: null, seriesOrder: null };
+  const prisma = {
+    tournament: {
+      findFirst: async () => null,
+      findUnique: async () => existing,
+      create: async ({ data }) => ({ ...existing, ...data, _count: { teamRegistrations: 0 }, sponsors: [] }),
+      update: async ({ data }) => ({ ...existing, ...data, _count: { teamRegistrations: 0 }, sponsors: [] }),
+    },
+  };
+  prisma.$transaction = async (work) => work({
+    tournament: prisma.tournament,
+    auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
+  });
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: { persistTournamentBannerUpload: async () => null, persistTournamentScheduleUpload: async () => null },
+    [teamServiceModulePath]: { syncSavedTeamFromRegistration: async () => [], sendTeamInvites: async () => undefined },
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [auditModulePath]: {
+      recordAuditInTransaction: async (tx, entry) => tx.auditLog.create({ data: entry }),
+    },
+  });
+
+  try {
+    await tournamentService.createAdminTournament({
+      body: buildAdminTournamentBody({ seriesId: "event-1", seriesOrder: "2" }),
+      files: {},
+      auditContext: { actorUserId: "admin-1", requestId: "req-child", ipAddress: "127.0.0.1" },
+    });
+    await tournamentService.attachTournamentToSeries({
+      tournamentId: "tournament-1",
+      seriesId: "event-2",
+      seriesOrder: 4,
+      auditContext: { actorUserId: "admin-1", requestId: "req-attach", ipAddress: "127.0.0.1" },
+    });
+    assert.deepEqual(audits.map((audit) => [audit.action, audit.afterData.seriesId, audit.afterData.seriesOrder]), [
+      ["tournament.created", "event-1", 2],
+      ["tournament.series_attached", "event-2", 4],
+    ]);
+    assert.equal(audits[1].beforeData.seriesId, null);
+    assert.equal(audits[1].beforeData.seriesOrder, null);
   } finally {
     restore();
   }

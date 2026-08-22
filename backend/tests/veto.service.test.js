@@ -6,6 +6,7 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const servicePath = path.join(__dirname, "../src/modules/veto/veto.service.js");
 const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
+const auditPath = path.join(__dirname, "../src/lib/audit.js");
 
 const loadService = () => loadModuleWithMocks(servicePath, { [prismaPath]: { prisma: {} } });
 
@@ -594,6 +595,55 @@ test("new map pool versions reject inactive map IDs while preserving version loo
   try {
     await assert.rejects(() => inactiveLoaded.module.createPool({ user: { id: "admin-1", role: "admin" }, body: { name: "New pool", mapIds: ["map-2"] } }), { statusCode: 400 });
   } finally { inactiveLoaded.restore(); }
+});
+
+test("staff public veto choice fails closed on audit failure while captain paths remain best effort", async () => {
+  const room = {
+    id: "room-audit",
+    code: "audit-flow",
+    tournamentId: null,
+    matchId: null,
+    status: "toss_pending",
+    revision: 1,
+    controlMode: "captain_or_link",
+    teamOrderMethod: "toss",
+    tossMethod: "digital",
+    tossCallerSlot: 1,
+    tossWinnerSlot: 1,
+    teamASlot: null,
+    turnSeconds: null,
+    configSnapshot: { maps: [], steps: [] },
+    participants: [{ slot: 1, registrationId: "registration-1" }, { slot: 2, registrationId: "registration-2" }],
+    actions: [],
+    tournament: null,
+    match: null,
+  };
+  const prisma = {
+    vetoRoom: {
+      findUnique: async () => room,
+      updateMany: async () => ({ count: 1 }),
+    },
+    tournamentStaffAssignment: { findFirst: async () => null },
+    teamRegistration: { findMany: async () => [] },
+    match: { updateMany: async () => ({ count: 0 }) },
+    $transaction: async (callback) => callback(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [auditPath]: { recordAuditInTransaction: async () => { throw new Error("veto audit unavailable"); } },
+  });
+  try {
+    await assert.rejects(
+      service.chooseTeamA({
+        code: room.code,
+        user: { id: "admin-1", role: "admin" },
+        token: "",
+        body: { choice: "A", expectedRevision: 1 },
+        auditContext: { actorUserId: "admin-1", requestId: "req-veto", ipAddress: "127.0.0.1" },
+      }),
+      /veto audit unavailable/,
+    );
+  } finally { restore(); }
 });
 
 test("veto catalog writes enforce global super-admin and tournament-admin roles in the service", async () => {

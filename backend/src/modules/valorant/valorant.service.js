@@ -8,6 +8,9 @@ const { normalizeRiotId, generateExternalKey, assertSupportedFormat, deriveManua
 
 const hashRequestBody = (body) =>
   crypto.createHash("sha256").update(JSON.stringify(body || {})).digest("hex");
+const runTransaction = (work) => typeof prisma.$transaction === "function"
+  ? prisma.$transaction(work)
+  : work(prisma);
 
 const createOperation = async ({ type, externalKey = null, questSeriesId = null, actorUserId, requestBody = null }) =>
   prisma.questValorantOperation.create({
@@ -869,10 +872,20 @@ const finalizeSeries = async ({
       idempotent: false,
     });
   } catch (error) {
-    await markOperationFailed(operation.id, error);
     if (error?.code === "SERIES_ALREADY_FINALIZED") {
       // Surface the committed state, never re-apply (spec §5.5, §8.2).
-      await reconcileSeries({ seriesId, actorUserId, requestId, ipAddress });
+      await reconcileSeries({
+        seriesId,
+        actorUserId,
+        requestId,
+        ipAddress,
+        operationId: operation.id,
+        operationExternalId: operation.operationId,
+        ratingMode,
+        finalizeError: error,
+      });
+    } else {
+      await markOperationFailed(operation.id, error);
     }
     throw error;
   }
@@ -962,7 +975,16 @@ const finalizeSeries = async ({
   return { ...result, operationId: operation.operationId };
 };
 
-const reconcileSeries = async ({ seriesId, actorUserId, requestId, ipAddress }) => {
+const reconcileSeries = async ({
+  seriesId,
+  actorUserId,
+  requestId,
+  ipAddress,
+  operationId,
+  operationExternalId,
+  ratingMode,
+  finalizeError,
+}) => {
   const series = await prisma.questValorantSeries.findUnique({
     where: { id: seriesId },
     select: { id: true, status: true, valorantSeriesUuid: true },
@@ -970,27 +992,222 @@ const reconcileSeries = async ({ seriesId, actorUserId, requestId, ipAddress }) 
   if (!series) throw new HttpError(404, "Series not found.");
   if (!series.valorantSeriesUuid) throw new HttpError(409, "This series has no VALORANT series yet.");
 
-  const response = await valorantRequest({
-    method: "GET",
-    path: `/api/v1/series/${series.valorantSeriesUuid}`,
-    actorUserId,
-    operationId: crypto.randomUUID(),
-    idempotent: true,
-  });
-  const view = mapSeriesView(response.data);
-
-  if (view.status === "finalized") {
-    return prisma.questValorantSeries.update({
-      where: { id: series.id },
-      data: { status: "finalized", finalizedById: actorUserId, lastOperationId: undefined, ratingMode: view.ratingMode },
+  let response;
+  try {
+    response = await valorantRequest({
+      method: "GET",
+      path: `/api/v1/series/${series.valorantSeriesUuid}`,
+      actorUserId,
+      operationId: crypto.randomUUID(),
+      idempotent: true,
     });
+  } catch (error) {
+    if (!operationId) throw error;
+    try {
+      await runTransaction(async (tx) => {
+        const current = await tx.questValorantSeries.findUnique({
+          where: { id: series.id },
+          select: { status: true },
+        });
+        await recordAuditInTransaction(tx, {
+          actorUserId,
+          action: "valorant.series.finalize.result.reconciliation_required",
+          targetType: "QuestValorantSeries",
+          targetId: series.id,
+          beforeData: { status: current?.status || series.status },
+          afterData: {
+            operationId: operationExternalId,
+            finalizeError: finalizeError?.code || finalizeError?.message || null,
+            reconciliationError: error?.code || error?.message || "reconciliation read failed",
+            upstreamCommitted: true,
+          },
+          requestId,
+          ipAddress,
+        });
+        await tx.questValorantOperation.update({
+          where: { id: operationId },
+          data: { status: "reconciliation_required", errorCode: error?.code || "VALORANT_RECONCILIATION_READ_FAILED" },
+        });
+      });
+    } catch (transactionError) {
+      await markOperationReconciliationRequired(operationId, transactionError, {
+        upstreamCommitted: true,
+        operationId: operationExternalId,
+        finalizeError: finalizeError?.code || finalizeError?.message || null,
+        reconciliationError: error?.code || error?.message || "reconciliation read failed",
+      });
+    }
+    throw new HttpError(503, "VALORANT finalize committed upstream; reconciliation is required.");
   }
-  // FastAPI still reports draft: the finalize transaction rolled back; a fresh
-  // finalize with the same inputs is safe (double-finalize is rejected server-side).
-  return prisma.questValorantSeries.update({
-    where: { id: series.id },
-    data: { status: series.status === "reconciliation_required" ? "draft" : series.status },
-  });
+
+  let view = null;
+  let mappingError = null;
+  try {
+    view = mapSeriesView(response.data);
+  } catch (error) {
+    mappingError = error;
+  }
+
+  if (view?.status === "finalized" || mappingError) {
+    let transactionError = null;
+    try {
+      await runTransaction(async (tx) => {
+        const current = await tx.questValorantSeries.findUnique({
+          where: { id: series.id },
+          select: { id: true, status: true, ratingMode: true },
+        });
+        if (!current) throw new HttpError(404, "Series not found.");
+        const finalized = await tx.questValorantSeries.update({
+          where: { id: series.id },
+          data: {
+            status: "finalized",
+            finalizedById: actorUserId,
+            lastOperationId: operationId || undefined,
+            ratingMode: view?.ratingMode ?? ratingMode ?? current.ratingMode,
+          },
+        });
+        await recordAuditInTransaction(tx, {
+          actorUserId,
+          action: "valorant.series.finalize.result",
+          targetType: "QuestValorantSeries",
+          targetId: series.id,
+          beforeData: { status: current.status, ratingMode: current.ratingMode },
+          afterData: {
+            status: finalized.status,
+            ratingMode: finalized.ratingMode,
+            operationId: operationExternalId,
+            externalStatus: view?.status || null,
+            externalResult: response.data,
+            responseMappingError: mappingError?.message || null,
+            reconciled: true,
+          },
+          requestId,
+          ipAddress,
+        });
+        if (operationId) {
+          await tx.questValorantOperation.update({
+            where: { id: operationId },
+            data: {
+              status: "succeeded",
+              responseCode: response.status,
+              fastapiRequestId: response.requestId,
+              responseSummary: response.data || undefined,
+              errorCode: mappingError ? "VALORANT_FINALIZE_RESPONSE_MAPPING_FAILED" : "SERIES_ALREADY_FINALIZED",
+            },
+          });
+        }
+      });
+    } catch (error) {
+      transactionError = error;
+    }
+    if (transactionError) {
+      if (operationId) {
+        await markOperationReconciliationRequired(operationId, transactionError, {
+          upstreamCommitted: true,
+          operationId: operationExternalId,
+          externalResult: response.data,
+          responseMappingError: mappingError?.message || null,
+        });
+      }
+      try {
+        await recordAudit({
+          actorUserId,
+          action: "valorant.series.finalize.result.reconciliation_required",
+          targetType: "QuestValorantSeries",
+          targetId: series.id,
+          beforeData: { status: series.status },
+          afterData: {
+            status: "finalized",
+            operationId: operationExternalId,
+            externalResult: response.data,
+            responseMappingError: mappingError?.message || null,
+            error: transactionError.message,
+          },
+          requestId,
+          ipAddress,
+        });
+      } catch (fallbackAuditError) {
+        void fallbackAuditError;
+      }
+      throw new HttpError(503, "VALORANT finalize committed upstream; audit reconciliation is required.");
+    }
+    if (mappingError) {
+      const mappingResponseError = new HttpError(503, "VALORANT finalize committed and was audited, but the response could not be mapped.");
+      mappingResponseError.code = "VALORANT_FINALIZE_RESPONSE_MAPPING_FAILED";
+      throw mappingResponseError;
+    }
+    return view;
+  }
+
+  const reconciliationError = new HttpError(503, "VALORANT finalize could not confirm the committed upstream result.");
+  reconciliationError.code = "VALORANT_FINALIZE_RECONCILIATION_REQUIRED";
+  if (operationId) {
+    let transactionError = null;
+    try {
+      await runTransaction(async (tx) => {
+        const current = await tx.questValorantSeries.findUnique({
+          where: { id: series.id },
+          select: { status: true },
+        });
+        await recordAuditInTransaction(tx, {
+          actorUserId,
+          action: "valorant.series.finalize.result.reconciliation_required",
+          targetType: "QuestValorantSeries",
+          targetId: series.id,
+          beforeData: { status: current?.status || series.status },
+          afterData: {
+            status: current?.status || series.status,
+            operationId: operationExternalId,
+            externalStatus: view?.status || null,
+            externalResult: response.data,
+            finalizeError: finalizeError?.code || finalizeError?.message || null,
+          },
+          requestId,
+          ipAddress,
+        });
+        await tx.questValorantOperation.update({
+          where: { id: operationId },
+          data: {
+            status: "reconciliation_required",
+            errorCode: reconciliationError.code,
+            responseCode: response.status,
+            fastapiRequestId: response.requestId,
+            responseSummary: response.data || undefined,
+          },
+        });
+      });
+    } catch (error) {
+      transactionError = error;
+    }
+    if (transactionError) {
+      await markOperationReconciliationRequired(operationId, transactionError, {
+        upstreamCommitted: true,
+        operationId: operationExternalId,
+        externalResult: response.data,
+        externalStatus: view?.status || null,
+      });
+      try {
+        await recordAudit({
+          actorUserId,
+          action: "valorant.series.finalize.result.reconciliation_required",
+          targetType: "QuestValorantSeries",
+          targetId: series.id,
+          beforeData: { status: series.status },
+          afterData: {
+            operationId: operationExternalId,
+            externalStatus: view?.status || null,
+            externalResult: response.data,
+            error: transactionError.message,
+          },
+          requestId,
+          ipAddress,
+        });
+      } catch (fallbackAuditError) {
+        void fallbackAuditError;
+      }
+    }
+  }
+  throw reconciliationError;
 };
 
 const getRankings = async ({ actorUserId }) => {
