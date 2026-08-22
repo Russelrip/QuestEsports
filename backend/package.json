@@ -35,7 +35,8 @@
     "data:hygiene": "node scripts/data-hygiene.js",
     "data:hygiene:apply": "node scripts/data-hygiene.js --apply",
     "data:backfill-match-rooms": "node scripts/backfill-match-rooms.js",
-    "data:backfill-match-rooms:apply": "node scripts/backfill-match-rooms.js --apply"
+    "data:backfill-match-rooms:apply": "node scripts/backfill-match-rooms.js --apply",
+    "data:player-census": "node scripts/player-identity-census.js"
   },
   "keywords": [],
   "author": "",
