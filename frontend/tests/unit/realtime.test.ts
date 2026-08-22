@@ -23,7 +23,10 @@ describe("realtime subscriptions", () => {
 
   it("opens and closes EventSource when realtime is enabled", async () => {
     const close = vi.fn();
-    const addEventListener = vi.fn();
+    const listeners = new Map<string, () => void>();
+    const addEventListener = vi.fn((event: string, listener: EventListener) => {
+      listeners.set(event, listener as () => void);
+    });
     const eventSource = vi.fn(function MockEventSource() {
       return { addEventListener, close };
     });
@@ -37,8 +40,32 @@ describe("realtime subscriptions", () => {
     const onUpdate = vi.fn();
     const unsubscribe = subscribeToRealtimeUpdates("matches", onUpdate);
     await vi.waitFor(() => expect(eventSource).toHaveBeenCalledOnce());
+    expect(addEventListener).toHaveBeenCalledWith("ready", onUpdate);
     expect(addEventListener).toHaveBeenCalledWith("update", onUpdate);
+    listeners.get("ready")?.();
+    listeners.get("update")?.();
+    expect(onUpdate).toHaveBeenCalledTimes(2);
     unsubscribe();
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("does not open EventSource when unsubscribed before the health request resolves", async () => {
+    let resolveHealth!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => {
+      resolveHealth = resolve;
+    })));
+    vi.stubGlobal("EventSource", vi.fn());
+
+    const { subscribeToRealtimeUpdates } = await import("../../lib/realtime");
+    const unsubscribe = subscribeToRealtimeUpdates("matches", vi.fn());
+    unsubscribe();
+    resolveHealth(new Response(JSON.stringify({
+      success: true,
+      realtime: { enabled: true },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(EventSource).not.toHaveBeenCalled();
   });
 });

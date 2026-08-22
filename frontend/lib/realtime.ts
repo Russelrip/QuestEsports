@@ -35,6 +35,7 @@ export const subscribeToRealtimeUpdates = (
       buildApiUrl(`/api/v1/events?topics=${encodeURIComponent(topic)}`),
       { withCredentials: true },
     );
+    events.addEventListener("ready", onUpdate);
     events.addEventListener("update", onUpdate);
   });
 

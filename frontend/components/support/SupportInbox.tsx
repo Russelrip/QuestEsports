@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useToastStore } from "@/hooks/useToastStore";
 import { subscribeToRealtimeUpdates } from "@/lib/realtime";
@@ -9,18 +9,23 @@ import SupportConversationList from "./SupportConversationList";
 import SupportComposer from "./SupportComposer";
 import SupportThread from "./SupportThread";
 
+const SUPPORT_POLL_INTERVAL_MS = 30_000;
+
 export default function SupportInbox({ conversationId }: { conversationId?: string }) {
   const { user, isLoading: authLoading } = useAuth();
   const showToast = useToastStore((state) => state.showToast);
   const [items, setItems] = useState<SupportConversationSummary[]>([]); const [conversation, setConversation] = useState<SupportConversation | null>(null);
   const [listLoading, setListLoading] = useState(true); const [threadLoading, setThreadLoading] = useState(Boolean(conversationId));
   const [listError, setListError] = useState<string | null>(null); const [threadError, setThreadError] = useState<string | null>(null); const [readError, setReadError] = useState<string | null>(null); const [createError, setCreateError] = useState<string | null>(null); const [creating, setCreating] = useState(false);
-  const loadList = useCallback(async () => { try { const result = await listSupportConversations(); setItems(result.items); setListError(null); } catch (error) { setListError(error instanceof Error ? error.message : "Inbox could not be loaded."); } finally { setListLoading(false); } }, []);
-  const loadThread = useCallback(async () => { if (!conversationId) return; setThreadLoading(true); setThreadError(null); setReadError(null); try { const result = await getSupportConversation(conversationId); setConversation(result); try { await markSupportConversationRead(conversationId); await loadList(); } catch (error) { setReadError(error instanceof Error ? error.message : "Read status could not be saved."); } } catch (error) { setConversation(null); setThreadError(error instanceof Error ? error.message : "Conversation could not be loaded."); } finally { setThreadLoading(false); } }, [conversationId, loadList]);
+  const listInFlight = useRef(false);
+  const threadInFlight = useRef<string | null>(null);
+  const loadList = useCallback(async () => { if (listInFlight.current) return; listInFlight.current = true; try { const result = await listSupportConversations(); setItems(result.items); setListError(null); } catch (error) { setListError(error instanceof Error ? error.message : "Inbox could not be loaded."); } finally { listInFlight.current = false; setListLoading(false); } }, []);
+  const loadThread = useCallback(async () => { if (!conversationId || threadInFlight.current === conversationId) return; threadInFlight.current = conversationId; setThreadLoading(true); setThreadError(null); setReadError(null); try { const result = await getSupportConversation(conversationId); setConversation(result); try { await markSupportConversationRead(conversationId); await loadList(); } catch (error) { setReadError(error instanceof Error ? error.message : "Read status could not be saved."); } } catch (error) { setConversation(null); setThreadError(error instanceof Error ? error.message : "Conversation could not be loaded."); } finally { if (threadInFlight.current === conversationId) threadInFlight.current = null; setThreadLoading(false); } }, [conversationId, loadList]);
   useEffect(() => { setConversation(null); setThreadError(null); setReadError(null); setThreadLoading(Boolean(conversationId)); }, [conversationId]);
   useEffect(() => { if (!authLoading && user) void loadList(); }, [authLoading, user, loadList]);
   useEffect(() => { if (!authLoading && user && conversationId) void loadThread(); }, [authLoading, user, conversationId, loadThread]);
   useEffect(() => { if (!user) return; const close = subscribeToRealtimeUpdates(`user:${user.id}`, () => { void loadList(); if (conversationId) void loadThread(); }); return close; }, [user, conversationId, loadList, loadThread]);
+  useEffect(() => { if (authLoading || !user) return; const interval = window.setInterval(() => { void loadList(); if (conversationId) void loadThread(); }, SUPPORT_POLL_INTERVAL_MS); return () => window.clearInterval(interval); }, [authLoading, user, conversationId, loadList, loadThread]);
   const create = async ({ subject, body }: { subject: string; body: string }) => { setCreating(true); setCreateError(null); try { const next = await createSupportConversation(subject, body); showToast({ title: "Message sent", description: "Your support conversation is ready.", tone: "success" }); await loadList(); window.history.pushState({}, "", `/support/${next.id}`); setConversation(next); return true; } catch (error) { setCreateError(error instanceof Error ? error.message : "Message could not be sent. Try again."); return false; } finally { setCreating(false); } };
   if (authLoading) return <div className="rounded-2xl border border-white/10 bg-white/[.03] p-10 text-center text-sm text-slate-400">Checking your account…</div>;
   if (!user) return <div className="rounded-2xl border border-white/10 bg-white/[.03] p-10 text-center"><h2 className="text-xl text-white">Sign in to contact support</h2><p className="mx-auto mt-2 max-w-md text-sm text-slate-400">Your conversations stay private and available whenever you return.</p><Link href="/login?redirect=%2Fsupport" className="mt-5 inline-flex h-10 items-center rounded-xl bg-cyan-300 px-4 text-sm font-semibold text-slate-950">Sign in to continue</Link></div>;

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SupportComposer from "../../components/support/SupportComposer";
@@ -46,6 +46,36 @@ describe("support inbox rendered states", () => {
   it("refreshes summaries after marking a thread read", async () => { render(<SupportInbox conversationId="conversation-1" />); await waitFor(() => expect(markSupportConversationRead).toHaveBeenCalledWith("conversation-1")); await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2)); });
 
   it("shows mark-read failures inside the loaded thread", async () => { markSupportConversationRead.mockRejectedValueOnce(new Error("Read status failed")); render(<SupportInbox conversationId="conversation-1" />); expect(await screen.findByRole("alert")).toHaveTextContent("Read status failed"); expect(screen.getByText("Registration help")).toBeInTheDocument(); });
+
+  it("polls the inbox and selected thread, then stops after unmount", async () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(<SupportInbox conversationId="conversation-1" />);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      vi.clearAllMocks();
+
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+        await Promise.resolve();
+      });
+      expect(listSupportConversations).toHaveBeenCalled();
+      expect(getSupportConversation).toHaveBeenCalledWith("conversation-1");
+
+      vi.clearAllMocks();
+      view.unmount();
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+        await Promise.resolve();
+      });
+      expect(listSupportConversations).not.toHaveBeenCalled();
+      expect(getSupportConversation).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("support notifications", () => {
