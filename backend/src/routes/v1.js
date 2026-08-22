@@ -180,6 +180,7 @@ router.post("/game-accounts/valorant/resolve", requireAuth, gameAccountResolveLi
 router.post("/game-accounts/valorant/link", requireAuth, gameAccountResolveLimiter, gameAccountController.linkValorant);
 router.get("/users/me/game-accounts", requireAuth, gameAccountController.listMyGameAccounts);
 router.get("/teams/:teamId/registration-readiness", requireAuth, gameAccountController.getTeamRegistrationReadiness);
+router.post("/game-accounts/valorant/change-request", requireAuth, gameAccountResolveLimiter, gameAccountController.requestValorantChange);
 
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);
@@ -243,6 +244,11 @@ router.delete(
   staffRosterManagement,
   staffController.removeStaff
 );
+
+// Identity administration sits behind the same admin guard as the rest of the
+// VALORANT operations surface.
+router.get("/admin/game-accounts/change-requests", requireAuth, requireAdmin, gameAccountController.listAdminChangeRequests);
+router.post("/admin/game-accounts/change-requests/:requestId/review", requireAuth, requireAdmin, gameAccountController.reviewAdminChangeRequest);
 
 router.use("/admin/valorant", requireAdmin);
 router.get("/admin/valorant/teams", valorantController.listTeams);

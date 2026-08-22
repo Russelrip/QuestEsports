@@ -69,6 +69,16 @@ existing contact, match-room, notification, or OAuth tables.
   registered with, and the text snapshot survives the reference on purpose.
   Additive and unbackfilled: a NULL snapshot honestly means "predates identity
   snapshots", which is different from "no account".
+- `20260823150000_add_game_account_change_requests` adds the admin-reviewed
+  account-replacement workflow. It exists for one case only: the underlying
+  account is genuinely different. A Riot rename is not that case — the stable
+  identifier is unchanged, so display fields refresh with no request and no
+  approval. Conflating the two would either bury admins in rename paperwork or
+  let a real account swap pass as a rename. Integrity is in the database: a
+  partial unique index allows one pending request per player per game, and
+  CHECK constraints require a non-empty reason and a normalized requested
+  identifier. Every foreign key except the owning player is `SET NULL` — a
+  decision record must outlive the rows it references or the audit trail rots.
 - `20260822150000_add_saved_team_logo_cleared_at` adds the nullable
   `saved_teams.logo_cleared_at` marker. `logo_name` alone cannot say why a team
   has no logo, so this column separates a team that has never had one — which

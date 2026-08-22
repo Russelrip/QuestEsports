@@ -6,6 +6,11 @@ const {
   listGameAccountsForUser,
 } = require("./game-account.service");
 const { getRegistrationReadiness } = require("./registration-readiness.service");
+const {
+  requestAccountChange,
+  listChangeRequests,
+  reviewChangeRequest,
+} = require("./game-account-change.service");
 
 const respond = (res, data, status = 200) =>
   res.status(status).json({ success: true, data, meta: { serverNow: new Date().toISOString() } });
@@ -53,8 +58,43 @@ const getTeamRegistrationReadiness = asyncHandler(async (req, res) => {
   respond(res, data);
 });
 
+// A rename and a replacement arrive through the same door and are told apart
+// by the stable identifier, not by what the player calls it.
+const requestValorantChange = asyncHandler(async (req, res) => {
+  const data = await requestAccountChange({
+    userId: req.user.id,
+    riotId: req.body?.riotId,
+    name: req.body?.name,
+    tag: req.body?.tag,
+    reason: req.body?.reason,
+    audit: requestAuditContext(req),
+  });
+  respond(res, data, data.kind === "replacement" ? 202 : 200);
+});
+
+const listAdminChangeRequests = asyncHandler(async (req, res) => {
+  const data = await listChangeRequests({
+    status: req.query.status ? String(req.query.status) : "pending",
+  });
+  respond(res, { requests: data });
+});
+
+const reviewAdminChangeRequest = asyncHandler(async (req, res) => {
+  const data = await reviewChangeRequest({
+    requestId: req.params.requestId,
+    approve: req.body?.approve === true,
+    adminUserId: req.user.id,
+    adminNote: req.body?.adminNote,
+    audit: requestAuditContext(req),
+  });
+  respond(res, data);
+});
+
 module.exports = {
   resolveValorant,
+  requestValorantChange,
+  listAdminChangeRequests,
+  reviewAdminChangeRequest,
   linkValorant,
   listMyGameAccounts,
   getTeamRegistrationReadiness,

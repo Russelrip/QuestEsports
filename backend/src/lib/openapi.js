@@ -1369,6 +1369,23 @@ const additionalPaths = {
       authenticated: true,
     }),
   },
+  "/api/v1/game-accounts/valorant/change-request": {
+    post: createOperation(
+      "Game accounts",
+      "Refresh a renamed account, or open an admin-reviewed account replacement",
+      { authenticated: true },
+    ),
+  },
+  "/api/v1/admin/game-accounts/change-requests": {
+    get: createOperation("Game accounts", "List game account change requests", {
+      authenticated: true,
+    }),
+  },
+  "/api/v1/admin/game-accounts/change-requests/{requestId}/review": {
+    post: createOperation("Game accounts", "Approve or reject a game account change request", {
+      authenticated: true,
+    }),
+  },
   "/api/v1/teams/{teamId}/registration-readiness": {
     get: createOperation(
       "Game accounts",

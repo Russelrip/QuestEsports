@@ -86,6 +86,15 @@ enum GameAccountVerificationStatus {
 // Lifecycle, kept separate from verification: an admin-verified account can
 // still be locked by a live tournament, and a replaced account keeps its
 // verification history.
+// A change request is an admin decision record, not a state of the account.
+// Keeping it separate means a rejected request stays visible as history.
+enum GameAccountChangeStatus {
+  pending
+  approved
+  rejected
+  withdrawn
+}
+
 enum GameAccountStatus {
   active
   change_requested
@@ -407,6 +416,8 @@ model User {
   webPushSubscriptions         WebPushSubscription[]
   notificationPreference       UserNotificationPreference?
   player                       Player?
+  gameAccountChangesRequested  GameAccountChangeRequest[]  @relation("GameAccountChangeRequester")
+  gameAccountChangesReviewed   GameAccountChangeRequest[]  @relation("GameAccountChangeReviewer")
 
   @@index([role])
   @@index([createdAt])
@@ -1570,17 +1581,49 @@ model SavedTeamMember {
 // player may exist before anyone claims them (legacy roster rows, guests at a
 // LAN), and one person must survive changing their email, username, Discord,
 // or Riot account without losing tournament history.
+// Replacing the actual game account behind a competitive identity is an
+// audited, admin-reviewed event — never a profile edit. A Riot RENAME is not a
+// change: the stable identifier is unchanged, so display fields simply refresh.
+// This table exists for the other case, where the underlying account differs.
+model GameAccountChangeRequest {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  playerId            String                  @map("player_id") @db.Uuid
+  currentAccountId    String?                 @map("current_account_id") @db.Uuid
+  game                GameAccountGame
+  requestedExternalId String                  @map("requested_external_id")
+  requestedUsername   String?                 @map("requested_username")
+  requestedTagline    String?                 @map("requested_tagline")
+  requestedRegion     String?                 @map("requested_region")
+  reason              String
+  status              GameAccountChangeStatus @default(pending)
+  requestedByUserId   String?                 @map("requested_by_user_id") @db.Uuid
+  reviewedByUserId    String?                 @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt          DateTime?               @map("reviewed_at")
+  adminNote           String?                 @map("admin_note")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  player              Player                  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  currentAccount      GameAccount?            @relation(fields: [currentAccountId], references: [id], onDelete: SetNull)
+  requestedByUser     User?                   @relation("GameAccountChangeRequester", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  reviewedByUser      User?                   @relation("GameAccountChangeReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([playerId])
+  @@map("game_account_change_requests")
+}
+
 model Player {
-  id                  String               @id @default(uuid()) @db.Uuid
-  publicId            String               @unique @default(dbgenerated("('QPID-' || lpad(nextval('player_public_id_seq')::text, 6, '0'))")) @map("public_id")
-  userId              String?              @unique @map("user_id") @db.Uuid
-  displayName         String               @map("display_name")
-  createdAt           DateTime             @default(now()) @map("created_at")
-  updatedAt           DateTime             @updatedAt @map("updated_at")
-  user                User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id                  String                     @id @default(uuid()) @db.Uuid
+  publicId            String                     @unique @default(dbgenerated("('QPID-' || lpad(nextval('player_public_id_seq')::text, 6, '0'))")) @map("public_id")
+  userId              String?                    @unique @map("user_id") @db.Uuid
+  displayName         String                     @map("display_name")
+  createdAt           DateTime                   @default(now()) @map("created_at")
+  updatedAt           DateTime                   @updatedAt @map("updated_at")
+  user                User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
   gameAccounts        GameAccount[]
   savedTeamMembers    SavedTeamMember[]
   registrationMembers RegistrationMember[]
+  changeRequests      GameAccountChangeRequest[]
 
   @@index([createdAt])
   @@map("players")
@@ -1608,6 +1651,7 @@ model GameAccount {
   updatedAt             DateTime                      @updatedAt @map("updated_at")
   player                Player                        @relation(fields: [playerId], references: [id], onDelete: Cascade)
   registrationSnapshots RegistrationMember[]
+  changeRequests        GameAccountChangeRequest[]
 
   // The abuse boundary: one Quest player per real game account. A partial
   // unique index in the migration additionally allows only one ACTIVE account
