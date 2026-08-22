@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { Product } from "@/lib/shop";
 import type { TicketedEvent } from "@/lib/tickets";
 import type { Tournament } from "@/lib/tournaments";
+import type { NavIconKey } from "@/lib/icons";
 
 const siteName = "Quest E-sports LK";
 const siteTitle = "Quest E-sports LK";
@@ -449,19 +450,25 @@ export const buildBreadcrumbStructuredData = (
   })),
 });
 
-export const primaryNavItems = [
-  { href: "/", label: "Home" },
-  { href: "/tournaments", label: "Tournaments" },
-  { href: "/valorant-leaderboard", label: "Valorant Leaderboard" },
-  { href: "/match-videos", label: "Match Videos" },
-  { href: "/gallery", label: "Gallery" },
-] as const;
+export type SiteNavItem = {
+  href: string;
+  label: string;
+  icon: NavIconKey;
+};
 
-export const secondaryNavItems = [
-  { href: "/shop", label: "Shop" },
-  { href: "/members", label: "Members" },
-  { href: "/contact", label: "Contact" },
-] as const;
+export const primaryNavItems: ReadonlyArray<SiteNavItem> = [
+  { href: "/", label: "Home", icon: "home" },
+  { href: "/tournaments", label: "Tournaments", icon: "trophy" },
+  { href: "/valorant-leaderboard", label: "Valorant Leaderboard", icon: "chart" },
+  { href: "/match-videos", label: "Match Videos", icon: "video" },
+  { href: "/gallery", label: "Gallery", icon: "image" },
+];
+
+export const secondaryNavItems: ReadonlyArray<SiteNavItem> = [
+  { href: "/shop", label: "Shop", icon: "shopping-bag" },
+  { href: "/members", label: "Members", icon: "users" },
+  { href: "/contact", label: "Contact", icon: "message" },
+];
 
 export const authNavItems = [
   { href: "/signup", label: "Sign Up" },

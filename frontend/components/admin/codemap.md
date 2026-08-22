@@ -9,7 +9,10 @@ registration managers.
 `AdminShell` is the authenticated visual boundary for admin routes: it provides
 the grouped responsive sidebar/top-bar navigation, active route state, and
 account/sign-out controls. The root layout suppresses public header/footer
-chrome whenever this boundary is present.
+chrome whenever this boundary is present. Navigation glyphs come from the
+shared `lib/icons.ts` path table rendered through `components/ui/icon.tsx`,
+which the public navbar also uses; add a key there rather than inlining SVG
+paths in a shell.
 
 ## Event integration
 

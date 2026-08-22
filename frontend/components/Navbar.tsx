@@ -13,12 +13,15 @@ import { cn, getInitials } from "@/lib/utils";
 import { resolveImageUrl } from "@/lib/media";
 import { authNavItems, primaryNavItems, secondaryNavItems } from "@/lib/site";
 import NotificationBell from "@/components/notifications/NotificationBell";
+import { NavIcon } from "@/components/ui/icon";
 
 const isNavItemActive = (pathname: string, href: string) =>
   href === "/"
     ? pathname === href
     : pathname === href ||
       pathname.startsWith(`${href}/`) ||
+      // Tickets has no header slot of its own yet, so it borrows this one.
+      // Remove once the header restructure gives it a real entry.
       (href === "/tournaments" && pathname.startsWith("/tickets"));
 
 export default function Navbar() {
@@ -96,7 +99,7 @@ export default function Navbar() {
                 prefetch={false}
                 onMouseEnter={() => router.prefetch("/")}
                 onFocus={() => router.prefetch("/")}
-                className="flex flex-col items-center gap-1"
+                className="flex items-center"
                 aria-label="Quest home"
               >
                 <Image
@@ -105,11 +108,8 @@ export default function Navbar() {
                   width={48}
                   height={48}
                   priority
-                  className="h-10 w-10 sm:h-11 sm:w-11"
+                  className="h-11 w-11 sm:h-12 sm:w-12"
                 />
-                <span className="pl-[0.22em] font-display text-[10px] leading-none tracking-[0.22em] text-white sm:text-xs">
-                  QUEST
-                </span>
               </Link>
             </div>
 
@@ -179,10 +179,11 @@ export default function Navbar() {
                     href={item.href}
                     prefetch={false}
                     className={cn(
-                      "rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/8 hover:text-white",
+                      "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/8 hover:text-white",
                       isNavItemActive(pathname, item.href) && "bg-white/10 text-white"
                     )}
                   >
+                    <NavIcon icon={item.icon} />
                     {item.label}
                   </Link>
                 ))}
@@ -199,7 +200,8 @@ export default function Navbar() {
                     </Link>
                     <NotificationBell user={user} compact />
                     {user.role === "admin" ? (
-                      <Link href="/admin" prefetch={false} className="rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
+                      <Link href="/admin" prefetch={false} className="flex items-center gap-3 rounded-2xl bg-white/6 px-4 py-3 text-sm text-white">
+                        <NavIcon icon="shield" />
                         Admin Panel
                       </Link>
                     ) : null}
@@ -209,6 +211,7 @@ export default function Navbar() {
                         if (await logout()) setMobileNavOpen(false);
                       }}
                     >
+                      <NavIcon icon="logout" />
                       Logout
                     </Button>
                   </div>

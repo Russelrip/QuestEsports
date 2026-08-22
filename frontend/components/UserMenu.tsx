@@ -10,6 +10,7 @@ import type { AuthUser } from "@/lib/auth";
 import { getInitials } from "@/lib/utils";
 import { resolveImageUrl } from "@/lib/media";
 import NotificationBell from "@/components/notifications/NotificationBell";
+import { NavIcon } from "@/components/ui/icon";
 
 type UserMenuProps = {
   user: AuthUser;
@@ -71,12 +72,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
         <span className="account-menu-avatar relative flex size-9 items-center justify-center overflow-hidden bg-violet-700 text-xs font-bold text-white">
           <span aria-hidden="true">{initials}</span>{avatarUrl ? <Image src={avatarUrl} alt="" width={36} height={36} unoptimized className="absolute h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}
         </span>
-        <span>
-          <span className="block text-sm font-semibold text-white">{user.username}</span>
-          <span className="block text-xs text-slate-400">
-            {user.emailVerified ? "Verified account" : "Verification pending"}
-          </span>
-        </span>
+        <span className="text-sm font-semibold text-white">{user.username}</span>
       </button>
 
       {isOpen ? (
@@ -88,6 +84,9 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
                     {user.firstName} {user.lastName}
                   </p>
                   <p className="text-xs text-slate-400">{user.email}</p>
+                  <p className="text-xs text-slate-400">
+                    {user.emailVerified ? "Verified account" : "Verification pending"}
+                  </p>
                 </div>
                 <Badge className="account-menu-badge border-purple-300/20 bg-purple-400/10 text-purple-100">
                   {user.role}
@@ -96,11 +95,13 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
             </div>
 
             <div className="grid gap-2">
-              <Link href="/profile" className="account-menu-item px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
+              <Link href="/profile" className="account-menu-item flex items-center gap-3 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
+                <NavIcon icon="user" />
                 Profile
               </Link>
               {isAdmin ? (
-                <Link href="/admin" className="account-menu-item px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
+                <Link href="/admin" className="account-menu-item flex items-center gap-3 px-3 py-2 text-sm text-slate-200 transition hover:bg-white/8 hover:text-white">
+                  <NavIcon icon="shield" />
                   Admin Panel
                 </Link>
               ) : null}
@@ -111,6 +112,7 @@ export default function UserMenu({ user, logout, isAdmin = false }: UserMenuProp
                   if (await logout()) router.push("/");
                 }}
               >
+                <NavIcon icon="logout" />
                 Logout
               </Button>
             </div>

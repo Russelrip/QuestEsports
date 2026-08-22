@@ -14,17 +14,12 @@ import {
   formatSriLankaDateTime,
   sriLankaDateTimeLocalToIso,
 } from "@/lib/date-time";
-
-export type AdminIconKey =
-  | "book" | "calendar" | "clipboard" | "crosshair" | "credit-card"
-  | "dashboard" | "gamepad" | "image" | "layers" | "message" | "monitor" | "package"
-  | "receipt" | "shopping-bag" | "swords" | "ticket" | "trophy"
-  | "user-plus" | "users";
+import type { NavIconKey } from "@/lib/icons";
 
 export type AdminNavigationLink = {
   href: string;
   label: string;
-  icon: AdminIconKey;
+  icon: NavIconKey;
 };
 
 export const adminNavigationGroups: ReadonlyArray<{
