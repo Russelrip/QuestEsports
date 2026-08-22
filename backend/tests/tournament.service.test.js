@@ -1464,3 +1464,116 @@ test("deleteAdminTournament removes private proofs and only unreferenced registr
     restore();
   }
 });
+
+test("the default public projection still resolves bracket teams outside the participant page", async () => {
+  let bracketFindOptions;
+  const registrations = Array.from({ length: 50 }, (_, index) => ({
+    id: `registration-${index + 1}`,
+    teamName: `Team ${index + 1}`,
+    captainName: `Captain ${index + 1}`,
+    entryType: "team",
+    status: "approved",
+    members: [],
+  }));
+  const prisma = {
+    teamRegistration: {
+      count: async () => 75,
+      findMany: async (options) => {
+        bracketFindOptions = options;
+        return [{
+          id: "registration-outside-page",
+          teamName: "Outside Page",
+          teamLogoName: "current.png",
+          savedTeam: null,
+        }];
+      },
+    },
+    tournament: {
+      findFirst: async () => ({
+        id: "tournament-1",
+        slug: "quest-cup",
+        title: "Quest Cup",
+        game: "valorant",
+        status: "registration_open",
+        isPublished: true,
+        teamRegistrations: registrations,
+        bracket: {
+          status: "published",
+          lastUpdatedAt: new Date(),
+          bracketData: {
+            participant: [{ registrationId: "registration-outside-page", name: "Stale Name" }],
+          },
+        },
+        _count: { teamRegistrations: 0, adminSlotReservations: 0 },
+        adminSlotReservations: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    // No participant pagination query: participants are still bounded to the
+    // default page, so published-bracket names must come from their own
+    // unbounded read rather than from the bounded participant page.
+    const tournament = await tournamentService.getPublicTournamentBySlug("quest-cup");
+
+    assert.equal(bracketFindOptions?.where.tournamentId, "tournament-1");
+    assert.equal("participantPagination" in tournament, false);
+    assert.equal(tournament.registeredParticipants.length, 50);
+    assert.deepEqual(tournament.bracketData.participant[0], {
+      registrationId: "registration-outside-page",
+      name: "Outside Page",
+      shortCode: "OP",
+      logoUrl: "/api/uploads/team-logos/current.png",
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("the default public projection skips the bracket read when no bracket is published", async () => {
+  let bracketReads = 0;
+  const prisma = {
+    teamRegistration: {
+      count: async () => 4,
+      findMany: async () => {
+        bracketReads += 1;
+        return [];
+      },
+    },
+    tournament: {
+      findFirst: async () => ({
+        id: "tournament-1",
+        slug: "quest-cup",
+        title: "Quest Cup",
+        game: "valorant",
+        status: "registration_open",
+        isPublished: true,
+        teamRegistrations: [],
+        bracket: { status: "draft", lastUpdatedAt: new Date(), bracketData: { participant: [] } },
+        _count: { teamRegistrations: 0, adminSlotReservations: 0 },
+        adminSlotReservations: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    await tournamentService.getPublicTournamentBySlug("quest-cup");
+    assert.equal(bracketReads, 0, "an unpublished bracket must not trigger an extra registration read");
+  } finally {
+    restore();
+  }
+});

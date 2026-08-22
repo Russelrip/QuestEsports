@@ -1294,10 +1294,10 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
     capacityUsed,
   };
 
-  if (!hasParticipantPaginationQuery) {
-    return mapTournamentWithPublicTeams(tournamentWithPublicTotals);
-  }
-
+  // The participant projection is bounded on every path, so a published
+  // bracket must resolve its live team names and logos from its own read.
+  // Falling back to the bounded participant page would serve stale bracket
+  // names for any tournament with more approved teams than one page.
   const bracketRegistrations = tournament.bracket?.status === "published"
     ? await prisma.teamRegistration.findMany({
         where: {
@@ -1312,6 +1312,10 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
         },
       })
     : null;
+
+  if (!hasParticipantPaginationQuery) {
+    return mapTournamentWithPublicTeams(tournamentWithPublicTotals, { bracketRegistrations });
+  }
 
   return mapTournamentWithPublicTeams(
     tournamentWithPublicTotals,
