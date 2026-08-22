@@ -35,3 +35,17 @@ Frontend-only changes were limited to the tournament/event status contract, publ
 ## Concerns
 
 The local E2E fixture/backend state did not satisfy the existing Challonge showcase expectation; this failure is outside the changed status-contract files. No backend files were changed.
+
+## Fix round — aggregate fixture correction
+
+- Updated `frontend/tests/unit/tournament-status-contract.test.ts` so the closed-event/open-child fixture now sets both the top-level event `registrationState` and `aggregate.registrationState` to `closed`.
+- Preserved the child tournament's `registrationState: "registration_open"` and asserted both aggregate fields directly, making the intended genuinely closed aggregate/open child case explicit.
+- Inspected the reported Challonge E2E failure: the failing assertions concern `TournamentDetailsContent`'s completed showcase (`isCompleted`/`resultSummary`) and Challonge iframe behavior, while this task round changes only the event-status unit fixture. No causal relationship to the status-contract change was found, so unrelated E2E behavior was not modified.
+
+### Fix-round validation
+
+- Focused status-contract test — passed: 6 tests.
+- `npm run lint` — passed.
+- `npm run typecheck` — passed.
+- `npm test` — passed: 39 files, 220 tests.
+- `npm run test:e2e:local` — build passed; the run again hit the existing Challonge showcase failure in Chromium, Firefox, and Mobile Safari (`The tournament is over` was not found) before the command timeout. No unrelated E2E changes were made.

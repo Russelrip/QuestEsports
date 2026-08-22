@@ -79,12 +79,13 @@ const event = (overrides: Partial<EventSeries> = {}): EventSeries => ({
   displayOrder: 1,
   isPublished: true,
   eventStatus: "closed",
+  registrationState: "closed",
   aggregate: {
     games: 1,
     teamsRegistered: 1,
     playersRegistered: 5,
     availableSlots: 0,
-    registrationState: "open",
+    registrationState: "closed",
   },
   tournaments: [tournament({ registrationState: "registration_open" })],
   ...overrides,
@@ -140,11 +141,11 @@ describe("tournament status contract", () => {
   });
 
   it("keeps event-card labels aggregate-scoped when a child is open", () => {
-    const presentation = getEventCardPresentation(event({
-      eventStatus: "closed",
-      tournaments: [tournament({ registrationState: "registration_open" })],
-    }));
+    const currentEvent = event();
+    const presentation = getEventCardPresentation(currentEvent);
 
+    expect(currentEvent.registrationState).toBe("closed");
+    expect(currentEvent.aggregate?.registrationState).toBe("closed");
     expect(presentation.eventStatus).toEqual({ key: "closed", label: "Registration closed" });
     expect(presentation.childRegistration).toMatchObject({
       state: "registration_open",
