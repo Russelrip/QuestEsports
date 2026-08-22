@@ -91,6 +91,7 @@ const createRealtimeTransport = ({
   let activeCancellationBody = null;
   let subscriptionTask = null;
   let subscriptionBarrier = null;
+  let poisonedSubscriptionBarrier = null;
   let stopTask = null;
   let startTask = null;
   let generation = 0;
@@ -136,6 +137,25 @@ const createRealtimeTransport = ({
     }
   };
 
+  const retainPoisonedSubscriptionBarrier = (error) => {
+    const teardownError = error instanceof Error
+      ? error
+      : new Error(`Realtime subscription cancellation failed: ${asErrorText(error)}`);
+    if (!poisonedSubscriptionBarrier) {
+      poisonedSubscriptionBarrier = new Promise(() => {});
+    }
+    subscriptionBarrier = poisonedSubscriptionBarrier;
+    reportFailure("teardown-error", teardownError);
+  };
+
+  const observeCancellationTask = (task) => {
+    if (!task) return null;
+    return Promise.resolve(task).catch((error) => {
+      retainPoisonedSubscriptionBarrier(error);
+      return false;
+    });
+  };
+
   const getActiveCancellationTask = () => {
     const reader = activeReader;
     const body = activeBody;
@@ -152,11 +172,18 @@ const createRealtimeTransport = ({
       const cancellations = [];
       if (reader && typeof reader.cancel === "function") {
         cancellations.push(Promise.resolve().then(() => reader.cancel()));
+      } else if (reader) {
+        cancellations.push(Promise.reject(new Error("Realtime subscription reader cannot be cancelled.")));
       }
       if (body && typeof body.cancel === "function") {
         cancellations.push(Promise.resolve().then(() => body.cancel()));
+      } else if (body) {
+        cancellations.push(Promise.reject(new Error("Realtime subscription body cannot be cancelled.")));
       }
-      return Promise.allSettled(cancellations);
+      const results = await Promise.allSettled(cancellations);
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure) throw failure.reason;
+      return results;
     })();
     activeCancellationTask = task;
     activeCancellationReader = reader;
@@ -309,9 +336,10 @@ const createRealtimeTransport = ({
       // read promise settles. Keep the physical subscription task pending for
       // both operations so reconnect cannot overlap the old upstream stream.
       const cancellationTask = pendingReadTask ? getActiveCancellationTask() : null;
+      const cancellationObservation = observeCancellationTask(cancellationTask);
       if (pendingReadTask) {
         await Promise.allSettled(
-          [pendingReadTask, cancellationTask].filter(Boolean),
+          [pendingReadTask, cancellationObservation].filter(Boolean),
         );
       }
       if (activeReader === reader) activeReader = null;
@@ -326,7 +354,12 @@ const createRealtimeTransport = ({
   };
 
   const scheduleReconnect = (runGeneration, reason, error, alreadyReported = false) => {
-    if (!running || runGeneration !== generation || reconnectTimer) return;
+    if (
+      !running ||
+      runGeneration !== generation ||
+      reconnectTimer ||
+      poisonedSubscriptionBarrier
+    ) return;
     if (!alreadyReported) reportFailure(reason, error);
     const baseDelay = Math.min(
       env.REALTIME_PUBSUB_RECONNECT_MAX_MS,
@@ -403,7 +436,7 @@ const createRealtimeTransport = ({
         if (response) {
           activeResponse = response;
           activeBody = response.body;
-          await getActiveCancellationTask();
+          await observeCancellationTask(getActiveCancellationTask());
         }
         if (connectionDeadlineExceeded && running && runGeneration === generation) {
           throw new Error("Realtime subscription connection deadline exceeded.");
@@ -442,13 +475,13 @@ const createRealtimeTransport = ({
           response = await fetchTask;
           activeResponse = response;
           activeBody = response?.body;
-          await getActiveCancellationTask();
+          await observeCancellationTask(getActiveCancellationTask());
         } catch (lateError) {
           settledError = lateError;
         }
       }
       if (response && activeResponse === response) {
-        await getActiveCancellationTask();
+        await observeCancellationTask(getActiveCancellationTask());
       }
       if (responseBodyTask) {
         // A timed-out error-body read is also physical work. Cancellation can
@@ -459,7 +492,7 @@ const createRealtimeTransport = ({
           settledError = bodyError;
         }
       }
-      if (running && runGeneration === generation) {
+      if (running && runGeneration === generation && !poisonedSubscriptionBarrier) {
         scheduleReconnect(runGeneration, "error", settledError, disconnectedReported);
       }
     } finally {
@@ -477,7 +510,7 @@ const createRealtimeTransport = ({
         activeCancellationReader = null;
         activeCancellationBody = null;
       }
-      if (cleanupTask) await cleanupTask;
+      if (cleanupTask) await observeCancellationTask(cleanupTask);
     }
   };
 
@@ -580,7 +613,7 @@ const createRealtimeTransport = ({
         activeController = null;
       }
       const remaining = () => Math.max(0, deadline - Date.now());
-      await awaitBounded(getActiveCancellationTask(), remaining());
+      await awaitBounded(observeCancellationTask(getActiveCancellationTask()), remaining());
       await awaitSubscriptionSettlement(priorBarrier || priorTask, remaining());
       reportStatus(false, "stopped");
     })();

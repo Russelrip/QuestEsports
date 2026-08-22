@@ -595,6 +595,37 @@ test("a timed-out fetch cannot overlap a replacement until its late body settles
   await transport.stop();
 });
 
+test("a late response with rejected body cancellation poisons the replacement barrier", async () => {
+  let calls = 0;
+  let releaseLateFetch;
+  const lateFetch = new Promise((resolve) => {
+    releaseLateFetch = resolve;
+  });
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => {
+      calls += 1;
+      return lateFetch;
+    },
+  });
+
+  await transport.start(() => {});
+  await wait(35);
+  releaseLateFetch({
+    ok: true,
+    status: 200,
+    body: {
+      cancel: () => Promise.reject(new Error("late body cancellation failed")),
+    },
+  });
+  await wait(10);
+
+  assert.equal(transport.getStatus().connected, false);
+  await transport.stop();
+  await transport.start(() => {});
+  assert.equal(calls, 1);
+  assert.equal(transport.getStatus().connected, false);
+});
+
 test("acknowledgement timeout reconnects after the physical subscription settles", async () => {
   let timeoutCallback;
   let releaseCancellation;
@@ -641,6 +672,42 @@ test("acknowledgement timeout reconnects after the physical subscription settles
 
   assert.equal(calls, 2);
   await transport.stop();
+});
+
+test("rejected reader and body cancellation poisons stop-to-start", async () => {
+  let calls = 0;
+  let readerCancelCalls = 0;
+  let bodyCancelCalls = 0;
+  const body = {
+    getReader: () => ({
+      read: () => new Promise(() => {}),
+      cancel: () => {
+        readerCancelCalls += 1;
+        return Promise.reject(new Error("reader cancellation failed"));
+      },
+      releaseLock() {},
+    }),
+    cancel: () => {
+      bodyCancelCalls += 1;
+      return Promise.reject(new Error("body cancellation failed"));
+    },
+  };
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => {
+      calls += 1;
+      return response(200, { body });
+    },
+  });
+
+  await transport.start(() => {});
+  await wait(0);
+  await transport.stop();
+  await transport.start(() => {});
+
+  assert.equal(readerCancelCalls, 1);
+  assert.equal(bodyCancelCalls, 1);
+  assert.equal(calls, 1);
+  assert.equal(transport.getStatus().connected, false);
 });
 
 test("read failure after acknowledgement marks the transport disconnected before cancellation settles", async () => {
