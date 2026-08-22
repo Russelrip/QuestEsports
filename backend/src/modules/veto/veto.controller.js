@@ -54,8 +54,7 @@ const saveTournamentConfig = asyncHandler(async (req, res) => {
 
 const listRooms = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.listRooms({ user: req.user, tournamentId: req.query.tournamentId }), meta: meta() }));
 const createRoom = asyncHandler(async (req, res) => {
-  const result = await service.createRoom({ user: req.user, body: req.body });
-  await audit(req, "veto.room.created", result.room);
+  const result = await service.createRoom({ user: req.user, body: req.body, auditContext: requestAuditContext(req) });
   await publish(result.room);
   res.status(201).json({ success: true, data: result, meta: meta() });
 });
@@ -70,13 +69,13 @@ const runRoomCommand = (name, fn, { transactionAudited = false } = {}) => asyncH
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 
-const openRoom = (req, res, next) => runRoomCommand("veto.room.opened", () => service.openRoom({ user: req.user, roomId: req.params.roomId, revision: req.body.expectedRevision }))(req, res, next);
-const startRoom = (req, res, next) => runRoomCommand("veto.room.started", () => service.startRoom({ user: req.user, roomId: req.params.roomId, body: req.body }))(req, res, next);
-const assignTeamA = (req, res, next) => runRoomCommand("veto.team_order.assigned", () => service.assignTeamA({ user: req.user, roomId: req.params.roomId, body: req.body }))(req, res, next);
-const recordManualToss = (req, res, next) => runRoomCommand("veto.toss.recorded", () => service.recordManualToss({ user: req.user, roomId: req.params.roomId, body: req.body }))(req, res, next);
+const openRoom = (req, res, next) => runRoomCommand("veto.room.opened", () => service.openRoom({ user: req.user, roomId: req.params.roomId, revision: req.body.expectedRevision, auditContext: requestAuditContext(req) }), { transactionAudited: true })(req, res, next);
+const startRoom = (req, res, next) => runRoomCommand("veto.room.started", () => service.startRoom({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }), { transactionAudited: true })(req, res, next);
+const assignTeamA = (req, res, next) => runRoomCommand("veto.team_order.assigned", () => service.assignTeamA({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }), { transactionAudited: true })(req, res, next);
+const recordManualToss = (req, res, next) => runRoomCommand("veto.toss.recorded", () => service.recordManualToss({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }), { transactionAudited: true })(req, res, next);
 const rewindRoom = (req, res, next) => runRoomCommand("veto.room.rewound", () => service.rewindRoom({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }), { transactionAudited: true })(req, res, next);
 const resetRoom = (req, res, next) => runRoomCommand("veto.room.reset", () => service.resetRoom({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }), { transactionAudited: true })(req, res, next);
-const cancelRoom = (req, res, next) => runRoomCommand("veto.room.cancelled", () => service.cancelRoom({ user: req.user, roomId: req.params.roomId, body: req.body }))(req, res, next);
+const cancelRoom = (req, res, next) => runRoomCommand("veto.room.cancelled", () => service.cancelRoom({ user: req.user, roomId: req.params.roomId, body: req.body, auditContext: requestAuditContext(req) }), { transactionAudited: true })(req, res, next);
 
 const readyRoom = asyncHandler(async (req, res) => {
   const room = await service.readyRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
@@ -99,8 +98,7 @@ const submitAction = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const rotateGrant = asyncHandler(async (req, res) => {
-  const data = await service.rotateGrant({ user: req.user, roomId: req.params.roomId, role: req.body.role });
-  await recordAudit({ ...requestAuditContext(req), action: "veto.access.rotated", targetType: "VetoRoom", targetId: req.params.roomId, afterData: { role: data.role } });
+  const data = await service.rotateGrant({ user: req.user, roomId: req.params.roomId, role: req.body.role, auditContext: requestAuditContext(req) });
   res.status(200).json({ success: true, data, meta: meta() });
 });
 

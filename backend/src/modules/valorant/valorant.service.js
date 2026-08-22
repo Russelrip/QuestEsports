@@ -46,13 +46,14 @@ const markOperationFailed = async (operationId, error) => {
   });
 };
 
-const markOperationReconciliationRequired = async (operationId, error) =>
+const markOperationReconciliationRequired = async (operationId, error, details = {}) =>
   prisma.questValorantOperation.update({
     where: { id: operationId },
     data: {
       status: "reconciliation_required",
       errorCode: error?.code || "valorant_unreachable",
       fastapiRequestId: error?.requestId || null,
+      responseSummary: Object.keys(details).length ? details : undefined,
     },
   });
 
@@ -828,6 +829,7 @@ const finalizeSeries = async ({
   // the operation row is an idempotency/reconciliation ledger, while this is
   // the durable AuditLog security event. Do not call the external mutator
   // until the intent is durably recorded.
+  let resultTransactionError = null;
   try {
     await recordAudit({
       actorUserId,
@@ -875,8 +877,14 @@ const finalizeSeries = async ({
     throw error;
   }
 
-  const result = mapFinalizeResult(response.data);
+  let result = null;
+  let mappingError = null;
   try {
+    try {
+      result = mapFinalizeResult(response.data);
+    } catch (error) {
+      mappingError = error;
+    }
     await prisma.$transaction(async (tx) => {
       const finalized = await tx.questValorantSeries.update({
         where: { id: series.id },
@@ -892,21 +900,64 @@ const finalizeSeries = async ({
           status: finalized.status,
           ratingMode: finalized.ratingMode,
           operationId: operation.operationId,
-          externalStatus: result.status,
+          externalStatus: result?.status || null,
+          externalResult: response.data,
+          responseMappingError: mappingError?.message || null,
         },
         requestId,
         ipAddress,
       });
       await tx.questValorantOperation.update({
         where: { id: operation.id },
-        data: { status: "succeeded", responseCode: response.status, fastapiRequestId: response.requestId, responseSummary: response.data || undefined },
+        data: {
+          status: "succeeded",
+          responseCode: response.status,
+          fastapiRequestId: response.requestId,
+          responseSummary: response.data || undefined,
+          errorCode: mappingError ? "VALORANT_FINALIZE_RESPONSE_MAPPING_FAILED" : null,
+        },
       });
     });
   } catch (error) {
-    await markOperationReconciliationRequired(operation.id, error);
+    resultTransactionError = error;
+  }
+  if (resultTransactionError) {
+    const error = resultTransactionError;
+    await markOperationReconciliationRequired(operation.id, error, {
+      upstreamCommitted: true,
+      operationId: operation.operationId,
+      externalResult: response.data,
+      responseMappingError: mappingError?.message || null,
+    });
+    try {
+      await recordAudit({
+        actorUserId,
+        action: "valorant.series.finalize.result.reconciliation_required",
+        targetType: "QuestValorantSeries",
+        targetId: series.id,
+        beforeData: { status: series.status },
+        afterData: {
+          status: "finalized",
+          operationId: operation.operationId,
+          externalResult: response.data,
+          error: error?.message || "Result audit transaction failed.",
+        },
+        requestId,
+        ipAddress,
+      });
+    } catch (fallbackAuditError) {
+      // The operation's reconciliation record retains the raw upstream result
+      // when the durable fallback AuditLog write is unavailable.
+      void fallbackAuditError;
+    }
     const auditError = new HttpError(503, "VALORANT finalize committed upstream; audit reconciliation is required.");
     auditError.code = "VALORANT_AUDIT_RECONCILIATION_REQUIRED";
     throw auditError;
+  }
+  if (mappingError) {
+    const mappingResponseError = new HttpError(503, "VALORANT finalize committed and was audited, but the response could not be mapped.");
+    mappingResponseError.code = "VALORANT_FINALIZE_RESPONSE_MAPPING_FAILED";
+    throw mappingResponseError;
   }
   return { ...result, operationId: operation.operationId };
 };

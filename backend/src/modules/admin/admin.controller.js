@@ -232,13 +232,7 @@ const correctRegistrationRoster = asyncHandler(async (req, res) => {
 });
 
 const removeRegistration = asyncHandler(async (req, res) => {
-  await deleteTeamRegistration(req.params.registrationId);
-  await recordAudit({
-    ...requestAuditContext(req),
-    action: "team_registration.deleted",
-    targetType: "TeamRegistration",
-    targetId: req.params.registrationId,
-  });
+  await deleteTeamRegistration(req.params.registrationId, requestAuditContext(req));
   res.status(200).json({
     success: true,
     message: "Team registration deleted successfully.",

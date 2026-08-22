@@ -352,13 +352,21 @@ const generateTournamentBracket = async (tournamentId, auditContext = {}) => {
   });
   const bracket = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
     ? await prisma.$transaction(async (tx) => {
+      const existing = await tx.tournamentBracket.findUnique({ where: { tournamentId } });
       const created = await persistBracket(tx);
       await recordAuditInTransaction(tx, {
         ...auditContext,
         action: "tournament.bracket.generated",
         targetType: "TournamentBracket",
         targetId: created.id,
-        beforeData: { status: "absent" },
+        beforeData: existing
+          ? {
+            status: existing.status,
+            seedCount: Array.isArray(existing.seedData) ? existing.seedData.length : null,
+            generatedAt: existing.generatedAt,
+            publishedAt: existing.publishedAt,
+          }
+          : { status: "absent" },
         afterData: { status: created.status, seedCount: seeds.length },
       });
       return created;

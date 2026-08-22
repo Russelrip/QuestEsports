@@ -1775,6 +1775,49 @@ test("finalizeSeries marks reconciliation when result audit fails after the exte
   }
 });
 
+test("finalizeSeries audits raw committed output and resolves the operation when response mapping fails", async () => {
+  const statuses = [];
+  const audits = [];
+  const rawResult = { status: "finalized", unexpected: true };
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async () => ({ id: "series-map", status: "draft", valorantSeriesUuid: "external-map" }),
+        update: async ({ data }) => ({ id: "series-map", ...data }),
+      },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "operation-map", operationId: "operation-map-id", ...data }),
+        update: async ({ data }) => { statuses.push(data.status); return data; },
+      },
+    },
+  };
+  prismaMock.prisma.$transaction = async (work) => work(prismaMock.prisma);
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => ({ status: 200, data: rawResult, requestId: "external-map-request" }) },
+    [mapperPath]: { mapFinalizeResult: () => { throw new Error("new upstream result shape"); } },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAudit: async (entry) => audits.push(entry),
+      recordAuditInTransaction: async (_tx, entry) => audits.push(entry),
+    },
+  });
+
+  try {
+    await assert.rejects(
+      service.finalizeSeries({ seriesId: "series-map", ratingMode: "normal", actorUserId: "user-1", requestId: "req-map", ipAddress: "127.0.0.1" }),
+      (error) => error.code === "VALORANT_FINALIZE_RESPONSE_MAPPING_FAILED" && error.statusCode === 503,
+    );
+    assert.deepEqual(statuses, ["in_flight", "succeeded"]);
+    assert.equal(audits[1].action, "valorant.series.finalize.result");
+    assert.deepEqual(audits[1].afterData.externalResult, rawResult);
+    assert.equal(audits[1].afterData.responseMappingError, "new upstream result shape");
+  } finally {
+    restore();
+  }
+});
+
 test("finalizeSeries marks the operation failed and reconciles on SERIES_ALREADY_FINALIZED", async () => {
   const fixture = require("./fixtures/valorant/series-finalize.json");
   const statuses = [];

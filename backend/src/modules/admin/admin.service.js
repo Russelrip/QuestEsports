@@ -2112,7 +2112,7 @@ const updateTeamRegistrationStatus = async (
   return mapTeamRegistration(registration);
 };
 
-const deleteTeamRegistration = async (registrationId) => {
+const deleteTeamRegistration = async (registrationId, auditContext = {}) => {
   const registration = await prisma.teamRegistration.findUnique({
     where: { id: registrationId },
     select: {
@@ -2131,9 +2131,23 @@ const deleteTeamRegistration = async (registrationId) => {
     throw new HttpError(404, "Team registration not found.");
   }
 
-  const deleted = await prisma.teamRegistration.deleteMany({
-    where: { id: registrationId },
-  });
+  const deleted = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+    ? await prisma.$transaction(async (tx) => {
+      const result = await tx.teamRegistration.deleteMany({ where: { id: registrationId } });
+      if (result.count === 0) throw new HttpError(404, "Team registration not found.");
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "team_registration.deleted",
+        targetType: "TeamRegistration",
+        targetId: registrationId,
+        beforeData: {
+          teamLogoName: registration.teamLogoName,
+          paymentProofCount: registration.payments.filter((payment) => payment.bankTransferProof?.storedFilename).length,
+        },
+      });
+      return result;
+    })
+    : await prisma.teamRegistration.deleteMany({ where: { id: registrationId } });
 
   if (deleted.count === 0) {
     throw new HttpError(404, "Team registration not found.");

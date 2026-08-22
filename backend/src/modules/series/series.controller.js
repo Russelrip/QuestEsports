@@ -1,4 +1,5 @@
 const { asyncHandler } = require("../../lib/async-handler");
+const { requestAuditContext } = require("../../lib/audit");
 const { listTeamRegistrations } = require("../admin/admin.service");
 const service = require("./series.service");
 
@@ -84,6 +85,7 @@ const createEventTournament = asyncHandler(async (req, res) => {
     eventId: req.params.eventId,
     body: req.body,
     files: req.files,
+    auditContext: requestAuditContext(req),
   });
   res.status(201).json({ success: true, message: "Tournament added to event.", tournament });
 });

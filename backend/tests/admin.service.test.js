@@ -1082,6 +1082,37 @@ test("deleteTeamRegistration preserves a logo referenced by a saved team", async
   }
 });
 
+test("deleteTeamRegistration rolls back the mutation when its critical audit fails", async () => {
+  let deleteCalls = 0;
+  let cleanupCalls = 0;
+  const prisma = {
+    teamRegistration: {
+      findUnique: async () => ({ teamLogoName: "logo.png", payments: [] }),
+      deleteMany: async () => { deleteCalls += 1; return { count: 1 }; },
+    },
+    $transaction: async (work) => work({
+      teamRegistration: {
+        deleteMany: async () => { deleteCalls += 1; return { count: 1 }; },
+      },
+      auditLog: { create: async () => { throw new Error("audit unavailable"); } },
+    }),
+  };
+  const { module: adminService, restore } = loadAdminService(prisma, {}, {
+    removeUploadFiles: async () => { cleanupCalls += 1; },
+  });
+
+  try {
+    await assert.rejects(
+      adminService.deleteTeamRegistration("registration-audit", { actorUserId: "admin-1", requestId: "req-audit", ipAddress: "127.0.0.1" }),
+      /audit unavailable/,
+    );
+    assert.equal(deleteCalls, 1);
+    assert.equal(cleanupCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
 test("exportTeamRegistrations rejects oversized exports before building workbooks", async () => {
   const { module: adminService, restore } = loadAdminService({
     teamRegistration: {

@@ -1585,14 +1585,14 @@ const updateAdminTournament = async ({ tournamentId, body, files, auditContext =
   return mapAdminTournament(tournament);
 };
 
-const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder }) => {
+const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder, auditContext = {} }) => {
   const existingTournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
   });
   if (!existingTournament) throw new HttpError(404, "Tournament not found.");
 
   const normalizedOrder = normalizeInteger(seriesOrder);
-  const tournament = await prisma.tournament.update({
+  const persist = (database) => database.tournament.update({
     where: { id: tournamentId },
     data: {
       seriesId,
@@ -1600,6 +1600,20 @@ const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder })
     },
     include: buildRegistrationCountInclude(),
   });
+  const tournament = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+    ? await prisma.$transaction(async (tx) => {
+      const updated = await persist(tx);
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "tournament.series_attached",
+        targetType: "Tournament",
+        targetId: updated.id,
+        beforeData: { seriesId: existingTournament.seriesId, seriesOrder: existingTournament.seriesOrder },
+        afterData: { seriesId: updated.seriesId, seriesOrder: updated.seriesOrder },
+      });
+      return updated;
+    })
+    : await persist(prisma);
   return mapAdminTournament(tournament);
 };
 

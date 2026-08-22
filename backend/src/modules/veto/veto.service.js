@@ -22,6 +22,18 @@ const roomInclude = {
 const randomCode = () => crypto.randomBytes(7).toString("base64url").toLowerCase();
 const randomToken = () => crypto.randomBytes(32).toString("hex");
 const hashToken = (token) => crypto.createHash("sha256").update(String(token || "")).digest("hex");
+const hasAuditContext = (context = {}) => Boolean(context.actorUserId || context.requestId || context.ipAddress);
+const auditRoomMutation = (tx, auditContext, action, room, beforeData, afterData) =>
+  hasAuditContext(auditContext)
+    ? recordAuditInTransaction(tx, {
+      ...auditContext,
+      action,
+      targetType: "VetoRoom",
+      targetId: room.id,
+      beforeData,
+      afterData,
+    })
+    : null;
 
 const parseRevision = (value) => {
   const revision = Number(value);
@@ -380,7 +392,7 @@ const participantInput = (input, slot) => ({
   accentColor: normalizeText(input?.accentColor) || TEAM_COLORS[slot - 1],
 });
 
-const createRoom = async ({ user, body }) => {
+const createRoom = async ({ user, body, auditContext = {} }) => {
   let tournamentId = normalizeText(body.tournamentId) || null;
   let match = null;
   if (body.matchId) {
@@ -422,26 +434,35 @@ const createRoom = async ({ user, body }) => {
   const issuedTokens = { team1: randomToken(), team2: randomToken(), viewer: settings.viewerEnabled ? randomToken() : null };
   const code = randomCode();
   const title = (normalizeText(body.title) || (match ? `${participants[0].displayName} vs ${participants[1].displayName}` : `${format.toUpperCase()} Veto Room`)).slice(0, 180);
-  const room = await prisma.$transaction(async (tx) => tx.vetoRoom.create({
-    data: {
-      code, tournamentId, matchId: match?.id || null, templateId: template?.id || null, mapPoolId: pool.id, rulePresetId: preset.id,
-      title, format, ...settings, createdById: user.id, preVetoMatchStatus: match?.status || null,
-      configSnapshot: {
-        pool: { id: pool.id, name: pool.name, version: pool.version },
-        preset: { id: preset.id, name: preset.name, version: preset.version },
-        maps: pool.maps.map(({ map }) => ({ slug: map.slug, name: map.name, artworkUrl: map.artworkUrl, accentColor: map.accentColor })),
-        steps,
-        settings,
+  const room = await prisma.$transaction(async (tx) => {
+    const created = await tx.vetoRoom.create({
+      data: {
+        code, tournamentId, matchId: match?.id || null, templateId: template?.id || null, mapPoolId: pool.id, rulePresetId: preset.id,
+        title, format, ...settings, createdById: user.id, preVetoMatchStatus: match?.status || null,
+        configSnapshot: {
+          pool: { id: pool.id, name: pool.name, version: pool.version },
+          preset: { id: preset.id, name: preset.name, version: preset.version },
+          maps: pool.maps.map(({ map }) => ({ slug: map.slug, name: map.name, artworkUrl: map.artworkUrl, accentColor: map.accentColor })),
+          steps,
+          settings,
+        },
+        participants: { create: participants },
+        grants: { create: [
+          { role: "team_1", tokenHash: hashToken(issuedTokens.team1) },
+          { role: "team_2", tokenHash: hashToken(issuedTokens.team2) },
+          ...(issuedTokens.viewer ? [{ role: "viewer", tokenHash: hashToken(issuedTokens.viewer) }] : []),
+        ] },
       },
-      participants: { create: participants },
-      grants: { create: [
-        { role: "team_1", tokenHash: hashToken(issuedTokens.team1) },
-        { role: "team_2", tokenHash: hashToken(issuedTokens.team2) },
-        ...(issuedTokens.viewer ? [{ role: "viewer", tokenHash: hashToken(issuedTokens.viewer) }] : []),
-      ] },
-    },
-    include: roomInclude,
-  }));
+      include: roomInclude,
+    });
+    await auditRoomMutation(tx, auditContext, "veto.room.created", created, null, {
+      code: created.code,
+      status: created.status,
+      tournamentId: created.tournamentId,
+      matchId: created.matchId,
+    });
+    return created;
+  });
   return { room: mapRoom(room, { kind: "staff", slot: null }), issuedTokens };
 };
 
@@ -490,13 +511,14 @@ const syncMatchStatus = async (tx, room, fromStatuses, status) => {
   await tx.match.updateMany({ where: { id: room.matchId, status: { in: fromStatuses } }, data: { status } });
 };
 
-const openRoom = async ({ user, roomId, revision }) => {
+const openRoom = async ({ user, roomId, revision, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
   if (room.status !== "draft") throw new HttpError(409, "Only a draft room can be opened.");
   await prisma.$transaction(async (tx) => {
     await mutateRevision(tx, room.id, parseRevision(revision), { status: "open", openedAt: new Date() });
     await syncMatchStatus(tx, room, ["not_scheduled", "scheduled", "check_in_open", "veto_starting_soon"], "veto_starting_soon");
+    await auditRoomMutation(tx, auditContext, "veto.room.opened", room, { status: room.status, revision: room.revision }, { status: "open", revision: room.revision + 1 });
   });
   return getAdminRoom({ user, roomId });
 };
@@ -524,7 +546,7 @@ const initialTeamASlot = (room) => {
   return room.teamASlot;
 };
 
-const startRoom = async ({ user, roomId, body }) => {
+const startRoom = async ({ user, roomId, body, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
   const revision = parseRevision(body.expectedRevision);
@@ -540,15 +562,20 @@ const startRoom = async ({ user, roomId, body }) => {
   await prisma.$transaction(async (tx) => {
     await mutateRevision(tx, room.id, revision, { status, teamASlot, startedAt: status === "in_progress" ? now : room.startedAt, turnDeadline });
     if (status === "in_progress") await syncMatchStatus(tx, room, ["veto_starting_soon", "veto_in_progress"], "veto_in_progress");
+    await auditRoomMutation(tx, auditContext, "veto.room.started", room, { status: room.status, teamASlot: room.teamASlot, revision: room.revision }, { status, teamASlot, revision: room.revision + 1 });
   });
   return getAdminRoom({ user, roomId });
 };
 
-const assignTeamA = async ({ user, roomId, body }) => {
+const assignTeamA = async ({ user, roomId, body, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
   if (!["draft", "open"].includes(room.status) || room.teamOrderMethod !== "staff_assignment") throw new HttpError(409, "Direct Team A assignment is not available now.");
-  await mutateRevision(prisma, room.id, parseRevision(body.expectedRevision), { teamASlot: parseSlot(body.teamASlot, "Team A slot") });
+  const teamASlot = parseSlot(body.teamASlot, "Team A slot");
+  await prisma.$transaction(async (tx) => {
+    await mutateRevision(tx, room.id, parseRevision(body.expectedRevision), { teamASlot });
+    await auditRoomMutation(tx, auditContext, "veto.team_order.assigned", room, { teamASlot: room.teamASlot, revision: room.revision }, { teamASlot, revision: room.revision + 1 });
+  });
   return getAdminRoom({ user, roomId });
 };
 
@@ -566,7 +593,7 @@ const tossRoom = async ({ code, user, token, body }) => {
   return getRoom({ code: room.code, user, token });
 };
 
-const recordManualToss = async ({ user, roomId, body }) => {
+const recordManualToss = async ({ user, roomId, body, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
   if (room.status !== "toss_pending" || room.tossMethod !== "manual") throw new HttpError(409, "This room is not waiting for a physical toss.");
@@ -574,7 +601,10 @@ const recordManualToss = async ({ user, roomId, body }) => {
   const result = normalizeText(body.result).toLowerCase();
   if (!["heads", "tails"].includes(call) || !["heads", "tails"].includes(result)) throw new HttpError(400, "Record a valid Heads or Tails call and result.");
   const winnerSlot = result === call ? room.tossCallerSlot : (room.tossCallerSlot === 1 ? 2 : 1);
-  await mutateRevision(prisma, room.id, parseRevision(body.expectedRevision), { tossCall: call, tossResult: result, tossWinnerSlot: winnerSlot });
+  await prisma.$transaction(async (tx) => {
+    await mutateRevision(tx, room.id, parseRevision(body.expectedRevision), { tossCall: call, tossResult: result, tossWinnerSlot: winnerSlot });
+    await auditRoomMutation(tx, auditContext, "veto.toss.recorded", room, { status: room.status, tossCall: room.tossCall, tossResult: room.tossResult, revision: room.revision }, { status: room.status, tossCall: call, tossResult: result, tossWinnerSlot: winnerSlot, revision: room.revision + 1 });
+  });
   return getAdminRoom({ user, roomId });
 };
 
@@ -724,25 +754,27 @@ const resetRoom = async ({ user, roomId, body, auditContext = {} }) => {
   return getAdminRoom({ user, roomId });
 };
 
-const cancelRoom = async ({ user, roomId, body }) => {
+const cancelRoom = async ({ user, roomId, body, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
   await prisma.$transaction(async (tx) => {
     await mutateRevision(tx, room.id, parseRevision(body.expectedRevision), { status: "cancelled", cancelledAt: new Date(), turnDeadline: null });
     if (room.matchId && room.preVetoMatchStatus) await tx.match.updateMany({ where: { id: room.matchId, status: { in: ["veto_starting_soon", "veto_in_progress"] } }, data: { status: room.preVetoMatchStatus } });
+    await auditRoomMutation(tx, auditContext, "veto.room.cancelled", room, { status: room.status, revision: room.revision }, { status: "cancelled", revision: room.revision + 1 });
   });
   return getAdminRoom({ user, roomId });
 };
 
-const rotateGrant = async ({ user, roomId, role }) => {
+const rotateGrant = async ({ user, roomId, role, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
   if (!["team_1", "team_2", "viewer"].includes(role)) throw new HttpError(400, "Invalid access-link role.");
   const token = randomToken();
-  await prisma.$transaction([
-    prisma.vetoAccessGrant.updateMany({ where: { roomId, role, revokedAt: null }, data: { revokedAt: new Date() } }),
-    prisma.vetoAccessGrant.create({ data: { roomId, role, tokenHash: hashToken(token) } }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    await tx.vetoAccessGrant.updateMany({ where: { roomId, role, revokedAt: null }, data: { revokedAt: new Date() } });
+    await tx.vetoAccessGrant.create({ data: { roomId, role, tokenHash: hashToken(token) } });
+    await auditRoomMutation(tx, auditContext, "veto.access.rotated", room, { role, accessRotated: false }, { role, accessRotated: true });
+  });
   return { role, token };
 };
 

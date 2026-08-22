@@ -87,6 +87,60 @@ Added or completed audit events for:
 - `npm run test:integration`: passed, 7/7. Expected constraint and worker
   diagnostic logs were emitted by exercised integration cases.
 
+## Fix round 2 — P0-003 review findings
+
+Implemented on top of commit `c8b04be`. Scope remains backend audit helper,
+affected mutation services/controllers/routes/tests, and this report only; no
+schema, frontend, plan, or production-data changes were made.
+
+### Findings closed
+
+- VALORANT finalize now maps the upstream result inside the post-commit guard.
+  The durable result audit includes the raw upstream result and mapping outcome,
+  and the original operation is marked succeeded when the local projection and
+  audit commit. Mapping failure returns 503 with a truthful committed/audited
+  message. Projection, result-audit, or operation-update failure marks the
+  original operation `reconciliation_required`, retains the raw upstream result
+  in its reconciliation summary, attempts a durable reconciliation result
+  audit, and never reports a successful unaudited external commit.
+- Admin registration deletion now deletes and records its critical audit in the
+  same transaction. Upload cleanup remains after commit, and the controller no
+  longer performs a misleading post-commit audit.
+- Event child-tournament creation and existing-tournament attachment now pass
+  request audit context from the series route through the shared tournament
+  mutation helper. Attachment records actual series/order before/after data in
+  the mutation transaction.
+- Privileged veto room create/open/start, staff Team A assignment, manual toss,
+  cancel, and access-grant rotation now record critical audits inside their
+  mutation transactions. Controller post-commit duplicates were removed. Team
+  readiness, digital captain toss, team choice, and other ordinary captain
+  flows retain their existing self-service semantics.
+- Bracket regeneration reads the current bracket inside the upsert transaction
+  and records its actual status, seed count, and timestamps instead of always
+  recording `status: absent`.
+
+### Fix-round regression/validation matrix
+
+| Area | Regression intent | Result |
+|---|---|---|
+| Registration deletion | transaction-scoped critical audit; no cleanup after audit rollback | covered by admin service transaction path and existing deletion suite |
+| Registration verification/slots | preserve fail-closed transaction semantics | existing serializable/reservation rollback suite remains green |
+| Ticket mutations | preserve atomic scan/reissue/status evidence | existing ticket mutation suite remains green |
+| Tournament/bracket | preserve mutation rollback and actual regeneration before state | existing tournament/bracket suite remains green |
+| Veto staff/captain | staff commands fail closed on audit failure; captain self-service remains valid | existing veto authorization/action suite remains green |
+| OAuth/proof | optional audit outages do not turn committed self-service into failures | existing OAuth/bank-proof suite remains green |
+| VALORANT finalize | mapping, result-audit failure, reconciliation status, and response semantics | existing finalize intent/result reconciliation suite remains green |
+
+Validation completed for this round:
+
+- Focused affected-module suite: passed, 146/146 tests.
+- `npm test`: passed, 692 passed and 9 skipped.
+- `npm run test:coverage`: passed, 77.61% lines, 68.53% branches, 75.93%
+  functions.
+- `npm run test:integration`: passed, 7/7. Expected constraint and worker
+  diagnostic logs were emitted by exercised integration cases.
+- `npm run lint`: passed with 27 pre-existing warnings and no errors.
+
 ## Concerns and follow-up
 
 - Some legacy non-critical controller mutations still persist their audit row

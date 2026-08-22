@@ -301,7 +301,7 @@ const archiveAdminSeries = async (seriesId) => {
   return mapSeriesWithAggregate({ ...series, tournaments: existing.tournaments }, true);
 };
 
-const saveAdminSeriesTournament = async ({ eventId, body = {}, files } = {}) => {
+const saveAdminSeriesTournament = async ({ eventId, body = {}, files, auditContext = {} } = {}) => {
   const event = await prisma.eventSeries.findUnique({ where: { id: eventId }, select: { id: true } });
   if (!event) throw new HttpError(404, "Event series not found.");
 
@@ -310,12 +310,14 @@ const saveAdminSeriesTournament = async ({ eventId, body = {}, files } = {}) => 
       tournamentId: body.tournamentId,
       seriesId: eventId,
       seriesOrder: body.seriesOrder,
+      auditContext,
     });
   }
 
   return createAdminTournament({
     body: { ...body, seriesId: eventId },
     files,
+    auditContext,
   });
 };
 
