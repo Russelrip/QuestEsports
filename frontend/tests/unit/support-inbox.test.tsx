@@ -35,6 +35,34 @@ describe("support inbox rendered states", () => {
 
   it("shows a retryable create failure without losing the message", async () => { const user = userEvent.setup(); createSupportConversation.mockRejectedValue(new Error("Network unavailable")); render(<SupportInbox />); await screen.findByText("Start a support conversation"); const subject = screen.getByLabelText(/Subject/); const body = screen.getByLabelText(/Message/); await user.type(subject, "Login issue"); await user.type(body, "Please help me sign in."); await user.click(screen.getByRole("button", { name: "Send message" })); expect(await screen.findByRole("alert")).toHaveTextContent("Network unavailable"); expect(subject).toHaveValue("Login issue"); expect(body).toHaveValue("Please help me sign in."); await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).not.toBeDisabled()); });
 
+  it("ignores a deferred create completion after the authenticated user changes", async () => {
+    const user = userEvent.setup();
+    let resolveCreate!: (value: SupportConversation) => void;
+    const pendingCreate = new Promise<SupportConversation>((resolve) => { resolveCreate = resolve; });
+    const pushState = vi.spyOn(window.history, "pushState");
+    createSupportConversation.mockReturnValue(pendingCreate);
+
+    const view = render(<SupportInbox />);
+    await screen.findByText("Start a support conversation");
+    await user.type(screen.getByLabelText(/Subject/), "Login issue");
+    await user.type(screen.getByLabelText(/Message/), "Please help me sign in.");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(createSupportConversation).toHaveBeenCalledWith("Login issue", "Please help me sign in."));
+
+    mocks.auth.user = { id: "user-2" };
+    view.rerender(<SupportInbox />);
+    await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2));
+
+    resolveCreate(conversation("OPEN", "stale-conversation", "Stale conversation"));
+    await act(async () => { await pendingCreate; await Promise.resolve(); });
+
+    expect(mocks.showToast).not.toHaveBeenCalled();
+    expect(pushState).not.toHaveBeenCalled();
+    expect(screen.queryByText("Stale conversation")).not.toBeInTheDocument();
+    pushState.mockRestore();
+    mocks.auth.user = { id: "user-1" };
+  });
+
   it("reopens a resolved thread and resets the reply input after success", async () => { const user = userEvent.setup(); const resolved = conversation("RESOLVED"); reopenSupportConversation.mockResolvedValue(conversation("OPEN")); sendSupportMessage.mockResolvedValue({ message: message("message-2"), status: "PENDING_STAFF" }); render(<SupportThread conversation={resolved} currentUserId="user-1" onChanged={vi.fn()} />); await user.click(screen.getByRole("button", { name: "Reopen" })); expect(await screen.findByText("Open")).toBeInTheDocument(); await user.type(screen.getByLabelText(/Message/), "Following up"); await user.click(screen.getAllByRole("button", { name: "Send message" }).at(-1)!); await waitFor(() => expect(screen.getByLabelText(/Message/)).toHaveValue("")); });
 
   it("shows a pending send state and disables the reply textarea", async () => { const user = userEvent.setup(); let resolveSend!: (value: { message: ReturnType<typeof message>; status: "PENDING_STAFF" }) => void; sendSupportMessage.mockReturnValue(new Promise((resolve) => { resolveSend = resolve; })); render(<SupportThread conversation={conversation()} currentUserId="user-1" onChanged={vi.fn()} />); const body = screen.getByLabelText(/Message/); await user.type(body, "Still need help"); await user.click(screen.getByRole("button", { name: "Send message" })); expect(screen.getByRole("button", { name: "Sending…" })).toBeDisabled(); expect(body).toBeDisabled(); resolveSend({ message: message("message-2"), status: "PENDING_STAFF" }); await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled()); });

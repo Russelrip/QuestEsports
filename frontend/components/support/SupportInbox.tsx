@@ -11,6 +11,7 @@ import SupportThread from "./SupportThread";
 
 const SUPPORT_POLL_INTERVAL_MS = 30_000;
 type RequestContext = { key: string; generation: number; userId: string | null; conversationId?: string };
+type CreateRequestContext = { userId: string; generation: number };
 
 export default function SupportInbox({ conversationId }: { conversationId?: string }) {
   const { user, isLoading: authLoading } = useAuth();
@@ -29,13 +30,31 @@ function SupportInboxForUser({ conversationId, userId }: { conversationId?: stri
   const threadContextRef = useRef<RequestContext>({ key: threadContextKey, generation: 0, userId, conversationId });
   const listRefreshQueued = useRef<RequestContext | null>(null);
   const threadRefreshQueued = useRef<RequestContext | null>(null);
+  const createGenerationRef = useRef(0);
+  const createUserIdRef = useRef(userId);
+  const createRequestRef = useRef<CreateRequestContext | null>(null);
+  const mountedRef = useRef(false);
+  if (createUserIdRef.current !== userId) {
+    createUserIdRef.current = userId;
+    createGenerationRef.current += 1;
+    createRequestRef.current = null;
+  }
   if (threadContextRef.current.key !== threadContextKey) {
     threadContextRef.current = { key: threadContextKey, generation: threadContextRef.current.generation + 1, userId, conversationId };
     threadRefreshQueued.current = null;
   }
   const listInFlight = useRef<RequestContext | null>(null);
   const threadInFlight = useRef<RequestContext | null>(null);
-  useEffect(() => () => { listRefreshQueued.current = null; threadRefreshQueued.current = null; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      createGenerationRef.current += 1;
+      createRequestRef.current = null;
+      listRefreshQueued.current = null;
+      threadRefreshQueued.current = null;
+    };
+  }, []);
   const loadList = useCallback(async () => { const requestContext = listContextRef.current; if (!requestContext.userId) return; if (listInFlight.current?.generation === requestContext.generation) { listRefreshQueued.current = requestContext; return; } listInFlight.current = requestContext; try { const result = await listSupportConversations(); if (listContextRef.current.generation !== requestContext.generation) return; setItems(result.items); setListError(null); } catch (error) { if (listContextRef.current.generation !== requestContext.generation) return; setListError(error instanceof Error ? error.message : "Inbox could not be loaded."); } finally { if (listInFlight.current === requestContext) { listInFlight.current = null; const refreshQueued = listRefreshQueued.current === requestContext; listRefreshQueued.current = null; if (listContextRef.current.generation === requestContext.generation) { if (refreshQueued) void loadList(); else setListLoading(false); } } } }, []);
   const loadThread = useCallback(async () => { const requestContext = threadContextRef.current; if (!conversationId || requestContext.conversationId !== conversationId) return; if (threadInFlight.current?.generation === requestContext.generation) { threadRefreshQueued.current = requestContext; return; } threadInFlight.current = requestContext; setThreadLoading(true); setThreadError(null); setReadError(null); try { const result = await getSupportConversation(conversationId); if (threadContextRef.current.generation !== requestContext.generation) return; setConversation(result); try { await markSupportConversationRead(conversationId); if (threadContextRef.current.generation === requestContext.generation) await loadList(); } catch (error) { if (threadContextRef.current.generation === requestContext.generation) setReadError(error instanceof Error ? error.message : "Read status could not be saved."); } } catch (error) { if (threadContextRef.current.generation !== requestContext.generation) return; setConversation(null); setThreadError(error instanceof Error ? error.message : "Conversation could not be loaded."); } finally { if (threadInFlight.current === requestContext) { threadInFlight.current = null; const refreshQueued = threadRefreshQueued.current === requestContext; threadRefreshQueued.current = null; if (threadContextRef.current.generation === requestContext.generation) { if (refreshQueued) void loadThread(); else setThreadLoading(false); } } } }, [conversationId, loadList]);
   useEffect(() => { setConversation(null); setThreadError(null); setReadError(null); setThreadLoading(Boolean(conversationId)); }, [conversationId]);
@@ -43,7 +62,31 @@ function SupportInboxForUser({ conversationId, userId }: { conversationId?: stri
   useEffect(() => { if (conversationId) void loadThread(); }, [conversationId, loadThread]);
   useEffect(() => { const close = subscribeToRealtimeUpdates(`user:${userId}`, () => { void loadList(); if (conversationId) void loadThread(); }); return close; }, [userId, conversationId, loadList, loadThread]);
   useEffect(() => { const interval = window.setInterval(() => { void loadList(); if (conversationId) void loadThread(); }, SUPPORT_POLL_INTERVAL_MS); return () => window.clearInterval(interval); }, [conversationId, loadList, loadThread]);
-  const create = async ({ subject, body }: { subject: string; body: string }) => { setCreating(true); setCreateError(null); try { const next = await createSupportConversation(subject, body); showToast({ title: "Message sent", description: "Your support conversation is ready.", tone: "success" }); await loadList(); window.history.pushState({}, "", `/support/${next.id}`); setConversation(next); return true; } catch (error) { setCreateError(error instanceof Error ? error.message : "Message could not be sent. Try again."); return false; } finally { setCreating(false); } };
+  const create = async ({ subject, body }: { subject: string; body: string }) => {
+    const requestContext: CreateRequestContext = { userId, generation: createGenerationRef.current + 1 };
+    createGenerationRef.current = requestContext.generation;
+    createRequestRef.current = requestContext;
+    const isCurrentRequest = () => mountedRef.current && createUserIdRef.current === requestContext.userId && createRequestRef.current === requestContext;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const next = await createSupportConversation(subject, body);
+      if (!isCurrentRequest()) return false;
+      showToast({ title: "Message sent", description: "Your support conversation is ready.", tone: "success" });
+      if (!isCurrentRequest()) return false;
+      await loadList();
+      if (!isCurrentRequest()) return false;
+      window.history.pushState({}, "", `/support/${next.id}`);
+      setConversation(next);
+      return true;
+    } catch (error) {
+      if (!isCurrentRequest()) return false;
+      setCreateError(error instanceof Error ? error.message : "Message could not be sent. Try again.");
+      return false;
+    } finally {
+      if (isCurrentRequest()) setCreating(false);
+    }
+  };
   if (listLoading && !items.length) return <div className="rounded-2xl border border-white/10 bg-white/[.03] p-10 text-center text-sm text-slate-400">Loading your conversations…</div>;
   return <div className="grid gap-4 lg:grid-cols-[19rem_1fr]"><aside className="overflow-hidden rounded-2xl border border-white/10 bg-[#0d0c13]"><div className="border-b border-white/8 px-4 py-5"><p className="text-xs uppercase tracking-[.25em] text-slate-500">Your inbox</p><h2 className="mt-2 text-xl text-white">Support conversations</h2></div>{listError && !items.length ? <div className="p-4 text-sm text-red-100"><p>{listError}</p><button className="mt-3 text-cyan-200 underline" onClick={() => { setListLoading(true); void loadList(); }}>Try again</button></div> : items.length ? <SupportConversationList items={items} selectedId={conversationId} /> : <div className="p-5 text-sm leading-6 text-slate-400">No conversations yet. Start a message and the Quest team will pick it up.</div>}</aside><main className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#0d0c13]">{conversationId && threadLoading ? <div className="p-10 text-center text-sm text-slate-400">Loading this conversation…</div> : threadError ? <div className="p-8 text-center"><p role="alert" className="text-sm text-red-100">{threadError}</p><button className="mt-4 text-sm text-cyan-200 underline" onClick={() => void loadThread()}>Try again</button></div> : conversation ? <SupportThread conversation={conversation} currentUserId={userId} readError={readError} onChanged={() => void loadList()} /> : <div className="p-5 sm:p-8"><p className="text-xs uppercase tracking-[.25em] text-cyan-200">Need a hand?</p><h2 className="mt-3 text-3xl text-white">Start a support conversation</h2><p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">Share the details once. Keep the thread open for updates from Quest Support.</p>{readError ? <p role="alert" className="mt-4 text-sm text-red-200">{readError}</p> : null}<div className="mt-7 max-w-2xl"><SupportComposer busy={creating} error={createError} onSubmit={create} /></div></div>}</main></div>;
 }
