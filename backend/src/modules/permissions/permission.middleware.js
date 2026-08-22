@@ -150,6 +150,33 @@ const requirePermission = (scope, options = {}) =>
     next();
   });
 
+// Route-level defence in depth for the public veto code routes. `veto.service`
+// remains the authority on who may read or mutate a room; these guards only
+// reject callers that cannot possibly be authorized, using the same status
+// codes the service already returns, before any room lookup happens.
+const VETO_ROOM_CODE_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+const requireVetoRoomCode = (req, res, next) => {
+  const code = String(req.params?.code ?? "").trim();
+  if (!VETO_ROOM_CODE_PATTERN.test(code)) {
+    next(new HttpError(404, "Veto room not found."));
+    return;
+  }
+  next();
+};
+
+const requireVetoRoomCredential = (req, res, next) => {
+  if (req.user) {
+    next();
+    return;
+  }
+  if (String(req.headers?.["x-veto-token"] ?? "").trim()) {
+    next();
+    return;
+  }
+  next(new HttpError(401, "This veto room requires an authorized account or access link."));
+};
+
 const requireSuperAdmin = (req, res, next) => {
   if (!isSuperAdmin(req.user)) {
     next(new HttpError(403, "Super admin access is required."));
@@ -264,4 +291,6 @@ module.exports = {
   requireMatchStaff,
   requireVetoRoomStaff,
   requireVetoTournamentStaff,
+  requireVetoRoomCode,
+  requireVetoRoomCredential,
 };

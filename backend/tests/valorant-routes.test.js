@@ -53,6 +53,8 @@ test("v1 router guards /admin/valorant with requireAdmin and declares every prox
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => passMiddleware,
       requirePermission: requirePermissionMock,
+      requireVetoRoomCode: passMiddleware,
+      requireVetoRoomCredential: passMiddleware,
       PERMISSION_SCOPES: permissionScopesMock,
     },
     [valorantControllerPath]: controllerMock,
@@ -141,6 +143,8 @@ test("v1 tournament detail mutations invalidate both foundation and tournament c
     [permissionMiddlewarePath]: {
       requireSuperAdmin: () => passMiddleware,
       requirePermission: requirePermissionMock,
+      requireVetoRoomCode: passMiddleware,
+      requireVetoRoomCredential: passMiddleware,
       PERMISSION_SCOPES: permissionScopesMock,
     },
     [valorantControllerPath]: controllerMock,

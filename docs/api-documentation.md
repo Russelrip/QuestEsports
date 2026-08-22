@@ -86,6 +86,7 @@ Tournament administrators and referees can use `/api/v1/admin/tournaments/:id/ma
 
 - `GET /api/v1/veto-rooms/:code` returns the authorized room snapshot. Private role links send their fragment token through `X-Veto-Token`; signed captains and staff use their normal session.
 - `POST /api/v1/veto-rooms/:code/ready`, `/toss`, `/team-a`, and `/actions` require `expectedRevision`. Stale or simultaneous changes return `409` and clients refetch the room.
+- Code routes carry route-level defence in depth before the room is loaded: a code outside `[A-Za-z0-9_-]{1,64}` returns the usual `404`, and a `POST` with neither a session nor `X-Veto-Token` returns `401`. `veto.service` access resolution stays authoritative for every credential-bearing caller.
 - `GET /api/v1/veto-rooms/mine` lists rooms where the signed-in user is the registered captain.
 - `/api/v1/admin/veto/catalog` exposes maps, versioned pools, rule presets, and reusable room templates. Staff room creation and lifecycle controls are under `/api/v1/admin/veto-rooms`.
 - `PATCH /api/v1/admin/veto/maps/:id` accepts `{ "isActive": boolean }`, is admin-only, and changes the map pool used for future room setup only. It is the map availability endpoint; disabling a map does not modify an active room.

@@ -19,6 +19,8 @@ const { getRealtimeEvents } = require("../modules/realtime/realtime.controller")
 const {
   requireSuperAdmin,
   requirePermission,
+  requireVetoRoomCode,
+  requireVetoRoomCredential,
   PERMISSION_SCOPES,
 } = require("../modules/permissions/permission.middleware");
 
@@ -99,13 +101,16 @@ router.post("/notifications/push-subscriptions", requireAuth, notificationContro
 router.delete("/notifications/push-subscriptions", requireAuth, notificationController.unsubscribe);
 router.patch("/notifications/preferences", requireAuth, notificationController.preference);
 router.get("/veto-rooms/mine", requireAuth, vetoController.myRooms);
-// Code routes intentionally remain service-authorized: resolveAccess preserves
-// captain, public, account, and x-veto-token flows without granting admin scope.
-router.get("/veto-rooms/:code", vetoController.getRoom);
-router.post("/veto-rooms/:code/ready", vetoController.readyRoom);
-router.post("/veto-rooms/:code/toss", vetoController.tossRoom);
-router.post("/veto-rooms/:code/team-a", vetoController.chooseTeamA);
-router.post("/veto-rooms/:code/actions", vetoController.submitAction);
+// Code routes stay service-authorized: resolveAccess remains the authority and
+// preserves captain, public, account, and x-veto-token flows without granting
+// admin scope. The route guards are defence in depth only — they reject
+// impossible codes and credential-free mutations with the status codes the
+// service already returns, before the room is loaded.
+router.get("/veto-rooms/:code", requireVetoRoomCode, vetoController.getRoom);
+router.post("/veto-rooms/:code/ready", requireVetoRoomCode, requireVetoRoomCredential, vetoController.readyRoom);
+router.post("/veto-rooms/:code/toss", requireVetoRoomCode, requireVetoRoomCredential, vetoController.tossRoom);
+router.post("/veto-rooms/:code/team-a", requireVetoRoomCode, requireVetoRoomCredential, vetoController.chooseTeamA);
+router.post("/veto-rooms/:code/actions", requireVetoRoomCode, requireVetoRoomCredential, vetoController.submitAction);
 
 router.get("/admin/veto/catalog", requireAuth, requirePermission(scopes.VETO_CATALOG_CONFIG, { queryField: "tournamentId", allowUnscoped: true }), vetoController.catalog);
 router.post("/admin/veto/maps", requireAuth, requireAdmin, vetoController.createMap);

@@ -60,7 +60,7 @@ const runRoute = async (layer, req) => {
   return errors[0] || null;
 };
 
-test("admin veto mutations enforce scoped staff access without guarding public code routes", async () => {
+test("admin veto mutations enforce scoped staff access while public code routes keep their own guards", async () => {
   const prisma = {
     tournament: {
       findUnique: async ({ where }) => where.id === "missing-tournament" ? null : ({ id: where.id }),
@@ -420,6 +420,221 @@ test("public veto code routes use real captain, grant, and published-room access
 
     const unauthenticatedRequest = { user: null, params: { code: "captain-room" }, headers: {} };
     assert.equal((await runRoute(getRoom, unauthenticatedRequest))?.statusCode, 401);
+  } finally {
+    loaded.restore();
+    permission.restore();
+    actualController.restore();
+    actualService.restore();
+  }
+});
+
+test("public veto code routes are route-guarded before the service resolves access", async () => {
+  const tokenHash = (token) => crypto.createHash("sha256").update(token).digest("hex");
+  const roomLookups = [];
+  const room = (overrides = {}) => ({
+    id: `room-${overrides.code || "guard"}`,
+    code: overrides.code || "guard-room",
+    tournamentId: "tournament-1",
+    title: "Guard Room",
+    format: "bo1",
+    status: "open",
+    revision: 1,
+    controlMode: "captain_or_link",
+    teamOrderMethod: "toss",
+    tossMethod: "digital",
+    tossCallerSlot: 2,
+    tossCall: null,
+    tossResult: null,
+    tossWinnerSlot: null,
+    teamASlot: null,
+    currentStep: 0,
+    turnSeconds: null,
+    turnDeadline: null,
+    viewerEnabled: true,
+    publishResult: false,
+    participants: [],
+    actions: [],
+    configSnapshot: { maps: [], steps: [] },
+    tournament: null,
+    match: null,
+    openedAt: null,
+    startedAt: null,
+    completedAt: null,
+    cancelledAt: null,
+    updatedAt: new Date(),
+    ...overrides,
+  });
+  const participant = (slot, registrationId) => ({
+    id: `participant-${slot}`,
+    slot,
+    registrationId,
+    displayName: `Team ${slot}`,
+    seed: slot,
+    accentColor: "#22d3ee",
+    readyAt: null,
+    joinedAt: null,
+  });
+  const rooms = [
+    room({
+      code: "captain-room",
+      participants: [participant(1, "registration-1"), participant(2, "registration-2")],
+    }),
+    room({ code: "link-room", controlMode: "link_only" }),
+    room({ code: "published-room", status: "completed", publishResult: true }),
+  ];
+  const prisma = {
+    vetoRoom: {
+      findUnique: async ({ where }) => {
+        roomLookups.push(where);
+        return rooms.find((entry) => (where.code ? entry.code === where.code : entry.id === where.id)) || null;
+      },
+    },
+    tournamentStaffAssignment: {
+      findFirst: async ({ where }) => (where.tournamentId === "tournament-1" && where.userId === "staff-1"
+        ? { id: "assignment-1" }
+        : null),
+    },
+    teamRegistration: {
+      findMany: async ({ where }) => {
+        const owners = { "captain-1": "registration-1", "captain-2": "registration-2" };
+        const userId = where.OR?.map((entry) => entry.userId).find(Boolean);
+        const registrationId = owners[userId];
+        if (!registrationId) return [];
+        return where.id.in.includes(registrationId) ? [{ id: registrationId }] : [];
+      },
+    },
+    vetoAccessGrant: {
+      findFirst: async ({ where }) => (where.tokenHash === tokenHash("live-grant")
+        ? { id: "grant-live", role: "team_1", expiresAt: new Date(Date.now() + 60_000) }
+        : where.tokenHash === tokenHash("stale-grant")
+          ? { id: "grant-stale", role: "team_1", expiresAt: new Date(Date.now() - 60_000) }
+          : null),
+      update: async () => undefined,
+    },
+  };
+  const actualService = loadModuleWithMocks(vetoServicePath, { [prismaPath]: { prisma } });
+  const actualController = loadModuleWithMocks(vetoControllerPath, {
+    [vetoServicePath]: actualService.module,
+    [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
+    [realtimeServicePath]: { publishRealtimeEvent: () => undefined },
+    [matchRoomServicePath]: { notifyVetoTurn: async () => undefined },
+  });
+  const permission = loadModuleWithMocks(permissionMiddlewarePath, { [prismaPath]: { prisma } });
+  const loaded = loadModuleWithMocks(v1Path, {
+    [envPath]: { env: { CACHE_TTL_SECONDS: 300, CHALLONGE_BRACKET_CACHE_SECONDS: 30 } },
+    [authPath]: {
+      attachSession: pass,
+      requireAuth: (req, res, next) => (req.user ? next() : next(Object.assign(new Error("auth"), { statusCode: 401 }))),
+      requireAdmin: (req, res, next) => (req.user?.role === "admin"
+        ? next()
+        : next(Object.assign(new Error("admin"), { statusCode: 403 }))),
+    },
+    [asyncHandlerPath]: { asyncHandler: (handler) => handler },
+    [cacheControlPath]: { cachePublicData: () => pass },
+    [responseCachePath]: { cacheJson: () => pass, invalidateCache: () => pass },
+    [tournamentServicePath]: { getPublicTournamentBySlug: async () => ({}) },
+    [matchControllerPath]: controller,
+    [vetoControllerPath]: actualController.module,
+    [matchRoomControllerPath]: controller,
+    [notificationControllerPath]: controller,
+    [supportRoutesPath]: pass,
+    [authRoutesPath]: { oauthLinkRoutes: pass },
+    [challongeControllerPath]: controller,
+    [staffControllerPath]: controller,
+    [realtimeControllerPath]: { getRealtimeEvents: pass },
+    [permissionMiddlewarePath]: permission.module,
+    [valorantControllerPath]: controller,
+    [valorantLeaderboardControllerPath]: controller,
+  });
+
+  const getRoom = route(loaded.module, "get", "/veto-rooms/:code");
+  const readyRoom = route(loaded.module, "post", "/veto-rooms/:code/ready");
+  const tossRoom = route(loaded.module, "post", "/veto-rooms/:code/toss");
+  const teamARoom = route(loaded.module, "post", "/veto-rooms/:code/team-a");
+  const actionsRoom = route(loaded.module, "post", "/veto-rooms/:code/actions");
+  const codeRoutes = [getRoom, readyRoom, tossRoom, teamARoom, actionsRoom];
+  const mutationRoutes = [readyRoom, tossRoom, teamARoom, actionsRoom];
+
+  try {
+    for (const layer of codeRoutes) {
+      assert.ok(layer, "every public veto code route stays registered");
+      assert.ok(layer.route.stack.length > 1, "public veto code routes gain route-level guards");
+    }
+
+    // A malformed room code is rejected at the route boundary with the existing
+    // not-found contract and never reaches the database.
+    for (const layer of codeRoutes) {
+      for (const code of ["../admin", "code with spaces", "", "a".repeat(65)]) {
+        roomLookups.length = 0;
+        const rejected = await runRoute(layer, {
+          user: { id: "captain-1", role: "user" },
+          params: { code },
+          headers: {},
+          body: {},
+        });
+        assert.equal(rejected?.statusCode, 404, "a malformed veto code is rejected with the existing not-found status");
+        assert.equal(roomLookups.length, 0, "a malformed veto code never reaches the veto room lookup");
+      }
+    }
+
+    // Credential-free mutations stop at the route boundary with the same
+    // permission response the service produces for anonymous callers.
+    for (const layer of mutationRoutes) {
+      roomLookups.length = 0;
+      const anonymous = await runRoute(layer, { user: null, params: { code: "captain-room" }, headers: {}, body: {} });
+      assert.equal(anonymous?.statusCode, 401);
+      assert.equal(roomLookups.length, 0, "an anonymous mutation never reaches the veto room lookup");
+
+      roomLookups.length = 0;
+      const publishedAnonymous = await runRoute(layer, { user: null, params: { code: "published-room" }, headers: {}, body: {} });
+      assert.equal(publishedAnonymous?.statusCode, 401, "a published room does not expose mutation state to anonymous callers");
+      assert.equal(roomLookups.length, 0);
+    }
+
+    // The public read stays public for a published room without any credential.
+    const publicRead = { user: null, params: { code: "published-room" }, headers: {} };
+    assert.equal(await runRoute(getRoom, publicRead), null);
+    assert.equal(publicRead.responseBody.data.access.kind, "public");
+
+    // The service remains authoritative for every credential-bearing caller.
+    const captainRead = { user: { id: "captain-1", role: "user" }, params: { code: "captain-room" }, headers: {} };
+    assert.equal(await runRoute(getRoom, captainRead), null);
+    assert.deepEqual(captainRead.responseBody.data.access, { kind: "team", slot: 1 });
+
+    const grantRead = { user: null, params: { code: "link-room" }, headers: { "x-veto-token": "live-grant" } };
+    assert.equal(await runRoute(getRoom, grantRead), null);
+    assert.deepEqual(grantRead.responseBody.data.access, { kind: "team", slot: 1 });
+
+    const staffRead = { user: { id: "staff-1", role: "user" }, params: { code: "captain-room" }, headers: {} };
+    assert.equal(await runRoute(getRoom, staffRead), null);
+    assert.equal(staffRead.responseBody.data.access.kind, "staff");
+
+    const superAdminRead = { user: { id: "admin-1", role: "admin" }, params: { code: "captain-room" }, headers: {} };
+    assert.equal(await runRoute(getRoom, superAdminRead), null);
+    assert.equal(superAdminRead.responseBody.data.access.kind, "staff");
+
+    // Cross-tournament staff hold no code-route access; the service rejects them.
+    const crossTournamentRead = { user: { id: "other-tournament-staff", role: "user" }, params: { code: "captain-room" }, headers: {} };
+    assert.equal((await runRoute(getRoom, crossTournamentRead))?.statusCode, 403);
+
+    // An expired grant passes the route credential check and is refused by the service.
+    roomLookups.length = 0;
+    const expiredGrantAction = { user: null, params: { code: "link-room" }, headers: { "x-veto-token": "stale-grant" }, body: {} };
+    assert.equal((await runRoute(actionsRoom, expiredGrantAction))?.statusCode, 401);
+    assert.ok(roomLookups.length > 0, "a supplied credential still reaches service-level authorization");
+
+    // A captain who is not the designated caller is refused by the service, not the route.
+    const wrongTeamToss = {
+      user: { id: "captain-1", role: "user" },
+      params: { code: "captain-room" },
+      headers: {},
+      body: { call: "heads", expectedRevision: 1 },
+    };
+    assert.equal((await runRoute(tossRoom, wrongTeamToss))?.statusCode, 409);
+
+    // An unknown but well-formed code still resolves to the existing 404.
+    const unknownRoom = { user: { id: "captain-1", role: "user" }, params: { code: "no-such-room" }, headers: {} };
+    assert.equal((await runRoute(getRoom, unknownRoom))?.statusCode, 404);
   } finally {
     loaded.restore();
     permission.restore();
