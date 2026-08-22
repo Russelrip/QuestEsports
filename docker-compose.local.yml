@@ -1,0 +1,101 @@
+# LOCAL DEVELOPMENT ONLY — this is not a deployment artefact.
+#
+# Production runs Quest Express under PM2 on the API VPS via
+# .github/workflows/cd.yml (gated by MIGRATION_APPROVAL_SHA), the frontend on
+# Vercel, and backup/restore/secret-recovery out of ops/. None of that is
+# containerised, and containerising it means redesigning those controls first.
+# This file exists for one narrow purpose: running Quest Express, the sibling
+# VALORANT service, and a throwaway Postgres together on one machine, so a
+# developer no longer needs a shared remote Supabase test project.
+#
+#   docker compose -f docker-compose.local.yml up
+#
+# The frontend deliberately stays outside: `cd frontend && npm run dev` gives
+# better fast refresh than a bind-mounted container.
+#
+# The valorant-backend service requires the sibling repository checked out at
+# ../valorant-platform-backend (the same path docs/setup-and-deployment.md
+# assumes). It sits behind a profile so compose works without it:
+#
+#   docker compose -f docker-compose.local.yml --profile valorant up
+
+name: quest-local
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    # Loopback only. An internal service bound to 0.0.0.0 is how a development
+    # database ends up reachable from the network.
+    ports:
+      - "127.0.0.1:55432:5432"
+    environment:
+      # Local-only fixtures for a loopback container. Not secrets, and never
+      # reused anywhere else.
+      POSTGRES_USER: quest
+      POSTGRES_PASSWORD: local_quest
+      POSTGRES_DB: quest
+    volumes:
+      - quest-local-pgdata:/var/lib/postgresql/data
+      # Creates the FastAPI runtime role so the two-schema topology matches
+      # docs/setup-and-deployment.md.
+      - ./ops/docker/init-local-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quest -d quest"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: ops/docker/backend.local.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Deliberately NOT backend/.env — that file points at a remote Supabase
+    # project. See ops/docker/quest.local.env.example.
+    env_file:
+      - path: ./ops/docker/quest.local.env
+        required: false
+    environment:
+      # Set here rather than in the env file so the local database always wins,
+      # even if someone points env_file at their real .env by mistake.
+      DATABASE_URL: postgresql://quest:local_quest@postgres:5432/quest?schema=public
+      DIRECT_URL: postgresql://quest:local_quest@postgres:5432/quest?schema=public
+      # Service name on the compose network, never localhost:8000.
+      VALORANT_INTERNAL_BASE_URL: http://valorant-backend:8000
+    ports:
+      - "127.0.0.1:5001:5001"
+    volumes:
+      # Source is mounted so edits are live; node_modules stays in the image so
+      # the host's platform-specific builds never leak in.
+      - ./backend:/app/backend
+      - /app/backend/node_modules
+
+  valorant-backend:
+    profiles: ["valorant"]
+    build:
+      # The sibling repository owns its own deployment; this builds it only for
+      # local parity.
+      context: ../valorant-platform-backend
+      dockerfile: ../QuestEsports/ops/docker/valorant.local.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql+asyncpg://quest:local_quest@postgres:5432/quest
+      # Must match VALORANT_SERVICE_KEY_ID / VALORANT_SERVICE_SECRET on the
+      # Quest side, in the upstream's kid=secret form.
+      QUEST_SERVICE_SHARED_SECRETS: local=local-development-shared-secret-change-me
+      # Set your own HenrikDev key to exercise live resolution; without it the
+      # service still starts and the health route answers.
+      HENRIK_API_KEY: ${HENRIK_API_KEY:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ../valorant-platform-backend:/app
+      - /app/.venv
+
+volumes:
+  quest-local-pgdata:
