@@ -31,6 +31,21 @@ existing contact, match-room, notification, or OAuth tables.
   saved-team members. Saved teams may persist `COACH` members alongside player,
   substitute, and captain roles; coach phone data remains nullable for legacy
   and partially populated saved rosters.
+- `20260823120000_add_players_and_game_accounts` adds the Quest-owned durable
+  player identity (`players`, with a sequence-backed `QPID-000001` public
+  reference and a nullable, unique `user_id` so a player may be unclaimed) and
+  the per-title `game_accounts` table keyed on the upstream's stable identifier
+  (PUUID for VALORANT). Display name, tag, and region are a cached snapshot and
+  are never an identity key. Integrity lives in the database: unique
+  `(game, external_id)`, a partial unique index allowing one `active` account
+  per player per game, and a CHECK forcing `external_id` to be stored
+  normalized. Verification strength and lifecycle are separate columns, and the
+  verification enum deliberately has no ownership state — the VALORANT upstream
+  resolves accounts through HenrikDev, which proves an account exists but never
+  proves the signed-in user holds it. Wholly additive: the legacy free-text
+  `saved_team_members.riot_id`, `registration_members.riot_id`, and
+  `team_registrations.captain_riot_id` columns are untouched, and nothing is
+  backfilled.
 - `20260822150000_add_saved_team_logo_cleared_at` adds the nullable
   `saved_teams.logo_cleared_at` marker. `logo_name` alone cannot say why a team
   has no logo, so this column separates a team that has never had one — which

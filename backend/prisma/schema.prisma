@@ -62,6 +62,38 @@ enum AuthProvider {
   discord
 }
 
+// A game account is per-title because every title resolves identity through a
+// different upstream with a different verification strength. Adding a title is
+// an additive enum value plus an adapter, never a new user model.
+enum GameAccountGame {
+  valorant
+}
+
+// Verification says exactly what was PROVEN, never more. There is no Riot
+// Sign-On available to Quest — the VALORANT upstream resolves accounts through
+// HenrikDev, which proves an account EXISTS but can never prove the signed-in
+// Quest user holds it. `ownership_verified` is therefore deliberately absent;
+// if RSO ever ships it is a new state, not a rename of one of these.
+enum GameAccountVerificationStatus {
+  resolved
+  user_confirmed
+  discord_corroborated
+  admin_verified
+  legacy_unverified
+  revoked
+}
+
+// Lifecycle, kept separate from verification: an admin-verified account can
+// still be locked by a live tournament, and a replaced account keeps its
+// verification history.
+enum GameAccountStatus {
+  active
+  change_requested
+  locked
+  replaced
+  revoked
+}
+
 enum RegistrationMemberRole {
   CAPTAIN
   PLAYER
@@ -313,67 +345,68 @@ model DeploymentEnvironment {
 }
 
 model User {
-  id                      String                      @id @default(uuid()) @db.Uuid
-  firstName               String                      @map("first_name")
-  lastName                String                      @map("last_name")
-  email                   String
-  emailNormalized         String                      @unique @map("email_normalized")
-  pendingEmail            String?                     @map("pending_email")
-  pendingEmailNormalized  String?                     @unique @map("pending_email_normalized")
-  username                String
-  usernameNormalized      String                      @unique @map("username_normalized")
-  passwordHash            String                      @map("password_hash")
-  passwordSetAt           DateTime?                   @map("password_set_at")
-  emailVerified           Boolean                     @default(false) @map("email_verified")
-  emailVerifiedAt         DateTime?                   @map("email_verified_at")
-  role                    UserRole                    @default(user)
-  phone                   String?
-  discordTag              String?                     @map("discord_tag")
-  avatarImageName         String?                     @map("avatar_image_name")
-  lastLoginAt             DateTime?                   @map("last_login_at")
-  failedLoginCount        Int                         @default(0) @map("failed_login_count")
-  lastFailedLoginAt       DateTime?                   @map("last_failed_login_at")
-  lockedUntil             DateTime?                   @map("locked_until")
-  createdAt               DateTime                    @default(now()) @map("created_at")
-  updatedAt               DateTime                    @updatedAt @map("updated_at")
-  sessions                Session[]
-  verificationTokens      VerificationToken[]
-  emailChangeTokens       EmailChangeToken[]
-  passwordResetTokens     PasswordResetToken[]
-  mobileOAuthGrants       MobileOAuthGrant[]
-  oauthAccounts           OAuthAccount[]
-  oauthLinkNonces          OAuthLinkNonce[]
-  savedTeams              SavedTeam[]
-  savedTeamMemberships    SavedTeamMember[]
-  registrationMemberships RegistrationMember[]
-  recruitmentApplications RecruitmentApplication[]
-  tournamentRegistrations TeamRegistration[]
-  merchandiseOrders       MerchandiseOrder[]
-  ticketOrders            TicketOrder[]
-  checkedInTickets        Ticket[]                    @relation("TicketCheckInStaff")
-  ticketScans             TicketScan[]                @relation("TicketScanStaff")
-  reviewedPaymentProofs   BankTransferProof[]         @relation("PaymentProofReviewer")
-  reconciledPayments      PaymentTransaction[]        @relation("PaymentReconciler")
-  adminSlotReservations   AdminSlotReservation[]
-  tournamentStaff         TournamentStaffAssignment[]
-  assignedMatches         Match[]                     @relation("AssignedMatchStaff")
-  auditLogs               AuditLog[]                  @relation("AuditActor")
-  createdExpenses         EventExpense[]              @relation("ExpenseCreator")
-  valorantBindings        ValorantTeamBinding[]       @relation("ValorantBindingBoundBy")
-  valorantSeriesFinalized QuestValorantSeries[]       @relation("ValorantSeriesFinalizer")
-  matchRoomMemberships    MatchRoomMember[]
-  matchRoomMessages       MatchRoomMessage[]          @relation("MatchRoomMessageSender")
-  moderatedRoomMessages   MatchRoomMessage[]          @relation("MatchRoomMessageModerator")
-  openedSupportRequests   MatchSupportRequest[]       @relation("MatchSupportRequestOpener")
-  resolvedSupportRequests MatchSupportRequest[]       @relation("MatchSupportRequestResolver")
-  matchSupportMessages    MatchSupportMessage[]
-  ownedSupportConversations SupportConversation[]     @relation("SupportConversationOwner")
-  assignedSupportConversations SupportConversation[]  @relation("SupportConversationAssignee")
-  supportMessages          SupportMessage[]            @relation("SupportMessageSender")
-  supportConversationReads SupportConversationRead[]
-  notificationRecipients  NotificationRecipient[]
-  webPushSubscriptions    WebPushSubscription[]
-  notificationPreference  UserNotificationPreference?
+  id                           String                      @id @default(uuid()) @db.Uuid
+  firstName                    String                      @map("first_name")
+  lastName                     String                      @map("last_name")
+  email                        String
+  emailNormalized              String                      @unique @map("email_normalized")
+  pendingEmail                 String?                     @map("pending_email")
+  pendingEmailNormalized       String?                     @unique @map("pending_email_normalized")
+  username                     String
+  usernameNormalized           String                      @unique @map("username_normalized")
+  passwordHash                 String                      @map("password_hash")
+  passwordSetAt                DateTime?                   @map("password_set_at")
+  emailVerified                Boolean                     @default(false) @map("email_verified")
+  emailVerifiedAt              DateTime?                   @map("email_verified_at")
+  role                         UserRole                    @default(user)
+  phone                        String?
+  discordTag                   String?                     @map("discord_tag")
+  avatarImageName              String?                     @map("avatar_image_name")
+  lastLoginAt                  DateTime?                   @map("last_login_at")
+  failedLoginCount             Int                         @default(0) @map("failed_login_count")
+  lastFailedLoginAt            DateTime?                   @map("last_failed_login_at")
+  lockedUntil                  DateTime?                   @map("locked_until")
+  createdAt                    DateTime                    @default(now()) @map("created_at")
+  updatedAt                    DateTime                    @updatedAt @map("updated_at")
+  sessions                     Session[]
+  verificationTokens           VerificationToken[]
+  emailChangeTokens            EmailChangeToken[]
+  passwordResetTokens          PasswordResetToken[]
+  mobileOAuthGrants            MobileOAuthGrant[]
+  oauthAccounts                OAuthAccount[]
+  oauthLinkNonces              OAuthLinkNonce[]
+  savedTeams                   SavedTeam[]
+  savedTeamMemberships         SavedTeamMember[]
+  registrationMemberships      RegistrationMember[]
+  recruitmentApplications      RecruitmentApplication[]
+  tournamentRegistrations      TeamRegistration[]
+  merchandiseOrders            MerchandiseOrder[]
+  ticketOrders                 TicketOrder[]
+  checkedInTickets             Ticket[]                    @relation("TicketCheckInStaff")
+  ticketScans                  TicketScan[]                @relation("TicketScanStaff")
+  reviewedPaymentProofs        BankTransferProof[]         @relation("PaymentProofReviewer")
+  reconciledPayments           PaymentTransaction[]        @relation("PaymentReconciler")
+  adminSlotReservations        AdminSlotReservation[]
+  tournamentStaff              TournamentStaffAssignment[]
+  assignedMatches              Match[]                     @relation("AssignedMatchStaff")
+  auditLogs                    AuditLog[]                  @relation("AuditActor")
+  createdExpenses              EventExpense[]              @relation("ExpenseCreator")
+  valorantBindings             ValorantTeamBinding[]       @relation("ValorantBindingBoundBy")
+  valorantSeriesFinalized      QuestValorantSeries[]       @relation("ValorantSeriesFinalizer")
+  matchRoomMemberships         MatchRoomMember[]
+  matchRoomMessages            MatchRoomMessage[]          @relation("MatchRoomMessageSender")
+  moderatedRoomMessages        MatchRoomMessage[]          @relation("MatchRoomMessageModerator")
+  openedSupportRequests        MatchSupportRequest[]       @relation("MatchSupportRequestOpener")
+  resolvedSupportRequests      MatchSupportRequest[]       @relation("MatchSupportRequestResolver")
+  matchSupportMessages         MatchSupportMessage[]
+  ownedSupportConversations    SupportConversation[]       @relation("SupportConversationOwner")
+  assignedSupportConversations SupportConversation[]       @relation("SupportConversationAssignee")
+  supportMessages              SupportMessage[]            @relation("SupportMessageSender")
+  supportConversationReads     SupportConversationRead[]
+  notificationRecipients       NotificationRecipient[]
+  webPushSubscriptions         WebPushSubscription[]
+  notificationPreference       UserNotificationPreference?
+  player                       Player?
 
   @@index([role])
   @@index([createdAt])
@@ -554,14 +587,14 @@ model OAuthAccount {
 }
 
 model OAuthLinkNonce {
-  id         String      @id @default(uuid()) @db.Uuid
-  nonce      String      @unique
-  userId     String      @map("user_id") @db.Uuid
+  id         String       @id @default(uuid()) @db.Uuid
+  nonce      String       @unique
+  userId     String       @map("user_id") @db.Uuid
   provider   AuthProvider
-  expiresAt  DateTime    @map("expires_at")
-  consumedAt DateTime?   @map("consumed_at")
-  createdAt  DateTime    @default(now()) @map("created_at")
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime     @map("expires_at")
+  consumedAt DateTime?    @map("consumed_at")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, provider])
   @@index([expiresAt])
@@ -603,13 +636,13 @@ model SupportConversation {
 }
 
 model SupportMessage {
-  id             String             @id @default(uuid()) @db.Uuid
-  conversationId String             @map("conversation_id") @db.Uuid
-  senderUserId   String?            @map("sender_user_id") @db.Uuid
+  id             String              @id @default(uuid()) @db.Uuid
+  conversationId String              @map("conversation_id") @db.Uuid
+  senderUserId   String?             @map("sender_user_id") @db.Uuid
   body           String
-  createdAt      DateTime           @default(now()) @map("created_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
   conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User?              @relation("SupportMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+  sender         User?               @relation("SupportMessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
 
   @@index([conversationId, createdAt])
   @@index([senderUserId, createdAt])
@@ -617,12 +650,12 @@ model SupportMessage {
 }
 
 model SupportConversationRead {
-  id             String             @id @default(uuid()) @db.Uuid
-  conversationId String             @map("conversation_id") @db.Uuid
-  userId         String             @map("user_id") @db.Uuid
-  lastReadAt     DateTime           @map("last_read_at")
+  id             String              @id @default(uuid()) @db.Uuid
+  conversationId String              @map("conversation_id") @db.Uuid
+  userId         String              @map("user_id") @db.Uuid
+  lastReadAt     DateTime            @map("last_read_at")
   conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
   @@index([userId, lastReadAt])
@@ -975,6 +1008,7 @@ model TeamRegistration {
   vetoParticipants       VetoRoomParticipant[]
 
   @@unique([tournamentId, captainEmail])
+  @@unique([tournamentId, waitlistPosition])
   @@index([tournamentId])
   @@index([tournamentId, teamName])
   @@index([savedTeamId])
@@ -982,7 +1016,6 @@ model TeamRegistration {
   @@index([reservedUntil])
   @@index([tournamentId, assignedSlotNumber])
   @@index([tournamentId, status, waitlistPosition])
-  @@unique([tournamentId, waitlistPosition])
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([paymentStatus, verificationStatus])
@@ -1368,30 +1401,30 @@ model ValorantTeamBinding {
 }
 
 model QuestValorantSeries {
-  id                   String                  @id @default(uuid()) @db.Uuid
-  externalKey          String                  @unique @map("external_key")
-  bindingAId           String                  @map("binding_a_id") @db.Uuid
-  bindingBId           String                  @map("binding_b_id") @db.Uuid
+  id                   String                    @id @default(uuid()) @db.Uuid
+  externalKey          String                    @unique @map("external_key")
+  bindingAId           String                    @map("binding_a_id") @db.Uuid
+  bindingBId           String                    @map("binding_b_id") @db.Uuid
   format               ValorantFormat
-  playedAt             DateTime                @map("played_at")
-  ratingModePreference String?                 @map("rating_mode_preference")
-  ratingMode           String?                 @map("rating_mode")
-  anchorPlayerAName    String?                 @map("anchor_player_a_name")
-  anchorPlayerATag     String?                 @map("anchor_player_a_tag")
-  anchorPlayerBName    String?                 @map("anchor_player_b_name")
-  anchorPlayerBTag     String?                 @map("anchor_player_b_tag")
-  status               ValorantSeriesStatus    @default(draft)
-  valorantSeriesUuid   String?                 @map("valorant_series_uuid")
-  finalizedById        String?                 @map("finalized_by_id") @db.Uuid
-  lastOperationId      String?                 @unique @map("last_operation_id") @db.Uuid
-  tournamentId         String?                 @map("tournament_id") @db.Uuid
-  createdAt            DateTime                @default(now()) @map("created_at")
-  updatedAt            DateTime                @updatedAt @map("updated_at")
-  bindingA             ValorantTeamBinding     @relation("ValorantBindingA", fields: [bindingAId], references: [id], onDelete: Restrict)
-  bindingB             ValorantTeamBinding     @relation("ValorantBindingB", fields: [bindingBId], references: [id], onDelete: Restrict)
-  finalizedBy          User?                   @relation("ValorantSeriesFinalizer", fields: [finalizedById], references: [id], onDelete: SetNull)
-  lastOperation        QuestValorantOperation? @relation("ValorantSeriesLastOperation", fields: [lastOperationId], references: [id], onDelete: SetNull)
-  tournament           Tournament?             @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  playedAt             DateTime                  @map("played_at")
+  ratingModePreference String?                   @map("rating_mode_preference")
+  ratingMode           String?                   @map("rating_mode")
+  anchorPlayerAName    String?                   @map("anchor_player_a_name")
+  anchorPlayerATag     String?                   @map("anchor_player_a_tag")
+  anchorPlayerBName    String?                   @map("anchor_player_b_name")
+  anchorPlayerBTag     String?                   @map("anchor_player_b_tag")
+  status               ValorantSeriesStatus      @default(draft)
+  valorantSeriesUuid   String?                   @map("valorant_series_uuid")
+  finalizedById        String?                   @map("finalized_by_id") @db.Uuid
+  lastOperationId      String?                   @unique @map("last_operation_id") @db.Uuid
+  tournamentId         String?                   @map("tournament_id") @db.Uuid
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  bindingA             ValorantTeamBinding       @relation("ValorantBindingA", fields: [bindingAId], references: [id], onDelete: Restrict)
+  bindingB             ValorantTeamBinding       @relation("ValorantBindingB", fields: [bindingBId], references: [id], onDelete: Restrict)
+  finalizedBy          User?                     @relation("ValorantSeriesFinalizer", fields: [finalizedById], references: [id], onDelete: SetNull)
+  lastOperation        QuestValorantOperation?   @relation("ValorantSeriesLastOperation", fields: [lastOperationId], references: [id], onDelete: SetNull)
+  tournament           Tournament?               @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
   games                QuestValorantSeriesGame[]
   operations           QuestValorantOperation[]
 
@@ -1465,19 +1498,19 @@ model QuestValorantOperation {
 }
 
 model SavedTeam {
-  id                    String             @id @default(uuid()) @db.Uuid
-  captainUserId         String             @map("captain_user_id") @db.Uuid
+  id                    String                @id @default(uuid()) @db.Uuid
+  captainUserId         String                @map("captain_user_id") @db.Uuid
   name                  String
   country               String?
-  teamTag               String?            @map("team_tag")
-  organizationRequested Boolean            @default(false) @map("organization_requested")
-  organizationName      String?            @map("organization_name")
-  logoName              String?            @map("logo_name")
-  logoClearedAt         DateTime?          @map("logo_cleared_at")
-  game                  String?            @map("game")
-  createdAt             DateTime           @default(now()) @map("created_at")
-  updatedAt             DateTime           @updatedAt @map("updated_at")
-  captainUser           User               @relation(fields: [captainUserId], references: [id], onDelete: Cascade)
+  teamTag               String?               @map("team_tag")
+  organizationRequested Boolean               @default(false) @map("organization_requested")
+  organizationName      String?               @map("organization_name")
+  logoName              String?               @map("logo_name")
+  logoClearedAt         DateTime?             @map("logo_cleared_at")
+  game                  String?               @map("game")
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  captainUser           User                  @relation(fields: [captainUserId], references: [id], onDelete: Cascade)
   members               SavedTeamMember[]
   registrations         TeamRegistration[]
   valorantBindings      ValorantTeamBinding[]
@@ -1517,6 +1550,57 @@ model SavedTeamMember {
   @@index([emailNormalized])
   @@index([inviteStatus])
   @@map("saved_team_members")
+}
+
+// Quest-owned durable player identity. Separate from `User` on purpose: a
+// player may exist before anyone claims them (legacy roster rows, guests at a
+// LAN), and one person must survive changing their email, username, Discord,
+// or Riot account without losing tournament history.
+model Player {
+  id           String        @id @default(uuid()) @db.Uuid
+  publicId     String        @unique @default(dbgenerated("('QPID-' || lpad(nextval('player_public_id_seq')::text, 6, '0'))")) @map("public_id")
+  userId       String?       @unique @map("user_id") @db.Uuid
+  displayName  String        @map("display_name")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  gameAccounts GameAccount[]
+
+  @@index([createdAt])
+  @@map("players")
+}
+
+// A player's identity inside one specific game, keyed on the upstream's STABLE
+// identifier (PUUID for VALORANT). `username`/`tagline`/`region` are a cached
+// display snapshot and are never an identity key — a Riot rename changes them
+// while `externalId` stays put.
+model GameAccount {
+  id                 String                        @id @default(uuid()) @db.Uuid
+  playerId           String                        @map("player_id") @db.Uuid
+  game               GameAccountGame
+  externalId         String                        @map("external_id")
+  username           String?
+  tagline            String?
+  region             String?
+  verificationStatus GameAccountVerificationStatus @default(resolved) @map("verification_status")
+  status             GameAccountStatus             @default(active)
+  linkedAt           DateTime                      @default(now()) @map("linked_at")
+  verifiedAt         DateTime?                     @map("verified_at")
+  lastSyncedAt       DateTime?                     @map("last_synced_at")
+  metadata           Json                          @default("{}")
+  createdAt          DateTime                      @default(now()) @map("created_at")
+  updatedAt          DateTime                      @updatedAt @map("updated_at")
+  player             Player                        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  // The abuse boundary: one Quest player per real game account. A partial
+  // unique index in the migration additionally allows only one ACTIVE account
+  // per player per game, so a replaced account keeps its history without
+  // colliding with its successor.
+  @@unique([game, externalId])
+  @@index([playerId])
+  @@index([game, status])
+  @@index([verificationStatus])
+  @@map("game_accounts")
 }
 
 model RateLimitBucket {
