@@ -85,10 +85,12 @@ const createRealtimeTransport = ({
   let activeReader = null;
   let activeResponse = null;
   let activeBody = null;
+  let activeBodyState = null;
   let activeConnectionTimer = null;
   let activeCancellationTask = null;
   let activeCancellationReader = null;
   let activeCancellationBody = null;
+  let activeCancellationState = null;
   let subscriptionTask = null;
   let subscriptionBarrier = null;
   let poisonedSubscriptionBarrier = null;
@@ -160,34 +162,44 @@ const createRealtimeTransport = ({
     const reader = activeReader;
     const body = activeBody;
     if (!reader && !body) return null;
+    const state = activeBodyState && activeBodyState.body === body
+      ? activeBodyState
+      : null;
     if (
       activeCancellationTask &&
       activeCancellationReader === reader &&
-      activeCancellationBody === body
+      activeCancellationBody === body &&
+      activeCancellationState === state
     ) {
       return activeCancellationTask;
     }
 
     const task = (async () => {
-      const cancellations = [];
-      if (reader && typeof reader.cancel === "function") {
-        cancellations.push(Promise.resolve().then(() => reader.cancel()));
-      } else if (reader) {
-        cancellations.push(Promise.reject(new Error("Realtime subscription reader cannot be cancelled.")));
+      // A body is locked as soon as getReader() succeeds. The reader then owns
+      // cancellation; body.cancel() is valid only before that ownership exists.
+      const readerOwnsStream = state?.readerAcquired || Boolean(reader);
+      if (state?.settled || state?.errored) return null;
+
+      if (readerOwnsStream) {
+        if (!reader) return null;
+        if (typeof reader.cancel !== "function") {
+          throw new Error("Realtime subscription reader cannot be cancelled.");
+        }
+        await reader.cancel();
+        return true;
       }
-      if (body && typeof body.cancel === "function") {
-        cancellations.push(Promise.resolve().then(() => body.cancel()));
-      } else if (body) {
-        cancellations.push(Promise.reject(new Error("Realtime subscription body cannot be cancelled.")));
+
+      if (!body) return null;
+      if (typeof body.cancel !== "function") {
+        throw new Error("Realtime subscription body cannot be cancelled.");
       }
-      const results = await Promise.allSettled(cancellations);
-      const failure = results.find((result) => result.status === "rejected");
-      if (failure) throw failure.reason;
-      return results;
+      await body.cancel();
+      return true;
     })();
     activeCancellationTask = task;
     activeCancellationReader = reader;
     activeCancellationBody = body;
+    activeCancellationState = state;
     return task;
   };
 
@@ -246,7 +258,20 @@ const createRealtimeTransport = ({
     if (!body || typeof body.getReader !== "function") {
       throw new Error("Upstash subscribe response did not include a readable stream.");
     }
+    const state = activeBodyState && activeBodyState.body === body
+      ? activeBodyState
+      : {
+        body,
+        reader: null,
+        readerAcquired: false,
+        pendingReadTask: null,
+        settled: false,
+        errored: false,
+      };
+    activeBodyState = state;
     const reader = body.getReader();
+    state.reader = reader;
+    state.readerAcquired = true;
     activeReader = reader;
     const decoder = new TextDecoder();
     let buffer = "";
@@ -307,7 +332,25 @@ const createRealtimeTransport = ({
 
     try {
       while (running && runGeneration === generation) {
-        const readTask = reader.read();
+        let readResult;
+        try {
+          readResult = reader.read();
+        } catch (error) {
+          readResult = Promise.reject(error);
+        }
+        const readTask = Promise.resolve(readResult).then(
+          (result) => {
+            state.pendingReadTask = null;
+            if (result.done) state.settled = true;
+            return result;
+          },
+          (error) => {
+            state.pendingReadTask = null;
+            state.errored = true;
+            throw error;
+          },
+        );
+        state.pendingReadTask = readTask;
         pendingReadTask = readTask;
         const result = acknowledged
           ? await readTask
@@ -335,14 +378,17 @@ const createRealtimeTransport = ({
       // A cancelled reader can resolve its cancellation promise before the
       // read promise settles. Keep the physical subscription task pending for
       // both operations so reconnect cannot overlap the old upstream stream.
-      const cancellationTask = pendingReadTask ? getActiveCancellationTask() : null;
+      const cancellationTask = state.settled || state.errored
+        ? null
+        : getActiveCancellationTask();
       const cancellationObservation = observeCancellationTask(cancellationTask);
-      if (pendingReadTask) {
+      if (pendingReadTask || cancellationObservation) {
         await Promise.allSettled(
           [pendingReadTask, cancellationObservation].filter(Boolean),
         );
       }
       if (activeReader === reader) activeReader = null;
+      if (state.reader === reader) state.reader = null;
       if (typeof reader.releaseLock === "function") {
         try {
           reader.releaseLock();
@@ -436,6 +482,14 @@ const createRealtimeTransport = ({
         if (response) {
           activeResponse = response;
           activeBody = response.body;
+          activeBodyState = activeBody ? {
+            body: activeBody,
+            reader: null,
+            readerAcquired: false,
+            pendingReadTask: null,
+            settled: false,
+            errored: false,
+          } : null;
           await observeCancellationTask(getActiveCancellationTask());
         }
         if (connectionDeadlineExceeded && running && runGeneration === generation) {
@@ -445,8 +499,26 @@ const createRealtimeTransport = ({
       }
       activeResponse = response;
       activeBody = response.body;
+      activeBodyState = activeBody ? {
+        body: activeBody,
+        reader: null,
+        readerAcquired: false,
+        pendingReadTask: null,
+        settled: false,
+        errored: false,
+      } : null;
       if (!response.ok) {
+        const responseBodyState = activeBodyState;
+        if (responseBodyState) responseBodyState.readerAcquired = true;
         responseBodyTask = readResponseBody(response);
+        responseBodyTask.then(
+          () => {
+            if (responseBodyState) responseBodyState.settled = true;
+          },
+          () => {
+            if (responseBodyState) responseBodyState.errored = true;
+          },
+        );
         responseBodyTask.catch(noop);
         const body = await Promise.race([responseBodyTask, connectionDeadline]);
         clearConnectionTimer();
@@ -475,6 +547,14 @@ const createRealtimeTransport = ({
           response = await fetchTask;
           activeResponse = response;
           activeBody = response?.body;
+          activeBodyState = activeBody ? {
+            body: activeBody,
+            reader: null,
+            readerAcquired: false,
+            pendingReadTask: null,
+            settled: false,
+            errored: false,
+          } : null;
           await observeCancellationTask(getActiveCancellationTask());
         } catch (lateError) {
           settledError = lateError;
@@ -504,11 +584,13 @@ const createRealtimeTransport = ({
       if (ownsResponse) {
         activeResponse = null;
         activeBody = null;
+        activeBodyState = null;
       }
       if (cleanupTask && activeCancellationTask === cleanupTask) {
         activeCancellationTask = null;
         activeCancellationReader = null;
         activeCancellationBody = null;
+        activeCancellationState = null;
       }
       if (cleanupTask) await observeCancellationTask(cleanupTask);
     }

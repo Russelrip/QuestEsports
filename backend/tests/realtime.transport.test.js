@@ -495,22 +495,16 @@ test("stop-to-start waits for a physically hanging subscription cancellation", a
   const firstCancellation = new Promise((resolve) => {
     releaseFirstCancellation = resolve;
   });
-  let firstReadResolve;
-  const firstRead = new Promise((resolve) => {
-    firstReadResolve = resolve;
-  });
   const createBody = ({ hanging }) => {
-    const reader = {
-      read: () => hanging ? firstRead : new Promise(() => {}),
-      cancel: () => hanging
-        ? firstCancellation.then(() => firstReadResolve({ done: true }))
-        : Promise.resolve().then(() => firstReadResolve?.({ done: true })),
-      releaseLock() {},
-    };
-    return {
-      getReader: () => reader,
-      cancel: () => hanging ? firstCancellation : Promise.resolve(),
-    };
+    return new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data: subscribe,quest-realtime,1\n\n"));
+      },
+      cancel: () => (hanging ? firstCancellation : Promise.resolve())
+        .finally(() => {
+          activeSubscriptions -= 1;
+        }),
+    });
   };
   const transport = createRealtimeTransport({
     fetchImpl: async () => {
@@ -518,12 +512,7 @@ test("stop-to-start waits for a physically hanging subscription cancellation", a
       activeSubscriptions += 1;
       maximumActiveSubscriptions = Math.max(maximumActiveSubscriptions, activeSubscriptions);
       const hanging = calls === 1;
-      const body = createBody({ hanging });
-      const originalCancel = body.cancel;
-      body.cancel = () => Promise.resolve(originalCancel()).finally(() => {
-        activeSubscriptions -= 1;
-      });
-      return response(200, { body });
+      return response(200, { body: createBody({ hanging }) });
     },
   });
 
@@ -613,9 +602,11 @@ test("a late response with rejected body cancellation poisons the replacement ba
   releaseLateFetch({
     ok: true,
     status: 200,
-    body: {
-      cancel: () => Promise.reject(new Error("late body cancellation failed")),
-    },
+    body: new ReadableStream({
+      cancel() {
+        throw new Error("late body cancellation failed");
+      },
+    }),
   });
   await wait(10);
 
@@ -674,24 +665,16 @@ test("acknowledgement timeout reconnects after the physical subscription settles
   await transport.stop();
 });
 
-test("rejected reader and body cancellation poisons stop-to-start", async () => {
+test("a genuine reader cancellation failure poisons stop-to-start", async () => {
   let calls = 0;
-  let readerCancelCalls = 0;
-  let bodyCancelCalls = 0;
-  const body = {
-    getReader: () => ({
-      read: () => new Promise(() => {}),
-      cancel: () => {
-        readerCancelCalls += 1;
-        return Promise.reject(new Error("reader cancellation failed"));
-      },
-      releaseLock() {},
-    }),
-    cancel: () => {
-      bodyCancelCalls += 1;
-      return Promise.reject(new Error("body cancellation failed"));
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("data: subscribe,quest-realtime,1\n\n"));
     },
-  };
+    cancel() {
+      throw new Error("reader cancellation failed");
+    },
+  });
   const transport = createRealtimeTransport({
     fetchImpl: async () => {
       calls += 1;
@@ -704,37 +687,24 @@ test("rejected reader and body cancellation poisons stop-to-start", async () => 
   await transport.stop();
   await transport.start(() => {});
 
-  assert.equal(readerCancelCalls, 1);
-  assert.equal(bodyCancelCalls, 1);
   assert.equal(calls, 1);
   assert.equal(transport.getStatus().connected, false);
 });
 
-test("read failure after acknowledgement marks the transport disconnected before cancellation settles", async () => {
-  let rejectRead;
-  let releaseCancellation;
+test("native read failure after acknowledgement reconnects without teardown poisoning", async () => {
   let calls = 0;
-  let reads = 0;
-  const readFailure = new Promise((_, reject) => {
-    rejectRead = reject;
+  const readFailure = new Error("reader failed");
+  let deliveredAcknowledgement = false;
+  const body = new ReadableStream({
+    pull(controller) {
+      if (deliveredAcknowledgement) {
+        controller.error(readFailure);
+      } else {
+        deliveredAcknowledgement = true;
+        controller.enqueue(new TextEncoder().encode("data: subscribe,quest-realtime,1\n\n"));
+      }
+    },
   });
-  const cancellation = new Promise((resolve) => {
-    releaseCancellation = resolve;
-  });
-  const body = {
-    getReader: () => ({
-      read: () => {
-        reads += 1;
-        return reads === 1 ? Promise.resolve({
-          done: false,
-          value: new TextEncoder().encode("data: subscribe,quest-realtime,1\n\n"),
-        }) : readFailure;
-      },
-      cancel: () => cancellation,
-      releaseLock() {},
-    }),
-    cancel: () => cancellation,
-  };
   const recoveredBody = () => new ReadableStream({
     start(controller) {
       controller.enqueue(new TextEncoder().encode("data: subscribe,quest-realtime,1\n\n"));
@@ -763,12 +733,13 @@ test("read failure after acknowledgement marks the transport disconnected before
   });
   await connected;
   assert.equal(transport.getStatus().connected, true);
-  rejectRead(new Error("reader failed"));
   await disconnected;
   assert.equal(transport.getStatus().connected, false);
   assert.equal(statuses.at(-1).reason, "error");
 
-  releaseCancellation();
+  await wait(10);
+  assert.ok(calls >= 2);
+  assert.equal(transport.getStatus().connected, true);
   await transport.stop();
 });
 
