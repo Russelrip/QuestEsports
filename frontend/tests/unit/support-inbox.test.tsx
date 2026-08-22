@@ -77,6 +77,23 @@ describe("support inbox rendered states", () => {
     }
   });
 
+  it("keeps a pending list response current when the selected conversation changes", async () => {
+    let resolveList!: (value: { items: SupportConversationSummary[]; nextCursor: null }) => void;
+    const pendingList = new Promise<{ items: SupportConversationSummary[]; nextCursor: null }>((resolve) => { resolveList = resolve; });
+    const currentItem = { ...conversation("OPEN", "conversation-2", "Current conversation"), lastMessage: null, preview: null };
+    listSupportConversations.mockReset();
+    listSupportConversations.mockImplementationOnce(() => pendingList);
+
+    const view = render(<SupportInbox conversationId="conversation-1" />);
+    await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(1));
+    view.rerender(<SupportInbox conversationId="conversation-2" />);
+    expect(listSupportConversations).toHaveBeenCalledTimes(1);
+    resolveList({ items: [currentItem], nextCursor: null });
+
+    expect(await screen.findByText("Current conversation")).toBeInTheDocument();
+    expect(screen.queryByText("Loading your conversations…")).not.toBeInTheDocument();
+  });
+
   it("ignores a stale thread response after the selected conversation changes", async () => {
     let resolveFirst!: (value: SupportConversation) => void;
     const firstResponse = new Promise<SupportConversation>((resolve) => { resolveFirst = resolve; });
