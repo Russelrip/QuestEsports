@@ -1,8 +1,11 @@
+const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
 const cache = require("../../lib/cache");
 const { normalizeRiotId } = require("../valorant/valorant.validation");
+const { recordAuditInTransaction } = require("../../lib/audit");
+const { checkDiscord } = require("../valorant-leaderboard/service");
 const {
   resolveRiotAccount,
   fetchPlayerPreview,
@@ -141,6 +144,164 @@ const resolveValorantAccount = async ({ riotId, name, tag, userId }) => {
   };
 };
 
+
+// A stable identifier is not secret, but it is a durable cross-service handle
+// and the audit policy already redacts anything keyed `puuid`. Audit rows carry
+// a short fingerprint plus the account row id, which is enough for an admin to
+// follow a change without the identifier itself living in exported audit data.
+const fingerprint = (externalId) =>
+  crypto.createHash("sha256").update(externalId).digest("hex").slice(0, 12);
+
+const publicView = (account) => ({
+  id: account.id,
+  game: account.game,
+  username: account.username,
+  tagline: account.tagline,
+  region: account.region,
+  verificationStatus: account.verificationStatus,
+  status: account.status,
+  linkedAt: account.linkedAt,
+  verifiedAt: account.verifiedAt,
+  lastSyncedAt: account.lastSyncedAt,
+});
+
+// Every Quest user owns at most one player row, created on first use. A player
+// may also exist unclaimed (legacy rosters, LAN guests), which is why the
+// relation is nullable rather than a column on `users`.
+const ensurePlayerForUser = async (database, { userId, displayName }) => {
+  const existing = await database.player.findUnique({ where: { userId } });
+  if (existing) return existing;
+  return database.player.create({
+    data: { id: crypto.randomUUID(), userId, displayName },
+  });
+};
+
+// Discord corroboration is the strongest signal available without Riot Sign-On:
+// the upstream leaderboard already pairs a stable Discord ID to a PUUID under a
+// partial-unique index. If the signed-in user's linked Discord account is the
+// one paired to this PUUID upstream, two independent systems agree — which is
+// meaningfully more than the user asserting it. It is still not ownership.
+const corroborateWithDiscord = async ({ userId, externalId }) => {
+  const discord = await prisma.oAuthAccount.findFirst({
+    where: { userId, provider: "discord" },
+    select: { providerUserId: true },
+  });
+  if (!discord?.providerUserId) return false;
+
+  try {
+    const result = await checkDiscord(discord.providerUserId);
+    const upstreamPuuid = normalizeExternalId(result?.user?.puuid || result?.puuid || "");
+    return Boolean(upstreamPuuid) && upstreamPuuid === externalId;
+  } catch (error) {
+    // Corroboration is an upgrade, never a gate: if the upstream cannot answer,
+    // the link still succeeds at the weaker, honest state.
+    logger.warn("Discord corroboration unavailable; linking without it.", {
+      code: error?.code || null,
+      status: error?.status || null,
+    });
+    return false;
+  }
+};
+
+// Link a resolved VALORANT account to the signed-in user.
+//
+// The client sends only the Riot ID: the PUUID is re-resolved server-side so a
+// crafted request cannot bind an identifier the user never saw confirmed.
+const linkValorantAccount = async ({ riotId, name, tag, userId, displayName, audit }) => {
+  const resolved = await resolveValorantAccount({ riotId, name, tag, userId });
+
+  if (resolved.linkedToYou) {
+    return { alreadyLinked: true, account: resolved };
+  }
+  if (resolved.linkedElsewhere) {
+    // The (game, external_id) unique index is the real boundary; this is the
+    // friendly path to the same answer. Deliberately says nothing about who
+    // holds it.
+    throw new HttpError(
+      409,
+      "That VALORANT account is already linked to another Quest account. If it is yours, contact support.",
+    );
+  }
+
+  const corroborated = await corroborateWithDiscord({
+    userId,
+    externalId: resolved.externalId,
+  });
+  const verificationStatus = corroborated ? "discord_corroborated" : "user_confirmed";
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const player = await ensurePlayerForUser(tx, { userId, displayName });
+      const account = await tx.gameAccount.create({
+        data: {
+          id: crypto.randomUUID(),
+          playerId: player.id,
+          game: VALORANT,
+          externalId: resolved.externalId,
+          username: resolved.username,
+          tagline: resolved.tagline,
+          region: resolved.region,
+          verificationStatus,
+          status: "active",
+          verifiedAt: new Date(),
+          lastSyncedAt: new Date(),
+        },
+      });
+
+      await recordAuditInTransaction(tx, {
+        ...audit,
+        action: "game_account.linked",
+        targetType: "GameAccount",
+        targetId: account.id,
+        beforeData: null,
+        afterData: {
+          game: VALORANT,
+          externalIdFingerprint: fingerprint(resolved.externalId),
+          displayIdentity: `${resolved.username}#${resolved.tagline}`,
+          verificationStatus,
+          playerId: player.id,
+        },
+      });
+
+      return { alreadyLinked: false, account: publicView(account) };
+    });
+  } catch (error) {
+    // Two requests racing for the same PUUID: the database decides, and the
+    // loser gets the same answer as the pre-check rather than a 500.
+    if (error?.code === "P2002") {
+      logger.warn("Game account link rejected as a duplicate.", {
+        game: VALORANT,
+        externalIdFingerprint: fingerprint(resolved.externalId),
+      });
+      throw new HttpError(
+        409,
+        "That VALORANT account is already linked to another Quest account. If it is yours, contact support.",
+      );
+    }
+    throw error;
+  }
+};
+
+// The signed-in user's linked accounts, for the profile panel and for roster
+// readiness. Returns display data and state only — never the stable identifier.
+const listGameAccountsForUser = async ({ userId }) => {
+  const player = await prisma.player.findUnique({
+    where: { userId },
+    select: {
+      publicId: true,
+      gameAccounts: {
+        where: { status: { not: "replaced" } },
+        orderBy: { linkedAt: "desc" },
+      },
+    },
+  });
+
+  return {
+    playerPublicId: player?.publicId ?? null,
+    accounts: (player?.gameAccounts ?? []).map(publicView),
+  };
+};
+
 const splitRiotId = (value) => {
   const raw = String(value || "").trim();
   const separator = raw.lastIndexOf("#");
@@ -152,6 +313,12 @@ const splitRiotId = (value) => {
 
 module.exports = {
   resolveValorantAccount,
+  linkValorantAccount,
+  listGameAccountsForUser,
+  corroborateWithDiscord,
+  ensurePlayerForUser,
+  fingerprint,
+  publicView,
   normalizeExternalId,
   describeExistingLink,
   translateUpstreamError,

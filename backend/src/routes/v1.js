@@ -177,6 +177,8 @@ router.post("/valorant/leaderboard/register/submit", leaderboardRegisterSubmitLi
 // proves the signed-in user owns it, so it is a lookup behind the session and
 // is stored by nothing here.
 router.post("/game-accounts/valorant/resolve", requireAuth, gameAccountResolveLimiter, gameAccountController.resolveValorant);
+router.post("/game-accounts/valorant/link", requireAuth, gameAccountResolveLimiter, gameAccountController.linkValorant);
+router.get("/users/me/game-accounts", requireAuth, gameAccountController.listMyGameAccounts);
 
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);

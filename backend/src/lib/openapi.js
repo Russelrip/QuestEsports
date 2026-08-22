@@ -1357,6 +1357,18 @@ const additionalPaths = {
       { authenticated: true },
     ),
   },
+  "/api/v1/game-accounts/valorant/link": {
+    post: createOperation(
+      "Game accounts",
+      "Link a resolved VALORANT account to the signed-in Quest account",
+      { authenticated: true },
+    ),
+  },
+  "/api/v1/users/me/game-accounts": {
+    get: createOperation("Game accounts", "List the signed-in user's linked game accounts", {
+      authenticated: true,
+    }),
+  },
   "/api/contact": {
     post: createOperation("Contact", "Submit a contact message"),
   },
