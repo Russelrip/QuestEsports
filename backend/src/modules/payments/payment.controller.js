@@ -69,6 +69,18 @@ const uploadBankTransferProof = asyncHandler(async (req, res) => {
     publicToken: req.get("x-order-token"),
     file: req.file,
   });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "bank_transfer_proof.submitted",
+    targetType: "PaymentTransaction",
+    targetId: result.id || req.params.orderId,
+    afterData: {
+      status: result.status || "review_required",
+      reviewUntil: result.reviewUntil || null,
+      contentType: req.file?.mimetype || null,
+      byteSize: req.file?.size || null,
+    },
+  });
   markTournamentPaymentCache(res, result);
   res.status(201).json({
     success: true,

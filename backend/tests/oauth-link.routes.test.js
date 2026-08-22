@@ -14,6 +14,7 @@ const oauthPath = path.join(__dirname, "../src/modules/auth/oauth.service.js");
 const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
 const envPath = path.join(__dirname, "../src/config/env.js");
 const loggerPath = path.join(__dirname, "../src/lib/logger.js");
+const auditPath = path.join(__dirname, "../src/lib/audit.js");
 const sessionPath = path.join(__dirname, "../src/modules/auth/session.service.js");
 const authServicePath = path.join(__dirname, "../src/modules/auth/auth.service.js");
 const errorHandlerPath = path.join(__dirname, "../src/middleware/error-handler.js");
@@ -163,6 +164,7 @@ const buildMountedV1App = ({ unlinkError = null } = {}) => {
       [oauthPath]: oauthService,
       [envPath]: { env: { APP_URL: "https://app.example.test" } },
       [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+      [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
       [sessionPath]: {
         createSession: async () => {
           sessionsCreated += 1;

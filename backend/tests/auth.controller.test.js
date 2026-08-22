@@ -10,6 +10,7 @@ const controllerPath = path.join(
 );
 const envPath = path.join(__dirname, "../src/config/env.js");
 const loggerPath = path.join(__dirname, "../src/lib/logger.js");
+const auditPath = path.join(__dirname, "../src/lib/audit.js");
 const oauthPath = path.join(
   __dirname,
   "../src/modules/auth/oauth.service.js"
@@ -302,6 +303,7 @@ test("mobile OAuth start rejects requests without PKCE binding", async () => {
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
     [envPath]: { env: { APP_URL: "https://app.example.com" } },
     [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
     [oauthPath]: { createOAuthAuthorization: () => assert.fail("OAuth must not start") },
     [sessionPath]: {},
     [authServicePath]: {},
@@ -321,6 +323,7 @@ test("mobile OAuth grant exchange issues an admin bearer session", async () => {
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
     [envPath]: { env: { APP_URL: "https://app.example.com" } },
     [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
     [oauthPath]: {},
     [sessionPath]: {
       createSession: async () => ({
@@ -371,6 +374,7 @@ test("OAuth account-link handlers use the authenticated user and a fixed profile
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
     [envPath]: { env: { APP_URL: "https://app.example.com" } },
     [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
     [oauthPath]: {
       buildExpiredOAuthLinkFlowCookie: (provider) => `link-cookie-${provider}=; Expires=expired`,
       createOAuthLinkAuthorization: async (args) => {
@@ -547,6 +551,7 @@ test("OAuth unlink controller preserves safe last-login-method errors", async ()
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
     [envPath]: { env: { APP_URL: "https://app.example.com" } },
     [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [auditPath]: { recordAudit: async () => undefined, requestAuditContext: () => ({}) },
     [oauthPath]: {
       unlinkOAuthProvider: async () => {
         throw lastLoginMethod;

@@ -656,11 +656,12 @@ const submitAction = async ({ code, user, token, body }) => {
   return getRoom({ code: room.code, user, token });
 };
 
-const rewindRoom = async ({ user, roomId, body }) => {
+const rewindRoom = async ({ user, roomId, body, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
   const targetStep = Number(body.targetStep);
   if (!Number.isInteger(targetStep) || targetStep < 0 || targetStep > room.currentStep) throw new HttpError(400, "Choose a valid rewind step.");
+  const previousStep = room.currentStep;
   const now = new Date();
   await prisma.$transaction(async (tx) => {
     await mutateRevision(tx, room.id, parseRevision(body.expectedRevision), { currentStep: targetStep, status: "in_progress", completedAt: null, turnDeadline: room.turnSeconds ? new Date(now.getTime() + room.turnSeconds * 1000) : null });
@@ -670,11 +671,26 @@ const rewindRoom = async ({ user, roomId, body }) => {
     const advancedStep = await advanceAutomatic(tx, room);
     if (advancedStep !== targetStep) await tx.vetoRoom.update({ where: { id: room.id }, data: { currentStep: advancedStep } });
     await syncMatchStatus(tx, room, ["ready", "veto_in_progress"], "veto_in_progress");
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+      await tx.auditLog.create({
+        data: {
+          id: crypto.randomUUID(),
+          actorUserId: auditContext.actorUserId || null,
+          action: "veto.room.rewound",
+          targetType: "VetoRoom",
+          targetId: room.id,
+          beforeData: { currentStep: previousStep },
+          afterData: { currentStep: targetStep, reason: body.reason || null },
+          requestId: auditContext.requestId || null,
+          ipAddress: auditContext.ipAddress || null,
+        },
+      });
+    }
   });
   return getAdminRoom({ user, roomId });
 };
 
-const resetRoom = async ({ user, roomId, body }) => {
+const resetRoom = async ({ user, roomId, body, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
   const now = new Date();
@@ -683,6 +699,21 @@ const resetRoom = async ({ user, roomId, body }) => {
     await tx.vetoRoomParticipant.updateMany({ where: { roomId: room.id }, data: { readyAt: null } });
     await tx.vetoRoomAction.updateMany({ where: { roomId: room.id, invalidatedAt: null }, data: { invalidatedAt: now, invalidatedById: user.id } });
     await syncMatchStatus(tx, room, ["ready", "veto_in_progress", "veto_starting_soon"], "veto_starting_soon");
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+      await tx.auditLog.create({
+        data: {
+          id: crypto.randomUUID(),
+          actorUserId: auditContext.actorUserId || null,
+          action: "veto.room.reset",
+          targetType: "VetoRoom",
+          targetId: room.id,
+          beforeData: { status: room.status, currentStep: room.currentStep },
+          afterData: { status: "open", currentStep: 0, reason: body.reason || null },
+          requestId: auditContext.requestId || null,
+          ipAddress: auditContext.ipAddress || null,
+        },
+      });
+    }
   });
   return getAdminRoom({ user, roomId });
 };

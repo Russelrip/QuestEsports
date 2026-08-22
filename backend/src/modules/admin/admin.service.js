@@ -897,7 +897,7 @@ const getAdminTeamRegistrationById = async (registrationId) => {
   return mapTeamRegistration(registration);
 };
 
-const updateTeamRegistrationGameIds = async (registrationId, body = {}) => {
+const updateTeamRegistrationGameIds = async (registrationId, body = {}, auditContext = {}) => {
   const captainGameId = normalizeText(body.captainGameId);
   const requestedMembers = Array.isArray(body.members) ? body.members : [];
 
@@ -993,6 +993,23 @@ const updateTeamRegistrationGameIds = async (registrationId, body = {}) => {
         },
       });
     }
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+      await tx.auditLog.create({
+        data: {
+          id: crypto.randomUUID(),
+          actorUserId: auditContext.actorUserId || null,
+          action: "team_registration.game_ids_updated",
+          targetType: "TeamRegistration",
+          targetId: registrationId,
+          afterData: {
+            captainUpdated: true,
+            memberCount: normalizedMembers.length,
+          },
+          requestId: auditContext.requestId || null,
+          ipAddress: auditContext.ipAddress || null,
+        },
+      });
+    }
   });
 
   return getAdminTeamRegistrationById(registrationId);
@@ -1074,7 +1091,7 @@ const normalizeAdminRosterMembers = (body = {}) => {
   return members;
 };
 
-const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
+const correctTeamRegistrationRoster = async (registrationId, body = {}, auditContext = {}) => {
   const requestedMembers = normalizeAdminRosterMembers(body);
   const syncSavedTeam = body.syncSavedTeam === true;
   const respondedAt = new Date();
@@ -1358,6 +1375,30 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}) => {
           data: { captainUserId: nextCaptain.userId },
         });
       }
+    }
+
+    const audit = {
+      actorUserId: auditContext.actorUserId || null,
+      action: "team_registration.roster_corrected",
+      targetType: "TeamRegistration",
+      targetId: registrationId,
+      beforeData: { members: before },
+      afterData: {
+        members: nextMembers.map((member) => ({
+          id: member.id,
+          role: member.role,
+          name: member.name,
+          email: member.email,
+          riotId: member.riotId,
+        })),
+        savedTeamId: syncSavedTeam ? registration.savedTeam.id : null,
+        captainChanged,
+      },
+      requestId: auditContext.requestId || null,
+      ipAddress: auditContext.ipAddress || null,
+    };
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+      await tx.auditLog.create({ data: { id: crypto.randomUUID(), ...audit } });
     }
 
     return {

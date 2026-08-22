@@ -190,6 +190,15 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
     req.user.id,
     requestAuditContext(req)
   );
+  if (!req.body.status && req.body.verificationStatus) {
+    await recordAudit({
+      ...requestAuditContext(req),
+      action: "team_registration.verification_status_changed",
+      targetType: "TeamRegistration",
+      targetId: req.params.registrationId,
+      afterData: { verificationStatus: registration.verificationStatus },
+    });
+  }
 
   res.status(200).json({
     success: true,
@@ -201,7 +210,8 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
 const updateRegistrationGameIds = asyncHandler(async (req, res) => {
   const registration = await updateTeamRegistrationGameIds(
     req.params.registrationId,
-    req.body
+    req.body,
+    requestAuditContext(req)
   );
 
   res.status(200).json({
@@ -214,21 +224,9 @@ const updateRegistrationGameIds = asyncHandler(async (req, res) => {
 const correctRegistrationRoster = asyncHandler(async (req, res) => {
   const result = await correctTeamRegistrationRoster(
     req.params.registrationId,
-    req.body
+    req.body,
+    requestAuditContext(req)
   );
-
-  await recordAudit({
-    ...requestAuditContext(req),
-    action: "team_registration.roster_corrected",
-    targetType: "TeamRegistration",
-    targetId: req.params.registrationId,
-    beforeData: { members: result.correction.before },
-    afterData: {
-      members: result.correction.after,
-      savedTeamId: result.correction.savedTeamId,
-      captainChanged: result.correction.captainChanged,
-    },
-  });
 
   res.status(200).json({
     success: true,
@@ -239,6 +237,12 @@ const correctRegistrationRoster = asyncHandler(async (req, res) => {
 
 const removeRegistration = asyncHandler(async (req, res) => {
   await deleteTeamRegistration(req.params.registrationId);
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "team_registration.deleted",
+    targetType: "TeamRegistration",
+    targetId: req.params.registrationId,
+  });
 
   res.status(200).json({
     success: true,
@@ -248,11 +252,24 @@ const removeRegistration = asyncHandler(async (req, res) => {
 
 const reserveRegistrationSlot = asyncHandler(async (req, res) => {
   const reservation = await reserveAdminRegistrationSlot({ registrationId: req.params.registrationId, adminUserId: req.user.id, body: req.body });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "team_registration.slot_reserved",
+    targetType: "AdminSlotReservation",
+    targetId: reservation.id || req.params.registrationId,
+    afterData: { registrationId: req.params.registrationId, expiresAt: reservation.expiresAt || null },
+  });
   res.status(201).json({ success: true, message: "Slot reserved privately for this team.", reservation });
 });
 
 const releaseRegistrationSlot = asyncHandler(async (req, res) => {
   await releaseAdminRegistrationSlot(req.params.registrationId);
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "team_registration.slot_released",
+    targetType: "AdminSlotReservation",
+    targetId: req.params.registrationId,
+  });
   res.status(200).json({ success: true, message: "Private slot reservation released." });
 });
 
@@ -330,11 +347,25 @@ const getSavedTeam = asyncHandler(async (req, res) => {
 
 const updateSavedTeamOrganization = asyncHandler(async (req, res) => {
   const team = await updateAdminSavedTeamOrganization(req.params.teamId, req.body);
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "saved_team.organization_updated",
+    targetType: "SavedTeam",
+    targetId: req.params.teamId,
+    afterData: { organization: team.organization || null },
+  });
   res.status(200).json({ success: true, message: "Team organization updated.", team });
 });
 
 const updateSavedTeam = asyncHandler(async (req, res) => {
   const team = await updateAdminSavedTeam(req.params.teamId, req.body, req.file);
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "saved_team.updated",
+    targetType: "SavedTeam",
+    targetId: req.params.teamId,
+    afterData: { memberCount: team.members?.length || 0, hasLogo: Boolean(team.logoUrl) },
+  });
   res.status(200).json({ success: true, message: "Team updated successfully.", team });
 });
 
@@ -364,6 +395,12 @@ const transferSavedTeamCaptain = asyncHandler(async (req, res) => {
 
 const removeSavedTeam = asyncHandler(async (req, res) => {
   await deleteAdminSavedTeam(req.params.teamId);
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "saved_team.deleted",
+    targetType: "SavedTeam",
+    targetId: req.params.teamId,
+  });
   res.status(200).json({ success: true, message: "Team deleted successfully." });
 });
 

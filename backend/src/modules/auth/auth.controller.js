@@ -2,6 +2,7 @@ const { asyncHandler } = require("../../lib/async-handler");
 const { env } = require("../../config/env");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
+const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const {
   buildExpiredOAuthFlowCookie,
   buildExpiredOAuthLinkFlowCookie,
@@ -354,7 +355,7 @@ const getOAuthLinkRedirect = (marker) =>
 
 const completeOAuthLink = async ({ provider, req, res }) => {
   try {
-    await handleOAuthLinkCallback({
+    const result = await handleOAuthLinkCallback({
       provider,
       code: String(req.query.code || ""),
       state: String(req.query.state || ""),
@@ -363,6 +364,13 @@ const completeOAuthLink = async ({ provider, req, res }) => {
         cookieHeader: req.headers.cookie,
       }),
       userId: req.user.id,
+    });
+
+    await recordAudit({
+      ...requestAuditContext(req),
+      action: "oauth.account.linked",
+      targetType: "OAuthAccount",
+      afterData: { provider, linked: true, providers: result?.providers || null },
     });
 
     res.setHeader("Set-Cookie", buildExpiredOAuthLinkFlowCookie(provider));
@@ -409,6 +417,13 @@ const unlinkProvider = asyncHandler(async (req, res) => {
   const providers = await unlinkOAuthProvider({
     userId: req.user.id,
     provider,
+  });
+  await recordAudit({
+    ...requestAuditContext(req),
+    action: "oauth.account.unlinked",
+    targetType: "OAuthAccount",
+    targetId: `${req.user.id}:${provider}`,
+    afterData: { provider, linked: false, providers },
   });
 
   res.status(200).json({

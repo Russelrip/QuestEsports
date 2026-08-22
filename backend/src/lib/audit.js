@@ -2,10 +2,30 @@ const crypto = require("crypto");
 const { prisma } = require("./prisma");
 const { logger, redact } = require("./logger");
 
-const sanitizeAuditData = (value) => {
+const AUDIT_REDACTED_VALUE = "[REDACTED]";
+const AUDIT_SENSITIVE_KEY = /(?:password|secret|token|authorization|cookie|session|oauth|grant|signature|ciphertext|encrypted|private.?key|puuid|buffer|contents|raw.?file|upload.?data)/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// Audit records are durable and are routinely exported for incident review.
+// Keep this policy stricter than the general logger policy: capability values,
+// provider credentials, encrypted identifiers, PUUIDs, and file contents must
+// never become part of an audit row even when a caller passes a whole object.
+const sanitizeAuditValue = (value, key = "") => {
   if (value === undefined) return undefined;
-  return redact(value);
+  if (AUDIT_SENSITIVE_KEY.test(key)) return AUDIT_REDACTED_VALUE;
+  if (Buffer.isBuffer(value)) return AUDIT_REDACTED_VALUE;
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map((entry) => sanitizeAuditValue(entry));
+  if (value && typeof value === "object") {
+    return Object.entries(value).reduce((result, [nestedKey, nestedValue]) => {
+      result[nestedKey] = sanitizeAuditValue(nestedValue, nestedKey);
+      return result;
+    }, {});
+  }
+  return typeof value === "string" ? redact(value) : value;
 };
+
+const sanitizeAuditData = (value) => sanitizeAuditValue(value);
 
 const persistAudit = async (database, {
   actorUserId,
@@ -19,7 +39,7 @@ const persistAudit = async (database, {
 }) => database.auditLog.create({
   data: {
     id: crypto.randomUUID(),
-    actorUserId: actorUserId || null,
+    actorUserId: UUID_PATTERN.test(String(actorUserId || "")) ? actorUserId : null,
     action,
     targetType,
     targetId: targetId ? String(targetId) : null,
@@ -56,4 +76,5 @@ module.exports = {
   recordAudit,
   recordAuditInTransaction,
   requestAuditContext,
+  sanitizeAuditData,
 };
