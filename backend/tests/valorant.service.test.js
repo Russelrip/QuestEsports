@@ -1821,6 +1821,7 @@ test("finalizeSeries audits raw committed output and resolves the operation when
 test("finalizeSeries reconciles and audits the original operation on SERIES_ALREADY_FINALIZED", async () => {
   const fixture = require("./fixtures/valorant/series-finalize.json");
   const statuses = [];
+  const operationUpdates = [];
   const audits = [];
   let adoptionCalls = 0;
   const prismaMock = {
@@ -1835,6 +1836,7 @@ test("finalizeSeries reconciles and audits the original operation on SERIES_ALRE
       questValorantOperation: {
         create: async ({ data }) => ({ id: "op-row-15", ...data }),
         update: async ({ data }) => {
+          operationUpdates.push(data);
           statuses.push(data.status);
           return { id: "op-row-15", ...data };
         },
@@ -1849,7 +1851,7 @@ test("finalizeSeries reconciles and audits the original operation on SERIES_ALRE
         throw new FastApiError("already finalized", { code: "SERIES_ALREADY_FINALIZED", status: 409, requestId: "fastapi-req-15" });
       }
       assert.equal(path, "/api/v1/series/series-uuid-1");
-      return { status: 200, data: { ...fixture, status: "finalized" }, requestId: "fastapi-req-15" };
+      return { status: 200, data: { ...fixture, status: "finalized" }, requestId: "reconcile-get-15" };
     },
     FastApiError,
     InternalServiceError,
@@ -1877,6 +1879,10 @@ test("finalizeSeries reconciles and audits the original operation on SERIES_ALRE
     assert.ok(statuses.includes("succeeded"));
     assert.equal(callCount, 2, "finalize attempt + one reconcile read, no blind retry");
     assert.equal(adoptionCalls, 1, "the committed finalized state is adopted");
+    assert.equal(operationUpdates.at(-1).responseCode, 409, "the original finalize response code is preserved");
+    assert.equal(operationUpdates.at(-1).fastapiRequestId, "fastapi-req-15", "the original finalize request ID is preserved");
+    assert.equal(operationUpdates.at(-1).responseSummary.finalize.requestId, "fastapi-req-15");
+    assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.requestId, "reconcile-get-15");
     assert.deepEqual(audits.map((entry) => entry.action), [
       "valorant.series.finalize.intent",
       "valorant.series.finalize.result",
@@ -1929,9 +1935,165 @@ test("SERIES_ALREADY_FINALIZED with malformed reconciliation output is audited a
     assert.equal(audits.at(-1).action, "valorant.series.finalize.result");
     assert.equal(audits.at(-1).afterData.reconciled, true);
     assert.deepEqual(audits.at(-1).afterData.externalResult, { malformed: true });
+    assert.notEqual(audits.at(-1).afterData.ratingMode, "normal", "requested rating mode is not observed committed state");
   } finally {
     restore();
   }
+});
+
+test("SERIES_ALREADY_FINALIZED reconciliation fails closed when its result audit fails", async () => {
+  const operationUpdates = [];
+  let projectionUpdates = 0;
+  const prisma = {
+    questValorantSeries: {
+      findUnique: async () => ({ id: "series-audit-failure", status: "draft", ratingMode: null, valorantSeriesUuid: "external-audit-failure" }),
+      update: async () => { projectionUpdates += 1; return {}; },
+    },
+    questValorantOperation: {
+      create: async ({ data }) => ({ id: "operation-audit-failure", ...data }),
+      update: async ({ data }) => { operationUpdates.push(data); return data; },
+    },
+    $transaction: async (work) => {
+      try {
+        return await work(prisma);
+      } catch (error) {
+        projectionUpdates = 0;
+        throw error;
+      }
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [clientPath]: {
+      valorantRequest: async ({ path: requestPath }) => requestPath.endsWith("/finalize")
+        ? Promise.reject(new FastApiError("already finalized", { code: "SERIES_ALREADY_FINALIZED", status: 409, requestId: "finalize-audit-failure" }))
+        : { status: 200, data: { status: "finalized" }, requestId: "reconcile-audit-failure" },
+    },
+    [mapperPath]: {
+      mapFinalizeResult: () => ({ status: "finalized" }),
+      mapSeriesView: (value) => ({ status: value.status }),
+    },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAudit: async () => undefined,
+      recordAuditInTransaction: async () => { throw new Error("reconciliation result audit unavailable"); },
+    },
+  });
+  try {
+    await assert.rejects(
+      service.finalizeSeries({ seriesId: "series-audit-failure", ratingMode: "normal", actorUserId: "user-1", requestId: "req-audit-failure", ipAddress: "127.0.0.1" }),
+      (error) => error.statusCode === 503 && /audit reconciliation is required/.test(error.message),
+    );
+    assert.equal(projectionUpdates, 0, "a failed result audit cannot adopt the projection");
+    assert.equal(operationUpdates.at(-1).status, "reconciliation_required");
+    assert.equal(operationUpdates.at(-1).responseCode, 409);
+    assert.equal(operationUpdates.at(-1).fastapiRequestId, "finalize-audit-failure");
+  } finally { restore(); }
+});
+
+test("SERIES_ALREADY_FINALIZED reconciliation GET failure preserves the original mutation metadata", async () => {
+  const operationUpdates = [];
+  const prisma = {
+    questValorantSeries: {
+      findUnique: async () => ({ id: "series-get-failure", status: "draft", valorantSeriesUuid: "external-get-failure" }),
+    },
+    questValorantOperation: {
+      create: async ({ data }) => ({ id: "operation-get-failure", ...data }),
+      update: async ({ data }) => { operationUpdates.push(data); return data; },
+    },
+    $transaction: async (work) => work(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [clientPath]: {
+      valorantRequest: async ({ path: requestPath }) => {
+        if (requestPath.endsWith("/finalize")) {
+          throw new FastApiError("already finalized", { code: "SERIES_ALREADY_FINALIZED", status: 409, requestId: "finalize-get-failure" });
+        }
+        throw new InternalServiceError("reconciliation read unavailable", { code: "valorant_read_failed", status: 502, requestId: "reconcile-read-failure" });
+      },
+    },
+    [mapperPath]: {},
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAudit: async () => undefined,
+      recordAuditInTransaction: async () => undefined,
+    },
+  });
+  try {
+    await assert.rejects(
+      service.finalizeSeries({ seriesId: "series-get-failure", ratingMode: "normal", actorUserId: "user-1", requestId: "req-get-failure", ipAddress: "127.0.0.1" }),
+      (error) => error.statusCode === 503 && /reconciliation is required/.test(error.message),
+    );
+    assert.equal(operationUpdates.at(-1).status, "reconciliation_required");
+    assert.equal(operationUpdates.at(-1).responseCode, 409);
+    assert.equal(operationUpdates.at(-1).fastapiRequestId, "finalize-get-failure");
+    assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.errorCode, "valorant_read_failed");
+  } finally { restore(); }
+});
+
+test("generic malformed reconciliation leaves the local projection unchanged", async () => {
+  let projectionUpdates = 0;
+  const operationUpdates = [];
+  const prisma = {
+    questValorantSeries: {
+      findUnique: async () => ({ id: "series-generic-malformed", status: "draft", ratingMode: null, valorantSeriesUuid: "external-generic-malformed" }),
+      update: async () => { projectionUpdates += 1; return {}; },
+    },
+    questValorantOperation: {
+      update: async ({ data }) => { operationUpdates.push(data); return data; },
+    },
+    $transaction: async (work) => work(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [clientPath]: { valorantRequest: async () => ({ status: 200, data: { malformed: true }, requestId: "generic-malformed" }) },
+    [mapperPath]: { mapSeriesView: () => { throw new Error("malformed reconciliation response"); } },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: { recordAuditInTransaction: async () => undefined },
+  });
+  try {
+    await assert.rejects(
+      service.reconcileSeries({ seriesId: "series-generic-malformed", actorUserId: "user-1", requestId: "req-generic-malformed", ipAddress: "127.0.0.1", operationId: "operation-generic-malformed", operationExternalId: "external-operation" }),
+      (error) => error.code === "VALORANT_FINALIZE_RECONCILIATION_REQUIRED" && error.statusCode === 503,
+    );
+    assert.equal(projectionUpdates, 0);
+    assert.equal(operationUpdates.at(-1).status, "reconciliation_required");
+  } finally { restore(); }
+});
+
+test("draft reconciliation records evidence but does not finalize the local projection", async () => {
+  let projectionUpdates = 0;
+  const operationUpdates = [];
+  const prisma = {
+    questValorantSeries: {
+      findUnique: async () => ({ id: "series-draft", status: "draft", valorantSeriesUuid: "external-draft" }),
+      update: async () => { projectionUpdates += 1; return {}; },
+    },
+    questValorantOperation: {
+      update: async ({ data }) => { operationUpdates.push(data); return data; },
+    },
+    $transaction: async (work) => work(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [clientPath]: { valorantRequest: async () => ({ status: 200, data: { status: "draft" }, requestId: "draft-read" }) },
+    [mapperPath]: { mapSeriesView: (value) => ({ status: value.status }) },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: { recordAuditInTransaction: async () => undefined },
+  });
+  try {
+    await assert.rejects(
+      service.reconcileSeries({ seriesId: "series-draft", actorUserId: "user-1", requestId: "req-draft", ipAddress: "127.0.0.1", operationId: "operation-draft", operationExternalId: "external-operation" }),
+      (error) => error.code === "VALORANT_FINALIZE_RECONCILIATION_REQUIRED" && error.statusCode === 503,
+    );
+    assert.equal(projectionUpdates, 0);
+    assert.equal(operationUpdates.at(-1).status, "reconciliation_required");
+  } finally { restore(); }
 });
 
 test("finalizeSeries marks reconciliation_required on timeout and never blind-retries", async () => {

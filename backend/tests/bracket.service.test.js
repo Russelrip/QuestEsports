@@ -96,6 +96,37 @@ test("bracket regeneration audits the actual existing before snapshot", async ()
   }
 });
 
+test("bracket publication carries request context and fails closed on audit failure", async () => {
+  const updates = [];
+  const bracket = {
+    id: "bracket-audit",
+    tournamentId: "tournament-audit",
+    status: "draft",
+    publishedAt: null,
+    bracketData: { participant: [], match: [] },
+  };
+  const prisma = {
+    tournamentBracket: {
+      findUnique: async () => bracket,
+      update: async ({ data }) => { updates.push(data); return { ...bracket, ...data }; },
+    },
+    $transaction: async (work) => work(prisma),
+  };
+  const { module: bracketService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [auditModulePath]: { recordAuditInTransaction: async () => { throw new Error("bracket audit unavailable"); } },
+  });
+  try {
+    await assert.rejects(
+      bracketService.publishTournamentBracket("tournament-audit", { isPublished: true }, {
+        actorUserId: "admin-1", requestId: "req-bracket-audit", ipAddress: "127.0.0.1",
+      }),
+      /bracket audit unavailable/,
+    );
+    assert.equal(updates.length, 1, "the publication and audit share the transaction boundary");
+  } finally { restore(); }
+});
+
 test("updateTournamentBracketMatch completes a ready match and advances the winner", async () => {
   let currentBracket = null;
   const prismaMock = {

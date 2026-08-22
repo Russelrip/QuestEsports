@@ -464,6 +464,72 @@ test("child tournament create and attachment audit series relationship evidence 
   }
 });
 
+test("child tournament attachment fails closed when its transaction audit fails", async () => {
+  let updateCalls = 0;
+  const existing = { id: "tournament-audit", seriesId: null, seriesOrder: null };
+  const prisma = {
+    tournament: {
+      findUnique: async () => existing,
+      update: async ({ data }) => { updateCalls += 1; return { ...existing, ...data, _count: { teamRegistrations: 0 }, sponsors: [] }; },
+    },
+    $transaction: async (work) => work(prisma),
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+    [auditModulePath]: { recordAuditInTransaction: async () => { throw new Error("child tournament audit unavailable"); } },
+  });
+  try {
+    await assert.rejects(
+      tournamentService.attachTournamentToSeries({
+        tournamentId: existing.id,
+        seriesId: "event-audit",
+        seriesOrder: 3,
+        auditContext: { actorUserId: "admin-1", requestId: "req-child-audit", ipAddress: "127.0.0.1" },
+      }),
+      /child tournament audit unavailable/,
+    );
+    assert.equal(updateCalls, 1, "the mutation reaches the transaction before the audit veto");
+  } finally { restore(); }
+});
+
+test("admin tournament creation carries request context and fails closed on audit failure", async () => {
+  const auditEntries = [];
+  const prisma = {
+    tournament: {
+      findFirst: async () => null,
+      create: async ({ data }) => ({ ...data, _count: { teamRegistrations: 0 }, sponsors: [] }),
+    },
+    $transaction: async (work) => work(prisma),
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: { persistTournamentBannerUpload: async () => null, persistTournamentScheduleUpload: async () => null, removeUploadFiles: async () => undefined },
+    [teamServiceModulePath]: { syncSavedTeamFromRegistration: async () => [], sendTeamInvites: async () => undefined },
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [auditModulePath]: {
+      recordAuditInTransaction: async (_tx, entry) => {
+        auditEntries.push(entry);
+        throw new Error("tournament audit unavailable");
+      },
+    },
+  });
+  try {
+    await assert.rejects(
+      tournamentService.createAdminTournament({
+        body: buildAdminTournamentBody(),
+        files: {},
+        auditContext: { actorUserId: "admin-1", requestId: "req-tournament-audit", ipAddress: "127.0.0.1" },
+      }),
+      /tournament audit unavailable/,
+    );
+    assert.equal(auditEntries[0].requestId, "req-tournament-audit");
+    assert.equal(auditEntries[0].action, "tournament.created");
+  } finally { restore(); }
+});
+
 test("admin tournaments can save an editable schedule without a spreadsheet", async () => {
   let savedData;
   const prismaMock = {

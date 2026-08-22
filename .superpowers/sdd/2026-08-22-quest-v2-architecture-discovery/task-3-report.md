@@ -53,19 +53,19 @@ Added or completed audit events for:
 | Operation | Handler boundary | AuditLog | Same transaction | Before/after or minimal outcome | Severity before fix |
 |---|---|---:|---:|---|---|
 | Registration status/approval | `admin.service.updateTeamRegistrationStatus` | Yes | Yes | status + reason | High |
-| Registration verification | admin status controller | Yes | Legacy post-write | resulting verification status | Medium |
+| Registration verification | admin status controller | Yes | Yes | resulting verification status | Medium |
 | Registration Game IDs | admin service/controller | Yes | Yes | captain/member count | High |
 | Roster correction | admin service/controller | Yes | Yes | sanitized roster before/after | Critical |
 | Payment reconciliation/reopen | payment services | Yes | Yes | status + decision/reason | Critical |
 | Bank-transfer proof review | bank-transfer service | Yes | Yes | status + decision/reason | Critical |
 | Private proof submission/download | payment controller | Yes | Submission legacy post-write; download read audit | metadata only | High |
 | Veto rewind/reset | veto service/controller | Yes | Yes | step/status + reason | Critical |
-| Veto team/toss/action mutations | veto controller | Yes | Legacy post-write | room outcome, no grant token | High |
+| Veto team/toss/action mutations | veto controller | Yes for staff overrides | State transaction for staff overrides; captain self-service does not require audit | room outcome, no grant token | High |
 | VALORANT mutations | VALORANT controller + operation ledger | Yes | Operation/remote contract | operation/status metadata | High |
 | Staff assignment | staff controller | Yes | Legacy post-write | assignment outcome | High |
-| Tournament/bracket admin mutations | tournament controller | Yes | Legacy post-write | status/visibility metadata | High |
+| Tournament/bracket admin mutations | tournament controller | Yes | Mutation transaction when privileged audit context is present | status/visibility metadata | High |
 | Slot reservation | admin controller | Yes | Existing service transaction plus audit boundary | expiry/registration | High |
-| Ticket admin mutations | ticket controller | Yes | Legacy post-write | status/result metadata | High |
+| Ticket admin mutations | ticket controller | Yes | Ticket mutation transaction | status/result metadata | High |
 | OAuth link/unlink | auth controller | Yes | OAuth state transaction plus audit boundary | provider/result only | High |
 
 ## Test-first regressions
@@ -86,6 +86,51 @@ Added or completed audit events for:
   functions.
 - `npm run test:integration`: passed, 7/7. Expected constraint and worker
   diagnostic logs were emitted by exercised integration cases.
+
+## Fix round 4 — P0-003 review findings
+
+Implemented on the current HEAD after the prior fixer rounds. Scope is limited
+to VALORANT reconciliation, related veto/tournament/bracket audit regressions,
+and this report. No schema, migration, frontend, plan, or production-data
+changes were made.
+
+### Findings closed
+
+- `SERIES_ALREADY_FINALIZED` now retains the original finalize mutation status
+  and FastAPI request ID as the operation's primary response metadata. The
+  reconciliation GET status/request ID/result are stored separately in the
+  operation summary and result audit evidence.
+- Reconciliation adoption no longer uses the requested `ratingMode` when the
+  reconciliation response cannot be mapped. It preserves only the local stored
+  rating mode or a successfully mapped upstream value.
+- Malformed mapping is eligible for finalized adoption only when the call is
+  explicitly carrying the trusted `SERIES_ALREADY_FINALIZED` error. Generic
+  malformed and draft/unconfirmed reconciliation records evidence, leaves the
+  local projection unchanged, and remains reconciliation-required.
+- Added direct audit failure, reconciliation GET failure, unconfirmed/draft,
+  metadata-preservation, staff-veto, captain-veto, child-tournament,
+  tournament-create, and bracket-publication regressions.
+
+### Corrected operation evidence matrix
+
+| Operation/path | What the round-4 tests prove | State/audit boundary proven |
+|---|---|---|
+| VALORANT `SERIES_ALREADY_FINALIZED` | Original 409/request ID remains distinct from reconciliation GET metadata; requested rating mode is not treated as observed state | Trusted adoption only; result audit and operation metadata are coherent |
+| Generic malformed reconciliation | Mapping failure does not finalize/adopt the local projection | Evidence is recorded and reconciliation remains required |
+| Draft/unconfirmed reconciliation | Draft status does not finalize/adopt the local projection | Evidence is recorded and reconciliation remains required |
+| Veto staff vs captain choice | Staff audit failure rejects the mutation; captain self-service succeeds without invoking staff audit telemetry | Staff override audit is transaction-scoped; captain path preserves self-service semantics |
+| Child tournament attachment/create | Request context reaches the audit event and audit failure rejects the privileged mutation path | Transaction boundary is exercised by the service tests |
+| Bracket publication/regeneration | Request context and actual before-state evidence are covered; publication audit failure rejects the mutation path | Transaction boundary is exercised by the bracket tests |
+
+### Fix-round validation
+
+- Focused affected-module suite: passed, 94/94 tests.
+- `npm test`: passed, 705 passed and 9 skipped.
+- `npm run test:coverage`: passed; 77.92% lines, 68.35% branches, 76.23%
+  functions.
+- `npm run test:integration`: passed, 7/7. Expected constraint, worker, and
+  uniqueness diagnostic logs were emitted by exercised integration cases.
+- `npm run lint`: passed with 25 pre-existing warnings and no errors.
 
 ## Fix round 2 — P0-003 review findings
 

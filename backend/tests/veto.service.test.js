@@ -646,6 +646,55 @@ test("staff public veto choice fails closed on audit failure while captain paths
   } finally { restore(); }
 });
 
+test("captain veto choice does not fail when optional staff audit context is unavailable", async () => {
+  const room = {
+    id: "room-captain-audit",
+    code: "captain-audit-flow",
+    tournamentId: null,
+    matchId: null,
+    status: "toss_pending",
+    revision: 1,
+    controlMode: "captain_or_link",
+    teamOrderMethod: "toss",
+    tossMethod: "digital",
+    tossCallerSlot: 1,
+    tossWinnerSlot: 1,
+    teamASlot: null,
+    turnSeconds: null,
+    configSnapshot: { maps: [], steps: [] },
+    participants: [{ slot: 1, registrationId: "registration-1" }, { slot: 2, registrationId: "registration-2" }],
+    actions: [],
+    tournament: null,
+    match: null,
+  };
+  let auditCalls = 0;
+  const prisma = {
+    vetoRoom: {
+      findUnique: async () => room,
+      updateMany: async ({ data }) => { Object.assign(room, data, { revision: room.revision + 1 }); return { count: 1 }; },
+    },
+    tournamentStaffAssignment: { findFirst: async () => null },
+    teamRegistration: { findMany: async ({ where }) => where.OR?.some((entry) => entry.userId === "captain-1") ? [{ id: "registration-1" }] : [] },
+    match: { updateMany: async () => ({ count: 0 }) },
+    $transaction: async (callback) => callback(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [auditPath]: { recordAuditInTransaction: async () => { auditCalls += 1; throw new Error("optional audit unavailable"); } },
+  });
+  try {
+    const result = await service.chooseTeamA({
+      code: room.code,
+      user: { id: "captain-1", role: "user" },
+      token: "",
+      body: { choice: "A", expectedRevision: 1 },
+      auditContext: { actorUserId: "captain-1", requestId: "req-captain", ipAddress: "127.0.0.1" },
+    });
+    assert.equal(result.status, "in_progress");
+    assert.equal(auditCalls, 0, "captain self-service does not invoke staff audit telemetry");
+  } finally { restore(); }
+});
+
 test("veto catalog writes enforce global super-admin and tournament-admin roles in the service", async () => {
   const writes = [];
   const prisma = {
