@@ -388,6 +388,40 @@ channel* with email as fallback — a failed DM must never lose the invitation.
 back, with the pending invite always reachable inside Quest.
 **Depends on:** Section 5. Independent of 6–8.
 
+#### Evaluation result (23 Aug 2026) — half shipped, half blocked
+
+**Shipped: the invitation inbox** (`GET /api/me/invitations`). The evaluation
+turned up a live defect that had to be fixed before any channel work: a pending
+invitation was invisible inside Quest. `listProfileTeams`
+(`backend/src/modules/teams/team.service.js:191-224`) returns only teams the
+user captains or has already **accepted**, so an invitation existed solely at
+the end of an emailed token link. If that email bounced or landed in spam the
+invite was effectively lost, and the captain's only recourse was to resend and
+hope. That fragility belongs to the delivery channel, not to the invitation.
+The inbox makes the invitation itself durable and discoverable — which is also
+the precondition for adding *any* best-effort channel, since a Discord DM that
+silently fails must not cost someone their roster spot.
+
+**Blocked: the Discord bot.** Quest cannot DM anyone today, and the gap is
+infrastructure, not code:
+
+| Requirement | State |
+|---|---|
+| Bot application + token | Absent. `backend/.env.example` has `DISCORD_CLIENT_ID`/`SECRET`/`CALLBACK_URL` (OAuth login only) and `DISCORD_ALERT_WEBHOOK_URL` (ops alerts). **A webhook cannot DM a user.** |
+| Gateway library | Absent. No `discord.js` dependency in `backend/package.json`. |
+| A guild the bot and the player share | Undecided — a product call, not an engineering one. |
+| Player has DMs open | Never guaranteed; unknowable in advance. |
+
+The existing bot (`valorant-platform-backend/workers/discord_bot.py`) is a
+rank-role/nickname worker for the VALORANT-SL guild operating on
+`leaderboard_players`. It has no Quest user context and cannot carry Quest
+invitations.
+
+**Recommendation:** leave email as the delivery channel until the bot
+application and guild are decided. With the inbox shipped, adding Discord later
+is a purely additive best-effort sender — the invitation is already safe
+without it, which is the property that made this section worth doing at all.
+
 ---
 
 ### Section 10 — Optional: Dockerization

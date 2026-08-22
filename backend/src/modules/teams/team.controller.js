@@ -8,6 +8,7 @@ const {
   getTeamInvitePreview,
   respondToTeamInvite,
 } = require("./team.service");
+const { listInvitationsForUser } = require("./invitation-inbox.service");
 
 const getProfileTeams = asyncHandler(async (req, res) => {
   const teams = await listProfileTeams({
@@ -94,8 +95,16 @@ const respondTeamInvite = asyncHandler(async (req, res) => {
   });
 });
 
+// An invitation must be findable inside Quest, not only at the end of whatever
+// message happened to deliver it.
+const getMyInvitations = asyncHandler(async (req, res) => {
+  const { invitations } = await listInvitationsForUser({ user: req.user });
+  res.status(200).json({ success: true, invitations });
+});
+
 module.exports = {
   getProfileTeams,
+  getMyInvitations,
   createProfileTeam,
   updateProfileTeam,
   deleteProfileTeam,

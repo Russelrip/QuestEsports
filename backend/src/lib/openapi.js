@@ -1523,6 +1523,11 @@ const additionalPaths = {
       authenticated: true,
     }),
   },
+  "/api/me/invitations": {
+    get: createOperation("Teams", "List pending team invitations addressed to the signed-in user", {
+      authenticated: true,
+    }),
+  },
   "/api/teams": {
     post: createOperation("Teams", "Create a saved team", {
       authenticated: true,

@@ -6,6 +6,7 @@ const {
 } = require("../auth/auth.middleware");
 const {
   getProfileTeams,
+  getMyInvitations,
   createProfileTeam,
   updateProfileTeam,
   deleteProfileTeam,
@@ -43,6 +44,7 @@ const resendTeamInviteRateLimiter = createRateLimiter({
 });
 
 router.get("/teams/profile", requireAuth, getProfileTeams);
+router.get("/me/invitations", requireAuth, getMyInvitations);
 router.post(
   "/teams",
   requireAuth,
