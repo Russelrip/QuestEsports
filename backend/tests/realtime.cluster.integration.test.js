@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
@@ -11,6 +12,7 @@ const transportPath = path.join(backendRoot, "src/modules/realtime/realtime.tran
 const loggerPath = path.join(backendRoot, "src/lib/logger.js");
 const controllerPath = path.join(backendRoot, "src/modules/realtime/realtime.controller.js");
 const matchRoomServicePath = path.join(backendRoot, "src/modules/match-rooms/match-room.service.js");
+const smokeScriptPath = path.join(backendRoot, "scripts/realtime-cluster-smoke.js");
 
 const createSharedTransports = () => {
   const states = new Map();
@@ -107,6 +109,14 @@ const createResponse = () => ({
   end() {
     this.ended = true;
   },
+});
+
+test("cluster smoke uses server-to-server headers and checks a concrete foreign user topic", () => {
+  const smokeSource = fs.readFileSync(smokeScriptPath, "utf8");
+
+  assert.doesNotMatch(smokeSource, /\bOrigin\s*:/);
+  assert.match(smokeSource, /user:__realtime_other_user__/);
+  assert.match(smokeSource, /const assertTopicDenied = async \(workerUrl, cookie, topic\)/);
 });
 
 test("two isolated workers deliver local-first and remote events exactly once", async () => {

@@ -57,10 +57,11 @@ Do not point local development at production. Shared staging environments should
 
 Use `CACHE_DRIVER=upstash` whenever `API_PROCESS_COUNT` is greater than one.
 `API_PROCESS_COUNT` must equal the PM2 API worker count; all workers must share
-the same `REALTIME_PUBSUB_CHANNEL`, while each separately configured worker
-needs a unique `REALTIME_WORKER_ID`. Set both `UPSTASH_REDIS_REST_URL` and
-`UPSTASH_REDIS_REST_TOKEN` on every worker. The memory cache is valid only for a
-single API process.
+the same `REALTIME_PUBSUB_CHANNEL` and configured `REALTIME_WORKER_ID` base.
+The effective worker identity is `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`,
+so PM2 workers sharing the base still have distinct runtime identities. Set
+both `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` on every worker.
+The memory cache is valid only for a single API process.
 
 The transport subscribes with the exact Upstash REST request
 `POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}` and publishes with
@@ -83,9 +84,15 @@ node scripts/realtime-cluster-smoke.js
 ```
 
 The smoke test uses native `fetch` and SSE-compatible streaming, checks both
-workers, reconnect readiness, and broad private-topic rejection, and exits
-non-zero with diagnostics on any failure. Do not place a real cookie in shell
-history or documentation.
+workers, reconnect readiness, and denial of the concrete foreign topic
+`user:__realtime_other_user__` (plus the broad `user` topic). It deliberately
+omits synthetic `Origin` and `Referer` headers: this is a server-to-server
+staging check, not a browser-origin simulation, and it does not treat an API
+worker origin as an allowed frontend CORS origin. Run it only against a
+staging security posture or approved mutation endpoint that accepts the
+cookie-bearing server-to-server request without those browser headers. It
+exits non-zero with diagnostics on any failure. Do not place a real cookie in
+shell history or documentation.
 
 Legacy media import/migration commands remain available for controlled recovery work. Back up PostgreSQL and uploads before using them.
 

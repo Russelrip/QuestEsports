@@ -59,9 +59,11 @@ Use [backend/.env.example](../backend/.env.example) for the full variable list a
 For a multi-worker API, set `CACHE_DRIVER=upstash`, set
 `API_PROCESS_COUNT` to the exact PM2 API worker count, and configure
 `UPSTASH_REDIS_REST_URL` plus `UPSTASH_REDIS_REST_TOKEN` on every worker. All
-workers must use the same `REALTIME_PUBSUB_CHANNEL` and a unique
-`REALTIME_WORKER_ID`. The shared transport uses the exact Upstash REST routes
-below (with channel and message URL-encoded):
+workers must use the same `REALTIME_PUBSUB_CHANNEL` and configured
+`REALTIME_WORKER_ID` base. The implementation creates each effective identity
+as `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`, so a shared PM2 base
+still produces distinct runtime identities. The shared transport uses the
+exact Upstash REST routes below (with channel and message URL-encoded):
 
 ```text
 POST {UPSTASH_REDIS_REST_URL}/subscribe/{channel}   # text/event-stream
@@ -73,7 +75,8 @@ Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}
 
 Run these checks as `deploy` after every clustered deployment. The PM2 instance
 count, `API_PROCESS_COUNT`, and shared channel must agree; never infer this
-from the number of healthy HTTP responses alone:
+from the number of healthy HTTP responses alone. `pm2 env` verifies only the
+configured base ID, not the effective ID:
 
 ```bash
 sudo -u deploy -H pm2 list
@@ -83,8 +86,34 @@ sudo -u deploy -H pm2 env 1 | grep -E '^(API_PROCESS_COUNT|CACHE_DRIVER|REALTIME
 ```
 
 For the two-worker target, expect two `online` instances, `API_PROCESS_COUNT=2`,
-`CACHE_DRIVER=upstash`, and the same channel on both instances. Worker IDs must
-be distinct at runtime. The PM2 launch equivalent is:
+`CACHE_DRIVER=upstash`, and the same channel and configured base on both
+instances. Verify the effective identity prefixes (base plus actual process
+PID) with this runtime check; the final UUID is generated inside each API
+process at startup and is intentionally not exposed as a credential or
+configuration value:
+
+```bash
+sudo -u deploy -H pm2 jlist | node -e '
+  let input = "";
+  process.stdin.on("data", (chunk) => { input += chunk; });
+  process.stdin.on("end", () => {
+    const workers = JSON.parse(input).filter((app) => app.name === "quest-backend");
+    if (workers.length !== 2) throw new Error(`expected 2 quest-backend workers, got ${workers.length}`);
+    const prefixes = workers.map((app) => {
+      const base = app.pm2_env?.env?.REALTIME_WORKER_ID;
+      if (!base || !Number.isInteger(app.pid) || app.pid <= 0) throw new Error("missing worker base ID or PID");
+      return `${base}:${app.pid}`;
+    });
+    if (new Set(prefixes).size !== prefixes.length) throw new Error("duplicate effective realtime identity prefix");
+    console.log(prefixes.map((prefix) => `${prefix}:<randomUUID>`).join("\n"));
+  });
+'
+```
+
+The output is the implementation's effective identity shape, with the
+per-process UUID shown as a placeholder; it checks the runtime PID component
+and confirms that each PM2 worker has a distinct effective prefix. The PM2
+launch equivalent is:
 
 ```bash
 sudo -u deploy -H bash -lc '
@@ -123,6 +152,10 @@ observe a `: heartbeat` comment. If it closes near 25 seconds, fix the proxy
 before enabling more than one worker. The optional staging exercise is
 `node scripts/realtime-cluster-smoke.js` from `backend/`; it requires all seven
 `REALTIME_CLUSTER_*` variables documented in [backend/README.md](../backend/README.md).
+The smoke requests intentionally omit synthetic `Origin` and `Referer` headers;
+use an approved staging security posture or mutation endpoint that accepts the
+cookie-bearing server-to-server check without browser-origin headers. It checks
+both `user:__realtime_other_user__` and broad `user` denial on both workers.
 
 ### Realtime rollback
 

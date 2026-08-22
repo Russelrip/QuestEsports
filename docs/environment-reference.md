@@ -75,7 +75,7 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `REALTIME_SSE_MAX_CONNECTIONS` | No — defaults to `100` | Backend | L/D/P | Public/non-secret | `100` | Restart backend |
 | `REALTIME_SSE_MAX_CONNECTIONS_PER_IP` | No — defaults to `5` | Backend | L/D/P | Public/non-secret | `5` | Restart backend |
 | `REALTIME_PUBSUB_CHANNEL` | Required and identical on every API worker in a cluster | Backend/deployment owner | D/P | Public/non-secret | `quest-realtime` | Restart backend |
-| `REALTIME_WORKER_ID` | Required as a distinct worker base ID for each separately configured API worker | Backend/deployment owner | D/P | Public/non-secret | `<unique-worker-id>` | Restart backend |
+| `REALTIME_WORKER_ID` | Required stable worker base ID; effective identity adds process PID and UUID | Backend/deployment owner | D/P | Public/non-secret | `<cluster-worker-base-id>` | Restart backend |
 | `REALTIME_PUBSUB_MAX_MESSAGE_BYTES` | No — defaults to `65536` | Backend | L/D/P | Public/non-secret | `65536` | Restart backend |
 | `LOG_DRAIN_URL` | No | Backend/operations owner | D/P | Secret | `<structured log drain URL>` | Restart backend |
 | `LOG_DRAIN_TOKEN` | Conditional | Backend/operations owner | D/P | Secret | `<log drain token>` when a drain requires it | Restart backend |
@@ -88,9 +88,12 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 For two or more API workers, set `CACHE_DRIVER=upstash` and provide both
 `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. `API_PROCESS_COUNT`
 must match the PM2/API worker count. Every worker uses the same
-`REALTIME_PUBSUB_CHANNEL` prefix/channel, while `REALTIME_WORKER_ID` must
-identify that worker uniquely. Do not run a multi-worker deployment with the
-memory cache or with a missing shared transport credential.
+`REALTIME_PUBSUB_CHANNEL` prefix/channel and configured `REALTIME_WORKER_ID`
+base. The implementation creates the effective identity as
+`${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`; therefore a shared PM2
+base is safe because process PID and startup UUID distinguish workers. Do not
+run a multi-worker deployment with the memory cache or with a missing shared
+transport credential.
 
 The shared transport uses these exact Upstash REST routes, with the channel and
 message URL-encoded:
@@ -103,6 +106,14 @@ POST {UPSTASH_REDIS_REST_URL}/publish/{channel}/{message}
 Both requests require `Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}`.
 The subscribe response is `text/event-stream`; the publish request carries the
 serialized realtime envelope in the `{message}` path segment.
+
+The optional cluster smoke test is server-to-server and intentionally omits
+synthetic `Origin` and `Referer` headers. It must target a staging security
+posture or approved mutation endpoint that accepts the supplied cookie without
+browser-origin headers; it must not invent an API origin as a frontend CORS
+origin. The smoke test uses the concrete foreign private topic
+`user:__realtime_other_user__` and the broad `user` topic when checking 403
+isolation.
 
 ## Backend — mail and web push
 

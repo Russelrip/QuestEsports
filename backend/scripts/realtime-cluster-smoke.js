@@ -30,8 +30,6 @@ const withApiPath = (baseUrl, path) => {
   return url;
 };
 
-const originHeaderFor = (url) => new URL(url).origin;
-
 const responseText = async (response) => {
   try {
     return await response.text();
@@ -69,7 +67,6 @@ class SseClient {
         headers: {
           Accept: "text/event-stream",
           Cookie: this.cookie,
-          Origin: originHeaderFor(this.workerUrl),
         },
         signal: this.controller.signal,
       });
@@ -173,7 +170,6 @@ const performMutation = async (config) => {
       Accept: "application/json",
       "Content-Type": "application/json",
       Cookie: config.REALTIME_CLUSTER_COOKIE,
-      Origin: originHeaderFor(config.REALTIME_CLUSTER_MUTATION_URL),
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
@@ -186,23 +182,27 @@ const performMutation = async (config) => {
   return response;
 };
 
-const assertPrivateTopicIsolation = async (workerUrl, cookie) => {
+const assertTopicDenied = async (workerUrl, cookie, topic) => {
   const response = await fetch(
-    withApiPath(workerUrl, "/api/v1/events?topics=user"),
+    withApiPath(workerUrl, `/api/v1/events?topics=${encodeURIComponent(topic)}`),
     {
       headers: {
         Accept: "text/event-stream",
         Cookie: cookie,
-        Origin: originHeaderFor(workerUrl),
       },
       signal: AbortSignal.timeout(10_000),
     },
   );
   if (response.status !== 403) {
     throw new Error(
-      `Private topic isolation failed: broad user topic returned HTTP ${response.status}; expected 403.`,
+      `Private topic isolation failed: ${topic} returned HTTP ${response.status}; expected 403.`,
     );
   }
+};
+
+const assertPrivateTopicIsolation = async (workerUrl, cookie) => {
+  await assertTopicDenied(workerUrl, cookie, "user:__realtime_other_user__");
+  await assertTopicDenied(workerUrl, cookie, "user");
 };
 
 const main = async () => {
@@ -270,7 +270,7 @@ const main = async () => {
     console.log("Realtime cluster smoke: PASS");
     console.log("- both workers emitted ready and observed the configured mutation refresh");
     console.log("- reconnect emitted ready");
-    console.log("- broad private user topic returned 403 on both workers");
+    console.log("- foreign user:__realtime_other_user__ and broad private topics returned 403 on both workers");
   } finally {
     await Promise.all(clients.map((client) => client.close()));
   }
