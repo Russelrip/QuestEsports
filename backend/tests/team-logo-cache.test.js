@@ -90,6 +90,20 @@ test("team and admin team mutations invalidate both local projection tags", () =
     ]);
     assert.ok(captainPatch.includes(teamInvalidationMiddleware));
     assert.ok(adminPatch.includes(adminInvalidationMiddleware));
+    for (const route of [
+      "PATCH /admin/team-registrations/:registrationId/status",
+      "PATCH /admin/team-registrations/:registrationId/game-ids",
+      "PATCH /admin/team-registrations/:registrationId/roster",
+      "DELETE /admin/team-registrations/:registrationId",
+      "POST /admin/team-registrations/:registrationId/slot-reservation",
+      "DELETE /admin/team-registrations/:registrationId/slot-reservation",
+      "PATCH /admin/teams/:teamId",
+      "PATCH /admin/teams/:teamId/organization",
+      "POST /admin/teams/:teamId/captain-transfer",
+      "DELETE /admin/teams/:teamId",
+    ]) {
+      assert.ok(adminRoutes.get(route)?.includes(adminInvalidationMiddleware), `${route} should invalidate foundation`);
+    }
     assert.equal(
       captainPatch.indexOf(teamInvalidationMiddleware),
       captainPatch.indexOf(controllerHandler) - 1,
@@ -109,7 +123,7 @@ test("team mutation routes all carry foundation invalidation middleware", () => 
   const invalidations = [];
   const rateLimiter = () => passThrough;
   const uploadMiddleware = { single: () => passThrough };
-  const { restore } = loadModuleWithMocks(teamRoutesPath, {
+  const { module: router, restore } = loadModuleWithMocks(teamRoutesPath, {
     [authMiddlewarePath]: { requireAuth: passThrough, requireVerifiedEmail: passThrough },
     [rateLimitPath]: { createRateLimiter: rateLimiter },
     [uploadPath]: { imageUpload: uploadMiddleware },
@@ -123,6 +137,15 @@ test("team mutation routes all carry foundation invalidation middleware", () => 
   });
 
   try {
+    const routes = routeMiddleware(router);
+    for (const route of [
+      "POST /teams",
+      "PATCH /teams/:teamId",
+      "DELETE /teams/:teamId",
+      "POST /team-invite/respond",
+    ]) {
+      assert.ok(routes.get(route)?.includes(invalidationMiddleware), `${route} should invalidate foundation`);
+    }
     assert.deepEqual(invalidations, [
       ["tournaments", "foundation"],
       ["tournaments", "foundation"],

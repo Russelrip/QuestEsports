@@ -1191,7 +1191,9 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
     query.participantPage !== undefined || query.participantPageSize !== undefined;
   const participantPagination = buildPagination({
     page: query.participantPage,
-    pageSize: query.participantPageSize || PUBLIC_PARTICIPANT_PAGE_SIZE,
+    pageSize: hasParticipantPaginationQuery
+      ? query.participantPageSize
+      : PUBLIC_PARTICIPANT_PAGE_SIZE,
   });
   const tournament = await prisma.tournament.findFirst({
     where: {
@@ -1278,10 +1280,6 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  if (!hasParticipantPaginationQuery) {
-    return mapTournamentWithPublicTeams(tournament);
-  }
-
   const total = await prisma.teamRegistration.count({
     where: {
       tournamentId: tournament.id,
@@ -1289,6 +1287,16 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
     },
   });
   const capacityUsed = withRegistrationCount(tournament).capacityUsed;
+  const tournamentWithPublicTotals = {
+    ...tournament,
+    registrationCount: total,
+    capacityUsed,
+  };
+
+  if (!hasParticipantPaginationQuery) {
+    return mapTournamentWithPublicTeams(tournamentWithPublicTotals);
+  }
+
   const bracketRegistrations = tournament.bracket?.status === "published"
     ? await prisma.teamRegistration.findMany({
         where: {
@@ -1305,7 +1313,7 @@ const getPublicTournamentBySlug = async (slug, query = {}) => {
     : null;
 
   return mapTournamentWithPublicTeams(
-    { ...tournament, registrationCount: total, capacityUsed },
+    tournamentWithPublicTotals,
     {
       participantPagination: {
         page: participantPagination.page,

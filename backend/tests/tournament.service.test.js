@@ -756,7 +756,7 @@ test("getPublicTournamentBySlug exposes approved public team card data", async (
     assert.equal(tournament.registrationCount, 1);
     assert.equal(tournament.capacityUsed, 2);
     assert.equal("participantPagination" in tournament, false);
-    assert.equal(capacityCountCalls, 0);
+    assert.equal(capacityCountCalls, 1);
   } finally {
     restore();
   }
@@ -861,7 +861,66 @@ test("public tournament participant pagination keeps full registration totals", 
 
 test("public tournament detail bounds the default participant projection", async () => {
   let findOptions;
+  const registrations = Array.from({ length: 50 }, (_, index) => ({
+    id: `registration-${index + 1}`,
+    teamName: `Team ${index + 1}`,
+    captainName: `Captain ${index + 1}`,
+    entryType: "team",
+    status: "approved",
+    members: [],
+  }));
   const prisma = {
+    teamRegistration: {
+      count: async () => 75,
+    },
+    tournament: {
+      findFirst: async (options) => {
+        findOptions = options;
+        return {
+          id: "tournament-1",
+          slug: "quest-cup",
+          title: "Quest Cup",
+          game: "valorant",
+          status: "registration_open",
+          isPublished: true,
+          teamRegistrations: registrations,
+          _count: { teamRegistrations: 0, adminSlotReservations: 0 },
+          adminSlotReservations: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+  });
+
+  try {
+    const tournament = await tournamentService.getPublicTournamentBySlug("quest-cup");
+
+    assert.equal(findOptions.include.teamRegistrations.skip, 0);
+    assert.equal(findOptions.include.teamRegistrations.take, 50);
+    assert.equal(tournament.registrationCount, 75);
+    assert.equal(tournament.registeredParticipants.length, 50);
+    assert.equal("participantPagination" in tournament, false);
+  } finally {
+    restore();
+  }
+});
+
+test("page-only participant pagination preserves the shared default page size", async () => {
+  let findOptions;
+  let countCalls = 0;
+  const prisma = {
+    teamRegistration: {
+      count: async () => {
+        countCalls += 1;
+        return 25;
+      },
+    },
     tournament: {
       findFirst: async (options) => {
         findOptions = options;
@@ -888,11 +947,19 @@ test("public tournament detail bounds the default participant projection", async
   });
 
   try {
-    const tournament = await tournamentService.getPublicTournamentBySlug("quest-cup");
+    const tournament = await tournamentService.getPublicTournamentBySlug("quest-cup", {
+      participantPage: "2",
+    });
 
-    assert.equal(findOptions.include.teamRegistrations.skip, 0);
-    assert.equal(findOptions.include.teamRegistrations.take, 50);
-    assert.equal("participantPagination" in tournament, false);
+    assert.equal(findOptions.include.teamRegistrations.skip, 10);
+    assert.equal(findOptions.include.teamRegistrations.take, 10);
+    assert.equal(countCalls, 1);
+    assert.deepEqual(tournament.participantPagination, {
+      page: 2,
+      pageSize: 10,
+      total: 25,
+      totalPages: 3,
+    });
   } finally {
     restore();
   }

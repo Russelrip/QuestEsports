@@ -74,3 +74,39 @@ constraint/job error logs while all integration subtests passed.
 - `backend/tests/event-album.service.test.js`
 - `backend/tests/team-logo-cache.test.js`
 - `backend/tests/event-album.routes.test.js`
+
+## Fix round — public participant totals and pagination compatibility
+
+### Findings addressed
+
+- Default bounded participant loading no longer derives the public
+  `registrationCount` from the truncated relation. The service now runs an
+  approved-registration count query for both default and explicit participant
+  requests, while separately preserving the active capacity calculation.
+- A page-only `participantPage` request now uses the shared pagination default
+  of 10. The bounded default of 50 applies only when neither participant
+  pagination parameter is supplied; explicit page-size requests still use the
+  shared clamping behavior.
+- Team and admin-team invalidation regressions now enumerate each mutation
+  route and assert that its route stack contains the expected invalidation
+  middleware, in addition to checking configured tags.
+
+### Additional regressions
+
+- Default public tournament detail with 75 approved registrations and only 50
+  loaded cards preserves `registrationCount: 75`.
+- Page-only participant pagination preserves `pageSize: 10` and calculates
+  pagination metadata from the full approved count.
+- Every public/admin team projection mutation route is checked for foundation
+  invalidation middleware.
+
+### Fix-round validation
+
+- Focused projection/cache suite (`tournament.service`, `event-album.service`,
+  `team-logo-cache`, and `event-album.routes`) — passed (35/35).
+- `npm run lint` — passed with 28 existing warnings and no errors.
+- `npm test` — passed (685 passed, 9 skipped).
+- `npm run test:coverage` — passed (685 passed, 9 skipped; 77.92% lines,
+  68.53% branches, 75.88% functions).
+- `npm run test:integration` — passed (7/7); expected constraint and worker
+  diagnostic logs were emitted by exercised integration cases.
