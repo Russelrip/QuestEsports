@@ -1369,6 +1369,13 @@ const additionalPaths = {
       authenticated: true,
     }),
   },
+  "/api/v1/teams/{teamId}/registration-readiness": {
+    get: createOperation(
+      "Game accounts",
+      "Server-computed roster readiness for a saved team, optionally scoped to a tournament",
+      { authenticated: true },
+    ),
+  },
   "/api/contact": {
     post: createOperation("Contact", "Submit a contact message"),
   },

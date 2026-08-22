@@ -179,6 +179,7 @@ router.post("/valorant/leaderboard/register/submit", leaderboardRegisterSubmitLi
 router.post("/game-accounts/valorant/resolve", requireAuth, gameAccountResolveLimiter, gameAccountController.resolveValorant);
 router.post("/game-accounts/valorant/link", requireAuth, gameAccountResolveLimiter, gameAccountController.linkValorant);
 router.get("/users/me/game-accounts", requireAuth, gameAccountController.listMyGameAccounts);
+router.get("/teams/:teamId/registration-readiness", requireAuth, gameAccountController.getTeamRegistrationReadiness);
 
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);

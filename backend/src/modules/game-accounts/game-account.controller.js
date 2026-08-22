@@ -5,6 +5,7 @@ const {
   linkValorantAccount,
   listGameAccountsForUser,
 } = require("./game-account.service");
+const { getRegistrationReadiness } = require("./registration-readiness.service");
 
 const respond = (res, data, status = 200) =>
   res.status(status).json({ success: true, data, meta: { serverNow: new Date().toISOString() } });
@@ -41,8 +42,20 @@ const listMyGameAccounts = asyncHandler(async (req, res) => {
   respond(res, data);
 });
 
+// The authoritative answer to "can this team register?". The frontend renders
+// this result; it must not recompute the rules.
+const getTeamRegistrationReadiness = asyncHandler(async (req, res) => {
+  const data = await getRegistrationReadiness({
+    teamId: req.params.teamId,
+    tournamentId: req.query.tournamentId ? String(req.query.tournamentId) : null,
+    user: req.user,
+  });
+  respond(res, data);
+});
+
 module.exports = {
   resolveValorant,
   linkValorant,
   listMyGameAccounts,
+  getTeamRegistrationReadiness,
 };

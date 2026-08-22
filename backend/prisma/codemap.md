@@ -46,6 +46,17 @@ existing contact, match-room, notification, or OAuth tables.
   `saved_team_members.riot_id`, `registration_members.riot_id`, and
   `team_registrations.captain_riot_id` columns are untouched, and nothing is
   backfilled.
+- `20260823130000_add_player_links_to_rosters` adds the nullable
+  `saved_team_members.player_id` and `registration_members.player_id` links.
+  Nullable and unbackfilled by design: roster history is sensitive, so every
+  existing `riot_id`, `email`, `discord`, and invite column keeps its value and
+  stays authoritative for rows that predate player identity. Both foreign keys
+  are `SET NULL` — deleting a player must never delete roster or registration
+  history; the worst case is a row falling back to its legacy free-text
+  identity, which is the pre-migration state. `TeamRegistration` ownership is
+  deliberately unchanged: a registration's captain is represented through its
+  captain `registration_members` row, so the link lands there rather than on
+  the aggregate.
 - `20260822150000_add_saved_team_logo_cleared_at` adds the nullable
   `saved_teams.logo_cleared_at` marker. `logo_name` alone cannot say why a team
   has no logo, so this column separates a team that has never had one — which
