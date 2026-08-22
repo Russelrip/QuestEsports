@@ -155,7 +155,9 @@ test("subscribe parses only matching message frames and reconnects after EOF", a
   const received = [];
 
   await transport.start((value) => received.push(value));
-  await wait(25);
+  // The delivery and the post-EOF reconnect are both driven by timers; poll for
+  // them rather than guessing a delay a loaded runner will exceed.
+  await until(() => received.length === 1 && calls.length >= 2);
 
   assert.deepEqual(received, [{ version: 1, eventId: "e1" }]);
   assert.ok(calls.length >= 2);
@@ -166,7 +168,8 @@ test("subscribe parses only matching message frames and reconnects after EOF", a
   await transport.stop();
   releaseSecondRequest();
   const callCount = calls.length;
-  await wait(20);
+  // Negative assertion: a stopped transport must issue no further requests.
+  await wait(40);
   assert.equal(calls.length, callCount);
   assert.equal(transport.getStatus().connected, false);
 });
