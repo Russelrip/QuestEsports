@@ -125,6 +125,100 @@ Run in `backend/` at the committed tree:
   functions, above the configured 68/60/64 thresholds.
 - `npm run test:integration`: passed, 7/7.
 
+## Whole-branch review round
+
+After V2-P0-004 landed, the whole branch (`origin/main..HEAD`) was reviewed
+against the plan. Three issues were found and fixed; each fix was written
+test-first and re-reviewed.
+
+### Important — public bracket names came from a bounded page
+
+`getPublicTournamentBySlug` bounds the participant projection on every path
+(V2-P0-002), but `bracketRegistrations` — the unbounded read that refreshes
+published-bracket team names and logos — was only performed on the paginated
+path. A caller that supplies no participant pagination therefore resolved
+bracket participants from at most the first 50 approved registrations, so any
+tournament with more approved teams served stale bracket names and logos.
+`GET /api/tournaments/:slug` returns `bracketData` in full, so the stale values
+were publicly observable there; `GET /api/v1/tournaments/:slug` strips
+`bracketData` and was unaffected. The Quest frontend always sends participant
+pagination and was also unaffected.
+
+Fixed by performing the bracket read before the default-path return and passing
+it to `mapTournamentWithPublicTeams` on both paths.
+`backend/tests/tournament.service.test.js` gained two regressions: the default
+path resolves a bracket team that is outside the participant page, and an
+unpublished bracket still performs no extra registration read.
+
+### Important — ticket reissue audit evidence was redacted
+
+Recorded in the V2-P0-003 report under "Whole-branch review round"; the
+`ticket.reissued` audit persisted `"[REDACTED]"` in place of its only
+before/after evidence.
+
+### Minor — dead post-commit veto audit path
+
+Every `runRoomCommand` caller passed `transactionAudited: true`, leaving the
+controller-level `audit()` helper unreachable. It was removed along with the
+flag, so a future command cannot silently reintroduce an out-of-transaction
+audit write. No behaviour change; covered by the existing veto route and
+service suites.
+
+### Not fixed — out of scope
+
+- `backend/src/lib/jobs.js:183-262` has a pre-existing claim race. When two
+  concurrent `runJobWorkerTick()` calls both lose their serializable
+  `backgroundJob.updateMany` to a write conflict, each retry re-reads a row
+  that is now `processing` with a fresh lock, matches no candidate, and returns
+  `null`; the job is left claimed by nobody until the five-minute stale-lock
+  cutoff. This makes `real PostgreSQL protects sessions and claims a queued job
+  only once` flaky. It is present on `origin/main`, no job, session, or worker
+  code changed on this branch, and it belongs to no Phase 0 task, so it was
+  reported rather than fixed.
+
+## Final verification
+
+Backend (`backend/`):
+
+- `npm run lint`: passed — 0 errors, 25 pre-existing warnings.
+- `npm test`: passed — 721 tests, 712 passed, 9 skipped (configured VALORANT
+  end-to-end cases, skipped for absent external environment variables).
+- `npm run test:coverage`: passed — 78.13% lines, 68.29% branches, 76.75%
+  functions.
+- `npm run test:integration`: 7/7 on five consecutive runs. The suite is
+  flaky in this environment because of the pre-existing job-claim race above:
+  with every change stashed at the same commit it failed 2 of 4 runs with the
+  identical assertion, so the flake is not attributable to this branch.
+
+Frontend (`frontend/`):
+
+- `npm run lint`: passed, clean.
+- `npm run typecheck`: passed, clean.
+- `npm test`: passed — 39 files, 220 tests.
+- `npm run test:e2e:local`: passed — 57 passed, 15 skipped, 0 failed.
+
+### The Challonge E2E failure, classified
+
+Before this round the E2E suite failed `Challonge public bracket is preloaded
+and reused without consuming REST requests` on all three browser projects. The
+cause is a test-fixture bug, not a product bug:
+`frontend/scripts/mock-api.mjs` matched the fixture with
+`request.url === "/api/tournaments/challonge-test"`, while
+`fetchPublicTournamentBySlug` has always appended
+`?participantPage=1&participantPageSize=10`. The strict comparison never
+matched, the mock fell through to its 404 handler, and the page rendered
+without the tournament.
+
+Both sides of that mismatch are identical on `origin/main`: the mock's strict
+comparison and the frontend's query string both predate this branch, and
+neither file's behaviour was changed by it. The failure was therefore
+pre-existing and unrelated to V2-P0-001 through V2-P0-004 — the earlier reports
+were right to call it unrelated, but never named the mechanism.
+
+It is now fixed in the mock by comparing the parsed pathname, matching the
+idiom the mock's other handlers already use. The change is confined to the E2E
+fixture; no product code was altered for it.
+
 ## Acceptance criteria
 
 - Invalid callers are rejected at the route boundary **and** at the service

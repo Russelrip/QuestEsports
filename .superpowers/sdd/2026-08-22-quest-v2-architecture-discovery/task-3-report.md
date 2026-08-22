@@ -174,7 +174,6 @@ were made.
   diagnostic logs were emitted by exercised integration cases.
 - `npm run lint`: passed with 25 warnings and no errors; warnings are existing
   unused-argument/fixture warnings.
-- `npm run lint`: passed with 25 pre-existing warnings and no errors.
 
 ## Fix round 2 — P0-003 review findings
 
@@ -282,6 +281,31 @@ schema, migration, frontend, plan, or production-data changes were made.
   two attempts. The pre-existing background-worker concurrency case failed its
   `processed === 1` assertion after PostgreSQL write-conflict diagnostics;
   the other six integration cases passed. No integration code was changed.
+
+## Whole-branch review round — P0-003 finding
+
+Found while reviewing the whole branch after V2-P0-004 landed, and fixed in the
+same round.
+
+### Ticket reissue audit evidence was redacted
+
+`ticket.reissued` recorded its before/after under a `tokenVersion` key. The
+durable-audit sanitizer added by this task redacts every key matching
+`/token/i`, so both sides persisted as `"[REDACTED]"`. Because a reissue leaves
+`status` unchanged, the row carried no distinguishing before/after evidence at
+all, and this report's earlier claim of "accurate before/after token-version
+evidence" was not true of the persisted row.
+
+The sanitizer policy was deliberately left unchanged — weakening it to admit
+`tokenVersion` would also admit real credential keys. The non-secret reissue
+counter is now recorded as `qrVersion`, which the policy passes through.
+`backend/tests/ticket.service.test.js` gained a regression that drives the real
+sanitizer through the mocked transaction and asserts the persisted row holds
+`qrVersion` 3 → 4 rather than `"[REDACTED]"`.
+
+No other audit payload in `backend/src` collides with the sanitizer's key
+policy; the payload keys were enumerated against the policy regex to confirm
+this.
 
 ## Concerns and follow-up
 
