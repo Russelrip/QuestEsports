@@ -1349,28 +1349,38 @@ model PaymentNotificationAudit {
 }
 
 model RegistrationMember {
-  id                String                 @id @default(uuid()) @db.Uuid
-  registrationId    String                 @map("registration_id") @db.Uuid
-  userId            String?                @map("user_id") @db.Uuid
-  role              RegistrationMemberRole
-  memberOrder       Int                    @map("member_order")
-  name              String
-  email             String?
-  phone             String?
-  emailNormalized   String?                @map("email_normalized")
-  discord           String?
-  riotId            String?                @map("riot_id")
-  playerId          String?                @map("player_id") @db.Uuid
-  additionalData    Json                   @default("{}") @map("additional_data")
-  inviteStatus      TeamMemberInviteStatus @default(pending) @map("invite_status")
-  inviteTokenHash   String?                @unique @map("invite_token_hash")
-  inviteSentAt      DateTime?              @map("invite_sent_at")
-  inviteExpiresAt   DateTime?              @map("invite_expires_at")
-  inviteRespondedAt DateTime?              @map("invite_responded_at")
-  createdAt         DateTime               @default(now()) @map("created_at")
-  registration      TeamRegistration       @relation(fields: [registrationId], references: [id], onDelete: Cascade)
-  user              User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
-  player            Player?                @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  id                         String                         @id @default(uuid()) @db.Uuid
+  registrationId             String                         @map("registration_id") @db.Uuid
+  userId                     String?                        @map("user_id") @db.Uuid
+  role                       RegistrationMemberRole
+  memberOrder                Int                            @map("member_order")
+  name                       String
+  email                      String?
+  phone                      String?
+  emailNormalized            String?                        @map("email_normalized")
+  discord                    String?
+  riotId                     String?                        @map("riot_id")
+  playerId                   String?                        @map("player_id") @db.Uuid
+  additionalData             Json                           @default("{}") @map("additional_data")
+  // Competitive identity as committed to THIS tournament. Written only when a
+  // registration is approved, and never by a profile edit: the whole point is
+  // that a later rename or account swap cannot rewrite what was registered.
+  gameAccountId              String?                        @map("game_account_id") @db.Uuid
+  externalIdSnapshot         String?                        @map("external_id_snapshot")
+  usernameSnapshot           String?                        @map("username_snapshot")
+  tagSnapshot                String?                        @map("tag_snapshot")
+  verificationStatusSnapshot GameAccountVerificationStatus? @map("verification_status_snapshot")
+  snapshotAt                 DateTime?                      @map("snapshot_at")
+  inviteStatus               TeamMemberInviteStatus         @default(pending) @map("invite_status")
+  inviteTokenHash            String?                        @unique @map("invite_token_hash")
+  inviteSentAt               DateTime?                      @map("invite_sent_at")
+  inviteExpiresAt            DateTime?                      @map("invite_expires_at")
+  inviteRespondedAt          DateTime?                      @map("invite_responded_at")
+  createdAt                  DateTime                       @default(now()) @map("created_at")
+  registration               TeamRegistration               @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  user                       User?                          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  player                     Player?                        @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  gameAccount                GameAccount?                   @relation(fields: [gameAccountId], references: [id], onDelete: SetNull)
 
   @@unique([registrationId, role, memberOrder])
   @@index([registrationId])
@@ -1581,22 +1591,23 @@ model Player {
 // display snapshot and are never an identity key — a Riot rename changes them
 // while `externalId` stays put.
 model GameAccount {
-  id                 String                        @id @default(uuid()) @db.Uuid
-  playerId           String                        @map("player_id") @db.Uuid
-  game               GameAccountGame
-  externalId         String                        @map("external_id")
-  username           String?
-  tagline            String?
-  region             String?
-  verificationStatus GameAccountVerificationStatus @default(resolved) @map("verification_status")
-  status             GameAccountStatus             @default(active)
-  linkedAt           DateTime                      @default(now()) @map("linked_at")
-  verifiedAt         DateTime?                     @map("verified_at")
-  lastSyncedAt       DateTime?                     @map("last_synced_at")
-  metadata           Json                          @default("{}")
-  createdAt          DateTime                      @default(now()) @map("created_at")
-  updatedAt          DateTime                      @updatedAt @map("updated_at")
-  player             Player                        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  id                    String                        @id @default(uuid()) @db.Uuid
+  playerId              String                        @map("player_id") @db.Uuid
+  game                  GameAccountGame
+  externalId            String                        @map("external_id")
+  username              String?
+  tagline               String?
+  region                String?
+  verificationStatus    GameAccountVerificationStatus @default(resolved) @map("verification_status")
+  status                GameAccountStatus             @default(active)
+  linkedAt              DateTime                      @default(now()) @map("linked_at")
+  verifiedAt            DateTime?                     @map("verified_at")
+  lastSyncedAt          DateTime?                     @map("last_synced_at")
+  metadata              Json                          @default("{}")
+  createdAt             DateTime                      @default(now()) @map("created_at")
+  updatedAt             DateTime                      @updatedAt @map("updated_at")
+  player                Player                        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  registrationSnapshots RegistrationMember[]
 
   // The abuse boundary: one Quest player per real game account. A partial
   // unique index in the migration additionally allows only one ACTIVE account

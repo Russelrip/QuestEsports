@@ -57,6 +57,18 @@ existing contact, match-room, notification, or OAuth tables.
   deliberately unchanged: a registration's captain is represented through its
   captain `registration_members` row, so the link lands there rather than on
   the aggregate.
+- `20260823140000_add_roster_identity_snapshots` adds the competitive identity
+  snapshot to `registration_members`: `game_account_id`,
+  `external_id_snapshot`, `username_snapshot`, `tag_snapshot`,
+  `verification_status_snapshot`, and `snapshot_at`. The table already copied a
+  roster, but it copied free text that was typed by a human and checked against
+  nothing; these columns record which game account was actually committed and
+  what it looked like at that moment. Written only when a registration is
+  approved, never by a profile or roster edit. The foreign key is `SET NULL` —
+  deleting a game account must not delete the evidence of what a team
+  registered with, and the text snapshot survives the reference on purpose.
+  Additive and unbackfilled: a NULL snapshot honestly means "predates identity
+  snapshots", which is different from "no account".
 - `20260822150000_add_saved_team_logo_cleared_at` adds the nullable
   `saved_teams.logo_cleared_at` marker. `logo_name` alone cannot say why a team
   has no logo, so this column separates a team that has never had one — which

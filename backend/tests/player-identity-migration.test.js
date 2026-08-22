@@ -97,7 +97,8 @@ test("schema keeps verification strength separate from lifecycle", () => {
   // An admin-verified account can still be locked by a live tournament, and a
   // replaced account keeps its verification history. Collapsing these into one
   // column loses that.
-  assert.match(schema, /verificationStatus GameAccountVerificationStatus/);
-  assert.match(schema, /status\s+GameAccountStatus/);
+  // Whitespace is owned by `prisma format`, so match on the declaration only.
+  assert.match(schema, /verificationStatus\s+GameAccountVerificationStatus/);
+  assert.match(schema, /\bstatus\s+GameAccountStatus/);
   assert.match(schema, /enum GameAccountStatus \{[\s\S]*?locked[\s\S]*?replaced[\s\S]*?\}/);
 });
