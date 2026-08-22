@@ -7,6 +7,7 @@ process.env.REALTIME_PUBSUB_CHANNEL = "quest-realtime";
 process.env.REALTIME_PUBSUB_MAX_MESSAGE_BYTES = "1024";
 process.env.REALTIME_PUBSUB_RECONNECT_BASE_MS = "5";
 process.env.REALTIME_PUBSUB_RECONNECT_MAX_MS = "10";
+process.env.CACHE_CONNECTION_TIMEOUT_MS = "25";
 
 const { createRealtimeTransport } = require("../src/modules/realtime/realtime.transport");
 
@@ -136,6 +137,61 @@ test("subscribe parses only matching message frames and reconnects after EOF", a
   assert.equal(transport.getStatus().connected, false);
 });
 
+test("subscribe does not become ready for an invalid or missing acknowledgement", async () => {
+  const pendingTimers = [];
+  const setTimeoutImpl = (callback, delay) => {
+    const timer = { callback, delay, cancelled: false };
+    pendingTimers.push(timer);
+    return timer;
+  };
+  const clearTimeoutImpl = (timer) => {
+    timer.cancelled = true;
+  };
+  const statuses = [];
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode("data: subscribe,other-channel,1\n\n"),
+      );
+      controller.close();
+    },
+  });
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => response(200, { body: stream }),
+    setTimeoutImpl,
+    clearTimeoutImpl,
+  });
+
+  await transport.start(() => {}, (status) => statuses.push(status));
+  await wait(0);
+
+  assert.equal(statuses.some((status) => status.connected), false);
+  assert.equal(transport.getStatus().connected, false);
+  await transport.stop();
+  assert.equal(pendingTimers.every((timer) => timer.cancelled), true);
+});
+
+test("subscribe reports ready only after the documented acknowledgement", async () => {
+  const statuses = [];
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode("data: subscribe,quest-realtime,1\n\n"),
+      );
+    },
+  });
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => response(200, { body: stream }),
+  });
+
+  await transport.start(() => {}, (status) => statuses.push(status));
+  await wait(0);
+
+  assert.deepEqual(statuses, [{ connected: true, reason: "connected" }]);
+  assert.equal(transport.getStatus().connected, true);
+  await transport.stop();
+});
+
 test("an envelope at the serialized byte limit round-trips through publish and subscribe", async () => {
   const emptyEnvelopeSize = Buffer.byteLength(JSON.stringify({ payload: "" }), "utf8");
   const exactEnvelope = {
@@ -161,7 +217,10 @@ test("an envelope at the serialized byte limit round-trips through publish and s
   const stream = new ReadableStream({
     start(controller) {
       controller.enqueue(
-        new TextEncoder().encode(`data: message,quest-realtime,${serialized}\n\n`),
+        new TextEncoder().encode(
+          `data: subscribe,quest-realtime,1\n\n` +
+            `data: message,quest-realtime,${serialized}\n\n`,
+        ),
       );
       controller.close();
     },
@@ -201,6 +260,7 @@ test("reconnect backoff increases after repeated EOFs and stays bounded", async 
   const emptyStream = () =>
     new ReadableStream({
       start(controller) {
+        controller.enqueue(new TextEncoder().encode("data: subscribe,quest-realtime,1\n\n"));
         controller.close();
       },
     });
@@ -230,7 +290,12 @@ test("oversized unterminated SSE records are discarded incrementally", async () 
   const received = [];
   const stream = new ReadableStream({
     start(controller) {
-      controller.enqueue(new TextEncoder().encode("data: message,quest-realtime,"));
+      controller.enqueue(
+        new TextEncoder().encode(
+          "data: subscribe,quest-realtime,1\n\n" +
+            "data: message,quest-realtime,",
+        ),
+      );
       controller.enqueue(new TextEncoder().encode("x".repeat(2000)));
       controller.enqueue(
         new TextEncoder().encode(
@@ -267,6 +332,45 @@ test("start and stop are idempotent and stop aborts an active subscription", asy
   await transport.stop();
 
   assert.equal(requestOptions.signal.aborted, true);
+});
+
+test("stop returns within its bound when fetch ignores abort", async () => {
+  let requestOptions;
+  const transport = createRealtimeTransport({
+    fetchImpl: async (_url, options) => {
+      requestOptions = options;
+      return new Promise(() => {});
+    },
+  });
+
+  await transport.start(() => {});
+  const startedAt = Date.now();
+  await transport.stop();
+
+  assert.equal(requestOptions.signal.aborted, true);
+  assert.ok(Date.now() - startedAt < 150);
+});
+
+test("stop returns within its bound when reader and body cancellation hang", async () => {
+  const reader = {
+    read: () => new Promise(() => {}),
+    cancel: () => new Promise(() => {}),
+    releaseLock() {},
+  };
+  const body = {
+    getReader: () => reader,
+    cancel: () => new Promise(() => {}),
+  };
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => response(200, { body }),
+  });
+
+  await transport.start(() => {});
+  await wait(0);
+  const startedAt = Date.now();
+  await transport.stop();
+
+  assert.ok(Date.now() - startedAt < 150);
 });
 
 test("subscribe aborts when the connection deadline expires and clears it after headers arrive", async () => {

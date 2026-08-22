@@ -59,7 +59,9 @@ Use [backend/.env.example](../backend/.env.example) for the full variable list a
 For a multi-worker API, set `CACHE_DRIVER=upstash`, set
 `API_PROCESS_COUNT` to the exact PM2 API worker count, and configure
 `UPSTASH_REDIS_REST_URL` plus `UPSTASH_REDIS_REST_TOKEN` on every worker. All
-workers must use the same `REALTIME_PUBSUB_CHANNEL`. When
+workers in one environment must use the same `REALTIME_PUBSUB_CHANNEL`, and
+staging and production must use different channel names when they share an
+Upstash database. If omitted, the default is `quest-realtime-${NODE_ENV}`. When
 `REALTIME_WORKER_ID` is configured, use the same base on every worker; otherwise
 config supplies a process-derived fallback. The implementation creates each
 effective identity as `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`, so
@@ -77,7 +79,9 @@ Authorization: Bearer {UPSTASH_REDIS_REST_TOKEN}
 `REALTIME_PUBSUB_RECONNECT_BASE_MS` and
 `REALTIME_PUBSUB_RECONNECT_MAX_MS` bound the subscriber's exponential
 reconnect delay; they default to `250` ms and `10000` ms. Keep these values
-consistent across workers when changing the deployment defaults.
+consistent across workers when changing the deployment defaults. Readiness is
+green only after the subscribe SSE stream provides the valid
+`data: subscribe,{channel},{count}` acknowledgement.
 
 ### Verify PM2 worker count and transport configuration
 

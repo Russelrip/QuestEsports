@@ -85,6 +85,8 @@ const normalizeNodeEnv = (value) => {
   return normalized;
 };
 
+const configuredNodeEnv = normalizeNodeEnv(process.env.NODE_ENV);
+
 const normalizeTrustProxy = (value) => {
   const normalized = String(value || "")
     .trim()
@@ -190,7 +192,7 @@ const env = {
   UPSTASH_REDIS_REST_TOKEN: optional("UPSTASH_REDIS_REST_TOKEN"),
   REALTIME_PUBSUB_CHANNEL: optional(
     "REALTIME_PUBSUB_CHANNEL",
-    "quest-realtime",
+    `quest-realtime-${configuredNodeEnv}`,
   ),
   REALTIME_WORKER_ID: optional(
     "REALTIME_WORKER_ID",
@@ -235,7 +237,7 @@ const env = {
   ),
   QUEST_LEADERBOARD_SYSTEM_ACTOR: optional("QUEST_LEADERBOARD_SYSTEM_ACTOR"),
   VALORANT_SL_API_URL: optional("VALORANT_SL_API_URL"),
-  NODE_ENV: normalizeNodeEnv(process.env.NODE_ENV),
+  NODE_ENV: configuredNodeEnv,
   LOG_LEVEL: optional("LOG_LEVEL", "info").toLowerCase(),
   SESSION_COOKIE_NAME: required("SESSION_COOKIE_NAME"),
   SESSION_TTL_DAYS: normalizePositiveInteger(process.env.SESSION_TTL_DAYS, 1),

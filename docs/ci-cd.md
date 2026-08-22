@@ -102,8 +102,10 @@ cross-schema foreign keys).
 
 Deployment health semantics are consistent across the workflows: `/api/health/live`
 is liveness, while `/api/health` and `/api/health/ready` are readiness aliases
-that check database and storage and may return `503` during maintenance or
-dependency failure. `/api/openapi.json` is the API schema endpoint.
+that check database and storage and, when clustered realtime is enabled, the
+acknowledged shared realtime transport. They may return `503` during
+maintenance or dependency failure. `/api/openapi.json` is the API schema
+endpoint.
 
 ## Enabling Deployment
 

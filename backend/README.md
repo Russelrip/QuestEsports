@@ -56,8 +56,10 @@ Do not point local development at production. Shared staging environments should
 ## Clustered realtime
 
 Use `CACHE_DRIVER=upstash` whenever `API_PROCESS_COUNT` is greater than one.
-`API_PROCESS_COUNT` must equal the PM2 API worker count; all workers must share
-the same `REALTIME_PUBSUB_CHANNEL`. When `REALTIME_WORKER_ID` is configured,
+`API_PROCESS_COUNT` must equal the PM2 API worker count; all workers in one
+environment must share the same `REALTIME_PUBSUB_CHANNEL`, while staging and
+production must use different channel names. The default channel is
+`quest-realtime-${NODE_ENV}`. When `REALTIME_WORKER_ID` is configured,
 use the same base on every worker; otherwise config supplies a process-derived
 fallback.
 The effective worker identity is `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`,
@@ -120,8 +122,9 @@ Legacy media import/migration commands remain available for controlled recovery 
 
 `/api/health/live` is liveness only. `/api/health` and `/api/health/ready`
 are readiness aliases that check database and storage dependencies and, when
-clustered realtime is enabled, the shared realtime transport; they may return
-`503` during maintenance or dependency failure.
+clustered realtime is enabled, require the shared realtime transport to be
+connected and acknowledged by Upstash; they may return `503` during
+maintenance or dependency failure.
 
 Route families cover authentication, sessions, tournaments, registrations, teams, event series, recruitment, contact messages, media, products, payments, tickets, brackets, matches, and admin operations. See [API Documentation](../docs/api-documentation.md) for contracts.
 

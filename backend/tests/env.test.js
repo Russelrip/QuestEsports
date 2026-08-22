@@ -50,6 +50,17 @@ const loadEnvironment = (overrides) =>
     encoding: "utf8",
   });
 
+const readRealtimeChannel = (overrides) =>
+  spawnSync(
+    process.execPath,
+    ["-e", "process.stdout.write(require('./src/config/env').env.REALTIME_PUBSUB_CHANNEL)"],
+    {
+      cwd: backendRoot,
+      env: { ...productionEnv, REALTIME_PUBSUB_CHANNEL: "", ...overrides },
+      encoding: "utf8",
+    },
+  );
+
 test("production environment rejects CORS values that are not exact origins", () => {
   const result = loadEnvironment({ CORS_ORIGIN: "https://quest.example.com/" });
   assert.notEqual(result.status, 0);
@@ -121,6 +132,17 @@ test("clustered API processes require shared Upstash realtime configuration", ()
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /CACHE_DRIVER=upstash/);
+});
+
+test("realtime channel defaults are isolated by deployment environment", () => {
+  const staging = readRealtimeChannel({ NODE_ENV: "development" });
+  const production = readRealtimeChannel({ NODE_ENV: "production" });
+
+  assert.equal(staging.status, 0, staging.stderr);
+  assert.equal(production.status, 0, production.stderr);
+  assert.equal(staging.stdout, "quest-realtime-development");
+  assert.equal(production.stdout, "quest-realtime-production");
+  assert.notEqual(staging.stdout, production.stdout);
 });
 
 test("realtime settings reject non-positive limits and reconnect delays", () => {

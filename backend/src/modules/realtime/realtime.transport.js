@@ -86,7 +86,11 @@ const createRealtimeTransport = ({
   let activeResponse = null;
   let activeBody = null;
   let activeConnectionTimer = null;
+  let activeCancellationTask = null;
+  let activeCancellationReader = null;
+  let activeCancellationBody = null;
   let subscriptionTask = null;
+  let stopTask = null;
   let generation = 0;
   let onEnvelope = noop;
   let onStatus = noop;
@@ -110,42 +114,72 @@ const createRealtimeTransport = ({
     if (error) log("warn", `Realtime subscription ${reason}`, error);
   };
 
-  const cancelResponseBody = async (body) => {
-    if (!body || typeof body.cancel !== "function") return false;
-    try {
-      await body.cancel();
-      return true;
-    } catch (error) {
-      log("debug", "Realtime response body cancellation failed", error);
-      return false;
-    }
-  };
-
-  const cancelActiveSubscription = async () => {
-    if (activeReader && typeof activeReader.cancel === "function") {
-      try {
-        await activeReader.cancel();
-        return;
-      } catch (error) {
-        log("debug", "Realtime reader cancellation failed", error);
-      }
-    }
-    await cancelResponseBody(activeBody);
-  };
-
-  const awaitSubscriptionSettlement = async (task) => {
-    if (!task) return;
+  const awaitBounded = async (task, timeoutMs) => {
+    if (!task || !(timeoutMs > 0)) return false;
     let timeout;
     try {
       await Promise.race([
-        task,
+        Promise.resolve(task),
         new Promise((resolve) => {
-          timeout = setTimeout(resolve, env.CACHE_CONNECTION_TIMEOUT_MS);
+          timeout = setTimeout(resolve, timeoutMs);
         }),
       ]);
+      return true;
+    } catch (error) {
+      log("debug", "Realtime bounded operation failed", error);
+      return false;
     } finally {
       if (timeout) clearTimeout(timeout);
     }
+  };
+
+  const cancelResponseBody = async (
+    body,
+    timeoutMs = env.CACHE_CONNECTION_TIMEOUT_MS,
+  ) => {
+    if (!body || typeof body.cancel !== "function") return false;
+    return awaitBounded(
+      Promise.resolve().then(() => body.cancel()),
+      timeoutMs,
+    );
+  };
+
+  const cancelActiveSubscription = async (
+    timeoutMs = env.CACHE_CONNECTION_TIMEOUT_MS,
+  ) => {
+    const reader = activeReader;
+    const body = activeBody;
+    if (!reader && !body) return false;
+    if (
+      activeCancellationTask &&
+      activeCancellationReader === reader &&
+      activeCancellationBody === body
+    ) {
+      return activeCancellationTask;
+    }
+
+    const task = (async () => {
+      const cancellations = [];
+      if (reader && typeof reader.cancel === "function") {
+        cancellations.push(Promise.resolve().then(() => reader.cancel()));
+      }
+      if (body && typeof body.cancel === "function") {
+        cancellations.push(Promise.resolve().then(() => body.cancel()));
+      }
+      return awaitBounded(Promise.allSettled(cancellations), timeoutMs);
+    })();
+    activeCancellationTask = task;
+    activeCancellationReader = reader;
+    activeCancellationBody = body;
+    return task;
+  };
+
+  const awaitSubscriptionSettlement = async (
+    task,
+    timeoutMs = env.CACHE_CONNECTION_TIMEOUT_MS,
+  ) => {
+    if (!task) return;
+    await awaitBounded(task, timeoutMs);
   };
 
   const parseRecord = (record) => {
@@ -162,6 +196,11 @@ const createRealtimeTransport = ({
 
     const frameType = data.slice(0, firstComma);
     const frameChannel = data.slice(firstComma + 1, secondComma);
+    if (frameType === "subscribe") {
+      const count = data.slice(secondComma + 1);
+      if (frameChannel !== channel || !/^\d+$/.test(count)) return "invalid-ack";
+      return "ack";
+    }
     if (frameType !== "message" || frameChannel !== channel) return;
 
     const payload = data.slice(secondComma + 1);
@@ -173,14 +212,19 @@ const createRealtimeTransport = ({
       } catch (error) {
         log("warn", "Realtime envelope callback failed", error);
       }
-      return true;
+      return "message";
     } catch (error) {
       log("warn", "Ignoring malformed realtime Pub/Sub payload", error);
       return false;
     }
   };
 
-  const consumeStream = async (body, runGeneration) => {
+  const consumeStream = async (
+    body,
+    runGeneration,
+    connectionDeadline,
+    onAcknowledged,
+  ) => {
     if (!body || typeof body.getReader !== "function") {
       throw new Error("Upstash subscribe response did not include a readable stream.");
     }
@@ -189,6 +233,7 @@ const createRealtimeTransport = ({
     const decoder = new TextDecoder();
     let buffer = "";
     let discardingOversizedRecord = false;
+    let acknowledged = false;
 
     const consumeText = (text) => {
       let remainder = text;
@@ -209,7 +254,13 @@ const createRealtimeTransport = ({
           const match = buffer.match(/\r?\n\r?\n/);
           const record = buffer.slice(0, separator);
           if (Buffer.byteLength(record, "utf8") <= maxSseRecordBytes) {
-            if (parseRecord(record)) reconnectAttempt = 0;
+            const parsed = parseRecord(record);
+            if (parsed === "ack" && !acknowledged) {
+              acknowledged = true;
+              onAcknowledged();
+            } else if (parsed === "message" && acknowledged) {
+              reconnectAttempt = 0;
+            }
           }
           buffer = buffer.slice(separator + match[0].length);
         }
@@ -223,7 +274,10 @@ const createRealtimeTransport = ({
 
     try {
       while (running && runGeneration === generation) {
-        const result = await reader.read();
+        const readTask = reader.read();
+        const result = acknowledged
+          ? await readTask
+          : await Promise.race([readTask, connectionDeadline]);
         if (result.done) break;
         if (!running || runGeneration !== generation) break;
         consumeText(
@@ -233,9 +287,18 @@ const createRealtimeTransport = ({
         );
       }
       if (running && runGeneration === generation) consumeText(decoder.decode());
+      if (!acknowledged) {
+        throw new Error("Upstash subscribe stream did not provide a valid acknowledgement.");
+      }
     } finally {
       if (activeReader === reader) activeReader = null;
-      if (typeof reader.releaseLock === "function") reader.releaseLock();
+      if (typeof reader.releaseLock === "function") {
+        try {
+          reader.releaseLock();
+        } catch (error) {
+          log("debug", "Realtime reader lock release failed", error);
+        }
+      }
     }
   };
 
@@ -275,6 +338,7 @@ const createRealtimeTransport = ({
     activeConnectionTimer = connectionTimer;
     activeController = controller;
     let response = null;
+    let fetchTask = null;
     const clearConnectionTimer = () => {
       if (!connectionTimer) return;
       if (activeConnectionTimer === connectionTimer) {
@@ -284,17 +348,18 @@ const createRealtimeTransport = ({
       connectionTimer = null;
     };
     try {
-      response = await fetchImpl(
-        `${baseUrl}/subscribe/${encodeURIComponent(channel)}`,
-        {
+      fetchTask = Promise.resolve().then(() =>
+        fetchImpl(`${baseUrl}/subscribe/${encodeURIComponent(channel)}`, {
           method: "POST",
           headers: {
             Authorization: authorization,
             Accept: "text/event-stream",
           },
           signal: controller.signal,
-        },
+        }),
       );
+      fetchTask.catch(noop);
+      response = await Promise.race([fetchTask, connectionDeadline]);
       if (connectionDeadlineExceeded || !running || runGeneration !== generation) {
         await cancelResponseBody(response.body);
         if (connectionDeadlineExceeded && running && runGeneration === generation) {
@@ -309,11 +374,22 @@ const createRealtimeTransport = ({
         clearConnectionTimer();
         throw responseError(response, "subscribe", body);
       }
-      clearConnectionTimer();
-      reportStatus(true, "connected");
-      await consumeStream(response.body, runGeneration);
+      await consumeStream(
+        response.body,
+        runGeneration,
+        connectionDeadline,
+        () => {
+          clearConnectionTimer();
+          if (running && runGeneration === generation) reportStatus(true, "connected");
+        },
+      );
       if (running && runGeneration === generation) scheduleReconnect(runGeneration, "eof");
     } catch (error) {
+      if (connectionDeadlineExceeded && fetchTask && !response) {
+        fetchTask
+          .then((lateResponse) => cancelResponseBody(lateResponse?.body))
+          .catch(noop);
+      }
       if (response && activeResponse === response) {
         await cancelActiveSubscription();
       }
@@ -324,6 +400,9 @@ const createRealtimeTransport = ({
       if (activeResponse && activeResponse === response) {
         activeResponse = null;
         activeBody = null;
+      }
+      if (activeCancellationReader === activeReader && activeCancellationBody === activeBody) {
+        activeCancellationTask = null;
       }
     }
   };
@@ -380,22 +459,40 @@ const createRealtimeTransport = ({
   };
 
   const stop = async () => {
+    if (stopTask) return stopTask;
     if (!running && !reconnectTimer && !activeController && !subscriptionTask) return;
-    const priorTask = subscriptionTask;
-    running = false;
-    generation += 1;
-    if (reconnectTimer) {
-      clearTimeoutImpl(reconnectTimer);
-      reconnectTimer = null;
+    stopTask = (async () => {
+      const deadline = Date.now() + env.CACHE_CONNECTION_TIMEOUT_MS;
+      const priorTask = subscriptionTask;
+      running = false;
+      generation += 1;
+      if (subscriptionTask === priorTask) subscriptionTask = null;
+      if (reconnectTimer) {
+        clearTimeoutImpl(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (activeConnectionTimer) {
+        clearConnectionTimeoutImpl(activeConnectionTimer);
+        activeConnectionTimer = null;
+      }
+      if (activeController) {
+        activeController.abort();
+        activeController = null;
+      }
+      const remaining = () => Math.max(0, deadline - Date.now());
+      const cancellationBudget = remaining();
+      await awaitBounded(
+        cancelActiveSubscription(cancellationBudget),
+        cancellationBudget,
+      );
+      await awaitSubscriptionSettlement(priorTask, remaining());
+      reportStatus(false, "stopped");
+    })();
+    try {
+      await stopTask;
+    } finally {
+      stopTask = null;
     }
-    if (activeConnectionTimer) {
-      clearConnectionTimeoutImpl(activeConnectionTimer);
-      activeConnectionTimer = null;
-    }
-    if (activeController) activeController.abort();
-    await cancelActiveSubscription();
-    await awaitSubscriptionSettlement(priorTask);
-    reportStatus(false, "stopped");
   };
 
   return {

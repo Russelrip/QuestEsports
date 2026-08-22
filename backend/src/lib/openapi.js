@@ -140,7 +140,7 @@ const openApiDocument = {
     title: "Quest E-sports API",
     version: "2.0.0",
     description:
-      "Core contracts for auth, tournament series, configurable registrations, PayHere payments, merchandise, and admin workflows.",
+      "Core contracts for auth, tournament series, configurable registrations, PayHere payments, merchandise, admin workflows, and readiness including the shared clustered realtime transport when enabled.",
   },
   servers: [{ url: apiBaseUrl }],
   tags: [
@@ -267,7 +267,7 @@ const openApiDocument = {
     "/api/health": {
       get: {
         tags: ["System"],
-        summary: "Health check",
+        summary: "Database, storage, and clustered realtime readiness check when enabled",
         responses: {
           200: createResponse("API health payload"),
         },
@@ -277,7 +277,10 @@ const openApiDocument = {
       get: createOperation("System", "Process liveness check"),
     },
     "/api/health/ready": {
-      get: createOperation("System", "Database-backed readiness check"),
+      get: createOperation(
+        "System",
+        "Database, storage, and clustered realtime readiness check when enabled",
+      ),
     },
     "/api/capabilities": {
       get: createOperation("System", "Frontend deployment compatibility capabilities"),

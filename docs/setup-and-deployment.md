@@ -50,6 +50,12 @@ SITE_MAINTENANCE_MESSAGE=We’re carrying out scheduled maintenance. Please try 
 SITE_MAINTENANCE_RETRY_AFTER_SECONDS=900
 JOB_WORKER_POLL_MS=5000
 JOB_WORKER_MAX_ATTEMPTS=5
+API_PROCESS_COUNT=1
+CACHE_DRIVER=memory
+# Use one exact channel on every worker in an environment and different
+# channels for staging and production when sharing an Upstash database.
+REALTIME_PUBSUB_CHANNEL=quest-realtime-development
+REALTIME_SSE_ENABLED=false
 LOG_DRAIN_URL=
 LOG_DRAIN_TOKEN=
 MONITORING_WEBHOOK_URL=
@@ -149,8 +155,9 @@ npm run dev
 - Backend and frontend are started separately; there is no root workspace dev command.
 
 The liveness endpoint checks that the process can answer. Both readiness
-aliases check the database and storage and may return `503` during maintenance
-or dependency failure.
+aliases check the database and storage and, when clustered realtime is enabled,
+the acknowledged shared realtime transport. They may return `503` during
+maintenance or dependency failure.
 
 ## First Admin User
 
