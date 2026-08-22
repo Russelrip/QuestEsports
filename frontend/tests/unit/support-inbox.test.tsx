@@ -8,20 +8,20 @@ import SupportThread from "../../components/support/SupportThread";
 import NotificationBell from "../../components/notifications/NotificationBell";
 import type { SupportConversation, SupportConversationSummary } from "../../lib/support";
 
-const mocks = vi.hoisted(() => ({ apiFetchJson: vi.fn(), listSupportConversations: vi.fn(), getSupportConversation: vi.fn(), markSupportConversationRead: vi.fn(), createSupportConversation: vi.fn(), sendSupportMessage: vi.fn(), reopenSupportConversation: vi.fn(), resolveSupportConversation: vi.fn(), showToast: vi.fn(), auth: { user: { id: "user-1" }, isLoading: false } }));
-const { apiFetchJson, listSupportConversations, getSupportConversation, markSupportConversationRead, createSupportConversation, sendSupportMessage, reopenSupportConversation } = mocks;
+const mocks = vi.hoisted(() => ({ apiFetchJson: vi.fn(), listSupportConversations: vi.fn(), getSupportConversation: vi.fn(), markSupportConversationRead: vi.fn(), createSupportConversation: vi.fn(), sendSupportMessage: vi.fn(), reopenSupportConversation: vi.fn(), resolveSupportConversation: vi.fn(), subscribeToRealtimeUpdates: vi.fn(), showToast: vi.fn(), auth: { user: { id: "user-1" }, isLoading: false } }));
+const { apiFetchJson, listSupportConversations, getSupportConversation, markSupportConversationRead, createSupportConversation, sendSupportMessage, reopenSupportConversation, subscribeToRealtimeUpdates } = mocks;
 
 vi.mock("@/lib/auth", () => ({ apiFetchJson: mocks.apiFetchJson, apiFetch: vi.fn() }));
 vi.mock("@/lib/support", () => ({ listSupportConversations: mocks.listSupportConversations, getSupportConversation: mocks.getSupportConversation, markSupportConversationRead: mocks.markSupportConversationRead, createSupportConversation: mocks.createSupportConversation, sendSupportMessage: mocks.sendSupportMessage, reopenSupportConversation: mocks.reopenSupportConversation, resolveSupportConversation: mocks.resolveSupportConversation }));
 vi.mock("@/components/auth/AuthProvider", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/hooks/useToastStore", () => ({ useToastStore: (selector: (state: { showToast: typeof mocks.showToast }) => unknown) => selector({ showToast: mocks.showToast }) }));
-vi.mock("@/lib/realtime", () => ({ subscribeToRealtimeUpdates: () => () => undefined }));
+vi.mock("@/lib/realtime", () => ({ subscribeToRealtimeUpdates: mocks.subscribeToRealtimeUpdates }));
 vi.mock("next/link", () => ({ default: ({ children, ...props }: React.PropsWithChildren<{ href: string }>) => <a {...props}>{children}</a> }));
 
 const message = (id: string, senderUserId = "user-1", body = "I need help", conversationId = "conversation-1") => ({ id, conversationId, senderUserId, body, createdAt: "2026-08-19T12:00:00.000Z", sender: { id: senderUserId, username: "player", firstName: senderUserId === "user-1" ? "Player" : "Staff", lastName: null, avatarUrl: null } });
 const conversation = (status: SupportConversation["status"] = "OPEN", id = "conversation-1", subject = "Registration help"): SupportConversation => ({ id, ownerUserId: "user-1", subject, status, assignedStaffUserId: null, createdAt: "2026-08-19T11:00:00.000Z", updatedAt: "2026-08-19T12:00:00.000Z", resolvedAt: status === "RESOLVED" ? "2026-08-19T12:30:00.000Z" : null, owner: null, assignedStaff: null, unreadCount: 0, messages: [message("message-1", "user-1", "I need help", id)] });
 
-beforeEach(() => { vi.clearAllMocks(); mocks.auth.user = { id: "user-1" }; listSupportConversations.mockResolvedValue({ items: [], nextCursor: null }); getSupportConversation.mockResolvedValue(conversation()); markSupportConversationRead.mockResolvedValue({ lastReadAt: "now", unreadCount: 0 }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.auth.user = { id: "user-1" }; subscribeToRealtimeUpdates.mockReturnValue(vi.fn()); listSupportConversations.mockResolvedValue({ items: [], nextCursor: null }); getSupportConversation.mockResolvedValue(conversation()); markSupportConversationRead.mockResolvedValue({ lastReadAt: "now", unreadCount: 0 }); });
 afterEach(() => cleanup());
 
 describe("support inbox rendered states", () => {
@@ -44,6 +44,23 @@ describe("support inbox rendered states", () => {
   it("offers thread retry and keeps list errors separate", async () => { const user = userEvent.setup(); getSupportConversation.mockRejectedValueOnce(new Error("Thread unavailable")); render(<SupportInbox conversationId="conversation-1" />); expect(await screen.findByRole("alert")).toHaveTextContent("Thread unavailable"); getSupportConversation.mockResolvedValueOnce(conversation()); await user.click(screen.getByRole("button", { name: "Try again" })); expect(await screen.findByText("Registration help")).toBeInTheDocument(); });
 
   it("refreshes summaries after marking a thread read", async () => { render(<SupportInbox conversationId="conversation-1" />); await waitFor(() => expect(markSupportConversationRead).toHaveBeenCalledWith("conversation-1")); await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2)); });
+
+  it("refreshes again when realtime invalidates a pending list request", async () => {
+    let resolveList!: (value: { items: SupportConversationSummary[]; nextCursor: null }) => void;
+    const pendingList = new Promise<{ items: SupportConversationSummary[]; nextCursor: null }>((resolve) => { resolveList = resolve; });
+    let onRealtimeUpdate!: () => void;
+    listSupportConversations.mockReset();
+    listSupportConversations.mockImplementationOnce(() => pendingList).mockResolvedValue({ items: [], nextCursor: null });
+    subscribeToRealtimeUpdates.mockImplementationOnce((_topic: string, callback: () => void) => { onRealtimeUpdate = callback; return vi.fn(); });
+
+    render(<SupportInbox />);
+    await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(1));
+    act(() => { onRealtimeUpdate(); });
+    expect(listSupportConversations).toHaveBeenCalledTimes(1);
+
+    resolveList({ items: [], nextCursor: null });
+    await waitFor(() => expect(listSupportConversations).toHaveBeenCalledTimes(2));
+  });
 
   it("shows mark-read failures inside the loaded thread", async () => { markSupportConversationRead.mockRejectedValueOnce(new Error("Read status failed")); render(<SupportInbox conversationId="conversation-1" />); expect(await screen.findByRole("alert")).toHaveTextContent("Read status failed"); expect(screen.getByText("Registration help")).toBeInTheDocument(); });
 
