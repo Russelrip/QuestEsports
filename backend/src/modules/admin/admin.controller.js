@@ -73,6 +73,7 @@ const getUser = asyncHandler(async (req, res) => {
 
 const createUser = asyncHandler(async (req, res) => {
   const user = await createAdminUser({ body: req.body });
+  await recordAudit({ ...requestAuditContext(req), action: "admin.user.created", targetType: "User", targetId: user.id, afterData: { role: user.role, emailVerified: user.emailVerified } });
 
   res.status(201).json({
     success: true,
@@ -87,6 +88,7 @@ const updateUser = asyncHandler(async (req, res) => {
     body: req.body,
     currentUser: req.user,
   });
+  await recordAudit({ ...requestAuditContext(req), action: "admin.user.updated", targetType: "User", targetId: user.id, afterData: { role: user.role, emailVerified: user.emailVerified } });
 
   res.status(200).json({
     success: true,
@@ -100,6 +102,7 @@ const removeUser = asyncHandler(async (req, res) => {
     userId: req.params.userId,
     currentUser: req.user,
   });
+  await recordAudit({ ...requestAuditContext(req), action: "admin.user.deleted", targetType: "User", targetId: req.params.userId });
 
   res.status(200).json({
     success: true,
@@ -122,6 +125,7 @@ const updateContactMessageStatus = asyncHandler(async (req, res) => {
     req.params.messageId,
     req.body.isRead
   );
+  await recordAudit({ ...requestAuditContext(req), action: "contact_message.status_updated", targetType: "ContactMessage", targetId: req.params.messageId, afterData: { isRead: contactMessage.isRead } });
 
   res.status(200).json({
     success: true,
@@ -132,6 +136,7 @@ const updateContactMessageStatus = asyncHandler(async (req, res) => {
 
 const removeContactMessage = asyncHandler(async (req, res) => {
   await deleteContactMessage(req.params.messageId);
+  await recordAudit({ ...requestAuditContext(req), action: "contact_message.deleted", targetType: "ContactMessage", targetId: req.params.messageId });
 
   res.status(200).json({
     success: true,
@@ -190,15 +195,6 @@ const updateRegistrationStatus = asyncHandler(async (req, res) => {
     req.user.id,
     requestAuditContext(req)
   );
-  if (!req.body.status && req.body.verificationStatus) {
-    await recordAudit({
-      ...requestAuditContext(req),
-      action: "team_registration.verification_status_changed",
-      targetType: "TeamRegistration",
-      targetId: req.params.registrationId,
-      afterData: { verificationStatus: registration.verificationStatus },
-    });
-  }
 
   res.status(200).json({
     success: true,
@@ -243,7 +239,6 @@ const removeRegistration = asyncHandler(async (req, res) => {
     targetType: "TeamRegistration",
     targetId: req.params.registrationId,
   });
-
   res.status(200).json({
     success: true,
     message: "Team registration deleted successfully.",
@@ -251,25 +246,12 @@ const removeRegistration = asyncHandler(async (req, res) => {
 });
 
 const reserveRegistrationSlot = asyncHandler(async (req, res) => {
-  const reservation = await reserveAdminRegistrationSlot({ registrationId: req.params.registrationId, adminUserId: req.user.id, body: req.body });
-  await recordAudit({
-    ...requestAuditContext(req),
-    action: "team_registration.slot_reserved",
-    targetType: "AdminSlotReservation",
-    targetId: reservation.id || req.params.registrationId,
-    afterData: { registrationId: req.params.registrationId, expiresAt: reservation.expiresAt || null },
-  });
+  const reservation = await reserveAdminRegistrationSlot({ registrationId: req.params.registrationId, adminUserId: req.user.id, body: req.body, auditContext: requestAuditContext(req) });
   res.status(201).json({ success: true, message: "Slot reserved privately for this team.", reservation });
 });
 
 const releaseRegistrationSlot = asyncHandler(async (req, res) => {
-  await releaseAdminRegistrationSlot(req.params.registrationId);
-  await recordAudit({
-    ...requestAuditContext(req),
-    action: "team_registration.slot_released",
-    targetType: "AdminSlotReservation",
-    targetId: req.params.registrationId,
-  });
+  await releaseAdminRegistrationSlot(req.params.registrationId, requestAuditContext(req));
   res.status(200).json({ success: true, message: "Private slot reservation released." });
 });
 
@@ -299,6 +281,7 @@ const updateRecruitmentStatus = asyncHandler(async (req, res) => {
     req.params.applicationId,
     req.body
   );
+  await recordAudit({ ...requestAuditContext(req), action: "recruitment_application.status_updated", targetType: "RecruitmentApplication", targetId: req.params.applicationId, afterData: { status: application.status } });
 
   res.status(200).json({
     success: true,
@@ -309,6 +292,7 @@ const updateRecruitmentStatus = asyncHandler(async (req, res) => {
 
 const removeRecruitmentApplication = asyncHandler(async (req, res) => {
   await deleteRecruitmentApplication(req.params.applicationId);
+  await recordAudit({ ...requestAuditContext(req), action: "recruitment_application.deleted", targetType: "RecruitmentApplication", targetId: req.params.applicationId });
 
   res.status(200).json({
     success: true,
@@ -318,6 +302,7 @@ const removeRecruitmentApplication = asyncHandler(async (req, res) => {
 
 const importLegacyPosterMedia = asyncHandler(async (req, res) => {
   const summary = await runLegacyPosterImport();
+  await recordAudit({ ...requestAuditContext(req), action: "media.legacy_posters_imported", targetType: "MediaImport", afterData: { imported: summary.imported || 0 } });
 
   res.status(200).json({
     success: true,
@@ -328,6 +313,7 @@ const importLegacyPosterMedia = asyncHandler(async (req, res) => {
 
 const migratePosterMediaToFilesystem = asyncHandler(async (req, res) => {
   const summary = await runPosterImageAssetMigration();
+  await recordAudit({ ...requestAuditContext(req), action: "media.poster_assets_migrated", targetType: "MediaMigration", afterData: { migrated: summary.migrated || 0 } });
 
   res.status(200).json({
     success: true,

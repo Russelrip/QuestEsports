@@ -17,8 +17,16 @@ const audit = async (req, action, room, extra) => recordAudit({
 });
 
 const catalog = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.listCatalog(req.query), meta: meta() }));
-const createPool = asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.createPool({ user: req.user, body: req.body }), meta: meta() }));
-const createMap = asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.createMap({ user: req.user, body: req.body }), meta: meta() }));
+const createPool = asyncHandler(async (req, res) => {
+  const data = await service.createPool({ user: req.user, body: req.body });
+  await recordAudit({ ...requestAuditContext(req), action: "veto.map_pool.created", targetType: "VetoMapPool", targetId: data.id, afterData: { name: data.name, tournamentId: data.tournamentId, version: data.version } });
+  res.status(201).json({ success: true, data, meta: meta() });
+});
+const createMap = asyncHandler(async (req, res) => {
+  const data = await service.createMap({ user: req.user, body: req.body });
+  await recordAudit({ ...requestAuditContext(req), action: "veto.map.created", targetType: "VetoMap", targetId: data.id, afterData: { slug: data.slug, isActive: data.isActive } });
+  res.status(201).json({ success: true, data, meta: meta() });
+});
 const updateMap = asyncHandler(async (req, res) => {
   const map = await service.updateMapAvailability({ user: req.user, mapId: req.params.id, isActive: req.body?.isActive });
   await recordAudit({
@@ -27,10 +35,22 @@ const updateMap = asyncHandler(async (req, res) => {
   });
   res.status(200).json({ success: true, data: map, meta: meta() });
 });
-const createPreset = asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.createPreset({ user: req.user, body: req.body }), meta: meta() }));
-const createTemplate = asyncHandler(async (req, res) => res.status(201).json({ success: true, data: await service.createTemplate({ user: req.user, body: req.body }), meta: meta() }));
+const createPreset = asyncHandler(async (req, res) => {
+  const data = await service.createPreset({ user: req.user, body: req.body });
+  await recordAudit({ ...requestAuditContext(req), action: "veto.rule_preset.created", targetType: "VetoRulePreset", targetId: data.id, afterData: { name: data.name, format: data.format, tournamentId: data.tournamentId } });
+  res.status(201).json({ success: true, data, meta: meta() });
+});
+const createTemplate = asyncHandler(async (req, res) => {
+  const data = await service.createTemplate({ user: req.user, body: req.body });
+  await recordAudit({ ...requestAuditContext(req), action: "veto.room_template.created", targetType: "VetoRoomTemplate", targetId: data.id, afterData: { name: data.name, format: data.format, tournamentId: data.tournamentId } });
+  res.status(201).json({ success: true, data, meta: meta() });
+});
 const tournamentConfig = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.getTournamentConfig({ user: req.user, tournamentId: req.params.id }), meta: meta() }));
-const saveTournamentConfig = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.saveTournamentConfig({ user: req.user, tournamentId: req.params.id, body: req.body }), meta: meta() }));
+const saveTournamentConfig = asyncHandler(async (req, res) => {
+  const data = await service.saveTournamentConfig({ user: req.user, tournamentId: req.params.id, body: req.body });
+  await recordAudit({ ...requestAuditContext(req), action: "veto.tournament_config.updated", targetType: "TournamentVetoConfig", targetId: req.params.id, afterData: { defaultTemplateId: data.defaultTemplateId || null } });
+  res.status(200).json({ success: true, data, meta: meta() });
+});
 
 const listRooms = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.listRooms({ user: req.user, tournamentId: req.query.tournamentId }), meta: meta() }));
 const createRoom = asyncHandler(async (req, res) => {
@@ -60,25 +80,21 @@ const cancelRoom = (req, res, next) => runRoomCommand("veto.room.cancelled", () 
 
 const readyRoom = asyncHandler(async (req, res) => {
   const room = await service.readyRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
-  await audit(req, "veto.readiness.changed", room, { ready: req.body.ready !== false });
   await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const tossRoom = asyncHandler(async (req, res) => {
   const room = await service.tossRoom({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
-  await audit(req, "veto.toss.called", room, { call: req.body.call });
   await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const chooseTeamA = asyncHandler(async (req, res) => {
   const room = await service.chooseTeamA({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
-  await audit(req, "veto.team_order.chosen", room, { choice: req.body.choice });
   await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });
 const submitAction = asyncHandler(async (req, res) => {
-  const room = await service.submitAction({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body });
-  await audit(req, "veto.action.submitted", room, { kind: room.currentAction?.kind || null, mapSlug: room.currentAction?.mapSlug || null });
+  const room = await service.submitAction({ code: req.params.code, user: req.user, token: tokenFrom(req), body: req.body, auditContext: requestAuditContext(req) });
   await publish(room);
   res.status(200).json({ success: true, data: room, meta: meta() });
 });

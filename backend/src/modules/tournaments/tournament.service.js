@@ -4,6 +4,7 @@ const { readSheet: readXlsxFile } = require("read-excel-file/node");
 const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { recordAuditInTransaction } = require("../../lib/audit");
 const {
   removeUploadsQuietly,
   removeTeamLogoIfUnreferenced,
@@ -1480,7 +1481,7 @@ const buildTournamentAssetUpdates = async ({ body, files }) => {
   }
 };
 
-const createAdminTournament = async ({ body, files }) => {
+const createAdminTournament = async ({ body, files, auditContext = {} }) => {
   const payload = normalizeTournamentInput({ body });
   await ensureSlugAvailable(payload.slug);
   await ensureRulebookMatchesTournamentGame(payload);
@@ -1489,7 +1490,7 @@ const createAdminTournament = async ({ body, files }) => {
   let tournament;
 
   try {
-    tournament = await prisma.tournament.create({
+    const persist = (database) => database.tournament.create({
       data: {
         id: crypto.randomUUID(),
         ...payload,
@@ -1497,6 +1498,19 @@ const createAdminTournament = async ({ body, files }) => {
       },
       include: buildRegistrationCountInclude(),
     });
+    tournament = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+      ? await prisma.$transaction(async (tx) => {
+        const created = await persist(tx);
+        await recordAuditInTransaction(tx, {
+          ...auditContext,
+          action: "tournament.created",
+          targetType: "Tournament",
+          targetId: created.id,
+          afterData: { slug: created.slug, status: created.status, isPublished: created.isPublished },
+        });
+        return created;
+      })
+      : await persist(prisma);
   } catch (error) {
     await removeUploadsQuietly(assetUpdates.uploadedFiles, {
       operation: "createAdminTournament",
@@ -1507,7 +1521,7 @@ const createAdminTournament = async ({ body, files }) => {
   return mapAdminTournament(tournament);
 };
 
-const updateAdminTournament = async ({ tournamentId, body, files }) => {
+const updateAdminTournament = async ({ tournamentId, body, files, auditContext = {} }) => {
   const existingTournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
   });
@@ -1527,7 +1541,7 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
   let tournament;
 
   try {
-    tournament = await prisma.tournament.update({
+    const persist = (database) => database.tournament.update({
       where: { id: tournamentId },
       data: {
         ...payload,
@@ -1535,6 +1549,20 @@ const updateAdminTournament = async ({ tournamentId, body, files }) => {
       },
       include: buildRegistrationCountInclude(),
     });
+    tournament = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+      ? await prisma.$transaction(async (tx) => {
+        const updated = await persist(tx);
+        await recordAuditInTransaction(tx, {
+          ...auditContext,
+          action: "tournament.updated",
+          targetType: "Tournament",
+          targetId: updated.id,
+          beforeData: { slug: existingTournament.slug, status: existingTournament.status, isPublished: existingTournament.isPublished },
+          afterData: { slug: updated.slug, status: updated.status, isPublished: updated.isPublished },
+        });
+        return updated;
+      })
+      : await persist(prisma);
   } catch (error) {
     await removeUploadsQuietly(assetUpdates.uploadedFiles, {
       operation: "updateAdminTournament",
@@ -1575,7 +1603,7 @@ const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder })
   return mapAdminTournament(tournament);
 };
 
-const deleteAdminTournament = async (tournamentId) => {
+const deleteAdminTournament = async (tournamentId, auditContext = {}) => {
   const existingTournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     include: {
@@ -1597,9 +1625,22 @@ const deleteAdminTournament = async (tournamentId) => {
     throw new HttpError(404, "Tournament not found.");
   }
 
-  const deleted = await prisma.tournament.deleteMany({
-    where: { id: tournamentId },
-  });
+  const deleteMutation = async (database) => database.tournament.deleteMany({ where: { id: tournamentId } });
+  const deleted = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+    ? await prisma.$transaction(async (tx) => {
+      const result = await deleteMutation(tx);
+      if (result.count) {
+        await recordAuditInTransaction(tx, {
+          ...auditContext,
+          action: "tournament.deleted",
+          targetType: "Tournament",
+          targetId: tournamentId,
+          beforeData: { slug: existingTournament.slug, status: existingTournament.status, isPublished: existingTournament.isPublished },
+        });
+      }
+      return result;
+    })
+    : await deleteMutation(prisma);
 
   if (deleted.count === 0) {
     throw new HttpError(404, "Tournament not found.");

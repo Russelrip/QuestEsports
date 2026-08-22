@@ -67,19 +67,25 @@ test("bindTeam controller records an AuditLog and returns the binding envelope",
   }
 });
 
-test("finalizeSeries controller records the operation id in the audit afterData", async () => {
-  const audits = [];
+test("finalizeSeries controller passes complete audit context to the audit-safe service", async () => {
   const serviceMock = {
-    finalizeSeries: async ({ seriesId, ratingMode, actorUserId }) => ({
+    finalizeSeries: async ({ seriesId, ratingMode, actorUserId, requestId, ipAddress }) => {
+      assert.equal(seriesId, "quest-series-1");
+      assert.equal(ratingMode, "normal");
+      assert.equal(actorUserId, "admin-1");
+      assert.equal(requestId, "req-2");
+      assert.equal(ipAddress, "127.0.0.1");
+      return {
       seriesId,
       ratingMode,
       status: "finalized",
       operationId: "op-abc",
-    }),
+      };
+    },
   };
   const auditMock = {
     requestAuditContext: (req) => ({ actorUserId: req.user?.id, requestId: req.requestId, ipAddress: req.ip }),
-    recordAudit: async (entry) => audits.push(entry),
+    recordAudit: async () => {},
   };
   const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
     [servicePath]: serviceMock,
@@ -98,8 +104,6 @@ test("finalizeSeries controller records the operation id in the audit afterData"
     });
     assert.equal(res.payload.data.status, "finalized");
     assert.deepEqual(nextErrors, []);
-    assert.equal(audits[0].targetType, "valorant_series");
-    assert.equal(audits[0].afterData.operationId, "op-abc");
   } finally {
     restore();
   }

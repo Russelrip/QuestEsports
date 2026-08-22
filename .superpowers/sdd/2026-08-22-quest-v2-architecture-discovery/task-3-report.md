@@ -97,3 +97,104 @@ Added or completed audit events for:
 - The configured VALORANT end-to-end test remains skipped when its external
   service/database environment contract is absent; unit and operation-ledger
   coverage passed.
+
+## Fix round — review findings addressed
+
+### VALORANT finalize audit safety
+
+`finalizeSeries` now has an explicit three-stage boundary:
+
+1. It creates the existing `QuestValorantOperation` idempotency/reconciliation
+   row, then writes a separate `AuditLog` intent event through `recordAudit`.
+   If the intent audit fails, the external finalize request is never sent and
+   the operation is marked `reconciliation_required`.
+2. The remote finalize call is performed only after the intent is durable.
+3. The local finalized projection, the transaction-scoped `AuditLog` result
+   event, and the operation success state are committed together through the
+   existing Prisma transaction. The result event contains accurate draft to
+   finalized evidence and only minimal result metadata.
+
+If the remote operation has committed but the local result/audit transaction
+cannot commit, the operation is marked `reconciliation_required` and the
+client receives an explicit `503` with
+`VALORANT_AUDIT_RECONCILIATION_REQUIRED`; it is not presented as a normal
+successful finalize, and the existing operation ledger is not described or
+used as an `AuditLog` substitute. The controller now passes audit context to
+the service rather than attempting a misleading post-commit result audit.
+
+### Shared helper and evidence corrections
+
+- All critical transaction-scoped audit writes now use
+  `recordAuditInTransaction`; direct `tx.auditLog.create` duplicates were
+  removed from registration and veto services.
+- The shared helper applies sanitization and actor UUID normalization to both
+  ordinary and transaction-scoped writes, including test/mocked logger
+  boundaries.
+- Game ID edits record the operation and member count without treating the
+  requested payload as a persisted before/after snapshot.
+- Veto rewind records the original step, requested step, and actual automatic
+  advancement step. Staff veto actions record the prior step/action and the
+  committed action/result; captain readiness, toss, team choice, and action
+  flows remain free of post-commit audit-induced failures.
+- Ticket scan records the actual scan result, prior status/check-in timestamp,
+  committed status, and accepted flag. Reissue/status changes record accurate
+  before/after token-version or status evidence.
+
+### Transaction boundaries and optional audits
+
+- Registration verification-only changes and slot reserve/release audits now
+  share their existing serializable/database transactions.
+- Ticket scan, reissue, status, and admin ticket-event writes now include their
+  critical audit in the same database transaction.
+- Tournament create/update/delete and bracket generate/match-update/publish
+  writes now include transaction-scoped audit rows when called from privileged
+  request boundaries.
+- OAuth link/unlink and bank-transfer proof submission are classified as
+  optional post-mutation security telemetry: audit failures are logged/ignored
+  so ordinary self-service or proof-submission flows do not report a committed
+  mutation as failed solely because telemetry is unavailable. Payment review
+  and reconciliation remain fail-closed transaction-scoped audits.
+
+### Operation-by-operation audit/security matrix
+
+| Operation/path family | Audit event and evidence | Audit location | Failure semantics | Regression evidence |
+|---|---|---|---|---|
+| Registration status/approval | status/reason before/after | serializable admin transaction | fail closed | `admin.service.test.js` status/waitlist cases |
+| Registration verification | verification status before/after | serializable admin transaction | fail closed | admin service status suite |
+| Registration Game IDs | captain-updated/member-count outcome | serializable admin transaction | fail closed | admin Game ID cases |
+| Registration roster edit | sanitized member before/after, saved-team/captain flags | serializable admin transaction | fail closed | admin roster correction cases |
+| Registration slot reserve/release | slot, fee/currency, reservation before/after | existing reservation transaction | fail closed | reservation service/route coverage |
+| Payment bank review/reconciliation/reopen | status, decision, reason code | payment transaction | fail closed | payment and bank-transfer rollback tests |
+| Bank proof submit/download | content type/size or download metadata only; no contents/signatures | optional controller audit | preserves committed user flow | bank-transfer proof lifecycle tests |
+| Veto rewind/reset | original/requested/actual step, status, reason | veto state transaction | fail closed for staff override | veto service/route authorization suite |
+| Veto staff action | prior step/action and committed action/result | veto state transaction | fail closed | veto mutation suite |
+| Veto captain readiness/toss/choice/action | service authorization remains authoritative; no required post audit | no optional audit failure in flow | preserves valid captain flow | veto wrong-team/grant/toss/action tests |
+| Veto catalog/map/preset/template/config | scoped object identity and safe settings metadata | controller audit boundary | existing privileged response semantics | veto catalog tests |
+| VALORANT finalize | separate intent and result events, operation ID, status/rating only | intent before remote; result with local projection transaction | fail closed/reconciliation-required | finalize intent/result failure tests |
+| Other VALORANT mutations | existing bind/detach/import/series/game audit events plus operation ledger | controller/operation boundaries | existing upstream semantics | VALORANT controller/service suite |
+| Ticket scan/check-in | result, prior/after status and check-in timestamp | ticket transaction | fail closed | ticket scan atomicity tests |
+| Ticket reissue/status | token version or status before/after | ticket transaction | fail closed | ticket mutation tests |
+| Ticket event admin | slug/capacity/status before/after | ticket transaction | fail closed | ticket/admin event suite |
+| Tournament admin create/update/delete | slug/status/publication before/after | tournament transaction | fail closed | tournament service suite |
+| Bracket generate/update/publish | seed count, scores/winner, visibility before/after | bracket transaction | fail closed | bracket service/controller suite |
+| Admin user/contact/recruitment | role/verification, read state, status/deletion outcome | controller audit boundary | existing response semantics | admin service/controller suite |
+| Media/poster/image mutations | asset/poster identity/count/status; no file bytes | controller audit boundary | existing upload rollback semantics | media library/event album/upload suites |
+| Saved-team/captain/staff mutations | existing safe identity/status evidence | existing controller audit boundaries | existing flows preserved | admin/staff/team suites |
+| Match-room staff moderation/support/lock/sync | room/message/member/request outcome; no private body contents | existing controller audit boundary | existing status semantics | match-room service tests |
+| OAuth link/unlink and mobile OAuth safety | provider/link state only; grants/session/codes never recorded | optional link/unlink audit | preserves self-service flow on audit outage | OAuth service/controller/route tests |
+| CSRF/origin protections | no mutation audit added; security middleware decision | middleware | existing 401/403 behavior preserved | `security.test.js` CSRF/origin cases |
+| Rate limits | no sensitive request payload logged/audited | rate-limit middleware | existing 429 behavior preserved | `rate-limit.test.js` |
+| Log/audit leakage | sanitizer/redactor coverage for sessions, grants, signatures, secrets, ciphertext, PUUIDs, buffers/private uploads | shared helper/logger | sensitive values replaced | `audit.test.js`, observability/security suites |
+
+### Fix-round tests and validation
+
+- Focused corrected-path suite: passed, 154/154 tests.
+- Added finalize intent-audit failure and result-audit reconciliation
+  regressions, transaction sanitizer/actor normalization coverage, and
+  corrected ticket/veto evidence assertions.
+- `npm run lint`: passed with 27 pre-existing warnings and no errors.
+- `npm test`: passed, 690 passed and 9 skipped.
+- `npm run test:coverage`: passed; 77.67% lines, 68.51% branches, 75.99%
+  functions.
+- `npm run test:integration`: passed, 7/7. Expected constraint and worker
+  diagnostic logs were emitted by exercised integration cases.

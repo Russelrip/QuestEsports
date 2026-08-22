@@ -13,6 +13,7 @@ const validationPath = path.join(__dirname, "../src/modules/valorant/valorant.va
 const httpErrorPath = path.join(__dirname, "../src/lib/http-error.js");
 const { HttpError } = require(httpErrorPath);
 const envPath = path.join(__dirname, "../src/config/env.js");
+const auditPath = path.join(__dirname, "../src/lib/audit.js");
 
 const envMock = { env: {
   VALORANT_INTERNAL_BASE_URL: "http://localhost:8000",
@@ -154,6 +155,7 @@ test("bindTeam classifies a transport failure as reconciliation_required", async
           return { id: "op-row-2", ...data };
         },
       },
+      $transaction: async (work) => work(prismaMock.prisma),
     },
   };
   const clientMock = {
@@ -165,6 +167,7 @@ test("bindTeam classifies a transport failure as reconciliation_required", async
     [mapperPath]: { mapTeamResponse },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
+    [auditPath]: { recordAudit: async () => undefined, recordAuditInTransaction: async () => undefined },
   });
 
   try {
@@ -198,6 +201,7 @@ test("detachBinding is a Quest-local status change that never calls FastAPI", as
     [mapperPath]: { mapTeamResponse },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
+    [auditPath]: { recordAudit: async () => undefined, recordAuditInTransaction: async () => undefined },
   });
 
   try {
@@ -255,6 +259,7 @@ test("listTeams fetches the FastAPI team catalog and joins it onto each binding"
     [mapperPath]: { mapTeamResponse },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
+    [auditPath]: { recordAudit: async () => undefined, recordAuditInTransaction: async () => undefined },
   });
 
   try {
@@ -1629,6 +1634,7 @@ test("previewSeries returns the mapped FastAPI preview", async () => {
 test("finalizeSeries marks the operation in_flight before the call and adopts the committed result", async () => {
   const fixture = require("./fixtures/valorant/series-finalize.json");
   const statuses = [];
+  const audits = [];
   const prismaMock = {
     prisma: {
       questValorantSeries: {
@@ -1649,6 +1655,7 @@ test("finalizeSeries marks the operation in_flight before the call and adopts th
       },
     },
   };
+  prismaMock.prisma.$transaction = async (work) => work(prismaMock.prisma);
   const clientMock = {
     valorantRequest: async ({ path, body }) => {
       assert.equal(path, "/api/v1/series/series-uuid-1/finalize");
@@ -1666,6 +1673,10 @@ test("finalizeSeries marks the operation in_flight before the call and adopts th
     [mapperPath]: { mapFinalizeResult: (r) => ({ seriesId: r.series_id, status: r.status, ratingMode: r.rating_mode }) },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAudit: async (entry) => audits.push(entry),
+      recordAuditInTransaction: async (_tx, entry) => audits.push(entry),
+    },
   });
 
   try {
@@ -1679,6 +1690,86 @@ test("finalizeSeries marks the operation in_flight before the call and adopts th
     assert.equal(result.status, "finalized");
     assert.equal(result.ratingMode, "normal");
     assert.deepEqual(statuses, ["in_flight", "succeeded"]);
+    assert.deepEqual(audits.map((entry) => entry.action), [
+      "valorant.series.finalize.intent",
+      "valorant.series.finalize.result",
+    ]);
+    assert.equal(audits[1].beforeData.status, "draft");
+    assert.equal(audits[1].afterData.status, "finalized");
+  } finally {
+    restore();
+  }
+});
+
+test("finalizeSeries fails closed before the external mutation when intent audit persistence fails", async () => {
+  let externalCalls = 0;
+  const statuses = [];
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: { findUnique: async () => ({ id: "series-1", status: "draft", valorantSeriesUuid: "external-1" }) },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "operation-1", ...data }),
+        update: async ({ data }) => { statuses.push(data.status); return data; },
+      },
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => { externalCalls += 1; } },
+    [mapperPath]: { mapFinalizeResult: () => ({}) },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAudit: async () => { throw new Error("audit unavailable"); },
+      recordAuditInTransaction: async () => undefined,
+    },
+  });
+
+  try {
+    await assert.rejects(
+      service.finalizeSeries({ seriesId: "series-1", ratingMode: "normal", actorUserId: "user-1", requestId: "req-intent", ipAddress: "127.0.0.1" }),
+      /audit unavailable/,
+    );
+    assert.equal(externalCalls, 0);
+    assert.deepEqual(statuses, ["reconciliation_required"]);
+  } finally {
+    restore();
+  }
+});
+
+test("finalizeSeries marks reconciliation when result audit fails after the external commit", async () => {
+  const statuses = [];
+  const prismaMock = {
+    prisma: {
+      questValorantSeries: {
+        findUnique: async () => ({ id: "series-1", status: "draft", valorantSeriesUuid: "external-1" }),
+        update: async () => ({ id: "series-1", status: "finalized", ratingMode: "normal" }),
+      },
+      questValorantOperation: {
+        create: async ({ data }) => ({ id: "operation-1", ...data }),
+        update: async ({ data }) => { statuses.push(data.status); return data; },
+      },
+    },
+  };
+  prismaMock.prisma.$transaction = async (work) => work(prismaMock.prisma);
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: prismaMock,
+    [clientPath]: { valorantRequest: async () => ({ status: 200, data: require("./fixtures/valorant/series-finalize.json"), requestId: "external-request" }) },
+    [mapperPath]: { mapFinalizeResult: (r) => ({ status: r.status, ratingMode: r.rating_mode }) },
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAudit: async () => undefined,
+      recordAuditInTransaction: async () => { throw new Error("result audit unavailable"); },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      service.finalizeSeries({ seriesId: "series-1", ratingMode: "normal", actorUserId: "user-1", requestId: "req-result", ipAddress: "127.0.0.1" }),
+      (error) => error.code === "VALORANT_AUDIT_RECONCILIATION_REQUIRED" && error.statusCode === 503,
+    );
+    assert.deepEqual(statuses, ["in_flight", "reconciliation_required"]);
   } finally {
     restore();
   }
@@ -1728,6 +1819,7 @@ test("finalizeSeries marks the operation failed and reconciles on SERIES_ALREADY
     },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
+    [auditPath]: { recordAudit: async () => undefined, recordAuditInTransaction: async () => undefined },
   });
 
   try {
@@ -1773,6 +1865,7 @@ test("finalizeSeries marks reconciliation_required on timeout and never blind-re
     [mapperPath]: { mapFinalizeResult: () => ({}) },
     [envPath]: envMock,
     [httpErrorPath]: { HttpError },
+    [auditPath]: { recordAudit: async () => undefined, recordAuditInTransaction: async () => undefined },
   });
 
   try {

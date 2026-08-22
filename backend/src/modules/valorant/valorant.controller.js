@@ -232,7 +232,6 @@ const finalizeSeries = asyncHandler(async (req, res) => {
     requestId: req.requestId,
     ipAddress: req.ip,
   });
-  await writeAudit(req, { targetType: "valorant_series", targetId: req.params.id, afterData: { action: "finalize", operationId: result.operationId || null, ratingMode: result.ratingMode || null } });
   // FinalizeResult fields are surfaced first-class under `data` (spec §6.4),
   // not nested under `data.result` — the controller test asserts
   // `res.payload.data.status`, and the UI consumes `data.series_id`/`data.status`.

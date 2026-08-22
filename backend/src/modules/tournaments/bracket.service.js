@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { BracketsManager } = require("brackets-manager");
 const { Status } = require("brackets-model");
 const { prisma } = require("../../lib/prisma");
+const { recordAuditInTransaction } = require("../../lib/audit");
 const { HttpError } = require("../../lib/http-error");
 const { normalizeText } = require("../../lib/validation");
 const {
@@ -285,7 +286,7 @@ const listApprovedBracketSeeds = async (tournamentId) => {
   }));
 };
 
-const generateTournamentBracket = async (tournamentId) => {
+const generateTournamentBracket = async (tournamentId, auditContext = {}) => {
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     select: { id: true, title: true },
@@ -328,7 +329,7 @@ const generateTournamentBracket = async (tournamentId) => {
   });
 
   const bracketData = await manager.export();
-  const bracket = await prisma.tournamentBracket.upsert({
+  const persistBracket = (database) => database.tournamentBracket.upsert({
     where: { tournamentId },
     create: {
       id: crypto.randomUUID(),
@@ -349,6 +350,20 @@ const generateTournamentBracket = async (tournamentId) => {
       publishedAt: null,
     },
   });
+  const bracket = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+    ? await prisma.$transaction(async (tx) => {
+      const created = await persistBracket(tx);
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "tournament.bracket.generated",
+        targetType: "TournamentBracket",
+        targetId: created.id,
+        beforeData: { status: "absent" },
+        afterData: { status: created.status, seedCount: seeds.length },
+      });
+      return created;
+    })
+    : await persistBracket(prisma);
 
   return mapBracketRecord(bracket);
 };
@@ -371,7 +386,7 @@ const getAdminTournamentBracket = async (tournamentId) => {
   return mapBracketRecord(bracket && overlayBracketLogos(bracket, registrations));
 };
 
-const updateTournamentBracketMatch = async (tournamentId, matchId, body) => {
+const updateTournamentBracketMatch = async (tournamentId, matchId, body, auditContext = {}) => {
   const bracket = await prisma.tournamentBracket.findUnique({
     where: { tournamentId },
   });
@@ -417,18 +432,29 @@ const updateTournamentBracketMatch = async (tournamentId, matchId, body) => {
   });
 
   const bracketData = await manager.export();
-  const updated = await prisma.tournamentBracket.update({
+  const persist = (database) => database.tournamentBracket.update({
     where: { tournamentId },
-    data: {
-      bracketData,
-      status: bracket.status,
-    },
+    data: { bracketData, status: bracket.status },
   });
+  const updated = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+    ? await prisma.$transaction(async (tx) => {
+      const saved = await persist(tx);
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "tournament.bracket.match_updated",
+        targetType: "TournamentBracketMatch",
+        targetId: String(parsedMatchId),
+        beforeData: { bracketStatus: bracket.status, opponent1Score: match.opponent1?.score || 0, opponent2Score: match.opponent2?.score || 0 },
+        afterData: { bracketStatus: saved.status, opponent1Score, opponent2Score, winner },
+      });
+      return saved;
+    })
+    : await persist(prisma);
 
   return mapBracketRecord(updated);
 };
 
-const publishTournamentBracket = async (tournamentId, body) => {
+const publishTournamentBracket = async (tournamentId, body, auditContext = {}) => {
   const bracket = await prisma.tournamentBracket.findUnique({
     where: { tournamentId },
   });
@@ -441,13 +467,24 @@ const publishTournamentBracket = async (tournamentId, body) => {
     body?.isPublished === undefined
       ? true
       : ["true", "1", "yes", "on"].includes(normalizeText(body.isPublished).toLowerCase());
-  const updated = await prisma.tournamentBracket.update({
+  const persist = (database) => database.tournamentBracket.update({
     where: { tournamentId },
-    data: {
-      status: publish ? "published" : "draft",
-      publishedAt: publish ? new Date() : null,
-    },
+    data: { status: publish ? "published" : "draft", publishedAt: publish ? new Date() : null },
   });
+  const updated = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+    ? await prisma.$transaction(async (tx) => {
+      const saved = await persist(tx);
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "tournament.bracket.visibility_changed",
+        targetType: "TournamentBracket",
+        targetId: saved.id,
+        beforeData: { status: bracket.status, publishedAt: bracket.publishedAt || null },
+        afterData: { status: saved.status, publishedAt: saved.publishedAt || null },
+      });
+      return saved;
+    })
+    : await persist(prisma);
 
   return mapBracketRecord(updated);
 };

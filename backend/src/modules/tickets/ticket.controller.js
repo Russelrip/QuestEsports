@@ -1,5 +1,5 @@
 const { asyncHandler } = require("../../lib/async-handler");
-const { recordAudit, requestAuditContext } = require("../../lib/audit");
+const { requestAuditContext } = require("../../lib/audit");
 const service = require("./ticket.service");
 
 const listEvents = asyncHandler(async (_req, res) =>
@@ -60,25 +60,11 @@ const getAdminEvent = asyncHandler(async (req, res) =>
     }),
 );
 const createAdminEvent = asyncHandler(async (req, res) => {
-  const event = await service.saveAdminEvent({ body: req.body });
-  await recordAudit({
-    ...requestAuditContext(req),
-    action: "ticket.event.created",
-    targetType: "TicketEvent",
-    targetId: event.id,
-    afterData: { slug: event.slug, status: event.status },
-  });
+  const event = await service.saveAdminEvent({ body: req.body, auditContext: requestAuditContext(req) });
   res.status(201).json({ success: true, event });
 });
 const updateAdminEvent = asyncHandler(async (req, res) => {
-  const event = await service.saveAdminEvent({ eventId: req.params.eventId, body: req.body });
-  await recordAudit({
-    ...requestAuditContext(req),
-    action: "ticket.event.updated",
-    targetType: "TicketEvent",
-    targetId: event.id,
-    afterData: { slug: event.slug, status: event.status },
-  });
+  const event = await service.saveAdminEvent({ eventId: req.params.eventId, body: req.body, auditContext: requestAuditContext(req) });
   res.status(200).json({ success: true, event });
 });
 const getAdminOrders = asyncHandler(async (req, res) => {
@@ -108,23 +94,19 @@ const getAdminTickets = asyncHandler(async (req, res) => {
     });
 });
 const scanTicket = asyncHandler(async (req, res) => {
-  const scan = await service.scanTicket({ eventId: req.params.eventId, payload: req.body.payload, admin: req.user });
-  await recordAudit({ ...requestAuditContext(req), action: "ticket.scanned", targetType: "Ticket", targetId: scan.ticket?.id || null, afterData: { result: scan.status || null } });
+  const scan = await service.scanTicket({ eventId: req.params.eventId, payload: req.body.payload, admin: req.user, auditContext: requestAuditContext(req) });
   res.status(200).json({ success: true, scan });
 });
 const checkInTicket = asyncHandler(async (req, res) => {
-  const scan = await service.checkInTicketById({ eventId: req.params.eventId, ticketId: req.params.ticketId, admin: req.user });
-  await recordAudit({ ...requestAuditContext(req), action: "ticket.checked_in", targetType: "Ticket", targetId: req.params.ticketId, afterData: { status: scan.status || null } });
+  const scan = await service.checkInTicketById({ eventId: req.params.eventId, ticketId: req.params.ticketId, admin: req.user, auditContext: requestAuditContext(req) });
   res.status(200).json({ success: true, scan });
 });
 const reissueTicket = asyncHandler(async (req, res) => {
-  const ticket = await service.reissueTicket({ ticketId: req.params.ticketId });
-  await recordAudit({ ...requestAuditContext(req), action: "ticket.reissued", targetType: "Ticket", targetId: req.params.ticketId, afterData: { status: ticket.status || null } });
+  const ticket = await service.reissueTicket({ ticketId: req.params.ticketId, auditContext: requestAuditContext(req) });
   res.status(200).json({ success: true, ticket });
 });
 const updateTicket = asyncHandler(async (req, res) => {
-  const ticket = await service.updateTicketStatus({ ticketId: req.params.ticketId, status: req.body.status });
-  await recordAudit({ ...requestAuditContext(req), action: "ticket.status.updated", targetType: "Ticket", targetId: req.params.ticketId, afterData: { status: ticket.status || req.body.status } });
+  const ticket = await service.updateTicketStatus({ ticketId: req.params.ticketId, status: req.body.status, auditContext: requestAuditContext(req) });
   res.status(200).json({ success: true, ticket });
 });
 const exportReport = asyncHandler(async (req, res) => {

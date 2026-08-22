@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { sanitizeAuditData } = require("../src/lib/audit");
+const { recordAuditInTransaction, sanitizeAuditData } = require("../src/lib/audit");
 
 test("audit sanitization removes credentials, capability values, PUUIDs, and private upload contents", () => {
   const sanitized = sanitizeAuditData({
@@ -29,4 +29,25 @@ test("audit sanitization preserves safe metadata and normalizes dates", () => {
     createdAt: createdAt.toISOString(),
     action: "ticket.checked_in",
   });
+});
+
+test("transaction audit persistence sanitizes data and normalizes malformed actors", async () => {
+  let persisted;
+  await recordAuditInTransaction({
+    auditLog: {
+      create: async ({ data }) => {
+        persisted = data;
+        return data;
+      },
+    },
+  }, {
+    actorUserId: "test-user",
+    action: "security.test",
+    targetType: "Test",
+    targetId: "target-1",
+    afterData: { session: "not-persisted", status: "ok" },
+  });
+
+  assert.equal(persisted.actorUserId, null);
+  assert.deepEqual(persisted.afterData, { session: "[REDACTED]", status: "ok" });
 });

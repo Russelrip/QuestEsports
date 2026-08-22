@@ -46,6 +46,7 @@ const {
 } = require("../tournaments/registration-eligibility");
 const { getRegistrationPublicReference } = require("../tournaments/registration-state");
 const { getBankTransferAmountForSlot } = require("../payments/bank-transfer.service");
+const { recordAuditInTransaction } = require("../../lib/audit");
 const { activatePaidTeamRegistration } = require("../teams/team.service");
 const { buildShortCode } = require("../tournaments/bracket.service");
 const { normalizeCoachSubmission } = require("../tournaments/coach.validation");
@@ -95,18 +96,16 @@ const recordRegistrationStatusAudit = async ({
   reason,
   requestId,
   ipAddress,
-}) => tx.auditLog.create({
-  data: {
-    id: crypto.randomUUID(),
+  action = "team_registration.status_changed",
+}) => recordAuditInTransaction(tx, {
     actorUserId: actorUserId || null,
-    action: "team_registration.status_changed",
+    action,
     targetType: "TeamRegistration",
     targetId: registrationId,
     beforeData: { status: fromStatus },
     afterData: { status: toStatus, reason: reason || null },
     requestId: requestId || null,
     ipAddress: ipAddress || null,
-  },
 });
 
 const acceptPendingRegistrationInvites = async ({ tx, registrationId, savedTeamId, members }) => {
@@ -994,9 +993,7 @@ const updateTeamRegistrationGameIds = async (registrationId, body = {}, auditCon
       });
     }
     if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
-      await tx.auditLog.create({
-        data: {
-          id: crypto.randomUUID(),
+      await recordAuditInTransaction(tx, {
           actorUserId: auditContext.actorUserId || null,
           action: "team_registration.game_ids_updated",
           targetType: "TeamRegistration",
@@ -1007,7 +1004,6 @@ const updateTeamRegistrationGameIds = async (registrationId, body = {}, auditCon
           },
           requestId: auditContext.requestId || null,
           ipAddress: auditContext.ipAddress || null,
-        },
       });
     }
   });
@@ -1398,7 +1394,7 @@ const correctTeamRegistrationRoster = async (registrationId, body = {}, auditCon
       ipAddress: auditContext.ipAddress || null,
     };
     if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
-      await tx.auditLog.create({ data: { id: crypto.randomUUID(), ...audit } });
+      await recordAuditInTransaction(tx, audit);
     }
 
     return {
@@ -2087,10 +2083,28 @@ const updateTeamRegistrationStatus = async (
         return updated;
       });
     } else {
-      registration = await prisma.teamRegistration.update({
-        where: { id: registrationId },
-        data: updateData,
-        include: TEAM_REGISTRATION_INCLUDE,
+      registration = await runAdminSerializable(async (tx) => {
+        const current = await tx.teamRegistration.findUnique({
+          where: { id: registrationId },
+          select: { id: true, verificationStatus: true },
+        });
+        if (!current) throw new HttpError(404, "Registration not found.");
+        const updated = await tx.teamRegistration.update({
+          where: { id: registrationId },
+          data: updateData,
+          include: TEAM_REGISTRATION_INCLUDE,
+        });
+        await recordRegistrationStatusAudit({
+          tx,
+          actorUserId: adminUserId,
+          registrationId,
+          fromStatus: current.verificationStatus,
+          toStatus: updateData.verificationStatus,
+          reason,
+          action: "team_registration.verification_status_changed",
+          ...auditContext,
+        });
+        return updated;
       });
     }
   }
@@ -2813,7 +2827,7 @@ const deleteAdminSavedTeam = async (teamId) => {
   }
 };
 
-const reserveAdminRegistrationSlot = async ({ registrationId, adminUserId, body }) => {
+const reserveAdminRegistrationSlot = async ({ registrationId, adminUserId, body, auditContext = {} }) => {
   const note = normalizeText(body?.note) || null;
   if (note && note.length > 300) throw new HttpError(400, "Reservation note must be 300 characters or fewer.");
   return prisma.$transaction(async (tx) => {
@@ -2849,7 +2863,7 @@ const reserveAdminRegistrationSlot = async ({ registrationId, adminUserId, body 
     const quotedFeeAmount = registration.tournament.paymentMethod === "bank_transfer"
       ? getBankTransferAmountForSlot(registration.tournament, assignedSlotNumber)
       : Number(registration.tournament.registrationFeeAmount);
-    return tx.adminSlotReservation.create({
+    const reservation = await tx.adminSlotReservation.create({
       data: {
         tournamentId: registration.tournamentId,
         registrationId,
@@ -2860,12 +2874,49 @@ const reserveAdminRegistrationSlot = async ({ registrationId, adminUserId, body 
         note,
       },
     });
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "team_registration.slot_reserved",
+        targetType: "AdminSlotReservation",
+        targetId: reservation.id,
+        afterData: {
+          registrationId,
+          assignedSlotNumber: reservation.assignedSlotNumber,
+          quotedFeeAmount: reservation.quotedFeeAmount,
+          quotedFeeCurrency: reservation.quotedFeeCurrency,
+        },
+      });
+    }
+    return reservation;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 };
 
-const releaseAdminRegistrationSlot = async (registrationId) => {
-  const removed = await prisma.adminSlotReservation.deleteMany({ where: { registrationId } });
-  if (!removed.count) throw new HttpError(404, "Admin slot reservation not found.");
+const releaseAdminRegistrationSlot = async (registrationId, auditContext = {}) => {
+  if (!auditContext.actorUserId && !auditContext.requestId && !auditContext.ipAddress) {
+    const removed = await prisma.adminSlotReservation.deleteMany({ where: { registrationId } });
+    if (!removed.count) throw new HttpError(404, "Admin slot reservation not found.");
+    return;
+  }
+  await prisma.$transaction(async (tx) => {
+    const reservation = await tx.adminSlotReservation.findUnique({ where: { registrationId } });
+    if (!reservation) throw new HttpError(404, "Admin slot reservation not found.");
+    await tx.adminSlotReservation.delete({ where: { id: reservation.id } });
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "team_registration.slot_released",
+        targetType: "AdminSlotReservation",
+        targetId: reservation.id,
+        beforeData: {
+          registrationId,
+          assignedSlotNumber: reservation.assignedSlotNumber,
+          quotedFeeAmount: reservation.quotedFeeAmount,
+          quotedFeeCurrency: reservation.quotedFeeCurrency,
+        },
+      });
+    }
+  });
 };
 
 module.exports = {

@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const { Prisma } = require("../../generated/prisma");
 const { env } = require("../../config/env");
 const { prisma } = require("../../lib/prisma");
+const { recordAuditInTransaction } = require("../../lib/audit");
 const { HttpError } = require("../../lib/http-error");
 const {
   normalizeInteger,
@@ -663,7 +664,7 @@ const parseEventInput = (body, existing) => {
   };
 };
 
-const saveAdminEvent = async ({ eventId, body }) => {
+const saveAdminEvent = async ({ eventId, body, auditContext = {} }) => {
   const existing = eventId
     ? await prisma.ticketEvent.findUnique({ where: { id: eventId } })
     : null;
@@ -699,16 +700,30 @@ const saveAdminEvent = async ({ eventId, body }) => {
       "Capacity cannot be lower than the number of reserved and paid tickets.",
     );
   }
-  const event = eventId
-    ? await prisma.ticketEvent.update({
+  const persist = (database) => eventId
+    ? database.ticketEvent.update({
         where: { id: eventId },
         data,
         include: { series: { select: ticketSeriesSelect } },
       })
-    : await prisma.ticketEvent.create({
+    : database.ticketEvent.create({
         data: { id: crypto.randomUUID(), ...data },
         include: { series: { select: ticketSeriesSelect } },
       });
+  const event = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
+    ? await prisma.$transaction(async (tx) => {
+      const saved = await persist(tx);
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: eventId ? "ticket.event.updated" : "ticket.event.created",
+        targetType: "TicketEvent",
+        targetId: saved.id,
+        beforeData: existing ? { status: existing.status, capacity: existing.capacity, slug: existing.slug } : undefined,
+        afterData: { status: saved.status, capacity: saved.capacity, slug: saved.slug },
+      });
+      return saved;
+    })
+    : await persist(prisma);
   return mapAdminEvent(event, await getEventStats(event.id));
 };
 
@@ -946,7 +961,24 @@ const scanResponse = (result, ticket, message) => ({
     : null,
 });
 
-const scanTicket = async ({ eventId, payload, admin }) =>
+const recordTicketScanAudit = async (tx, { ticket, result, auditContext, beforeStatus, beforeCheckedInAt }) => {
+  if (!auditContext?.actorUserId && !auditContext?.requestId && !auditContext?.ipAddress) return;
+  await recordAuditInTransaction(tx, {
+    ...auditContext,
+    action: "ticket.scanned",
+    targetType: "Ticket",
+    targetId: ticket?.id || null,
+    beforeData: ticket ? { status: beforeStatus || ticket.status, checkedInAt: beforeCheckedInAt === undefined ? ticket.checkedInAt || null : beforeCheckedInAt } : undefined,
+    afterData: {
+      result,
+      status: ticket?.status || null,
+      checkedInAt: ticket?.checkedInAt || null,
+      accepted: result === "accepted",
+    },
+  });
+};
+
+const scanTicket = async ({ eventId, payload, admin, auditContext = {} }) =>
   runSerializable(async (tx) => {
     const event = await tx.ticketEvent.findUnique({
       where: { id: eventId },
@@ -969,6 +1001,7 @@ const scanTicket = async ({ eventId, payload, admin }) =>
           detail: "QR signature or format was invalid.",
         },
       });
+      await recordTicketScanAudit(tx, { eventId, result: "invalid_code", auditContext });
       return scanResponse(
         "invalid_code",
         null,
@@ -994,6 +1027,7 @@ const scanTicket = async ({ eventId, payload, admin }) =>
           detail: "Ticket was missing or its QR had been reissued.",
         },
       });
+      await recordTicketScanAudit(tx, { eventId, ticket, result: "invalid_code", auditContext });
       return scanResponse(
         "invalid_code",
         ticket,
@@ -1011,6 +1045,7 @@ const scanTicket = async ({ eventId, payload, admin }) =>
           detail: `Ticket belongs to ${ticket.event.title}.`,
         },
       });
+      await recordTicketScanAudit(tx, { eventId, ticket, result: "wrong_event", auditContext });
       return scanResponse(
         "wrong_event",
         ticket,
@@ -1028,6 +1063,7 @@ const scanTicket = async ({ eventId, payload, admin }) =>
           detail: "Ticket had already been checked in.",
         },
       });
+      await recordTicketScanAudit(tx, { eventId, ticket, result: "already_used", auditContext });
       return scanResponse(
         "already_used",
         ticket,
@@ -1045,6 +1081,7 @@ const scanTicket = async ({ eventId, payload, admin }) =>
           detail: `Ticket status was ${ticket.status}.`,
         },
       });
+      await recordTicketScanAudit(tx, { eventId, ticket, result: "invalid_status", auditContext });
       return scanResponse(
         "invalid_status",
         ticket,
@@ -1052,6 +1089,7 @@ const scanTicket = async ({ eventId, payload, admin }) =>
       );
     }
     const now = new Date();
+    const previousStatus = ticket.status;
     const claimed = await tx.ticket.updateMany({
       where: {
         id: ticket.id,
@@ -1077,6 +1115,7 @@ const scanTicket = async ({ eventId, payload, admin }) =>
           detail: "Concurrent scan was rejected.",
         },
       });
+      await recordTicketScanAudit(tx, { eventId, ticket, result: "already_used", auditContext });
       return scanResponse(
         "already_used",
         ticket,
@@ -1093,6 +1132,7 @@ const scanTicket = async ({ eventId, payload, admin }) =>
         result: "accepted",
       },
     });
+    await recordTicketScanAudit(tx, { eventId, ticket, result: "accepted", auditContext, beforeStatus: previousStatus, beforeCheckedInAt: null });
     return scanResponse(
       "accepted",
       ticket,
@@ -1100,55 +1140,55 @@ const scanTicket = async ({ eventId, payload, admin }) =>
     );
   });
 
-const checkInTicketById = async ({ ticketId, eventId, admin }) => {
+const checkInTicketById = async ({ ticketId, eventId, admin, auditContext }) => {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) throw new HttpError(404, "Ticket not found.");
-  return scanTicket({ eventId, payload: buildQrPayload(ticket), admin });
+  return scanTicket({ eventId, payload: buildQrPayload(ticket), admin, auditContext });
 };
 
-const reissueTicket = async ({ ticketId }) => {
-  const ticket = await prisma.ticket.findUnique({
-    where: { id: ticketId },
-    include: { order: true },
-  });
+const reissueTicket = async ({ ticketId, auditContext = {} }) => prisma.$transaction(async (tx) => {
+  const ticket = await tx.ticket.findUnique({ where: { id: ticketId }, include: { order: true } });
   if (!ticket) throw new HttpError(404, "Ticket not found.");
-  if (
-    ticket.order.status !== "paid" ||
-    !["valid", "checked_in"].includes(ticket.status)
-  ) {
+  if (ticket.order.status !== "paid" || !["valid", "checked_in"].includes(ticket.status)) {
     throw new HttpError(409, "Only a paid ticket can be reissued.");
   }
-  if (ticket.status === "checked_in")
-    throw new HttpError(409, "A checked-in ticket cannot be reissued.");
-  const updated = await prisma.ticket.update({
-    where: { id: ticketId },
-    data: { tokenVersion: { increment: 1 } },
-  });
+  if (ticket.status === "checked_in") throw new HttpError(409, "A checked-in ticket cannot be reissued.");
+  const updated = await tx.ticket.update({ where: { id: ticketId }, data: { tokenVersion: { increment: 1 } } });
+  if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+    await recordAuditInTransaction(tx, {
+      ...auditContext,
+      action: "ticket.reissued",
+      targetType: "Ticket",
+      targetId: ticketId,
+      beforeData: { status: ticket.status, tokenVersion: ticket.tokenVersion },
+      afterData: { status: updated.status, tokenVersion: updated.tokenVersion },
+    });
+  }
   return mapTicket(updated);
-};
+});
 
-const updateTicketStatus = async ({ ticketId, status }) => {
+const updateTicketStatus = async ({ ticketId, status, auditContext = {} }) => {
   const normalized = normalizeText(status).toLowerCase();
   if (!new Set(["valid", "cancelled"]).has(normalized))
     throw new HttpError(400, "Ticket status is invalid.");
-  const ticket = await prisma.ticket.findUnique({
-    where: { id: ticketId },
-    include: { order: true },
+  return prisma.$transaction(async (tx) => {
+    const ticket = await tx.ticket.findUnique({ where: { id: ticketId }, include: { order: true } });
+    if (!ticket) throw new HttpError(404, "Ticket not found.");
+    if (ticket.status === "checked_in") throw new HttpError(409, "A checked-in ticket cannot be cancelled or restored.");
+    if (normalized === "valid" && ticket.order.status !== "paid") throw new HttpError(409, "Only a paid order can have a valid ticket.");
+    const updated = await tx.ticket.update({ where: { id: ticketId }, data: { status: normalized } });
+    if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "ticket.status.updated",
+        targetType: "Ticket",
+        targetId: ticketId,
+        beforeData: { status: ticket.status },
+        afterData: { status: updated.status },
+      });
+    }
+    return mapTicket(updated);
   });
-  if (!ticket) throw new HttpError(404, "Ticket not found.");
-  if (ticket.status === "checked_in")
-    throw new HttpError(
-      409,
-      "A checked-in ticket cannot be cancelled or restored.",
-    );
-  if (normalized === "valid" && ticket.order.status !== "paid")
-    throw new HttpError(409, "Only a paid order can have a valid ticket.");
-  return mapTicket(
-    await prisma.ticket.update({
-      where: { id: ticketId },
-      data: { status: normalized },
-    }),
-  );
 };
 
 const getEventReportRows = async (eventId) => {

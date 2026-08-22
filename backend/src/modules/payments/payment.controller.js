@@ -29,6 +29,14 @@ const paymentAudit = (req, action, decision, reasonCode) => ({
 });
 
 const normalizedDecision = (value) => String(value || "").trim().toLowerCase();
+const recordOptionalAudit = async (entry) => {
+  try {
+    await recordAudit(entry);
+  } catch (_error) {
+    // Upload submission is a user-owned mutation; an optional audit outage
+    // must not turn a committed proof submission into a client-visible error.
+  }
+};
 
 const notifyPayHere = asyncHandler(async (req, res) => {
   const payment = await processPayHereNotification(req.body);
@@ -69,7 +77,7 @@ const uploadBankTransferProof = asyncHandler(async (req, res) => {
     publicToken: req.get("x-order-token"),
     file: req.file,
   });
-  await recordAudit({
+  await recordOptionalAudit({
     ...requestAuditContext(req),
     action: "bank_transfer_proof.submitted",
     targetType: "PaymentTransaction",

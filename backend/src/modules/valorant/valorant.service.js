@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
+const { recordAudit, recordAuditInTransaction } = require("../../lib/audit");
 const { valorantRequest, FastApiError } = require("./valorant.client");
 const { mapTeamResponse, mapMatchCandidate, mapMatchSummary, mapMatchDetail, mapSeriesView, mapGameView, mapPreview, mapFinalizeResult, mapManualFinalizeResult, mapRankingEntry, mapRatingEvent } = require("./valorant.mapper");
 const { normalizeRiotId, generateExternalKey, assertSupportedFormat, deriveManualSeriesExternalKey } = require("./valorant.validation");
@@ -823,6 +824,29 @@ const finalizeSeries = async ({
       rating_mode: ratingMode,
     },
   });
+  // The intent audit is deliberately separate from QuestValorantOperation:
+  // the operation row is an idempotency/reconciliation ledger, while this is
+  // the durable AuditLog security event. Do not call the external mutator
+  // until the intent is durably recorded.
+  try {
+    await recordAudit({
+      actorUserId,
+      action: "valorant.series.finalize.intent",
+      targetType: "QuestValorantSeries",
+      targetId: series.id,
+      afterData: {
+        operationId: operation.operationId,
+        ratingMode,
+        officialWinnerTeamId,
+        overrideReason,
+      },
+      requestId,
+      ipAddress,
+    });
+  } catch (error) {
+    await markOperationFailed(operation.id, error);
+    throw error;
+  }
   await prisma.questValorantOperation.update({
     where: { id: operation.id },
     data: { status: "in_flight" },
@@ -852,11 +876,38 @@ const finalizeSeries = async ({
   }
 
   const result = mapFinalizeResult(response.data);
-  await prisma.questValorantSeries.update({
-    where: { id: series.id },
-    data: { status: "finalized", finalizedById: actorUserId, lastOperationId: operation.id, ratingMode },
-  });
-  await markOperationSucceeded(operation.id, response);
+  try {
+    await prisma.$transaction(async (tx) => {
+      const finalized = await tx.questValorantSeries.update({
+        where: { id: series.id },
+        data: { status: "finalized", finalizedById: actorUserId, lastOperationId: operation.id, ratingMode },
+      });
+      await recordAuditInTransaction(tx, {
+        actorUserId,
+        action: "valorant.series.finalize.result",
+        targetType: "QuestValorantSeries",
+        targetId: series.id,
+        beforeData: { status: series.status, ratingMode: null },
+        afterData: {
+          status: finalized.status,
+          ratingMode: finalized.ratingMode,
+          operationId: operation.operationId,
+          externalStatus: result.status,
+        },
+        requestId,
+        ipAddress,
+      });
+      await tx.questValorantOperation.update({
+        where: { id: operation.id },
+        data: { status: "succeeded", responseCode: response.status, fastapiRequestId: response.requestId, responseSummary: response.data || undefined },
+      });
+    });
+  } catch (error) {
+    await markOperationReconciliationRequired(operation.id, error);
+    const auditError = new HttpError(503, "VALORANT finalize committed upstream; audit reconciliation is required.");
+    auditError.code = "VALORANT_AUDIT_RECONCILIATION_REQUIRED";
+    throw auditError;
+  }
   return { ...result, operationId: operation.operationId };
 };
 

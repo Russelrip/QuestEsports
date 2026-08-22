@@ -1,4 +1,5 @@
 const { asyncHandler } = require("../../lib/async-handler");
+const { recordAudit, requestAuditContext } = require("../../lib/audit");
 const { createReadStream } = require("fs");
 const { pipeline } = require("stream/promises");
 const { listPublicUploads } = require("../uploads/upload.service");
@@ -33,6 +34,7 @@ const uploadImages = asyncHandler(async (req, res) => {
     body: req.body,
     files: req.files,
   });
+  await recordAudit({ ...requestAuditContext(req), action: "media.images.uploaded", targetType: "ImageAsset", afterData: { count: assets.length } });
 
   res.status(201).json({
     success: true,
@@ -85,6 +87,7 @@ const streamPosterImage = asyncHandler(async (req, res) => {
 
 const createPosterEntry = asyncHandler(async (req, res) => {
   const poster = await createPoster({ body: req.body });
+  await recordAudit({ ...requestAuditContext(req), action: "media.poster.created", targetType: "Poster", targetId: poster.id, afterData: { tournamentId: poster.tournamentId } });
 
   res.status(201).json({
     success: true,
@@ -114,6 +117,7 @@ const getPoster = asyncHandler(async (req, res) => {
 
 const deletePoster = asyncHandler(async (req, res) => {
   await deletePosterById(req.params.posterId);
+  await recordAudit({ ...requestAuditContext(req), action: "media.poster.deleted", targetType: "Poster", targetId: req.params.posterId });
 
   res.status(200).json({
     success: true,
@@ -123,11 +127,13 @@ const deletePoster = asyncHandler(async (req, res) => {
 
 const updatePoster = asyncHandler(async (req, res) => {
   const poster = await updatePosterById(req.params.posterId, req.body);
+  await recordAudit({ ...requestAuditContext(req), action: "media.poster.updated", targetType: "Poster", targetId: poster.id, afterData: { tournamentId: poster.tournamentId } });
   res.status(200).json({ success: true, message: "Tournament media updated.", poster });
 });
 
 const deleteImage = asyncHandler(async (req, res) => {
   await deleteUnusedImageAsset(req.params.imageId);
+  await recordAudit({ ...requestAuditContext(req), action: "media.image.deleted", targetType: "ImageAsset", targetId: req.params.imageId });
   res.status(200).json({ success: true, message: "Unused image removed." });
 });
 

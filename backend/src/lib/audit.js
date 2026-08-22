@@ -5,6 +5,7 @@ const { logger, redact } = require("./logger");
 const AUDIT_REDACTED_VALUE = "[REDACTED]";
 const AUDIT_SENSITIVE_KEY = /(?:password|secret|token|authorization|cookie|session|oauth|grant|signature|ciphertext|encrypted|private.?key|puuid|buffer|contents|raw.?file|upload.?data)/i;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const redactAuditString = typeof redact === "function" ? redact : (value) => value;
 
 // Audit records are durable and are routinely exported for incident review.
 // Keep this policy stricter than the general logger policy: capability values,
@@ -22,7 +23,7 @@ const sanitizeAuditValue = (value, key = "") => {
       return result;
     }, {});
   }
-  return typeof value === "string" ? redact(value) : value;
+  return typeof value === "string" ? redactAuditString(value) : value;
 };
 
 const sanitizeAuditData = (value) => sanitizeAuditValue(value);

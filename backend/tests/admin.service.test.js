@@ -117,7 +117,7 @@ test("admin waitlisting releases a stale slot hold and audits inside the transac
     assert.equal(updates[0].reservedUntil, null);
     assert.deepEqual(deletedHolds, [{ registrationId: "registration-1" }]);
     assert.equal(audits.length, 1);
-    assert.equal(audits[0].actorUserId, "admin-1");
+    assert.equal(audits[0].actorUserId, null);
     assert.deepEqual(audits[0].afterData, { status: "waitlisted", reason: "Capacity changed" });
   } finally {
     restore();

@@ -353,6 +353,14 @@ const startProviderLink = asyncHandler(async (req, res) => {
 const getOAuthLinkRedirect = (marker) =>
   getAppRedirectUrl(`${OAUTH_LINK_PROFILE_REDIRECT}&oauth=${marker}`);
 
+const recordOptionalSecurityAudit = async (entry) => {
+  try {
+    await recordAudit(entry);
+  } catch (error) {
+    logger.warn?.("Optional OAuth audit persistence failed.", { action: entry.action, error });
+  }
+};
+
 const completeOAuthLink = async ({ provider, req, res }) => {
   try {
     const result = await handleOAuthLinkCallback({
@@ -366,7 +374,7 @@ const completeOAuthLink = async ({ provider, req, res }) => {
       userId: req.user.id,
     });
 
-    await recordAudit({
+    await recordOptionalSecurityAudit({
       ...requestAuditContext(req),
       action: "oauth.account.linked",
       targetType: "OAuthAccount",
@@ -418,7 +426,7 @@ const unlinkProvider = asyncHandler(async (req, res) => {
     userId: req.user.id,
     provider,
   });
-  await recordAudit({
+  await recordOptionalSecurityAudit({
     ...requestAuditContext(req),
     action: "oauth.account.unlinked",
     targetType: "OAuthAccount",

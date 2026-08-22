@@ -1,5 +1,5 @@
 const { asyncHandler } = require("../../lib/async-handler");
-const { recordAudit, requestAuditContext } = require("../../lib/audit");
+const { requestAuditContext } = require("../../lib/audit");
 const {
   listPublicTournaments,
   getPublicTournamentBySlug,
@@ -62,8 +62,8 @@ const createTournament = asyncHandler(async (req, res) => {
   const tournament = await createAdminTournament({
     body: req.body,
     files: req.files,
+    auditContext: requestAuditContext(req),
   });
-  await recordAudit({ ...requestAuditContext(req), action: "tournament.created", targetType: "Tournament", targetId: tournament.id, afterData: { slug: tournament.slug, status: tournament.status } });
 
   res.status(201).json({
     success: true,
@@ -77,8 +77,8 @@ const updateTournament = asyncHandler(async (req, res) => {
     tournamentId: req.params.tournamentId,
     body: req.body,
     files: req.files,
+    auditContext: requestAuditContext(req),
   });
-  await recordAudit({ ...requestAuditContext(req), action: "tournament.updated", targetType: "Tournament", targetId: tournament.id, afterData: { slug: tournament.slug, status: tournament.status, isPublished: tournament.isPublished } });
 
   res.status(200).json({
     success: true,
@@ -88,8 +88,7 @@ const updateTournament = asyncHandler(async (req, res) => {
 });
 
 const deleteTournament = asyncHandler(async (req, res) => {
-  await deleteAdminTournament(req.params.tournamentId);
-  await recordAudit({ ...requestAuditContext(req), action: "tournament.deleted", targetType: "Tournament", targetId: req.params.tournamentId });
+  await deleteAdminTournament(req.params.tournamentId, requestAuditContext(req));
 
   res.status(200).json({
     success: true,
@@ -148,8 +147,7 @@ const getTournamentBracket = asyncHandler(async (req, res) => {
 });
 
 const generateBracket = asyncHandler(async (req, res) => {
-  const bracket = await generateTournamentBracket(req.params.tournamentId);
-  await recordAudit({ ...requestAuditContext(req), action: "tournament.bracket.generated", targetType: "Tournament", targetId: req.params.tournamentId, afterData: { status: bracket.status || null } });
+  const bracket = await generateTournamentBracket(req.params.tournamentId, requestAuditContext(req));
 
   res.status(201).json({
     success: true,
@@ -162,9 +160,9 @@ const updateBracketMatch = asyncHandler(async (req, res) => {
   const bracket = await updateTournamentBracketMatch(
     req.params.tournamentId,
     req.params.matchId,
-    req.body
+    req.body,
+    requestAuditContext(req)
   );
-  await recordAudit({ ...requestAuditContext(req), action: "tournament.bracket.match_updated", targetType: "TournamentBracketMatch", targetId: req.params.matchId, afterData: { status: bracket.status || null } });
 
   res.status(200).json({
     success: true,
@@ -174,8 +172,7 @@ const updateBracketMatch = asyncHandler(async (req, res) => {
 });
 
 const publishBracket = asyncHandler(async (req, res) => {
-  const bracket = await publishTournamentBracket(req.params.tournamentId, req.body);
-  await recordAudit({ ...requestAuditContext(req), action: "tournament.bracket.visibility_changed", targetType: "Tournament", targetId: req.params.tournamentId, afterData: { status: bracket.status || null } });
+  const bracket = await publishTournamentBracket(req.params.tournamentId, req.body, requestAuditContext(req));
 
   res.status(200).json({
     success: true,
