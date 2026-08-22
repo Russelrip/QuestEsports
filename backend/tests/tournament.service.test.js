@@ -494,6 +494,48 @@ test("child tournament attachment fails closed when its transaction audit fails"
   } finally { restore(); }
 });
 
+test("admin tournament update reads its forensic before state inside the mutation transaction", async () => {
+  let transactionActive = false;
+  let readInsideTransaction = false;
+  let updateInsideTransaction = false;
+  const existing = { id: "tournament-update-boundary", ...buildAdminTournamentBody() };
+  const prisma = {
+    tournament: {
+      findUnique: async () => {
+        readInsideTransaction = transactionActive;
+        return existing;
+      },
+      findFirst: async () => null,
+      update: async ({ data }) => {
+        updateInsideTransaction = transactionActive;
+        return { ...existing, ...data, _count: { teamRegistrations: 0 }, teamRegistrations: [], adminSlotReservations: [], sponsors: [] };
+      },
+    },
+    $transaction: async (work) => {
+      transactionActive = true;
+      try { return await work(prisma); } finally { transactionActive = false; }
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: { persistTournamentBannerUpload: async () => null, persistTournamentScheduleUpload: async () => null, removeUploadFiles: async () => undefined },
+    [teamServiceModulePath]: {},
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [auditModulePath]: { recordAuditInTransaction: async () => undefined },
+  });
+  try {
+    await tournamentService.updateAdminTournament({
+      tournamentId: existing.id,
+      body: buildAdminTournamentBody({ title: "Updated Quest Cup" }),
+      files: {},
+      auditContext: { actorUserId: "admin-1", requestId: "req-update-boundary" },
+    });
+    assert.equal(readInsideTransaction, true);
+    assert.equal(updateInsideTransaction, true);
+  } finally { restore(); }
+});
+
 test("admin tournament creation carries request context and fails closed on audit failure", async () => {
   const auditEntries = [];
   const prisma = {
@@ -1354,9 +1396,14 @@ test("a TBA registration deadline does not close an otherwise open tournament", 
 
 test("deleteAdminTournament removes private proofs and only unreferenced registration logos", async () => {
   const removedUploads = [];
+  let transactionActive = false;
+  let readInsideTransaction = false;
+  let deleteInsideTransaction = false;
   const prisma = {
     tournament: {
-      findUnique: async () => ({
+      findUnique: async () => {
+        readInsideTransaction = transactionActive;
+        return ({
         id: "tournament-1",
         bannerImageName: "banner.webp",
         heroImageName: null,
@@ -1375,13 +1422,21 @@ test("deleteAdminTournament removes private proofs and only unreferenced registr
           },
           { teamLogoName: "orphan-logo.webp", payments: [] },
         ],
-      }),
-      deleteMany: async () => ({ count: 1 }),
+        });
+      },
+      deleteMany: async () => {
+        deleteInsideTransaction = transactionActive;
+        return { count: 1 };
+      },
     },
     teamRegistration: { count: async () => 0 },
     savedTeam: {
       count: async ({ where }) => where.logoName === "shared-logo.webp" ? 1 : 0,
     },
+  };
+  prisma.$transaction = async (work) => {
+    transactionActive = true;
+    try { return await work(prisma); } finally { transactionActive = false; }
   };
   const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
@@ -1398,6 +1453,8 @@ test("deleteAdminTournament removes private proofs and only unreferenced registr
 
   try {
     await tournamentService.deleteAdminTournament("tournament-1");
+    assert.equal(readInsideTransaction, true);
+    assert.equal(deleteInsideTransaction, true);
     assert.deepEqual(removedUploads, [
       { directory: "uploads/tournament-banners", filename: "banner.webp" },
       { directory: "private/bank-transfer-proofs", filename: "private-proof.webp" },

@@ -34,6 +34,7 @@ test("generateTournamentBracket uses approved teams and pads non-power-of-two fi
       },
     },
   };
+  prismaMock.prisma.$transaction = async (work) => work(prismaMock.prisma);
 
   const { module: bracketService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: prismaMock,
@@ -98,6 +99,8 @@ test("bracket regeneration audits the actual existing before snapshot", async ()
 
 test("bracket publication carries request context and fails closed on audit failure", async () => {
   const updates = [];
+  let transactionActive = false;
+  let readInsideTransaction = false;
   const bracket = {
     id: "bracket-audit",
     tournamentId: "tournament-audit",
@@ -107,10 +110,13 @@ test("bracket publication carries request context and fails closed on audit fail
   };
   const prisma = {
     tournamentBracket: {
-      findUnique: async () => bracket,
-      update: async ({ data }) => { updates.push(data); return { ...bracket, ...data }; },
+      findUnique: async () => { readInsideTransaction = transactionActive; return bracket; },
+      update: async ({ data }) => { updates.push(data); assert.equal(transactionActive, true); return { ...bracket, ...data }; },
     },
-    $transaction: async (work) => work(prisma),
+    $transaction: async (work) => {
+      transactionActive = true;
+      try { return await work(prisma); } finally { transactionActive = false; }
+    },
   };
   const { module: bracketService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
@@ -123,12 +129,16 @@ test("bracket publication carries request context and fails closed on audit fail
       }),
       /bracket audit unavailable/,
     );
+    assert.equal(readInsideTransaction, true);
     assert.equal(updates.length, 1, "the publication and audit share the transaction boundary");
   } finally { restore(); }
 });
 
 test("updateTournamentBracketMatch completes a ready match and advances the winner", async () => {
   let currentBracket = null;
+  let transactionActive = false;
+  let readInsideTransaction = false;
+  let updateInsideTransaction = false;
   const prismaMock = {
     prisma: {
       tournament: {
@@ -153,8 +163,9 @@ test("updateTournamentBracketMatch completes a ready match and advances the winn
           };
           return currentBracket;
         },
-        findUnique: async () => currentBracket,
+        findUnique: async () => { readInsideTransaction = transactionActive; return currentBracket; },
         update: async ({ data }) => {
+          updateInsideTransaction = transactionActive;
           currentBracket = {
             ...currentBracket,
             ...data,
@@ -164,6 +175,10 @@ test("updateTournamentBracketMatch completes a ready match and advances the winn
         },
       },
     },
+  };
+  prismaMock.prisma.$transaction = async (work) => {
+    transactionActive = true;
+    try { return await work(prismaMock.prisma); } finally { transactionActive = false; }
   };
 
   const { module: bracketService, restore } = loadModuleWithMocks(servicePath, {
@@ -183,6 +198,8 @@ test("updateTournamentBracketMatch completes a ready match and advances the winn
     assert.equal(updatedMatch.status, 4);
     assert.equal(updatedMatch.opponent1.result, "win");
     assert.equal(nextWinnerMatch.opponent1.id, updatedMatch.opponent1.id);
+    assert.equal(readInsideTransaction, true);
+    assert.equal(updateInsideTransaction, true);
   } finally {
     restore();
   }

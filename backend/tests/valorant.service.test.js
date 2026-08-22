@@ -2030,7 +2030,58 @@ test("SERIES_ALREADY_FINALIZED reconciliation GET failure preserves the original
     assert.equal(operationUpdates.at(-1).status, "reconciliation_required");
     assert.equal(operationUpdates.at(-1).responseCode, 409);
     assert.equal(operationUpdates.at(-1).fastapiRequestId, "finalize-get-failure");
+    assert.equal(operationUpdates.at(-1).responseSummary.finalize.responseCode, 409);
+    assert.equal(operationUpdates.at(-1).responseSummary.finalize.requestId, "finalize-get-failure");
+    assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.responseCode, 502);
+    assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.requestId, "reconcile-read-failure");
     assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.errorCode, "valorant_read_failed");
+  } finally { restore(); }
+});
+
+test("generic reconciliation GET failure preserves read metadata without claiming an observed commit", async () => {
+  const operationUpdates = [];
+  const audits = [];
+  const prisma = {
+    questValorantSeries: {
+      findUnique: async () => ({ id: "series-generic-read-failure", status: "draft", valorantSeriesUuid: "external-generic-read-failure" }),
+    },
+    questValorantOperation: {
+      update: async ({ data }) => { operationUpdates.push(data); return data; },
+    },
+    $transaction: async (work) => work(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaPath]: { prisma },
+    [clientPath]: {
+      valorantRequest: async () => {
+        throw new InternalServiceError("reconciliation read unavailable", { code: "valorant_read_failed", status: 503, requestId: "generic-read-failure" });
+      },
+    },
+    [mapperPath]: {},
+    [envPath]: envMock,
+    [httpErrorPath]: { HttpError },
+    [auditPath]: {
+      recordAuditInTransaction: async (_tx, entry) => audits.push(entry),
+    },
+  });
+  try {
+    await assert.rejects(
+      service.reconcileSeries({
+        seriesId: "series-generic-read-failure",
+        actorUserId: "user-1",
+        requestId: "req-generic-read-failure",
+        operationId: "operation-generic-read-failure",
+        operationExternalId: "external-operation",
+      }),
+      (error) => error.statusCode === 503 && /reconciliation is required/.test(error.message),
+    );
+    const operation = operationUpdates.at(-1);
+    assert.equal(operation.responseCode, 503);
+    assert.equal(operation.fastapiRequestId, "generic-read-failure");
+    assert.equal(operation.responseSummary.finalize, null);
+    assert.equal(operation.responseSummary.reconciliation.responseCode, 503);
+    assert.equal(operation.responseSummary.reconciliation.requestId, "generic-read-failure");
+    assert.equal(audits.at(-1).afterData.upstreamCommitted, false);
   } finally { restore(); }
 });
 
@@ -2088,11 +2139,16 @@ test("draft reconciliation records evidence but does not finalize the local proj
   });
   try {
     await assert.rejects(
-      service.reconcileSeries({ seriesId: "series-draft", actorUserId: "user-1", requestId: "req-draft", ipAddress: "127.0.0.1", operationId: "operation-draft", operationExternalId: "external-operation" }),
+      service.reconcileSeries({ seriesId: "series-draft", actorUserId: "user-1", requestId: "req-draft", ipAddress: "127.0.0.1", operationId: "operation-draft", operationExternalId: "external-operation", finalizeError: new FastApiError("already finalized", { code: "SERIES_ALREADY_FINALIZED", status: 409, requestId: "draft-finalize-request" }) }),
       (error) => error.code === "VALORANT_FINALIZE_RECONCILIATION_REQUIRED" && error.statusCode === 503,
     );
     assert.equal(projectionUpdates, 0);
     assert.equal(operationUpdates.at(-1).status, "reconciliation_required");
+    assert.equal(operationUpdates.at(-1).responseCode, 409);
+    assert.equal(operationUpdates.at(-1).fastapiRequestId, "draft-finalize-request");
+    assert.equal(operationUpdates.at(-1).responseSummary.finalize.responseCode, 409);
+    assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.responseCode, 200);
+    assert.equal(operationUpdates.at(-1).responseSummary.reconciliation.requestId, "draft-read");
   } finally { restore(); }
 });
 

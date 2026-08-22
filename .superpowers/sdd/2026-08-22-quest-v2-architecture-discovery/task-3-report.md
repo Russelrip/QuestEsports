@@ -63,10 +63,10 @@ Added or completed audit events for:
 | Veto team/toss/action mutations | veto controller | Yes for staff overrides | State transaction for staff overrides; captain self-service does not require audit | room outcome, no grant token | High |
 | VALORANT mutations | VALORANT controller + operation ledger | Yes | Operation/remote contract | operation/status metadata | High |
 | Staff assignment | staff controller | Yes | Legacy post-write | assignment outcome | High |
-| Tournament/bracket admin mutations | tournament controller | Yes | Mutation transaction when privileged audit context is present | status/visibility metadata | High |
+| Tournament/bracket admin mutations | tournament controller | Yes | Audited tournament mutation transaction; bracket match/publication transaction | status/visibility metadata | High |
 | Slot reservation | admin controller | Yes | Existing service transaction plus audit boundary | expiry/registration | High |
 | Ticket admin mutations | ticket controller | Yes | Ticket mutation transaction | status/result metadata | High |
-| OAuth link/unlink | auth controller | Yes | OAuth state transaction plus audit boundary | provider/result only | High |
+| OAuth link/unlink | auth controller | Yes | OAuth state/link mutation transaction; optional post-mutation audit callback | provider/result only | High |
 
 ## Test-first regressions
 
@@ -130,6 +130,50 @@ changes were made.
   functions.
 - `npm run test:integration`: passed, 7/7. Expected constraint, worker, and
   uniqueness diagnostic logs were emitted by exercised integration cases.
+
+## Fix round 5 — P0-003 final review findings
+
+Implemented on the current HEAD. Scope remains limited to VALORANT
+reconciliation metadata, tournament/bracket mutation transaction boundaries,
+regressions, and this report. No schema, migration, frontend, or plan changes
+were made.
+
+### Findings closed
+
+- `SERIES_ALREADY_FINALIZED` keeps the original finalize status/request ID as
+  the operation's primary metadata for finalized adoption, draft/unconfirmed
+  reads, and reconciliation GET failures. GET status/request ID/error/result
+  evidence is stored under a separate `reconciliation` summary.
+- Generic reconciliation GET failures retain their known read status/request
+  ID, record `upstreamCommitted: false`, and do not adopt or imply an observed
+  committed projection.
+- Tournament update/delete and bracket match/publication before-state reads
+  now occur inside the same Prisma transaction as their mutation and audit
+  when audit context is present. Delete and bracket mutation paths use the
+  transaction boundary consistently even without audit context.
+- Corrected the matrix to describe OAuth link/unlink auditing as optional
+  post-mutation controller telemetry, and bracket publication as a mutation
+  transaction. The matrix now explicitly avoids claiming a fault-injected
+  OAuth outage regression that is not present in the test suite.
+
+### Fix-round regressions
+
+- Finalize adoption, draft/unconfirmed reconciliation, trusted GET failure,
+  generic GET failure, and both primary/reconciliation metadata sets.
+- Tournament update/delete transaction-boundary seam assertions.
+- Bracket match/publication transaction-boundary seam assertions.
+
+### Fix-round validation
+
+- Focused affected-module suite: passed, 77/77 tests.
+- `npm test`: passed, 707 tests; 9 configured VALORANT E2E tests skipped for
+  missing external environment variables.
+- `npm run test:coverage`: passed; 77.92% lines, 68.37% branches, 76.37%
+  functions.
+- `npm run test:integration`: passed, 7/7. Expected uniqueness and worker
+  diagnostic logs were emitted by exercised integration cases.
+- `npm run lint`: passed with 25 warnings and no errors; warnings are existing
+  unused-argument/fixture warnings.
 - `npm run lint`: passed with 25 pre-existing warnings and no errors.
 
 ## Fix round 2 — P0-003 review findings
@@ -173,7 +217,7 @@ schema, frontend, plan, or production-data changes were made.
 | Ticket mutations | preserve atomic scan/reissue/status evidence | existing ticket mutation suite remains green |
 | Tournament/bracket | preserve mutation rollback and actual regeneration before state | existing tournament/bracket suite remains green |
 | Veto staff/captain | staff commands fail closed on audit failure; captain self-service remains valid | existing veto authorization/action suite remains green |
-| OAuth/proof | optional audit outages do not turn committed self-service into failures | existing OAuth/bank-proof suite remains green |
+| OAuth/proof | OAuth link/unlink and proof flows preserve their implemented optional-audit semantics; this matrix does not claim a fault-injected OAuth outage test | existing OAuth/bank-proof route/service coverage remains green |
 | VALORANT finalize | mapping, result-audit failure, reconciliation status, and response semantics | existing finalize intent/result reconciliation suite remains green |
 
 Validation completed for this round:
@@ -328,12 +372,12 @@ the service rather than attempting a misleading post-commit result audit.
 | Ticket reissue/status | token version or status before/after | ticket transaction | fail closed | ticket mutation tests |
 | Ticket event admin | slug/capacity/status before/after | ticket transaction | fail closed | ticket/admin event suite |
 | Tournament admin create/update/delete | slug/status/publication before/after | tournament transaction | fail closed | tournament service suite |
-| Bracket generate/update/publish | seed count, scores/winner, visibility before/after | bracket transaction | fail closed | bracket service/controller suite |
+| Bracket generate/update/publish | seed count, scores/winner, visibility before/after | match/publication mutation transaction; audited generation uses the generation transaction | fail closed when audit context is supplied | bracket service/controller suite |
 | Admin user/contact/recruitment | role/verification, read state, status/deletion outcome | controller audit boundary | existing response semantics | admin service/controller suite |
 | Media/poster/image mutations | asset/poster identity/count/status; no file bytes | controller audit boundary | existing upload rollback semantics | media library/event album/upload suites |
 | Saved-team/captain/staff mutations | existing safe identity/status evidence | existing controller audit boundaries | existing flows preserved | admin/staff/team suites |
 | Match-room staff moderation/support/lock/sync | room/message/member/request outcome; no private body contents | existing controller audit boundary | existing status semantics | match-room service tests |
-| OAuth link/unlink and mobile OAuth safety | provider/link state only; grants/session/codes never recorded | optional link/unlink audit | preserves self-service flow on audit outage | OAuth service/controller/route tests |
+| OAuth link/unlink and mobile OAuth safety | provider/link state only; grants/session/codes never recorded | optional post-mutation controller audit; OAuth state/link mutation remains transaction-scoped | preserves self-service flow when optional audit persistence fails | OAuth service/controller/route coverage; no dedicated fault-injected outage assertion |
 | CSRF/origin protections | no mutation audit added; security middleware decision | middleware | existing 401/403 behavior preserved | `security.test.js` CSRF/origin cases |
 | Rate limits | no sensitive request payload logged/audited | rate-limit middleware | existing 429 behavior preserved | `rate-limit.test.js` |
 | Log/audit leakage | sanitizer/redactor coverage for sessions, grants, signatures, secrets, ciphertext, PUUIDs, buffers/private uploads | shared helper/logger | sensitive values replaced | `audit.test.js`, observability/security suites |

@@ -997,6 +997,7 @@ const reconcileSeries = async ({
   if (!series) throw new HttpError(404, "Series not found.");
   if (!series.valorantSeriesUuid) throw new HttpError(409, "This series has no VALORANT series yet.");
 
+  const trustedAlreadyFinalized = finalizeError?.code === "SERIES_ALREADY_FINALIZED";
   let response;
   try {
     response = await valorantRequest({
@@ -1008,6 +1009,12 @@ const reconcileSeries = async ({
     });
   } catch (error) {
     if (!operationId) throw error;
+    const primaryResponseCode = trustedAlreadyFinalized
+      ? finalizeError?.status || null
+      : error?.status || null;
+    const primaryRequestId = trustedAlreadyFinalized
+      ? finalizeError?.requestId || null
+      : error?.requestId || null;
     try {
       await runTransaction(async (tx) => {
         const current = await tx.questValorantSeries.findUnique({
@@ -1024,7 +1031,8 @@ const reconcileSeries = async ({
             operationId: operationExternalId,
             finalizeError: finalizeError?.code || finalizeError?.message || null,
             reconciliationError: error?.code || error?.message || "reconciliation read failed",
-            upstreamCommitted: true,
+            upstreamCommitted: false,
+            upstreamCommitSignal: trustedAlreadyFinalized ? finalizeError.code : null,
           },
           requestId,
           ipAddress,
@@ -1034,19 +1042,20 @@ const reconcileSeries = async ({
           data: {
             status: "reconciliation_required",
             errorCode: error?.code || "VALORANT_RECONCILIATION_READ_FAILED",
-            responseCode: finalizeError?.status || null,
-            fastapiRequestId: finalizeError?.requestId || null,
+            responseCode: primaryResponseCode,
+            fastapiRequestId: primaryRequestId,
             responseSummary: {
-              finalize: {
+              finalize: trustedAlreadyFinalized ? {
                 responseCode: finalizeError?.status || null,
                 requestId: finalizeError?.requestId || null,
                 errorCode: finalizeError?.code || null,
                 responseSummary: finalizeError?.responseSummary || null,
-              },
+              } : null,
               reconciliation: {
-                responseCode: null,
-                requestId: null,
+                responseCode: error?.status || null,
+                requestId: error?.requestId || null,
                 errorCode: error?.code || "VALORANT_RECONCILIATION_READ_FAILED",
+                responseSummary: error?.responseSummary || null,
               },
             },
           },
@@ -1054,17 +1063,24 @@ const reconcileSeries = async ({
       });
     } catch (transactionError) {
       await markOperationReconciliationRequired(operationId, transactionError, {
-        responseCode: finalizeError?.status || null,
-        fastapiRequestId: finalizeError?.requestId || null,
-        upstreamCommitted: true,
+        responseCode: primaryResponseCode,
+        fastapiRequestId: primaryRequestId,
+        upstreamCommitted: false,
+        upstreamCommitSignal: trustedAlreadyFinalized ? finalizeError.code : null,
         operationId: operationExternalId,
-        finalize: {
+        finalize: trustedAlreadyFinalized ? {
           responseCode: finalizeError?.status || null,
           requestId: finalizeError?.requestId || null,
           errorCode: finalizeError?.code || null,
-        },
+        } : null,
         finalizeError: finalizeError?.code || finalizeError?.message || null,
         reconciliationError: error?.code || error?.message || "reconciliation read failed",
+        reconciliation: {
+          responseCode: error?.status || null,
+          requestId: error?.requestId || null,
+          errorCode: error?.code || "VALORANT_RECONCILIATION_READ_FAILED",
+          responseSummary: error?.responseSummary || null,
+        },
       });
     }
     throw new HttpError(503, "VALORANT finalize committed upstream; reconciliation is required.");
@@ -1078,7 +1094,6 @@ const reconcileSeries = async ({
     mappingError = error;
   }
 
-  const trustedAlreadyFinalized = finalizeError?.code === "SERIES_ALREADY_FINALIZED";
   if (view?.status === "finalized" || (mappingError && trustedAlreadyFinalized)) {
     let transactionError = null;
     try {
@@ -1224,6 +1239,7 @@ const reconcileSeries = async ({
             externalStatus: view?.status || null,
             externalResult: response.data,
             finalizeError: finalizeError?.code || finalizeError?.message || null,
+            upstreamCommitted: false,
           },
           requestId,
           ipAddress,
@@ -1233,9 +1249,21 @@ const reconcileSeries = async ({
           data: {
             status: "reconciliation_required",
             errorCode: reconciliationError.code,
-            responseCode: response.status,
-            fastapiRequestId: response.requestId,
-            responseSummary: response.data || undefined,
+            responseCode: trustedAlreadyFinalized ? finalizeError?.status || null : null,
+            fastapiRequestId: trustedAlreadyFinalized ? finalizeError?.requestId || null : null,
+            responseSummary: {
+              finalize: trustedAlreadyFinalized ? {
+                responseCode: finalizeError?.status || null,
+                requestId: finalizeError?.requestId || null,
+                errorCode: finalizeError?.code || null,
+                responseSummary: finalizeError?.responseSummary || null,
+              } : null,
+              reconciliation: {
+                responseCode: response.status,
+                requestId: response.requestId || null,
+                data: response.data,
+              },
+            },
           },
         });
       });
@@ -1244,10 +1272,22 @@ const reconcileSeries = async ({
     }
     if (transactionError) {
       await markOperationReconciliationRequired(operationId, transactionError, {
-        upstreamCommitted: true,
+        responseCode: trustedAlreadyFinalized ? finalizeError?.status || null : null,
+        fastapiRequestId: trustedAlreadyFinalized ? finalizeError?.requestId || null : null,
+        upstreamCommitted: false,
+        upstreamCommitSignal: trustedAlreadyFinalized ? finalizeError.code : null,
         operationId: operationExternalId,
         externalResult: response.data,
         externalStatus: view?.status || null,
+        finalize: trustedAlreadyFinalized ? {
+          responseCode: finalizeError?.status || null,
+          requestId: finalizeError?.requestId || null,
+          errorCode: finalizeError?.code || null,
+        } : null,
+        reconciliation: {
+          responseCode: response.status,
+          requestId: response.requestId || null,
+        },
       });
       try {
         await recordAudit({

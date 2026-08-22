@@ -1557,13 +1557,15 @@ const updateAdminTournament = async ({ tournamentId, body, files, auditContext =
     });
     tournament = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
       ? await prisma.$transaction(async (tx) => {
+        const before = await tx.tournament.findUnique({ where: { id: tournamentId } });
+        if (!before) throw new HttpError(404, "Tournament not found.");
         const updated = await persist(tx);
         await recordAuditInTransaction(tx, {
           ...auditContext,
           action: "tournament.updated",
           targetType: "Tournament",
           targetId: updated.id,
-          beforeData: { slug: existingTournament.slug, status: existingTournament.status, isPublished: existingTournament.isPublished },
+          beforeData: { slug: before.slug, status: before.status, isPublished: before.isPublished },
           afterData: { slug: updated.slug, status: updated.status, isPublished: updated.isPublished },
         });
         return updated;
@@ -1625,43 +1627,38 @@ const attachTournamentToSeries = async ({ tournamentId, seriesId, seriesOrder, a
 };
 
 const deleteAdminTournament = async (tournamentId, auditContext = {}) => {
-  const existingTournament = await prisma.tournament.findUnique({
-    where: { id: tournamentId },
-    include: {
-      sponsors: { select: { logoImageName: true } },
-      teamRegistrations: {
-        select: {
-          teamLogoName: true,
-          payments: {
-            select: {
-              bankTransferProof: { select: { storedFilename: true } },
+  const deleteMutation = async (database) => database.tournament.deleteMany({ where: { id: tournamentId } });
+  const { deleted, existingTournament } = await prisma.$transaction(async (tx) => {
+    const before = await tx.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        sponsors: { select: { logoImageName: true } },
+        teamRegistrations: {
+          select: {
+            teamLogoName: true,
+            payments: {
+              select: {
+                bankTransferProof: { select: { storedFilename: true } },
+              },
             },
           },
         },
       },
-    },
+    });
+    if (!before) throw new HttpError(404, "Tournament not found.");
+
+    const result = await deleteMutation(tx);
+    if (result.count && (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress)) {
+      await recordAuditInTransaction(tx, {
+        ...auditContext,
+        action: "tournament.deleted",
+        targetType: "Tournament",
+        targetId: tournamentId,
+        beforeData: { slug: before.slug, status: before.status, isPublished: before.isPublished },
+      });
+    }
+    return { deleted: result, existingTournament: before };
   });
-
-  if (!existingTournament) {
-    throw new HttpError(404, "Tournament not found.");
-  }
-
-  const deleteMutation = async (database) => database.tournament.deleteMany({ where: { id: tournamentId } });
-  const deleted = auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress
-    ? await prisma.$transaction(async (tx) => {
-      const result = await deleteMutation(tx);
-      if (result.count) {
-        await recordAuditInTransaction(tx, {
-          ...auditContext,
-          action: "tournament.deleted",
-          targetType: "Tournament",
-          targetId: tournamentId,
-          beforeData: { slug: existingTournament.slug, status: existingTournament.status, isPublished: existingTournament.isPublished },
-        });
-      }
-      return result;
-    })
-    : await deleteMutation(prisma);
 
   if (deleted.count === 0) {
     throw new HttpError(404, "Tournament not found.");
