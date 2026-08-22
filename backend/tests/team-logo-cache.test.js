@@ -76,23 +76,13 @@ test("team and admin team mutations invalidate both local projection tags", () =
       ["tournaments", "foundation"],
       ["tournaments", "foundation"],
     ]);
-    assert.deepEqual(adminInvalidations, [
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-      ["tournaments", "foundation"],
-    ]);
+    assert.deepEqual(adminInvalidations, Array.from({ length: 11 }, () => ["tournaments", "foundation"]));
     assert.ok(captainPatch.includes(teamInvalidationMiddleware));
     assert.ok(adminPatch.includes(adminInvalidationMiddleware));
     for (const route of [
       "PATCH /admin/team-registrations/:registrationId/status",
       "PATCH /admin/team-registrations/:registrationId/game-ids",
+      "PATCH /admin/team-registrations/:registrationId/logo",
       "PATCH /admin/team-registrations/:registrationId/roster",
       "DELETE /admin/team-registrations/:registrationId",
       "POST /admin/team-registrations/:registrationId/slot-reservation",

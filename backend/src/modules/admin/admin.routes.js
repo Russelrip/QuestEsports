@@ -18,6 +18,7 @@ const {
   downloadTeamRegistrations,
   updateRegistrationStatus,
   updateRegistrationGameIds,
+  updateRegistrationLogo,
   correctRegistrationRoster,
   removeRegistration,
   reserveRegistrationSlot,
@@ -55,6 +56,12 @@ router.get("/admin/team-registrations/:registrationId", getTeamRegistration);
 router.get("/admin/tournaments/:tournamentId/registrations", getTournamentRegistrations);
 router.patch("/admin/team-registrations/:registrationId/status", invalidateCache("tournaments", "foundation"), updateRegistrationStatus);
 router.patch("/admin/team-registrations/:registrationId/game-ids", invalidateCache("tournaments", "foundation"), updateRegistrationGameIds);
+router.patch(
+  "/admin/team-registrations/:registrationId/logo",
+  imageUpload.single("teamLogo"),
+  invalidateCache("tournaments", "foundation"),
+  updateRegistrationLogo
+);
 router.patch("/admin/team-registrations/:registrationId/roster", invalidateCache("tournaments", "foundation"), correctRegistrationRoster);
 router.delete("/admin/team-registrations/:registrationId", invalidateCache("tournaments", "foundation"), removeRegistration);
 router.post("/admin/team-registrations/:registrationId/slot-reservation", invalidateCache("tournaments", "foundation"), reserveRegistrationSlot);

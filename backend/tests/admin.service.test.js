@@ -3264,3 +3264,193 @@ test("correctTeamRegistrationRoster rejects coach data when disabled and removal
   });
   await run({ game: "Valorant", registrationFields: [], minRosterSize: 1, maxRosterSize: 1, maxSubstitutes: 0, allowCoach: true, coachRequired: true }, { members, coach: null });
 });
+
+const registrationLogoHarness = ({ registration, persistFails = false }) => {
+  const updates = [];
+  const audits = [];
+  const cleaned = [];
+  const removedUploads = [];
+  const prisma = {
+    teamRegistration: {
+      findUnique: async () => registration,
+      update: async ({ data }) => {
+        updates.push(data);
+        return { ...registration, ...data };
+      },
+    },
+    auditLog: { create: async ({ data }) => { audits.push(data); return data; } },
+    $transaction: async (callback) => callback(prisma),
+  };
+  const uploadMock = {
+    persistTeamLogoUpload: async () => {
+      if (persistFails) throw new Error("upload rejected");
+      return { filename: "new-logo.png" };
+    },
+    teamLogoDirectory: "uploads/team-logos",
+  };
+  const cleanupMock = {
+    removeTeamLogoIfUnreferenced: async ({ filename }) => { cleaned.push(filename); return true; },
+    scheduleTeamLogoCleanup: async () => undefined,
+    removeUploadsQuietly: async (files) => { removedUploads.push(...files); },
+  };
+  return { prisma, uploadMock, cleanupMock, updates, audits, cleaned, removedUploads };
+};
+
+// Includes the extra relations `getAdminTeamRegistrationById` projects after
+// the write; the assertions below are about the mutation, not the projection.
+const unlinkedRegistration = (overrides = {}) => ({
+  id: "registration-1",
+  teamName: "OCG Valorant Academy",
+  teamLogoName: null,
+  savedTeamId: null,
+  members: [],
+  payments: [],
+  tournament: { id: "tournament-1", title: "Quest Cup" },
+  user: null,
+  savedTeam: null,
+  _count: { members: 0 },
+  ...overrides,
+});
+
+const auditContext = {
+  actorUserId: "3f1d4f4a-1f2e-4a0b-9c4d-2b7e5c8a9d10",
+  requestId: "request-1",
+  ipAddress: "127.0.0.1",
+};
+
+test("an unlinked registration accepts its own team logo", async () => {
+  const harness = registrationLogoHarness({ registration: unlinkedRegistration() });
+  const { module: adminService, restore } = loadAdminService(harness.prisma, harness.uploadMock, harness.cleanupMock);
+
+  try {
+    await adminService.updateTeamRegistrationLogo(
+      "registration-1",
+      { file: { originalname: "logo.png" } },
+      auditContext,
+    );
+
+    assert.deepEqual(harness.updates, [{ teamLogoName: "new-logo.png" }]);
+    assert.equal(harness.audits.length, 1);
+    assert.equal(harness.audits[0].action, "team_registration.logo_updated");
+    assert.deepEqual(harness.audits[0].beforeData, { teamLogoName: null });
+    assert.deepEqual(harness.audits[0].afterData, { teamLogoName: "new-logo.png" });
+    assert.deepEqual(harness.cleaned, [], "there was no previous file to clean up");
+  } finally {
+    restore();
+  }
+});
+
+test("replacing a registration logo cleans up the previous file only when unreferenced", async () => {
+  const harness = registrationLogoHarness({
+    registration: unlinkedRegistration({ teamLogoName: "old-logo.png" }),
+  });
+  const { module: adminService, restore } = loadAdminService(harness.prisma, harness.uploadMock, harness.cleanupMock);
+
+  try {
+    await adminService.updateTeamRegistrationLogo(
+      "registration-1",
+      { file: { originalname: "logo.png" } },
+      auditContext,
+    );
+
+    assert.deepEqual(harness.updates, [{ teamLogoName: "new-logo.png" }]);
+    // The shared-file check lives in removeTeamLogoIfUnreferenced, which counts
+    // both registration and saved-team references before deleting.
+    assert.deepEqual(harness.cleaned, ["old-logo.png"]);
+  } finally {
+    restore();
+  }
+});
+
+test("an unlinked registration logo can be removed", async () => {
+  const harness = registrationLogoHarness({
+    registration: unlinkedRegistration({ teamLogoName: "old-logo.png" }),
+  });
+  const { module: adminService, restore } = loadAdminService(harness.prisma, harness.uploadMock, harness.cleanupMock);
+
+  try {
+    await adminService.updateTeamRegistrationLogo("registration-1", { removeLogo: true }, auditContext);
+
+    assert.deepEqual(harness.updates, [{ teamLogoName: null }]);
+    assert.deepEqual(harness.audits[0].afterData, { teamLogoName: null });
+    assert.deepEqual(harness.cleaned, ["old-logo.png"]);
+  } finally {
+    restore();
+  }
+});
+
+test("a linked registration is refused so the saved team stays authoritative", async () => {
+  const harness = registrationLogoHarness({
+    registration: unlinkedRegistration({ savedTeamId: "saved-team-1" }),
+  });
+  const { module: adminService, restore } = loadAdminService(harness.prisma, harness.uploadMock, harness.cleanupMock);
+
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationLogo(
+        "registration-1",
+        { file: { originalname: "logo.png" } },
+        auditContext,
+      ),
+      (error) => error.statusCode === 409 && /saved team/i.test(error.message),
+    );
+    assert.deepEqual(harness.updates, [], "a linked registration is never written");
+    assert.deepEqual(harness.audits, []);
+  } finally {
+    restore();
+  }
+});
+
+test("a request with neither an upload nor a removal is rejected", async () => {
+  const harness = registrationLogoHarness({ registration: unlinkedRegistration() });
+  const { module: adminService, restore } = loadAdminService(harness.prisma, harness.uploadMock, harness.cleanupMock);
+
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationLogo("registration-1", {}, auditContext),
+      (error) => error.statusCode === 400,
+    );
+    assert.deepEqual(harness.updates, []);
+  } finally {
+    restore();
+  }
+});
+
+test("a missing registration is reported as not found", async () => {
+  const harness = registrationLogoHarness({ registration: null });
+  const { module: adminService, restore } = loadAdminService(harness.prisma, harness.uploadMock, harness.cleanupMock);
+
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationLogo("registration-1", { removeLogo: true }, auditContext),
+      (error) => error.statusCode === 404,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("a failed write discards the freshly uploaded file", async () => {
+  const harness = registrationLogoHarness({ registration: unlinkedRegistration() });
+  harness.prisma.$transaction = async () => { throw new Error("write failed"); };
+  const { module: adminService, restore } = loadAdminService(harness.prisma, harness.uploadMock, harness.cleanupMock);
+
+  try {
+    await assert.rejects(
+      adminService.updateTeamRegistrationLogo(
+        "registration-1",
+        { file: { originalname: "logo.png" } },
+        auditContext,
+      ),
+      (error) => /write failed/.test(error.message),
+    );
+    assert.deepEqual(
+      harness.removedUploads,
+      [{ directory: "uploads/team-logos", filename: "new-logo.png" }],
+      "the orphaned upload is removed rather than left on disk",
+    );
+    assert.deepEqual(harness.cleaned, [], "the previous logo is untouched when the write failed");
+  } finally {
+    restore();
+  }
+});

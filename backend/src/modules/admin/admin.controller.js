@@ -13,6 +13,7 @@ const {
   listTeamRegistrations,
   getAdminTeamRegistrationById,
   updateTeamRegistrationGameIds,
+  updateTeamRegistrationLogo,
   correctTeamRegistrationRoster,
   exportTeamRegistrations,
   listRecruitmentApplications,
@@ -217,6 +218,20 @@ const updateRegistrationGameIds = asyncHandler(async (req, res) => {
   });
 });
 
+const updateRegistrationLogo = asyncHandler(async (req, res) => {
+  const registration = await updateTeamRegistrationLogo(
+    req.params.registrationId,
+    { file: req.file, removeLogo: ["true", "1", "on"].includes(String(req.body?.removeLogo || "").trim().toLowerCase()) },
+    requestAuditContext(req),
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Registration logo updated successfully.",
+    registration,
+  });
+});
+
 const correctRegistrationRoster = asyncHandler(async (req, res) => {
   const result = await correctTeamRegistrationRoster(
     req.params.registrationId,
@@ -400,6 +415,7 @@ module.exports = {
   downloadTeamRegistrations,
   updateRegistrationStatus,
   updateRegistrationGameIds,
+  updateRegistrationLogo,
   correctRegistrationRoster,
   removeRegistration,
   reserveRegistrationSlot,

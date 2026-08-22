@@ -2170,6 +2170,70 @@ const deleteTeamRegistration = async (registrationId, auditContext = {}) => {
   }
 };
 
+// Manages the logo of a registration that is not linked to a saved team. A
+// linked registration takes its logo from `SavedTeam.logoName`, which stays
+// authoritative, so writing one here would be silently invisible; those are
+// refused and pointed at the saved-team editor instead.
+const updateTeamRegistrationLogo = async (registrationId, { file, removeLogo } = {}, auditContext = {}) => {
+  const registration = await prisma.teamRegistration.findUnique({
+    where: { id: registrationId },
+    select: { id: true, teamName: true, teamLogoName: true, savedTeamId: true },
+  });
+  if (!registration) throw new HttpError(404, "Team registration not found.");
+  if (registration.savedTeamId) {
+    throw new HttpError(
+      409,
+      "This registration is linked to a saved team. Manage its logo on the saved team so every linked entry stays in sync.",
+    );
+  }
+  if (!file && !removeLogo) {
+    throw new HttpError(400, "Upload a team logo or ask for the current one to be removed.");
+  }
+
+  const persistedLogo = file ? await persistTeamLogoUpload(file) : null;
+  const nextLogoName = persistedLogo ? persistedLogo.filename : null;
+  const previousLogoName = registration.teamLogoName || null;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.teamRegistration.update({
+        where: { id: registrationId },
+        data: { teamLogoName: nextLogoName },
+      });
+      if (auditContext.actorUserId || auditContext.requestId || auditContext.ipAddress) {
+        await recordAuditInTransaction(tx, {
+          ...auditContext,
+          action: "team_registration.logo_updated",
+          targetType: "TeamRegistration",
+          targetId: registrationId,
+          beforeData: { teamLogoName: previousLogoName },
+          afterData: { teamLogoName: nextLogoName },
+        });
+      }
+    });
+  } catch (error) {
+    if (persistedLogo) {
+      await removeUploadsQuietly(
+        [{ directory: teamLogoDirectory, filename: persistedLogo.filename }],
+        { operation: "updateTeamRegistrationLogoRollback", registrationId },
+      );
+    }
+    throw error;
+  }
+
+  // Only after the write commits, and only if nothing else still points at it:
+  // logo files are shared between registrations and saved teams.
+  if (previousLogoName && previousLogoName !== nextLogoName) {
+    await removeTeamLogoIfUnreferenced({
+      prisma,
+      filename: previousLogoName,
+      context: { operation: "updateTeamRegistrationLogo", registrationId },
+    });
+  }
+
+  return getAdminTeamRegistrationById(registrationId);
+};
+
 const runLegacyPosterImport = async () => importLegacyPosters();
 const runPosterImageAssetMigration = async () => migrateImageAssetsToFilesystem();
 
@@ -2946,6 +3010,7 @@ module.exports = {
   listTeamRegistrations,
   getAdminTeamRegistrationById,
   updateTeamRegistrationGameIds,
+  updateTeamRegistrationLogo,
   correctTeamRegistrationRoster,
   exportTeamRegistrations,
   listRecruitmentApplications,

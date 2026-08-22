@@ -20,6 +20,10 @@ import {
   type TeamRegistrationSummary,
 } from "@/lib/admin";
 import { getCoachValidationMessage, type CoachDraft } from "@/lib/tournament-coach";
+import {
+  TEAM_LOGO_MAX_FILE_SIZE,
+  assertFileWithinUploadLimit,
+} from "@/lib/upload-limits";
 
 type RosterDraftMember = {
   key: string;
@@ -458,6 +462,7 @@ function RegistrationDetail({
 }) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [captainGameId, setCaptainGameId] = useState("");
+  const [teamLogo, setTeamLogo] = useState<File | null>(null);
   const [memberGameIds, setMemberGameIds] = useState<Record<string, string>>(
     {},
   );
@@ -698,6 +703,33 @@ function RegistrationDetail({
       showToast({
         tone: "error",
         title: "Unable to update slot hold",
+        description:
+          nextError instanceof Error ? nextError.message : "Request failed.",
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const saveRegistrationLogo = async (removeLogo: boolean) => {
+    if (!registration) return;
+    setBusyAction("logo");
+    try {
+      if (!removeLogo) assertFileWithinUploadLimit(teamLogo, TEAM_LOGO_MAX_FILE_SIZE, "Team logo");
+      const body = new FormData();
+      body.append("removeLogo", String(removeLogo));
+      if (!removeLogo && teamLogo) body.append("teamLogo", teamLogo);
+      await adminRequest(`/api/admin/team-registrations/${registration.id}/logo`, {
+        method: "PATCH",
+        body,
+      });
+      setTeamLogo(null);
+      showToast({ tone: "success", title: removeLogo ? "Registration logo removed" : "Registration logo updated" });
+      await onChanged();
+    } catch (nextError) {
+      showToast({
+        tone: "error",
+        title: "Unable to update the registration logo",
         description:
           nextError instanceof Error ? nextError.message : "Request failed.",
       });
@@ -1170,6 +1202,66 @@ function RegistrationDetail({
               ) : null}
             </div>
           ) : null}
+
+          <div className="mt-7 border border-purple-300/20 bg-purple-400/[0.06] p-4 sm:p-5">
+            <div>
+              <h4 className="text-sm font-semibold uppercase tracking-wide text-purple-100">
+                Team logo
+              </h4>
+              {registration.savedTeamLinked ? (
+                <p className="mt-1 text-sm text-slate-400">
+                  This registration is linked to a saved team, so the saved
+                  team&apos;s logo is used everywhere. Edit it on the team to keep
+                  every linked registration in sync.
+                </p>
+              ) : (
+                <>
+                  <p className="mt-1 text-sm text-slate-400">
+                    This registration is not linked to a saved team, so it carries
+                    its own logo. PNG, JPG, or WebP, up to 5&nbsp;MB.
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-4">
+                    {registration.logoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={registration.logoUrl}
+                        alt=""
+                        className="size-16 border border-white/10 object-cover"
+                      />
+                    ) : (
+                      <span className="flex size-16 items-center justify-center border border-white/10 bg-white/5 text-xs text-slate-500">
+                        None
+                      </span>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={busyAction !== null}
+                      onChange={(event) => setTeamLogo(event.target.files?.[0] ?? null)}
+                      className="max-w-full text-sm text-slate-300 file:mr-3 file:border file:border-white/10 file:bg-white/5 file:px-3 file:py-2 file:text-sm file:text-white"
+                    />
+                    <Button
+                      type="button"
+                      disabled={busyAction !== null || !teamLogo}
+                      onClick={() => void saveRegistrationLogo(false)}
+                    >
+                      {busyAction === "logo" ? "Saving..." : "Save logo"}
+                    </Button>
+                    {registration.logoUrl ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={busyAction !== null}
+                        onClick={() => void saveRegistrationLogo(true)}
+                      >
+                        Remove
+                      </Button>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
 
           <div className="mt-7 border border-purple-300/20 bg-purple-400/[0.06] p-4 sm:p-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
