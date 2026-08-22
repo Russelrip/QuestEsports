@@ -168,9 +168,27 @@ test("an envelope at the serialized byte limit round-trips through publish and s
 });
 
 test("reconnect backoff increases after repeated EOFs and stays bounded", async () => {
-  const originalSetTimeout = global.setTimeout;
   const requestedDelays = [];
+  const pendingTimers = [];
   const calls = [];
+  const setTimeoutImpl = (callback, delay) => {
+    const timer = { callback, cancelled: false };
+    requestedDelays.push(delay);
+    pendingTimers.push(timer);
+    return timer;
+  };
+  const clearTimeoutImpl = (timer) => {
+    timer.cancelled = true;
+  };
+  const flushMicrotasks = async () => {
+    for (let index = 0; index < 10; index += 1) await Promise.resolve();
+  };
+  const runNextTimer = async () => {
+    const timer = pendingTimers.shift();
+    assert.ok(timer);
+    if (!timer.cancelled) timer.callback();
+    await flushMicrotasks();
+  };
   const emptyStream = () =>
     new ReadableStream({
       start(controller) {
@@ -183,19 +201,16 @@ test("reconnect backoff increases after repeated EOFs and stays bounded", async 
       return response(200, { body: emptyStream() });
     },
     random: () => 1,
+    setTimeoutImpl,
+    clearTimeoutImpl,
   });
 
-  global.setTimeout = (callback, delay, ...args) => {
-    requestedDelays.push(delay);
-    return originalSetTimeout(callback, delay, ...args);
-  };
-  try {
-    await transport.start(() => {});
-    await new Promise((resolve) => originalSetTimeout(resolve, 60));
-  } finally {
-    await transport.stop();
-    global.setTimeout = originalSetTimeout;
-  }
+  await transport.start(() => {});
+  await flushMicrotasks();
+  await runNextTimer();
+  await runNextTimer();
+  await runNextTimer();
+  await transport.stop();
 
   assert.ok(calls.length >= 4);
   assert.deepEqual(requestedDelays.slice(0, 4), [5, 10, 10, 10]);

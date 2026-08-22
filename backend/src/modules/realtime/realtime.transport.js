@@ -55,6 +55,8 @@ const createRealtimeTransport = ({
   logger = {},
   now = () => new Date(),
   random = Math.random,
+  setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout,
 } = {}) => {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required for realtime transport.");
@@ -204,7 +206,7 @@ const createRealtimeTransport = ({
       Math.round(baseDelay * (0.5 + jitter * 0.5)),
     );
     reconnectAttempt += 1;
-    reconnectTimer = setTimeout(() => {
+    reconnectTimer = setTimeoutImpl(() => {
       reconnectTimer = null;
       if (running) subscribe();
     }, delay);
@@ -276,7 +278,7 @@ const createRealtimeTransport = ({
     if (!running && !reconnectTimer && !activeController) return;
     running = false;
     if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
+      clearTimeoutImpl(reconnectTimer);
       reconnectTimer = null;
     }
     if (activeController) activeController.abort();
