@@ -57,7 +57,9 @@ Do not point local development at production. Shared staging environments should
 
 Use `CACHE_DRIVER=upstash` whenever `API_PROCESS_COUNT` is greater than one.
 `API_PROCESS_COUNT` must equal the PM2 API worker count; all workers must share
-the same `REALTIME_PUBSUB_CHANNEL` and configured `REALTIME_WORKER_ID` base.
+the same `REALTIME_PUBSUB_CHANNEL`. When `REALTIME_WORKER_ID` is configured,
+use the same base on every worker; otherwise config supplies a process-derived
+fallback.
 The effective worker identity is `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`,
 so PM2 workers sharing the base still have distinct runtime identities. Set
 both `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` on every worker.
@@ -117,8 +119,9 @@ Legacy media import/migration commands remain available for controlled recovery 
 - OpenAPI JSON: `http://localhost:5001/api/openapi.json`
 
 `/api/health/live` is liveness only. `/api/health` and `/api/health/ready`
-are readiness aliases that check database and storage dependencies and may
-return `503` during maintenance or dependency failure.
+are readiness aliases that check database and storage dependencies and, when
+clustered realtime is enabled, the shared realtime transport; they may return
+`503` during maintenance or dependency failure.
 
 Route families cover authentication, sessions, tournaments, registrations, teams, event series, recruitment, contact messages, media, products, payments, tickets, brackets, matches, and admin operations. See [API Documentation](../docs/api-documentation.md) for contracts.
 

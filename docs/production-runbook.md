@@ -59,10 +59,11 @@ Use [backend/.env.example](../backend/.env.example) for the full variable list a
 For a multi-worker API, set `CACHE_DRIVER=upstash`, set
 `API_PROCESS_COUNT` to the exact PM2 API worker count, and configure
 `UPSTASH_REDIS_REST_URL` plus `UPSTASH_REDIS_REST_TOKEN` on every worker. All
-workers must use the same `REALTIME_PUBSUB_CHANNEL` and configured
-`REALTIME_WORKER_ID` base. The implementation creates each effective identity
-as `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`, so a shared PM2 base
-still produces distinct runtime identities. The shared transport uses the exact
+workers must use the same `REALTIME_PUBSUB_CHANNEL`. When
+`REALTIME_WORKER_ID` is configured, use the same base on every worker; otherwise
+config supplies a process-derived fallback. The implementation creates each
+effective identity as `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`, so
+a shared PM2 base still produces distinct runtime identities. The shared transport uses the exact
 Upstash REST requests below. The publish request uses Upstash's single-command
 protocol; the command array is the JSON body, not an object wrapper:
 
@@ -323,7 +324,8 @@ pm2 save --force
 ```
 
 Only after both liveness and a `200` readiness response (database and storage
-available) pass should the old root entry be removed. During maintenance,
+available, plus clustered realtime when enabled) pass should the old root entry
+be removed. During maintenance,
 readiness intentionally returns `503`; this procedure therefore rolls back to
 the root-owned process instead of claiming a safe handover. Then install the
 `deploy` systemd unit, stop the manually started deploy daemon once, and let
@@ -446,8 +448,9 @@ Do not run `pm2 save` while it is stopped, or the stopped state can survive a re
 
 Health endpoint semantics are fixed: `/api/health/live` is liveness only;
 `/api/health` and `/api/health/ready` are readiness aliases that check the
-database and storage and may return `503` during maintenance or dependency
-failure. `/api/openapi.json` is the API schema endpoint. During maintenance,
+database and storage, plus clustered realtime when enabled, and may return
+`503` during maintenance or dependency failure. `/api/openapi.json` is the API
+schema endpoint. During maintenance,
 liveness remains available while both readiness aliases intentionally return
 the maintenance `503`.
 

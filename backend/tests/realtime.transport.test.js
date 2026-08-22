@@ -313,6 +313,40 @@ test("subscribe aborts when the connection deadline expires and clears it after 
   assert.ok(establishedClearCalls >= 1);
 });
 
+test("subscribe keeps the connection deadline active while reading an error body", async () => {
+  let timeoutCallback;
+  let clearCalls = 0;
+  let releaseBody;
+  const errorBody = new Promise((resolve) => {
+    releaseBody = resolve;
+  });
+  const transport = createRealtimeTransport({
+    fetchImpl: async () => ({
+      ok: false,
+      status: 503,
+      text: async () => errorBody,
+    }),
+    setConnectionTimeoutImpl: (callback) => {
+      timeoutCallback = callback;
+      return { timeout: true };
+    },
+    clearConnectionTimeoutImpl: () => {
+      clearCalls += 1;
+    },
+  });
+
+  await transport.start(() => {});
+  await wait(5);
+  assert.equal(clearCalls, 0);
+
+  timeoutCallback();
+  assert.equal(clearCalls, 0);
+  releaseBody("upstream unavailable");
+  await wait(0);
+  assert.equal(clearCalls, 1);
+  await transport.stop();
+});
+
 test("a stopped subscription cannot affect a later start", async () => {
   let resolveFirst;
   let secondRequestOptions;
@@ -344,4 +378,38 @@ test("a stopped subscription cannot affect a later start", async () => {
   assert.equal(calls, 2);
   await transport.stop();
   assert.equal(secondRequestOptions.signal.aborted, true);
+});
+
+test("stop cancels a never-ending response that resolves after the subscription is stale", async () => {
+  let calls = 0;
+  let cancellations = 0;
+  const neverEndingBody = () =>
+    new ReadableStream({
+      cancel() {
+        cancellations += 1;
+      },
+    });
+  const transport = createRealtimeTransport({
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      return new Promise((resolve) => {
+        options.signal.addEventListener(
+          "abort",
+          () => resolve(response(200, { body: neverEndingBody() })),
+          { once: true },
+        );
+      });
+    },
+  });
+
+  await transport.start(() => {});
+  await wait(5);
+  await transport.stop();
+  assert.equal(cancellations, 1);
+
+  await transport.start(() => {});
+  await wait(5);
+  await transport.stop();
+  assert.equal(calls, 2);
+  assert.equal(cancellations, 2);
 });

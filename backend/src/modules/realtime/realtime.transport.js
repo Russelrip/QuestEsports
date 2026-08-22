@@ -83,6 +83,8 @@ const createRealtimeTransport = ({
   let reconnectAttempt = 0;
   let activeController = null;
   let activeReader = null;
+  let activeResponse = null;
+  let activeBody = null;
   let activeConnectionTimer = null;
   let subscriptionTask = null;
   let generation = 0;
@@ -106,6 +108,44 @@ const createRealtimeTransport = ({
     lastErrorAt = toIsoString(now());
     reportStatus(false, reason);
     if (error) log("warn", `Realtime subscription ${reason}`, error);
+  };
+
+  const cancelResponseBody = async (body) => {
+    if (!body || typeof body.cancel !== "function") return false;
+    try {
+      await body.cancel();
+      return true;
+    } catch (error) {
+      log("debug", "Realtime response body cancellation failed", error);
+      return false;
+    }
+  };
+
+  const cancelActiveSubscription = async () => {
+    if (activeReader && typeof activeReader.cancel === "function") {
+      try {
+        await activeReader.cancel();
+        return;
+      } catch (error) {
+        log("debug", "Realtime reader cancellation failed", error);
+      }
+    }
+    await cancelResponseBody(activeBody);
+  };
+
+  const awaitSubscriptionSettlement = async (task) => {
+    if (!task) return;
+    let timeout;
+    try {
+      await Promise.race([
+        task,
+        new Promise((resolve) => {
+          timeout = setTimeout(resolve, env.CACHE_CONNECTION_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   };
 
   const parseRecord = (record) => {
@@ -221,17 +261,30 @@ const createRealtimeTransport = ({
   const subscribe = async (runGeneration) => {
     if (!running || runGeneration !== generation) return;
     const controller = new AbortController();
-    let connectionTimer = setConnectionTimeoutImpl(() => controller.abort(), env.CACHE_CONNECTION_TIMEOUT_MS);
+    let connectionDeadlineExceeded = false;
+    let rejectConnectionDeadline;
+    const connectionDeadline = new Promise((_, reject) => {
+      rejectConnectionDeadline = reject;
+    });
+    connectionDeadline.catch(noop);
+    let connectionTimer = setConnectionTimeoutImpl(() => {
+      connectionDeadlineExceeded = true;
+      controller.abort();
+      rejectConnectionDeadline(new Error("Realtime subscription connection deadline exceeded."));
+    }, env.CACHE_CONNECTION_TIMEOUT_MS);
     activeConnectionTimer = connectionTimer;
     activeController = controller;
+    let response = null;
     const clearConnectionTimer = () => {
       if (!connectionTimer) return;
-      clearConnectionTimeoutImpl(connectionTimer);
-      if (activeConnectionTimer === connectionTimer) activeConnectionTimer = null;
+      if (activeConnectionTimer === connectionTimer) {
+        clearConnectionTimeoutImpl(connectionTimer);
+        activeConnectionTimer = null;
+      }
       connectionTimer = null;
     };
     try {
-      const response = await fetchImpl(
+      response = await fetchImpl(
         `${baseUrl}/subscribe/${encodeURIComponent(channel)}`,
         {
           method: "POST",
@@ -242,20 +295,36 @@ const createRealtimeTransport = ({
           signal: controller.signal,
         },
       );
-      clearConnectionTimer();
-      if (!running || runGeneration !== generation) return;
+      if (connectionDeadlineExceeded || !running || runGeneration !== generation) {
+        await cancelResponseBody(response.body);
+        if (connectionDeadlineExceeded && running && runGeneration === generation) {
+          throw new Error("Realtime subscription connection deadline exceeded.");
+        }
+        return;
+      }
+      activeResponse = response;
+      activeBody = response.body;
       if (!response.ok) {
-        const body = await readResponseBody(response);
+        const body = await Promise.race([readResponseBody(response), connectionDeadline]);
+        clearConnectionTimer();
         throw responseError(response, "subscribe", body);
       }
+      clearConnectionTimer();
       reportStatus(true, "connected");
       await consumeStream(response.body, runGeneration);
       if (running && runGeneration === generation) scheduleReconnect(runGeneration, "eof");
     } catch (error) {
+      if (response && activeResponse === response) {
+        await cancelActiveSubscription();
+      }
       if (running && runGeneration === generation) scheduleReconnect(runGeneration, "error", error);
     } finally {
       clearConnectionTimer();
       if (activeController === controller) activeController = null;
+      if (activeResponse && activeResponse === response) {
+        activeResponse = null;
+        activeBody = null;
+      }
     }
   };
 
@@ -312,9 +381,9 @@ const createRealtimeTransport = ({
 
   const stop = async () => {
     if (!running && !reconnectTimer && !activeController && !subscriptionTask) return;
+    const priorTask = subscriptionTask;
     running = false;
     generation += 1;
-    subscriptionTask = null;
     if (reconnectTimer) {
       clearTimeoutImpl(reconnectTimer);
       reconnectTimer = null;
@@ -324,13 +393,8 @@ const createRealtimeTransport = ({
       activeConnectionTimer = null;
     }
     if (activeController) activeController.abort();
-    if (activeReader && typeof activeReader.cancel === "function") {
-      try {
-        await activeReader.cancel();
-      } catch (error) {
-        log("debug", "Realtime reader cancellation failed", error);
-      }
-    }
+    await cancelActiveSubscription();
+    await awaitSubscriptionSettlement(priorTask);
     reportStatus(false, "stopped");
   };
 

@@ -75,7 +75,7 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `REALTIME_SSE_MAX_CONNECTIONS` | No — defaults to `100` | Backend | L/D/P | Public/non-secret | `100` | Restart backend |
 | `REALTIME_SSE_MAX_CONNECTIONS_PER_IP` | No — defaults to `5` | Backend | L/D/P | Public/non-secret | `5` | Restart backend |
 | `REALTIME_PUBSUB_CHANNEL` | Required and identical on every API worker in a cluster | Backend/deployment owner | D/P | Public/non-secret | `quest-realtime` | Restart backend |
-| `REALTIME_WORKER_ID` | Required stable worker base ID; effective identity adds process PID and UUID | Backend/deployment owner | D/P | Public/non-secret | `<cluster-worker-base-id>` | Restart backend |
+| `REALTIME_WORKER_ID` | No — defaults to a process-derived worker base; set a stable base when deployment identity requires it | Backend/deployment owner | D/P | Public/non-secret | blank; config fallback is `worker-${process.pid}` | Restart backend |
 | `REALTIME_PUBSUB_MAX_MESSAGE_BYTES` | No — defaults to `65536` | Backend | L/D/P | Public/non-secret | `65536` | Restart backend |
 | `REALTIME_PUBSUB_RECONNECT_BASE_MS` | No — defaults to `250` | Backend | L/D/P | Public/non-secret | `250` | Restart backend |
 | `REALTIME_PUBSUB_RECONNECT_MAX_MS` | No — defaults to `10000` | Backend | L/D/P | Public/non-secret | `10000` | Restart backend |
@@ -90,8 +90,9 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 For two or more API workers, set `CACHE_DRIVER=upstash` and provide both
 `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. `API_PROCESS_COUNT`
 must match the PM2/API worker count. Every worker uses the same
-`REALTIME_PUBSUB_CHANNEL` prefix/channel and configured `REALTIME_WORKER_ID`
-base. The implementation creates the effective identity as
+`REALTIME_PUBSUB_CHANNEL` prefix/channel. If `REALTIME_WORKER_ID` is configured,
+use the same base on every worker; otherwise the configuration supplies a
+process-derived fallback. The implementation creates the effective identity as
 `${REALTIME_WORKER_ID}:${process.pid}:${randomUUID()}`; therefore a shared PM2
 base is safe because process PID and startup UUID distinguish workers. Do not
 run a multi-worker deployment with the memory cache or with a missing shared
