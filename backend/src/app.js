@@ -8,7 +8,10 @@ const { checkDatabaseReadiness } = require("./lib/database");
 const { checkUploadReadiness } = require("./middleware/upload");
 const { logger } = require("./lib/logger");
 const { getObservabilityTransportStatus } = require("./lib/observability-transport");
-const { getRealtimeStatus } = require("./modules/realtime/realtime.service");
+const {
+  getRealtimeStatus,
+  isRealtimeTransportReady,
+} = require("./modules/realtime/realtime.service");
 const { getApiCapabilities } = require("./lib/release");
 const {
   requireSiteAvailable,
@@ -32,6 +35,9 @@ const buildHealthPayload = () => ({
   message: "Quest E-sports API is healthy.",
   timestamp: new Date().toISOString(),
 });
+
+const requiresRealtimeReadiness = () =>
+  env.REALTIME_SSE_ENABLED && getRealtimeStatus().sharedTransportRequired;
 
 app.set("trust proxy", env.TRUST_PROXY);
 
@@ -84,10 +90,19 @@ const readinessHandler = async (req, res) => {
   }
 
   try {
-    await Promise.all([checkDatabaseReadiness(), checkUploadReadiness()]);
+    const readinessChecks = [checkDatabaseReadiness(), checkUploadReadiness()];
+    const realtimeReadinessRequired = requiresRealtimeReadiness();
+    if (realtimeReadinessRequired) {
+      readinessChecks.push(Promise.resolve().then(() => {
+        if (!isRealtimeTransportReady()) throw new Error("Realtime transport is not ready.");
+      }));
+    }
+    await Promise.all(readinessChecks);
+    const readiness = { database: "ready", storage: "ready" };
+    if (realtimeReadinessRequired) readiness.realtime = "ready";
     res.status(200).json({
       ...buildHealthPayload(),
-      readiness: { database: "ready", storage: "ready" },
+      readiness,
     });
   } catch (error) {
     logger.warn("API readiness check failed", { error });

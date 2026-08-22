@@ -310,3 +310,60 @@ test("rechecks transport readiness after async topic authorization", async () =>
     restore();
   }
 });
+
+test("does not reserve a slot when the request disconnects during authorization", async () => {
+  let request;
+  let opened = 0;
+  let closed = 0;
+  const { module: controller, restore } = createRealtimeController({
+    accessRoom: async () => {
+      request.destroyed = true;
+    },
+    openRealtimeConnection: () => {
+      opened += 1;
+      return true;
+    },
+    closeRealtimeConnection: () => {
+      closed += 1;
+    },
+  });
+  request = createRequest({
+    query: { topics: "match-room:room-1" },
+    user: { id: "user-1" },
+  });
+
+  try {
+    await controller.getRealtimeEvents(request, createResponse());
+    assert.equal(opened, 0);
+    assert.equal(closed, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("releases a reserved slot exactly once when header setup fails after disconnect", async () => {
+  let closeCalls = 0;
+  const request = createRequest();
+  const response = createResponse();
+  response.flushHeaders = () => {
+    request.emit("close");
+    throw new Error("header flush failed");
+  };
+  const { module: controller, restore } = createRealtimeController({
+    closeRealtimeConnection: () => {
+      closeCalls += 1;
+    },
+  });
+
+  try {
+    await assert.rejects(
+      controller.getRealtimeEvents(request, response),
+      /header flush failed/,
+    );
+    request.emit("aborted");
+    assert.equal(closeCalls, 1);
+    assert.equal(response.ended, true);
+  } finally {
+    restore();
+  }
+});

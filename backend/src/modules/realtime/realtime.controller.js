@@ -10,6 +10,9 @@ const { accessRoom } = require("../match-rooms/match-room.service");
 
 const activeSseConnections = new Set();
 
+const isRequestClosed = (req) =>
+  req.aborted === true || req.destroyed === true || req.socket?.destroyed === true;
+
 const parseTopics = (value) =>
   new Set(
     String(value || "matches,brackets")
@@ -63,6 +66,7 @@ const getRealtimeEvents = async (req, res) => {
   }
 
   const topics = await authorizeTopics(parseTopics(req.query.topics), req.user);
+  if (isRequestClosed(req)) return;
   if (typeof isRealtimeTransportReady === "function" && !isRealtimeTransportReady()) {
     if (typeof res.set === "function") res.set("Retry-After", "5");
     else res.setHeader?.("Retry-After", "5");
@@ -91,21 +95,6 @@ const getRealtimeEvents = async (req, res) => {
     });
     return;
   }
-  res.status(200);
-  res.set({
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  res.flushHeaders?.();
-  const safeWrite = (value) => {
-    try {
-      return res.write(value);
-    } catch {
-      return false;
-    }
-  };
 
   let closed = false;
   let heartbeat = null;
@@ -125,27 +114,53 @@ const getRealtimeEvents = async (req, res) => {
     closeRealtimeConnection(clientKey);
     if (!res.writableEnded) res.end();
   };
-  activeSseConnections.add(close);
-  const eventListener = (event) => {
-    const rootTopic = event.topic.split(":")[0];
-    if (topics.size && !topics.has(event.topic) && !topics.has(rootTopic)) return;
-    if (!safeWrite(`id: ${event.id}\nevent: update\ndata: ${JSON.stringify(event)}\n\n`)) close();
-  };
-  const registeredUnsubscribe = subscribeToRealtimeEvents(eventListener);
-  unsubscribe = typeof registeredUnsubscribe === "function" ? registeredUnsubscribe : () => {};
-  subscriptionReady = true;
-  if (closed) removeSubscription();
-  if (closed) return;
-  heartbeat = setInterval(() => {
-    if (!safeWrite(": heartbeat\n\n")) close();
-  }, 25_000);
 
-  req.on("close", close);
-  req.on("aborted", close);
-  safeWrite(`retry: 5000\nevent: ready\ndata: ${JSON.stringify({
-    serverNow: new Date().toISOString(),
-    reconcile: true,
-  })}\n\n`);
+  try {
+    activeSseConnections.add(close);
+    req.on("close", close);
+    req.on("aborted", close);
+    if (isRequestClosed(req)) {
+      close();
+      return;
+    }
+    res.status(200);
+    res.set({
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders?.();
+    if (closed) return;
+    const safeWrite = (value) => {
+      try {
+        return res.write(value);
+      } catch {
+        return false;
+      }
+    };
+    const eventListener = (event) => {
+      const rootTopic = event.topic.split(":")[0];
+      if (topics.size && !topics.has(event.topic) && !topics.has(rootTopic)) return;
+      if (!safeWrite(`id: ${event.id}\nevent: update\ndata: ${JSON.stringify(event)}\n\n`)) close();
+    };
+    const registeredUnsubscribe = subscribeToRealtimeEvents(eventListener);
+    unsubscribe = typeof registeredUnsubscribe === "function" ? registeredUnsubscribe : () => {};
+    subscriptionReady = true;
+    if (closed) removeSubscription();
+    if (closed) return;
+    heartbeat = setInterval(() => {
+      if (!safeWrite(": heartbeat\n\n")) close();
+    }, 25_000);
+
+    safeWrite(`retry: 5000\nevent: ready\ndata: ${JSON.stringify({
+      serverNow: new Date().toISOString(),
+      reconcile: true,
+    })}\n\n`);
+  } catch (error) {
+    close();
+    throw error;
+  }
 };
 
 const drainRealtimeConnections = () => {
