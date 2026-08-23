@@ -1,3 +1,4 @@
+import FeaturedEvents from "@/components/home/FeaturedEvents";
 import FeaturedTournaments from "@/components/home/FeaturedTournaments";
 import HomeHero from "@/components/home/HomeHero";
 import JoinQuestSection from "@/components/home/JoinQuestSection";
@@ -34,6 +35,7 @@ export default function HomePage() {
       <HomeHero />
       <JoinQuestSection />
       <TeamSection />
+      <FeaturedEvents />
       <FeaturedTournaments />
     </>
   );

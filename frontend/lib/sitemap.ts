@@ -3,6 +3,7 @@ import type { MetadataRoute } from "next";
 export const sitemapStaticPaths = [
   "/",
   "/tournaments",
+  "/events",
   "/valorant-leaderboard",
   "/match-videos",
   "/gallery",

@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
+import EventCard from "@/components/tournaments/event/EventCard";
 import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
-import { getEventCardPresentation } from "@/lib/event-utils";
 import { resolveImageUrl } from "@/lib/media";
 import { getTournamentRegistrationPresentation, type EventSeries, type GameCategory, type Tournament } from "@/lib/tournaments";
 import { formatTournamentDate } from "@/lib/utils";
@@ -131,7 +131,7 @@ export default function TournamentsContent({ tournaments, series = [], categorie
       return rightDate - leftDate;
     });
   const standaloneTournaments = [...active, ...past];
-  const filteredSeries = series.filter((item) => item.isPublished && item.tournaments.length > 1 && item.tournaments.some(matches));
+  const filteredSeries = series.filter((item) => item.isPublished && item.tournaments.some(matches));
 
   useEffect(() => {
     const scroller = gameScrollerRef.current;
@@ -181,21 +181,7 @@ export default function TournamentsContent({ tournaments, series = [], categorie
       </button>
     </div>
 
-    {filteredSeries.length ? <div className="mb-9 grid gap-5 md:grid-cols-2">{filteredSeries.map((item, index) => {
-      const eventPresentation = getEventCardPresentation(item);
-      const preview = eventPresentation.child;
-      return <Link key={item.id} href={`/events/${item.slug}`} prefetch={false} className={`group relative aspect-[4/3] overflow-hidden rounded-[30px] border bg-[#0d0c13] ${eventPresentation.eventStatus.key === "closed" ? "border-rose-500/45" : "border-white/10"}`}>
-        <TournamentBannerImage
-          bannerUrl={item.heroUrl || preview?.bannerUrl}
-          title={item.title}
-          preload={index === 0}
-          loading={index < 4 ? "eager" : "lazy"}
-          className="absolute inset-0 h-full w-full object-contain"
-        />
-        <span className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent" />
-        <span className="absolute inset-x-5 bottom-5"><span className="text-xs uppercase tracking-[0.22em] text-purple-200">Event · {item.tournaments.length} games</span><span className="mt-2 block text-2xl text-white transition-colors group-hover:text-[var(--interactive-text)]">{item.title}</span><span className="mt-3 flex flex-wrap items-center gap-3 text-sm"><b className="text-white">{preview?.prizePool || "Prize TBA"}</b><b className={eventPresentation.eventStatus.key === "open" ? "text-emerald-300" : "text-slate-300"}>{eventPresentation.eventStatus.label} · Explore</b></span></span>
-      </Link>;
-    })}</div> : null}
+    {filteredSeries.length ? <div className="mb-9 grid gap-5 md:grid-cols-2">{filteredSeries.map((item, index) => <EventCard key={item.id} event={item} preload={index === 0} eager={index < 4} />)}</div> : null}
 
     {standaloneTournaments.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{standaloneTournaments.map((tournament, index) => <TournamentCard key={tournament.id} tournament={tournament} preload={filteredSeries.length === 0 && index === 0} eager={index < 4} />)}</div> : filteredSeries.length === 0 ? <EmptyState title="No tournaments match this game" description="Choose another game or view all events." /> : null}
   </Section>;

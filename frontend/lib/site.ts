@@ -466,6 +466,7 @@ export const siteNavLabel = (item: { label: string; fullLabel?: string }) =>
 export const primaryNavItems: ReadonlyArray<SiteNavItem> = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/tournaments", label: "Tournaments", icon: "trophy" },
+  { href: "/events", label: "Events", icon: "calendar" },
   {
     href: "/valorant-leaderboard",
     label: "Leaderboard",
@@ -600,6 +601,8 @@ export const defaultPageDescriptions = {
   home: siteDescription,
   tournaments:
     "Discover upcoming Quest E-sports tournaments, prize pools, registration windows, and featured competitive gaming events.",
+  events:
+    "Browse Quest E-sports events — multi-game banners that bring their own tournaments, schedules, venues, and registration windows together.",
   valorantLeaderboard:
     "Sri Lanka's Valorant player leaderboard — the country's top-ranked players by ELO, with rank, tier, and peak rank.",
   tournamentRegistration:

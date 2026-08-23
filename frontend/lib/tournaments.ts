@@ -156,6 +156,7 @@ export type EventSeries = {
   registrationState?: EventRegistrationState;
   displayOrder: number;
   isPublished: boolean;
+  featured?: boolean;
   tournaments: Tournament[];
   ticketEvent?: TicketedEvent | null;
 };
@@ -389,6 +390,17 @@ export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => 
       return rightDate - leftDate;
     })
     .slice(0, limit);
+};
+
+/**
+ * Mirrors `getFeaturedTournaments`: an explicit `featured` pick wins, and with
+ * none set the newest published events stand in. Backend order (displayOrder,
+ * then newest) is preserved rather than re-sorted here.
+ */
+export const getFeaturedEvents = (events: EventSeries[], limit = 3) => {
+  const withGames = events.filter((event) => event.tournaments.length > 0);
+  const featured = withGames.filter((event) => event.featured);
+  return (featured.length > 0 ? featured : withGames).slice(0, limit);
 };
 
 export const fetchPublicTournaments = async (game?: string) => {
