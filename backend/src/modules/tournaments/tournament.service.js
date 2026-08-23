@@ -107,6 +107,7 @@ const buildRegistrationCountInclude = (now = new Date()) => ({
       id: true,
       slug: true,
       title: true,
+      isPublished: true,
       registrationOpenAt: true,
       registrationCloseAt: true,
       registrationStatusOverride: true,

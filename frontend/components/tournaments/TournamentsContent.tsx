@@ -8,7 +8,7 @@ import EventCard from "@/components/tournaments/event/EventCard";
 import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
 import { resolveImageUrl } from "@/lib/media";
-import { getTournamentRegistrationPresentation, type EventSeries, type GameCategory, type Tournament } from "@/lib/tournaments";
+import { getTournamentRegistrationPresentation, isCoveredByEventCard, type EventSeries, type GameCategory, type Tournament } from "@/lib/tournaments";
 import { formatTournamentDate } from "@/lib/utils";
 
 const gameIconBySlug: Record<string, string> = {
@@ -122,9 +122,9 @@ export default function TournamentsContent({ tournaments, series = [], categorie
   const [canScrollRight, setCanScrollRight] = useState(false);
   const gameFilters = getUniqueGameFilters(categories);
   const matches = (tournament: Tournament) => gameFilter === "all" || normalizeGameSlug(tournament.gameCategory?.slug || tournament.game) === gameFilter;
-  const active = tournaments.filter((item) => !item.isCompleted && !item.series && matches(item));
+  const active = tournaments.filter((item) => !item.isCompleted && !isCoveredByEventCard(item) && matches(item));
   const past = tournaments
-    .filter((item) => item.isCompleted && !item.series && matches(item))
+    .filter((item) => item.isCompleted && !isCoveredByEventCard(item) && matches(item))
     .sort((left, right) => {
       const leftDate = new Date(left.endDate || left.startDate || left.createdAt || 0).getTime();
       const rightDate = new Date(right.endDate || right.startDate || right.createdAt || 0).getTime();
