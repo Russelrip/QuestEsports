@@ -79,6 +79,15 @@ existing contact, match-room, notification, or OAuth tables.
   CHECK constraints require a non-empty reason and a normalized requested
   identifier. Every foreign key except the owning player is `SET NULL` — a
   decision record must outlive the rows it references or the audit trail rots.
+- `20260823160000_add_tournament_discord_requirement` adds
+  `tournaments.discord_required`, defaulting to FALSE so every existing
+  tournament behaves exactly as it does today. Roster readiness reports each
+  member's Discord status regardless of the flag — a captain should always be
+  able to see who is reachable — and the flag only decides whether a missing
+  connection BLOCKS registration. Unlike a game account this covers every roster
+  member including a coach, because the point is being contactable during the
+  event. Discord identity is read from `OAuthAccount`, never from the mutable
+  `User.discordTag`.
 - `20260822150000_add_saved_team_logo_cleared_at` adds the nullable
   `saved_teams.logo_cleared_at` marker. `logo_name` alone cannot say why a team
   has no logo, so this column separates a team that has never had one — which

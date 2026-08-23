@@ -19,11 +19,17 @@ const FAIL = "FAIL";
 // not play, so requiring a game account from them would block real teams.
 const COMPETING_ROLES = new Set(["CAPTAIN", "PLAYER", "SUBSTITUTE"]);
 
-const memberView = (member, requiredGame) => {
+const memberView = (member, requiredGame, discordRequired) => {
   const account = member.player?.gameAccounts?.[0] ?? null;
   const competing = COMPETING_ROLES.has(member.role);
   const inviteAccepted = member.inviteStatus === "accepted";
   const needsAccount = competing && Boolean(requiredGame);
+  // Discord is a connected identity on `OAuthAccount`, never the mutable
+  // `User.discordTag`, which is display text anyone can change.
+  const hasDiscord = (member.user?.oauthAccounts?.length ?? 0) > 0;
+  // A coach still needs reaching during an event, so unlike a game account
+  // this applies to every roster member, not just competing ones.
+  const needsDiscord = Boolean(discordRequired);
 
   return {
     id: member.id,
@@ -32,13 +38,20 @@ const memberView = (member, requiredGame) => {
     memberOrder: member.memberOrder,
     inviteStatus: member.inviteStatus,
     hasQuestAccount: Boolean(member.userId),
+    // Reported for every tournament so a captain can always see who is
+    // reachable, whether or not this event requires it.
+    hasDiscord,
+    requiresDiscord: needsDiscord,
     gameAccount: account ? publicView(account) : null,
     // A legacy roster row may still carry a typed Riot ID. It is shown so a
     // captain can see what the old registration used, but it never satisfies
     // the requirement: it was never checked against anything.
     legacyRiotId: member.riotId || null,
     requiresGameAccount: needsAccount,
-    ready: inviteAccepted && (!needsAccount || Boolean(account)),
+    ready:
+      inviteAccepted &&
+      (!needsAccount || Boolean(account)) &&
+      (!needsDiscord || hasDiscord),
   };
 };
 
@@ -64,6 +77,14 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
           userId: true,
           riotId: true,
           inviteStatus: true,
+          user: {
+            select: {
+              oauthAccounts: {
+                where: { provider: "discord" },
+                select: { id: true },
+              },
+            },
+          },
           player: {
             select: {
               gameAccounts: {
@@ -93,7 +114,13 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
   if (tournamentId) {
     tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
-      select: { id: true, game: true, minRosterSize: true, maxRosterSize: true },
+      select: {
+        id: true,
+        game: true,
+        minRosterSize: true,
+        maxRosterSize: true,
+        discordRequired: true,
+      },
     });
     if (!tournament) {
       throw new HttpError(404, "Tournament not found.");
@@ -101,7 +128,11 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
   }
 
   const requiredGame = requiredGameFor(tournament?.game ?? team.game);
-  const members = team.members.map((member) => memberView(member, requiredGame));
+  // Off unless this specific tournament asks for it, so existing events are
+  // unaffected and Discord can be trialled on one before committing.
+  const discordRequired = tournament?.discordRequired === true;
+  const members = team.members.map((member) =>
+    memberView(member, requiredGame, discordRequired));
   const competing = members.filter((member) => COMPETING_ROLES.has(member.role));
 
   const requirements = [];
@@ -127,6 +158,17 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
     members: pendingInvites.map((member) => member.id),
   });
 
+  if (discordRequired) {
+    // Every roster member, including a coach: the point is being reachable
+    // during the event, and a coach needs that as much as a player does.
+    const missing = members.filter((member) => !member.hasDiscord);
+    requirements.push({
+      type: "DISCORD_CONNECTED",
+      status: missing.length === 0 ? PASS : FAIL,
+      members: missing.map((member) => member.id),
+    });
+  }
+
   if (requiredGame) {
     const missing = competing.filter((member) => member.requiresGameAccount && !member.gameAccount);
     requirements.push({
@@ -142,6 +184,7 @@ const getRegistrationReadiness = async ({ teamId, tournamentId, user }) => {
     teamName: team.name,
     tournamentId: tournament?.id ?? null,
     requiredGame,
+    discordRequired,
     ready: requirements.every((requirement) => requirement.status === PASS),
     requirements,
     members,

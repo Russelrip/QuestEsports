@@ -713,6 +713,9 @@ model Tournament {
   maxSubstitutes             Int                         @default(0) @map("max_substitutes")
   allowCoach                 Boolean                     @default(false) @map("allow_coach")
   coachRequired              Boolean                     @default(false) @map("coach_required")
+  // Whether every roster member must have a connected Discord identity before
+  // the team can register. Defaults off so existing tournaments are unaffected.
+  discordRequired            Boolean                     @default(false) @map("discord_required")
   registrationFields         Json                        @default("[]") @map("registration_fields")
   paymentMethod              TournamentPaymentMethod     @default(free) @map("payment_method")
   registrationFeeAmount      Decimal                     @default(0) @map("registration_fee_amount") @db.Decimal(12, 2)

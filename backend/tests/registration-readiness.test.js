@@ -49,8 +49,14 @@ const member = (overrides = {}) => ({
   riotId: null,
   inviteStatus: "accepted",
   player: null,
+  // A linked Discord identity lives on OAuthAccount, never on the mutable
+  // User.discordTag.
+  user: { oauthAccounts: [{ id: "oauth-1" }] },
   ...overrides,
 });
+
+const withoutDiscord = (overrides = {}) =>
+  member({ user: { oauthAccounts: [] }, ...overrides });
 
 const CAPTAIN = { id: "captain-1", role: "user" };
 
@@ -369,5 +375,119 @@ test("the roster-link migration preserves every legacy identity column", () => {
   assert.equal(foreignKeys.length, 2);
   for (const clause of foreignKeys) {
     assert.match(clause, /ON DELETE SET NULL/);
+  }
+});
+
+
+test("Discord status is reported even when a tournament does not require it", async () => {
+  const members = [withoutDiscord({ id: "m-1", player: withAccount().player })];
+  const { module: service, restore } = loadService({
+    team: baseTeam(members),
+    tournament: valorantTournament({ minRosterSize: 1 }),
+  });
+  try {
+    const result = await service.getRegistrationReadiness({
+      teamId: "team-1",
+      tournamentId: "tournament-1",
+      user: CAPTAIN,
+    });
+    // A captain should always be able to see who is reachable, whether or not
+    // this particular event insists on it.
+    assert.equal(result.members[0].hasDiscord, false);
+    assert.equal(result.discordRequired, false);
+    assert.equal(result.requirements.some((r) => r.type === "DISCORD_CONNECTED"), false);
+    // And it must not block.
+    assert.equal(result.ready, true);
+  } finally {
+    restore();
+  }
+});
+
+test("a tournament that requires Discord blocks and names who is missing it", async () => {
+  const members = [
+    member({ id: "ok-1", player: withAccount().player }),
+    withoutDiscord({ id: "missing-1", memberOrder: 2, player: withAccount().player }),
+  ];
+  const { module: service, restore } = loadService({
+    team: baseTeam(members),
+    tournament: valorantTournament({ minRosterSize: 1, discordRequired: true }),
+  });
+  try {
+    const result = await service.getRegistrationReadiness({
+      teamId: "team-1",
+      tournamentId: "tournament-1",
+      user: CAPTAIN,
+    });
+    assert.equal(result.discordRequired, true);
+    const requirement = result.requirements.find((r) => r.type === "DISCORD_CONNECTED");
+    assert.equal(requirement.status, "FAIL");
+    assert.deepEqual(requirement.members, ["missing-1"]);
+    assert.equal(result.ready, false);
+  } finally {
+    restore();
+  }
+});
+
+test("a coach must be reachable too when Discord is required", async () => {
+  const members = [
+    member({ id: "ok-1", player: withAccount().player }),
+    withoutDiscord({ id: "coach-1", role: "COACH", memberOrder: 5 }),
+  ];
+  const { module: service, restore } = loadService({
+    team: baseTeam(members),
+    tournament: valorantTournament({ minRosterSize: 1, discordRequired: true }),
+  });
+  try {
+    const result = await service.getRegistrationReadiness({
+      teamId: "team-1",
+      tournamentId: "tournament-1",
+      user: CAPTAIN,
+    });
+    // Unlike a game account, this is about being contactable during the event
+    // — a coach needs that as much as a player.
+    const requirement = result.requirements.find((r) => r.type === "DISCORD_CONNECTED");
+    assert.deepEqual(requirement.members, ["coach-1"]);
+    assert.equal(result.ready, false);
+  } finally {
+    restore();
+  }
+});
+
+test("a fully connected roster passes the Discord requirement", async () => {
+  const members = [member({ id: "ok-1", player: withAccount().player })];
+  const { module: service, restore } = loadService({
+    team: baseTeam(members),
+    tournament: valorantTournament({ minRosterSize: 1, discordRequired: true }),
+  });
+  try {
+    const result = await service.getRegistrationReadiness({
+      teamId: "team-1",
+      tournamentId: "tournament-1",
+      user: CAPTAIN,
+    });
+    assert.equal(result.requirements.find((r) => r.type === "DISCORD_CONNECTED").status, "PASS");
+    assert.equal(result.ready, true);
+  } finally {
+    restore();
+  }
+});
+
+test("existing tournaments are unaffected by the new setting", async () => {
+  const members = [withoutDiscord({ id: "m-1", player: withAccount().player })];
+  const { module: service, restore } = loadService({
+    team: baseTeam(members),
+    // A tournament row created before the column existed reads as false.
+    tournament: valorantTournament({ minRosterSize: 1, discordRequired: undefined }),
+  });
+  try {
+    const result = await service.getRegistrationReadiness({
+      teamId: "team-1",
+      tournamentId: "tournament-1",
+      user: CAPTAIN,
+    });
+    assert.equal(result.discordRequired, false);
+    assert.equal(result.ready, true);
+  } finally {
+    restore();
   }
 });
