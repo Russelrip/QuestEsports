@@ -45,7 +45,16 @@ const translateUpstreamError = (error) => {
       return new HttpError(404, NOT_FOUND_MESSAGE);
     }
     if (INVALID_INPUT_CODES.has(error.code)) {
-      return new HttpError(400, "Invalid Riot ID — expected Name#Tag.");
+      // Distinct from the local validation message on purpose: an identical
+      // string for "we rejected the shape" and "the provider rejected it"
+      // makes the two indistinguishable in a log, and sends anyone debugging
+      // to the wrong layer.
+      logger.warn("VALORANT provider rejected the Riot ID.", {
+        code: error.code,
+        status: error.status,
+        requestId: error.requestId,
+      });
+      return new HttpError(400, "That Riot ID was not accepted. Check the name and tag.");
     }
     // A provider outage, a provider rate limit, or a service-auth problem are
     // all "we could not check", never "the account does not exist".
