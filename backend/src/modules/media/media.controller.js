@@ -1,7 +1,6 @@
 const { asyncHandler } = require("../../lib/async-handler");
+const { streamFileToResponse } = require("../../lib/stream-response");
 const { recordAudit, requestAuditContext } = require("../../lib/audit");
-const { createReadStream } = require("fs");
-const { pipeline } = require("stream/promises");
 const { listPublicUploads } = require("../uploads/upload.service");
 const {
   createImageAssets,
@@ -23,7 +22,7 @@ const sendImage = async (res, image, cacheControl) => {
   res.setHeader("Cache-Control", cacheControl);
   res.status(200);
   if (image.path) {
-    await pipeline(createReadStream(image.path), res);
+    await streamFileToResponse(image.path, res);
     return;
   }
   res.send(image.data);

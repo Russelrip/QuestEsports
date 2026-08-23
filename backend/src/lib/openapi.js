@@ -1350,6 +1350,49 @@ const additionalPaths = {
   "/api/v1/valorant/leaderboard/register/submit": {
     post: createOperation("valorant", "Submit leaderboard registration for a PUUID"),
   },
+  "/api/v1/game-accounts/valorant/resolve": {
+    post: createOperation(
+      "Game accounts",
+      "Resolve a Riot ID to its stable identifier and current display identity",
+      { authenticated: true },
+    ),
+  },
+  "/api/v1/game-accounts/valorant/link": {
+    post: createOperation(
+      "Game accounts",
+      "Link a resolved VALORANT account to the signed-in Quest account",
+      { authenticated: true },
+    ),
+  },
+  "/api/v1/users/me/game-accounts": {
+    get: createOperation("Game accounts", "List the signed-in user's linked game accounts", {
+      authenticated: true,
+    }),
+  },
+  "/api/v1/game-accounts/valorant/change-request": {
+    post: createOperation(
+      "Game accounts",
+      "Refresh a renamed account, or open an admin-reviewed account replacement",
+      { authenticated: true },
+    ),
+  },
+  "/api/v1/admin/game-accounts/change-requests": {
+    get: createOperation("Game accounts", "List game account change requests", {
+      authenticated: true,
+    }),
+  },
+  "/api/v1/admin/game-accounts/change-requests/{requestId}/review": {
+    post: createOperation("Game accounts", "Approve or reject a game account change request", {
+      authenticated: true,
+    }),
+  },
+  "/api/v1/teams/{teamId}/registration-readiness": {
+    get: createOperation(
+      "Game accounts",
+      "Server-computed roster readiness for a saved team, optionally scoped to a tournament",
+      { authenticated: true },
+    ),
+  },
   "/api/contact": {
     post: createOperation("Contact", "Submit a contact message"),
   },
@@ -1477,6 +1520,11 @@ const additionalPaths = {
   },
   "/api/teams/profile": {
     get: createOperation("Teams", "List the current user's teams", {
+      authenticated: true,
+    }),
+  },
+  "/api/me/invitations": {
+    get: createOperation("Teams", "List pending team invitations addressed to the signed-in user", {
       authenticated: true,
     }),
   },

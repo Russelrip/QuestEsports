@@ -13,7 +13,9 @@ import {
 
 const providerDetails: Record<OAuthProvider, { name: string; description: string; mark: string }> = {
   google: { name: "Google", description: "Use your Google identity to sign in faster.", mark: "G" },
-  discord: { name: "Discord", description: "Keep your Discord identity connected to your player account.", mark: "D" },
+  // Discord is how tournament communication reaches a player, so it is framed
+  // as something worth connecting rather than a second way to sign in.
+  discord: { name: "Discord", description: "Connect Discord so your captain and tournament staff can reach you. Some tournaments require it.", mark: "D" },
 };
 
 type AccountLinkingPanelProps = { className?: string };
@@ -86,10 +88,10 @@ export default function AccountLinkingPanel({ className = "" }: AccountLinkingPa
     <section className={`border-t border-white/8 pt-8 ${className}`} aria-labelledby="linked-accounts-heading">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Sign-in connections</p>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Connected accounts</p>
           <h3 id="linked-accounts-heading" className="mt-2 text-2xl text-white">Linked accounts</h3>
         </div>
-        <p className="max-w-sm text-sm leading-6 text-slate-400">Connect a provider for a quicker sign-in. You can unlink it later as long as another secure login method remains.</p>
+        <p className="max-w-sm text-sm leading-6 text-slate-400">Sign in faster, and let tournament staff reach you on Discord. You can unlink a provider later as long as another secure login method remains.</p>
       </div>
 
       {notice ? <p className="mt-5 border border-emerald-300/20 bg-emerald-400/8 p-3 text-sm text-emerald-100" role="status">{notice}</p> : null}

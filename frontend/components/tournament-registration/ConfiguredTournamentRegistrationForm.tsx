@@ -12,6 +12,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useTeams } from "@/hooks/api/useTeams";
+import RosterReadinessPanel from "@/components/tournament-registration/RosterReadinessPanel";
 import { apiFetch } from "@/lib/auth";
 import { ApiRequestError, readApiResponse } from "@/lib/api";
 import { PayHereCheckout, submitPayHereCheckout } from "@/lib/payments";
@@ -473,6 +474,12 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
                 {savedTeams.filter((team) => team.isCaptain).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
               </Select>
             </FormField>
+            {/* The server already knows which roster members are ready. Showing
+                it here means a captain chases the right person instead of
+                discovering the problem at submit. */}
+            {selectedSavedTeamId ? (
+              <RosterReadinessPanel teamId={selectedSavedTeamId} tournamentId={tournament.id} />
+            ) : null}
             {pendingSavedTeam ? (
               <div className="grid gap-4 rounded-[22px] border border-amber-300/25 bg-amber-300/[0.06] p-5">
                 <div>

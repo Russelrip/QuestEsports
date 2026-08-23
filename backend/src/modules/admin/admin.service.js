@@ -108,6 +108,8 @@ const recordRegistrationStatusAudit = async ({
     ipAddress: ipAddress || null,
 });
 
+const { snapshotAndLockRoster } = require("../game-accounts/roster-snapshot.service");
+
 const acceptPendingRegistrationInvites = async ({ tx, registrationId, savedTeamId, members }) => {
   const pendingMembers = (members || []).filter((member) => member.inviteStatus === "pending");
   if (pendingMembers.length > 0) {
@@ -1841,6 +1843,17 @@ const updateTeamRegistrationStatus = async (
         savedTeamId: current.savedTeamId,
         members: current.members,
       });
+      // Approval is the moment the roster is committed. Snapshot the
+      // competitive identities inside this transaction so an approved
+      // registration can never exist without a record of who played.
+      await snapshotAndLockRoster({
+        tx,
+        registrationId: current.id,
+        tournamentGame: current.tournament?.game,
+        actorUserId: adminUserId,
+        requestId: auditContext.requestId,
+        ipAddress: auditContext.ipAddress,
+      });
       const updated = await tx.teamRegistration.update({
         where: { id: current.id },
         data: {
@@ -2013,6 +2026,18 @@ const updateTeamRegistrationStatus = async (
             members: current.members,
           })
         : null;
+      if (nextStatus === "approved") {
+        // Same transaction as the status change: an approved roster without a
+        // competitive snapshot is a registration with no record of who played.
+        await snapshotAndLockRoster({
+          tx,
+          registrationId: current.id,
+          tournamentGame: current.tournament?.game,
+          actorUserId: adminUserId,
+          requestId: auditContext.requestId,
+          ipAddress: auditContext.ipAddress,
+        });
+      }
       const updated = await tx.teamRegistration.update({
         where: { id: registrationId },
         data: {
@@ -2044,7 +2069,16 @@ const updateTeamRegistrationStatus = async (
       registration = await runAdminSerializable(async (tx) => {
         const current = await tx.teamRegistration.findUnique({
           where: { id: registrationId },
-          select: { id: true, tournamentId: true, status: true, savedTeamId: true, members: true },
+          select: {
+            id: true,
+            tournamentId: true,
+            status: true,
+            savedTeamId: true,
+            members: true,
+            // Needed to decide whether this tournament has a game identity to
+            // snapshot at all.
+            tournament: { select: { game: true } },
+          },
         });
         if (!current) throw new HttpError(404, "Registration not found.");
         if (nextStatus !== "rejected") {
@@ -2063,6 +2097,16 @@ const updateTeamRegistrationStatus = async (
               members: current.members,
             })
           : null;
+        if (nextStatus === "approved") {
+          await snapshotAndLockRoster({
+            tx,
+            registrationId: current.id,
+            tournamentGame: current.tournament?.game,
+            actorUserId: adminUserId,
+            requestId: auditContext.requestId,
+            ipAddress: auditContext.ipAddress,
+          });
+        }
         const updated = await tx.teamRegistration.update({
           where: { id: registrationId },
           data: {

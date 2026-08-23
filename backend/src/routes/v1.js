@@ -4,8 +4,10 @@ const { asyncHandler } = require("../lib/async-handler");
 const { attachSession, requireAuth, requireAdmin } = require("../modules/auth/auth.middleware");
 const valorantController = require("../modules/valorant/valorant.controller");
 const valorantLeaderboardController = require("../modules/valorant-leaderboard/controller");
+const gameAccountController = require("../modules/game-accounts/game-account.controller");
 const { cachePublicData } = require("../middleware/cache-control");
 const { cacheJson, invalidateCache } = require("../middleware/response-cache");
+const { createRateLimiter } = require("../middleware/rate-limit");
 const { getPublicTournamentBySlug } = require("../modules/tournaments/tournament.service");
 const matchController = require("../modules/matches/match.controller");
 const vetoController = require("../modules/veto/veto.controller");
@@ -37,6 +39,34 @@ const bracketResponseCache = cacheJson({
 });
 const leaderboardPublicCache = cachePublicData({ browserSeconds: 0, sharedSeconds: 60 });
 const leaderboardCache = cacheJson({ ttlSeconds: 60, tags: ["foundation"] });
+// The leaderboard registration proxy is the only PUBLIC path into the
+// Henrik-backed upstream (`valorant-platform-backend`), and it stays public on
+// purpose: this is the community VALORANT-SL signup, which authenticates with
+// Discord and does not require a Quest account. Authentication would break it,
+// so the abuse surface — burning the shared upstream Henrik budget, and
+// enumerating which PUUIDs/Discord accounts are registered — is closed with
+// per-IP limits instead.
+const leaderboardRegisterLookupLimiter = createRateLimiter({
+  name: "valorant-leaderboard-register-lookup",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 30,
+  message: "Too many VALORANT lookups. Please try again in a few minutes.",
+});
+const leaderboardRegisterSubmitLimiter = createRateLimiter({
+  name: "valorant-leaderboard-register-submit",
+  windowMs: 60 * 60 * 1000,
+  maxRequests: 10,
+  message: "Too many registration attempts. Please try again later.",
+});
+// Riot ID resolution is debounced in the UI and cached for five minutes, but it
+// still reaches the shared upstream Henrik budget, so a signed-in caller gets a
+// bounded number of distinct lookups.
+const gameAccountResolveLimiter = createRateLimiter({
+  name: "game-account-resolve",
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 40,
+  message: "Too many account lookups. Please try again in a few minutes.",
+});
 const tournamentResource = {
   parameter: "id",
   matchParameter: null,
@@ -137,11 +167,20 @@ router.get("/valorant/leaderboard/search", leaderboardPublicCache, leaderboardCa
 
 // Quest-hosted leaderboard registration/auth proxy (HMAC service-token
 // upstream). No cache middleware — these are stateful/live calls.
-router.get("/valorant/leaderboard/register/discord/login", valorantLeaderboardController.getDiscordLogin);
-router.get("/valorant/leaderboard/register/discord/callback", valorantLeaderboardController.getDiscordCallback);
-router.post("/valorant/leaderboard/register/check-puuid", valorantLeaderboardController.checkPuuid);
-router.post("/valorant/leaderboard/register/preview", valorantLeaderboardController.previewRegistration);
-router.post("/valorant/leaderboard/register/submit", valorantLeaderboardController.submitRegistration);
+router.get("/valorant/leaderboard/register/discord/login", leaderboardRegisterLookupLimiter, valorantLeaderboardController.getDiscordLogin);
+router.get("/valorant/leaderboard/register/discord/callback", leaderboardRegisterLookupLimiter, valorantLeaderboardController.getDiscordCallback);
+router.post("/valorant/leaderboard/register/check-puuid", leaderboardRegisterLookupLimiter, valorantLeaderboardController.checkPuuid);
+router.post("/valorant/leaderboard/register/preview", leaderboardRegisterLookupLimiter, valorantLeaderboardController.previewRegistration);
+router.post("/valorant/leaderboard/register/submit", leaderboardRegisterSubmitLimiter, valorantLeaderboardController.submitRegistration);
+
+// Quest player identity. Resolution proves a Riot account EXISTS; it never
+// proves the signed-in user owns it, so it is a lookup behind the session and
+// is stored by nothing here.
+router.post("/game-accounts/valorant/resolve", requireAuth, gameAccountResolveLimiter, gameAccountController.resolveValorant);
+router.post("/game-accounts/valorant/link", requireAuth, gameAccountResolveLimiter, gameAccountController.linkValorant);
+router.get("/users/me/game-accounts", requireAuth, gameAccountController.listMyGameAccounts);
+router.get("/teams/:teamId/registration-readiness", requireAuth, gameAccountController.getTeamRegistrationReadiness);
+router.post("/game-accounts/valorant/change-request", requireAuth, gameAccountResolveLimiter, gameAccountController.requestValorantChange);
 
 router.get("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, challongeController.getIntegration);
 router.patch("/admin/tournaments/:id/challonge", requireAuth, tournamentAdmin, invalidateCache("foundation"), challongeController.saveIntegration);
@@ -205,6 +244,11 @@ router.delete(
   staffRosterManagement,
   staffController.removeStaff
 );
+
+// Identity administration sits behind the same admin guard as the rest of the
+// VALORANT operations surface.
+router.get("/admin/game-accounts/change-requests", requireAuth, requireAdmin, gameAccountController.listAdminChangeRequests);
+router.post("/admin/game-accounts/change-requests/:requestId/review", requireAuth, requireAdmin, gameAccountController.reviewAdminChangeRequest);
 
 router.use("/admin/valorant", requireAdmin);
 router.get("/admin/valorant/teams", valorantController.listTeams);

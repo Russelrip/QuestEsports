@@ -388,6 +388,35 @@ Do not point this workflow at production and do not run destructive reset comman
 
 ## VALORANT Local Development Topology
 
+### Optional: run the local stack in containers
+
+`docker-compose.local.yml` runs Quest Express, the sibling VALORANT service, and
+a throwaway PostgreSQL together, so local work needs no shared remote Supabase
+test project at all:
+
+```bash
+cp ops/docker/quest.local.env.example ops/docker/quest.local.env
+docker compose -f docker-compose.local.yml up                      # Quest + Postgres
+docker compose -f docker-compose.local.yml --profile valorant up    # + the sibling service
+```
+
+The frontend deliberately stays outside the stack — `cd frontend && npm run dev`
+gives better fast refresh than a bind-mounted container.
+
+**This is a development convenience, not a deployment path.** Production runs
+Quest Express under PM2 on the API VPS through `.github/workflows/cd.yml` gated
+by `MIGRATION_APPROVAL_SHA`, the frontend on Vercel, and backup, restore, and
+secret recovery out of `ops/`. Containerising production means redesigning those
+controls first, and nothing in `ops/docker/` is wired into them.
+
+Three properties are asserted by `backend/tests/local-docker-compose.test.js`
+rather than left to convention: every published port binds to `127.0.0.1`; the
+containers never load `backend/.env` (which points at a remote Supabase project)
+and set `DATABASE_URL` in `environment:` so the local database wins regardless;
+and no credential is baked into an image layer. `ops/docker/quest.local.env` is
+git-ignored explicitly, because the repository's `.env*` rule does not match
+that name.
+
 The VALORANT integration runs two services against **one dedicated Supabase test
 project** — never production or shared staging:
 

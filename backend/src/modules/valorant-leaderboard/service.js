@@ -4,6 +4,7 @@ const {
   getDiscordLogin: fetchDiscordLogin,
   getDiscordCallback: fetchDiscordCallback,
   checkPuuid: fetchCheckPuuid,
+  checkDiscord: fetchCheckDiscord,
   previewRegistration: fetchPreviewRegistration,
   submitRegistration: fetchSubmitRegistration,
 } = require("./client");
@@ -47,6 +48,8 @@ const getDiscordCallback = async (code) => fetchDiscordCallback(code);
 
 const checkPuuid = async (puuid) => fetchCheckPuuid(puuid);
 
+const checkDiscord = async (discordId) => fetchCheckDiscord(discordId);
+
 const previewRegistration = async (puuid) => fetchPreviewRegistration(puuid);
 
 const submitRegistration = async (input) => fetchSubmitRegistration(input);
@@ -57,6 +60,7 @@ module.exports = {
   getDiscordLogin,
   getDiscordCallback,
   checkPuuid,
+  checkDiscord,
   previewRegistration,
   submitRegistration,
 };

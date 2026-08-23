@@ -106,7 +106,10 @@ try {
     }
     $tableCount = (& $psql --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';").Trim()
     $migrationCount = (& $psql --no-psqlrc --tuples-only --no-align --command 'SELECT count(*) FROM public."_prisma_migrations";').Trim()
-    if ($LASTEXITCODE -ne 0 -or [int]$tableCount -le 0 -or [int]$migrationCount -le 0) {
+    # The VALORANT schema is verified too, or a backup that silently stopped
+    # capturing match and rating history would still pass this drill.
+    $valorantTableCount = (& $psql --no-psqlrc --tuples-only --no-align --command "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'valorant';").Trim()
+    if ($LASTEXITCODE -ne 0 -or [int]$tableCount -le 0 -or [int]$migrationCount -le 0 -or [int]$valorantTableCount -le 0) {
       throw "The restored database failed the table/migration verification."
     }
   }
@@ -114,7 +117,7 @@ try {
     Remove-Item Env:PGHOST, Env:PGPORT, Env:PGDATABASE, Env:PGUSER, Env:PGPASSWORD -ErrorAction SilentlyContinue
   }
 
-  Write-Output "Restore drill passed: $tableCount public tables and $migrationCount migration records restored."
+  Write-Output "Restore drill passed: $tableCount public tables, $valorantTableCount valorant tables, and $migrationCount migration records restored."
 }
 finally {
   $matchingContainer = docker ps -a --filter "name=^/$containerName$" --format '{{.Names}}' 2>$null

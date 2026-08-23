@@ -117,6 +117,13 @@ const getDiscordCallback = async (code) =>
 const checkPuuid = async (puuid) =>
   post("/api/v1/auth/check-puuid", { puuid }, REGISTRATION_TIMEOUT_MS);
 
+// Stable Discord account id -> upstream leaderboard registration, if any. The
+// upstream keeps `leaderboard_players.discord_id` under a partial-unique index,
+// which is what makes this usable as a corroborating signal for account
+// linking. Never keyed on the mutable Discord username.
+const checkDiscord = async (discordId) =>
+  post("/api/v1/auth/check-discord", { discord_id: discordId }, REGISTRATION_TIMEOUT_MS);
+
 const previewRegistration = async (puuid) =>
   post("/api/v1/register/preview", { puuid }, REGISTRATION_TIMEOUT_MS);
 
@@ -129,6 +136,7 @@ module.exports = {
   getDiscordLogin,
   getDiscordCallback,
   checkPuuid,
+  checkDiscord,
   previewRegistration,
   submitRegistration,
 };

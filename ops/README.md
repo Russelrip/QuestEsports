@@ -10,8 +10,8 @@ These scripts support encrypted backup and recovery for Quest Esports production
 | `notify-backup-failure.sh` | Sends a minimal Discord-compatible webhook alert without including secrets or backup URLs |
 | `check-backup-freshness.sh` | Fails when no locally checksum-valid and remotely matching archive/checksum pair is newer than the configured maximum age |
 | `create-secret-recovery-package.sh` | Creates a confirmation-gated, `age`-encrypted package of allowlisted application/infrastructure secrets for transfer to a separate recovery vault |
-| `backup-paris-database-windows.ps1` | Creates an encrypted Paris database-only snapshot on the secured Windows recovery PC |
-| `test-paris-database-backup-windows.ps1` | Restores the database-only snapshot into disposable PostgreSQL 17 |
+| `backup-paris-database-windows.ps1` | Creates an encrypted Paris database-only snapshot of both Quest-owned schemas (`public` and `valorant`) on the secured Windows recovery PC |
+| `test-paris-database-backup-windows.ps1` | Restores the database-only snapshot into disposable PostgreSQL 17 and asserts both schemas restored |
 | `quest-esports-backup.env.example` | Production backup environment template |
 | `quest-esports-recovery.env.example` | Isolated recovery environment template |
 | `systemd/quest-esports-backup.service` | Restricted oneshot service running as `deploy` |
@@ -110,7 +110,11 @@ The command has no dry-run mode. Transfer the encrypted package and checksum to 
 
 ### Windows Paris database backup
 
-**Classification: production-source backup operation with local recovery-file and ACL side effects.** The backup script intentionally reads the Paris production database named by `DIRECT_URL` from its `-EnvironmentFile` (default `..\backend\.env` relative to the script), validates the Paris host, writes an encrypted database-only archive and checksum under `-BackupRoot`, restricts their ACLs, and removes temporary staging files. It does not restore or delete the production database, but it uses production database credentials and is not disposable-target-only. It defaults `-BackupRoot`, `-RecoveryRoot`, and `-PostgresBin` to local Windows paths. It has no dry-run mode or confirmation token. Use the secured recovery PC and explicit isolated paths:
+**Classification: production-source backup operation with local recovery-file and ACL side effects.** The backup script intentionally reads the Paris production database named by `DIRECT_URL` from its `-EnvironmentFile` (default `..\backend\.env` relative to the script), validates the Paris host, writes an encrypted database-only archive and checksum under `-BackupRoot`, restricts their ACLs, and removes temporary staging files. It does not restore or delete the production database, but it uses production database credentials and is not disposable-target-only. It defaults `-BackupRoot`, `-RecoveryRoot`, and `-PostgresBin` to local Windows paths. It has no dry-run mode or confirmation token.
+
+It dumps **both Quest-owned schemas**, `public` and `valorant`. Dumping only `public` would silently omit the sibling FastAPI service's match, series, and rating history, which exists nowhere else; the drill script asserts both schemas restored so a regression cannot pass unnoticed. Supabase-managed schemas (`auth`, `storage`, `realtime`, `vault`) remain excluded and are Supabase's own responsibility. The checksum is written with LF endings so `sha256sum -c` validates it directly — a trailing CR makes the archive read as missing, which during a recovery looks exactly like corruption.
+
+Use the secured recovery PC and explicit isolated paths:
 
 ```powershell
 Set-Location D:\absolute\path\to\QuestEsports
