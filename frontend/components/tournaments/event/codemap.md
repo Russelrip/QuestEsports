@@ -8,7 +8,8 @@ registration state.
 - `EventCard.tsx` is the grid tile linking to `/events/[slug]`, shared by the
   `/events` index, the event row on `/tournaments`, and the home page's
   `FeaturedEvents` section. It renders for any published event with at least
-  one published child.
+  one published child. The standalone tournament grids drop a child only when
+  such a card exists, so a child of a draft event is not orphaned.
 - `EventHero.tsx` displays event identity, public media, status, and timing.
 - `EventOverview.tsx` displays dates, venue, and the aggregate games/teams/
   players/available-capacity projection.

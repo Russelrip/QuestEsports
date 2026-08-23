@@ -7,6 +7,7 @@ import { formatTournamentDateRange } from "@/lib/utils";
 import {
   fetchPublicTournaments,
   getFeaturedTournaments,
+  isCoveredByEventCard,
   getTournamentRegistrationPresentation,
   type Tournament,
 } from "@/lib/tournaments";
@@ -20,9 +21,9 @@ export default async function FeaturedTournaments() {
     console.error("Unable to load featured tournaments:", error);
   }
 
-  // A tournament inside an event is advertised through its event card, so the
-  // home page does not offer the same game twice under two destinations.
-  const featuredTournaments = getFeaturedTournaments(tournaments.filter((tournament) => !tournament.series));
+  // A tournament inside a published event is advertised through its event card,
+  // so the home page does not offer the same game twice under two destinations.
+  const featuredTournaments = getFeaturedTournaments(tournaments.filter((tournament) => !isCoveredByEventCard(tournament)));
 
   return (
     <Section>

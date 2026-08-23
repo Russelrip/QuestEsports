@@ -564,7 +564,7 @@ normal public tournament endpoint):
         "slug": "quest-ascension-valorant",
         "title": "Quest Ascension Valorant",
         "game": "valorant",
-        "series": { "id": "event-uuid", "slug": "quest-ascension", "title": "Quest Ascension" },
+        "series": { "id": "event-uuid", "slug": "quest-ascension", "title": "Quest Ascension", "isPublished": true },
         "status": "registration_open",
         "isPublished": true,
         "startDate": "2026-09-01T09:00:00.000Z",

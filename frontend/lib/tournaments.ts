@@ -244,7 +244,7 @@ export type Tournament = {
   organizer: string;
   country: string;
   location: string;
-  series: { id: string; slug: string; title: string } | null;
+  series: { id: string; slug: string; title: string; isPublished?: boolean } | null;
   seriesOrder: number;
   displayPriority: number;
   bannerUrl: string | null;
@@ -397,6 +397,13 @@ export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => 
  * none set the newest published events stand in. Backend order (displayOrder,
  * then newest) is preserved rather than re-sorted here.
  */
+/**
+ * A child is represented by its event card, so the standalone listings skip it.
+ * A draft parent publishes no card, so the child would otherwise vanish from
+ * every public listing while still being published itself.
+ */
+export const isCoveredByEventCard = (tournament: Tournament) => Boolean(tournament.series?.isPublished);
+
 export const getFeaturedEvents = (events: EventSeries[], limit = 3) => {
   const withGames = events.filter((event) => event.tournaments.length > 0);
   const featured = withGames.filter((event) => event.featured);
