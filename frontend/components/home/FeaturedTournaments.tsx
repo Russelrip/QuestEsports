@@ -20,13 +20,15 @@ export default async function FeaturedTournaments() {
     console.error("Unable to load featured tournaments:", error);
   }
 
-  const featuredTournaments = getFeaturedTournaments(tournaments);
+  // A tournament inside an event is advertised through its event card, so the
+  // home page does not offer the same game twice under two destinations.
+  const featuredTournaments = getFeaturedTournaments(tournaments.filter((tournament) => !tournament.series));
 
   return (
     <Section>
       <div className="mb-8 flex flex-col items-center gap-4 text-center sm:flex-row sm:items-end sm:justify-between sm:text-left">
         <div className="max-w-3xl">
-          <h2 className="text-3xl text-white sm:text-4xl">Featured Events</h2>
+          <h2 className="text-3xl text-white sm:text-4xl">Featured Tournaments</h2>
         </div>
         <Link href="/tournaments" className={`${buttonClassName({ variant: "secondary" })} hidden sm:inline-flex`}>
           View all
@@ -79,7 +81,7 @@ export default async function FeaturedTournaments() {
           ))
         ) : (
           <Card className="p-8 lg:col-span-3">
-            <h3 className="text-2xl text-white">More events are on the way.</h3>
+            <h3 className="text-2xl text-white">More tournaments are on the way.</h3>
             <p className="mt-3 max-w-2xl text-sm text-slate-400">
               Quest E-sports is preparing the next tournament cycle. Check the full listing for announcements and registration windows.
             </p>
