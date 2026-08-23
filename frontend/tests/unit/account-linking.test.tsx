@@ -118,3 +118,36 @@ describe("ProfileView OAuth callback integration", () => {
     expect(window.location.search).toBe("");
   });
 });
+
+describe("provider descriptions match the connection state", () => {
+  it("stops telling a connected user to connect", async () => {
+    mocks.getLinkedProviders.mockResolvedValue(linked(false, true));
+    render(<AccountLinkingPanel />);
+
+    // A card badged CONNECTED that still says "Connect Discord so staff can
+    // reach you" reads as an unfinished instruction, and leaves the user
+    // hunting for a step they already completed.
+    expect(
+      await screen.findByText("Your captain and tournament staff can reach you on Discord."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/^Connect Discord so your captain/)).toBeNull();
+  });
+
+  it("still explains why an unconnected user should bother", async () => {
+    mocks.getLinkedProviders.mockResolvedValue(linked(false, false));
+    render(<AccountLinkingPanel />);
+
+    expect(await screen.findByText(/Connect Discord so your captain/)).toBeTruthy();
+    expect(
+      screen.queryByText("Your captain and tournament staff can reach you on Discord."),
+    ).toBeNull();
+  });
+
+  it("applies the same rule to Google", async () => {
+    mocks.getLinkedProviders.mockResolvedValue(linked(true, false));
+    render(<AccountLinkingPanel />);
+
+    expect(await screen.findByText("You can sign in with Google.")).toBeTruthy();
+    expect(screen.queryByText("Use your Google identity to sign in faster.")).toBeNull();
+  });
+});
