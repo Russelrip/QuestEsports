@@ -501,7 +501,9 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
 
   const existingUser = await prisma.user.findUnique({
     where: { id: requestedUserId },
-    select: { id: true, email: true },
+    // `discordTag` is read so a linked account's verified value can be
+    // preserved against a client that tries to overwrite it.
+    select: { id: true, email: true, discordTag: true },
   });
 
   if (!existingUser) {
@@ -546,6 +548,16 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
     throw new HttpError(400, "Username already exists.");
   }
 
+  // Once Discord is connected, the tag comes from that connection and a profile
+  // edit cannot change it. Locking the input alone would be cosmetic — the
+  // client can post whatever it likes, and an identity field anyone can retype
+  // is not an identity.
+  const linkedDiscord = await prisma.oAuthAccount.findFirst({
+    where: { userId: requestedUserId, provider: "discord" },
+    select: { id: true },
+  });
+  const nextDiscordTag = linkedDiscord ? existingUser.discordTag : discordTag;
+
   const user = await prisma.user.update({
     where: { id: requestedUserId },
     data: {
@@ -554,7 +566,7 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
       username,
       usernameNormalized,
       phone,
-      discordTag,
+      discordTag: nextDiscordTag,
     },
     select: PUBLIC_USER_SELECT,
   });
