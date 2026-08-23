@@ -7,6 +7,7 @@ import {
   verificationLabel,
   type GameAccountVerification,
 } from "../../lib/game-accounts";
+import { isValidRiotId } from "../../components/auth/GameAccountsPanel";
 
 const mocks = vi.hoisted(() => ({
   getMyGameAccounts: vi.fn(),
@@ -209,5 +210,32 @@ describe("linking flow", () => {
 
     expect(await screen.findByText("Locked by a tournament")).toBeTruthy();
     expect(screen.getByText(/registered tournament roster/i)).toBeTruthy();
+  });
+});
+
+
+describe("Riot ID validation", () => {
+  it("accepts game names containing spaces", () => {
+    // Riot allows spaces in game names, and rejecting them locally means a
+    // player with a perfectly valid ID can never connect their account.
+    expect(isValidRiotId("QT Russel#Senu")).toBe(true);
+    expect(isValidRiotId("a b c#tag")).toBe(true);
+    expect(isValidRiotId("  QT Russel#Senu  ")).toBe(true);
+  });
+
+  it("accepts ordinary Riot IDs", () => {
+    expect(isValidRiotId("Russel#1234")).toBe(true);
+    expect(isValidRiotId("TenZ#SEN")).toBe(true);
+  });
+
+  it("still rejects what cannot resolve", () => {
+    for (const value of ["Russel", "Russel#", "#1234", "   ", "#", "a#b#c"]) {
+      expect(isValidRiotId(value)).toBe(false);
+    }
+  });
+
+  it("rejects whitespace inside the tag", () => {
+    // The tag is what keeps the separator unambiguous, so it stays strict.
+    expect(isValidRiotId("QT Russel#Se nu")).toBe(false);
   });
 });

@@ -17,7 +17,22 @@ import {
 // Long enough that a player typing "Russel#1234" produces one lookup rather
 // than eleven, short enough that the result feels immediate.
 const LOOKUP_DEBOUNCE_MS = 500;
-const RIOT_ID_PATTERN = /^[^#\s]{1,32}#[^#\s]{1,16}$/;
+// Riot game names may contain spaces — "QT Russel#Senu" is an ordinary Riot ID
+// — so the name excludes only `#` and control characters. The tag never
+// contains whitespace, which is what keeps the separator unambiguous.
+// Must stay in step with backend valorant.validation.js.
+const RIOT_NAME_PATTERN = /^[^#\r\n\t]{1,32}$/;
+const RIOT_TAG_PATTERN = /^[^#\s]{1,16}$/;
+
+export const isValidRiotId = (value: string): boolean => {
+  const trimmed = value.trim();
+  // Split on the LAST separator: anything before it belongs to the name.
+  const separator = trimmed.lastIndexOf("#");
+  if (separator <= 0) return false;
+  const name = trimmed.slice(0, separator);
+  const tag = trimmed.slice(separator + 1);
+  return RIOT_NAME_PATTERN.test(name) && name.trim().length > 0 && RIOT_TAG_PATTERN.test(tag);
+};
 
 type GameAccountsPanelProps = { className?: string };
 
@@ -68,7 +83,7 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
 
     // Reject locally what cannot possibly resolve, so a malformed entry never
     // spends the shared upstream budget.
-    if (!RIOT_ID_PATTERN.test(trimmed)) {
+    if (!isValidRiotId(trimmed)) {
       setResolved(null);
       setLookupError("Enter your Riot ID as Name#Tag.");
       setLooking(false);
