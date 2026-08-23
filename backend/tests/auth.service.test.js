@@ -296,6 +296,9 @@ test("admin profile updates validate the target user's email", async () => {
           return { ...target, ...args.data };
         },
       },
+      // A profile update now checks for a linked Discord account, because a
+      // connected tag is verified data that an edit must not overwrite.
+      oAuthAccount: { findFirst: async () => null },
     },
   });
 

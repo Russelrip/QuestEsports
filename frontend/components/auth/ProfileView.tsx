@@ -467,8 +467,16 @@ export default function ProfileView() {
                       <FormField label="Phone" htmlFor="phone">
                         <Input id="phone" {...profileForm.register("phone")} />
                       </FormField>
+                      {/* Derived from the connected Discord account, never
+                          typed. A tag anyone can retype is not an identity, and
+                          the server ignores edits to it once Discord is linked. */}
                       <FormField label="Discord Tag" htmlFor="discordTag">
-                        <Input id="discordTag" {...profileForm.register("discordTag")} />
+                        <Input id="discordTag" disabled {...profileForm.register("discordTag")} />
+                        <p className="mt-2 text-xs leading-5 text-slate-500">
+                          {user?.discordTag
+                            ? "From your connected Discord account."
+                            : "Connect Discord under Linked accounts to fill this in."}
+                        </p>
                       </FormField>
                     </div>
                     {profileForm.formState.errors.root?.message ? <p className="text-sm text-slate-300">{profileForm.formState.errors.root.message}</p> : null}

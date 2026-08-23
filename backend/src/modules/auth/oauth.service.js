@@ -891,14 +891,28 @@ const handleOAuthLinkCallback = async ({
 
   if (!existingAccount) {
     try {
-      await prisma.oAuthAccount.create({
-        data: {
-          id: crypto.randomUUID(),
-          userId: normalizedUserId,
-          provider,
-          providerUserId: profile.providerUserId,
-          email: profile.email,
-        },
+      await prisma.$transaction(async (tx) => {
+        await tx.oAuthAccount.create({
+          data: {
+            id: crypto.randomUUID(),
+            userId: normalizedUserId,
+            provider,
+            providerUserId: profile.providerUserId,
+            email: profile.email,
+          },
+        });
+
+        // The Discord tag is display data, and the connection is the only place
+        // it can come from honestly. Before this, linking left the profile's
+        // Discord field empty and the user was expected to type it themselves —
+        // which meant it could say anything at all. Same transaction as the
+        // link, so the two never disagree.
+        if (provider === "discord" && profile.discordTag) {
+          await tx.user.update({
+            where: { id: normalizedUserId },
+            data: { discordTag: profile.discordTag },
+          });
+        }
       });
     } catch (error) {
       if (error?.code === "P2002") {
@@ -950,6 +964,16 @@ const unlinkOAuthProvider = async ({ userId, provider }) => {
     await tx.oAuthAccount.deleteMany({
       where: { userId: normalizedUserId, provider },
     });
+
+    // A Discord tag outlives nothing once the connection is gone: it was only
+    // ever true because the link vouched for it, and keeping it would leave a
+    // stale handle that looks verified but is not.
+    if (provider === "discord") {
+      await tx.user.update({
+        where: { id: normalizedUserId },
+        data: { discordTag: null },
+      });
+    }
   });
 
   return listLinkedOAuthProviders(normalizedUserId);

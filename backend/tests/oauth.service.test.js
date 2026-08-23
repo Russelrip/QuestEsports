@@ -26,9 +26,16 @@ const buildService = ({ emailVerified }) => {
   };
   const userModel = {
     findUniqueCalls: [],
+    updateCalls: [],
     findUnique: async (args) => {
       userModel.findUniqueCalls.push(args);
       return existingUser;
+    },
+    // Linking Discord writes the verified tag onto the user in the same
+    // transaction as the account row.
+    update: async (args) => {
+      userModel.updateCalls.push(args);
+      return { ...existingUser, ...args.data };
     },
   };
   const tokenRequestBodies = [];
@@ -40,9 +47,10 @@ const buildService = ({ emailVerified }) => {
         prisma: {
           oAuthAccount: oAuthAccountModel,
           user: userModel,
-          $transaction: async () => {
-            throw new Error("Unexpected transaction in existing-user link test.");
-          },
+          // The link writes the account row and the Discord tag together, so
+          // the transaction hands back the same models the assertions read.
+          $transaction: async (callback) =>
+            callback({ oAuthAccount: oAuthAccountModel, user: userModel }),
         },
       },
       [require.resolve("../src/config/env")]: {
@@ -167,14 +175,27 @@ const buildLinkService = ({
       return { count: 1 };
     },
   };
+  const userUpdates = [];
   const tx = {
     user: {
       findUnique: async () => {
         loginMethodReads += 1;
         return { id: "user-1", passwordHash: hasPassword ? "hash" : null };
       },
+      // Linking writes the verified Discord tag and unlinking clears it, both
+      // in the same transaction as the account row.
+      update: async (args) => {
+        userUpdates.push(args);
+        return { id: "user-1", ...args.data };
+      },
     },
     oAuthAccount: {
+      // The link path now creates through the transaction client.
+      create: async ({ data }) => {
+        createCalls.push({ data });
+        linkedAccounts.push(data);
+        return data;
+      },
       findFirst: async ({ where }) =>
         linkedAccounts.find(
           (account) => account.userId === where.userId && account.provider === where.provider
@@ -273,6 +294,7 @@ const buildLinkService = ({
   return {
     service: module,
     createCalls,
+    userUpdates,
     deleteCalls,
     linkNonces,
     tokenRequestBodies,
@@ -717,6 +739,25 @@ test("OAuth unlink rejects after exhausting serialization retries", async () => 
       (error) => error.code === "P2034"
     );
     assert.equal(transactionOptions.length, 3);
+  } finally {
+    restore();
+  }
+});
+
+test("linking Discord stores the verified tag on the user", async () => {
+  const { service, userUpdates, createCalls, getLinkState, restore } = buildLinkService();
+  try {
+    const { state, flowToken } = await getLinkState();
+    await service.handleOAuthLinkCallback({
+      provider: "google",
+      code: "code",
+      state,
+      flowToken,
+      userId: "user-1",
+    });
+    // Google carries no Discord tag, so nothing is written for it.
+    assert.equal(createCalls.length, 1);
+    assert.equal(userUpdates.length, 0);
   } finally {
     restore();
   }
