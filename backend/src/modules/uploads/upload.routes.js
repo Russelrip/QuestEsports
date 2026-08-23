@@ -1,6 +1,5 @@
 const express = require("express");
-const { createReadStream } = require("fs");
-const { pipeline } = require("stream/promises");
+const { streamFileToResponse } = require("../../lib/stream-response");
 const { asyncHandler } = require("../../lib/async-handler");
 const { streamUpload } = require("./upload.service");
 
@@ -13,7 +12,7 @@ const sendPublicUpload = (directoryKey) =>
     res.setHeader("Content-Length", file.size);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     res.status(200);
-    await pipeline(createReadStream(file.path), res);
+    await streamFileToResponse(file.path, res);
   });
 
 router.get("/uploads/tournament-banners/:filename", sendPublicUpload("tournament-banners"));

@@ -1,7 +1,6 @@
-const { createReadStream } = require("fs");
-const { pipeline } = require("stream/promises");
 const { asyncHandler } = require("../../lib/async-handler");
 const { prepareEventAlbumPhotoDownload } = require("./event-album-download");
+const { streamFileToResponse } = require("../../lib/stream-response");
 const {
   listPublicEventAlbums,
   listAdminEventAlbums,
@@ -22,7 +21,7 @@ const sendImage = async (res, image) => {
   res.setHeader("Content-Length", image.size ?? image.data.length);
   res.status(200);
   if (image.path) {
-    await pipeline(createReadStream(image.path), res);
+    await streamFileToResponse(image.path, res);
     return;
   }
   res.send(image.data);
