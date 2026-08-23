@@ -73,7 +73,10 @@ try {
   $env:PGPASSWORD = $databasePassword
   $env:PGSSLMODE = "require"
   try {
-    & $pgDump --format=custom --schema=public --no-owner --no-acl --file=$dumpPath
+    # Both Quest-owned schemas. `public` is Prisma's; `valorant` belongs to the
+    # sibling FastAPI service and holds match, series, and rating history that
+    # exists nowhere else. Dumping only `public` silently loses it.
+    & $pgDump --format=custom --schema=public --schema=valorant --no-owner --no-acl --file=$dumpPath
     if ($LASTEXITCODE -ne 0) {
       throw "pg_dump failed with exit code $LASTEXITCODE."
     }
@@ -93,7 +96,8 @@ try {
     "source_host=$($databaseUri.Host)",
     "database=$databaseName",
     "database_format=postgres_custom",
-    "scope=application_public_schema_only",
+    "scope=quest_owned_schemas",
+    "schemas_included=public,valorant",
     "supabase_managed_schemas_included=false",
     "vps_uploads_included=false"
   ), $utf8NoBom)
@@ -116,7 +120,10 @@ try {
   }
 
   $hash = (Get-FileHash -LiteralPath $encryptedPath -Algorithm SHA256).Hash.ToLowerInvariant()
-  [IO.File]::WriteAllText($checksumPath, "$hash  $([IO.Path]::GetFileName($encryptedPath))`r`n", [Text.Encoding]::ASCII)
+  # LF, not CRLF: `sha256sum -c` treats a trailing CR as part of the filename
+  # and reports the archive as missing, which during a recovery reads as a
+  # corrupt backup at the worst possible moment.
+  [IO.File]::WriteAllText($checksumPath, "$hash  $([IO.Path]::GetFileName($encryptedPath))`n", [Text.Encoding]::ASCII)
 
   foreach ($backupFile in @($encryptedPath, $checksumPath)) {
     icacls $backupFile /inheritance:r /grant:r "${currentIdentity}:F" '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
