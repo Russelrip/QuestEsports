@@ -1399,6 +1399,8 @@ model RegistrationMember {
   @@unique([registrationId, role, memberOrder])
   @@index([registrationId])
   @@index([userId])
+  @@index([playerId])
+  @@index([gameAccountId])
   @@index([emailNormalized])
   @@index([inviteStatus])
   @@index([inviteExpiresAt])
@@ -1575,6 +1577,7 @@ model SavedTeamMember {
   @@unique([teamId, emailNormalized])
   @@index([teamId])
   @@index([userId])
+  @@index([playerId])
   @@index([emailNormalized])
   @@index([inviteStatus])
   @@map("saved_team_members")
@@ -1617,7 +1620,7 @@ model GameAccountChangeRequest {
 
 model Player {
   id                  String                     @id @default(uuid()) @db.Uuid
-  publicId            String                     @unique @default(dbgenerated("('QPID-' || lpad(nextval('player_public_id_seq')::text, 6, '0'))")) @map("public_id")
+  publicId            String                     @unique @default(dbgenerated("('QPID-'::text || lpad((nextval('player_public_id_seq'::regclass))::text, 6, '0'::text))")) @map("public_id")
   userId              String?                    @unique @map("user_id") @db.Uuid
   displayName         String                     @map("display_name")
   createdAt           DateTime                   @default(now()) @map("created_at")
