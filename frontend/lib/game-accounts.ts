@@ -113,7 +113,10 @@ export async function getMyGameAccounts(): Promise<GameAccountList> {
 export async function resolveValorantAccount(riotId: string): Promise<ResolvedGameAccount> {
   const { response, data } = await apiFetchJson<{ data?: ResolvedGameAccount }>(
     "/api/v1/game-accounts/valorant/resolve",
-    { method: "POST", body: JSON.stringify({ riotId }) },
+    // `json` rather than a raw `body`: apiFetch only sets the JSON
+    // Content-Type when this option is used, and without that header Express
+    // never parses the body — the server sees an empty request.
+    { method: "POST", json: { riotId } },
   );
   const message = getApiErrorMessage(response, data, "Could not look up that Riot ID.");
   if (message) throw new Error(message);
@@ -125,7 +128,10 @@ export async function resolveValorantAccount(riotId: string): Promise<ResolvedGa
 export async function linkValorantAccount(riotId: string): Promise<GameAccount> {
   const { response, data } = await apiFetchJson<{ data?: GameAccount }>(
     "/api/v1/game-accounts/valorant/link",
-    { method: "POST", body: JSON.stringify({ riotId }) },
+    // `json` rather than a raw `body`: apiFetch only sets the JSON
+    // Content-Type when this option is used, and without that header Express
+    // never parses the body — the server sees an empty request.
+    { method: "POST", json: { riotId } },
   );
   const message = getApiErrorMessage(response, data, "Could not link that VALORANT account.");
   if (message) throw new Error(message);
