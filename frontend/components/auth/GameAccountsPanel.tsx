@@ -7,6 +7,7 @@ import { buildValorantTrackerProfileUrl } from "@/lib/valorant";
 import {
   getMyGameAccounts,
   linkValorantAccount,
+  requestValorantChange,
   resolveValorantAccount,
   statusLabel,
   verificationLabel,
@@ -48,6 +49,13 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
   const [linking, setLinking] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+
+  // Changing the account behind a competitive identity is deliberate, so it
+  // sits behind an explicit toggle rather than being an always-visible field.
+  const [changing, setChanging] = useState(false);
+  const [changeRiotId, setChangeRiotId] = useState("");
+  const [changeReason, setChangeReason] = useState("");
+  const [submittingChange, setSubmittingChange] = useState(false);
 
   // Every lookup carries a sequence number so a slow earlier response can never
   // overwrite a newer one when the player keeps typing.
@@ -128,6 +136,44 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
     }
   };
 
+  const submitChange = async () => {
+    const riotId = changeRiotId.trim();
+    const reason = changeReason.trim();
+    if (!isValidRiotId(riotId)) {
+      setError("Enter the new Riot ID as Name#Tag.");
+      return;
+    }
+    if (!reason) {
+      setError("Tell us why this account needs to change — an admin reads it.");
+      return;
+    }
+    setSubmittingChange(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await requestValorantChange(riotId, reason);
+      if (result.kind === "rename") {
+        // Same underlying account: nothing to review, so say so plainly rather
+        // than implying a request is pending.
+        setNotice(
+          result.refreshed
+            ? "That is the same account under a new Riot name, so we just refreshed it. No review needed."
+            : "That is already your current account — nothing changed.",
+        );
+      } else {
+        setNotice("Request sent. An admin will review it and you will keep your current account until then.");
+      }
+      setChanging(false);
+      setChangeRiotId("");
+      setChangeReason("");
+      await refresh();
+    } catch (reason_) {
+      setError(reason_ instanceof Error ? reason_.message : "Could not request an account change.");
+    } finally {
+      setSubmittingChange(false);
+    }
+  };
+
   const valorant = accounts?.find((account) => account.game === "valorant") ?? null;
   const trackerUrl = valorant?.username && valorant?.tagline
     ? buildValorantTrackerProfileUrl(valorant.username, valorant.tagline)
@@ -183,6 +229,55 @@ export default function GameAccountsPanel({ className = "" }: GameAccountsPanelP
               View on tracker.gg
             </a>
           ) : null}
+
+          {/* Renamed on Riot? Nothing to do — the same entry point handles it
+              and the server tells the two apart by the stable identifier. */}
+          {changing ? (
+            <div className="mt-5 border-t border-white/10 pt-5">
+              <p className="text-sm leading-6 text-slate-400">
+                Renamed on Riot? Just enter your new ID — we will recognise it as the same
+                account and refresh it. Moving to a <strong className="text-slate-200">different</strong>{" "}
+                account needs an admin to approve it, and you keep this one until they do.
+              </p>
+
+              <label className="mt-4 block text-xs uppercase tracking-[0.15em] text-slate-500" htmlFor="change-riot-id">
+                New Riot ID
+              </label>
+              <input
+                id="change-riot-id"
+                className="mt-2 w-full border border-white/10 bg-white/[.03] p-3 text-white outline-none focus:border-cyan-300/40"
+                placeholder="Name#Tag"
+                autoComplete="off"
+                value={changeRiotId}
+                onChange={(event) => setChangeRiotId(event.target.value)}
+              />
+
+              <label className="mt-4 block text-xs uppercase tracking-[0.15em] text-slate-500" htmlFor="change-reason">
+                Why is it changing?
+              </label>
+              <textarea
+                id="change-reason"
+                rows={2}
+                className="mt-2 w-full border border-white/10 bg-white/[.03] p-3 text-white outline-none focus:border-cyan-300/40"
+                placeholder="e.g. I lost access to my old Riot account"
+                value={changeReason}
+                onChange={(event) => setChangeReason(event.target.value)}
+              />
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button type="button" variant="secondary" disabled={submittingChange} onClick={() => void submitChange()}>
+                  {submittingChange ? "Sending…" : "Request change"}
+                </Button>
+                <Button type="button" variant="ghost" disabled={submittingChange} onClick={() => { setChanging(false); setChangeRiotId(""); setChangeReason(""); setError(""); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button type="button" variant="ghost" className="mt-4 sm:ml-4" onClick={() => { setChanging(true); setNotice(""); setError(""); }}>
+              Change account
+            </Button>
+          )}
         </article>
       ) : (
         <div className="mt-6 border border-white/8 bg-white/[.02] p-5">
