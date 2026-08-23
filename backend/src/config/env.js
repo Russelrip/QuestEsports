@@ -244,6 +244,9 @@ const env = {
   ),
   QUEST_LEADERBOARD_SYSTEM_ACTOR: optional("QUEST_LEADERBOARD_SYSTEM_ACTOR"),
   VALORANT_SL_API_URL: optional("VALORANT_SL_API_URL"),
+  // Optional. Team invitations are delivered by email regardless; a bot token
+  // only enables an additional Discord DM where the recipient can receive one.
+  DISCORD_BOT_TOKEN: optional("DISCORD_BOT_TOKEN"),
   NODE_ENV: configuredNodeEnv,
   LOG_LEVEL: optional("LOG_LEVEL", "info").toLowerCase(),
   SESSION_COOKIE_NAME: required("SESSION_COOKIE_NAME"),
