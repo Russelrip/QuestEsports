@@ -11,11 +11,27 @@ import {
   unlinkProvider,
 } from "@/lib/account-linking";
 
-const providerDetails: Record<OAuthProvider, { name: string; description: string; mark: string }> = {
-  google: { name: "Google", description: "Use your Google identity to sign in faster.", mark: "G" },
+// Two descriptions per provider, because one string cannot serve both states:
+// "Connect Discord so staff can reach you" reads as an instruction to someone
+// who has already connected it, and leaves them wondering what else to do.
+const providerDetails: Record<
+  OAuthProvider,
+  { name: string; prompt: string; connected: string; mark: string }
+> = {
+  google: {
+    name: "Google",
+    prompt: "Use your Google identity to sign in faster.",
+    connected: "You can sign in with Google.",
+    mark: "G",
+  },
   // Discord is how tournament communication reaches a player, so it is framed
   // as something worth connecting rather than a second way to sign in.
-  discord: { name: "Discord", description: "Connect Discord so your captain and tournament staff can reach you. Some tournaments require it.", mark: "D" },
+  discord: {
+    name: "Discord",
+    prompt: "Connect Discord so your captain and tournament staff can reach you. Some tournaments require it.",
+    connected: "Your captain and tournament staff can reach you on Discord.",
+    mark: "D",
+  },
 };
 
 type AccountLinkingPanelProps = { className?: string };
@@ -111,7 +127,7 @@ export default function AccountLinkingPanel({ className = "" }: AccountLinkingPa
                 <div className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-full bg-white text-lg font-bold text-slate-950" aria-hidden="true">{details.mark}</span><div><h4 className="font-semibold text-white">{details.name}</h4><p className="mt-1 text-xs uppercase tracking-[0.15em] text-slate-500">{!known ? "Status unavailable" : linked ? "Connected" : "Not connected"}</p></div></div>
                 <span className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${linked ? "text-cyan-200" : "text-slate-500"}`}>{!known ? "Unavailable" : linked ? "Linked" : "Available"}</span>
               </div>
-              <p className="mt-5 text-sm leading-6 text-slate-400">{details.description}</p>
+              <p className="mt-5 text-sm leading-6 text-slate-400">{linked ? details.connected : details.prompt}</p>
               {linked ? <Button type="button" variant="ghost" className="mt-4 w-full sm:w-auto" disabled={pending} onClick={() => void unlink(provider)}>{pending ? "Unlinking…" : `Unlink ${details.name}`}</Button> : <Button type="button" variant="secondary" className="mt-4 w-full sm:w-auto" disabled={!known} onClick={() => link(provider)}>{known ? `Link ${details.name}` : "Unavailable"}</Button>}
             </article>;
           })}
