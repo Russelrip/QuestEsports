@@ -60,6 +60,7 @@ describe("admin navigation", () => {
           { href: "/admin/match-rooms", label: "Match Rooms", icon: "monitor" },
           { href: "/admin/veto-rooms", label: "Veto Rooms", icon: "swords" },
           { href: "/admin/valorant", label: "Valorant", icon: "crosshair" },
+          { href: "/admin/game-accounts", label: "Account Changes", icon: "user-plus" },
         ],
       },
     ]);
