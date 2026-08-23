@@ -8,6 +8,7 @@ const {
   sendTeamInviteEmail,
   sendTeamInviteEmails,
 } = require("../../lib/mail/sendTeamInviteEmail");
+const { notifyInviteOnDiscord } = require("./invite-discord-notice");
 const {
   removeUploadsQuietly,
   removeTeamLogoIfUnreferenced,
@@ -755,6 +756,24 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
     member.team.captainUser.firstName,
     member.team.captainUser.lastName,
   ].filter(Boolean).join(" ").trim() || member.team.captainUser.username;
+
+  // Best effort, after the email is queued and never in its way: a DM that
+  // cannot be delivered must not cost anyone their roster spot.
+  void notifyInviteOnDiscord({
+    userId: member.userId || null,
+    emailNormalized: member.emailNormalized || null,
+    recipientName: member.name,
+    teamName: member.team.name,
+    captainName,
+    tournamentTitle: relatedRegistrationMember?.registration?.tournament?.title || null,
+  }).then((result) => {
+    logger.info("Discord invite notice attempted.", {
+      teamId,
+      memberId,
+      delivered: result.delivered,
+      reason: result.reason,
+    });
+  });
 
   try {
     await sendTeamInviteEmail({
