@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getMyGameAccounts: vi.fn(),
   resolveValorantAccount: vi.fn(),
   linkValorantAccount: vi.fn(),
+  requestValorantChange: vi.fn(),
 }));
 
 vi.mock("@/lib/game-accounts", async () => {
@@ -237,5 +238,102 @@ describe("Riot ID validation", () => {
   it("rejects whitespace inside the tag", () => {
     // The tag is what keeps the separator unambiguous, so it stays strict.
     expect(isValidRiotId("QT Russel#Se nu")).toBe(false);
+  });
+});
+
+const connectedAccount = (overrides = {}) => ({
+  id: "account-1",
+  game: "valorant" as const,
+  username: "QT Russel",
+  tagline: "Senu",
+  region: "ap",
+  verificationStatus: "discord_corroborated" as const,
+  status: "active" as const,
+  linkedAt: null,
+  verifiedAt: null,
+  lastSyncedAt: null,
+  ...overrides,
+});
+
+describe("changing the connected account", () => {
+  beforeEach(() => {
+    mocks.getMyGameAccounts.mockResolvedValue({
+      playerPublicId: "QPID-000001",
+      accounts: [connectedAccount()],
+    });
+    mocks.requestValorantChange.mockResolvedValue({
+      kind: "replacement",
+      requestId: "req-1",
+      status: "pending",
+    });
+  });
+
+  it("offers a way to change a connected account", async () => {
+    render(<GameAccountsPanel />);
+    expect(await screen.findByRole("button", { name: "Change account" })).toBeTruthy();
+  });
+
+  it("explains that a rename needs no approval", async () => {
+    const user = userEvent.setup();
+    render(<GameAccountsPanel />);
+    await user.click(await screen.findByRole("button", { name: "Change account" }));
+    // Otherwise a renamed player thinks they must wait for an admin.
+    expect(screen.getByText(/same\s+account and refresh it/i)).toBeTruthy();
+  });
+
+  it("requires a reason, because an admin has to read it", async () => {
+    const user = userEvent.setup();
+    render(<GameAccountsPanel />);
+    await user.click(await screen.findByRole("button", { name: "Change account" }));
+    await user.type(screen.getByLabelText("New Riot ID"), "Other#1234");
+    await user.click(screen.getByRole("button", { name: "Request change" }));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(mocks.requestValorantChange).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed Riot ID before calling the server", async () => {
+    const user = userEvent.setup();
+    render(<GameAccountsPanel />);
+    await user.click(await screen.findByRole("button", { name: "Change account" }));
+    await user.type(screen.getByLabelText("New Riot ID"), "NoSeparator");
+    await user.type(screen.getByLabelText("Why is it changing?"), "lost access");
+    await user.click(screen.getByRole("button", { name: "Request change" }));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(mocks.requestValorantChange).not.toHaveBeenCalled();
+  });
+
+  it("sends a replacement request and says the current account is kept", async () => {
+    const user = userEvent.setup();
+    render(<GameAccountsPanel />);
+    await user.click(await screen.findByRole("button", { name: "Change account" }));
+    await user.type(screen.getByLabelText("New Riot ID"), "Other#1234");
+    await user.type(screen.getByLabelText("Why is it changing?"), "lost access to my old account");
+    await user.click(screen.getByRole("button", { name: "Request change" }));
+
+    await waitFor(() => {
+      expect(mocks.requestValorantChange).toHaveBeenCalledWith(
+        "Other#1234",
+        "lost access to my old account",
+      );
+    });
+    expect(await screen.findByText(/keep your current account until then/i)).toBeTruthy();
+  });
+
+  it("tells a renamed player no review is needed", async () => {
+    mocks.requestValorantChange.mockResolvedValue({
+      kind: "rename",
+      refreshed: true,
+      account: connectedAccount({ username: "NewName" }),
+    });
+    const user = userEvent.setup();
+    render(<GameAccountsPanel />);
+    await user.click(await screen.findByRole("button", { name: "Change account" }));
+    await user.type(screen.getByLabelText("New Riot ID"), "NewName#Senu");
+    await user.type(screen.getByLabelText("Why is it changing?"), "renamed on Riot");
+    await user.click(screen.getByRole("button", { name: "Request change" }));
+
+    expect(await screen.findByText(/No review needed/i)).toBeTruthy();
   });
 });

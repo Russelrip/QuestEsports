@@ -139,3 +139,29 @@ export async function linkValorantAccount(riotId: string): Promise<GameAccount> 
   if (!account) throw new Error("Could not link that VALORANT account.");
   return account;
 }
+
+/**
+ * Asking to move to a different Riot account.
+ *
+ * A RENAME is not a change: the stable identifier is unchanged, so the server
+ * simply refreshes the cached display name and answers `kind: "rename"` with no
+ * review. Only a genuinely different account produces a request an admin sees.
+ */
+export type AccountChangeResult =
+  | { kind: "rename"; refreshed: boolean; account: GameAccount }
+  | { kind: "replacement"; requestId: string; status: string };
+
+export async function requestValorantChange(
+  riotId: string,
+  reason: string,
+): Promise<AccountChangeResult> {
+  const { response, data } = await apiFetchJson<{ data?: AccountChangeResult }>(
+    "/api/v1/game-accounts/valorant/change-request",
+    { method: "POST", json: { riotId, reason } },
+  );
+  const message = getApiErrorMessage(response, data, "Could not request an account change.");
+  if (message) throw new Error(message);
+  const result = unwrap<AccountChangeResult>(data);
+  if (!result) throw new Error("Could not request an account change.");
+  return result;
+}
