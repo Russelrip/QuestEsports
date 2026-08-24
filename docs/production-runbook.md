@@ -372,6 +372,10 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 2. CI runs backend audit, migrations against PostgreSQL 16, migration/schema verification, coverage, lint, frontend audit/lint/unit tests/build, and Playwright.
 3. After CI succeeds, automatic backend CD deploys the exact successful CI commit SHA.
 4. If migrations changed, set the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to that exact 40-character commit SHA. Destructive or backward-incompatible migrations also require `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` to equal that SHA. CD refuses any other value and creates an encrypted off-site backup before applying the migration.
+
+   Set it on the **`Production` environment** (`Settings -> Environments -> Production -> Environment secrets`), not on repository secrets. The `backend-deploy` job declares `environment: production`, and an environment secret of the same name overrides the repository one. If both exist, the repository value is never read: editing it appears to do nothing, and the deployment fails with `A schema migration requires BACKEND_MIGRATION_APPROVAL_SHA to equal <sha>` while the log shows an empty `MIGRATION_APPROVAL_SHA:`. A populated value logs as `***`, which is the quickest way to confirm CD actually received it. Keep only the environment copy so the two can never disagree.
+
+   The approval must equal the SHA CD is currently deploying, so any push to `main` between setting the secret and the deployment invalidates it. Set the secret, deploy, then clear it.
 5. CD installs backend dependencies, generates Prisma, lints, applies production migrations, verifies RLS/Data API privileges, restarts PM2, checks health plus public tournament/product/capability reads, and saves the process list.
 6. After backend CD succeeds, automatic frontend deployment promotes that same exact SHA after validating the successful CI run and live API compatibility.
 
@@ -392,7 +396,9 @@ The deployment refuses root SSH users, dirty tracked worktrees, insecure `.env` 
 
 If install, restart, or health validation fails, CD checks out the previous application commit, reinstalls its dependencies, regenerates Prisma, and restarts PM2. Database migrations are not reversed. Every production migration must therefore remain backward-compatible with the previous application release (expand first; contract later).
 
-Never rely on a Free-plan Supabase dashboard backup. Confirm that the encrypted database-and-upload archive exists off-site before approving a migration. Clear `BACKEND_MIGRATION_APPROVAL_SHA` after the deployment.
+Never rely on a Free-plan Supabase dashboard backup. Confirm that the encrypted database-and-upload archive exists off-site before approving a migration. Clear `BACKEND_MIGRATION_APPROVAL_SHA` from the `Production` environment after the deployment; while it still equals a commit SHA, the approval gate is disarmed for that commit.
+
+Confirm the backup in the deployment log before the migration applies. A successful run prints `Encrypted production backup uploaded successfully: quest-production-<timestamp>.tar.gz.enc` immediately before the first `Applying migration` line. The backup and the approval check share one condition, so a deployment with nothing pending performs neither — `No pending database migrations` means the run changed no schema, not that it backed up and found nothing to do.
 
 ## Site Maintenance Mode
 
