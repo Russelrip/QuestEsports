@@ -96,6 +96,32 @@ existing contact, match-room, notification, or OAuth tables.
   column is additive and intentionally not backfilled: existing logo-less teams
   read as never having had a logo.
 
+- `20260824210000_add_canonical_game` introduces `games` and `game_aliases`, and
+  adds a nullable `game_id` to `tournaments`, `rulebooks`,
+  `recruitment_applications`, `saved_teams`, `veto_maps`, `veto_map_pools`,
+  `veto_rule_presets` and `game_categories`. Before it, "which game" was stated
+  seven ways with nothing tying them together, so a tournament could reference a
+  rulebook for a different title and no constraint objected. `game_categories`
+  already held the established public slugs (`codm`, `mlbb`, `pubg-mobile`,
+  `valorant`), so those are adopted as canonical rather than invented afresh, and
+  `games.slug` deliberately carries the same values as the `GameAccountGame` enum
+  so the enum and the table agree by construction.
+
+  `game_aliases` exists because normalising text is not sufficient: "COD Mobile"
+  slugifies to `cod-mobile`, which is not `codm`, so normalisation alone would
+  create a second title for one that already exists. Known spellings are seeded;
+  an unrecognised title still resolves by becoming its own row, and can be merged
+  later by adding an alias. The SQL normaliser and
+  `modules/games/game.service.js#normalizeGameKey` must stay in step — a test
+  asserts this, because divergence would strand rows the migration mapped.
+
+  This is the EXPAND half of expand-migrate-contract. Every new column is
+  nullable, no legacy column is dropped or made NOT NULL, and no read path
+  depends on the new columns yet. Dropping `tournaments.game`,
+  `rulebooks.game`, `saved_teams.game`, `recruitment_applications.game` and the
+  three veto catalog `game` columns is the CONTRACT step and belongs in a later
+  release once reads have moved.
+
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
 delete guards protect children during normal admin operations. OAuth link

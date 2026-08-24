@@ -1404,6 +1404,9 @@ const additionalPaths = {
   "/api/game-categories": {
     get: createOperation("Games", "List public game categories"),
   },
+  "/api/games": {
+    get: createOperation("Games", "List active games"),
+  },
   "/api/rulebooks": {
     get: createOperation("Rulebooks", "List published rulebooks"),
   },
@@ -1801,6 +1804,11 @@ const additionalPaths = {
     patch: createOperation("Admin", "Update team organization status", {
       authenticated: true,
       parameters: idParameter("teamId"),
+    }),
+  },
+  "/api/admin/games": {
+    get: createOperation("Admin", "List games including inactive", {
+      authenticated: true,
     }),
   },
   "/api/admin/game-categories": {
