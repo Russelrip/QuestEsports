@@ -233,6 +233,13 @@ export type ValorantPlayerLeaderboardEntry = {
   lastPlayed: string | null;
 };
 
+// A search hit carries the player's real position on the leaderboard. `rank` is
+// null only when the result came from the upstream exact-match fallback, which
+// does not report one.
+export type ValorantPlayerLeaderboardSearchEntry = ValorantPlayerLeaderboardEntry & {
+  rank: number | null;
+};
+
 export type ValorantPlayerLeaderboardPage = {
   entries: ValorantPlayerLeaderboardEntry[];
   total: number;

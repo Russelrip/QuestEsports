@@ -104,6 +104,28 @@ test("searchLeaderboard URL-encodes the query and passes through a null result",
   }
 });
 
+test("searchLeaderboard treats an upstream 404 as no match, not an outage", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse(404, { error: { code: "not_found" } });
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    assert.equal(await client.searchLeaderboard("nobody"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("searchLeaderboard still throws 502 on an upstream server error", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse(500, { error: { code: "boom" } });
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    await assert.rejects(client.searchLeaderboard("sahan"), (e) => e.statusCode === 502);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("throws 503 when VALORANT_INTERNAL_BASE_URL is not configured", async () => {
   const { module: client } = loadClient(envWithoutBaseUrl);
   await assert.rejects(client.getLeaderboard({ page: 1, perPage: 50 }), (e) => e.statusCode === 503);

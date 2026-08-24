@@ -1333,7 +1333,7 @@ const additionalPaths = {
     get: createOperation("valorant", "List the public VALORANT player leaderboard (paginated, ELO-desc)"),
   },
   "/api/v1/valorant/leaderboard/search": {
-    get: createOperation("valorant", "Search the public VALORANT player leaderboard by Discord username"),
+    get: createOperation("valorant", "Search the public VALORANT player leaderboard by Discord username, Riot name, tag, or name#tag"),
   },
   "/api/v1/valorant/leaderboard/register/discord/login": {
     get: createOperation("valorant", "Get the Discord OAuth login URL for leaderboard registration"),

@@ -40,6 +40,116 @@ const searchLeaderboardPlayer = async (query) => {
   return raw ? mapLeaderboardEntry(raw) : null;
 };
 
+// --- Ranked partial search -------------------------------------------------
+// The upstream only offers an EXACT Discord-username lookup, which makes the
+// public search box unusable unless you already know the username character for
+// character. We page the whole leaderboard into a short-lived snapshot once and
+// match against it locally, so a partial Discord name, a Riot name, a tag, or a
+// full `name#tag` all find the player - and every hit keeps its real
+// leaderboard rank instead of rendering as an em dash.
+
+const SNAPSHOT_TTL_MS = 60_000;
+const SNAPSHOT_PAGE_SIZE = 200;
+// Ceiling on the upstream paging a single cold snapshot can do (200 * 25).
+// A player past this cap still resolves through the exact-match fallback below.
+const SNAPSHOT_MAX_PAGES = 25;
+const SEARCH_RESULT_LIMIT = 25;
+const MIN_QUERY_LENGTH = 2;
+
+let snapshot = null; // { entries, complete, expiresAt }
+let snapshotInFlight = null; // de-dupes concurrent cold loads
+
+// Resolves to { entries, complete }. `complete` means the snapshot holds the
+// whole leaderboard, which is what lets a local miss be treated as definitive.
+const loadSnapshot = async () => {
+  if (snapshot && snapshot.expiresAt > Date.now()) return snapshot;
+  if (snapshotInFlight) return snapshotInFlight;
+
+  snapshotInFlight = (async () => {
+    const entries = [];
+    let totalPages = 1;
+    let page = 1;
+    for (; page <= Math.min(totalPages, SNAPSHOT_MAX_PAGES); page += 1) {
+      const raw = await getLeaderboard({ page, perPage: SNAPSHOT_PAGE_SIZE });
+      const pageEntries = raw.entries || [];
+      if (pageEntries.length === 0) break;
+      const perPage = raw.per_page || SNAPSHOT_PAGE_SIZE;
+      for (const [index, entry] of pageEntries.entries()) {
+        entries.push({ ...mapLeaderboardEntry(entry), rank: (page - 1) * perPage + index + 1 });
+      }
+      totalPages = raw.total_pages ?? 1;
+    }
+    snapshot = { entries, complete: page > totalPages, expiresAt: Date.now() + SNAPSHOT_TTL_MS };
+    return snapshot;
+  })();
+
+  try {
+    return await snapshotInFlight;
+  } finally {
+    snapshotInFlight = null;
+  }
+};
+
+const normalize = (value) => String(value ?? "").trim().toLowerCase();
+
+// Lower is better: 0 exact, 1 prefix, 2 substring, null no match.
+const matchScore = (haystack, needle) => {
+  if (!haystack) return null;
+  if (haystack === needle) return 0;
+  if (haystack.startsWith(needle)) return 1;
+  return haystack.includes(needle) ? 2 : null;
+};
+
+// Riot tags are 3-5 characters, so a bare substring hit on one is mostly noise -
+// it still matches, but always sorts below a name or Discord hit.
+const TAG_PENALTY = 3;
+
+const scoreEntry = (entry, needle) => {
+  const candidates = [
+    matchScore(normalize(entry.discordUsername), needle),
+    matchScore(normalize(entry.name), needle),
+    matchScore(normalize(`${entry.name}#${entry.tag}`), needle),
+  ];
+  const tagScore = matchScore(normalize(entry.tag), needle);
+  if (tagScore !== null) candidates.push(tagScore + TAG_PENALTY);
+  const scores = candidates.filter((score) => score !== null);
+  return scores.length > 0 ? Math.min(...scores) : null;
+};
+
+const searchLeaderboardPlayers = async (query, { limit = SEARCH_RESULT_LIMIT } = {}) => {
+  // Discord handles are often pasted with a leading @.
+  const needle = normalize(query).replace(/^@+/, "");
+  if (needle.length < MIN_QUERY_LENGTH) return [];
+
+  let complete = false;
+  let matches = [];
+  try {
+    const loaded = await loadSnapshot();
+    complete = loaded.complete;
+    matches = loaded.entries
+      .map((entry) => ({ entry, score: scoreEntry(entry, needle) }))
+      .filter((candidate) => candidate.score !== null)
+      .sort((a, b) => a.score - b.score || a.entry.rank - b.entry.rank)
+      .slice(0, limit)
+      .map((candidate) => candidate.entry);
+  } catch {
+    // Snapshot paging failed (upstream slow or down) - fall through to the
+    // single exact lookup rather than failing the whole search.
+    complete = false;
+    matches = [];
+  }
+  if (matches.length > 0) return matches;
+
+  // A miss against a snapshot of the WHOLE leaderboard is the final answer;
+  // spending an upstream call on it would just repeat what we already know.
+  if (complete) return [];
+
+  // The snapshot was truncated or unavailable, so the player may still exist
+  // upstream. One exact lookup is a cheap backstop.
+  const exact = await searchLeaderboardPlayer(query);
+  return exact ? [{ ...exact, rank: null }] : [];
+};
+
 // Registration/auth flow: pass the upstream payload through UNCHANGED
 // (snake_case — the Quest frontend consumes it as-is for this flow).
 const getDiscordLogin = async () => fetchDiscordLogin();
@@ -57,6 +167,7 @@ const submitRegistration = async (input) => fetchSubmitRegistration(input);
 module.exports = {
   listLeaderboard,
   searchLeaderboardPlayer,
+  searchLeaderboardPlayers,
   getDiscordLogin,
   getDiscordCallback,
   checkPuuid,

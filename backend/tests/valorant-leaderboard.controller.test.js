@@ -22,7 +22,7 @@ const loadController = (serviceMock) => loadModuleWithMocks(controllerPath, { [s
 test("getLeaderboard wraps the mapped page in the Quest envelope", async () => {
   const serviceMock = {
     listLeaderboard: async ({ page, perPage }) => ({ entries: [], total: 0, page, perPage, totalPages: 1 }),
-    searchLeaderboardPlayer: async () => null,
+    searchLeaderboardPlayers: async () => [],
   };
   const { module: controller } = loadController(serviceMock);
   const { res, calls } = makeRes();
@@ -37,7 +37,7 @@ test("getLeaderboard clamps per_page to the upstream max of 200", async () => {
   let seenPerPage;
   const serviceMock = {
     listLeaderboard: async ({ perPage }) => { seenPerPage = perPage; return { entries: [], total: 0, page: 1, perPage, totalPages: 1 }; },
-    searchLeaderboardPlayer: async () => null,
+    searchLeaderboardPlayers: async () => [],
   };
   const { module: controller } = loadController(serviceMock);
   const { res } = makeRes();
@@ -48,11 +48,43 @@ test("getLeaderboard clamps per_page to the upstream max of 200", async () => {
 test("searchLeaderboard returns { entry: null } for a blank query", async () => {
   const serviceMock = {
     listLeaderboard: async () => ({}),
-    searchLeaderboardPlayer: async (q) => (q === "sahan" ? { puuid: "p-1", name: "Sahan" } : null),
+    searchLeaderboardPlayers: async (q) => (q === "sahan" ? [{ puuid: "p-1", name: "Sahan" }] : []),
   };
   const { module: controller } = loadController(serviceMock);
   const { res, calls } = makeRes();
   await controller.searchLeaderboard({ query: {} }, res);
+  assert.equal(calls.json.data.entry, null);
+});
+
+test("searchLeaderboard returns the ranked entries plus the legacy entry field", async () => {
+  let seen;
+  const serviceMock = {
+    listLeaderboard: async () => ({}),
+    searchLeaderboardPlayers: async (query, options) => {
+      seen = { query, options };
+      return [{ puuid: "p-1", name: "Sahan", rank: 3 }, { puuid: "p-2", name: "Sahani", rank: 9 }];
+    },
+  };
+  const { module: controller } = loadController(serviceMock);
+  const { res, calls } = makeRes();
+  await controller.searchLeaderboard({ query: { q: "  sahan  " } }, res);
+  assert.equal(seen.query, "sahan");
+  assert.equal(seen.options.limit, 25);
+  assert.equal(calls.json.data.entries.length, 2);
+  assert.equal(calls.json.data.entry.puuid, "p-1");
+});
+
+test("searchLeaderboard clamps the result limit", async () => {
+  let seenLimit;
+  const serviceMock = {
+    listLeaderboard: async () => ({}),
+    searchLeaderboardPlayers: async (_query, { limit }) => { seenLimit = limit; return []; },
+  };
+  const { module: controller } = loadController(serviceMock);
+  const { res, calls } = makeRes();
+  await controller.searchLeaderboard({ query: { q: "sahan", limit: "9999" } }, res);
+  assert.equal(seenLimit, 50);
+  assert.deepEqual(calls.json.data.entries, []);
   assert.equal(calls.json.data.entry, null);
 });
 
@@ -67,7 +99,7 @@ const noopServices = {
 test("getDiscordLogin wraps the upstream discord url in the Quest envelope", async () => {
   const serviceMock = {
     listLeaderboard: async () => ({}),
-    searchLeaderboardPlayer: async () => null,
+    searchLeaderboardPlayers: async () => [],
     ...noopServices,
     getDiscordLogin: async () => ({ url: "https://discord.com/api/oauth2/authorize?client_id=1" }),
   };
@@ -84,7 +116,7 @@ test("getDiscordCallback reads code from req.query.code and wraps the result", a
   let seenCode;
   const serviceMock = {
     listLeaderboard: async () => ({}),
-    searchLeaderboardPlayer: async () => null,
+    searchLeaderboardPlayers: async () => [],
     ...noopServices,
     getDiscordCallback: async (code) => {
       seenCode = code;
@@ -103,7 +135,7 @@ test("checkPuuid reads puuid from req.body and wraps the result", async () => {
   let seenPuuid;
   const serviceMock = {
     listLeaderboard: async () => ({}),
-    searchLeaderboardPlayer: async () => null,
+    searchLeaderboardPlayers: async () => [],
     ...noopServices,
     checkPuuid: async (puuid) => {
       seenPuuid = puuid;
@@ -120,7 +152,7 @@ test("checkPuuid reads puuid from req.body and wraps the result", async () => {
 test("previewRegistration passes the upstream snake_case payload through unchanged", async () => {
   const serviceMock = {
     listLeaderboard: async () => ({}),
-    searchLeaderboardPlayer: async () => null,
+    searchLeaderboardPlayers: async () => [],
     ...noopServices,
     previewRegistration: async (puuid) => ({
       puuid,
@@ -146,7 +178,7 @@ test("submitRegistration passes the raw body through to the service", async () =
   const body = { discord_id: "123", discord_username: "sahan", puuid: "p-1" };
   const serviceMock = {
     listLeaderboard: async () => ({}),
-    searchLeaderboardPlayer: async () => null,
+    searchLeaderboardPlayers: async () => [],
     ...noopServices,
     submitRegistration: async (input) => {
       seenInput = input;
