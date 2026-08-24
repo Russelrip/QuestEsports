@@ -78,6 +78,15 @@ ON CONFLICT ("slug") DO NOTHING;
 
 UPDATE "games" SET "short_name" = 'VAL' WHERE "slug" = 'valorant' AND "short_name" IS NULL;
 
+-- Free Fire has no game_categories row — it reaches Quest only through
+-- recruitment applications — but it is a real title, so it is seeded here
+-- rather than left to step 4. Seeding it before the alias block is what lets
+-- its alternative spellings resolve; a title created in step 4 comes too late
+-- for step 3 to attach aliases to it.
+INSERT INTO "games" ("slug", "display_name", "short_name")
+VALUES ('free-fire', 'Free Fire', 'FF')
+ON CONFLICT ("slug") DO NOTHING;
+
 -- 3. Known spellings ---------------------------------------------------------
 -- Seeded rather than inferred: a machine cannot know that "COD Mobile" and
 -- "codm" are the same product. Anything not listed here still resolves — it
@@ -97,7 +106,11 @@ FROM (VALUES
   ('pubg',                  'pubg-mobile'),
   ('pubg-mobile-lite',      'pubg-mobile'),
   ('val',                   'valorant'),
-  ('riot-valorant',         'valorant')
+  ('riot-valorant',         'valorant'),
+  ('garena-free-fire',      'free-fire'),
+  ('freefire',              'free-fire'),
+  ('ff',                    'free-fire'),
+  ('free-fire-max',         'free-fire')
 ) AS v(alias, target_slug)
 JOIN "games" g ON g."slug" = v.target_slug
 ON CONFLICT ("alias") DO NOTHING;
