@@ -237,24 +237,40 @@ Security-related variables:
 - `DISCORD_ALERT_WEBHOOK_URL` for direct redacted exception alerts to a private Discord channel
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` for Google login
 - `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_CALLBACK_URL` for Discord login
+- Account linking has no separate variable. Its redirect URI is derived from the
+  provider callback URL, so both must be registered with the provider. See
+  [OAuth Provider Configuration](#oauth-provider-configuration).
 
 ## OAuth Provider Configuration
 
+Each provider needs two redirect URIs registered, not one. Signing in uses the
+callback URL from the environment variable. Linking or reconnecting a provider
+from the profile page uses a separate link callback, derived from the same
+origin with the path replaced by `/api/v1/auth/oauth/<provider>/link/callback`.
+Registering only the login callback lets sign-in work while linking fails with
+an invalid redirect URI error from the provider.
+
 Local redirect URIs:
 
-- Google: `http://localhost:5001/api/auth/google/callback`
-- Discord: `http://localhost:5001/api/auth/discord/callback`
+- Google login: `http://localhost:5001/api/auth/google/callback`
+- Google link: `http://localhost:5001/api/v1/auth/oauth/google/link/callback`
+- Discord login: `http://localhost:5001/api/auth/discord/callback`
+- Discord link: `http://localhost:5001/api/v1/auth/oauth/discord/link/callback`
 - Mobile admin: `questadmin://oauth` (custom scheme)
 
 Production redirect URIs:
 
-- Google: `https://api.questesports.lk/api/auth/google/callback`
-- Discord: `https://api.questesports.lk/api/auth/discord/callback`
+- Google login: `https://api.questesports.lk/api/auth/google/callback`
+- Google link: `https://api.questesports.lk/api/v1/auth/oauth/google/link/callback`
+- Discord login: `https://api.questesports.lk/api/auth/discord/callback`
+- Discord link: `https://api.questesports.lk/api/v1/auth/oauth/discord/link/callback`
 - Mobile admin: `https://api.questesports.lk/mobile-admin-oauth` (verified HTTPS Android App Link)
 
 Notes:
 
-- The provider dashboard redirect must match your backend callback URL exactly.
+- The provider dashboard redirects must match both the login and link callback URLs exactly.
+- Register every environment you sign in from. A dashboard holding only the
+  production callbacks makes local OAuth fail even though the code is correct.
 - `APP_URL` must point to the frontend origin, not the API origin, because the backend redirects the browser back to the frontend after OAuth completes.
 - The mobile custom scheme is for local development only. Production mobile OAuth must use the verified HTTPS App Link and matching release certificate fingerprint.
 - Do not use placeholder strings such as `your_google_client_id` or `your_discord_client_id`; leave values blank until real credentials are available.
