@@ -51,6 +51,26 @@ route is enumerable by design. It is rate limited, but the real defence is the
 projection: walking the sequence yields only what a bracket page already shows.
 Keep it that way — anything added here is added to every player at once.
 
+## Rankings
+
+`ranking-sync.service.js` refreshes `player_rankings` from the external
+leaderboard in ONE pass, not one call per player: the upstream is rate limited,
+and a player's POSITION is a property of the board rather than of the player, so
+it can only be known by walking the board in order.
+
+Every failure degrades to "keep the previous cache". An unavailable upstream
+skips the sync entirely, a player missing from the board is left alone rather
+than zeroed, and one failing row does not abandon the rest. A ranking is
+decoration on a profile and must never be why a profile fails.
+
+A position read from a partially walked board is stored as NULL. A number that
+is quietly wrong is worse than an absent one.
+
+The profile exposes `syncedAt` with every ranking. This cache exists so the page
+survives the upstream being unreachable, which makes "possibly stale" the normal
+case rather than an error state — a rank rendered without saying when it was
+read claims more freshness than it has.
+
 ## Not yet here
 
 Team profiles. `SavedTeam` has no public identifier — it is unique per captain

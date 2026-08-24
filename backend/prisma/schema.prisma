@@ -1791,6 +1791,7 @@ model Player {
   registrationMembers RegistrationMember[]
   changeRequests      GameAccountChangeRequest[]
   discordIdentity     DiscordIdentity?
+  rankings            PlayerRanking[]
 
   @@index([createdAt])
   @@map("players")
@@ -1863,6 +1864,48 @@ model GameAccount {
   @@index([game, status])
   @@index([verificationStatus])
   @@map("game_accounts")
+}
+
+// A cached projection of a player's standing in an external ranking service.
+//
+// This is a CACHE, never a source of truth. The VALORANT ranking lives in
+// `valorant-platform-backend`, which owns its own rating engine and ingests
+// from HenrikDev; Quest reads it over a signed service token. Copying a
+// snapshot here means a profile still renders when that service is slow, rate
+// limited, or down — which the leaderboard client already compensates for with
+// its own snapshot and a 60-second TTL.
+//
+// Keyed on `playerId`, not on the PUUID, even though the PUUID is what the join
+// is actually made on. `game_accounts` already owns the PUUID -> player
+// mapping, so duplicating it here would create a second place for it to be
+// wrong — and it keeps the PUUID out of every profile query, which is the
+// boundary the public projection depends on.
+//
+// `syncedAt` is not decoration: every value here is as-of, and a profile that
+// cannot say when it last synced is claiming more freshness than it has.
+model PlayerRanking {
+  id           String          @id @default(uuid()) @db.Uuid
+  playerId     String          @map("player_id") @db.Uuid
+  game         GameAccountGame
+  // Position on the leaderboard — the headline "Sri Lanka Rank #4". Nullable
+  // because a registered account that has not placed has no position, which is
+  // different from position zero.
+  position     Int?
+  elo          Int?
+  tier         String?
+  rankInTier   Int?            @map("rank_in_tier")
+  peakTier     String?         @map("peak_tier")
+  peakSeason   String?         @map("peak_season")
+  lastPlayedAt DateTime?       @map("last_played_at")
+  syncedAt     DateTime        @map("synced_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  player       Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, game])
+  @@index([game, position])
+  @@index([syncedAt])
+  @@map("player_rankings")
 }
 
 model RateLimitBucket {

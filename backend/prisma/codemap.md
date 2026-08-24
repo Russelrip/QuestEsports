@@ -173,6 +173,21 @@ existing contact, match-room, notification, or OAuth tables.
   retained and still authoritative; moving reads onto versions and dropping it
   is the contract step.
 
+- `20260825030000_add_player_rankings` adds `player_rankings`, a cached
+  projection of a player's standing in the external leaderboard. It is a CACHE,
+  never a source of truth: the VALORANT ranking lives in
+  `valorant-platform-backend`, which owns its own rating engine and ingests from
+  HenrikDev, and Quest reads it over a signed service token. Caching it means a
+  profile still renders when that service is slow, rate limited, or down —
+  losing the table costs a refresh, not data. Keyed on `player_id` rather than
+  the PUUID even though the PUUID is what the join is made on: `game_accounts`
+  already owns that mapping, duplicating it would create a second place for it
+  to be wrong, and keying on the player keeps the PUUID out of every profile
+  query, which is the boundary the public projection depends on. `position` is
+  CHECK-constrained to >= 1 so "Rank #0" is impossible, and is stored NULL when
+  the board was only partially read — a rank from a truncated board would be
+  quietly wrong, which is worse than showing nothing.
+
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
 delete guards protect children during normal admin operations. OAuth link

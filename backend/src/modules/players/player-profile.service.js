@@ -29,6 +29,22 @@ const mapGameAccount = (account) => ({
   verificationStatus: account.verificationStatus,
 });
 
+// Every ranking value is as-of, so `syncedAt` travels with it. A profile that
+// renders a rank without saying when it was read is claiming more freshness
+// than it has — and this cache exists precisely so the page still works while
+// the upstream is unreachable, which means "possibly stale" is the normal case
+// rather than an error state.
+const mapRanking = (ranking) => ({
+  game: ranking.game,
+  position: ranking.position,
+  elo: ranking.elo,
+  tier: ranking.tier,
+  rankInTier: ranking.rankInTier,
+  peakTier: ranking.peakTier,
+  peakSeason: ranking.peakSeason,
+  syncedAt: ranking.syncedAt,
+});
+
 // A tournament appears only if it is published. A draft or unpublished event is
 // staff-only, and leaking one through a player's history would be a disclosure
 // nobody would think to look for.
@@ -77,6 +93,20 @@ const getPublicProfile = async (publicId) => {
       // and links a Quest player to an account outside Quest; "reachable on
       // Discord" is the useful public fact, the ID is not.
       discordIdentity: { select: { id: true } },
+      // The cached standing. Keyed on playerId precisely so this join needs no
+      // PUUID — the profile query never touches `externalId` at all.
+      rankings: {
+        select: {
+          game: true,
+          position: true,
+          elo: true,
+          tier: true,
+          rankInTier: true,
+          peakTier: true,
+          peakSeason: true,
+          syncedAt: true,
+        },
+      },
       savedTeamMembers: {
         select: {
           role: true,
@@ -133,6 +163,7 @@ const getPublicProfile = async (publicId) => {
     memberSince: player.createdAt,
     discordLinked: Boolean(player.discordIdentity),
     gameAccounts: player.gameAccounts.map(mapGameAccount),
+    rankings: player.rankings.map(mapRanking),
     teams: player.savedTeamMembers
       .filter((m) => m.team)
       .map((m) => ({

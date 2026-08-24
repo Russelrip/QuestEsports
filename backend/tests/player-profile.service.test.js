@@ -51,6 +51,18 @@ const basePlayer = (over = {}) => ({
     },
   ],
   discordIdentity: { id: "di-1" },
+  rankings: [
+    {
+      game: "valorant",
+      position: 4,
+      elo: 1842,
+      tier: "Immortal 1",
+      rankInTier: 12,
+      peakTier: "Radiant",
+      peakSeason: "e9a3",
+      syncedAt: new Date("2026-08-24T20:00:00Z"),
+    },
+  ],
   savedTeamMembers: [
     { role: "CAPTAIN", team: { name: "Team QUEST", teamTag: "QST", game: "valorant" } },
   ],
@@ -279,6 +291,51 @@ test("only active game accounts are shown", async () => {
   try {
     await service.getPublicProfile("QPID-000006");
     assert.deepEqual(capture.args.select.gameAccounts.where, { status: "active" });
+  } finally {
+    restore();
+  }
+});
+
+// The cache exists so the page survives the upstream being down, which makes
+// "possibly stale" the normal case rather than an error state. A rank rendered
+// without saying when it was read claims more freshness than it has.
+test("rankings are exposed with the time they were synced", async () => {
+  const { module: service, restore } = load(basePlayer());
+  try {
+    const profile = await service.getPublicProfile("QPID-000006");
+    const valorant = profile.rankings.find((r) => r.game === "valorant");
+    assert.equal(valorant.position, 4);
+    assert.equal(valorant.elo, 1842);
+    assert.equal(valorant.peakTier, "Radiant");
+    assert.ok(valorant.syncedAt instanceof Date);
+  } finally {
+    restore();
+  }
+});
+
+// The join is on playerId precisely so the profile query never touches the
+// PUUID. If this ever regresses, the public projection starts selecting a
+// stable cross-service identifier.
+test("the ranking join never selects a PUUID", async () => {
+  const capture = {};
+  const { module: service, restore } = load(basePlayer(), capture);
+  try {
+    await service.getPublicProfile("QPID-000006");
+    const selected = Object.keys(capture.args.select.rankings.select);
+    assert.ok(!selected.includes("externalId"));
+    assert.ok(!selected.includes("playerId"));
+    assert.ok(selected.includes("position"));
+    assert.ok(selected.includes("syncedAt"));
+  } finally {
+    restore();
+  }
+});
+
+test("a player with no cached ranking renders an empty list, not an error", async () => {
+  const { module: service, restore } = load(basePlayer({ rankings: [] }));
+  try {
+    const profile = await service.getPublicProfile("QPID-000006");
+    assert.deepEqual(profile.rankings, []);
   } finally {
     restore();
   }
