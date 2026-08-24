@@ -7,17 +7,22 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 const UNVERIFIED_EMAIL_MESSAGE =
   "This provider account cannot be used to sign in until its email address is verified.";
 
-const buildService = ({ emailVerified }) => {
+const buildService = ({
+  emailVerified,
+  existingAccount = null,
+  discordTag = null,
+}) => {
   const existingUser = {
     id: "user-1",
     email: "player@example.com",
+    discordTag,
   };
   const oAuthAccountModel = {
     findUniqueCalls: [],
     createCalls: [],
     findUnique: async (args) => {
       oAuthAccountModel.findUniqueCalls.push(args);
-      return null;
+      return existingAccount;
     },
     create: async (args) => {
       oAuthAccountModel.createCalls.push(args);
@@ -61,6 +66,9 @@ const buildService = ({ emailVerified }) => {
           GOOGLE_CLIENT_ID: "google-client-id",
           GOOGLE_CLIENT_SECRET: "google-client-secret",
           GOOGLE_CALLBACK_URL: "http://localhost:5001/api/auth/google/callback",
+          DISCORD_CLIENT_ID: "discord-client-id",
+          DISCORD_CLIENT_SECRET: "discord-client-secret",
+          DISCORD_CALLBACK_URL: "http://localhost:5001/api/auth/discord/callback",
         },
       },
       [require.resolve("../src/lib/logger")]: {
@@ -72,6 +80,7 @@ const buildService = ({ emailVerified }) => {
         PUBLIC_USER_SELECT: {
           id: true,
           email: true,
+          discordTag: true,
         },
         mapUserForResponse: (user) => user,
       },
@@ -80,12 +89,27 @@ const buildService = ({ emailVerified }) => {
 
   const originalFetch = global.fetch;
   global.fetch = async (url, options = {}) => {
-    if (String(url).includes("oauth2.googleapis.com/token")) {
+    if (/oauth2\.googleapis\.com\/token|discord\.com\/api\/oauth2\/token/.test(String(url))) {
       tokenRequestBodies.push(new URLSearchParams(options.body));
       return {
         ok: true,
         status: 200,
         json: async () => ({ access_token: "access-token" }),
+      };
+    }
+
+    if (String(url).includes("discord.com/api/users/@me")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "discord-user-1",
+          username: "questplayer",
+          global_name: "QuestPlayer",
+          discriminator: "0",
+          email: "player@example.com",
+          verified: emailVerified,
+        }),
       };
     }
 
@@ -105,6 +129,7 @@ const buildService = ({ emailVerified }) => {
   return {
     existingUser,
     oAuthAccountModel,
+    userModel,
     service: module,
     tokenRequestBodies,
     restore: () => {
@@ -114,16 +139,16 @@ const buildService = ({ emailVerified }) => {
   };
 };
 
-const getState = (service) => {
+const getState = (service, provider = "google") => {
   const authorization = service.createOAuthAuthorization({
-    provider: "google",
+    provider,
     redirectTo: "/profile",
   });
 
   return {
     authorizationUrl: authorization.authorizationUrl,
     flowToken: service.getOAuthFlowToken({
-      provider: "google",
+      provider,
       cookieHeader: authorization.flowCookie,
     }),
     state: new URL(authorization.authorizationUrl).searchParams.get("state"),
@@ -224,6 +249,14 @@ const buildLinkService = ({
         prisma: {
           oAuthAccount: oauthAccount,
           oAuthLinkNonce: oauthLinkNonce,
+          // Re-linking a connection this user already owns writes the tag
+          // outside the transaction, since there is no account row to create.
+          user: {
+            update: async (args) => {
+              userUpdates.push(args);
+              return { id: "user-1", ...args.data };
+            },
+          },
           $transaction: async (callback, options) => {
             transactionOptions.push(options);
             if (transactionFailureAfterCallback && transactionFailures > 0) {
@@ -275,9 +308,23 @@ const buildLinkService = ({
   );
   const originalFetch = global.fetch;
   global.fetch = async (url, options = {}) => {
-    if (String(url).includes("oauth2.googleapis.com/token")) {
+    if (/oauth2\.googleapis\.com\/token|discord\.com\/api\/oauth2\/token/.test(String(url))) {
       tokenRequestBodies.push(new URLSearchParams(options.body));
       return { ok: true, status: 200, json: async () => ({ access_token: "access-token" }) };
+    }
+    if (String(url).includes("discord.com/api/users/@me")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "discord-user-1",
+          username: "questplayer",
+          global_name: "QuestPlayer",
+          discriminator: "0",
+          email: "player@example.com",
+          verified: true,
+        }),
+      };
     }
     return {
       ok: true,
@@ -300,9 +347,9 @@ const buildLinkService = ({
     tokenRequestBodies,
     transactionOptions,
     getLoginMethodReads: () => loginMethodReads,
-    getLinkState: async () => {
+    getLinkState: async (provider = "google") => {
       const authorization = await module.createOAuthLinkAuthorization({
-        provider: "google",
+        provider,
         userId: "user-1",
         redirectTo: "/profile?tab=account",
       });
@@ -310,7 +357,7 @@ const buildLinkService = ({
         authorizationUrl: authorization.authorizationUrl,
         state: new URL(authorization.authorizationUrl).searchParams.get("state"),
         flowToken: module.getOAuthLinkFlowToken({
-          provider: "google",
+          provider,
           cookieHeader: authorization.flowCookie,
         }),
       };
@@ -758,6 +805,123 @@ test("linking Discord stores the verified tag on the user", async () => {
     // Google carries no Discord tag, so nothing is written for it.
     assert.equal(createCalls.length, 1);
     assert.equal(userUpdates.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+// Every path that leaves Discord connected has to leave the tag behind with it.
+// A connection the profile cannot show is what users report as "linked but
+// blank": the panel says Connected and the Discord Tag field stays empty.
+
+test("linking Discord again backfills a tag the first link never wrote", async () => {
+  const { service, createCalls, userUpdates, getLinkState, restore } = buildLinkService({
+    existingAccount: { userId: "user-1" },
+  });
+  try {
+    await service.handleOAuthLinkCallback({
+      provider: "discord",
+      code: "code",
+      ...(await getLinkState("discord")),
+      userId: "user-1",
+    });
+
+    // The row already belongs to this user, so nothing is created — but the tag
+    // the pre-tag link never recorded is written now.
+    assert.equal(createCalls.length, 0);
+    assert.equal(userUpdates.length, 1);
+    assert.deepEqual(userUpdates[0].data, { discordTag: "QuestPlayer" });
+  } finally {
+    restore();
+  }
+});
+
+test("signing in with Discord records the tag on a link made before it existed", async () => {
+  const { service, userModel, restore } = buildService({
+    emailVerified: true,
+    existingAccount: {
+      userId: "user-1",
+      user: { id: "user-1", email: "player@example.com", discordTag: null },
+    },
+  });
+
+  try {
+    const { flowToken, state } = getState(service, "discord");
+    const result = await service.handleOAuthCallback({
+      provider: "discord",
+      code: "oauth-code",
+      state,
+      flowToken,
+    });
+
+    assert.equal(userModel.updateCalls.length, 1);
+    assert.deepEqual(userModel.updateCalls[0].data, { discordTag: "QuestPlayer" });
+    assert.equal(result.user.discordTag, "QuestPlayer");
+  } finally {
+    restore();
+  }
+});
+
+test("signing in with Discord leaves an unchanged tag alone", async () => {
+  const { service, userModel, restore } = buildService({
+    emailVerified: true,
+    existingAccount: {
+      userId: "user-1",
+      user: { id: "user-1", email: "player@example.com", discordTag: "QuestPlayer" },
+    },
+  });
+
+  try {
+    const { flowToken, state } = getState(service, "discord");
+    await service.handleOAuthCallback({
+      provider: "discord",
+      code: "oauth-code",
+      state,
+      flowToken,
+    });
+
+    assert.equal(userModel.updateCalls.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("auto-linking Discord at sign-in stores the tag with the account row", async () => {
+  const { service, oAuthAccountModel, userModel, restore } = buildService({
+    emailVerified: true,
+  });
+
+  try {
+    const { flowToken, state } = getState(service, "discord");
+    const result = await service.handleOAuthCallback({
+      provider: "discord",
+      code: "oauth-code",
+      state,
+      flowToken,
+    });
+
+    assert.equal(oAuthAccountModel.createCalls.length, 1);
+    assert.equal(userModel.updateCalls.length, 1);
+    assert.deepEqual(userModel.updateCalls[0].data, { discordTag: "QuestPlayer" });
+    assert.equal(result.user.discordTag, "QuestPlayer");
+  } finally {
+    restore();
+  }
+});
+
+test("auto-linking Google at sign-in touches no Discord tag", async () => {
+  const { service, userModel, restore } = buildService({ emailVerified: true });
+
+  try {
+    const { flowToken, state } = getState(service);
+    await service.handleOAuthCallback({
+      provider: "google",
+      code: "oauth-code",
+      state,
+      flowToken,
+    });
+
+    assert.equal(userModel.updateCalls.length, 0);
   } finally {
     restore();
   }
