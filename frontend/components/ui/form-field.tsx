@@ -20,7 +20,11 @@ export function FormField({
   className?: string;
 }) {
   return (
-    <div className={cn("grid min-w-0 gap-2", className)}>
+    // `content-start` keeps the label and control packed at the top of the
+    // cell. Without it the auto rows absorb whatever extra height a side-by-side
+    // sibling gives the row, so a field carrying a hint or an error silently
+    // pushes its neighbour's input out of alignment.
+    <div className={cn("grid min-w-0 content-start gap-2", className)}>
       <label htmlFor={htmlFor} className="text-sm font-medium text-slate-200">
         {label}
         {required ? <span className="ml-1 text-purple-300">*</span> : null}
