@@ -62,6 +62,16 @@ enum AuthProvider {
   discord
 }
 
+// How a Discord account came to be attached to a player. `oauth` means the
+// person completed the flow and Discord confirmed the account is theirs.
+// `admin` means staff asserted the link — necessary for a LAN entrant who has
+// no Quest account, but a materially weaker claim, so the two are never
+// collapsed into one boolean.
+enum DiscordLinkSource {
+  oauth
+  admin
+}
+
 // A game account is per-title because every title resolves identity through a
 // different upstream with a different verification strength. Adding a title is
 // an additive enum value plus an adapter, never a new user model.
@@ -1696,9 +1706,44 @@ model Player {
   savedTeamMembers    SavedTeamMember[]
   registrationMembers RegistrationMember[]
   changeRequests      GameAccountChangeRequest[]
+  discordIdentity     DiscordIdentity?
 
   @@index([createdAt])
   @@map("players")
+}
+
+// A player's Discord account, as competitive infrastructure rather than as a
+// login.
+//
+// `OAuthAccount` already stores the snowflake, but it is an AUTHENTICATION
+// record: it exists so somebody can sign in, and it cascades away with the user
+// row. Tournament operations need the link to outlive that, and need it to
+// exist for a player who has no Quest account at all — a LAN entrant a captain
+// registered on their behalf can still be the person a referee has to reach.
+//
+// `discordUserId` is the snowflake and the only identity key. `username` and
+// `globalName` are a cached display snapshot exactly like GameAccount's
+// username/tagline: Discord names change, snowflakes do not. This repo has
+// already shipped two fixes about storing the wrong one, so the distinction is
+// enforced by a CHECK constraint rather than left to discipline.
+model DiscordIdentity {
+  id            String            @id @default(uuid()) @db.Uuid
+  playerId      String            @unique @map("player_id") @db.Uuid
+  discordUserId String            @unique @map("discord_user_id")
+  username      String?
+  globalName    String?           @map("global_name")
+  source        DiscordLinkSource @default(oauth)
+  linkedAt      DateTime          @default(now()) @map("linked_at")
+  lastSeenAt    DateTime?         @map("last_seen_at")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  player        Player            @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  // The abuse boundary, mirroring GameAccount's: one Discord account belongs to
+  // one player. Without it, two people could claim the same account and a
+  // tournament role could be granted to the wrong person.
+  @@index([discordUserId])
+  @@map("discord_identities")
 }
 
 // A player's identity inside one specific game, keyed on the upstream's STABLE

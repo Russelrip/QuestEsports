@@ -10,6 +10,21 @@ paths = ['''^docs/setup-and-deployment\.md$''']
 regexes = ['''(?i)replace[-_a-z0-9]*''']
 
 [[allowlists]]
+description = "Synthetic Discord snowflakes in identity tests are fixtures, not credentials"
+targetRules = ["discord-client-id"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^backend/tests/discord-identity\.service\.test\.js$''']
+# Repeated-digit values only. A real snowflake has varied digits, so this
+# allowlist cannot hide one — which is the point: the rule stays live for
+# anything that looks like a genuine Discord ID.
+#
+# Written out digit by digit rather than with a backreference: gitleaks uses
+# Go's RE2, which has no backreferences, and `(\d)\1{16,18}` makes it panic
+# rather than fail closed.
+regexes = ['''\b(?:0{17,19}|1{17,19}|2{17,19}|3{17,19}|4{17,19}|5{17,19}|6{17,19}|7{17,19}|8{17,19}|9{17,19})\b''']
+
+[[allowlists]]
 description = "Ignore committed .env.example templates (placeholders only)"
 targetRules = ["generic-api-key"]
 condition = "AND"
