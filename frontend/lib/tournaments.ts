@@ -398,9 +398,11 @@ export const getFeaturedTournaments = (tournaments: Tournament[], limit = 3) => 
  * then newest) is preserved rather than re-sorted here.
  */
 /**
- * A child is represented by its event card, so the standalone listings skip it.
- * A draft parent publishes no card, so the child would otherwise vanish from
- * every public listing while still being published itself.
+ * True when a published event already advertises this tournament. Used only by
+ * surfaces that show event cards alongside tournaments — the home page — so one
+ * game is not offered twice there. `/tournaments` lists tournaments only and
+ * shows every child. A draft parent publishes no card, so its child still
+ * counts as uncovered and stays listed.
  */
 export const isCoveredByEventCard = (tournament: Tournament) => Boolean(tournament.series?.isPublished);
 

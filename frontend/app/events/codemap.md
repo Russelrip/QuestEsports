@@ -3,10 +3,12 @@
 ## Responsibility
 
 Owns the public event route family. `page.tsx` lists every published event
-that has at least one published child tournament, and is the destination of the
-header's Events nav item. `[slug]/page.tsx` fetches the public event projection
-from `/api/events/:slug`, builds canonical/SEO metadata, renders a 404 for an
-API 404, and composes the public event components.
+that has at least one published child tournament, and is the destination of
+the header's Events nav item. It is the only listing that carries event
+cards; `/tournaments` lists tournaments only. `[slug]/page.tsx` fetches the
+public event projection from `/api/events/:slug`, builds canonical/SEO
+metadata, renders a 404 for an API 404, and composes the public event
+components.
 
 ## Flow
 

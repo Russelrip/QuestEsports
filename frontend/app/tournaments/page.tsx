@@ -2,7 +2,6 @@ import PageLayout from "@/components/PageLayout";
 import TournamentsContent from "@/components/tournaments/TournamentsContent";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 import {
-  fetchPublicEvents,
   fetchPublicTournaments,
   fetchPublicGameCategories,
 } from "@/lib/tournaments";
@@ -27,9 +26,8 @@ export default async function TournamentsPage({
   searchParams: Promise<{ game?: string }>;
 }) {
   const { game = "all" } = await searchParams;
-  const [tournaments, series, categories] = await Promise.all([
+  const [tournaments, categories] = await Promise.all([
     fetchPublicTournaments(),
-    fetchPublicEvents(),
     fetchPublicGameCategories(),
   ]);
 
@@ -37,7 +35,6 @@ export default async function TournamentsPage({
     <PageLayout title="Tournaments" description={defaultPageDescriptions.tournaments}>
       <TournamentsContent
         tournaments={tournaments}
-        series={series}
         categories={categories}
         initialGameFilter={game}
       />
