@@ -25,6 +25,7 @@ Use the guide that matches the work being performed. The root [README](../README
 - [API Documentation](./api-documentation.md) — implemented endpoints and response behavior.
 - [Private Android Admin App](../mobile-admin/README.md) — local development, security model, signing, and private APK releases.
 - [Future Technical Improvements](./future-technical-improvements.md) — feasible candidates that are not committed or scheduled.
+- [Platform Integration Roadmap](./platform-integration-roadmap.md) — remaining work to unify the website, database, Discord, and the VALORANT SL leaderboard, and the decisions each item is waiting on.
 
 ## Product and Administration
 
