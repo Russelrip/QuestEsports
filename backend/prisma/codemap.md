@@ -141,6 +141,19 @@ existing contact, match-room, notification, or OAuth tables.
   never reported as missing. Row level security is enabled and the Supabase Data
   API roles are revoked, matching `players` and `game_accounts`.
 
+- `20260824230000_add_audit_source_and_reason` adds the nullable
+  `audit_logs.source` (`AuditSource`: web, admin, mobile, bot, system) and
+  `audit_logs.reason`. Actor, action, target and before/after are enough while
+  every write comes from a person in a browser; they stop being enough once
+  automation writes, because a role granted by a bot acting for an admin and the
+  same role granted by that admin in the dashboard are indistinguishable by
+  actor alone. Both columns are nullable with no default and are deliberately
+  not backfilled: NULL means "predates provenance tracking", which is a
+  different fact from "came from the web". `source` is derived only from what a
+  request proves — a service token means `bot`, the `/api/admin` prefix means
+  `admin` — and `mobile` is never inferred, because the Android client calls the
+  same routes as the web dashboard and announces nothing that separates them.
+
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
 delete guards protect children during normal admin operations. OAuth link

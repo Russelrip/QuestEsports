@@ -14,6 +14,24 @@ enum UserRole {
   admin
 }
 
+// Which surface produced an audited change. Once automation writes to the
+// database, "which actor" stops answering "which surface" — a role granted by
+// a bot acting for an admin and the same role granted by that admin in the
+// dashboard are indistinguishable by actor alone, and they need different
+// scrutiny during an incident review.
+//
+// `mobile` is declared but never inferred: the Android client calls the same
+// `/api/admin/*` routes as the web dashboard and sends nothing to tell them
+// apart. It is here so the value exists the day that client identifies itself,
+// rather than being retrofitted into a column that already has history.
+enum AuditSource {
+  web
+  admin
+  mobile
+  bot
+  system
+}
+
 enum ValorantBindingStatus {
   active
   detached
@@ -1044,12 +1062,22 @@ model AuditLog {
   afterData   Json?    @map("after_data")
   requestId   String?  @map("request_id")
   ipAddress   String?  @map("ip_address")
+  // Nullable with no default and no backfill: NULL honestly means "predates
+  // source tracking", which is a different fact from "came from the web".
+  // Defaulting historical rows to any value would assert something that was
+  // never established.
+  source      AuditSource?
+  // Why, for changes where the what and the who are not enough: a staff
+  // override, a referee decision, a temporary permission grant. Free text
+  // because the useful version is a sentence a human wrote, not an enum.
+  reason      String?
   createdAt   DateTime @default(now()) @map("created_at")
   actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([actorUserId, createdAt])
   @@index([targetType, targetId, createdAt])
   @@index([action, createdAt])
+  @@index([source, createdAt])
   @@map("audit_logs")
 }
 
