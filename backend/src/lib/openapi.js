@@ -1407,6 +1407,11 @@ const additionalPaths = {
   "/api/games": {
     get: createOperation("Games", "List active games"),
   },
+  "/api/players/{publicId}": {
+    get: createOperation("Players", "Get a public player profile", {
+      parameters: idParameter("publicId"),
+    }),
+  },
   "/api/rulebooks": {
     get: createOperation("Rulebooks", "List published rulebooks"),
   },
