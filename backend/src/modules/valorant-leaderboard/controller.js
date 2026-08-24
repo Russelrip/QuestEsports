@@ -1,7 +1,7 @@
 const { asyncHandler } = require("../../lib/async-handler");
 const {
   listLeaderboard,
-  searchLeaderboardPlayer,
+  searchLeaderboardPlayers,
   getDiscordLogin: serviceGetDiscordLogin,
   getDiscordCallback: serviceGetDiscordCallback,
   checkPuuid: serviceCheckPuuid,
@@ -26,10 +26,15 @@ const getLeaderboard = asyncHandler(async (req, res) => {
   respond(res, data);
 });
 
+const SEARCH_LIMIT_MAX = 50;
+const SEARCH_LIMIT_DEFAULT = 25;
+
 const searchLeaderboard = asyncHandler(async (req, res) => {
   const query = String(req.query.q || "").trim();
-  const entry = query ? await searchLeaderboardPlayer(query) : null;
-  respond(res, { entry });
+  const limit = clamp(parsePositiveInt(req.query.limit, SEARCH_LIMIT_DEFAULT), 1, SEARCH_LIMIT_MAX);
+  const entries = query ? await searchLeaderboardPlayers(query, { limit }) : [];
+  // `entry` is the legacy single-result field, kept so older clients keep working.
+  respond(res, { entries, entry: entries[0] ?? null });
 });
 
 const getDiscordLogin = asyncHandler(async (req, res) => {

@@ -2,8 +2,8 @@ import PageLayout from "@/components/PageLayout";
 import ValorantLeaderboard from "@/components/valorant/ValorantLeaderboard";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 import type {
-  ValorantPlayerLeaderboardEntry,
   ValorantPlayerLeaderboardPage,
+  ValorantPlayerLeaderboardSearchEntry,
 } from "@/lib/valorant";
 import {
   fetchPublicValorantLeaderboard,
@@ -25,6 +25,7 @@ export const metadata = buildPageMetadata({
 });
 
 const PER_PAGE = 50;
+const SEARCH_LIMIT = 25;
 
 export default async function ValorantLeaderboardPage({
   searchParams,
@@ -44,20 +45,22 @@ export default async function ValorantLeaderboardPage({
         total={0}
         totalPages={1}
         query=""
-        searchResult={null}
+        searchResults={[]}
       />
     </PageLayout>
   );
 
   if (query) {
-    let entry: ValorantPlayerLeaderboardEntry | null = null;
+    let results: ValorantPlayerLeaderboardSearchEntry[] = [];
     let failed = false;
     try {
-      entry = await searchPublicValorantLeaderboard(query);
+      results = await searchPublicValorantLeaderboard(query, SEARCH_LIMIT);
     } catch (error) {
       // The upstream is unreachable (e.g. VALORANT_SL_API_URL unset → 503).
       // Render the component's "Leaderboard unavailable" EmptyState + register CTA
-      // instead of throwing into the root error boundary.
+      // instead of throwing into the root error boundary. A query that simply
+      // matches nobody is NOT an error — it comes back as an empty list and the
+      // component renders "No player found".
       console.error("Valorant leaderboard search failed:", error);
       failed = true;
     }
@@ -71,7 +74,7 @@ export default async function ValorantLeaderboardPage({
           total={0}
           totalPages={1}
           query={query}
-          searchResult={entry}
+          searchResults={results}
         />
       </PageLayout>
     );
@@ -97,7 +100,7 @@ export default async function ValorantLeaderboardPage({
         total={pageData.total}
         totalPages={pageData.totalPages}
         query=""
-        searchResult={null}
+        searchResults={[]}
       />
     </PageLayout>
   );

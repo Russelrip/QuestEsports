@@ -19,8 +19,8 @@ import type {
   ValorantDiscordCallbackResult,
   ValorantFormat,
   ValorantMatchSummary,
-  ValorantPlayerLeaderboardEntry,
   ValorantPlayerLeaderboardPage,
+  ValorantPlayerLeaderboardSearchEntry,
   ValorantRatingMode,
   ValorantRegistrationPreview,
   ValorantRegistrationSubmitResult,
@@ -221,15 +221,17 @@ export const fetchPublicValorantLeaderboard = async (
 
 export const searchPublicValorantLeaderboard = async (
   query: string,
-): Promise<ValorantPlayerLeaderboardEntry | null> => {
+  limit = 25,
+): Promise<ValorantPlayerLeaderboardSearchEntry[]> => {
   const params = new URLSearchParams();
   params.set("q", query);
-  const envelope = await fetchApiJson<{ data: { entry: ValorantPlayerLeaderboardEntry | null } }>(
+  params.set("limit", String(limit));
+  const envelope = await fetchApiJson<{ data: { entries: ValorantPlayerLeaderboardSearchEntry[] } }>(
     `/api/v1/valorant/leaderboard/search?${params.toString()}`,
     { next: { revalidate: 60 } },
     "Leaderboard request failed.",
   );
-  return envelope.data.entry;
+  return envelope.data.entries ?? [];
 };
 
 // Registration flow helpers. These run in the browser, so they use plain fetch

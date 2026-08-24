@@ -101,8 +101,19 @@ const getLeaderboard = async ({ page = 1, perPage = 50 }) => {
   return get(`/api/v1/leaderboard?${params.toString()}`);
 };
 
-const searchLeaderboard = async (query) =>
-  get(`/api/v1/leaderboard/search/${encodeURIComponent(query)}`);
+// A query that matches nobody is a normal result, not an outage: upstream
+// answers 200 `null` today, but a 404 means the same thing. Both become null so
+// the page can render "no player found" instead of "leaderboard unavailable".
+const searchLeaderboard = async (query) => {
+  const response = await request({ path: `/api/v1/leaderboard/search/${encodeURIComponent(query)}` });
+  if (response.ok) {
+    return response.json();
+  }
+  if (response.status === 404) {
+    return null;
+  }
+  throw new HttpError(502, "VALORANT leaderboard is unavailable.");
+};
 
 // Registration + auth proxy endpoints (valorant-platform-backend).
 const getDiscordLogin = async () =>

@@ -171,19 +171,31 @@ describe("VALORANT public leaderboard API client", () => {
     );
   });
 
-  it("search unwraps the entry from the envelope", async () => {
+  it("search unwraps the ranked entries from the envelope", async () => {
     mockedFetchApiJson.mockResolvedValueOnce({
       success: true,
-      data: { entry: { puuid: "p-1", name: "Sahan", tag: "QST" } },
+      data: {
+        entries: [
+          { puuid: "p-1", name: "Sahan", tag: "QST", rank: 4 },
+          { puuid: "p-2", name: "Sahani", tag: "LKA", rank: 12 },
+        ],
+      },
     } as never);
     const { searchPublicValorantLeaderboard } = await import("../../lib/valorant-api");
-    const result = await searchPublicValorantLeaderboard("sahan");
-    expect(result?.puuid).toBe("p-1");
+    const result = await searchPublicValorantLeaderboard("sahan", 10);
+    expect(result.map((entry) => entry.puuid)).toEqual(["p-1", "p-2"]);
+    expect(result[0].rank).toBe(4);
     expect(mockedFetchApiJson).toHaveBeenCalledWith(
-      "/api/v1/valorant/leaderboard/search?q=sahan",
+      "/api/v1/valorant/leaderboard/search?q=sahan&limit=10",
       { next: { revalidate: 60 } },
       "Leaderboard request failed.",
     );
+  });
+
+  it("search returns an empty list when the envelope carries no entries", async () => {
+    mockedFetchApiJson.mockResolvedValueOnce({ success: true, data: {} } as never);
+    const { searchPublicValorantLeaderboard } = await import("../../lib/valorant-api");
+    expect(await searchPublicValorantLeaderboard("nobody")).toEqual([]);
   });
 });
 
