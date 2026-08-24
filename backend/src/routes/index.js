@@ -15,6 +15,7 @@ const paymentRoutes = require("../modules/payments/payment.routes");
 const shopRoutes = require("../modules/shop/shop.routes");
 const gameCategoryRoutes = require("../modules/games/game-category.routes");
 const gameRoutes = require("../modules/games/game.routes");
+const playerRoutes = require("../modules/players/player.routes");
 const ticketRoutes = require("../modules/tickets/ticket.routes");
 const expenseRoutes = require("../modules/expenses/expense.routes");
 
@@ -26,6 +27,7 @@ router.use(accountRoutes);
 router.use(seriesRoutes);
 router.use(gameCategoryRoutes);
 router.use(gameRoutes);
+router.use(playerRoutes);
 router.use(paymentRoutes);
 router.use(shopRoutes);
 router.use(ticketRoutes);
