@@ -783,6 +783,10 @@ model Tournament {
   fullDescription            String                      @map("full_description")
   rules                      String?
   rulebookId                 String?                     @map("rulebook_id") @db.Uuid
+  // The exact text that governs THIS tournament, pinned when it is published.
+  // Without it a tournament resolves to whatever the rulebook says today, so a
+  // rule edited mid-season silently rewrites what a completed event ran under.
+  rulebookVersionId          String?                     @map("rulebook_version_id") @db.Uuid
   registrationOpenAt         DateTime?                   @map("registration_open_at")
   startDate                  DateTime?                   @map("start_date")
   startDateStatus            TournamentDateStatus        @default(scheduled) @map("start_date_status")
@@ -830,6 +834,7 @@ model Tournament {
   eventAlbums                EventAlbum[]
   bracket                    TournamentBracket?
   rulebook                   Rulebook?                   @relation(fields: [rulebookId], references: [id], onDelete: SetNull)
+  rulebookVersion            RulebookVersion?            @relation(fields: [rulebookVersionId], references: [id], onDelete: SetNull)
   series                     EventSeries?                @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   gameCategory               GameCategory?               @relation(fields: [gameCategoryId], references: [id], onDelete: SetNull)
   gameRef                    Game?                       @relation(fields: [gameId], references: [id], onDelete: SetNull)
@@ -851,6 +856,7 @@ model Tournament {
   @@index([isFeatured, isPublished])
   @@index([displayPriority, startDate])
   @@index([rulebookId])
+  @@index([rulebookVersionId])
   @@index([seriesId, seriesOrder])
   @@index([gameCategoryId])
   @@index([gameId])
@@ -873,24 +879,74 @@ model TournamentSponsor {
   @@map("tournament_sponsors")
 }
 
+// Which tier of the rules hierarchy a document sits at. Conduct, cheating and
+// sanctions do not change per event; map pools and pause rules change per
+// title; eligibility and schedule change per tournament. Flattening all three
+// into one document is why a rule change means editing prose in several places
+// and hoping they agree.
+enum RulebookLayer {
+  policy
+  game
+  tournament
+}
+
+// The rulebook DOCUMENT: stable identity, title, layer, and where it sits in
+// the hierarchy. Its text lives in RulebookVersion.
+//
+// `content` is retained and still authoritative during the expand phase. It
+// becomes the v1 version body, and reads move across in a later release.
 model Rulebook {
-  id          String       @id @default(uuid()) @db.Uuid
-  slug        String       @unique
+  id          String            @id @default(uuid()) @db.Uuid
+  slug        String            @unique
   title       String
   game        String
-  gameId      String?      @map("game_id") @db.Uuid
-  variant     String       @default("Standard")
+  gameId      String?           @map("game_id") @db.Uuid
+  variant     String            @default("Standard")
   content     String
-  createdAt   DateTime     @default(now()) @map("created_at")
-  updatedAt   DateTime     @updatedAt @map("updated_at")
-  gameRef     Game?        @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  layer       RulebookLayer     @default(game)
+  // A tournament rulebook inherits from a game rulebook, which inherits from
+  // the competition policy. Nullable because the policy at the top has no
+  // parent, and because nothing is reparented by this migration.
+  parentId    String?           @map("parent_id") @db.Uuid
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  gameRef     Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  parent      Rulebook?         @relation("RulebookHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Rulebook[]        @relation("RulebookHierarchy")
+  versions    RulebookVersion[]
   tournaments Tournament[]
 
   @@index([game])
   @@index([game, variant])
   @@index([createdAt])
   @@index([gameId])
+  @@index([layer])
+  @@index([parentId])
   @@map("rulebooks")
+}
+
+// One immutable revision of a rulebook's text.
+//
+// Immutable is the whole point: a tournament pins the version that governed it,
+// so an edit two seasons later cannot change what a team actually agreed to.
+// Editing published rules therefore means publishing a new version, never
+// rewriting an existing row.
+model RulebookVersion {
+  id            String     @id @default(uuid()) @db.Uuid
+  rulebookId    String     @map("rulebook_id") @db.Uuid
+  version       Int
+  content       String
+  changeSummary String?    @map("change_summary")
+  effectiveFrom DateTime   @map("effective_from")
+  // NULL means a draft. A tournament may only pin a published version.
+  publishedAt   DateTime?  @map("published_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  rulebook      Rulebook   @relation(fields: [rulebookId], references: [id], onDelete: Cascade)
+  tournaments   Tournament[]
+
+  @@unique([rulebookId, version])
+  @@index([rulebookId, publishedAt])
+  @@map("rulebook_versions")
 }
 
 model TournamentBracket {
