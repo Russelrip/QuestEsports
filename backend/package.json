@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "dev:local": "node scripts/with-local-db.js nodemon src/server.js",
     "postinstall": "prisma generate",
     "start": "node src/server.js",
     "lint": "eslint src tests scripts",
@@ -17,6 +18,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:migrate:deploy:local": "node scripts/with-local-db.js prisma migrate deploy",
     "prisma:migrate:status": "prisma migrate status",
     "prisma:migrations:check-pending": "node scripts/check-pending-migrations.js",
     "prisma:security:verify": "node scripts/verify-database-security.js",

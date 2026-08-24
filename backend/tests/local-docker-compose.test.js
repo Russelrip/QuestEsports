@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const repoRoot = path.join(__dirname, "../..");
 const read = (relative) => fs.readFileSync(path.join(repoRoot, relative), "utf8");
@@ -73,10 +74,21 @@ test("a filled-in local env file cannot be committed", () => {
     fs.existsSync(path.join(repoRoot, "ops/docker/quest.local.env.example")),
     "the template must be committed",
   );
-  assert.ok(
-    !fs.existsSync(path.join(repoRoot, "ops/docker/quest.local.env")),
-    "a real local env file must not be in the repository",
-  );
+  // Checked against the git index, NOT the filesystem: the template tells you
+  // to copy it to this path, so a developer who followed the setup has the
+  // file on disk and must not fail this suite for it. What matters is that it
+  // is never tracked.
+  const tracked = spawnSync("git", ["ls-files", "--", "ops/docker/quest.local.env"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (tracked.status === 0) {
+    assert.equal(
+      tracked.stdout.trim(),
+      "",
+      "a real local env file must never be committed",
+    );
+  }
 });
 
 test("the image runtimes match what the projects declare", () => {
