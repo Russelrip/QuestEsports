@@ -154,6 +154,25 @@ existing contact, match-room, notification, or OAuth tables.
   `admin` — and `mobile` is never inferred, because the Android client calls the
   same routes as the web dashboard and announces nothing that separates them.
 
+- `20260825010000_add_rulebook_versioning` adds `rulebooks.layer` /
+  `rulebooks.parent_id`, the `rulebook_versions` table, and
+  `tournaments.rulebook_version_id`. `rulebooks` held one flat `content` string
+  with no version and no effective date, so a tournament resolved to whatever
+  the rulebook says TODAY — editing a rule mid-season silently rewrote what a
+  completed event ran under. A published version is immutable; editing rules
+  means publishing a new version, never rewriting a row. `layer` defaults to
+  `game` because the table is keyed and indexed on `(game, variant)`, so its own
+  shape says "rules for a title, in a variant"; reclassifying to `policy` or
+  `tournament` is an editorial decision for staff, not one a migration should
+  guess. Backfilled — unlike the roster snapshots — because the text already
+  exists and already governs, so recording it as v1 states a fact rather than
+  inventing one; `effective_from` uses the rulebook's own `created_at` rather
+  than `now()`, which would claim every existing rulebook took effect at
+  migration time. Existing tournaments are pinned to their rulebook's v1 so they
+  resolve to the same text after cutover as before. `rulebooks.content` is
+  retained and still authoritative; moving reads onto versions and dropping it
+  is the contract step.
+
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
 delete guards protect children during normal admin operations. OAuth link
