@@ -276,7 +276,6 @@ operators can distinguish required enablement from generated workflow values.
 | `BACKEND_APP_DIR` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<backend checkout path>` | Per deployment |
 | `BACKEND_PM2_PROCESS` | No — workflow defaults to `quest-backend` | Repository owner | CI/P | Secret/environment value | `quest-backend` | Per deployment |
 | `BACKEND_HEALTHCHECK_URL` | No — workflow defaults to `http://127.0.0.1:5001/api/health` | Repository owner | CI/P | Secret/environment value | `http://127.0.0.1:5001/api/health` | Per deployment |
-| `BACKEND_MIGRATION_APPROVAL_SHA` | Conditional; required for pending/changed migrations | Repository owner | CI/P | Secret | `<40-character approved commit SHA>` | Per deployment |
 | `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` | Conditional; required for destructive migrations | Repository owner | CI/P | Secret | `<40-character approved commit SHA>` | Per deployment |
 | `FRONTEND_DEPLOY_ENABLED` | Conditional; required to enable frontend deploy | Repository owner | CI/P | Public control | `false` | Per deployment workflow |
 | `PRODUCTION_API_URL` | Yes when frontend deploy enabled | Repository owner | CI/P | Public/environment value | `<production API origin>` | Per deployment |
