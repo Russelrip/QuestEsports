@@ -459,6 +459,57 @@ model EventSeries {
   @@map("event_series")
 }
 
+// The canonical title. Before this model, "which game" was stated seven
+// different ways — a free-text column on Tournament, Rulebook,
+// RecruitmentApplication, SavedTeam and three veto catalog models, plus the
+// GameCategory row that drives the public game pages. Nothing tied them
+// together, so a tournament could reference a rulebook for a different title
+// and no constraint objected.
+//
+// `slug` is the join key and deliberately carries the same values as the
+// GameAccountGame enum, so the enum and this table agree by construction rather
+// than by convention. Adding a title stays additive: one row here, one enum
+// value, one adapter.
+//
+// This model is identity only. GameCategory keeps presentation — artwork, logo,
+// ordering, publication — and now points at the title it presents.
+model Game {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  slug                    String                   @unique
+  displayName             String                   @map("display_name")
+  shortName               String?                  @map("short_name")
+  isActive                Boolean                  @default(true) @map("is_active")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  categories              GameCategory[]
+  tournaments             Tournament[]
+  rulebooks               Rulebook[]
+  savedTeams              SavedTeam[]
+  recruitmentApplications RecruitmentApplication[]
+  vetoMaps                VetoMap[]
+  vetoMapPools            VetoMapPool[]
+  vetoRulePresets         VetoRulePreset[]
+  aliases                 GameAlias[]
+
+  @@index([isActive])
+  @@map("games")
+}
+
+// Every alternative spelling that must resolve to one title. A machine cannot
+// know that "COD Mobile" and "codm" name the same product — normalising text
+// alone would create a second title for one that already exists. Aliases are
+// stored already-normalised, so resolution is a plain equality match.
+model GameAlias {
+  id        String   @id @default(uuid()) @db.Uuid
+  alias     String   @unique
+  gameId    String   @map("game_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+  @@map("game_aliases")
+}
+
 model GameCategory {
   id           String       @id @default(uuid()) @db.Uuid
   slug         String       @unique
@@ -467,11 +518,14 @@ model GameCategory {
   logoName     String?      @map("logo_name")
   displayOrder Int          @default(100) @map("display_order")
   isPublished  Boolean      @default(false) @map("is_published")
+  gameId       String?      @map("game_id") @db.Uuid
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
+  game         Game?        @relation(fields: [gameId], references: [id], onDelete: SetNull)
   tournaments  Tournament[]
 
   @@index([isPublished, displayOrder])
+  @@index([gameId])
   @@map("game_categories")
 }
 
@@ -495,12 +549,15 @@ model RecruitmentApplication {
   privacyPolicyVersion        String?                      @map("privacy_policy_version")
   privacyAcceptedAt           DateTime?                    @map("privacy_accepted_at")
   status                      RecruitmentApplicationStatus @default(pending)
+  gameId                      String?                      @map("game_id") @db.Uuid
   createdAt                   DateTime                     @default(now()) @map("created_at")
   updatedAt                   DateTime                     @updatedAt @map("updated_at")
   user                        User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameRef                     Game?                        @relation(fields: [gameId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  @@index([gameId])
   @@map("recruitment_applications")
 }
 
@@ -678,6 +735,7 @@ model Tournament {
   slug                       String                      @unique
   title                      String
   game                       String
+  gameId                     String?                     @map("game_id") @db.Uuid
   gameCategoryId             String?                     @map("game_category_id") @db.Uuid
   organizer                  String                      @default("Quest E-sports")
   country                    String                      @default("Sri Lanka")
@@ -746,6 +804,7 @@ model Tournament {
   rulebook                   Rulebook?                   @relation(fields: [rulebookId], references: [id], onDelete: SetNull)
   series                     EventSeries?                @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   gameCategory               GameCategory?               @relation(fields: [gameCategoryId], references: [id], onDelete: SetNull)
+  gameRef                    Game?                       @relation(fields: [gameId], references: [id], onDelete: SetNull)
   sponsors                   TournamentSponsor[]
   adminSlotReservations      AdminSlotReservation[]
   staffAssignments           TournamentStaffAssignment[]
@@ -766,6 +825,7 @@ model Tournament {
   @@index([rulebookId])
   @@index([seriesId, seriesOrder])
   @@index([gameCategoryId])
+  @@index([gameId])
   @@map("tournaments")
 }
 
@@ -790,15 +850,18 @@ model Rulebook {
   slug        String       @unique
   title       String
   game        String
+  gameId      String?      @map("game_id") @db.Uuid
   variant     String       @default("Standard")
   content     String
   createdAt   DateTime     @default(now()) @map("created_at")
   updatedAt   DateTime     @updatedAt @map("updated_at")
+  gameRef     Game?        @relation(fields: [gameId], references: [id], onDelete: SetNull)
   tournaments Tournament[]
 
   @@index([game])
   @@index([game, variant])
   @@index([createdAt])
+  @@index([gameId])
   @@map("rulebooks")
 }
 
@@ -1536,9 +1599,11 @@ model SavedTeam {
   logoName              String?               @map("logo_name")
   logoClearedAt         DateTime?             @map("logo_cleared_at")
   game                  String?               @map("game")
+  gameId                String?               @map("game_id") @db.Uuid
   createdAt             DateTime              @default(now()) @map("created_at")
   updatedAt             DateTime              @updatedAt @map("updated_at")
   captainUser           User                  @relation(fields: [captainUserId], references: [id], onDelete: Cascade)
+  gameRef               Game?                 @relation(fields: [gameId], references: [id], onDelete: SetNull)
   members               SavedTeamMember[]
   registrations         TeamRegistration[]
   valorantBindings      ValorantTeamBinding[]
@@ -1546,6 +1611,7 @@ model SavedTeam {
   @@unique([captainUserId, name])
   @@index([captainUserId])
   @@index([createdAt])
+  @@index([gameId])
   @@map("saved_teams")
 }
 
@@ -1796,11 +1862,14 @@ model VetoMap {
   artworkUrl  String?          @map("artwork_url")
   accentColor String           @default("#8b5cf6") @map("accent_color")
   isActive    Boolean          @default(true) @map("is_active")
+  gameId      String?          @map("game_id") @db.Uuid
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
+  gameRef     Game?            @relation(fields: [gameId], references: [id], onDelete: SetNull)
   pools       VetoMapPoolMap[]
 
   @@index([game, isActive])
+  @@index([gameId])
   @@map("veto_maps")
 }
 
@@ -1812,15 +1881,18 @@ model VetoMapPool {
   version      Int                @default(1)
   isBuiltIn    Boolean            @default(false) @map("is_built_in")
   isArchived   Boolean            @default(false) @map("is_archived")
+  gameId       String?            @map("game_id") @db.Uuid
   createdAt    DateTime           @default(now()) @map("created_at")
   updatedAt    DateTime           @updatedAt @map("updated_at")
   tournament   Tournament?        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  gameRef      Game?              @relation(fields: [gameId], references: [id], onDelete: SetNull)
   maps         VetoMapPoolMap[]
   templates    VetoRoomTemplate[]
   rooms        VetoRoom[]
 
   @@index([game, isArchived])
   @@index([tournamentId, isArchived])
+  @@index([gameId])
   @@map("veto_map_pools")
 }
 
@@ -1846,14 +1918,17 @@ model VetoRulePreset {
   steps        Json
   isBuiltIn    Boolean            @default(false) @map("is_built_in")
   isArchived   Boolean            @default(false) @map("is_archived")
+  gameId       String?            @map("game_id") @db.Uuid
   createdAt    DateTime           @default(now()) @map("created_at")
   updatedAt    DateTime           @updatedAt @map("updated_at")
   tournament   Tournament?        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  gameRef      Game?              @relation(fields: [gameId], references: [id], onDelete: SetNull)
   templates    VetoRoomTemplate[]
   rooms        VetoRoom[]
 
   @@index([game, format, isArchived])
   @@index([tournamentId, isArchived])
+  @@index([gameId])
   @@map("veto_rule_presets")
 }
 
