@@ -122,6 +122,25 @@ existing contact, match-room, notification, or OAuth tables.
   three veto catalog `game` columns is the CONTRACT step and belongs in a later
   release once reads have moved.
 
+- `20260824234500_add_discord_identity` adds `discord_identities`, attaching a
+  player's Discord account to `players` rather than leaving it inside
+  `oauth_accounts`. `oauth_accounts` is an AUTHENTICATION record: it exists so
+  somebody can sign in, and it cascades away with the user row. Tournament
+  operations need the link to outlive that, and need it to exist for a player
+  with no Quest account at all — a LAN entrant a captain registered on their
+  behalf is still someone a referee has to reach, which is why `source`
+  distinguishes an `oauth` link Discord confirmed from an `admin` assertion.
+  `discord_user_id` is the snowflake and the only identity key; `username` and
+  `global_name` are a cached display snapshot, and a CHECK constraint requires
+  digits so a username cannot be stored in the identity column at all. Unique on
+  both `player_id` and `discord_user_id`: one Discord account belongs to one
+  player, or a tournament role could be granted to the wrong person. Unlike the
+  roster snapshots this one IS backfilled — a completed OAuth flow already
+  established the fact, so copying it asserts nothing new — and reads fall back
+  to `oauth_accounts` during the expand phase so a link made before cutover is
+  never reported as missing. Row level security is enabled and the Supabase Data
+  API roles are revoked, matching `players` and `game_accounts`.
+
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
 delete guards protect children during normal admin operations. OAuth link
