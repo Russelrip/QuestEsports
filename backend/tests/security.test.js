@@ -154,6 +154,34 @@ test("PayHere notifications are exempt from browser origin and CSRF checks", asy
   }
 });
 
+test("OAuth link callbacks are exempt from browser origin checks", async () => {
+  const { module: security, restore } = loadSecurityMiddleware();
+  try {
+    for (const [provider, providerOrigin] of [
+      ["google", "https://accounts.google.com/"],
+      ["discord", "https://discord.com/"],
+    ]) {
+      const request = buildRequest({
+        path: `/api/v1/auth/oauth/${provider}/link/callback`,
+        headers: {
+          referer: providerOrigin,
+          cookie: "quest_session=session-token",
+        },
+      });
+      assert.equal(
+        await runMiddleware(security.requireAllowedApiOrigin, request),
+        null,
+      );
+      assert.equal(
+        await runMiddleware(security.protectAgainstCsrf, request),
+        null,
+      );
+    }
+  } finally {
+    restore();
+  }
+});
+
 test("mobile OAuth grant exchange is exempt from browser origin and CSRF checks", async () => {
   const { module: security, restore } = loadSecurityMiddleware();
   try {

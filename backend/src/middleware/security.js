@@ -3,9 +3,15 @@ const { env } = require("../config/env");
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const allowedOrigins = new Set(env.CORS_ORIGINS);
+// OAuth callbacks arrive as top-level browser redirects from the provider, so
+// the browser reports the provider's origin rather than ours. They carry their
+// own CSRF defence through the signed state, single-use nonce, flow cookie, and
+// PKCE verifier checked in the OAuth service.
 const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
   "/api/auth/google/callback",
   "/api/auth/discord/callback",
+  "/api/v1/auth/oauth/google/link/callback",
+  "/api/v1/auth/oauth/discord/link/callback",
   "/api/mobile/auth/login",
   "/api/mobile/auth/oauth/exchange",
   "/api/payments/payhere/notify",
