@@ -129,7 +129,6 @@ jobs:
           APP_DIR: ${{ secrets.BACKEND_APP_DIR }}
           PM2_PROCESS: ${{ secrets.BACKEND_PM2_PROCESS }}
           HEALTHCHECK_URL: ${{ secrets.BACKEND_HEALTHCHECK_URL }}
-          MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_MIGRATION_APPROVAL_SHA }}
           DESTRUCTIVE_MIGRATION_APPROVAL_SHA: ${{ secrets.BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA }}
           MOBILE_ANDROID_CERT_SHA256: ${{ secrets.MOBILE_ADMIN_ANDROID_CERT_SHA256 }}
           REPAIR_LEGACY_MEDIA: ${{ inputs.repair_legacy_media || false }}
@@ -143,10 +142,6 @@ jobs:
         run: |
           if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
             echo "DEPLOY_SHA must be a full lowercase 40-character commit SHA." >&2
-            exit 1
-          fi
-          if [ -n "$MIGRATION_APPROVAL_SHA" ] && ! printf '%s' "$MIGRATION_APPROVAL_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
-            echo "BACKEND_MIGRATION_APPROVAL_SHA must be empty or a full lowercase 40-character commit SHA." >&2
             exit 1
           fi
           if [ -n "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" ] && ! printf '%s' "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -185,7 +180,7 @@ jobs:
             echo "MOBILE_ADMIN_ANDROID_CERT_SHA256 must contain the verified release certificate fingerprint." >&2
             exit 1
           fi
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' MIGRATION_APPROVAL_SHA='$MIGRATION_APPROVAL_SHA' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' MOBILE_ANDROID_CERT_SHA256='$MOBILE_ANDROID_CERT_SHA256' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' OPTIMIZE_TOURNAMENT_BANNERS='$OPTIMIZE_TOURNAMENT_BANNERS' OPTIMIZE_EVENT_ALBUM_PHOTOS='$OPTIMIZE_EVENT_ALBUM_PHOTOS' INITIALIZE_MATCH_ROOMS='$INITIALIZE_MATCH_ROOMS' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_ANDROID_FINGERPRINT='$REPAIR_MOBILE_ANDROID_FINGERPRINT' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' MOBILE_ANDROID_CERT_SHA256='$MOBILE_ANDROID_CERT_SHA256' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' OPTIMIZE_TOURNAMENT_BANNERS='$OPTIMIZE_TOURNAMENT_BANNERS' OPTIMIZE_EVENT_ALBUM_PHOTOS='$OPTIMIZE_EVENT_ALBUM_PHOTOS' INITIALIZE_MATCH_ROOMS='$INITIALIZE_MATCH_ROOMS' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_ANDROID_FINGERPRINT='$REPAIR_MOBILE_ANDROID_FINGERPRINT' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
           set -euo pipefail
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
@@ -321,10 +316,17 @@ jobs:
             exit "$MIGRATION_STATUS_CODE"
           fi
           if [ "$MIGRATION_CHANGED" = true ] || [ "$MIGRATION_PENDING" = true ]; then
-            if [ "$MIGRATION_APPROVAL_SHA" != "$DEPLOY_SHA" ]; then
-              echo "A schema migration requires BACKEND_MIGRATION_APPROVAL_SHA to equal $DEPLOY_SHA." >&2
-              exit 1
-            fi
+            # A schema migration is approved by the `Production` environment's
+            # required reviewer, which pauses this job before any step runs.
+            # The BACKEND_MIGRATION_APPROVAL_SHA secret it replaces had to equal
+            # the deploying commit, so every push to main invalidated it, and an
+            # environment secret silently shadowed the repository one. Neither
+            # failure mode said what was wrong; both looked like a rejected
+            # approval.
+            #
+            # A destructive migration still needs its own explicit secret. One
+            # click approves a deployment; dropping a column deserves a second,
+            # deliberate act that names the exact commit.
             if [ "$DESTRUCTIVE_MIGRATION" = true ] && [ "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" != "$DEPLOY_SHA" ]; then
               echo "A destructive migration requires BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA to equal $DEPLOY_SHA." >&2
               echo "Prefer an expand-and-contract release; use this approval only after a verified recovery backup and maintenance plan." >&2

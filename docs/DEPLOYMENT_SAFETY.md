@@ -1,6 +1,6 @@
 # Deployment and migration safety
 
-Production deployments are promoted only from a successful `CI` run on the exact dispatched commit (normally `main`). The deploy workflow uses that exact tested commit and rejects newly introduced destructive migration statements. It does not enforce that the dispatched ref is `main`; the owner must dispatch from `main` to preserve the documented main-only promotion intent. A commit that changes migration SQL also requires the protected `BACKEND_MIGRATION_APPROVAL_SHA` secret to equal that exact 40-character commit SHA and must complete an encrypted off-site backup before migration.
+Production deployments are promoted only from a successful `CI` run on the exact dispatched commit (normally `main`). The deploy workflow uses that exact tested commit and rejects newly introduced destructive migration statements. It does not enforce that the dispatched ref is `main`; the owner must dispatch from `main` to preserve the documented main-only promotion intent. A commit that changes migration SQL is approved through the `Production` environment's required reviewer, which pauses the deployment until the owner approves it in the Actions UI, and must complete an encrypted off-site backup before migration.
 
 The gate checks both Git migration changes and migrations actually pending in production. This prevents a previously interrupted checkout from making a pending migration appear already deployed. A successful-deploy SHA marker is written only after migration, security verification, restart, health checks, and smoke checks succeed.
 
@@ -44,7 +44,8 @@ owns `valorant`. Deployment follows the same expand-and-contract discipline:
    populates it.
 4. Rollback = revert the app deployment. Newly added columns must stay nullable
    or defaulted so the previous app version remains compatible; the CD gate
-   (`BACKEND_MIGRATION_APPROVAL_SHA`/`BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA`)
+   (the `Production` environment's required reviewer, plus
+   `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` for destructive SQL)
    applies to Quest, and FastAPI production migrations follow the same manual
    approval + backup discipline.
 5. `prisma migrate reset` / `db drop` and the FastAPI reset harness remain
