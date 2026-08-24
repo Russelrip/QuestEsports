@@ -6,10 +6,10 @@ Provides the public event presentation layer without owning data fetching or
 registration state.
 
 - `EventCard.tsx` is the grid tile linking to `/events/[slug]`, shared by the
-  `/events` index, the event row on `/tournaments`, and the home page's
-  `FeaturedEvents` section. It renders for any published event with at least
-  one published child. The standalone tournament grids drop a child only when
-  such a card exists, so a child of a draft event is not orphaned.
+  `/events` index and the home page's `FeaturedEvents` section. It renders for
+  any published event with at least one published child. `/tournaments` carries
+  no event cards and lists every published tournament, children included; the
+  home page drops a child only because its own event row already shows it.
 - `EventHero.tsx` displays event identity, public media, status, and timing.
 - `EventOverview.tsx` displays dates, venue, and the aggregate games/teams/
   players/available-capacity projection.

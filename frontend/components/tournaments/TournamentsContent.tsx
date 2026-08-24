@@ -4,11 +4,10 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
-import EventCard from "@/components/tournaments/event/EventCard";
 import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
 import { resolveImageUrl } from "@/lib/media";
-import { getTournamentRegistrationPresentation, isCoveredByEventCard, type EventSeries, type GameCategory, type Tournament } from "@/lib/tournaments";
+import { getTournamentRegistrationPresentation, type GameCategory, type Tournament } from "@/lib/tournaments";
 import { formatTournamentDate } from "@/lib/utils";
 
 const gameIconBySlug: Record<string, string> = {
@@ -115,23 +114,22 @@ function getUniqueGameFilters(categories: GameCategory[]) {
   });
 }
 
-export default function TournamentsContent({ tournaments, series = [], categories = [], initialGameFilter = "all" }: { tournaments: Tournament[]; series?: EventSeries[]; categories?: GameCategory[]; initialGameFilter?: string }) {
+export default function TournamentsContent({ tournaments, categories = [], initialGameFilter = "all" }: { tournaments: Tournament[]; categories?: GameCategory[]; initialGameFilter?: string }) {
   const [gameFilter, setGameFilter] = useState(() => normalizeGameSlug(initialGameFilter) || "all");
   const gameScrollerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const gameFilters = getUniqueGameFilters(categories);
   const matches = (tournament: Tournament) => gameFilter === "all" || normalizeGameSlug(tournament.gameCategory?.slug || tournament.game) === gameFilter;
-  const active = tournaments.filter((item) => !item.isCompleted && !isCoveredByEventCard(item) && matches(item));
+  const active = tournaments.filter((item) => !item.isCompleted && matches(item));
   const past = tournaments
-    .filter((item) => item.isCompleted && !isCoveredByEventCard(item) && matches(item))
+    .filter((item) => item.isCompleted && matches(item))
     .sort((left, right) => {
       const leftDate = new Date(left.endDate || left.startDate || left.createdAt || 0).getTime();
       const rightDate = new Date(right.endDate || right.startDate || right.createdAt || 0).getTime();
       return rightDate - leftDate;
     });
-  const standaloneTournaments = [...active, ...past];
-  const filteredSeries = series.filter((item) => item.isPublished && item.tournaments.some(matches));
+  const listedTournaments = [...active, ...past];
 
   useEffect(() => {
     const scroller = gameScrollerRef.current;
@@ -181,9 +179,8 @@ export default function TournamentsContent({ tournaments, series = [], categorie
       </button>
     </div>
 
-    {filteredSeries.length ? <div className="mb-9 grid gap-5 md:grid-cols-2">{filteredSeries.map((item, index) => <EventCard key={item.id} event={item} preload={index === 0} eager={index < 4} />)}</div> : null}
 
-    {standaloneTournaments.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{standaloneTournaments.map((tournament, index) => <TournamentCard key={tournament.id} tournament={tournament} preload={filteredSeries.length === 0 && index === 0} eager={index < 4} />)}</div> : filteredSeries.length === 0 ? <EmptyState title="No tournaments match this game" description="Choose another game or view all events." /> : null}
+    {listedTournaments.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{listedTournaments.map((tournament, index) => <TournamentCard key={tournament.id} tournament={tournament} preload={index === 0} eager={index < 4} />)}</div> : <EmptyState title="No tournaments match this game" description="Choose another game, or browse the events page." />}
   </Section>;
 }
 
