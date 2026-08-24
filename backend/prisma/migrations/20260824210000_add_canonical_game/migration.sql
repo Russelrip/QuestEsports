@@ -202,3 +202,27 @@ UPDATE "veto_rule_presets"        SET "game_id" = pg_temp.resolve_game("game") W
 -- game_categories carries the canonical slug itself, so it joins directly.
 UPDATE "game_categories" c SET "game_id" = g."id"
 FROM "games" g WHERE g."slug" = c."slug";
+
+-- 7. Supabase hardening -------------------------------------------------------
+-- Matching 20260823120000_add_players_and_game_accounts: every new public table
+-- has row level security enabled and the Data API roles revoked. Quest reaches
+-- these tables only through the Prisma runtime role. These two hold no personal
+-- data, but the rule is the rule — scripts/verify-database-security.js fails CI
+-- on any public table without RLS, and a catalog table is exactly the kind that
+-- gets quietly exempted and then joined to something that does.
+ALTER TABLE public."games" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."game_aliases" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL PRIVILEGES ON TABLE public."games" FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON TABLE public."game_aliases" FROM PUBLIC;
+
+DO $migration$
+DECLARE role_name TEXT;
+BEGIN
+  FOREACH role_name IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+      EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public."games" FROM %I', role_name);
+      EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public."game_aliases" FROM %I', role_name);
+    END IF;
+  END LOOP;
+END
+$migration$;
