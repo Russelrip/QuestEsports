@@ -231,4 +231,4 @@ Contributors work on branches and submit pull requests. CODEOWNERS requests revi
 
 Because this private personal repository is on GitHub Free, branch protection is not enforceable. Production backend deployment is therefore manual and restricted in the workflow to the repository owner. A collaborator must never receive production database, VPS, payment, OAuth, mail, or signing credentials.
 
-See [Collaboration and Staging](./docs/collaboration-and-staging.md) before granting access. -Russ
+See [Collaboration and Staging](./docs/collaboration-and-staging.md) before granting access. -Russel
