@@ -11,6 +11,7 @@ const buildService = ({
   emailVerified,
   existingAccount = null,
   discordTag = null,
+  discordProfile = {},
 }) => {
   const existingUser = {
     id: "user-1",
@@ -109,6 +110,7 @@ const buildService = ({
           discriminator: "0",
           email: "player@example.com",
           verified: emailVerified,
+          ...discordProfile,
         }),
       };
     }
@@ -830,7 +832,7 @@ test("linking Discord again backfills a tag the first link never wrote", async (
     // the pre-tag link never recorded is written now.
     assert.equal(createCalls.length, 0);
     assert.equal(userUpdates.length, 1);
-    assert.deepEqual(userUpdates[0].data, { discordTag: "QuestPlayer" });
+    assert.deepEqual(userUpdates[0].data, { discordTag: "questplayer" });
   } finally {
     restore();
   }
@@ -855,8 +857,8 @@ test("signing in with Discord records the tag on a link made before it existed",
     });
 
     assert.equal(userModel.updateCalls.length, 1);
-    assert.deepEqual(userModel.updateCalls[0].data, { discordTag: "QuestPlayer" });
-    assert.equal(result.user.discordTag, "QuestPlayer");
+    assert.deepEqual(userModel.updateCalls[0].data, { discordTag: "questplayer" });
+    assert.equal(result.user.discordTag, "questplayer");
   } finally {
     restore();
   }
@@ -867,7 +869,7 @@ test("signing in with Discord leaves an unchanged tag alone", async () => {
     emailVerified: true,
     existingAccount: {
       userId: "user-1",
-      user: { id: "user-1", email: "player@example.com", discordTag: "QuestPlayer" },
+      user: { id: "user-1", email: "player@example.com", discordTag: "questplayer" },
     },
   });
 
@@ -902,8 +904,56 @@ test("auto-linking Discord at sign-in stores the tag with the account row", asyn
 
     assert.equal(oAuthAccountModel.createCalls.length, 1);
     assert.equal(userModel.updateCalls.length, 1);
-    assert.deepEqual(userModel.updateCalls[0].data, { discordTag: "QuestPlayer" });
-    assert.equal(result.user.discordTag, "QuestPlayer");
+    assert.deepEqual(userModel.updateCalls[0].data, { discordTag: "questplayer" });
+    assert.equal(result.user.discordTag, "questplayer");
+  } finally {
+    restore();
+  }
+});
+
+test("the Discord tag records the searchable username, not the display name", async () => {
+  // A display name cannot be searched or DMed and the player can change it at
+  // will, so storing it would break the promise that staff can reach them.
+  const { service, userModel, restore } = buildService({ emailVerified: true });
+
+  try {
+    const { flowToken, state } = getState(service, "discord");
+    const result = await service.handleOAuthCallback({
+      provider: "discord",
+      code: "oauth-code",
+      state,
+      flowToken,
+    });
+
+    assert.equal(result.user.discordTag, "questplayer");
+    assert.notEqual(result.user.discordTag, "QuestPlayer");
+    assert.deepEqual(userModel.updateCalls[0].data, { discordTag: "questplayer" });
+  } finally {
+    restore();
+  }
+});
+
+test("a legacy Discord account keeps its discriminator in the tag", async () => {
+  // Accounts that never migrated still have a real discriminator, where the
+  // handle staff can search is `username#1234` rather than the bare username.
+  const { service, userModel, restore } = buildService({
+    emailVerified: true,
+    discordProfile: { discriminator: "1234" },
+  });
+
+  try {
+    const { flowToken, state } = getState(service, "discord");
+    const result = await service.handleOAuthCallback({
+      provider: "discord",
+      code: "oauth-code",
+      state,
+      flowToken,
+    });
+
+    assert.equal(result.user.discordTag, "questplayer#1234");
+    assert.deepEqual(userModel.updateCalls[0].data, {
+      discordTag: "questplayer#1234",
+    });
   } finally {
     restore();
   }

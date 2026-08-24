@@ -569,10 +569,15 @@ const fetchDiscordProfile = async (accessToken) => {
     );
   }
 
+  // The tag exists so captains and staff can reach a player on Discord, so it
+  // must be the unique handle they can search or DM. `global_name` is only a
+  // display name: it is not unique, it cannot be looked up, and the player can
+  // change it at any time. Legacy accounts that never migrated still carry a
+  // real discriminator, where the searchable handle is `username#1234`.
   const discordTag =
     data.discriminator && data.discriminator !== "0"
       ? `${data.username}#${data.discriminator}`
-      : normalizeText(data.global_name || data.username);
+      : normalizeText(data.username);
 
   return {
     providerUserId: String(data.id),
