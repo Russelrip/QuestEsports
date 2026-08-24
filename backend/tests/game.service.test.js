@@ -125,6 +125,20 @@ test("migration is expand-only: no column dropped or made NOT NULL", () => {
   assert.doesNotMatch(sql, /ADD COLUMN IF NOT EXISTS "game_id" UUID NOT NULL/i);
 });
 
+// scripts/verify-database-security.js fails CI on any public table without RLS.
+// A catalog table is exactly the kind that gets quietly exempted and then joined
+// to something that does hold personal data.
+test("migration hardens both new tables against the Supabase Data API", () => {
+  const sql = fs.readFileSync(migrationPath, "utf8");
+  for (const table of ["games", "game_aliases"]) {
+    assert.match(sql, new RegExp(`ALTER TABLE public\\."${table}" ENABLE ROW LEVEL SECURITY`));
+    assert.match(sql, new RegExp(`REVOKE ALL PRIVILEGES ON TABLE public\\."${table}" FROM PUBLIC`));
+  }
+  for (const role of ["anon", "authenticated", "service_role"]) {
+    assert.match(sql, new RegExp(`'${role}'`));
+  }
+});
+
 test("migration guards every statement so it can be re-run", () => {
   const sql = fs.readFileSync(migrationPath, "utf8");
   const addColumns = sql.match(/ALTER TABLE "[a-z_]+"\s+ADD COLUMN/g) ?? [];
