@@ -650,6 +650,22 @@ const findOrCreateOAuthUser = async ({ provider, profile }) => {
   });
 
   if (existingAccount) {
+    // Signing in through an already-linked Discord account is the other place
+    // the tag can be learned. Links made before the tag was recorded — or
+    // Discord names changed since — would otherwise leave the profile blank or
+    // stale for as long as the connection lasts.
+    if (
+      provider === "discord" &&
+      profile.discordTag &&
+      existingAccount.user.discordTag !== profile.discordTag
+    ) {
+      return prisma.user.update({
+        where: { id: existingAccount.userId },
+        data: { discordTag: profile.discordTag },
+        select: PUBLIC_USER_SELECT,
+      });
+    }
+
     return existingAccount.user;
   }
 
@@ -671,17 +687,31 @@ const findOrCreateOAuthUser = async ({ provider, profile }) => {
       );
     }
 
-    await prisma.oAuthAccount.create({
-      data: {
-        id: crypto.randomUUID(),
-        userId: existingUser.id,
-        provider,
-        providerUserId: profile.providerUserId,
-        email: profile.email,
-      },
+    // Auto-linking at sign-in is a Discord connection like any other, so it
+    // owes the profile the same verified tag — written alongside the account
+    // row so the two never disagree.
+    await prisma.$transaction(async (tx) => {
+      await tx.oAuthAccount.create({
+        data: {
+          id: crypto.randomUUID(),
+          userId: existingUser.id,
+          provider,
+          providerUserId: profile.providerUserId,
+          email: profile.email,
+        },
+      });
+
+      if (provider === "discord" && profile.discordTag) {
+        await tx.user.update({
+          where: { id: existingUser.id },
+          data: { discordTag: profile.discordTag },
+        });
+      }
     });
 
-    return existingUser;
+    return provider === "discord" && profile.discordTag
+      ? { ...existingUser, discordTag: profile.discordTag }
+      : existingUser;
   }
 
   const { username, usernameNormalized } = await ensureUniqueUsername(
@@ -920,6 +950,14 @@ const handleOAuthLinkCallback = async ({
       }
       throw error;
     }
+  } else if (provider === "discord" && profile.discordTag) {
+    // The connection already belongs to this user, so there is no row to
+    // create — but a link made before the tag was recorded still has an empty
+    // profile field, and skipping the write here left it empty for good.
+    await prisma.user.update({
+      where: { id: normalizedUserId },
+      data: { discordTag: profile.discordTag },
+    });
   }
 
   return {

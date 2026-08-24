@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { LoadingState } from "@/components/ui/loading-state";
 import {
@@ -16,7 +17,7 @@ import {
 // who has already connected it, and leaves them wondering what else to do.
 const providerDetails: Record<
   OAuthProvider,
-  { name: string; prompt: string; connected: string; mark: string }
+  { name: string; prompt: string; connected: string; mark: string; derivesProfileData?: boolean }
 > = {
   google: {
     name: "Google",
@@ -31,12 +32,16 @@ const providerDetails: Record<
     prompt: "Connect Discord so your captain and tournament staff can reach you. Some tournaments require it.",
     connected: "Your captain and tournament staff can reach you on Discord.",
     mark: "D",
+    // Discord is the only provider that fills in a profile field, so it is the
+    // only one worth reconnecting once already linked.
+    derivesProfileData: true,
   },
 };
 
 type AccountLinkingPanelProps = { className?: string };
 
 export default function AccountLinkingPanel({ className = "" }: AccountLinkingPanelProps) {
+  const { refreshSession } = useAuth();
   const [providers, setProviders] = useState<LinkedProvider[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState("");
@@ -85,6 +90,10 @@ export default function AccountLinkingPanel({ className = "" }: AccountLinkingPa
     try {
       setProviders(await unlinkProvider(provider));
       setNotice(`${providerDetails[provider].name} has been unlinked.`);
+      // Unlinking Discord clears the verified tag on the server. Without this
+      // the profile keeps showing the old handle as if it were still vouched
+      // for, until the next full page load.
+      await refreshSession();
     } catch (reason) {
       const typedReason = reason as Error & { code?: string };
       setError(
@@ -128,7 +137,13 @@ export default function AccountLinkingPanel({ className = "" }: AccountLinkingPa
                 <span className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${linked ? "text-cyan-200" : "text-slate-500"}`}>{!known ? "Unavailable" : linked ? "Linked" : "Available"}</span>
               </div>
               <p className="mt-5 text-sm leading-6 text-slate-400">{linked ? details.connected : details.prompt}</p>
-              {linked ? <Button type="button" variant="ghost" className="mt-4 w-full sm:w-auto" disabled={pending} onClick={() => void unlink(provider)}>{pending ? "Unlinking…" : `Unlink ${details.name}`}</Button> : <Button type="button" variant="secondary" className="mt-4 w-full sm:w-auto" disabled={!known} onClick={() => link(provider)}>{known ? `Link ${details.name}` : "Unavailable"}</Button>}
+              {linked ? <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                {/* Connections made before the tag was recorded left the profile
+                    field empty, and unlinking to fix it is refused when Discord
+                    is the only login method. Re-running the link is the way out. */}
+                {details.derivesProfileData ? <Button type="button" variant="secondary" className="w-full sm:w-auto" disabled={pending} onClick={() => link(provider)}>{`Reconnect ${details.name}`}</Button> : null}
+                <Button type="button" variant="ghost" className="w-full sm:w-auto" disabled={pending} onClick={() => void unlink(provider)}>{pending ? "Unlinking…" : `Unlink ${details.name}`}</Button>
+              </div> : <Button type="button" variant="secondary" className="mt-4 w-full sm:w-auto" disabled={!known} onClick={() => link(provider)}>{known ? `Link ${details.name}` : "Unavailable"}</Button>}
             </article>;
           })}
         </div>
