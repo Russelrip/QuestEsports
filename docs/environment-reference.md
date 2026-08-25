@@ -52,7 +52,7 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `SITE_MAINTENANCE_MODE` | No — defaults to disabled | Backend and frontend release owner | L/D/P | Public/non-secret | `false` | Backend restart; frontend redeploy when its copy changes |
 | `SITE_MAINTENANCE_MESSAGE` | No — has a built-in fallback | Backend and frontend release owner | L/D/P | Public/non-secret | `We’re carrying out scheduled maintenance. Please try again shortly.` | Backend restart; frontend redeploy when its copy changes |
 | `SITE_MAINTENANCE_RETRY_AFTER_SECONDS` | No — defaults to `900` | Backend and frontend release owner | L/D/P | Public/non-secret | `900` | Backend restart; frontend redeploy when its copy changes |
-| `JOB_WORKER_POLL_MS` | No — defaults to `5000` | Backend | L/D/P | Public/non-secret | `5000` | Restart backend |
+| `JOB_WORKER_POLL_MS` | No — defaults to `15000` | Backend | L/D/P | Public/non-secret | `15000`; the worker polls whether or not there is work, so this is a floor on database traffic. Lower it only if job latency actually matters | Restart backend |
 | `JOB_WORKER_MAX_ATTEMPTS` | No — defaults to `5` | Backend | L/D/P | Public/non-secret | `5` | Restart backend |
 | `DATA_HYGIENE_MAINTENANCE_ENABLED` | No | Backend/operations owner | L/D/P | Public/non-secret | `true` | Restart backend |
 
