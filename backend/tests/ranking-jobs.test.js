@@ -160,3 +160,73 @@ test("the job handler runs the whole-board sync and takes no payload", async () 
     restore();
   }
 });
+
+test("the minute tick stops querying once it knows when the next sync is due", async () => {
+  let aggregateCalls = 0;
+  const lastSyncedAt = minutesAgo(1);
+  const { module: jobs, calls, restore } = load({
+    minutes: 15,
+    aggregate: async () => {
+      aggregateCalls += 1;
+      return { _max: { syncedAt: lastSyncedAt } };
+    },
+  });
+  try {
+    // The tick fires every minute; a sync is due every fifteen. Re-querying on
+    // every tick spends fourteen round trips to re-learn a time this process
+    // already knew -- exactly the idle polling that put this database over its
+    // egress quota.
+    for (let i = 0; i < 10; i += 1) await jobs.runRankingSchedulerTick();
+    assert.equal(aggregateCalls, 1);
+    assert.equal(calls.enqueued.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("the remembered due time is dropped once a sync is enqueued", async () => {
+  let aggregateCalls = 0;
+  let syncedAt = minutesAgo(30);
+  const { module: jobs, calls, restore } = load({
+    minutes: 15,
+    aggregate: async () => {
+      aggregateCalls += 1;
+      return { _max: { syncedAt } };
+    },
+  });
+  try {
+    await jobs.runRankingSchedulerTick();
+    assert.equal(calls.enqueued.length, 1);
+    assert.equal(aggregateCalls, 1);
+
+    // The cached row is about to move, so the next tick must look again rather
+    // than trusting a time computed from the pre-sync value.
+    syncedAt = new Date();
+    await jobs.runRankingSchedulerTick();
+    assert.equal(aggregateCalls, 2);
+    assert.equal(calls.enqueued.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("a database that has never synced is not cached as due forever", async () => {
+  let aggregateCalls = 0;
+  const { module: jobs, restore } = load({
+    aggregate: async () => {
+      aggregateCalls += 1;
+      return { _max: { syncedAt: null } };
+    },
+    enqueue: async () => ({ duplicate: true }),
+  });
+  try {
+    // With no cached ranking there is no due time to remember, so each tick has
+    // to ask. That is the correct cost: it is also the state that means every
+    // profile is currently rankless.
+    await jobs.runRankingSchedulerTick();
+    await jobs.runRankingSchedulerTick();
+    assert.equal(aggregateCalls, 2);
+  } finally {
+    restore();
+  }
+});
