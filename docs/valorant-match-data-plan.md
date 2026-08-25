@@ -8,7 +8,13 @@ This file is a handover. It records what was inspected, what already exists,
 what is missing, and the decisions still open, so the work can be picked up
 without repeating the investigation.
 
-Written 25 August 2026. Everything below was read from source, not assumed.
+Written 25 August 2026, and revised the same day once A-D were built: what
+shipped, what the plan got wrong, and which of its open questions now have
+answers. Everything below was read from source, not assumed.
+
+**Status at revision:** A (#69), B (#70) and C (#72) are merged, C is in
+production. D's anchor half is #74. The ranking scheduler is #73. None of it
+has processed a real match — see §5.1.
 
 ---
 
@@ -173,7 +179,7 @@ No stats are derived or stored: ACS, ADR and HS% are ratios over
 `red_score + blue_score`, cheap at read time, and storing them would freeze a
 formula the upstream owns.
 
-### B — Structured Quest tables *(medium, additive migration)*
+### B — Structured Quest tables *(medium, additive migration)* — **done, PR #70**
 
 `QuestValorantMatch.rosterSummary` is opaque JSON. That is fine for an admin
 panel and wrong for a public page that must sort, filter and aggregate.
@@ -191,11 +197,27 @@ Proposed, all additive:
 Keep `rosterSummary` during the expand phase; it stays authoritative until reads
 move.
 
-### C — Public read path *(medium)*
+Shipped as `match_maps` and `match_player_stats`. `MatchRound` was not built —
+it depends on §5.2, which is still open. `rounds_played` was deliberately left
+out of `match_maps`: it is `red_score + blue_score`, and storing a derived
+value freezes a formula the upstream owns.
 
-- `GET /api/matches/:id/public` and `GET /api/tournaments/:slug/results`
-- `frontend/app/matches/[id]/page.tsx` — scoreboard, per-map, timeline
-- `frontend/app/tournaments/[slug]/results/page.tsx`
+### C — Public read path *(medium)* — **done, PR #72, in production**
+
+Shipped as `GET /api/v1/valorant/series/:seriesId` and
+`GET /api/v1/tournaments/:slug/results`, with
+`frontend/app/matches/[id]/page.tsx` and
+`frontend/app/tournaments/[slug]/results/page.tsx`.
+
+Two corrections to what this section assumed. The route is keyed on the
+**series**, not a bracket `Match` — `match_maps.match_id` is still NULL for
+every row, so a bracket-keyed endpoint would have returned nothing for every
+match. And there is **no timeline**: it needs §5.2, which is unresolved.
+
+`QuestValorantSeries` has no winner column — `calculatedWinnerId` and
+`officialWinnerId` belong to the upstream's series view, not to Quest's table —
+so the result is counted from maps won. That is also the only version a reader
+can check against the scoreboard in front of them.
 
 Same projection discipline as the player profile: no PUUIDs, no emails, no
 internal ids. See `backend/src/modules/players/codemap.md`.
@@ -203,16 +225,32 @@ internal ids. See `backend/src/modules/players/codemap.md`.
 Link scoreboard rows to `/players/QPID-…` where a `playerId` resolves — that is
 what turns a scoreboard into a profile network.
 
-### D — Automated ingestion *(largest)*
+### D — Automated ingestion *(largest)* — **anchors done, PR #74**
 
 Roster-derived discovery per tournament, as in §3. Must be idempotent: reuse the
 existing `QuestValorantOperation` ledger, and never attach a map twice —
 `QuestValorantSeriesGame` already has `@@unique([matchId])` and
 `@@unique([questSeriesId, gameNumber])`.
 
-### E — Backfill the August/September event *(one-off)*
+The anchor half is built: `valorant-anchors.service.js` derives Riot IDs from
+approved rosters and pairs them **from the bracket** rather than from every
+combination of teams, so a proposed fixture already knows its `Match` — which
+is the value `match_maps.match_id` has been waiting for, and most of §5.3.
+
+It proposes and never commits. Import, attach and finalize are all still
+explicit admin actions, because a wrongly attached map changes a rating and a
+public result.
+
+**Untested against the upstream.** The derivation and its selects are covered,
+but the `discover` round trip has never run — see §5.1.
+
+### E — Backfill the August/September event *(one-off)* — **not possible as written**
 
 Run D against the completed event to populate real history.
+
+§5.1 is answered and the answer removes the source: the upstream `matches`
+table is empty. There is nothing to backfill *from*, and whether HenrikDev
+still holds those matches is a separate live question, not a database one.
 
 **Do this early, or at least check feasibility early — see §5.**
 
@@ -220,26 +258,46 @@ Run D against the completed event to populate real history.
 
 ## 5. Open questions, in priority order
 
-1. **Are the August matches in the upstream `matches` table?**
-   The tournament was **not ingested at the time**. `matches` is populated only
-   by import, and HenrikDev retains only recent match history. If those matches
-   were never imported, the raw payloads may no longer be fetchable at all.
-   This is a deadline, not a code problem. Check first:
+1. **~~Are the August matches in the upstream `matches` table?~~ ANSWERED,
+   25 August 2026 — no, and neither is anything else.**
+
    ```sql
-   SELECT count(*), min(started_at), max(started_at) FROM matches;
+   SELECT count(*) AS total, min(started_at), max(started_at),
+          min(imported_at), max(imported_at)
+   FROM valorant.matches;   -- schema is `valorant`, not `public`
+   -- total 0, every other column NULL
    ```
-   If they are gone, the August event needs manual entry and only future events
-   can be automated — which changes the value of E entirely.
+
+   `matches` is written only by import, and `imported_at` is NULL, so **no
+   match has ever been imported at all**. The pipeline has never run end to
+   end, which is a wider finding than the question asked: everything in A–D is
+   tested against fabricated data, and the first real import is also the first
+   real test of the mapper, the structured tables and the scoreboard.
+
+   E cannot be sourced from the upstream. Whether the matches are recoverable
+   at all is now a **live** question, not a database one: discovery pages
+   Henrik's `v4/by-puuid/matches/{affinity}/{platform}/{puuid}`, which is a
+   rolling window of each player's most recent matches. So recoverability
+   depends on how many matches those rosters have played *since* the event,
+   not on the calendar date — and it erodes every day they keep playing.
+
+   The way to find out is to run one two-player discovery against two players
+   from that event, which is exactly what D's fixture endpoint does.
 
 2. **`raw_payload` flag, or a derived-stats endpoint?** §2. Decides whether the
    round timeline is days or weeks of work.
 
-3. **Bracket linkage.** `Match` (Quest) and `QuestValorantSeries` both exist and
-   are both tournament-scoped, but nothing joins a discovered VAL series to a
-   bracket `Match`. Needed before results can render against a bracket.
+3. **Bracket linkage — mostly closed by D.** `match_maps.match_id` exists and
+   D's fixture endpoint pairs teams *from the bracket*, so a proposed fixture
+   already knows its `Match`. What remains is writing that id when a map is
+   attached; the column and the pairing are both in place.
 
-4. **Does the upstream deploy alongside Quest?** Its topology is not documented
-   in this repo. Anything requiring an upstream change needs that answered.
+4. **~~Does the upstream deploy alongside Quest?~~ ANSWERED — no, it ships
+   independently.** `valorant-platform-backend` has its own CD workflow that
+   deploys over SSH to its own host, gated on its own CI. That *lowers* the
+   cost of option (2) in §2: an upstream change does not have to ride a Quest
+   release, so the derived-stats endpoint is cheaper than this document
+   assumed when it recommended it.
 
 ---
 
@@ -268,6 +326,24 @@ production.
   `lint`.
 - **Every mounted route must be in `src/lib/openapi.js`** or `openapi.test.js`
   fails.
+- **A mocked Prisma client accepts any `select`, including invented columns.**
+  Two shipped in one afternoon — `finalizedAt`, and
+  `calculatedWinnerId`/`officialWinnerId` (which belong to the upstream's series
+  view, not to `quest_valorant_series`). Unit tests passed on all three. Probe a
+  new projection against the real schema *before* writing tests around it, and
+  leave a database-integration case behind that runs it.
+- **The response cache outlives the row.** Both public routes are cached on the
+  `foundation` tag, so a projection that correctly returns `null` for an
+  unpublished tournament can still be served from cache. Visibility needs
+  enforcing in the projection *and* invalidating on every admin write that can
+  change a public result. A live check against seeded data found this; nothing
+  that mocks Prisma or calls the service directly can.
+- **Egress is the scarce resource, not storage.** The Supabase organisation hit
+  141% of its 5 GB egress allowance against a 41 MB database in August 2026,
+  with a grace period ending **24 September 2026**, after which requests return
+  402. Idle polling and local development against the hosted database were the
+  causes. `npm run dev` now uses the loopback Postgres and `dev:remote` is the
+  opt-in; assume anything that polls is being counted.
 - **Read the nearest `codemap.md` before changing a directory, and update it**
   — required by `AGENTS.md`.
 - **Deploying**: backend CD pauses for the `Production` environment's required
@@ -286,8 +362,14 @@ identity, versioned rulebooks, public player profiles, cached rankings. See
 [Platform Integration Roadmap](./platform-integration-roadmap.md) for what
 remains there, including the Discord bot.
 
-The ranking sync (`modules/players/ranking-sync.service.js`) exists and is
-tested but **has no scheduler**, so `player_rankings` stays empty and profiles
-show no rank. The leaderboard refreshes every **15–30 minutes**, so a 15-minute
-interval matches its cadence. Wiring it to `BackgroundJob` is small and
-unblocks the rank display on both profiles and any future scoreboard.
+The ranking sync (`modules/players/ranking-sync.service.js`) now **has a
+scheduler** (`modules/players/ranking.jobs.js`, PR #73) on a 15-minute default
+matching the leaderboard's own cadence. It is **off by default**:
+`PLAYER_RANKING_SYNC_ENABLED` must be set where the upstream is configured, or
+`player_rankings` stays empty and profiles and scoreboards show no rank, exactly
+as before.
+
+Due-ness is read from `player_rankings.syncedAt` rather than an in-process
+timer, so a restart loop cannot walk a rate-limited leaderboard repeatedly, and
+the answer is remembered between ticks so the minute timer does not query for
+something it already knows.
