@@ -71,6 +71,12 @@ services:
       # the host's platform-specific builds never leak in.
       - ./backend:/app/backend
       - /app/backend/node_modules
+      # The generated Prisma client is the same class of thing as node_modules:
+      # a platform-specific build. `npm ci` runs `prisma generate` at image build
+      # time and produces a debian-openssl-3.0.x query engine; without this the
+      # bind mount buries it under the host's (windows, or darwin) engine and the
+      # server dies on its first query with a PrismaClientInitializationError.
+      - /app/backend/src/generated
 
   valorant-backend:
     profiles: ["valorant"]

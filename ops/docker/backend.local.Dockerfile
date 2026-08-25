@@ -26,4 +26,10 @@ ENV NODE_ENV=development
 EXPOSE 5001
 
 # No secrets are baked in: every value arrives through compose at run time.
-CMD ["npm", "run", "dev"]
+# NOT `npm run dev`. That routes through scripts/with-local-db.js, which points
+# at the HOST loopback mapping (127.0.0.1:55432) so a developer running on the
+# host cannot accidentally reach hosted Supabase. Inside this container there is
+# nothing on that port -- Postgres is the `postgres` compose service -- and
+# compose already sets DATABASE_URL correctly, so the guard is both unnecessary
+# and wrong here.
+CMD ["npm", "run", "dev:container"]
