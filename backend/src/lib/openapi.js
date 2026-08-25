@@ -799,6 +799,24 @@ const additionalPaths = {
       parameters: idParameter("slug"),
     }),
   },
+  "/api/v1/admin/valorant/tournaments/{tournamentId}/anchors": {
+    get: createOperation("Valorant", "Derive discovery anchors from approved rosters", {
+      authenticated: true,
+      parameters: idParameter("tournamentId"),
+    }),
+  },
+  "/api/v1/admin/valorant/tournaments/{tournamentId}/fixtures": {
+    get: createOperation("Valorant", "List bracket fixtures with their derived anchors", {
+      authenticated: true,
+      parameters: idParameter("tournamentId"),
+    }),
+  },
+  "/api/v1/admin/valorant/tournaments/{tournamentId}/fixtures/{matchId}/discover": {
+    post: createOperation("Valorant", "Propose matches for one fixture using derived anchors", {
+      authenticated: true,
+      parameters: [...idParameter("tournamentId"), ...idParameter("matchId")],
+    }),
+  },
   "/api/v1/valorant/series/{seriesId}": {
     get: createOperation("Matches", "Get a public VALORANT match scoreboard", {
       parameters: idParameter("seriesId"),

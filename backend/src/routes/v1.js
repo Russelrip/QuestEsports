@@ -4,6 +4,7 @@ const { asyncHandler } = require("../lib/async-handler");
 const { attachSession, requireAuth, requireAdmin } = require("../modules/auth/auth.middleware");
 const valorantController = require("../modules/valorant/valorant.controller");
 const valorantPublicController = require("../modules/valorant/valorant-public.controller");
+const valorantAnchorsController = require("../modules/valorant/valorant-anchors.controller");
 const valorantLeaderboardController = require("../modules/valorant-leaderboard/controller");
 const gameAccountController = require("../modules/game-accounts/game-account.controller");
 const { cachePublicData } = require("../middleware/cache-control");
@@ -264,6 +265,12 @@ router.get("/admin/valorant/teams", valorantController.listTeams);
 router.post("/admin/valorant/teams/bind", valorantController.bindTeam);
 router.delete("/admin/valorant/teams/:bindingId/detach", valorantController.detachBinding);
 router.post("/admin/valorant/discover", valorantController.discover);
+// Roster-derived discovery: the anchors come from what each team registered
+// with, so an admin confirms a fixture instead of typing two Riot IDs from
+// memory. These propose only -- nothing is imported, attached or finalized.
+router.get("/admin/valorant/tournaments/:tournamentId/anchors", valorantAnchorsController.getTournamentAnchors);
+router.get("/admin/valorant/tournaments/:tournamentId/fixtures", valorantAnchorsController.getTournamentFixtures);
+router.post("/admin/valorant/tournaments/:tournamentId/fixtures/:matchId/discover", valorantAnchorsController.discoverFixture);
 router.post("/admin/valorant/matches/import", invalidateCache("foundation"), valorantController.importMatch);
 router.get("/admin/valorant/matches/by-henrik-id/:henrikMatchId", valorantController.getMatchByHenrikId);
 router.get("/admin/valorant/matches", valorantController.listMatches);

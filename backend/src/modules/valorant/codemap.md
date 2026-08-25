@@ -16,6 +16,8 @@ caches what it needs.
 - `valorant.controller.js` — the admin surface under `/api/v1/admin/valorant/*`.
 - `valorant-public.service.js` / `valorant-public.controller.js` — the public
   read path.
+- `valorant-anchors.service.js` / `valorant-anchors.controller.js` — discovery
+  anchors derived from approved rosters, and the bracket fixtures they pair.
 
 ## Two surfaces, one module
 
@@ -76,6 +78,48 @@ is populated, a bracket page can join to these rows without a schema change.
   tie or an unimported map yields no winner rather than a guess.
 - **Sides are per map, not per series.** Teams swap halves between maps, so
   which of red/blue is team A is read from `QuestValorantSeriesGame`, per game.
+
+## Roster-derived discovery
+
+`valorant-anchors.service.js` removes the reason ingestion was manual.
+`discover` needs two anchor Riot IDs, one player per side, and an admin used to
+type them from memory. `RegistrationMember` already records the game account a
+team committed to a tournament, so the anchors are derivable and discovery can
+be driven from the bracket.
+
+Anchor sources are ordered by how much each one proves:
+
+1. **`snapshot`** — `usernameSnapshot`/`tagSnapshot`, what the team actually
+   committed to THIS tournament. A later rename cannot rewrite it, so it wins.
+2. **`game_account`** — the live active VALORANT account. A good guess, but it
+   describes today rather than the day of the match.
+3. **`legacy_text`** — the free-text `riot_id` a human typed, accepted only when
+   it already parses as `Name#Tag`. Anything else is a note to a human.
+
+Every usable anchor is returned, not just the best one: an anchor only works if
+that person actually played the map being searched for, so a substitute who sat
+out is a dead end the caller has to be able to retry past.
+
+Pairs come from the **bracket**, never from every combination of teams. A
+16-team event has 120 possible pairings and roughly 15 real ones; searching the
+rest would spend upstream rate limit proving that teams who never met never
+played. It also means a proposed fixture already knows its bracket `Match`,
+which is the value `match_maps.match_id` has been waiting for.
+
+Two rules this surface must keep:
+
+- **It proposes, never commits.** Nothing here imports, attaches or finalizes.
+  A wrongly attached map changes a rating and a public result, so a human
+  confirms. `discoverFixture` runs one fixture per call for the same reason —
+  one endpoint that swept a bracket would turn a careless click into dozens of
+  upstream searches.
+- **A blocked fixture says why.** `fixture_has_no_opponent_pair`,
+  `participant_not_linked_to_registration`, `team_has_no_derivable_anchor`, and
+  the tournament-level `unanchored` list. Silently omitting them would let an
+  admin assume the whole bracket is covered when half of it is invisible.
+
+Searches default to the tournament's `startDate`, because the same two teams may
+well have scrimmed a month earlier and those matches are the false positives.
 
 ## Caching
 
