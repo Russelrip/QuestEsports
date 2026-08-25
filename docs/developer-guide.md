@@ -72,12 +72,21 @@ Set backend database URLs and required local values in `backend/.env`. Keep real
 The backend is an Express API backed by PostgreSQL through Prisma. Its normal development URL is `http://localhost:5001`.
 
 ```powershell
+docker compose -f docker-compose.local.yml up -d postgres
 Set-Location backend
 npm ci
 npm run prisma:generate
 npm run prisma:migrate:deploy
 npm run dev
 ```
+
+`npm run dev` runs against the loopback Postgres from
+`docker-compose.local.yml`, not against whatever `backend/.env` points at. That
+matters because `.env` carries the hosted Supabase URL, so the old default sent
+every local page load and every hot reload to production — which is metered, and
+was the largest single source of the egress overage in August 2026. Use
+`npm run dev:remote` on the rare occasion you genuinely need hosted data, and
+know what you are spending when you do.
 
 The setup block applies committed migrations with `npm run prisma:migrate:deploy`.
 For a shared or staging database, use that command and do not reset, drop, or

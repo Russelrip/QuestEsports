@@ -117,3 +117,30 @@ test("the sibling VALORANT service is optional", () => {
   assert.match(composeCode, /profiles:\s*\["valorant"\]/);
   assert.match(composeCode, /context:\s*\.\.\/valorant-platform-backend/);
 });
+
+test("the default dev script never reaches the hosted database", () => {
+  const scripts = JSON.parse(read("backend/package.json")).scripts;
+
+  // backend/.env carries the hosted Supabase URL, so a dev server that does not
+  // route through with-local-db.js sends every page load and every hot reload
+  // to production. That is metered egress, and it was the largest single source
+  // of the August 2026 quota overage. Reaching hosted data has to be something
+  // you opt into by name.
+  assert.match(scripts.dev, /with-local-db\.js/);
+  assert.match(scripts["dev:local"], /with-local-db\.js/);
+  assert.equal(scripts["dev:remote"], "nodemon src/server.js");
+});
+
+test("the job worker does not poll the database faster than its egress budget allows", () => {
+  const env = read("backend/src/config/env.js");
+  const poll = env.match(/JOB_WORKER_POLL_MS: normalizePositiveInteger\(\s*process\.env\.JOB_WORKER_POLL_MS,\s*(\d+),/);
+  assert.ok(poll, "JOB_WORKER_POLL_MS default not found in env.js");
+
+  // The worker queries whether or not there is work, so this interval is a
+  // constant floor on database traffic: 5s is ~500k queries a month against an
+  // otherwise idle table. Nothing in this app needs 5-second job latency.
+  assert.ok(
+    Number(poll[1]) >= 15000,
+    `JOB_WORKER_POLL_MS default is ${poll[1]}ms; anything under 15000 spends egress on an idle queue`,
+  );
+});

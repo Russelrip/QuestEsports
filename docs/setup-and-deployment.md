@@ -135,9 +135,12 @@ Use a direct PostgreSQL URL for `DIRECT_URL` when the deployment host supports S
 
 ### 4. Start both apps
 
-Backend:
+Backend (`npm run dev` uses the loopback Postgres from
+`docker-compose.local.yml`; `npm run dev:remote` is the opt-in that reaches the
+hosted database, which is metered):
 
 ```bash
+docker compose -f docker-compose.local.yml up -d postgres
 cd backend
 npm run dev
 ```

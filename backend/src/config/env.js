@@ -284,9 +284,14 @@ const env = {
     1,
     86400,
   ),
+  // The worker polls whether or not there is work, so this interval is a
+  // constant floor on database traffic: at 5s it was ~500k queries a month
+  // against an otherwise idle table, which is most of what a small database
+  // spends its egress allowance on. Nothing here needs 5-second job latency --
+  // the slowest consumer is queued mail.
   JOB_WORKER_POLL_MS: normalizePositiveInteger(
     process.env.JOB_WORKER_POLL_MS,
-    5000,
+    15000,
   ),
   JOB_WORKER_MAX_ATTEMPTS: normalizePositiveInteger(
     process.env.JOB_WORKER_MAX_ATTEMPTS,
