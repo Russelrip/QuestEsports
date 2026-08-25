@@ -201,3 +201,140 @@ test("mapRankingEntry does not read a top-level elo field", () => {
   });
   assert.equal(mapped.elo, 1111);
 });
+
+test("mapMatchDetail projects the per-player scoreboard stats and the match metadata", () => {
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapMatchDetail({
+    id: "00000000-0000-4000-8000-00000000000e",
+    henrik_match_id: "abcdef0123456789",
+    affinity: "eu",
+    platform: "pc",
+    map_name: "Ascent",
+    map_id: "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319",
+    mode: "Standard",
+    queue: "unrated",
+    started_at: "2026-08-01T14:30:00Z",
+    duration_ms: 2_142_000,
+    is_completed: true,
+    red_score: 13,
+    blue_score: 8,
+    winning_side: "red",
+    game_version: "release-11.04",
+    raw_payload_available: true,
+    players: [{
+      puuid: "11111111-1111-4111-8111-111111111111",
+      name: "Quester",
+      tag: "QST",
+      side: "red",
+      agent_id: "add6443a-41bd-e414-f6ad-e58d267f4e95",
+      agent_name: "Jett",
+      score_total: 5_460,
+      kills: 24,
+      deaths: 13,
+      assists: 4,
+      damage_dealt: 4_368,
+      damage_received: 3_010,
+      headshots: 30,
+      bodyshots: 62,
+      legshots: 8,
+    }],
+  });
+  assert.equal(mapped.mapId, "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319");
+  assert.equal(mapped.durationMs, 2_142_000);
+  assert.equal(mapped.gameVersion, "release-11.04");
+  assert.deepEqual(mapped.players[0], {
+    puuid: "11111111-1111-4111-8111-111111111111",
+    name: "Quester",
+    tag: "QST",
+    side: "red",
+    agentName: "Jett",
+    scoreTotal: 5_460,
+    kills: 24,
+    deaths: 13,
+    assists: 4,
+    damageDealt: 4_368,
+    damageReceived: 3_010,
+    headshots: 30,
+    bodyshots: 62,
+    legshots: 8,
+  });
+  // agent_id is returned upstream but deliberately not projected.
+  assert.equal("agentId" in mapped.players[0], false);
+});
+
+test("mapMatchDetail carries enough per player to derive ACS, ADR and HS%", () => {
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapMatchDetail({
+    id: "00000000-0000-4000-8000-00000000000e",
+    henrik_match_id: "abcdef0123456789",
+    affinity: "eu",
+    platform: "pc",
+    map_name: "Ascent",
+    started_at: "2026-08-01T14:30:00Z",
+    is_completed: true,
+    red_score: 13,
+    blue_score: 8,
+    raw_payload_available: true,
+    players: [{
+      puuid: "11111111-1111-4111-8111-111111111111",
+      name: "Quester",
+      tag: "QST",
+      side: "red",
+      agent_name: "Jett",
+      score_total: 5_460,
+      kills: 24,
+      deaths: 13,
+      assists: 4,
+      damage_dealt: 4_368,
+      damage_received: 3_010,
+      headshots: 30,
+      bodyshots: 62,
+      legshots: 8,
+    }],
+  });
+  const rounds = mapped.redScore + mapped.blueScore;
+  const player = mapped.players[0];
+  assert.equal(rounds, 21);
+  assert.equal(player.scoreTotal / rounds, 260);
+  assert.equal(player.damageDealt / rounds, 208);
+  assert.equal(player.headshots / (player.headshots + player.bodyshots + player.legshots), 0.3);
+});
+
+test("mapMatchDetail nulls the scoreboard stats an in-progress match has not reported", () => {
+  const { module: mapper } = loadMapper();
+  const mapped = mapper.mapMatchDetail({
+    id: "00000000-0000-4000-8000-00000000000f",
+    henrik_match_id: "fedcba9876543210",
+    affinity: "eu",
+    platform: "pc",
+    map_name: "Bind",
+    started_at: "2026-08-01T15:00:00Z",
+    is_completed: false,
+    raw_payload_available: false,
+    players: [{
+      puuid: "22222222-2222-4222-8222-222222222222",
+      name: "Rookie",
+      tag: "QST",
+      side: "blue",
+    }],
+  });
+  assert.equal(mapped.mapId, null);
+  assert.equal(mapped.durationMs, null);
+  assert.equal(mapped.gameVersion, null);
+  assert.deepEqual(mapped.players[0], {
+    puuid: "22222222-2222-4222-8222-222222222222",
+    name: "Rookie",
+    tag: "QST",
+    side: "blue",
+    agentName: null,
+    scoreTotal: null,
+    kills: null,
+    deaths: null,
+    assists: null,
+    damageDealt: null,
+    damageReceived: null,
+    headshots: null,
+    bodyshots: null,
+    legshots: null,
+  });
+});

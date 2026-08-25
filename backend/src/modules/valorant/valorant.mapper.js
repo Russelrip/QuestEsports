@@ -34,15 +34,27 @@ const mapMatchCandidate = (candidate) => ({
   alreadyImported: candidate.already_imported,
 });
 
+// MatchPlayerResponse (app/schemas/matches.py). The upstream response also
+// carries the scoreboard counters below; they were dropped here until now,
+// which is why Quest had no ACS, ADR or HS%. Those are ratios derived at read
+// time from these counters and the round total, so none of them is stored.
+// agent_id stays unprojected: agent_name is the display value, nothing reads
+// the id.
 const mapMatchPlayer = (player) => ({
   puuid: player.puuid,
   name: player.name,
   tag: player.tag,
   side: player.side,
   agentName: player.agent_name ?? null,
+  scoreTotal: player.score_total ?? null,
   kills: player.kills ?? null,
   deaths: player.deaths ?? null,
   assists: player.assists ?? null,
+  damageDealt: player.damage_dealt ?? null,
+  damageReceived: player.damage_received ?? null,
+  headshots: player.headshots ?? null,
+  bodyshots: player.bodyshots ?? null,
+  legshots: player.legshots ?? null,
 });
 
 const mapMatchDetail = (detail) => ({
@@ -51,13 +63,16 @@ const mapMatchDetail = (detail) => ({
   affinity: detail.affinity,
   platform: detail.platform,
   mapName: detail.map_name,
+  mapId: detail.map_id ?? null,
   mode: detail.mode ?? null,
   queue: detail.queue ?? null,
   startedAt: detail.started_at,
+  durationMs: detail.duration_ms ?? null,
   isCompleted: detail.is_completed,
   redScore: detail.red_score ?? null,
   blueScore: detail.blue_score ?? null,
   winningSide: detail.winning_side ?? null,
+  gameVersion: detail.game_version ?? null,
   players: (detail.players || []).map(mapMatchPlayer),
   rawPayloadAvailable: detail.raw_payload_available,
 });
