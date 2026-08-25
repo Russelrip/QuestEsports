@@ -93,15 +93,10 @@ const stopRankingScheduler = async () => {
   while (schedulerRunning) await new Promise((resolve) => setTimeout(resolve, 25));
 };
 
-// Exposed so a test can prove the guard is reset rather than leaking between
-// cases; nothing in production calls it.
-const __resetDueCache = () => { nextPossibleDueAt = null; };
-
 module.exports = {
   RANKING_SYNC_JOB_NAME,
   SCHEDULER_TICK_MS,
   isSyncDue,
-  __resetDueCache,
   processRankingSyncJob,
   runRankingSchedulerTick,
   startRankingScheduler,
