@@ -158,11 +158,20 @@ auto-finalize: a wrongly attached map changes ratings and a public result.
 
 ## 4. Plan
 
-### A — Widen the mapper *(small, no migration)*
+### A — Widen the mapper *(small, no migration)* — **done, PR #69**
 
 Project the six dropped fields in `mapMatchPlayer`, and carry `duration_ms`,
 `map_id` and `game_version` through `mapMatchDetail`. Nothing else changes;
 `rosterSummary` starts carrying the richer shape.
+
+Shipped as written, plus `agent_id` — the plan had scoped it out on the
+grounds that `agent_name` is the display value, but an agent icon needs the
+id, and a name is a display string that can be localised or renamed while the
+id is stable. Cheaper to carry it now than to widen the mapper twice.
+
+No stats are derived or stored: ACS, ADR and HS% are ratios over
+`red_score + blue_score`, cheap at read time, and storing them would freeze a
+formula the upstream owns.
 
 ### B — Structured Quest tables *(medium, additive migration)*
 
