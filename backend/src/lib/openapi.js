@@ -794,6 +794,16 @@ const additionalPaths = {
   "/api/v1/matches": {
     get: createOperation("Matches", "List paginated public matches"),
   },
+  "/api/v1/tournaments/{slug}/results": {
+    get: createOperation("Matches", "List a tournament's public VALORANT results", {
+      parameters: idParameter("slug"),
+    }),
+  },
+  "/api/v1/valorant/series/{seriesId}": {
+    get: createOperation("Matches", "Get a public VALORANT match scoreboard", {
+      parameters: idParameter("seriesId"),
+    }),
+  },
   "/api/v1/matches/next": {
     get: createOperation(
       "Matches",

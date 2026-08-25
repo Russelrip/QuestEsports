@@ -3,6 +3,7 @@ const { env } = require("../config/env");
 const { asyncHandler } = require("../lib/async-handler");
 const { attachSession, requireAuth, requireAdmin } = require("../modules/auth/auth.middleware");
 const valorantController = require("../modules/valorant/valorant.controller");
+const valorantPublicController = require("../modules/valorant/valorant-public.controller");
 const valorantLeaderboardController = require("../modules/valorant-leaderboard/controller");
 const gameAccountController = require("../modules/game-accounts/game-account.controller");
 const { cachePublicData } = require("../middleware/cache-control");
@@ -110,6 +111,11 @@ router.get(
 router.get("/tournaments/:slug/bracket", bracketPublicCache, bracketResponseCache, challongeController.publicBracket);
 router.get("/tournaments/:slug/matches", publicCache, shortCache, matchController.listTournamentMatches);
 router.get("/matches", publicCache, shortCache, matchController.listMatches);
+// Public VALORANT results. A "match" here is the SERIES, as it is on VLR — the
+// scoreboard belongs to a bo1/bo3, not to a Quest bracket row, and the bracket
+// link on match_maps is still unpopulated.
+router.get("/tournaments/:slug/results", publicCache, shortCache, valorantPublicController.getTournamentResults);
+router.get("/valorant/series/:seriesId", publicCache, shortCache, valorantPublicController.getPublicSeries);
 router.get("/matches/next", matchController.nextMatch);
 router.get("/events", getRealtimeEvents);
 router.get("/match-rooms/mine", requireAuth, matchRoomController.mine);
@@ -252,24 +258,27 @@ router.post("/admin/game-accounts/change-requests/:requestId/review", requireAut
 
 router.use("/admin/valorant", requireAdmin);
 router.get("/admin/valorant/teams", valorantController.listTeams);
+// These admin writes change what /api/v1/tournaments/:slug/results and the
+// public match page render, so they drop the cached public payload rather than
+// leaving a stale result up for the cache TTL.
 router.post("/admin/valorant/teams/bind", valorantController.bindTeam);
 router.delete("/admin/valorant/teams/:bindingId/detach", valorantController.detachBinding);
 router.post("/admin/valorant/discover", valorantController.discover);
-router.post("/admin/valorant/matches/import", valorantController.importMatch);
+router.post("/admin/valorant/matches/import", invalidateCache("foundation"), valorantController.importMatch);
 router.get("/admin/valorant/matches/by-henrik-id/:henrikMatchId", valorantController.getMatchByHenrikId);
 router.get("/admin/valorant/matches", valorantController.listMatches);
 router.post("/admin/valorant/series", valorantController.createSeries);
 router.post("/admin/valorant/series/manual", valorantController.createManualSeries);
 router.get("/admin/valorant/series", valorantController.listSeries);
 router.get("/admin/valorant/series/:id", valorantController.getSeries);
-router.delete("/admin/valorant/series/:id", valorantController.deleteSeries);
-router.patch("/admin/valorant/series/:seriesId", valorantController.updateSeriesPlayedAt);
+router.delete("/admin/valorant/series/:id", invalidateCache("foundation"), valorantController.deleteSeries);
+router.patch("/admin/valorant/series/:seriesId", invalidateCache("foundation"), valorantController.updateSeriesPlayedAt);
 router.get("/admin/valorant/series/:seriesId/matches", valorantController.listSeriesMatches);
-router.post("/admin/valorant/series/:id/games", valorantController.attachGame);
+router.post("/admin/valorant/series/:id/games", invalidateCache("foundation"), valorantController.attachGame);
 router.put("/admin/valorant/series/:id/games/order", valorantController.setGameOrder);
-router.delete("/admin/valorant/series/:id/games/:gameId", valorantController.removeGame);
+router.delete("/admin/valorant/series/:id/games/:gameId", invalidateCache("foundation"), valorantController.removeGame);
 router.get("/admin/valorant/series/:id/preview", valorantController.previewSeries);
-router.post("/admin/valorant/series/:id/finalize", valorantController.finalizeSeries);
+router.post("/admin/valorant/series/:id/finalize", invalidateCache("foundation"), valorantController.finalizeSeries);
 router.get("/admin/valorant/rankings", valorantController.getRankings);
 router.get("/admin/valorant/teams/:teamId/rating-history", valorantController.getRatingHistory);
 router.get("/admin/valorant/teams/:teamId/series", valorantController.getTeamSeries);

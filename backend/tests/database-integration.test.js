@@ -496,3 +496,24 @@ test("structured scoreboard tables enforce their integrity in PostgreSQL", {
     await prisma.$disconnect();
   }
 });
+
+test("the public VALORANT projection is a query real PostgreSQL accepts", {
+  skip: !runDatabaseTests,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const service = require("../src/modules/valorant/valorant-public.service");
+
+  // A mocked Prisma client accepts any `select` at all, so the unit tests
+  // cannot tell a real column from an invented one — a `finalizedAt` that does
+  // not exist on quest_valorant_series passed them and failed instantly here.
+  // This case exists to run the projection against the real schema.
+  try {
+    const missing = await service.getPublicSeries(crypto.randomUUID());
+    assert.equal(missing, null);
+
+    const results = await service.getTournamentResults(`no-such-tournament-${crypto.randomUUID()}`);
+    assert.equal(results, null);
+  } finally {
+    await prisma.$disconnect();
+  }
+});
