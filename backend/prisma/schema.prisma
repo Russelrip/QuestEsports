@@ -1007,6 +1007,7 @@ model Match {
   participants      MatchParticipant[]
   vetoRoom          VetoRoom?
   matchRoom         MatchRoom?
+  matchMaps         MatchMap[]
 
   @@unique([tournamentId, source, externalId])
   @@index([tournamentId, status, scheduledAt])
@@ -1633,6 +1634,7 @@ model QuestValorantSeriesGame {
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
   questSeries      QuestValorantSeries @relation(fields: [questSeriesId], references: [id], onDelete: Cascade)
+  matchMap         MatchMap?
 
   @@unique([questSeriesId, gameNumber])
   @@unique([matchId])
@@ -1651,12 +1653,116 @@ model QuestValorantMatch {
   blueScore     Int?     @map("blue_score")
   winningSide   String?  @map("winning_side")
   rosterSummary Json?    @map("roster_summary")
-  lastSyncedAt  DateTime @default(now()) @map("last_synced_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  lastSyncedAt  DateTime  @default(now()) @map("last_synced_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  matchMap      MatchMap?
 
   @@index([startedAt])
   @@map("quest_valorant_matches")
+}
+
+// One played map, as a Quest-owned row rather than a blob.
+//
+// `QuestValorantMatch` already caches the upstream result, but its
+// `rosterSummary` is opaque JSON: fine for an admin panel that renders one
+// match at a time, wrong for a public page that has to sort by ADR, filter by
+// agent, or aggregate a tournament. This table and `MatchPlayerStat` are the
+// structured half; `rosterSummary` is retained and stays authoritative until
+// reads move, per expand-never-contract.
+//
+// It also gives `duration_ms`, `map_id` and `game_version` somewhere to land —
+// the mapper carries them but `quest_valorant_matches` has no column for any of
+// them.
+//
+// Three links, deliberately of different strengths:
+//   - `questValorantMatch` is the owner and cascades: this row is a projection
+//     of that import and means nothing without it.
+//   - `seriesGame` is SetNull — detaching a map from a series must not destroy
+//     the scoreboard, and `quest_valorant_series_games` is admin bookkeeping
+//     that a public page should survive.
+//   - `match` is the bracket link and stays NULL for now. Nothing joins a
+//     discovered VAL series to a bracket `Match` yet; this is the column that
+//     will hold it, so a later release adds the join rather than the schema.
+//
+// `roundsPlayed` is deliberately absent: it is `redScore + blueScore`, and ACS
+// and ADR are ratios over it. Storing a derived value would freeze a formula
+// the upstream owns.
+model MatchMap {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  questValorantMatchId String                   @unique @map("quest_valorant_match_id") @db.Uuid
+  seriesGameId         String?                  @unique @map("series_game_id") @db.Uuid
+  matchId              String?                  @map("match_id") @db.Uuid
+  mapName              String                   @map("map_name")
+  mapExternalId        String?                  @map("map_external_id")
+  startedAt            DateTime                 @map("started_at")
+  durationMs           Int?                     @map("duration_ms")
+  gameVersion          String?                  @map("game_version")
+  redScore             Int?                     @map("red_score")
+  blueScore            Int?                     @map("blue_score")
+  winningSide          ValorantGameSide?        @map("winning_side")
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+  questValorantMatch   QuestValorantMatch       @relation(fields: [questValorantMatchId], references: [id], onDelete: Cascade)
+  seriesGame           QuestValorantSeriesGame? @relation(fields: [seriesGameId], references: [id], onDelete: SetNull)
+  match                Match?                   @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  playerStats          MatchPlayerStat[]
+
+  @@index([matchId])
+  @@index([startedAt])
+  @@map("match_maps")
+}
+
+// One player's line on one map's scoreboard.
+//
+// Every counter is nullable because the upstream returns them per player and an
+// in-progress or partially ingested match legitimately has none. NULL means
+// "not reported", which is a different fact from zero — a player with 0 kills
+// and a player whose stats never arrived must not render the same.
+//
+// `puuid` is stored because it is the only join key the upstream gives, and it
+// is what resolves a scoreboard row to a Quest profile through
+// `game_accounts (game, external_id)`. It is private: this table has RLS and
+// the Supabase Data API roles revoked like every other table Quest owns, and
+// the public projection must never echo it — same discipline as the player
+// profile.
+//
+// `playerId` is nullable and SetNull: most people on a VALORANT scoreboard are
+// not Quest players at all, and deleting a player must not delete the record of
+// a match they played. A row that falls back to `displayName`/`tagline` is the
+// honest pre-identity state.
+//
+// `displayName` and `tagline` are a snapshot, never an identity key, matching
+// `GameAccount` — a Riot rename changes them while the PUUID stays put. They
+// are what a scoreboard shows for someone with no Quest profile.
+model MatchPlayerStat {
+  id             String           @id @default(uuid()) @db.Uuid
+  matchMapId     String           @map("match_map_id") @db.Uuid
+  puuid          String
+  playerId       String?          @map("player_id") @db.Uuid
+  displayName    String?          @map("display_name")
+  tagline        String?
+  side           ValorantGameSide
+  agentId        String?          @map("agent_id")
+  agentName      String?          @map("agent_name")
+  scoreTotal     Int?             @map("score_total")
+  kills          Int?
+  deaths         Int?
+  assists        Int?
+  damageDealt    Int?             @map("damage_dealt")
+  damageReceived Int?             @map("damage_received")
+  headshots      Int?
+  bodyshots      Int?
+  legshots       Int?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  matchMap       MatchMap         @relation(fields: [matchMapId], references: [id], onDelete: Cascade)
+  player         Player?          @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@unique([matchMapId, puuid])
+  @@index([playerId])
+  @@index([puuid])
+  @@map("match_player_stats")
 }
 
 model QuestValorantOperation {
@@ -1792,6 +1898,7 @@ model Player {
   changeRequests      GameAccountChangeRequest[]
   discordIdentity     DiscordIdentity?
   rankings            PlayerRanking[]
+  matchStats          MatchPlayerStat[]
 
   @@index([createdAt])
   @@map("players")

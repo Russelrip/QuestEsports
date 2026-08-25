@@ -188,6 +188,50 @@ existing contact, match-room, notification, or OAuth tables.
   the board was only partially read — a rank from a truncated board would be
   quietly wrong, which is worse than showing nothing.
 
+- `20260825120000_add_structured_valorant_match_tables` adds `match_maps` and
+  `match_player_stats`, the structured form of what
+  `quest_valorant_matches.roster_summary` holds as opaque JSON. The blob is fine
+  for an admin panel rendering one match at a time and wrong for a public page
+  that must sort by ADR, filter by agent, or aggregate a tournament — none of
+  which is expressible against JSON without scanning every row. The two tables
+  also give `duration_ms`, `map_id` and `game_version` a home; the mapper
+  carries all three and `quest_valorant_matches` has no column for any of them,
+  so until now they were read and discarded.
+
+  Nothing is derived and nothing is stored that can be computed. ACS, ADR and
+  HS% are ratios over `red_score + blue_score`, so a `rounds_played` column is
+  deliberately absent — storing a derived value would freeze a formula the
+  upstream owns. Every per-player counter is nullable because NULL means "not
+  reported", which is a different fact from zero: a player with 0 kills and a
+  player whose stats never arrived must not render the same.
+
+  The three foreign keys out of `match_maps` are deliberately of different
+  strengths. `quest_valorant_match_id` CASCADEs because the row is a projection
+  of that import and means nothing without it. `series_game_id` is `SET NULL` —
+  detaching a map from a series is admin bookkeeping and must not destroy a
+  scoreboard the public page is rendering. `match_id` is the bracket link and
+  stays NULL: nothing joins a discovered VAL series to a bracket `matches` row
+  yet, so this is the column a later release fills rather than a schema change
+  it has to make. `match_player_stats.player_id` is `SET NULL` for the same
+  reason as the roster links — most people on a VALORANT scoreboard are not
+  Quest players, and deleting a player must not delete the record of a match
+  they played; the row falls back to its display-name snapshot.
+
+  `puuid` carries the same normalization CHECK as `game_accounts.external_id`,
+  because that column is what it joins against. If the two could disagree on
+  case or padding the join would not error, it would silently miss and render a
+  real Quest player as an unlinked stranger. Both tables have RLS enabled and
+  the Supabase Data API roles revoked; `match_player_stats` holds PUUIDs, so an
+  exposed Data API role there would leak the identity key the public projection
+  exists to keep private.
+
+  EXPAND half of expand-migrate-contract, and unbackfilled. `roster_summary` is
+  retained and stays authoritative until the public read path moves onto these
+  tables; existing imports carry no structured scoreboard until they are
+  re-imported, which reads honestly as "imported before structured stats" rather
+  than as a match played with no stats. Dropping `roster_summary` is the
+  CONTRACT step and belongs in a later release.
+
 The rollout is additive and preserves legacy null/default behavior. The
 tournament relation is nullable with `SetNull`, while the service archive and
 delete guards protect children during normal admin operations. OAuth link

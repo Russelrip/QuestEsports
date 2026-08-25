@@ -188,11 +188,13 @@ test("VALORANT public-schema tables exist and are RLS-protected", {
           'quest_valorant_series',
           'quest_valorant_series_games',
           'quest_valorant_matches',
-          'quest_valorant_operations'
+          'quest_valorant_operations',
+          'match_maps',
+          'match_player_stats'
         )
       ORDER BY c.relname
     `;
-    assert.equal(rows.length, 5);
+    assert.equal(rows.length, 7);
     assert.ok(rows.every((row) => row.rls === true));
   } finally {
     await prisma.$disconnect();
@@ -381,6 +383,116 @@ test("operation ledger transitions and match projection upsert work against Post
   } finally {
     if (opRowId) await prisma.questValorantOperation.deleteMany({ where: { id: opRowId } });
     await prisma.questValorantMatch.deleteMany({ where: { henrikMatchId: `henrik-${suffix}` } });
+    await prisma.$disconnect();
+  }
+});
+
+test("structured scoreboard tables enforce their integrity in PostgreSQL", {
+  skip: !runDatabaseTests,
+}, async () => {
+  const { prisma } = require("../src/lib/prisma");
+  const suffix = crypto.randomUUID();
+  const henrikMatchId = `henrik-structured-${suffix}`;
+  const puuid = crypto.randomUUID();
+  let questMatchId;
+
+  try {
+    const questMatch = await prisma.questValorantMatch.create({
+      data: {
+        matchId: crypto.randomUUID(),
+        henrikMatchId,
+        mapName: "Ascent",
+        startedAt: new Date(),
+        redScore: 13,
+        blueScore: 8,
+        winningSide: "red",
+        rosterSummary: { players: [] },
+      },
+    });
+    questMatchId = questMatch.id;
+
+    const matchMap = await prisma.matchMap.create({
+      data: {
+        questValorantMatchId: questMatch.id,
+        mapName: "Ascent",
+        mapExternalId: "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319",
+        startedAt: new Date(),
+        durationMs: 2142000,
+        gameVersion: "release-11.04",
+        redScore: 13,
+        blueScore: 8,
+        winningSide: "red",
+      },
+    });
+
+    await prisma.matchPlayerStat.create({
+      data: {
+        matchMapId: matchMap.id,
+        puuid,
+        side: "red",
+        displayName: "Quester",
+        tagline: "QST",
+        scoreTotal: 5460,
+        kills: 24,
+        deaths: 13,
+        assists: 4,
+        damageDealt: 4368,
+      },
+    });
+
+    // One scoreboard line per player per map: a retry must update, not append.
+    await assert.rejects(
+      prisma.matchPlayerStat.create({
+        data: { matchMapId: matchMap.id, puuid, side: "blue" },
+      }),
+      (error) => error.code === "P2002",
+    );
+
+    // The PUUID is the join key to game_accounts, which stores it normalized.
+    // If the two could disagree on case the join would silently miss, so the
+    // database refuses the de-normalized form outright.
+    await assert.rejects(
+      prisma.matchPlayerStat.create({
+        data: {
+          matchMapId: matchMap.id,
+          puuid: puuid.toUpperCase(),
+          side: "blue",
+        },
+      }),
+      /match_player_stats_puuid_normalized/,
+    );
+
+    // A negative score would invert ACS and ADR rather than merely look wrong.
+    await assert.rejects(
+      prisma.matchMap.update({
+        where: { id: matchMap.id },
+        data: { redScore: -1 },
+      }),
+      /match_maps_scores_non_negative/,
+    );
+
+    // One structured row per imported map.
+    await assert.rejects(
+      prisma.matchMap.create({
+        data: {
+          questValorantMatchId: questMatch.id,
+          mapName: "Bind",
+          startedAt: new Date(),
+        },
+      }),
+      (error) => error.code === "P2002",
+    );
+
+    // The scoreboard is a projection of the import: deleting the cached match
+    // takes both the map and its player rows with it.
+    await prisma.questValorantMatch.delete({ where: { id: questMatch.id } });
+    questMatchId = null;
+    assert.equal(await prisma.matchMap.count({ where: { id: matchMap.id } }), 0);
+    assert.equal(await prisma.matchPlayerStat.count({ where: { matchMapId: matchMap.id } }), 0);
+  } finally {
+    if (questMatchId) {
+      await prisma.questValorantMatch.deleteMany({ where: { id: questMatchId } });
+    }
     await prisma.$disconnect();
   }
 });
