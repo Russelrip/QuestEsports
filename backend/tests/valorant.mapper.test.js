@@ -247,6 +247,7 @@ test("mapMatchDetail projects the per-player scoreboard stats and the match meta
     name: "Quester",
     tag: "QST",
     side: "red",
+    agentId: "add6443a-41bd-e414-f6ad-e58d267f4e95",
     agentName: "Jett",
     scoreTotal: 5_460,
     kills: 24,
@@ -258,8 +259,6 @@ test("mapMatchDetail projects the per-player scoreboard stats and the match meta
     bodyshots: 62,
     legshots: 8,
   });
-  // agent_id is returned upstream but deliberately not projected.
-  assert.equal("agentId" in mapped.players[0], false);
 });
 
 test("mapMatchDetail carries enough per player to derive ACS, ADR and HS%", () => {
@@ -326,6 +325,7 @@ test("mapMatchDetail nulls the scoreboard stats an in-progress match has not rep
     name: "Rookie",
     tag: "QST",
     side: "blue",
+    agentId: null,
     agentName: null,
     scoreTotal: null,
     kills: null,

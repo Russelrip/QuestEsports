@@ -38,13 +38,15 @@ const mapMatchCandidate = (candidate) => ({
 // carries the scoreboard counters below; they were dropped here until now,
 // which is why Quest had no ACS, ADR or HS%. Those are ratios derived at read
 // time from these counters and the round total, so none of them is stored.
-// agent_id stays unprojected: agent_name is the display value, nothing reads
-// the id.
+// agent_id is carried alongside agent_name because an agent icon is keyed by
+// id, and a name is a display string that can be localised or renamed while
+// the id stays stable.
 const mapMatchPlayer = (player) => ({
   puuid: player.puuid,
   name: player.name,
   tag: player.tag,
   side: player.side,
+  agentId: player.agent_id ?? null,
   agentName: player.agent_name ?? null,
   scoreTotal: player.score_total ?? null,
   kills: player.kills ?? null,
