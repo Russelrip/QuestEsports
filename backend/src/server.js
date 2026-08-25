@@ -15,6 +15,10 @@ const {
   stopChallongeScheduler,
 } = require("./modules/challonge/challonge.jobs");
 const {
+  startRankingScheduler,
+  stopRankingScheduler,
+} = require("./modules/players/ranking.jobs");
+const {
   startRealtimeTransport,
   stopRealtimeTransport,
 } = require("./modules/realtime/realtime.service");
@@ -81,6 +85,7 @@ const shutdown = async (signal, exitCode = 0) => {
       stopJobWorker(),
       stopCommerceMaintenance(),
       stopChallongeScheduler(),
+      stopRankingScheduler(),
       stopDataHygieneMaintenance(),
       stopRealtimeTransport(),
     ]);
@@ -129,6 +134,7 @@ const start = async () => {
   startJobWorker();
   startCommerceMaintenance();
   startChallongeScheduler();
+  startRankingScheduler();
   startDataHygieneMaintenance();
 
   server = app.listen(env.PORT);

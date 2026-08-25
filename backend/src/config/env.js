@@ -292,6 +292,21 @@ const env = {
     process.env.JOB_WORKER_MAX_ATTEMPTS,
     5,
   ),
+  // The ranking sync reads an external leaderboard that refreshes every 15-30
+  // minutes, so a shorter interval spends rate limit re-reading numbers that
+  // have not moved. Off by default: it calls an upstream service, and an
+  // environment without that configured should stay quiet.
+  PLAYER_RANKING_SYNC_ENABLED: normalizeBoolean(
+    process.env.PLAYER_RANKING_SYNC_ENABLED,
+    false,
+  ),
+  PLAYER_RANKING_SYNC_MINUTES: normalizeIntegerInRange(
+    "PLAYER_RANKING_SYNC_MINUTES",
+    process.env.PLAYER_RANKING_SYNC_MINUTES,
+    15,
+    5,
+    240,
+  ),
   CHALLONGE_ENABLED: normalizeBoolean(process.env.CHALLONGE_ENABLED, false),
   CHALLONGE_AUTOMATIC_SYNC_ENABLED: normalizeBoolean(
     process.env.CHALLONGE_AUTOMATIC_SYNC_ENABLED,

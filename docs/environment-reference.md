@@ -60,6 +60,8 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 
 | Variable | Required? | Owner | Applies | Classification | Safe placeholder/default | Restart/redeploy impact |
 | --- | --- | --- | --- | --- | --- | --- |
+| `PLAYER_RANKING_SYNC_ENABLED` | No | Backend/integration owner | L/D/P | Public/non-secret | `false`; set `true` where the VALORANT upstream is configured, or player profiles show no rank | Restart backend |
+| `PLAYER_RANKING_SYNC_MINUTES` | No — has a built-in default | Backend/integration owner | L/D/P | Public/non-secret | `15` (5-240); matches the upstream leaderboard refresh, shorter only spends rate limit | Restart backend |
 | `CHALLONGE_ENABLED` | No | Backend/integration owner | L/D/P | Public/non-secret | `false` | Restart backend |
 | `CHALLONGE_AUTOMATIC_SYNC_ENABLED` | No | Backend/integration owner | L/D/P | Public/non-secret | `false` | Restart backend |
 | `CHALLONGE_CLIENT_ID` | Conditional | Backend/integration owner | D/P | Secret | `<Challonge client ID>` when enabled | Restart backend |

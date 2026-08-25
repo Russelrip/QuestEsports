@@ -13,8 +13,10 @@ const {
   processTeamLogoCleanupJob,
 } = require("./upload-cleanup-job");
 const { syncChallongeIntegration } = require("../modules/challonge/challonge.service");
+const { syncValorantRankings } = require("../modules/players/ranking-sync.service");
 
 const CHALLONGE_SYNC_JOB_NAME = "challonge.sync";
+const RANKING_SYNC_JOB_NAME = "players.ranking-sync";
 
 const JOB_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 const JOB_RETRY_BASE_DELAY_MS = 30 * 1000;
@@ -317,6 +319,10 @@ const processJobByName = async (job) => {
         trigger: "scheduled",
         requestId: job.payload.requestId || null,
       });
+    case RANKING_SYNC_JOB_NAME:
+      // Takes no payload: a position is a property of the whole board, so the
+      // sync always walks it in one pass rather than syncing one player.
+      return syncValorantRankings();
     default:
       throw new Error(`Unsupported background job: ${job.name}`);
   }
@@ -444,4 +450,5 @@ module.exports = {
   stopJobWorker,
   suggestedJobBackends,
   CHALLONGE_SYNC_JOB_NAME,
+  RANKING_SYNC_JOB_NAME,
 };
