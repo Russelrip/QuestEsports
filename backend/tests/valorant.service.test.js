@@ -25,6 +25,42 @@ const envMock = { env: {
   VALORANT_READ_RETRIES: 2,
 } };
 
+// Recording stand-in for the structured scoreboard tables written alongside the
+// cached match projection. Returns the rows it captured so a test can assert on
+// what the import actually wrote.
+const structuredStatsMock = ({ accounts = [] } = {}) => {
+  const matchMaps = [];
+  const playerStats = [];
+  const deletes = [];
+  return {
+    matchMaps,
+    playerStats,
+    deletes,
+    models: {
+      matchMap: {
+        upsert: async ({ where, create, update }) => {
+          matchMaps.push({ where, create, update });
+          return { id: "match-map-1", ...create };
+        },
+      },
+      matchPlayerStat: {
+        upsert: async ({ where, create, update }) => {
+          playerStats.push({ where, create, update });
+          return { id: `stat-${playerStats.length}`, ...create };
+        },
+        deleteMany: async (args) => {
+          deletes.push(args);
+          return { count: 0 };
+        },
+      },
+      gameAccount: {
+        findMany: async ({ where }) => accounts.filter((account) =>
+          where.externalId.in.includes(account.externalId)),
+      },
+    },
+  };
+};
+
 class FastApiError extends Error {
   constructor(message, options) {
     super(message);
@@ -361,6 +397,7 @@ test("importMatch imports once, upserts the projection, and reports created from
     raw_payload_available: true,
   };
   const upserts = [];
+  const structured = structuredStatsMock();
   const prismaMock = {
     prisma: {
       questValorantMatch: {
@@ -369,6 +406,7 @@ test("importMatch imports once, upserts the projection, and reports created from
           return { ...create, id: "projection-1" };
         },
       },
+      ...structured.models,
     },
   };
   const clientMock = {
@@ -2424,6 +2462,243 @@ test("updateSeriesPlayedAt 409s when the Quest series has no VALORANT series yet
       service.updateSeriesPlayedAt({ seriesId: "quest-series-1", playedAt: new Date(), actorUserId: "user-1", requestId: "req-21", ipAddress: "127.0.0.1" }),
       (error) => error instanceof HttpError && error.statusCode === 409,
     );
+  } finally {
+    restore();
+  }
+});
+
+// The tests below deliberately load the REAL mapper: the point of the
+// structured tables is that upstream fields survive the whole path from the
+// FastAPI payload to the row, and a mapper stub would hide a break in it.
+const structuredImportDetail = {
+  id: "00000000-0000-4000-8000-00000000000e",
+  henrik_match_id: "abcdef0123",
+  affinity: "eu",
+  platform: "pc",
+  map_name: "Ascent",
+  map_id: "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319",
+  mode: "Standard",
+  queue: "unrated",
+  started_at: "2026-08-01T14:30:00Z",
+  duration_ms: 2142000,
+  is_completed: true,
+  red_score: 13,
+  blue_score: 8,
+  winning_side: "red",
+  game_version: "release-11.04",
+  raw_payload_available: true,
+  players: [
+    {
+      puuid: "11111111-1111-4111-8111-111111111111",
+      name: "Quester",
+      tag: "QST",
+      side: "red",
+      agent_id: "add6443a-41bd-e414-f6ad-e58d267f4e95",
+      agent_name: "Jett",
+      score_total: 5460,
+      kills: 24,
+      deaths: 13,
+      assists: 4,
+      damage_dealt: 4368,
+      damage_received: 3010,
+      headshots: 30,
+      bodyshots: 62,
+      legshots: 8,
+    },
+    {
+      puuid: "22222222-2222-4222-8222-222222222222",
+      name: "Stranger",
+      tag: "EU",
+      side: "blue",
+      agent_name: "Sova",
+      kills: 11,
+      deaths: 19,
+      assists: 7,
+    },
+  ],
+};
+
+const loadServiceForImport = (prismaMock, detail = structuredImportDetail) => loadModuleWithMocks(servicePath, {
+  [prismaPath]: prismaMock,
+  [clientPath]: {
+    valorantRequest: async () => ({ status: 201, data: { match: detail, created: true }, requestId: "fastapi-req-1" }),
+  },
+  [envPath]: envMock,
+  [httpErrorPath]: { HttpError },
+});
+
+const importPrismaMock = (structured) => ({
+  prisma: {
+    questValorantMatch: { upsert: async ({ create }) => ({ ...create, id: "projection-1" }) },
+    ...structured.models,
+  },
+});
+
+test("importMatch writes one structured map row carrying the fields quest_valorant_matches has no column for", async () => {
+  const structured = structuredStatsMock();
+  const { module: service, restore } = loadServiceForImport(importPrismaMock(structured));
+
+  try {
+    await service.importMatch({ henrikMatchId: "abcdef0123", affinity: "eu", actorUserId: "user-1" });
+    assert.equal(structured.matchMaps.length, 1);
+    const created = structured.matchMaps[0].create;
+    assert.equal(created.questValorantMatchId, "projection-1");
+    assert.equal(created.mapName, "Ascent");
+    assert.equal(created.mapExternalId, "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319");
+    assert.equal(created.durationMs, 2142000);
+    assert.equal(created.gameVersion, "release-11.04");
+    assert.equal(created.winningSide, "red");
+    assert.equal(created.redScore, 13);
+    assert.equal(created.blueScore, 8);
+    // Derived stats are never stored: rounds is red + blue, computed at read time.
+    assert.equal("roundsPlayed" in created, false);
+  } finally {
+    restore();
+  }
+});
+
+test("importMatch writes one scoreboard row per player and links only the ones Quest knows", async () => {
+  const structured = structuredStatsMock({
+    accounts: [{ playerId: "player-1", externalId: "11111111-1111-4111-8111-111111111111" }],
+  });
+  const { module: service, restore } = loadServiceForImport(importPrismaMock(structured));
+
+  try {
+    await service.importMatch({ henrikMatchId: "abcdef0123", affinity: "eu", actorUserId: "user-1" });
+    assert.equal(structured.playerStats.length, 2);
+
+    const quester = structured.playerStats[0].create;
+    assert.equal(quester.playerId, "player-1");
+    assert.equal(quester.displayName, "Quester");
+    assert.equal(quester.tagline, "QST");
+    assert.equal(quester.side, "red");
+    assert.equal(quester.agentId, "add6443a-41bd-e414-f6ad-e58d267f4e95");
+    assert.equal(quester.agentName, "Jett");
+    assert.equal(quester.scoreTotal, 5460);
+    assert.equal(quester.damageDealt, 4368);
+    assert.equal(quester.damageReceived, 3010);
+    assert.equal(quester.headshots, 30);
+    assert.equal(quester.bodyshots, 62);
+    assert.equal(quester.legshots, 8);
+
+    // Most of a VALORANT scoreboard is not Quest players. An unlinked row is
+    // the normal case, not a failure, and renders from its name snapshot.
+    const stranger = structured.playerStats[1].create;
+    assert.equal(stranger.playerId, null);
+    assert.equal(stranger.displayName, "Stranger");
+    // Not reported is stored as null, never coerced to zero.
+    assert.equal(stranger.scoreTotal, null);
+    assert.equal(stranger.damageDealt, null);
+    assert.equal(stranger.agentId, null);
+  } finally {
+    restore();
+  }
+});
+
+test("importMatch normalizes a PUUID before storing it or resolving a player", async () => {
+  const detail = {
+    ...structuredImportDetail,
+    players: [{
+      ...structuredImportDetail.players[0],
+      puuid: "  11111111-1111-4111-8111-AAAAAAAAAAAA  ",
+    }],
+  };
+  const structured = structuredStatsMock({
+    accounts: [{ playerId: "player-1", externalId: "11111111-1111-4111-8111-aaaaaaaaaaaa" }],
+  });
+  const { module: service, restore } = loadServiceForImport(importPrismaMock(structured), detail);
+
+  try {
+    await service.importMatch({ henrikMatchId: "abcdef0123", affinity: "eu", actorUserId: "user-1" });
+    const created = structured.playerStats[0].create;
+    // The database CHECK would reject the padded, upper-case form outright, and
+    // the game_accounts join would silently miss it.
+    assert.equal(created.puuid, "11111111-1111-4111-8111-aaaaaaaaaaaa");
+    assert.equal(created.playerId, "player-1");
+  } finally {
+    restore();
+  }
+});
+
+test("importMatch prunes a player a re-import no longer lists", async () => {
+  const structured = structuredStatsMock();
+  const { module: service, restore } = loadServiceForImport(importPrismaMock(structured));
+
+  try {
+    await service.importMatch({ henrikMatchId: "abcdef0123", affinity: "eu", actorUserId: "user-1" });
+    assert.equal(structured.deletes.length, 1);
+    assert.deepEqual(structured.deletes[0].where.puuid.notIn, [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("importMatch leaves an existing scoreboard alone when the upstream returns no players", async () => {
+  const structured = structuredStatsMock();
+  const detail = { ...structuredImportDetail, players: [] };
+  const { module: service, restore } = loadServiceForImport(importPrismaMock(structured), detail);
+
+  try {
+    await service.importMatch({ henrikMatchId: "abcdef0123", affinity: "eu", actorUserId: "user-1" });
+    assert.equal(structured.matchMaps.length, 1);
+    assert.equal(structured.playerStats.length, 0);
+    // An empty roster is far more likely a partial upstream response than a
+    // match nobody played, so nothing is pruned on the strength of it.
+    assert.equal(structured.deletes.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("importMatch stores an unrecognized winning side as null rather than inventing one", async () => {
+  const structured = structuredStatsMock();
+  const detail = { ...structuredImportDetail, winning_side: "spectator", players: [] };
+  const { module: service, restore } = loadServiceForImport(importPrismaMock(structured), detail);
+
+  try {
+    await service.importMatch({ henrikMatchId: "abcdef0123", affinity: "eu", actorUserId: "user-1" });
+    assert.equal(structured.matchMaps[0].create.winningSide, null);
+  } finally {
+    restore();
+  }
+});
+
+test("importMatch writes the cached projection and the structured rows in one transaction", async () => {
+  const calls = [];
+  const structured = structuredStatsMock();
+  const prisma = {
+    questValorantMatch: {
+      upsert: async ({ create }) => {
+        calls.push("questValorantMatch.upsert");
+        return { ...create, id: "projection-1" };
+      },
+    },
+    matchMap: {
+      upsert: async ({ create }) => {
+        calls.push("matchMap.upsert");
+        return { id: "match-map-1", ...create };
+      },
+    },
+    matchPlayerStat: structured.models.matchPlayerStat,
+    gameAccount: structured.models.gameAccount,
+  };
+  // A cached match whose scoreboard failed to write would read as a match
+  // nobody played, so both must land together or not at all.
+  prisma.$transaction = async (work) => {
+    calls.push("transaction:begin");
+    const result = await work(prisma);
+    calls.push("transaction:commit");
+    return result;
+  };
+  const { module: service, restore } = loadServiceForImport({ prisma });
+
+  try {
+    await service.importMatch({ henrikMatchId: "abcdef0123", affinity: "eu", actorUserId: "user-1" });
+    assert.deepEqual(calls.slice(0, 3), ["transaction:begin", "questValorantMatch.upsert", "matchMap.upsert"]);
+    assert.equal(calls.at(-1), "transaction:commit");
   } finally {
     restore();
   }
