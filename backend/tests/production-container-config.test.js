@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -13,6 +14,50 @@ const productionEnv = read("ops/docker/quest.production.env.example");
 const postgresBootstrap = read("ops/docker/postgres/init/001-bootstrap-roles.sql");
 const postgresHealthcheck = read("ops/docker/postgres/healthcheck.sh");
 
+const unquote = (value) => {
+  const trimmed = value.trim();
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+};
+
+const sectionLines = (source, name) => {
+  const lines = source.split("\n");
+  const header = lines.findIndex((line) => /^ {4}\S/.test(line) && line.trim() === `${name}:`);
+  if (header === -1) return [];
+
+  const section = [];
+  for (const line of lines.slice(header + 1)) {
+    if (line.trim() && line.match(/^\s*/)[0].length <= 4) break;
+    section.push(line);
+  }
+  return section;
+};
+
+const listRecords = (lines) => {
+  const records = [];
+  for (const line of lines) {
+    const match = line.match(/^\s*-\s*(.*)$/);
+    if (match) records.push([match[1]]);
+    else if (records.length > 0 && line.trim()) records.at(-1).push(line.trim());
+  }
+  return records;
+};
+
+const mappingFields = (record) => {
+  const fields = {};
+  for (const line of record) {
+    const match = line.match(/^(?:["']([^"']+)["']|([A-Za-z_][A-Za-z0-9_]*))\s*:\s*(.*?)\s*$/);
+    if (match) fields[match[1] || match[2]] = unquote(match[3]);
+  }
+  return fields;
+};
+
 const serviceBlock = (name) => {
   const match = productionCompose.match(
     new RegExp(`(?:^|\\n)  ${name}:[\\s\\S]*?(?=\\n  [a-z-]+:|\\nnetworks:)`),
@@ -21,46 +66,107 @@ const serviceBlock = (name) => {
   return match[0];
 };
 
-const serviceNetworks = (name) => {
-  const block = serviceBlock(name);
-  const match = block.match(/\n    networks:\n([\s\S]*)$/);
-  assert.ok(match, `expected networks for production Compose service ${name}`);
-  return [...match[1].matchAll(/^      ([a-z-]+):/gm)].map((entry) => entry[1]);
+const networkNames = (source) => {
+  const lines = sectionLines(source, "networks");
+  assert.ok(lines.length > 0, "expected Compose network section");
+  const names = [];
+  for (const line of lines) {
+    if (line.match(/^\s*/)[0].length !== 6) continue;
+    const mapping = line.trim().match(/^(?:["']([^"']+)["']|([^:\s]+))\s*:/);
+    const list = line.trim().match(/^[-]\s*(.+)$/);
+    if (mapping) names.push(mapping[1] || mapping[2]);
+    else if (list) names.push(unquote(list[1]));
+  }
+  return names;
 };
 
+const serviceNetworks = (name) => networkNames(serviceBlock(name));
+
+const serviceNetworksFrom = (source) => networkNames(`\n  fixture:\n${source}`);
+
 const portMapping = (value) => {
-  const [mapping, protocol = "tcp"] = value.replace(/^['"]|['"]$/g, "").split("/");
-  if (!/^[\d.]+:\d+:\d+$/.test(mapping)) return null;
-  return protocol === "tcp" ? mapping : `${mapping}/${protocol}`;
+  const candidate = unquote(value);
+  const match = candidate.match(
+    /^(\[[^\]]+\]|[^:/]+):(\d+):(\d+)(?:\/([A-Za-z0-9]+))?$/,
+  );
+  if (!match) return `invalid-port:${candidate}`;
+  const mapping = `${match[1]}:${match[2]}:${match[3]}`;
+  return match[4] && match[4].toLowerCase() !== "tcp"
+    ? `${mapping}/${match[4]}`
+    : mapping;
 };
 
 const publishedPorts = (source) => {
-  const section = source.match(/\n    ports:\n([\s\S]*?)(?=\n    [a-z_]+:|\n  [a-z-]+:|\nnetworks:|$)/)?.[1] || "";
-  const values = [];
-  for (const entry of section.matchAll(/^\s*-\s*([^\n]+)$/gm)) {
-    const value = entry[1].trim();
-    if (!value.startsWith("target:")) {
-      const mapping = portMapping(value);
-      if (mapping) values.push(mapping);
+  return listRecords(sectionLines(source, "ports")).map((record) => {
+    const first = record[0];
+    if (/^(?:["'](?:target|published|host_ip|protocol)["']|(?:target|published|host_ip|protocol))\s*:/.test(first)) {
+      const fields = mappingFields(record);
+      if (!fields.target || !fields.published || !fields.host_ip) {
+        return `invalid-port-record:${record.join(" ")}`;
+      }
+      return portMapping(
+        `${fields.host_ip}:${fields.published}:${fields.target}${
+          fields.protocol ? `/${fields.protocol}` : ""
+        }`,
+      );
     }
-  }
-  for (const record of section.split(/(?=^\s*-\s*target:)/m)) {
-    if (!record.includes("target:")) continue;
-    const target = record.match(/^\s*-\s*target:\s*["']?(\d+)["']?/m)?.[1];
-    const published = record.match(/^\s+published:\s*["']?(\d+)["']?/m)?.[1];
-    const hostIp = record.match(/^\s+host_ip:\s*["']?([^\s"']+)["']?/m)?.[1];
-    const protocol = record.match(/^\s+protocol:\s*["']?([^\s"']+)["']?/m)?.[1] || "tcp";
-    if (target && published && hostIp) values.push(portMapping(`${hostIp}:${published}:${target}/${protocol}`));
-  }
-  return values.filter(Boolean);
+    return portMapping(first);
+  });
 };
 
-const mountSources = (source) => {
-  const section = source.match(/\n    volumes:\n([\s\S]*?)(?=\n    [a-z_]+:|\n  [a-z-]+:|\nnetworks:|$)/)?.[1] || "";
-  const values = [...section.matchAll(/^\s*-\s*(\/[^:\n]+):/gm)].map((entry) => entry[1]);
-  values.push(...[...section.matchAll(/^\s+source:\s*["']?([^\s"']+)["']?\s*$/gm)].map((entry) => entry[1]));
-  return values;
+const invalidMount = (value) => ({ invalid: value });
+
+const parseShortMount = (value) => {
+  const parts = unquote(value).split(":");
+  if (parts.length < 2 || parts.length > 3) return invalidMount(value);
+  const [source, target, mode = ""] = parts;
+  if (mode && mode !== "ro" && mode !== "rw") return invalidMount(value);
+  return { source, target, type: "bind", read_only: mode === "ro" };
 };
+
+const mountRecords = (source) =>
+  listRecords(sectionLines(source, "volumes")).map((record) => {
+    if (record.length === 1 && !/^(?:["']?(?:type|source|target|read_only)["']?)\s*:/.test(record[0])) {
+      return parseShortMount(record[0]);
+    }
+
+    const fields = mappingFields(record);
+    const allowed = new Set(["type", "source", "target", "read_only"]);
+    if (Object.keys(fields).some((field) => !allowed.has(field))) {
+      return invalidMount(record.join(" "));
+    }
+    if (!fields.type || !fields.source || !fields.target) {
+      return invalidMount(record.join(" "));
+    }
+    if (fields.read_only && !["true", "false"].includes(fields.read_only)) {
+      return invalidMount(record.join(" "));
+    }
+    return {
+      source: fields.source,
+      target: fields.target,
+      type: fields.type,
+      read_only: fields.read_only === "true",
+    };
+  });
+
+const sortedRecords = (records) =>
+  records.map((record) => JSON.stringify(record)).sort().map((record) => JSON.parse(record));
+
+const dockerFixture = (() => {
+  const version = spawnSync("docker", ["version", "--format", "{{.Server.Version}}"], {
+    encoding: "utf8",
+  });
+  if (version.error || version.status !== 0) {
+    return { skip: "Docker daemon/CLI unavailable for the certificate healthcheck fixture" };
+  }
+  const image = spawnSync("docker", ["image", "inspect", "postgres:17-bookworm"], {
+    encoding: "utf8",
+  });
+  if (image.error || image.status !== 0) {
+    return { skip: "local postgres:17-bookworm image unavailable for the certificate healthcheck fixture" };
+  }
+  return { skip: false };
+})();
 
 const dockerIgnoreRegex = (pattern) => {
   let source = "";
@@ -232,24 +338,74 @@ test("production Compose uses stable aliases and durable, non-source mounts", ()
   assert.match(postgres, /postgres-healthcheck\.sh:\/usr\/local\/bin\/quest-postgres-healthcheck:ro/);
   assert.match(postgres, /quest-postgres\.crt:\/run\/postgresql\/tls\/server\.crt:ro/);
   assert.match(postgres, /quest-postgres\.key:\/run\/postgresql\/tls\/server\.key:ro/);
-  const absoluteSources = ["frontend", "backend", "postgres"].flatMap((service) =>
-    mountSources(serviceBlock(service)),
+  const actualMounts = ["frontend", "backend", "postgres"].flatMap((service) =>
+    mountRecords(serviceBlock(service)),
   );
   assert.deepEqual(
-    absoluteSources.sort(),
+    sortedRecords(actualMounts),
     [
-      "/etc/quest-esports/postgres-healthcheck.sh",
-      "/etc/quest-esports/secrets/postgres-admin-password",
-      "/etc/quest-esports/tls/quest-postgres.crt",
-      "/etc/quest-esports/tls/quest-postgres.key",
-      "/etc/quest-esports/tls/quest-private-ca.crt",
-      "/etc/quest-esports/tls/quest-private-ca.crt",
-      "/srv/quest-esports/postgres/17/data",
-      "/srv/quest-esports/postgres/init",
-      "/srv/quest-esports/private",
-      "/srv/quest-esports/uploads",
-    ].sort(),
-    "absolute mounts must be exactly the approved durable/config paths",
+      {
+        source: "/etc/quest-esports/postgres-healthcheck.sh",
+        target: "/usr/local/bin/quest-postgres-healthcheck",
+        type: "bind",
+        read_only: true,
+      },
+      {
+        source: "/etc/quest-esports/secrets/postgres-admin-password",
+        target: "/run/secrets/postgres-admin-password",
+        type: "bind",
+        read_only: true,
+      },
+      {
+        source: "/etc/quest-esports/tls/quest-postgres.crt",
+        target: "/run/postgresql/tls/server.crt",
+        type: "bind",
+        read_only: true,
+      },
+      {
+        source: "/etc/quest-esports/tls/quest-postgres.key",
+        target: "/run/postgresql/tls/server.key",
+        type: "bind",
+        read_only: true,
+      },
+      {
+        source: "/etc/quest-esports/tls/quest-private-ca.crt",
+        target: "/run/secrets/quest-private-ca.crt",
+        type: "bind",
+        read_only: true,
+      },
+      {
+        source: "/etc/quest-esports/tls/quest-private-ca.crt",
+        target: "/run/postgresql/tls/ca.crt",
+        type: "bind",
+        read_only: true,
+      },
+      {
+        source: "/srv/quest-esports/postgres/17/data",
+        target: "/var/lib/postgresql/data",
+        type: "bind",
+        read_only: false,
+      },
+      {
+        source: "/srv/quest-esports/postgres/init",
+        target: "/docker-entrypoint-initdb.d",
+        type: "bind",
+        read_only: true,
+      },
+      {
+        source: "/srv/quest-esports/private",
+        target: "/srv/quest-esports/private",
+        type: "bind",
+        read_only: false,
+      },
+      {
+        source: "/srv/quest-esports/uploads",
+        target: "/srv/quest-esports/uploads",
+        type: "bind",
+        read_only: false,
+      },
+    ].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+    "mount source, target, type, and read-only contracts must be exact",
   );
   assert.match(productionCompose, /stop_grace_period:\s*40s/);
   assert.match(productionCompose, /read_only:\s*true/);
@@ -283,14 +439,99 @@ test("contract parsers accept valid Compose short/long port and mount forms", ()
     ["127.0.0.1:3000:3000"],
   );
   assert.deepEqual(
-    mountSources(`
+    mountRecords(`
     volumes:
-      - /srv/quest-esports/uploads:/srv/quest-esports/uploads
+      - "/srv/quest-esports/uploads:/srv/quest-esports/uploads"
       - type: bind
         source: /srv/quest-esports/private
         target: /srv/quest-esports/private
+        read_only: false
 `),
-    ["/srv/quest-esports/uploads", "/srv/quest-esports/private"],
+    [
+      {
+        source: "/srv/quest-esports/uploads",
+        target: "/srv/quest-esports/uploads",
+        type: "bind",
+        read_only: false,
+      },
+      {
+        source: "/srv/quest-esports/private",
+        target: "/srv/quest-esports/private",
+        type: "bind",
+        read_only: false,
+      },
+    ],
+  );
+});
+
+test("contract parsers do not ignore alternate published-port representations", () => {
+  const ports = publishedPorts(`
+    ports:
+      - 127.0.0.1:3000:3000
+      - "0.0.0.0:5001:5001"
+      - 192.0.2.10:6000:6000
+      - 127.0.0.1:7000:7000/udp
+      - "[::1]:8000:8000"
+      - target: 9000
+        published: 9000
+      - target: 9100
+        published: 9100
+        host_ip: 127.0.0.1
+        protocol: udp
+`);
+  assert.equal(ports.length, 7);
+  assert.deepEqual(ports.slice(0, 2), ["127.0.0.1:3000:3000", "0.0.0.0:5001:5001"]);
+  assert.notDeepEqual(ports, ["127.0.0.1:3000:3000", "127.0.0.1:5001:5001"]);
+  assert.ok(ports.some((port) => port.startsWith("invalid-port-record:")));
+  assert.ok(ports.some((port) => port.includes("/udp")));
+  assert.ok(ports.some((port) => port.includes("[::1]")));
+});
+
+test("mount contract rejects unapproved quoted, long-form, relative, named, and variable sources", () => {
+  const mounts = mountRecords(`
+    volumes:
+      - "/srv/quest-esports/uploads:/srv/quest-esports/uploads:ro"
+      - type: volume
+        source: named-volume
+        target: /srv/quest-esports/private
+        read_only: false
+      - type: bind
+        source: ./private
+        target: /srv/quest-esports/private
+        read_only: false
+      - type: bind
+        source: \${PRIVATE_ROOT}
+        target: /srv/quest-esports/private
+        read_only: false
+      - type: bind
+        source: /srv/quest-esports/private
+        target: /srv/quest-esports/private
+        read_only: true
+`);
+  assert.equal(mounts.length, 5);
+  assert.notDeepEqual(mounts, [
+    {
+      source: "/srv/quest-esports/uploads",
+      target: "/srv/quest-esports/uploads",
+      type: "bind",
+      read_only: false,
+    },
+  ]);
+  assert.ok(mounts.some((mount) => mount.type === "volume"));
+  assert.ok(mounts.some((mount) => mount.source === "./private"));
+  assert.ok(mounts.some((mount) => mount.source === "${PRIVATE_ROOT}"));
+  assert.ok(mounts.some((mount) => mount.read_only === true));
+});
+
+test("network parser retains quoted and otherwise valid network keys", () => {
+  assert.deepEqual(
+    serviceNetworksFrom(`
+    networks:
+      "app": {}
+      quest-shared: {}
+      "unexpected-network": {}
+`),
+    ["app", "quest-shared", "unexpected-network"],
   );
 });
 
@@ -306,6 +547,74 @@ test("every production service has an explicit liveness/readiness healthcheck", 
   assert.match(postgresHealthcheck, /^#!\/bin\/sh/);
 });
 
+test(
+  "the PostgreSQL healthcheck passes SAN certificates and rejects CN-only certificates",
+  { skip: dockerFixture.skip || false },
+  () => {
+    const scriptPath = path.join(repoRoot, "ops/docker/postgres/healthcheck.sh");
+    const scriptMount = `${scriptPath.replace(/\\/g, "/")}:/fixture/healthcheck.sh:ro`;
+    const fixture = `
+set -eu
+tmp=$(mktemp -d)
+mkdir -p "$tmp/bin"
+printf '%s\\n' '#!/bin/sh' 'exit 0' > "$tmp/bin/pg_isready"
+chmod +x "$tmp/bin/pg_isready"
+
+make_certificate() {
+  certificate="$1"
+  if [ "$2" = san ]; then
+    openssl req -x509 -newkey rsa:2048 -nodes -days 1 \\
+      -subj '/CN=quest-postgres' \\
+      -addext 'subjectAltName=DNS:quest-postgres' \\
+      -keyout "$certificate.key" -out "$certificate.crt" >/dev/null 2>&1
+  else
+    openssl req -x509 -newkey rsa:2048 -nodes -days 1 \\
+      -subj '/CN=quest-postgres' \\
+      -keyout "$certificate.key" -out "$certificate.crt" >/dev/null 2>&1
+  fi
+}
+
+run_case() {
+  label="$1"
+  make_certificate "$tmp/$label" "$label"
+  if PATH="$tmp/bin:$PATH" \\
+    POSTGRES_CERT_RUNTIME_FILE="$tmp/$label.crt" \\
+    POSTGRES_CA_RUNTIME_FILE="$tmp/$label.crt" \\
+    sh /fixture/healthcheck.sh; then
+    printf '%s\\n' "$label:pass"
+  else
+    printf '%s\\n' "$label:fail"
+  fi
+}
+
+san_result=$(run_case san)
+cn_result=$(run_case cn)
+[ "$san_result" = 'san:pass' ]
+[ "$cn_result" = 'cn:fail' ]
+`;
+    const result = spawnSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--entrypoint",
+        "sh",
+        "--volume",
+        scriptMount,
+        "postgres:17-bookworm",
+        "-c",
+        fixture,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(
+      result.status,
+      0,
+      `SAN/CN healthcheck fixture failed:\n${result.stdout}\n${result.stderr}`,
+    );
+  },
+);
+
 test("production images are manifest-supplied and digest-oriented", () => {
   const imageVariables = [...productionCompose.matchAll(
     /^\s+image:\s*\$\{([A-Z_]+):\?[^}]+\}\s*$/gm,
@@ -317,16 +626,20 @@ test("production images are manifest-supplied and digest-oriented", () => {
       new RegExp(`image:\\s*\\$\\{${variable}:\\?`),
       `${variable} must be required from the release manifest`,
     );
+    assert.match(productionEnv, new RegExp(`^${variable}=`, "m"), `${variable} must be a release variable`);
   }
   assert.match(productionEnv, /^QUEST_MIGRATOR_IMAGE=$/m);
   assert.match(productionEnv, /^POSTGRES_IMAGE=$/m);
   assert.match(productionCompose, /postgres:17-bookworm@sha256:<digest>/);
   assert.match(productionEnv, /postgres:17-bookworm@sha256:<64-hex-digest>/);
-  const releaseManifest = {
+  const fallbackManifest = {
     QUEST_FRONTEND_IMAGE: `ghcr.io/questesports/quest-frontend@sha256:${"a".repeat(64)}`,
     QUEST_BACKEND_IMAGE: `ghcr.io/questesports/quest-backend@sha256:${"b".repeat(64)}`,
     POSTGRES_IMAGE: `postgres:17-bookworm@sha256:${"c".repeat(64)}`,
   };
+  const releaseManifest = Object.fromEntries(
+    imageVariables.map((variable) => [variable, process.env[variable] || fallbackManifest[variable]]),
+  );
   for (const variable of imageVariables) {
     assert.match(
       releaseManifest[variable],
