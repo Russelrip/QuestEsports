@@ -773,3 +773,235 @@ test("a missing ticket is a 404 rather than a silent no-op", async () => {
     restore();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Event configuration.
+//
+// Everything a buyer is later charged, and every seat that can be sold, comes
+// from this validation. A bad price or capacity accepted here is not caught
+// downstream -- the order path trusts the event row -- so each rule is asserted
+// rather than covered incidentally by one happy-path save.
+// ---------------------------------------------------------------------------
+
+const HOUR = 3_600_000;
+const eventInput = (over = {}) => ({
+  seriesId: "series-1",
+  title: "Grand Finals",
+  slug: "finals-2026",
+  description: "The finals.",
+  venue: "Colombo",
+  status: "on_sale",
+  capacity: 100,
+  maxTicketsPerOrder: 10,
+  currency: "LKR",
+  singlePrice: 500,
+  pairPrice: 800,
+  paymentMethods: ["payhere"],
+  bankTransferReviewMinutes: 60,
+  salesStartAt: new Date(Date.now() + HOUR).toISOString(),
+  salesEndAt: new Date(Date.now() + 2 * HOUR).toISOString(),
+  startsAt: new Date(Date.now() + 3 * HOUR).toISOString(),
+  endsAt: new Date(Date.now() + 4 * HOUR).toISOString(),
+  ...over,
+});
+
+// A save that would succeed: series exists, slug is free, nothing reserved.
+const savePrisma = ({ existing = null, reserved = 0 } = {}) => {
+  const writes = [];
+  return {
+    writes,
+    prisma: {
+      ticketEvent: {
+        findUnique: async () => existing,
+        findFirst: async () => null,
+        create: async ({ data }) => { writes.push(data); return { id: "event-1", ...data }; },
+        update: async ({ data }) => { writes.push(data); return { id: "event-1", ...data }; },
+      },
+      eventSeries: { findUnique: async () => ({ id: "series-1" }) },
+      ticketOrder: {
+        aggregate: async () => ({ _sum: { quantity: reserved, total: 0 } }),
+        groupBy: async () => [],
+      },
+      ticket: { groupBy: async () => [] },
+      // getEventStats passes an ARRAY of promises; saveAdminEvent passes a
+      // callback only when there is audit context.
+      $transaction: async (work) => (typeof work === "function" ? work({}) : Promise.all(work)),
+    },
+  };
+};
+
+const rejectsSave = async (service, over, predicate, label) => {
+  await assert.rejects(
+    service.saveAdminEvent({ body: eventInput(over) }),
+    predicate,
+    label,
+  );
+};
+
+test("event capacity and per-order limits are bounded on both sides", async () => {
+  const { prisma } = savePrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    // Zero capacity sells nothing; a million-plus is a typo, not an arena.
+    for (const [label, over] of [
+      ["zero capacity", { capacity: 0 }],
+      ["capacity over one million", { capacity: 1_000_001 }],
+      ["zero per-order limit", { maxTicketsPerOrder: 0 }],
+      ["per-order limit over 100", { maxTicketsPerOrder: 101 }],
+    ]) {
+      await rejectsSave(service, over, (e) => e.statusCode === 400 && /capacity or order limit/i.test(e.message), label);
+    }
+  } finally {
+    restore();
+  }
+});
+
+test("a currency that is not a three-letter code is refused", async () => {
+  const { prisma } = savePrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    for (const currency of ["L", "LKRR", "12A", "", "L K"]) {
+      await rejectsSave(service, { currency }, (e) => e.statusCode === 400 && /three-letter/i.test(e.message), currency);
+    }
+    // Lowercase is not a rejection: the value is upper-cased first, so an admin
+    // typing "lkr" saves the same event as one typing "LKR".
+    await service.saveAdminEvent({ body: eventInput({ currency: "lkr" }) });
+  } finally {
+    restore();
+  }
+});
+
+test("the sales window must end after it starts and before doors open", async () => {
+  const { prisma } = savePrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    const cases = [
+      ["sales end before they start", { salesEndAt: new Date(Date.now() + HOUR / 2).toISOString() }],
+      ["sales end after the event begins", { salesEndAt: new Date(Date.now() + 3.5 * HOUR).toISOString() }],
+      ["event begins before sales start", { startsAt: new Date(Date.now() + HOUR / 2).toISOString() }],
+    ];
+    for (const [label, over] of cases) {
+      // Selling a ticket for a match that already started is worse than
+      // refusing a save.
+      await rejectsSave(service, over, (e) => e.statusCode === 400 && /sales must end/i.test(e.message), label);
+    }
+  } finally {
+    restore();
+  }
+});
+
+test("an unknown event status is refused", async () => {
+  const { prisma } = savePrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    await rejectsSave(service, { status: "live" }, (e) => e.statusCode === 400 && /status is invalid/i.test(e.message));
+  } finally {
+    restore();
+  }
+});
+
+test("bank transfer cannot be offered without an account to pay into", async () => {
+  const { prisma } = savePrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    await rejectsSave(
+      service,
+      { paymentMethods: ["bank_transfer"], bankName: "Bank", bankAccountName: "Quest", bankAccountNumber: "" },
+      (e) => e.statusCode === 400 && /bank account details/i.test(e.message),
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("at least one recognised payment method is required", async () => {
+  const { prisma } = savePrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    for (const paymentMethods of [[], ["crypto"], ["", null]]) {
+      await rejectsSave(service, { paymentMethods }, (e) => e.statusCode === 400 && /payment method/i.test(e.message), JSON.stringify(paymentMethods));
+    }
+  } finally {
+    restore();
+  }
+});
+
+test("oversized event text is refused rather than silently truncated", async () => {
+  const { prisma } = savePrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    for (const [label, over] of [
+      ["title over 200", { title: "a".repeat(201) }],
+      ["venue over 300", { venue: "a".repeat(301) }],
+      ["description over 10k", { description: "a".repeat(10_001) }],
+    ]) {
+      await rejectsSave(service, over, (e) => e.statusCode === 400 && /exceed the allowed length/i.test(e.message), label);
+    }
+  } finally {
+    restore();
+  }
+});
+
+test("an entrance fee must be attached to a LAN event that exists", async () => {
+  const { prisma } = savePrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    await rejectsSave(service, { seriesId: "" }, (e) => e.statusCode === 400 && /choose the lan event/i.test(e.message));
+  } finally {
+    restore();
+  }
+
+  const missingSeries = savePrisma();
+  missingSeries.prisma.eventSeries.findUnique = async () => null;
+  const second = load(missingSeries.prisma);
+  try {
+    await assert.rejects(
+      second.module.saveAdminEvent({ body: eventInput() }),
+      (e) => e.statusCode === 400 && /lan event was not found/i.test(e.message),
+    );
+  } finally {
+    second.restore();
+  }
+});
+
+test("capacity cannot be cut below tickets already reserved or paid", async () => {
+  const existing = { id: "event-1", seriesId: "series-1", capacity: 100 };
+  const { prisma } = savePrisma({ existing, reserved: 40 });
+  const { module: service, restore } = load(prisma);
+  try {
+    // Shrinking under the reserved count would oversell retroactively: the
+    // tickets are already sold and the seats would no longer exist.
+    await assert.rejects(
+      service.saveAdminEvent({ eventId: "event-1", body: eventInput({ capacity: 30 }) }),
+      (e) => e.statusCode === 409 && /cannot be lower/i.test(e.message),
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("capacity may be cut down to exactly the reserved count", async () => {
+  const existing = { id: "event-1", seriesId: "series-1", capacity: 100 };
+  const { writes, prisma } = savePrisma({ existing, reserved: 40 });
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.saveAdminEvent({ eventId: "event-1", body: eventInput({ capacity: 40 }) });
+    // The boundary is inclusive: 40 reserved seats still fit in 40.
+    assert.equal(writes[0].capacity, 40);
+  } finally {
+    restore();
+  }
+});
+
+test("saving a new event that does not exist is a 404, not a silent create", async () => {
+  const { prisma } = savePrisma({ existing: null });
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.saveAdminEvent({ eventId: "missing", body: eventInput() }),
+      (e) => e.statusCode === 404,
+    );
+  } finally {
+    restore();
+  }
+});
