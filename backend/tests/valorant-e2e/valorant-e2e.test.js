@@ -69,7 +69,7 @@ test.after(stopAll);
 test(
   "full VALORANT journey through Quest routes",
   { skip: missingEnv.length ? `missing E2E env contract: ${missingEnv.join(", ")}` : false },
-  async (t) => {
+  async (_t) => {
     // E2E_PLAYER_A/E2E_PLAYER_B are JSON strings in the env contract (README);
     // both discover and series create expect { name, tag } objects.
     const playerA = JSON.parse(process.env.E2E_PLAYER_A);

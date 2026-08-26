@@ -13,13 +13,31 @@ echo "1) FastAPI health (must be 200, unauthenticated):"
 curl --fail --silent "$FASTAPI_BASE/api/v1/health"
 echo
 
-echo "2) FastAPI domain route rejects a missing token (expect 401):"
+echo "2) FastAPI domain route auth gate:"
+# The upstream deliberately bypasses `require_service_token` when APP_ENV is
+# `local` or `test` (a documented seam so audit persistence is exercisable
+# without HMAC), and docker-compose.local.yml sets APP_ENV=local. This script
+# was written for a shared test project where APP_ENV is NOT local, so a bare
+# `expect 401` fails against the very stack it is meant to smoke. Read the
+# environment from the health route and assert what that environment promises.
+APP_ENV="$(curl --silent "$FASTAPI_BASE/api/v1/health" | sed -n 's/.*"env":"\([^"]*\)".*/\1/p')"
 STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' "$FASTAPI_BASE/api/v1/teams")"
-if [[ "$STATUS" != "401" ]]; then
-  echo "Unexpected status for unauthenticated domain route: $STATUS (expected 401)" >&2
-  exit 1
-fi
-echo "  ok ($STATUS)"
+case "$APP_ENV" in
+  local|test)
+    if [[ "$STATUS" != "200" ]]; then
+      echo "Unexpected status for domain route in APP_ENV=$APP_ENV: $STATUS (expected 200; the token gate is bypassed here)" >&2
+      exit 1
+    fi
+    echo "  ok ($STATUS; token gate intentionally bypassed in APP_ENV=$APP_ENV)"
+    ;;
+  *)
+    if [[ "$STATUS" != "401" ]]; then
+      echo "Unexpected status for unauthenticated domain route in APP_ENV=${APP_ENV:-unknown}: $STATUS (expected 401)" >&2
+      exit 1
+    fi
+    echo "  ok ($STATUS)"
+    ;;
+esac
 
 echo "3) Quest liveness (expect 200):"
 curl --fail --silent "$QUEST_BASE/api/health/live" > /dev/null

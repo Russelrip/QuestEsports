@@ -80,6 +80,9 @@ export type TournamentResult = {
 
 export type TournamentResults = {
   tournament: { slug: string; title: string };
+  // True when the backend capped the page. The list is newest-first, so the
+  // matches missing are the oldest ones.
+  truncated?: boolean;
   results: TournamentResult[];
 };
 

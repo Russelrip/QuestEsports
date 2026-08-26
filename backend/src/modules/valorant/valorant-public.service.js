@@ -261,6 +261,13 @@ const getPublicSeries = async (seriesId) => {
   };
 };
 
+// How many completed series one page of results returns. A bound rather than
+// "every series ever": this is an unauthenticated route and an unbounded
+// findMany over a long-running event ships an arbitrarily large payload on every
+// cache miss. Matches the take-limits modules/matches/match.service.js already
+// applies to its public lists.
+const RESULTS_PAGE_SIZE = 100;
+
 // The results list for one tournament. Deliberately a SUMMARY: it carries map
 // scores but no scoreboards, because a 16-team event would otherwise ship a few
 // hundred player rows to render a list of scorelines.
@@ -277,6 +284,7 @@ const getTournamentResults = async (slug) => {
   const series = await prisma.questValorantSeries.findMany({
     where: { tournamentId: tournament.id, status: { in: PUBLIC_SERIES_STATUSES } },
     orderBy: [{ playedAt: "desc" }],
+    take: RESULTS_PAGE_SIZE,
     select: {
       ...seriesSelect,
       games: {
@@ -305,6 +313,10 @@ const getTournamentResults = async (slug) => {
 
   return {
     tournament: { slug: tournament.slug, title: tournament.title },
+    // Stated rather than left to be inferred from the array length: a reader who
+    // cannot tell a complete list from a truncated one will report the missing
+    // matches as a bug.
+    truncated: series.length === RESULTS_PAGE_SIZE,
     results: series.map((entry) => {
       const games = entry.games.map(mapGame);
       const tally = mapsWon(games);

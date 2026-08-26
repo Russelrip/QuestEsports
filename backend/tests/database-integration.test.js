@@ -328,7 +328,6 @@ test("operation ledger transitions and match projection upsert work against Post
   const mapperPath = path.join(__dirname, "../src/modules/valorant/valorant.mapper.js");
   const envPath = path.join(__dirname, "../src/config/env.js");
   const httpErrorPath = path.join(__dirname, "../src/lib/http-error.js");
-  const operationId = crypto.randomUUID();
   let opRowId;
 
   try {

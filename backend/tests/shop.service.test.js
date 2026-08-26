@@ -235,3 +235,130 @@ test("public order lookup expires only the matching stale order", async () => {
     assert.equal(reads, 2);
   } finally { restore(); }
 });
+
+// ---------------------------------------------------------------------------
+// Inventory reservation.
+//
+// Stock is decremented with a guarded compare-and-swap rather than a read
+// followed by a write, so two simultaneous checkouts cannot both pass the same
+// stock check. The guard is the product: these cases pin its where-clause,
+// because a decrement that silently loses a condition oversells stock without
+// erroring anywhere.
+// ---------------------------------------------------------------------------
+
+const checkoutBody = (over = {}) => ({
+  email: "player@example.com",
+  firstName: "Quest",
+  lastName: "Player",
+  phone: "0712345678",
+  address: "1 Main Street",
+  city: "Colombo",
+  expectedTotal: 7500,
+  expectedCurrency: "LKR",
+  items: [{ variantId: "variant-1", quantity: 2 }],
+  ...over,
+});
+
+// Enough of the write surface for checkout to run to completion.
+const checkoutPrisma = ({ variantRows = variants, reservedCount = 1 } = {}) => {
+  const seen = { updateArgs: [], orders: [], items: 0, payments: 0 };
+  const tx = {
+    productVariant: {
+      findMany: async () => variantRows,
+      updateMany: async (args) => {
+        seen.updateArgs.push(args);
+        return { count: reservedCount };
+      },
+    },
+    merchandiseOrder: {
+      create: async ({ data }) => { seen.orders.push(data); return { ...data, status: "pending_payment" }; },
+    },
+    merchandiseOrderItem: { createMany: async ({ data }) => { seen.items += data.length; return { count: data.length }; } },
+    paymentTransaction: { create: async ({ data }) => { seen.payments += 1; return data; } },
+  };
+  return {
+    seen,
+    prisma: {
+      productVariant: { findMany: async () => variantRows },
+      $transaction: async (callback) => callback(tx),
+    },
+  };
+};
+
+test("stock is reserved by a guarded decrement, not a read-then-write", async () => {
+  const { seen, prisma } = checkoutPrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.createMerchandiseOrder({ body: checkoutBody() });
+    assert.equal(seen.updateArgs.length, 1);
+    const { where, data } = seen.updateArgs[0];
+
+    // `stock: { gte: quantity }` inside the UPDATE is what makes two concurrent
+    // checkouts safe. Without it, both could read stock 2 and both decrement.
+    assert.deepEqual(where.stock, { gte: 2 });
+    assert.deepEqual(data.stock, { decrement: 2 });
+
+    // The same statement re-checks everything the price quote depended on, so a
+    // variant deactivated or repriced mid-checkout fails the reservation rather
+    // than selling at the old price.
+    assert.equal(where.id, "variant-1");
+    assert.equal(where.isActive, true);
+    assert.equal(where.price, 3500);
+    assert.equal(where.product.status, "active");
+    assert.equal(where.product.currency, "LKR");
+  } finally { restore(); }
+});
+
+test("a reservation that matches no row is refused instead of overselling", async () => {
+  // count: 0 is what the database returns when stock ran out between the quote
+  // and the decrement — the concurrent-checkout case.
+  const { seen, prisma } = checkoutPrisma({ reservedCount: 0 });
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.createMerchandiseOrder({ body: checkoutBody() }),
+      (error) => error.statusCode === 409 && /enough stock/i.test(error.message)
+    );
+    // The order must not exist if its stock was never reserved.
+    assert.equal(seen.orders.length, 0);
+    assert.equal(seen.items, 0);
+    assert.equal(seen.payments, 0);
+  } finally { restore(); }
+});
+
+test("a variant with unlimited stock is not decremented", async () => {
+  const unlimited = [{ ...variants[0], stock: null }];
+  const { seen, prisma } = checkoutPrisma({ variantRows: unlimited });
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.createMerchandiseOrder({ body: checkoutBody() });
+    // null means "not stock tracked". Decrementing it would write negative
+    // stock onto a variant that deliberately has none.
+    assert.equal(seen.updateArgs.length, 0);
+    assert.equal(seen.orders.length, 1);
+  } finally { restore(); }
+});
+
+test("every line of a multi-variant order is reserved before the order exists", async () => {
+  const two = [
+    variants[0],
+    { ...variants[0], id: "variant-2", name: "Large", sku: "QUEST-L", stock: 1 },
+  ];
+  const { seen, prisma } = checkoutPrisma({ variantRows: two });
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.createMerchandiseOrder({
+      body: checkoutBody({
+        expectedTotal: 11000,
+        items: [
+          { variantId: "variant-1", quantity: 2 },
+          { variantId: "variant-2", quantity: 1 },
+        ],
+      }),
+    });
+    assert.equal(seen.updateArgs.length, 2);
+    assert.deepEqual(seen.updateArgs.map((a) => a.where.id), ["variant-1", "variant-2"]);
+    assert.deepEqual(seen.updateArgs.map((a) => a.data.stock.decrement), [2, 1]);
+    assert.equal(seen.items, 2);
+  } finally { restore(); }
+});
