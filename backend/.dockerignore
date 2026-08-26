@@ -24,9 +24,11 @@ Thumbs.db
 *.swp
 *.swo
 
-**/*credential*
-**/*credentials*
-**/*secret*
-**/*secrets*
+**/*credential*.json
+**/*credentials*.json
+**/*secret*.json
+**/*secrets*.json
+**/credentials/
+**/secrets/
 *.pem
 *.key

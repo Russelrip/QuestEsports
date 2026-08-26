@@ -137,7 +137,7 @@ const start = async () => {
   startRankingScheduler();
   startDataHygieneMaintenance();
 
-  server = app.listen(env.PORT);
+  server = app.listen(env.PORT, "0.0.0.0");
 
   server.on("listening", () => {
     isServerListening = true;

@@ -40,8 +40,6 @@ RUN apt-get update \
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV HOST=0.0.0.0
-ENV HOSTNAME=0.0.0.0
 
 COPY --from=production-dependencies /app/node_modules ./node_modules
 COPY --chown=1001:1001 src ./src
