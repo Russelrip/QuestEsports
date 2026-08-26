@@ -1,0 +1,135 @@
+# Immutable Quest production topology.
+#
+# The image variables are populated by the signed release manifest. They are
+# deliberately required: this file must never silently fall back to a mutable
+# tag or build application source on the VPS.
+
+name: quest-prod
+
+services:
+  frontend:
+    image: ${QUEST_FRONTEND_IMAGE:?QUEST_FRONTEND_IMAGE must be supplied by the release manifest}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    read_only: true
+    user: "1001:1001"
+    tmpfs:
+      - /tmp
+    stop_grace_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:3000/health').then((response) =>
+          process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks:
+      app: {}
+
+  backend:
+    image: ${QUEST_BACKEND_IMAGE:?QUEST_BACKEND_IMAGE must be supplied by the release manifest}
+    env_file:
+      - path: /etc/quest-esports/quest.production.env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: "5001"
+      UPLOAD_ROOT: /srv/quest-esports/uploads
+      PRIVATE_UPLOAD_ROOT: /srv/quest-esports/private
+      NODE_EXTRA_CA_CERTS: /run/secrets/quest-private-ca.crt
+      VALORANT_INTERNAL_BASE_URL: https://valorant-platform:8000
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5001:5001"
+    volumes:
+      - /srv/quest-esports/uploads:/srv/quest-esports/uploads
+      - /srv/quest-esports/private:/srv/quest-esports/private
+      - /etc/quest-esports/tls/quest-private-ca.crt:/run/secrets/quest-private-ca.crt:ro
+    read_only: true
+    user: "1001:1001"
+    tmpfs:
+      - /tmp
+    stop_grace_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:5001/api/health/ready').then((response) =>
+          process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks:
+      app: {}
+      database: {}
+      quest-shared:
+        aliases:
+          - quest-backend
+
+  postgres:
+    # The release manifest must resolve this to postgres:17-bookworm@sha256:<digest>.
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be supplied by the release manifest (PostgreSQL 17 Bookworm digest)}
+    environment:
+      POSTGRES_DB: quest
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command:
+      - postgres
+      - -c
+      - listen_addresses=*
+      - -c
+      - ssl=on
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - ssl_ca_file=/run/postgresql/tls/ca.crt
+      - -c
+      - ssl_cert_file=/run/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/run/postgresql/tls/server.key
+    volumes:
+      - /srv/quest-esports/postgres/17/data:/var/lib/postgresql/data
+      - /srv/quest-esports/postgres/init:/docker-entrypoint-initdb.d:ro
+      - /etc/quest-esports/postgres-healthcheck.sh:/usr/local/bin/quest-postgres-healthcheck:ro
+      - /etc/quest-esports/tls/quest-private-ca.crt:/run/postgresql/tls/ca.crt:ro
+      - /etc/quest-esports/tls/quest-postgres.crt:/run/postgresql/tls/server.crt:ro
+      - /etc/quest-esports/tls/quest-postgres.key:/run/postgresql/tls/server.key:ro
+    stop_grace_period: 40s
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/local/bin/quest-postgres-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      database:
+        aliases:
+          - quest-postgres
+      quest-shared:
+        aliases:
+          - quest-postgres
+
+networks:
+  app:
+    internal: true
+  database:
+    internal: true
+  quest-shared:
+    name: quest-shared
+    external: true

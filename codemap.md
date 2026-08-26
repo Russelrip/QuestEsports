@@ -27,10 +27,19 @@ The API routes and aggregate definitions are mapped in
 - `mobile-admin/` — private Android operations client.
 - `docs/` — API, operational, deployment, recovery, and security contracts.
 - `ops/` — production backup, restore, retention, and freshness tooling.
+- `ops/docker/` — immutable production Compose topology, PostgreSQL 17 role/TLS
+  bootstrap, and durable upload/database mount contracts. The production
+  project is fixed as `quest-prod`; its pre-created external network is
+  `quest-shared`.
 
 PostgreSQL and uploads are backend/operations concerns. Public event responses
 contain only published event and child projections; captain/contact data,
 payment evidence, admin holds, and admin notes remain private admin concerns.
+
+The production Compose boundary keeps Quest `public` schema access separate from
+the sibling VALORANT `valorant` schema: Quest runtime/migrator and VALORANT
+runtime/migrator roles are bootstrapped independently, while PostgreSQL TLS is
+validated against the stable `quest-postgres` alias.
 
 ## Documentation links
 
