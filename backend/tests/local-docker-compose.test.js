@@ -144,3 +144,19 @@ test("the job worker does not poll the database faster than its egress budget al
     `JOB_WORKER_POLL_MS default is ${poll[1]}ms; anything under 15000 spends egress on an idle queue`,
   );
 });
+
+test("the container entrypoint does not use the host-loopback database guard", () => {
+  const dockerfile = read("ops/docker/backend.local.Dockerfile");
+  const scripts = JSON.parse(read("backend/package.json")).scripts;
+
+  // `npm run dev` routes through scripts/with-local-db.js, which pins the HOST
+  // loopback mapping (127.0.0.1:55432) so a developer on the host cannot reach
+  // hosted Supabase by accident. Inside the container nothing listens there --
+  // Postgres is the `postgres` compose service -- and compose already sets
+  // DATABASE_URL, so running `dev` here exits 69 before the server starts.
+  // That regressed once already, silently, because nothing asserted it.
+  assert.match(dockerfile, /CMD \["npm", "run", "dev:container"\]/);
+  assert.doesNotMatch(dockerfile, /CMD \["npm", "run", "dev"\]/);
+  assert.equal(scripts["dev:container"], "nodemon src/server.js");
+  assert.doesNotMatch(scripts["dev:container"], /with-local-db/);
+});
