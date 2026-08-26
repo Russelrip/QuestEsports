@@ -234,7 +234,7 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
 
 test("production environment template contains no credential values", () => {
   for (const line of productionEnv.split("\n")) {
-    if (/^(?:AUTH_ENCRYPTION_KEY|SESSION_SECRET|VALORANT_SERVICE_SECRET|POSTGRES_SUPERUSER_PASSWORD)=/.test(line)) {
+    if (/^(?:AUTH_ENCRYPTION_KEY|SESSION_SECRET|VALORANT_SERVICE_SECRET|POSTGRES_PASSWORD)=/.test(line)) {
       assert.equal(line.split("=", 2)[1], "", `${line} must remain blank`);
     }
   }
