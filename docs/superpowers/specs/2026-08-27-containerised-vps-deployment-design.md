@@ -1,7 +1,7 @@
 # Containerised VPS Deployment Design
 
 **Date:** 2026-08-27
-**Status:** Approved architecture with amendments; implementation pending spec review
+**Status:** Changes requested against ccf6727; implementation blocked pending resolution
 
 ## Goal
 
@@ -46,6 +46,37 @@ the source database may return a quota-related 402.
 - Application and database secrets are runtime configuration. No secret is
   placed in an image, build argument, release bundle, or repository.
 
+### Privileged access
+
+The deployment account `deploy` currently holds exactly one sudo grant:
+
+```text
+(root) NOPASSWD: /usr/bin/systemctl restart valorant-platform valorant-updater valorant-discord-bot
+```
+
+Nothing in Phases 1–3 is possible under that grant. Installing Docker,
+creating `/srv/quest-esports/postgres/17/data`, `/opt/quest-esports/`, and
+`/etc/quest-esports/`, adding systemd units, and changing firewall and Nginx
+configuration all require root. The design must therefore name two distinct
+actors before implementation begins:
+
+1. **Host bootstrap actor.** A root-capable operator performs one-time host
+   preparation (Docker installation, directory and ownership creation, systemd
+   units, firewall, Nginx). This is owner-performed maintenance, not part of
+   the automated release path, and is recorded as an explicit runbook step.
+2. **Release actor.** CI connects as `deploy`, so `deploy` must be able to run
+   the release operation unattended after bootstrap.
+
+The privilege granted to the release actor is a security decision that must be
+made deliberately here rather than discovered during implementation. Membership
+of the `docker` group is equivalent to root on this host and therefore
+re-grants, to the CI-reachable account, the privilege the current sudoers
+policy deliberately withholds. The preferred form is a narrow `NOPASSWD`
+sudoers entry for a single fixed, root-owned, non-writable release script,
+with no wildcard arguments. If the `docker` group is chosen instead, the
+design must state that CI compromise equals host compromise and accept it
+explicitly.
+
 ### Future deployment path
 
 Each release is a directory named by the source commit, containing the Compose
@@ -64,6 +95,23 @@ the currently deployed digest running and do not build untrusted or
 unreproducible images on the VPS. A future break-glass procedure may be added
 only if it reproduces the same pinned build, tests, signing, SBOM/provenance,
 and registry publication guarantees; it is not part of this initial design.
+
+### Accepted tradeoff: loss of edge delivery
+
+Moving the frontend off Vercel replaces global edge delivery with a single
+origin in France, while the audience is primarily in Sri Lanka. Every static
+asset, document, and navigation currently served from a nearby edge location
+will instead cross that distance from one host, and the VPS absorbs traffic
+Vercel previously absorbed.
+
+This is a real cost of consolidation, not an oversight, and the design accepts
+it in exchange for a single operational surface, removal of a third provider,
+and the elimination of the Vercel/VPS split-brain in the release path. It is
+recorded here so it is a decision rather than a discovery after cutover.
+
+If measured latency proves unacceptable, the supported remedies are a CDN in
+front of the host origin or retaining Vercel for the frontend only. Both are
+compatible with this design; neither is in initial scope.
 
 ## Target topology
 
@@ -99,6 +147,20 @@ with a private CA and a certificate valid for `postgres` and use
 `sslmode=verify-full`, or obtain an explicit, tested application/security
 exception for the trusted internal network. It must not silently add
 `sslmode=require` without configuring server-side TLS.
+
+This decision must be resolved separately for each of the two consumers,
+because they do not share a driver or a URL syntax:
+
+- **Quest** connects through Prisma and expresses TLS as `sslmode=`, with the
+  CA supplied by `sslrootcert=`.
+- **VALORANT** connects through SQLAlchemy/asyncpg as
+  `postgresql+asyncpg://...?ssl=require`. asyncpg does not accept `sslmode` at
+  all, and verify-full behaviour is configured through an SSL context rather
+  than a URL parameter.
+
+A single agreed "TLS mode" phrased only in `libpq` terms is therefore not
+implementable on the VALORANT side. Both spellings, and the CA distribution
+mechanism for each, must be recorded and tested during the rehearsal.
 
 ## Images
 
@@ -227,13 +289,30 @@ retention tooling remains the operational foundation. Its age encryption,
 SHA-256 sidecars, two-pass upload snapshot, `flock`, destructive restore
 confirmations, and freshness checks are preserved.
 
-The new off-site destination must be **non-Supabase**: an rclone-supported B2,
-S3, R2, or equivalent remote. Supabase Storage is deliberately excluded due to
-the project's 1 GB free storage limit, the existing egress overage, and the
-undesirable coupling of disaster recovery to the provider being migrated away
-from. No new backup implementation is required merely to change the remote;
-the protected `BACKUP_RCLONE_REMOTE` and `RCLONE_CONFIG` values change after
-the new remote is created and tested.
+The current off-site destination is **already non-Supabase**. The configured
+rclone remote is Google Drive (`type = drive`), writing to
+`quest-esports-v2/production`, and the daily unit is uploading successfully.
+Supabase Storage was never the destination, so "move off Supabase Storage" is
+not a reason to change anything and must not be used to justify this phase.
+
+The actual reasons to move to an rclone-supported B2, S3, or R2 remote are:
+
+- **No immutability.** Google Drive offers no object lock or write-once
+  retention, so anything able to write the backups can also delete them. This
+  is the ransomware-resistance property the rest of this section relies on,
+  and it is currently absent rather than merely "recommended".
+- **Credential fragility.** The remote authenticates with a refreshable OAuth
+  token that can be revoked or expire out of band, with failure surfacing only
+  through the freshness check.
+- **No native checksum/retention semantics** comparable to object storage.
+
+Supabase Storage remains excluded on its own merits: the 1 GB free limit, the
+existing egress overage, and the undesirable coupling of disaster recovery to
+the provider being migrated away from.
+
+No new backup implementation is required merely to change the remote; the
+protected `BACKUP_RCLONE_REMOTE` and `RCLONE_CONFIG` values change after the
+new remote is created and tested.
 
 The existing destination remains configured until all of the following are
 true:
@@ -256,7 +335,40 @@ recommended for ransomware resistance.
 Before production cutover, the source PostgreSQL major version must be
 recorded explicitly. A full production-shaped archive must be restored with
 `ops/restore-production-backup.sh` against a PostgreSQL 17 instance, not merely
-checked with `pg_restore --list`. The rehearsal must cover:
+checked with `pg_restore --list`.
+
+### Client version pinning
+
+Recording the *server* version is not sufficient, because the VPS cannot
+currently be trusted to select a matching *client*. The host has PostgreSQL
+client packages 16, 17, and 18 installed simultaneously, and `pg_wrapper`
+currently resolves them inconsistently:
+
+```text
+psql     -> 18.6
+pg_dump  -> 16.15
+```
+
+A `pg_dump` older than the server it is dumping refuses to run, and a
+`pg_restore` chosen by accident is how a rehearsal appears to fail for
+reasons unrelated to the design. The rehearsal and the cutover must therefore
+run `pg_dump`/`pg_restore` from a version-pinned `postgres:17` container image
+rather than from whatever the host `PATH` resolves to, or invoke the absolute
+versioned binary path explicitly. The chosen mechanism is recorded in the
+runbook.
+
+### Stray cluster removal
+
+The host also runs an empty PostgreSQL 16 cluster on `127.0.0.1:5432`, and has
+a `postgresql-18` server package installed with no cluster. Neither is used by
+Quest or VALORANT; both currently point at Supabase. The containerised
+PostgreSQL 17 publishes no host port, so there is no port conflict, but an
+idle local server listening on the conventional port is an invitation to
+restore into the wrong database during a maintenance window. Both must be
+stopped, disabled, and removed before cutover, and their absence confirmed as
+a Phase 0 checklist item.
+
+The rehearsal must cover:
 
 - `public` and `valorant` schema restoration;
 - role/grant/bootstrap recreation;
@@ -270,8 +382,27 @@ The rehearsal must complete before the final cutover window is scheduled.
 
 ## Operational boundaries
 
-- Nginx preserves SSE buffering-off and read/send timeouts longer than the
-  backend's 25-second heartbeat.
+- SSE settings must be **set explicitly, not preserved**. The current
+  `quest-api` server block contains no `proxy_buffering` or `proxy_read_timeout`
+  directive at all. Buffering-off works today only because the application
+  sends `X-Accel-Buffering: no` from
+  `backend/src/modules/realtime/realtime.controller.js`, and the stream
+  survives only because Nginx's default 60-second read timeout happens to
+  exceed the 25-second heartbeat in the same file. Nothing pins either
+  property. The new configuration must state `proxy_buffering off` and a
+  `proxy_read_timeout`/`proxy_send_timeout` comfortably above the heartbeat
+  interval, so the invariant does not depend on an application header and a
+  compiled-in default coinciding.
+- The backend must bind `127.0.0.1`, not `0.0.0.0`. It currently listens on
+  all interfaces and is protected by the host firewall alone; the loopback
+  bind in the target topology is a deliberate tightening and must not be
+  reverted in the name of preserving existing behaviour.
+- `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` appear in both the application
+  environment and `/etc/quest-esports-backup.env`. Both must resolve to the
+  same host bind mounts after containerisation. If the application writes to a
+  container path while the backup unit reads the host path, backups continue to
+  succeed while archiving an empty directory, and the loss is discovered only
+  at restore.
 - `TRUST_PROXY`, HTTPS origins, upload limits, OAuth callbacks, payment
   callbacks, and private-upload isolation retain their existing production
   invariants.
@@ -290,9 +421,28 @@ The rehearsal must complete before the final cutover window is scheduled.
 - Verify Supabase Egress breakdown and source database availability.
 - Confirm VPS CPU, RAM, disk, firewall, DNS, IPv4/IPv6, and TLS prerequisites.
 - Record source PostgreSQL version and current schema/role state.
-- Create the non-Supabase rclone remote and dual-write/test it without removing
-  the existing destination.
+- Create the new rclone remote and dual-write/test it without removing the
+  existing Google Drive destination.
 - Build production images and run the complete PostgreSQL 17 restore rehearsal.
+
+The following were verified against the running host on 2026-08-27 and are
+**not** met. Each is a prerequisite, not an implementation detail:
+
+- **Privileged actor.** `deploy` cannot perform host bootstrap. Confirm who
+  does, per the *Privileged access* decision above.
+- **Docker is not installed.** The host has no `docker` binary. Installation is
+  root-only bootstrap work.
+- **No swap is configured.** The host has 7.8 GiB RAM and zero swap, and is
+  about to gain a Next.js runtime and PostgreSQL alongside the existing
+  backend and three VALORANT units. Configure swap and set explicit PostgreSQL
+  memory parameters rather than relying on container defaults sized for a
+  dedicated database host.
+- **IPv6 is only half-configured.** The host holds a global IPv6 address, but
+  the `quest-api` server block listens on `listen 443 ssl;` only, with no
+  `listen [::]:443`. Either complete IPv6 ingress or remove it from the
+  prerequisite list; it must not remain listed as satisfied when it is not.
+- **Stray PostgreSQL servers.** Remove the idle local PostgreSQL 16 cluster and
+  the clusterless `postgresql-18` package, per *Stray cluster removal* above.
 
 ### Phase 1 — Production image and Compose foundation
 
@@ -319,11 +469,11 @@ The rehearsal must complete before the final cutover window is scheduled.
 
 ### Phase 4 — Backup destination transition
 
-- Run daily encrypted backups to the new non-Supabase remote in parallel with
-  the existing destination.
+- Run daily encrypted backups to the new object-locked remote in parallel with
+  the existing Google Drive destination.
 - Complete an isolated restore drill and verify freshness/retention.
-- Retire the old destination only after owner approval and retained recovery
-  evidence.
+- Retire the Google Drive destination only after owner approval and retained
+  recovery evidence.
 
 ## Acceptance criteria
 
@@ -337,8 +487,21 @@ The rehearsal must complete before the final cutover window is scheduled.
   new databases.
 - The local Compose safeguards remain green and Prisma generated artifacts are
   not hidden by host-platform mounts.
-- Daily encrypted archives reach a non-Supabase rclone remote with matching
-  checksums and freshness evidence.
+- Daily encrypted archives reach an object-locked rclone remote with matching
+  checksums and freshness evidence, and the Google Drive destination is
+  retired only after a verified restore from the new remote.
+- The release actor's privilege is granted in the form chosen by the
+  *Privileged access* decision, and host bootstrap steps are recorded as
+  owner-performed runbook actions rather than assumed.
+- `pg_dump` and `pg_restore` run from a pinned PostgreSQL 17 client during the
+  rehearsal and cutover, and no idle local PostgreSQL server remains listening
+  on the host.
+- Nginx sets `proxy_buffering off` and read/send timeouts above the 25-second
+  heartbeat explicitly, verified by an SSE stream held open past that interval
+  without truncation.
+- The application and the backup unit resolve `UPLOAD_ROOT` and
+  `PRIVATE_UPLOAD_ROOT` to the same host paths, proven by a post-cutover
+  archive containing a file written through the running application.
 - A full archive has been restored successfully in isolation before cutover.
 - Supabase egress has been investigated before implementation/cutover, and
   quota-related 402 responses are not conflated with container failures.
