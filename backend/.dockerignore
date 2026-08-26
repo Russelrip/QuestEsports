@@ -24,10 +24,11 @@ Thumbs.db
 *.swp
 *.swo
 
-**/*credential*.json
-**/*credentials*.json
-**/*secret*.json
-**/*secrets*.json
+**/*credential*
+**/*credentials*
+**/*secret*
+**/*secrets*
+!src/lib/secret-box.js
 **/credentials/
 **/secrets/
 *.pem
