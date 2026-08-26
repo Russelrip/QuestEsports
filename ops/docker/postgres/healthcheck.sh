@@ -16,6 +16,8 @@ test -r "$ca_certificate"
 # PostgreSQL TLS handshake; the explicit checkhost keeps the SAN requirement
 # visible and prevents a CN-only certificate from being accepted by policy.
 openssl x509 -in "$certificate" -noout -checkhost quest-postgres >/dev/null
+openssl x509 -in "$certificate" -noout -ext subjectAltName |
+  grep -Eq 'DNS:quest-postgres([,[:space:]]|$)'
 pg_isready \
   -d "host=$host port=$port dbname=$database user=$user sslmode=verify-full sslrootcert=$ca_certificate" \
   >/dev/null
