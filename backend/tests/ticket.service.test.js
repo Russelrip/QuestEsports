@@ -299,3 +299,477 @@ test("a reissued ticket audits its QR version through the durable-audit sanitize
     restore();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Order creation and reservation release.
+//
+// This is the money path: it decides what a buyer is charged, whether an event
+// can be oversold, and when reserved capacity returns to the pool. Every guard
+// below fails open into either a wrong charge or a ticket that does not exist,
+// so each one is asserted on its own rather than through one happy-path case.
+// ---------------------------------------------------------------------------
+
+const ticketEvent = (over = {}) => ({
+  id: "event-1",
+  slug: "finals-2026",
+  title: "Grand Finals",
+  status: "on_sale",
+  salesStartAt: new Date(Date.now() - 86_400_000),
+  salesEndAt: new Date(Date.now() + 86_400_000),
+  singlePrice: 500,
+  pairPrice: 800,
+  currency: "LKR",
+  capacity: 100,
+  maxTicketsPerOrder: 10,
+  paymentMethods: ["payhere", "bank_transfer", "cash"],
+  bankName: "Bank",
+  bankAccountName: "Quest",
+  bankAccountNumber: "123",
+  ...over,
+});
+
+const buyer = {
+  email: "buyer@example.com",
+  firstName: "Ada",
+  lastName: "Lovelace",
+  phone: "+94770000000",
+};
+
+// Captures every write so a test can assert what was persisted, not merely
+// that the call returned.
+const orderPrisma = ({ event = ticketEvent(), reserved = 0 } = {}) => {
+  const writes = { orders: [], tickets: [], payments: [] };
+  const tx = {
+    ticketEvent: { findUnique: async () => event },
+    ticketOrder: {
+      aggregate: async () => ({ _sum: { quantity: reserved } }),
+      create: async ({ data }) => {
+        writes.orders.push(data);
+        return { ...data, status: "pending_payment" };
+      },
+    },
+    ticket: { createMany: async ({ data }) => { writes.tickets.push(...data); return { count: data.length }; } },
+    paymentTransaction: { create: async ({ data }) => { writes.payments.push(data); return data; } },
+  };
+  return { writes, prisma: { $transaction: async (work) => work(tx) } };
+};
+
+const orderBody = (over = {}) => ({
+  ...buyer,
+  quantity: 2,
+  paymentMethod: "bank_transfer",
+  expectedTotal: 800,
+  expectedCurrency: "LKR",
+  ...over,
+});
+
+test("a ticket order is priced by the server, not by the client's expected total", async () => {
+  const { writes, prisma } = orderPrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    const result = await service.createTicketOrder({
+      slug: "finals-2026",
+      body: orderBody(),
+      user: null,
+    });
+    // 2 tickets = one pair at 800, never 2 x 500.
+    assert.equal(result.order.total, 800);
+    assert.equal(writes.orders[0].total.toNumber(), 800);
+    assert.equal(writes.orders[0].pairCount, 1);
+    assert.equal(writes.orders[0].singleCount, 0);
+    // One ticket row per seat, each with its own number and sequence.
+    assert.equal(writes.tickets.length, 2);
+    assert.deepEqual(writes.tickets.map((t) => t.sequence), [1, 2]);
+    assert.equal(new Set(writes.tickets.map((t) => t.ticketNumber)).size, 2);
+    // The payment is recorded for exactly the server-computed amount.
+    assert.equal(writes.payments[0].amount.toNumber(), 800);
+    assert.equal(writes.payments[0].currency, "LKR");
+    assert.equal(writes.payments[0].purpose, "ticket_order");
+  } finally {
+    restore();
+  }
+});
+
+test("an order whose expected total does not match the server price is refused", async () => {
+  const { writes, prisma } = orderPrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    // A client that submits a total it prefers must not be charged it.
+    await assert.rejects(
+      service.createTicketOrder({
+        slug: "finals-2026",
+        body: orderBody({ expectedTotal: 1 }),
+        user: null,
+      }),
+      (error) => error.statusCode === 409 && /pricing changed/i.test(error.message),
+    );
+    // Nothing is persisted on a rejected price.
+    assert.equal(writes.orders.length, 0);
+    assert.equal(writes.tickets.length, 0);
+    assert.equal(writes.payments.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("an order in a different currency to the event is refused", async () => {
+  const { prisma } = orderPrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    // Same number, different currency, would otherwise charge 800 USD for an
+    // 800 LKR event.
+    await assert.rejects(
+      service.createTicketOrder({
+        slug: "finals-2026",
+        body: orderBody({ expectedCurrency: "USD" }),
+        user: null,
+      }),
+      (error) => error.statusCode === 409,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("capacity already reserved by other orders prevents an oversell", async () => {
+  // 99 of 100 reserved; a 2-ticket order would take it to 101.
+  const { writes, prisma } = orderPrisma({ reserved: 99 });
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.createTicketOrder({ slug: "finals-2026", body: orderBody(), user: null }),
+      (error) => error.statusCode === 409 && /no longer available/i.test(error.message),
+    );
+    assert.equal(writes.tickets.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("an order that exactly fills the remaining capacity is allowed", async () => {
+  const { writes, prisma } = orderPrisma({ reserved: 98 });
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.createTicketOrder({ slug: "finals-2026", body: orderBody(), user: null });
+    // The boundary must not be off by one in the cautious direction either.
+    assert.equal(writes.tickets.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("orders are refused outside the sales window and off sale", async () => {
+  const cases = [
+    ["draft status", ticketEvent({ status: "draft" })],
+    ["sales not started", ticketEvent({ salesStartAt: new Date(Date.now() + 3_600_000) })],
+    ["sales ended", ticketEvent({ salesEndAt: new Date(Date.now() - 3_600_000) })],
+  ];
+  for (const [label, event] of cases) {
+    const { prisma } = orderPrisma({ event });
+    const { module: service, restore } = load(prisma);
+    try {
+      await assert.rejects(
+        service.createTicketOrder({ slug: "finals-2026", body: orderBody(), user: null }),
+        (error) => error.statusCode === 409,
+        label,
+      );
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("a payment method the event does not offer is refused", async () => {
+  const { prisma } = orderPrisma({ event: ticketEvent({ paymentMethods: ["payhere"] }) });
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.createTicketOrder({
+        slug: "finals-2026",
+        body: orderBody({ paymentMethod: "cash" }),
+        user: null,
+      }),
+      (error) => error.statusCode === 409,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("bank transfer is refused when the event has no bank details to pay into", async () => {
+  const { prisma } = orderPrisma({ event: ticketEvent({ bankAccountNumber: null }) });
+  const { module: service, restore } = load(prisma);
+  try {
+    // 503 rather than 400: the buyer did nothing wrong, the event is
+    // misconfigured, and taking the money with nowhere to send it is worse.
+    await assert.rejects(
+      service.createTicketOrder({ slug: "finals-2026", body: orderBody(), user: null }),
+      (error) => error.statusCode === 503,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("an order above the per-order ticket limit is refused", async () => {
+  const { prisma } = orderPrisma({ event: ticketEvent({ maxTicketsPerOrder: 2 }) });
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.createTicketOrder({
+        slug: "finals-2026",
+        body: orderBody({ quantity: 4, expectedTotal: 1600 }),
+        user: null,
+      }),
+      (error) => error.statusCode === 400,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("incomplete or oversized buyer details are refused before anything is reserved", async () => {
+  const cases = [
+    ["missing email", { email: "" }],
+    ["malformed email", { email: "not-an-email" }],
+    ["missing first name", { firstName: "" }],
+    ["missing phone", { phone: "" }],
+    ["email over 254 chars", { email: `${"a".repeat(250)}@example.com` }],
+    ["name over 100 chars", { firstName: "a".repeat(101) }],
+  ];
+  for (const [label, over] of cases) {
+    const { writes, prisma } = orderPrisma();
+    const { module: service, restore } = load(prisma);
+    try {
+      await assert.rejects(
+        service.createTicketOrder({ slug: "finals-2026", body: orderBody(over), user: null }),
+        (error) => error.statusCode === 400,
+        label,
+      );
+      // Validation runs before the transaction, so capacity is never touched.
+      assert.equal(writes.orders.length, 0, label);
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("buyer details fall back to the signed-in user when the body omits them", async () => {
+  const { writes, prisma } = orderPrisma();
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.createTicketOrder({
+      slug: "finals-2026",
+      body: { quantity: 2, paymentMethod: "cash", expectedTotal: 800, expectedCurrency: "LKR" },
+      user: { id: "user-1", ...buyer },
+    });
+    assert.equal(writes.orders[0].email, "buyer@example.com");
+    assert.equal(writes.orders[0].userId, "user-1");
+  } finally {
+    restore();
+  }
+});
+
+test("an expired reservation releases capacity, cancels its tickets and expires its payment", async () => {
+  const calls = { orders: null, tickets: null, payments: null };
+  const prisma = {
+    $transaction: async (work) => work({
+      ticketOrder: { updateMany: async (args) => { calls.orders = args; return { count: 1 }; } },
+      ticket: { updateMany: async (args) => { calls.tickets = args; return { count: 2 }; } },
+      paymentTransaction: { updateMany: async (args) => { calls.payments = args; return { count: 1 }; } },
+    }),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    const now = new Date("2026-08-26T00:00:00Z");
+    assert.equal(await service.expireTicketOrderReservation({ orderId: "order-1", now }), true);
+
+    // Only a still-pending, not-yet-released, actually-expired order.
+    assert.equal(calls.orders.where.status, "pending_payment");
+    assert.equal(calls.orders.where.capacityReleasedAt, null);
+    assert.deepEqual(calls.orders.where.expiresAt, { lte: now });
+    // capacityReleasedAt is what stops a second release double-counting.
+    assert.equal(calls.orders.data.capacityReleasedAt, now);
+    assert.equal(calls.orders.data.status, "expired");
+
+    assert.equal(calls.tickets.data.status, "cancelled");
+    assert.equal(calls.payments.data.status, "expired");
+    assert.deepEqual(calls.payments.where.status, {
+      in: ["created", "pending", "review_required"],
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("releasing an already-released reservation is a no-op, not a double release", async () => {
+  let ticketWrites = 0;
+  const prisma = {
+    $transaction: async (work) => work({
+      // The guarded updateMany matches nothing the second time round.
+      ticketOrder: { updateMany: async () => ({ count: 0 }) },
+      ticket: { updateMany: async () => { ticketWrites += 1; return { count: 0 }; } },
+      paymentTransaction: { updateMany: async () => ({ count: 0 }) },
+    }),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    assert.equal(await service.expireTicketOrderReservation({ orderId: "order-1" }), false);
+    // It must stop at the order, not go on to cancel tickets a paid order owns.
+    assert.equal(ticketWrites, 0);
+  } finally {
+    restore();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Ticket lifecycle guards.
+//
+// A ticket is a bearer instrument: once it is `valid` it admits somebody to a
+// venue, and once it is `checked_in` that admission has already happened. Every
+// rule below exists so a ticket cannot be made admissible without a paid order,
+// and so a used ticket cannot be quietly restored.
+// ---------------------------------------------------------------------------
+
+const ticketRow = (over = {}) => ({
+  id: "ticket-1",
+  ticketNumber: "QES-ABC123",
+  status: "valid",
+  tokenVersion: 1,
+  eventId: "event-1",
+  order: { status: "paid" },
+  ...over,
+});
+
+const lifecyclePrisma = (ticket) => {
+  const writes = [];
+  const tx = {
+    ticket: {
+      findUnique: async () => ticket,
+      update: async (args) => { writes.push(args); return { ...ticket, ...args.data }; },
+    },
+    auditLog: { create: async () => ({}) },
+  };
+  return { writes, prisma: { $transaction: async (work) => work(tx) } };
+};
+
+test("a ticket cannot be made valid while its order is unpaid", async () => {
+  const { writes, prisma } = lifecyclePrisma(
+    ticketRow({ status: "cancelled", order: { status: "pending_payment" } }),
+  );
+  const { module: service, restore } = load(prisma);
+  try {
+    // Otherwise an unpaid order yields a ticket that opens the gate.
+    await assert.rejects(
+      service.updateTicketStatus({ ticketId: "ticket-1", status: "valid" }),
+      (error) => error.statusCode === 409 && /paid order/i.test(error.message),
+    );
+    assert.equal(writes.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("a checked-in ticket can be neither cancelled nor restored", async () => {
+  for (const status of ["valid", "cancelled"]) {
+    const { writes, prisma } = lifecyclePrisma(ticketRow({ status: "checked_in" }));
+    const { module: service, restore } = load(prisma);
+    try {
+      // The admission already happened; rewriting the record would hide it.
+      await assert.rejects(
+        service.updateTicketStatus({ ticketId: "ticket-1", status }),
+        (error) => error.statusCode === 409,
+        status,
+      );
+      assert.equal(writes.length, 0, status);
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("only valid and cancelled are accepted as ticket statuses", async () => {
+  for (const status of ["checked_in", "refunded", "", "VALID; DROP TABLE tickets"]) {
+    const { prisma } = lifecyclePrisma(ticketRow());
+    const { module: service, restore } = load(prisma);
+    try {
+      await assert.rejects(
+        service.updateTicketStatus({ ticketId: "ticket-1", status }),
+        (error) => error.statusCode === 400,
+        JSON.stringify(status),
+      );
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("cancelling a paid ticket is allowed and writes the new status", async () => {
+  const { writes, prisma } = lifecyclePrisma(ticketRow());
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.updateTicketStatus({ ticketId: "ticket-1", status: "Cancelled" });
+    // Case-insensitive, because the value arrives from an admin UI.
+    assert.equal(writes[0].data.status, "cancelled");
+  } finally {
+    restore();
+  }
+});
+
+test("only a paid, unused ticket can be reissued", async () => {
+  const cases = [
+    ["unpaid order", ticketRow({ order: { status: "pending_payment" } })],
+    ["cancelled ticket", ticketRow({ status: "cancelled" })],
+    ["already checked in", ticketRow({ status: "checked_in" })],
+  ];
+  for (const [label, ticket] of cases) {
+    const { writes, prisma } = lifecyclePrisma(ticket);
+    const { module: service, restore } = load(prisma);
+    try {
+      await assert.rejects(
+        service.reissueTicket({ ticketId: "ticket-1" }),
+        (error) => error.statusCode === 409,
+        label,
+      );
+      // No token version bump: the old QR must stay the only valid one.
+      assert.equal(writes.length, 0, label);
+    } finally {
+      restore();
+    }
+  }
+});
+
+test("reissuing bumps the token version so the previous QR stops working", async () => {
+  const { writes, prisma } = lifecyclePrisma(ticketRow());
+  const { module: service, restore } = load(prisma);
+  try {
+    await service.reissueTicket({ ticketId: "ticket-1" });
+    assert.deepEqual(writes[0].data.tokenVersion, { increment: 1 });
+  } finally {
+    restore();
+  }
+});
+
+test("a missing ticket is a 404 rather than a silent no-op", async () => {
+  const prisma = {
+    ticket: { findUnique: async () => null },
+    $transaction: async (work) => work({ ticket: { findUnique: async () => null } }),
+  };
+  const { module: service, restore } = load(prisma);
+  try {
+    await assert.rejects(
+      service.updateTicketStatus({ ticketId: "nope", status: "cancelled" }),
+      (error) => error.statusCode === 404,
+    );
+    await assert.rejects(
+      service.reissueTicket({ ticketId: "nope" }),
+      (error) => error.statusCode === 404,
+    );
+    await assert.rejects(
+      service.checkInTicketById({ ticketId: "nope", eventId: "event-1", admin: {} }),
+      (error) => error.statusCode === 404,
+    );
+  } finally {
+    restore();
+  }
+});
