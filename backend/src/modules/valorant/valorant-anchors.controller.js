@@ -2,6 +2,7 @@ const { asyncHandler } = require("../../lib/async-handler");
 const { HttpError } = require("../../lib/http-error");
 const anchors = require("./valorant-anchors.service");
 const { discover } = require("./valorant.service");
+const { parseRiotId } = require("./valorant.validation");
 
 const getTournamentAnchors = asyncHandler(async (req, res) => {
   const derived = await anchors.deriveTournamentAnchors(req.params.tournamentId);
@@ -39,9 +40,14 @@ const discoverFixture = asyncHandler(async (req, res) => {
   const pair = anchors.fixtureAnchorPair(fixture);
   if (!pair) throw new HttpError(409, "Fixture cannot be searched yet: anchor pair incomplete.");
 
+  // `discover` takes { name, tag }, not "Name#Tag". Anchors are carried as the
+  // display string because that is what a roster snapshot stores and what an
+  // admin reads, so they are parsed at the boundary. Passing the string through
+  // fails every call with "Invalid Riot ID" -- which is exactly what the first
+  // real call to this endpoint did.
   const result = await discover({
-    playerA: pair.playerA,
-    playerB: pair.playerB,
+    playerA: parseRiotId(pair.playerA),
+    playerB: parseRiotId(pair.playerB),
     pageSize: Number(req.body?.pageSize) || 10,
     maxPages: Number(req.body?.maxPages) || 1,
     map: req.body?.map || null,

@@ -246,3 +246,50 @@ test("fixtureAnchorPair refuses a half-known pair", async () => {
     restore();
   }
 });
+
+test("a derived anchor parses into the { name, tag } shape discover requires", () => {
+  const { module: service, restore } = load();
+  const { parseRiotId } = require("../src/modules/valorant/valorant.validation");
+  try {
+    const fixture = {
+      ready: true,
+      sides: [
+        { anchor: { riotId: "Logger#lh44" } },
+        { anchor: { riotId: "Dimeth#short" } },
+      ],
+    };
+    const pair = service.fixtureAnchorPair(fixture);
+
+    // Anchors are carried as the display string, because that is what a roster
+    // snapshot stores and what an admin reads. `discover` takes { name, tag },
+    // and handing it the string fails every call with "Invalid Riot ID" — which
+    // is exactly what the first real call to the fixture endpoint did. The
+    // controller parses at the boundary; this asserts the strings it produces
+    // can actually survive that parse.
+    assert.deepEqual(parseRiotId(pair.playerA), { name: "Logger", tag: "lh44" });
+    assert.deepEqual(parseRiotId(pair.playerB), { name: "Dimeth", tag: "short" });
+  } finally {
+    restore();
+  }
+});
+
+test("an anchor built from a snapshot round-trips through the Riot ID parser", () => {
+  const { module: service, restore } = load();
+  const { parseRiotId } = require("../src/modules/valorant/valorant.validation");
+  try {
+    const [anchor] = service.memberAnchors({
+      name: "Quester",
+      role: "PLAYER",
+      memberOrder: 1,
+      riotId: null,
+      usernameSnapshot: "Logger",
+      tagSnapshot: "lh44",
+      externalIdSnapshot: null,
+      verificationStatusSnapshot: null,
+      player: null,
+    });
+    assert.deepEqual(parseRiotId(anchor.riotId), { name: "Logger", tag: "lh44" });
+  } finally {
+    restore();
+  }
+});
