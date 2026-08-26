@@ -21,6 +21,18 @@ const serviceBlock = (name) => {
   return match[0];
 };
 
+const serviceNetworks = (name) => {
+  const block = serviceBlock(name);
+  const match = block.match(/\n    networks:\n([\s\S]*)$/);
+  assert.ok(match, `expected networks for production Compose service ${name}`);
+  return [...match[1].matchAll(/^      ([a-z-]+):/gm)].map((entry) => entry[1]);
+};
+
+const publishedPorts = (source) =>
+  [...source.matchAll(/^\s+- "([^\n"]+)"$/gm)]
+    .map((entry) => entry[1])
+    .filter((value) => /^[\d.]+:\d+:\d+$/.test(value));
+
 const dockerIgnoreRegex = (pattern) => {
   let source = "";
   for (let index = 0; index < pattern.length; index += 1) {
@@ -163,8 +175,13 @@ test("the application explicitly preserves the all-interface production bind", (
 
 test("production Compose has a fixed project and exact loopback publications", () => {
   assert.match(productionCompose, /^name:\s*quest-prod\s*$/m);
-  assert.match(serviceBlock("frontend"), /127\.0\.0\.1:3000:3000/);
-  assert.match(serviceBlock("backend"), /127\.0\.0\.1:5001:5001/);
+  assert.deepEqual(publishedPorts(productionCompose), [
+    "127.0.0.1:3000:3000",
+    "127.0.0.1:5001:5001",
+  ]);
+  assert.deepEqual(publishedPorts(serviceBlock("frontend")), ["127.0.0.1:3000:3000"]);
+  assert.deepEqual(publishedPorts(serviceBlock("backend")), ["127.0.0.1:5001:5001"]);
+  assert.deepEqual(publishedPorts(serviceBlock("postgres")), []);
   assert.doesNotMatch(serviceBlock("postgres"), /\bports:/);
   assert.doesNotMatch(productionCompose, /^\s+build:/m);
   assert.doesNotMatch(productionCompose, /-\s+\.{1,2}\//);
@@ -183,8 +200,26 @@ test("production Compose uses stable aliases and durable, non-source mounts", ()
   assert.match(postgres, /postgres-healthcheck\.sh:\/usr\/local\/bin\/quest-postgres-healthcheck:ro/);
   assert.match(postgres, /quest-postgres\.crt:\/run\/postgresql\/tls\/server\.crt:ro/);
   assert.match(postgres, /quest-postgres\.key:\/run\/postgresql\/tls\/server\.key:ro/);
+  const absoluteSources = [...productionCompose.matchAll(/^\s+- (\/[^:\n]+):/gm)].map(
+    (entry) => entry[1],
+  );
+  assert.ok(absoluteSources.length > 0, "expected durable absolute host mounts");
+  assert.ok(
+    absoluteSources.every(
+      (source) => source.startsWith("/srv/quest-esports/") || source.startsWith("/etc/quest-esports/"),
+    ),
+    "absolute mounts must be approved durable/config paths, not source checkouts",
+  );
   assert.match(productionCompose, /stop_grace_period:\s*40s/);
   assert.match(productionCompose, /read_only:\s*true/);
+});
+
+test("production services have exactly the required network memberships", () => {
+  assert.deepEqual(serviceNetworks("frontend"), ["app"]);
+  assert.deepEqual(serviceNetworks("backend"), ["app", "database", "quest-shared"]);
+  assert.deepEqual(serviceNetworks("postgres"), ["database", "quest-shared"]);
+  assert.match(productionCompose, /app:\s*\n\s+internal:\s*true/);
+  assert.match(productionCompose, /database:\s*\n\s+internal:\s*true/);
 });
 
 test("every production service has an explicit liveness/readiness healthcheck", () => {
@@ -210,6 +245,12 @@ test("production images are manifest-supplied and digest-oriented", () => {
   assert.match(productionEnv, /^POSTGRES_IMAGE=$/m);
   assert.match(productionCompose, /postgres:17-bookworm@sha256:<digest>/);
   assert.match(productionEnv, /postgres:17-bookworm@sha256:<64-hex-digest>/);
+  const digestFixture = ["a", "b", "c"].map(
+    (name) => `ghcr.io/questesports/${name}@sha256:${"a".repeat(64)}`,
+  );
+  for (const image of digestFixture) {
+    assert.match(image, /^[a-z0-9./-]+@sha256:[a-f0-9]{64}$/);
+  }
   assert.doesNotMatch(productionCompose, /image:\s*(?:postgres|node|ghcr\.io)[^$\n]*:[\w.-]+\s*$/m);
 });
 
@@ -218,30 +259,56 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
     assert.match(postgresBootstrap, new RegExp(`CREATE ROLE ${role} LOGIN`));
   }
   assert.match(postgresBootstrap, /CREATE SCHEMA IF NOT EXISTS valorant AUTHORIZATION val_migrator/);
+  assert.match(postgresBootstrap, /REVOKE ALL ON DATABASE quest FROM PUBLIC/);
   assert.match(postgresBootstrap, /ALTER SCHEMA public OWNER TO quest_migrator/);
   assert.match(postgresBootstrap, /ALTER SCHEMA valorant OWNER TO val_migrator/);
+  for (const role of ["quest_migrator", "quest_runtime", "val_migrator", "val_runtime"]) {
+    assert.match(postgresBootstrap, new RegExp(`ALTER ROLE ${role} LOGIN`));
+    assert.match(postgresBootstrap, new RegExp(`ALTER ROLE ${role}[\\s\\S]*NOBYPASSRLS`));
+  }
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator/);
+  assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES[\s\S]*REVOKE ALL ON TABLES FROM PUBLIC/);
+  assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES[\s\S]*REVOKE ALL ON SEQUENCES FROM PUBLIC/);
   assert.doesNotMatch(postgresBootstrap, /PASSWORD\s+'[^']+'/i);
   assert.match(productionCompose, /ssl=on/);
   assert.match(productionCompose, /sslrootcert|ssl_ca_file/);
   assert.match(productionCompose, /ssl_cert_file[\s\S]*server\.crt/);
   assert.match(productionCompose, /ssl_key_file[\s\S]*server\.key/);
   assert.match(postgresHealthcheck, /-checkhost quest-postgres/);
+  assert.match(postgresHealthcheck, /pg_isready/);
+  assert.match(postgresHealthcheck, /sslmode=verify-full/);
+  assert.match(postgresHealthcheck, /sslrootcert=\$ca_certificate/);
+  assert.match(postgresHealthcheck, /host=\$host port=\$port/);
   assert.match(productionEnv, /sslmode=verify-full/);
   assert.match(productionEnv, /sslrootcert=/);
 });
 
 test("production environment template contains no credential values", () => {
+  const sensitiveAssignment = /^(?:AUTH_ENCRYPTION_KEY|SESSION_SECRET|VALORANT_SERVICE_KEY_ID|VALORANT_SERVICE_SECRET|DATABASE_URL|DIRECT_URL|SMTP_HOST|SMTP_USER|SMTP_PASS)=/;
   for (const line of productionEnv.split("\n")) {
-    if (/^(?:AUTH_ENCRYPTION_KEY|SESSION_SECRET|VALORANT_SERVICE_SECRET|POSTGRES_PASSWORD)=/.test(line)) {
-      assert.equal(line.split("=", 2)[1], "", `${line} must remain blank`);
+    if (sensitiveAssignment.test(line)) {
+      assert.match(line, /<[^>]+>/, `${line} must use a safe placeholder`);
     }
   }
+  assert.doesNotMatch(productionEnv, /^POSTGRES_PASSWORD(?:=|:)/m);
+  assert.doesNotMatch(serviceBlock("backend"), /POSTGRES_PASSWORD_FILE/);
+  assert.doesNotMatch(serviceBlock("backend"), /POSTGRES_PASSWORD/);
+  assert.doesNotMatch(serviceBlock("postgres"), /env_file:/);
+  assert.match(serviceBlock("postgres"), /POSTGRES_PASSWORD_FILE: \/run\/secrets\/postgres-admin-password/);
+  assert.match(serviceBlock("postgres"), /postgres-admin-password:\/run\/secrets\/postgres-admin-password:ro/);
+  assert.doesNotMatch(productionCompose, /POSTGRES_PASSWORD:\s*\$\{[^}]+\}/);
+  assert.doesNotMatch(productionCompose, /SMTP_PASS:/);
   assert.match(productionEnv, /^NODE_EXTRA_CA_CERTS=/m);
   assert.match(productionEnv, /^UPLOAD_ROOT=\/srv\/quest-esports\/uploads$/m);
   assert.match(productionEnv, /^PRIVATE_UPLOAD_ROOT=\/srv\/quest-esports\/private$/m);
   assert.match(productionEnv, /^VALORANT_INTERNAL_BASE_URL=https:\/\/valorant-platform:8000$/m);
+  assert.match(productionEnv, /^MOBILE_ADMIN_ANDROID_CERT_SHA256=<[^>]+>$/m);
+  assert.match(productionEnv, /^TRUST_PROXY=1$/m);
+  assert.match(productionEnv, /^MAIL_PROVIDER=smtp$/m);
+  for (const variable of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "MAIL_FROM", "MAIL_DELIVERY_REQUIRED"]) {
+    assert.match(productionEnv, new RegExp(`^${variable}=`, "m"), `${variable} must be documented`);
+  }
   assert.match(productionEnv, /^COMPOSE_PROJECT_NAME=quest-prod$/m);
   assert.match(productionEnv, /^QUEST_SHARED_NETWORK=quest-shared$/m);
 });

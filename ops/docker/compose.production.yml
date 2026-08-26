@@ -82,13 +82,11 @@ services:
   postgres:
     # The release manifest must resolve this to postgres:17-bookworm@sha256:<digest>.
     image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be supplied by the release manifest (PostgreSQL 17 Bookworm digest)}
-    env_file:
-      - path: /etc/quest-esports/quest.production.env
-        required: false
     environment:
       POSTGRES_DB: quest
       POSTGRES_USER: postgres
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-admin-password
     command:
       - postgres
       - -c
@@ -107,6 +105,7 @@ services:
       - /srv/quest-esports/postgres/17/data:/var/lib/postgresql/data
       - /srv/quest-esports/postgres/init:/docker-entrypoint-initdb.d:ro
       - /etc/quest-esports/postgres-healthcheck.sh:/usr/local/bin/quest-postgres-healthcheck:ro
+      - /etc/quest-esports/secrets/postgres-admin-password:/run/secrets/postgres-admin-password:ro
       - /etc/quest-esports/tls/quest-private-ca.crt:/run/postgresql/tls/ca.crt:ro
       - /etc/quest-esports/tls/quest-postgres.crt:/run/postgresql/tls/server.crt:ro
       - /etc/quest-esports/tls/quest-postgres.key:/run/postgresql/tls/server.key:ro
