@@ -28,10 +28,39 @@ const serviceNetworks = (name) => {
   return [...match[1].matchAll(/^      ([a-z-]+):/gm)].map((entry) => entry[1]);
 };
 
-const publishedPorts = (source) =>
-  [...source.matchAll(/^\s+- "([^\n"]+)"$/gm)]
-    .map((entry) => entry[1])
-    .filter((value) => /^[\d.]+:\d+:\d+$/.test(value));
+const portMapping = (value) => {
+  const [mapping, protocol = "tcp"] = value.replace(/^['"]|['"]$/g, "").split("/");
+  if (!/^[\d.]+:\d+:\d+$/.test(mapping)) return null;
+  return protocol === "tcp" ? mapping : `${mapping}/${protocol}`;
+};
+
+const publishedPorts = (source) => {
+  const section = source.match(/\n    ports:\n([\s\S]*?)(?=\n    [a-z_]+:|\n  [a-z-]+:|\nnetworks:|$)/)?.[1] || "";
+  const values = [];
+  for (const entry of section.matchAll(/^\s*-\s*([^\n]+)$/gm)) {
+    const value = entry[1].trim();
+    if (!value.startsWith("target:")) {
+      const mapping = portMapping(value);
+      if (mapping) values.push(mapping);
+    }
+  }
+  for (const record of section.split(/(?=^\s*-\s*target:)/m)) {
+    if (!record.includes("target:")) continue;
+    const target = record.match(/^\s*-\s*target:\s*["']?(\d+)["']?/m)?.[1];
+    const published = record.match(/^\s+published:\s*["']?(\d+)["']?/m)?.[1];
+    const hostIp = record.match(/^\s+host_ip:\s*["']?([^\s"']+)["']?/m)?.[1];
+    const protocol = record.match(/^\s+protocol:\s*["']?([^\s"']+)["']?/m)?.[1] || "tcp";
+    if (target && published && hostIp) values.push(portMapping(`${hostIp}:${published}:${target}/${protocol}`));
+  }
+  return values.filter(Boolean);
+};
+
+const mountSources = (source) => {
+  const section = source.match(/\n    volumes:\n([\s\S]*?)(?=\n    [a-z_]+:|\n  [a-z-]+:|\nnetworks:|$)/)?.[1] || "";
+  const values = [...section.matchAll(/^\s*-\s*(\/[^:\n]+):/gm)].map((entry) => entry[1]);
+  values.push(...[...section.matchAll(/^\s+source:\s*["']?([^\s"']+)["']?\s*$/gm)].map((entry) => entry[1]));
+  return values;
+};
 
 const dockerIgnoreRegex = (pattern) => {
   let source = "";
@@ -175,7 +204,10 @@ test("the application explicitly preserves the all-interface production bind", (
 
 test("production Compose has a fixed project and exact loopback publications", () => {
   assert.match(productionCompose, /^name:\s*quest-prod\s*$/m);
-  assert.deepEqual(publishedPorts(productionCompose), [
+  const allPublishedPorts = ["frontend", "backend", "postgres"].flatMap((service) =>
+    publishedPorts(serviceBlock(service)),
+  );
+  assert.deepEqual(allPublishedPorts, [
     "127.0.0.1:3000:3000",
     "127.0.0.1:5001:5001",
   ]);
@@ -200,8 +232,8 @@ test("production Compose uses stable aliases and durable, non-source mounts", ()
   assert.match(postgres, /postgres-healthcheck\.sh:\/usr\/local\/bin\/quest-postgres-healthcheck:ro/);
   assert.match(postgres, /quest-postgres\.crt:\/run\/postgresql\/tls\/server\.crt:ro/);
   assert.match(postgres, /quest-postgres\.key:\/run\/postgresql\/tls\/server\.key:ro/);
-  const absoluteSources = [...productionCompose.matchAll(/^\s+- (\/[^:\n]+):/gm)].map(
-    (entry) => entry[1],
+  const absoluteSources = ["frontend", "backend", "postgres"].flatMap((service) =>
+    mountSources(serviceBlock(service)),
   );
   assert.deepEqual(
     absoluteSources.sort(),
@@ -229,6 +261,37 @@ test("production services have exactly the required network memberships", () => 
   assert.deepEqual(serviceNetworks("postgres"), ["database", "quest-shared"]);
   assert.match(productionCompose, /app:\s*\n\s+internal:\s*true/);
   assert.match(productionCompose, /database:\s*\n\s+internal:\s*true/);
+});
+
+test("contract parsers accept valid Compose short/long port and mount forms", () => {
+  assert.deepEqual(
+    publishedPorts(`
+    ports:
+      - 127.0.0.1:3000:3000/tcp
+      - "127.0.0.1:5001:5001"
+`),
+    ["127.0.0.1:3000:3000", "127.0.0.1:5001:5001"],
+  );
+  assert.deepEqual(
+    publishedPorts(`
+    ports:
+      - target: 3000
+        published: "3000"
+        host_ip: 127.0.0.1
+        protocol: tcp
+`),
+    ["127.0.0.1:3000:3000"],
+  );
+  assert.deepEqual(
+    mountSources(`
+    volumes:
+      - /srv/quest-esports/uploads:/srv/quest-esports/uploads
+      - type: bind
+        source: /srv/quest-esports/private
+        target: /srv/quest-esports/private
+`),
+    ["/srv/quest-esports/uploads", "/srv/quest-esports/private"],
+  );
 });
 
 test("every production service has an explicit liveness/readiness healthcheck", () => {
@@ -300,6 +363,8 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(postgresBootstrap, /REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC/);
   assert.match(postgresBootstrap, /REVOKE ALL ON ALL PROCEDURES IN SCHEMA valorant FROM PUBLIC/);
   assert.match(postgresBootstrap, /REVOKE ALL ON TYPE %I\.%I FROM PUBLIC/);
+  assert.match(postgresBootstrap, /type_object\.typelem = 0/);
+  assert.match(postgresBootstrap, /type_object\.typtype <> 'm'/);
   assert.doesNotMatch(postgresBootstrap, /PASSWORD\s+'[^']+'/i);
   assert.match(productionCompose, /ssl=on/);
   assert.match(productionCompose, /sslrootcert|ssl_ca_file/);

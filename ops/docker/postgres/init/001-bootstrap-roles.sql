@@ -74,8 +74,10 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
 REVOKE ALL ON ALL PROCEDURES IN SCHEMA public FROM PUBLIC;
 
--- PostgreSQL has no ALL TYPES IN SCHEMA form. Normalize every existing type
--- explicitly, then grant USAGE only to the owning service runtime role.
+-- PostgreSQL has no ALL TYPES IN SCHEMA form. Normalize existing user-defined
+-- types explicitly, excluding generated array and multirange types: PostgreSQL
+-- 17 rejects ACL changes on those generated companion types. Default privileges
+-- below cover types created by future migrations.
 DO $$
 DECLARE
   object_type record;
@@ -85,7 +87,10 @@ BEGIN
     FROM pg_type AS type_object
     JOIN pg_namespace AS namespace ON namespace.oid = type_object.typnamespace
     WHERE namespace.nspname IN ('public', 'valorant')
+      AND type_object.typisdefined
       AND type_object.typtype <> 'p'
+      AND type_object.typtype <> 'm'
+      AND type_object.typelem = 0
   LOOP
     EXECUTE format('REVOKE ALL ON TYPE %I.%I FROM PUBLIC', object_type.nspname, object_type.typname);
     IF object_type.nspname = 'public' THEN
