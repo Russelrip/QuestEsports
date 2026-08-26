@@ -196,7 +196,7 @@ test("createSeries controller passes the optional tournamentId through (null whe
 test("attachGame controller accepts a request without teamASide (derived server-side)", async () => {
   const audits = [];
   const serviceMock = {
-    attachGame: async ({ seriesId, gameNumber, matchId, teamASide }) => ({
+    attachGame: async ({ gameNumber, matchId, teamASide }) => ({
       id: "game-1",
       gameNumber,
       matchId,

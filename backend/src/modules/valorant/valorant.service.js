@@ -12,7 +12,7 @@ const runTransaction = (work) => typeof prisma.$transaction === "function"
   ? prisma.$transaction(work)
   : work(prisma);
 
-const createOperation = async ({ type, externalKey = null, questSeriesId = null, actorUserId, requestBody = null }) =>
+const createOperation = async ({ type, externalKey = null, questSeriesId = null, requestBody = null }) =>
   prisma.questValorantOperation.create({
     data: {
       operationId: crypto.randomUUID(),
@@ -103,7 +103,7 @@ const listTeams = async ({ actorUserId }) => {
   return bindings.map((binding) => ({ ...binding, valorantTeam: teamsByUuid.get(binding.valorantTeamUuid) ?? null }));
 };
 
-const bindTeam = async ({ savedTeamId, actorUserId, requestId, ipAddress }) => {
+const bindTeam = async ({ savedTeamId, actorUserId }) => {
   const savedTeam = await prisma.savedTeam.findUnique({
     where: { id: savedTeamId },
     select: { id: true, name: true, teamTag: true },
@@ -164,7 +164,7 @@ const bindTeam = async ({ savedTeamId, actorUserId, requestId, ipAddress }) => {
   return binding;
 };
 
-const detachBinding = async ({ bindingId, actorUserId, requestId, ipAddress }) => {
+const detachBinding = async ({ bindingId, actorUserId }) => {
   const binding = await prisma.valorantTeamBinding.findUnique({
     where: { id: bindingId },
     select: { id: true, savedTeamId: true, valorantTeamUuid: true, status: true },
@@ -195,7 +195,6 @@ const discover = async ({
   map = null,
   from = null,
   actorUserId,
-  requestId,
 }) => {
   const anchorA = normalizeRiotId(playerA);
   const anchorB = normalizeRiotId(playerB);
@@ -344,7 +343,7 @@ const upsertMatchProjection = (detail) => {
   });
 };
 
-const importMatch = async ({ henrikMatchId, affinity = "eu", actorUserId, requestId, ipAddress }) => {
+const importMatch = async ({ henrikMatchId, affinity = "eu", actorUserId }) => {
   const response = await valorantRequest({
     method: "POST",
     path: "/api/v1/matches/import",
@@ -426,8 +425,6 @@ const createSeries = async ({
   anchorPlayerB,
   tournamentId = null,
   actorUserId,
-  requestId,
-  ipAddress,
 }) => {
   assertSupportedFormat(format);
   const anchorA = normalizeRiotId(anchorPlayerA);
@@ -535,8 +532,6 @@ const createManualSeries = async ({
   teamBMapsWon,
   tournamentId = null,
   actorUserId,
-  requestId,
-  ipAddress,
 }) => {
   assertSupportedFormat(format);
 
@@ -703,7 +698,7 @@ const listSeries = async () =>
     orderBy: { createdAt: "desc" },
   });
 
-const deleteSeries = async ({ seriesId, actorUserId, requestId, ipAddress }) => {
+const deleteSeries = async ({ seriesId, actorUserId }) => {
   const series = await requireSeriesWithUuid({ seriesId, status: "draft" });
   const operation = await createOperation({
     type: "reconcile",
@@ -731,7 +726,7 @@ const deleteSeries = async ({ seriesId, actorUserId, requestId, ipAddress }) => 
 // Draft-series playedAt update (FastAPI PATCH /api/v1/series/{series_uuid}
 // accepts { played_at } and returns the updated SeriesView). The Quest
 // projection is written to match after the upstream PATCH commits.
-const updateSeriesPlayedAt = async ({ seriesId, playedAt, actorUserId, requestId, ipAddress }) => {
+const updateSeriesPlayedAt = async ({ seriesId, playedAt, actorUserId }) => {
   const series = await requireSeriesWithUuid({ seriesId, status: "draft" });
   const operation = await createOperation({
     type: "series_update",
@@ -773,7 +768,7 @@ const updateSeriesPlayedAt = async ({ seriesId, playedAt, actorUserId, requestId
   return { series: seriesView, projection };
 };
 
-const attachGame = async ({ seriesId, gameNumber, matchId, teamASide, actorUserId, requestId, ipAddress }) => {
+const attachGame = async ({ seriesId, gameNumber, matchId, teamASide, actorUserId }) => {
   const series = await requireSeriesWithUuid({ seriesId, status: "draft" });
   // teamASide is optional: FastAPI derives the side mapping from the anchors
   // when omitted. Keep passing it through verbatim when the caller provides it.
@@ -815,7 +810,7 @@ const attachGame = async ({ seriesId, gameNumber, matchId, teamASide, actorUserI
   return mirrored;
 };
 
-const setGameOrder = async ({ seriesId, games, actorUserId, requestId, ipAddress }) => {
+const setGameOrder = async ({ seriesId, games, actorUserId }) => {
   const series = await requireSeriesWithUuid({ seriesId, status: "draft" });
   const projections = await prisma.questValorantSeriesGame.findMany({
     where: { id: { in: games.map((g) => g.gameId) }, questSeriesId: series.id },
@@ -861,7 +856,7 @@ const setGameOrder = async ({ seriesId, games, actorUserId, requestId, ipAddress
   await markOperationSucceeded(operation.id, { status: 200, requestId: null, data: { games } });
 };
 
-const removeGame = async ({ seriesId, gameId, actorUserId, requestId, ipAddress }) => {
+const removeGame = async ({ seriesId, gameId, actorUserId }) => {
   const series = await requireSeriesWithUuid({ seriesId, status: "draft" });
   const projection = await prisma.questValorantSeriesGame.findUnique({
     where: { id: gameId, questSeriesId: series.id },

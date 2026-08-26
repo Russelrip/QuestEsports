@@ -347,3 +347,38 @@ test("getTournamentResults ignores a blank slug without querying", async () => {
     restore();
   }
 });
+
+test("getTournamentResults bounds the page and says when it truncated", async () => {
+  const capture = {};
+  // One more than the page size, so the take is the only thing that can cap it.
+  const many = Array.from({ length: 100 }, (_, i) => baseSeries({ id: `series-${i}` }));
+  const { module: service, restore } = load({
+    tournament: { id: "t-1", slug: "lus-sep", title: "Level Up Series", isPublished: true },
+    seriesList: many,
+  }, capture);
+  try {
+    const payload = await service.getTournamentResults("lus-sep");
+    // Unbounded, this is an unauthenticated route shipping every series a
+    // long-running event ever played, on every cache miss.
+    assert.equal(capture.findMany.take, 100);
+    // Stated, not inferred: a reader who cannot tell a capped list from a
+    // complete one reports the missing matches as a bug.
+    assert.equal(payload.truncated, true);
+  } finally {
+    restore();
+  }
+});
+
+test("getTournamentResults does not claim truncation for a short list", async () => {
+  const { module: service, restore } = load({
+    tournament: { id: "t-1", slug: "lus-sep", title: "Level Up Series", isPublished: true },
+    seriesList: [baseSeries()],
+  });
+  try {
+    const payload = await service.getTournamentResults("lus-sep");
+    assert.equal(payload.truncated, false);
+    assert.equal(payload.results.length, 1);
+  } finally {
+    restore();
+  }
+});
