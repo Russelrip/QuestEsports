@@ -4,11 +4,12 @@ These scripts support encrypted backup and recovery for Quest Esports production
 
 | File | Purpose |
 | --- | --- |
-| `backup-production.sh` | Locks against overlap, snapshots both upload roots around a PostgreSQL dump of `public` and `valorant` schemas, encrypts with `age`, uploads with rclone, verifies remote content, and prunes old local encrypted files |
+| `backup-production.sh` | Acquires the shared release lock, then runs the locked multi-remote snapshot wrapper |
+| `backup-production-multi-remote.sh` | Snapshots both upload roots around a PostgreSQL dump, encrypts one archive, uploads/checks the pair independently on every required remote, records labeled outcomes, and prunes old local encrypted files |
 | `restore-production-backup.sh` | Preflights/stages both file trees, activates them under an exit rollback guard, restores PostgreSQL in one transaction, and retains replaced trees after success; destructive and confirmation-gated |
-| `prune-production-backups.sh` | Dry-run-by-default off-site retention with an age threshold, explicit confirmation, and a minimum-recovery-point guard |
+| `prune-production-backups.sh` | Shared-lock, per-remote, dry-run-by-default off-site retention with explicit confirmation and a minimum-recovery-point guard |
 | `notify-backup-failure.sh` | Sends a minimal Discord-compatible webhook alert without including secrets or backup URLs |
-| `check-backup-freshness.sh` | Fails when no locally checksum-valid and remotely matching archive/checksum pair is newer than the configured maximum age |
+| `check-backup-freshness.sh` | Shared-lock freshness check that requires a locally checksum-valid and remotely matching pair on every required remote |
 | `create-secret-recovery-package.sh` | Creates a confirmation-gated, `age`-encrypted package of allowlisted application/infrastructure secrets for transfer to a separate recovery vault |
 | `backup-paris-database-windows.ps1` | Creates an encrypted Paris database-only snapshot of both Quest-owned schemas (`public` and `valorant`) on the secured Windows recovery PC |
 | `test-paris-database-backup-windows.ps1` | Restores the database-only snapshot into disposable PostgreSQL 17 and asserts both schemas restored |
@@ -19,6 +20,7 @@ These scripts support encrypted backup and recovery for Quest Esports production
 | `systemd/quest-esports-backup-failure@.service` | Restricted `OnFailure` notification service; requires an approved webhook in the protected environment file |
 | `systemd/quest-esports-backup-freshness.service` | Restricted freshness probe that alerts through the same failure notifier |
 | `systemd/quest-esports-backup-freshness.timer` | Persistent daily freshness check at 05:00 UTC plus randomized delay |
+| `systemd/quest-esports-release-lock.tmpfiles` | Creates the shared root-owned release lock at boot |
 
 Never commit a filled environment file, archive, checksum, database dump, rclone configuration, OAuth credential, or private `age` identity. Never use the production database or live upload paths for a restore drill.
 
@@ -27,6 +29,16 @@ Never commit a filled environment file, archive, checksum, database dump, rclone
 The [Backup and Disaster Recovery](../docs/backup-and-disaster-recovery.md) runbook is the authoritative recovery procedure. These examples use placeholders for paths and never include credentials or secret values. Any newer backup or restore safety change still requires a fresh isolated drill unless a checked-in record proves that drill; these examples do not claim that a production restore drill was performed.
 
 ### Create a full encrypted backup
+
+The protected environment consumes `BACKUP_RCLONE_REMOTES` as newline-separated
+`label=remote:path` entries and `BACKUP_RCLONE_CONFIGS` as matching
+`label=/path/to/private-rclone-config` entries. Each remote must have its own
+rclone config and credentials. The older `BACKUP_RCLONE_REMOTE` plus
+`RCLONE_CONFIG` pair remains supported while migrating a single destination.
+The wrapper acquires `/var/lock/quest-esports-release.lock` before the nested
+`/srv/quest-esports/backups/.quest-backup.lock`, and holds both through the
+archive, every upload/check, and the per-run `.results` record. The result file
+contains only the archive name, remote labels, and success/failure outcomes.
 
 **Classification: production-source read operation with a local cleanup side effect.** The script reads the configured production database and upload roots, creates and uploads an encrypted archive, and deletes local encrypted backup/checksum files older than `BACKUP_LOCAL_RETENTION_DAYS`; it does not delete production source data. `BACKUP_ENV_FILE` defaults to `/etc/quest-esports-backup.env` and is shown explicitly here.
 
@@ -49,11 +61,11 @@ sudo -u deploy -H env \
   bash ops/check-backup-freshness.sh
 ```
 
-This is read-only and has no dry-run switch or confirmation token.
+This is read-only apart from acquiring the shared release lock and has no dry-run switch or confirmation token. A recent pair must pass independently on every required remote.
 
 ### Review and prune expired remote backups
 
-First run the **dry-run** without `RETENTION_CONFIRMATION`; it requires `BACKUP_ENV_FILE` (default `/etc/quest-esports-backup.env`), `BACKUP_REMOTE_RETENTION_DAYS`, and `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS`.
+First run the **dry-run** without `RETENTION_CONFIRMATION`; it requires `BACKUP_ENV_FILE` (default `/etc/quest-esports-backup.env`), `BACKUP_REMOTE_RETENTION_DAYS`, and `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS`. The shared release lock is held while each remote is listed and evaluated.
 
 ```bash
 sudo -u deploy -H env \
@@ -141,7 +153,7 @@ The Windows verification workflow is disposable-target-only and is not a substit
 
 ### Install and inspect systemd backup services
 
-**Classification: system change with scheduled-job side effects.** Installation writes root-owned unit files, `daemon-reload` changes systemd's loaded configuration, and enabling/starting the persistent timers changes future execution. The inspection commands below are **read-only**. Do not use `enable --now`: because both timers are persistent, starting them may immediately trigger a missed backup or freshness job. Install all five units as root, reload systemd, enable the timers without starting them, inspect the schedule, and start them only after explicit approval:
+**Classification: system change with scheduled-job side effects.** Installation writes root-owned unit files and the canonical lock, `daemon-reload` changes systemd's loaded configuration, and enabling/starting the persistent timers changes future execution. The inspection commands below are **read-only**. Do not use `enable --now`: because both timers are persistent, starting them may immediately trigger a missed backup or freshness job. Install all five units and the tmpfiles contract as root, reload systemd, enable the timers without starting them, inspect the schedule, and start them only after explicit approval:
 
 ```bash
 sudo install -o root -g root -m 644 \
@@ -151,11 +163,15 @@ sudo install -o root -g root -m 644 \
   ops/systemd/quest-esports-backup-freshness.service \
   ops/systemd/quest-esports-backup-freshness.timer \
   /etc/systemd/system/
+sudo install -o root -g root -m 644 \
+  ops/systemd/quest-esports-release-lock.tmpfiles \
+  /etc/tmpfiles.d/quest-esports-release.conf
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/quest-esports-release.conf
 sudo systemctl daemon-reload
 sudo systemctl enable quest-esports-backup.timer quest-esports-backup-freshness.timer
 ```
 
-The backup service runs at 02:15 UTC and the freshness service at 05:00 UTC, each with up to a 15-minute randomized delay. Inspect installation and recent outcomes without starting a backup or deletion operation:
+The backup service runs at 02:15 UTC and the freshness service at 05:00 UTC, each with up to a 15-minute randomized delay. Release, migration, backup, and name-audit jobs must acquire `/var/lock/quest-esports-release.lock` before changing shared production state. Inspect installation and recent outcomes without starting a backup or deletion operation:
 
 ```bash
 systemctl list-timers quest-esports-backup.timer quest-esports-backup-freshness.timer --no-pager

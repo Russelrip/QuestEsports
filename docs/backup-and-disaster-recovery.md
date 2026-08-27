@@ -26,24 +26,23 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 | Public uploads | `/srv/quest-esports/uploads` |
 | Private uploads | `/srv/quest-esports/private` |
 | Backup staging | `/srv/quest-esports/backups`, seven-day local retention |
-| Active off-site destination | Repository-recorded target `quest-backups-custom:quest-esports-v2/production`; owner verification required |
-| Historical destination | Repository-recorded target `quest-backups:quest-esports/production`; owner verification required |
+| Active off-site destinations | Protected environment labels and destinations; owner verification required |
+| Historical destination | Retained only according to the protected multi-remote configuration; owner verification required |
 | Encryption | `age` public-recipient encryption; private identity kept offline |
-| Automation | Repository provides `quest-esports-backup.service` and `quest-esports-backup.timer`; owner must verify installation and state |
+| Automation | Repository provides locked backup/freshness services and timers; owner must verify installation and state |
 | Schedule | Daily at 02:15 UTC with up to 15 minutes randomized delay; missed runs are persistent |
 | Restore-drill status | Not proven by checked-in files; owner verification and an isolated drill are required |
 
-The checked-in record describes the active Drive remote as using a
-QuestEsports-owned Google OAuth desktop client, the least-privilege `drive.file`
-scope, and an **In production** publishing status. These are owner-verification
-items, not proof of the live remote or token state.
+The checked-in record describes the configured remotes as using separate,
+QuestEsports-owned credentials. Remote labels, destinations, and token state
+remain owner-verification items and must never be printed in alerts or logs.
 
 ## Recovery objectives and limitations
 
 - The timer provides a technical recovery-point interval of approximately 24 hours plus up to 15 minutes when the timer, VPS, database, and Drive destination are healthy. A migration-changing CD run creates an additional backup immediately before migration.
 - There is no contractual recovery-time objective recorded yet. Time the next quarterly drill and have the business owner approve an RTO and RPO.
 - Local encrypted copies older than `BACKUP_LOCAL_RETENTION_DAYS` are removed by the script; the current value is seven days.
-- The repository includes a dry-run-first remote retention tool with a minimum-recovery-point guard. Production deletion remains disabled until the owner approves the retention values and runs the exact confirmation-gated command.
+- The repository includes a dry-run-first, per-remote retention tool with a minimum-recovery-point guard. Production deletion remains disabled until the owner approves the retention values and runs the exact confirmation-gated command for object-locked destinations.
 - The repository includes a systemd `OnFailure` notifier. It pages an operator only after the failure unit is installed and an approved Discord-compatible HTTPS webhook is added to the protected backup environment and tested.
 
 ## What a full production archive contains
@@ -85,17 +84,38 @@ Losing every copy of the private `age` identity makes existing encrypted archive
 The production templates are:
 
 - `ops/quest-esports-backup.env.example`
+- `ops/backup-production-multi-remote.sh`
 - `ops/systemd/quest-esports-backup.service`
 - `ops/systemd/quest-esports-backup.timer`
 - `ops/systemd/quest-esports-backup-failure@.service`
 - `ops/systemd/quest-esports-backup-freshness.service`
 - `ops/systemd/quest-esports-backup-freshness.timer`
+- `ops/systemd/quest-esports-release-lock.tmpfiles`
 
 Install PostgreSQL client 17, `age`, `rclone`, and `rsync`. The generic Ubuntu `pg_dump` may still resolve to PostgreSQL 16, so the backup environment pins `/usr/lib/postgresql/17/bin` at the start of `PATH`.
 
 The backup takes an exclusive `flock`, copies both immutable upload trees, runs the database dump, and copies the upload trees a second time before packaging. This closes the common gap where a database row commits while its file is omitted from the archive. PostgreSQL and the VPS filesystem still cannot participate in one distributed transaction, so the application must keep random upload filenames immutable and quarterly restore verification remains required.
 
-Use the dedicated Google OAuth client when creating the rclone remote. Create and test a new remote before changing `BACKUP_RCLONE_REMOTE`; this preserves the previous remote as rollback access. Never use `rclone config show` in logs or support output.
+Set `BACKUP_RCLONE_REMOTES` to newline-separated `label=remote:path` entries and
+`BACKUP_RCLONE_CONFIGS` to matching newline-separated `label=/path/to/config`
+entries. Each remote must have a separate rclone config and credential/token.
+The legacy single `BACKUP_RCLONE_REMOTE` plus `RCLONE_CONFIG` form remains
+supported during transition. Never use `rclone config show` in logs or support
+output.
+
+The root bootstrap creates the shared lock before any release, migration,
+backup, or name-audit operation:
+
+```bash
+install -o root -g root -m 644 ops/systemd/quest-esports-release-lock.tmpfiles \
+  /etc/tmpfiles.d/quest-esports-release.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/quest-esports-release.conf
+```
+
+The exact tmpfiles contract is `f /var/lock/quest-esports-release.lock 0660
+root deploy -`. The backup wrapper takes this canonical lock before
+`/srv/quest-esports/backups/.quest-backup.lock` and holds it through archive
+creation, every remote upload/check, and the per-run result record.
 
 ## Routine verification
 
@@ -174,7 +194,7 @@ sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
 
 Confirm exactly one safe alert arrives. The message contains only the host and failed unit name. Rotate the webhook immediately if its URL appears in terminal output, chat, logs, or screenshots.
 
-Set `BACKUP_MAX_AGE_MINUTES=2160` in the protected environment, then verify and enable the independent freshness path:
+Set `BACKUP_MAX_AGE_MINUTES=2160` in the protected environment, then verify and enable the independent freshness path. Freshness passes only when the same recent local pair verifies independently on every required remote:
 
 ```bash
 sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
@@ -185,7 +205,7 @@ systemctl show quest-esports-backup-freshness.service \
 systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
 ```
 
-The freshness timer runs after the normal backup window and fails if there is no archive/checksum pair from the last 36 hours whose local checksum is valid and whose off-site contents match. Its `OnFailure` path uses the same notifier, covering a timer or backup schedule that silently stops producing verified recovery points. Restore drills remain the proof of actual recoverability.
+The freshness timer runs after the normal backup window and fails if there is no archive/checksum pair from the last 36 hours whose local checksum is valid and whose contents match on every required remote. Its `OnFailure` path uses the same notifier, covering a timer or backup schedule that silently stops producing verified recovery points. Restore drills remain the proof of actual recoverability.
 
 ### Review and apply off-site retention
 
@@ -205,7 +225,7 @@ sudo -u deploy -H env \
   bash ops/prune-production-backups.sh
 ```
 
-Do not automate this deletion until at least one newer archive has passed a full isolated restore drill and the business owner has approved the schedule. The rclone listing handles the complete remote; do not manually delete pages of Drive results.
+Do not automate this deletion until at least one newer archive has passed a full isolated restore drill and the business owner has approved the schedule. The tool lists and evaluates every configured remote independently; do not manually delete remote objects. Object-locked destinations remain confirmation-gated and a failed remote causes a nonzero result.
 
 ### Create the separate secret recovery package
 
