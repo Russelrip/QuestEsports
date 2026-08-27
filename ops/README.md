@@ -7,6 +7,8 @@ These scripts support encrypted backup and recovery for Quest Esports production
 | `backup-production.sh` | Acquires the shared release lock, then runs the locked multi-remote snapshot wrapper |
 | `backup-production-multi-remote.sh` | Snapshots both upload roots around a PostgreSQL dump, encrypts one archive, uploads/checks the pair independently on every required remote, records labeled outcomes, and prunes old local encrypted files |
 | `restore-production-backup.sh` | Preflights/stages both file trees, activates them under an exit rollback guard, restores PostgreSQL in one transaction, and retains replaced trees after success; destructive and confirmation-gated |
+| `rehearsal/postgres17-restore-rehearsal.sh` | Fail-closed disposable-only PostgreSQL 17 restore rehearsal wrapper; privately runs the existing restore primitive and writes machine-readable evidence |
+| `rehearsal/verify-rehearsal-evidence.sh` | Rejects stale, incomplete, production-looking, or non-runtime rehearsal evidence |
 | `prune-production-backups.sh` | Shared-lock, per-remote, dry-run-by-default off-site retention with explicit confirmation and a minimum-recovery-point guard |
 | `notify-backup-failure.sh` | Sends a minimal Discord-compatible webhook alert without including secrets or backup URLs |
 | `check-backup-freshness.sh` | Shared-lock freshness check that requires a locally checksum-valid and remotely matching pair on every required remote |
@@ -23,6 +25,51 @@ These scripts support encrypted backup and recovery for Quest Esports production
 | `systemd/quest-esports-release-lock.tmpfiles` | Creates the shared root-owned release lock at boot |
 
 Never commit a filled environment file, archive, checksum, database dump, rclone configuration, OAuth credential, or private `age` identity. Never use the production database or live upload paths for a restore drill.
+
+## Isolated PostgreSQL 17 restore rehearsal
+
+The rehearsal wrapper is the only documented full-drill entry point. It never
+defaults a target, requires `REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL`,
+an existing private evidence directory, an absolute archive/checksum pair, an
+offline identity, fresh empty upload roots, and a PostgreSQL 17 client bin
+directory (or three individually pinned client paths). `BACKUP_ENV_FILE` is
+parsed as data and copied into a temporary private environment; it is never
+sourced by the wrapper. Production-looking URLs/paths, symlinks, nested roots,
+unsafe permissions, missing manifest scope, and source-major mismatches without
+an explicit logical-migration approval are refused.
+
+Provide these additional disposable-only variables: `REHEARSAL_EVIDENCE_DIR`,
+`SOURCE_POSTGRES_MAJOR`, `QUEST_LIVENESS_URL`, `QUEST_READINESS_URL`,
+`VALORANT_HEALTH_URL`, `VALORANT_CA_FILE`, `FREEZE_STATUS_URL`,
+`FREEZE_MUTATION_URL`, `FREEZE_CALLBACK_URL`,
+`NO_WRITER_ADMISSION_CONFIRMATION=verified`, six
+`FAILURE_INJECTION_<NAME>_STATUS=passed` results (bad checksum, bad
+decryption, wrong CA, blocked network, failed service health, and attempted
+mutation/callback), `REHEARSAL_RTO_SECONDS`, and
+`REHEARSAL_RTO_DECISION=met|not_met`. The URLs must point to disposable
+services and the CA must be supplied explicitly. Health probes require JSON
+`status=ok`; readiness also requires `db=up`, and frozen mutation/callback
+probes must return `503` with `X-Write-Freeze: validation`.
+
+```bash
+chmod 600 /secure/recovery/quest-esports-recovery.env
+chmod 700 /secure/recovery/rehearsal-evidence
+REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL \
+  BACKUP_ENV_FILE=/secure/recovery/quest-esports-recovery.env \
+  REHEARSAL_EVIDENCE_DIR=/secure/recovery/rehearsal-evidence \
+  POSTGRES17_BIN=/usr/lib/postgresql/17/bin \
+  bash ops/rehearsal/postgres17-restore-rehearsal.sh \
+  /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
+bash ops/rehearsal/verify-rehearsal-evidence.sh /secure/recovery/rehearsal-evidence
+```
+
+The evidence file is mode `600` and contains only redacted statuses, counts,
+checksums, and timings—never URLs, credentials, tokens, identities, or secret
+environment contents. `verify-rehearsal-evidence.sh` requires actual status
+fields and non-zero schema/object and ledger counts; a file's presence alone is
+not runtime proof. The fixture test is deliberately limited to fake commands
+and generated disposable evidence. It does not contact Docker, PostgreSQL,
+age, a VPS, a hosted service, a live upload root, or an rclone remote.
 
 ## Operational examples
 

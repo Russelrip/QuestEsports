@@ -753,6 +753,48 @@ record names `quest-production-20260729T133147Z.tar.gz.enc` on the historical
 
 The active destination was then documented as moved to the dedicated-client remote `quest-backups-custom:quest-esports-v2/production`. Manual archive `quest-production-20260729T154756Z.tar.gz.enc` and its checksum were documented as confirmed off-site, and a subsequent `quest-esports-backup.service` run was documented as returning `Result=success`, `ExecMainStatus=0`, and `ActiveState=inactive`. The daily timer was documented as enabled. These are historical records, not proof of current remote contents or timer state; the owner must verify them before relying on the destination.
 
+## Coordinated Quest + VALORANT cutover and restore boundary
+
+This is the approved boundary for promoting the containerised PostgreSQL 17
+topology. It is a coordinated change, not two independent application
+deployments:
+
+1. Stage the approved Quest release and the separately approved sibling
+   VALORANT release, with both projects in frozen read-only mode and no
+   writers.
+2. Enable and acknowledge the validation freeze. Stop, but do not mask, the
+   old VALORANT units; keeping them unmasked preserves the pre-commit restart
+   path.
+3. Create the final encrypted archive containing `public` and `valorant` plus
+   both upload roots. Independently verify its checksum, age decryption, exact
+   manifest scope, and the isolated Phase 8 rehearsal evidence.
+4. Restore into the PostgreSQL 17 target, update both services' database URLs,
+   then start both candidate services still frozen. Validate Quest liveness,
+   readiness, database/security state, uploads, and the VALORANT HTTPS health
+   response through the approved CA (`status=ok`, `db=up`).
+5. Admit Quest and VALORANT writers together only after both readiness
+   acknowledgements. Record the commit point, release SHA, database authority,
+   archive identity, and writer-admission result. Mask the old VALORANT units
+   only after that record exists.
+
+Before the commit point, a failed candidate gate means: keep writers disabled,
+restore the previous Quest release, and restart only the previously stopped,
+still-unmasked VALORANT units. Do not change database authority or restart an
+old writer against a new schema. After the commit point, an application
+rollback is not a database rollback: stop both writer groups, re-enable the
+freeze, capture the current PostgreSQL 17 and upload state, record expected
+loss/RPO, and obtain incident-owner approval for fix-forward or a controlled
+restore. Never restart the old VALORANT writers or redirect only one service to
+stale Supabase data after commit.
+
+The sibling VALORANT Compose release manifest, its image digests, its live
+source-major record, and its own deployment evidence remain required operator
+artifacts. Quest's archive manifest and this worktree do not prove those
+values. A source-major mismatch is an explicit logical-major-migration gate,
+not an implicit compatibility claim. No live VPS, Supabase, rclone remote,
+hosted health endpoint, or sibling repository is contacted by the fixture
+rehearsal.
+
 ### Local Paris database snapshot on Windows
 
 For an immediate database-only snapshot from the secured development PC, run:

@@ -262,6 +262,43 @@ This workflow validates an encrypted application-database snapshot in disposable
 
 Perform this at least quarterly and after meaningful changes to the backup scripts, database major version, upload layout, encryption, or storage provider.
 
+### Phase 8 rehearsal boundary
+
+Use `ops/rehearsal/postgres17-restore-rehearsal.sh`, not a direct invocation of
+the destructive restore primitive, for a full drill. Create the evidence
+directory before starting and make it private. The wrapper requires an
+explicit `REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL`, an existing
+mode-600 recovery environment, an absolute encrypted archive and exact
+`.sha256` sibling, an offline age identity, fresh distinct empty upload roots,
+and pinned PostgreSQL 17 `psql`, `pg_restore`, and `pg_dump`. It refuses
+production-looking database hosts and paths, root/symlink/nested/identical
+targets, unsafe environment-file content, missing manifest checksum/age
+identity/evidence, non-17 clients, and an unapproved source-major mismatch.
+
+The wrapper makes a temporary isolated `BACKUP_ENV_FILE`, invokes
+`restore-production-backup.sh` with `RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION`
+and a zero countdown, and captures its output privately. It then records the
+exact two-schema manifest scope, source/client versions, checksum/decryption,
+both schema/object counts, both migration ledgers, roles/owners/grants/default
+ACLs, extensions/settings/RLS, upload counts/bytes/checksums, Quest and
+VALORANT health/CA/database status, validation freeze and writer rejection,
+named negative injections, measured resources, and an explicit RTO decision.
+No URL, credential, token, identity, or secret environment value is printed or
+written to evidence. Verify only with:
+
+```bash
+bash ops/rehearsal/verify-rehearsal-evidence.sh /secure/recovery/rehearsal-evidence
+```
+
+The verifier rejects stale, malformed, incomplete, production-looking, or
+file-existence-only evidence. A valid rehearsal still does not prove a live
+VPS, Supabase project, rclone remote, Docker deployment, or the sibling
+VALORANT deployment. The sibling VALORANT Compose manifest and live
+source-major record remain required operator artifacts; this Quest worktree
+cannot manufacture either one. If the recorded source major differs from 17,
+the rehearsal is a logical-major-migration gate and must not be described as a
+transparent compatible restore.
+
 1. Select one archive and its exact `.sha256` sibling from the active remote.
 2. Download both through the Google Drive UI or a recovery-only rclone configuration to an access-controlled recovery host.
 3. Copy `ops/quest-esports-recovery.env.example` outside the repository and set:
@@ -278,9 +315,11 @@ chmod 600 /secure/recovery/quest-esports-recovery.env
 
 cd /path/to/QuestEsports
 
-RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL \
   BACKUP_ENV_FILE=/secure/recovery/quest-esports-recovery.env \
-  bash ops/restore-production-backup.sh \
+  REHEARSAL_EVIDENCE_DIR=/secure/recovery/rehearsal-evidence \
+  POSTGRES17_BIN=/usr/lib/postgresql/17/bin \
+  bash ops/rehearsal/postgres17-restore-rehearsal.sh \
   /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
 ```
 

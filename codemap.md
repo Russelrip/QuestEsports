@@ -27,6 +27,10 @@ The API routes and aggregate definitions are mapped in
 - `mobile-admin/` — private Android operations client.
 - `docs/` — API, operational, deployment, recovery, and security contracts.
 - `ops/` — production backup, restore, retention, and freshness tooling.
+- `ops/rehearsal/` — isolated PostgreSQL 17 restore rehearsal boundary. It may
+  invoke the existing destructive restore primitive only through explicit
+  disposable-target checks and emits private, machine-readable evidence; it
+  never owns production restore or live service cutover.
 - `ops/deploy/` — root-owned immutable Compose release, verification, and
   pre/post-commit rollback contracts. It consumes exact image-digest manifests,
   the canonical host lock, and explicit coordinated freeze/read-only and
