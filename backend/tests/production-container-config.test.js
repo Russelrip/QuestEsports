@@ -58,11 +58,13 @@ const mappingFields = (record) => {
   return fields;
 };
 
-const serviceBlock = (name) => {
-  const match = productionCompose.match(
+const serviceBlock = (name) => serviceBlockFrom(productionCompose, name);
+
+const serviceBlockFrom = (source, name) => {
+  const match = source.match(
     new RegExp(`(?:^|\\n)  ${name}:[\\s\\S]*?(?=\\n  [a-z-]+:|\\nnetworks:)`),
   );
-  assert.ok(match, `expected production Compose service ${name}`);
+  assert.ok(match, `expected Compose service ${name}`);
   return match[0];
 };
 
@@ -101,6 +103,10 @@ const publishedPorts = (source) => {
     const first = record[0];
     if (/^(?:["'](?:target|published|host_ip|protocol)["']|(?:target|published|host_ip|protocol))\s*:/.test(first)) {
       const fields = mappingFields(record);
+      const allowed = new Set(["target", "published", "host_ip", "protocol"]);
+      if (Object.keys(fields).some((field) => !allowed.has(field))) {
+        return `invalid-port-record:${record.join(" ")}`;
+      }
       if (!fields.target || !fields.published || !fields.host_ip) {
         return `invalid-port-record:${record.join(" ")}`;
       }
@@ -151,6 +157,86 @@ const mountRecords = (source) =>
 
 const sortedRecords = (records) =>
   records.map((record) => JSON.stringify(record)).sort().map((record) => JSON.parse(record));
+
+const expectedMountsByService = {
+  frontend: [],
+  backend: [
+    {
+      source: "/etc/quest-esports/tls/quest-private-ca.crt",
+      target: "/run/secrets/quest-private-ca.crt",
+      type: "bind",
+      read_only: true,
+    },
+    {
+      source: "/srv/quest-esports/private",
+      target: "/srv/quest-esports/private",
+      type: "bind",
+      read_only: false,
+    },
+    {
+      source: "/srv/quest-esports/uploads",
+      target: "/srv/quest-esports/uploads",
+      type: "bind",
+      read_only: false,
+    },
+  ],
+  postgres: [
+    {
+      source: "/etc/quest-esports/postgres-healthcheck.sh",
+      target: "/usr/local/bin/quest-postgres-healthcheck",
+      type: "bind",
+      read_only: true,
+    },
+    {
+      source: "/etc/quest-esports/secrets/postgres-admin-password",
+      target: "/run/secrets/postgres-admin-password",
+      type: "bind",
+      read_only: true,
+    },
+    {
+      source: "/etc/quest-esports/tls/quest-postgres.crt",
+      target: "/run/postgresql/tls/server.crt",
+      type: "bind",
+      read_only: true,
+    },
+    {
+      source: "/etc/quest-esports/tls/quest-postgres.key",
+      target: "/run/postgresql/tls/server.key",
+      type: "bind",
+      read_only: true,
+    },
+    {
+      source: "/etc/quest-esports/tls/quest-private-ca.crt",
+      target: "/run/postgresql/tls/ca.crt",
+      type: "bind",
+      read_only: true,
+    },
+    {
+      source: "/srv/quest-esports/postgres/17/data",
+      target: "/var/lib/postgresql/data",
+      type: "bind",
+      read_only: false,
+    },
+    {
+      source: "/srv/quest-esports/postgres/init",
+      target: "/docker-entrypoint-initdb.d",
+      type: "bind",
+      read_only: true,
+    },
+  ],
+};
+
+const normalizedMountsByService = (source) =>
+  Object.fromEntries(
+    Object.keys(expectedMountsByService).map((service) => [
+      service,
+      sortedRecords(mountRecords(serviceBlockFrom(source, service))),
+    ]),
+  );
+
+const normalizedExpectedMountsByService = Object.fromEntries(
+  Object.entries(expectedMountsByService).map(([service, mounts]) => [service, sortedRecords(mounts)]),
+);
 
 const dockerFixture = (() => {
   const version = spawnSync("docker", ["version", "--format", "{{.Server.Version}}"], {
@@ -338,6 +424,11 @@ test("production Compose uses stable aliases and durable, non-source mounts", ()
   assert.match(postgres, /postgres-healthcheck\.sh:\/usr\/local\/bin\/quest-postgres-healthcheck:ro/);
   assert.match(postgres, /quest-postgres\.crt:\/run\/postgresql\/tls\/server\.crt:ro/);
   assert.match(postgres, /quest-postgres\.key:\/run\/postgresql\/tls\/server\.key:ro/);
+  assert.deepEqual(
+    normalizedMountsByService(productionCompose),
+    normalizedExpectedMountsByService,
+    "mount source, target, type, and read-only contracts must match per service",
+  );
   const actualMounts = ["frontend", "backend", "postgres"].flatMap((service) =>
     mountRecords(serviceBlock(service)),
   );
@@ -487,6 +578,29 @@ test("contract parsers do not ignore alternate published-port representations", 
   assert.ok(ports.some((port) => port.includes("[::1]")));
 });
 
+test("contract parser rejects unapproved long-form port auxiliary fields", () => {
+  const ports = publishedPorts(`
+    ports:
+      - target: 3000
+        published: 3000
+        host_ip: 127.0.0.1
+        protocol: tcp
+        mode: host
+      - target: 3001
+        published: 3001
+        host_ip: 127.0.0.1
+        protocol: tcp
+        name: unexpected-port
+      - target: 3002
+        published: 3002
+        host_ip: 127.0.0.1
+        protocol: tcp
+        app_protocol: http
+  `);
+  assert.equal(ports.length, 3);
+  assert.ok(ports.every((port) => port.startsWith("invalid-port-record:")));
+});
+
 test("mount contract rejects unapproved quoted, long-form, relative, named, and variable sources", () => {
   const mounts = mountRecords(`
     volumes:
@@ -521,6 +635,22 @@ test("mount contract rejects unapproved quoted, long-form, relative, named, and 
   assert.ok(mounts.some((mount) => mount.source === "./private"));
   assert.ok(mounts.some((mount) => mount.source === "${PRIVATE_ROOT}"));
   assert.ok(mounts.some((mount) => mount.read_only === true));
+});
+
+test("mount contract rejects mounts swapped between services", () => {
+  const swapped = `
+  backend:
+    volumes:
+      - /srv/quest-esports/postgres/17/data:/var/lib/postgresql/data
+  postgres:
+    volumes:
+      - /srv/quest-esports/uploads:/srv/quest-esports/uploads
+  networks:
+`;
+  assert.throws(
+    () => assert.deepEqual(normalizedMountsByService(swapped), normalizedExpectedMountsByService),
+    assert.AssertionError,
+  );
 });
 
 test("network parser retains quoted and otherwise valid network keys", () => {
