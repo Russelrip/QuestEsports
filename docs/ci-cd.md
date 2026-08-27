@@ -11,10 +11,13 @@ This repository uses GitHub Actions for continuous integration and owner-control
 - `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
 - `.github/workflows/build-container-images.yml` publishes immutable frontend,
   backend-runtime, and backend-migrator images only after a successful `CI` run
-  for `main`. It does not run for pull requests or publish on a direct PR event.
+  for `main`, after the protected image-build environment approves the external
+  image references. It does not run for pull requests or publish on a direct PR
+  event.
 - `.github/workflows/deploy-compose.yml` promotes only the manifest artifact from
-  a successful image-build run. It supports a protected manual dispatch that
-  selects the latest successful build; it has no SHA override input.
+  a successful image-build run whose full SHA also has a successful `CI` run. It
+  supports a protected manual dispatch that selects the latest successful build;
+  it has no SHA override input.
 
 ## Immutable Compose release transition
 
@@ -27,15 +30,35 @@ with GitHub OIDC. Its release artifact is an exact six-entry manifest containing
 `postgres_image`, and `valorant_image`; deployment rejects mutable references or
 any SHA that is not bound to that artifact.
 
+Before deployment, the workflow logs in to GHCR and verifies each Quest image
+digest with cosign using the fixed issuer
+`https://token.actions.githubusercontent.com` and the exact certificate
+identity
+`https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main`.
+It separately inspects the OCI BuildKit attestation manifests and requires both
+an SPDX/CycloneDX SBOM predicate and an SLSA provenance predicate. These are
+BuildKit attestations, not cosign-signed attestations, so the workflow does not
+misrepresent them with `cosign verify-attestation`.
+
 Configure these non-secret repository variables before enabling the path:
 
 ```text
 PRODUCTION_API_URL=https://api.questesports.lk
 PRODUCTION_SITE_URL=https://questesports.lk
 POSTGRES_17_BOOKWORM_DIGEST=sha256:<owner-verified-digest>
+POSTGRES_IMAGE_APPROVED_REF=postgres:17-bookworm@sha256:<same-owner-approved-digest>
 VALORANT_IMAGE=ghcr.io/<sibling-owner>/<image>@sha256:<owner-verified-digest>
+VALORANT_IMAGE_APPROVED_REF=ghcr.io/<sibling-owner>/<image>@sha256:<same-owner-approved-digest>
 COMPOSE_DEPLOY_ENABLED=true
 ```
+
+Use a protected `container-image-build` Environment with required reviewers for
+the external digest/reference variables above, and configure the same two
+approved reference variables in the protected `production-compose` Environment. Both
+workflows fail closed unless the approved PostgreSQL and VALORANT references
+exactly equal the manifest values. Quest does not assert or create signatures
+for those externally built/published images; the owner-approved exact-digest
+controls are the trust boundary for this phase.
 
 `production-compose` should be a protected GitHub Environment with required
 reviewers. The deploy job uses the existing `BACKEND_SSH_HOST`,
@@ -50,6 +73,12 @@ the Task 7A root-ownership check remains true; it does not remove or replace
 the file. This workflow does not grant Docker access or run source checkout,
 npm, PM2, or migrations on the VPS.
 
+Cosign is installed from the fixed Go module version `v2.4.1` in both workflows.
+The repository does not invent an upstream binary checksum; therefore binary
+artifact checksum pinning remains an explicit limitation, while the module
+version and Go checksum verification provide the practical reproducibility
+available here.
+
 This phase does **not** change DNS or claim that a VPS, registry, signing,
 attestation, SSH, or hosted GitHub execution has been verified. Keep `.github/
 workflows/cd.yml` and `deploy-frontend.yml` unchanged as the legacy PM2/Vercel
@@ -59,9 +88,11 @@ the immutable image or deployment workflows.
 
 For a local contract check, confirm both new files contain only 40-hex SHA
 workflow/artifact bindings, `cancel-in-progress: false`, no `workflow_dispatch`
-in the build workflow, and no `npm ci`, `pm2`, `docker group`, or mutable
-`:latest` deployment reference. Runtime evidence still requires the assigned
-actionlint and host/operator checks; documentation cannot provide that evidence.
+in the build workflow, exact CI/build SHA checks, fixed cosign identity/issuer,
+external approval equality checks, and no `npm ci`, `pm2`, `docker group`, or
+mutable `:latest` deployment reference. Runtime evidence still requires the
+assigned actionlint and host/operator checks; documentation cannot provide that
+evidence.
 
 Backend CD is an automatic, repository-owner-only job gated by
 `BACKEND_DEPLOY_ENABLED=true`, the exact successful CI SHA, and a successful CI

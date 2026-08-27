@@ -24,13 +24,16 @@ jobs:
     name: Build and sign immutable images
     if: ${{ github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-latest
+    environment: container-image-build
     timeout-minutes: 45
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
       NEXT_PUBLIC_API_URL: ${{ vars.PRODUCTION_API_URL }}
       NEXT_PUBLIC_SITE_URL: ${{ vars.PRODUCTION_SITE_URL }}
       POSTGRES_17_BOOKWORM_DIGEST: ${{ vars.POSTGRES_17_BOOKWORM_DIGEST }}
+      POSTGRES_IMAGE_APPROVED_REF: ${{ vars.POSTGRES_IMAGE_APPROVED_REF }}
       VALORANT_IMAGE: ${{ vars.VALORANT_IMAGE }}
+      VALORANT_IMAGE_APPROVED_REF: ${{ vars.VALORANT_IMAGE_APPROVED_REF }}
 
     steps:
       - name: Check out the exact successful CI commit
@@ -59,8 +62,17 @@ jobs:
             printf '%s\n' 'POSTGRES_17_BOOKWORM_DIGEST must be an exact sha256 digest.' >&2
             exit 1
           }
+          postgres_ref="postgres:17-bookworm@$POSTGRES_17_BOOKWORM_DIGEST"
+          [[ "$POSTGRES_IMAGE_APPROVED_REF" == "$postgres_ref" ]] || {
+            printf '%s\n' 'POSTGRES_IMAGE_APPROVED_REF must exactly approve the PostgreSQL manifest reference.' >&2
+            exit 1
+          }
           [[ "$VALORANT_IMAGE" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || {
             printf '%s\n' 'VALORANT_IMAGE must be an exact GHCR digest reference.' >&2
+            exit 1
+          }
+          [[ "$VALORANT_IMAGE_APPROVED_REF" == "$VALORANT_IMAGE" ]] || {
+            printf '%s\n' 'VALORANT_IMAGE_APPROVED_REF must exactly approve VALORANT_IMAGE.' >&2
             exit 1
           }
 
