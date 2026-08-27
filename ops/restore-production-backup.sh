@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+canonical_security_sql="$script_directory/docker/postgres/init/001-bootstrap-roles.sql"
 
 if [[ "${RESTORE_CONFIRMATION:-}" != "RESTORE_QUEST_PRODUCTION" ]]; then
   echo "Set RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION for an intentional restore." >&2
@@ -202,6 +204,15 @@ if ! pg_restore --dbname="$DIRECT_URL" \
   --single-transaction \
   "$work_directory/database.dump"; then
   echo "Database restore failed; the exit guard will roll back both activated file trees." >&2
+  exit 1
+fi
+
+if [[ ! -r "$canonical_security_sql" ]]; then
+  echo "Canonical PostgreSQL security SQL is missing: $canonical_security_sql; the exit guard will roll back both activated file trees." >&2
+  exit 1
+fi
+if ! psql "$DIRECT_URL" -v RESTORE_MODE=1 -v ON_ERROR_STOP=1 -f "$canonical_security_sql"; then
+  echo "Canonical PostgreSQL security normalization failed; the exit guard will roll back both activated file trees." >&2
   exit 1
 fi
 

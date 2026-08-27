@@ -24,7 +24,15 @@ $$;
 -- Remove the database-level defaults before granting only the service roles.
 -- This also repairs databases initialized with PostgreSQL's PUBLIC CONNECT and
 -- TEMP privileges.
+\if :{?RESTORE_MODE}
+DO $$
+BEGIN
+  EXECUTE format('REVOKE ALL ON DATABASE %I FROM PUBLIC', current_database());
+END
+$$;
+\else
 REVOKE ALL ON DATABASE quest FROM PUBLIC;
+\endif
 
 -- Normalize attributes even when a role already existed. In particular,
 -- bootstrap must not preserve inherited memberships or elevated capabilities.
@@ -61,7 +69,18 @@ CREATE SCHEMA IF NOT EXISTS valorant AUTHORIZATION val_migrator;
 ALTER SCHEMA public OWNER TO quest_migrator;
 ALTER SCHEMA valorant OWNER TO val_migrator;
 
+\if :{?RESTORE_MODE}
+DO $$
+BEGIN
+  EXECUTE format(
+    'GRANT CONNECT ON DATABASE %I TO quest_migrator, quest_runtime, val_migrator, val_runtime',
+    current_database()
+  );
+END
+$$;
+\else
 GRANT CONNECT ON DATABASE quest TO quest_migrator, quest_runtime, val_migrator, val_runtime;
+\endif
 
 REVOKE ALL ON SCHEMA valorant FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA valorant FROM PUBLIC;
@@ -113,6 +132,14 @@ GRANT USAGE ON SCHEMA valorant TO val_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA valorant TO val_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA valorant TO val_runtime;
 
+-- PostgreSQL's built-in PUBLIC defaults are global. Schema-local revokes alone
+-- do not remove those defaults from future routines and types, so revoke them
+-- globally for each migrator before materializing owner-only schema defaults.
+ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator REVOKE USAGE ON TYPES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator REVOKE USAGE ON TYPES FROM PUBLIC;
+
 ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
   REVOKE ALL ON TABLES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
@@ -127,6 +154,8 @@ ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
   REVOKE ALL ON ROUTINES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public
   REVOKE ALL ON TYPES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO quest_migrator;
+ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator IN SCHEMA public GRANT USAGE ON TYPES TO quest_migrator;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
   REVOKE ALL ON TABLES FROM PUBLIC;
@@ -142,6 +171,8 @@ ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
   REVOKE ALL ON ROUTINES FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant
   REVOKE ALL ON TYPES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant GRANT EXECUTE ON FUNCTIONS TO val_migrator;
+ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator IN SCHEMA valorant GRANT USAGE ON TYPES TO val_migrator;
 
 -- Explicitly prevent the two runtime roles from crossing schema boundaries.
 REVOKE ALL ON SCHEMA valorant FROM quest_runtime;

@@ -277,6 +277,13 @@ executable no-writer-admission probe. It refuses
 production-looking database hosts and paths, root/symlink/nested/identical
 targets, unsafe environment-file content, missing manifest checksum/age
 identity/evidence, non-17 clients, and an unapproved source-major mismatch.
+The security verifier hook must return only the exact stdout token
+`security-verified`; its private output artifact and SHA-256 binding are
+retained in the evidence bundle.
+The host must bootstrap `openssl` and a protected signing key pair. The wrapper
+requires `REHEARSAL_SIGNING_PRIVATE_KEY`; verification requires the operator-
+trusted `REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY`. Missing key material or the
+signature tool fails closed.
 
 The wrapper makes a temporary isolated `BACKUP_ENV_FILE`, invokes
 `restore-production-backup.sh` with `RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION`
@@ -300,9 +307,16 @@ source; a different major is an approved logical-migration gate, never a live
 source probe.
 
 ```bash
-bash ops/rehearsal/verify-rehearsal-evidence.sh /secure/recovery/rehearsal-evidence
+REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY=/secure/recovery/rehearsal-trusted-signing-public.pem \
+  bash ops/rehearsal/verify-rehearsal-evidence.sh \
+  /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc \
+  /secure/recovery/rehearsal-evidence
 ```
 
+The verifier recomputes the selected archive checksum and every deterministic
+evidence-artifact hash, and requires the detached manifest signature from the
+trusted public key. Hooks receive only the disposable isolated-target context;
+their basenames and exact accepted outputs are retained in private evidence.
 The verifier rejects stale, malformed, incomplete, production-looking, or
 file-existence-only evidence. A valid rehearsal still does not prove a live
 VPS, Supabase project, rclone remote, Docker deployment, or the sibling

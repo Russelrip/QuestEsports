@@ -55,8 +55,9 @@ services and the CA must be supplied explicitly. Health probes require JSON
 probes must return `503` with `X-Write-Freeze: validation`.
 
 Each hook is an operator-provided disposable-target wrapper, not a fabricated
-status variable. The wrapper invokes it and accepts only exact stdout
-`passed`/`verified` results with a successful exit. It also queries the exact
+status variable. `SECURITY_VERIFY_COMMAND` must return exact stdout
+`security-verified`; the other hooks return exact `passed`/`verified` results,
+all with a successful exit. It also queries the exact
 VALORANT `_migration_ledger` table and verifies the four bootstrap roles,
 memberships, owners, grants, default ACLs, and RLS posture.
 
@@ -69,10 +70,17 @@ REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL \
   POSTGRES17_BIN=/usr/lib/postgresql/17/bin \
   bash ops/rehearsal/postgres17-restore-rehearsal.sh \
   /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
-bash ops/rehearsal/verify-rehearsal-evidence.sh /secure/recovery/rehearsal-evidence
+REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY=/secure/recovery/rehearsal-trusted-signing-public.pem \
+  bash ops/rehearsal/verify-rehearsal-evidence.sh \
+  /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc \
+  /secure/recovery/rehearsal-evidence
 ```
 
-The evidence directory contains mode-`600` summary, raw observation, and
+The host must bootstrap `openssl` plus a protected signing key pair. The
+wrapper requires `REHEARSAL_SIGNING_PRIVATE_KEY`; verification requires the
+operator-configured trusted `REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY`. If either
+key/tool is unavailable the flow fails closed. The evidence directory contains
+mode-`600` summary, raw observation, and
 inventory artifacts. The summary includes a SHA-256 binding to the fixed-name
 `rehearsal-observations.env`; the verifier hashes and parses that artifact and
 the raw role/inventory outputs before accepting the summary. Upload checksums
