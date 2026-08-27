@@ -55,6 +55,32 @@ for bundle_file in compose.production.yml valorant.compose.yml .env release-meta
   fi
 done
 
+validate_metadata() {
+  local metadata_file="$1" release_name="$2" metadata_line metadata_key
+  declare -A metadata=()
+  while IFS= read -r metadata_line || [[ -n "$metadata_line" ]]; do
+    [[ "$metadata_line" =~ ^[a-z][a-z0-9_]*=[^[:space:]]+$ ]] || die 'release metadata contains an ambiguous entry.'
+    metadata_key="${metadata_line%%=*}"
+    case "$metadata_key" in
+      commit_sha|commit_point_utc|writer_admitted|current_pointer_updated|previous_release|quest_project|valorant_project|shared_network) ;;
+      *) die "release metadata contains an unknown entry: $metadata_key" ;;
+    esac
+    [[ -z "${metadata[$metadata_key]+present}" ]] || die "release metadata contains a duplicate entry: $metadata_key"
+    metadata["$metadata_key"]="${metadata_line#*=}"
+  done < "$metadata_file"
+  for metadata_key in commit_sha commit_point_utc writer_admitted current_pointer_updated previous_release quest_project valorant_project shared_network; do
+    [[ -n "${metadata[$metadata_key]:-}" ]] || die "release metadata is missing $metadata_key."
+  done
+  [[ "${metadata[commit_sha],,}" == "${release_name,,}" && "${metadata[commit_sha]}" =~ ^[0-9a-fA-F]{40}$ ]] || die 'release metadata commit_sha is not bound to the release directory.'
+  [[ "${metadata[commit_point_utc]}" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || die 'release metadata commit_point_utc is invalid.'
+  [[ "${metadata[writer_admitted]}" == true ]] || die 'release metadata writer_admitted must be true.'
+  [[ "${metadata[current_pointer_updated]}" == true ]] || die 'release metadata current_pointer_updated must be true.'
+  [[ "${metadata[quest_project]}" == quest-prod && "${metadata[valorant_project]}" == valorant-prod && "${metadata[shared_network]}" == quest-shared ]] || die 'release metadata has an invalid project or network identity.'
+  [[ "${metadata[previous_release]}" == "$canonical_releases_root/"[0-9a-fA-F][0-9a-fA-F]* ]] || die 'release metadata previous_release is outside RELEASES_ROOT.'
+  [[ -d "${metadata[previous_release]}" && ! -L "${metadata[previous_release]}" && "$(realpath "${metadata[previous_release]}" 2>/dev/null)" == "${metadata[previous_release]}" ]] || die 'release metadata previous_release is not canonical.'
+  [[ "$(basename "${metadata[previous_release]}")" =~ ^[0-9a-fA-F]{40}$ ]] || die 'release metadata previous_release is not a full-SHA bundle.'
+}
+
 compose() { "$DOCKER_BIN" compose "$@"; }
 validate_project() {
   local file="$1" project="$2" env_file="${3:-}" config
@@ -95,6 +121,7 @@ validate_aliases() {
     [[ -n "${seen_aliases[$alias]:-}" ]] || die "required shared-network alias is missing: $alias"
   done
 }
+validate_metadata "$release_dir/release-metadata.txt" "$(basename "$release_dir")"
 validate_project "$release_dir/compose.production.yml" quest-prod "$release_dir/.env"
 validate_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir/.env"
 validate_active_project "$release_dir/compose.production.yml" quest-prod "$release_dir/.env"

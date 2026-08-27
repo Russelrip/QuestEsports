@@ -353,5 +353,10 @@ assert_contains "$TEST_LOG" 'project=valorant-prod'
 [[ -e "$fixture/current" ]] || { printf 'FAIL: current pointer was not retained\n' >&2; exit 1; }
 export TEST_PREVIOUS="$fixture/releases/1111111111111111111111111111111111111111"
 bash "$script_directory/deploy/verify-release.sh" >/dev/null
+metadata_backup="$fixture/release-metadata.good"
+cp "$TEST_PREVIOUS/release-metadata.txt" "$metadata_backup"
+printf '%s\n' 'unexpected=metadata' >> "$TEST_PREVIOUS/release-metadata.txt"
+assert_failed malformed-metadata bash "$script_directory/deploy/verify-release.sh"
+mv "$metadata_backup" "$TEST_PREVIOUS/release-metadata.txt"
 
 printf '%s\n' 'deploy release fixture tests passed'
