@@ -43,3 +43,7 @@ quest-esports.conf
 # Local container env. `.env*` does not match this name, and a filled-in copy
 # carries real OAuth credentials.
 ops/docker/quest.local.env
+
+# BEGIN oh-my-opencode-slim deepwork
+.slim/deepwork/
+# END oh-my-opencode-slim deepwork
