@@ -11,9 +11,9 @@ This repository uses GitHub Actions for continuous integration and owner-control
 - `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
 - `.github/workflows/build-container-images.yml` publishes immutable frontend,
   backend-runtime, and backend-migrator images only after a successful `CI` run
-  for `main`, after the protected image-build environment approves the external
-  image references. It does not run for pull requests or publish on a direct PR
-  event.
+  for `main`, after the build job's protected `container-image-build` Environment
+  approves the external image references. It does not run for pull requests or
+  publish on a direct PR event.
 - `.github/workflows/deploy-compose.yml` promotes only the manifest artifact from
   a successful image-build run whose full SHA also has a successful `CI` run. It
   supports a protected manual dispatch that selects the latest successful build;
