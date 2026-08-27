@@ -270,21 +270,34 @@ directory before starting and make it private. The wrapper requires an
 explicit `REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL`, an existing
 mode-600 recovery environment, an absolute encrypted archive and exact
 `.sha256` sibling, an offline age identity, fresh distinct empty upload roots,
-and pinned PostgreSQL 17 `psql`, `pg_restore`, and `pg_dump`. It refuses
+and pinned PostgreSQL 17 `psql`, `pg_restore`, and `pg_dump`. It also requires
+an operator-recorded source-version evidence file, an executable repository
+security-verifier hook, executable disposable failure-injection hooks, and an
+executable no-writer-admission probe. It refuses
 production-looking database hosts and paths, root/symlink/nested/identical
 targets, unsafe environment-file content, missing manifest checksum/age
 identity/evidence, non-17 clients, and an unapproved source-major mismatch.
 
 The wrapper makes a temporary isolated `BACKUP_ENV_FILE`, invokes
 `restore-production-backup.sh` with `RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION`
-and a zero countdown, and captures its output privately. It then records the
+and a zero countdown, and captures its output privately. It emits a fixed-name
+`rehearsal-observations.env` plus hashed raw role/inventory artifacts, binds
+that raw file into the summary, and then records the
 exact two-schema manifest scope, source/client versions, checksum/decryption,
-both schema/object counts, both migration ledgers, roles/owners/grants/default
+both schema/object counts, both migration ledgers (including the exact
+VALORANT `_migration_ledger`), roles/owners/grants/default
 ACLs, extensions/settings/RLS, upload counts/bytes/checksums, Quest and
 VALORANT health/CA/database status, validation freeze and writer rejection,
 named negative injections, measured resources, and an explicit RTO decision.
 No URL, credential, token, identity, or secret environment value is printed or
 written to evidence. Verify only with:
+
+The recorded upload checksums are post-restore tree checksums. They are not
+claims that the restored tree equals the source unless a source per-file
+inventory was supplied and independently bound. The source-version record is
+labelled `operator_recorded` when this isolated target cannot measure the live
+source; a different major is an approved logical-migration gate, never a live
+source probe.
 
 ```bash
 bash ops/rehearsal/verify-rehearsal-evidence.sh /secure/recovery/rehearsal-evidence

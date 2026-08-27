@@ -39,17 +39,26 @@ unsafe permissions, missing manifest scope, and source-major mismatches without
 an explicit logical-migration approval are refused.
 
 Provide these additional disposable-only variables: `REHEARSAL_EVIDENCE_DIR`,
-`SOURCE_POSTGRES_MAJOR`, `QUEST_LIVENESS_URL`, `QUEST_READINESS_URL`,
+`SOURCE_VERSION_EVIDENCE_FILE` (a private operator-recorded record containing
+`source_major`, `source_version`, and `provenance=operator_recorded`),
+`SECURITY_VERIFY_COMMAND` (an executable wrapper around the repository security
+verifier), `NO_WRITER_ADMISSION_COMMAND` (an executable disposable-target
+probe), `QUEST_LIVENESS_URL`, `QUEST_READINESS_URL`,
 `VALORANT_HEALTH_URL`, `VALORANT_CA_FILE`, `FREEZE_STATUS_URL`,
-`FREEZE_MUTATION_URL`, `FREEZE_CALLBACK_URL`,
-`NO_WRITER_ADMISSION_CONFIRMATION=verified`, six
-`FAILURE_INJECTION_<NAME>_STATUS=passed` results (bad checksum, bad
-decryption, wrong CA, blocked network, failed service health, and attempted
-mutation/callback), `REHEARSAL_RTO_SECONDS`, and
+`FREEZE_MUTATION_URL`, `FREEZE_CALLBACK_URL`, six executable
+`FAILURE_INJECTION_<NAME>_COMMAND` hooks (bad checksum, bad decryption, wrong
+CA, blocked network, failed service health, and attempted mutation/callback),
+`REHEARSAL_RTO_SECONDS`, and
 `REHEARSAL_RTO_DECISION=met|not_met`. The URLs must point to disposable
 services and the CA must be supplied explicitly. Health probes require JSON
 `status=ok`; readiness also requires `db=up`, and frozen mutation/callback
 probes must return `503` with `X-Write-Freeze: validation`.
+
+Each hook is an operator-provided disposable-target wrapper, not a fabricated
+status variable. The wrapper invokes it and accepts only exact stdout
+`passed`/`verified` results with a successful exit. It also queries the exact
+VALORANT `_migration_ledger` table and verifies the four bootstrap roles,
+memberships, owners, grants, default ACLs, and RLS posture.
 
 ```bash
 chmod 600 /secure/recovery/quest-esports-recovery.env
@@ -63,13 +72,16 @@ REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL \
 bash ops/rehearsal/verify-rehearsal-evidence.sh /secure/recovery/rehearsal-evidence
 ```
 
-The evidence file is mode `600` and contains only redacted statuses, counts,
-checksums, and timings—never URLs, credentials, tokens, identities, or secret
-environment contents. `verify-rehearsal-evidence.sh` requires actual status
-fields and non-zero schema/object and ledger counts; a file's presence alone is
-not runtime proof. The fixture test is deliberately limited to fake commands
-and generated disposable evidence. It does not contact Docker, PostgreSQL,
-age, a VPS, a hosted service, a live upload root, or an rclone remote.
+The evidence directory contains mode-`600` summary, raw observation, and
+inventory artifacts. The summary includes a SHA-256 binding to the fixed-name
+`rehearsal-observations.env`; the verifier hashes and parses that artifact and
+the raw role/inventory outputs before accepting the summary. Upload checksums
+are explicitly post-restore tree checksums, not source-equivalence claims
+unless a source per-file inventory was also supplied. Evidence never contains
+URLs, credentials, tokens, identities, or secret environment contents. The
+fixture test is deliberately limited to fake commands and generated
+disposable evidence. It does not contact Docker, PostgreSQL, age, a VPS, a
+hosted service, a live upload root, or an rclone remote.
 
 ## Operational examples
 
