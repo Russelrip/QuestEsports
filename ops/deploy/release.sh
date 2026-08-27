@@ -11,6 +11,9 @@ say() { printf '%s\n' "$*"; }
 
 release_lock_path="${RELEASE_LOCK_PATH:-/var/lock/quest-esports-release.lock}"
 [[ "$release_lock_path" == /* && "$release_lock_path" != / ]] || die 'RELEASE_LOCK_PATH must be an absolute non-root path.'
+if [[ "${QUEST_DEPLOY_FIXTURE:-0}" != 1 ]]; then
+  [[ "$release_lock_path" == /var/lock/quest-esports-release.lock ]] || die 'the canonical release lock path cannot be overridden.'
+fi
 [[ -e "$release_lock_path" ]] || die 'the canonical release lock must be created by root bootstrap before release.'
 exec 9>"$release_lock_path" || die 'the canonical release lock is not writable.'
 flock -n 9 || die 'another release, migration, backup, or name-audit operation is already running.'
@@ -19,7 +22,7 @@ fixture_mode="${QUEST_DEPLOY_FIXTURE:-0}"
 if [[ "$fixture_mode" != 1 ]]; then
   [[ "$(id -u)" == 0 ]] || die 'release.sh must run as root.'
   lock_stat="$(stat -c '%u %a' "$release_lock_path" 2>/dev/null)" || die 'cannot inspect canonical lock ownership.'
-  [[ "$lock_stat" == 0\ * ]] || die 'canonical release lock must be root-owned.'
+  [[ "$lock_stat" == '0 660' ]] || die 'canonical release lock must be root-owned with mode 0660.'
 fi
 
 [[ $# -eq 2 ]] || die 'usage: release.sh FULL_COMMIT_SHA RELEASE_MANIFEST'

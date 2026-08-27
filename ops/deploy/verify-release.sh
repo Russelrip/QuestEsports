@@ -5,12 +5,15 @@ umask 077
 die() { printf 'verification failed: %s\n' "$*" >&2; exit 1; }
 release_lock_path="${RELEASE_LOCK_PATH:-/var/lock/quest-esports-release.lock}"
 [[ "$release_lock_path" == /* && "$release_lock_path" != / && -e "$release_lock_path" ]] || die 'the canonical release lock must be a pre-created absolute path.'
+if [[ "${QUEST_DEPLOY_FIXTURE:-0}" != 1 ]]; then
+  [[ "$release_lock_path" == /var/lock/quest-esports-release.lock ]] || die 'the canonical release lock path cannot be overridden.'
+fi
 exec 9>"$release_lock_path" || die 'the canonical release lock is not writable.'
 flock -n 9 || die 'another release operation is already running.'
 fixture_mode="${QUEST_DEPLOY_FIXTURE:-0}"
 if [[ "$fixture_mode" != 1 ]]; then
   [[ "$(id -u)" == 0 ]] || die 'verify-release.sh must run as root.'
-  [[ "$(stat -c '%u' "$release_lock_path" 2>/dev/null)" == 0 ]] || die 'canonical release lock must be root-owned.'
+  [[ "$(stat -c '%u %a' "$release_lock_path" 2>/dev/null)" == '0 660' ]] || die 'canonical release lock must be root-owned with mode 0660.'
 fi
 release_env_file="${RELEASE_ENV_FILE:-/etc/quest-esports/release.env}"
 [[ -f "$release_env_file" && -r "$release_env_file" && ! -L "$release_env_file" ]] || die 'release environment is missing or unsafe.'
@@ -42,8 +45,30 @@ validate_project() {
   [[ "$(printf '%s\n' "$config" | awk -v p="$project" '$0 == "name: " p { n++ } END { print n+0 }')" == 1 ]] || die "Compose project identity is not exactly $project."
   [[ "$(printf '%s\n' "$active" | awk 'NF { print }' | sort -u)" == "$project" ]] || die "active project is not exactly one $project project."
 }
+validate_aliases() {
+  local alias_output record alias_list alias container
+  declare -A seen_aliases=()
+  alias_output="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{.Name}}|{{join .Aliases ","}}{{"\n"}}{{end}}' 2>/dev/null)" || die 'shared-network inspection failed.'
+  [[ -n "$alias_output" ]] || die 'shared-network alias inspection returned no containers.'
+  while IFS= read -r record; do
+    [[ -z "$record" ]] && continue
+    container="${record%%|*}"
+    alias_list="${record#*|}"
+    [[ -n "$container" && "$alias_list" != "$record" ]] || die 'shared-network alias inspection is ambiguous.'
+    IFS=',' read -r -a aliases <<< "$alias_list"
+    for alias in "${aliases[@]}"; do
+      [[ -z "$alias" ]] && continue
+      [[ -z "${seen_aliases[$alias]+seen}" ]] || die "duplicate shared-network alias: $alias"
+      seen_aliases["$alias"]="$container"
+    done
+  done <<< "$alias_output"
+  for alias in quest-backend quest-postgres valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
+    [[ -n "${seen_aliases[$alias]:-}" ]] || die "required shared-network alias is missing: $alias"
+  done
+}
 validate_project "$release_dir/compose.production.yml" quest-prod "$release_dir/.env"
 validate_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir/.env"
+validate_aliases
 quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health failed.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health JSON was not healthy.'
 "$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" >/dev/null 2>&1 || die 'Quest readiness failed.'
