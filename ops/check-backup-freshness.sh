@@ -39,6 +39,7 @@ declare -a remote_labels=()
 declare -a remote_values=()
 declare -a remote_configs=()
 declare -A config_by_label=()
+declare -A config_by_resolved_path=()
 if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
   while IFS= read -r config_entry || [[ -n "$config_entry" ]]; do
     [[ -z "$config_entry" ]] && continue
@@ -53,12 +54,26 @@ if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
       echo "BACKUP_RCLONE_CONFIGS contains a duplicate label." >&2
       exit 1
     fi
-    config_by_label["$config_label"]="$config_path"
+    resolved_config_path="$(realpath "$config_path" 2>/dev/null)" || {
+      echo "Rclone configuration is unavailable for remote label: $config_label" >&2
+      exit 1
+    }
+    if [[ ! -r "$resolved_config_path" || -n "${config_by_resolved_path[$resolved_config_path]+x}" ]]; then
+      echo "Rclone configuration paths must be readable and unique." >&2
+      exit 1
+    fi
+    config_by_label["$config_label"]="$resolved_config_path"
+    config_by_resolved_path["$resolved_config_path"]="$config_label"
   done <<< "$BACKUP_RCLONE_CONFIGS"
 fi
-remote_entries="${BACKUP_RCLONE_REMOTES:-}"
-if [[ -z "$remote_entries" && -n "${BACKUP_RCLONE_REMOTE:-}" ]]; then
+if [[ -n "${BACKUP_RCLONE_REMOTES+x}" ]]; then
+  remote_entries="$BACKUP_RCLONE_REMOTES"
+elif [[ -n "${BACKUP_RCLONE_REMOTE:-}" ]]; then
   remote_entries="legacy=${BACKUP_RCLONE_REMOTE}"
+  if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
+    echo "BACKUP_RCLONE_CONFIGS requires BACKUP_RCLONE_REMOTES." >&2
+    exit 1
+  fi
   if [[ -z "${RCLONE_CONFIG:-}" ]]; then
     echo "Missing required freshness setting: RCLONE_CONFIG" >&2
     exit 1
@@ -86,7 +101,8 @@ while IFS= read -r remote_entry || [[ -n "$remote_entry" ]]; do
     }
   done
   remote_config="${config_by_label[$remote_label]:-}"
-  if [[ -z "$remote_config" && ${#remote_labels[@]} -eq 0 && -n "${RCLONE_CONFIG:-}" ]]; then
+  if [[ -z "$remote_config" && -z "${BACKUP_RCLONE_REMOTES+x}" &&
+        ${#remote_labels[@]} -eq 0 && -n "${RCLONE_CONFIG:-}" ]]; then
     remote_config="$RCLONE_CONFIG"
   fi
   if [[ -z "$remote_config" || ! -r "$remote_config" ]]; then
@@ -101,13 +117,25 @@ if (( ${#remote_labels[@]} == 0 )); then
   echo "At least one backup remote is required." >&2
   exit 1
 fi
+if [[ -n "${BACKUP_RCLONE_REMOTES+x}" ]]; then
+  for configured_label in "${!config_by_label[@]}"; do
+    configured_remote=false
+    for remote_label in "${remote_labels[@]}"; do
+      [[ "$configured_label" == "$remote_label" ]] && configured_remote=true
+    done
+    if [[ "$configured_remote" != true ]]; then
+      echo "BACKUP_RCLONE_CONFIGS must exactly match BACKUP_RCLONE_REMOTES." >&2
+      exit 1
+    fi
+  done
+fi
 
 maximum_age_minutes="${BACKUP_MAX_AGE_MINUTES:-2160}"
 if [[ ! "$maximum_age_minutes" =~ ^[1-9][0-9]*$ ]]; then
   echo "BACKUP_MAX_AGE_MINUTES must be a positive integer." >&2
   exit 1
 fi
-for command in basename find flock rclone sha256sum; do
+for command in basename find flock realpath rclone sha256sum sort; do
   command -v "$command" >/dev/null || {
     echo "Required freshness command is unavailable: $command" >&2
     exit 1
@@ -118,7 +146,7 @@ candidate_file="$(mktemp)"
 trap 'rm -f -- "$candidate_file"' EXIT
 find "$BACKUP_ROOT" -maxdepth 1 -type f \
   -name 'quest-production-*.tar.gz.enc' -mmin "-${maximum_age_minutes}" \
-  -print0 > "$candidate_file"
+  -print0 | sort -z -r > "$candidate_file"
 recent_archive=""
 while IFS= read -r -d '' candidate; do
   [[ -f "$candidate.sha256" ]] || continue

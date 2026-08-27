@@ -19,14 +19,29 @@ for name in "${required[@]}"; do
     exit 1
   fi
 done
+command -v readlink >/dev/null || {
+  echo "Required backup command is unavailable: readlink" >&2
+  exit 1
+}
 if [[ ! "$BACKUP_AGE_RECIPIENT" =~ ^age1[0-9a-z]{58}$ ]]; then
   echo "BACKUP_AGE_RECIPIENT must be a valid age public recipient." >&2
   exit 1
 fi
 
+release_lock_path="${BACKUP_RELEASE_LOCK_PATH:-/var/lock/quest-esports-release.lock}"
 # Direct execution remains safe for operators and disposable fixture tests.
-if [[ "${BACKUP_RELEASE_LOCK_HELD:-}" != 1 ]]; then
-  release_lock_path="${BACKUP_RELEASE_LOCK_PATH:-/var/lock/quest-esports-release.lock}"
+if [[ "${BACKUP_RELEASE_LOCK_HELD:-}" == 1 ]]; then
+  expected_lock_target="$(readlink -f "$release_lock_path" 2>/dev/null || true)"
+  inherited_lock_target="$(readlink -f /proc/self/fd/8 2>/dev/null || true)"
+  if [[ -z "$expected_lock_target" || "$expected_lock_target" != "$inherited_lock_target" ]]; then
+    echo "The inherited release lock descriptor is not the canonical lock." >&2
+    exit 1
+  fi
+  if ! flock -n 8; then
+    echo "The inherited release lock is not held." >&2
+    exit 1
+  fi
+else
   if [[ "$release_lock_path" != /* || "$release_lock_path" == "/" ]]; then
     echo "BACKUP_RELEASE_LOCK_PATH must be an absolute non-root path." >&2
     exit 1
@@ -41,6 +56,7 @@ declare -a remote_labels=()
 declare -a remote_values=()
 declare -a remote_configs=()
 declare -A config_by_label=()
+declare -A config_by_resolved_path=()
 
 if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
   while IFS= read -r config_entry || [[ -n "$config_entry" ]]; do
@@ -56,13 +72,27 @@ if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
       echo "BACKUP_RCLONE_CONFIGS contains a duplicate label." >&2
       exit 1
     fi
-    config_by_label["$config_label"]="$config_path"
+    resolved_config_path="$(realpath "$config_path" 2>/dev/null)" || {
+      echo "Rclone configuration is unavailable for remote label: $config_label" >&2
+      exit 1
+    }
+    if [[ ! -r "$resolved_config_path" || -n "${config_by_resolved_path[$resolved_config_path]+x}" ]]; then
+      echo "Rclone configuration paths must be readable and unique." >&2
+      exit 1
+    fi
+    config_by_label["$config_label"]="$resolved_config_path"
+    config_by_resolved_path["$resolved_config_path"]="$config_label"
   done <<< "$BACKUP_RCLONE_CONFIGS"
 fi
 
-remote_entries="${BACKUP_RCLONE_REMOTES:-}"
-if [[ -z "$remote_entries" && -n "${BACKUP_RCLONE_REMOTE:-}" ]]; then
+if [[ -n "${BACKUP_RCLONE_REMOTES+x}" ]]; then
+  remote_entries="$BACKUP_RCLONE_REMOTES"
+elif [[ -n "${BACKUP_RCLONE_REMOTE:-}" ]]; then
   remote_entries="legacy=${BACKUP_RCLONE_REMOTE}"
+  if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
+    echo "BACKUP_RCLONE_CONFIGS requires BACKUP_RCLONE_REMOTES." >&2
+    exit 1
+  fi
   if [[ -z "${RCLONE_CONFIG:-}" ]]; then
     echo "Missing required backup setting: RCLONE_CONFIG" >&2
     exit 1
@@ -91,7 +121,8 @@ while IFS= read -r remote_entry || [[ -n "$remote_entry" ]]; do
     }
   done
   remote_config="${config_by_label[$remote_label]:-}"
-  if [[ -z "$remote_config" && ${#remote_labels[@]} -eq 0 && -n "${RCLONE_CONFIG:-}" ]]; then
+  if [[ -z "$remote_config" && -z "${BACKUP_RCLONE_REMOTES+x}" &&
+        ${#remote_labels[@]} -eq 0 && -n "${RCLONE_CONFIG:-}" ]]; then
     remote_config="$RCLONE_CONFIG"
   fi
   if [[ -z "$remote_config" || ! -r "$remote_config" ]]; then
@@ -105,6 +136,18 @@ done <<< "$remote_entries"
 if (( ${#remote_labels[@]} == 0 )); then
   echo "At least one backup remote is required." >&2
   exit 1
+fi
+if [[ -n "${BACKUP_RCLONE_REMOTES+x}" ]]; then
+  for configured_label in "${!config_by_label[@]}"; do
+    configured_remote=false
+    for remote_label in "${remote_labels[@]}"; do
+      [[ "$configured_label" == "$remote_label" ]] && configured_remote=true
+    done
+    if [[ "$configured_remote" != true ]]; then
+      echo "BACKUP_RCLONE_CONFIGS must exactly match BACKUP_RCLONE_REMOTES." >&2
+      exit 1
+    fi
+  done
 fi
 
 for directory in "$UPLOAD_ROOT" "$PRIVATE_UPLOAD_ROOT"; do
@@ -253,7 +296,7 @@ if [[ ! "$retention_days" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 find "$BACKUP_ROOT" -maxdepth 1 -type f \
-  \( -name 'quest-production-*.tar.gz.enc' -o -name 'quest-production-*.tar.gz.enc.sha256' \) \
+  \( -name 'quest-production-*.tar.gz.enc' -o -name 'quest-production-*.tar.gz.enc.sha256' -o -name 'quest-production-*.results' \) \
   -mtime "+$retention_days" -delete
 
 if (( remote_failures > 0 )); then

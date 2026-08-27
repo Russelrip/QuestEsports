@@ -8,7 +8,7 @@ This is the source of truth for Quest Esports production backup, restore testing
 ## Safety rules
 
 1. Never test a restore against the live Paris database or live upload directories.
-2. Never print or commit `/etc/quest-esports-backup.env` or `/srv/quest-esports/rclone/quest-esports.conf`.
+2. Never print or commit `/etc/quest-esports-backup.env` or any protected per-remote rclone configuration.
 3. Never place the private `age` identity in Git, Google Drive, email, chat, support tickets, or a normal cloud-synced folder.
 4. Always require both an encrypted archive and its matching `.sha256` file.
 5. Always verify the checksum before decrypting.
@@ -73,7 +73,7 @@ Consequently, the production `.env` and infrastructure credentials require a sep
 | `age` public recipient | `/etc/quest-esports-backup.env` | Safe for encryption; not sufficient to decrypt |
 | `age` private identity | Secured offline recovery package | Maintain at least two controlled offline copies; never keep it permanently on the VPS |
 | Backup environment | `/etc/quest-esports-backup.env`, `root:deploy`, mode `640` | Contains the database URL; never print the file |
-| rclone configuration | `/srv/quest-esports/rclone/quest-esports.conf`, `deploy:deploy`, mode `600` | Contains OAuth material; inspect only through safe rclone commands |
+| rclone configurations | One mode-`600` protected config per configured remote | Contains OAuth material; inspect only through safe rclone commands |
 | Google OAuth client | Google Cloud project `QuestEsports Backups` | Do not commit/download/store its JSON unnecessarily; rotate if exposed |
 | Production application secrets | Approved encrypted secret store | Not included in the backup archive |
 
@@ -99,9 +99,9 @@ The backup takes an exclusive `flock`, copies both immutable upload trees, runs 
 Set `BACKUP_RCLONE_REMOTES` to newline-separated `label=remote:path` entries and
 `BACKUP_RCLONE_CONFIGS` to matching newline-separated `label=/path/to/config`
 entries. Each remote must have a separate rclone config and credential/token.
-The legacy single `BACKUP_RCLONE_REMOTE` plus `RCLONE_CONFIG` form remains
-supported during transition. Never use `rclone config show` in logs or support
-output.
+The transition path may temporarily contain one configured destination, but
+normal operation requires a complete archive/checksum pair to succeed on every
+configured remote. Never use `rclone config show` in logs or support output.
 
 The root bootstrap creates the shared lock before any release, migration,
 backup, or name-audit operation:
@@ -131,8 +131,8 @@ systemctl show quest-esports-backup.service \
 journalctl -u quest-esports-backup.service --since today --no-pager
 
 sudo -u deploy -H rclone lsl \
-  quest-backups-custom:quest-esports-v2/production \
-  --config /srv/quest-esports/rclone/quest-esports.conf
+  '<configured-remote:path>' \
+  --config '<protected-per-remote-rclone-config>'
 ```
 
 A completed oneshot service normally reports:
@@ -157,7 +157,9 @@ sudo -u deploy -H env \
   bash ops/backup-production.sh
 ```
 
-Success is not established until both remote objects are visible. A local encrypted file alone is insufficient.
+Success is not established until the encrypted archive and matching checksum
+are visible and verified independently on every configured remote. A local
+encrypted file alone is insufficient.
 
 ### Test the automated path
 
@@ -253,7 +255,7 @@ This workflow validates an encrypted application-database snapshot in disposable
 | Paris database loss | Create a compatible PostgreSQL/Supabase target, restore the application schemas recorded by the archive manifest (`public` and `valorant` when included), update secrets, run migrations/security checks, then switch the backend |
 | VPS loss with database intact | Rebuild the VPS from Git and the secret store, restore public/private uploads, reinstall PM2/Nginx/systemd/rclone, then verify health |
 | Complete environment loss | Rebuild database and VPS, restore database/uploads, restore external configuration from its separate secret recovery process, then update DNS and verify every integration |
-| OAuth token revoked | Re-authorize the dedicated rclone remote and run a manual plus systemd backup test; do not change archive encryption keys |
+| OAuth token revoked | Re-authorize the affected configured remote and run a manual plus systemd backup test; do not change archive encryption keys |
 | Private `age` identity lost | Existing archives cannot be decrypted; locate the second offline identity copy before taking any destructive action |
 
 ## Isolated full restore drill

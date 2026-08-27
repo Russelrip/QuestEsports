@@ -36,13 +36,15 @@ if [[ ! "$BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS" =~ ^[0-9]+$ || "$BACKUP_REMOTE_
   echo "BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS must be an integer of at least 2." >&2
   exit 1
 fi
-command -v rclone >/dev/null || { echo "rclone is required." >&2; exit 1; }
-command -v mktemp >/dev/null || { echo "mktemp is required." >&2; exit 1; }
+for command in mktemp realpath rclone; do
+  command -v "$command" >/dev/null || { echo "$command is required." >&2; exit 1; }
+done
 
 declare -a remote_labels=()
 declare -a remote_values=()
 declare -a remote_configs=()
 declare -A config_by_label=()
+declare -A config_by_resolved_path=()
 if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
   while IFS= read -r config_entry || [[ -n "$config_entry" ]]; do
     [[ -z "$config_entry" ]] && continue
@@ -57,12 +59,26 @@ if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
       echo "BACKUP_RCLONE_CONFIGS contains a duplicate label." >&2
       exit 1
     fi
-    config_by_label["$config_label"]="$config_path"
+    resolved_config_path="$(realpath "$config_path" 2>/dev/null)" || {
+      echo "Rclone configuration is unavailable for remote label: $config_label" >&2
+      exit 1
+    }
+    if [[ ! -r "$resolved_config_path" || -n "${config_by_resolved_path[$resolved_config_path]+x}" ]]; then
+      echo "Rclone configuration paths must be readable and unique." >&2
+      exit 1
+    fi
+    config_by_label["$config_label"]="$resolved_config_path"
+    config_by_resolved_path["$resolved_config_path"]="$config_label"
   done <<< "$BACKUP_RCLONE_CONFIGS"
 fi
-remote_entries="${BACKUP_RCLONE_REMOTES:-}"
-if [[ -z "$remote_entries" && -n "${BACKUP_RCLONE_REMOTE:-}" ]]; then
+if [[ -n "${BACKUP_RCLONE_REMOTES+x}" ]]; then
+  remote_entries="$BACKUP_RCLONE_REMOTES"
+elif [[ -n "${BACKUP_RCLONE_REMOTE:-}" ]]; then
   remote_entries="legacy=${BACKUP_RCLONE_REMOTE}"
+  if [[ -n "${BACKUP_RCLONE_CONFIGS:-}" ]]; then
+    echo "BACKUP_RCLONE_CONFIGS requires BACKUP_RCLONE_REMOTES." >&2
+    exit 1
+  fi
   if [[ -z "${RCLONE_CONFIG:-}" ]]; then
     echo "Missing required retention setting: RCLONE_CONFIG" >&2
     exit 1
@@ -90,7 +106,8 @@ while IFS= read -r remote_entry || [[ -n "$remote_entry" ]]; do
     }
   done
   remote_config="${config_by_label[$remote_label]:-}"
-  if [[ -z "$remote_config" && ${#remote_labels[@]} -eq 0 && -n "${RCLONE_CONFIG:-}" ]]; then
+  if [[ -z "$remote_config" && -z "${BACKUP_RCLONE_REMOTES+x}" &&
+        ${#remote_labels[@]} -eq 0 && -n "${RCLONE_CONFIG:-}" ]]; then
     remote_config="$RCLONE_CONFIG"
   fi
   if [[ -z "$remote_config" || ! -r "$remote_config" ]]; then
@@ -105,9 +122,25 @@ if (( ${#remote_labels[@]} == 0 )); then
   echo "At least one backup remote is required." >&2
   exit 1
 fi
+if [[ -n "${BACKUP_RCLONE_REMOTES+x}" ]]; then
+  for configured_label in "${!config_by_label[@]}"; do
+    configured_remote=false
+    for remote_label in "${remote_labels[@]}"; do
+      [[ "$configured_label" == "$remote_label" ]] && configured_remote=true
+    done
+    if [[ "$configured_remote" != true ]]; then
+      echo "BACKUP_RCLONE_CONFIGS must exactly match BACKUP_RCLONE_REMOTES." >&2
+      exit 1
+    fi
+  done
+fi
 
 listing_file="$(mktemp)"
-trap 'rm -f -- "$listing_file"' EXIT
+state_directory="$(mktemp -d)"
+trap 'rm -f -- "$listing_file"; rm -rf -- "$state_directory"' EXIT
+declare -a expired_files=()
+declare -a expired_counts=()
+declare -a remaining_counts=()
 policy_failure=0
 operation_failure=0
 for remote_index in "${!remote_labels[@]}"; do
@@ -136,7 +169,10 @@ for remote_index in "${!remote_labels[@]}"; do
     [[ -n "${object_set[${object_name}.sha256]:-}" ]] || continue
     complete_count=$((complete_count + 1))
   done < "$listing_file"
-  expired_file="$(mktemp)"
+  expired_file="$state_directory/expired-$remote_index"
+  pair_file="$state_directory/pairs-$remote_index"
+  : > "$expired_file"
+  : > "$pair_file"
   if ! rclone lsf "${remote%/}" --config "$config" --files-only --max-depth 1 \
       --min-age "${BACKUP_REMOTE_RETENTION_DAYS}d" \
       --include 'quest-production-*.tar.gz.enc' > "$expired_file" 2>/dev/null; then
@@ -149,39 +185,59 @@ for remote_index in "${!remote_labels[@]}"; do
     [[ "$object_name" =~ ^quest-production-[0-9]{8}T[0-9]{6}Z\.tar\.gz\.enc$ ]] || continue
     [[ -n "${object_set[${object_name}.sha256]:-}" ]] || continue
     expired_archives+=("$object_name")
+    printf '%s\n' "$object_name" >> "$pair_file"
   done < "$expired_file"
-  rm -f -- "$expired_file"
-
+  expired_files[$remote_index]="$pair_file"
   remaining_count=$((complete_count - ${#expired_archives[@]}))
+  expired_counts[$remote_index]=${#expired_archives[@]}
+  remaining_counts[$remote_index]=$remaining_count
+  printf 'Inspected remote label %s.\n' "$label"
   if (( remaining_count < BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS )); then
     echo "Refusing retention for remote label $label: policy is below the minimum recovery points." >&2
     policy_failure=1
     continue
   fi
-  if (( ${#expired_archives[@]} == 0 )); then
-    echo "No remote production backups are older than ${BACKUP_REMOTE_RETENTION_DAYS} days for label $label."
-    continue
-  fi
-  echo "Remote retention candidate archives for label $label: ${#expired_archives[@]}; recovery points retained: ${remaining_count}."
-  if [[ "${RETENTION_CONFIRMATION:-}" != "PRUNE_QUEST_PRODUCTION" ]]; then
-    echo "Dry run only. Set RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION for an intentional deletion."
-    for archive_name in "${expired_archives[@]}"; do
-      printf 'Would delete recovery pair for label %s: %s and checksum\n' "$label" "$archive_name"
-    done
-    continue
-  fi
-  for archive_name in "${expired_archives[@]}"; do
-    if ! rclone deletefile "${remote%/}/$archive_name.sha256" --config "$config" >/dev/null 2>/dev/null; then
-      operation_failure=1
-      continue
-    fi
-    if ! rclone deletefile "${remote%/}/$archive_name" --config "$config" >/dev/null 2>/dev/null; then
-      operation_failure=1
-    fi
-  done
 done
 
 if (( policy_failure > 0 || operation_failure > 0 )); then
+  exit 1
+fi
+for remote_index in "${!remote_labels[@]}"; do
+  [[ -n "${expired_files[$remote_index]:-}" ]] || continue
+  label="${remote_labels[$remote_index]}"
+  remote="${remote_values[$remote_index]}"
+  config="${remote_configs[$remote_index]}"
+  expired_file="${expired_files[$remote_index]}"
+  expired_count="${expired_counts[$remote_index]}"
+  remaining_count="${remaining_counts[$remote_index]}"
+  if (( expired_count == 0 )); then
+    echo "No remote production backups are older than ${BACKUP_REMOTE_RETENTION_DAYS} days for label $label."
+    continue
+  fi
+  echo "Remote retention candidate archives for label $label: ${expired_count}; recovery points retained: ${remaining_count}."
+  if [[ "${RETENTION_CONFIRMATION:-}" != "PRUNE_QUEST_PRODUCTION" ]]; then
+    echo "Dry run only. Set RETENTION_CONFIRMATION=PRUNE_QUEST_PRODUCTION for an intentional deletion."
+    while IFS= read -r archive_name; do
+      [[ -n "$archive_name" ]] || continue
+      printf 'Would delete recovery pair for label %s: %s and checksum\n' "$label" "$archive_name"
+    done < "$expired_file"
+    continue
+  fi
+  while IFS= read -r archive_name; do
+    [[ -n "$archive_name" ]] || continue
+    if ! rclone deletefile "${remote%/}/$archive_name" --config "$config" >/dev/null 2>/dev/null; then
+      printf 'Remote retention deletion was incomplete for label %s; the recovery pair was retained.\n' "$label" >&2
+      operation_failure=1
+      continue
+    fi
+    if ! rclone deletefile "${remote%/}/$archive_name.sha256" --config "$config" >/dev/null 2>/dev/null; then
+      printf 'Remote retention deletion was incomplete for label %s; the archive was removed but checksum cleanup failed.\n' "$label" >&2
+      operation_failure=1
+    fi
+  done < "$expired_file"
+done
+
+if (( operation_failure > 0 )); then
   exit 1
 fi
 if [[ "${RETENTION_CONFIRMATION:-}" == "PRUNE_QUEST_PRODUCTION" ]]; then
