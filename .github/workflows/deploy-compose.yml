@@ -1,0 +1,141 @@
+name: Deploy immutable Compose release
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Build container images
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: production-compose-deploy
+  cancel-in-progress: false
+
+jobs:
+  resolve-build:
+    name: Resolve a successful image build
+    if: ${{ vars.COMPOSE_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Build container images' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      build_run_id: ${{ steps.resolve.outputs.build_run_id }}
+      release_sha: ${{ steps.resolve.outputs.release_sha }}
+    steps:
+      - name: Resolve only the successful build run
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            runs_json="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow build-container-images.yml \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json databaseId,headSha,conclusion)"
+            build_run_id="$(jq -er '.[0].databaseId | select(type == "number")' <<< "$runs_json")"
+            release_sha="$(jq -er '.[0].headSha | select(test("^[0-9a-f]{40}$"))' <<< "$runs_json")"
+          else
+            [[ "$EVENT_BUILD_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+            [[ "$EVENT_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+            build_run_id="$EVENT_BUILD_RUN_ID"
+            release_sha="$EVENT_RELEASE_SHA"
+          fi
+          [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            printf '%s\n' 'The selected build did not provide a full lowercase SHA.' >&2
+            exit 1
+          }
+          printf 'build_run_id=%s\n' "$build_run_id" >> "$GITHUB_OUTPUT"
+          printf 'release_sha=%s\n' "$release_sha" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy signed Compose release
+    needs: resolve-build
+    if: ${{ needs.resolve-build.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: production-compose
+    timeout-minutes: 30
+    env:
+      RELEASE_SHA: ${{ needs.resolve-build.outputs.release_sha }}
+      BUILD_RUN_ID: ${{ needs.resolve-build.outputs.build_run_id }}
+      SSH_HOST: ${{ secrets.BACKEND_SSH_HOST }}
+      SSH_PORT: ${{ secrets.BACKEND_SSH_PORT }}
+      SSH_USER: ${{ secrets.BACKEND_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
+      SSH_HOST_KEY: ${{ secrets.BACKEND_SSH_HOST_KEY }}
+
+    steps:
+      - name: Download the manifest from that exact successful build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: container-release-manifest-${{ needs.resolve-build.outputs.release_sha }}
+          run-id: ${{ needs.resolve-build.outputs.build_run_id }}
+          github-token: ${{ github.token }}
+          path: release-manifest
+
+      - name: Verify the immutable release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest='release-manifest/release-manifest.txt'
+          test -f "$manifest" && test ! -L "$manifest"
+          test "$(find release-manifest -type f -print | wc -l)" -eq 1
+          expected_keys='commit_sha frontend_image backend_image migrator_image postgres_image valorant_image'
+          actual_keys="$(awk -F= '{ print $1 }' "$manifest" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+          [[ "$actual_keys" == "$expected_keys" ]] || exit 1
+          while IFS= read -r line; do
+            [[ "$line" =~ ^[a-z][a-z0-9_]*=[^[:space:]]+$ ]] || exit 1
+          done < "$manifest"
+          test "$(awk -F= -v sha="$RELEASE_SHA" '$1 == "commit_sha" && $2 == sha { count++ } END { print count + 0 }' "$manifest")" = 1
+          for key in frontend_image backend_image migrator_image valorant_image; do
+            value="$(awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1) }' "$manifest")"
+            [[ "$value" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || exit 1
+          done
+          postgres_image="$(awk -F= '$1 == "postgres_image" { print $2 }' "$manifest")"
+          [[ "$postgres_image" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || exit 1
+
+      - name: Configure the pinned deploy SSH connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST"
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_HOST_KEY"
+          test "$SSH_USER" = deploy
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/quest-deploy-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/quest-deploy-key" "$HOME/.ssh/known_hosts"
+
+      - name: Transfer the verified manifest and invoke the fixed root release script
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Host bootstrap pre-creates this root-owned, deploy-group-writable
+          # inode. scp truncates the existing inode, preserving the ownership
+          # required by release.sh; it must not be replaced with a deploy-owned
+          # temporary file.
+          remote_manifest='/var/lib/quest-esports/incoming/release-manifest'
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i "$HOME/.ssh/quest-deploy-key" -P "${SSH_PORT:-22}" \
+            release-manifest/release-manifest.txt \
+            "deploy@$SSH_HOST:$remote_manifest"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            -i "$HOME/.ssh/quest-deploy-key" -p "${SSH_PORT:-22}" \
+            "deploy@$SSH_HOST" \
+            "sudo -n -- /usr/local/sbin/quest-esports-release '$RELEASE_SHA' '$remote_manifest'"

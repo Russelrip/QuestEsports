@@ -9,6 +9,59 @@ This repository uses GitHub Actions for continuous integration and owner-control
 - `.github/workflows/cd.yml` automatically runs after a successful `CI` workflow for a push to `main`; it also retains manual dispatch for emergency/manual redeploys. It only deploys when the actor is the repository owner.
 - `.github/workflows/deploy-frontend.yml` automatically runs after a successful backend CD for `main`, promoting that workflow's exact successful upstream SHA after the production backend reports API compatibility version 2 or newer. It also retains manual dispatch for emergency/manual redeploys.
 - `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
+- `.github/workflows/build-container-images.yml` publishes immutable frontend,
+  backend-runtime, and backend-migrator images only after a successful `CI` run
+  for `main`. It does not run for pull requests or publish on a direct PR event.
+- `.github/workflows/deploy-compose.yml` promotes only the manifest artifact from
+  a successful image-build run. It supports a protected manual dispatch that
+  selects the latest successful build; it has no SHA override input.
+
+## Immutable Compose release transition
+
+The container path is deliberately separate from the legacy PM2/Vercel path.
+The image workflow checks out the exact successful CI `head_sha`, tags each
+Quest image with that full SHA, publishes by GHCR digest, emits BuildKit
+provenance/SBOM attestations, and keylessly signs the three Quest image digests
+with GitHub OIDC. Its release artifact is an exact six-entry manifest containing
+`commit_sha`, `frontend_image`, `backend_image`, `migrator_image`,
+`postgres_image`, and `valorant_image`; deployment rejects mutable references or
+any SHA that is not bound to that artifact.
+
+Configure these non-secret repository variables before enabling the path:
+
+```text
+PRODUCTION_API_URL=https://api.questesports.lk
+PRODUCTION_SITE_URL=https://questesports.lk
+POSTGRES_17_BOOKWORM_DIGEST=sha256:<owner-verified-digest>
+VALORANT_IMAGE=ghcr.io/<sibling-owner>/<image>@sha256:<owner-verified-digest>
+COMPOSE_DEPLOY_ENABLED=true
+```
+
+`production-compose` should be a protected GitHub Environment with required
+reviewers. The deploy job uses the existing `BACKEND_SSH_HOST`,
+`BACKEND_SSH_PORT`, `BACKEND_SSH_USER`, `BACKEND_SSH_PRIVATE_KEY`, and
+`BACKEND_SSH_HOST_KEY` contract, requires the user to be exactly `deploy`, and
+invokes only the root-owned `/usr/local/sbin/quest-esports-release` through
+non-interactive sudo with the full SHA and downloaded manifest path. The host
+bootstrap must install that fixed script and its narrow sudoers entry and
+pre-create `/var/lib/quest-esports/incoming/release-manifest` as a non-symlink
+`root:deploy` mode `0660` file. The workflow overwrites that existing inode so
+the Task 7A root-ownership check remains true; it does not remove or replace
+the file. This workflow does not grant Docker access or run source checkout,
+npm, PM2, or migrations on the VPS.
+
+This phase does **not** change DNS or claim that a VPS, registry, signing,
+attestation, SSH, or hosted GitHub execution has been verified. Keep `.github/
+workflows/cd.yml` and `deploy-frontend.yml` unchanged as the legacy PM2/Vercel
+transition path until observation, host bootstrap, sibling Compose readiness,
+and the separately approved DNS cutover phases pass. No DNS cutover occurs in
+the immutable image or deployment workflows.
+
+For a local contract check, confirm both new files contain only 40-hex SHA
+workflow/artifact bindings, `cancel-in-progress: false`, no `workflow_dispatch`
+in the build workflow, and no `npm ci`, `pm2`, `docker group`, or mutable
+`:latest` deployment reference. Runtime evidence still requires the assigned
+actionlint and host/operator checks; documentation cannot provide that evidence.
 
 Backend CD is an automatic, repository-owner-only job gated by
 `BACKEND_DEPLOY_ENABLED=true`, the exact successful CI SHA, and a successful CI
