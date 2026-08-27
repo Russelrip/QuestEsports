@@ -367,6 +367,88 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 
 ## Normal Deployment
 
+### Immutable Compose release contract
+
+The repository also contains a target-state release path under `ops/deploy/`.
+It is a root-owned host contract and is not evidence that Docker, systemd, the
+registry, the backup remotes, or the sibling VALORANT deployment is currently
+installed or healthy. Host bootstrap must first create the root-owned
+`/var/lock/quest-esports-release.lock`, install the protected release
+environment from `ops/deploy/release.env.example`, create the pre-created
+`quest-shared` network, and install the fixed root-owned command wrappers named
+by that environment. The release actor must be granted only the narrow sudo
+permission for the fixed release script; adding `deploy` to the Docker group
+is not an implicit substitute.
+
+The release manifest is an operator-approved, non-secret file with exactly one
+`commit_sha`, `frontend_image`, `backend_image`, `migrator_image`,
+`postgres_image`, and `valorant_image` entry. The commit is the full SHA and all
+application images are exact `ghcr.io/...@sha256:<64 hex>` references;
+PostgreSQL is the exact `postgres:17-bookworm@sha256:<64 hex>` reference. The
+script rejects duplicate or unknown manifest keys, mutable tags, mismatched
+SHAs, wrong project names, duplicate shared-network aliases, and more than one
+active fixed-name service group. It stages at
+`/opt/quest-esports/releases/<full-sha>/` and atomically replaces
+`/opt/quest-esports/current` only after writer admission.
+
+Run the release only from an approved host session, without printing the
+protected environment or manifest credentials:
+
+```bash
+sudo /usr/local/sbin/quest-esports-release \
+  <full-40-character-commit-sha> /secure/releases/<full-sha>.manifest
+sudo /var/www/QuestEsports/ops/deploy/verify-release.sh
+```
+
+The script takes the canonical lock before disk, database, registry, backup,
+Compose, migration, or health work and retains it through the pointer switch.
+It performs no VPS-side build and does not stop PM2/Vercel as part of this
+transition. It stages/pulls both fixed Compose projects without writers,
+checks PostgreSQL and multi-remote freshness, and preserves the old VALORANT
+units unmasked until the commit point. If migrations are pending, both the
+relevant owner approval for the exact SHA and `BACKUP_APPROVAL=
+BACKUP_QUEST_PRODUCTION` are required before the existing backup primitive is
+invoked. The backup must then produce a remotely verified complete archive and
+checksum pair. Migrations are one-shot operations and are never automatically
+reversed.
+
+After coordinated freeze acknowledgements, the release starts both projects
+frozen/read-only and requires Quest health/readiness, PostgreSQL readiness,
+unique `quest-shared` aliases, and VALORANT HTTPS health with certificate
+validation plus JSON `status: "ok"` and `db: "up"`. Only after both repository
+readiness acknowledgements does the configured coordinated writer-enable
+operation run. The resulting commit point, SHA, projects, aliases, and pointer
+state are retained in release metadata. Old VALORANT units are masked only
+after that record exists.
+
+Before writer admission, a failed gate restores the previous application
+release and may restart only the previously stopped, still-unmasked old
+VALORANT units while the old database remains authoritative. Use the explicit
+boundary rather than changing one database URL:
+
+```bash
+sudo env OLD_VALORANT_WAS_STOPPED=1 \
+  /usr/local/sbin/quest-esports-rollback pre-commit \
+  /opt/quest-esports/releases/<failed-sha>
+```
+
+After writer admission, an application rollback is not a database rollback.
+Stop both writer groups, re-enable the coordinated freeze, capture and
+checksum current PostgreSQL 17 and both upload roots, record expected loss/RPO,
+and obtain incident-owner approval before selecting fix-forward or a controlled
+restore:
+
+```bash
+sudo env EXPECTED_LOSS_RPO='<owner-approved statement>' \
+  INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL \
+  /usr/local/sbin/quest-esports-rollback post-commit
+```
+
+The post-commit path never restarts old writers and never redirects only one
+service to stale Supabase. These scripts and their fixture test are disposable
+contracts; they do not claim a live VPS, hosted database, real rclone remote,
+systemd, registry, or sibling-repository verification.
+
 1. Push to `main`.
 2. CI runs backend audit, migrations against PostgreSQL 16, migration/schema verification, coverage, lint, frontend audit/lint/unit tests/build, and Playwright.
 3. After CI succeeds, automatic backend CD deploys the exact successful CI commit SHA.

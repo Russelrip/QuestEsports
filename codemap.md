@@ -27,6 +27,10 @@ The API routes and aggregate definitions are mapped in
 - `mobile-admin/` — private Android operations client.
 - `docs/` — API, operational, deployment, recovery, and security contracts.
 - `ops/` — production backup, restore, retention, and freshness tooling.
+- `ops/deploy/` — root-owned immutable Compose release, verification, and
+  pre/post-commit rollback contracts. It consumes exact image-digest manifests
+  and the canonical host lock; it does not build images or own the sibling
+  repository's release.
 - `ops/docker/` — immutable production Compose topology, PostgreSQL 17 role/TLS
   bootstrap, and durable upload/database mount contracts. The production
   project is fixed as `quest-prod`; its pre-created external network is
