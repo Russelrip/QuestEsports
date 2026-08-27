@@ -78,6 +78,9 @@ root_file "$manifest_path"
 protected_file "$CURRENT_SUPABASE_ENV_FILE"
 command_setting VALIDATE_HOST_COMMAND
 [[ "$(RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" "$VALIDATE_HOST_COMMAND" 2>/dev/null)" == validated ]] || die 'host/artifact validation did not acknowledge the cutover manifest.'
+require_setting SERVICE_OWNERSHIP_COMMAND
+command_setting SERVICE_OWNERSHIP_COMMAND
+[[ "$("$SERVICE_OWNERSHIP_COMMAND" 2>/dev/null)" == owned ]] || die 'service ownership validation failed.'
 require_setting FIRST_CUTOVER_OWNER_APPROVAL_SHA
 [[ "$FIRST_CUTOVER_OWNER_APPROVAL_SHA" == "$release_sha" ]] || die 'first-cutover owner approval is not bound to this SHA.'
 
@@ -187,24 +190,33 @@ validate_active_project() {
 }
 
 validate_aliases() {
-  local alias_output alias record container alias_list
-  declare -A seen_aliases=()
+  local alias_output alias record container project service image alias_list expected metadata
+  declare -A seen_aliases=() expected_projects=() expected_services=() expected_images=()
+  expected_projects[quest-backend]=quest-prod; expected_services[quest-backend]=backend; expected_images[quest-backend]="${manifest[backend_image]}"
+  expected_projects[quest-postgres]=quest-prod; expected_services[quest-postgres]=postgres; expected_images[quest-postgres]="${manifest[postgres_image]}"
+  for alias in valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
+    expected_projects[$alias]=valorant-prod; expected_services[$alias]=valorant-platform; expected_images[$alias]="${manifest[valorant_image]}"
+  done
   alias_output="$("$DOCKER_BIN" network inspect "$shared_network" --format '{{range .Containers}}{{.Name}}|{{join .Aliases ","}}{{"\n"}}{{end}}' 2>/dev/null)" || die "could not inspect external network $shared_network."
   [[ -n "$alias_output" ]] || die "external network $shared_network has no inspectable containers."
   while IFS= read -r record; do
     [[ -z "$record" ]] && continue
-    container="${record%%|*}"
-    alias_list="${record#*|}"
-    [[ -n "$container" && "$alias_list" != "$record" ]] || die 'shared-network alias inspection is ambiguous.'
+    IFS='|' read -r container alias_list <<< "$record"
+    metadata="$("$DOCKER_BIN" inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Config.Image}}' 2>/dev/null)" || die 'shared-network container metadata inspection failed.'
+    IFS='|' read -r project service image <<< "$metadata"
+    [[ -n "$container" && -n "$project" && -n "$service" && -n "$image" && -n "$alias_list" ]] || die 'shared-network alias inspection is ambiguous.'
     IFS=',' read -r -a aliases <<< "$alias_list"
     for alias in "${aliases[@]}"; do
       [[ -n "$alias" ]] || continue
       [[ -z "${seen_aliases[$alias]+seen}" ]] || die "duplicate shared-network alias: $alias"
-      seen_aliases["$alias"]="$container"
+      seen_aliases["$alias"]="$project|$service|$image|$container"
     done
   done <<< "$alias_output"
   for alias in quest-backend quest-postgres valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
-    [[ -n "${seen_aliases[$alias]:-}" ]] || die "required shared-network alias is missing: $alias"
+    expected="${seen_aliases[$alias]:-}"
+    [[ -n "$expected" ]] || die "required shared-network alias is missing: $alias"
+    IFS='|' read -r project service image container <<< "$expected"
+    [[ "$project" == "${expected_projects[$alias]}" && "$service" == "${expected_services[$alias]}" && "$image" == "${expected_images[$alias]}" ]] || die "shared-network alias $alias is bound to an unexpected project, service, or image."
   done
 }
 
@@ -221,7 +233,7 @@ run_migrator() {
   [[ "$target_authority" == quest-postgres ]] || die 'migrator target authority is not the fixed Quest PostgreSQL target.'
   [[ "$schema" == public || "$schema" == valorant ]] || die 'migrator schema is not an approved service schema.'
   output="$(MIGRATION_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" MIGRATOR_IMAGE="${manifest[migrator_image]}" EXPECTED_MIGRATOR_IMAGE="${manifest[migrator_image]}" "${!variable}" 2>/dev/null)" || die 'migration command failed.'
-  [[ "$output" =~ ^migrated[[:space:]]+image=${manifest[migrator_image]}[[:space:]]+target=quest-postgres[[:space:]]+schema=$schema([[:space:]]|$) ]] || die 'migration command did not acknowledge the exact migrator image, target, and schema.'
+  [[ "$output" =~ ^migrated[[:space:]]+image=${manifest[migrator_image]}[[:space:]]+target=quest-postgres[[:space:]]+schema=$schema[[:space:]]+repository=$repository$ ]] || die 'migration command did not acknowledge the exact migrator image, target, schema, and repository.'
 }
 run_migration_status() {
   # Accepted acknowledgements are `pending target=quest-postgres` and `none target=quest-postgres`.
@@ -230,9 +242,8 @@ run_migration_status() {
   [[ "$target_authority" == quest-postgres ]] || die 'migration target authority is not the fixed Quest PostgreSQL target.'
   [[ "$schema" == public || "$schema" == valorant ]] || die 'migration schema is not an approved service schema.'
   output="$(CHECK_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" "${!variable}" 2>/dev/null)" || die "$variable failed."
-  [[ "$output" =~ (^|[[:space:]])target=quest-postgres([[:space:]]|$) && "$output" =~ (^|[[:space:]])schema=$schema([[:space:]]|$) ]] || die "$variable did not identify target quest-postgres and schema $schema."
-  if [[ "$output" =~ (^|[[:space:]])none([[:space:]]|$) ]]; then return 0; fi
-  [[ "$output" =~ (^|[[:space:]])pending([[:space:]]|$) ]] || die "$variable returned an unexpected migration status."
+  [[ "$output" =~ ^(none|pending)[[:space:]]+target=quest-postgres[[:space:]]+schema=$schema[[:space:]]+repository=$repository$ ]] || die "$variable returned an ambiguous target/schema/status acknowledgement."
+  [[ "$output" == none* ]] && return 0
   return 1
 }
 
@@ -280,6 +291,24 @@ validate_reboot_persistence() {
   done
 }
 
+record_commit_point() {
+  local quest_admitted="$1" quest_timestamp="$2" valorant_admitted="$3" valorant_timestamp="$4" temporary_file
+  temporary_file="$stage_dir/.commit-point.$$.tmp"
+  {
+    printf 'writer_admission_starting=true\n'
+    printf 'commit_sha=%s\n' "$release_sha"
+    printf 'commit_point_utc=%s\n' "${commit_timestamp:-not-recorded}"
+    printf 'quest_writer_admitted=%s\n' "$quest_admitted"
+    printf 'quest_writer_ack_utc=%s\n' "${quest_timestamp:-not-recorded}"
+    printf 'valorant_writer_admitted=%s\n' "$valorant_admitted"
+    printf 'valorant_writer_ack_utc=%s\n' "${valorant_timestamp:-not-recorded}"
+    printf 'writer_admitted=%s\n' "$writer_admitted"
+    printf 'quest_project=%s\nvalorant_project=%s\nshared_network=%s\n' "$quest_project" "$valorant_project" "$shared_network"
+  } > "$temporary_file" 2>/dev/null || return 1
+  chmod 600 "$temporary_file" 2>/dev/null || return 1
+  mv -Tf -- "$temporary_file" "$stage_dir/commit-point.txt" 2>/dev/null || return 1
+}
+
 precommit_rollback() {
   local status=0
   set +e
@@ -300,6 +329,14 @@ precommit_rollback() {
   }
   if [[ -n "${CUTOVER_ABORT_COMMAND:-}" ]]; then
     recovery_hook CUTOVER_ABORT_COMMAND || status=1
+  fi
+  if [[ -f "$stage_dir/compose.production.yml" && -f "$stage_dir/valorant.compose.yml" ]]; then
+    compose --env-file "$compose_env_file" -f "$stage_dir/compose.production.yml" --project-name quest-prod down --remove-orphans >/dev/null 2>&1 || status=1
+    compose --env-file "$compose_env_file" -f "$stage_dir/valorant.compose.yml" --project-name valorant-prod down --remove-orphans >/dev/null 2>&1 || status=1
+  fi
+  if [[ -n "${PREVIOUS_RELEASE_DIR:-}" && -f "$PREVIOUS_RELEASE_DIR/compose.production.yml" && -f "$PREVIOUS_RELEASE_DIR/valorant.compose.yml" && -f "$PREVIOUS_RELEASE_DIR/.env" ]]; then
+    compose --env-file "$PREVIOUS_RELEASE_DIR/.env" -f "$PREVIOUS_RELEASE_DIR/compose.production.yml" --project-name quest-prod up -d --no-build >/dev/null 2>&1 || status=1
+    compose --env-file "$PREVIOUS_RELEASE_DIR/.env" -f "$PREVIOUS_RELEASE_DIR/valorant.compose.yml" --project-name valorant-prod up -d --no-build >/dev/null 2>&1 || status=1
   fi
   if [[ "$old_valorant_stop_attempted" == true && "$old_valorant_was_active" == true && -n "${OLD_VALORANT_RESTART_COMMAND:-}" ]]; then
     if [[ -n "${OLD_VALORANT_UNMASKED_CHECK:-}" ]]; then recovery_hook OLD_VALORANT_UNMASKED_CHECK unmasked || status=1; fi
@@ -355,7 +392,7 @@ postcommit_boundary() {
     else
       output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" "$hook" 2>/dev/null)"
       hook_rc=$?
-      [[ "$output" == captured ]] || { printf '%s\n' 'URGENT: post-commit current-state capture did not acknowledge captured.' >&2; status=1; }
+      [[ "$output" == "captured evidence_bundle=$stage_dir" ]] || { printf '%s\n' 'URGENT: post-commit current-state capture did not identify the immutable evidence bundle.' >&2; status=1; }
       (( hook_rc == 0 )) || status=1
     fi
   else
@@ -366,11 +403,13 @@ postcommit_boundary() {
   return "$status"
 }
 record_recovery_evidence() {
-  local boundary="$1" result="$2"
+  local boundary="$1" result="$2" original_status="${3:-not-recorded}" recovery_status="${4:-not-recorded}"
   [[ -n "${stage_dir:-}" && -d "$stage_dir" ]] || return 0
   {
     printf 'boundary=%s\n' "$boundary"
     printf 'result=%s\n' "$result"
+    printf 'deployment_exit_status=%s\n' "$original_status"
+    printf 'recovery_exit_status=%s\n' "$recovery_status"
     printf 'release_sha=%s\n' "$release_sha"
     printf 'legacy_restart_allowed=%s\n' "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)"
     printf 'writer_admitted=%s\n' "$writer_admitted"
@@ -378,17 +417,20 @@ record_recovery_evidence() {
   chmod 600 "$stage_dir/recovery-evidence.txt" 2>/dev/null || return 1
 }
 on_exit() {
-  local status=$?
+  local status=$? original_status recovery_status
+  original_status="$status"
   trap - EXIT
   if (( status != 0 )); then
     if [[ "$postcommit_armed" == true || "$writer_admitted" == true || "$commit_recorded" == true ]]; then
-      record_recovery_evidence post-commit-recovery started || true
-      postcommit_boundary || status=1
-      record_recovery_evidence post-commit-recovery "$([[ "$status" == 0 ]] && printf completed || printf incomplete)" || status=1
+      record_recovery_evidence post-commit-recovery started "$original_status" running || true
+      postcommit_boundary; recovery_status=$?
+      record_recovery_evidence post-commit-recovery "$([[ "$recovery_status" == 0 ]] && printf completed || printf incomplete)" "$original_status" "$recovery_status" || recovery_status=1
+      (( recovery_status == 0 )) || status=1
     else
-      record_recovery_evidence pre-commit-rollback started || true
-      precommit_rollback || status=1
-      record_recovery_evidence pre-commit-rollback "$([[ "$status" == 0 ]] && printf completed || printf incomplete)" || status=1
+      record_recovery_evidence pre-commit-rollback started "$original_status" running || true
+      precommit_rollback; recovery_status=$?
+      record_recovery_evidence pre-commit-rollback "$([[ "$recovery_status" == 0 ]] && printf completed || printf incomplete)" "$original_status" "$recovery_status" || recovery_status=1
+      (( recovery_status == 0 )) || status=1
     fi
   fi
   exit "$status"
@@ -493,27 +535,22 @@ command_setting VALORANT_READINESS_ACK_COMMAND
 [[ "$("$QUEST_READINESS_ACK_COMMAND" 2>/dev/null)" == ready ]] || die 'Quest frozen readiness was not acknowledged.'
 [[ "$("$VALORANT_READINESS_ACK_COMMAND" 2>/dev/null)" == ready ]] || die 'VALORANT frozen readiness was not acknowledged.'
 
-printf '%s\n' 'writer_admission_starting' > "$stage_dir/commit-point.txt"
-printf 'commit_sha=%s\nwriter_admitted=false\n' "$release_sha" >> "$stage_dir/commit-point.txt"
 command_setting POST_COMMIT_RECOVERY_ARM_COMMAND
 run_hook POST_COMMIT_RECOVERY_ARM_COMMAND armed
 postcommit_armed=true
+commit_timestamp=not-recorded
+record_commit_point false not-recorded false not-recorded || die 'could not record the armed writer-admission boundary.'
 command_setting QUEST_WRITER_ENABLE_COMMAND
 [[ "$(RELEASE_SHA="$release_sha" "$QUEST_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'Quest writer admission failed.'
 writer_admitted=true
-command_setting VALORANT_WRITER_ENABLE_COMMAND
-[[ "$(RELEASE_SHA="$release_sha" "$VALORANT_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'VALORANT writer admission failed.'
 commit_recorded=true
 commit_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-cat > "$stage_dir/commit-point.txt" <<EOF
-commit_point_utc=$commit_timestamp
-commit_sha=$release_sha
-writer_admitted=true
-quest_project=$quest_project
-valorant_project=$valorant_project
-shared_network=quest-shared
-EOF
-chmod 600 "$stage_dir/commit-point.txt"
+quest_writer_ack_timestamp="$commit_timestamp"
+record_commit_point true "$quest_writer_ack_timestamp" false not-recorded || die 'could not record the Quest writer admission boundary.'
+command_setting VALORANT_WRITER_ENABLE_COMMAND
+[[ "$(RELEASE_SHA="$release_sha" "$VALORANT_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'VALORANT writer admission failed.'
+valorant_writer_ack_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+record_commit_point true "$quest_writer_ack_timestamp" true "$valorant_writer_ack_timestamp" || die 'could not record the VALORANT writer admission boundary.'
 command_setting OLD_QUEST_MASK_COMMAND
 run_hook OLD_QUEST_MASK_COMMAND
 command_setting OLD_VALORANT_MASK_COMMAND

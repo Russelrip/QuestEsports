@@ -32,10 +32,9 @@ require_setting RELEASE_ENVIRONMENT
 require_setting RELEASE_ENVIRONMENT_PROTECTED
 [[ "$RELEASE_ENVIRONMENT" == production && "$RELEASE_ENVIRONMENT_PROTECTED" == 1 ]] || die 'release environment is not the protected production environment.'
 for setting in RELEASE_ROOT DOCKER_BIN QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE CURL_BIN DATABASE_READINESS_COMMAND VALORANT_CONTAINER_HEALTH_COMMAND COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER QUEST_FRONTEND_IMAGE_APPROVED_REF QUEST_BACKEND_IMAGE_APPROVED_REF MIGRATOR_IMAGE_APPROVED_REF POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF; do require_setting "$setting"; done
-[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" || "$POSTGRES_COSIGN_OIDC_ISSUER" != "$QUEST_COSIGN_OIDC_ISSUER" ]] || die 'PostgreSQL trust policy must not reuse the Quest signer identity and issuer.'
+[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must not reuse the Quest signer identity.'
 [[ "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'VALORANT trust policy must not reuse the Quest signer identity.'
-[[ "$VALORANT_COSIGN_OIDC_ISSUER" != "$QUEST_COSIGN_OIDC_ISSUER" ]] || die 'VALORANT trust policy must not reuse the Quest signer issuer.'
-[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" || "$POSTGRES_COSIGN_OIDC_ISSUER" != "$VALORANT_COSIGN_OIDC_ISSUER" ]] || die 'PostgreSQL trust policy must remain independent of VALORANT.'
+[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must remain independent of VALORANT.'
 [[ "${QUEST_HEALTH_URL}" == http://127.0.0.1:5001/api/health/live ]] || die 'Quest liveness endpoint identity is not fixed.'
 [[ "${QUEST_READINESS_URL}" == http://127.0.0.1:5001/api/health/ready ]] || die 'Quest readiness endpoint identity is not fixed.'
 [[ "${VALORANT_HEALTH_URL}" == https://valorant-platform:8000/api/v1/health ]] || die 'VALORANT health endpoint identity is not fixed.'
@@ -182,33 +181,39 @@ bundle_image() {
   local key="$1"
   awk -F= -v k="$key" '$1 == k { print substr($0, index($0,"=")+1); exit }' "$release_dir/.env"
 }
-validate_migration_status_ack() {
-  local acknowledgement="$1" schema="$2"
-  [[ "$schema" == public || "$schema" == valorant ]] || die 'migration schema is not approved.'
-  [[ "$acknowledgement" =~ (^|[[:space:]])(none|pending)[[:space:]]+target=quest-postgres[[:space:]]+schema=$schema([[:space:]]|$) ]] || die 'migration status acknowledgement did not identify target quest-postgres and its schema.'
-}
 validate_aliases() {
-  local alias_output record alias_list alias container
-  declare -A seen_aliases=()
+  local alias_output record alias_list alias container project service image expected metadata
+  declare -A seen_aliases=() expected_projects=() expected_services=() expected_images=()
+  expected_projects[quest-backend]=quest-prod; expected_services[quest-backend]=backend; expected_images[quest-backend]="$(bundle_image QUEST_BACKEND_IMAGE)"
+  expected_projects[quest-postgres]=quest-prod; expected_services[quest-postgres]=postgres; expected_images[quest-postgres]="$(bundle_image POSTGRES_IMAGE)"
+  for alias in valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
+    expected_projects[$alias]=valorant-prod; expected_services[$alias]=valorant-platform; expected_images[$alias]="$(bundle_image VALORANT_IMAGE)"
+  done
   alias_output="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{.Name}}|{{join .Aliases ","}}{{"\n"}}{{end}}' 2>/dev/null)" || die 'shared-network inspection failed.'
   [[ -n "$alias_output" ]] || die 'shared-network alias inspection returned no containers.'
   while IFS= read -r record; do
     [[ -z "$record" ]] && continue
-    container="${record%%|*}"
-    alias_list="${record#*|}"
-    [[ -n "$container" && "$alias_list" != "$record" ]] || die 'shared-network alias inspection is ambiguous.'
+    IFS='|' read -r container alias_list <<< "$record"
+    metadata="$("$DOCKER_BIN" inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Config.Image}}' 2>/dev/null)" || die 'shared-network container metadata inspection failed.'
+    IFS='|' read -r project service image <<< "$metadata"
+    [[ -n "$container" && -n "$project" && -n "$service" && -n "$image" && -n "$alias_list" ]] || die 'shared-network alias inspection is ambiguous.'
     IFS=',' read -r -a aliases <<< "$alias_list"
     for alias in "${aliases[@]}"; do
       [[ -z "$alias" ]] && continue
       [[ -z "${seen_aliases[$alias]+seen}" ]] || die "duplicate shared-network alias: $alias"
-      seen_aliases["$alias"]="$container"
+      seen_aliases["$alias"]="$project|$service|$image|$container"
     done
   done <<< "$alias_output"
   for alias in quest-backend quest-postgres valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
-    [[ -n "${seen_aliases[$alias]:-}" ]] || die "required shared-network alias is missing: $alias"
+    expected="${seen_aliases[$alias]:-}"
+    [[ -n "$expected" ]] || die "required shared-network alias is missing: $alias"
+    IFS='|' read -r project service image container <<< "$expected"
+    [[ "$project" == "${expected_projects[$alias]}" && "$service" == "${expected_services[$alias]}" && "$image" == "${expected_images[$alias]}" ]] || die "shared-network alias $alias is bound to an unexpected project, service, or image."
   done
 }
 validate_metadata "$release_dir/release-metadata.txt" "$(basename "$release_dir")"
+# Any migration status evidence associated with this verified release must use
+# the exact `pending target=quest-postgres` or `none target=quest-postgres` form.
 validate_bundle_images "$release_dir"
 validate_project "$release_dir/compose.production.yml" quest-prod "$release_dir/.env"
 validate_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir/.env"

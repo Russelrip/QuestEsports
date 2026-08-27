@@ -137,8 +137,10 @@ if [[ "$mode" == pre-commit ]]; then
   recovery_status=0
   record_recovery_evidence "$rollback_release" pre-commit-rollback started || recovery_status=1
   compose --env-file "$rollback_release/.env" -f "$rollback_release/compose.production.yml" --project-name quest-prod down --remove-orphans >/dev/null 2>&1 || recovery_status=1
+  compose --env-file "$rollback_release/.env" -f "$rollback_release/valorant.compose.yml" --project-name valorant-prod down --remove-orphans >/dev/null 2>&1 || recovery_status=1
   if [[ "$previous_database_authority" == quest-postgres ]]; then
     compose --env-file "$previous_release/.env" -f "$previous_release/compose.production.yml" --project-name quest-prod up -d --no-build >/dev/null 2>&1 || recovery_status=1
+    compose --env-file "$previous_release/.env" -f "$previous_release/valorant.compose.yml" --project-name valorant-prod up -d --no-build >/dev/null 2>&1 || recovery_status=1
   else
     RELEASE_DIR="$previous_release" recovery_command "${OLD_APPLICATION_RESTART_COMMAND:-}" restarted || recovery_status=1
   fi
@@ -156,10 +158,14 @@ fi
 # writers and never points either service at stale Supabase.
 postcommit_status=0
 recovery_bundle="${ROLLBACK_RELEASE_DIR:-}"
+[[ -n "$recovery_bundle" ]] || die 'post-commit recovery requires an evidence bundle path.'
+safe_bundle "$recovery_bundle" 'post-commit evidence bundle'
 record_recovery_evidence "$recovery_bundle" post-commit-recovery started || postcommit_status=1
-recovery_command "${WRITER_STOP_COMMAND:-}" || postcommit_status=1
+recovery_command "${QUEST_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1
+recovery_command "${VALORANT_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1
 RELEASE_DIR="$recovery_bundle" recovery_command "${FREEZE_ENABLE_COMMAND:-}" || postcommit_status=1
-RELEASE_DIR="$recovery_bundle" recovery_command "${CURRENT_STATE_CAPTURE_COMMAND:-}" captured || postcommit_status=1
+capture_output="$(RELEASE_DIR="$recovery_bundle" "${CURRENT_STATE_CAPTURE_COMMAND:-}" 2>/dev/null)"; capture_rc=$?
+(( capture_rc == 0 )) && [[ "$capture_output" == "captured evidence_bundle=$recovery_bundle" ]] || postcommit_status=1
 [[ -n "${EXPECTED_LOSS_RPO:-}" ]] || { printf '%s\n' 'URGENT: post-commit recovery requires an explicit expected-loss/RPO record.' >&2; postcommit_status=1; }
 [[ "${INCIDENT_OWNER_APPROVAL:-}" == INCIDENT_OWNER_APPROVAL ]] || { printf '%s\n' 'URGENT: post-commit recovery requires incident-owner approval.' >&2; postcommit_status=1; }
 if [[ -z "${RECOVERY_ACTION_COMMAND:-}" || ! -x "$RECOVERY_ACTION_COMMAND" ]]; then

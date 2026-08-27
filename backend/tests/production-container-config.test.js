@@ -454,11 +454,13 @@ test("artifact trust keeps VALORANT on an independent signer policy", () => {
     assignment("QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP"),
     "VALORANT must not inherit the Quest signer identity",
   );
-  assert.match(
-    verifyRelease,
-    /VALORANT trust policy must not reuse the Quest signer identity/,
-    "verification must reject a VALORANT policy equal to Quest's policy",
+  assert.equal(
+    assignment("VALORANT_COSIGN_OIDC_ISSUER"),
+    assignment("QUEST_COSIGN_OIDC_ISSUER"),
+    "VALORANT may use the shared documented GitHub OIDC issuer",
   );
+  assert.match(verifyRelease, /VALORANT trust policy must not reuse the Quest signer identity/);
+  assert.doesNotMatch(verifyRelease, /VALORANT trust policy must not reuse the Quest signer issuer/);
   const questSigningStep = imageWorkflow.match(
     /Sign each Quest image digest with keyless OIDC[\s\S]*?(?=\n\s*- name:|$)/,
   )?.[0] || "";

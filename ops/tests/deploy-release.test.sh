@@ -36,7 +36,7 @@ make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
-  unset WRONG_PROJECT DUPLICATE_ALIASES STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
   mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private"
@@ -94,10 +94,19 @@ if [[ "$1" == pull ]]; then printf 'pull %s\n' "$2" >> "$log"; exit 0; fi
 if [[ "$1" == info ]]; then exit 0; fi
 if [[ "$1" == network && "$2" == inspect ]]; then
   if [[ "${DUPLICATE_ALIASES:-0}" == 1 ]]; then
-    printf 'quest|quest-backend,quest-backend\n'
+    printf 'quest-backend-1|quest-backend,quest-backend\n'
   else
-    printf 'quest|quest-backend,quest-postgres\nvalorant|valorant-platform,valorant-updater,valorant-discord-bot,valorant-name-audit\n'
+    printf 'quest-backend-1|quest-backend\nquest-postgres-1|quest-postgres\nvalorant-platform-1|valorant-platform,valorant-updater,valorant-discord-bot,valorant-name-audit\n'
   fi
+  exit 0
+fi
+if [[ "$1" == inspect ]]; then
+  case "$2" in
+    quest-backend-1) [[ "${BAD_ALIAS_BINDING:-0}" != 1 ]] || printf 'valorant-prod|valorant-platform|ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555\n'; [[ "${BAD_ALIAS_BINDING:-0}" == 1 ]] || printf 'quest-prod|backend|ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222\n' ;;
+    quest-postgres-1) printf 'quest-prod|postgres|postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333\n' ;;
+    valorant-platform-1) printf 'valorant-prod|valorant-platform|ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555\n' ;;
+    *) exit 1 ;;
+  esac
   exit 0
 fi
 [[ "$1" == compose ]] || exit 1
@@ -280,7 +289,7 @@ case "$(basename "$0")" in
   freeze-disable) printf 'off\n' ;;
   freeze-status) printf 'acknowledged\n' ;;
   validate-host) printf 'validated\n' ;;
-  service-ownership) printf 'owned\n' ;;
+  service-ownership) [[ "${FAIL_SERVICE_OWNERSHIP:-0}" != 1 ]] || exit 1; printf 'owned\n' ;;
   cutover-restore) printf 'restored\n' ;;
   cutover-abort) printf 'aborted\n' >> "$TEST_LOG" ;;
   quest-ready|valorant-ready) printf 'ready\n' ;;
@@ -292,7 +301,7 @@ case "$(basename "$0")" in
   quest-writer-stop) printf 'quest-writer-stop\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_WRITER_STOP:-0}" == 1 ]] && exit 1; printf 'stopped\n' ;;
   valorant-writer-stop) printf 'valorant-writer-stop\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_WRITER_STOP:-0}" == 1 ]] && exit 1; printf 'stopped\n' ;;
   writer-stop) printf 'stopped\n' ;;
-  capture) printf 'capture\n' >> "$TEST_LOG"; printf 'captured\n' ;;
+  capture) printf 'capture\n' >> "$TEST_LOG"; printf 'captured evidence_bundle=%s\n' "${RELEASE_DIR:?}" ;;
   recovery-action) printf 'fix-forward\n' ;;
   *) exit 1 ;;
 esac
@@ -418,6 +427,14 @@ assert_failed wrong-project run_release
 setup_fixture duplicate-alias
 export DUPLICATE_ALIASES=1
 assert_failed duplicate-alias run_release
+
+setup_fixture bad-alias-binding
+export BAD_ALIAS_BINDING=1
+assert_failed bad-alias-binding run_release
+
+setup_fixture service-ownership-failure
+export FAIL_SERVICE_OWNERSHIP=1
+assert_failed service-ownership-failure run_release
 
 setup_fixture stale-backup
 export STALE_BACKUP=1

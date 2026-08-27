@@ -37,7 +37,6 @@ if [[ "$fixture_mode" != 1 ]]; then
   [[ "$manifest_mode" != *2 && "$manifest_mode" != *3 && "$manifest_mode" != *6 && "$manifest_mode" != *7 ]] || die 'release manifest is writable by a non-root actor.'
 fi
 
-require_setting() { [[ -n "${!1:-}" ]] || die "required host setting is missing: $1."; }
 root_file() {
   [[ -f "$1" && -r "$1" && ! -L "$1" ]] || die 'required host file is missing or unsafe.'
   if [[ "$fixture_mode" != 1 ]]; then
@@ -48,10 +47,9 @@ root_file() {
 for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND; do
   require_setting "$setting"
 done
-[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" || "$POSTGRES_COSIGN_OIDC_ISSUER" != "$QUEST_COSIGN_OIDC_ISSUER" ]] || die 'PostgreSQL trust policy must not reuse the Quest signer identity and issuer.'
+[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must not reuse the Quest signer identity.'
 [[ "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'VALORANT trust policy must not reuse the Quest signer identity.'
-[[ "$VALORANT_COSIGN_OIDC_ISSUER" != "$QUEST_COSIGN_OIDC_ISSUER" ]] || die 'VALORANT trust policy must not reuse the Quest signer issuer.'
-[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" || "$POSTGRES_COSIGN_OIDC_ISSUER" != "$VALORANT_COSIGN_OIDC_ISSUER" ]] || die 'PostgreSQL trust policy must remain independent of VALORANT.'
+[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must remain independent of VALORANT.'
 [[ "$RELEASE_LOCK_PATH" == /* && "$RELEASE_LOCK_PATH" != / && -e "$RELEASE_LOCK_PATH" && ! -L "$RELEASE_LOCK_PATH" ]] || die 'canonical release lock is invalid.'
 if [[ "$fixture_mode" != 1 ]]; then
   [[ "$RELEASE_LOCK_PATH" == /var/lock/quest-esports-release.lock ]] || die 'canonical release lock path cannot be overridden.'

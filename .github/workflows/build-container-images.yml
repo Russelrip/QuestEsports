@@ -46,6 +46,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          [[ "${GITHUB_REPOSITORY,,}" == russelrip/questesports ]] || {
+            printf '%s\n' 'Container signing must run from the documented Quest repository identity.' >&2
+            exit 1
+          }
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
             printf '%s\n' 'The upstream CI SHA must be a lowercase full 40-character SHA.' >&2
             exit 1
@@ -199,7 +203,7 @@ jobs:
           : > "$manifest"
           printf 'commit_sha=%s\n' "$RELEASE_SHA" >> "$manifest"
           cat "$RUNNER_TEMP/release-manifest.entries" >> "$manifest"
-          printf 'postgres_image=postgres:17-bookworm@%s\n' "${POSTGRES_17_BOOKWORM_DIGEST#sha256:}" >> "$manifest"
+          printf 'postgres_image=postgres:17-bookworm@%s\n' "$POSTGRES_17_BOOKWORM_DIGEST" >> "$manifest"
           printf 'valorant_image=%s\n' "$VALORANT_IMAGE" >> "$manifest"
 
           expected_keys='commit_sha frontend_image backend_image migrator_image postgres_image valorant_image'

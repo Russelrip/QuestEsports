@@ -27,6 +27,11 @@ The API routes and aggregate definitions are mapped in
 - `mobile-admin/` — private Android operations client.
 - `docs/` — API, operational, deployment, recovery, and security contracts.
 - `ops/` — production backup, restore, retention, and freshness tooling.
+  - `ops/docker/` — immutable production Compose topology and host Nginx
+    ingress; PostgreSQL stays private and application publications are
+    loopback-only.
+  - `ops/deploy/` — root-owned artifact verification, the one-time Supabase
+    to PostgreSQL 17 cutover boundary, and digest-only steady-state releases.
 - `ops/rehearsal/` — isolated PostgreSQL 17 restore rehearsal boundary. It may
   invoke the existing destructive restore primitive only through explicit
   disposable-target checks and emits private, machine-readable evidence; it

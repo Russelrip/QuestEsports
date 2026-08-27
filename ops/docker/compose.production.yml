@@ -9,6 +9,12 @@ name: quest-prod
 services:
   frontend:
     image: ${QUEST_FRONTEND_IMAGE:?QUEST_FRONTEND_IMAGE must be supplied by the release manifest}
+    # Frontend server-side fetches may reach the backend over the internal app
+    # network. The frontend is not attached to database or quest-shared.
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      API_EGRESS_ALLOWED: "true"
+      INTERNAL_API_URL: http://backend:5001
     depends_on:
       backend:
         condition: service_healthy
@@ -18,6 +24,7 @@ services:
     user: "1001:1001"
     tmpfs:
       - /tmp
+      - /app/.next/cache
     stop_grace_period: 40s
     security_opt:
       - no-new-privileges:true
@@ -38,7 +45,7 @@ services:
     image: ${QUEST_BACKEND_IMAGE:?QUEST_BACKEND_IMAGE must be supplied by the release manifest}
     env_file:
       - path: /etc/quest-esports/quest.production.env
-        required: false
+        required: true
     environment:
       NODE_ENV: production
       PORT: "5001"

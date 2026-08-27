@@ -34,17 +34,19 @@ describe("API helpers", () => {
 
   it("uses the internal origin for SSR event-album and health requests", () => {
     const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
-    Object.defineProperty(globalThis, "window", { value: undefined, configurable: true });
-    process.env.INTERNAL_API_URL = "http://backend:5001";
-    delete process.env.NEXT_PUBLIC_API_URL;
+    try {
+      Object.defineProperty(globalThis, "window", { value: undefined, configurable: true });
+      process.env.INTERNAL_API_URL = "http://backend:5001";
+      delete process.env.NEXT_PUBLIC_API_URL;
 
-    expect(buildApiUrl("/api/event-albums/quest-finals-2026")).toBe(
-      "http://backend:5001/api/event-albums/quest-finals-2026"
-    );
-    expect(buildApiUrl("/api/health/ready")).toBe("http://backend:5001/api/health/ready");
-
-    if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
-    else delete (globalThis as { window?: unknown }).window;
+      expect(buildApiUrl("/api/event-albums/quest-finals-2026")).toBe(
+        "http://backend:5001/api/event-albums/quest-finals-2026"
+      );
+      expect(buildApiUrl("/api/health/ready")).toBe("http://backend:5001/api/health/ready");
+    } finally {
+      if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
+      else delete (globalThis as { window?: unknown }).window;
+    }
   });
 
   it("does not use malformed configured API values as URL prefixes", () => {
