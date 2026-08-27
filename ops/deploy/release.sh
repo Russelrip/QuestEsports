@@ -330,6 +330,7 @@ record_commit_point() {
     printf 'valorant_writer_ack_utc=%s\n' "${valorant_timestamp:-not-recorded}"
     printf 'writer_admitted=%s\n' "$writer_admitted"
     printf 'previous_release=%s\n' "$previous_release"
+    printf 'cutover_type=steady-state\n'
     printf 'quest_project=%s\nvalorant_project=%s\nshared_network=%s\n' "$quest_project" "$valorant_project" "$shared_network"
   } > "$temporary_file" 2>/dev/null || return 1
   chmod 600 "$temporary_file" 2>/dev/null || return 1

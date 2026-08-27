@@ -124,17 +124,26 @@ validate_commit_point() {
     [[ "$line" =~ ^([a-z][a-z0-9_]*)=([^[:space:]]+)$ ]] || die 'durable commit-point record contains an ambiguous entry.'
     key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
     case "$key" in
-      writer_admission_starting|commit_sha|commit_point_utc|quest_writer_admission_started|quest_writer_admitted|quest_writer_ack_utc|valorant_writer_admission_started|valorant_writer_admitted|valorant_writer_ack_utc|writer_admitted|previous_release|quest_project|valorant_project|shared_network) ;;
+      writer_admission_starting|commit_sha|commit_point_utc|quest_writer_admission_started|quest_writer_admitted|quest_writer_ack_utc|valorant_writer_admission_started|valorant_writer_admitted|valorant_writer_ack_utc|writer_admitted|previous_release|cutover_type|quest_project|valorant_project|shared_network) ;;
       *) die "durable commit-point record contains an unknown entry: $key" ;;
     esac
     [[ -z "${point[$key]+present}" ]] || die "durable commit-point record contains a duplicate entry: $key"
     point["$key"]="$value"
   done < "$bundle/commit-point.txt"
-  for key in writer_admission_starting commit_sha commit_point_utc quest_writer_admission_started quest_writer_admitted quest_writer_ack_utc valorant_writer_admission_started valorant_writer_admitted valorant_writer_ack_utc writer_admitted previous_release quest_project valorant_project shared_network; do
+  for key in writer_admission_starting commit_sha commit_point_utc quest_writer_admission_started quest_writer_admitted quest_writer_ack_utc valorant_writer_admission_started valorant_writer_admitted valorant_writer_ack_utc writer_admitted previous_release cutover_type quest_project valorant_project shared_network; do
     [[ -n "${point[$key]:-}" ]] || die "durable commit-point record is missing $key."
   done
   [[ "${point[commit_sha],,}" == "$(basename "$bundle" | tr '[:upper:]' '[:lower:]')" && "${point[commit_sha]}" =~ ^[0-9a-fA-F]{40}$ ]] || die 'durable commit-point SHA is not bound to its release bundle.'
   [[ "${point[writer_admission_starting]}" == true && "${point[quest_project]}" == quest-prod && "${point[valorant_project]}" == valorant-prod && "${point[shared_network]}" == quest-shared ]] || die 'durable commit-point identity is invalid.'
+  [[ "${point[cutover_type]}" == steady-state || "${point[cutover_type]}" == first-supabase-cutover ]] || die 'durable commit-point cutover type is invalid.'
+  if [[ "${point[previous_release]}" == supabase ]]; then
+    [[ "${point[cutover_type]}" == first-supabase-cutover ]] || die 'durable commit-point Supabase predecessor is only valid for first cutover.'
+  else
+    [[ "${point[cutover_type]}" == steady-state ]] || die 'durable commit-point first-cutover predecessor is fabricated.'
+    [[ "${point[previous_release]}" == "$canonical_releases_root/"[0-9a-fA-F][0-9a-fA-F]* ]] || die 'durable commit-point previous release is outside RELEASES_ROOT.'
+    [[ -d "${point[previous_release]}" && ! -L "${point[previous_release]}" && "$(realpath "${point[previous_release]}" 2>/dev/null)" == "${point[previous_release]}" ]] || die 'durable commit-point previous release is not canonical.'
+    [[ "$(basename "${point[previous_release]}")" =~ ^[0-9a-fA-F]{40}$ && "${point[previous_release]}" != "$bundle" ]] || die 'durable commit-point previous release is not a distinct full-SHA bundle.'
+  fi
   for key in quest_writer_admission_started quest_writer_admitted valorant_writer_admission_started valorant_writer_admitted writer_admitted; do
     [[ "${point[$key]}" == true || "${point[$key]}" == false ]] || die "durable commit-point $key is not boolean."
   done
@@ -145,7 +154,7 @@ validate_commit_point() {
   [[ "${point[valorant_writer_admitted]}" == false || "${point[valorant_writer_ack_utc]}" != not-recorded ]] || die 'durable commit-point lost the VALORANT writer acknowledgement timestamp.'
   [[ "${point[quest_writer_admission_started]}" == true || "${point[quest_writer_admitted]}" == false ]] || die 'durable commit-point admitted Quest without recording its admission start.'
   [[ "${point[valorant_writer_admission_started]}" == true || "${point[valorant_writer_admitted]}" == false ]] || die 'durable commit-point admitted VALORANT without recording its admission start.'
-  [[ "${point[writer_admitted]}" == false || ( "${point[quest_writer_admitted]}" == true && "${point[valorant_writer_admitted]}" == true ) ]] || die 'durable commit-point writer_admitted is not backed by both group acknowledgements.'
+  [[ "${point[writer_admitted]}" == false || "${point[quest_writer_admitted]}" == true || "${point[valorant_writer_admitted]}" == true ]] || die 'durable commit-point writer_admitted is not backed by a writer-group acknowledgement.'
   commit_point_requires_postcommit=false
   if [[ "${point[quest_writer_admission_started]}" == true || "${point[quest_writer_admitted]}" == true || "${point[valorant_writer_admission_started]}" == true || "${point[valorant_writer_admitted]}" == true || "${point[writer_admitted]}" == true ]]; then
     commit_point_requires_postcommit=true

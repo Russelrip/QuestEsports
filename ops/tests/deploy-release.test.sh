@@ -83,6 +83,7 @@ EOF
 commit_sha=$previous_sha
 writer_admitted=false
 previous_release=$fixture/releases/$previous_sha
+cutover_type=steady-state
 EOF
   cat > "$fixture/releases/$previous_sha/commit-point.txt" <<EOF
 writer_admission_starting=true
@@ -96,6 +97,7 @@ valorant_writer_admitted=false
 valorant_writer_ack_utc=not-recorded
 writer_admitted=false
 previous_release=$fixture/releases/$previous_sha
+cutover_type=steady-state
 quest_project=quest-prod
 valorant_project=valorant-prod
 shared_network=quest-shared
@@ -429,6 +431,38 @@ EOF
 
 run_release() { DATABASE_AUTHORITY=quest-postgres bash "$release_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"; }
 
+make_failed_bundle() {
+  local sha="$1"
+  rollback_sha="$sha"
+  rollback_fixture="$fixture/releases/$sha"
+  mkdir -p "$rollback_fixture"
+  cp "$fixture/releases/$previous_sha/compose.production.yml" "$rollback_fixture/compose.production.yml"
+  cp "$fixture/releases/$previous_sha/valorant.compose.yml" "$rollback_fixture/valorant.compose.yml"
+  cp "$fixture/releases/$previous_sha/.env" "$rollback_fixture/.env"
+  cat > "$rollback_fixture/release-metadata.txt" <<EOF
+commit_sha=$sha
+writer_admitted=false
+previous_release=$fixture/releases/$previous_sha
+EOF
+  cat > "$rollback_fixture/commit-point.txt" <<EOF
+writer_admission_starting=true
+commit_sha=$sha
+commit_point_utc=not-recorded
+quest_writer_admission_started=false
+quest_writer_admitted=false
+quest_writer_ack_utc=not-recorded
+valorant_writer_admission_started=false
+valorant_writer_admitted=false
+valorant_writer_ack_utc=not-recorded
+writer_admitted=false
+previous_release=$fixture/releases/$previous_sha
+cutover_type=steady-state
+quest_project=quest-prod
+valorant_project=valorant-prod
+shared_network=quest-shared
+EOF
+}
+
 setup_fixture invalid-sha
 assert_failed invalid-sha env RELEASE_ENV_FILE="$RELEASE_ENV_FILE" bash "$release_script" not-a-full-sha "$fixture/manifest.txt"
 
@@ -452,9 +486,21 @@ setup_fixture service-ownership-failure
 export FAIL_SERVICE_OWNERSHIP=1
 assert_failed service-ownership-failure run_release
 
+setup_fixture termination-before-either-admission
+make_failed_bundle 2222222222222222222222222222222222222222
+export OLD_VALORANT_WAS_STOPPED=1
+bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture" >/dev/null
+assert_contains "$rollback_fixture/recovery-evidence.txt" 'result=completed'
+
+setup_fixture termination-after-quest-admission
+make_failed_bundle 3333333333333333333333333333333333333333
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$rollback_fixture/commit-point.txt"
+assert_failed termination-after-quest-admission bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
+
 setup_fixture durable-commit-point
-sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/' "$fixture/releases/$previous_sha/commit-point.txt"
-assert_failed durable-commit-point bash "$script_directory/deploy/rollback.sh" pre-commit "$fixture/releases/$previous_sha"
+make_failed_bundle 4444444444444444444444444444444444444444
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/' "$rollback_fixture/commit-point.txt"
+assert_failed durable-commit-point bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
 
 setup_fixture stale-backup
 export STALE_BACKUP=1
@@ -473,34 +519,8 @@ setup_fixture failed-valorant-health
 export BAD_VALORANT_HEALTH=1
 assert_failed failed-valorant-health run_release
 
-setup_fixture explicit-precommit-rollback
-rollback_sha=2222222222222222222222222222222222222222
-rollback_fixture="$fixture/releases/$rollback_sha"
-mkdir -p "$rollback_fixture"
-cp "$fixture/releases/$previous_sha/compose.production.yml" "$rollback_fixture/compose.production.yml"
-cp "$fixture/releases/$previous_sha/valorant.compose.yml" "$rollback_fixture/valorant.compose.yml"
-cp "$fixture/releases/$previous_sha/.env" "$rollback_fixture/.env"
-cat > "$rollback_fixture/release-metadata.txt" <<EOF
-commit_sha=$rollback_sha
-writer_admitted=false
-previous_release=$fixture/releases/$previous_sha
-EOF
-  cat > "$rollback_fixture/commit-point.txt" <<EOF
-writer_admission_starting=true
-commit_sha=$rollback_sha
-commit_point_utc=not-recorded
-quest_writer_admission_started=false
-quest_writer_admitted=false
-quest_writer_ack_utc=not-recorded
-valorant_writer_admission_started=false
-valorant_writer_admitted=false
-valorant_writer_ack_utc=not-recorded
-writer_admitted=false
-previous_release=$fixture/releases/$previous_sha
-quest_project=quest-prod
-valorant_project=valorant-prod
-shared_network=quest-shared
-EOF
+setup_fixture standalone-rollback-consumes-record
+make_failed_bundle 5555555555555555555555555555555555555555
 export OLD_VALORANT_WAS_STOPPED=1
 bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture" >/dev/null
 assert_contains "$TEST_LOG" 'old-application-restart'
@@ -549,16 +569,25 @@ if grep -Fq 'old-mask' "$TEST_LOG"; then
 fi
 
 setup_fixture post-commit-boundary
-export ROLLBACK_RELEASE_DIR="$fixture/releases/$previous_sha" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL
-sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/valorant_writer_admission_started=false/valorant_writer_admission_started=true/; s/valorant_writer_admitted=false/valorant_writer_admitted=true/; s/valorant_writer_ack_utc=not-recorded/valorant_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$fixture/releases/$previous_sha/commit-point.txt"
+make_failed_bundle 6666666666666666666666666666666666666666
+export ROLLBACK_RELEASE_DIR="$rollback_fixture" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/valorant_writer_admission_started=false/valorant_writer_admission_started=true/; s/valorant_writer_admitted=false/valorant_writer_admitted=true/; s/valorant_writer_ack_utc=not-recorded/valorant_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$rollback_fixture/commit-point.txt"
 bash "$script_directory/deploy/rollback.sh" post-commit >/dev/null
 assert_contains "$TEST_LOG" 'freeze-enable'
 
+setup_fixture complete-two-group-admission
+make_failed_bundle 7777777777777777777777777777777777777777
+export ROLLBACK_RELEASE_DIR="$rollback_fixture" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/valorant_writer_admission_started=false/valorant_writer_admission_started=true/; s/valorant_writer_admitted=false/valorant_writer_admitted=true/; s/valorant_writer_ack_utc=not-recorded/valorant_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$rollback_fixture/commit-point.txt"
+bash "$script_directory/deploy/rollback.sh" post-commit >/dev/null
+assert_contains "$rollback_fixture/recovery-evidence.txt" 'boundary=post-commit-recovery'
+
 setup_fixture post-commit-capture-failure
-export ROLLBACK_RELEASE_DIR="$fixture/releases/$previous_sha" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL FAIL_CAPTURE=1
-sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/valorant_writer_admission_started=false/valorant_writer_admission_started=true/; s/valorant_writer_admitted=false/valorant_writer_admitted=true/; s/valorant_writer_ack_utc=not-recorded/valorant_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$fixture/releases/$previous_sha/commit-point.txt"
+make_failed_bundle 8888888888888888888888888888888888888888
+export ROLLBACK_RELEASE_DIR="$rollback_fixture" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL FAIL_CAPTURE=1
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/valorant_writer_admission_started=false/valorant_writer_admission_started=true/; s/valorant_writer_admitted=false/valorant_writer_admitted=true/; s/valorant_writer_ack_utc=not-recorded/valorant_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$rollback_fixture/commit-point.txt"
 assert_failed post-commit-capture-failure bash "$script_directory/deploy/rollback.sh" post-commit
-assert_contains "$fixture/releases/$previous_sha/recovery-evidence.txt" 'result=incomplete'
+assert_contains "$rollback_fixture/recovery-evidence.txt" 'result=incomplete'
 
 setup_fixture fixed-projects
 run_release >/dev/null
@@ -671,6 +700,8 @@ gate_log_before "$TEST_LOG" 'ps project=valorant-prod' 'valorant-writer-enable' 
 
 cutover_release_dir="$fixture/releases/1111111111111111111111111111111111111111"
 gate_file_contains "$cutover_release_dir/release-metadata.txt" 'previous_release=supabase' 'first cutover metadata did not name Supabase as the predecessor'
+gate_file_contains "$cutover_release_dir/commit-point.txt" 'previous_release=supabase' 'first cutover commit-point did not name Supabase as the predecessor'
+gate_file_contains "$cutover_release_dir/commit-point.txt" 'cutover_type=first-supabase-cutover' 'first cutover commit-point did not identify the cutover type'
 export TEST_PREVIOUS="$cutover_release_dir"
 if bash "$script_directory/deploy/verify-release.sh" >"$work_directory/first-cutover-verify.out" 2>&1; then
   :
