@@ -102,18 +102,44 @@ safe_bundle() {
       [[ "$mode" == 600 || "$mode" == 640 ]] || die "$label/$file has an unsafe mode."
     fi
   done
-  metadata_commit_sha="$(awk -F= '$1 == "commit_sha" { print $2; count++ } END { if (count != 1) exit 1 }' "$bundle/release-metadata.txt")" || die "$label metadata has an invalid commit_sha."
-  [[ "$metadata_commit_sha" =~ ^[0-9a-fA-F]{40}$ && "${metadata_commit_sha,,}" == "$(basename "$bundle" | tr '[:upper:]' '[:lower:]')" ]] || die "$label metadata is not bound to its directory."
-  metadata_writer_state="$(awk -F= '$1 == "writer_admitted" { print $2; count++ } END { if (count != 1) exit 1 }' "$bundle/release-metadata.txt")" || die "$label metadata has an invalid writer_admitted value."
-  [[ "$metadata_writer_state" == true || "$metadata_writer_state" == false ]] || die "$label metadata has an invalid writer_admitted value."
-  while IFS= read -r metadata_line || [[ -n "$metadata_line" ]]; do
-    [[ "$metadata_line" =~ ^[a-z][a-z0-9_]*=[^[:space:]]+$ ]] || die "$label metadata contains an ambiguous entry."
-    metadata_key="${metadata_line%%=*}"
-    case "$metadata_key" in
+  validate_release_metadata "$bundle" "$label"
+}
+
+validate_release_metadata() {
+  local bundle="$1" label="$2" line key
+  declare -A metadata=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^([a-z][a-z0-9_]*)=([^[:space:]]+)$ ]] || die "$label metadata contains an ambiguous entry."
+    key="${BASH_REMATCH[1]}"
+    case "$key" in
       commit_sha|commit_point_utc|writer_admitted|current_pointer_updated|previous_release|quest_project|valorant_project|shared_network|database_schemas|writer_groups|owner_approval_sha|cutover_type) ;;
-      *) die "$label metadata contains an unknown entry." ;;
+      *) die "$label metadata contains an unknown entry: $key" ;;
     esac
+    [[ -z "${metadata[$key]+present}" ]] || die "$label metadata contains a duplicate entry: $key"
+    metadata["$key"]="${BASH_REMATCH[2]}"
   done < "$bundle/release-metadata.txt"
+  for key in commit_sha writer_admitted previous_release cutover_type; do
+    [[ -n "${metadata[$key]:-}" ]] || die "$label metadata is missing $key."
+  done
+  metadata_commit_sha="${metadata[commit_sha]}"
+  [[ "$metadata_commit_sha" =~ ^[0-9a-fA-F]{40}$ && "${metadata_commit_sha,,}" == "$(basename "$bundle" | tr '[:upper:]' '[:lower:]')" ]] || die "$label metadata is not bound to its directory."
+  metadata_writer_state="${metadata[writer_admitted]}"
+  [[ "$metadata_writer_state" == true || "$metadata_writer_state" == false ]] || die "$label metadata has an invalid writer_admitted value."
+  metadata_previous_release="${metadata[previous_release]}"
+  metadata_cutover_type="${metadata[cutover_type]}"
+}
+
+validate_predecessor_metadata() {
+  local label="$1"
+  [[ "$metadata_previous_release" == "$commit_point_previous_release" ]] || die "$label metadata previous_release does not match the durable commit-point record."
+  [[ "$metadata_cutover_type" == "$commit_point_cutover_type" ]] || die "$label metadata cutover_type does not match the durable commit-point record."
+  if [[ "$commit_point_previous_release" == supabase ]]; then
+    [[ "$metadata_previous_release" == supabase && "$metadata_cutover_type" == first-supabase-cutover ]] || die "$label metadata has an invalid first-cutover predecessor."
+  else
+    [[ "$metadata_cutover_type" == steady-state ]] || die "$label metadata has an invalid steady-state predecessor."
+    [[ "$metadata_previous_release" == "$canonical_releases_root/"[0-9a-fA-F][0-9a-fA-F]* ]] || die "$label metadata previous release is outside RELEASES_ROOT."
+    [[ "$(basename "$metadata_previous_release")" =~ ^[0-9a-fA-F]{40}$ ]] || die "$label metadata previous release is not a full-SHA bundle."
+  fi
 }
 
 validate_commit_point() {
@@ -168,20 +194,19 @@ if [[ "$mode" == pre-commit ]]; then
   [[ -n "$rollback_release" ]] || die 'pre-commit rollback requires an immutable failed release directory.'
   safe_bundle "$rollback_release" 'failed release bundle'
   validate_commit_point "$rollback_release"
+  validate_predecessor_metadata "$rollback_release"
   [[ "$commit_point_requires_postcommit" == false ]] || die 'durable commit-point state requires post-commit recovery; refusing pre-commit rollback.'
-  metadata_file="$rollback_release/release-metadata.txt"
-  previous_release="$(awk -F= '$1 == "previous_release" { print substr($0, index($0,"=")+1); exit }' "$metadata_file")"
-  [[ -n "$previous_release" ]] || die 'failed release metadata does not identify a predecessor.'
+  writer_state="$metadata_writer_state"
+  previous_release="$metadata_previous_release"
   if [[ "$previous_release" == supabase ]]; then
     [[ "$commit_point_previous_release" == supabase && "$commit_point_cutover_type" == first-supabase-cutover ]] || die 'Supabase predecessor is only valid for a first-cutover durable bundle.'
-    [[ "$(awk -F= '$1 == "cutover_type" { print $2; exit }' "$metadata_file")" == first-supabase-cutover ]] || die 'first-cutover metadata does not identify the Supabase sentinel.'
-    [[ "$(awk -F= '$1 == "owner_approval_sha" { print $2; exit }' "$metadata_file")" == "$(basename "$rollback_release")" ]] || die 'first-cutover metadata lacks owner approval for this release.'
+    [[ "$metadata_cutover_type" == first-supabase-cutover ]] || die 'first-cutover metadata does not identify the Supabase sentinel.'
+    [[ "$(awk -F= '$1 == "owner_approval_sha" { print $2; exit }' "$rollback_release/release-metadata.txt")" == "$(basename "$rollback_release")" ]] || die 'first-cutover metadata lacks owner approval for this release.'
     first_cutover_recovery=true
   else
     first_cutover_recovery=false
     safe_bundle "$previous_release" 'previous release bundle'
   fi
-  writer_state="$(awk -F= '$1 == "writer_admitted" { print $2; exit }' "$metadata_file")"
   [[ "$writer_state" == false ]] || die 'a release past writer admission requires the post-commit recovery boundary.'
   validate_project_config "$rollback_release" quest-prod
   if [[ "$first_cutover_recovery" != true ]]; then
@@ -230,6 +255,7 @@ recovery_bundle="${ROLLBACK_RELEASE_DIR:-}"
 [[ -n "$recovery_bundle" ]] || die 'post-commit recovery requires an evidence bundle path.'
 safe_bundle "$recovery_bundle" 'post-commit evidence bundle'
 validate_commit_point "$recovery_bundle"
+validate_predecessor_metadata "$recovery_bundle"
 [[ "$commit_point_requires_postcommit" == true ]] || { printf '%s\n' 'URGENT: post-commit recovery requires durable writer-admission evidence.' >&2; postcommit_status=1; }
 record_recovery_evidence "$recovery_bundle" post-commit-recovery started || postcommit_status=1
 recovery_command "${QUEST_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1

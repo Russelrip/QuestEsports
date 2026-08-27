@@ -443,6 +443,7 @@ make_failed_bundle() {
 commit_sha=$sha
 writer_admitted=false
 previous_release=$fixture/releases/$previous_sha
+cutover_type=steady-state
 EOF
   cat > "$rollback_fixture/commit-point.txt" <<EOF
 writer_admission_starting=true
@@ -533,6 +534,31 @@ assert_contains "$TEST_LOG" 'old-application-restart'
 setup_fixture unsafe-rollback-path
 unsafe_rollback="$fixture/releases/$rollback_sha/../$previous_sha"
 assert_failed unsafe-rollback-path bash "$script_directory/deploy/rollback.sh" pre-commit "$unsafe_rollback"
+
+setup_fixture rollback-predecessor-metadata-mismatch
+make_failed_bundle 9999999999999999999999999999999999999999
+sed -i 's#^previous_release=.*#previous_release=supabase#; s/^cutover_type=.*/cutover_type=first-supabase-cutover/' "$rollback_fixture/release-metadata.txt"
+assert_failed rollback-predecessor-metadata-mismatch bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
+
+setup_fixture rollback-duplicate-previous-metadata
+make_failed_bundle aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+printf 'previous_release=%s\n' "$fixture/releases/$previous_sha" >> "$rollback_fixture/release-metadata.txt"
+assert_failed rollback-duplicate-previous-metadata bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
+
+setup_fixture rollback-duplicate-cutover-metadata
+make_failed_bundle bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+printf '%s\n' 'cutover_type=steady-state' >> "$rollback_fixture/release-metadata.txt"
+assert_failed rollback-duplicate-cutover-metadata bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
+
+setup_fixture rollback-missing-predecessor-metadata
+make_failed_bundle cccccccccccccccccccccccccccccccccccccccc
+sed -i '/^previous_release=/d' "$rollback_fixture/release-metadata.txt"
+assert_failed rollback-missing-predecessor-metadata bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
+
+setup_fixture rollback-malformed-predecessor-metadata
+make_failed_bundle dddddddddddddddddddddddddddddddddddddddd
+sed -i 's/^cutover_type=.*/cutover_type=steady state/' "$rollback_fixture/release-metadata.txt"
+assert_failed rollback-malformed-predecessor-metadata bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
 
 setup_fixture valorant-digest-mismatch
 export BAD_VALORANT_DIGEST=1
