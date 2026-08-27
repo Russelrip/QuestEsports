@@ -12,6 +12,12 @@ const dockerfile = read("ops/docker/backend.production.Dockerfile");
 const dockerignore = read("backend/.dockerignore");
 const productionCompose = read("ops/docker/compose.production.yml");
 const productionEnv = read("ops/docker/quest.production.env.example");
+const nginxConfigPath = path.join(repoRoot, "ops/docker/nginx/quest.conf");
+const nginxConfig = fs.existsSync(nginxConfigPath) ? fs.readFileSync(nginxConfigPath, "utf8").replace(/\r\n/g, "\n") : "";
+const verifyRelease = read("ops/deploy/verify-release.sh");
+const releaseEnv = read("ops/deploy/release.env.example");
+const frontendApi = read("frontend/lib/api.ts");
+const imageWorkflow = read(".github/workflows/build-container-images.yml");
 const postgresBootstrap = read("ops/docker/postgres/init/001-bootstrap-roles.sql");
 const postgresHealthcheck = read("ops/docker/postgres/healthcheck.sh");
 
@@ -412,6 +418,102 @@ test("production Compose has a fixed project and exact loopback publications", (
   assert.doesNotMatch(productionCompose, /-\s+\.{1,2}\//);
   assert.match(productionCompose, /quest-shared:[\s\S]*?name:\s*quest-shared/);
   assert.match(productionCompose, /quest-shared:[\s\S]*?external:\s*true/);
+});
+
+test("production backend receives mandatory runtime configuration", () => {
+  const backend = serviceBlock("backend");
+  assert.match(backend, /env_file:[\s\S]*required:\s*true/);
+  assert.doesNotMatch(backend, /required:\s*false/);
+});
+
+test("frontend has deliberate outbound and cache behavior", () => {
+  const frontend = serviceBlock("frontend");
+  assert.match(frontend, /NEXT_TELEMETRY_DISABLED:\s*["']?1["']?/);
+  assert.match(frontend, /tmpfs:[\s\S]*\/app\/\.next\/cache/);
+  assert.doesNotMatch(frontend, /network_mode:\s*none/);
+  assert.deepEqual(serviceNetworks("frontend"), ["app"]);
+});
+
+test("host verification requires exact image identity and Cosign verification", () => {
+  assert.match(verifyRelease, /COSIGN_BIN/);
+  assert.match(verifyRelease, /COSIGN_CERTIFICATE_IDENTITY_REGEXP/);
+  assert.match(verifyRelease, /COSIGN_OIDC_ISSUER/);
+  assert.match(verifyRelease, /cosign verify|COSIGN_BIN[\s\S]*?verify/);
+  assert.match(verifyRelease, /APPROVED_REF/);
+  assert.match(verifyRelease, /POSTGRES_IMAGE.*postgres:17-bookworm@sha256/);
+});
+
+test("artifact trust keeps VALORANT on an independent signer policy", () => {
+  const assignment = (name) => {
+    const match = releaseEnv.match(new RegExp(`^${name}=(.*)$`, "m"));
+    assert.ok(match, `${name} must be documented`);
+    return match[1];
+  };
+  assert.notEqual(
+    assignment("VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP"),
+    assignment("QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP"),
+    "VALORANT must not inherit the Quest signer identity",
+  );
+  assert.match(
+    verifyRelease,
+    /VALORANT trust policy must not reuse the Quest signer identity/,
+    "verification must reject a VALORANT policy equal to Quest's policy",
+  );
+  const questSigningStep = imageWorkflow.match(
+    /Sign each Quest image digest with keyless OIDC[\s\S]*?(?=\n\s*- name:|$)/,
+  )?.[0] || "";
+  assert.doesNotMatch(
+    questSigningStep,
+    /valorant_image|VALORANT_IMAGE/,
+    "the Quest workflow signing loop must not sign VALORANT with Quest policy",
+  );
+  assert.match(imageWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
+});
+
+test("frontend SSR selects an explicit internal API origin while browsers keep the public origin", () => {
+  const frontend = serviceBlock("frontend");
+  assert.match(
+    frontend,
+    /(?:INTERNAL_API_URL|SERVER_API_URL|API_INTERNAL_ORIGIN):\s*["']?https?:\/\/(?:backend|quest-backend):\d+/,
+    "frontend Compose must provide the server-only backend origin consumed by the SSR helper",
+  );
+  assert.match(
+    frontendApi,
+    /(?:INTERNAL_API_URL|SERVER_API_URL|API_INTERNAL_ORIGIN)/,
+    "frontend/lib/api.ts must consume an explicit server-only backend origin",
+  );
+  assert.match(
+    frontendApi,
+    /typeof window\s*===\s*["']undefined["'][\s\S]{0,500}(?:INTERNAL_API_URL|SERVER_API_URL|API_INTERNAL_ORIGIN)/,
+    "server-side URL selection must use the internal backend origin",
+  );
+  assert.match(
+    frontendApi,
+    /typeof window[\s\S]{0,500}NEXT_PUBLIC_API_URL|NEXT_PUBLIC_API_URL[\s\S]{0,500}typeof window/,
+    "browser URL selection must remain based on the public API origin",
+  );
+});
+
+test("deployment contracts bind production environment, both schemas, and both writer groups", () => {
+  assert.match(releaseEnv, /^RELEASE_ENVIRONMENT=production$/m);
+  assert.match(releaseEnv, /^RELEASE_ENVIRONMENT_PROTECTED=1$/m);
+  assert.match(verifyRelease, /database_schemas/);
+  assert.match(verifyRelease, /public,valorant/);
+  assert.match(verifyRelease, /writer_groups/);
+  assert.match(verifyRelease, /quest,valorant/);
+  assert.match(read("ops/deploy/release.sh"), /OLD_VALORANT_REBOOT_PERSISTENCE_CHECK/);
+  assert.match(read("ops/deploy/cutover.sh"), /OLD_QUEST_REBOOT_PERSISTENCE_CHECK/);
+  assert.match(read("ops/deploy/rollback.sh"), /recovery-evidence\.txt/);
+});
+
+test("Nginx keeps public ingress on loopback and preserves SSE", () => {
+  assert.ok(nginxConfig, "production Nginx configuration is required");
+  assert.match(nginxConfig, /proxy_pass\s+http:\/\/127\.0\.0\.1:3000/);
+  assert.match(nginxConfig, /proxy_pass\s+http:\/\/127\.0\.0\.1:5001/);
+  assert.match(nginxConfig, /proxy_buffering\s+off/);
+  assert.match(nginxConfig, /proxy_read_timeout\s+(?:[3-9][0-9]|[1-9][0-9]{2,})s/);
+  assert.match(nginxConfig, /proxy_send_timeout\s+(?:[3-9][0-9]|[1-9][0-9]{2,})s/);
+  assert.doesNotMatch(nginxConfig, /private|\/srv\/quest-esports/);
 });
 
 test("production Compose uses stable aliases and durable, non-source mounts", () => {

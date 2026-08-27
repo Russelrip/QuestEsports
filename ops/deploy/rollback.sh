@@ -32,6 +32,9 @@ fi
 source "$release_env_file"
 require_setting() { [[ -n "${!1:-}" ]] || die "missing release setting: $1"; }
 command_setting() { require_setting "$1"; [[ -x "${!1}" ]] || die "release command is not executable: $1"; }
+require_setting RELEASE_ENVIRONMENT
+require_setting RELEASE_ENVIRONMENT_PROTECTED
+[[ "$RELEASE_ENVIRONMENT" == production && "$RELEASE_ENVIRONMENT_PROTECTED" == 1 ]] || die 'release environment is not the protected production environment.'
 require_setting RELEASE_ROOT
 require_setting DOCKER_BIN
 releases_root="${RELEASES_ROOT:-$RELEASE_ROOT/releases}"
@@ -47,6 +50,22 @@ canonical_releases_root="$(realpath "$releases_root" 2>/dev/null)" || die 'RELEA
 mode="${1:-pre-commit}"
 [[ "$mode" == pre-commit || "$mode" == post-commit ]] || die 'usage: rollback.sh pre-commit|post-commit'
 compose() { "$DOCKER_BIN" compose "$@"; }
+recovery_command() {
+  local command="$1" expected="${2:-}" output rc
+  if [[ ! -x "$command" ]]; then
+    printf '%s\n' 'URGENT: recovery command is missing or not executable.' >&2
+    return 1
+  fi
+  output="$($command 2>/dev/null)"; rc=$?
+  (( rc == 0 )) || return 1
+  [[ -z "$expected" || "$output" == "$expected" ]]
+}
+record_recovery_evidence() {
+  local bundle="$1" boundary="$2" result="$3"
+  [[ -n "$bundle" && -d "$bundle" ]] || return 0
+  printf 'boundary=%s\nresult=%s\nlegacy_restart_allowed=%s\n' "$boundary" "$result" "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)" > "$bundle/recovery-evidence.txt" 2>/dev/null || return 1
+  chmod 600 "$bundle/recovery-evidence.txt" 2>/dev/null || return 1
+}
 
 validate_project_config() {
   local bundle="$1" project="$2" output compose_file="compose.production.yml"
@@ -62,8 +81,8 @@ validate_bundle_images() {
   for key in "${image_keys[@]}"; do
     value="$(awk -F= -v k="$key" '$1 == k { print substr($0, index($0,"=")+1); found=1 } END { if (!found) exit 1 }' "$bundle/.env")" || die "$bundle/.env is missing $key."
     case "$key" in
-      POSTGRES_IMAGE) [[ "$value" =~ ^postgres:17-bookworm@sha256:[0-9a-fA-F]{64}$ ]] || die "$bundle/.env has an unsafe PostgreSQL image." ;;
-      *) [[ "$value" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-fA-F]{64}$ ]] || die "$bundle/.env has an unsafe $key." ;;
+      POSTGRES_IMAGE) [[ "$value" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe PostgreSQL image." ;;
+      *) [[ "$value" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe $key." ;;
     esac
   done
 }
@@ -91,7 +110,7 @@ safe_bundle() {
     [[ "$metadata_line" =~ ^[a-z][a-z0-9_]*=[^[:space:]]+$ ]] || die "$label metadata contains an ambiguous entry."
     metadata_key="${metadata_line%%=*}"
     case "$metadata_key" in
-      commit_sha|commit_point_utc|writer_admitted|current_pointer_updated|previous_release|quest_project|valorant_project|shared_network) ;;
+      commit_sha|commit_point_utc|writer_admitted|current_pointer_updated|previous_release|quest_project|valorant_project|shared_network|database_schemas|writer_groups|owner_approval_sha|cutover_type) ;;
       *) die "$label metadata contains an unknown entry." ;;
     esac
   done < "$bundle/release-metadata.txt"
@@ -115,35 +134,45 @@ if [[ "$mode" == pre-commit ]]; then
   command_setting OLD_DATABASE_AUTHORITATIVE_COMMAND
   previous_database_authority="$("$OLD_DATABASE_AUTHORITATIVE_COMMAND" 2>/dev/null)"
   [[ "$previous_database_authority" == supabase || "$previous_database_authority" == quest-postgres ]] || die 'previous database authority is ambiguous; refusing a split-brain rollback.'
-  compose --env-file "$rollback_release/.env" -f "$rollback_release/compose.production.yml" --project-name quest-prod down --remove-orphans >/dev/null 2>&1 || die 'failed to stop the candidate Compose project.'
+  recovery_status=0
+  record_recovery_evidence "$rollback_release" pre-commit-rollback started || recovery_status=1
+  compose --env-file "$rollback_release/.env" -f "$rollback_release/compose.production.yml" --project-name quest-prod down --remove-orphans >/dev/null 2>&1 || recovery_status=1
   if [[ "$previous_database_authority" == quest-postgres ]]; then
-    compose --env-file "$previous_release/.env" -f "$previous_release/compose.production.yml" --project-name quest-prod up -d --no-build >/dev/null 2>&1 || die 'failed to restore the previous application digest.'
+    compose --env-file "$previous_release/.env" -f "$previous_release/compose.production.yml" --project-name quest-prod up -d --no-build >/dev/null 2>&1 || recovery_status=1
   else
-    command_setting OLD_APPLICATION_RESTART_COMMAND
-    RELEASE_DIR="$previous_release" "$OLD_APPLICATION_RESTART_COMMAND" >/dev/null 2>&1 || die 'failed to restore the legacy PM2 application.'
+    RELEASE_DIR="$previous_release" recovery_command "${OLD_APPLICATION_RESTART_COMMAND:-}" restarted || recovery_status=1
   fi
 
   if [[ "${OLD_VALORANT_WAS_STOPPED:-0}" == 1 ]]; then
-    command_setting OLD_VALORANT_UNMASKED_CHECK
-    [[ "$("$OLD_VALORANT_UNMASKED_CHECK" 2>/dev/null)" == unmasked ]] || die 'refusing to restart a masked old VALORANT unit.'
-    command_setting OLD_VALORANT_RESTART_COMMAND
-    "$OLD_VALORANT_RESTART_COMMAND" >/dev/null 2>&1 || die 'failed to restart the previously stopped old VALORANT units.'
+    recovery_command "${OLD_VALORANT_UNMASKED_CHECK:-}" unmasked || recovery_status=1
+    recovery_command "${OLD_VALORANT_RESTART_COMMAND:-}" || recovery_status=1
   fi
-  printf '%s\n' 'Pre-commit rollback completed: previous application release restored; no database URL was redirected.'
-  exit 0
+  record_recovery_evidence "$rollback_release" pre-commit-rollback "$([[ "$recovery_status" == 0 ]] && printf completed || printf incomplete)" || recovery_status=1
+  (( recovery_status == 0 )) && printf '%s\n' 'Pre-commit rollback completed: previous application release restored; no database URL was redirected.' || printf '%s\n' 'URGENT: pre-commit rollback was incomplete; inspect recovery-evidence.txt.' >&2
+  exit "$recovery_status"
 fi
 
 # Post-commit recovery is not an application rollback. It never restarts old
 # writers and never points either service at stale Supabase.
-command_setting WRITER_STOP_COMMAND
-command_setting FREEZE_ENABLE_COMMAND
-command_setting CURRENT_STATE_CAPTURE_COMMAND
-"$WRITER_STOP_COMMAND" >/dev/null 2>&1 || die 'failed to stop both writer groups.'
-RELEASE_DIR="${ROLLBACK_RELEASE_DIR:-}" "$FREEZE_ENABLE_COMMAND" >/dev/null 2>&1 || die 'failed to re-enable coordinated write freeze.'
-RELEASE_DIR="${ROLLBACK_RELEASE_DIR:-}" "$CURRENT_STATE_CAPTURE_COMMAND" >/dev/null 2>&1 || die 'failed to capture/checksum current PostgreSQL 17 and uploads.'
-[[ -n "${EXPECTED_LOSS_RPO:-}" ]] || die 'post-commit recovery requires an explicit expected-loss/RPO record.'
-[[ "${INCIDENT_OWNER_APPROVAL:-}" == INCIDENT_OWNER_APPROVAL ]] || die 'post-commit recovery requires incident-owner approval.'
-command_setting RECOVERY_ACTION_COMMAND
-action="$("$RECOVERY_ACTION_COMMAND" 2>/dev/null)"
-[[ "$action" == fix-forward || "$action" == controlled-restore ]] || die 'recovery action must be fix-forward or controlled-restore.'
+postcommit_status=0
+recovery_bundle="${ROLLBACK_RELEASE_DIR:-}"
+record_recovery_evidence "$recovery_bundle" post-commit-recovery started || postcommit_status=1
+recovery_command "${WRITER_STOP_COMMAND:-}" || postcommit_status=1
+RELEASE_DIR="$recovery_bundle" recovery_command "${FREEZE_ENABLE_COMMAND:-}" || postcommit_status=1
+RELEASE_DIR="$recovery_bundle" recovery_command "${CURRENT_STATE_CAPTURE_COMMAND:-}" captured || postcommit_status=1
+[[ -n "${EXPECTED_LOSS_RPO:-}" ]] || { printf '%s\n' 'URGENT: post-commit recovery requires an explicit expected-loss/RPO record.' >&2; postcommit_status=1; }
+[[ "${INCIDENT_OWNER_APPROVAL:-}" == INCIDENT_OWNER_APPROVAL ]] || { printf '%s\n' 'URGENT: post-commit recovery requires incident-owner approval.' >&2; postcommit_status=1; }
+if [[ -z "${RECOVERY_ACTION_COMMAND:-}" || ! -x "$RECOVERY_ACTION_COMMAND" ]]; then
+  printf '%s\n' 'URGENT: recovery action command is missing or not executable.' >&2
+  postcommit_status=1
+fi
+action='not-selected'
+if (( postcommit_status == 0 )); then
+  action="$("$RECOVERY_ACTION_COMMAND" 2>/dev/null)"; action_rc=$?
+else
+  action_rc=1
+fi
+if (( action_rc != 0 )) || [[ "$action" != fix-forward && "$action" != controlled-restore ]]; then postcommit_status=1; fi
+record_recovery_evidence "$recovery_bundle" post-commit-recovery "$([[ "$postcommit_status" == 0 ]] && printf completed || printf incomplete)" || postcommit_status=1
+(( postcommit_status == 0 )) || die 'post-commit recovery was incomplete; inspect recovery-evidence.txt.'
 printf 'Post-commit recovery boundary recorded: action=%s expected_loss_rpo=%s\n' "$action" "$EXPECTED_LOSS_RPO"

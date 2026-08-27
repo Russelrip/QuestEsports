@@ -3,8 +3,12 @@ set -euo pipefail
 
 script_directory="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 release_script="$script_directory/deploy/release.sh"
+cutover_script="$script_directory/deploy/cutover.sh"
+host_validation_script="$script_directory/deploy/validate-host.sh"
+workflow_file="$script_directory/../.github/workflows/build-container-images.yml"
 work_directory="$(mktemp -d)"
 trap 'rm -rf -- "$work_directory"' EXIT
+base_path="$PATH"
 
 assert_failed() {
   local label="$1"; shift
@@ -15,17 +19,36 @@ assert_failed() {
   fi
 }
 assert_contains() { grep -Fq -- "$2" "$1" || { printf 'FAIL: %s lacks %s\n' "$1" "$2" >&2; printf '%s\n' '--- log ---' >&2; sed -n '1,120p' "$1" >&2; printf '%s\n' '--- failure output ---' >&2; sed -n '1,120p' "$failure_output" >&2; return 1; }; }
+new_gate_failures=0
+gate_failure() { printf 'FAIL: %s\n' "$1" >&2; new_gate_failures=$((new_gate_failures + 1)); }
+gate_log_contains() { grep -Fq -- "$2" "$1" || gate_failure "$3"; }
+gate_log_exact() { grep -Fxq -- "$2" "$1" || gate_failure "$3"; }
+gate_log_not_contains() { grep -Fq -- "$2" "$1" && gate_failure "$3" || true; }
+gate_file_contains() { [[ -f "$1" ]] && grep -Fq -- "$2" "$1" || gate_failure "$3"; }
+gate_log_before() {
+  local log_file="$1" before="$2" after="$3" label="$4" before_line after_line
+  before_line="$(grep -nF -- "$before" "$log_file" | cut -d: -f1 | head -n1 || true)"
+  after_line="$(grep -nF -- "$after" "$log_file" | cut -d: -f1 | head -n1 || true)"
+  [[ -n "$before_line" && -n "$after_line" && "$before_line" -lt "$after_line" ]] || gate_failure "$label"
+}
 
 make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
-  unset WRONG_PROJECT DUPLICATE_ALIASES STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_WRITER_ENABLE FAIL_START || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
   mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private"
   : > "$fixture/release.lock"
   : > "$fixture/ca.crt"
+  : > "$fixture/postgres.crt"
+  : > "$fixture/postgres.key"
+  : > "$fixture/current-supabase.env"
+  printf '%s\n' active > "$fixture/old-quest.state"
+  printf '%s\n' active > "$fixture/old-valorant.state"
+  printf '%s\n' unmasked > "$fixture/old-valorant.persistence"
+  printf '%s\n' unmasked > "$fixture/old-quest.persistence"
   cat > "$fixture/valorant.compose.yml" <<'EOF'
 name: valorant-prod
 services:
@@ -68,6 +91,7 @@ EOF
 set -euo pipefail
 log="${TEST_LOG:?}"
 if [[ "$1" == pull ]]; then printf 'pull %s\n' "$2" >> "$log"; exit 0; fi
+if [[ "$1" == info ]]; then exit 0; fi
 if [[ "$1" == network && "$2" == inspect ]]; then
   if [[ "${DUPLICATE_ALIASES:-0}" == 1 ]]; then
     printf 'quest|quest-backend,quest-backend\n'
@@ -89,6 +113,7 @@ for ((i=1; i<=$#; i++)); do
 done
 if [[ "${WRONG_PROJECT:-0}" == 1 ]]; then project=wrong-project; fi
 if [[ " $* " == *' config --images '* ]]; then
+  printf 'compose project=%s action=config-images\n' "$project" >> "$log"
   if [[ "$project" == valorant-prod ]]; then
     if [[ "${BAD_VALORANT_DIGEST:-0}" == 1 ]]; then
       printf '%s\n' 'ghcr.io/quest/valorant@sha256:6666666666666666666666666666666666666666666666666666666666666666'
@@ -102,11 +127,34 @@ if [[ " $* " == *' config --images '* ]]; then
       'postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333'
   fi
 elif [[ " $* " == *' config '* ]]; then
+  printf 'compose project=%s action=config\n' "$project" >> "$log"
   printf 'name: %s\n' "$project"
 elif [[ " $* " == *' ps '* ]]; then
   [[ -f "${ACTIVE_MARKER:?}" ]] || exit 0
   printf 'ps project=%s\n' "$project" >> "$log"
-  printf '%s\n%s\n' "$project" "$project"
+  if [[ "${TOPOLOGY_STRUCTURED:-1}" == 1 ]]; then
+    if [[ "$project" == quest-prod ]]; then
+      if [[ "${TOPOLOGY_MISSING:-0}" != 1 ]]; then
+        printf '%s\n' '{"Name":"quest-frontend-1","Service":"frontend","State":"running","Image":"ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111","Project":"quest-prod"}'
+      fi
+      backend_state=running
+      backend_image=ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222
+      if [[ "${TOPOLOGY_STALE:-0}" == 1 ]]; then
+        backend_state=exited
+        backend_image=ghcr.io/quest/backend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      fi
+      printf '{"Name":"quest-backend-1","Service":"backend","State":"%s","Image":"%s","Project":"quest-prod"}\n' "$backend_state" "$backend_image"
+      if [[ "${TOPOLOGY_MISSING:-0}" != 1 ]]; then
+        printf '%s\n' '{"Name":"quest-postgres-1","Service":"postgres","State":"running","Image":"postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333","Project":"quest-prod"}'
+      fi
+      [[ "${TOPOLOGY_STALE:-0}" == 1 ]] && printf '%s\n' '{"Name":"quest-old-worker-1","Service":"old-worker","State":"running","Image":"ghcr.io/quest/old@sha256:9999999999999999999999999999999999999999999999999999999999999999","Project":"quest-prod"}' || true
+    else
+      printf '%s\n' '{"Name":"valorant-platform-1","Service":"valorant-platform","State":"running","Image":"ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555","Project":"valorant-prod"}'
+      [[ "${TOPOLOGY_STALE:-0}" == 1 ]] && printf '%s\n' '{"Name":"valorant-old-1","Service":"old-platform","State":"running","Image":"ghcr.io/quest/valorant-old@sha256:9999999999999999999999999999999999999999999999999999999999999999","Project":"valorant-prod"}' || true
+    fi
+  else
+    printf '%s\n%s\n' "$project" "$project"
+  fi
 elif [[ " $* " == *' up '* || " $* " == *' down '* || " $* " == *' pull '* ]]; then
   printf 'compose project=%s action=%s' "$project" "$*" >> "$log"
   if [[ -n "$env_file" && -f "$env_file" ]]; then
@@ -154,40 +202,109 @@ printf '{"status":"ok"}\n'
 EOF
   make_executable "$fixture/bin/curl"
 
+  cat > "$fixture/bin/cosign" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+log="${TEST_LOG:?}"
+identity=""
+issuer=""
+image="${!#}"
+while (($#)); do
+  case "$1" in
+    --certificate-identity-regexp) identity="$2"; shift 2 ;;
+    --certificate-oidc-issuer) issuer="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf 'cosign image=%s identity=%s issuer=%s\n' "$image" "$identity" "$issuer" >> "$log"
+if [[ "${REQUIRE_ARTIFACT_TRUST_POLICY:-0}" == 1 ]]; then
+  case "$image" in
+    postgres:17-bookworm@*) [[ "$identity" == postgres-fixture-identity && "$issuer" == postgres-fixture-issuer ]] || exit 1 ;;
+    ghcr.io/quest/valorant@*) [[ "$identity" == valorant-fixture-identity && "$issuer" == valorant-fixture-issuer ]] || exit 1 ;;
+  esac
+fi
+exit 0
+EOF
+  make_executable "$fixture/bin/cosign"
+
+  cat > "$fixture/bin/valorant-health" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${FAIL_VALORANT_HEALTH:-0}" == 1 ]] && exit 1
+if [[ "${BAD_VALORANT_HEALTH:-0}" == 1 ]]; then printf '{"status":"ok","db":"down"}\n'; else printf '{"status":"ok","db":"up"}\n'; fi
+EOF
+  make_executable "$fixture/bin/valorant-health"
+
   cat > "$fixture/bin/status" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$(basename "$0")" in
-  migration-status) [[ "${MIGRATION_PENDING:-0}" == 1 ]] && printf 'pending\n' || printf 'none\n' ;;
-  db-health|db-ready) printf 'ready\n' ;;
+  migration-status)
+    status_count=0
+    if [[ -n "${MIGRATION_STATUS_COUNT_FILE:-}" ]]; then
+      status_count="$(cat "$MIGRATION_STATUS_COUNT_FILE" 2>/dev/null || printf '0')"
+      status_count=$((status_count + 1))
+      printf '%s\n' "$status_count" > "$MIGRATION_STATUS_COUNT_FILE"
+    fi
+    migration_state=none
+    if [[ "${MIGRATION_PENDING:-0}" == 1 && ( "${REQUIRE_MIGRATION_RECHECK:-0}" != 1 || "$status_count" -le 2 ) ]]; then migration_state=pending; fi
+    ack_target="${TARGET_AUTHORITY:-none}"
+    [[ "${TARGET_ACK_LIES:-0}" == 1 ]] && ack_target=wrong-postgres
+    printf 'migration-status repo=%s target=%s state=%s\n' "${CHECK_REPOSITORY:-unknown}" "$ack_target" "$migration_state" >> "$TEST_LOG"
+    if [[ "${TARGET_ACK_MODE:-0}" == 1 ]]; then
+      schema=public; [[ "${CHECK_REPOSITORY:-}" == valorant ]] && schema=valorant
+      printf '%s target=%s schema=%s repository=%s\n' "$migration_state" "$ack_target" "$schema" "${CHECK_REPOSITORY:-unknown}"
+    else
+      printf '%s\n' "$migration_state"
+    fi
+    ;;
+  db-health|db-ready) ack_target="${TARGET_AUTHORITY:-quest-postgres}"; [[ "${TARGET_ACK_LIES:-0}" == 1 ]] && ack_target=wrong-postgres; printf 'ready target=%s schemas=public,valorant\n' "$ack_target" ;;
   registry) [[ "${FAIL_REGISTRY:-0}" == 1 ]] && exit 1 || exit 0 ;;
   backup-freshness) [[ "${STALE_BACKUP:-0}" == 1 ]] && exit 1 || { printf 'freshness lock=%s\n' "${BACKUP_RELEASE_LOCK_PATH:?}" >> "$TEST_LOG"; printf 'fresh\n'; } ;;
   backup) printf 'backup lock=%s\n' "${BACKUP_RELEASE_LOCK_PATH:?}" >> "$TEST_LOG"; printf 'backup\n' ;;
   backup-evidence) printf 'verified-complete release_sha=%s schemas=verified:public,valorant uploads=verified:public,private archive=verified checksum=verified remote=verified\n' "${BACKUP_RELEASE_SHA:?}" ;;
-  old-active) printf 'active\n' ;;
-  old-stop) printf 'old-stop\n' >> "$TEST_LOG" ;;
+  old-active) state="$(cat "${FIXTURE_OLD_VALORANT_STATE:?}")"; printf 'old-val-active-check state=%s\n' "$state" >> "$TEST_LOG"; [[ "${BAD_LEGACY_STATE:-0}" == 1 ]] && printf 'active\n' || for unit in valorant-platform valorant-updater valorant-discord-bot; do printf 'unit=%s state=%s observed_at=20260828T120000Z\n' "$unit" "$state"; done ;;
+  old-quest-active) state="$(cat "${FIXTURE_OLD_QUEST_STATE:?}")"; printf 'old-quest-active-check state=%s\n' "$state" >> "$TEST_LOG"; printf 'unit=quest-pm2 state=%s observed_at=20260828T120000Z\n' "$state" ;;
+  old-stop) printf 'old-stop\n' >> "$TEST_LOG"; [[ "${FAIL_OLD_VALORANT_STOP:-0}" == 1 ]] && exit 1; printf 'inactive\n' > "${FIXTURE_OLD_VALORANT_STATE:?}" ;;
+  old-quest-stop) printf 'old-quest-stop\n' >> "$TEST_LOG"; [[ "${FAIL_OLD_QUEST_STOP:-0}" == 1 ]] && exit 1; printf 'inactive\n' > "${FIXTURE_OLD_QUEST_STATE:?}" ;;
   old-restart) printf 'old-restart\n' >> "$TEST_LOG" ;;
-  old-mask) printf 'old-mask\n' >> "$TEST_LOG" ;;
-  old-unmasked) printf 'unmasked\n' ;;
-  old-authoritative) printf 'supabase\n' ;;
+  old-quest-restart) printf 'old-quest-restart\n' >> "$TEST_LOG"; printf 'restarted\n' ;;
+  old-mask) printf 'old-mask\n' >> "$TEST_LOG"; printf 'masked\n' > "${FIXTURE_OLD_VALORANT_PERSISTENCE:?}" ;;
+  old-quest-mask) printf 'old-quest-mask\n' >> "$TEST_LOG"; printf 'masked\n' > "${FIXTURE_OLD_QUEST_PERSISTENCE:?}" ;;
+  old-unmasked) cat "${FIXTURE_OLD_VALORANT_PERSISTENCE:?}" ;;
+  old-reboot-persistence) [[ "${FAIL_REBOOT_PERSISTENCE:-0}" == 1 ]] && exit 1; for unit in valorant-platform valorant-updater valorant-discord-bot; do printf 'unit=%s state=inactive reboot_persistent=true observed_at=20260828T120000Z\n' "$unit"; done ;;
+  old-quest-reboot-persistence) printf 'unit=quest-pm2 state=inactive reboot_persistent=true observed_at=20260828T120000Z\n' ;;
+  old-authoritative) printf '%s\n' "${DATABASE_AUTHORITY:-supabase}" ;;
   old-application-restart) printf 'old-application-restart\n' >> "$TEST_LOG"; printf 'restarted\n' ;;
   freeze-enable) printf 'freeze-enable\n' >> "$TEST_LOG"; printf 'validation\n' ;;
   freeze-disable) printf 'off\n' ;;
   freeze-status) printf 'acknowledged\n' ;;
+  validate-host) printf 'validated\n' ;;
+  service-ownership) printf 'owned\n' ;;
+  cutover-restore) printf 'restored\n' ;;
+  cutover-abort) printf 'aborted\n' >> "$TEST_LOG" ;;
   quest-ready|valorant-ready) printf 'ready\n' ;;
-  quest-migrate|valorant-migrate) [[ "${BAD_MIGRATOR:-0}" == 1 || "${MIGRATOR_IMAGE:-}" != "${EXPECTED_MIGRATOR_IMAGE:-}" ]] && exit 1; printf 'migrated image=%s\n' "${MIGRATOR_IMAGE:?}" ;;
-  writer-enable) [[ "${FAIL_WRITER_ENABLE:-0}" == 1 ]] && exit 1 || printf 'admitted\n' ;;
+  quest-migrate|valorant-migrate) [[ "${BAD_MIGRATOR:-0}" == 1 || "${MIGRATOR_IMAGE:-}" != "${EXPECTED_MIGRATOR_IMAGE:-}" ]] && exit 1; ack_target="${TARGET_AUTHORITY:-none}"; [[ "${TARGET_ACK_LIES:-0}" == 1 ]] && ack_target=wrong-postgres; schema=public; [[ "$(basename "$0")" == valorant-migrate ]] && schema=valorant; printf 'migrator repo=%s target=%s\n' "${MIGRATION_REPOSITORY:-unknown}" "$ack_target" >> "$TEST_LOG"; printf 'migrate\n' >> "$TEST_LOG"; if [[ "${TARGET_ACK_MODE:-0}" == 1 ]]; then printf 'migrated image=%s target=%s schema=%s repository=%s\n' "${MIGRATOR_IMAGE:?}" "$ack_target" "$schema" "${MIGRATION_REPOSITORY:-unknown}"; else printf 'migrated image=%s schema=%s\n' "${MIGRATOR_IMAGE:?}" "$schema"; fi ;;
+  quest-writer-enable) printf 'quest-writer-enable\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_WRITER_ENABLE:-0}" == 1 ]] && exit 1 || printf 'admitted\n' ;;
+  valorant-writer-enable) printf 'valorant-writer-enable\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_WRITER_ENABLE:-0}" == 1 ]] && exit 1 || printf 'admitted\n' ;;
+  post-commit-recovery-arm) printf 'post-commit-recovery-arm\n' >> "$TEST_LOG"; printf 'armed\n' ;;
   candidate-start) printf 'candidate-start freeze=%s readonly=%s\n' "$4" "$6" >> "$TEST_LOG"; [[ "${FAIL_START:-0}" == 1 ]] && exit 1; : > "${ACTIVE_MARKER:?}"; printf 'started-frozen-read-only\n' ;;
+  quest-writer-stop) printf 'quest-writer-stop\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_WRITER_STOP:-0}" == 1 ]] && exit 1; printf 'stopped\n' ;;
+  valorant-writer-stop) printf 'valorant-writer-stop\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_WRITER_STOP:-0}" == 1 ]] && exit 1; printf 'stopped\n' ;;
   writer-stop) printf 'stopped\n' ;;
-  capture) printf 'captured\n' ;;
+  capture) printf 'capture\n' >> "$TEST_LOG"; printf 'captured\n' ;;
   recovery-action) printf 'fix-forward\n' ;;
   *) exit 1 ;;
 esac
 EOF
-  for command_name in db-health db-ready registry backup-freshness backup backup-evidence migration-status old-active old-stop old-restart old-application-restart old-mask old-unmasked old-authoritative freeze-enable freeze-disable freeze-status quest-ready valorant-ready quest-migrate valorant-migrate writer-enable candidate-start writer-stop capture recovery-action; do
-    cp "$fixture/bin/status" "$fixture/bin/$command_name"
-    make_executable "$fixture/bin/$command_name"
+  status_contents="$(< "$fixture/bin/status")"
+  command_paths=()
+  for command_name in db-health db-ready registry backup-freshness backup backup-evidence migration-status old-active old-quest-active old-stop old-quest-stop old-restart old-quest-restart old-application-restart old-mask old-quest-mask old-unmasked old-reboot-persistence old-quest-reboot-persistence old-authoritative freeze-enable freeze-disable freeze-status validate-host service-ownership cutover-restore cutover-abort quest-ready valorant-ready quest-migrate valorant-migrate quest-writer-enable valorant-writer-enable post-commit-recovery-arm candidate-start quest-writer-stop valorant-writer-stop writer-stop capture recovery-action; do
+    command_path="$fixture/bin/$command_name"
+    printf '%s\n' "$status_contents" > "$command_path"
+    command_paths+=("$command_path")
   done
+  chmod 755 "$fixture/bin/status" "${command_paths[@]}"
 
   cat > "$fixture/release.env" <<EOF
 QUEST_DEPLOY_FIXTURE=1
@@ -195,23 +312,56 @@ RELEASE_ROOT=$fixture
 RELEASES_ROOT=$fixture/releases
 CURRENT_LINK=$fixture/current
 RELEASE_LOCK_PATH=$fixture/release.lock
+RELEASE_ENVIRONMENT=production
+RELEASE_ENVIRONMENT_PROTECTED=1
 QUEST_COMPOSE_TEMPLATE=$fixture/quest.compose.yml
 VALORANT_COMPOSE_SOURCE=$fixture/valorant.compose.yml
 DOCKER_BIN=$fixture/bin/docker
 DATABASE_HEALTH_COMMAND=$fixture/bin/db-health
 DATABASE_READINESS_COMMAND=$fixture/bin/db-ready
 REGISTRY_CHECK_COMMAND=$fixture/bin/registry
+VALIDATE_HOST_COMMAND=$fixture/bin/validate-host
+SERVICE_OWNERSHIP_COMMAND=$fixture/bin/service-ownership
+CURRENT_SUPABASE_ENV_FILE=$fixture/current-supabase.env
+CUTOVER_RESTORE_COMMAND=$fixture/bin/cutover-restore
+CUTOVER_ABORT_COMMAND=$fixture/bin/cutover-abort
+COSIGN_BIN=$fixture/bin/cosign
+QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP=fixture-identity
+QUEST_COSIGN_OIDC_ISSUER=fixture-issuer
+POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP=postgres-fixture-identity
+POSTGRES_COSIGN_OIDC_ISSUER=postgres-fixture-issuer
+VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP=valorant-fixture-identity
+VALORANT_COSIGN_OIDC_ISSUER=valorant-fixture-issuer
+QUEST_FRONTEND_IMAGE_APPROVED_REF=ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111
+QUEST_BACKEND_IMAGE_APPROVED_REF=ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222
+MIGRATOR_IMAGE_APPROVED_REF=ghcr.io/quest/migrator@sha256:4444444444444444444444444444444444444444444444444444444444444444
+POSTGRES_IMAGE_APPROVED_REF=postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333
+VALORANT_IMAGE_APPROVED_REF=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555
 BACKUP_FRESHNESS_COMMAND=$fixture/bin/backup-freshness
 BACKUP_COMMAND=$fixture/bin/backup
 BACKUP_EVIDENCE_COMMAND=$fixture/bin/backup-evidence
 QUEST_MIGRATION_STATUS_COMMAND=$fixture/bin/migration-status
 VALORANT_MIGRATION_STATUS_COMMAND=$fixture/bin/migration-status
+FIRST_CUTOVER_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
 QUEST_MIGRATOR_COMMAND=$fixture/bin/quest-migrate
 VALORANT_MIGRATOR_COMMAND=$fixture/bin/valorant-migrate
+QUEST_WRITER_ENABLE_COMMAND=$fixture/bin/quest-writer-enable
+VALORANT_WRITER_ENABLE_COMMAND=$fixture/bin/valorant-writer-enable
+POST_COMMIT_RECOVERY_ARM_COMMAND=$fixture/bin/post-commit-recovery-arm
+QUEST_WRITER_STOP_COMMAND=$fixture/bin/quest-writer-stop
+VALORANT_WRITER_STOP_COMMAND=$fixture/bin/valorant-writer-stop
 OLD_VALORANT_ACTIVE_CHECK=$fixture/bin/old-active
+OLD_VALORANT_UNITS=valorant-platform,valorant-updater,valorant-discord-bot
+OLD_VALORANT_REBOOT_PERSISTENCE_CHECK=$fixture/bin/old-reboot-persistence
 OLD_VALORANT_STOP_COMMAND=$fixture/bin/old-stop
+OLD_QUEST_STOP_COMMAND=$fixture/bin/old-quest-stop
+OLD_QUEST_ACTIVE_CHECK=$fixture/bin/old-quest-active
+OLD_QUEST_UNITS=quest-pm2
+OLD_QUEST_REBOOT_PERSISTENCE_CHECK=$fixture/bin/old-quest-reboot-persistence
+OLD_QUEST_RESTART_COMMAND=$fixture/bin/old-quest-restart
 OLD_VALORANT_RESTART_COMMAND=$fixture/bin/old-restart
 OLD_VALORANT_MASK_COMMAND=$fixture/bin/old-mask
+OLD_QUEST_MASK_COMMAND=$fixture/bin/old-quest-mask
 OLD_VALORANT_UNMASKED_CHECK=$fixture/bin/old-unmasked
 OLD_DATABASE_AUTHORITATIVE_COMMAND=$fixture/bin/old-authoritative
 OLD_APPLICATION_RESTART_COMMAND=$fixture/bin/old-application-restart
@@ -222,22 +372,26 @@ QUEST_HEALTH_URL=http://127.0.0.1:5001/api/health/live
 QUEST_READINESS_URL=http://127.0.0.1:5001/api/health/ready
 VALORANT_HEALTH_URL=https://valorant-platform:8000/api/v1/health
 VALORANT_CA_FILE=$fixture/ca.crt
+POSTGRES_CERT_FILE=$fixture/postgres.crt
+POSTGRES_KEY_FILE=$fixture/postgres.key
 CURL_BIN=$fixture/bin/curl
+VALORANT_CONTAINER_HEALTH_COMMAND=$fixture/bin/valorant-health
 QUEST_READINESS_ACK_COMMAND=$fixture/bin/quest-ready
 VALORANT_READINESS_ACK_COMMAND=$fixture/bin/valorant-ready
 CANDIDATE_FROZEN_START_COMMAND=$fixture/bin/candidate-start
 CANDIDATE_START_CONTRACT=frozen-read-only
 CANDIDATE_FREEZE_FLAG=--write-freeze=validation
 CANDIDATE_READ_ONLY_FLAG=--read-only
-WRITER_ENABLE_COMMAND=$fixture/bin/writer-enable
 WRITER_STOP_COMMAND=$fixture/bin/writer-stop
 CURRENT_STATE_CAPTURE_COMMAND=$fixture/bin/capture
 RECOVERY_ACTION_COMMAND=$fixture/bin/recovery-action
 RELEASE_MIN_FREE_KB=1
 EOF
-  export QUEST_DEPLOY_FIXTURE=1 RELEASE_ENV_FILE="$fixture/release.env" RELEASE_LOCK_PATH="$fixture/release.lock" TEST_LOG="$fixture/commands.log" TEST_CURRENT="$fixture/current" TEST_PREVIOUS="$fixture/releases/$previous_sha" ACTIVE_MARKER="$fixture/active.marker"
+  export QUEST_DEPLOY_FIXTURE=1 TARGET_ACK_MODE=1 RELEASE_ENV_FILE="$fixture/release.env" RELEASE_LOCK_PATH="$fixture/release.lock" TEST_LOG="$fixture/commands.log" TEST_CURRENT="$fixture/current" TEST_PREVIOUS="$fixture/releases/$previous_sha" ACTIVE_MARKER="$fixture/active.marker" FIXTURE_OLD_QUEST_STATE="$fixture/old-quest.state" FIXTURE_OLD_VALORANT_STATE="$fixture/old-valorant.state" FIXTURE_OLD_VALORANT_PERSISTENCE="$fixture/old-valorant.persistence" FIXTURE_OLD_QUEST_PERSISTENCE="$fixture/old-quest.persistence"
+  MIGRATION_STATUS_COUNT_FILE="$fixture/migration-status.count"
+  export MIGRATION_STATUS_COUNT_FILE
   : > "$TEST_LOG"
-  export PATH="$fixture/bin:$PATH"
+  export PATH="$fixture/bin:$base_path"
   cat > "$fixture/manifest.txt" <<'EOF'
 commit_sha=1111111111111111111111111111111111111111
 frontend_image=ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111
@@ -248,7 +402,7 @@ valorant_image=ghcr.io/quest/valorant@sha256:55555555555555555555555555555555555
 EOF
 }
 
-run_release() { bash "$release_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"; }
+run_release() { DATABASE_AUTHORITY=quest-postgres bash "$release_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"; }
 
 setup_fixture invalid-sha
 assert_failed invalid-sha env RELEASE_ENV_FILE="$RELEASE_ENV_FILE" bash "$release_script" not-a-full-sha "$fixture/manifest.txt"
@@ -276,7 +430,7 @@ assert_failed pending-without-approval run_release
 setup_fixture failed-readiness
 export FAIL_QUEST_HEALTH=1
 assert_failed failed-readiness run_release
-assert_contains "$TEST_LOG" 'old-application-restart'
+assert_contains "$TEST_LOG" 'action=compose --env-file'
 
 setup_fixture failed-valorant-health
 export BAD_VALORANT_HEALTH=1
@@ -307,14 +461,14 @@ export BAD_VALORANT_DIGEST=1
 assert_failed valorant-digest-mismatch run_release
 
 setup_fixture migrator-digest-mismatch
-export MIGRATION_PENDING=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+export MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
 export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
 export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
 export BAD_MIGRATOR=1
 assert_failed migrator-digest-mismatch run_release
 
 setup_fixture successful-approved-release
-export MIGRATION_PENDING=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+export MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
 export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
 export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
 run_release >/dev/null
@@ -334,7 +488,7 @@ if grep -Fq 'ps project=' "$TEST_LOG"; then
 fi
 
 setup_fixture admission-failure-before-mask
-export FAIL_WRITER_ENABLE=1
+export FAIL_QUEST_WRITER_ENABLE=1
 assert_failed admission-failure-before-mask run_release
 if grep -Fq 'old-mask' "$TEST_LOG"; then
   printf 'FAIL: old VALORANT units were masked before writer admission\n' >&2
@@ -358,5 +512,301 @@ cp "$TEST_PREVIOUS/release-metadata.txt" "$metadata_backup"
 printf '%s\n' 'unexpected=metadata' >> "$TEST_PREVIOUS/release-metadata.txt"
 assert_failed malformed-metadata bash "$script_directory/deploy/verify-release.sh"
 mv "$metadata_backup" "$TEST_PREVIOUS/release-metadata.txt"
+
+workflow_source="$(cat "$workflow_file")"
+if grep -Fq 'POSTGRES_17_BOOKWORM_DIGEST#sha256' <<<"$workflow_source"; then
+  printf 'FAIL: workflow strips the PostgreSQL sha256 algorithm prefix\n' >&2
+  exit 1
+fi
+grep -Eq "postgres_image=postgres:17-bookworm@%s.*POSTGRES_17_BOOKWORM_DIGEST" "$workflow_file" || {
+  printf 'FAIL: workflow does not emit the complete PostgreSQL digest reference\n' >&2
+  exit 1
+}
+
+setup_fixture first-cutover
+[[ "$(RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script")" == validated ]] || {
+  printf 'FAIL: host trust fixture did not validate the signed exact manifest\n' >&2
+  exit 1
+}
+sed -i 's/postgres_image=postgres:17-bookworm@sha256:.*/postgres_image=postgres:17-bookworm@sha256:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC/' "$fixture/manifest.txt"
+assert_failed uppercase-postgres-digest run_release
+setup_fixture first-cutover
+run_first_cutover() { DATABASE_AUTHORITY=supabase bash "$release_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"; }
+assert_failed steady-release-rejects-first-cutover run_first_cutover
+assert_contains "$failure_output" 'first cutover requires cutover.sh'
+
+setup_fixture first-cutover-success
+export MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+if ! bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt" >/dev/null; then
+  printf '%s\n' 'expected current cutover fixture failure is recorded by the Oracle Gate assertions below' >&2
+fi
+assert_contains "$TEST_LOG" 'quest-writer-enable'
+[[ "$(grep -n 'migrate' "$TEST_LOG" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'candidate-start' "$TEST_LOG" | cut -d: -f1 | head -n1)" ]] || { printf 'FAIL: candidate started before migration completed\n' >&2; exit 1; }
+[[ "$(grep -n 'freeze-enable' "$TEST_LOG" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'old-stop' "$TEST_LOG" | cut -d: -f1 | head -n1)" ]] || { printf 'FAIL: cutover froze writers after stopping them\n' >&2; exit 1; }
+[[ "$(grep -n 'old-stop' "$TEST_LOG" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'candidate-start' "$TEST_LOG" | cut -d: -f1 | head -n1)" ]] || { printf 'FAIL: candidate started before old writers stopped\n' >&2; exit 1; }
+[[ "$(grep -n 'candidate-start' "$TEST_LOG" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'writer-enable' "$TEST_LOG" | cut -d: -f1 | head -n1)" ]] || { printf 'FAIL: writer admission preceded candidate validation\n' >&2; exit 1; }
+
+[[ -x "$cutover_script" ]] || { printf 'FAIL: cutover.sh is missing or not executable\n' >&2; exit 1; }
+[[ -x "$host_validation_script" ]] || { printf 'FAIL: validate-host.sh is missing or not executable\n' >&2; exit 1; }
+grep -q 'writer_admission_starting' "$cutover_script" || {
+  printf 'FAIL: cutover does not record writer admission boundary\n' >&2
+  exit 1
+}
+[[ "$(grep -n 'writer_admission_starting' "$cutover_script" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'WRITER_ENABLE_COMMAND' "$cutover_script" | cut -d: -f1 | tail -n1)" ]] || {
+  printf 'FAIL: writer admission is enabled before its boundary is recorded\n' >&2
+  exit 1
+}
+[[ "$(grep -n 'run_migrator' "$cutover_script" | head -n1 | cut -d: -f1)" -lt "$(grep -n 'CANDIDATE_FROZEN_START_COMMAND' "$cutover_script" | head -n1 | cut -d: -f1)" ]] || {
+  printf 'FAIL: candidate startup precedes migration\n' >&2
+  exit 1
+}
+grep -q 'postcommit_boundary' "$cutover_script" || {
+  printf 'FAIL: cutover lacks post-commit recovery boundary\n' >&2
+  exit 1
+}
+
+# Oracle Gate 1 regressions. These cases intentionally use a disposable command
+# fixture so the current implementation fails for missing contracts rather
+# than contacting Supabase, PM2, Docker, or a real release host.
+setup_fixture independent-writer-admission-release
+export FAIL_VALORANT_WRITER_ENABLE=1
+if run_release >"$work_directory/independent-release.out" 2>&1; then
+  gate_failure 'release accepted a VALORANT writer-enable failure'
+fi
+gate_log_contains "$TEST_LOG" 'quest-writer-enable' 'release did not request an independent Quest writer acknowledgement'
+gate_log_contains "$TEST_LOG" 'valorant-writer-enable' 'release did not request an independent VALORANT writer acknowledgement'
+gate_log_before "$TEST_LOG" 'post-commit-recovery-arm' 'quest-writer-enable' 'release did not arm post-commit recovery before the first writer enable'
+gate_log_not_contains "$TEST_LOG" 'old-application-restart' 'release entered the legacy Supabase/PM2 application restart path after VALORANT admission failed'
+gate_log_not_contains "$TEST_LOG" 'old-restart' 'release restarted the legacy VALORANT unit after VALORANT admission failed'
+
+setup_fixture independent-writer-admission-cutover
+export FAIL_VALORANT_WRITER_ENABLE=1
+if DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt" >"$work_directory/independent-cutover.out" 2>&1; then
+  gate_failure 'cutover accepted a VALORANT writer-enable failure'
+fi
+gate_log_contains "$TEST_LOG" 'quest-writer-enable' 'cutover did not request an independent Quest writer acknowledgement'
+gate_log_contains "$TEST_LOG" 'valorant-writer-enable' 'cutover did not request an independent VALORANT writer acknowledgement'
+gate_log_before "$TEST_LOG" 'post-commit-recovery-arm' 'quest-writer-enable' 'cutover did not arm post-commit recovery before the first writer enable'
+gate_log_not_contains "$TEST_LOG" 'old-application-restart' 'cutover entered the legacy Supabase/PM2 application restart path after VALORANT admission failed'
+gate_log_not_contains "$TEST_LOG" 'old-restart' 'cutover restarted the legacy VALORANT unit after VALORANT admission failed'
+
+setup_fixture first-cutover-gates
+if DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt" >"$work_directory/first-cutover-gates.out" 2>&1; then
+  :
+else
+  gate_failure 'first cutover did not complete its disposable happy path'
+fi
+gate_log_contains "$TEST_LOG" 'old-quest-stop' 'first cutover did not explicitly stop legacy Quest/PM2 before candidate startup'
+gate_log_before "$TEST_LOG" 'old-quest-stop' 'candidate-start' 'first cutover started the candidate before stopping legacy Quest/PM2'
+gate_log_exact "$TEST_LOG" 'compose project=quest-prod action=config' 'first cutover did not validate the staged Quest Compose project'
+gate_log_exact "$TEST_LOG" 'compose project=valorant-prod action=config' 'first cutover did not validate the staged VALORANT Compose project'
+gate_log_contains "$TEST_LOG" 'compose project=quest-prod action=config-images' 'first cutover did not validate staged Quest Compose images'
+gate_log_contains "$TEST_LOG" 'compose project=valorant-prod action=config-images' 'first cutover did not validate staged VALORANT Compose images'
+gate_log_before "$TEST_LOG" 'compose project=quest-prod action=config-images' 'quest-writer-enable' 'first cutover admitted Quest writers before validating staged Quest images'
+gate_log_before "$TEST_LOG" 'compose project=valorant-prod action=config-images' 'valorant-writer-enable' 'first cutover admitted VALORANT writers before validating staged VALORANT images'
+gate_log_before "$TEST_LOG" 'ps project=quest-prod' 'quest-writer-enable' 'first cutover admitted Quest writers before validating active Quest topology'
+gate_log_before "$TEST_LOG" 'ps project=valorant-prod' 'valorant-writer-enable' 'first cutover admitted VALORANT writers before validating active VALORANT topology'
+
+cutover_release_dir="$fixture/releases/1111111111111111111111111111111111111111"
+gate_file_contains "$cutover_release_dir/release-metadata.txt" 'previous_release=supabase' 'first cutover metadata did not name Supabase as the predecessor'
+export TEST_PREVIOUS="$cutover_release_dir"
+if bash "$script_directory/deploy/verify-release.sh" >"$work_directory/first-cutover-verify.out" 2>&1; then
+  :
+else
+  gate_failure 'first cutover metadata was not accepted by verify-release.sh'
+fi
+
+setup_fixture artifact-specific-trust
+if run_release >"$work_directory/artifact-trust-release.out" 2>&1; then
+  :
+else
+  gate_failure 'release could not create the artifact-specific trust fixture release'
+fi
+export TEST_PREVIOUS="$fixture/releases/1111111111111111111111111111111111111111"
+export REQUIRE_ARTIFACT_TRUST_POLICY=1
+if RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script" >"$work_directory/artifact-trust-host.out" 2>&1; then
+  :
+else
+  gate_failure 'host verification rejected the artifact-specific PostgreSQL/VALORANT trust policy'
+fi
+if bash "$script_directory/deploy/verify-release.sh" >"$work_directory/artifact-trust-verify.out" 2>&1; then
+  :
+else
+  gate_failure 'release verification rejected the artifact-specific PostgreSQL/VALORANT trust policy'
+fi
+gate_log_contains "$TEST_LOG" 'cosign image=postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333 identity=postgres-fixture-identity issuer=postgres-fixture-issuer' 'host/release verification did not use the PostgreSQL-specific signer'
+gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555 identity=valorant-fixture-identity issuer=valorant-fixture-issuer' 'host/release verification did not use the VALORANT-specific signer'
+
+check_migration_contract() {
+  local label="$1" migration_count
+  migration_count="$(grep -c '^migration-status ' "$TEST_LOG" || true)"
+  [[ "$migration_count" -ge 4 ]] || gate_failure "$label did not recheck migration status after migration"
+  gate_log_contains "$TEST_LOG" 'migration-status repo=quest target=quest-postgres state=pending' "$label did not pass the explicit target authority to Quest migration status"
+  gate_log_contains "$TEST_LOG" 'migration-status repo=valorant target=quest-postgres state=pending' "$label did not pass the explicit target authority to VALORANT migration status"
+  gate_log_contains "$TEST_LOG" 'migration-status repo=quest target=quest-postgres state=none' "$label did not observe the post-migration Quest status"
+  gate_log_contains "$TEST_LOG" 'migration-status repo=valorant target=quest-postgres state=none' "$label did not observe the post-migration VALORANT status"
+  gate_log_contains "$TEST_LOG" 'migrator repo=quest target=quest-postgres' "$label did not pass the explicit target authority to the Quest migrator"
+  gate_log_contains "$TEST_LOG" 'migrator repo=valorant target=quest-postgres' "$label did not pass the explicit target authority to the VALORANT migrator"
+}
+
+setup_fixture migration-contract-release
+export MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+if run_release >"$work_directory/migration-release.out" 2>&1; then
+  :
+else
+  gate_failure 'release migration contract fixture did not complete'
+fi
+check_migration_contract release
+
+setup_fixture migration-contract-cutover
+export MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+if DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt" >"$work_directory/migration-cutover.out" 2>&1; then
+  :
+else
+  gate_failure 'cutover migration contract fixture did not complete'
+fi
+check_migration_contract cutover
+
+setup_fixture frontend-api-egress
+frontend_services="$(awk '/^  frontend:/{inside=1} inside && /^  backend:/{exit} inside {print}' "$fixture/quest.compose.yml")"
+if ! grep -Eq '(INTERNAL|SERVER|BACKEND|API)[A-Z_]*(URL|EGRESS)[A-Z_]*:[[:space:]]*https?://(backend|quest-backend)(:|/)|API_EGRESS_ALLOWED:[[:space:]]*("true"|true)' <<<"$frontend_services"; then
+  gate_failure 'frontend Compose has no deliberate server-side API egress or internal backend URL'
+fi
+
+# Oracle Gate 2 regressions. These cases deliberately exercise the failure and
+# acknowledgement boundaries that must remain observable in disposable tests.
+setup_fixture post-commit-containment-all-actions
+export FAIL_VALORANT_WRITER_ENABLE=1 FAIL_QUEST_WRITER_STOP=1
+if run_release >"$work_directory/post-commit-containment.out" 2>&1; then
+  gate_failure 'release accepted a writer admission failure before post-commit containment'
+fi
+gate_log_contains "$TEST_LOG" 'quest-writer-stop' 'post-commit containment did not attempt Quest writer stop after a containment hook failed'
+gate_log_contains "$TEST_LOG" 'valorant-writer-stop' 'post-commit containment did not attempt VALORANT writer stop after a containment hook failed'
+gate_log_contains "$TEST_LOG" 'freeze-enable' 'post-commit containment did not attempt freeze enable after a containment hook failed'
+gate_log_contains "$TEST_LOG" 'capture' 'post-commit containment did not attempt current-state capture after a containment hook failed'
+
+setup_fixture cutover-old-service-state
+if DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt" >"$work_directory/cutover-old-service-state.out" 2>&1; then
+  [[ "$(< "$fixture/old-quest.state")" == inactive ]] || gate_failure 'cutover did not leave old Quest/PM2 inactive after stopping it'
+  [[ "$(< "$fixture/old-valorant.state")" == inactive ]] || gate_failure 'cutover did not leave old VALORANT inactive after stopping it'
+  [[ "$(< "$fixture/old-quest.persistence")" == masked ]] || gate_failure 'cutover did not disable or mask old Quest/PM2 persistence after admission'
+  [[ "$(< "$fixture/old-valorant.persistence")" == masked ]] || gate_failure 'cutover did not disable or mask old VALORANT persistence after admission'
+else
+  gate_failure 'cutover old-service state fixture did not complete its disposable happy path'
+fi
+gate_log_contains "$TEST_LOG" 'old-quest-active-check state=active' 'cutover did not inspect old Quest/PM2 state before stopping it'
+gate_log_contains "$TEST_LOG" 'old-val-active-check state=active' 'cutover did not inspect old VALORANT state before stopping it'
+gate_log_contains "$TEST_LOG" 'old-quest-active-check state=inactive' 'cutover did not verify old Quest/PM2 was inactive after stopping it'
+gate_log_contains "$TEST_LOG" 'old-val-active-check state=inactive' 'cutover did not verify old VALORANT was inactive after stopping it'
+gate_log_contains "$TEST_LOG" 'old-quest-mask' 'cutover did not execute the old Quest/PM2 persistence disable or mask hook'
+gate_log_contains "$TEST_LOG" 'old-mask' 'cutover did not execute the old VALORANT persistence disable or mask hook'
+
+setup_fixture cutover-partial-stop-recovery
+export FAIL_OLD_VALORANT_STOP=1
+if DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt" >"$work_directory/cutover-partial-stop-recovery.out" 2>&1; then
+  gate_failure 'cutover accepted a failed old VALORANT stop'
+fi
+gate_log_contains "$TEST_LOG" 'old-stop' 'cutover did not attempt the old VALORANT stop before failing'
+gate_log_contains "$TEST_LOG" 'old-restart' 'pre-commit recovery did not track and restore a partially attempted old VALORANT stop'
+
+setup_fixture cutover-requires-explicit-legacy-evidence
+export BAD_LEGACY_STATE=1
+assert_failed cutover-requires-explicit-legacy-evidence bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+
+setup_fixture cutover-requires-reboot-persistence
+export FAIL_REBOOT_PERSISTENCE=1
+assert_failed cutover-requires-reboot-persistence bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+
+for topology_script in "$release_script" "$cutover_script" "$script_directory/deploy/verify-release.sh"; do
+  if { ! grep -Fq -- '{{json .}}' "$topology_script" && ! grep -Fq -- '--format json' "$topology_script"; } || ! grep -Eq 'Service|State|Image|Project' "$topology_script"; then
+    gate_failure "$(basename "$topology_script") does not validate structured service, running-state, image, and project ownership records"
+  fi
+done
+setup_fixture active-topology-structured
+export TOPOLOGY_STRUCTURED=1
+if run_release >"$work_directory/active-topology-structured.out" 2>&1; then
+  :
+else
+  gate_failure 'release did not accept the exact structured active-topology fixture'
+fi
+setup_fixture active-topology-stale
+export TOPOLOGY_STRUCTURED=1 TOPOLOGY_STALE=1
+assert_failed active-topology-stale run_release
+setup_fixture active-topology-missing-service
+export TOPOLOGY_STRUCTURED=1 TOPOLOGY_MISSING=1
+assert_failed active-topology-missing-service run_release
+
+for migration_script in "$release_script" "$cutover_script" "$script_directory/deploy/verify-release.sh"; do
+  if ! grep -Eq 'pending.*target=|target=.*pending|none.*target=' "$migration_script"; then
+    gate_failure "$(basename "$migration_script") does not validate target identity in migration status acknowledgements"
+  fi
+done
+for migrator_script in "$release_script" "$cutover_script"; do
+  if ! grep -Eq 'migrated image=.*target=|target=.*migrated image=' "$migrator_script"; then
+    gate_failure "$(basename "$migrator_script") does not validate target identity in migrator acknowledgements"
+  fi
+done
+setup_fixture target-identity-honest
+export TARGET_ACK_MODE=1 MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+if run_release >"$work_directory/target-identity-honest.out" 2>&1; then
+  :
+else
+  gate_failure 'release rejected honest target-bound migration and readiness acknowledgements'
+fi
+setup_fixture target-identity-lies
+export TARGET_ACK_MODE=1 TARGET_ACK_LIES=1 MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
+export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
+assert_failed target-identity-lies run_release
+
+setup_fixture artifact-trust-quest-policy-reuse
+sed -i 's/^VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP=.*/VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP=fixture-identity/' "$fixture/release.env"
+sed -i 's/^VALORANT_COSIGN_OIDC_ISSUER=.*/VALORANT_COSIGN_OIDC_ISSUER=fixture-issuer/' "$fixture/release.env"
+export REQUIRE_ARTIFACT_TRUST_POLICY=1
+assert_failed artifact-trust-quest-policy-reuse RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script"
+if grep -Fq -- 'VALORANT trust policy must not reuse the Quest signer identity' "$script_directory/deploy/verify-release.sh"; then
+  :
+else
+  gate_failure 'verify-release.sh does not reject VALORANT reusing the Quest signer policy'
+fi
+if grep -Fq -- 'VALORANT_IMAGE_APPROVED_REF' "$workflow_file" && grep -Fq -- 'VALORANT_IMAGE_APPROVED_REF" == "$VALORANT_IMAGE"' "$workflow_file"; then
+  :
+else
+  gate_failure 'container image workflow does not expose the VALORANT identity/policy contract'
+fi
+
+setup_fixture steady-state-supabase-metadata
+run_release >/dev/null
+export TEST_PREVIOUS="$fixture/releases/1111111111111111111111111111111111111111"
+sed -i 's#^previous_release=.*#previous_release=supabase#' "$TEST_PREVIOUS/release-metadata.txt"
+steady_state_verify_output="$work_directory/steady-state-supabase-metadata.out"
+if bash "$script_directory/deploy/verify-release.sh" >"$steady_state_verify_output" 2>&1; then
+  gate_failure 'verify-release.sh accepted previous_release=supabase for steady-state metadata'
+fi
+
+cutover_source="$(< "$cutover_script")"
+cutover_source_line="$(grep -nF -- 'source "$release_env_file"' "$cutover_script" 2>/dev/null | cut -d: -f1 | head -n1 || true)"
+cutover_env_stat_line="$(grep -nE 'stat -c .*release_env_file|release_env_file.*stat -c' "$cutover_script" | cut -d: -f1 | head -n1 || true)"
+cutover_env_path_line="$(grep -nE 'realpath .*release_env_file|release_env_file.*realpath' "$cutover_script" | cut -d: -f1 | head -n1 || true)"
+cutover_env_mode_line="$(grep -nE 'env_mode|%u %a.*release_env_file|release_env_file.*%a' "$cutover_script" | cut -d: -f1 | head -n1 || true)"
+if [[ -z "$cutover_source_line" || -z "$cutover_env_stat_line" || -z "$cutover_env_path_line" || -z "$cutover_env_mode_line" || "$cutover_env_stat_line" -ge "$cutover_source_line" || "$cutover_env_path_line" -ge "$cutover_source_line" || "$cutover_env_mode_line" -ge "$cutover_source_line" ]]; then
+  gate_failure 'cutover sources release-env before validating its canonical path/ownership'
+fi
+if ! grep -Fq -- 'env_stat=' "$cutover_script" || ! grep -Eq 'env_mode.*(600|640)' <<<"$cutover_source"; then
+  gate_failure 'cutover does not validate release-env mode before sourcing it'
+fi
+
+if (( new_gate_failures != 0 )); then
+  printf 'deploy release fixture tests failed: %d Oracle Gate 2 assertion(s) failed as expected against the current implementation\n' "$new_gate_failures" >&2
+  exit 1
+fi
 
 printf '%s\n' 'deploy release fixture tests passed'

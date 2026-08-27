@@ -47,13 +47,31 @@ source "$release_env_file"
 require_setting() { [[ -n "${!1:-}" ]] || die "missing release setting: $1"; }
 absolute_nonroot() { [[ "$2" == /* && "$2" != / ]] || die "$1 must be an absolute non-root path."; }
 command_setting() { require_setting "$1"; [[ -x "${!1}" ]] || die "release command is not executable: $1"; }
+validate_release_environment() {
+  require_setting RELEASE_ENVIRONMENT
+  require_setting RELEASE_ENVIRONMENT_PROTECTED
+  [[ "$RELEASE_ENVIRONMENT" == production ]] || die 'release environment must be production.'
+  [[ "$RELEASE_ENVIRONMENT_PROTECTED" == 1 ]] || die 'release environment must be protected.'
+}
+validate_endpoint_identities() {
+  [[ "${QUEST_HEALTH_URL:-}" == http://127.0.0.1:5001/api/health/live ]] || die 'Quest liveness endpoint identity is not the fixed loopback endpoint.'
+  [[ "${QUEST_READINESS_URL:-}" == http://127.0.0.1:5001/api/health/ready ]] || die 'Quest readiness endpoint identity is not the fixed loopback endpoint.'
+  [[ "${VALORANT_HEALTH_URL:-}" == https://valorant-platform:8000/api/v1/health ]] || die 'VALORANT health endpoint identity is not the fixed HTTPS service endpoint.'
+}
 root_file() {
   [[ -f "$1" && -r "$1" && ! -L "$1" ]] || die "required file is missing or unsafe: $1"
   if [[ "$fixture_mode" != 1 ]]; then
     [[ "$(stat -c '%u' "$1" 2>/dev/null)" == 0 ]] || die "required file is not root-owned: $1"
   fi
 }
+validate_release_environment
+for setting in QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL; do require_setting "$setting"; done
+validate_endpoint_identities
 root_file "$manifest_path"
+if [[ "$fixture_mode" != 1 ]]; then
+  manifest_stat="$(stat -c '%u %a' "$manifest_path" 2>/dev/null)" || die 'cannot inspect release manifest ownership.'
+  [[ "$manifest_stat" == 0\ 600 || "$manifest_stat" == 0\ 640 ]] || die 'release manifest must be root-owned and mode 0600 or 0640.'
+fi
 
 require_setting RELEASE_ROOT
 require_setting QUEST_COMPOSE_TEMPLATE
@@ -69,8 +87,9 @@ releases_root="${RELEASES_ROOT:-$RELEASE_ROOT/releases}"
 current_link="${CURRENT_LINK:-$RELEASE_ROOT/current}"
 absolute_nonroot RELEASES_ROOT "$releases_root"
 absolute_nonroot CURRENT_LINK "$current_link"
+[[ -d "$RELEASE_ROOT" && ! -L "$RELEASE_ROOT" ]] || die 'release root must be an existing non-symlink directory.'
 mkdir -p "$releases_root"
-[[ -d "$RELEASE_ROOT" && ! -L "$RELEASE_ROOT" && ! -L "$releases_root" ]] || die 'release roots must be existing non-symlink directories.'
+[[ -d "$releases_root" && ! -L "$releases_root" ]] || die 'release roots must be existing non-symlink directories.'
 canonical_releases_root="$(realpath "$releases_root" 2>/dev/null)" || die 'release root cannot be canonicalized.'
 [[ "$canonical_releases_root" == "$releases_root" ]] || die 'release root must not contain a symlink.'
 
@@ -93,9 +112,9 @@ for manifest_key in commit_sha frontend_image backend_image migrator_image postg
 done
 [[ "${manifest[commit_sha],,}" == "${release_sha,,}" ]] || die 'manifest commit_sha does not equal the requested full SHA.'
 for manifest_key in frontend_image backend_image migrator_image valorant_image; do
-  [[ "${manifest[$manifest_key]}" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-fA-F]{64}$ ]] || die "$manifest_key must be an exact GHCR digest reference."
+  [[ "${manifest[$manifest_key]}" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die "$manifest_key must be an exact GHCR digest reference."
 done
-[[ "${manifest[postgres_image]}" =~ ^postgres:17-bookworm@sha256:[0-9a-fA-F]{64}$ ]] || die 'postgres_image must be the exact PostgreSQL 17 Bookworm digest.'
+[[ "${manifest[postgres_image]}" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die 'postgres_image must be the exact PostgreSQL 17 Bookworm digest.'
 
 quest_project="quest-prod"
 valorant_project="valorant-prod"
@@ -109,6 +128,8 @@ writer_admitted=false
 commit_recorded=false
 pointer_updated=false
 old_units_stopped=false
+old_valorant_stop_attempted=false
+postcommit_armed=false
 
 compose() { "$DOCKER_BIN" compose "$@"; }
 compose_common_args() { :; }
@@ -124,14 +145,43 @@ validate_project() {
 }
 
 validate_active_project() {
-  local compose_file="$1" project="$2" env_file="${3:-}" active_output unique_active
+  local compose_file="$1" project="$2" env_file="${3:-}" active_output record service state image record_project
+  shift 3
+  local expected_count=$#
+  declare -A expected_images=() seen_services=()
+  for record in "$@"; do
+    service="${record%%=*}"
+    image="${record#*=}"
+    [[ -n "$service" && "$image" != "$record" ]] || die "active Compose topology expectation is invalid for $project."
+    expected_images["$service"]="$image"
+  done
   if [[ -n "$env_file" ]]; then
-    active_output="$(compose --env-file "$env_file" -f "$compose_file" --project-name "$project" ps --all --format '{{.Project}}' 2>/dev/null)" || die "could not inspect active Compose project $project."
+    active_output="$(compose --env-file "$env_file" -f "$compose_file" --project-name "$project" ps --all --format '{{json .}}' 2>/dev/null)" || die "could not inspect active Compose project $project."
   else
-    active_output="$(compose -f "$compose_file" --project-name "$project" ps --all --format '{{.Project}}' 2>/dev/null)" || die "could not inspect active Compose project $project."
+    active_output="$(compose -f "$compose_file" --project-name "$project" ps --all --format '{{json .}}' 2>/dev/null)" || die "could not inspect active Compose project $project."
   fi
-  unique_active="$(printf '%s\n' "$active_output" | awk 'NF { print }' | sort -u)"
-  [[ "$unique_active" == "$project" ]] || die "active Compose projects for the service group are not exactly one $project project."
+  while IFS= read -r record; do
+    [[ -n "$record" ]] || continue
+    [[ "$record" == \{*\} ]] || die "active Compose topology for $project is not structured JSON."
+    service="$(printf '%s\n' "$record" | sed -nE 's/.*"Service"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')"
+    [[ -n "$service" ]] || die "active Compose topology for $project lacks Service."
+    state="$(printf '%s\n' "$record" | sed -nE 's/.*"State"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')"
+    [[ -n "$state" ]] || die "active Compose topology for $project lacks State."
+    image="$(printf '%s\n' "$record" | sed -nE 's/.*"Image"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')"
+    [[ -n "$image" ]] || die "active Compose topology for $project lacks Image."
+    record_project="$(printf '%s\n' "$record" | sed -nE 's/.*"Project"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')"
+    [[ -n "$record_project" ]] || die "active Compose topology for $project lacks Project."
+    [[ "$record_project" == "$project" ]] || die 'active Compose topology contains an unexpected project.'
+    [[ "$state" == running ]] || die "active Compose service $service is not running."
+    [[ -n "${expected_images[$service]+present}" ]] || die "active Compose topology contains unexpected service $service."
+    [[ -z "${seen_services[$service]+present}" ]] || die "active Compose topology contains duplicate service $service."
+    [[ "$image" == "${expected_images[$service]}" ]] || die "active Compose service $service has an unexpected image."
+    seen_services["$service"]=1
+  done <<< "$active_output"
+  [[ "${#seen_services[@]}" -eq "$expected_count" ]] || die "active Compose topology is missing an expected service."
+  for service in "${!expected_images[@]}"; do
+    [[ -n "${seen_services[$service]+present}" ]] || die "active Compose topology is missing service $service."
+  done
 }
 
 validate_images() {
@@ -142,7 +192,7 @@ validate_images() {
     printf '%s\n' "$output" | grep -Fqx "$image" || die "staged $project Compose does not use exact digest $image."
   done
   while IFS= read -r image; do
-    [[ -z "$image" || "$image" =~ @sha256:[0-9a-fA-F]{64}$ ]] || die "staged $project Compose contains a mutable image reference."
+    [[ -z "$image" || "$image" =~ @sha256:[0-9a-f]{64}$ ]] || die "staged $project Compose contains a mutable image reference."
   done <<< "$output"
 }
 
@@ -177,14 +227,16 @@ check_disk() {
 }
 
 run_migration_status() {
-  local variable="$1" repository="$2" output
+  # Accepted acknowledgements are `pending target=quest-postgres` and `none target=quest-postgres`.
+  local variable="$1" repository="$2" target_authority="$3" schema="$4" output
   command_setting "$variable"
-  output="$(CHECK_REPOSITORY="$repository" RELEASE_SHA="$release_sha" "${!variable}" 2>/dev/null)" || die "$variable failed."
-  case "$output" in
-    none) return 0 ;;
-    pending) return 1 ;;
-    *) die "$variable returned an unexpected migration status." ;;
-  esac
+  [[ "$target_authority" == quest-postgres ]] || die 'migration target authority is not the fixed Quest PostgreSQL target.'
+  [[ "$schema" == public || "$schema" == valorant ]] || die 'migration schema is not an approved service schema.'
+  output="$(CHECK_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" "${!variable}" 2>/dev/null)" || die "$variable failed."
+  [[ "$output" =~ (^|[[:space:]])target=quest-postgres([[:space:]]|$) && "$output" =~ (^|[[:space:]])schema=$schema([[:space:]]|$) ]] || die "$variable did not identify target quest-postgres and schema $schema."
+  if [[ "$output" =~ (^|[[:space:]])none([[:space:]]|$) ]]; then return 0; fi
+  [[ "$output" =~ (^|[[:space:]])pending([[:space:]]|$) ]] || die "$variable returned an unexpected migration status."
+  return 1
 }
 
 run_hook() {
@@ -197,17 +249,79 @@ run_hook() {
 }
 
 run_migrator() {
-  local variable="$1" output command
+  # The migrator acknowledgement is `migrated image=<digest> target=quest-postgres`.
+  local variable="$1" repository="$2" target_authority="$3" schema="$4" output command
   command_setting "$variable"
   command="${!variable}"
-  output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" MIGRATOR_IMAGE="${manifest[migrator_image]}" EXPECTED_MIGRATOR_IMAGE="${manifest[migrator_image]}" "$command" 2>/dev/null)" || die "$variable failed."
-  [[ "$output" == "migrated image=${manifest[migrator_image]}" ]] || die "$variable did not acknowledge the exact manifest migrator image."
+  [[ "$target_authority" == quest-postgres ]] || die 'migrator target authority is not the fixed Quest PostgreSQL target.'
+  [[ "$schema" == public || "$schema" == valorant ]] || die 'migrator schema is not an approved service schema.'
+  output="$(MIGRATION_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" MIGRATOR_IMAGE="${manifest[migrator_image]}" EXPECTED_MIGRATOR_IMAGE="${manifest[migrator_image]}" "$command" 2>/dev/null)" || die "$variable failed."
+  [[ "$output" =~ ^migrated[[:space:]]+image=${manifest[migrator_image]}[[:space:]]+target=quest-postgres[[:space:]]+schema=$schema([[:space:]]|$) ]] || die "$variable did not acknowledge the exact migrator image, target, and schema."
+}
+
+run_database_readiness() {
+  local output
+  command_setting DATABASE_READINESS_COMMAND
+  output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" "$DATABASE_READINESS_COMMAND" 2>/dev/null)" || die 'PostgreSQL 17 database readiness command failed.'
+  [[ "$output" =~ ^ready[[:space:]]+target=quest-postgres[[:space:]]+schemas=public,valorant([[:space:]]|$) ]] || die 'PostgreSQL 17 database readiness did not identify both target schemas.'
+}
+
+validate_legacy_states() {
+  local output="$1" units="$2" expected_state="$3" label="$4" line unit state observed
+  declare -A seen=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" =~ ^unit=([A-Za-z0-9_.@-]+)[[:space:]]+state=(active|inactive)[[:space:]]+observed_at=([0-9]{8}T[0-9]{6}Z)$ ]] || die "$label returned an untrusted state observation."
+    unit="${BASH_REMATCH[1]}"; state="${BASH_REMATCH[2]}"; observed="${BASH_REMATCH[3]}"
+    [[ -n "$observed" ]] || die "$label omitted its observation time."
+    [[ ",$units," == *,"$unit",* ]] || die "$label reported an unexpected unit."
+    [[ -z "${seen[$unit]+present}" ]] || die "$label reported a duplicate unit."
+    [[ "$expected_state" == any || "$state" == "$expected_state" ]] || die "$label reported unit $unit as $state, expected $expected_state."
+    seen["$unit"]=1
+  done <<< "$output"
+  local expected
+  IFS=',' read -r -a expected_units <<< "$units"
+  for expected in "${expected_units[@]}"; do
+    [[ -n "${seen[$expected]+present}" ]] || die "$label omitted expected unit $expected."
+  done
+}
+
+validate_reboot_persistence() {
+  local output="$1" units="$2" label="$3" line unit observed
+  declare -A seen=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" =~ ^unit=([A-Za-z0-9_.@-]+)[[:space:]]+state=inactive[[:space:]]+reboot_persistent=true[[:space:]]+observed_at=([0-9]{8}T[0-9]{6}Z)$ ]] || die "$label returned invalid reboot-persistence evidence."
+    unit="${BASH_REMATCH[1]}"; observed="${BASH_REMATCH[2]}"
+    [[ -n "$observed" && ",$units," == *,"$unit",* ]] || die "$label reported an unexpected unit."
+    [[ -z "${seen[$unit]+present}" ]] || die "$label reported a duplicate unit."
+    seen["$unit"]=1
+  done <<< "$output"
+  local expected
+  IFS=',' read -r -a expected_units <<< "$units"
+  for expected in "${expected_units[@]}"; do
+    [[ -n "${seen[$expected]+present}" ]] || die "$label omitted expected reboot-persistence evidence for $expected."
+  done
 }
 
 precommit_rollback() {
   local rollback_status=0
   set +e
   say 'pre-commit boundary: restoring the previous application release without changing database authority.' >&2
+  recovery_hook() {
+    local variable="$1" expected="${2:-}" command output rc
+    command="${!variable:-}"
+    if [[ -z "$command" || ! -x "$command" ]]; then
+      printf 'URGENT: pre-commit recovery hook %s is missing or not executable.\n' "$variable" >&2
+      return 1
+    fi
+    output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="${stage_dir:-}" "$command" 2>/dev/null)"; rc=$?
+    if (( rc != 0 )) || [[ -n "$expected" && "$output" != "$expected" ]]; then
+      printf 'URGENT: pre-commit recovery hook %s failed or returned an invalid acknowledgement.\n' "$variable" >&2
+      return 1
+    fi
+    return 0
+  }
   if [[ -n "$stage_dir" ]]; then
     compose --env-file "$compose_env_file" -f "$stage_dir/compose.production.yml" --project-name "$quest_project" down --remove-orphans >/dev/null 2>&1 || rollback_status=1
   fi
@@ -217,7 +331,7 @@ precommit_rollback() {
     fi
   elif [[ "${previous_database_authority:-}" == supabase ]]; then
     if [[ -n "${OLD_APPLICATION_RESTART_COMMAND:-}" ]]; then
-      run_hook OLD_APPLICATION_RESTART_COMMAND restarted || rollback_status=1
+      recovery_hook OLD_APPLICATION_RESTART_COMMAND restarted || rollback_status=1
     else
       printf '%s\n' 'URGENT: legacy Supabase authority was detected but no old application restart contract was configured.' >&2
       rollback_status=1
@@ -227,14 +341,17 @@ precommit_rollback() {
     rollback_status=1
   fi
   if [[ "$freeze_active" == true && -n "${FREEZE_DISABLE_COMMAND:-}" ]]; then
-    run_hook FREEZE_DISABLE_COMMAND || rollback_status=1
+    recovery_hook FREEZE_DISABLE_COMMAND || rollback_status=1
   fi
-  if [[ "$old_units_stopped" == true && "$old_valorant_was_active" == true && -n "${OLD_VALORANT_RESTART_COMMAND:-}" ]]; then
+  if [[ "$old_valorant_stop_attempted" == true && "$old_valorant_was_active" == true && -n "${OLD_VALORANT_RESTART_COMMAND:-}" ]]; then
     if [[ -n "${OLD_DATABASE_AUTHORITATIVE_COMMAND:-}" ]]; then
-      command_setting OLD_DATABASE_AUTHORITATIVE_COMMAND
-      [[ "$OLD_DATABASE_AUTHORITATIVE_COMMAND" ]] && "$OLD_DATABASE_AUTHORITATIVE_COMMAND" >/dev/null 2>&1 || rollback_status=1
+      command="${OLD_DATABASE_AUTHORITATIVE_COMMAND:-}"
+      [[ -x "$command" ]] && "$command" >/dev/null 2>&1 || rollback_status=1
     fi
-    run_hook OLD_VALORANT_RESTART_COMMAND || rollback_status=1
+    if [[ -n "${OLD_VALORANT_UNMASKED_CHECK:-}" ]]; then
+      recovery_hook OLD_VALORANT_UNMASKED_CHECK unmasked || rollback_status=1
+    fi
+    recovery_hook OLD_VALORANT_RESTART_COMMAND restarted || rollback_status=1
   fi
   if (( rollback_status != 0 )); then
     printf '%s\n' 'URGENT: pre-commit rollback was incomplete; do not redirect either service to stale Supabase manually.' >&2
@@ -243,13 +360,43 @@ precommit_rollback() {
 }
 
 postcommit_boundary() {
-  local capture_status=0
+  local capture_status=0 writer_stop hook hook_rc output
   set +e
   say 'post-commit boundary: stopping both writer groups and re-enabling coordinated freeze.' >&2
-  [[ -z "${WRITER_STOP_COMMAND:-}" ]] || run_hook WRITER_STOP_COMMAND || capture_status=1
-  [[ -z "${FREEZE_ENABLE_COMMAND:-}" ]] || run_hook FREEZE_ENABLE_COMMAND || capture_status=1
+  for writer_stop in QUEST_WRITER_STOP_COMMAND VALORANT_WRITER_STOP_COMMAND; do
+    hook="${!writer_stop:-}"
+    if [[ -z "$hook" || ! -x "$hook" ]]; then
+      printf 'URGENT: post-commit hook %s is missing or not executable.\n' "$writer_stop" >&2
+      capture_status=1
+      continue
+    fi
+    output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="${stage_dir:-}" "$hook" 2>/dev/null)"
+    hook_rc=$?
+    if (( hook_rc != 0 )) || [[ "$output" != stopped ]]; then
+      printf 'URGENT: post-commit hook %s failed or did not acknowledge stopped.\n' "$writer_stop" >&2
+      capture_status=1
+    fi
+  done
+  hook="${FREEZE_ENABLE_COMMAND:-}"
+  if [[ -z "$hook" || ! -x "$hook" ]]; then
+    printf '%s\n' 'URGENT: post-commit freeze-enable hook is missing or not executable.' >&2
+    capture_status=1
+  else
+    output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="${stage_dir:-}" "$hook" 2>/dev/null)"
+    hook_rc=$?
+    (( hook_rc == 0 )) || { printf '%s\n' 'URGENT: post-commit freeze-enable failed.' >&2; capture_status=1; }
+  fi
   if [[ -n "${CURRENT_STATE_CAPTURE_COMMAND:-}" ]]; then
-    run_hook CURRENT_STATE_CAPTURE_COMMAND captured || capture_status=1
+    hook="$CURRENT_STATE_CAPTURE_COMMAND"
+    if [[ ! -x "$hook" ]]; then
+      printf '%s\n' 'URGENT: post-commit current-state capture hook is not executable.' >&2
+      capture_status=1
+    else
+      output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="${stage_dir:-}" "$hook" 2>/dev/null)"
+      hook_rc=$?
+      [[ "$output" == captured ]] || { printf '%s\n' 'URGENT: post-commit current-state capture did not acknowledge captured.' >&2; capture_status=1; }
+      (( hook_rc == 0 )) || capture_status=1
+    fi
   else
     printf '%s\n' 'URGENT: no current PostgreSQL 17/uploads capture command was configured.' >&2
     capture_status=1
@@ -258,15 +405,33 @@ postcommit_boundary() {
   return "$capture_status"
 }
 
+record_recovery_evidence() {
+  local boundary="$1" result="$2" evidence_file
+  [[ -n "${stage_dir:-}" && -d "$stage_dir" ]] || return 0
+  evidence_file="$stage_dir/recovery-evidence.txt"
+  {
+    printf 'boundary=%s\n' "$boundary"
+    printf 'result=%s\n' "$result"
+    printf 'release_sha=%s\n' "$release_sha"
+    printf 'legacy_restart_allowed=%s\n' "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)"
+    printf 'writer_admitted=%s\n' "$writer_admitted"
+  } > "$evidence_file" 2>/dev/null || return 1
+  chmod 600 "$evidence_file" 2>/dev/null || return 1
+}
+
 on_exit() {
   local status=$?
   trap - EXIT
   set +e
   if (( status != 0 )); then
-    if [[ "$writer_admitted" == true || "$commit_recorded" == true ]]; then
+    if [[ "$postcommit_armed" == true || "$writer_admitted" == true || "$commit_recorded" == true ]]; then
+      record_recovery_evidence post-commit-recovery started || true
       postcommit_boundary || status=1
+      record_recovery_evidence post-commit-recovery "$([[ "$status" == 0 ]] && printf completed || printf incomplete)" || status=1
     else
+      record_recovery_evidence pre-commit-rollback started || true
       precommit_rollback || status=1
+      record_recovery_evidence pre-commit-rollback "$([[ "$status" == 0 ]] && printf completed || printf incomplete)" || status=1
     fi
   fi
   exit "$status"
@@ -277,7 +442,10 @@ check_disk
 validate_project "$QUEST_COMPOSE_TEMPLATE" "$quest_project"
 validate_project "$VALORANT_COMPOSE_SOURCE" "$valorant_project"
 command_setting DATABASE_HEALTH_COMMAND
-[[ "$(DATABASE_URL="${DATABASE_URL:-fixture://database}" "$DATABASE_HEALTH_COMMAND" 2>/dev/null)" == ready ]] || die 'PostgreSQL health check did not return ready.'
+database_health_output="$(DATABASE_URL="${DATABASE_URL:-fixture://database}" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres "$DATABASE_HEALTH_COMMAND" 2>/dev/null)" || die 'PostgreSQL health check failed.'
+[[ "$database_health_output" =~ ^ready[[:space:]]+target=quest-postgres([[:space:]]|$) ]] || die 'PostgreSQL health check did not identify target quest-postgres.'
+command_setting VALIDATE_HOST_COMMAND
+[[ "$(RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" "$VALIDATE_HOST_COMMAND" 2>/dev/null)" == validated ]] || die 'host/artifact validation did not acknowledge the exact release manifest.'
 command_setting REGISTRY_CHECK_COMMAND
 for image in "${manifest[frontend_image]}" "${manifest[backend_image]}" "${manifest[migrator_image]}" "${manifest[postgres_image]}" "${manifest[valorant_image]}"; do
   RELEASE_IMAGE="$image" "$REGISTRY_CHECK_COMMAND" >/dev/null 2>&1 || die "registry access or digest verification failed for $image."
@@ -301,6 +469,7 @@ fi
 command_setting OLD_DATABASE_AUTHORITATIVE_COMMAND
 previous_database_authority="$("$OLD_DATABASE_AUTHORITATIVE_COMMAND" 2>/dev/null)"
 [[ "$previous_database_authority" == supabase || "$previous_database_authority" == quest-postgres ]] || die 'previous database authority was ambiguous.'
+[[ "$previous_database_authority" != supabase ]] || die 'first cutover requires cutover.sh; release.sh is for steady-state releases only.'
 
 stage_dir="$releases_root/$release_sha"
 [[ ! -e "$stage_dir" && ! -L "$stage_dir" ]] || die 'the release directory already exists; release directories are immutable.'
@@ -332,15 +501,18 @@ previous_release=$previous_release
 quest_project=$quest_project
 valorant_project=$valorant_project
 shared_network=$shared_network
+database_schemas=public,valorant
+writer_groups=quest,valorant
+cutover_type=steady-state
 EOF
 chmod 600 "$stage_dir/release-metadata.txt"
 
 command_setting QUEST_MIGRATION_STATUS_COMMAND
 command_setting VALORANT_MIGRATION_STATUS_COMMAND
-run_migration_status QUEST_MIGRATION_STATUS_COMMAND quest || quest_migration_pending=true
-run_migration_status VALORANT_MIGRATION_STATUS_COMMAND valorant || valorant_migration_pending=true
-quest_migration_pending="${quest_migration_pending:-false}"
-valorant_migration_pending="${valorant_migration_pending:-false}"
+quest_migration_pending=false
+valorant_migration_pending=false
+run_migration_status QUEST_MIGRATION_STATUS_COMMAND quest quest-postgres public || quest_migration_pending=true
+run_migration_status VALORANT_MIGRATION_STATUS_COMMAND valorant quest-postgres valorant || valorant_migration_pending=true
 
 if [[ "$quest_migration_pending" == true || "$valorant_migration_pending" == true ]]; then
   [[ "${BACKUP_APPROVAL:-}" == BACKUP_QUEST_PRODUCTION ]] || die 'migration requires BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION.'
@@ -364,15 +536,32 @@ command_setting FREEZE_STATUS_COMMAND
 [[ "$("$FREEZE_STATUS_COMMAND" 2>/dev/null)" == acknowledged ]] || die 'Quest/VALORANT coordinated freeze was not acknowledged.'
 
 command_setting OLD_VALORANT_ACTIVE_CHECK
+require_setting OLD_VALORANT_UNITS
+[[ "$OLD_VALORANT_UNITS" == valorant-platform,valorant-updater,valorant-discord-bot ]] || die 'old VALORANT unit identity is not the fixed three-unit transition set.'
 old_valorant_state="$("$OLD_VALORANT_ACTIVE_CHECK" 2>/dev/null)"
-[[ "$old_valorant_state" == active || "$old_valorant_state" == inactive ]] || die 'old VALORANT unit state was ambiguous.'
-[[ "$old_valorant_state" == active ]] && old_valorant_was_active=true
+validate_legacy_states "$old_valorant_state" "$OLD_VALORANT_UNITS" any 'old VALORANT state check'
+grep -Eq 'state=active([[:space:]]|$)' <<< "$old_valorant_state" && old_valorant_was_active=true
 command_setting OLD_VALORANT_STOP_COMMAND
+old_valorant_stop_attempted=true
 run_hook OLD_VALORANT_STOP_COMMAND
 old_units_stopped=true
+old_valorant_state="$("$OLD_VALORANT_ACTIVE_CHECK" 2>/dev/null)"
+validate_legacy_states "$old_valorant_state" "$OLD_VALORANT_UNITS" inactive 'old VALORANT post-stop state check'
 
 compose --env-file "$compose_env_file" -f "$stage_dir/compose.production.yml" --project-name "$quest_project" pull >/dev/null 2>&1 || die 'staged Quest image pull failed.'
 compose --env-file "$compose_env_file" -f "$stage_dir/valorant.compose.yml" --project-name "$valorant_project" pull >/dev/null 2>&1 || die 'staged VALORANT image pull failed.'
+
+if [[ "$quest_migration_pending" == true ]]; then
+  run_migrator QUEST_MIGRATOR_COMMAND quest quest-postgres public
+fi
+if [[ "$valorant_migration_pending" == true ]]; then
+  run_migrator VALORANT_MIGRATOR_COMMAND valorant quest-postgres valorant
+fi
+if [[ "$quest_migration_pending" == true || "$valorant_migration_pending" == true ]]; then
+  run_migration_status QUEST_MIGRATION_STATUS_COMMAND quest quest-postgres public || die 'Quest migrations remain pending after the migrator.'
+  run_migration_status VALORANT_MIGRATION_STATUS_COMMAND valorant quest-postgres valorant || die 'VALORANT migrations remain pending after the migrator.'
+fi
+
 command_setting CANDIDATE_FROZEN_START_COMMAND
 require_setting CANDIDATE_START_CONTRACT
 require_setting CANDIDATE_FREEZE_FLAG
@@ -389,26 +578,23 @@ candidate_start_output="$(
 )" || die 'candidate frozen/read-only start command failed.'
 [[ "$candidate_start_output" == started-frozen-read-only ]] || die 'candidate start command did not acknowledge frozen/read-only mode.'
 
-if [[ "$quest_migration_pending" == true ]]; then
-  run_migrator QUEST_MIGRATOR_COMMAND
-fi
-if [[ "$valorant_migration_pending" == true ]]; then
-  run_migrator VALORANT_MIGRATOR_COMMAND
-fi
-
 command_setting CURL_BIN
+command_setting VALORANT_CONTAINER_HEALTH_COMMAND
 command_setting DATABASE_READINESS_COMMAND
 for setting in QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE; do require_setting "$setting"; done
+validate_endpoint_identities
 root_file "$VALORANT_CA_FILE"
 quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health gate failed.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health response was not healthy.'
 quest_ready="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" 2>/dev/null)" || die 'Quest readiness gate failed.'
 [[ "$quest_ready" =~ "ready" || "$quest_ready" =~ "status"[[:space:]]*:[[:space:]]*"ok" ]] || die 'Quest readiness response was not ready.'
-valorant_health="$("$CURL_BIN" --fail --silent --show-error --cacert "$VALORANT_CA_FILE" --max-time 10 "$VALORANT_HEALTH_URL" 2>/dev/null)" || die 'VALORANT HTTPS health gate failed.'
+valorant_health="$(VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$VALORANT_CA_FILE" "$VALORANT_CONTAINER_HEALTH_COMMAND" 2>/dev/null)" || die 'VALORANT HTTPS health gate failed from the Quest network boundary.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$valorant_health" && grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' <<< "$valorant_health" || die 'VALORANT HTTPS health did not return status ok and db up.'
-[[ "$("$DATABASE_READINESS_COMMAND" 2>/dev/null)" == ready ]] || die 'PostgreSQL 17 database readiness gate failed.'
-validate_active_project "$stage_dir/compose.production.yml" "$quest_project" "$compose_env_file"
-validate_active_project "$stage_dir/valorant.compose.yml" "$valorant_project" "$compose_env_file"
+run_database_readiness
+validate_active_project "$stage_dir/compose.production.yml" "$quest_project" "$compose_env_file" \
+  "frontend=${manifest[frontend_image]}" "backend=${manifest[backend_image]}" "postgres=${manifest[postgres_image]}"
+validate_active_project "$stage_dir/valorant.compose.yml" "$valorant_project" "$compose_env_file" \
+  "valorant-platform=${manifest[valorant_image]}"
 validate_aliases
 
 command_setting QUEST_READINESS_ACK_COMMAND
@@ -416,9 +602,14 @@ command_setting VALORANT_READINESS_ACK_COMMAND
 [[ "$("$QUEST_READINESS_ACK_COMMAND" 2>/dev/null)" == ready ]] || die 'Quest did not acknowledge frozen readiness.'
 [[ "$("$VALORANT_READINESS_ACK_COMMAND" 2>/dev/null)" == ready ]] || die 'VALORANT did not acknowledge frozen readiness.'
 
-command_setting WRITER_ENABLE_COMMAND
-[[ "$(RELEASE_SHA="$release_sha" "$WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'coordinated writer admission failed.'
+command_setting POST_COMMIT_RECOVERY_ARM_COMMAND
+run_hook POST_COMMIT_RECOVERY_ARM_COMMAND armed
+postcommit_armed=true
+command_setting QUEST_WRITER_ENABLE_COMMAND
+[[ "$(RELEASE_SHA="$release_sha" "$QUEST_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'Quest writer admission failed.'
 writer_admitted=true
+command_setting VALORANT_WRITER_ENABLE_COMMAND
+[[ "$(RELEASE_SHA="$release_sha" "$VALORANT_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'VALORANT writer admission failed.'
 commit_recorded=true
 commit_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 cat > "$stage_dir/commit-point.txt" <<EOF
@@ -432,7 +623,12 @@ shared_network=$shared_network
 EOF
 chmod 600 "$stage_dir/commit-point.txt"
 
+command_setting OLD_VALORANT_REBOOT_PERSISTENCE_CHECK
+old_valorant_persistence="$("$OLD_VALORANT_REBOOT_PERSISTENCE_CHECK" 2>/dev/null)"
+validate_reboot_persistence "$old_valorant_persistence" "$OLD_VALORANT_UNITS" 'old VALORANT reboot-persistence check'
 command_setting OLD_VALORANT_MASK_COMMAND
+command_setting OLD_QUEST_MASK_COMMAND
+run_hook OLD_QUEST_MASK_COMMAND
 run_hook OLD_VALORANT_MASK_COMMAND
 temporary_current="$RELEASE_ROOT/.current.$release_sha.$$"
 rm -f -- "$temporary_current"
@@ -448,6 +644,9 @@ previous_release=$previous_release
 quest_project=$quest_project
 valorant_project=$valorant_project
 shared_network=$shared_network
+database_schemas=public,valorant
+writer_groups=quest,valorant
+cutover_type=steady-state
 EOF
 chmod 600 "$stage_dir/release-metadata.txt"
 say "Immutable Compose release admitted: $release_sha"
