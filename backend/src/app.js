@@ -49,9 +49,20 @@ app.use(
   cors({
     origin: env.CORS_ORIGINS,
     credentials: true,
-    exposedHeaders: ["Content-Disposition"],
+    exposedHeaders: ["Content-Disposition", "Retry-After", "X-Write-Freeze"],
   })
 );
+// This boundary deliberately precedes origin checks, body parsers, and CSRF
+// validation so a frozen writer cannot be answered with a different
+// client-input error first. CORS only adds response headers; it does not reject
+// the request, so frozen browser mutations remain observable to callers.
+app.get("/api/health/write-freeze", (req, res) =>
+  res.status(200).json({
+    mode: env.WRITE_FREEZE_MODE,
+    writersEnabled: env.WRITE_FREEZE_MODE !== "validation",
+  }),
+);
+app.use(requireWritesEnabled);
 app.use(requireAllowedApiOrigin);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb", parameterLimit: 100 }));
@@ -120,13 +131,6 @@ app.get("/api/health/ready", readinessHandler);
 app.get("/api/capabilities", (req, res) =>
   res.status(200).json({ success: true, ...getApiCapabilities() }),
 );
-app.get("/api/health/write-freeze", (req, res) =>
-  res.status(200).json({
-    mode: env.WRITE_FREEZE_MODE,
-    writersEnabled: env.WRITE_FREEZE_MODE !== "validation",
-  }),
-);
-app.use(requireWritesEnabled);
 app.use(requireSiteAvailable);
 app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));
 

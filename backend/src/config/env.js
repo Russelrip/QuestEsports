@@ -145,17 +145,17 @@ const normalizeBoolean = (value, fallback = false) => {
 };
 
 const normalizeWriteFreezeMode = (value) => {
-  const normalized = String(value || "off")
-    .trim()
-    .toLowerCase();
+  if (value === undefined) {
+    return "off";
+  }
 
-  if (!["off", "validation"].includes(normalized)) {
+  if (!["off", "validation"].includes(value)) {
     throw new Error(
       `Invalid WRITE_FREEZE_MODE value "${value}". Expected off or validation.`,
     );
   }
 
-  return normalized;
+  return value;
 };
 
 const normalizeIntegerInRange = (name, value, fallback, minimum, maximum) => {
