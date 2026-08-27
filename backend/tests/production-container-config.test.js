@@ -5,7 +5,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const repoRoot = path.join(__dirname, "../..");
-const read = (relative) => fs.readFileSync(path.join(repoRoot, relative), "utf8");
+const read = (relative) =>
+  fs.readFileSync(path.join(repoRoot, relative), "utf8").replace(/\r\n/g, "\n");
 
 const dockerfile = read("ops/docker/backend.production.Dockerfile");
 const dockerignore = read("backend/.dockerignore");
