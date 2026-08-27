@@ -17,6 +17,7 @@ const {
   requireSiteAvailable,
   sendMaintenanceResponse,
 } = require("./middleware/maintenance");
+const { requireWritesEnabled } = require("./middleware/write-freeze");
 const { notFoundHandler, errorHandler } = require("./middleware/error-handler");
 const {
   attachRequestContext,
@@ -119,6 +120,13 @@ app.get("/api/health/ready", readinessHandler);
 app.get("/api/capabilities", (req, res) =>
   res.status(200).json({ success: true, ...getApiCapabilities() }),
 );
+app.get("/api/health/write-freeze", (req, res) =>
+  res.status(200).json({
+    mode: env.WRITE_FREEZE_MODE,
+    writersEnabled: env.WRITE_FREEZE_MODE !== "validation",
+  }),
+);
+app.use(requireWritesEnabled);
 app.use(requireSiteAvailable);
 app.get("/api/openapi.json", (req, res) => res.status(200).json(openApiDocument));
 

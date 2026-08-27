@@ -144,6 +144,20 @@ const normalizeBoolean = (value, fallback = false) => {
   throw new Error(`Invalid boolean value "${value}".`);
 };
 
+const normalizeWriteFreezeMode = (value) => {
+  const normalized = String(value || "off")
+    .trim()
+    .toLowerCase();
+
+  if (!["off", "validation"].includes(normalized)) {
+    throw new Error(
+      `Invalid WRITE_FREEZE_MODE value "${value}". Expected off or validation.`,
+    );
+  }
+
+  return normalized;
+};
+
 const normalizeIntegerInRange = (name, value, fallback, minimum, maximum) => {
   const normalized = String(value || "").trim();
   if (!normalized) return fallback;
@@ -284,6 +298,7 @@ const env = {
     1,
     86400,
   ),
+  WRITE_FREEZE_MODE: normalizeWriteFreezeMode(process.env.WRITE_FREEZE_MODE),
   // The worker polls whether or not there is work, so this interval is a
   // constant floor on database traffic: at 5s it was ~500k queries a month
   // against an otherwise idle table, which is most of what a small database
@@ -720,6 +735,7 @@ module.exports = {
     normalizeNonNegativeInteger,
     normalizePositiveInteger,
     normalizeTrustProxy,
+    normalizeWriteFreezeMode,
     validatePostgresDatabaseUrl,
   },
 };

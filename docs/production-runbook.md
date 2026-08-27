@@ -445,9 +445,37 @@ CD uses liveness to confirm that PM2 restarted and recognizes the explicit maint
 3. Set `SITE_MAINTENANCE_MODE=false` in Vercel Production and redeploy the same approved commit. Disable the frontend last so users cannot return before the API is ready.
 4. Run the normal production smoke checks and watch PM2 logs.
 
+### Coordinated write-freeze validation mode
+
+`SITE_MAINTENANCE_MODE` is not a database write freeze. For a migration or
+other operation that requires zero application writers, set the backend
+`WRITE_FREEZE_MODE=validation` and restart the API. In this mode the API still
+initializes its database connection and HTTP server, but rejects all mutation
+methods and inbound callbacks with `503`, `Retry-After`, and
+`X-Write-Freeze: validation`. All Quest workers and schedulers are disabled.
+
+Verify the acknowledgement before running read-only migration validation:
+
+```bash
+curl --fail --silent --show-error https://api.questesports.lk/api/health/write-freeze
+curl --silent --show-error --dump-header - \
+  -X POST https://api.questesports.lk/api/v1/example-mutation
+```
+
+The status response must be exactly equivalent to
+`{"mode":"validation","writersEnabled":false}` (JSON key order may vary),
+and mutation attempts must return `503` with the freeze header. Keep this mode
+active until validation is complete and the migration operator is ready to
+resume writers. Set `WRITE_FREEZE_MODE=off`, restart the API, and verify the
+status response reports `writersEnabled: true` before resuming normal traffic.
+
 ### Full stop and write-freeze warning
 
-Maintenance mode is **not** a database write freeze. Background jobs continue and the PayHere notification callback can still write. For a database restore, destructive migration, suspected compromise, or any operation requiring zero writes, follow the disaster-recovery procedure and stop the backend:
+The coordinated validation mode blocks Quest HTTP and callback writers and
+stops Quest workers, but it does not replace the full-stop procedure when the
+database itself must be isolated. For a database restore, suspected
+compromise, or any operation requiring the backend to be unavailable, follow
+the disaster-recovery procedure and stop the backend:
 
 ```bash
 sudo -u deploy -H pm2 stop quest-backend
