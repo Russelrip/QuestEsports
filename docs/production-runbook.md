@@ -453,6 +453,11 @@ other operation that requires zero application writers, set the backend
 initializes its database connection and HTTP server, but rejects all mutation
 methods and inbound callbacks with `503`, `Retry-After`, and
 `X-Write-Freeze: validation`. All Quest workers and schedulers are disabled.
+Validation API traffic is deny-by-default: only the explicitly verified health,
+status, capability, OpenAPI, and public catalog/media read probes are admitted.
+Unknown API GET/HEAD requests are frozen too, including order, ticket-order,
+payment, match-room, veto, and rate-limited endpoints whose handlers or
+middleware can perform writes.
 
 Verify the acknowledgement before running read-only migration validation:
 

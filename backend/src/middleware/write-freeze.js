@@ -13,6 +13,25 @@ const CALLBACK_PATHS = new Set([
 const WRITE_FREEZE_HEADER = "X-Write-Freeze";
 const WRITE_FREEZE_MESSAGE =
   "Database writes are temporarily disabled for validation.";
+const VALIDATION_READ_PROBES = [
+  /^\/api\/health(?:\/(?:live|ready))?$/,
+  /^\/api\/health\/write-freeze$/,
+  /^\/api\/capabilities$/,
+  /^\/api\/openapi\.json$/,
+  /^\/api\/tournaments(?:\/[^/]+)?$/,
+  /^\/api\/posters(?:\/[^/]+(?:\/image)?)?$/,
+  /^\/api\/event-albums(?:\/[^/]+(?:\/photos\/[^/]+\/image)?)?$/,
+  /^\/api\/rulebooks(?:\/[^/]+)?$/,
+  /^\/api\/event-series(?:\/[^/]+)?$/,
+  /^\/api\/events(?:\/[^/]+)?$/,
+  /^\/api\/game-categories(?:\/[^/]+)?$/,
+  /^\/api\/products(?:\/[^/]+)?$/,
+  /^\/api\/ticket-events(?:\/[^/]+)?$/,
+  /^\/api\/commerce\/capabilities$/,
+  /^\/api\/products\/[^/]+\/images\/[^/]+$/,
+  /^\/api\/uploads\/(?:tournament-banners|poster-images|team-logos|avatars|game-assets|sponsor-logos)\/[^/]+$/,
+  /^\/api\/team-invite$/,
+];
 
 const normalizeRequestPath = (requestPath) => {
   const normalized = String(requestPath || "")
@@ -44,11 +63,28 @@ const isWriteCapableReadRequest = (req) => {
   );
 };
 
-const isWriteFreezeRequest = (req) =>
-  env.WRITE_FREEZE_MODE === "validation" &&
-  (MUTATING_METHODS.has(req.method) ||
+const isValidationReadProbe = (req) => {
+  if (!READ_METHODS.has(req.method)) {
+    return false;
+  }
+
+  const path = normalizeRequestPath(req.path || req.originalUrl || req.url);
+  return VALIDATION_READ_PROBES.some((pattern) => pattern.test(path));
+};
+
+const isWriteFreezeRequest = (req) => {
+  if (env.WRITE_FREEZE_MODE !== "validation") {
+    return false;
+  }
+
+  const path = normalizeRequestPath(req.path || req.originalUrl || req.url);
+  return (
+    MUTATING_METHODS.has(req.method) ||
     isCallbackRequest(req) ||
-    isWriteCapableReadRequest(req));
+    isWriteCapableReadRequest(req) ||
+    (path.startsWith("/api") && !isValidationReadProbe(req))
+  );
+};
 
 const sendWriteFreezeResponse = (req, res) => {
   res.locals.expectedWriteFreeze = true;
@@ -83,6 +119,7 @@ module.exports = {
   isCallbackRequest,
   isWriteFreezeRequest,
   isWriteCapableReadRequest,
+  isValidationReadProbe,
   normalizeRequestPath,
   requireWritesEnabled,
   sendWriteFreezeResponse,

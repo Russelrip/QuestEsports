@@ -69,6 +69,7 @@ test("the app freezes malformed, unauthorized, normalized, and real callback mut
         response.on("data", (chunk) => { responseBody += chunk; });
         response.on("end", () => resolve({
           method,
+          path,
           status: response.statusCode,
           retryAfter: response.headers["retry-after"],
           freeze: response.headers["x-write-freeze"],
@@ -84,6 +85,11 @@ test("the app freezes malformed, unauthorized, normalized, and real callback mut
       try {
         const health = await request(server, "GET", "/API/HEALTH/LIVE");
         const status = await request(server, "HEAD", "/api/health/write-freeze");
+        const safeReads = await Promise.all([
+          request(server, "GET", "/api/health/ready"),
+          request(server, "GET", "/api/capabilities"),
+          request(server, "GET", "/api/openapi.json"),
+        ]);
         const methods = await Promise.all(["POST", "PUT", "PATCH", "DELETE"].map((method) => request(
           server,
           method,
@@ -101,7 +107,16 @@ test("the app freezes malformed, unauthorized, normalized, and real callback mut
           request(server, "HEAD", "/api/email-change/confirm/"),
           request(server, "GET", "/API/AUTH/GOOGLE/START/"),
         ]);
-        console.log(JSON.stringify({ health, status, methods, exposed, payHere, callbacks }));
+        const writeShapedReads = await Promise.all([
+          request(server, "GET", "/api/unknown"),
+          request(server, "HEAD", "/api/orders/order-1"),
+          request(server, "GET", "/api/ticket-orders/status"),
+          request(server, "GET", "/api/payments/payment-1"),
+          request(server, "GET", "/api/v1/match-rooms/mine"),
+          request(server, "GET", "/api/v1/veto-rooms/mine"),
+          request(server, "GET", "/api/v1/valorant/leaderboard/register/discord/login"),
+        ]);
+        console.log(JSON.stringify({ health, status, safeReads, methods, exposed, payHere, callbacks, writeShapedReads }));
         setTimeout(() => server.close(), 50);
       } catch (error) {
         console.error(error);
@@ -113,7 +128,14 @@ test("the app freezes malformed, unauthorized, normalized, and real callback mut
   const output = parseLastJsonLine(result.stdout);
   assert.equal(output.health.status, 200);
   assert.equal(output.status.status, 200);
-  for (const response of [...output.methods, output.exposed, output.payHere, ...output.callbacks]) {
+  for (const response of output.safeReads) {
+    assert.notEqual(response.code, "WRITE_FREEZE");
+    assert.notEqual(response.freeze, "validation");
+    if (response.path !== "/api/health/ready") {
+      assert.equal(response.status, 200);
+    }
+  }
+  for (const response of [...output.methods, output.exposed, output.payHere, ...output.callbacks, ...output.writeShapedReads]) {
     assert.equal(response.status, 503);
     assert.equal(response.retryAfter, "900");
     assert.equal(response.freeze, "validation");
