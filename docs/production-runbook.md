@@ -402,6 +402,9 @@ sudo /var/www/QuestEsports/ops/deploy/verify-release.sh
 
 The script takes the canonical lock before disk, database, registry, backup,
 Compose, migration, or health work and retains it through the pointer switch.
+Backup and freshness wrappers inherit descriptor 9 through
+`BACKUP_RELEASE_LOCK_PATH=/proc/self/fd/9`; they re-lock that same canonical
+file before their nested lock, preserving canonical-before-nested ordering.
 It performs no VPS-side build and does not stop PM2/Vercel as part of this
 transition. It stages/pulls both fixed Compose projects without writers,
 checks PostgreSQL and multi-remote freshness, and preserves the old VALORANT
@@ -409,11 +412,23 @@ units unmasked until the commit point. If migrations are pending, both the
 relevant owner approval for the exact SHA and `BACKUP_APPROVAL=
 BACKUP_QUEST_PRODUCTION` are required before the existing backup primitive is
 invoked. The backup must then produce a remotely verified complete archive and
-checksum pair. Migrations are one-shot operations and are never automatically
-reversed.
+checksum pair, with release-bound machine-readable evidence containing
+`schemas=verified:public,valorant`, `uploads=verified:public,private`,
+`archive=verified`, `checksum=verified`, and `remote=verified`, plus the exact
+requested full SHA. Migrations are one-shot operations and are never
+automatically reversed. The manifest's `migrator_image` is passed as
+`MIGRATOR_IMAGE` and `EXPECTED_MIGRATOR_IMAGE` to a migrator wrapper only when
+that migration is invoked; the release does not invent a Compose migrator.
 
-After coordinated freeze acknowledgements, the release starts both projects
-frozen/read-only and requires Quest health/readiness, PostgreSQL readiness,
+After the coordinated freeze is acknowledged, the release stops the old
+VALORANT units and starts both candidate projects only through the configured
+`CANDIDATE_FROZEN_START_COMMAND`. That wrapper must enforce the
+`frozen-read-only`, `--write-freeze=validation`, and `--read-only` contract and
+return `started-frozen-read-only`; it must not rely on mutable Compose defaults.
+Freeze is enabled and acknowledged before either stopping old VALORANT units or
+starting candidate services. Both Quest and VALORANT readiness acknowledgements
+are required before writer admission.
+The release then requires Quest health/readiness, PostgreSQL readiness,
 unique `quest-shared` aliases, and VALORANT HTTPS health with certificate
 validation plus JSON `status: "ok"` and `db: "up"`. Only after both repository
 readiness acknowledgements does the configured coordinated writer-enable
@@ -423,8 +438,11 @@ after that record exists.
 
 Before writer admission, a failed gate restores the previous application
 release and may restart only the previously stopped, still-unmasked old
-VALORANT units while the old database remains authoritative. Use the explicit
-boundary rather than changing one database URL:
+VALORANT units without changing database authority. If the authority check
+reports `supabase`, rollback restarts the legacy PM2 application and does not
+start a Compose bundle; if it reports `quest-postgres`, rollback starts the
+validated previous Compose bundle. This prevents a stale-Supabase split brain.
+Use the explicit boundary rather than changing one database URL:
 
 ```bash
 sudo env OLD_VALORANT_WAS_STOPPED=1 \

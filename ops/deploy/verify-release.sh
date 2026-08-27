@@ -16,33 +16,62 @@ if [[ "$fixture_mode" != 1 ]]; then
   [[ "$(stat -c '%u %a' "$release_lock_path" 2>/dev/null)" == '0 660' ]] || die 'canonical release lock must be root-owned with mode 0660.'
 fi
 release_env_file="${RELEASE_ENV_FILE:-/etc/quest-esports/release.env}"
+[[ "$release_env_file" == /* && "$release_env_file" != / ]] || die 'release environment must be an absolute non-root path.'
 [[ -f "$release_env_file" && -r "$release_env_file" && ! -L "$release_env_file" ]] || die 'release environment is missing or unsafe.'
+if [[ "$fixture_mode" != 1 ]]; then
+  env_stat="$(stat -c '%u %a' "$release_env_file" 2>/dev/null)" || die 'cannot inspect release environment ownership.'
+  [[ "$env_stat" == 0\ * ]] || die 'release environment must be root-owned.'
+  env_mode="${env_stat##* }"
+  [[ "$env_mode" == 600 || "$env_mode" == 640 ]] || die 'release environment must be mode 0600 or 0640.'
+  [[ "$(realpath "$release_env_file" 2>/dev/null)" == /etc/quest-esports/release.env ]] || die 'release environment must use the canonical host path.'
+fi
 # shellcheck disable=SC1090
 source "$release_env_file"
 require_setting() { [[ -n "${!1:-}" ]] || die "missing release setting: $1"; }
 for setting in RELEASE_ROOT DOCKER_BIN QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE CURL_BIN DATABASE_READINESS_COMMAND; do require_setting "$setting"; done
 [[ "$RELEASE_ROOT" == /* && "$RELEASE_ROOT" != / ]] || die 'RELEASE_ROOT must be absolute and non-root.'
+releases_root="${RELEASES_ROOT:-$RELEASE_ROOT/releases}"
+[[ "$releases_root" == /* && "$releases_root" != / && -d "$RELEASE_ROOT" && ! -L "$RELEASE_ROOT" ]] || die 'release roots must be absolute existing non-symlink directories.'
+[[ -d "$releases_root" && ! -L "$releases_root" ]] || die 'RELEASES_ROOT must be an existing non-symlink directory.'
+canonical_releases_root="$(realpath "$releases_root" 2>/dev/null)" || die 'RELEASES_ROOT cannot be canonicalized.'
+[[ "$canonical_releases_root" == "$releases_root" ]] || die 'RELEASES_ROOT must not contain a symlink.'
 [[ -x "$DOCKER_BIN" && -x "$CURL_BIN" && -x "$DATABASE_READINESS_COMMAND" ]] || die 'verification command is not executable.'
 [[ -f "$VALORANT_CA_FILE" && -r "$VALORANT_CA_FILE" && ! -L "$VALORANT_CA_FILE" ]] || die 'VALORANT_CA_FILE is missing or unsafe.'
 current_link="${CURRENT_LINK:-$RELEASE_ROOT/current}"
 current_target="$(realpath "$current_link" 2>/dev/null || true)"
 release_dir="${1:-$current_target}"
-[[ -n "$release_dir" && -d "$release_dir" && ! -L "$release_dir" ]] || die 'release directory is missing or unsafe.'
-[[ "$release_dir" == "${RELEASES_ROOT:-$RELEASE_ROOT/releases}/"* ]] || die 'release is outside RELEASES_ROOT.'
+[[ -n "$release_dir" && "$release_dir" == "$canonical_releases_root/"* && -d "$release_dir" && ! -L "$release_dir" ]] || die 'release directory is missing or unsafe.'
+[[ "$(basename "$release_dir")" =~ ^[0-9a-fA-F]{40}$ ]] || die 'release directory must be named by a full release SHA.'
+[[ "$(realpath "$release_dir" 2>/dev/null)" == "$release_dir" ]] || die 'release directory is not canonical.'
 [[ "$current_target" == "$release_dir" ]] || die 'current pointer does not identify the verified release.'
 [[ -f "$release_dir/compose.production.yml" && -f "$release_dir/.env" && -f "$release_dir/valorant.compose.yml" ]] || die 'release bundle is incomplete.'
+for bundle_file in compose.production.yml valorant.compose.yml .env release-metadata.txt; do
+  [[ -f "$release_dir/$bundle_file" && ! -L "$release_dir/$bundle_file" && -r "$release_dir/$bundle_file" ]] || die "release bundle has an unsafe $bundle_file."
+  if [[ "$fixture_mode" != 1 ]]; then
+    bundle_stat="$(stat -c '%u %a' "$release_dir/$bundle_file" 2>/dev/null)" || die "cannot inspect release bundle $bundle_file."
+    [[ "$bundle_stat" == 0\ * ]] || die "release bundle $bundle_file must be root-owned."
+    bundle_mode="${bundle_stat##* }"
+    [[ "$bundle_mode" == 600 || "$bundle_mode" == 640 ]] || die "release bundle $bundle_file has an unsafe mode."
+  fi
+done
 
 compose() { "$DOCKER_BIN" compose "$@"; }
 validate_project() {
-  local file="$1" project="$2" env_file="${3:-}" config active
+  local file="$1" project="$2" env_file="${3:-}" config
   if [[ -n "$env_file" ]]; then
     config="$(compose --env-file "$env_file" -f "$file" --project-name "$project" config 2>/dev/null)" || die "Compose config failed for $project."
-    active="$(compose --env-file "$env_file" -f "$file" --project-name "$project" ps --all --format '{{.Project}}' 2>/dev/null)" || die "Compose inspection failed for $project."
   else
     config="$(compose -f "$file" --project-name "$project" config 2>/dev/null)" || die "Compose config failed for $project."
-    active="$(compose -f "$file" --project-name "$project" ps --all --format '{{.Project}}' 2>/dev/null)" || die "Compose inspection failed for $project."
   fi
   [[ "$(printf '%s\n' "$config" | awk -v p="$project" '$0 == "name: " p { n++ } END { print n+0 }')" == 1 ]] || die "Compose project identity is not exactly $project."
+}
+validate_active_project() {
+  local file="$1" project="$2" env_file="${3:-}" active
+  if [[ -n "$env_file" ]]; then
+    active="$(compose --env-file "$env_file" -f "$file" --project-name "$project" ps --all --format '{{.Project}}' 2>/dev/null)" || die "Compose inspection failed for $project."
+  else
+    active="$(compose -f "$file" --project-name "$project" ps --all --format '{{.Project}}' 2>/dev/null)" || die "Compose inspection failed for $project."
+  fi
   [[ "$(printf '%s\n' "$active" | awk 'NF { print }' | sort -u)" == "$project" ]] || die "active project is not exactly one $project project."
 }
 validate_aliases() {
@@ -68,6 +97,8 @@ validate_aliases() {
 }
 validate_project "$release_dir/compose.production.yml" quest-prod "$release_dir/.env"
 validate_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir/.env"
+validate_active_project "$release_dir/compose.production.yml" quest-prod "$release_dir/.env"
+validate_active_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir/.env"
 validate_aliases
 quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health failed.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health JSON was not healthy.'
