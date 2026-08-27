@@ -36,7 +36,7 @@ make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
-  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
   mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private"
@@ -83,6 +83,22 @@ EOF
 commit_sha=$previous_sha
 writer_admitted=false
 previous_release=$fixture/releases/$previous_sha
+EOF
+  cat > "$fixture/releases/$previous_sha/commit-point.txt" <<EOF
+writer_admission_starting=true
+commit_sha=$previous_sha
+commit_point_utc=not-recorded
+quest_writer_admission_started=false
+quest_writer_admitted=false
+quest_writer_ack_utc=not-recorded
+valorant_writer_admission_started=false
+valorant_writer_admitted=false
+valorant_writer_ack_utc=not-recorded
+writer_admitted=false
+previous_release=$fixture/releases/$previous_sha
+quest_project=quest-prod
+valorant_project=valorant-prod
+shared_network=quest-shared
 EOF
   ln -s "$fixture/releases/$previous_sha" "$fixture/current"
 
@@ -289,7 +305,7 @@ case "$(basename "$0")" in
   freeze-disable) printf 'off\n' ;;
   freeze-status) printf 'acknowledged\n' ;;
   validate-host) printf 'validated\n' ;;
-  service-ownership) [[ "${FAIL_SERVICE_OWNERSHIP:-0}" != 1 ]] || exit 1; printf 'owned\n' ;;
+  service-ownership) [[ "${FAIL_SERVICE_OWNERSHIP:-0}" != 1 ]] || { printf 'owned\n'; exit 0; }; printf 'file=/etc/quest-esports/release.env service=quest-prod owner=root mode=0640 observed_at=20260828T120000Z\nfile=/etc/quest-esports/release.env service=valorant-prod owner=root mode=0640 observed_at=20260828T120000Z\n' ;;
   cutover-restore) printf 'restored\n' ;;
   cutover-abort) printf 'aborted\n' >> "$TEST_LOG" ;;
   quest-ready|valorant-ready) printf 'ready\n' ;;
@@ -301,7 +317,7 @@ case "$(basename "$0")" in
   quest-writer-stop) printf 'quest-writer-stop\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_WRITER_STOP:-0}" == 1 ]] && exit 1; printf 'stopped\n' ;;
   valorant-writer-stop) printf 'valorant-writer-stop\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_WRITER_STOP:-0}" == 1 ]] && exit 1; printf 'stopped\n' ;;
   writer-stop) printf 'stopped\n' ;;
-  capture) printf 'capture\n' >> "$TEST_LOG"; printf 'captured evidence_bundle=%s\n' "${RELEASE_DIR:?}" ;;
+  capture) printf 'capture\n' >> "$TEST_LOG"; [[ "${FAIL_CAPTURE:-0}" != 1 ]] || exit 1; printf 'captured evidence_bundle=%s\n' "${RELEASE_DIR:?}" ;;
   recovery-action) printf 'fix-forward\n' ;;
   *) exit 1 ;;
 esac
@@ -436,6 +452,10 @@ setup_fixture service-ownership-failure
 export FAIL_SERVICE_OWNERSHIP=1
 assert_failed service-ownership-failure run_release
 
+setup_fixture durable-commit-point
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/' "$fixture/releases/$previous_sha/commit-point.txt"
+assert_failed durable-commit-point bash "$script_directory/deploy/rollback.sh" pre-commit "$fixture/releases/$previous_sha"
+
 setup_fixture stale-backup
 export STALE_BACKUP=1
 assert_failed stale-backup run_release
@@ -464,6 +484,22 @@ cat > "$rollback_fixture/release-metadata.txt" <<EOF
 commit_sha=$rollback_sha
 writer_admitted=false
 previous_release=$fixture/releases/$previous_sha
+EOF
+  cat > "$rollback_fixture/commit-point.txt" <<EOF
+writer_admission_starting=true
+commit_sha=$rollback_sha
+commit_point_utc=not-recorded
+quest_writer_admission_started=false
+quest_writer_admitted=false
+quest_writer_ack_utc=not-recorded
+valorant_writer_admission_started=false
+valorant_writer_admitted=false
+valorant_writer_ack_utc=not-recorded
+writer_admitted=false
+previous_release=$fixture/releases/$previous_sha
+quest_project=quest-prod
+valorant_project=valorant-prod
+shared_network=quest-shared
 EOF
 export OLD_VALORANT_WAS_STOPPED=1
 bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture" >/dev/null
@@ -514,8 +550,15 @@ fi
 
 setup_fixture post-commit-boundary
 export ROLLBACK_RELEASE_DIR="$fixture/releases/$previous_sha" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/valorant_writer_admission_started=false/valorant_writer_admission_started=true/; s/valorant_writer_admitted=false/valorant_writer_admitted=true/; s/valorant_writer_ack_utc=not-recorded/valorant_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$fixture/releases/$previous_sha/commit-point.txt"
 bash "$script_directory/deploy/rollback.sh" post-commit >/dev/null
 assert_contains "$TEST_LOG" 'freeze-enable'
+
+setup_fixture post-commit-capture-failure
+export ROLLBACK_RELEASE_DIR="$fixture/releases/$previous_sha" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL FAIL_CAPTURE=1
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/valorant_writer_admission_started=false/valorant_writer_admission_started=true/; s/valorant_writer_admitted=false/valorant_writer_admitted=true/; s/valorant_writer_ack_utc=not-recorded/valorant_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$fixture/releases/$previous_sha/commit-point.txt"
+assert_failed post-commit-capture-failure bash "$script_directory/deploy/rollback.sh" post-commit
+assert_contains "$fixture/releases/$previous_sha/recovery-evidence.txt" 'result=incomplete'
 
 setup_fixture fixed-projects
 run_release >/dev/null

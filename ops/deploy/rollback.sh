@@ -56,7 +56,7 @@ recovery_command() {
     printf '%s\n' 'URGENT: recovery command is missing or not executable.' >&2
     return 1
   fi
-  output="$($command 2>/dev/null)"; rc=$?
+  if output="$("$command" 2>/dev/null)"; then rc=0; else rc=$?; fi
   (( rc == 0 )) || return 1
   [[ -z "$expected" || "$output" == "$expected" ]]
 }
@@ -116,10 +116,48 @@ safe_bundle() {
   done < "$bundle/release-metadata.txt"
 }
 
+validate_commit_point() {
+  local bundle="$1" line key value
+  declare -A point=()
+  [[ -f "$bundle/commit-point.txt" && ! -L "$bundle/commit-point.txt" && -r "$bundle/commit-point.txt" ]] || die "$bundle is missing a durable commit-point record."
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^([a-z][a-z0-9_]*)=([^[:space:]]+)$ ]] || die 'durable commit-point record contains an ambiguous entry.'
+    key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
+    case "$key" in
+      writer_admission_starting|commit_sha|commit_point_utc|quest_writer_admission_started|quest_writer_admitted|quest_writer_ack_utc|valorant_writer_admission_started|valorant_writer_admitted|valorant_writer_ack_utc|writer_admitted|previous_release|quest_project|valorant_project|shared_network) ;;
+      *) die "durable commit-point record contains an unknown entry: $key" ;;
+    esac
+    [[ -z "${point[$key]+present}" ]] || die "durable commit-point record contains a duplicate entry: $key"
+    point["$key"]="$value"
+  done < "$bundle/commit-point.txt"
+  for key in writer_admission_starting commit_sha commit_point_utc quest_writer_admission_started quest_writer_admitted quest_writer_ack_utc valorant_writer_admission_started valorant_writer_admitted valorant_writer_ack_utc writer_admitted previous_release quest_project valorant_project shared_network; do
+    [[ -n "${point[$key]:-}" ]] || die "durable commit-point record is missing $key."
+  done
+  [[ "${point[commit_sha],,}" == "$(basename "$bundle" | tr '[:upper:]' '[:lower:]')" && "${point[commit_sha]}" =~ ^[0-9a-fA-F]{40}$ ]] || die 'durable commit-point SHA is not bound to its release bundle.'
+  [[ "${point[writer_admission_starting]}" == true && "${point[quest_project]}" == quest-prod && "${point[valorant_project]}" == valorant-prod && "${point[shared_network]}" == quest-shared ]] || die 'durable commit-point identity is invalid.'
+  for key in quest_writer_admission_started quest_writer_admitted valorant_writer_admission_started valorant_writer_admitted writer_admitted; do
+    [[ "${point[$key]}" == true || "${point[$key]}" == false ]] || die "durable commit-point $key is not boolean."
+  done
+  for key in commit_point_utc quest_writer_ack_utc valorant_writer_ack_utc; do
+    [[ "${point[$key]}" == not-recorded || "${point[$key]}" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || die "durable commit-point $key is not a UTC timestamp."
+  done
+  [[ "${point[quest_writer_admitted]}" == false || "${point[quest_writer_ack_utc]}" != not-recorded ]] || die 'durable commit-point lost the Quest writer acknowledgement timestamp.'
+  [[ "${point[valorant_writer_admitted]}" == false || "${point[valorant_writer_ack_utc]}" != not-recorded ]] || die 'durable commit-point lost the VALORANT writer acknowledgement timestamp.'
+  [[ "${point[quest_writer_admission_started]}" == true || "${point[quest_writer_admitted]}" == false ]] || die 'durable commit-point admitted Quest without recording its admission start.'
+  [[ "${point[valorant_writer_admission_started]}" == true || "${point[valorant_writer_admitted]}" == false ]] || die 'durable commit-point admitted VALORANT without recording its admission start.'
+  [[ "${point[writer_admitted]}" == false || ( "${point[quest_writer_admitted]}" == true && "${point[valorant_writer_admitted]}" == true ) ]] || die 'durable commit-point writer_admitted is not backed by both group acknowledgements.'
+  commit_point_requires_postcommit=false
+  if [[ "${point[quest_writer_admission_started]}" == true || "${point[quest_writer_admitted]}" == true || "${point[valorant_writer_admission_started]}" == true || "${point[valorant_writer_admitted]}" == true || "${point[writer_admitted]}" == true ]]; then
+    commit_point_requires_postcommit=true
+  fi
+}
+
 if [[ "$mode" == pre-commit ]]; then
   rollback_release="${ROLLBACK_RELEASE_DIR:-${2:-}}"
   [[ -n "$rollback_release" ]] || die 'pre-commit rollback requires an immutable failed release directory.'
   safe_bundle "$rollback_release" 'failed release bundle'
+  validate_commit_point "$rollback_release"
+  [[ "$commit_point_requires_postcommit" == false ]] || die 'durable commit-point state requires post-commit recovery; refusing pre-commit rollback.'
   metadata_file="$rollback_release/release-metadata.txt"
   previous_release="$(awk -F= '$1 == "previous_release" { print substr($0, index($0,"=")+1); exit }' "$metadata_file")"
   safe_bundle "$previous_release" 'previous release bundle'
@@ -160,11 +198,13 @@ postcommit_status=0
 recovery_bundle="${ROLLBACK_RELEASE_DIR:-}"
 [[ -n "$recovery_bundle" ]] || die 'post-commit recovery requires an evidence bundle path.'
 safe_bundle "$recovery_bundle" 'post-commit evidence bundle'
+validate_commit_point "$recovery_bundle"
+[[ "$commit_point_requires_postcommit" == true ]] || { printf '%s\n' 'URGENT: post-commit recovery requires durable writer-admission evidence.' >&2; postcommit_status=1; }
 record_recovery_evidence "$recovery_bundle" post-commit-recovery started || postcommit_status=1
 recovery_command "${QUEST_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1
 recovery_command "${VALORANT_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1
 RELEASE_DIR="$recovery_bundle" recovery_command "${FREEZE_ENABLE_COMMAND:-}" || postcommit_status=1
-capture_output="$(RELEASE_DIR="$recovery_bundle" "${CURRENT_STATE_CAPTURE_COMMAND:-}" 2>/dev/null)"; capture_rc=$?
+if capture_output="$(RELEASE_DIR="$recovery_bundle" "${CURRENT_STATE_CAPTURE_COMMAND:-}" 2>/dev/null)"; then capture_rc=0; else capture_rc=$?; fi
 (( capture_rc == 0 )) && [[ "$capture_output" == "captured evidence_bundle=$recovery_bundle" ]] || postcommit_status=1
 [[ -n "${EXPECTED_LOSS_RPO:-}" ]] || { printf '%s\n' 'URGENT: post-commit recovery requires an explicit expected-loss/RPO record.' >&2; postcommit_status=1; }
 [[ "${INCIDENT_OWNER_APPROVAL:-}" == INCIDENT_OWNER_APPROVAL ]] || { printf '%s\n' 'URGENT: post-commit recovery requires incident-owner approval.' >&2; postcommit_status=1; }

@@ -103,7 +103,21 @@ if [[ "$fixture_mode" != 1 ]]; then
   [[ "$(stat -c '%u %a' "$RELEASE_LOCK_PATH" 2>/dev/null)" == '0 660' ]] || die 'canonical release lock ownership or mode is invalid.'
 fi
 
-[[ "$($SERVICE_OWNERSHIP_COMMAND 2>/dev/null)" == owned ]] || die 'service ownership validation failed.'
+validate_service_ownership() {
+  local output line file service owner mode observed
+  declare -A seen=()
+  output="$("$SERVICE_OWNERSHIP_COMMAND" 2>/dev/null)" || die 'service ownership evidence command failed.'
+  while IFS= read -r line; do
+    [[ "$line" =~ ^file=([^[:space:]]+)[[:space:]]+service=([a-z0-9.-]+)[[:space:]]+owner=([^[:space:]]+)[[:space:]]+mode=(0600|0640)[[:space:]]+observed_at=([0-9]{8}T[0-9]{6}Z)$ ]] || die 'service ownership evidence is ambiguous.'
+    file="${BASH_REMATCH[1]}"; service="${BASH_REMATCH[2]}"; owner="${BASH_REMATCH[3]}"; mode="${BASH_REMATCH[4]}"; observed="${BASH_REMATCH[5]}"
+    [[ "$file" == /etc/quest-esports/release.env && "$owner" == root && -n "$observed" ]] || die 'service ownership evidence does not identify the expected release file, root owner, or observation.'
+    [[ "$service" == quest-prod || "$service" == valorant-prod ]] || die 'service ownership evidence identifies an unexpected service.'
+    [[ -z "${seen[$service]+present}" ]] || die 'service ownership evidence contains a duplicate service.'
+    seen["$service"]="$mode"
+  done <<< "$output"
+  [[ -n "${seen[quest-prod]:-}" && -n "${seen[valorant-prod]:-}" ]] || die 'service ownership evidence omitted Quest or VALORANT.'
+}
+validate_service_ownership
 
 "$DOCKER_BIN" info >/dev/null 2>&1 || die 'Docker daemon is unavailable.'
 network_output="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{.Name}}|{{join .Aliases ","}}{{"\n"}}{{end}}' 2>/dev/null)" || die 'shared network is unavailable.'

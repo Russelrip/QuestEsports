@@ -260,13 +260,14 @@ run_hook() {
 
 run_migrator() {
   # The migrator acknowledgement is `migrated image=<digest> target=quest-postgres`.
-  local variable="$1" repository="$2" target_authority="$3" schema="$4" output command
+  local variable="$1" repository="$2" target_authority="$3" schema="$4" output command expected
   command_setting "$variable"
   command="${!variable}"
   [[ "$target_authority" == quest-postgres ]] || die 'migrator target authority is not the fixed Quest PostgreSQL target.'
   [[ "$schema" == public || "$schema" == valorant ]] || die 'migrator schema is not an approved service schema.'
   output="$(MIGRATION_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" MIGRATOR_IMAGE="${manifest[migrator_image]}" EXPECTED_MIGRATOR_IMAGE="${manifest[migrator_image]}" "$command" 2>/dev/null)" || die "$variable failed."
-  [[ "$output" =~ ^migrated[[:space:]]+image=${manifest[migrator_image]}[[:space:]]+target=quest-postgres[[:space:]]+schema=$schema[[:space:]]+repository=$repository$ ]] || die "$variable did not acknowledge the exact migrator image, target, schema, and repository."
+  expected="migrated image=${manifest[migrator_image]} target=quest-postgres schema=$schema repository=$repository"
+  [[ "$output" == "$expected" ]] || die "$variable did not acknowledge the exact migrator image, target, schema, and repository."
 }
 
 run_database_readiness() {
@@ -315,14 +316,16 @@ validate_reboot_persistence() {
 }
 
 record_commit_point() {
-  local quest_admitted="$1" quest_timestamp="$2" valorant_admitted="$3" valorant_timestamp="$4" temporary_file
+  local quest_started="$1" quest_admitted="$2" quest_timestamp="$3" valorant_started="$4" valorant_admitted="$5" valorant_timestamp="$6" temporary_file
   temporary_file="$stage_dir/.commit-point.$$.tmp"
   {
     printf 'writer_admission_starting=true\n'
     printf 'commit_sha=%s\n' "$release_sha"
     printf 'commit_point_utc=%s\n' "${commit_timestamp:-not-recorded}"
+    printf 'quest_writer_admission_started=%s\n' "$quest_started"
     printf 'quest_writer_admitted=%s\n' "$quest_admitted"
     printf 'quest_writer_ack_utc=%s\n' "${quest_timestamp:-not-recorded}"
+    printf 'valorant_writer_admission_started=%s\n' "$valorant_started"
     printf 'valorant_writer_admitted=%s\n' "$valorant_admitted"
     printf 'valorant_writer_ack_utc=%s\n' "${valorant_timestamp:-not-recorded}"
     printf 'writer_admitted=%s\n' "$writer_admitted"
@@ -486,7 +489,21 @@ database_health_output="$(DATABASE_URL="${DATABASE_URL:-fixture://database}" TAR
 command_setting VALIDATE_HOST_COMMAND
 [[ "$(RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" "$VALIDATE_HOST_COMMAND" 2>/dev/null)" == validated ]] || die 'host/artifact validation did not acknowledge the exact release manifest.'
 command_setting SERVICE_OWNERSHIP_COMMAND
-[[ "$("$SERVICE_OWNERSHIP_COMMAND" 2>/dev/null)" == owned ]] || die 'service ownership validation failed.'
+validate_service_ownership() {
+  local output line file service owner mode observed
+  declare -A seen=()
+  output="$("$SERVICE_OWNERSHIP_COMMAND" 2>/dev/null)" || die 'service ownership evidence command failed.'
+  while IFS= read -r line; do
+    [[ "$line" =~ ^file=([^[:space:]]+)[[:space:]]+service=([a-z0-9.-]+)[[:space:]]+owner=([^[:space:]]+)[[:space:]]+mode=(0600|0640)[[:space:]]+observed_at=([0-9]{8}T[0-9]{6}Z)$ ]] || die 'service ownership evidence is ambiguous.'
+    file="${BASH_REMATCH[1]}"; service="${BASH_REMATCH[2]}"; owner="${BASH_REMATCH[3]}"; mode="${BASH_REMATCH[4]}"; observed="${BASH_REMATCH[5]}"
+    [[ "$file" == /etc/quest-esports/release.env && "$owner" == root && -n "$observed" ]] || die 'service ownership evidence does not identify the expected release file, root owner, or observation.'
+    [[ "$service" == quest-prod || "$service" == valorant-prod ]] || die 'service ownership evidence identifies an unexpected service.'
+    [[ -z "${seen[$service]+present}" ]] || die 'service ownership evidence contains a duplicate service.'
+    seen["$service"]="$mode"
+  done <<< "$output"
+  [[ -n "${seen[quest-prod]:-}" && -n "${seen[valorant-prod]:-}" ]] || die 'service ownership evidence omitted Quest or VALORANT.'
+}
+validate_service_ownership
 command_setting REGISTRY_CHECK_COMMAND
 for image in "${manifest[frontend_image]}" "${manifest[backend_image]}" "${manifest[migrator_image]}" "${manifest[postgres_image]}" "${manifest[valorant_image]}"; do
   RELEASE_IMAGE="$image" "$REGISTRY_CHECK_COMMAND" >/dev/null 2>&1 || die "registry access or digest verification failed for $image."
@@ -658,18 +675,20 @@ command_setting POST_COMMIT_RECOVERY_ARM_COMMAND
 run_hook POST_COMMIT_RECOVERY_ARM_COMMAND armed
 postcommit_armed=true
 commit_timestamp=not-recorded
-record_commit_point false not-recorded false not-recorded || die 'could not record the armed writer-admission boundary.'
+record_commit_point false false not-recorded false false not-recorded || die 'could not record the armed writer-admission boundary.'
 command_setting QUEST_WRITER_ENABLE_COMMAND
+record_commit_point true false not-recorded false false not-recorded || die 'could not record the Quest writer-admission start boundary.'
 [[ "$(RELEASE_SHA="$release_sha" "$QUEST_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'Quest writer admission failed.'
 writer_admitted=true
 commit_recorded=true
 commit_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 quest_writer_ack_timestamp="$commit_timestamp"
-record_commit_point true "$quest_writer_ack_timestamp" false not-recorded || die 'could not record the Quest writer admission boundary.'
+record_commit_point true true "$quest_writer_ack_timestamp" false false not-recorded || die 'could not record the Quest writer admission boundary.'
 command_setting VALORANT_WRITER_ENABLE_COMMAND
+record_commit_point true true "$quest_writer_ack_timestamp" true false not-recorded || die 'could not record the VALORANT writer-admission start boundary.'
 [[ "$(RELEASE_SHA="$release_sha" "$VALORANT_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'VALORANT writer admission failed.'
 valorant_writer_ack_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-record_commit_point true "$quest_writer_ack_timestamp" true "$valorant_writer_ack_timestamp" || die 'could not record the VALORANT writer admission boundary.'
+record_commit_point true true "$quest_writer_ack_timestamp" true true "$valorant_writer_ack_timestamp" || die 'could not record the VALORANT writer admission boundary.'
 
 command_setting OLD_VALORANT_REBOOT_PERSISTENCE_CHECK
 old_valorant_persistence="$("$OLD_VALORANT_REBOOT_PERSISTENCE_CHECK" 2>/dev/null)"
