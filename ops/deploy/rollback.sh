@@ -159,6 +159,8 @@ validate_commit_point() {
   if [[ "${point[quest_writer_admission_started]}" == true || "${point[quest_writer_admitted]}" == true || "${point[valorant_writer_admission_started]}" == true || "${point[valorant_writer_admitted]}" == true || "${point[writer_admitted]}" == true ]]; then
     commit_point_requires_postcommit=true
   fi
+  commit_point_previous_release="${point[previous_release]}"
+  commit_point_cutover_type="${point[cutover_type]}"
 }
 
 if [[ "$mode" == pre-commit ]]; then
@@ -169,18 +171,34 @@ if [[ "$mode" == pre-commit ]]; then
   [[ "$commit_point_requires_postcommit" == false ]] || die 'durable commit-point state requires post-commit recovery; refusing pre-commit rollback.'
   metadata_file="$rollback_release/release-metadata.txt"
   previous_release="$(awk -F= '$1 == "previous_release" { print substr($0, index($0,"=")+1); exit }' "$metadata_file")"
-  safe_bundle "$previous_release" 'previous release bundle'
+  [[ -n "$previous_release" ]] || die 'failed release metadata does not identify a predecessor.'
+  if [[ "$previous_release" == supabase ]]; then
+    [[ "$commit_point_previous_release" == supabase && "$commit_point_cutover_type" == first-supabase-cutover ]] || die 'Supabase predecessor is only valid for a first-cutover durable bundle.'
+    [[ "$(awk -F= '$1 == "cutover_type" { print $2; exit }' "$metadata_file")" == first-supabase-cutover ]] || die 'first-cutover metadata does not identify the Supabase sentinel.'
+    [[ "$(awk -F= '$1 == "owner_approval_sha" { print $2; exit }' "$metadata_file")" == "$(basename "$rollback_release")" ]] || die 'first-cutover metadata lacks owner approval for this release.'
+    first_cutover_recovery=true
+  else
+    first_cutover_recovery=false
+    safe_bundle "$previous_release" 'previous release bundle'
+  fi
   writer_state="$(awk -F= '$1 == "writer_admitted" { print $2; exit }' "$metadata_file")"
   [[ "$writer_state" == false ]] || die 'a release past writer admission requires the post-commit recovery boundary.'
   validate_project_config "$rollback_release" quest-prod
-  validate_project_config "$previous_release" quest-prod
-  validate_project_config "$previous_release" valorant-prod
+  if [[ "$first_cutover_recovery" != true ]]; then
+    validate_project_config "$previous_release" quest-prod
+    validate_project_config "$previous_release" valorant-prod
+  fi
   validate_bundle_images "$rollback_release" true
-  validate_bundle_images "$previous_release"
+  if [[ "$first_cutover_recovery" != true ]]; then
+    validate_bundle_images "$previous_release"
+  fi
 
   command_setting OLD_DATABASE_AUTHORITATIVE_COMMAND
   previous_database_authority="$("$OLD_DATABASE_AUTHORITATIVE_COMMAND" 2>/dev/null)"
   [[ "$previous_database_authority" == supabase || "$previous_database_authority" == quest-postgres ]] || die 'previous database authority is ambiguous; refusing a split-brain rollback.'
+  if [[ "$first_cutover_recovery" == true && "$previous_database_authority" != supabase ]]; then
+    die 'first-cutover Supabase recovery requires Supabase to remain authoritative.'
+  fi
   recovery_status=0
   record_recovery_evidence "$rollback_release" pre-commit-rollback started || recovery_status=1
   compose --env-file "$rollback_release/.env" -f "$rollback_release/compose.production.yml" --project-name quest-prod down --remove-orphans >/dev/null 2>&1 || recovery_status=1
@@ -189,7 +207,11 @@ if [[ "$mode" == pre-commit ]]; then
     compose --env-file "$previous_release/.env" -f "$previous_release/compose.production.yml" --project-name quest-prod up -d --no-build >/dev/null 2>&1 || recovery_status=1
     compose --env-file "$previous_release/.env" -f "$previous_release/valorant.compose.yml" --project-name valorant-prod up -d --no-build >/dev/null 2>&1 || recovery_status=1
   else
-    RELEASE_DIR="$previous_release" recovery_command "${OLD_APPLICATION_RESTART_COMMAND:-}" restarted || recovery_status=1
+    if [[ "$first_cutover_recovery" == true ]]; then
+      recovery_command "${OLD_APPLICATION_RESTART_COMMAND:-}" restarted || recovery_status=1
+    else
+      RELEASE_DIR="$previous_release" recovery_command "${OLD_APPLICATION_RESTART_COMMAND:-}" restarted || recovery_status=1
+    fi
   fi
 
   if [[ "${OLD_VALORANT_WAS_STOPPED:-0}" == 1 ]]; then

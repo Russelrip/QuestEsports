@@ -494,8 +494,13 @@ assert_contains "$rollback_fixture/recovery-evidence.txt" 'result=completed'
 
 setup_fixture termination-after-quest-admission
 make_failed_bundle 3333333333333333333333333333333333333333
-sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$rollback_fixture/commit-point.txt"
+sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/^writer_admitted=false/writer_admitted=true/' "$rollback_fixture/commit-point.txt"
 assert_failed termination-after-quest-admission bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
+export ROLLBACK_RELEASE_DIR="$rollback_fixture" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL
+bash "$script_directory/deploy/rollback.sh" post-commit >/dev/null
+assert_contains "$rollback_fixture/recovery-evidence.txt" 'boundary=post-commit-recovery'
+assert_contains "$TEST_LOG" 'quest-writer-stop'
+assert_contains "$TEST_LOG" 'valorant-writer-stop'
 
 setup_fixture durable-commit-point
 make_failed_bundle 4444444444444444444444444444444444444444
@@ -708,6 +713,22 @@ if bash "$script_directory/deploy/verify-release.sh" >"$work_directory/first-cut
 else
   gate_failure 'first cutover metadata was not accepted by verify-release.sh'
 fi
+
+setup_fixture first-cutover-provisional-recovery
+export FAIL_QUEST_WRITER_ENABLE=1
+if DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt" >"$work_directory/first-cutover-provisional-recovery.out" 2>&1; then
+  gate_failure 'first cutover unexpectedly accepted the failed Quest writer admission fixture'
+fi
+cutover_release_dir="$fixture/releases/1111111111111111111111111111111111111111"
+gate_file_contains "$cutover_release_dir/release-metadata.txt" 'previous_release=supabase' 'first cutover did not persist provisional Supabase metadata before writer admission'
+gate_file_contains "$cutover_release_dir/commit-point.txt" 'quest_writer_admission_started=true' 'first cutover failure did not retain the durable Quest admission-start record'
+export ROLLBACK_RELEASE_DIR="$cutover_release_dir" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL
+if bash "$script_directory/deploy/rollback.sh" post-commit >"$work_directory/first-cutover-standalone-recovery.out" 2>&1; then
+  :
+else
+  gate_failure 'standalone rollback rejected the provisional first-cutover recovery bundle'
+fi
+gate_file_contains "$cutover_release_dir/recovery-evidence.txt" 'boundary=post-commit-recovery' 'first-cutover standalone rollback did not record post-commit recovery evidence'
 
 setup_fixture artifact-specific-trust
 if run_release >"$work_directory/artifact-trust-release.out" 2>&1; then

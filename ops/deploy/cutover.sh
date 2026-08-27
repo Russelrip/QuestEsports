@@ -329,6 +329,27 @@ record_commit_point() {
   mv -Tf -- "$temporary_file" "$stage_dir/commit-point.txt" 2>/dev/null || return 1
 }
 
+write_release_metadata() {
+  local point_utc="$1" admitted="$2" pointer_updated="$3" temporary_file
+  temporary_file="$stage_dir/.release-metadata.$$.tmp"
+  {
+    printf 'commit_sha=%s\n' "$release_sha"
+    printf 'commit_point_utc=%s\n' "$point_utc"
+    printf 'writer_admitted=%s\n' "$admitted"
+    printf 'current_pointer_updated=%s\n' "$pointer_updated"
+    printf 'previous_release=%s\n' "$previous_release"
+    printf 'quest_project=%s\n' "$quest_project"
+    printf 'valorant_project=%s\n' "$valorant_project"
+    printf 'shared_network=%s\n' "$shared_network"
+    printf 'database_schemas=public,valorant\n'
+    printf 'writer_groups=quest,valorant\n'
+    printf 'owner_approval_sha=%s\n' "$FIRST_CUTOVER_OWNER_APPROVAL_SHA"
+    printf 'cutover_type=first-supabase-cutover\n'
+  } > "$temporary_file" 2>/dev/null || return 1
+  chmod 600 "$temporary_file" 2>/dev/null || return 1
+  mv -Tf -- "$temporary_file" "$stage_dir/release-metadata.txt" 2>/dev/null || return 1
+}
+
 precommit_rollback() {
   local status=0
   set +e
@@ -558,6 +579,7 @@ command_setting VALORANT_READINESS_ACK_COMMAND
 command_setting POST_COMMIT_RECOVERY_ARM_COMMAND
 run_hook POST_COMMIT_RECOVERY_ARM_COMMAND armed
 postcommit_armed=true
+write_release_metadata not-recorded false false || die 'could not record provisional first-cutover metadata.'
 commit_timestamp=not-recorded
 record_commit_point false false not-recorded false false not-recorded || die 'could not record the armed writer-admission boundary.'
 command_setting QUEST_WRITER_ENABLE_COMMAND
@@ -581,19 +603,5 @@ temporary_current="$RELEASE_ROOT/.current.$release_sha.$$"
 rm -f -- "$temporary_current"
 ln -s -- "$stage_dir" "$temporary_current"
 mv -Tf -- "$temporary_current" "${CURRENT_LINK:-$RELEASE_ROOT/current}"
-cat > "$stage_dir/release-metadata.txt" <<EOF
-commit_sha=$release_sha
-commit_point_utc=$commit_timestamp
-writer_admitted=true
-current_pointer_updated=true
-previous_release=supabase
-quest_project=$quest_project
-valorant_project=$valorant_project
-shared_network=quest-shared
-database_schemas=public,valorant
-writer_groups=quest,valorant
-owner_approval_sha=$FIRST_CUTOVER_OWNER_APPROVAL_SHA
-cutover_type=first-supabase-cutover
-EOF
-chmod 600 "$stage_dir/release-metadata.txt"
+write_release_metadata "$commit_timestamp" true true || die 'could not record final first-cutover metadata.'
 say "First production cutover admitted: $release_sha"
