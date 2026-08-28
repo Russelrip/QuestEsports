@@ -4,8 +4,12 @@ umask 077
 
 base="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 restore="$base/restore-production-backup.sh"
+contract="$base/rehearsal/rehearsal-contract.sh"
 fail() { echo "Restore rehearsal refused: $1" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || fail "required command unavailable: $1"; }
+[[ -r "$contract" && ! -L "$contract" ]] || fail "rehearsal contract is missing"
+# shellcheck source=/dev/null
+source "$contract"
 [[ $# -eq 1 ]] || fail "usage: postgres17-restore-rehearsal.sh /absolute/archive.tar.gz.enc"
 archive="$1"
 [[ "$archive" == /* && -f "$archive" && ! -L "$archive" ]] || fail "archive must be an absolute regular file"
@@ -328,6 +332,7 @@ psql_query "$scratch/acl-global" "SELECT r.rolname || '|<global>|' || d.defaclob
 cat "$scratch/acl-global" >> "$scratch/acl"
 [[ "$(wc -l < "$scratch/grants" | tr -d ' ')" -ge 12 ]] || fail "grant inventory is incomplete"
 [[ "$(wc -l < "$scratch/acl" | tr -d ' ')" == 12 ]] || fail "default ACL inventory contains unexpected extra rows"
+canonical_acl="$scratch/canonical-acl"; rehearsal_canonical_acl_rows > "$canonical_acl"; cmp -s "$canonical_acl" "$scratch/acl" || fail "default ACL payload does not match canonical bootstrap contract"
 while IFS='|' read -r kind grant_scope role privilege granted; do [[ "$granted" == t ]] || fail "grant inventory contains a denied expected privilege"; if [[ "$kind" == schema ]]; then [[ "$role" =~ ^(quest_migrator|quest_runtime|val_migrator|val_runtime)$ ]]; else [[ "$kind" == table || "$kind" == sequence ]] || fail "grant inventory kind is unsafe"; fi; done < "$scratch/grants"
 for expected in 'quest_migrator|public' 'val_migrator|valorant'; do grep -q "^${expected}|r|" "$scratch/acl" || fail "default ACL table entry is missing"; grep -q "^${expected}|S|" "$scratch/acl" || fail "default ACL sequence entry is missing"; grep -q "^${expected}|f|" "$scratch/acl" || fail "default ACL function entry is missing"; grep -q "^${expected}|T|" "$scratch/acl" || fail "default ACL type entry is missing"; done
 for expected in 'quest_migrator|<global>|f|' 'quest_migrator|<global>|T|' 'val_migrator|<global>|f|' 'val_migrator|<global>|T|'; do grep -q "^${expected}" "$scratch/acl" || fail "global default ACL entry is missing"; done
@@ -388,14 +393,14 @@ run_exact_hook "$no_admission_hook" verified "$scratch/no-admission.output" || f
 declare -A hook_source_sha256=() hook_staged_sha256=()
 for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_service_health attempted_mutation_callback; do
   var="FAILURE_INJECTION_${injection^^}_COMMAND"; hook="${!var:-}"
-  [[ "$hook" == /* && -x "$hook" && ! -L "$hook" ]] || fail "failure injection $injection needs an executable hook"
-  check_path "$hook" "$var"
+  rehearsal_safe_hook_path "$hook" || fail "failure injection $injection hook path is unsafe"
   case "$injection" in
-    bad_checksum) endpoint_id=archive-checksum; endpoint_sha256="$(sha256sum "$checksum" | cut -d' ' -f1)" ;;
-    bad_decryption) endpoint_id=archive-decryption; endpoint_sha256="$(sha256sum "$archive" | cut -d' ' -f1)" ;;
-    wrong_ca|blocked_network|failed_service_health) endpoint_id=valorant-health; endpoint_sha256="$(printf '%s' "$val_health" | sha256sum | cut -d' ' -f1)" ;;
-    attempted_mutation_callback) endpoint_id=quest-api; endpoint_sha256="$(printf '%s' "$callback" | sha256sum | cut -d' ' -f1)" ;;
+    bad_checksum) endpoint_sha256="$(sha256sum "$checksum" | cut -d' ' -f1)" ;;
+    bad_decryption) endpoint_sha256="$(sha256sum "$archive" | cut -d' ' -f1)" ;;
+    wrong_ca|blocked_network|failed_service_health) endpoint_sha256="$(printf '%s' "$val_health" | sha256sum | cut -d' ' -f1)" ;;
+    attempted_mutation_callback) endpoint_sha256="$(printf '%s' "$callback" | sha256sum | cut -d' ' -f1)" ;;
   esac
+  endpoint_id="$(rehearsal_failure_endpoint_id "$injection")" || fail "failure injection $injection endpoint mapping is missing"
   export FAILURE_ENDPOINT_ID="$endpoint_id" FAILURE_ENDPOINT_SHA256="$endpoint_sha256"
   staged_hook="$evidence/.rehearsal-failure-hook-$injection.sh"
   [[ ! -e "$staged_hook" && ! -L "$staged_hook" ]] || fail "failure injection $injection staged path already exists"
@@ -414,11 +419,12 @@ failure_inventory="$scratch/failure-injections.tsv"
 for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_service_health attempted_mutation_callback; do
   var="FAILURE_INJECTION_${injection^^}_COMMAND"; hook="${!var}"
   case "$injection" in
-    bad_checksum) endpoint_id=archive-checksum; endpoint_sha256="$(sha256sum "$checksum" | cut -d' ' -f1)" ;;
-    bad_decryption) endpoint_id=archive-decryption; endpoint_sha256="$(sha256sum "$archive" | cut -d' ' -f1)" ;;
-    wrong_ca|blocked_network|failed_service_health) endpoint_id=valorant-health; endpoint_sha256="$(printf '%s' "$val_health" | sha256sum | cut -d' ' -f1)" ;;
-    attempted_mutation_callback) endpoint_id=quest-api; endpoint_sha256="$(printf '%s' "$callback" | sha256sum | cut -d' ' -f1)" ;;
+    bad_checksum) endpoint_sha256="$(sha256sum "$checksum" | cut -d' ' -f1)" ;;
+    bad_decryption) endpoint_sha256="$(sha256sum "$archive" | cut -d' ' -f1)" ;;
+    wrong_ca|blocked_network|failed_service_health) endpoint_sha256="$(printf '%s' "$val_health" | sha256sum | cut -d' ' -f1)" ;;
+    attempted_mutation_callback) endpoint_sha256="$(printf '%s' "$callback" | sha256sum | cut -d' ' -f1)" ;;
   esac
+  endpoint_id="$(rehearsal_failure_endpoint_id "$injection")" || fail "failure injection $injection endpoint mapping is missing"
   staged_hook="$evidence/rehearsal-failure-hook-$injection.sh"
   [[ "$(sha256sum "$hook" | cut -d' ' -f1)" == "${hook_source_sha256[$injection]}" && "$(sha256sum "$staged_hook" | cut -d' ' -f1)" == "${hook_staged_sha256[$injection]}" ]] || fail "failure injection $injection executable identity changed before evidence emission"
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$injection" "$hook" "${hook_source_sha256[$injection]}" "$staged_hook" "${hook_staged_sha256[$injection]}" "$endpoint_id" "$endpoint_sha256" passed "$(sha256sum "$scratch/$injection.output" | cut -d' ' -f1)" >> "$failure_inventory"
@@ -464,4 +470,6 @@ manifest="$evidence/rehearsal-evidence.manifest"; signature="$evidence/rehearsal
 artifact_list=(rehearsal-evidence.env rehearsal-observations.env rehearsal-source-version.env rehearsal-security-verifier.output rehearsal-target-sentinel.env rehearsal-failure-injections.tsv rehearsal-failure-bad_checksum.output rehearsal-failure-bad_decryption.output rehearsal-failure-wrong_ca.output rehearsal-failure-blocked_network.output rehearsal-failure-failed_service_health.output rehearsal-failure-attempted_mutation_callback.output rehearsal-failure-hook-bad_checksum.sh rehearsal-failure-hook-bad_decryption.sh rehearsal-failure-hook-wrong_ca.sh rehearsal-failure-hook-blocked_network.sh rehearsal-failure-hook-failed_service_health.sh rehearsal-failure-hook-attempted_mutation_callback.sh rehearsal-roles.tsv rehearsal-memberships.tsv rehearsal-owners.tsv rehearsal-grants.tsv rehearsal-acl.tsv rehearsal-ext-before.tsv rehearsal-ext.tsv rehearsal-settings-before.tsv rehearsal-settings.tsv rehearsal-rls.tsv rehearsal-quest-migrations-before.tsv rehearsal-valorant-migrations-before.tsv rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv rehearsal-target-docker-before.txt rehearsal-target-port-mapping.txt rehearsal-target-port-mapping-after.txt rehearsal-connection-binding.txt rehearsal-docker-connection-binding.txt rehearsal-target-docker-after.txt rehearsal-connection-binding-after.txt rehearsal-docker-connection-binding-after.txt rehearsal-quest-read-probe.tsv)
 (cd -- "$evidence" && for artifact in "${artifact_list[@]}"; do [[ -f "$artifact" && ! -L "$artifact" ]] || exit 1; sha256sum -- "$artifact"; done) > "$manifest" || fail "evidence manifest creation failed"
 chmod 600 "$manifest"; openssl dgst -sha256 -sign "$signing_key" -out "$signature" "$manifest" >/dev/null 2>&1 || fail "evidence bundle signature failed"; chmod 600 "$signature"
+trusted_self_key="$scratch/rehearsal-signing-public.pem"; openssl pkey -in "$signing_key" -pubout -out "$trusted_self_key" >/dev/null 2>&1 || fail "rehearsal signing public key derivation failed"; chmod 600 "$trusted_self_key"
+REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY="$trusted_self_key" bash "$base/rehearsal/verify-rehearsal-evidence.sh" "$archive" "$evidence" >"$scratch/self-verification.log" 2>&1 || fail "generated evidence did not pass the verifier"
 echo "Restore rehearsal completed; evidence written to the supplied disposable evidence directory."
