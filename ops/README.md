@@ -61,6 +61,8 @@ unsafe permissions, missing manifest scope, and source-major mismatches without
 an explicit logical-migration approval are refused.
 
 Provide these additional disposable-only variables: `REHEARSAL_EVIDENCE_DIR`,
+`REHEARSAL_TARGET_SENTINEL_FILE` (a private record containing the disposable
+target kind/id, exact container ID, and both upload roots),
 `SOURCE_VERSION_EVIDENCE_FILE` (a private operator-recorded record containing
 `source_major`, `source_version`, and `provenance=operator_recorded`),
 `SECURITY_VERIFY_COMMAND` (an executable wrapper around the repository security
@@ -92,6 +94,7 @@ chmod 700 /secure/recovery/rehearsal-evidence
 REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL \
   BACKUP_ENV_FILE=/secure/recovery/quest-esports-recovery.env \
   REHEARSAL_EVIDENCE_DIR=/secure/recovery/rehearsal-evidence \
+  REHEARSAL_TARGET_SENTINEL_FILE=/secure/recovery/quest-rehearsal-target.env \
   POSTGRES17_BIN=/usr/lib/postgresql/17/bin \
   bash ops/rehearsal/postgres17-restore-rehearsal.sh \
   /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
@@ -105,8 +108,9 @@ The host must bootstrap `openssl` plus a protected signing key pair. The
 wrapper requires `REHEARSAL_SIGNING_PRIVATE_KEY`; verification requires the
 operator-configured trusted `REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY`. If either
 key/tool is unavailable the flow fails closed. The evidence directory contains
-mode-`600` summary, raw observation, and
-inventory artifacts. The summary includes a SHA-256 binding to the fixed-name
+mode-`600` summary, raw observation, target-sentinel, migration-ledger,
+failure-injection, and other inventory artifacts. The summary includes a
+SHA-256 binding to the fixed-name
 `rehearsal-observations.env`; the verifier hashes and parses that artifact and
 the raw role/inventory outputs before accepting the summary. Upload checksums
 are explicitly post-restore tree checksums, not source-equivalence claims

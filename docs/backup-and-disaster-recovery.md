@@ -323,6 +323,8 @@ directory before starting and make it private. The wrapper requires an
 explicit `REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL`, an existing
 mode-600 recovery environment, an absolute encrypted archive and exact
 `.sha256` sibling, an offline age identity, fresh distinct empty upload roots,
+a private disposable-target sentinel containing the target kind/id, exact
+container ID, and both upload roots,
 and pinned PostgreSQL 17 `psql`, `pg_restore`, and `pg_dump`. It also requires
 an operator-recorded source-version evidence file, an executable repository
 security-verifier hook, executable disposable failure-injection hooks, and an
@@ -399,6 +401,7 @@ cd /path/to/QuestEsports
 REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL \
   BACKUP_ENV_FILE=/secure/recovery/quest-esports-recovery.env \
   REHEARSAL_EVIDENCE_DIR=/secure/recovery/rehearsal-evidence \
+  REHEARSAL_TARGET_SENTINEL_FILE=/secure/recovery/quest-rehearsal-target.env \
   POSTGRES17_BIN=/usr/lib/postgresql/17/bin \
   bash ops/rehearsal/postgres17-restore-rehearsal.sh \
   /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
