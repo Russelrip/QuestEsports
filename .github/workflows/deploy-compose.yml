@@ -27,7 +27,6 @@ jobs:
     timeout-minutes: 10
     outputs:
       build_run_id: ${{ steps.resolve.outputs.build_run_id }}
-      ci_run_id: ${{ steps.resolve.outputs.ci_run_id }}
       artifact_name: ${{ steps.resolve.outputs.artifact_name }}
       release_sha: ${{ steps.resolve.outputs.release_sha }}
     steps:
@@ -82,7 +81,6 @@ jobs:
             printf '%s\n' 'The upstream CI artifact did not provide a full lowercase SHA.' >&2
             exit 1
           }
-          printf 'ci_run_id=%s\n' "$ci_run_id" >> "$GITHUB_OUTPUT"
           printf 'artifact_name=%s\n' "$artifact_name" >> "$GITHUB_OUTPUT"
           printf 'build_run_id=%s\n' "$build_run_id" >> "$GITHUB_OUTPUT"
           printf 'release_sha=%s\n' "$release_sha" >> "$GITHUB_OUTPUT"

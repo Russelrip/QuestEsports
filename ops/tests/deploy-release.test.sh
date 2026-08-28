@@ -680,23 +680,93 @@ if grep -Eq 'release_sha=.*headSha|release_sha=.*head_sha' "$deploy_workflow_fil
   exit 1
 fi
 
-# Binding fixture: a downstream Build container images run may expose a
-# different head SHA. The artifact name must carry the upstream CI run ID and
-# SHA, and the latter must become the deploy release SHA.
-fixture_build_head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-fixture_upstream_ci_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-fixture_artifact_name="container-release-manifest-123456-$fixture_upstream_ci_sha"
-if [[ "$fixture_artifact_name" =~ ^container-release-manifest-([0-9]+)-([0-9a-f]{40})$ ]]; then
-  fixture_artifact_ci_run_id="${BASH_REMATCH[1]}"
-  fixture_artifact_release_sha="${BASH_REMATCH[2]}"
+# Executable binding fixture: extract and run the resolver body from the actual
+# deployment workflow with mocked GitHub CLI responses. The downstream build
+# head SHA is deliberately different from the upstream CI artifact SHA.
+resolver_script="$work_directory/resolve-release.sh"
+awk '
+  /^        run: \|$/ { capture=1; next }
+  capture && (/^      - name:/ || /^  [a-z-]+:/) { exit }
+  capture { sub(/^          /, ""); print }
+' "$deploy_workflow_file" > "$resolver_script"
+chmod 755 "$resolver_script"
+resolver_bin="$work_directory/resolver-bin"
+mkdir -p "$resolver_bin"
+cat > "$resolver_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == run && "$2" == view ]]; then
+  [[ "$4" == --repo && "$5" == Russelrip/QuestEsports ]] || exit 1
+  case "$3" in
+    999)
+      printf '%s\n' '{"databaseId":999,"headSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","headBranch":"main","conclusion":"success","event":"workflow_run","workflowName":"Build container images","repository":{"fullName":"Russelrip/QuestEsports"}}'
+      ;;
+    123456)
+      ci_sha="${RESOLVER_CI_SHA:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
+      printf '{"databaseId":123456,"headSha":"%s","headBranch":"main","conclusion":"success","event":"push","workflowName":"CI","repository":{"fullName":"Russelrip/QuestEsports"}}\n' "$ci_sha"
+      ;;
+    *) exit 1 ;;
+  esac
+elif [[ "$1" == api ]]; then
+  [[ "$2" == repos/Russelrip/QuestEsports/actions/runs/999/artifacts\?per_page=100 ]] || exit 1
+  printf '%s\n' '{"artifacts":[{"expired":false,"name":"container-release-manifest-123456-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}'
 else
-  fixture_artifact_ci_run_id=''
-  fixture_artifact_release_sha=''
-  gate_failure 'upstream CI artifact binding fixture name was not accepted'
+  exit 1
 fi
-[[ "$fixture_build_head_sha" != "$fixture_artifact_release_sha" ]] || gate_failure 'binding fixture did not model a differing downstream build SHA'
-[[ "$fixture_artifact_release_sha" == "$fixture_upstream_ci_sha" ]] || gate_failure 'binding fixture did not select the upstream CI SHA'
-[[ "$fixture_artifact_ci_run_id" == 123456 ]] || gate_failure 'binding fixture did not select the upstream CI run ID'
+EOF
+chmod 755 "$resolver_bin/gh"
+cat > "$resolver_bin/jq" <<'EOF'
+#!/usr/bin/env node
+const fs = require("node:fs");
+
+const input = JSON.parse(fs.readFileSync(0, "utf8"));
+const filter = process.argv.slice(2).join(" ");
+const artifacts = Array.isArray(input.artifacts) ? input.artifacts : [];
+const matchingArtifacts = artifacts.filter(
+  (artifact) => artifact.expired === false && /^container-release-manifest-[0-9]+-[0-9a-f]{40}$/.test(artifact.name),
+);
+
+if (filter.includes(".databaseId | tostring")) process.stdout.write(`${input.databaseId}\n`);
+else if (filter.includes(".workflowName")) process.stdout.write(`${input.workflowName}\n`);
+else if (filter.includes(".conclusion")) process.stdout.write(`${input.conclusion}\n`);
+else if (filter.includes(".event")) process.stdout.write(`${input.event}\n`);
+else if (filter.includes(".headBranch")) process.stdout.write(`${input.headBranch}\n`);
+else if (filter.includes(".headSha")) {
+  if (/^[0-9a-f]{40}$/.test(input.headSha)) process.stdout.write(`${input.headSha}\n`);
+  else process.exit(1);
+} else if (filter.includes("| length")) {
+  process.stdout.write(`${matchingArtifacts.length}\n`);
+} else if (filter.includes(".[0].name")) {
+  if (matchingArtifacts.length !== 1) process.exit(1);
+  process.stdout.write(`${matchingArtifacts[0].name}\n`);
+} else {
+  process.exit(1);
+}
+EOF
+chmod 755 "$resolver_bin/jq"
+resolver_output="$work_directory/resolver-good.out"
+resolver_environment=(
+  "PATH=$resolver_bin:$base_path"
+  GITHUB_EVENT_NAME=workflow_run
+  GITHUB_REPOSITORY=Russelrip/QuestEsports
+  EVENT_BUILD_RUN_ID=999
+  "GITHUB_OUTPUT=$resolver_output"
+)
+env "${resolver_environment[@]}" bash "$resolver_script"
+assert_contains "$resolver_output" 'artifact_name=container-release-manifest-123456-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+assert_contains "$resolver_output" 'release_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+assert_contains "$resolver_output" 'build_run_id=999'
+if grep -Fq 'release_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$resolver_output"; then
+  printf 'FAIL: resolver selected downstream build headSha instead of upstream CI SHA\n' >&2
+  exit 1
+fi
+resolver_mismatch_output="$work_directory/resolver-mismatch.out"
+assert_failed resolver-ci-sha-mismatch env "${resolver_environment[@]}" RESOLVER_CI_SHA=cccccccccccccccccccccccccccccccccccccccc GITHUB_OUTPUT="$resolver_mismatch_output" bash "$resolver_script"
+if [[ -s "$resolver_mismatch_output" ]]; then
+  printf 'FAIL: resolver emitted deployment outputs after rejecting the CI/artifact SHA mismatch\n' >&2
+  exit 1
+fi
+
 grep -Eq 'workflowName.*CI' <<<"$deploy_workflow_source" || {
   printf 'FAIL: deploy workflow does not validate the upstream CI workflow identity\n' >&2
   exit 1
