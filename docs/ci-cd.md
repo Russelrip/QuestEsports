@@ -16,11 +16,12 @@ This repository uses GitHub Actions for continuous integration and owner-control
   It checks out and compares the exact successful CI SHA before publishing. It
   does not run for pull requests or publish on a direct PR event.
 - `.github/workflows/deploy-compose.yml` promotes only the manifest artifact from
-  a successful image-build run whose full SHA also has a successful `CI` run. It
-  re-reads the selected image-build run metadata and requires its run ID, SHA,
-  workflow, event, branch, and successful conclusion to agree. It supports a
-  protected manual dispatch that selects the latest successful build; it has no
-  SHA override input.
+  a successful image-build run whose artifact names the upstream successful
+  `CI` run ID and full SHA. It re-reads the selected image-build run metadata,
+  enumerates its unexpired artifacts, and requires exactly one artifact whose
+  upstream CI run ID, workflow, event, branch, conclusion, and SHA all agree.
+  It supports a protected manual dispatch that selects the latest successful
+  build; it has no SHA override input.
 
 ## Immutable Compose release transition
 
@@ -28,7 +29,8 @@ The container path is deliberately separate from the legacy PM2/Vercel path.
 The image workflow checks out the exact successful CI `head_sha`, tags each
 Quest image with that full SHA, publishes by GHCR digest, emits BuildKit
 provenance/SBOM attestations, and keylessly signs the three Quest image digests
-with GitHub OIDC. Its release artifact is an exact six-entry manifest containing
+with GitHub OIDC. Its release artifact is named with the upstream CI run ID and
+full SHA and contains an exact six-entry manifest containing
 `commit_sha`, `frontend_image`, `backend_image`, `migrator_image`,
 `postgres_image`, and `valorant_image`; deployment rejects mutable references or
 any SHA that is not bound to that artifact.
@@ -89,7 +91,10 @@ the Task 7A root-ownership check remains true; it does not remove or replace
 the file. This workflow does not grant Docker access or run source checkout,
 npm, PM2, or migrations on the VPS.
 
-Cosign is installed from the fixed Go module version `v2.4.1` in both workflows.
+The image workflow requests only `contents: read`, `packages: write`, and
+`id-token: write`. BuildKit's registry-pushed SBOM/provenance attestations do
+not require the separate GitHub Artifact Attestations permission. Cosign is
+installed from the fixed Go module version `v2.4.1` in both workflows.
 The repository does not invent an upstream binary checksum; therefore binary
 artifact checksum pinning remains an explicit limitation, while the module
 version and Go checksum verification provide the practical reproducibility

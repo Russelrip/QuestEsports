@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 10
     outputs:
       build_run_id: ${{ steps.resolve.outputs.build_run_id }}
+      ci_run_id: ${{ steps.resolve.outputs.ci_run_id }}
+      artifact_name: ${{ steps.resolve.outputs.artifact_name }}
       release_sha: ${{ steps.resolve.outputs.release_sha }}
     steps:
       - name: Resolve only the successful build run
@@ -34,7 +36,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
-          EVENT_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -45,14 +46,11 @@ jobs:
               --branch main \
               --status success \
               --limit 1 \
-              --json databaseId,headSha,conclusion)"
+              --json databaseId)"
             build_run_id="$(jq -er '.[0].databaseId | select(type == "number")' <<< "$runs_json")"
-            release_sha="$(jq -er '.[0].headSha | select(test("^[0-9a-f]{40}$"))' <<< "$runs_json")"
           else
             [[ "$EVENT_BUILD_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
-            [[ "$EVENT_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
             build_run_id="$EVENT_BUILD_RUN_ID"
-            release_sha="$EVENT_RELEASE_SHA"
           fi
           build_run_json="$(gh run view "$build_run_id" \
             --repo "$GITHUB_REPOSITORY" \
@@ -62,21 +60,30 @@ jobs:
           test "$(jq -er '.conclusion' <<< "$build_run_json")" = success
           test "$(jq -er '.event' <<< "$build_run_json")" = workflow_run
           test "$(jq -er '.headBranch' <<< "$build_run_json")" = main
-          test "$(jq -er '.headSha | select(test("^[0-9a-f]{40}$"))' <<< "$build_run_json")" = "$release_sha"
+
+          artifacts_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$build_run_id/artifacts?per_page=100")"
+          artifact_count="$(jq '[.artifacts[] | select(.expired == false and (.name | test("^container-release-manifest-[0-9]+-[0-9a-f]{40}$")))] | length' <<< "$artifacts_json")"
+          test "$artifact_count" = 1
+          artifact_name="$(jq -er '[.artifacts[] | select(.expired == false and (.name | test("^container-release-manifest-[0-9]+-[0-9a-f]{40}$")))] | .[0].name' <<< "$artifacts_json")"
+          [[ "$artifact_name" =~ ^container-release-manifest-([0-9]+)-([0-9a-f]{40})$ ]] || exit 1
+          ci_run_id="${BASH_REMATCH[1]}"
+          release_sha="${BASH_REMATCH[2]}"
+
+          ci_run_json="$(gh run view "$ci_run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,headSha,headBranch,conclusion,event,workflowName)"
+          test "$(jq -er '.databaseId | tostring' <<< "$ci_run_json")" = "$ci_run_id"
+          test "$(jq -er '.workflowName' <<< "$ci_run_json")" = CI
+          test "$(jq -er '.conclusion' <<< "$ci_run_json")" = success
+          test "$(jq -er '.event' <<< "$ci_run_json")" = push
+          test "$(jq -er '.headBranch' <<< "$ci_run_json")" = main
+          test "$(jq -er '.headSha | select(test("^[0-9a-f]{40}$"))' <<< "$ci_run_json")" = "$release_sha"
           [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || {
-            printf '%s\n' 'The selected build did not provide a full lowercase SHA.' >&2
+            printf '%s\n' 'The upstream CI artifact did not provide a full lowercase SHA.' >&2
             exit 1
           }
-          ci_runs_json="$(gh run list \
-            --repo "$GITHUB_REPOSITORY" \
-            --workflow CI \
-            --commit "$release_sha" \
-            --status success \
-            --limit 1 \
-            --json databaseId,headSha,conclusion)"
-          test "$(jq -r 'length' <<< "$ci_runs_json")" = 1
-          test "$(jq -er '.[0].headSha' <<< "$ci_runs_json")" = "$release_sha"
-          test "$(jq -er '.[0].conclusion' <<< "$ci_runs_json")" = success
+          printf 'ci_run_id=%s\n' "$ci_run_id" >> "$GITHUB_OUTPUT"
+          printf 'artifact_name=%s\n' "$artifact_name" >> "$GITHUB_OUTPUT"
           printf 'build_run_id=%s\n' "$build_run_id" >> "$GITHUB_OUTPUT"
           printf 'release_sha=%s\n' "$release_sha" >> "$GITHUB_OUTPUT"
 
@@ -102,7 +109,7 @@ jobs:
       - name: Download the manifest from that exact successful build
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: container-release-manifest-${{ needs.resolve-build.outputs.release_sha }}
+          name: ${{ needs.resolve-build.outputs.artifact_name }}
           run-id: ${{ needs.resolve-build.outputs.build_run_id }}
           github-token: ${{ github.token }}
           path: release-manifest

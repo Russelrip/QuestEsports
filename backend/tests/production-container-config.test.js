@@ -485,8 +485,13 @@ test("immutable image CI binds successful repository CI and publishes all signed
   assert.match(imageWorkflow, /\[\[ "\$checked_out_sha" == "\$RELEASE_SHA" \]\]/);
   assert.match(
     imageWorkflow,
-    /^permissions:\n  contents: read\n  packages: write\n  id-token: write\n  attestations: write$/m,
+    /name: container-release-manifest-\$\{\{ github\.event\.workflow_run\.id \}\}-\$\{\{ github\.event\.workflow_run\.head_sha \}\}/,
   );
+  assert.match(
+    imageWorkflow,
+    /^permissions:\n  contents: read\n  packages: write\n  id-token: write$/m,
+  );
+  assert.doesNotMatch(imageWorkflow, /^\s+attestations:\s+write$/m);
 
   for (const image of ["quest-frontend", "quest-backend", "quest-migrator"]) {
     assert.match(imageWorkflow, new RegExp(`ghcr\.io/\\$\\{\\{ github\.repository_owner \\}\\}/${image}`));
@@ -510,13 +515,18 @@ test("Compose deployment consumes only a protected, successful, signed digest re
   assert.match(deployWorkflow, /^permissions:\n  actions: read\n  contents: read\n  packages: read$/m);
   assert.match(deployWorkflow, /environment: production-compose/);
   assert.match(deployWorkflow, /gh run view "\$build_run_id"/);
+  assert.match(deployWorkflow, /actions\/runs\/\$build_run_id\/artifacts\?per_page=100/);
+  assert.match(deployWorkflow, /container-release-manifest-\[0-9\]\+\-\[0-9a-f\]\{40\}/);
+  assert.match(deployWorkflow, /ci_run_id="\$\{BASH_REMATCH\[1\]\}"/);
+  assert.match(deployWorkflow, /release_sha="\$\{BASH_REMATCH\[2\]\}"/);
   assert.match(deployWorkflow, /workflowName.*Build container images/);
   assert.match(deployWorkflow, /conclusion.*success/);
   assert.match(deployWorkflow, /event.*workflow_run/);
   assert.match(deployWorkflow, /headBranch.*main/);
-  assert.match(deployWorkflow, /headSha.*release_sha/);
-  assert.match(deployWorkflow, /name: container-release-manifest-\$\{\{ needs\.resolve-build\.outputs\.release_sha \}\}/);
+  assert.match(deployWorkflow, /headSha.*ci_run_json/);
+  assert.match(deployWorkflow, /name: \$\{\{ needs\.resolve-build\.outputs\.artifact_name \}\}/);
   assert.match(deployWorkflow, /run-id: \$\{\{ needs\.resolve-build\.outputs\.build_run_id \}\}/);
+  assert.match(deployWorkflow, /workflowName.*CI/);
   assert.match(
     deployWorkflow,
     /COSIGN_CERTIFICATE_IDENTITY: https:\/\/github\.com\/Russelrip\/QuestEsports\/.github\/workflows\/build-container-images\.yml@refs\/heads\/main/,
@@ -539,6 +549,18 @@ test("Compose deployment consumes only a protected, successful, signed digest re
     .filter((line) => /(?:printf|echo)[^\n]*SSH_(?:PRIVATE_KEY|HOST_KEY)/.test(line))
     .filter((line) => !line.includes(">"));
   assert.deepEqual(shellSecretOutputLines, [], "SSH secrets must only be written to files, never printed");
+});
+
+test("deployment rejects a downstream build SHA that differs from its upstream CI artifact SHA", () => {
+  const downstreamBuildSha = "a".repeat(40);
+  const upstreamCiSha = "b".repeat(40);
+  const artifactName = `container-release-manifest-123456-${upstreamCiSha}`;
+  const artifactBinding = artifactName.match(/^container-release-manifest-([0-9]+)-([0-9a-f]{40})$/);
+  assert.ok(artifactBinding, "the fixture artifact must carry an upstream run ID and full SHA");
+  assert.notEqual(downstreamBuildSha, artifactBinding[2]);
+  assert.match(deployWorkflow, /\.headSha.*ci_run_json/);
+  assert.match(deployWorkflow, /\.headSha.*release_sha/);
+  assert.match(deployWorkflow, /artifact_name/);
 });
 
 test("frontend SSR selects an explicit internal API origin while browsers keep the public origin", () => {

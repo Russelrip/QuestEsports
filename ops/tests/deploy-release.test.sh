@@ -6,6 +6,7 @@ release_script="$script_directory/deploy/release.sh"
 cutover_script="$script_directory/deploy/cutover.sh"
 host_validation_script="$script_directory/deploy/validate-host.sh"
 workflow_file="$script_directory/../.github/workflows/build-container-images.yml"
+deploy_workflow_file="$script_directory/../.github/workflows/deploy-compose.yml"
 work_directory="$(mktemp -d)"
 trap 'rm -rf -- "$work_directory"' EXIT
 base_path="$PATH"
@@ -654,6 +655,50 @@ if grep -Fq 'POSTGRES_17_BOOKWORM_DIGEST#sha256' <<<"$workflow_source"; then
 fi
 grep -Eq "postgres_image=postgres:17-bookworm@%s.*POSTGRES_17_BOOKWORM_DIGEST" "$workflow_file" || {
   printf 'FAIL: workflow does not emit the complete PostgreSQL digest reference\n' >&2
+  exit 1
+}
+
+deploy_workflow_source="$(< "$deploy_workflow_file")"
+if grep -Eq '^\s+attestations:\s+write$' "$workflow_file"; then
+  printf 'FAIL: image workflow requests unnecessary GitHub attestations write permission\n' >&2
+  exit 1
+fi
+grep -Fq 'actions/runs/$build_run_id/artifacts?per_page=100' "$deploy_workflow_file" || {
+  printf 'FAIL: deploy workflow does not enumerate artifacts from the selected build run\n' >&2
+  exit 1
+}
+grep -Fq 'ci_run_id="${BASH_REMATCH[1]}"' "$deploy_workflow_file" || {
+  printf 'FAIL: deploy workflow does not bind the artifact to its upstream CI run ID\n' >&2
+  exit 1
+}
+grep -Fq 'release_sha="${BASH_REMATCH[2]}"' "$deploy_workflow_file" || {
+  printf 'FAIL: deploy workflow does not bind release SHA to the artifact name\n' >&2
+  exit 1
+}
+if grep -Eq 'release_sha=.*headSha|release_sha=.*head_sha' "$deploy_workflow_file"; then
+  printf 'FAIL: deploy workflow derives release SHA from the downstream build run SHA\n' >&2
+  exit 1
+fi
+
+# Binding fixture: a downstream Build container images run may expose a
+# different head SHA. The artifact name must carry the upstream CI run ID and
+# SHA, and the latter must become the deploy release SHA.
+fixture_build_head_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+fixture_upstream_ci_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+fixture_artifact_name="container-release-manifest-123456-$fixture_upstream_ci_sha"
+if [[ "$fixture_artifact_name" =~ ^container-release-manifest-([0-9]+)-([0-9a-f]{40})$ ]]; then
+  fixture_artifact_ci_run_id="${BASH_REMATCH[1]}"
+  fixture_artifact_release_sha="${BASH_REMATCH[2]}"
+else
+  fixture_artifact_ci_run_id=''
+  fixture_artifact_release_sha=''
+  gate_failure 'upstream CI artifact binding fixture name was not accepted'
+fi
+[[ "$fixture_build_head_sha" != "$fixture_artifact_release_sha" ]] || gate_failure 'binding fixture did not model a differing downstream build SHA'
+[[ "$fixture_artifact_release_sha" == "$fixture_upstream_ci_sha" ]] || gate_failure 'binding fixture did not select the upstream CI SHA'
+[[ "$fixture_artifact_ci_run_id" == 123456 ]] || gate_failure 'binding fixture did not select the upstream CI run ID'
+grep -Eq 'workflowName.*CI' <<<"$deploy_workflow_source" || {
+  printf 'FAIL: deploy workflow does not validate the upstream CI workflow identity\n' >&2
   exit 1
 }
 
