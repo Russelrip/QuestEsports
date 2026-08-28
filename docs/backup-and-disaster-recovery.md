@@ -325,7 +325,8 @@ mode-600 recovery environment, an absolute encrypted archive and exact
 `.sha256` sibling, an offline age identity, a private mode-600 disposable-target
 sentinel, and roots below a previously absent dedicated upload parent that the
 wrapper creates atomically. The `DIRECT_URL` loopback host/port must match the
-inspected container's PostgreSQL port mapping,
+inspected container's PostgreSQL port mapping, and `QUEST_RUNTIME_DATABASE_URL`
+must use `quest_runtime` against that same endpoint,
 and pinned PostgreSQL 17 `psql`, `pg_restore`, and `pg_dump`. It also requires
 an operator-recorded source-version evidence file, an executable repository
 security-verifier hook, executable disposable failure-injection hooks, and an
@@ -356,8 +357,9 @@ VALORANT health/CA/database status, validation freeze and writer rejection,
 named negative injections, measured resources, and explicit owner-approved
 RPO/RTO decisions.
 No database URL, credential, token, or secret environment value is printed or
-written to the summary/observations; only the approved failure-hook paths and
-hashes are retained in the signed artifact inventory. Verify only with:
+written to the summary/observations; only approved failure-hook paths,
+executable hashes, configured endpoint IDs, and endpoint hashes are retained in
+the signed artifact inventory. Verify only with:
 
 The recorded upload checksums are post-restore tree checksums. They are not
 claims that the restored tree equals the source unless a source per-file
@@ -376,7 +378,10 @@ REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY=/secure/recovery/rehearsal-trusted-signing-
 The verifier recomputes the selected archive checksum and every deterministic
 evidence-artifact hash, and requires the detached manifest signature from the
 trusted public key. Hooks receive only the disposable isolated-target context;
-their basenames and exact accepted outputs are retained in private evidence.
+their absolute paths, executable hashes, configured endpoint identities, and
+exact accepted outputs are retained in private evidence. The wrapper independently
+checks the nonce through `pg_stat_activity` inside the inspected container and
+uses the least-privileged `quest_runtime` URL for the Quest read probe.
 The verifier rejects stale, malformed, incomplete, production-looking, or
 file-existence-only evidence. A valid rehearsal still does not prove a live
 VPS, Supabase project, rclone remote, Docker deployment, or the sibling
@@ -390,7 +395,11 @@ transparent compatible restore.
 2. Download both through the Google Drive UI or a recovery-only rclone configuration to an access-controlled recovery host.
 3. Copy `ops/quest-esports-recovery.env.example` outside the repository and set:
    - `DIRECT_URL` to disposable PostgreSQL 17, never Paris production.
-   - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` to new empty temporary directories.
+   - `QUEST_RUNTIME_DATABASE_URL` to the `quest_runtime` credential for the same
+     disposable database endpoint.
+   - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` below a new, dedicated parent that
+     does not already exist; the wrapper creates and removes that parent
+     atomically.
    - `BACKUP_AGE_IDENTITY_FILE` to the offline identity path.
 4. Restrict the recovery environment to the recovery operator.
 5. Independently verify the checksum.
