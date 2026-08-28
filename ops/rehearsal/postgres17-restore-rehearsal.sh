@@ -149,7 +149,7 @@ archive_scope="$(manifest_value database_scope)"; included="$(manifest_value val
 [[ "$archive_scope" == application_public_and_valorant_schemas && "$included" == true ]] || fail "archive manifest is not the exact two-schema scope"
 [[ "$(basename "$(manifest_value public_upload_root)")" == "$(basename "$public_root")" && "$(basename "$(manifest_value private_upload_root)")" == "$(basename "$private_root")" ]] || fail "archive manifest upload scope does not match targets"
 
-start="$(date -u +%s)"; start_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+start="$(date -u +%s)"; start_utc="$(date -u -d "@$start" +%Y-%m-%dT%H:%M:%SZ)"
 
 pg_stage="$scratch/pg17"; mkdir -p "$pg_stage"
 if [[ -n "${POSTGRES17_BIN:-}" ]]; then
@@ -184,13 +184,18 @@ SQL
 validate_binding_output() {
   local output="$1" expected_app="$2" app database session_user current_user server_port backend_pid
   IFS='|' read -r app database session_user current_user server_port backend_pid < "$output"
-  [[ "$app" == "$expected_app" && "$database" == "$target_database" && "$session_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$current_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$server_port" == 5432 && "$backend_pid" =~ ^[0-9]+$ ]] || return 1
+  [[ "$app" == "$expected_app" && "$database" == "$target_database" && "$session_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$current_user" == "$session_user" && "$server_port" == 5432 && "$backend_pid" =~ ^[0-9]+$ ]] || return 1
   binding_database="$database"; binding_session_user="$session_user"; binding_current_user="$current_user"; binding_server_port="$server_port"; binding_backend_pid="$backend_pid"
+}
+validate_container_binding() {
+  local output="$1" observed_app observed_database observed_user observed_state observed_port observed_pid
+  IFS='|' read -r observed_app observed_database observed_user observed_state observed_port observed_pid < "$output"
+  [[ "$observed_app" == "$rehearsal_app_name" && "$observed_database" == "$binding_database" && "$observed_user" == "$binding_session_user" && "$observed_state" == active && "$observed_port" == "$binding_server_port" && "$observed_pid" == "$binding_backend_pid" ]] || return 1
 }
 target_identity="$(docker container inspect --size --format '{{.Id}}|{{.Name}}|{{.State.Running}}|{{.Config.Image}}|{{.SizeRw}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "disposable target container identity could not be verified"
 printf '%s\n' "$target_identity" > "$scratch/target-docker-before"
 IFS='|' read -r inspected_id inspected_name inspected_running inspected_image container_disk_bytes <<< "$target_identity"
-[[ "$inspected_id" == "${sentinel_cfg[container_id]}" && "$inspected_name" == /quest-rehearsal-* && "$inspected_running" == true && "$inspected_image" =~ ^postgres:17([.][0-9]+)?(-bookworm)?@sha256:[0-9a-f]{64}$ && "$container_disk_bytes" =~ ^[0-9]+$ ]] || fail "disposable target container identity and immutable PostgreSQL 17 image are unsafe"
+[[ "$inspected_id" == "${sentinel_cfg[container_id]}" && "$inspected_name" == /quest-rehearsal-* && "$inspected_running" == true && "$inspected_image" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ && "$container_disk_bytes" =~ ^[0-9]+$ ]] || fail "disposable target container identity and immutable PostgreSQL 17 image are unsafe"
 url_endpoint="$(python3 - "$db_url" <<'PY'
 from urllib.parse import urlsplit
 import sys
@@ -222,6 +227,7 @@ validate_binding_output "$scratch/connection-binding" "$rehearsal_app_name" || f
 docker_psql_query() { docker container exec --user postgres "${sentinel_cfg[container_id]}" psql -X -A -t -F '|' -d postgres -c "$2" >"$1" 2>/dev/null; }
 docker_psql_query "$scratch/docker-connection-binding" "SELECT application_name || '|' || datname || '|' || usename || '|' || COALESCE(state,'') || '|' || COALESCE(inet_server_port(),0) || '|' || pid FROM pg_stat_activity WHERE application_name='$rehearsal_app_name' AND backend_type='client backend'" || fail "independent container connection binding probe failed"
 [[ "$(wc -l < "$scratch/docker-connection-binding" | tr -d ' ')" == 1 ]] || fail "independent container connection binding did not observe exactly one active session"
+validate_container_binding "$scratch/docker-connection-binding" || fail "DIRECT_URL active connection does not match the independent container binding"
 stop_binding_session
 nonce_sha256="$(printf '%s' "$rehearsal_nonce" | sha256sum | cut -d' ' -f1)"
 psql_query "$scratch/target-sentinel" "SELECT current_setting('quest.rehearsal_target_id', true)" || fail "disposable target sentinel query failed"
@@ -229,7 +235,7 @@ psql_query "$scratch/target-sentinel" "SELECT current_setting('quest.rehearsal_t
 psql_query "$scratch/target-server-version" "SELECT current_setting('server_version_num')" || fail "target server version query failed"
 target_server_version="$(tr -d '[:space:]' < "$scratch/target-server-version")"; [[ "$target_server_version" =~ ^17[0-9]{4}$ ]] || fail "disposable target server is not PostgreSQL 17"
 validate_extensions() { local file="$1" count; count="$(wc -l < "$file" | tr -d ' ')"; [[ "$count" == 1 ]] && grep -qx 'plpgsql|1.0' "$file"; }
-validate_settings() { local file="$1" count; count="$(wc -l < "$file" | tr -d ' ')"; [[ "$count" == 7 ]] && grep -Eq '^server_version\|PostgreSQL_17([.][0-9]+)?$' "$file" && grep -Eq '^server_version_num\|17[0-9]{4}$' "$file" && grep -qx 'ssl|on' "$file" && grep -Eq '^ssl_min_protocol_version\|TLSv1\.(2|3)$' "$file" && grep -qx 'row_security|on' "$file" && grep -qx 'default_transaction_read_only|off' "$file" && grep -Eq '^listen_addresses\|([*]|localhost|127\.0\.0\.1)$' "$file"; }
+validate_settings() { local file="$1" count; count="$(wc -l < "$file" | tr -d ' ')"; [[ "$count" == 7 ]] && grep -Eq '^server_version\|17[.][0-9]+(_[A-Za-z0-9_.:+*/-]+)?$' "$file" && grep -Eq '^server_version_num\|17[0-9]{4}$' "$file" && grep -qx 'ssl|on' "$file" && grep -Eq '^ssl_min_protocol_version\|TLSv1\.(2|3)$' "$file" && grep -qx 'row_security|on' "$file" && grep -qx 'default_transaction_read_only|off' "$file" && grep -Eq '^listen_addresses\|([*]|localhost|127\.0\.0\.1)$' "$file"; }
 psql_query "$scratch/ext-before" "SELECT extname || '|' || extversion FROM pg_extension ORDER BY extname" || fail "pre-restore extension inventory query failed"
 validate_extensions "$scratch/ext-before" || fail "pre-restore extension inventory is missing required PostgreSQL extensions"
 extensions_before_sha256="$(sha256sum "$scratch/ext-before" | cut -d' ' -f1)"; extensions_before_count="$(wc -l < "$scratch/ext-before" | tr -d ' ')"
@@ -255,14 +261,14 @@ gate=none; if [[ "$source_major" != 17 ]]; then [[ "${SOURCE_MAJOR_MISMATCH_APPR
 
 isolated="$scratch/BACKUP_ENV_FILE"
 { printf 'DIRECT_URL='; printf '%q' "$db_url"; printf '\nUPLOAD_ROOT='; printf '%q' "$public_root"; printf '\nPRIVATE_UPLOAD_ROOT='; printf '%q' "$private_root"; printf '\nBACKUP_AGE_IDENTITY_FILE='; printf '%q' "$identity"; printf '\n'; } > "$isolated"; chmod 600 "$isolated"
-[[ -x /usr/bin/time ]] || fail "/usr/bin/time is required for measured resource evidence"
-env -u BASH_ENV -u ENV RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION BACKUP_ENV_FILE="$isolated" RESTORE_COUNTDOWN_SECONDS=0 /usr/bin/time -f 'cpu_seconds=%U\npeak_memory_kb=%M' -o "$scratch/resource" bash "$restore" "$archive" >"$scratch/restore.log" 2>&1 || fail "existing restore primitive failed"
+time_command="${REHEARSAL_TIME_COMMAND:-/usr/bin/time}"; [[ "$time_command" == /* && -x "$time_command" && ! -L "$time_command" ]] || fail "REHEARSAL_TIME_COMMAND must be an absolute executable resource timer"; check_path "$time_command" REHEARSAL_TIME_COMMAND
+env -u BASH_ENV -u ENV RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION BACKUP_ENV_FILE="$isolated" RESTORE_COUNTDOWN_SECONDS=0 "$time_command" -f 'cpu_seconds=%U\npeak_memory_kb=%M' -o "$scratch/resource" bash "$restore" "$archive" >"$scratch/restore.log" 2>&1 || fail "existing restore primitive failed"
 cpu="$(grep -m1 '^cpu_seconds=' "$scratch/resource" | cut -d= -f2)"; memory="$(grep -m1 '^peak_memory_kb=' "$scratch/resource" | cut -d= -f2)"
 [[ "$cpu" =~ ^[0-9]+([.][0-9]+)?$ && "$memory" =~ ^[0-9]+$ ]] || fail "resource measurement is incomplete"
 target_identity_after="$(docker container inspect --size --format '{{.Id}}|{{.Name}}|{{.State.Running}}|{{.Config.Image}}|{{.SizeRw}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "disposable target container could not be re-inspected"
 printf '%s\n' "$target_identity_after" > "$scratch/target-docker-after"
 IFS='|' read -r inspected_id_after inspected_name_after inspected_running_after inspected_image_after container_disk_bytes_after <<< "$target_identity_after"
-[[ "$inspected_id_after" == "${sentinel_cfg[container_id]}" && "$inspected_name_after" == /quest-rehearsal-* && "$inspected_running_after" == true && "$inspected_image_after" =~ ^postgres:17([.][0-9]+)?(-bookworm)?@sha256:[0-9a-f]{64}$ && "$container_disk_bytes_after" =~ ^[0-9]+$ ]] || fail "post-restore target container identity and immutable PostgreSQL 17 image are unsafe"
+[[ "$inspected_id_after" == "${sentinel_cfg[container_id]}" && "$inspected_name_after" == /quest-rehearsal-* && "$inspected_running_after" == true && "$inspected_image_after" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ && "$container_disk_bytes_after" =~ ^[0-9]+$ ]] || fail "post-restore target container identity and immutable PostgreSQL 17 image are unsafe"
 mapping_json_after="$(docker container inspect --format '{{json .NetworkSettings.Ports}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "post-restore target port mapping could not be inspected"
 printf '%s\n' "$mapping_json_after" > "$scratch/target-port-mapping-after"
 mapping_after="$(python3 - "$mapping_json_after" <<'PY'
@@ -281,6 +287,7 @@ start_binding_session "$rehearsal_app_name_after" "$scratch/connection-binding-a
 validate_binding_output "$scratch/connection-binding-after" "$rehearsal_app_name_after" || fail "post-restore active connection binding is malformed"
 docker_psql_query "$scratch/docker-connection-binding-after" "SELECT application_name || '|' || datname || '|' || usename || '|' || COALESCE(state,'') || '|' || COALESCE(inet_server_port(),0) || '|' || pid FROM pg_stat_activity WHERE application_name='$rehearsal_app_name_after' AND backend_type='client backend'" || fail "post-restore independent container connection binding probe failed"
 [[ "$(wc -l < "$scratch/docker-connection-binding-after" | tr -d ' ')" == 1 ]] || fail "post-restore independent container connection binding did not observe exactly one active session"
+rehearsal_app_name="$rehearsal_app_name_after"; validate_container_binding "$scratch/docker-connection-binding-after" || fail "post-restore DIRECT_URL connection does not match the independent container binding"
 stop_binding_session
 nonce_after_sha256="$(printf '%s' "$rehearsal_nonce_after" | sha256sum | cut -d' ' -f1)"
 psql_query "$scratch/database-size" "SELECT pg_database_size(current_database())" || fail "database size query failed"
@@ -378,6 +385,7 @@ validate_failure_output() {
 }
 no_admission_hook="${NO_WRITER_ADMISSION_COMMAND:-}"; [[ "$no_admission_hook" == /* && -x "$no_admission_hook" && ! -L "$no_admission_hook" ]] || fail "NO_WRITER_ADMISSION_COMMAND must be an absolute executable hook"; check_path "$no_admission_hook" NO_WRITER_ADMISSION_COMMAND
 run_exact_hook "$no_admission_hook" verified "$scratch/no-admission.output" || fail "no-writer-admission hook did not return verified"
+declare -A hook_source_sha256=() hook_staged_sha256=()
 for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_service_health attempted_mutation_callback; do
   var="FAILURE_INJECTION_${injection^^}_COMMAND"; hook="${!var:-}"
   [[ "$hook" == /* && -x "$hook" && ! -L "$hook" ]] || fail "failure injection $injection needs an executable hook"
@@ -394,7 +402,9 @@ for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_ser
   cp -- "$hook" "$staged_hook"; chmod 700 "$staged_hook"
   configured_hook_sha256="$(sha256sum "$hook" | cut -d' ' -f1)"; staged_hook_sha256_before="$(sha256sum "$staged_hook" | cut -d' ' -f1)"
   [[ "$configured_hook_sha256" == "$staged_hook_sha256_before" ]] || fail "failure injection $injection staging hash mismatch"
+  hook_source_sha256["$injection"]="$configured_hook_sha256"; hook_staged_sha256["$injection"]="$staged_hook_sha256_before"
   env -u BASH_ENV -u ENV DIRECT_URL="$db_url" DATABASE_URL="$db_url" "$staged_hook" >"$scratch/$injection.output" 2>&1 || fail "failure injection $injection hook failed"
+  [[ "$(sha256sum "$hook" | cut -d' ' -f1)" == "$configured_hook_sha256" ]] || fail "failure injection $injection source executable changed during execution"
   [[ "$(sha256sum "$staged_hook" | cut -d' ' -f1)" == "$staged_hook_sha256_before" ]] || fail "failure injection $injection staged executable changed during execution"
   mv -f -- "$staged_hook" "$evidence/rehearsal-failure-hook-$injection.sh"
   validate_failure_output "$injection" "$scratch/$injection.output" "$endpoint_id" "$endpoint_sha256" || fail "failure injection $injection evidence is not structured or contained"
@@ -410,7 +420,8 @@ for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_ser
     attempted_mutation_callback) endpoint_id=quest-api; endpoint_sha256="$(printf '%s' "$callback" | sha256sum | cut -d' ' -f1)" ;;
   esac
   staged_hook="$evidence/rehearsal-failure-hook-$injection.sh"
-  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$injection" "$hook" "$(sha256sum "$hook" | cut -d' ' -f1)" "$staged_hook" "$(sha256sum "$staged_hook" | cut -d' ' -f1)" "$endpoint_id" "$endpoint_sha256" passed "$(sha256sum "$scratch/$injection.output" | cut -d' ' -f1)" >> "$failure_inventory"
+  [[ "$(sha256sum "$hook" | cut -d' ' -f1)" == "${hook_source_sha256[$injection]}" && "$(sha256sum "$staged_hook" | cut -d' ' -f1)" == "${hook_staged_sha256[$injection]}" ]] || fail "failure injection $injection executable identity changed before evidence emission"
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$injection" "$hook" "${hook_source_sha256[$injection]}" "$staged_hook" "${hook_staged_sha256[$injection]}" "$endpoint_id" "$endpoint_sha256" passed "$(sha256sum "$scratch/$injection.output" | cut -d' ' -f1)" >> "$failure_inventory"
 done
 rpo="${REHEARSAL_RPO_SECONDS:-}"; rpo_decision="${REHEARSAL_RPO_DECISION:-}"
 rto="${REHEARSAL_RTO_SECONDS:-}"; rto_decision="${REHEARSAL_RTO_DECISION:-}"
@@ -418,10 +429,12 @@ rto="${REHEARSAL_RTO_SECONDS:-}"; rto_decision="${REHEARSAL_RTO_DECISION:-}"
 [[ "$rto" =~ ^[0-9]+$ && "$rto" -gt 0 && ( "$rto_decision" == met || "$rto_decision" == not_met ) ]] || fail "approved RTO and explicit decision are required"
 decision="$rto_decision"
 disk="$(du -sk -- "$public_root" "$private_root" | awk '{sum += $1} END {print sum * 1024}')"; [[ "$disk" =~ ^[0-9]+$ ]] || fail "disk resource measurement failed"
-end="$(date -u +%s)"; end_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; duration=$((end-start))
+end="$(date -u +%s)"; end_utc="$(date -u -d "@$end" +%Y-%m-%dT%H:%M:%SZ)"; duration=$((end-start))
 
 tmp="$evidence/.rehearsal-evidence.$$"
-for artifact in roles memberships owners grants acl ext settings rls quest-migrations-before valorant-migrations-before quest-migrations valorant-migrations; do cp -- "$scratch/$artifact" "$evidence/rehearsal-${artifact}.tsv"; chmod 600 "$evidence/rehearsal-${artifact}.tsv"; done
+for artifact in roles memberships owners grants acl ext settings rls; do cp -- "$scratch/$artifact" "$evidence/rehearsal-${artifact}.tsv"; chmod 600 "$evidence/rehearsal-${artifact}.tsv"; done
+cp -- "$scratch/quest-migrations.tsv" "$evidence/rehearsal-quest-migrations.tsv"; cp -- "$scratch/valorant-migrations.tsv" "$evidence/rehearsal-valorant-migrations.tsv"; chmod 600 "$evidence/rehearsal-quest-migrations.tsv" "$evidence/rehearsal-valorant-migrations.tsv"
+cp -- "$scratch/quest-migrations-before.tsv" "$evidence/rehearsal-quest-migrations-before.tsv"; cp -- "$scratch/valorant-migrations-before.tsv" "$evidence/rehearsal-valorant-migrations-before.tsv"; chmod 600 "$evidence/rehearsal-quest-migrations-before.tsv" "$evidence/rehearsal-valorant-migrations-before.tsv"
 cp -- "$scratch/ext-before" "$evidence/rehearsal-ext-before.tsv"; cp -- "$scratch/settings-before" "$evidence/rehearsal-settings-before.tsv"; chmod 600 "$evidence/rehearsal-ext-before.tsv" "$evidence/rehearsal-settings-before.tsv"
 for artifact in target-docker-before target-port-mapping target-port-mapping-after connection-binding docker-connection-binding target-docker-after connection-binding-after docker-connection-binding-after; do cp -- "$scratch/$artifact" "$evidence/rehearsal-${artifact}.txt"; chmod 600 "$evidence/rehearsal-${artifact}.txt"; done
 cp -- "$scratch/quest-read-probe" "$evidence/rehearsal-quest-read-probe.tsv"; chmod 600 "$evidence/rehearsal-quest-read-probe.tsv"
@@ -448,7 +461,7 @@ printf 'target_host=%s\ntarget_port=%s\ntarget_database_name=%s\ntarget_nonce_sh
 printf 'target_docker_before_sha256=%s\ntarget_mapping_sha256=%s\ntarget_mapping_after_sha256=%s\ntarget_connection_before_sha256=%s\ntarget_docker_connection_before_sha256=%s\ntarget_docker_after_sha256=%s\ntarget_connection_after_sha256=%s\ntarget_docker_connection_after_sha256=%s\n' "$target_docker_before_sha256" "$target_mapping_sha256" "$target_mapping_after_sha256" "$target_connection_before_sha256" "$target_docker_connection_before_sha256" "$target_docker_after_sha256" "$target_connection_after_sha256" "$target_docker_connection_after_sha256" >> "$tmp"
 chmod 600 "$tmp"; mv -f -- "$tmp" "$evidence/rehearsal-evidence.env"
 manifest="$evidence/rehearsal-evidence.manifest"; signature="$evidence/rehearsal-evidence.sig"
-artifact_list=(rehearsal-evidence.env rehearsal-observations.env rehearsal-source-version.env rehearsal-security-verifier.output rehearsal-target-sentinel.env rehearsal-failure-injections.tsv rehearsal-failure-bad_checksum.output rehearsal-failure-bad_decryption.output rehearsal-failure-wrong_ca.output rehearsal-failure-blocked_network.output rehearsal-failure-failed_service_health.output rehearsal-failure-attempted_mutation_callback.output rehearsal-roles.tsv rehearsal-memberships.tsv rehearsal-owners.tsv rehearsal-grants.tsv rehearsal-acl.tsv rehearsal-ext-before.tsv rehearsal-ext.tsv rehearsal-settings-before.tsv rehearsal-settings.tsv rehearsal-rls.tsv rehearsal-quest-migrations-before.tsv rehearsal-valorant-migrations-before.tsv rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv rehearsal-target-docker-before.txt rehearsal-target-port-mapping.txt rehearsal-target-port-mapping-after.txt rehearsal-connection-binding.txt rehearsal-docker-connection-binding.txt rehearsal-target-docker-after.txt rehearsal-connection-binding-after.txt rehearsal-docker-connection-binding-after.txt rehearsal-quest-read-probe.tsv)
+artifact_list=(rehearsal-evidence.env rehearsal-observations.env rehearsal-source-version.env rehearsal-security-verifier.output rehearsal-target-sentinel.env rehearsal-failure-injections.tsv rehearsal-failure-bad_checksum.output rehearsal-failure-bad_decryption.output rehearsal-failure-wrong_ca.output rehearsal-failure-blocked_network.output rehearsal-failure-failed_service_health.output rehearsal-failure-attempted_mutation_callback.output rehearsal-failure-hook-bad_checksum.sh rehearsal-failure-hook-bad_decryption.sh rehearsal-failure-hook-wrong_ca.sh rehearsal-failure-hook-blocked_network.sh rehearsal-failure-hook-failed_service_health.sh rehearsal-failure-hook-attempted_mutation_callback.sh rehearsal-roles.tsv rehearsal-memberships.tsv rehearsal-owners.tsv rehearsal-grants.tsv rehearsal-acl.tsv rehearsal-ext-before.tsv rehearsal-ext.tsv rehearsal-settings-before.tsv rehearsal-settings.tsv rehearsal-rls.tsv rehearsal-quest-migrations-before.tsv rehearsal-valorant-migrations-before.tsv rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv rehearsal-target-docker-before.txt rehearsal-target-port-mapping.txt rehearsal-target-port-mapping-after.txt rehearsal-connection-binding.txt rehearsal-docker-connection-binding.txt rehearsal-target-docker-after.txt rehearsal-connection-binding-after.txt rehearsal-docker-connection-binding-after.txt rehearsal-quest-read-probe.tsv)
 (cd -- "$evidence" && for artifact in "${artifact_list[@]}"; do [[ -f "$artifact" && ! -L "$artifact" ]] || exit 1; sha256sum -- "$artifact"; done) > "$manifest" || fail "evidence manifest creation failed"
 chmod 600 "$manifest"; openssl dgst -sha256 -sign "$signing_key" -out "$signature" "$manifest" >/dev/null 2>&1 || fail "evidence bundle signature failed"; chmod 600 "$signature"
 echo "Restore rehearsal completed; evidence written to the supplied disposable evidence directory."

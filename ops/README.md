@@ -62,7 +62,10 @@ directory (or three individually pinned client paths). `BACKUP_ENV_FILE` is
 parsed as data and copied into a temporary private environment; it is never
 sourced by the wrapper. Production-looking URLs/paths, symlinks, nested roots,
 unsafe permissions, missing manifest scope, and source-major mismatches without
-an explicit logical-migration approval are refused.
+an explicit logical-migration approval are refused. The target image contract is
+exactly `postgres:17-bookworm@sha256:<64 lowercase hex characters>`. The raw
+`server_version` inventory records PostgreSQL's normal `17.<minor>` value with
+an optional package suffix; it does not use a fabricated `PostgreSQL_17` label.
 
 Provide these additional disposable-only variables: `REHEARSAL_EVIDENCE_DIR`,
 `QUEST_RUNTIME_DATABASE_URL` (the `quest_runtime` credential for the same
@@ -81,7 +84,8 @@ CA, blocked network, failed service health, and attempted mutation/callback),
 `REHEARSAL_RPO_SECONDS`, `REHEARSAL_RPO_DECISION=met|not_met`,
 `REHEARSAL_RTO_SECONDS`, and `REHEARSAL_RTO_DECISION=met|not_met`. These are
 owner-approved objectives; measured duration/resource values are emitted by
-the wrapper. The URLs must point to disposable services and the CA must be
+the wrapper. `REHEARSAL_TIME_COMMAND` may replace `/usr/bin/time` only with an
+absolute, non-symlink executable for an approved disposable harness. The URLs must point to disposable services and the CA must be
 supplied explicitly. Health probes require JSON
 `status=ok`; readiness also requires `db=up`, and frozen mutation/callback
 probes must return `503` with `X-Write-Freeze: validation`.
@@ -122,7 +126,10 @@ SHA-256 binding to the fixed-name
 `rehearsal-observations.env`; the verifier hashes and parses that artifact and
 the raw role/inventory outputs before accepting the summary. Upload checksums
 are explicitly post-restore tree checksums, not source-equivalence claims
-unless a source per-file inventory was also supplied. Evidence never contains
+unless a source per-file inventory was also supplied. Every failure hook is
+staged into the evidence directory before execution; its configured source hash,
+staged hash, signed manifest entry, and pre-execution identity must agree.
+Evidence never contains
 database URLs, credentials, tokens, or secret environment contents; these are
 not written to the summary/observations. The signed failure-injection inventory
 contains only approved hook paths, executable hashes, configured endpoint IDs,
