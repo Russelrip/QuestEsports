@@ -24,7 +24,9 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 | Database | Supabase PostgreSQL, Paris `eu-west-3` |
 | Backend | France VPS, `/var/www/QuestEsports`, PM2 process `quest-backend` owned by `deploy` |
 | Public uploads | `/srv/quest-esports/uploads` |
+| Public event-album previews | `/srv/quest-esports/uploads/poster-images` (WebP previews) |
 | Private uploads | `/srv/quest-esports/private` |
+| Private event-album originals | `/srv/quest-esports/private/event-album-originals` (mode `700` tree) |
 | Backup staging | `/srv/quest-esports/backups`, seven-day local retention |
 | Active off-site destinations | Protected environment labels and destinations; owner verification required |
 | Historical destination | Retained only according to the protected multi-remote configuration; owner verification required |
@@ -50,9 +52,17 @@ remain owner-verification items and must never be printed in alerts or logs.
 Each `quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc` contains:
 
 - `database.dump`: PostgreSQL custom-format dump of the application-owned `public` schema and, when the `valorant` schema exists, the application-owned `valorant` schema too. The manifest records the selected database scope.
-- `manifest.txt`: creation time, source host, dump format, source upload paths, and the two-pass file snapshot strategy.
+- `manifest.txt`: creation time, source host, dump format, public/private upload roots, explicit event-album preview/original roots, and the two-pass file snapshot strategy.
 - The entire public upload directory.
 - The entire private upload directory, including protected payment evidence.
+
+The event-album upload contract stores a WebP preview in
+`/srv/quest-esports/uploads/poster-images` and the untouched upload in
+`/srv/quest-esports/private/event-album-originals`. The `ImageAsset` row keeps
+the preview `storedFilename` and the client-provided `originalName`, which are
+used together to locate an original safely. A valid manifest names both
+event-album roots, and the archive contains both corresponding directories;
+a previews-only archive is rejected before restore staging.
 
 Each archive has a sibling `quest-production-....tar.gz.enc.sha256` checksum file.
 

@@ -41,18 +41,19 @@ cat > "$test_root/bin/tar" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == --list ]]; then
-  printf '%s\n' public/ private/ database.dump manifest.txt
+  printf '%s\n' public/ public/poster-images/ private/ private/event-album-originals/ database.dump manifest.txt
   exit 0
 fi
 directory=''
 for argument in "$@"; do
   [[ "$argument" == --directory=* ]] && directory="${argument#--directory=}"
 done
-mkdir -p "$directory/public" "$directory/private"
+mkdir -p "$directory/public/poster-images" "$directory/private/event-album-originals"
 printf 'fixture public file\n' > "$directory/public/file.txt"
 printf 'fixture private file\n' > "$directory/private/file.txt"
 printf 'fixture dump\n' > "$directory/database.dump"
-printf 'public_upload_root=%s\nprivate_upload_root=%s\n' "$TEST_ROOT/public" "$TEST_ROOT/private" > "$directory/manifest.txt"
+printf 'public_upload_root=%s\nprivate_upload_root=%s\npublic_event_album_preview_root=%s\nprivate_event_album_original_root=%s\n' \
+  "$TEST_ROOT/public" "$TEST_ROOT/private" "$TEST_ROOT/public/poster-images" "$TEST_ROOT/private/event-album-originals" > "$directory/manifest.txt"
 EOF
 
 cat > "$test_root/bin/pg_restore" <<'EOF'

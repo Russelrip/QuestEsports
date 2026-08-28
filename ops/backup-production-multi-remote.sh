@@ -206,6 +206,12 @@ for source_root in "$resolved_upload_root" "$resolved_private_root"; do
   fi
 done
 
+public_event_album_preview_root="$resolved_upload_root/poster-images"
+private_event_album_original_root="$resolved_private_root/event-album-originals"
+# Keep both event-album representations present in every filesystem snapshot.
+mkdir -p "$public_event_album_preview_root" "$private_event_album_original_root"
+chmod 700 "$resolved_private_root" "$private_event_album_original_root"
+
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 hostname_value="$(hostname -f 2>/dev/null || hostname)"
 archive_name="quest-production-${timestamp}.tar.gz.enc"
@@ -255,6 +261,8 @@ fi
   printf 'public_upload_root=%s\n' "$UPLOAD_ROOT"
   printf 'private_upload_root=%s\n' "$PRIVATE_UPLOAD_ROOT"
   printf 'file_snapshot_strategy=two_pass_union_around_database_dump\n'
+  printf 'public_event_album_preview_root=%s\n' "$public_event_album_preview_root"
+  printf 'private_event_album_original_root=%s\n' "$private_event_album_original_root"
 } > "$work_directory/manifest.txt"
 
 tar --create --gzip --file="$work_directory/payload.tar.gz" \

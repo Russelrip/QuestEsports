@@ -137,14 +137,26 @@ public_name="$(basename "$UPLOAD_ROOT")"
 private_name="$(basename "$PRIVATE_UPLOAD_ROOT")"
 manifest_public_root="$(grep -m1 '^public_upload_root=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
 manifest_private_root="$(grep -m1 '^private_upload_root=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
+manifest_public_preview_root="$(grep -m1 '^public_event_album_preview_root=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
+manifest_private_original_root="$(grep -m1 '^private_event_album_original_root=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
 if [[ -z "$manifest_public_root" || -z "$manifest_private_root" ||
-      "$(basename "$manifest_public_root")" != "$public_name" ||
-      "$(basename "$manifest_private_root")" != "$private_name" ]]; then
-  echo "The backup manifest does not match the configured upload directory names." >&2
+       -z "$manifest_public_preview_root" || -z "$manifest_private_original_root" ||
+       "$(basename "$manifest_public_root")" != "$public_name" ||
+       "$(basename "$manifest_private_root")" != "$private_name" ||
+       "$(basename "$manifest_public_preview_root")" != "poster-images" ||
+       "$(basename "$(dirname "$manifest_public_preview_root")")" != "$public_name" ||
+       "$(basename "$manifest_private_original_root")" != "event-album-originals" ||
+       "$(basename "$(dirname "$manifest_private_original_root")")" != "$private_name" ]]; then
+  echo "The backup manifest does not include the public previews and private event-album originals roots." >&2
   exit 1
 fi
 test -d "$work_directory/$public_name"
 test -d "$work_directory/$private_name"
+if [[ ! -d "$work_directory/$public_name/poster-images" ||
+      ! -d "$work_directory/$private_name/event-album-originals" ]]; then
+  echo "The backup archive is missing the public previews or private event-album originals root." >&2
+  exit 1
+fi
 
 mkdir -p "$(dirname "$UPLOAD_ROOT")" "$(dirname "$PRIVATE_UPLOAD_ROOT")"
 resolved_upload_root="$(realpath -m "$UPLOAD_ROOT")"
@@ -161,7 +173,7 @@ public_stage="$(mktemp -d "$(dirname "$resolved_upload_root")/.quest-restore-${p
 private_stage="$(mktemp -d "$(dirname "$resolved_private_root")/.quest-restore-${private_name}-XXXXXX")"
 rsync -a --delete "$work_directory/$public_name/" "$public_stage/"
 rsync -a --delete "$work_directory/$private_name/" "$private_stage/"
-chmod 700 "$private_stage"
+chmod 700 "$private_stage" "$private_stage/event-album-originals"
 
 echo "Restore manifest:"
 cat "$work_directory/manifest.txt"
@@ -193,7 +205,7 @@ if ! swap_directory "$private_stage" "$resolved_private_root" private_previous; 
 fi
 private_stage=""
 private_activated=true
-chmod 700 "$resolved_private_root"
+chmod 700 "$resolved_private_root" "$resolved_private_root/event-album-originals"
 
 if ! pg_restore --dbname="$DIRECT_URL" \
   --clean \
