@@ -18,6 +18,7 @@ const ORIGIN_CHECK_EXEMPT_PATHS = new Set([
 ]);
 const SAFE_PUBLIC_API_PATHS = [
   /^\/api\/health(?:\/(?:live|ready))?$/,
+  /^\/api\/health\/write-freeze$/,
   /^\/api\/openapi\.json$/,
   /^\/api\/auth\/(?:google|discord)\/start$/,
   /^\/api\/mobile\/auth\/oauth\/(?:google|discord)\/start$/,

@@ -57,6 +57,7 @@ const apiRemotePattern = parsedApiUrl
   : null;
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   async redirects() {
     return [
       { source: "/admin/valorant/teams", destination: "/admin/valorant", permanent: false },

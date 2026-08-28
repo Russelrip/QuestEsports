@@ -25,27 +25,34 @@ test("production restore passes the target database through pg_restore --dbname"
   assert.match(restoreScript, /rollback_activated_directory/);
 });
 
-test("production backup prevents overlap and snapshots uploads around the database dump", () => {
-  const backupScript = fs.readFileSync(
+test("production backup wrapper locks before delegated two-pass snapshot", () => {
+  const wrapperScript = fs.readFileSync(
     path.join(__dirname, "../../ops/backup-production.sh"),
     "utf8"
   );
+  const implementationScript = fs.readFileSync(
+    path.join(__dirname, "../../ops/backup-production-multi-remote.sh"),
+    "utf8"
+  );
 
-  assert.match(backupScript, /flock -n 9/);
-  const firstUploadCopy = backupScript.indexOf(
+  assert.match(wrapperScript, /flock -n 8/);
+  assert.match(wrapperScript, /backup-production-multi-remote\.sh/);
+  assert.match(implementationScript, /exec 9>"\$BACKUP_ROOT\/\.quest-backup\.lock"/);
+  const firstUploadCopy = implementationScript.indexOf(
     'rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"'
   );
-  const databaseDump = backupScript.indexOf('pg_dump "$DIRECT_URL"');
-  const secondUploadCopy = backupScript.indexOf(
+  const databaseDump = implementationScript.indexOf('pg_dump "$DIRECT_URL"');
+  const secondUploadCopy = implementationScript.indexOf(
     'rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"',
     firstUploadCopy + 1
   );
   assert.ok(firstUploadCopy >= 0 && firstUploadCopy < databaseDump);
   assert.ok(secondUploadCopy > databaseDump);
-  assert.match(backupScript, /rclone check/);
+  assert.match(implementationScript, /rclone check/);
+  assert.match(implementationScript, /remote_label\\tstatus/);
 });
 
-test("backup freshness requires a recent encrypted archive and checksum", () => {
+test("backup freshness requires a recent encrypted archive and checksum on every remote", () => {
   const freshnessScript = fs.readFileSync(
     path.join(__dirname, "../../ops/check-backup-freshness.sh"),
     "utf8"
@@ -55,40 +62,74 @@ test("backup freshness requires a recent encrypted archive and checksum", () => 
   assert.match(freshnessScript, /quest-production-\*\.tar\.gz\.enc/);
   assert.match(freshnessScript, /candidate\.sha256/);
   assert.match(freshnessScript, /sha256sum --check --status/);
+  assert.match(freshnessScript, /for remote_index in/);
   assert.match(freshnessScript, /rclone check/);
 });
 
-test("remote retention counts and deletes only complete recovery pairs", () => {
+test("remote retention counts and safely deletes only complete recovery pairs", () => {
   const retentionScript = fs.readFileSync(
     path.join(__dirname, "../../ops/prune-production-backups.sh"),
     "utf8"
   );
 
-  assert.match(retentionScript, /complete_archives/);
-  assert.match(retentionScript, /object_set\[\$sidecar_name\]/);
-  assert.match(retentionScript, /rclone deletefile "\$remote\/\$archive_name\.sha256"/);
+  assert.match(retentionScript, /complete_count/);
+  assert.match(retentionScript, /object_set\[\$\{object_name\}\.sha256\]/);
+  assert.match(retentionScript, /rclone deletefile .*\$archive_name/);
+  assert.match(retentionScript, /archive was removed but checksum cleanup failed/);
   assert.match(retentionScript, /RETENTION_CONFIRMATION/);
 });
 
 test("production backup dumps both schemas when the valorant schema exists", () => {
   const backupScript = fs.readFileSync(
-    path.join(__dirname, "../../ops/backup-production.sh"),
-    "utf8",
+    path.join(__dirname, "../../ops/backup-production-multi-remote.sh"),
+    "utf8"
   );
 
   assert.match(backupScript, /pg_namespace/);
   assert.match(backupScript, /valorant_schema_exists/);
-  assert.match(backupScript, /--schema=public \\\n\s+--schema=valorant/);
+  assert.match(backupScript, /--schema=public\s+--schema=valorant/);
   assert.match(backupScript, /database_scope=application_public_and_valorant_schemas/);
-  assert.match(backupScript, /valorant_schema_included=\$valorant_schema_exists/);
+  assert.match(backupScript, /printf 'valorant_schema_included=%s\\n' "\$valorant_schema_exists"/);
 });
 
 test("production restore reports restored table counts for both schemas", () => {
   const restoreScript = fs.readFileSync(
     path.join(__dirname, "../../ops/restore-production-backup.sh"),
-    "utf8",
+    "utf8"
   );
 
   assert.match(restoreScript, /SELECT 'public=' \|\| count\(\*\)/);
   assert.match(restoreScript, /SELECT 'valorant=' \|\| count\(\*\)/);
+});
+
+test("shared release lock contract is documented for all writers", () => {
+  const operationsReadme = fs.readFileSync(
+    path.join(__dirname, "../../ops/README.md"),
+    "utf8"
+  );
+  const recoveryDoc = fs.readFileSync(
+    path.join(__dirname, "../../docs/backup-and-disaster-recovery.md"),
+    "utf8"
+  );
+  const tmpfilesContract = fs.readFileSync(
+    path.join(__dirname, "../../ops/systemd/quest-esports-release-lock.tmpfiles"),
+    "utf8"
+  );
+
+  assert.match(operationsReadme, /Release, migration, backup, and name-audit jobs must acquire/);
+  assert.match(recoveryDoc, /release, migration,\s+backup, or name-audit operation/);
+  assert.match(tmpfilesContract, /^f \/var\/lock\/quest-esports-release\.lock 0660 root deploy -$/m);
+});
+
+test("all remote probes use exact unique per-label configurations", () => {
+  for (const scriptName of [
+    "backup-production-multi-remote.sh",
+    "check-backup-freshness.sh",
+    "prune-production-backups.sh",
+  ]) {
+    const script = fs.readFileSync(path.join(__dirname, "../../ops", scriptName), "utf8");
+    assert.match(script, /config_by_resolved_path/);
+    assert.match(script, /RCLONE_CONFIGS requires BACKUP_RCLONE_REMOTES/);
+    assert.match(script, /BACKUP_RCLONE_CONFIGS must exactly match BACKUP_RCLONE_REMOTES/);
+  }
 });

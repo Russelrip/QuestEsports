@@ -21,7 +21,10 @@ export class ApiRequestError extends Error {
 }
 
 const getConfiguredApiOrigin = () => {
-  const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  const configuredApiUrl =
+    typeof window === "undefined"
+      ? process.env.INTERNAL_API_URL?.trim()
+      : process.env.NEXT_PUBLIC_API_URL?.trim();
   if (!configuredApiUrl) return null;
 
   // Permit harmless trailing slashes, but reject anything that is not an

@@ -34,6 +34,33 @@ chmod 700 /srv/quest-esports/private
 
 The backend creates the required child directories. Never expose `PRIVATE_UPLOAD_ROOT` through Nginx or `/api/uploads`.
 
+## Owner gates before VPS mutation
+
+This worktree records the procedure, not live host evidence. Before any root
+bootstrap or migration, the owner must record the categorized Supabase egress
+totals, corrected 72-hour observation, post-fix daily rate and quota, with no
+unexplained category; record production no-402 log/health evidence and a 402
+test performed only against a disposable mock. A rate above quota or any
+unexplained egress category stops the migration.
+
+The same pre-mutation record must name the root-capable bootstrap actor, the
+exact non-root release actor and narrow sudo rule, the approved backup
+destination and credential separation, and the business-approved RPO/RTO.
+These values remain `PENDING_OWNER_RECORD` until an operator supplies signed
+or otherwise retained evidence. They must not be inferred from this document.
+
+The root-capable operator creates only the documented runtime paths and
+identities: `/srv/quest-esports/postgres/17/data` (`postgres:postgres`, `700`),
+`/srv/quest-esports/uploads` (`deploy:deploy`, `750`),
+`/srv/quest-esports/private` and `/srv/quest-esports/backups`
+(`deploy:deploy`, `700`), `/opt/quest-esports/releases` (`root:deploy`, `750`),
+`/etc/quest-esports` (`root:root`, `750`), and the root-owned canonical
+`/var/lock/quest-esports-release.lock` (`root:deploy`, `660`). The operator
+installs Docker/Compose, Nginx, systemd/tmpfiles, and the narrow release sudo
+rule without stopping PM2 or legacy VALORANT services. No bootstrap, service
+stop, production restore, migration, or database-authority change is performed
+by the repository rehearsal flow.
+
 ## Production Environment Invariants
 
 Production startup intentionally fails when any of these invariants is broken:
@@ -367,6 +394,106 @@ Expected: `enabled`, `active`, `quest-backend` online, and the Node process owne
 
 ## Normal Deployment
 
+### Immutable Compose release contract
+
+The repository also contains a target-state release path under `ops/deploy/`.
+It is a root-owned host contract and is not evidence that Docker, systemd, the
+registry, the backup remotes, or the sibling VALORANT deployment is currently
+installed or healthy. Host bootstrap must first create the root-owned
+`/var/lock/quest-esports-release.lock`, install the protected release
+environment from `ops/deploy/release.env.example`, create the pre-created
+`quest-shared` network, and install the fixed root-owned command wrappers named
+by that environment. The release actor must be granted only the narrow sudo
+permission for the fixed release script; adding `deploy` to the Docker group
+is not an implicit substitute.
+
+The release manifest is an operator-approved, non-secret file with exactly one
+`commit_sha`, `frontend_image`, `backend_image`, `migrator_image`,
+`postgres_image`, and `valorant_image` entry. The commit is the full SHA and all
+application images are exact `ghcr.io/...@sha256:<64 hex>` references;
+PostgreSQL is the exact `postgres:17-bookworm@sha256:<64 hex>` reference. The
+script rejects duplicate or unknown manifest keys, mutable tags, mismatched
+SHAs, wrong project names, duplicate shared-network aliases, and more than one
+active fixed-name service group. It stages at
+`/opt/quest-esports/releases/<full-sha>/` and atomically replaces
+`/opt/quest-esports/current` only after writer admission.
+
+Run the release only from an approved host session, without printing the
+protected environment or manifest credentials:
+
+```bash
+sudo /usr/local/sbin/quest-esports-release \
+  <full-40-character-commit-sha> /secure/releases/<full-sha>.manifest
+sudo /var/www/QuestEsports/ops/deploy/verify-release.sh
+```
+
+The script takes the canonical lock before disk, database, registry, backup,
+Compose, migration, or health work and retains it through the pointer switch.
+Backup and freshness wrappers inherit descriptor 9 through
+`BACKUP_RELEASE_LOCK_PATH=/proc/self/fd/9`; they re-lock that same canonical
+file before their nested lock, preserving canonical-before-nested ordering.
+It performs no VPS-side build and does not stop PM2/Vercel as part of this
+transition. It stages/pulls both fixed Compose projects without writers,
+checks PostgreSQL and multi-remote freshness, and preserves the old VALORANT
+units unmasked until the commit point. If migrations are pending, both the
+relevant owner approval for the exact SHA and `BACKUP_APPROVAL=
+BACKUP_QUEST_PRODUCTION` are required before the existing backup primitive is
+invoked. The backup must then produce a remotely verified complete archive and
+checksum pair, with release-bound machine-readable evidence containing
+`schemas=verified:public,valorant`, `uploads=verified:public,private`,
+`archive=verified`, `checksum=verified`, and `remote=verified`, plus the exact
+requested full SHA. Migrations are one-shot operations and are never
+automatically reversed. The manifest's `migrator_image` is passed as
+`MIGRATOR_IMAGE` and `EXPECTED_MIGRATOR_IMAGE` to a migrator wrapper only when
+that migration is invoked; the release does not invent a Compose migrator.
+
+After the coordinated freeze is acknowledged, the release stops the old
+VALORANT units and starts both candidate projects only through the configured
+`CANDIDATE_FROZEN_START_COMMAND`. That wrapper must enforce the
+`frozen-read-only`, `--write-freeze=validation`, and `--read-only` contract and
+return `started-frozen-read-only`; it must not rely on mutable Compose defaults.
+Freeze is enabled and acknowledged before either stopping old VALORANT units or
+starting candidate services. Both Quest and VALORANT readiness acknowledgements
+are required before writer admission.
+The release then requires Quest health/readiness, PostgreSQL readiness,
+unique `quest-shared` aliases, and VALORANT HTTPS health with certificate
+validation plus JSON `status: "ok"` and `db: "up"`. Only after both repository
+readiness acknowledgements does the configured coordinated writer-enable
+operation run. The resulting commit point, SHA, projects, aliases, and pointer
+state are retained in release metadata. Old VALORANT units are masked only
+after that record exists.
+
+Before writer admission, a failed gate restores the previous application
+release and may restart only the previously stopped, still-unmasked old
+VALORANT units without changing database authority. If the authority check
+reports `supabase`, rollback restarts the legacy PM2 application and does not
+start a Compose bundle; if it reports `quest-postgres`, rollback starts the
+validated previous Compose bundle. This prevents a stale-Supabase split brain.
+Use the explicit boundary rather than changing one database URL:
+
+```bash
+sudo env OLD_VALORANT_WAS_STOPPED=1 \
+  /usr/local/sbin/quest-esports-rollback pre-commit \
+  /opt/quest-esports/releases/<failed-sha>
+```
+
+After writer admission, an application rollback is not a database rollback.
+Stop both writer groups, re-enable the coordinated freeze, capture and
+checksum current PostgreSQL 17 and both upload roots, record expected loss/RPO,
+and obtain incident-owner approval before selecting fix-forward or a controlled
+restore:
+
+```bash
+sudo env EXPECTED_LOSS_RPO='<owner-approved statement>' \
+  INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL \
+  /usr/local/sbin/quest-esports-rollback post-commit
+```
+
+The post-commit path never restarts old writers and never redirects only one
+service to stale Supabase. These scripts and their fixture test are disposable
+contracts; they do not claim a live VPS, hosted database, real rclone remote,
+systemd, registry, or sibling-repository verification.
+
 1. Push to `main`.
 2. CI runs backend audit, migrations against PostgreSQL 16, migration/schema verification, coverage, lint, frontend audit/lint/unit tests/build, and Playwright.
 3. After CI succeeds, automatic backend CD deploys the exact successful CI commit SHA.
@@ -445,9 +572,42 @@ CD uses liveness to confirm that PM2 restarted and recognizes the explicit maint
 3. Set `SITE_MAINTENANCE_MODE=false` in Vercel Production and redeploy the same approved commit. Disable the frontend last so users cannot return before the API is ready.
 4. Run the normal production smoke checks and watch PM2 logs.
 
+### Coordinated write-freeze validation mode
+
+`SITE_MAINTENANCE_MODE` is not a database write freeze. For a migration or
+other operation that requires zero application writers, set the backend
+`WRITE_FREEZE_MODE=validation` and restart the API. In this mode the API still
+initializes its database connection and HTTP server, but rejects all mutation
+methods and inbound callbacks with `503`, `Retry-After`, and
+`X-Write-Freeze: validation`. All Quest workers and schedulers are disabled.
+Validation API traffic is deny-by-default: only the explicitly verified health,
+status, capability, OpenAPI, and public catalog/media read probes are admitted.
+Unknown API GET/HEAD requests are frozen too, including order, ticket-order,
+payment, match-room, veto, and rate-limited endpoints whose handlers or
+middleware can perform writes.
+
+Verify the acknowledgement before running read-only migration validation:
+
+```bash
+curl --fail --silent --show-error https://api.questesports.lk/api/health/write-freeze
+curl --silent --show-error --dump-header - \
+  -X POST https://api.questesports.lk/api/v1/example-mutation
+```
+
+The status response must be exactly equivalent to
+`{"mode":"validation","writersEnabled":false}` (JSON key order may vary),
+and mutation attempts must return `503` with the freeze header. Keep this mode
+active until validation is complete and the migration operator is ready to
+resume writers. Set `WRITE_FREEZE_MODE=off`, restart the API, and verify the
+status response reports `writersEnabled: true` before resuming normal traffic.
+
 ### Full stop and write-freeze warning
 
-Maintenance mode is **not** a database write freeze. Background jobs continue and the PayHere notification callback can still write. For a database restore, destructive migration, suspected compromise, or any operation requiring zero writes, follow the disaster-recovery procedure and stop the backend:
+The coordinated validation mode blocks Quest HTTP and callback writers and
+stops Quest workers, but it does not replace the full-stop procedure when the
+database itself must be isolated. For a database restore, suspected
+compromise, or any operation requiring the backend to be unavailable, follow
+the disaster-recovery procedure and stop the backend:
 
 ```bash
 sudo -u deploy -H pm2 stop quest-backend
@@ -620,6 +780,48 @@ record names `quest-production-20260729T133147Z.tar.gz.enc` on the historical
 
 The active destination was then documented as moved to the dedicated-client remote `quest-backups-custom:quest-esports-v2/production`. Manual archive `quest-production-20260729T154756Z.tar.gz.enc` and its checksum were documented as confirmed off-site, and a subsequent `quest-esports-backup.service` run was documented as returning `Result=success`, `ExecMainStatus=0`, and `ActiveState=inactive`. The daily timer was documented as enabled. These are historical records, not proof of current remote contents or timer state; the owner must verify them before relying on the destination.
 
+## Coordinated Quest + VALORANT cutover and restore boundary
+
+This is the approved boundary for promoting the containerised PostgreSQL 17
+topology. It is a coordinated change, not two independent application
+deployments:
+
+1. Stage the approved Quest release and the separately approved sibling
+   VALORANT release, with both projects in frozen read-only mode and no
+   writers.
+2. Enable and acknowledge the validation freeze. Stop, but do not mask, the
+   old VALORANT units; keeping them unmasked preserves the pre-commit restart
+   path.
+3. Create the final encrypted archive containing `public` and `valorant` plus
+   both upload roots. Independently verify its checksum, age decryption, exact
+   manifest scope, and the isolated Phase 8 rehearsal evidence.
+4. Restore into the PostgreSQL 17 target, update both services' database URLs,
+   then start both candidate services still frozen. Validate Quest liveness,
+   readiness, database/security state, uploads, and the VALORANT HTTPS health
+   response through the approved CA (`status=ok`, `db=up`).
+5. Admit Quest and VALORANT writers together only after both readiness
+   acknowledgements. Record the commit point, release SHA, database authority,
+   archive identity, and writer-admission result. Mask the old VALORANT units
+   only after that record exists.
+
+Before the commit point, a failed candidate gate means: keep writers disabled,
+restore the previous Quest release, and restart only the previously stopped,
+still-unmasked VALORANT units. Do not change database authority or restart an
+old writer against a new schema. After the commit point, an application
+rollback is not a database rollback: stop both writer groups, re-enable the
+freeze, capture the current PostgreSQL 17 and upload state, record expected
+loss/RPO, and obtain incident-owner approval for fix-forward or a controlled
+restore. Never restart the old VALORANT writers or redirect only one service to
+stale Supabase data after commit.
+
+The sibling VALORANT Compose release manifest, its image digests, its live
+source-major record, and its own deployment evidence remain required operator
+artifacts. Quest's archive manifest and this worktree do not prove those
+values. A source-major mismatch is an explicit logical-major-migration gate,
+not an implicit compatibility claim. No live VPS, Supabase, rclone remote,
+hosted health endpoint, or sibling repository is contacted by the fixture
+rehearsal.
+
 ### Local Paris database snapshot on Windows
 
 For an immediate database-only snapshot from the secured development PC, run:
@@ -646,7 +848,15 @@ RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
   bash ops/restore-production-backup.sh /absolute/path/to/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
 ```
 
-Do not point a restore drill at Paris production. Record the archive timestamp, restored table counts, sample asset checks, and elapsed recovery time. Run a drill after setup and at least quarterly.
+Do not point a restore drill at Paris production. The rehearsal must use pinned
+PostgreSQL 17 clients and the existing restore primitive's
+`pg_restore --no-owner --no-acl --single-transaction --exit-on-error` path,
+then verify the roles/default privileges/grants separately. Record the
+pre-restore and post-restore Quest `public._prisma_migrations` and VALORANT
+`valorant._migration_ledger` states, both schema/object counts, both upload-root
+checksums, health/freeze/failure-injection results, measured resource usage,
+approved RPO/RTO, and elapsed recovery time. Run a drill after setup and at
+least quarterly.
 
 The repository contains a historical record describing a full drill dated
 2026-07-29 using `quest-production-20260729T133809Z.tar.gz.enc`. It records a

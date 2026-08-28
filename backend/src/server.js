@@ -49,6 +49,11 @@ const registerProcessDiagnostics = () => {
   });
 };
 
+const registerProcessSignals = () => {
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+};
+
 const shutdown = async (signal, exitCode = 0) => {
   if (isShuttingDown) {
     return;
@@ -126,18 +131,31 @@ const shutdown = async (signal, exitCode = 0) => {
   }
 };
 
-const start = async () => {
-  registerProcessDiagnostics();
-  await ensureUploadDirectories();
-  await initializeDatabase();
-  await startRealtimeTransport();
-  startJobWorker();
-  startCommerceMaintenance();
-  startChallongeScheduler();
-  startRankingScheduler();
-  startDataHygieneMaintenance();
+const start = async ({
+  ensureUploadDirectoriesFn = ensureUploadDirectories,
+  initializeDatabaseFn = initializeDatabase,
+  startRealtimeTransportFn = startRealtimeTransport,
+  startJobWorkerFn = startJobWorker,
+  startCommerceMaintenanceFn = startCommerceMaintenance,
+  startChallongeSchedulerFn = startChallongeScheduler,
+  startRankingSchedulerFn = startRankingScheduler,
+  startDataHygieneMaintenanceFn = startDataHygieneMaintenance,
+  registerProcessDiagnosticsFn = registerProcessDiagnostics,
+  registerProcessSignalsFn = registerProcessSignals,
+} = {}) => {
+  registerProcessDiagnosticsFn();
+  await ensureUploadDirectoriesFn();
+  await initializeDatabaseFn();
+  await startRealtimeTransportFn();
+  if (env.WRITE_FREEZE_MODE !== "validation") {
+    startJobWorkerFn();
+    startCommerceMaintenanceFn();
+    startChallongeSchedulerFn();
+    startRankingSchedulerFn();
+    startDataHygieneMaintenanceFn();
+  }
 
-  server = app.listen(env.PORT);
+  server = app.listen(env.PORT, "0.0.0.0");
 
   server.on("listening", () => {
     isServerListening = true;
@@ -164,12 +182,15 @@ const start = async () => {
     await shutdown("SERVER_ERROR", 1);
   });
 
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  registerProcessSignalsFn();
 };
 
-start().catch(async (error) => {
-  logger.error("Failed to start Quest E-sports API", { error });
-  await closeDatabase();
-  process.exit(1);
-});
+if (require.main === module) {
+  start().catch(async (error) => {
+    logger.error("Failed to start Quest E-sports API", { error });
+    await closeDatabase();
+    process.exit(1);
+  });
+}
+
+module.exports = { shutdown, start };

@@ -1,0 +1,246 @@
+name: Build container images
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: container-build-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and sign immutable images
+    if: ${{ github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    environment: container-image-build
+    timeout-minutes: 45
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      NEXT_PUBLIC_API_URL: ${{ vars.PRODUCTION_API_URL }}
+      NEXT_PUBLIC_SITE_URL: ${{ vars.PRODUCTION_SITE_URL }}
+      POSTGRES_17_BOOKWORM_DIGEST: ${{ vars.POSTGRES_17_BOOKWORM_DIGEST }}
+      POSTGRES_IMAGE_APPROVED_REF: ${{ vars.POSTGRES_IMAGE_APPROVED_REF }}
+      VALORANT_IMAGE: ${{ vars.VALORANT_IMAGE }}
+      VALORANT_IMAGE_APPROVED_REF: ${{ vars.VALORANT_IMAGE_APPROVED_REF }}
+
+    steps:
+      - name: Check out the exact successful CI commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Validate release inputs
+        shell: bash
+        env:
+          RELEASE_EVENT: ${{ github.event.workflow_run.event }}
+          RELEASE_CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          RELEASE_REPOSITORY: ${{ github.event.workflow_run.repository.full_name }}
+          RELEASE_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_REPOSITORY,,}" == russelrip/questesports ]] || {
+            printf '%s\n' 'Container signing must run from the documented Quest repository identity.' >&2
+            exit 1
+          }
+          [[ "$RELEASE_EVENT" == push && "$RELEASE_REPOSITORY" == "$GITHUB_REPOSITORY" && "$RELEASE_HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" ]] || {
+            printf '%s\n' 'Container signing requires a successful push CI run from this repository.' >&2
+            exit 1
+          }
+          [[ "$RELEASE_CI_RUN_ID" =~ ^[0-9]+$ ]] || {
+            printf '%s\n' 'The upstream CI run ID must be numeric.' >&2
+            exit 1
+          }
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            printf '%s\n' 'The upstream CI SHA must be a lowercase full 40-character SHA.' >&2
+            exit 1
+          }
+          checked_out_sha="$(git rev-parse --verify HEAD)"
+          [[ "$checked_out_sha" == "$RELEASE_SHA" ]] || {
+            printf '%s\n' 'The checked out commit does not equal the successful CI SHA.' >&2
+            exit 1
+          }
+          [[ "$NEXT_PUBLIC_API_URL" =~ ^https://[^[:space:]]+$ ]] || {
+            printf '%s\n' 'PRODUCTION_API_URL must be a non-empty HTTPS public URL.' >&2
+            exit 1
+          }
+          [[ "$NEXT_PUBLIC_SITE_URL" =~ ^https://[^[:space:]]+$ ]] || {
+            printf '%s\n' 'PRODUCTION_SITE_URL must be a non-empty HTTPS public URL.' >&2
+            exit 1
+          }
+          [[ "$POSTGRES_17_BOOKWORM_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            printf '%s\n' 'POSTGRES_17_BOOKWORM_DIGEST must be an exact sha256 digest.' >&2
+            exit 1
+          }
+          postgres_ref="postgres:17-bookworm@$POSTGRES_17_BOOKWORM_DIGEST"
+          [[ "$POSTGRES_IMAGE_APPROVED_REF" == "$postgres_ref" ]] || {
+            printf '%s\n' 'POSTGRES_IMAGE_APPROVED_REF must exactly approve the PostgreSQL manifest reference.' >&2
+            exit 1
+          }
+          [[ "$VALORANT_IMAGE" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || {
+            printf '%s\n' 'VALORANT_IMAGE must be an exact GHCR digest reference.' >&2
+            exit 1
+          }
+          [[ "$VALORANT_IMAGE_APPROVED_REF" == "$VALORANT_IMAGE" ]] || {
+            printf '%s\n' 'VALORANT_IMAGE_APPROVED_REF must exactly approve VALORANT_IMAGE.' >&2
+            exit 1
+          }
+
+      - name: Log in to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up an isolated BuildKit builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/release-manifest.entries"
+          docker buildx create --name quest-container-builder --driver docker-container --use
+          docker buildx inspect --bootstrap
+
+      - name: Build and publish frontend image
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/quest-frontend
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE,,}"
+          metadata_file="$(mktemp)"
+          trap 'rm -f -- "$metadata_file"' EXIT
+          docker buildx build \
+            --file frontend/Dockerfile \
+            --tag "$IMAGE:$RELEASE_SHA" \
+            --build-arg "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" \
+            --build-arg "NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL" \
+            --cache-from type=gha,scope=quest-frontend \
+            --cache-to type=gha,mode=max,scope=quest-frontend \
+            --provenance=mode=max \
+            --sbom=true \
+            --metadata-file "$metadata_file" \
+            --push \
+            frontend
+          digest="$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$metadata_file")"
+          printf 'frontend_image=%s@%s\n' "$IMAGE" "$digest" >> "$RUNNER_TEMP/release-manifest.entries"
+
+      - name: Build and publish backend runtime image
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/quest-backend
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE,,}"
+          metadata_file="$(mktemp)"
+          trap 'rm -f -- "$metadata_file"' EXIT
+          docker buildx build \
+            --file ops/docker/backend.production.Dockerfile \
+            --target runtime \
+            --tag "$IMAGE:$RELEASE_SHA" \
+            --cache-from type=gha,scope=quest-backend-runtime \
+            --cache-to type=gha,mode=max,scope=quest-backend-runtime \
+            --provenance=mode=max \
+            --sbom=true \
+            --metadata-file "$metadata_file" \
+            --push \
+            backend
+          digest="$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$metadata_file")"
+          printf 'backend_image=%s@%s\n' "$IMAGE" "$digest" >> "$RUNNER_TEMP/release-manifest.entries"
+
+      - name: Build and publish backend migrator image
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/quest-migrator
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE,,}"
+          metadata_file="$(mktemp)"
+          trap 'rm -f -- "$metadata_file"' EXIT
+          docker buildx build \
+            --file ops/docker/backend.production.Dockerfile \
+            --target migrator \
+            --tag "$IMAGE:$RELEASE_SHA" \
+            --cache-from type=gha,scope=quest-migrator \
+            --cache-to type=gha,mode=max,scope=quest-migrator \
+            --provenance=mode=max \
+            --sbom=true \
+            --metadata-file "$metadata_file" \
+            --push \
+            backend
+          digest="$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$metadata_file")"
+          printf 'migrator_image=%s@%s\n' "$IMAGE" "$digest" >> "$RUNNER_TEMP/release-manifest.entries"
+
+      - name: Install pinned cosign
+        shell: bash
+        env:
+          COSIGN_VERSION: v2.4.1
+        run: |
+          set -euo pipefail
+          command -v go >/dev/null
+          install_dir="$RUNNER_TEMP/cosign-bin"
+          mkdir -p "$install_dir"
+          GOBIN="$install_dir" go install "github.com/sigstore/cosign/v2/cmd/cosign@$COSIGN_VERSION"
+          test -x "$install_dir/cosign"
+          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+
+      - name: Sign each Quest image digest with keyless OIDC
+        shell: bash
+        env:
+          COSIGN_YES: 'true'
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/release-manifest.entries"
+          while IFS='=' read -r image_name image_reference; do
+            case "$image_name" in
+              frontend_image|backend_image|migrator_image) ;;
+              *) printf 'unexpected manifest image key: %s\n' "$image_name" >&2; exit 1 ;;
+            esac
+            [[ "$image_reference" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || exit 1
+            cosign sign --yes "$image_reference"
+          done < "$RUNNER_TEMP/release-manifest.entries"
+
+      - name: Write the exact release manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/release-manifest.txt"
+          : > "$manifest"
+          printf 'commit_sha=%s\n' "$RELEASE_SHA" >> "$manifest"
+          cat "$RUNNER_TEMP/release-manifest.entries" >> "$manifest"
+          printf 'postgres_image=postgres:17-bookworm@%s\n' "$POSTGRES_17_BOOKWORM_DIGEST" >> "$manifest"
+          printf 'valorant_image=%s\n' "$VALORANT_IMAGE" >> "$manifest"
+
+          expected_keys='commit_sha frontend_image backend_image migrator_image postgres_image valorant_image'
+          actual_keys="$(awk -F= '{ print $1 }' "$manifest" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+          [[ "$actual_keys" == "$expected_keys" ]] || {
+            printf 'manifest keys are not exact: %s\n' "$actual_keys" >&2
+            exit 1
+          }
+          while IFS= read -r line; do
+            [[ "$line" =~ ^[a-z][a-z0-9_]*=[^[:space:]]+$ ]] || exit 1
+          done < "$manifest"
+          test "$(awk -F= -v sha="$RELEASE_SHA" '$1 == "commit_sha" && $2 == sha { count++ } END { print count + 0 }' "$manifest")" = 1
+          [[ "$(awk -F= '$1 == "frontend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-frontend@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$(awk -F= '$1 == "backend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-backend@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$(awk -F= '$1 == "migrator_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-migrator@sha256:[0-9a-f]{64}$ ]] || exit 1
+
+      - name: Upload the SHA-bound release manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: container-release-manifest-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/release-manifest.txt
+          if-no-files-found: error
+          retention-days: 14

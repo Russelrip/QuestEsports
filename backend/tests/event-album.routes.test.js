@@ -12,6 +12,9 @@ const cacheControlPath = path.join(__dirname, "../src/middleware/cache-control.j
 const envPath = path.join(__dirname, "../src/config/env.js");
 const mediaControllerPath = path.join(__dirname, "../src/modules/media/media.controller.js");
 const albumControllerPath = path.join(__dirname, "../src/modules/media/event-album.controller.js");
+const albumServicePath = path.join(__dirname, "../src/modules/media/event-album.service.js");
+const downloadPath = path.join(__dirname, "../src/modules/media/event-album-download.js");
+const streamResponsePath = path.join(__dirname, "../src/lib/stream-response.js");
 
 const controllerHandler = (_req, _res, next) => next?.();
 const controllerMock = new Proxy({}, { get: () => controllerHandler });
@@ -77,6 +80,7 @@ test("event album routes cache public reads and invalidate every successful muta
     );
     assert.ok(routeMiddleware.get("GET /event-albums").includes("eventAlbumCacheMiddleware"));
     assert.ok(routeMiddleware.get("GET /event-albums/:slug").includes("eventAlbumCacheMiddleware"));
+    assert.ok(routeMiddleware.has("GET /event-albums/:slug/photos/:photoId/image"));
     assert.ok(
       routeMiddleware.get("GET /event-albums").indexOf("eventAlbumPublicCacheMiddleware") <
         routeMiddleware.get("GET /event-albums").indexOf("eventAlbumCacheMiddleware"),
@@ -101,6 +105,58 @@ test("event album routes cache public reads and invalidate every successful muta
         `${route} should invalidate event album cache entries`,
       );
     }
+  } finally {
+    restore();
+  }
+});
+
+test("event photo route uses the preview normally and the original for an allowed download", async () => {
+  const preview = Buffer.from("webp-preview");
+  const original = Buffer.from("jpeg-original");
+  const calls = [];
+  const responses = [];
+  const { module: controller, restore } = loadModuleWithMocks(albumControllerPath, {
+    [albumServicePath]: {
+      getPublicEventAlbumPhoto: async (options) => {
+        calls.push(options);
+        return options.preferOriginal
+          ? { contentType: "image/jpeg", data: original, size: original.length, originalName: "camera-original.jpg", allowDownloads: true }
+          : { contentType: "image/webp", data: preview, size: preview.length, originalName: "camera-original.jpg", allowDownloads: true };
+      },
+    },
+    [downloadPath]: {
+      prepareEventAlbumPhotoDownload: async (image) => ({ ...image, filename: "camera-original.jpg" }),
+    },
+    [streamResponsePath]: { streamFileToResponse: async () => undefined },
+  });
+
+  const invoke = async (query) => {
+    const response = {
+      headers: {},
+      body: null,
+      setHeader(name, value) { this.headers[name] = value; },
+      status(code) { this.statusCode = code; return this; },
+      send(body) { this.body = body; },
+    };
+    let nextError;
+    await controller.streamEventAlbumPhoto(
+      { params: { slug: "quest-finals", photoId: "photo-1" }, query },
+      response,
+      (error) => { nextError = error; },
+    );
+    assert.equal(nextError, undefined);
+    responses.push(response);
+  };
+
+  try {
+    await invoke({});
+    await invoke({ download: "original" });
+    assert.deepEqual(calls.map(({ preferOriginal }) => preferOriginal), [false, true]);
+    assert.equal(responses[0].body, preview);
+    assert.equal(responses[0].headers["Content-Type"], "image/webp");
+    assert.equal(responses[1].body, original);
+    assert.equal(responses[1].headers["Content-Type"], "image/jpeg");
+    assert.equal(responses[1].headers["Content-Disposition"], 'attachment; filename="camera-original.jpg"');
   } finally {
     restore();
   }

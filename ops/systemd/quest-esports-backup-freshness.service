@@ -14,5 +14,5 @@ PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/quest-esports
+ReadWritePaths=/srv/quest-esports /var/lock/quest-esports-release.lock
 RestrictSUIDSGID=true

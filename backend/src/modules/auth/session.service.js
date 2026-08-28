@@ -94,6 +94,8 @@ const buildExpiredCookieValue = () => {
   return segments.join("; ");
 };
 
+const isWriteFreezeValidation = () => env.WRITE_FREEZE_MODE === "validation";
+
 const createSession = async ({
   userId,
   rememberMe,
@@ -145,6 +147,10 @@ const deleteExpiredSessions = async () => {
 };
 
 const scheduleExpiredSessionCleanup = () => {
+  if (isWriteFreezeValidation()) {
+    return;
+  }
+
   const now = Date.now();
 
   if (
@@ -213,13 +219,17 @@ const getSessionFromRequest = async (req) => {
   }
 
   if (session.expiresAt.getTime() <= Date.now()) {
-    await deleteSessionByToken(token);
+    if (!isWriteFreezeValidation()) {
+      await deleteSessionByToken(token);
+    }
     return null;
   }
 
   if (
-    !session.lastSeenAt ||
+    !isWriteFreezeValidation() &&
+    (!session.lastSeenAt ||
     Date.now() - session.lastSeenAt.getTime() >= LAST_SEEN_UPDATE_INTERVAL_MS
+    )
   ) {
     const refreshed = await prisma.session.updateMany({
       where: {
