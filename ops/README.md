@@ -53,7 +53,10 @@ host.
 The rehearsal wrapper is the only documented full-drill entry point. It never
 defaults a target, requires `REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL`,
 an existing private evidence directory, an absolute archive/checksum pair, an
-offline identity, fresh empty upload roots, and a PostgreSQL 17 client bin
+offline identity, a mode-600 target sentinel, and roots below a previously absent
+dedicated upload parent that the wrapper creates atomically. The `DIRECT_URL`
+loopback host/port must match the inspected container's PostgreSQL port mapping;
+a PostgreSQL 17 client bin
 directory (or three individually pinned client paths). `BACKUP_ENV_FILE` is
 parsed as data and copied into a temporary private environment; it is never
 sourced by the wrapper. Production-looking URLs/paths, symlinks, nested roots,
@@ -82,14 +85,16 @@ probes must return `503` with `X-Write-Freeze: validation`.
 
 Each hook is an operator-provided disposable-target wrapper, not a fabricated
 status variable. `SECURITY_VERIFY_COMMAND` must return exact stdout
-`security-verified`; the other hooks return exact `passed`/`verified` results,
-all with a successful exit. It probes the target ledger state before restore,
+`security-verified`; failure hooks return structured result, failure class,
+service identity, endpoint ID/hash, pre/post state, and containment fields, all
+with a successful exit. It probes the target ledger state before restore,
 then queries the exact Quest `public._prisma_migrations` and VALORANT
 `_migration_ledger` tables after restore. It also verifies the four bootstrap
 roles, memberships, owners, grants, default ACLs, and RLS posture.
 
 ```bash
 chmod 600 /secure/recovery/quest-esports-recovery.env
+chmod 600 /secure/recovery/quest-rehearsal-target.env
 chmod 700 /secure/recovery/rehearsal-evidence
 REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL \
   BACKUP_ENV_FILE=/secure/recovery/quest-esports-recovery.env \
@@ -115,7 +120,9 @@ SHA-256 binding to the fixed-name
 the raw role/inventory outputs before accepting the summary. Upload checksums
 are explicitly post-restore tree checksums, not source-equivalence claims
 unless a source per-file inventory was also supplied. Evidence never contains
-URLs, credentials, tokens, identities, or secret environment contents. The
+Database URLs, credentials, tokens, or secret environment contents are not
+written to the summary/observations; the signed failure-injection inventory
+contains only the approved hook paths and hashes. The
 fixture test is deliberately limited to fake commands and generated
 disposable evidence. It does not contact Docker, PostgreSQL, age, a VPS, a
 hosted service, a live upload root, or an rclone remote.

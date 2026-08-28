@@ -322,9 +322,10 @@ the destructive restore primitive, for a full drill. Create the evidence
 directory before starting and make it private. The wrapper requires an
 explicit `REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL`, an existing
 mode-600 recovery environment, an absolute encrypted archive and exact
-`.sha256` sibling, an offline age identity, fresh distinct empty upload roots,
-a private disposable-target sentinel containing the target kind/id, exact
-container ID, and both upload roots,
+`.sha256` sibling, an offline age identity, a private mode-600 disposable-target
+sentinel, and roots below a previously absent dedicated upload parent that the
+wrapper creates atomically. The `DIRECT_URL` loopback host/port must match the
+inspected container's PostgreSQL port mapping,
 and pinned PostgreSQL 17 `psql`, `pg_restore`, and `pg_dump`. It also requires
 an operator-recorded source-version evidence file, an executable repository
 security-verifier hook, executable disposable failure-injection hooks, and an
@@ -334,7 +335,9 @@ targets, unsafe environment-file content, missing manifest checksum/age
 identity/evidence, non-17 clients, and an unapproved source-major mismatch.
 The security verifier hook must return only the exact stdout token
 `security-verified`; its private output artifact and SHA-256 binding are
-retained in the evidence bundle.
+retained in the evidence bundle. Failure hooks retain their executable path and
+content hash, raw structured output, attempted endpoint ID/hash, affected
+service, pre/post state, and containment result.
 The host must bootstrap `openssl` and a protected signing key pair. The wrapper
 requires `REHEARSAL_SIGNING_PRIVATE_KEY`; verification requires the operator-
 trusted `REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY`. Missing key material or the
@@ -348,12 +351,13 @@ that raw file into the summary, and then records the
 exact two-schema manifest scope, source/client versions, checksum/decryption,
 both schema/object counts, the pre-restore and post-restore migration ledgers
 (including the exact VALORANT `_migration_ledger`), roles/owners/grants/default
-ACLs, extensions/settings/RLS, upload counts/bytes/checksums, Quest and
+ACLs, before/after extensions/settings/RLS, upload counts/bytes/checksums, Quest and
 VALORANT health/CA/database status, validation freeze and writer rejection,
 named negative injections, measured resources, and explicit owner-approved
 RPO/RTO decisions.
-No URL, credential, token, identity, or secret environment value is printed or
-written to evidence. Verify only with:
+No database URL, credential, token, or secret environment value is printed or
+written to the summary/observations; only the approved failure-hook paths and
+hashes are retained in the signed artifact inventory. Verify only with:
 
 The recorded upload checksums are post-restore tree checksums. They are not
 claims that the restored tree equals the source unless a source per-file
@@ -395,6 +399,7 @@ transparent compatible restore.
 
 ```bash
 chmod 600 /secure/recovery/quest-esports-recovery.env
+chmod 600 /secure/recovery/quest-rehearsal-target.env
 
 cd /path/to/QuestEsports
 
