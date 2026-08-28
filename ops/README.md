@@ -26,6 +26,28 @@ These scripts support encrypted backup and recovery for Quest Esports production
 
 Never commit a filled environment file, archive, checksum, database dump, rclone configuration, OAuth credential, or private `age` identity. Never use the production database or live upload paths for a restore drill.
 
+## Host bootstrap and owner gate
+
+Root VPS bootstrap is an operator-gated prerequisite and is intentionally not
+implemented or executed by the rehearsal scripts. Before mutation, retain the
+categorized Supabase egress totals and corrected 72-hour observation, explain
+every category, record the post-fix daily rate/quota and no-402 evidence (with
+402 behavior tested only in a disposable mock), and name the root-capable
+bootstrap actor, exact release actor, approved backup destination, and
+business-approved RPO/RTO. Any unexplained category, over-quota rate, or missing
+owner decision stops the procedure.
+
+The root-capable operator documents creation of `/srv/quest-esports/postgres/17/data`
+(`postgres:postgres`, `700`), `/srv/quest-esports/uploads`
+(`deploy:deploy`, `750`), `/srv/quest-esports/private` and
+`/srv/quest-esports/backups` (`deploy:deploy`, `700`),
+`/opt/quest-esports/releases` (`root:deploy`, `750`), `/etc/quest-esports`
+(`root:root`, `750`), and `/var/lock/quest-esports-release.lock`
+(`root:deploy`, `660`). Docker/Compose, Nginx, systemd/tmpfiles, and the
+narrow release sudo rule are installed without stopping PM2 or legacy
+VALORANT services. These are operator records, not checked-in proof of a live
+host.
+
 ## Isolated PostgreSQL 17 restore rehearsal
 
 The rehearsal wrapper is the only documented full-drill entry point. It never
@@ -48,18 +70,21 @@ probe), `QUEST_LIVENESS_URL`, `QUEST_READINESS_URL`,
 `FREEZE_MUTATION_URL`, `FREEZE_CALLBACK_URL`, six executable
 `FAILURE_INJECTION_<NAME>_COMMAND` hooks (bad checksum, bad decryption, wrong
 CA, blocked network, failed service health, and attempted mutation/callback),
-`REHEARSAL_RTO_SECONDS`, and
-`REHEARSAL_RTO_DECISION=met|not_met`. The URLs must point to disposable
-services and the CA must be supplied explicitly. Health probes require JSON
+`REHEARSAL_RPO_SECONDS`, `REHEARSAL_RPO_DECISION=met|not_met`,
+`REHEARSAL_RTO_SECONDS`, and `REHEARSAL_RTO_DECISION=met|not_met`. These are
+owner-approved objectives; measured duration/resource values are emitted by
+the wrapper. The URLs must point to disposable services and the CA must be
+supplied explicitly. Health probes require JSON
 `status=ok`; readiness also requires `db=up`, and frozen mutation/callback
 probes must return `503` with `X-Write-Freeze: validation`.
 
 Each hook is an operator-provided disposable-target wrapper, not a fabricated
 status variable. `SECURITY_VERIFY_COMMAND` must return exact stdout
 `security-verified`; the other hooks return exact `passed`/`verified` results,
-all with a successful exit. It also queries the exact
-VALORANT `_migration_ledger` table and verifies the four bootstrap roles,
-memberships, owners, grants, default ACLs, and RLS posture.
+all with a successful exit. It probes the target ledger state before restore,
+then queries the exact Quest `public._prisma_migrations` and VALORANT
+`_migration_ledger` tables after restore. It also verifies the four bootstrap
+roles, memberships, owners, grants, default ACLs, and RLS posture.
 
 ```bash
 chmod 600 /secure/recovery/quest-esports-recovery.env

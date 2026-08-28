@@ -212,8 +212,8 @@ if ! pg_restore --dbname="$DIRECT_URL" \
   --if-exists \
   --no-owner \
   --no-acl \
-  --exit-on-error \
   --single-transaction \
+  --exit-on-error \
   "$work_directory/database.dump"; then
   echo "Database restore failed; the exit guard will roll back both activated file trees." >&2
   exit 1

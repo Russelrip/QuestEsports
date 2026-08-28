@@ -52,9 +52,15 @@ check_path() {
   local path="$1" label="$2" part current=/
   [[ "$path" == /* && "$path" != / ]] || fail "$label must be an absolute non-root path"
   if [[ "$label" != ARCHIVE_FILE && "$label" != ARCHIVE_CHECKSUM ]]; then looks_production "$path" || fail "$label looks like production"; fi
-  while IFS= read -r part; do [[ -z "$part" ]] && continue; current="${current%/}/$part"; [[ ! -L "$current" ]] || fail "$label contains a symbolic link"; done < <(printf '%s\n' "$path" | tr / '\n')
+  while IFS= read -r part; do
+    [[ -z "$part" ]] && continue
+    [[ "$part" != . && "$part" != .. ]] || fail "$label contains a traversal component"
+    current="${current%/}/$part"
+    [[ ! -L "$current" ]] || fail "$label contains a symbolic link"
+  done < <(printf '%s\n' "$path" | tr / '\n')
 }
 check_path "$archive" ARCHIVE_FILE; check_path "$checksum" ARCHIVE_CHECKSUM; looks_production "$(dirname "$archive")" || fail "archive directory looks like production"
+check_path "$evidence" REHEARSAL_EVIDENCE_DIR; check_path "$env_file" BACKUP_ENV_FILE
 check_path "$public_root" UPLOAD_ROOT; check_path "$private_root" PRIVATE_UPLOAD_ROOT; check_path "$identity" BACKUP_AGE_IDENTITY_FILE
 [[ -f "$identity" && ! -L "$identity" && -r "$identity" ]] || fail "age identity is missing or unreadable"
 private "$identity" || fail "age identity is not private"
@@ -83,6 +89,7 @@ line="$(tr -d '\r' < "$checksum")"
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/quest-rehearsal.XXXXXXXX")"; chmod 700 "$scratch"
 cleanup() { local s=$?; set +e; rm -rf -- "$scratch"; return "$s"; }; trap cleanup EXIT
+start="$(date -u +%s)"; start_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 age --decrypt --identity "$identity" --output "$scratch/payload.tar.gz" "$archive" >"$scratch/age.log" 2>&1 || fail "age decryption failed"
 tar --list --gzip --file="$scratch/payload.tar.gz" >"$scratch/list" 2>/dev/null || fail "decrypted payload is not a gzip tar"
 grep -Eq '(^|/)\.\.(\/|$)|^/' "$scratch/list" && fail "archive contains unsafe paths"
@@ -111,16 +118,24 @@ restore_major="$(major "$(pg_restore --version 2>/dev/null)")" || fail "pg_resto
 dump_major="$(major "$(pg_dump --version 2>/dev/null)")" || fail "pg_dump version unavailable"
 [[ "$psql_major" == 17 && "$restore_major" == 17 && "$dump_major" == 17 ]] || fail "all PostgreSQL clients must be major 17"
 
+psql_query() { psql -X -A -t -F '|' "$db_url" -c "$2" >"$1" 2>/dev/null; }
+ledger_presence() {
+  local schema="$1" table="$2" presence
+  psql_query "$scratch/${schema}-${table}-presence" "SELECT CASE WHEN to_regclass('${schema}.${table}') IS NULL THEN 'absent' ELSE 'present' END" || return 1
+  presence="$(tr -d '[:space:]' < "$scratch/${schema}-${table}-presence")"
+  [[ "$presence" == absent || "$presence" == present ]] || return 1
+  printf '%s' "$presence"
+}
+quest_migrations_before="$(ledger_presence public _prisma_migrations)" || fail "Quest migration ledger pre-restore probe failed"
+valorant_migrations_before="$(ledger_presence valorant _migration_ledger)" || fail "VALORANT migration ledger pre-restore probe failed"
+
 isolated="$scratch/BACKUP_ENV_FILE"
 { printf 'DIRECT_URL='; printf '%q' "$db_url"; printf '\nUPLOAD_ROOT='; printf '%q' "$public_root"; printf '\nPRIVATE_UPLOAD_ROOT='; printf '%q' "$private_root"; printf '\nBACKUP_AGE_IDENTITY_FILE='; printf '%q' "$identity"; printf '\n'; } > "$isolated"; chmod 600 "$isolated"
 [[ -x /usr/bin/time ]] || fail "/usr/bin/time is required for measured resource evidence"
-start="$(date -u +%s)"; start_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 env -u BASH_ENV -u ENV RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION BACKUP_ENV_FILE="$isolated" RESTORE_COUNTDOWN_SECONDS=0 /usr/bin/time -f 'cpu_seconds=%U\npeak_memory_kb=%M' -o "$scratch/resource" bash "$restore" "$archive" >"$scratch/restore.log" 2>&1 || fail "existing restore primitive failed"
-end="$(date -u +%s)"; end_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; duration=$((end-start))
 cpu="$(grep -m1 '^cpu_seconds=' "$scratch/resource" | cut -d= -f2)"; memory="$(grep -m1 '^peak_memory_kb=' "$scratch/resource" | cut -d= -f2)"
 [[ "$cpu" =~ ^[0-9]+([.][0-9]+)?$ && "$memory" =~ ^[0-9]+$ ]] || fail "resource measurement is incomplete"
 
-psql_query() { psql -X -A -t -F '|' "$db_url" -c "$2" >"$1" 2>/dev/null; }
 psql_tsv() { psql -X -A -t -F $'\t' "$db_url" -c "$2" >"$1" 2>/dev/null; }
 psql_query "$scratch/counts" "SELECT n.nspname || '|' || count(*) FILTER (WHERE c.relkind IN ('r','p','f')) || '|' || count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','valorant') GROUP BY n.nspname ORDER BY n.nspname" || fail "schema/object query failed"
 public_tables=0; valorant_tables=0; public_objects=0; valorant_objects=0
@@ -180,8 +195,13 @@ for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_ser
   check_path "$hook" "$var"
   run_exact_hook "$hook" passed "$scratch/$injection.output" || fail "failure injection $injection did not return passed"
 done
-rto="${REHEARSAL_RTO_SECONDS:-}"; decision="${REHEARSAL_RTO_DECISION:-}"; [[ "$rto" =~ ^[0-9]+$ && "$rto" -gt 0 && ( "$decision" == met || "$decision" == not_met ) ]] || fail "measured RTO and explicit decision are required"
+rpo="${REHEARSAL_RPO_SECONDS:-}"; rpo_decision="${REHEARSAL_RPO_DECISION:-}"
+rto="${REHEARSAL_RTO_SECONDS:-}"; rto_decision="${REHEARSAL_RTO_DECISION:-}"
+[[ "$rpo" =~ ^[0-9]+$ && "$rpo" -gt 0 && ( "$rpo_decision" == met || "$rpo_decision" == not_met ) ]] || fail "approved RPO and explicit decision are required"
+[[ "$rto" =~ ^[0-9]+$ && "$rto" -gt 0 && ( "$rto_decision" == met || "$rto_decision" == not_met ) ]] || fail "approved RTO and explicit decision are required"
+decision="$rto_decision"
 disk="$(du -sk -- "$public_root" "$private_root" | awk '{sum += $1} END {print sum * 1024}')"; [[ "$disk" =~ ^[0-9]+$ ]] || fail "disk resource measurement failed"
+end="$(date -u +%s)"; end_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; duration=$((end-start))
 
 tmp="$evidence/.rehearsal-evidence.$$"
 for artifact in roles memberships owners grants acl ext settings rls; do cp -- "$scratch/$artifact" "$evidence/rehearsal-${artifact}.tsv"; chmod 600 "$evidence/rehearsal-${artifact}.tsv"; done
@@ -192,8 +212,10 @@ roles_sha256="$(sha256sum "$scratch/roles" | cut -d' ' -f1)"; memberships_sha256
 upload_checksum_scope=post_restore_tree; upload_source_equivalence=not_claimed_without_source_inventory
 observations_tmp="$evidence/.rehearsal-observations.$$"
 { printf 'format_version=1\nobservation_status=complete\nrestore_command_status=verified\n'; printf 'checksum_command_status=verified\ndecryption_command_status=verified\n'; printf 'source_version_provenance=operator_recorded\nsource_version_record_sha256=%s\n' "$source_record_sha256"; printf 'source_postgres_major=%s\ntarget_postgres_major=%s\nclient_psql_major=%s\nclient_pg_restore_major=%s\nclient_pg_dump_major=%s\n' "$source_major" "$target_major" "$psql_major" "$restore_major" "$dump_major"; printf 'manifest_scope=%s\nmanifest_valorant_schema_included=true\npublic_table_count=%s\nvalorant_table_count=%s\npublic_object_count=%s\nvalorant_object_count=%s\nquest_migration_ledger_status=verified\nquest_migration_count=%s\nvalorant_migration_ledger_status=verified\nvalorant_migration_count=%s\n' "$archive_scope" "$public_tables" "$valorant_tables" "$public_objects" "$valorant_objects" "$quest_migrations" "$valorant_migrations"; printf 'roles_command_status=verified\nmemberships_command_status=verified\nowners_command_status=verified\ngrants_command_status=verified\ndefault_acl_command_status=verified\nrls_command_status=verified\nroles_observations_sha256=%s\nmemberships_observations_sha256=%s\nowners_observations_sha256=%s\ngrants_observations_sha256=%s\ndefault_acl_observations_sha256=%s\nrls_observations_sha256=%s\nsecurity_verify_status=verified\nsecurity_verify_output_sha256=%s\nextensions_inventory_sha256=%s\nsettings_inventory_sha256=%s\n' "$roles_sha256" "$memberships_sha256" "$owners_sha256" "$grants_sha256" "$acl_sha256" "$rls_sha256" "$security_output_sha256" "$extensions_sha256" "$settings_sha256"; printf 'public_upload_file_count=%s\npublic_upload_byte_count=%s\npublic_upload_checksum=%s\nprivate_upload_file_count=%s\nprivate_upload_byte_count=%s\nprivate_upload_checksum=%s\nupload_checksum_scope=%s\nupload_source_equivalence=%s\n' "$public_files" "$public_bytes" "$public_checksum" "$private_files" "$private_bytes" "$private_checksum" "$upload_checksum_scope" "$upload_source_equivalence"; printf 'quest_liveness_status=ok\nquest_readiness_status=ok\nquest_database_status=up\nvalorant_health_status=ok\nvalorant_database_status=up\nvalorant_ca_status=verified\nfreeze_mode=validation\nwriters_disabled=true\nmutation_rejection=verified\nno_writer_admission=verified\n'; for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_service_health attempted_mutation_callback; do printf 'failure_injection_%s=passed\n' "$injection"; done; printf 'resource_cpu_seconds=%s\nresource_peak_memory_kb=%s\nresource_disk_bytes=%s\nrto_seconds=%s\nrto_decision=%s\n' "$cpu" "$memory" "$disk" "$rto" "$decision"; } > "$observations_tmp"
+printf 'quest_migration_ledger_before_status=%s\nvalorant_migration_ledger_before_status=%s\nrpo_seconds=%s\nrpo_decision=%s\n' "$quest_migrations_before" "$valorant_migrations_before" "$rpo" "$rpo_decision" >> "$observations_tmp"
 chmod 600 "$observations_tmp"; observations_sha256="$(sha256sum "$observations_tmp" | cut -d' ' -f1)"; mv -f -- "$observations_tmp" "$evidence/rehearsal-observations.env"
 { printf 'format_version=1\nevidence_status=complete\nrehearsal_mode=disposable\nrestore_status=verified\n'; printf 'created_at_utc=%s\nrestore_start_utc=%s\nrestore_end_utc=%s\nrestore_duration_seconds=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$start_utc" "$end_utc" "$duration"; printf 'archive_name=%s\narchive_sha256=%s\nobservations_sha256=%s\nchecksum_status=verified\ndecryption_status=verified\nmanifest_database_scope=%s\nmanifest_valorant_schema_included=true\n' "$(basename "$archive")" "$(cut -d' ' -f1 < "$checksum")" "$observations_sha256" "$archive_scope"; printf 'source_postgres_major=%s\ntarget_postgres_major=%s\nsource_major_gate=%s\nsource_version_provenance=operator_recorded\nsource_version_record_sha256=%s\nclient_psql_major=%s\nclient_pg_restore_major=%s\nclient_pg_dump_major=%s\n' "$source_major" "$target_major" "$gate" "$source_record_sha256" "$psql_major" "$restore_major" "$dump_major"; printf 'public_table_count=%s\nvalorant_table_count=%s\npublic_object_count=%s\nvalorant_object_count=%s\nquest_migration_ledger_status=verified\nquest_migration_count=%s\nvalorant_migration_ledger_status=verified\nvalorant_migration_count=%s\n' "$public_tables" "$valorant_tables" "$public_objects" "$valorant_objects" "$quest_migrations" "$valorant_migrations"; printf 'roles_status=verified\nowners_status=verified\ngrants_status=verified\ndefault_acl_status=verified\nmemberships_status=verified\nroles_observations_sha256=%s\nmemberships_observations_sha256=%s\nowners_observations_sha256=%s\ngrants_observations_sha256=%s\ndefault_acl_observations_sha256=%s\nrls_observations_sha256=%s\nsecurity_verify_status=verified\nsecurity_verify_output_sha256=%s\nextensions_status=verified\nextensions_count=%s\nextensions_inventory_sha256=%s\nsettings_status=verified\nsettings_inventory_sha256=%s\nrls_status=verified\nrls_enabled_table_count=%s\nrls_table_count=%s\n' "$roles_sha256" "$memberships_sha256" "$owners_sha256" "$grants_sha256" "$acl_sha256" "$rls_sha256" "$security_output_sha256" "$extensions_count" "$extensions_sha256" "$settings_sha256" "$rls_enabled" "$rls_tables"; printf 'public_upload_file_count=%s\npublic_upload_byte_count=%s\npublic_upload_checksum=%s\nprivate_upload_file_count=%s\nprivate_upload_byte_count=%s\nprivate_upload_checksum=%s\nupload_checksum_scope=%s\nupload_source_equivalence=%s\n' "$public_files" "$public_bytes" "$public_checksum" "$private_files" "$private_bytes" "$private_checksum" "$upload_checksum_scope" "$upload_source_equivalence"; printf 'quest_liveness_status=ok\nquest_readiness_status=ok\nquest_database_status=up\nvalorant_health_status=ok\nvalorant_database_status=up\nvalorant_ca_status=verified\nfreeze_mode=validation\nwriters_disabled=true\nmutation_rejection=verified\nno_writer_admission=verified\n'; for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_service_health attempted_mutation_callback; do printf 'failure_injection_%s=passed\n' "$injection"; done; printf 'resource_cpu_seconds=%s\nresource_peak_memory_kb=%s\nresource_disk_bytes=%s\nrto_seconds=%s\nrto_decision=%s\n' "$cpu" "$memory" "$disk" "$rto" "$decision"; } > "$tmp"
+printf 'quest_migration_ledger_before_status=%s\nvalorant_migration_ledger_before_status=%s\nrpo_seconds=%s\nrpo_decision=%s\n' "$quest_migrations_before" "$valorant_migrations_before" "$rpo" "$rpo_decision" >> "$tmp"
 chmod 600 "$tmp"; mv -f -- "$tmp" "$evidence/rehearsal-evidence.env"
 manifest="$evidence/rehearsal-evidence.manifest"; signature="$evidence/rehearsal-evidence.sig"
 artifact_list=(rehearsal-evidence.env rehearsal-observations.env rehearsal-source-version.env rehearsal-security-verifier.output rehearsal-roles.tsv rehearsal-memberships.tsv rehearsal-owners.tsv rehearsal-grants.tsv rehearsal-acl.tsv rehearsal-ext.tsv rehearsal-settings.tsv rehearsal-rls.tsv)

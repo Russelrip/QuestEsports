@@ -42,7 +42,11 @@ remain owner-verification items and must never be printed in alerts or logs.
 ## Recovery objectives and limitations
 
 - The timer provides a technical recovery-point interval of approximately 24 hours plus up to 15 minutes when the timer, VPS, database, and Drive destination are healthy. A migration-changing CD run creates an additional backup immediately before migration.
-- There is no contractual recovery-time objective recorded yet. Time the next quarterly drill and have the business owner approve an RTO and RPO.
+- The owner must record an approved RPO and RTO before host mutation and before
+  accepting rehearsal evidence. The rehearsal records the approved values via
+  `REHEARSAL_RPO_SECONDS`/`REHEARSAL_RPO_DECISION` and
+  `REHEARSAL_RTO_SECONDS`/`REHEARSAL_RTO_DECISION`; restore duration and
+  resource usage remain measured observations, not operator estimates.
 - Local encrypted copies older than `BACKUP_LOCAL_RETENTION_DAYS` are removed by the script; the current value is seven days.
 - The repository includes a dry-run-first, per-remote retention tool with a minimum-recovery-point guard. Production deletion remains disabled until the owner approves the retention values and runs the exact confirmation-gated command for object-locked destinations.
 - The repository includes a systemd `OnFailure` notifier. It pages an operator only after the failure unit is installed and an approved Discord-compatible HTTPS webhook is added to the protected backup environment and tested.
@@ -90,6 +94,45 @@ Consequently, the production `.env` and infrastructure credentials require a sep
 Losing every copy of the private `age` identity makes existing encrypted archives unrecoverable. If the rclone token is lost, the encrypted files remain in Google Drive and can be downloaded through an authorized account while the remote is re-authorized.
 
 ## Installation and configuration
+
+## Owner gates and root-bootstrap boundary
+
+The following record is a hard gate, not a statement that the checks have been
+performed. The owner must complete it before any VPS package, filesystem,
+identity, service, or database mutation. If a category is unexplained, the
+corrected 72-hour rate exceeds the applicable plan quota, or an owner field is
+blank, stop at this gate.
+
+| Gate record | Required owner evidence | Status |
+| --- | --- | --- |
+| Supabase egress categories | Categorized totals, corrected 72-hour observation, post-fix daily rate, quota, and explanation for every category | `PENDING_OWNER_RECORD` |
+| No-402 evidence | Production logs/health observation showing no 402s; 402 behavior tested only against a disposable mock | `PENDING_OWNER_RECORD` |
+| Privileged actor | Named root-capable bootstrap operator and date/approval | `PENDING_OWNER_RECORD` |
+| Release actor | Exact non-root release actor and narrow sudo command/rule | `PENDING_OWNER_RECORD` |
+| Backup destination | Approved destination label, credential-separation confirmation, and archive/checksum pair policy | `PENDING_OWNER_RECORD` |
+| Recovery objectives | Business-owner-approved RPO and RTO, with decision owner | `PENDING_OWNER_RECORD` |
+
+Root bootstrap is operator-gated and is not performed by the rehearsal scripts.
+The root-capable operator must create only these documented paths and
+identities, then record the resulting ownership and modes:
+
+| Path/identity | Required owner and mode |
+| --- | --- |
+| `/srv/quest-esports/postgres/17/data` | `postgres:postgres`, `700` |
+| `/srv/quest-esports/uploads` | `deploy:deploy`, `750` |
+| `/srv/quest-esports/private` | `deploy:deploy`, `700` |
+| `/srv/quest-esports/backups` | `deploy:deploy`, `700` |
+| `/opt/quest-esports/releases` | `root:deploy`, `750` |
+| `/etc/quest-esports` | `root:root`, `750` |
+| `/var/lock/quest-esports-release.lock` | `root:deploy`, `660`, canonical lock |
+
+The same operator installs Docker/Compose, Nginx, systemd/tmpfiles, and the
+narrow release sudo rule. Bootstrap must not stop PM2 or any legacy VALORANT
+service, must not restore a database, and must not change database authority.
+The owner records Docker/Compose versions, host capacity and swap decision,
+Nginx/systemd installation, lock creation, and the exact sudo rule separately.
+No live bootstrap, service stop, production restore, or migration is implied by
+this repository record.
 
 The production templates are:
 
@@ -301,11 +344,12 @@ and a zero countdown, and captures its output privately. It emits a fixed-name
 `rehearsal-observations.env` plus hashed raw role/inventory artifacts, binds
 that raw file into the summary, and then records the
 exact two-schema manifest scope, source/client versions, checksum/decryption,
-both schema/object counts, both migration ledgers (including the exact
-VALORANT `_migration_ledger`), roles/owners/grants/default
+both schema/object counts, the pre-restore and post-restore migration ledgers
+(including the exact VALORANT `_migration_ledger`), roles/owners/grants/default
 ACLs, extensions/settings/RLS, upload counts/bytes/checksums, Quest and
 VALORANT health/CA/database status, validation freeze and writer rejection,
-named negative injections, measured resources, and an explicit RTO decision.
+named negative injections, measured resources, and explicit owner-approved
+RPO/RTO decisions.
 No URL, credential, token, identity, or secret environment value is printed or
 written to evidence. Verify only with:
 

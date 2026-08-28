@@ -34,6 +34,33 @@ chmod 700 /srv/quest-esports/private
 
 The backend creates the required child directories. Never expose `PRIVATE_UPLOAD_ROOT` through Nginx or `/api/uploads`.
 
+## Owner gates before VPS mutation
+
+This worktree records the procedure, not live host evidence. Before any root
+bootstrap or migration, the owner must record the categorized Supabase egress
+totals, corrected 72-hour observation, post-fix daily rate and quota, with no
+unexplained category; record production no-402 log/health evidence and a 402
+test performed only against a disposable mock. A rate above quota or any
+unexplained egress category stops the migration.
+
+The same pre-mutation record must name the root-capable bootstrap actor, the
+exact non-root release actor and narrow sudo rule, the approved backup
+destination and credential separation, and the business-approved RPO/RTO.
+These values remain `PENDING_OWNER_RECORD` until an operator supplies signed
+or otherwise retained evidence. They must not be inferred from this document.
+
+The root-capable operator creates only the documented runtime paths and
+identities: `/srv/quest-esports/postgres/17/data` (`postgres:postgres`, `700`),
+`/srv/quest-esports/uploads` (`deploy:deploy`, `750`),
+`/srv/quest-esports/private` and `/srv/quest-esports/backups`
+(`deploy:deploy`, `700`), `/opt/quest-esports/releases` (`root:deploy`, `750`),
+`/etc/quest-esports` (`root:root`, `750`), and the root-owned canonical
+`/var/lock/quest-esports-release.lock` (`root:deploy`, `660`). The operator
+installs Docker/Compose, Nginx, systemd/tmpfiles, and the narrow release sudo
+rule without stopping PM2 or legacy VALORANT services. No bootstrap, service
+stop, production restore, migration, or database-authority change is performed
+by the repository rehearsal flow.
+
 ## Production Environment Invariants
 
 Production startup intentionally fails when any of these invariants is broken:
@@ -821,7 +848,15 @@ RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
   bash ops/restore-production-backup.sh /absolute/path/to/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
 ```
 
-Do not point a restore drill at Paris production. Record the archive timestamp, restored table counts, sample asset checks, and elapsed recovery time. Run a drill after setup and at least quarterly.
+Do not point a restore drill at Paris production. The rehearsal must use pinned
+PostgreSQL 17 clients and the existing restore primitive's
+`pg_restore --no-owner --no-acl --single-transaction --exit-on-error` path,
+then verify the roles/default privileges/grants separately. Record the
+pre-restore and post-restore Quest `public._prisma_migrations` and VALORANT
+`valorant._migration_ledger` states, both schema/object counts, both upload-root
+checksums, health/freeze/failure-injection results, measured resource usage,
+approved RPO/RTO, and elapsed recovery time. Run a drill after setup and at
+least quarterly.
 
 The repository contains a historical record describing a full drill dated
 2026-07-29 using `quest-production-20260729T133809Z.tar.gz.enc`. It records a
