@@ -49,9 +49,11 @@ looks_production() {
 }
 looks_production "$db_url" || fail "database URL looks like production"
 [[ "$db_url" =~ ^postgres(ql)?:// && "$db_url" != *[[:space:]]* ]] || fail "target is not a safe PostgreSQL URL"
+[[ "$db_url" != *\?* && "$db_url" != *\#* ]] || fail "DIRECT_URL query/fragment overrides are not allowed"
 host="${db_url#*://}"; host="${host%%/*}"; host="${host##*@}"; host="${host%%:*}"
 case "${host,,}" in ""|questesports*|api.*|*.lk|supabase*|*.supabase.*|production*|prod*|paris*) fail "database host looks like production" ;; esac
 [[ "$runtime_db_url" =~ ^postgres(ql)?:// && "$runtime_db_url" != *[[:space:]]* ]] || fail "QUEST_RUNTIME_DATABASE_URL is required and unsafe"
+[[ "$runtime_db_url" != *\?* && "$runtime_db_url" != *\#* ]] || fail "QUEST_RUNTIME_DATABASE_URL query/fragment overrides are not allowed"
 looks_production "$runtime_db_url" || fail "runtime database URL looks like production"
 need python3
 runtime_endpoint="$(python3 - "$db_url" "$runtime_db_url" <<'PY'
@@ -93,6 +95,12 @@ check_path "$signing_key" REHEARSAL_SIGNING_PRIVATE_KEY; private "$signing_key" 
 
 for command in realpath sha256sum age tar mktemp date grep sed find sort stat curl python3 rsync sleep cp wc tr cut du awk cat openssl docker; do need "$command"; done
 [[ -r "$restore" ]] || fail "existing restore primitive is missing"
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/quest-rehearsal.XXXXXXXX")"; chmod 700 "$scratch"
+binding_pid=""
+stop_binding_session() { if [[ -n "${binding_pid:-}" ]] && kill -0 "$binding_pid" 2>/dev/null; then kill "$binding_pid" 2>/dev/null || true; wait "$binding_pid" 2>/dev/null || true; fi; binding_pid=""; }
+upload_parent_created=0
+cleanup_upload_parent() { if (( ${upload_parent_created:-0} )); then rmdir -- "$private_resolved" "$public_resolved" "$upload_parent" 2>/dev/null || true; fi; }
+cleanup() { local s=$?; set +e; stop_binding_session; rm -f -- "$evidence"/.rehearsal-failure-hook-*.sh; rm -rf -- "$scratch"; cleanup_upload_parent; return "$s"; }; trap cleanup EXIT
 public_resolved="$(realpath -m -- "$public_root")"; private_resolved="$(realpath -m -- "$private_root")"
 [[ "$public_resolved" != / && "$private_resolved" != / && "$public_resolved" != "$private_resolved" ]] || fail "upload roots must be distinct non-root paths"
 [[ "$public_resolved" != "$private_resolved"/* && "$private_resolved" != "$public_resolved"/* ]] || fail "upload roots must not be nested"
@@ -102,8 +110,6 @@ upload_parent="$(dirname "$public_resolved")"
 [[ ! -e "$upload_parent" && ! -L "$upload_parent" ]] || fail "upload parent must not already exist"
 mkdir -- "$upload_parent" || fail "disposable upload parent could not be created atomically"
 chmod 700 -- "$upload_parent"; upload_parent_created=1
-cleanup_upload_parent() { if (( ${upload_parent_created:-0} )); then rmdir -- "$private_resolved" "$public_resolved" "$upload_parent" 2>/dev/null || true; fi; }
-trap cleanup_upload_parent EXIT
 mkdir -- "$public_resolved" "$private_resolved" || fail "disposable upload roots could not be created"
 chmod 700 -- "$public_resolved" "$private_resolved"
 parent_device="$(stat -c '%d' -- "$upload_parent")"; parent_uid="$(stat -c '%u' -- "$upload_parent")"; parent_gid="$(stat -c '%g' -- "$upload_parent")"
@@ -133,9 +139,16 @@ done
 line="$(tr -d '\r' < "$checksum")"
 [[ "$line" =~ ^[a-fA-F0-9]{64}[[:space:]]+\*?$(basename "$archive")$ ]] || fail "checksum does not identify the selected archive"
 (cd -- "$(dirname "$archive")" && sha256sum --check --status "$(basename "$checksum")") || fail "archive checksum verification failed"
+age --decrypt --identity "$identity" --output "$scratch/payload.tar.gz" "$archive" >"$scratch/age.log" 2>&1 || fail "age decryption failed"
+tar --list --gzip --file="$scratch/payload.tar.gz" >"$scratch/list" 2>/dev/null || fail "decrypted payload is not a gzip tar"
+grep -Eq '(^|/)\.\.(\/|$)|^/' "$scratch/list" && fail "archive contains unsafe paths"
+tar --extract --gzip --no-same-owner --no-same-permissions --file="$scratch/payload.tar.gz" --directory="$scratch" >/dev/null 2>&1 || fail "archive extraction failed"
+manifest="$scratch/manifest.txt"; [[ -f "$manifest" && -f "$scratch/database.dump" ]] || fail "archive manifest or database dump is missing"
+manifest_value() { grep -m1 "^$1=" "$manifest" | sed 's/^[^=]*=//'; }
+archive_scope="$(manifest_value database_scope)"; included="$(manifest_value valorant_schema_included)"
+[[ "$archive_scope" == application_public_and_valorant_schemas && "$included" == true ]] || fail "archive manifest is not the exact two-schema scope"
+[[ "$(basename "$(manifest_value public_upload_root)")" == "$(basename "$public_root")" && "$(basename "$(manifest_value private_upload_root)")" == "$(basename "$private_root")" ]] || fail "archive manifest upload scope does not match targets"
 
-scratch="$(mktemp -d "${TMPDIR:-/tmp}/quest-rehearsal.XXXXXXXX")"; chmod 700 "$scratch"
-cleanup() { local s=$?; set +e; rm -rf -- "$scratch"; cleanup_upload_parent; return "$s"; }; trap cleanup EXIT
 start="$(date -u +%s)"; start_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 pg_stage="$scratch/pg17"; mkdir -p "$pg_stage"
@@ -151,12 +164,33 @@ psql_major="$(psql --version 2>/dev/null | { read -r version; major "$version"; 
 restore_major="$(pg_restore --version 2>/dev/null | { read -r version; major "$version"; })" || fail "pg_restore version unavailable"
 dump_major="$(pg_dump --version 2>/dev/null | { read -r version; major "$version"; })" || fail "pg_dump version unavailable"
 [[ "$psql_major" == 17 && "$restore_major" == 17 && "$dump_major" == 17 ]] || fail "all PostgreSQL clients must be major 17"
-psql_query() { PGAPPNAME="${rehearsal_app_name:-}" psql -X -A -t -F '|' "$db_url" -c "$2" >"$1" 2>/dev/null; }
-runtime_psql_query() { PGAPPNAME="${rehearsal_app_name:-quest-rehearsal-read-probe}" psql -X -A -t -F '|' "$runtime_db_url" -c "$2" >"$1" 2>/dev/null; }
+psql_query() { env -u PGUSER -u PGDATABASE -u PGHOST -u PGPORT -u PGSERVICE -u PGOPTIONS -u PGPASSWORD PGAPPNAME="${rehearsal_app_name:-}" psql -X -A -t -F '|' "$db_url" -c "$2" >"$1" 2>/dev/null; }
+runtime_psql_query() { env -u PGUSER -u PGDATABASE -u PGHOST -u PGPORT -u PGSERVICE -u PGOPTIONS -u PGPASSWORD PGAPPNAME="${rehearsal_app_name:-quest-rehearsal-read-probe}" psql -X -A -t -F '|' "$runtime_db_url" -c "$2" >"$1" 2>/dev/null; }
+start_binding_session() {
+  local app_name="$1" output="$2" errors="$3" attempt
+  : > "$output"; : > "$errors"
+  env -u PGUSER -u PGDATABASE -u PGHOST -u PGPORT -u PGSERVICE -u PGOPTIONS -u PGPASSWORD PGAPPNAME="$app_name" psql -X -A -t -F '|' -v ON_ERROR_STOP=1 "$db_url" >"$output" 2>"$errors" <<SQL &
+SELECT current_setting('application_name') || '|' || current_database() || '|' || session_user || '|' || current_user || '|' || inet_server_port() || '|' || pg_backend_pid();
+SELECT pg_sleep(60);
+SQL
+  binding_pid=$!
+  for attempt in {1..100}; do
+    if [[ -s "$output" ]] && grep -Eq '^quest-rehearsal-[0-9a-f]{64}\|[^|]+\|[^|]+\|[^|]+\|[0-9]+\|[0-9]+$' "$output"; then return 0; fi
+    if ! kill -0 "$binding_pid" 2>/dev/null; then wait "$binding_pid" 2>/dev/null || true; binding_pid=""; return 1; fi
+    sleep 0.1
+  done
+  return 1
+}
+validate_binding_output() {
+  local output="$1" expected_app="$2" app database session_user current_user server_port backend_pid
+  IFS='|' read -r app database session_user current_user server_port backend_pid < "$output"
+  [[ "$app" == "$expected_app" && "$database" == "$target_database" && "$session_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$current_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$server_port" == 5432 && "$backend_pid" =~ ^[0-9]+$ ]] || return 1
+  binding_database="$database"; binding_session_user="$session_user"; binding_current_user="$current_user"; binding_server_port="$server_port"; binding_backend_pid="$backend_pid"
+}
 target_identity="$(docker container inspect --size --format '{{.Id}}|{{.Name}}|{{.State.Running}}|{{.Config.Image}}|{{.SizeRw}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "disposable target container identity could not be verified"
 printf '%s\n' "$target_identity" > "$scratch/target-docker-before"
 IFS='|' read -r inspected_id inspected_name inspected_running inspected_image container_disk_bytes <<< "$target_identity"
-[[ "$inspected_id" == "${sentinel_cfg[container_id]}" && "$inspected_name" == /quest-rehearsal-* && "$inspected_running" == true && "$inspected_image" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ && "$container_disk_bytes" =~ ^[0-9]+$ ]] || fail "disposable target container identity and immutable PostgreSQL 17 image are unsafe"
+[[ "$inspected_id" == "${sentinel_cfg[container_id]}" && "$inspected_name" == /quest-rehearsal-* && "$inspected_running" == true && "$inspected_image" =~ ^postgres:17([.][0-9]+)?(-bookworm)?@sha256:[0-9a-f]{64}$ && "$container_disk_bytes" =~ ^[0-9]+$ ]] || fail "disposable target container identity and immutable PostgreSQL 17 image are unsafe"
 url_endpoint="$(python3 - "$db_url" <<'PY'
 from urllib.parse import urlsplit
 import sys
@@ -180,20 +214,22 @@ PY
 )" || fail "DIRECT_URL cannot be bound to one loopback PostgreSQL container port"
 IFS='|' read -r mapped_host mapped_port <<< "$mapping"
 [[ "$mapped_host" == "$url_host" && "$mapped_port" == "$url_port" && "$url_port" =~ ^[0-9]+$ ]] || fail "DIRECT_URL does not match the inspected container port mapping"
+target_database="${runtime_endpoint##*|}"
 rehearsal_nonce="$(openssl rand -hex 32)" || fail "fresh target-binding nonce could not be generated"
 rehearsal_app_name="quest-rehearsal-$rehearsal_nonce"; export PGAPPNAME="$rehearsal_app_name"
-psql_query "$scratch/connection-binding" "SELECT current_setting('application_name') || '|' || inet_server_port()" || fail "target connection binding probe failed"
-[[ "$(tr -d '[:space:]' < "$scratch/connection-binding")" == "$rehearsal_app_name|5432" ]] || fail "DIRECT_URL connection nonce/server port binding failed"
+start_binding_session "$rehearsal_app_name" "$scratch/connection-binding" "$scratch/connection-binding.stderr" || fail "target connection binding session could not be held open"
+validate_binding_output "$scratch/connection-binding" "$rehearsal_app_name" || fail "DIRECT_URL active connection binding is malformed"
 docker_psql_query() { docker container exec --user postgres "${sentinel_cfg[container_id]}" psql -X -A -t -F '|' -d postgres -c "$2" >"$1" 2>/dev/null; }
-docker_psql_query "$scratch/docker-connection-binding" "SELECT count(*) || '|' || COALESCE(max(inet_server_port()),0) FROM pg_stat_activity WHERE application_name='$rehearsal_app_name' AND backend_type='client backend'" || fail "independent container connection binding probe failed"
-[[ "$(tr -d '[:space:]' < "$scratch/docker-connection-binding")" == "1|5432" ]] || fail "independent container connection binding did not observe the nonce"
+docker_psql_query "$scratch/docker-connection-binding" "SELECT application_name || '|' || datname || '|' || usename || '|' || COALESCE(state,'') || '|' || COALESCE(inet_server_port(),0) || '|' || pid FROM pg_stat_activity WHERE application_name='$rehearsal_app_name' AND backend_type='client backend'" || fail "independent container connection binding probe failed"
+[[ "$(wc -l < "$scratch/docker-connection-binding" | tr -d ' ')" == 1 ]] || fail "independent container connection binding did not observe exactly one active session"
+stop_binding_session
 nonce_sha256="$(printf '%s' "$rehearsal_nonce" | sha256sum | cut -d' ' -f1)"
 psql_query "$scratch/target-sentinel" "SELECT current_setting('quest.rehearsal_target_id', true)" || fail "disposable target sentinel query failed"
 [[ "$(tr -d '[:space:]' < "$scratch/target-sentinel")" == "${sentinel_cfg[target_id]}" ]] || fail "database sentinel does not match disposable target"
 psql_query "$scratch/target-server-version" "SELECT current_setting('server_version_num')" || fail "target server version query failed"
 target_server_version="$(tr -d '[:space:]' < "$scratch/target-server-version")"; [[ "$target_server_version" =~ ^17[0-9]{4}$ ]] || fail "disposable target server is not PostgreSQL 17"
 validate_extensions() { local file="$1" count; count="$(wc -l < "$file" | tr -d ' ')"; [[ "$count" == 1 ]] && grep -qx 'plpgsql|1.0' "$file"; }
-validate_settings() { local file="$1"; grep -Eq '^server_version\|PostgreSQL_17([.][0-9]+)?$' "$file" && grep -Eq '^server_version_num\|17[0-9]{4}$' "$file" && grep -qx 'ssl|on' "$file" && grep -Eq '^ssl_min_protocol_version\|TLSv1\.(2|3)$' "$file" && grep -qx 'row_security|on' "$file" && grep -qx 'default_transaction_read_only|off' "$file" && grep -Eq '^listen_addresses\|([*]|localhost|127\.0\.0\.1)$' "$file"; }
+validate_settings() { local file="$1" count; count="$(wc -l < "$file" | tr -d ' ')"; [[ "$count" == 7 ]] && grep -Eq '^server_version\|PostgreSQL_17([.][0-9]+)?$' "$file" && grep -Eq '^server_version_num\|17[0-9]{4}$' "$file" && grep -qx 'ssl|on' "$file" && grep -Eq '^ssl_min_protocol_version\|TLSv1\.(2|3)$' "$file" && grep -qx 'row_security|on' "$file" && grep -qx 'default_transaction_read_only|off' "$file" && grep -Eq '^listen_addresses\|([*]|localhost|127\.0\.0\.1)$' "$file"; }
 psql_query "$scratch/ext-before" "SELECT extname || '|' || extversion FROM pg_extension ORDER BY extname" || fail "pre-restore extension inventory query failed"
 validate_extensions "$scratch/ext-before" || fail "pre-restore extension inventory is missing required PostgreSQL extensions"
 extensions_before_sha256="$(sha256sum "$scratch/ext-before" | cut -d' ' -f1)"; extensions_before_count="$(wc -l < "$scratch/ext-before" | tr -d ' ')"
@@ -213,16 +249,6 @@ valorant_migrations_before="$(ledger_presence valorant _migration_ledger "$scrat
 cp -- "$scratch/public-ledger-before.inventory" "$scratch/quest-migrations-before.tsv"
 cp -- "$scratch/valorant-ledger-before.inventory" "$scratch/valorant-migrations-before.tsv"
 
-age --decrypt --identity "$identity" --output "$scratch/payload.tar.gz" "$archive" >"$scratch/age.log" 2>&1 || fail "age decryption failed"
-tar --list --gzip --file="$scratch/payload.tar.gz" >"$scratch/list" 2>/dev/null || fail "decrypted payload is not a gzip tar"
-grep -Eq '(^|/)\.\.(\/|$)|^/' "$scratch/list" && fail "archive contains unsafe paths"
-tar --extract --gzip --no-same-owner --no-same-permissions --file="$scratch/payload.tar.gz" --directory="$scratch" >/dev/null 2>&1 || fail "archive extraction failed"
-manifest="$scratch/manifest.txt"; [[ -f "$manifest" && -f "$scratch/database.dump" ]] || fail "archive manifest or database dump is missing"
-manifest_value() { grep -m1 "^$1=" "$manifest" | sed 's/^[^=]*=//'; }
-archive_scope="$(manifest_value database_scope)"; included="$(manifest_value valorant_schema_included)"
-[[ "$archive_scope" == application_public_and_valorant_schemas && "$included" == true ]] || fail "archive manifest is not the exact two-schema scope"
-[[ "$(basename "$(manifest_value public_upload_root)")" == "$(basename "$public_root")" && "$(basename "$(manifest_value private_upload_root)")" == "$(basename "$private_root")" ]] || fail "archive manifest upload scope does not match targets"
-
 source_major="$(grep -m1 '^source_major=' "$source_record" | cut -d= -f2-)"; source_version="$(grep -m1 '^source_version=' "$source_record" | cut -d= -f2-)"; source_provenance="$(grep -m1 '^provenance=' "$source_record" | cut -d= -f2-)"
 [[ "$source_major" =~ ^[0-9]+$ && "$source_major" -gt 0 && "$source_version" =~ ^PostgreSQL_${source_major}([.][0-9]+)?$ && "$source_provenance" == operator_recorded ]] || fail "source-version evidence is incomplete or unsafe"
 gate=none; if [[ "$source_major" != 17 ]]; then [[ "${SOURCE_MAJOR_MISMATCH_APPROVAL:-}" == approved ]] || fail "source-major mismatch lacks approved logical-migration gate"; gate=approved_logical_major_migration; fi
@@ -236,7 +262,7 @@ cpu="$(grep -m1 '^cpu_seconds=' "$scratch/resource" | cut -d= -f2)"; memory="$(g
 target_identity_after="$(docker container inspect --size --format '{{.Id}}|{{.Name}}|{{.State.Running}}|{{.Config.Image}}|{{.SizeRw}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "disposable target container could not be re-inspected"
 printf '%s\n' "$target_identity_after" > "$scratch/target-docker-after"
 IFS='|' read -r inspected_id_after inspected_name_after inspected_running_after inspected_image_after container_disk_bytes_after <<< "$target_identity_after"
-[[ "$inspected_id_after" == "${sentinel_cfg[container_id]}" && "$inspected_name_after" == /quest-rehearsal-* && "$inspected_running_after" == true && "$inspected_image_after" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ && "$container_disk_bytes_after" =~ ^[0-9]+$ ]] || fail "post-restore target container identity and immutable PostgreSQL 17 image are unsafe"
+[[ "$inspected_id_after" == "${sentinel_cfg[container_id]}" && "$inspected_name_after" == /quest-rehearsal-* && "$inspected_running_after" == true && "$inspected_image_after" =~ ^postgres:17([.][0-9]+)?(-bookworm)?@sha256:[0-9a-f]{64}$ && "$container_disk_bytes_after" =~ ^[0-9]+$ ]] || fail "post-restore target container identity and immutable PostgreSQL 17 image are unsafe"
 mapping_json_after="$(docker container inspect --format '{{json .NetworkSettings.Ports}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "post-restore target port mapping could not be inspected"
 printf '%s\n' "$mapping_json_after" > "$scratch/target-port-mapping-after"
 mapping_after="$(python3 - "$mapping_json_after" <<'PY'
@@ -249,10 +275,14 @@ print(f"{bindings[0].get('HostIp')}|{bindings[0].get('HostPort')}")
 PY
 )" || fail "post-restore target port mapping is unsafe"
 [[ "$mapping_after" == "$mapping" && "$mapping_after" == "$url_host|$url_port" ]] || fail "post-restore target port mapping changed"
-psql_query "$scratch/connection-binding-after" "SELECT current_setting('application_name') || '|' || inet_server_port()" || fail "post-restore target connection binding probe failed"
-[[ "$(tr -d '[:space:]' < "$scratch/connection-binding-after")" == "$rehearsal_app_name|5432" ]] || fail "post-restore connection nonce/server port binding failed"
-docker_psql_query "$scratch/docker-connection-binding-after" "SELECT count(*) || '|' || COALESCE(max(inet_server_port()),0) FROM pg_stat_activity WHERE application_name='$rehearsal_app_name' AND backend_type='client backend'" || fail "post-restore independent container connection binding probe failed"
-[[ "$(tr -d '[:space:]' < "$scratch/docker-connection-binding-after")" == "1|5432" ]] || fail "post-restore container connection binding did not observe the nonce"
+rehearsal_nonce_after="$(openssl rand -hex 32)" || fail "fresh post-restore target-binding nonce could not be generated"
+rehearsal_app_name_after="quest-rehearsal-$rehearsal_nonce_after"; export PGAPPNAME="$rehearsal_app_name_after"
+start_binding_session "$rehearsal_app_name_after" "$scratch/connection-binding-after" "$scratch/connection-binding-after.stderr" || fail "post-restore connection binding session could not be held open"
+validate_binding_output "$scratch/connection-binding-after" "$rehearsal_app_name_after" || fail "post-restore active connection binding is malformed"
+docker_psql_query "$scratch/docker-connection-binding-after" "SELECT application_name || '|' || datname || '|' || usename || '|' || COALESCE(state,'') || '|' || COALESCE(inet_server_port(),0) || '|' || pid FROM pg_stat_activity WHERE application_name='$rehearsal_app_name_after' AND backend_type='client backend'" || fail "post-restore independent container connection binding probe failed"
+[[ "$(wc -l < "$scratch/docker-connection-binding-after" | tr -d ' ')" == 1 ]] || fail "post-restore independent container connection binding did not observe exactly one active session"
+stop_binding_session
+nonce_after_sha256="$(printf '%s' "$rehearsal_nonce_after" | sha256sum | cut -d' ' -f1)"
 psql_query "$scratch/database-size" "SELECT pg_database_size(current_database())" || fail "database size query failed"
 database_size_bytes="$(tr -d '[:space:]' < "$scratch/database-size")"; [[ "$database_size_bytes" =~ ^[0-9]+$ && "$database_size_bytes" -gt 0 ]] || fail "database size evidence is invalid"
 
@@ -300,8 +330,9 @@ psql_query "$scratch/ext" "SELECT extname || '|' || extversion FROM pg_extension
 psql_query "$scratch/settings" "SELECT name || '|' || regexp_replace(setting, '[^A-Za-z0-9_.:+*/-]', '_', 'g') FROM pg_settings WHERE name IN ('server_version','server_version_num','ssl','ssl_min_protocol_version','row_security','default_transaction_read_only','listen_addresses') ORDER BY name" || fail "settings inventory query failed"; settings_sha256="$(sha256sum "$scratch/settings" | cut -d' ' -f1)"; validate_settings "$scratch/settings" || fail "post-restore PostgreSQL settings are unsafe or unknown"; settings="$(grep '^server_version_num|' "$scratch/settings" | cut -d'|' -f2)"; [[ "$settings" =~ ^17[0-9]{4}$ ]] || fail "target PostgreSQL server is not major 17"; target_major=17
 cmp -s "$scratch/ext-before" "$scratch/ext" || fail "extension inventory changed during restore"
 cmp -s "$scratch/settings-before" "$scratch/settings" || fail "PostgreSQL settings changed during restore"
-runtime_psql_query "$scratch/quest-read-probe" "SELECT count(*) FROM public.\"users\"" || fail "Quest runtime database-backed read probe failed"
-quest_read_probe_count="$(tr -d '[:space:]' < "$scratch/quest-read-probe")"; [[ "$quest_read_probe_count" =~ ^[0-9]+$ ]] || fail "Quest database-backed read probe returned an invalid count"
+runtime_psql_query "$scratch/quest-read-probe" "SELECT session_user || '|' || current_user || '|' || count(*) FROM public.\"users\"" || fail "Quest runtime database-backed read probe failed"
+IFS='|' read -r quest_read_probe_session_user quest_read_probe_current_user quest_read_probe_count < "$scratch/quest-read-probe"
+[[ "$quest_read_probe_session_user" == quest_runtime && "$quest_read_probe_current_user" == quest_runtime && "$quest_read_probe_count" =~ ^[0-9]+$ ]] || fail "Quest database-backed read probe returned an invalid authenticated role or count"
 psql_tsv "$scratch/rls" "SELECT n.nspname, c.relname, c.relrowsecurity, COALESCE(p.policyname,'<none>'), COALESCE(array_to_string(p.roles,','),'<none>'), COALESCE(p.cmd,'<none>'), COALESCE(replace(replace(p.qual,E'\\t','_'),E'\\n','_'),'<none>'), COALESCE(replace(replace(p.with_check,E'\\t','_'),E'\\n','_'),'<none>') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace LEFT JOIN pg_policies p ON p.schemaname=n.nspname AND p.tablename=c.relname WHERE n.nspname IN ('public','valorant') AND c.relkind IN ('r','p','f') ORDER BY n.nspname,c.relname,p.policyname" || fail "RLS query failed"
 rls_enabled="$(awk -F '\t' '$3 == "t" { n++ } END { print n + 0 }' "$scratch/rls")"; rls_tables="$(wc -l < "$scratch/rls" | tr -d ' ')"; [[ "$rls_enabled" =~ ^[0-9]+$ && "$rls_tables" =~ ^[0-9]+$ && "$rls_enabled" -gt 0 ]] || fail "RLS evidence was not verified"
 while IFS=$'\t' read -r schema table protected policy roles command qual with_check; do [[ "$schema" == public || "$schema" == valorant ]] || fail "RLS schema is unsafe"; [[ -n "$table" && "$protected" == t || "$protected" == f ]] || fail "RLS table row is malformed"; if [[ "$schema" == valorant && "$table" != _migration_ledger ]]; then [[ "$protected" == t && "$policy" == "${table}_runtime_all" && "$roles" == *val_runtime* && "$command" == 'ALL' ]] || fail "VALORANT table lacks its val_runtime RLS policy"; fi; done < "$scratch/rls"
@@ -335,15 +366,15 @@ probe() { local url="$1" name="$2" h="$scratch/$name.h" b="$scratch/$name.b" cod
 run_exact_hook() { local path="$1" expected="$2" output="$3"; env -u BASH_ENV -u ENV DIRECT_URL="$db_url" DATABASE_URL="$db_url" "$path" >"$output" 2>&1 || return 1; [[ "$(tr -d '\r' < "$output")" == "$expected" ]]; }
 validate_failure_output() {
   local injection="$1" output="$2" expected_endpoint_id="$3" expected_endpoint_sha256="$4" expected_class
-  local expected_service
+  local expected_service expected_pre_state expected_post_state
   case "$injection" in
-    bad_checksum) expected_class=archive_checksum_failed; expected_service=quest-backup ;; bad_decryption) expected_class=age_decryption_failed; expected_service=quest-backup ;; wrong_ca) expected_class=certificate_verification_failed; expected_service=valorant-health ;;
-    blocked_network) expected_class=network_blocked; expected_service=valorant-health ;; failed_service_health) expected_class=service_health_failed; expected_service=valorant-health ;; attempted_mutation_callback) expected_class=writer_mutation_rejected; expected_service=quest-api ;;
+    bad_checksum) expected_class=archive_checksum_failed; expected_service=quest-backup; expected_pre_state=running; expected_post_state=running ;; bad_decryption) expected_class=age_decryption_failed; expected_service=quest-backup; expected_pre_state=running; expected_post_state=running ;; wrong_ca) expected_class=certificate_verification_failed; expected_service=valorant-health; expected_pre_state=running; expected_post_state=running ;;
+    blocked_network) expected_class=network_blocked; expected_service=valorant-health; expected_pre_state=running; expected_post_state=blocked ;; failed_service_health) expected_class=service_health_failed; expected_service=valorant-health; expected_pre_state=running; expected_post_state=stopped ;; attempted_mutation_callback) expected_class=writer_mutation_rejected; expected_service=quest-api; expected_pre_state=running; expected_post_state=blocked ;;
   esac
   declare -A failure=()
   while IFS= read -r line || [[ -n "$line" ]]; do [[ "$line" =~ ^([a-z][a-z0-9_]*)=([^[:space:]]+)$ ]] || return 1; key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"; [[ -z "${failure[$key]+x}" ]] || return 1; failure["$key"]="$value"; done < "$output"
-  for key in result failure_class service_identity endpoint_id endpoint_sha256 pre_state post_state containment; do [[ -n "${failure[$key]:-}" ]] || return 1; done
-  [[ "${failure[result]}" == passed && "${failure[failure_class]}" == "$expected_class" && "${failure[service_identity]}" == "$expected_service" && "${failure[endpoint_id]}" == "$expected_endpoint_id" && "${failure[endpoint_sha256]}" == "$expected_endpoint_sha256" && "${failure[pre_state]}" =~ ^(running|stopped|blocked|unavailable)$ && "${failure[post_state]}" =~ ^(running|stopped|blocked|unavailable)$ && "${failure[containment]}" == verified ]]
+  for key in result failure_class service_identity endpoint_id endpoint_sha256 pre_state post_state containment unaffected_service; do [[ -n "${failure[$key]:-}" ]] || return 1; done
+  [[ "${failure[result]}" == passed && "${failure[failure_class]}" == "$expected_class" && "${failure[service_identity]}" == "$expected_service" && "${failure[endpoint_id]}" == "$expected_endpoint_id" && "${failure[endpoint_sha256]}" == "$expected_endpoint_sha256" && "${failure[pre_state]}" == "$expected_pre_state" && "${failure[post_state]}" == "$expected_post_state" && "${failure[containment]}" == verified && "${failure[unaffected_service]}" == verified ]]
 }
 no_admission_hook="${NO_WRITER_ADMISSION_COMMAND:-}"; [[ "$no_admission_hook" == /* && -x "$no_admission_hook" && ! -L "$no_admission_hook" ]] || fail "NO_WRITER_ADMISSION_COMMAND must be an absolute executable hook"; check_path "$no_admission_hook" NO_WRITER_ADMISSION_COMMAND
 run_exact_hook "$no_admission_hook" verified "$scratch/no-admission.output" || fail "no-writer-admission hook did not return verified"
@@ -358,7 +389,14 @@ for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_ser
     attempted_mutation_callback) endpoint_id=quest-api; endpoint_sha256="$(printf '%s' "$callback" | sha256sum | cut -d' ' -f1)" ;;
   esac
   export FAILURE_ENDPOINT_ID="$endpoint_id" FAILURE_ENDPOINT_SHA256="$endpoint_sha256"
-  env -u BASH_ENV -u ENV DIRECT_URL="$db_url" DATABASE_URL="$db_url" "$hook" >"$scratch/$injection.output" 2>&1 || fail "failure injection $injection hook failed"
+  staged_hook="$evidence/.rehearsal-failure-hook-$injection.sh"
+  [[ ! -e "$staged_hook" && ! -L "$staged_hook" ]] || fail "failure injection $injection staged path already exists"
+  cp -- "$hook" "$staged_hook"; chmod 700 "$staged_hook"
+  configured_hook_sha256="$(sha256sum "$hook" | cut -d' ' -f1)"; staged_hook_sha256_before="$(sha256sum "$staged_hook" | cut -d' ' -f1)"
+  [[ "$configured_hook_sha256" == "$staged_hook_sha256_before" ]] || fail "failure injection $injection staging hash mismatch"
+  env -u BASH_ENV -u ENV DIRECT_URL="$db_url" DATABASE_URL="$db_url" "$staged_hook" >"$scratch/$injection.output" 2>&1 || fail "failure injection $injection hook failed"
+  [[ "$(sha256sum "$staged_hook" | cut -d' ' -f1)" == "$staged_hook_sha256_before" ]] || fail "failure injection $injection staged executable changed during execution"
+  mv -f -- "$staged_hook" "$evidence/rehearsal-failure-hook-$injection.sh"
   validate_failure_output "$injection" "$scratch/$injection.output" "$endpoint_id" "$endpoint_sha256" || fail "failure injection $injection evidence is not structured or contained"
 done
 failure_inventory="$scratch/failure-injections.tsv"
@@ -371,7 +409,8 @@ for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_ser
     wrong_ca|blocked_network|failed_service_health) endpoint_id=valorant-health; endpoint_sha256="$(printf '%s' "$val_health" | sha256sum | cut -d' ' -f1)" ;;
     attempted_mutation_callback) endpoint_id=quest-api; endpoint_sha256="$(printf '%s' "$callback" | sha256sum | cut -d' ' -f1)" ;;
   esac
-  printf '%s|%s|%s|%s|%s|%s|%s\n' "$injection" "$hook" "$(sha256sum "$hook" | cut -d' ' -f1)" "$endpoint_id" "$endpoint_sha256" passed "$(sha256sum "$scratch/$injection.output" | cut -d' ' -f1)" >> "$failure_inventory"
+  staged_hook="$evidence/rehearsal-failure-hook-$injection.sh"
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$injection" "$hook" "$(sha256sum "$hook" | cut -d' ' -f1)" "$staged_hook" "$(sha256sum "$staged_hook" | cut -d' ' -f1)" "$endpoint_id" "$endpoint_sha256" passed "$(sha256sum "$scratch/$injection.output" | cut -d' ' -f1)" >> "$failure_inventory"
 done
 rpo="${REHEARSAL_RPO_SECONDS:-}"; rpo_decision="${REHEARSAL_RPO_DECISION:-}"
 rto="${REHEARSAL_RTO_SECONDS:-}"; rto_decision="${REHEARSAL_RTO_DECISION:-}"
@@ -385,6 +424,7 @@ tmp="$evidence/.rehearsal-evidence.$$"
 for artifact in roles memberships owners grants acl ext settings rls quest-migrations-before valorant-migrations-before quest-migrations valorant-migrations; do cp -- "$scratch/$artifact" "$evidence/rehearsal-${artifact}.tsv"; chmod 600 "$evidence/rehearsal-${artifact}.tsv"; done
 cp -- "$scratch/ext-before" "$evidence/rehearsal-ext-before.tsv"; cp -- "$scratch/settings-before" "$evidence/rehearsal-settings-before.tsv"; chmod 600 "$evidence/rehearsal-ext-before.tsv" "$evidence/rehearsal-settings-before.tsv"
 for artifact in target-docker-before target-port-mapping target-port-mapping-after connection-binding docker-connection-binding target-docker-after connection-binding-after docker-connection-binding-after; do cp -- "$scratch/$artifact" "$evidence/rehearsal-${artifact}.txt"; chmod 600 "$evidence/rehearsal-${artifact}.txt"; done
+cp -- "$scratch/quest-read-probe" "$evidence/rehearsal-quest-read-probe.tsv"; chmod 600 "$evidence/rehearsal-quest-read-probe.tsv"
 cp -- "$failure_inventory" "$evidence/rehearsal-failure-injections.tsv"; chmod 600 "$evidence/rehearsal-failure-injections.tsv"
 for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_service_health attempted_mutation_callback; do cp -- "$scratch/$injection.output" "$evidence/rehearsal-failure-${injection}.output"; chmod 600 "$evidence/rehearsal-failure-${injection}.output"; done
 cp -- "$source_record" "$evidence/rehearsal-source-version.env"; chmod 600 "$evidence/rehearsal-source-version.env"
@@ -398,17 +438,17 @@ observations_tmp="$evidence/.rehearsal-observations.$$"
 { printf 'format_version=1\nobservation_status=complete\nrestore_command_status=verified\n'; printf 'checksum_command_status=verified\ndecryption_command_status=verified\n'; printf 'source_version_provenance=operator_recorded\nsource_version_record_sha256=%s\n' "$source_record_sha256"; printf 'source_postgres_major=%s\ntarget_postgres_major=%s\nclient_psql_major=%s\nclient_pg_restore_major=%s\nclient_pg_dump_major=%s\n' "$source_major" "$target_major" "$psql_major" "$restore_major" "$dump_major"; printf 'manifest_scope=%s\nmanifest_valorant_schema_included=true\npublic_table_count=%s\nvalorant_table_count=%s\npublic_object_count=%s\nvalorant_object_count=%s\nquest_migration_ledger_status=verified\nquest_migration_count=%s\nvalorant_migration_ledger_status=verified\nvalorant_migration_count=%s\n' "$archive_scope" "$public_tables" "$valorant_tables" "$public_objects" "$valorant_objects" "$quest_migrations" "$valorant_migrations"; printf 'roles_command_status=verified\nmemberships_command_status=verified\nowners_command_status=verified\ngrants_command_status=verified\ndefault_acl_command_status=verified\nrls_command_status=verified\nroles_observations_sha256=%s\nmemberships_observations_sha256=%s\nowners_observations_sha256=%s\ngrants_observations_sha256=%s\ndefault_acl_observations_sha256=%s\nrls_observations_sha256=%s\nsecurity_verify_status=verified\nsecurity_verify_output_sha256=%s\nextensions_inventory_sha256=%s\nsettings_inventory_sha256=%s\n' "$roles_sha256" "$memberships_sha256" "$owners_sha256" "$grants_sha256" "$acl_sha256" "$rls_sha256" "$security_output_sha256" "$extensions_sha256" "$settings_sha256"; printf 'public_upload_file_count=%s\npublic_upload_byte_count=%s\npublic_upload_checksum=%s\nprivate_upload_file_count=%s\nprivate_upload_byte_count=%s\nprivate_upload_checksum=%s\nupload_checksum_scope=%s\nupload_source_equivalence=%s\n' "$public_files" "$public_bytes" "$public_checksum" "$private_files" "$private_bytes" "$private_checksum" "$upload_checksum_scope" "$upload_source_equivalence"; printf 'quest_liveness_status=ok\nquest_readiness_status=ok\nquest_database_status=up\nvalorant_health_status=ok\nvalorant_database_status=up\nvalorant_ca_status=verified\nfreeze_mode=validation\nwriters_disabled=true\nmutation_rejection=verified\nno_writer_admission=verified\n'; for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_service_health attempted_mutation_callback; do printf 'failure_injection_%s=passed\n' "$injection"; done; printf 'resource_cpu_seconds=%s\nresource_peak_memory_kb=%s\nresource_disk_bytes=%s\nrto_seconds=%s\nrto_decision=%s\n' "$cpu" "$memory" "$disk" "$rto" "$decision"; } > "$observations_tmp"
 printf 'quest_migration_ledger_before_status=%s\nvalorant_migration_ledger_before_status=%s\nrpo_seconds=%s\nrpo_decision=%s\n' "$quest_migrations_before" "$valorant_migrations_before" "$rpo" "$rpo_decision" >> "$observations_tmp"
 printf 'target_kind=%s\ntarget_id=%s\ntarget_container_id=%s\ntarget_sentinel_sha256=%s\ntarget_container_disk_bytes_before=%s\ntarget_container_disk_bytes_after=%s\ntarget_database_size_bytes=%s\n' "${sentinel_cfg[target_kind]}" "${sentinel_cfg[target_id]}" "${sentinel_cfg[container_id]}" "$sentinel_sha256" "$container_disk_bytes" "$container_disk_bytes_after" "$database_size_bytes" >> "$observations_tmp"
-printf 'target_host=%s\ntarget_port=%s\ntarget_nonce_sha256=%s\nbootstrap_sql_sha256=%s\nextensions_before_status=verified\nextensions_before_count=%s\nextensions_before_inventory_sha256=%s\nsettings_before_status=verified\nsettings_before_inventory_sha256=%s\nquest_read_probe_status=verified\nquest_read_probe_count=%s\n' "$url_host" "$url_port" "$nonce_sha256" "$bootstrap_sql_sha256" "$extensions_before_count" "$extensions_before_sha256" "$settings_before_sha256" "$quest_read_probe_count" >> "$observations_tmp"
+printf 'target_host=%s\ntarget_port=%s\ntarget_database_name=%s\ntarget_nonce_sha256=%s\ntarget_nonce_after_sha256=%s\nbootstrap_sql_sha256=%s\nextensions_before_status=verified\nextensions_before_count=%s\nextensions_before_inventory_sha256=%s\nsettings_before_status=verified\nsettings_before_inventory_sha256=%s\nquest_read_probe_status=verified\nquest_read_probe_count=%s\nquest_read_probe_session_user=%s\nquest_read_probe_current_user=%s\n' "$url_host" "$url_port" "$target_database" "$nonce_sha256" "$nonce_after_sha256" "$bootstrap_sql_sha256" "$extensions_before_count" "$extensions_before_sha256" "$settings_before_sha256" "$quest_read_probe_count" "$quest_read_probe_session_user" "$quest_read_probe_current_user" >> "$observations_tmp"
 printf 'target_docker_before_sha256=%s\ntarget_mapping_sha256=%s\ntarget_mapping_after_sha256=%s\ntarget_connection_before_sha256=%s\ntarget_docker_connection_before_sha256=%s\ntarget_docker_after_sha256=%s\ntarget_connection_after_sha256=%s\ntarget_docker_connection_after_sha256=%s\n' "$target_docker_before_sha256" "$target_mapping_sha256" "$target_mapping_after_sha256" "$target_connection_before_sha256" "$target_docker_connection_before_sha256" "$target_docker_after_sha256" "$target_connection_after_sha256" "$target_docker_connection_after_sha256" >> "$observations_tmp"
 chmod 600 "$observations_tmp"; observations_sha256="$(sha256sum "$observations_tmp" | cut -d' ' -f1)"; mv -f -- "$observations_tmp" "$evidence/rehearsal-observations.env"
 { printf 'format_version=1\nevidence_status=complete\nrehearsal_mode=disposable\nrestore_status=verified\n'; printf 'created_at_utc=%s\nrestore_start_utc=%s\nrestore_end_utc=%s\nrestore_duration_seconds=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$start_utc" "$end_utc" "$duration"; printf 'archive_name=%s\narchive_sha256=%s\nobservations_sha256=%s\nchecksum_status=verified\ndecryption_status=verified\nmanifest_database_scope=%s\nmanifest_valorant_schema_included=true\n' "$(basename "$archive")" "$(cut -d' ' -f1 < "$checksum")" "$observations_sha256" "$archive_scope"; printf 'source_postgres_major=%s\ntarget_postgres_major=%s\nsource_major_gate=%s\nsource_version_provenance=operator_recorded\nsource_version_record_sha256=%s\nclient_psql_major=%s\nclient_pg_restore_major=%s\nclient_pg_dump_major=%s\n' "$source_major" "$target_major" "$gate" "$source_record_sha256" "$psql_major" "$restore_major" "$dump_major"; printf 'public_table_count=%s\nvalorant_table_count=%s\npublic_object_count=%s\nvalorant_object_count=%s\nquest_migration_ledger_status=verified\nquest_migration_count=%s\nvalorant_migration_ledger_status=verified\nvalorant_migration_count=%s\n' "$public_tables" "$valorant_tables" "$public_objects" "$valorant_objects" "$quest_migrations" "$valorant_migrations"; printf 'roles_status=verified\nowners_status=verified\ngrants_status=verified\ndefault_acl_status=verified\nmemberships_status=verified\nroles_observations_sha256=%s\nmemberships_observations_sha256=%s\nowners_observations_sha256=%s\ngrants_observations_sha256=%s\ndefault_acl_observations_sha256=%s\nrls_observations_sha256=%s\nsecurity_verify_status=verified\nsecurity_verify_output_sha256=%s\nextensions_status=verified\nextensions_count=%s\nextensions_inventory_sha256=%s\nsettings_status=verified\nsettings_inventory_sha256=%s\nrls_status=verified\nrls_enabled_table_count=%s\nrls_table_count=%s\n' "$roles_sha256" "$memberships_sha256" "$owners_sha256" "$grants_sha256" "$acl_sha256" "$rls_sha256" "$security_output_sha256" "$extensions_count" "$extensions_sha256" "$settings_sha256" "$rls_enabled" "$rls_tables"; printf 'public_upload_file_count=%s\npublic_upload_byte_count=%s\npublic_upload_checksum=%s\nprivate_upload_file_count=%s\nprivate_upload_byte_count=%s\nprivate_upload_checksum=%s\nupload_checksum_scope=%s\nupload_source_equivalence=%s\n' "$public_files" "$public_bytes" "$public_checksum" "$private_files" "$private_bytes" "$private_checksum" "$upload_checksum_scope" "$upload_source_equivalence"; printf 'quest_liveness_status=ok\nquest_readiness_status=ok\nquest_database_status=up\nvalorant_health_status=ok\nvalorant_database_status=up\nvalorant_ca_status=verified\nfreeze_mode=validation\nwriters_disabled=true\nmutation_rejection=verified\nno_writer_admission=verified\n'; for injection in bad_checksum bad_decryption wrong_ca blocked_network failed_service_health attempted_mutation_callback; do printf 'failure_injection_%s=passed\n' "$injection"; done; printf 'resource_cpu_seconds=%s\nresource_peak_memory_kb=%s\nresource_disk_bytes=%s\nrto_seconds=%s\nrto_decision=%s\n' "$cpu" "$memory" "$disk" "$rto" "$decision"; } > "$tmp"
 printf 'quest_migration_ledger_before_status=%s\nvalorant_migration_ledger_before_status=%s\nrpo_seconds=%s\nrpo_decision=%s\n' "$quest_migrations_before" "$valorant_migrations_before" "$rpo" "$rpo_decision" >> "$tmp"
 printf 'target_kind=%s\ntarget_id=%s\ntarget_container_id=%s\ntarget_sentinel_sha256=%s\ntarget_container_disk_bytes_before=%s\ntarget_container_disk_bytes_after=%s\ntarget_database_size_bytes=%s\n' "${sentinel_cfg[target_kind]}" "${sentinel_cfg[target_id]}" "${sentinel_cfg[container_id]}" "$sentinel_sha256" "$container_disk_bytes" "$container_disk_bytes_after" "$database_size_bytes" >> "$tmp"
-printf 'target_host=%s\ntarget_port=%s\ntarget_nonce_sha256=%s\nbootstrap_sql_sha256=%s\nextensions_before_status=verified\nextensions_before_count=%s\nextensions_before_inventory_sha256=%s\nsettings_before_status=verified\nsettings_before_inventory_sha256=%s\nquest_read_probe_status=verified\nquest_read_probe_count=%s\n' "$url_host" "$url_port" "$nonce_sha256" "$bootstrap_sql_sha256" "$extensions_before_count" "$extensions_before_sha256" "$settings_before_sha256" "$quest_read_probe_count" >> "$tmp"
+printf 'target_host=%s\ntarget_port=%s\ntarget_database_name=%s\ntarget_nonce_sha256=%s\ntarget_nonce_after_sha256=%s\nbootstrap_sql_sha256=%s\nextensions_before_status=verified\nextensions_before_count=%s\nextensions_before_inventory_sha256=%s\nsettings_before_status=verified\nsettings_before_inventory_sha256=%s\nquest_read_probe_status=verified\nquest_read_probe_count=%s\nquest_read_probe_session_user=%s\nquest_read_probe_current_user=%s\n' "$url_host" "$url_port" "$target_database" "$nonce_sha256" "$nonce_after_sha256" "$bootstrap_sql_sha256" "$extensions_before_count" "$extensions_before_sha256" "$settings_before_sha256" "$quest_read_probe_count" "$quest_read_probe_session_user" "$quest_read_probe_current_user" >> "$tmp"
 printf 'target_docker_before_sha256=%s\ntarget_mapping_sha256=%s\ntarget_mapping_after_sha256=%s\ntarget_connection_before_sha256=%s\ntarget_docker_connection_before_sha256=%s\ntarget_docker_after_sha256=%s\ntarget_connection_after_sha256=%s\ntarget_docker_connection_after_sha256=%s\n' "$target_docker_before_sha256" "$target_mapping_sha256" "$target_mapping_after_sha256" "$target_connection_before_sha256" "$target_docker_connection_before_sha256" "$target_docker_after_sha256" "$target_connection_after_sha256" "$target_docker_connection_after_sha256" >> "$tmp"
 chmod 600 "$tmp"; mv -f -- "$tmp" "$evidence/rehearsal-evidence.env"
 manifest="$evidence/rehearsal-evidence.manifest"; signature="$evidence/rehearsal-evidence.sig"
-artifact_list=(rehearsal-evidence.env rehearsal-observations.env rehearsal-source-version.env rehearsal-security-verifier.output rehearsal-target-sentinel.env rehearsal-failure-injections.tsv rehearsal-failure-bad_checksum.output rehearsal-failure-bad_decryption.output rehearsal-failure-wrong_ca.output rehearsal-failure-blocked_network.output rehearsal-failure-failed_service_health.output rehearsal-failure-attempted_mutation_callback.output rehearsal-roles.tsv rehearsal-memberships.tsv rehearsal-owners.tsv rehearsal-grants.tsv rehearsal-acl.tsv rehearsal-ext-before.tsv rehearsal-ext.tsv rehearsal-settings-before.tsv rehearsal-settings.tsv rehearsal-rls.tsv rehearsal-quest-migrations-before.tsv rehearsal-valorant-migrations-before.tsv rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv rehearsal-target-docker-before.txt rehearsal-target-port-mapping.txt rehearsal-target-port-mapping-after.txt rehearsal-connection-binding.txt rehearsal-docker-connection-binding.txt rehearsal-target-docker-after.txt rehearsal-connection-binding-after.txt rehearsal-docker-connection-binding-after.txt)
+artifact_list=(rehearsal-evidence.env rehearsal-observations.env rehearsal-source-version.env rehearsal-security-verifier.output rehearsal-target-sentinel.env rehearsal-failure-injections.tsv rehearsal-failure-bad_checksum.output rehearsal-failure-bad_decryption.output rehearsal-failure-wrong_ca.output rehearsal-failure-blocked_network.output rehearsal-failure-failed_service_health.output rehearsal-failure-attempted_mutation_callback.output rehearsal-roles.tsv rehearsal-memberships.tsv rehearsal-owners.tsv rehearsal-grants.tsv rehearsal-acl.tsv rehearsal-ext-before.tsv rehearsal-ext.tsv rehearsal-settings-before.tsv rehearsal-settings.tsv rehearsal-rls.tsv rehearsal-quest-migrations-before.tsv rehearsal-valorant-migrations-before.tsv rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv rehearsal-target-docker-before.txt rehearsal-target-port-mapping.txt rehearsal-target-port-mapping-after.txt rehearsal-connection-binding.txt rehearsal-docker-connection-binding.txt rehearsal-target-docker-after.txt rehearsal-connection-binding-after.txt rehearsal-docker-connection-binding-after.txt rehearsal-quest-read-probe.tsv)
 (cd -- "$evidence" && for artifact in "${artifact_list[@]}"; do [[ -f "$artifact" && ! -L "$artifact" ]] || exit 1; sha256sum -- "$artifact"; done) > "$manifest" || fail "evidence manifest creation failed"
 chmod 600 "$manifest"; openssl dgst -sha256 -sign "$signing_key" -out "$signature" "$manifest" >/dev/null 2>&1 || fail "evidence bundle signature failed"; chmod 600 "$signature"
 echo "Restore rehearsal completed; evidence written to the supplied disposable evidence directory."
