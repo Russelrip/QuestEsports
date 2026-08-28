@@ -11,13 +11,16 @@ This repository uses GitHub Actions for continuous integration and owner-control
 - `.github/workflows/release-admin-apk.yml` builds and signs the private Android admin APK for tags matching `admin-vMAJOR.MINOR.PATCH`, then attaches the APK and checksum to a GitHub Release.
 - `.github/workflows/build-container-images.yml` publishes immutable frontend,
   backend-runtime, and backend-migrator images only after a successful `CI` run
-  for `main`, after the build job's protected `container-image-build` Environment
-  approves the external image references. It does not run for pull requests or
-  publish on a direct PR event.
+  for a `main` push from this repository, after the build job's protected
+  `container-image-build` Environment approves the external image references.
+  It checks out and compares the exact successful CI SHA before publishing. It
+  does not run for pull requests or publish on a direct PR event.
 - `.github/workflows/deploy-compose.yml` promotes only the manifest artifact from
   a successful image-build run whose full SHA also has a successful `CI` run. It
-  supports a protected manual dispatch that selects the latest successful build;
-  it has no SHA override input.
+  re-reads the selected image-build run metadata and requires its run ID, SHA,
+  workflow, event, branch, and successful conclusion to agree. It supports a
+  protected manual dispatch that selects the latest successful build; it has no
+  SHA override input.
 
 ## Immutable Compose release transition
 
@@ -30,6 +33,11 @@ with GitHub OIDC. Its release artifact is an exact six-entry manifest containing
 `postgres_image`, and `valorant_image`; deployment rejects mutable references or
 any SHA that is not bound to that artifact.
 
+The Quest entries are fixed to the GHCR repositories
+`ghcr.io/russelrip/quest-frontend`, `ghcr.io/russelrip/quest-backend`, and
+`ghcr.io/russelrip/quest-migrator`. The deploy workflow rejects a manifest that
+uses another repository, a tag, or an unbound digest.
+
 Before deployment, the workflow logs in to GHCR and verifies each Quest image
 digest with cosign using the fixed issuer
 `https://token.actions.githubusercontent.com` and the exact certificate
@@ -39,6 +47,14 @@ It separately inspects the OCI BuildKit attestation manifests and requires both
 an SPDX/CycloneDX SBOM predicate and an SLSA provenance predicate. These are
 BuildKit attestations, not cosign-signed attestations, so the workflow does not
 misrepresent them with `cosign verify-attestation`.
+
+The host template's Quest Cosign certificate policy is the exact
+`build-container-images.yml` workflow identity on `refs/heads/main`; the
+PostgreSQL and VALORANT policies remain separate operator-owned policies and
+must never reuse that Quest identity. Public `NEXT_PUBLIC_*` values are the
+only image build arguments. Runtime credentials and secrets are supplied by
+the protected environment or mounted host configuration, never as build
+arguments.
 
 Configure these non-secret repository variables before enabling the path:
 

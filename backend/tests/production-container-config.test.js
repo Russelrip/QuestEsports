@@ -18,6 +18,7 @@ const verifyRelease = read("ops/deploy/verify-release.sh");
 const releaseEnv = read("ops/deploy/release.env.example");
 const frontendApi = read("frontend/lib/api.ts");
 const imageWorkflow = read(".github/workflows/build-container-images.yml");
+const deployWorkflow = read(".github/workflows/deploy-compose.yml");
 const postgresBootstrap = read("ops/docker/postgres/init/001-bootstrap-roles.sql");
 const postgresHealthcheck = read("ops/docker/postgres/healthcheck.sh");
 
@@ -470,6 +471,74 @@ test("artifact trust keeps VALORANT on an independent signer policy", () => {
     "the Quest workflow signing loop must not sign VALORANT with Quest policy",
   );
   assert.match(imageWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
+});
+
+test("immutable image CI binds successful repository CI and publishes all signed Quest digests", () => {
+  assert.match(
+    imageWorkflow,
+    /workflow_run\.conclusion == 'success'[\s\S]*workflow_run\.event == 'push'[\s\S]*workflow_run\.head_branch == 'main'/,
+  );
+  assert.match(imageWorkflow, /workflow_run\.head_repository\.full_name == github\.repository/);
+  assert.match(imageWorkflow, /RELEASE_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  assert.match(imageWorkflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  assert.match(imageWorkflow, /checked_out_sha="\$\(git rev-parse --verify HEAD\)"/);
+  assert.match(imageWorkflow, /\[\[ "\$checked_out_sha" == "\$RELEASE_SHA" \]\]/);
+  assert.match(
+    imageWorkflow,
+    /^permissions:\n  contents: read\n  packages: write\n  id-token: write\n  attestations: write$/m,
+  );
+
+  for (const image of ["quest-frontend", "quest-backend", "quest-migrator"]) {
+    assert.match(imageWorkflow, new RegExp(`ghcr\.io/\\$\\{\\{ github\.repository_owner \\}\\}/${image}`));
+  }
+  assert.equal((imageWorkflow.match(/--provenance=mode=max/g) || []).length, 3);
+  assert.equal((imageWorkflow.match(/--sbom=true/g) || []).length, 3);
+  assert.match(imageWorkflow, /containerimage\.digest.*sha256:\[0-9a-f\]\{64\}/);
+  assert.match(imageWorkflow, /Sign each Quest image digest with keyless OIDC/);
+  assert.match(imageWorkflow, /cosign sign --yes "\$image_reference"/);
+  assert.match(imageWorkflow, /printf 'frontend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
+  assert.match(imageWorkflow, /printf 'backend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
+  assert.match(imageWorkflow, /printf 'migrator_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
+
+  const buildArgs = [...imageWorkflow.matchAll(/--build-arg ([^\n]+)/g)].map((match) => match[1]);
+  assert.ok(buildArgs.length > 0, "public frontend build arguments must be explicit");
+  assert.ok(buildArgs.every((argument) => argument.includes("NEXT_PUBLIC_")));
+  assert.doesNotMatch(imageWorkflow, /--build-arg[^\n]*(?:SECRET|PASSWORD|TOKEN|PRIVATE_KEY)/i);
+});
+
+test("Compose deployment consumes only a protected, successful, signed digest release", () => {
+  assert.match(deployWorkflow, /^permissions:\n  actions: read\n  contents: read\n  packages: read$/m);
+  assert.match(deployWorkflow, /environment: production-compose/);
+  assert.match(deployWorkflow, /gh run view "\$build_run_id"/);
+  assert.match(deployWorkflow, /workflowName.*Build container images/);
+  assert.match(deployWorkflow, /conclusion.*success/);
+  assert.match(deployWorkflow, /event.*workflow_run/);
+  assert.match(deployWorkflow, /headBranch.*main/);
+  assert.match(deployWorkflow, /headSha.*release_sha/);
+  assert.match(deployWorkflow, /name: container-release-manifest-\$\{\{ needs\.resolve-build\.outputs\.release_sha \}\}/);
+  assert.match(deployWorkflow, /run-id: \$\{\{ needs\.resolve-build\.outputs\.build_run_id \}\}/);
+  assert.match(
+    deployWorkflow,
+    /COSIGN_CERTIFICATE_IDENTITY: https:\/\/github\.com\/Russelrip\/QuestEsports\/.github\/workflows\/build-container-images\.yml@refs\/heads\/main/,
+  );
+  assert.match(deployWorkflow, /COSIGN_OIDC_ISSUER: https:\/\/token\.actions\.githubusercontent\.com/);
+  assert.match(deployWorkflow, /cosign verify/);
+  assert.match(deployWorkflow, /verify_buildkit_attestations/);
+  assert.match(deployWorkflow, /https:\/\/spdx\.dev\/Document/);
+  assert.match(deployWorkflow, /https:\/\/slsa\.dev\/provenance\/v1/);
+  assert.match(deployWorkflow, /quest-frontend@sha256/);
+  assert.match(deployWorkflow, /quest-backend@sha256/);
+  assert.match(deployWorkflow, /quest-migrator@sha256/);
+  assert.match(deployWorkflow, /POSTGRES_IMAGE_APPROVED_REF/);
+  assert.match(deployWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
+  assert.match(deployWorkflow, /sudo -n -- \/usr\/local\/sbin\/quest-esports-release '\$RELEASE_SHA' '\$remote_manifest'/);
+  assert.doesNotMatch(deployWorkflow, /:latest/);
+  assert.doesNotMatch(deployWorkflow, /npm ci|\bpm2\b|docker group/);
+  const shellSecretOutputLines = deployWorkflow
+    .split("\n")
+    .filter((line) => /(?:printf|echo)[^\n]*SSH_(?:PRIVATE_KEY|HOST_KEY)/.test(line))
+    .filter((line) => !line.includes(">"));
+  assert.deepEqual(shellSecretOutputLines, [], "SSH secrets must only be written to files, never printed");
 });
 
 test("frontend SSR selects an explicit internal API origin while browsers keep the public origin", () => {

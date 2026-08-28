@@ -540,6 +540,20 @@ make_failed_bundle 9999999999999999999999999999999999999999
 sed -i 's#^previous_release=.*#previous_release=supabase#; s/^cutover_type=.*/cutover_type=first-supabase-cutover/' "$rollback_fixture/release-metadata.txt"
 assert_failed rollback-predecessor-metadata-mismatch bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
 
+setup_fixture rollback-steady-state-predecessor-mismatch
+make_failed_bundle 9999999999999999999999999999999999999999
+steady_state_metadata_predecessor=8888888888888888888888888888888888888888
+make_failed_bundle "$steady_state_metadata_predecessor"
+rollback_fixture="$fixture/releases/9999999999999999999999999999999999999999"
+sed -i "s#^previous_release=.*#previous_release=$fixture/releases/$steady_state_metadata_predecessor#" "$rollback_fixture/release-metadata.txt"
+assert_contains "$fixture/releases/$steady_state_metadata_predecessor/release-metadata.txt" 'cutover_type=steady-state'
+assert_failed rollback-steady-state-predecessor-mismatch bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
+
+setup_fixture rollback-sentinel-normal-predecessor-mismatch
+make_failed_bundle 9999999999999999999999999999999999999999
+sed -i 's#^previous_release=.*#previous_release=supabase#; s/^cutover_type=.*/cutover_type=first-supabase-cutover/' "$rollback_fixture/commit-point.txt"
+assert_failed rollback-sentinel-normal-predecessor-mismatch bash "$script_directory/deploy/rollback.sh" pre-commit "$rollback_fixture"
+
 setup_fixture rollback-duplicate-previous-metadata
 make_failed_bundle aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 printf 'previous_release=%s\n' "$fixture/releases/$previous_sha" >> "$rollback_fixture/release-metadata.txt"

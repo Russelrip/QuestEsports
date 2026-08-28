@@ -54,6 +54,15 @@ jobs:
             build_run_id="$EVENT_BUILD_RUN_ID"
             release_sha="$EVENT_RELEASE_SHA"
           fi
+          build_run_json="$(gh run view "$build_run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,headSha,headBranch,conclusion,event,workflowName)"
+          test "$(jq -er '.databaseId | tostring' <<< "$build_run_json")" = "$build_run_id"
+          test "$(jq -er '.workflowName' <<< "$build_run_json")" = 'Build container images'
+          test "$(jq -er '.conclusion' <<< "$build_run_json")" = success
+          test "$(jq -er '.event' <<< "$build_run_json")" = workflow_run
+          test "$(jq -er '.headBranch' <<< "$build_run_json")" = main
+          test "$(jq -er '.headSha | select(test("^[0-9a-f]{40}$"))' <<< "$build_run_json")" = "$release_sha"
           [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || {
             printf '%s\n' 'The selected build did not provide a full lowercase SHA.' >&2
             exit 1
@@ -123,6 +132,9 @@ jobs:
             value="$(awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1) }' "$manifest")"
             [[ "$value" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || exit 1
           done
+          [[ "$(awk -F= '$1 == "frontend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-frontend@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$(awk -F= '$1 == "backend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-backend@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$(awk -F= '$1 == "migrator_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-migrator@sha256:[0-9a-f]{64}$ ]] || exit 1
           postgres_image="$(awk -F= '$1 == "postgres_image" { print $2 }' "$manifest")"
           [[ "$postgres_image" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || exit 1
           test "$postgres_image" = "$POSTGRES_IMAGE_APPROVED_REF"

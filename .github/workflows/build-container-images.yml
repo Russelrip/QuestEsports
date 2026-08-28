@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     name: Build and sign immutable images
-    if: ${{ github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    if: ${{ github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
     environment: container-image-build
     timeout-minutes: 45
@@ -44,14 +44,27 @@ jobs:
 
       - name: Validate release inputs
         shell: bash
+        env:
+          RELEASE_EVENT: ${{ github.event.workflow_run.event }}
+          RELEASE_REPOSITORY: ${{ github.event.workflow_run.repository.full_name }}
+          RELEASE_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
         run: |
           set -euo pipefail
           [[ "${GITHUB_REPOSITORY,,}" == russelrip/questesports ]] || {
             printf '%s\n' 'Container signing must run from the documented Quest repository identity.' >&2
             exit 1
           }
+          [[ "$RELEASE_EVENT" == push && "$RELEASE_REPOSITORY" == "$GITHUB_REPOSITORY" && "$RELEASE_HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" ]] || {
+            printf '%s\n' 'Container signing requires a successful push CI run from this repository.' >&2
+            exit 1
+          }
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
             printf '%s\n' 'The upstream CI SHA must be a lowercase full 40-character SHA.' >&2
+            exit 1
+          }
+          checked_out_sha="$(git rev-parse --verify HEAD)"
+          [[ "$checked_out_sha" == "$RELEASE_SHA" ]] || {
+            printf '%s\n' 'The checked out commit does not equal the successful CI SHA.' >&2
             exit 1
           }
           [[ "$NEXT_PUBLIC_API_URL" =~ ^https://[^[:space:]]+$ ]] || {
@@ -216,6 +229,9 @@ jobs:
             [[ "$line" =~ ^[a-z][a-z0-9_]*=[^[:space:]]+$ ]] || exit 1
           done < "$manifest"
           test "$(awk -F= -v sha="$RELEASE_SHA" '$1 == "commit_sha" && $2 == sha { count++ } END { print count + 0 }' "$manifest")" = 1
+          [[ "$(awk -F= '$1 == "frontend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-frontend@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$(awk -F= '$1 == "backend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-backend@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$(awk -F= '$1 == "migrator_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-migrator@sha256:[0-9a-f]{64}$ ]] || exit 1
 
       - name: Upload the SHA-bound release manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
