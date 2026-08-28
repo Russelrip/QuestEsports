@@ -54,7 +54,9 @@ The rehearsal wrapper is the only documented full-drill entry point. It never
 defaults a target, requires `REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL`,
 an existing private evidence directory, an absolute archive/checksum pair, an
 offline identity, a mode-600 target sentinel, and roots below a previously absent
-dedicated upload parent that the wrapper creates atomically. The `DIRECT_URL`
+dedicated upload parent that the wrapper creates before creating the two roots. Cleanup
+removes only empty disposable roots and their parent; nonempty restored trees remain
+available for inspection or manual rollback. The `DIRECT_URL`
 loopback host/port must match the inspected container's PostgreSQL port mapping;
 `QUEST_RUNTIME_DATABASE_URL` must use `quest_runtime` against the same endpoint;
 a PostgreSQL 17 client bin

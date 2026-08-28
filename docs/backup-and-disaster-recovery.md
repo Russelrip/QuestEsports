@@ -324,7 +324,9 @@ explicit `REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL`, an existing
 mode-600 recovery environment, an absolute encrypted archive and exact
 `.sha256` sibling, an offline age identity, a private mode-600 disposable-target
 sentinel, and roots below a previously absent dedicated upload parent that the
-wrapper creates atomically. The `DIRECT_URL` loopback host/port must match the
+wrapper creates before creating the two roots. Cleanup removes only empty disposable
+roots and their parent; nonempty restored trees remain available for inspection or
+manual rollback. The `DIRECT_URL` loopback host/port must match the
 inspected container's PostgreSQL port mapping, and `QUEST_RUNTIME_DATABASE_URL`
 must use `quest_runtime` against that same endpoint,
 and pinned PostgreSQL 17 `psql`, `pg_restore`, and `pg_dump`. It also requires
@@ -398,8 +400,9 @@ transparent compatible restore.
    - `QUEST_RUNTIME_DATABASE_URL` to the `quest_runtime` credential for the same
      disposable database endpoint.
    - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` below a new, dedicated parent that
-     does not already exist; the wrapper creates and removes that parent
-     atomically.
+     does not already exist; the wrapper creates the parent and roots separately,
+     and cleanup removes only empty roots and the now-empty parent. Nonempty restored
+     trees are retained for inspection or manual rollback.
    - `BACKUP_AGE_IDENTITY_FILE` to the offline identity path.
 4. Restrict the recovery environment to the recovery operator.
 5. Independently verify the checksum.
