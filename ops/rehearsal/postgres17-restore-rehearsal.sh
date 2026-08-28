@@ -332,7 +332,8 @@ psql_query "$scratch/acl-global" "SELECT r.rolname || '|<global>|' || d.defaclob
 cat "$scratch/acl-global" >> "$scratch/acl"
 [[ "$(wc -l < "$scratch/grants" | tr -d ' ')" -ge 12 ]] || fail "grant inventory is incomplete"
 [[ "$(wc -l < "$scratch/acl" | tr -d ' ')" == 12 ]] || fail "default ACL inventory contains unexpected extra rows"
-canonical_acl="$scratch/canonical-acl"; rehearsal_canonical_acl_rows > "$canonical_acl"; cmp -s "$canonical_acl" "$scratch/acl" || fail "default ACL payload does not match canonical bootstrap contract"
+LC_ALL=C sort "$scratch/acl" > "$scratch/acl.normalized"; mv -- "$scratch/acl.normalized" "$scratch/acl"
+canonical_acl="$scratch/canonical-acl"; rehearsal_canonical_acl_rows | LC_ALL=C sort > "$canonical_acl"; cmp -s "$canonical_acl" "$scratch/acl" || fail "default ACL payload does not match canonical bootstrap contract"
 while IFS='|' read -r kind grant_scope role privilege granted; do [[ "$granted" == t ]] || fail "grant inventory contains a denied expected privilege"; if [[ "$kind" == schema ]]; then [[ "$role" =~ ^(quest_migrator|quest_runtime|val_migrator|val_runtime)$ ]]; else [[ "$kind" == table || "$kind" == sequence ]] || fail "grant inventory kind is unsafe"; fi; done < "$scratch/grants"
 for expected in 'quest_migrator|public' 'val_migrator|valorant'; do grep -q "^${expected}|r|" "$scratch/acl" || fail "default ACL table entry is missing"; grep -q "^${expected}|S|" "$scratch/acl" || fail "default ACL sequence entry is missing"; grep -q "^${expected}|f|" "$scratch/acl" || fail "default ACL function entry is missing"; grep -q "^${expected}|T|" "$scratch/acl" || fail "default ACL type entry is missing"; done
 for expected in 'quest_migrator|<global>|f|' 'quest_migrator|<global>|T|' 'val_migrator|<global>|f|' 'val_migrator|<global>|T|'; do grep -q "^${expected}" "$scratch/acl" || fail "global default ACL entry is missing"; done

@@ -99,7 +99,7 @@ for target_artifact in target-docker-before target-port-mapping target-port-mapp
   esac
   target_hash="$(sha256sum "$dir/rehearsal-${target_artifact}.txt" | cut -d' ' -f1)"; [[ "$target_hash" == "${e[$field]}" && "$target_hash" == "${o[$field]}" ]] || fail "target binding artifact is not bound: $target_artifact"
 done
-canonical_acl="$(rehearsal_canonical_acl_rows)"; [[ "$(cat "$dir/rehearsal-acl.tsv")" == "$canonical_acl" ]] || fail "default ACL payload does not match canonical bootstrap contract"
+canonical_acl="$(rehearsal_canonical_acl_rows | LC_ALL=C sort)"; observed_acl="$(LC_ALL=C sort "$dir/rehearsal-acl.tsv")"; [[ "$observed_acl" == "$canonical_acl" ]] || fail "default ACL payload does not match canonical bootstrap contract"
 for docker_artifact in rehearsal-target-docker-before.txt rehearsal-target-docker-after.txt; do IFS='|' read -r docker_id docker_name docker_running docker_image docker_size < "$dir/$docker_artifact"; [[ "$docker_id" == "${e[target_container_id]}" && "$docker_name" == /quest-rehearsal-* && "$docker_running" == true && "$docker_image" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ && "$docker_size" =~ ^[0-9]+$ ]] || fail "Docker target identity artifact is unsafe: $docker_artifact"; done
 before_nonce=""
 for binding_phase in before after; do
