@@ -271,3 +271,146 @@ warning for `ops/quest-esports-recovery.env.example`.
 - The normal recovery example intentionally requires the operator to provide
   protected TLS material, age identity, sentinel authorization, and the
   confirmation token out of band.
+
+## Fix round 2
+
+### Changed files
+
+- `ops/backup-production-multi-remote.sh` — rejected group/other-writable CA
+  and certificate files in addition to the existing root ownership and strict
+  private-key checks.
+- `ops/restore-production-backup.sh` — applied the TLS mode contract to all
+  supplied TLS files, bound the observed restore session to the role parsed
+  from `DIRECT_URL`, and replaced substring TOC checks with exact parsed schema
+  and object-scope validation.
+- `ops/quest-esports-recovery.env.example` — changed TLS paths to the canonical
+  `/etc/quest-esports/tls/...` contract.
+- `ops/tests/media-backup-contract.test.sh` — added a real extra-schema archive
+  fixture and verified it is rejected before destructive restore, activation,
+  or security SQL; retained public-only coverage.
+- `ops/tests/restore-production-backup.test.sh` — added wrong observed session
+  user, server-local endpoint, TLS, and writable-CA refusal fixtures, each
+  asserting no destructive restore, activation, or security SQL.
+- `.superpowers/sdd/2026-08-29-vps-database-migration/task-4-report.md` —
+  appended this fix-round record.
+
+### Commands and exact outputs
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" -n ops/backup-production.sh ops/backup-production-multi-remote.sh ops/restore-production-backup.sh ops/rehearsal/postgres17-restore-rehearsal.sh ops/tests/media-backup-contract.test.sh ops/tests/restore-production-backup.test.sh ops/tests/backup-multi-remote.test.sh ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output: none; `STATUS:0`.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/media-backup-contract.test.sh
+```
+
+Output: `media backup contract fixture tests passed` (`STATUS:0`).
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/restore-production-backup.test.sh
+```
+
+Output: `File activation and a transactional database restore begin in 0 seconds.`
+and `restore schema ownership regression test passed` (`STATUS:0`).
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/backup-multi-remote.test.sh
+```
+
+Output:
+
+```text
+Encrypted production backup uploaded successfully: quest-production-20260829T125625Z.tar.gz.enc
+Another release operation is already running.
+Production backup configuration is not canonical or private.
+Rclone configuration paths must be readable and unique.
+Production backup was created but one or more required remotes failed; see the per-run result record.
+No locally valid and remotely verified production backup/checksum pair newer than 2160 minutes was found.
+No locally valid and remotely verified production backup/checksum pair newer than 2160 minutes was found.
+Inspected remote label primary.
+Inspected remote label secondary.
+Remote retention candidate archives for label primary: 1; recovery points retained: 4.
+Remote retention deletion was incomplete for label primary; the recovery pair was retained.
+Remote retention candidate archives for label secondary: 1; recovery points retained: 3.
+Encrypted production backup uploaded successfully: quest-production-20260829T125650Z.tar.gz.enc
+backup multi-remote fixture tests passed
+```
+
+Result: `STATUS:0`.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output:
+
+```text
+ok: missing confirmation
+ok: production-looking target
+ok: missing target sentinel
+ok: world-readable target sentinel
+ok: group-readable target sentinel
+ok: existing generic upload parent
+ok: URL/container port mismatch
+ok: nested roots
+ok: traversal target
+ok: bad checksum
+ok: decryption failure
+ok: successful wrapper-path pre/post evidence generation
+ok: valid signed evidence
+ok: arbitrary ACL payload
+ok: wrong ACL grantee
+ok: wrong ACL privilege
+ok: PUBLIC default ACL grant
+ok: extra default ACL row
+ok: unsafe extension version
+ok: unsafe PostgreSQL setting
+ok: uncontained wrong-CA evidence
+ok: unknown failed-service identity
+ok: summary without raw observations
+ok: incomplete manifest evidence
+ok: wrong health evidence
+ok: wrong CA evidence
+ok: blocked writer/freeze evidence
+PostgreSQL 17 rehearsal fixture tests passed (no Docker, database, VPS, or remote contacted).
+```
+
+Result: `STATUS:0`.
+
+```text
+git diff --check
+```
+
+Output: no diff errors; Git emitted only the existing LF-to-CRLF working-copy
+warning for `ops/quest-esports-recovery.env.example` (`STATUS:0`).
+
+### Self-review
+
+- Restore now requires the observed `session_user` to equal the configured URL
+  role, and observed TLS, private-container address, and server-local port
+  remain independently checked.
+- Canonical production CA, certificate, and key paths remain unchanged; all
+  supplied TLS files reject group/other write bits and the key remains exact
+  mode 600. No secret or credential value is printed.
+- TOC parsing accepts normal PostgreSQL list spacing, requires exactly the
+  `public` and `valorant` schema entries, rejects third schemas and duplicate
+  schema entries, and compares object schema tokens exactly rather than by
+  substring.
+- Public-only and extra-schema archives, wrong observed identity/endpoint/TLS,
+  and writable CA fixtures all prove refusal before destructive `pg_restore`,
+  file activation, and security SQL. Existing client, flag, two-schema,
+  encryption/rclone/checksum/upload/confirmation/cleanup, and rehearsal
+  contracts remain covered.
+- No VPS, production database, remote, credential, or private key was
+  contacted or changed.
+
+### Concerns
+
+- A live production restore/backup was not exercised in this checkout; the
+  canonical root-owned TLS material, PostgreSQL 17 clients, sentinel, and
+  Compose endpoint still require deployment-host verification.
+- The normal recovery example still requires operators to provide protected
+  TLS material, age identity, sentinel authorization, and confirmation out of
+  band.

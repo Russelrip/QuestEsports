@@ -180,6 +180,20 @@ for setting in POSTGRES_CA_FILE POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
     exit 1
   }
 done
+for tls_file in "$POSTGRES_CA_FILE" "$POSTGRES_CERT_FILE" "$POSTGRES_KEY_FILE"; do
+  tls_mode="$(stat -c '%a' "$tls_file" 2>/dev/null)" || {
+    echo "PostgreSQL TLS material mode cannot be inspected." >&2
+    exit 1
+  }
+  [[ "$tls_mode" =~ ^[0-7]{3,4}$ ]] || {
+    echo "PostgreSQL TLS material mode is invalid." >&2
+    exit 1
+  }
+  (( (8#$tls_mode & 022) == 0 )) || {
+    echo "PostgreSQL TLS material must not be group/other-writable." >&2
+    exit 1
+  }
+done
 if [[ "$backup_test_fixture" == false ]]; then
   [[ "$POSTGRES_CA_FILE" == /etc/quest-esports/tls/quest-private-ca.crt &&
       "$POSTGRES_CERT_FILE" == /etc/quest-esports/tls/quest-postgres.crt &&
@@ -192,8 +206,14 @@ if [[ "$backup_test_fixture" == false ]]; then
     exit 1
   }
   for tls_file in "$POSTGRES_CA_FILE" "$POSTGRES_CERT_FILE"; do
-    [[ "$(stat -c '%u' "$tls_file" 2>/dev/null)" == 0 ]] || {
-      echo "PostgreSQL TLS material must be root-owned." >&2
+    tls_stat="$(stat -c '%u %a' "$tls_file" 2>/dev/null)" || {
+      echo "PostgreSQL TLS material ownership or mode cannot be inspected." >&2
+      exit 1
+    }
+    read -r tls_uid tls_mode <<< "$tls_stat"
+    [[ "$tls_uid" == 0 && "$tls_mode" =~ ^[0-7]{3,4}$ &&
+        $((8#$tls_mode & 022)) -eq 0 ]] || {
+      echo "PostgreSQL TLS material must be root-owned and not group/other-writable." >&2
       exit 1
     }
   done

@@ -100,7 +100,8 @@ if [[ "${1:-}" == --version ]]; then
 fi
 printf '%s\n' "psql $*" >> "$TEST_ROOT/psql.log"
 if [[ "$*" == *current_database* ]]; then
-  printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n'
+  printf 'quest_restore|170004|%s|%s|%s|%s|quest-restore-target\n' \
+    "${OBSERVED_SSL:-on}" "${OBSERVED_SESSION_USER:-restore}" "${OBSERVED_SERVER_ADDR:-172.18.0.2}" "${OBSERVED_SERVER_PORT:-5432}"
   exit 0
 fi
 for ((index = 1; index <= $#; index++)); do
@@ -236,6 +237,30 @@ refused() {
     exit 1
   }
 }
+# Canonical TLS material must not be group/world-writable, and this refusal is
+# before any destructive restore, file activation, or security SQL.
+cat > "$test_root/bin/stat" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *ca.crt*) printf '666\n'; exit 0 ;;
+esac
+exec "${REAL_STAT:?}" "$@"
+EOF
+chmod 700 "$test_root/bin/stat"
+refused writable-ca "$test_root/recovery.env"
+rm -f "$test_root/bin/stat"
+export OBSERVED_SESSION_USER=wrong_restore_role
+refused wrong-observed-session-user "$test_root/recovery.env"
+unset OBSERVED_SESSION_USER
+export OBSERVED_SERVER_ADDR=127.0.0.1
+refused wrong-observed-server-local-endpoint "$test_root/recovery.env"
+unset OBSERVED_SERVER_ADDR
+export OBSERVED_SERVER_PORT=55432
+refused wrong-observed-server-port "$test_root/recovery.env"
+unset OBSERVED_SERVER_PORT
+export OBSERVED_SSL=off
+refused wrong-observed-tls "$test_root/recovery.env"
+unset OBSERVED_SSL
 sed 's/127.0.0.1:55432/10.0.0.7:55432/' "$test_root/recovery.env" > "$test_root/wrong-host.env"
 refused wrong-host "$test_root/wrong-host.env"
 sed 's/127.0.0.1:55432/127.0.0.1:5432/; s/RESTORE_TARGET_PORT=55432/RESTORE_TARGET_PORT=5432/' "$test_root/recovery.env" > "$test_root/wrong-port.env"

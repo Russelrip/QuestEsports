@@ -122,6 +122,8 @@ printf '%s\n' "pg_restore $*" >> "$TEST_ROOT/pg_restore.log"
 dump="${@: -1}"
 if grep -q public-only "$dump"; then
   printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users'
+elif grep -q extra-schema "$dump"; then
+  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches' '7; 2615 2204 SCHEMA - analytics'
 else
   printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches'
 fi
@@ -275,6 +277,37 @@ if RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
 fi
 grep -F "TOC is missing the valorant schema" "$test_root/preview-only.out" >/dev/null || {
   cat "$test_root/preview-only.out" >&2
+  exit 1
+}
+! grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null
+! grep -F -- 'RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
+[[ ! -e "$test_root/restore/uploads/file.txt" && ! -e "$test_root/restore/private/file.txt" ]] || exit 1
+
+# An archive that adds a third schema is refused after TOC inspection but
+# before activation, destructive pg_restore, or security normalization.
+extra_schema="$test_root/extra-schema"
+mkdir -p "$extra_schema/uploads/poster-images" "$extra_schema/private/event-album-originals"
+printf 'extra-schema\n' > "$extra_schema/database.dump"
+cp -- "$preview_only/manifest.txt" "$extra_schema/manifest.txt"
+printf 'extra fixture\n' > "$extra_schema/uploads/poster-images/photo.webp"
+printf 'extra fixture\n' > "$extra_schema/private/event-album-originals/photo.jpg"
+extra_schema_archive="$test_root/extra-schema.tar.gz.enc"
+tar --create --gzip --file="$test_root/extra-schema.tar.gz" \
+  -C "$extra_schema" database.dump manifest.txt uploads private
+cp -- "$test_root/extra-schema.tar.gz" "$extra_schema_archive"
+printf 'fixture checksum\n' > "$extra_schema_archive.sha256"
+: > "$test_root/pg_restore.log"
+: > "$test_root/psql.log"
+if RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+    BACKUP_ENV_FILE="$test_root/restore.env" \
+    RESTORE_COUNTDOWN_SECONDS=0 \
+    bash "$root/ops/restore-production-backup.sh" --test-fixture "$extra_schema_archive" \
+    >"$test_root/extra-schema.out" 2>&1; then
+  echo "restore accepted an extra-schema archive" >&2
+  exit 1
+fi
+grep -F "unexpected schema scope" "$test_root/extra-schema.out" >/dev/null || {
+  cat "$test_root/extra-schema.out" >&2
   exit 1
 }
 ! grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null

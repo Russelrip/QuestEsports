@@ -99,6 +99,21 @@ POSTGRES_CA_FILE="${POSTGRES_CA_FILE:-${VALORANT_CA_FILE:-}}"
   echo "POSTGRES_CA_FILE must be an absolute non-symlink file." >&2
   exit 1
 }
+for tls_file in "$POSTGRES_CA_FILE" "${POSTGRES_CERT_FILE:-}" "${POSTGRES_KEY_FILE:-}"; do
+  [[ -z "$tls_file" ]] && continue
+  tls_mode="$(stat -c '%a' "$tls_file" 2>/dev/null)" || {
+    echo "PostgreSQL TLS material mode cannot be inspected." >&2
+    exit 1
+  }
+  [[ "$tls_mode" =~ ^[0-7]{3,4}$ ]] || {
+    echo "PostgreSQL TLS material mode is invalid." >&2
+    exit 1
+  }
+  (( (8#$tls_mode & 022) == 0 )) || {
+    echo "PostgreSQL TLS material must not be group/other-writable." >&2
+    exit 1
+  }
+done
 if [[ "$restore_test_fixture" == false ]]; then
   [[ "$POSTGRES_CA_FILE" == /etc/quest-esports/tls/quest-private-ca.crt ]] || {
     echo "PostgreSQL CA file is not canonical." >&2
@@ -201,7 +216,7 @@ read_restore_sentinel_command() {
 }
 
 validate_restore_target() {
-  local authority host_port host port path database username target_probe session_user server_addr server_port
+  local authority host_port host port path database username restore_role target_probe session_user server_addr server_port
   if [[ -n "$restore_sentinel_command" ]]; then
     read_restore_sentinel_command
   else
@@ -283,6 +298,11 @@ validate_restore_target() {
     echo "DIRECT_URL must contain an explicit restore credential." >&2
     exit 1
   }
+  restore_role="${username%%:*}"
+  [[ "$restore_role" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+    echo "DIRECT_URL restore credential has an invalid role." >&2
+    exit 1
+  }
   host="${host_port%%:*}"; port="${host_port##*:}"
   database="$path"
   [[ "$host" == "$restore_target_host" && "$port" == "$restore_target_port" &&
@@ -300,7 +320,7 @@ validate_restore_target() {
   }
   IFS='|' read -r observed_database observed_version observed_ssl observed_session_user server_addr server_port observed_appname <<< "$target_probe"
   [[ "$observed_database" == "$restore_target_database" && "$observed_version" =~ ^17[0-9]*$ &&
-      "$observed_ssl" == on && -n "$observed_session_user" && -n "$server_addr" &&
+      "$observed_ssl" == on && "$observed_session_user" == "$restore_role" && -n "$server_addr" &&
       "$server_port" == 5432 && "$observed_appname" == quest-restore-target &&
       "$server_addr" =~ ^((10|192\.168)\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+)$ ]] || {
     echo "Restore target database, PostgreSQL major, TLS, or endpoint identity is not verified." >&2
@@ -425,33 +445,90 @@ if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="${POSTGR
   echo "The database archive TOC could not be inspected." >&2
   exit 1
 fi
-grep -Eq '(^|[[:space:]])SCHEMA[[:space:]]+-[[:space:]]+public([[:space:]]|$)' "$toc_path" || {
-  echo "The database archive TOC is missing the public schema." >&2
-  exit 1
-}
-grep -Eq '(^|[[:space:]])SCHEMA[[:space:]]+-[[:space:]]+valorant([[:space:]]|$)' "$toc_path" || {
-  echo "The database archive TOC is missing the valorant schema." >&2
-  exit 1
-}
-grep -Eq '[[:space:]](TABLE|SEQUENCE|FUNCTION|INDEX|CONSTRAINT|TRIGGER|TYPE|VIEW|MATERIALIZED VIEW)([[:space:]]+DATA)?[[:space:]]+public([[:space:]]|$)' "$toc_path" || {
-  echo "The database archive TOC has no public objects." >&2
-  exit 1
-}
-grep -Eq '[[:space:]](TABLE|SEQUENCE|FUNCTION|INDEX|CONSTRAINT|TRIGGER|TYPE|VIEW|MATERIALIZED VIEW)([[:space:]]+DATA)?[[:space:]]+valorant([[:space:]]|$)' "$toc_path" || {
-  echo "The database archive TOC has no valorant objects." >&2
-  exit 1
-}
+declare -A toc_schemas=()
+public_object_count=0
+valorant_object_count=0
 while IFS= read -r toc_line || [[ -n "$toc_line" ]]; do
-  if [[ "$toc_line" == *TABLE* || "$toc_line" == *SEQUENCE* ||
-        "$toc_line" == *FUNCTION* || "$toc_line" == *INDEX* ||
-        "$toc_line" == *CONSTRAINT* || "$toc_line" == *TRIGGER* ||
-        "$toc_line" == *TYPE* || "$toc_line" == *VIEW* ]]; then
-    if [[ "$toc_line" != *public* && "$toc_line" != *valorant* ]]; then
+  [[ "$toc_line" =~ ^[[:space:]]*[0-9]+\;[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+ ]] || continue
+  toc_entry="${toc_line#*;}"
+  read -r -a toc_fields <<< "$toc_entry"
+  toc_type="${toc_fields[2]:-}"
+  toc_schema=""
+  toc_object=false
+  case "$toc_type" in
+    SCHEMA)
+      [[ "${toc_fields[3]:-}" == - && -n "${toc_fields[4]:-}" ]] || {
+        echo "The database archive TOC contains an ambiguous schema entry." >&2
+        exit 1
+      }
+      toc_schema="${toc_fields[4]}"
+      [[ -z "${toc_schemas[$toc_schema]+x}" ]] || {
+        echo "The database archive TOC contains an ambiguous duplicate schema entry." >&2
+        exit 1
+      }
+      toc_schemas["$toc_schema"]=1
+      ;;
+    TABLE)
+      if [[ "${toc_fields[3]:-}" == DATA || "${toc_fields[3]:-}" == ATTACH ]]; then
+        toc_schema="${toc_fields[4]:-}"
+      else
+        toc_schema="${toc_fields[3]:-}"
+      fi
+      toc_object=true
+      ;;
+    SEQUENCE)
+      if [[ "${toc_fields[3]:-}" == OWNED && "${toc_fields[4]:-}" == BY ]]; then
+        toc_schema="${toc_fields[5]:-}"
+      elif [[ "${toc_fields[3]:-}" == SET ]]; then
+        toc_schema="${toc_fields[4]:-}"
+      else
+        toc_schema="${toc_fields[3]:-}"
+      fi
+      toc_object=true
+      ;;
+    FUNCTION|INDEX|CONSTRAINT|TRIGGER|TYPE|VIEW)
+      toc_schema="${toc_fields[3]:-}"
+      toc_object=true
+      ;;
+    MATERIALIZED)
+      if [[ "${toc_fields[3]:-}" == VIEW ]]; then
+        toc_schema="${toc_fields[4]:-}"
+        toc_object=true
+      fi
+      ;;
+  esac
+  if [[ "$toc_object" == true ]]; then
+    [[ "$toc_schema" == public || "$toc_schema" == valorant ]] || {
       echo "The database archive TOC contains an object outside public and valorant." >&2
       exit 1
+    }
+    if [[ "$toc_schema" == public ]]; then
+      public_object_count=$((public_object_count + 1))
+    else
+      valorant_object_count=$((valorant_object_count + 1))
     fi
   fi
 done < "$toc_path"
+[[ -n "${toc_schemas[public]+x}" ]] || {
+  echo "The database archive TOC is missing the public schema." >&2
+  exit 1
+}
+[[ -n "${toc_schemas[valorant]+x}" ]] || {
+  echo "The database archive TOC is missing the valorant schema." >&2
+  exit 1
+}
+[[ "${#toc_schemas[@]}" == 2 ]] || {
+  echo "The database archive TOC contains an unexpected schema scope." >&2
+  exit 1
+}
+[[ "$public_object_count" -gt 0 ]] || {
+  echo "The database archive TOC has no public objects." >&2
+  exit 1
+}
+[[ "$valorant_object_count" -gt 0 ]] || {
+  echo "The database archive TOC has no valorant objects." >&2
+  exit 1
+}
 [[ -r "$canonical_security_sql" && -f "$canonical_security_sql" && ! -L "$canonical_security_sql" ]] || {
   echo "Canonical PostgreSQL security SQL is missing; restore refused before activation." >&2
   exit 1
