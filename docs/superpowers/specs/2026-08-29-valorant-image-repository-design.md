@@ -1,7 +1,7 @@
 # VALORANT Image Repository Design
 
-**Date:** 2026-08-29  
-**Status:** Approved for implementation; public visibility authorized by user  
+**Date:** 2026-08-29
+**Status:** Approved for implementation; public visibility authorized by user
 **Scope:** Create an owner-controlled public image source for the VALORANT
 platform so Quest can reference a verifiable immutable GHCR digest.
 
@@ -22,7 +22,7 @@ cut over as part of this work.
 ## Boundaries and safety
 
 - Source copying is authorized by the user.
-- Destination repository is public and owned by `Russelrip`; this supersedes the original private-visibility requirement by explicit user instruction.
+- Destination repository is public and owned by `Russelrip`, as explicitly authorized by the user.
 - The source history is preserved; no secrets are copied into new files.
 - The new image workflow is build-only, owner-only, and does not SSH to a VPS.
 - The existing sibling CD workflow's deployment behavior is not invoked.

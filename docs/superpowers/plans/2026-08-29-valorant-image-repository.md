@@ -1,10 +1,10 @@
-# Private VALORANT Image Repository Implementation Plan
+# Public VALORANT Image Repository Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Create `Russelrip/valorant-platform-backend`, publish a signed immutable image from the authorized VALORANT source, and configure Quest to validate that image without deploying or changing the existing VALORANT service.
 
-**Architecture:** The destination repository is a history-preserving private copy of the authorized sibling repository. Its existing application and Dockerfile remain unchanged; its SSH-based CD workflow is retained only after repository identity is updated, while a separate owner-only build workflow publishes, signs, attests, and records the image digest. Quest consumes the digest through protected environment variables and reruns its existing image-build workflow; Compose deployment remains separately disabled and gated.
+**Architecture:** The destination repository is a history-preserving public copy of the authorized sibling repository. Its existing application and Dockerfile remain unchanged; its SSH-based CD workflow is retained only after repository identity is updated, while a separate owner-only build workflow publishes, signs, attests, and records the image digest. Quest consumes the digest through protected environment variables and reruns its existing image-build workflow; Compose deployment remains separately disabled and gated.
 
 **Tech Stack:** Git/GitHub CLI, GitHub Actions, Docker Buildx, GHCR, Cosign keyless OIDC, BuildKit SBOM/provenance attestations, Python/uv/PostgreSQL CI.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Source copying is authorized by the user.
-- Destination repository is public and owned by `Russelrip`; this supersedes the original private-visibility requirement by explicit user instruction.
+- Destination repository is public and owned by `Russelrip`, as explicitly authorized by the user.
 - Preserve the authorized sibling repository's current `main` history at the copy point.
 - Do not copy secrets into new files; do not print token values, private keys, or environment values containing secrets.
 - The new image workflow is build-only, owner-only, and must not configure SSH, invoke a VPS, run migrations, or deploy the VALORANT service.
@@ -34,7 +34,7 @@
 
 **Interfaces:**
 - Consumes: authenticated GitHub CLI session for `Russelrip`; clean authorized source checkout; source `main` commit SHA.
-- Produces: private destination repository with all source Git history and a recorded copy-point SHA.
+- Produces: public destination repository with all source Git history and a recorded copy-point SHA.
 
 - [ ] **Step 1: Verify identity, source state, and authorization boundary**
 
@@ -49,12 +49,12 @@ git -C 'D:\Work\Projects\valorant-platform-backend' show-ref --heads --tags
 
 Expected: the GitHub login is `Russelrip`; the source working tree is clean; `refs/heads/main` resolves to a full SHA; and the source refs can be enumerated without exposing secret values. Abort before repository creation if the identity or source SHA is unexpected.
 
-- [ ] **Step 2: Create the private destination repository**
+- [ ] **Step 2: Create the public destination repository**
 
 Run:
 
 ```powershell
-gh repo create Russelrip/valorant-platform-backend --private --description 'Owner-controlled VALORANT platform image source'
+gh repo create Russelrip/valorant-platform-backend --public --description 'Owner-controlled VALORANT platform image source'
 gh api repos/Russelrip/valorant-platform-backend --jq '{full_name,private,default_branch}'
 ```
 
