@@ -115,9 +115,10 @@ Create separate credentials for:
 
 - `quest_runtime`: long-lived Quest API reads/writes only; no DDL, role
   management, or database ownership.
-- `valorant_runtime`: sibling-service reads/writes only for the `valorant`
+- `val_runtime`: sibling-service reads/writes only for the `valorant`
   schema and required shared objects.
 - `quest_migrator`: one-shot Prisma migration and schema verification role.
+- `val_migrator`: one-shot VALORANT migration and schema verification role.
 - `quest_backup`: dump-only role with no application write privileges.
 - Database owner/admin: bootstrap and recovery only; never placed in the API
   environment.

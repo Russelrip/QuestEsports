@@ -36,14 +36,10 @@ REVOKE ALL ON DATABASE quest FROM PUBLIC;
 
 -- Normalize attributes even when a role already existed. In particular,
 -- bootstrap must not preserve inherited memberships or elevated capabilities.
-ALTER ROLE quest_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
-  NOREPLICATION NOBYPASSRLS;
-ALTER ROLE quest_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
-  NOREPLICATION NOBYPASSRLS;
-ALTER ROLE val_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
-  NOREPLICATION NOBYPASSRLS;
-ALTER ROLE val_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
-  NOREPLICATION NOBYPASSRLS;
+ALTER ROLE quest_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE quest_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE val_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE val_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 
 -- Remove pre-existing memberships as well as INHERIT. NOINHERIT alone would
 -- still allow an explicit SET ROLE into a role that was already granted.
@@ -76,10 +72,15 @@ BEGIN
     'GRANT CONNECT ON DATABASE %I TO quest_migrator, quest_runtime, val_migrator, val_runtime',
     current_database()
   );
+  EXECUTE format(
+    'GRANT TEMPORARY ON DATABASE %I TO quest_migrator, val_migrator',
+    current_database()
+  );
 END
 $$;
 \else
 GRANT CONNECT ON DATABASE quest TO quest_migrator, quest_runtime, val_migrator, val_runtime;
+GRANT TEMPORARY ON DATABASE quest TO quest_migrator, val_migrator;
 \endif
 
 REVOKE ALL ON SCHEMA valorant FROM PUBLIC;
@@ -127,6 +128,20 @@ GRANT USAGE, CREATE ON SCHEMA public TO quest_migrator;
 GRANT USAGE ON SCHEMA public TO quest_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quest_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO quest_runtime;
+
+-- Prisma creates this table through the migrator connection. It must remain
+-- migrator-only even when this bootstrap repairs an existing database after
+-- migrations have already run.
+DO $$
+BEGIN
+  IF to_regclass('public._prisma_migrations') IS NOT NULL THEN
+    EXECUTE format(
+      'REVOKE ALL PRIVILEGES ON TABLE %I.%I FROM %I',
+      'public', '_prisma_migrations', 'quest_runtime'
+    );
+  END IF;
+END
+$$;
 
 GRANT USAGE ON SCHEMA valorant TO val_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA valorant TO val_runtime;

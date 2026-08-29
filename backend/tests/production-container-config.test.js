@@ -23,6 +23,10 @@ const imageWorkflow = read(".github/workflows/build-container-images.yml");
 const deployWorkflow = read(".github/workflows/deploy-compose.yml");
 const postgresBootstrap = read("ops/docker/postgres/init/001-bootstrap-roles.sql");
 const postgresHealthcheck = read("ops/docker/postgres/healthcheck.sh");
+const questRuntimeRlsMigration = read(
+  "backend/prisma/migrations/20260829120000_add_quest_runtime_rls_policies/migration.sql",
+);
+const databaseSecurityVerifier = read("backend/scripts/verify-database-security.js");
 
 const composeImageFixtures = {
   QUEST_FRONTEND_IMAGE:
@@ -1078,6 +1082,7 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(postgresBootstrap, /REVOKE ALL ON TYPE %I\.%I FROM PUBLIC/);
   assert.match(postgresBootstrap, /type_object\.typelem = 0/);
   assert.match(postgresBootstrap, /type_object\.typtype <> 'm'/);
+  assert.match(postgresBootstrap, /GRANT TEMPORARY ON DATABASE .* TO quest_migrator, val_migrator/);
   assert.doesNotMatch(postgresBootstrap, /PASSWORD\s+'[^']+'/i);
   assert.match(productionCompose, /ssl=on/);
   assert.match(productionCompose, /sslrootcert|ssl_ca_file/);
@@ -1095,6 +1100,88 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(productionEnv, /sslmode=verify-full/);
   assert.match(productionEnv, /sslrootcert=/);
 });
+
+test("PostgreSQL runtime roles use explicit non-bypass policies and keep the Prisma ledger private", () => {
+  const roleAttributes = "LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS";
+  for (const role of ["quest_runtime", "val_runtime", "quest_migrator", "val_migrator"]) {
+    assert.match(postgresBootstrap, new RegExp(`ALTER ROLE ${role} ${roleAttributes}`));
+  }
+  assert.match(questRuntimeRlsMigration, /GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quest_runtime/);
+  assert.match(questRuntimeRlsMigration, /GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO quest_runtime/);
+  assert.match(questRuntimeRlsMigration, /DROP POLICY IF EXISTS %I ON %I\.%I/);
+  assert.match(questRuntimeRlsMigration, /CREATE POLICY %I ON %I\.%I FOR ALL TO %I USING \(true\) WITH CHECK \(true\)/);
+  assert.match(questRuntimeRlsMigration, /c\.relname <> '_prisma_migrations'/);
+  assert.match(questRuntimeRlsMigration, /REVOKE ALL PRIVILEGES ON TABLE public\."_prisma_migrations" FROM quest_runtime/);
+  assert.match(postgresBootstrap, /to_regclass\('public\._prisma_migrations'\)/);
+  assert.match(databaseSecurityVerifier, /FROM pg_policies/);
+  assert.match(databaseSecurityVerifier, /tablesWithoutRuntimePolicy/);
+  assert.match(databaseSecurityVerifier, /rolbypassrls/);
+  assert.match(databaseSecurityVerifier, /crossSchemaGrants/);
+  assert.match(databaseSecurityVerifier, /_prisma_migrations/);
+});
+
+test(
+  "the runtime policy migration gives Quest access without exposing the Prisma ledger or sibling schema",
+  { skip: dockerFixture.skip || false },
+  () => {
+    const container = `quest-security-contract-${process.pid}`;
+    const docker = (args) => spawnSync("docker", ["exec", container, ...args], { encoding: "utf8" });
+    const runPsql = (role, sql) => docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", role, "-d", "postgres", "-At", "-c", sql]);
+    const started = spawnSync(
+      "docker",
+      ["run", "--detach", "--rm", "--name", container, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "postgres:17-bookworm"],
+      { encoding: "utf8" },
+    );
+    assert.equal(started.status, 0, `could not start PostgreSQL fixture:\n${started.stdout}\n${started.stderr}`);
+
+    try {
+      let ready = false;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const result = docker(["pg_isready", "-U", "postgres", "-d", "postgres"]);
+        if (result.status === 0) {
+          ready = true;
+          break;
+        }
+      }
+      assert.equal(ready, true, "PostgreSQL fixture did not become ready");
+
+      const bootstrapPath = path.join(repoRoot, "ops/docker/postgres/init/001-bootstrap-roles.sql");
+      const migrationPath = path.join(
+        repoRoot,
+        "backend/prisma/migrations/20260829120000_add_quest_runtime_rls_policies/migration.sql",
+      );
+      for (const [source, target] of [
+        [bootstrapPath, "/tmp/bootstrap.sql"],
+        [migrationPath, "/tmp/runtime-policies.sql"],
+      ]) {
+        const copied = spawnSync("docker", ["cp", source, `${container}:${target}`], { encoding: "utf8" });
+        assert.equal(copied.status, 0, `could not copy fixture SQL:\n${copied.stdout}\n${copied.stderr}`);
+      }
+
+      let result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-v", "RESTORE_MODE=1", "-U", "postgres", "-d", "postgres", "-f", "/tmp/bootstrap.sql"]);
+      assert.equal(result.status, 0, `bootstrap fixture failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("quest_migrator", 'CREATE TABLE public.fixture_application (id integer PRIMARY KEY); CREATE TABLE public."_prisma_migrations" (id text PRIMARY KEY);');
+      assert.equal(result.status, 0, `fixture tables failed:\n${result.stdout}\n${result.stderr}`);
+      result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "quest_migrator", "-d", "postgres", "-f", "/tmp/runtime-policies.sql"]);
+      assert.equal(result.status, 0, `runtime policy migration failed:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql("postgres", "SELECT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'fixture_application' AND policyname = 'fixture_application_runtime_all' AND cmd = 'ALL' AND 'quest_runtime' = ANY (roles) AND qual = 'true' AND with_check = 'true');");
+      assert.equal(result.stdout.trim(), "t", `fixture policy was not created:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("postgres", "SELECT has_table_privilege('quest_runtime', 'public.fixture_application', 'SELECT'), has_table_privilege('quest_runtime', 'public.\"_prisma_migrations\"', 'SELECT'), NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = '_prisma_migrations');");
+      assert.equal(result.stdout.trim(), "t|f|t", `ledger privilege contract failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("quest_runtime", "INSERT INTO public.fixture_application VALUES (1); SELECT count(*) FROM public.fixture_application;");
+      assert.equal(result.status, 0, `Quest runtime positive probe failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("quest_runtime", 'SELECT count(*) FROM public."_prisma_migrations";');
+      assert.notEqual(result.status, 0, "Quest runtime unexpectedly accessed _prisma_migrations");
+      result = runPsql("quest_runtime", "SELECT count(*) FROM valorant.fixture_application;");
+      assert.notEqual(result.status, 0, "Quest runtime unexpectedly accessed valorant");
+      result = runPsql("val_runtime", "SELECT count(*) FROM public.fixture_application;");
+      assert.notEqual(result.status, 0, "VAL runtime unexpectedly accessed public");
+    } finally {
+      spawnSync("docker", ["rm", "--force", container], { encoding: "utf8" });
+    }
+  },
+);
 
 test("production environment template contains no credential values", () => {
   const sensitiveAssignment = /^(?:AUTH_ENCRYPTION_KEY|VALORANT_SERVICE_KEY_ID|VALORANT_SERVICE_SECRET|DATABASE_URL|DIRECT_URL|SMTP_HOST|SMTP_USER|SMTP_PASS)=/;
