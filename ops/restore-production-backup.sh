@@ -449,12 +449,17 @@ declare -A toc_schemas=()
 public_object_count=0
 valorant_object_count=0
 while IFS= read -r toc_line || [[ -n "$toc_line" ]]; do
-  [[ "$toc_line" =~ ^[[:space:]]*[0-9]+\;[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+ ]] || continue
+  [[ -z "$toc_line" || "$toc_line" == \;* ]] && continue
+  [[ "$toc_line" =~ ^[[:space:]]*[0-9]+\;[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+ ]] || {
+    echo "The database archive TOC contains a malformed entry." >&2
+    exit 1
+  }
   toc_entry="${toc_line#*;}"
   read -r -a toc_fields <<< "$toc_entry"
   toc_type="${toc_fields[2]:-}"
   toc_schema=""
   toc_object=false
+  toc_scope_known=false
   case "$toc_type" in
     SCHEMA)
       [[ "${toc_fields[3]:-}" == - && -n "${toc_fields[4]:-}" ]] || {
@@ -462,6 +467,7 @@ while IFS= read -r toc_line || [[ -n "$toc_line" ]]; do
         exit 1
       }
       toc_schema="${toc_fields[4]}"
+      toc_scope_known=true
       [[ -z "${toc_schemas[$toc_schema]+x}" ]] || {
         echo "The database archive TOC contains an ambiguous duplicate schema entry." >&2
         exit 1
@@ -475,6 +481,7 @@ while IFS= read -r toc_line || [[ -n "$toc_line" ]]; do
         toc_schema="${toc_fields[3]:-}"
       fi
       toc_object=true
+      toc_scope_known=true
       ;;
     SEQUENCE)
       if [[ "${toc_fields[3]:-}" == OWNED && "${toc_fields[4]:-}" == BY ]]; then
@@ -485,18 +492,132 @@ while IFS= read -r toc_line || [[ -n "$toc_line" ]]; do
         toc_schema="${toc_fields[3]:-}"
       fi
       toc_object=true
+      toc_scope_known=true
       ;;
-    FUNCTION|INDEX|CONSTRAINT|TRIGGER|TYPE|VIEW)
-      toc_schema="${toc_fields[3]:-}"
+    FUNCTION|PROCEDURE|AGGREGATE|OPERATOR|COLLATION|CONVERSION|DOMAIN|INDEX|CONSTRAINT|TRIGGER|RULE|TYPE|VIEW|STATISTICS)
+      if [[ "${toc_type}" == OPERATOR && ( "${toc_fields[3]:-}" == CLASS || "${toc_fields[3]:-}" == FAMILY ) ]]; then
+        toc_schema="${toc_fields[4]:-}"
+      elif [[ "${toc_fields[3]:-}" == ATTACH ]]; then
+        toc_schema="${toc_fields[4]:-}"
+      else
+        toc_schema="${toc_fields[3]:-}"
+      fi
       toc_object=true
+      toc_scope_known=true
+      ;;
+    FOREIGN)
+      [[ "${toc_fields[3]:-}" == TABLE ]] || {
+        echo "The database archive TOC contains an unsupported FOREIGN entry." >&2
+        exit 1
+      }
+      toc_schema="${toc_fields[4]:-}"
+      toc_object=true
+      toc_scope_known=true
       ;;
     MATERIALIZED)
       if [[ "${toc_fields[3]:-}" == VIEW ]]; then
-        toc_schema="${toc_fields[4]:-}"
+        if [[ "${toc_fields[4]:-}" == DATA ]]; then
+          # pg_restore lists this as "MATERIALIZED VIEW DATA schema name".
+          toc_schema="${toc_fields[5]:-}"
+        else
+          toc_schema="${toc_fields[4]:-}"
+        fi
         toc_object=true
+        toc_scope_known=true
       fi
       ;;
+    FK)
+      [[ "${toc_fields[3]:-}" == CONSTRAINT ]] || {
+        echo "The database archive TOC contains an unsupported FK entry." >&2
+        exit 1
+      }
+      toc_schema="${toc_fields[4]:-}"
+      toc_object=true
+      toc_scope_known=true
+      ;;
+    POLICY|"ROW")
+      if [[ "$toc_type" == ROW ]]; then
+        [[ "${toc_fields[3]:-}" == SECURITY ]] || {
+          echo "The database archive TOC contains an unsupported ROW entry." >&2
+          exit 1
+        }
+        toc_schema="${toc_fields[4]:-}"
+      else
+        toc_schema="${toc_fields[3]:-}"
+      fi
+      toc_object=true
+      toc_scope_known=true
+      ;;
+    COMMENT|ACL)
+      # Object comments/ACLs use "COMMENT|ACL schema name ...".  Schema,
+      # database, and extension comments/ACLs use "COMMENT|ACL - TARGET ...";
+      # only the SCHEMA target carries an application schema scope.
+      if [[ "${toc_fields[3]:-}" == - ]]; then
+        case "${toc_fields[4]:-}" in
+          SCHEMA)
+            toc_schema="${toc_fields[5]:-}"
+            toc_object=true
+            ;;
+          DATABASE|EXTENSION|FOREIGN|TABLESPACE)
+            ;;
+          TABLE|SEQUENCE|FUNCTION|PROCEDURE|AGGREGATE|INDEX|CONSTRAINT|TRIGGER|RULE|TYPE|VIEW|MATERIALIZED|STATISTICS|COLLATION|CONVERSION|DOMAIN|POLICY|"ROW")
+            toc_schema="${toc_fields[5]:-}"
+            toc_object=true
+            ;;
+          *)
+            echo "The database archive TOC contains an ambiguous $toc_type entry." >&2
+            exit 1
+            ;;
+        esac
+      else
+        toc_schema="${toc_fields[3]:-}"
+        toc_object=true
+      fi
+      toc_scope_known=true
+      ;;
+    DEFAULT)
+      [[ "${toc_fields[3]:-}" == ACL ]] || {
+        echo "The database archive TOC contains an unsupported DEFAULT entry." >&2
+        exit 1
+      }
+      # DEFAULT ACL entries are database-global metadata and have no schema
+      # scope in PostgreSQL custom archives.
+      toc_scope_known=true
+      ;;
+    TEXT)
+      case "${toc_fields[3]:-} ${toc_fields[4]:-}" in
+        SEARCH\ DICTIONARY|SEARCH\ PARSER|SEARCH\ TEMPLATE|SEARCH\ CONFIGURATION)
+          toc_schema="${toc_fields[5]:-}"
+          toc_object=true
+          ;;
+        *)
+          echo "The database archive TOC contains an unsupported TEXT entry." >&2
+          exit 1
+          ;;
+      esac
+      toc_scope_known=true
+      ;;
+    EVENT|CAST|TRANSFORM)
+      # These are legitimate archive-global entries and deliberately do not
+      # name an application schema.  They still must be recognized rather than
+      # silently skipped.
+      toc_scope_known=true
+      ;;
+    DATABASE|EXTENSION|BLOB|TABLESPACE)
+      # These are legitimate archive-global entries and deliberately do not
+      # name an application schema.  They still must be recognized rather than
+      # silently skipped.
+      toc_scope_known=true
+      ;;
+    *)
+      echo "The database archive TOC contains an unsupported or ambiguous entry." >&2
+      exit 1
+      ;;
   esac
+  [[ "$toc_scope_known" == true ]] || {
+    echo "The database archive TOC contains an unsupported or ambiguous entry." >&2
+    exit 1
+  }
   if [[ "$toc_object" == true ]]; then
     [[ "$toc_schema" == public || "$toc_schema" == valorant ]] || {
       echo "The database archive TOC contains an object outside public and valorant." >&2

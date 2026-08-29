@@ -36,6 +36,7 @@ if [[ "${1:-}" == --version ]]; then
   printf 'psql (PostgreSQL) 17.4\n'
   exit 0
 fi
+printf '%s\n' "psql $*" >> "$TEST_ROOT/psql.log"
 if [[ "$*" == *current_database* && "${PGAPPNAME:-}" == quest-restore-target ]]; then
   printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n'
 elif [[ "$*" == *current_database* ]]; then
@@ -124,6 +125,25 @@ if grep -q public-only "$dump"; then
   printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users'
 elif grep -q extra-schema "$dump"; then
   printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches' '7; 2615 2204 SCHEMA - analytics'
+elif grep -q scoped-descriptors "$dump"; then
+  printf '%s\n' \
+    '3; 2615 2200 SCHEMA - public' \
+    '4; 1259 2201 TABLE public users' \
+    '5; 2615 2202 SCHEMA - valorant' \
+    '6; 1259 2203 TABLE valorant matches' \
+    '7; 2606 2204 FK CONSTRAINT analytics cross_schema' \
+    '8; 0 2205 ROW SECURITY analytics cross_schema' \
+    '9; 0 2206 POLICY analytics cross_schema' \
+    '10; 0 2207 ACL analytics cross_schema TABLE' \
+    '11; 0 2208 COMMENT analytics cross_schema TABLE'
+elif grep -q materialized-view-data "$dump"; then
+  printf '%s\n' \
+    '3; 2615 2200 SCHEMA - public' \
+    '4; 1259 2201 TABLE public users' \
+    '5; 2615 2202 SCHEMA - valorant' \
+    '6; 1259 2203 TABLE valorant matches' \
+    '7; 1259 2204 MATERIALIZED VIEW public standings' \
+    '8; 0 2204 MATERIALIZED VIEW DATA public standings'
 else
   printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches'
 fi
@@ -267,6 +287,21 @@ PRIVATE_UPLOAD_ROOT=$test_root/restore/private
 BACKUP_AGE_IDENTITY_FILE=$test_root/identity
 RESTORE_TARGET_SENTINEL_FILE=$test_root/restore-target-sentinel.env
 EOF
+
+# Count every attempted file-tree move so preflight refusals cannot pass by
+# activating and then restoring an identical fixture tree.
+real_mv="$(command -v mv)"
+activation_counter="$test_root/activation.counter"
+: > "$activation_counter"
+cat > "$fake_bin/mv" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$ACTIVATION_COUNTER"
+exec "$REAL_MV" "$@"
+FAKE
+chmod 700 "$fake_bin/mv"
+export REAL_MV="$real_mv" ACTIVATION_COUNTER="$activation_counter"
+
 if RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
     BACKUP_ENV_FILE="$test_root/restore.env" \
     RESTORE_COUNTDOWN_SECONDS=0 \
@@ -282,6 +317,10 @@ grep -F "TOC is missing the valorant schema" "$test_root/preview-only.out" >/dev
 ! grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null
 ! grep -F -- 'RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
 [[ ! -e "$test_root/restore/uploads/file.txt" && ! -e "$test_root/restore/private/file.txt" ]] || exit 1
+[[ "$(wc -l < "$activation_counter" | tr -d ' ')" == 0 ]] || {
+  echo "preflight refusal reached file activation for previews-only archive" >&2
+  exit 1
+}
 
 # An archive that adds a third schema is refused after TOC inspection but
 # before activation, destructive pg_restore, or security normalization.
@@ -313,5 +352,82 @@ grep -F "unexpected schema scope" "$test_root/extra-schema.out" >/dev/null || {
 ! grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null
 ! grep -F -- 'RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
 [[ ! -e "$test_root/restore/uploads/file.txt" && ! -e "$test_root/restore/private/file.txt" ]] || exit 1
+[[ "$(wc -l < "$activation_counter" | tr -d ' ')" == 0 ]] || {
+  echo "preflight refusal reached file activation for extra-schema archive" >&2
+  exit 1
+}
+
+# Scoped descriptors that were previously skipped must be rejected even when
+# the SCHEMA declarations themselves are limited to public and valorant.
+scoped_descriptors="$test_root/scoped-descriptors"
+mkdir -p "$scoped_descriptors/uploads/poster-images" "$scoped_descriptors/private/event-album-originals"
+printf 'scoped-descriptors\n' > "$scoped_descriptors/database.dump"
+cp -- "$preview_only/manifest.txt" "$scoped_descriptors/manifest.txt"
+printf 'scoped fixture\n' > "$scoped_descriptors/uploads/poster-images/photo.webp"
+printf 'scoped fixture\n' > "$scoped_descriptors/private/event-album-originals/photo.jpg"
+scoped_archive="$test_root/scoped-descriptors.tar.gz.enc"
+tar --create --gzip --file="$test_root/scoped-descriptors.tar.gz" \
+  -C "$scoped_descriptors" database.dump manifest.txt uploads private
+cp -- "$test_root/scoped-descriptors.tar.gz" "$scoped_archive"
+printf 'fixture checksum\n' > "$scoped_archive.sha256"
+: > "$test_root/pg_restore.log"
+: > "$test_root/psql.log"
+if RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+    BACKUP_ENV_FILE="$test_root/restore.env" \
+    RESTORE_COUNTDOWN_SECONDS=0 \
+    bash "$root/ops/restore-production-backup.sh" --test-fixture "$scoped_archive" \
+    >"$test_root/scoped-descriptors.out" 2>&1; then
+  echo "restore accepted an unexpected schema-scoped descriptor" >&2
+  exit 1
+fi
+grep -F "outside public and valorant" "$test_root/scoped-descriptors.out" >/dev/null || {
+  cat "$test_root/scoped-descriptors.out" >&2
+  exit 1
+}
+! grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null
+! grep -F -- 'RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
+[[ "$(wc -l < "$activation_counter" | tr -d ' ')" == 0 ]] || {
+  echo "preflight refusal reached file activation for scoped descriptor archive" >&2
+  exit 1
+}
+
+# MATERIALIZED VIEW DATA has DATA between the descriptor and schema.  It is a
+# valid public/valorant archive entry and must not be mistaken for schema DATA.
+materialized="$test_root/materialized-view-data"
+mkdir -p "$materialized/uploads/poster-images" "$materialized/private/event-album-originals"
+printf 'materialized-view-data\n' > "$materialized/database.dump"
+cp -- "$preview_only/manifest.txt" "$materialized/manifest.txt"
+printf 'materialized fixture\n' > "$materialized/uploads/poster-images/photo.webp"
+printf 'materialized fixture\n' > "$materialized/private/event-album-originals/photo.jpg"
+materialized_archive="$test_root/materialized-view-data.tar.gz.enc"
+tar --create --gzip --file="$test_root/materialized-view-data.tar.gz" \
+  -C "$materialized" database.dump manifest.txt uploads private
+cp -- "$test_root/materialized-view-data.tar.gz" "$materialized_archive"
+printf 'fixture checksum\n' > "$materialized_archive.sha256"
+: > "$test_root/pg_restore.log"
+: > "$test_root/psql.log"
+if ! RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+    BACKUP_ENV_FILE="$test_root/restore.env" \
+    RESTORE_COUNTDOWN_SECONDS=0 \
+    bash "$root/ops/restore-production-backup.sh" --test-fixture "$materialized_archive" \
+    >"$test_root/materialized-view-data.out" 2>&1; then
+  cat "$test_root/materialized-view-data.out" >&2
+  exit 1
+fi
+grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null || {
+  cat "$test_root/materialized-view-data.out" >&2
+  cat "$test_root/pg_restore.log" >&2
+  exit 1
+}
+grep -F -- 'RESTORE_MODE=1' "$test_root/psql.log" >/dev/null || {
+  cat "$test_root/materialized-view-data.out" >&2
+  printf '%s\n' '--- psql log ---' >&2
+  cat "$test_root/psql.log" >&2
+  exit 1
+}
+[[ "$(wc -l < "$activation_counter" | tr -d ' ')" -gt 0 ]] || {
+  echo "valid materialized-view data archive did not activate file trees" >&2
+  exit 1
+}
 
 printf 'media backup contract fixture tests passed\n'

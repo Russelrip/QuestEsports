@@ -178,6 +178,22 @@ done
 grep -F -- 'REVOKE ALL ON SCHEMA valorant FROM quest_runtime' "$test_root/psql.log" >/dev/null
 grep -F -- 'REVOKE ALL ON SCHEMA public FROM val_runtime' "$test_root/psql.log" >/dev/null
 
+# Refusal assertions must prove that the activation primitive was never
+# reached, rather than relying only on rollback leaving identical trees.
+real_mv="$(command -v mv)"
+activation_counter="$test_root/activation.counter"
+: > "$activation_counter"
+cat > "$test_root/bin/mv" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$ACTIVATION_COUNTER"
+exec "$REAL_MV" "$@"
+EOF
+chmod 700 "$test_root/bin/mv"
+REAL_MV="$real_mv"
+ACTIVATION_COUNTER="$activation_counter"
+export REAL_MV ACTIVATION_COUNTER
+
 # Restore must not fall back to mutable PostgreSQL clients discovered through PATH.
 sed '/^POSTGRES17_BIN=/d' "$test_root/recovery.env" > "$test_root/mutable.env"
 if PATH="$test_root/bin:$PATH" RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
@@ -188,6 +204,10 @@ if PATH="$test_root/bin:$PATH" RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
   exit 1
 fi
 grep -F "Pinned PostgreSQL client is missing or unsafe" "$test_root/mutable.out" >/dev/null
+[[ "$(wc -l < "$ACTIVATION_COUNTER" | tr -d ' ')" == 0 ]] || {
+  echo "mutable-client refusal reached file activation" >&2
+  exit 1
+}
 
 # A target sentinel writable by a group or other actor is refused before any
 # restore primitive is invoked.
@@ -209,14 +229,19 @@ if PATH="$test_root/bin:$PATH" RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
   exit 1
 fi
 grep -F "target sentinel must be private" "$test_root/unsafe-sentinel.out" >/dev/null
+[[ "$(wc -l < "$ACTIVATION_COUNTER" | tr -d ' ')" == 0 ]] || {
+  echo "unsafe-sentinel refusal reached file activation" >&2
+  exit 1
+}
 rm -f "$test_root/bin/stat"
 
 # Target binding failures are refused before a destructive restore is allowed.
 refused() {
   local label="$1" env_file="$2" output="$test_root/$1.out"
-  local restore_count security_count
+  local restore_count security_count activation_count
   restore_count="$(grep -c -- '--dbname=' "$test_root/pg_restore.log" 2>/dev/null || true)"
   security_count="$(grep -c -- 'RESTORE_MODE=1' "$test_root/psql.log" 2>/dev/null || true)"
+  activation_count="$(wc -l < "$ACTIVATION_COUNTER" | tr -d ' ')"
   if PATH="$test_root/bin:$PATH" RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
       BACKUP_ENV_FILE="$env_file" RESTORE_COUNTDOWN_SECONDS=0 \
       TEST_ROOT="$test_root" bash "$root/ops/restore-production-backup.sh" \
@@ -230,6 +255,10 @@ refused() {
   }
   [[ "$(grep -c -- 'RESTORE_MODE=1' "$test_root/psql.log" 2>/dev/null || true)" == "$security_count" ]] || {
     echo "refused target still invoked security SQL: $label" >&2
+    exit 1
+  }
+  [[ "$(wc -l < "$ACTIVATION_COUNTER" | tr -d ' ')" == "$activation_count" ]] || {
+    echo "refused target reached file activation: $label" >&2
     exit 1
   }
   [[ -f "$test_root/public/file.txt" && -f "$test_root/private/file.txt" ]] || {

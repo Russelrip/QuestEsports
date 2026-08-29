@@ -414,3 +414,151 @@ warning for `ops/quest-esports-recovery.env.example` (`STATUS:0`).
 - The normal recovery example still requires operators to provide protected
   TLS material, age identity, sentinel authorization, and confirmation out of
   band.
+
+## Fix round 3
+
+### Changed files
+
+- `ops/restore-production-backup.sh` — made TOC inspection fail closed for
+  every non-comment entry, explicitly parsed schema/object scope for
+  `FK CONSTRAINT`, `ROW SECURITY`, `POLICY`, `ACL`, `COMMENT`, and the other
+  PostgreSQL custom-archive descriptors, and corrected `MATERIALIZED VIEW DATA`
+  to read its schema after the `DATA` field while retaining legitimate global
+  archive metadata.
+- `ops/tests/restore-production-backup.test.sh` — added an activation move
+  counter and asserted it is unchanged for mutable-client, sentinel, and all
+  target-binding preflight refusals while retaining destructive restore and
+  security-SQL ordering assertions.
+- `ops/tests/media-backup-contract.test.sh` — added scoped-descriptor negative
+  coverage, activation-counter checks for preflight refusals, and a valid
+  two-schema materialized-view-data fixture that must activate successfully.
+- `.superpowers/sdd/2026-08-29-vps-database-migration/task-4-report.md` —
+  appended this round-3 record.
+
+### Commands and exact outputs
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" -n ops/backup-production.sh ops/backup-production-multi-remote.sh ops/restore-production-backup.sh ops/rehearsal/postgres17-restore-rehearsal.sh ops/tests/media-backup-contract.test.sh ops/tests/restore-production-backup.test.sh ops/tests/backup-multi-remote.test.sh ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output: `STATUS:0`.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/media-backup-contract.test.sh
+```
+
+Output:
+
+```text
+media backup contract fixture tests passed
+STATUS:0
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/restore-production-backup.test.sh
+```
+
+Output:
+
+```text
+File activation and a transactional database restore begin in 0 seconds. Press Ctrl+C to abort.
+restore schema ownership regression test passed
+STATUS:0
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/backup-multi-remote.test.sh
+```
+
+Output:
+
+```text
+Encrypted production backup uploaded successfully: quest-production-20260829T132145Z.tar.gz.enc
+Another release operation is already running.
+Production backup configuration is not canonical or private.
+Rclone configuration paths must be readable and unique.
+Production backup was created but one or more required remotes failed; see the per-run result record.
+No locally valid and remotely verified production backup/checksum pair newer than 2160 minutes was found.
+No locally valid and remotely verified production backup/checksum pair newer than 2160 minutes was found.
+Inspected remote label primary.
+Inspected remote label secondary.
+Remote retention candidate archives for label primary: 1; recovery points retained: 4.
+Remote retention deletion was incomplete for label primary; the recovery pair was retained.
+Remote retention candidate archives for label secondary: 1; recovery points retained: 3.
+Encrypted production backup uploaded successfully: quest-production-20260829T132212Z.tar.gz.enc
+backup multi-remote fixture tests passed
+STATUS:0
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output:
+
+```text
+ok: missing confirmation
+ok: production-looking target
+ok: missing target sentinel
+ok: world-readable target sentinel
+ok: group-readable target sentinel
+ok: existing generic upload parent
+ok: URL/container port mismatch
+ok: nested roots
+ok: traversal target
+ok: bad checksum
+ok: decryption failure
+ok: successful wrapper-path pre/post evidence generation
+ok: valid signed evidence
+ok: arbitrary ACL payload
+ok: wrong ACL grantee
+ok: wrong ACL privilege
+ok: PUBLIC default ACL grant
+ok: extra default ACL row
+ok: unsafe extension version
+ok: unsafe PostgreSQL setting
+ok: uncontained wrong-CA evidence
+ok: unknown failed-service identity
+ok: summary without raw observations
+ok: incomplete manifest evidence
+ok: wrong health evidence
+ok: wrong CA evidence
+ok: blocked writer/freeze evidence
+PostgreSQL 17 rehearsal fixture tests passed (no Docker, database, VPS, or remote contacted).
+STATUS:0
+```
+
+```text
+git diff --check
+```
+
+Output: no diff errors (`STATUS:0`).
+
+### Self-review
+
+- Every non-comment TOC line must match the PostgreSQL list grammar and a
+  recognized descriptor. Schema-scoped descriptors are mapped to their exact
+  schema field and must name only `public` or `valorant`; unsupported or
+  ambiguous entries fail before staging, activation, destructive `pg_restore`,
+  or security SQL. Recognized global metadata remains allowed without a fake
+  schema assignment.
+- `MATERIALIZED VIEW public name` and `MATERIALIZED VIEW DATA public name` now
+  use their distinct field positions, so valid materialized-view data passes
+  while an extra scoped descriptor fails.
+- The activation counter records attempted `mv` operations in refusal fixtures;
+  all preflight refusal assertions require no counter change and continue to
+  check destructive `pg_restore` and security SQL logs.
+- Strict TLS/session binding, canonical paths, explicit fixture seam,
+  host/container endpoint distinction, PostgreSQL 17 pinning, both-schema
+  scope, encryption/rclone/checksum/upload/confirmation/cleanup behavior, and
+  secret-free output remain unchanged. No VPS, production database, remote,
+  credential, or private key was contacted.
+
+### Concerns
+
+- A live production restore/backup was not exercised in this checkout; the
+  canonical root-owned TLS material, PostgreSQL 17 clients, sentinel, and
+  Compose endpoint still require deployment-host verification.
+- The normal recovery example still requires operators to provide protected
+  TLS material, age identity, sentinel authorization, and confirmation out of
+  band.
