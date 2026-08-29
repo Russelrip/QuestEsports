@@ -104,7 +104,6 @@ jobs:
     env:
       HOME: /root
       ALLOW_INSECURE_LOOPBACK_URLS: true
-      INTERNAL_API_URL: http://127.0.0.1:5011
       NEXT_PUBLIC_API_URL: http://127.0.0.1:5011
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       PLAYWRIGHT_MOCK_API_PORT: 5011
@@ -139,6 +138,8 @@ jobs:
         run: npm run build
 
       - name: Run frontend E2E tests
+        env:
+          INTERNAL_API_URL: http://127.0.0.1:5011
         run: npm run test:e2e
 
   mobile-admin:
