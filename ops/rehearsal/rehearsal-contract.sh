@@ -50,6 +50,10 @@ rehearsal_runtime_policy_name() {
   printf '%s_runtime_all' "$table"
 }
 
+rehearsal_live_gate_token() {
+  printf '%s' 'owner_deployment_host_evidence_required'
+}
+
 rehearsal_canonical_acl_rows() {
   printf '%s\n' \
     'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' \
