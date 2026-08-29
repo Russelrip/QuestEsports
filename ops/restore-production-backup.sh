@@ -576,12 +576,50 @@ while IFS= read -r toc_line || [[ -n "$toc_line" ]]; do
       toc_scope_known=true
       ;;
     DEFAULT)
-      [[ "${toc_fields[3]:-}" == ACL ]] || {
-        echo "The database archive TOC contains an unsupported DEFAULT entry." >&2
-        exit 1
-      }
-      # DEFAULT ACL entries are database-global metadata and have no schema
-      # scope in PostgreSQL custom archives.
+      if [[ "${toc_fields[3]:-}" == ACL ]]; then
+        # PostgreSQL lists a default-privilege entry as
+        # "DEFAULT ACL schema DEFAULT PRIVILEGES FOR ROLE role [IN SCHEMA
+        # schema]".  A '-' namespace is the legitimate database-global form;
+        # otherwise its namespace is schema-scoped and must be checked below.
+        [[ "${toc_fields[5]:-}" == DEFAULT &&
+           "${toc_fields[6]:-}" == PRIVILEGES &&
+           "${toc_fields[7]:-}" == FOR &&
+           "${toc_fields[8]:-}" == ROLE &&
+           -n "${toc_fields[9]:-}" && -z "${toc_fields[13]:-}" ]] || {
+          echo "The database archive TOC contains an ambiguous DEFAULT ACL entry." >&2
+          exit 1
+        }
+        if [[ "${toc_fields[4]:-}" == - ]]; then
+          [[ -z "${toc_fields[10]:-}" ]] || {
+            echo "The database archive TOC contains an ambiguous global DEFAULT ACL entry." >&2
+            exit 1
+          }
+        else
+          toc_schema="${toc_fields[4]:-}"
+          if [[ -n "${toc_fields[10]:-}" ]]; then
+            [[ "${toc_fields[10]:-}" == IN &&
+               "${toc_fields[11]:-}" == SCHEMA &&
+               -n "${toc_fields[12]:-}" &&
+               "${toc_fields[12]}" == "${toc_fields[4]}" &&
+               -z "${toc_fields[13]:-}" ]] || {
+              echo "The database archive TOC contains an ambiguous DEFAULT ACL schema." >&2
+              exit 1
+            }
+          fi
+          toc_object=true
+        fi
+      else
+        # Column defaults use the single-word DEFAULT descriptor:
+        # "DEFAULT schema table column".  Do not confuse these ordinary
+        # entries with DEFAULT ACL, but still enforce their schema scope.
+        [[ "${toc_fields[3]:-}" != - && -n "${toc_fields[3]:-}" &&
+           "${toc_fields[4]:-}" != - && -n "${toc_fields[4]:-}" ]] || {
+          echo "The database archive TOC contains an ambiguous DEFAULT entry." >&2
+          exit 1
+        }
+        toc_schema="${toc_fields[3]}"
+        toc_object=true
+      fi
       toc_scope_known=true
       ;;
     TEXT)

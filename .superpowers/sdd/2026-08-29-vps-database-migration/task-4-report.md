@@ -562,3 +562,141 @@ Output: no diff errors (`STATUS:0`).
 - The normal recovery example still requires operators to provide protected
   TLS material, age identity, sentinel authorization, and confirmation out of
   band.
+
+## Fix round 4
+
+### Changed files
+
+- `ops/restore-production-backup.sh` — parsed PostgreSQL's distinct column
+  `DEFAULT` and `DEFAULT ACL` TOC grammars; treated schema-qualified default
+  ACL entries as schema-scoped and allowed only `public` or `valorant`, while
+  retaining the legitimate database-global `DEFAULT ACL -` form.
+- `ops/tests/media-backup-contract.test.sh` — added independent refusal
+  archives for FK CONSTRAINT, ROW SECURITY, POLICY, ACL, COMMENT, and DEFAULT
+  ACL entries with an unexpected schema; added valid column-default,
+  database-global default ACL, and schema-qualified default ACL entries to the
+  accepted materialized-view archive; retained activation and destructive-order
+  assertions for every refusal.
+
+### Commands and exact outputs
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" -n ops/backup-production.sh ops/backup-production-multi-remote.sh ops/restore-production-backup.sh ops/rehearsal/postgres17-restore-rehearsal.sh ops/tests/media-backup-contract.test.sh ops/tests/restore-production-backup.test.sh ops/tests/backup-multi-remote.test.sh ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output: none; passed.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/media-backup-contract.test.sh
+```
+
+Output:
+
+```text
+media backup contract fixture tests passed
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/restore-production-backup.test.sh
+```
+
+Output:
+
+```text
+File activation and a transactional database restore begin in 0 seconds. Press Ctrl+C to abort.
+restore schema ownership regression test passed
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/backup-multi-remote.test.sh
+```
+
+Output:
+
+```text
+Encrypted production backup uploaded successfully: quest-production-20260829T135707Z.tar.gz.enc
+Another release operation is already running.
+Production backup configuration is not canonical or private.
+Rclone configuration paths must be readable and unique.
+Production backup was created but one or more required remotes failed; see the per-run result record.
+No locally valid and remotely verified production backup/checksum pair newer than 2160 minutes was found.
+No locally valid and remotely verified production backup/checksum pair newer than 2160 minutes was found.
+Inspected remote label primary.
+Inspected remote label secondary.
+Remote retention candidate archives for label primary: 1; recovery points retained: 4.
+Remote retention deletion was incomplete for label primary; the recovery pair was retained.
+Remote retention candidate archives for label secondary: 1; recovery points retained: 3.
+Encrypted production backup uploaded successfully: quest-production-20260829T135746Z.tar.gz.enc
+backup multi-remote fixture tests passed
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output:
+
+```text
+ok: missing confirmation
+ok: production-looking target
+ok: missing target sentinel
+ok: world-readable target sentinel
+ok: group-readable target sentinel
+ok: existing generic upload parent
+ok: URL/container port mismatch
+ok: nested roots
+ok: traversal target
+ok: bad checksum
+ok: decryption failure
+ok: successful wrapper-path pre/post evidence generation
+ok: valid signed evidence
+ok: arbitrary ACL payload
+ok: wrong ACL grantee
+ok: wrong ACL privilege
+ok: PUBLIC default ACL grant
+ok: extra default ACL row
+ok: unsafe extension version
+ok: unsafe PostgreSQL setting
+ok: uncontained wrong-CA evidence
+ok: unknown failed-service identity
+ok: summary without raw observations
+ok: incomplete manifest evidence
+ok: wrong health evidence
+ok: wrong CA evidence
+ok: blocked writer/freeze evidence
+PostgreSQL 17 rehearsal fixture tests passed (no Docker, database, VPS, or remote contacted).
+STATUS:0
+```
+
+```text
+git diff --check
+```
+
+Output: no diff errors (`STATUS:0`).
+
+### Self-review
+
+- `DEFAULT ACL` now follows actual PostgreSQL TOC positioning: `ACL` is the
+  descriptor continuation, the namespace is the next field, and the default
+  privileges tag is validated separately. Schema namespaces and any optional
+  `IN SCHEMA` content are constrained to the same allowed schema; only `-`
+  remains global.
+- Single-word column `DEFAULT` entries are accepted as schema/table/column
+  descriptors and still pass the exact schema check. Valid materialized-view
+  data and both required schemas remain accepted.
+- Each named descriptor refusal runs in a fresh archive and independently
+  proves no activation, destructive restore, or security SQL, so early parser
+  failure cannot hide later descriptor coverage.
+- Prior PostgreSQL 17 pinning, strict target/TLS/session identity, endpoint
+  separation, two-schema scope, encryption/rclone/checksum/upload,
+  confirmation, cleanup, explicit fixture seam, and secret-free behavior are
+  unchanged. No VPS, production database, remote, credential, or private key
+  was contacted or changed.
+
+### Concerns
+
+- A live production backup or restore was not exercised; deployment-host
+  verification of PostgreSQL 17 clients, TLS material, sentinel, and Compose
+  endpoint remains required.
+- The normal recovery example still requires protected TLS material, age
+  identity, sentinel authorization, and confirmation out of band.

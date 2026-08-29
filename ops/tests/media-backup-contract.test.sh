@@ -121,21 +121,35 @@ if [[ "${1:-}" == --version ]]; then
 fi
 printf '%s\n' "pg_restore $*" >> "$TEST_ROOT/pg_restore.log"
 dump="${@: -1}"
-if grep -q public-only "$dump"; then
-  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users'
-elif grep -q extra-schema "$dump"; then
-  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches' '7; 2615 2204 SCHEMA - analytics'
-elif grep -q scoped-descriptors "$dump"; then
+emit_schema_base() {
   printf '%s\n' \
     '3; 2615 2200 SCHEMA - public' \
     '4; 1259 2201 TABLE public users' \
     '5; 2615 2202 SCHEMA - valorant' \
-    '6; 1259 2203 TABLE valorant matches' \
-    '7; 2606 2204 FK CONSTRAINT analytics cross_schema' \
-    '8; 0 2205 ROW SECURITY analytics cross_schema' \
-    '9; 0 2206 POLICY analytics cross_schema' \
-    '10; 0 2207 ACL analytics cross_schema TABLE' \
-    '11; 0 2208 COMMENT analytics cross_schema TABLE'
+    '6; 1259 2203 TABLE valorant matches'
+}
+if grep -q public-only "$dump"; then
+  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users'
+elif grep -q extra-schema "$dump"; then
+  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches' '7; 2615 2204 SCHEMA - analytics'
+elif grep -q scoped-fk-constraint "$dump"; then
+  emit_schema_base
+  printf '%s\n' '7; 2606 2204 FK CONSTRAINT analytics cross_schema'
+elif grep -q scoped-row-security "$dump"; then
+  emit_schema_base
+  printf '%s\n' '7; 0 2204 ROW SECURITY analytics cross_schema'
+elif grep -q scoped-policy "$dump"; then
+  emit_schema_base
+  printf '%s\n' '7; 0 2204 POLICY analytics cross_schema'
+elif grep -q scoped-acl "$dump"; then
+  emit_schema_base
+  printf '%s\n' '7; 0 2204 ACL analytics cross_schema TABLE'
+elif grep -q scoped-comment "$dump"; then
+  emit_schema_base
+  printf '%s\n' '7; 0 2204 COMMENT analytics cross_schema TABLE'
+elif grep -q scoped-default-acl "$dump"; then
+  emit_schema_base
+  printf '%s\n' '7; 0 2204 DEFAULT ACL analytics DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA analytics'
 elif grep -q materialized-view-data "$dump"; then
   printf '%s\n' \
     '3; 2615 2200 SCHEMA - public' \
@@ -143,9 +157,12 @@ elif grep -q materialized-view-data "$dump"; then
     '5; 2615 2202 SCHEMA - valorant' \
     '6; 1259 2203 TABLE valorant matches' \
     '7; 1259 2204 MATERIALIZED VIEW public standings' \
-    '8; 0 2204 MATERIALIZED VIEW DATA public standings'
+    '8; 0 2204 MATERIALIZED VIEW DATA public standings' \
+    '9; 0 2205 DEFAULT public users status' \
+    '10; 0 2206 DEFAULT ACL - DEFAULT PRIVILEGES FOR ROLE postgres' \
+    '11; 0 2207 DEFAULT ACL public DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public'
 else
-  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches'
+  emit_schema_base
 fi
 exit 0
 FAKE
@@ -358,38 +375,44 @@ grep -F "unexpected schema scope" "$test_root/extra-schema.out" >/dev/null || {
 }
 
 # Scoped descriptors that were previously skipped must be rejected even when
-# the SCHEMA declarations themselves are limited to public and valorant.
-scoped_descriptors="$test_root/scoped-descriptors"
-mkdir -p "$scoped_descriptors/uploads/poster-images" "$scoped_descriptors/private/event-album-originals"
-printf 'scoped-descriptors\n' > "$scoped_descriptors/database.dump"
-cp -- "$preview_only/manifest.txt" "$scoped_descriptors/manifest.txt"
-printf 'scoped fixture\n' > "$scoped_descriptors/uploads/poster-images/photo.webp"
-printf 'scoped fixture\n' > "$scoped_descriptors/private/event-album-originals/photo.jpg"
-scoped_archive="$test_root/scoped-descriptors.tar.gz.enc"
-tar --create --gzip --file="$test_root/scoped-descriptors.tar.gz" \
-  -C "$scoped_descriptors" database.dump manifest.txt uploads private
-cp -- "$test_root/scoped-descriptors.tar.gz" "$scoped_archive"
-printf 'fixture checksum\n' > "$scoped_archive.sha256"
-: > "$test_root/pg_restore.log"
-: > "$test_root/psql.log"
-if RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
-    BACKUP_ENV_FILE="$test_root/restore.env" \
-    RESTORE_COUNTDOWN_SECONDS=0 \
-    bash "$root/ops/restore-production-backup.sh" --test-fixture "$scoped_archive" \
-    >"$test_root/scoped-descriptors.out" 2>&1; then
-  echo "restore accepted an unexpected schema-scoped descriptor" >&2
-  exit 1
-fi
-grep -F "outside public and valorant" "$test_root/scoped-descriptors.out" >/dev/null || {
-  cat "$test_root/scoped-descriptors.out" >&2
-  exit 1
-}
-! grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null
-! grep -F -- 'RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
-[[ "$(wc -l < "$activation_counter" | tr -d ' ')" == 0 ]] || {
-  echo "preflight refusal reached file activation for scoped descriptor archive" >&2
-  exit 1
-}
+# the SCHEMA declarations themselves are limited to public and valorant. Keep
+# each descriptor in its own archive so one early refusal cannot hide coverage
+# of the remaining PostgreSQL TOC descriptor grammars.
+for descriptor in fk-constraint row-security policy acl comment default-acl; do
+  marker="scoped-$descriptor"
+  scoped_descriptors="$test_root/$marker"
+  mkdir -p "$scoped_descriptors/uploads/poster-images" "$scoped_descriptors/private/event-album-originals"
+  printf '%s\n' "$marker" > "$scoped_descriptors/database.dump"
+  cp -- "$preview_only/manifest.txt" "$scoped_descriptors/manifest.txt"
+  printf 'scoped fixture\n' > "$scoped_descriptors/uploads/poster-images/photo.webp"
+  printf 'scoped fixture\n' > "$scoped_descriptors/private/event-album-originals/photo.jpg"
+  scoped_archive="$test_root/$marker.tar.gz.enc"
+  tar --create --gzip --file="$test_root/$marker.tar.gz" \
+    -C "$scoped_descriptors" database.dump manifest.txt uploads private
+  cp -- "$test_root/$marker.tar.gz" "$scoped_archive"
+  printf 'fixture checksum\n' > "$scoped_archive.sha256"
+  : > "$test_root/pg_restore.log"
+  : > "$test_root/psql.log"
+  activation_before="$(wc -l < "$activation_counter" | tr -d ' ')"
+  if RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+      BACKUP_ENV_FILE="$test_root/restore.env" \
+      RESTORE_COUNTDOWN_SECONDS=0 \
+      bash "$root/ops/restore-production-backup.sh" --test-fixture "$scoped_archive" \
+      >"$test_root/$marker.out" 2>&1; then
+    echo "restore accepted an unexpected schema-scoped descriptor: $descriptor" >&2
+    exit 1
+  fi
+  grep -F "outside public and valorant" "$test_root/$marker.out" >/dev/null || {
+    cat "$test_root/$marker.out" >&2
+    exit 1
+  }
+  ! grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null
+  ! grep -F -- 'RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
+  [[ "$(wc -l < "$activation_counter" | tr -d ' ')" == "$activation_before" ]] || {
+    echo "preflight refusal reached file activation for scoped descriptor: $descriptor" >&2
+    exit 1
+  }
+done
 
 # MATERIALIZED VIEW DATA has DATA between the descriptor and schema.  It is a
 # valid public/valorant archive entry and must not be mistaken for schema DATA.
