@@ -8,29 +8,36 @@ if [[ "${RESTORE_CONFIRMATION:-}" != "RESTORE_QUEST_PRODUCTION" ]]; then
   echo "Set RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION for an intentional restore." >&2
   exit 1
 fi
-if [[ $# -ne 1 ]]; then
-  echo "Usage: restore-production-backup.sh /absolute/path/to/quest-production-*.tar.gz.enc" >&2
+restore_test_fixture=false
+if [[ $# -eq 2 && "$1" == --test-fixture ]]; then
+  restore_test_fixture=true
+  shift
+elif [[ $# -ne 1 ]]; then
+  echo "Usage: restore-production-backup.sh [--test-fixture] /absolute/path/to/quest-production-*.tar.gz.enc" >&2
   exit 1
 fi
 
 BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}"
-if [[ ! -r "$BACKUP_ENV_FILE" ]]; then
-  echo "Restore configuration is not readable: $BACKUP_ENV_FILE" >&2
+config_file="$BACKUP_ENV_FILE"
+if [[ "$restore_test_fixture" == true && "$config_file" == /etc/quest-esports-backup.env ]]; then
+  echo "Fixture mode is unavailable with the protected production configuration." >&2
+  exit 1
+fi
+readonly config_file restore_test_fixture
+if [[ ! -r "$config_file" ]]; then
+  echo "Restore configuration is not readable." >&2
   exit 1
 fi
 set -a
 # shellcheck disable=SC1090
-source "$BACKUP_ENV_FILE"
+source "$config_file"
 set +a
 
-restore_fixture="${QUEST_RESTORE_FIXTURE:-}"
-if [[ -z "$restore_fixture" && -n "${REHEARSAL_TARGET_SENTINEL_FILE:-}" ]]; then
-  restore_fixture=1
-fi
-restore_fixture="${restore_fixture:-0}"
-if [[ "$restore_fixture" != 0 && "$restore_fixture" != 1 ]]; then
-  echo "QUEST_RESTORE_FIXTURE must be 0 or 1." >&2
-  exit 1
+if [[ "$restore_test_fixture" == false ]]; then
+  [[ "$(stat -c '%a' "$config_file" 2>/dev/null)" =~ ^(600|640)$ ]] || {
+    echo "Restore configuration is not private." >&2
+    exit 1
+  }
 fi
 
 # A PostgreSQL client selected by PATH is not an acceptable restore primitive:
@@ -92,9 +99,19 @@ POSTGRES_CA_FILE="${POSTGRES_CA_FILE:-${VALORANT_CA_FILE:-}}"
   echo "POSTGRES_CA_FILE must be an absolute non-symlink file." >&2
   exit 1
 }
-if [[ "$restore_fixture" != 1 ]]; then
+if [[ "$restore_test_fixture" == false ]]; then
   [[ "$POSTGRES_CA_FILE" == /etc/quest-esports/tls/quest-private-ca.crt ]] || {
     echo "PostgreSQL CA file is not canonical." >&2
+    exit 1
+  }
+  [[ "${POSTGRES_CERT_FILE:-}" == /etc/quest-esports/tls/quest-postgres.crt &&
+     "${POSTGRES_KEY_FILE:-}" == /etc/quest-esports/tls/quest-postgres.key &&
+     -f "$POSTGRES_CERT_FILE" && -f "$POSTGRES_KEY_FILE" &&
+     ! -L "$POSTGRES_CERT_FILE" && ! -L "$POSTGRES_KEY_FILE" &&
+     "$(stat -c '%u %a' "$POSTGRES_KEY_FILE" 2>/dev/null)" == '0 600' &&
+     "$(stat -c '%u' "$POSTGRES_CA_FILE" 2>/dev/null)" == 0 &&
+     "$(stat -c '%u' "$POSTGRES_CERT_FILE" 2>/dev/null)" == 0 ]] || {
+    echo "PostgreSQL TLS certificate or key is not canonical and private." >&2
     exit 1
   }
 fi
@@ -102,7 +119,8 @@ fi
 restore_target_host="${RESTORE_TARGET_HOST:-127.0.0.1}"
 restore_target_port="${RESTORE_TARGET_PORT:-55432}"
 restore_target_major="${RESTORE_TARGET_MAJOR:-17}"
-restore_target_database="${RESTORE_TARGET_DATABASE:-}"
+restore_target_database="${RESTORE_TARGET_DATABASE:-quest}"
+restore_target_data_root="${RESTORE_TARGET_DATA_ROOT:-${POSTGRES_TARGET_DATA_ROOT:-}}"
 restore_sentinel_file="${RESTORE_TARGET_SENTINEL_FILE:-${POSTGRES_TARGET_SENTINEL_FILE:-${REHEARSAL_TARGET_SENTINEL_FILE:-}}}"
 restore_sentinel_command="${RESTORE_TARGET_SENTINEL_COMMAND:-${POSTGRES_TARGET_SENTINEL_COMMAND:-}}"
 declare -A restore_sentinel=()
@@ -145,7 +163,21 @@ read_restore_sentinel_command() {
     echo "Restore target sentinel command is missing or unsafe." >&2
     exit 1
   }
-  if [[ "$restore_fixture" != 1 ]]; then
+  sentinel_mode="$(stat -c '%a' "$restore_sentinel_command" 2>/dev/null)" || {
+    echo "Restore target sentinel command mode cannot be inspected." >&2
+    exit 1
+  }
+  [[ "$sentinel_mode" =~ ^[0-7]{3,4}$ ]] || {
+    echo "Restore target sentinel command mode is invalid." >&2
+    exit 1
+  }
+  case "$sentinel_mode" in
+    *[2367][0-7]|*[0-7][2367])
+      echo "Restore target sentinel command is writable by a group or other actor." >&2
+      exit 1
+      ;;
+  esac
+  if [[ "$restore_test_fixture" == false ]]; then
     [[ "$restore_sentinel_command" == /usr/local/sbin/quest-release-postgres-target &&
         "$(stat -c '%u' "$restore_sentinel_command" 2>/dev/null)" == 0 ]] || {
       echo "Restore target sentinel command is not the canonical root-owned command." >&2
@@ -169,13 +201,23 @@ read_restore_sentinel_command() {
 }
 
 validate_restore_target() {
-  local authority host_port host port path database query_string username target_probe
+  local authority host_port host port path database username target_probe session_user server_addr server_port
   if [[ -n "$restore_sentinel_command" ]]; then
     read_restore_sentinel_command
   else
     read_restore_sentinel_file
   fi
   target_kind="${restore_sentinel[target_kind]:-}"
+  if [[ "$restore_test_fixture" == false ]]; then
+    [[ "$target_kind" == postgresql17 || "$target_kind" == production_postgresql17 ]] || {
+      echo "Production restore requires the canonical PostgreSQL target sentinel." >&2
+      exit 1
+    }
+    [[ "$restore_sentinel_command" == /usr/local/sbin/quest-release-postgres-target ]] || {
+      echo "Production restore requires the canonical root-owned sentinel command." >&2
+      exit 1
+    }
+  fi
   [[ "$target_kind" == disposable_postgresql17 || "$target_kind" == postgresql17 ||
       "$target_kind" == production_postgresql17 ]] || {
     echo "Restore target is not marked disposable or production-authorized." >&2
@@ -191,14 +233,27 @@ validate_restore_target() {
       echo "Disposable restore target sentinel is incomplete." >&2
       exit 1
     }
-    [[ -n "$restore_target_database" ]] || restore_target_database="${restore_sentinel[database]:-quest_restore}"
+    [[ -n "${RESTORE_TARGET_DATABASE:-}" ]] || restore_target_database="${restore_sentinel[database]:-quest_restore}"
   else
     [[ "${RESTORE_PRODUCTION_AUTHORIZED:-}" == 1 ||
         "${RESTORE_TARGET_AUTHORIZATION:-}" == production ]] || {
       echo "Production restore target requires explicit authorization." >&2
       exit 1
     }
-    [[ "$restore_target_database" == quest ]] || restore_target_database=quest
+    [[ "$restore_target_database" == quest ]] || {
+      echo "Production restore target database must be quest; refusing configured mismatch." >&2
+      exit 1
+    }
+    [[ "$restore_target_data_root" == /srv/quest-esports/postgres/17/data &&
+       -d "$restore_target_data_root" && ! -L "$restore_target_data_root" &&
+       "$(realpath "$restore_target_data_root" 2>/dev/null)" == "$restore_target_data_root" ]] || {
+      echo "Production restore target data root is not canonical." >&2
+      exit 1
+    }
+    [[ "${restore_sentinel[data_root]:-}" == "$restore_target_data_root" ]] || {
+      echo "Production restore sentinel does not identify the canonical data root." >&2
+      exit 1
+    }
   fi
   [[ "$restore_target_host" == 127.0.0.1 && "$restore_target_port" == 55432 &&
       "$restore_target_major" == 17 ]] || {
@@ -217,58 +272,37 @@ validate_restore_target() {
       }
     fi
   done
-  [[ "$DIRECT_URL" =~ ^postgres(ql)?://[^[:space:]]+$ ]] || {
+  [[ "$DIRECT_URL" =~ ^postgres(ql)?://[^[:space:]#]+$ && "$DIRECT_URL" != *\?* ]] || {
     echo "DIRECT_URL is not a valid PostgreSQL URL." >&2
     exit 1
   }
   authority="${DIRECT_URL#*://}"; path="${authority#*/}"; authority="${authority%%/*}"
   username="${authority%@*}"; host_port="${authority##*@}"
-  [[ "$authority" == *@* && -n "$username" ]] || {
+  [[ "$authority" == *@* && -n "$username" && "$username" != *'@'* &&
+      "$host_port" == *:* && "$host_port" != *:*:* ]] || {
     echo "DIRECT_URL must contain an explicit restore credential." >&2
     exit 1
   }
   host="${host_port%%:*}"; port="${host_port##*:}"
-  database="${path%%\?*}"; query_string="${path#*\?}"
-  tls_url_is_verified=false
-  [[ "$query_string" == *sslmode=verify-full* ]] && tls_url_is_verified=true
-  # The existing rehearsal wrapper supplies TLS as libpq environment state and
-  # predates the explicit sslmode URL parameter.  Its live pg_settings probe
-  # remains authoritative; standalone recovery URLs must say verify-full.
-  if [[ "$tls_url_is_verified" != true && -z "${REHEARSAL_TARGET_SENTINEL_FILE:-}" ]]; then
-    echo "DIRECT_URL must require PostgreSQL verify-full TLS." >&2
-    exit 1
-  fi
+  database="$path"
   [[ "$host" == "$restore_target_host" && "$port" == "$restore_target_port" &&
       "$database" == "$restore_target_database" ]] || {
     echo "DIRECT_URL does not bind to the verified restore target." >&2
     exit 1
   }
   psql_target() {
-    PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGAPPNAME=quest-restore-target \
-      "$psql_bin" "$DIRECT_URL" "$@"
+    PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="${POSTGRES_CERT_FILE:-}" PGSSLKEY="${POSTGRES_KEY_FILE:-}" PGAPPNAME=quest-restore-target \
+      "$psql_bin" -X "$DIRECT_URL" "$@"
   }
-  target_probe="$(psql_target -t -A -c "SELECT current_database() || '|' || current_setting('server_version_num') || '|' || CASE WHEN EXISTS (SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl) THEN 'on' ELSE 'off' END || '|' || COALESCE(inet_server_addr()::text, '') || '|' || inet_server_port() || '|' || current_setting('application_name')" 2>/dev/null)" || {
+  target_probe="$(psql_target -t -A -c "SELECT current_database() || '|' || current_setting('server_version_num') || '|' || CASE WHEN EXISTS (SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl) THEN 'on' ELSE 'off' END || '|' || session_user || '|' || COALESCE(inet_server_addr()::text, '') || '|' || inet_server_port() || '|' || current_setting('application_name')" 2>/dev/null)" || {
     echo "Restore target identity probe failed." >&2
     exit 1
   }
-  # Older disposable rehearsal fixtures expose the same facts through their
-  # settings inventory but do not implement the combined probe expression.
-  # Keep the live probe mandatory for normal restores; this compatibility path
-  # still obtains PostgreSQL major and TLS state from the target itself and
-  # binds endpoint/database to the already-validated URL.
-  if [[ "$target_probe" != "$restore_target_database|17"*"|on|127.0.0.1|55432|quest-restore-target" &&
-        -n "${REHEARSAL_TARGET_SENTINEL_FILE:-}" ]]; then
-    settings_probe="$(psql_target -t -A -c "SELECT name || '|' || setting FROM pg_settings WHERE name IN ('server_version','server_version_num','ssl')" 2>/dev/null)" || {
-      echo "Restore target settings probe failed." >&2
-      exit 1
-    }
-    [[ "$settings_probe" == *"server_version_num|17"* && "$settings_probe" == *"ssl|on"* ]] || {
-      echo "Restore target PostgreSQL major or TLS state is not verified." >&2
-      exit 1
-    }
-    target_probe="$restore_target_database|170004|on|127.0.0.1|$restore_target_port|quest-restore-target"
-  fi
-  [[ "$target_probe" == "$restore_target_database|17"*"|on|127.0.0.1|55432|quest-restore-target" ]] || {
+  IFS='|' read -r observed_database observed_version observed_ssl observed_session_user server_addr server_port observed_appname <<< "$target_probe"
+  [[ "$observed_database" == "$restore_target_database" && "$observed_version" =~ ^17[0-9]*$ &&
+      "$observed_ssl" == on && -n "$observed_session_user" && -n "$server_addr" &&
+      "$server_port" == 5432 && "$observed_appname" == quest-restore-target &&
+      "$server_addr" =~ ^((10|192\.168)\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+)$ ]] || {
     echo "Restore target database, PostgreSQL major, TLS, or endpoint identity is not verified." >&2
     exit 1
   }
@@ -385,8 +419,43 @@ manifest_valorant_schema="$(grep -m1 '^valorant_schema_included=' "$work_directo
   echo "The backup archive is not the exact public and valorant two-schema scope." >&2
   exit 1
 }
-PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGAPPNAME=quest-restore-target \
-  "$pg_restore_bin" --list "$work_directory/database.dump" >/dev/null
+toc_path="$work_directory/database.toc"
+if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="${POSTGRES_CERT_FILE:-}" PGSSLKEY="${POSTGRES_KEY_FILE:-}" PGAPPNAME=quest-restore-target \
+  "$pg_restore_bin" --list "$work_directory/database.dump" > "$toc_path"; then
+  echo "The database archive TOC could not be inspected." >&2
+  exit 1
+fi
+grep -Eq '(^|[[:space:]])SCHEMA[[:space:]]+-[[:space:]]+public([[:space:]]|$)' "$toc_path" || {
+  echo "The database archive TOC is missing the public schema." >&2
+  exit 1
+}
+grep -Eq '(^|[[:space:]])SCHEMA[[:space:]]+-[[:space:]]+valorant([[:space:]]|$)' "$toc_path" || {
+  echo "The database archive TOC is missing the valorant schema." >&2
+  exit 1
+}
+grep -Eq '[[:space:]](TABLE|SEQUENCE|FUNCTION|INDEX|CONSTRAINT|TRIGGER|TYPE|VIEW|MATERIALIZED VIEW)([[:space:]]+DATA)?[[:space:]]+public([[:space:]]|$)' "$toc_path" || {
+  echo "The database archive TOC has no public objects." >&2
+  exit 1
+}
+grep -Eq '[[:space:]](TABLE|SEQUENCE|FUNCTION|INDEX|CONSTRAINT|TRIGGER|TYPE|VIEW|MATERIALIZED VIEW)([[:space:]]+DATA)?[[:space:]]+valorant([[:space:]]|$)' "$toc_path" || {
+  echo "The database archive TOC has no valorant objects." >&2
+  exit 1
+}
+while IFS= read -r toc_line || [[ -n "$toc_line" ]]; do
+  if [[ "$toc_line" == *TABLE* || "$toc_line" == *SEQUENCE* ||
+        "$toc_line" == *FUNCTION* || "$toc_line" == *INDEX* ||
+        "$toc_line" == *CONSTRAINT* || "$toc_line" == *TRIGGER* ||
+        "$toc_line" == *TYPE* || "$toc_line" == *VIEW* ]]; then
+    if [[ "$toc_line" != *public* && "$toc_line" != *valorant* ]]; then
+      echo "The database archive TOC contains an object outside public and valorant." >&2
+      exit 1
+    fi
+  fi
+done < "$toc_path"
+[[ -r "$canonical_security_sql" && -f "$canonical_security_sql" && ! -L "$canonical_security_sql" ]] || {
+  echo "Canonical PostgreSQL security SQL is missing; restore refused before activation." >&2
+  exit 1
+}
 
 public_name="$(basename "$UPLOAD_ROOT")"
 private_name="$(basename "$PRIVATE_UPLOAD_ROOT")"
@@ -462,7 +531,7 @@ private_stage=""
 private_activated=true
 chmod 700 "$resolved_private_root" "$resolved_private_root/event-album-originals"
 
-if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGAPPNAME=quest-restore-target \
+if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="${POSTGRES_CERT_FILE:-}" PGSSLKEY="${POSTGRES_KEY_FILE:-}" PGAPPNAME=quest-restore-target \
   "$pg_restore_bin" --dbname="$DIRECT_URL" \
   --clean \
   --if-exists \

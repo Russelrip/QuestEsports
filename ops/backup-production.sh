@@ -20,4 +20,4 @@ fi
 
 export BACKUP_RELEASE_LOCK_HELD=1
 script_directory="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-exec bash "$script_directory/backup-production-multi-remote.sh"
+exec bash "$script_directory/backup-production-multi-remote.sh" "$@"

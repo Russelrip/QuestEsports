@@ -37,9 +37,9 @@ if [[ "${1:-}" == --version ]]; then
   exit 0
 fi
 if [[ "$*" == *current_database* && "${PGAPPNAME:-}" == quest-restore-target ]]; then
-  printf 'quest_restore|170004|on|127.0.0.1|55432|quest-restore-target\n'
+  printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n'
 elif [[ "$*" == *current_database* ]]; then
-  printf 'quest|170004|on|127.0.0.1|55432|quest-backup-target\n'
+  printf 'quest|170004|on|quest_backup|172.18.0.2|5432|quest-backup-target\n'
 elif [[ "$*" == *"nspname = 'valorant'"* ]]; then
   [[ "${MISSING_VALORANT:-0}" == 1 ]] || printf '1\n'
 fi
@@ -51,6 +51,7 @@ if [[ "${1:-}" == --version ]]; then
   printf 'pg_dump (PostgreSQL) 17.4\n'
   exit 0
 fi
+printf '%s\n' "pg_dump $*" >> "$TEST_ROOT/pg_dump.log"
 for argument in "$@"; do
   case "$argument" in
     --file=*) printf 'fixture database dump\n' > "${argument#--file=}" ;;
@@ -112,8 +113,17 @@ esac
 FAKE
 cat > "$fake_bin/pg_restore" <<'FAKE'
 #!/usr/bin/env bash
+set -euo pipefail
 if [[ "${1:-}" == --version ]]; then
   printf 'pg_restore (PostgreSQL) 17.4\n'
+  exit 0
+fi
+printf '%s\n' "pg_restore $*" >> "$TEST_ROOT/pg_restore.log"
+dump="${@: -1}"
+if grep -q public-only "$dump"; then
+  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users'
+else
+  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches'
 fi
 exit 0
 FAKE
@@ -138,7 +148,7 @@ POSTGRES_TARGET_DATABASE=quest
 POSTGRES_TARGET_MAJOR=17
 POSTGRES_TARGET_DATA_ROOT=$backup_root
 POSTGRES_TARGET_SENTINEL_COMMAND=$fake_bin/postgres-target
-DIRECT_URL=postgresql://quest_backup:fixture@127.0.0.1:55432/quest?sslmode=verify-full
+DIRECT_URL=postgresql://quest_backup:fixture@127.0.0.1:55432/quest
 UPLOAD_ROOT=$upload_root
 PRIVATE_UPLOAD_ROOT=$private_root
 BACKUP_ROOT=$backup_root
@@ -147,10 +157,10 @@ BACKUP_RCLONE_REMOTES='primary=fixture:production'
 BACKUP_RCLONE_CONFIGS='primary=$test_root/rclone.conf'
 EOF
 
-export PATH="$fake_bin:$PATH" REMOTE_ROOT="$remote_root"
-BACKUP_ENV_FILE="$env_file" QUEST_BACKUP_FIXTURE=1 \
+export PATH="$fake_bin:$PATH" REMOTE_ROOT="$remote_root" TEST_ROOT="$test_root"
+BACKUP_ENV_FILE="$env_file" \
   BACKUP_RELEASE_LOCK_PATH="$test_root/release.lock" \
-  bash "$root/ops/backup-production.sh" >/dev/null
+  bash "$root/ops/backup-production.sh" --test-fixture >/dev/null
 
 archive_path="$(find "$backup_root" -maxdepth 1 -type f -name 'quest-production-*.tar.gz.enc' -print -quit)"
 [[ -f "$archive_path" && -f "$archive_path.sha256" ]] || {
@@ -167,12 +177,37 @@ grep -F "public_event_album_preview_root=$upload_root/poster-images" "$manifest"
 grep -F "private_event_album_original_root=$private_root/event-album-originals" "$manifest" >/dev/null
 [[ -f "$archive_extract/uploads/poster-images/photo-preview.webp" ]] || exit 1
 [[ -f "$archive_extract/private/event-album-originals/photo-preview.original.jpg" ]] || exit 1
+grep -F -- '--format=custom' "$test_root/pg_dump.log" >/dev/null
+grep -F -- '--schema=public' "$test_root/pg_dump.log" >/dev/null
+grep -F -- '--schema=valorant' "$test_root/pg_dump.log" >/dev/null
+grep -F -- '--no-owner' "$test_root/pg_dump.log" >/dev/null
+grep -F -- '--no-acl' "$test_root/pg_dump.log" >/dev/null
+
+# The fixture seam still enforces the deployment sentinel's non-writable
+# contract; only ownership/path canonicality is relaxed for the disposable root.
+real_stat="$(command -v stat)"
+cat > "$fake_bin/stat" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  *postgres-target*) printf '702\n'; exit 0 ;;
+esac
+exec "$REAL_STAT" "$@"
+FAKE
+chmod 700 "$fake_bin/stat"
+export REAL_STAT="$real_stat"
+if BACKUP_ENV_FILE="$env_file" BACKUP_RELEASE_LOCK_PATH="$test_root/unsafe-sentinel.lock" \
+    bash "$root/ops/backup-production.sh" --test-fixture >"$test_root/unsafe-sentinel.out" 2>&1; then
+  echo "backup accepted a group/world-writable target sentinel" >&2
+  exit 1
+fi
+grep -F "writable by a group or other actor" "$test_root/unsafe-sentinel.out" >/dev/null
+rm -f "$fake_bin/stat"
 
 # The two-schema target is mandatory; a missing VALORANT schema must not
 # silently downgrade the recovery point to a public-only archive.
-if MISSING_VALORANT=1 BACKUP_ENV_FILE="$env_file" QUEST_BACKUP_FIXTURE=1 \
+if MISSING_VALORANT=1 BACKUP_ENV_FILE="$env_file" \
     BACKUP_RELEASE_LOCK_PATH="$test_root/missing-schema.lock" \
-    bash "$root/ops/backup-production.sh" >"$test_root/missing-schema.out" 2>&1; then
+    bash "$root/ops/backup-production.sh" --test-fixture >"$test_root/missing-schema.out" 2>&1; then
   echo "backup accepted a target without the valorant schema" >&2
   exit 1
 fi
@@ -181,9 +216,9 @@ grep -F "valorant schema is required" "$test_root/missing-schema.out" >/dev/null
 # Removing the explicit pinned directory must fail even though PATH contains
 # fixture clients, proving that mutable discovery is not a supported fallback.
 sed '/^POSTGRES17_BIN=/d' "$env_file" > "$test_root/mutable.env"
-if BACKUP_ENV_FILE="$test_root/mutable.env" QUEST_BACKUP_FIXTURE=1 \
+if BACKUP_ENV_FILE="$test_root/mutable.env" \
     BACKUP_RELEASE_LOCK_PATH="$test_root/mutable.lock" \
-    bash "$root/ops/backup-production.sh" >"$test_root/mutable.out" 2>&1; then
+    bash "$root/ops/backup-production.sh" --test-fixture >"$test_root/mutable.out" 2>&1; then
   echo "backup accepted mutable PostgreSQL client discovery" >&2
   exit 1
 fi
@@ -194,7 +229,7 @@ grep -F "Pinned PostgreSQL client is missing or unsafe" "$test_root/mutable.out"
 preview_only="$test_root/preview-only"
 mkdir -p "$preview_only/uploads/poster-images" "$preview_only/private"
 printf 'preview only\n' > "$preview_only/uploads/poster-images/photo.webp"
-printf 'dump\n' > "$preview_only/database.dump"
+printf 'public-only\n' > "$preview_only/database.dump"
 cat > "$preview_only/manifest.txt" <<EOF
 database_scope=application_public_and_valorant_schemas
 valorant_schema_included=true
@@ -209,6 +244,8 @@ tar --create --gzip --file="$test_root/preview-only.tar.gz" \
 cp -- "$test_root/preview-only.tar.gz" "$preview_archive"
 printf 'fixture checksum\n' > "$preview_archive.sha256"
 mkdir -p "$test_root/restore/uploads" "$test_root/restore/private"
+: > "$test_root/psql.log"
+: > "$test_root/pg_restore.log"
 cat > "$test_root/restore-target-sentinel.env" <<EOF
 target_kind=disposable_postgresql17
 target_id=quest-restore-fixture
@@ -220,7 +257,9 @@ chmod 600 "$test_root/restore-target-sentinel.env"
 cat > "$test_root/restore.env" <<EOF
 POSTGRES17_BIN=$fake_bin
 POSTGRES_CA_FILE=$test_root/ca.crt
-DIRECT_URL=postgresql://restore:fixture@127.0.0.1:55432/quest_restore?sslmode=verify-full
+POSTGRES_CERT_FILE=$test_root/postgres.crt
+POSTGRES_KEY_FILE=$test_root/postgres.key
+DIRECT_URL=postgresql://restore:fixture@127.0.0.1:55432/quest_restore
 UPLOAD_ROOT=$test_root/restore/uploads
 PRIVATE_UPLOAD_ROOT=$test_root/restore/private
 BACKUP_AGE_IDENTITY_FILE=$test_root/identity
@@ -229,15 +268,17 @@ EOF
 if RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
     BACKUP_ENV_FILE="$test_root/restore.env" \
     RESTORE_COUNTDOWN_SECONDS=0 \
-    QUEST_RESTORE_FIXTURE=1 \
-    bash "$root/ops/restore-production-backup.sh" "$preview_archive" \
+    bash "$root/ops/restore-production-backup.sh" --test-fixture "$preview_archive" \
     >"$test_root/preview-only.out" 2>&1; then
   echo "restore accepted a previews-only archive" >&2
   exit 1
 fi
-grep -F "missing the public previews or private event-album originals root" "$test_root/preview-only.out" >/dev/null || {
+grep -F "TOC is missing the valorant schema" "$test_root/preview-only.out" >/dev/null || {
   cat "$test_root/preview-only.out" >&2
   exit 1
 }
+! grep -F -- '--dbname=' "$test_root/pg_restore.log" >/dev/null
+! grep -F -- 'RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
+[[ ! -e "$test_root/restore/uploads/file.txt" && ! -e "$test_root/restore/private/file.txt" ]] || exit 1
 
 printf 'media backup contract fixture tests passed\n'

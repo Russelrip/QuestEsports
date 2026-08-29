@@ -10,6 +10,10 @@ PRIVATE_ROOT="$TEST_ROOT/private"
 BACKUP_ROOT="$TEST_ROOT/backups"
 REMOTE_ROOT="$TEST_ROOT/remotes"
 mkdir -p "$FAKE_BIN" "$UPLOAD_ROOT" "$PRIVATE_ROOT" "$BACKUP_ROOT" "$REMOTE_ROOT"
+printf 'fixture ca\n' > "$TEST_ROOT/ca.crt"
+printf 'fixture cert\n' > "$TEST_ROOT/postgres.crt"
+printf 'fixture key\n' > "$TEST_ROOT/postgres.key"
+chmod 600 "$TEST_ROOT/ca.crt" "$TEST_ROOT/postgres.crt" "$TEST_ROOT/postgres.key"
 printf 'public fixture\n' > "$UPLOAD_ROOT/public.txt"
 printf 'private fixture\n' > "$PRIVATE_ROOT/private.txt"
 printf 'fixture\n' > "$TEST_ROOT/primary.conf"
@@ -30,13 +34,20 @@ fi
 FAKE
 cat > "$FAKE_BIN/psql" <<'FAKE'
 #!/usr/bin/env bash
-printf '1\n'
+if [[ "${1:-}" == --version ]]; then printf 'psql (PostgreSQL) 17.4\n'; exit 0; fi
+if [[ "$*" == *current_database* ]]; then printf 'quest|170004|on|quest_backup|172.18.0.2|5432|quest-backup-target\n'; else printf '1\n'; fi
 FAKE
 cat > "$FAKE_BIN/pg_dump" <<'FAKE'
 #!/usr/bin/env bash
+if [[ "${1:-}" == --version ]]; then printf 'pg_dump (PostgreSQL) 17.4\n'; exit 0; fi
+printf '%s\n' "pg_dump $*" >> "$TEST_ROOT/pg_dump.log"
 for argument in "$@"; do
   case "$argument" in --file=*) printf 'fake postgres custom dump\n' > "${argument#--file=}" ;; esac
 done
+FAKE
+cat > "$FAKE_BIN/pg_restore" <<'FAKE'
+#!/usr/bin/env bash
+if [[ "${1:-}" == --version ]]; then printf 'pg_restore (PostgreSQL) 17.4\n'; fi
 FAKE
 cat > "$FAKE_BIN/age" <<'FAKE'
 #!/usr/bin/env bash
@@ -114,11 +125,21 @@ chmod +x "$FAKE_BIN"/*
 
 ENV_FILE="$TEST_ROOT/backup.env"
 cat > "$ENV_FILE" <<EOF
-DIRECT_URL=postgresql://fixture.invalid/not-a-real-database
+DIRECT_URL=postgresql://quest_backup:fixture@127.0.0.1:55432/quest
 UPLOAD_ROOT=$UPLOAD_ROOT
 PRIVATE_UPLOAD_ROOT=$PRIVATE_ROOT
 BACKUP_ROOT=$BACKUP_ROOT
 BACKUP_AGE_RECIPIENT=age1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+POSTGRES17_BIN=$FAKE_BIN
+POSTGRES_CA_FILE=$TEST_ROOT/ca.crt
+POSTGRES_CERT_FILE=$TEST_ROOT/postgres.crt
+POSTGRES_KEY_FILE=$TEST_ROOT/postgres.key
+POSTGRES_TARGET_HOST=127.0.0.1
+POSTGRES_TARGET_PORT=55432
+POSTGRES_TARGET_DATABASE=quest
+POSTGRES_TARGET_MAJOR=17
+POSTGRES_TARGET_DATA_ROOT=$BACKUP_ROOT
+POSTGRES_TARGET_SENTINEL_COMMAND=$FAKE_BIN/postgres-target
 BACKUP_RCLONE_REMOTES='primary=one:production
 secondary=two:production'
 BACKUP_RCLONE_CONFIGS='primary=$TEST_ROOT/primary.conf
@@ -128,10 +149,15 @@ BACKUP_MAX_AGE_MINUTES=2160
 BACKUP_REMOTE_RETENTION_DAYS=90
 BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS=2
 EOF
-export PATH="$FAKE_BIN:$PATH" FLOCK_LOG="$TEST_ROOT/flock.log" REMOTE_ROOT FLOCK_OWNER_TOKEN=owner-a
+cat > "$FAKE_BIN/postgres-target" <<EOF
+#!/usr/bin/env bash
+printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=17 data_root=%s\n' "$BACKUP_ROOT"
+EOF
+chmod 700 "$FAKE_BIN/postgres-target"
+export PATH="$FAKE_BIN:$PATH" FLOCK_LOG="$TEST_ROOT/flock.log" REMOTE_ROOT FLOCK_OWNER_TOKEN=owner-a TEST_ROOT
 assert_file() { [[ -f "$1" ]] || { printf 'missing fixture file: %s\n' "$1" >&2; exit 1; }; }
 assert_contains() { grep -F -- "$1" "$2" >/dev/null || { printf 'missing fixture result\n' >&2; exit 1; }; }
-run_backup() { BACKUP_ENV_FILE="$ENV_FILE" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/release.lock" bash "$ROOT/ops/backup-production.sh"; }
+run_backup() { BACKUP_ENV_FILE="$ENV_FILE" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/release.lock" bash "$ROOT/ops/backup-production.sh" --test-fixture; }
 
 run_backup
 archive_path="$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'quest-production-*.tar.gz.enc' -print -quit)"
@@ -160,14 +186,14 @@ duplicate_env="$TEST_ROOT/duplicate.env"
 sed "s#secondary=$TEST_ROOT/secondary.conf#secondary=$TEST_ROOT/primary.conf#" \
   "$ENV_FILE" > "$duplicate_env"
 if BACKUP_ENV_FILE="$duplicate_env" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/duplicate.lock" \
-    bash "$ROOT/ops/backup-production.sh"; then
+    bash "$ROOT/ops/backup-production.sh" --test-fixture; then
   printf 'expected duplicate resolved config paths to be rejected\n' >&2
   exit 1
 fi
 
 sleep 1
 if RCLONE_FAIL_CONFIG=secondary.conf BACKUP_ENV_FILE="$ENV_FILE" \
-    BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/release.lock" bash "$ROOT/ops/backup-production.sh"; then
+    BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/release.lock" bash "$ROOT/ops/backup-production.sh" --test-fixture; then
   printf 'expected failed remote\n' >&2
   exit 1
 fi
@@ -244,5 +270,5 @@ single_env="$TEST_ROOT/single.env"
 sed "/BACKUP_RCLONE_REMOTES=/,/^secondary=/d; /BACKUP_RCLONE_CONFIGS=/,/^secondary=/d" "$ENV_FILE" > "$single_env"
 printf '%s\n' "BACKUP_RCLONE_REMOTE=one:production" "RCLONE_CONFIG=$TEST_ROOT/primary.conf" >> "$single_env"
 BACKUP_ENV_FILE="$single_env" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/single.lock" \
-  bash "$ROOT/ops/backup-production.sh"
+  bash "$ROOT/ops/backup-production.sh" --test-fixture
 printf 'backup multi-remote fixture tests passed\n'

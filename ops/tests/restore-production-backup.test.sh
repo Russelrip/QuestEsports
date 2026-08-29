@@ -8,14 +8,18 @@ trap 'rm -rf -- "$test_root"' EXIT
 mkdir -p "$test_root/bin" "$test_root/public" "$test_root/private"
 printf 'fixture identity\n' > "$test_root/identity"
 printf 'fixture ca\n' > "$test_root/ca.crt"
-chmod 600 "$test_root/identity" "$test_root/ca.crt"
+printf 'fixture cert\n' > "$test_root/postgres.crt"
+printf 'fixture key\n' > "$test_root/postgres.key"
+chmod 600 "$test_root/identity" "$test_root/ca.crt" "$test_root/postgres.crt" "$test_root/postgres.key"
 printf 'encrypted fixture\n' > "$test_root/quest-production-fixture.tar.gz.enc"
 printf 'checksum\n' > "$test_root/quest-production-fixture.tar.gz.enc.sha256"
 
 cat > "$test_root/recovery.env" <<EOF
 POSTGRES17_BIN=$test_root/bin
 POSTGRES_CA_FILE=$test_root/ca.crt
-DIRECT_URL=postgresql://restore:fixture@127.0.0.1:55432/quest_restore?sslmode=verify-full
+POSTGRES_CERT_FILE=$test_root/postgres.crt
+POSTGRES_KEY_FILE=$test_root/postgres.key
+DIRECT_URL=postgresql://restore:fixture@127.0.0.1:55432/quest_restore
 UPLOAD_ROOT=$test_root/public
 PRIVATE_UPLOAD_ROOT=$test_root/private
 BACKUP_AGE_IDENTITY_FILE=$test_root/identity
@@ -82,6 +86,8 @@ if [[ "${1:-}" == --version ]]; then
   exit 0
 fi
 printf '%s\n' "pg_restore $*" >> "$TEST_ROOT/pg_restore.log"
+dump="${@: -1}"
+printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches'
 exit 0
 EOF
 
@@ -94,7 +100,7 @@ if [[ "${1:-}" == --version ]]; then
 fi
 printf '%s\n' "psql $*" >> "$TEST_ROOT/psql.log"
 if [[ "$*" == *current_database* ]]; then
-  printf 'quest_restore|170004|on|127.0.0.1|55432|quest-restore-target\n'
+  printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n'
   exit 0
 fi
 for ((index = 1; index <= $#; index++)); do
@@ -130,13 +136,13 @@ PATH="$test_root/bin:$PATH" \
   RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
   BACKUP_ENV_FILE="$test_root/recovery.env" \
   RESTORE_COUNTDOWN_SECONDS=0 \
-  QUEST_RESTORE_FIXTURE=1 \
   TEST_ROOT="$test_root" \
   bash "$root/ops/restore-production-backup.sh" \
-  "$test_root/quest-production-fixture.tar.gz.enc" >/dev/null
+  --test-fixture "$test_root/quest-production-fixture.tar.gz.enc" >/dev/null
 
 grep -F -- '--no-owner' "$test_root/pg_restore.log" >/dev/null
 grep -F -- '--no-acl' "$test_root/pg_restore.log" >/dev/null
+grep -F -- '-X' "$test_root/psql.log" >/dev/null
 grep -F -- '-v RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
 grep -F -- "REVOKE ALL ON DATABASE %I FROM PUBLIC" "$test_root/psql.log" >/dev/null
 grep -F -- "GRANT CONNECT ON DATABASE %I TO quest_migrator, quest_runtime, val_migrator, val_runtime" "$test_root/psql.log" >/dev/null
@@ -171,16 +177,64 @@ done
 grep -F -- 'REVOKE ALL ON SCHEMA valorant FROM quest_runtime' "$test_root/psql.log" >/dev/null
 grep -F -- 'REVOKE ALL ON SCHEMA public FROM val_runtime' "$test_root/psql.log" >/dev/null
 
+# Restore must not fall back to mutable PostgreSQL clients discovered through PATH.
+sed '/^POSTGRES17_BIN=/d' "$test_root/recovery.env" > "$test_root/mutable.env"
+if PATH="$test_root/bin:$PATH" RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+    BACKUP_ENV_FILE="$test_root/mutable.env" RESTORE_COUNTDOWN_SECONDS=0 \
+    TEST_ROOT="$test_root" bash "$root/ops/restore-production-backup.sh" --test-fixture \
+    "$test_root/quest-production-fixture.tar.gz.enc" >"$test_root/mutable.out" 2>&1; then
+  echo "restore accepted mutable PostgreSQL client discovery" >&2
+  exit 1
+fi
+grep -F "Pinned PostgreSQL client is missing or unsafe" "$test_root/mutable.out" >/dev/null
+
+# A target sentinel writable by a group or other actor is refused before any
+# restore primitive is invoked.
+real_stat="$(command -v stat)"
+cat > "$test_root/bin/stat" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *target-sentinel.env*) printf '640\n'; exit 0 ;;
+esac
+exec "$REAL_STAT" "$@"
+EOF
+chmod 700 "$test_root/bin/stat"
+export REAL_STAT="$real_stat"
+if PATH="$test_root/bin:$PATH" RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+    BACKUP_ENV_FILE="$test_root/recovery.env" RESTORE_COUNTDOWN_SECONDS=0 \
+    TEST_ROOT="$test_root" bash "$root/ops/restore-production-backup.sh" --test-fixture \
+    "$test_root/quest-production-fixture.tar.gz.enc" >"$test_root/unsafe-sentinel.out" 2>&1; then
+  echo "restore accepted a group-writable target sentinel" >&2
+  exit 1
+fi
+grep -F "target sentinel must be private" "$test_root/unsafe-sentinel.out" >/dev/null
+rm -f "$test_root/bin/stat"
+
 # Target binding failures are refused before a destructive restore is allowed.
 refused() {
   local label="$1" env_file="$2" output="$test_root/$1.out"
+  local restore_count security_count
+  restore_count="$(grep -c -- '--dbname=' "$test_root/pg_restore.log" 2>/dev/null || true)"
+  security_count="$(grep -c -- 'RESTORE_MODE=1' "$test_root/psql.log" 2>/dev/null || true)"
   if PATH="$test_root/bin:$PATH" RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
-      BACKUP_ENV_FILE="$env_file" RESTORE_COUNTDOWN_SECONDS=0 QUEST_RESTORE_FIXTURE=1 \
+      BACKUP_ENV_FILE="$env_file" RESTORE_COUNTDOWN_SECONDS=0 \
       TEST_ROOT="$test_root" bash "$root/ops/restore-production-backup.sh" \
-      "$test_root/quest-production-fixture.tar.gz.enc" >"$output" 2>&1; then
+      --test-fixture "$test_root/quest-production-fixture.tar.gz.enc" >"$output" 2>&1; then
     echo "restore accepted unsafe target: $label" >&2
     exit 1
   fi
+  [[ "$(grep -c -- '--dbname=' "$test_root/pg_restore.log" 2>/dev/null || true)" == "$restore_count" ]] || {
+    echo "refused target still invoked destructive pg_restore: $label" >&2
+    exit 1
+  }
+  [[ "$(grep -c -- 'RESTORE_MODE=1' "$test_root/psql.log" 2>/dev/null || true)" == "$security_count" ]] || {
+    echo "refused target still invoked security SQL: $label" >&2
+    exit 1
+  }
+  [[ -f "$test_root/public/file.txt" && -f "$test_root/private/file.txt" ]] || {
+    echo "refused target changed activated file trees: $label" >&2
+    exit 1
+  }
 }
 sed 's/127.0.0.1:55432/10.0.0.7:55432/' "$test_root/recovery.env" > "$test_root/wrong-host.env"
 refused wrong-host "$test_root/wrong-host.env"
@@ -190,6 +244,8 @@ sed 's/RESTORE_TARGET_MAJOR=17/RESTORE_TARGET_MAJOR=16/' "$test_root/recovery.en
 refused wrong-major "$test_root/wrong-major.env"
 sed 's/RESTORE_TARGET_DATABASE=quest_restore/RESTORE_TARGET_DATABASE=wrong_database/' "$test_root/recovery.env" > "$test_root/wrong-database.env"
 refused wrong-database "$test_root/wrong-database.env"
+sed 's#127.0.0.1:55432/quest_restore#127.0.0.1:55432/quest_restore?sslmode=disable#' "$test_root/recovery.env" > "$test_root/query-override.env"
+refused query-override "$test_root/query-override.env"
 sed 's/target_kind=disposable_postgresql17/target_kind=postgresql17/' "$test_root/target-sentinel.env" > "$test_root/production-unauthorized-sentinel.env"
 chmod 600 "$test_root/production-unauthorized-sentinel.env"
 sed 's#target-sentinel.env#production-unauthorized-sentinel.env#' "$test_root/recovery.env" > "$test_root/production-unauthorized.env"

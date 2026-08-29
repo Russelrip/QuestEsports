@@ -158,6 +158,7 @@ if (( ! has_c )); then printf '%s|quest_restore|restore|restore|5432|12345\n' "$
 if [[ "$sql" == *defaclnamespace* && "$sql" == *IS\ NULL* ]]; then printf '%s\n' 'quest_migrator|<global>|T|quest_migrator=U/quest_migrator' 'quest_migrator|<global>|f|quest_migrator=X/quest_migrator' 'val_migrator|<global>|T|val_migrator=U/val_migrator' 'val_migrator|<global>|f|val_migrator=X/val_migrator'; exit 0; fi
 if [[ "$sql" == *defaclobjtype* ]]; then printf '%s\n' 'quest_migrator|public|S|quest_runtime=rwU/quest_migrator' 'quest_migrator|public|T|quest_migrator=U/quest_migrator' 'quest_migrator|public|f|quest_migrator=X/quest_migrator' 'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' 'val_migrator|valorant|S|val_runtime=rwU/val_migrator' 'val_migrator|valorant|T|val_migrator=U/val_migrator' 'val_migrator|valorant|f|val_migrator=X/val_migrator' 'val_migrator|valorant|r|val_runtime=arwd/val_migrator'; exit 0; fi
 case "$sql" in
+  *current_setting*session_user*) printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n' ;;
   *quest.rehearsal_target_id*) printf 'quest-fixture-20260827\n' ;;
   *pg_settings*) printf '%s\n' 'server_version|17.4_Debian_17.4-1.pgdg' 'server_version_num|170004' 'ssl|on' 'ssl_min_protocol_version|TLSv1.2' 'row_security|on' 'default_transaction_read_only|off' 'listen_addresses|*' ;;
   *server_version_num*) printf '170004\n' ;;
@@ -182,6 +183,13 @@ case "$sql" in
   *count*) printf '0\n' ;;
 esac
 EOF
+  cat > "$tmp/bin/pg_restore" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == --version ]]; then echo 'pg_restore (PostgreSQL) 17.4'; exit 0; fi
+if [[ "$1" == --list ]]; then printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches'; exit 0; fi
+exit 0
+EOF
+  chmod 700 "$tmp/bin/pg_restore"
   cat > "$tmp/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$*" == *'container exec'* ]]; then printf '%s|quest_restore|restore|active|5432|12345\n' "${PGAPPNAME:?}" >> "${TARGET_BINDING_MARKER:?}"; printf '%s|quest_restore|restore|active|5432|12345\n' "${PGAPPNAME:?}"; exit 0; fi
