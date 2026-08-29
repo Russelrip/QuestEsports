@@ -15,10 +15,19 @@ needed:
 
 ```bash
 docker compose \
+  --env-file /etc/quest-esports/quest.production.env \
   -f ops/docker/compose.production.yml \
   -f ops/docker/compose.postgres-staging.yml \
   up -d postgres
 ```
+
+The completed `/etc/quest-esports/quest.production.env` is passed explicitly
+with `--env-file`: Compose uses it for interpolation of the required image
+references and `POSTGRES_STAGING_HOST_PORT`, while the backend service also
+loads it through its `env_file` entry. Values loaded only by a service
+`env_file` are not available for Compose interpolation. Populate the image
+references from the signed release manifest before running this command; the
+checked-in example is only a template.
 
 The base file must continue to be used alone for the final production
 topology. The overlay must never be copied into that file or used to expose
@@ -77,16 +86,21 @@ The backend readiness probe writes a process-specific
 success/failure. Therefore the runtime must retain write and delete permission
 on both directories; a read-only or root-owned mount will make readiness fail.
 
-The PostgreSQL certificate **must** contain `DNS:quest-postgres` in its SAN.
-Verify the actual provisioned certificate before startup:
+The PostgreSQL certificate **must** contain both `DNS:quest-postgres` and
+`IP:127.0.0.1` in its SAN. The DNS identity is used by Compose clients; the IP
+identity is required for host-run staging clients connecting to the documented
+loopback publication with `sslmode=verify-full`. Verify the actual provisioned
+certificate before startup:
 
 ```bash
 openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt \
   -noout -checkhost quest-postgres
+openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt \
+  -noout -checkip 127.0.0.1
 ```
 
-The command must report a matching identity. A common name without that SAN is
-not sufficient for `sslmode=verify-full`.
+Both commands must report a matching identity. A common name without both SANs
+is not sufficient for `sslmode=verify-full`.
 
 ## Four-role and schema contract
 
@@ -133,6 +147,7 @@ same approved CA trust material and use its asyncpg SSL-context equivalent;
 
 The database healthcheck connects to the live `quest-postgres` listener with
 `pg_isready`, `sslmode=verify-full`, and the mounted CA, then checks the
-provisioned certificate with `openssl -checkhost quest-postgres`. A successful
-process check or a certificate-file inspection without a valid CA chain and SAN
-is not considered healthy.
+provisioned certificate with `openssl -checkhost quest-postgres` and
+`openssl -checkip 127.0.0.1`. A successful process check or a
+certificate-file inspection without a valid CA chain and both SAN identities is
+not considered healthy.

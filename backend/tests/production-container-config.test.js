@@ -949,7 +949,12 @@ chmod +x "$tmp/bin/pg_isready"
 
 make_certificate() {
   certificate="$1"
-  if [ "$2" = san ]; then
+  if [ "$2" = both ]; then
+    openssl req -x509 -newkey rsa:2048 -nodes -days 1 \\
+      -subj '/CN=quest-postgres' \\
+      -addext 'subjectAltName=DNS:quest-postgres,IP:127.0.0.1' \\
+      -keyout "$certificate.key" -out "$certificate.crt" >/dev/null 2>&1
+  elif [ "$2" = dns ]; then
     openssl req -x509 -newkey rsa:2048 -nodes -days 1 \\
       -subj '/CN=quest-postgres' \\
       -addext 'subjectAltName=DNS:quest-postgres' \\
@@ -974,9 +979,11 @@ run_case() {
   fi
 }
 
-san_result=$(run_case san)
+both_result=$(run_case both both)
+dns_result=$(run_case dns dns)
 cn_result=$(run_case cn)
-[ "$san_result" = 'san:pass' ]
+[ "$both_result" = 'both:pass' ]
+[ "$dns_result" = 'dns:fail' ]
 [ "$cn_result" = 'cn:fail' ]
 `;
     const result = spawnSync(
@@ -1077,8 +1084,10 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(productionCompose, /ssl_cert_file[\s\S]*server\.crt/);
   assert.match(productionCompose, /ssl_key_file[\s\S]*server\.key/);
   assert.match(postgresHealthcheck, /-checkhost quest-postgres/);
+  assert.match(postgresHealthcheck, /-checkip 127\.0\.0\.1/);
   assert.match(postgresHealthcheck, /-ext subjectAltName/);
   assert.match(postgresHealthcheck, /grep -Eq ['"]DNS:quest-postgres/);
+  assert.match(postgresHealthcheck, /grep -Eq ['"]IP Address:127\\\.0\\\.0\\\.1/);
   assert.match(postgresHealthcheck, /pg_isready/);
   assert.match(postgresHealthcheck, /sslmode=verify-full/);
   assert.match(postgresHealthcheck, /sslrootcert=\$ca_certificate/);
