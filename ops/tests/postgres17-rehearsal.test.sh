@@ -71,6 +71,7 @@ grep -F 'QUEST_RUNTIME_DATABASE_URL is required and unsafe' "$rehearsal" >/dev/n
 grep -F 'pg_stat_activity' "$rehearsal" >/dev/null || { echo "FAIL: rehearsal must independently inspect target connection binding" >&2; exit 1; }
 grep -F "current_database()" "$rehearsal" | grep -F "current_setting('server_version_num')" | grep -F "pg_stat_ssl" >/dev/null || { echo "FAIL: rehearsal must record session-level target database TLS" >&2; exit 1; }
 grep -F 'VERBOSITY=verbose' "$rehearsal" >/dev/null && ! grep -F 'VERBOSITY=sqlstate' "$rehearsal" >/dev/null || { echo "FAIL: denial probe must retain SQLSTATE and permission-denied text" >&2; exit 1; }
+! grep -F 'psql -X -q -A -t -F' "$rehearsal" >/dev/null || { echo "FAIL: runtime write probe must not suppress PostgreSQL transaction command-status rows" >&2; exit 1; }
 grep -F "tablename NOT IN ('_prisma_migrations','_migration_ledger')" "$rehearsal" >/dev/null || { echo "FAIL: rehearsal must count runtime policies excluding migration ledgers" >&2; exit 1; }
 grep -F 'roles_nobypassrls_status' "$rehearsal" "$verify" >/dev/null || { echo "FAIL: rehearsal evidence must explicitly prove NOBYPASSRLS" >&2; exit 1; }
 grep -F 'quest-write-probe' "$rehearsal" >/dev/null && grep -F 'quest_write_probe_status' "$rehearsal" "$verify" >/dev/null || { echo "FAIL: rehearsal must run and record a runtime write probe" >&2; exit 1; }
@@ -161,7 +162,7 @@ EOF
 #!/usr/bin/env bash
 if [[ "$1" == --version ]]; then echo 'fixture (PostgreSQL) 17.4'; exit 0; fi
 for arg in "$@"; do [[ "$arg" == -f || "$arg" == --file=* ]] && exit 0; done
-has_c=0; sql=''; for ((i=1; i<=$#; i++)); do arg="${!i}"; if [[ "$arg" == -c ]]; then has_c=1; j=$((i+1)); sql="${!j}"; fi; done
+has_c=0; quiet=0; sql=''; for ((i=1; i<=$#; i++)); do arg="${!i}"; if [[ "$arg" == -c ]]; then has_c=1; j=$((i+1)); sql="${!j}"; fi; [[ "$arg" == -q ]] && quiet=1; done
 if (( ! has_c )); then printf '%s|quest_restore|restore|restore|5432|12345\n' "${PGAPPNAME:?}" >> "${TARGET_BINDING_MARKER:?}"; printf '%s\n' "${PGAPPNAME:?}|quest_restore|restore|restore|5432|12345" "quest_restore|170004|on|${PGAPPNAME:?}|12345"; sleep 5; exit 0; fi
 if [[ "$sql" == *defaclnamespace* && "$sql" == *IS\ NULL* ]]; then printf '%s\n' 'quest_migrator|<global>|T|quest_migrator=U/quest_migrator' 'quest_migrator|<global>|f|quest_migrator=X/quest_migrator' 'val_migrator|<global>|T|val_migrator=U/val_migrator' 'val_migrator|<global>|f|val_migrator=X/val_migrator'; exit 0; fi
 if [[ "$sql" == *defaclobjtype* ]]; then printf '%s\n' 'quest_migrator|public|S|quest_runtime=rwU/quest_migrator' 'quest_migrator|public|T|quest_migrator=U/quest_migrator' 'quest_migrator|public|f|quest_migrator=X/quest_migrator' 'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' 'val_migrator|valorant|S|val_runtime=rwU/val_migrator' 'val_migrator|valorant|T|val_migrator=U/val_migrator' 'val_migrator|valorant|f|val_migrator=X/val_migrator' 'val_migrator|valorant|r|val_runtime=arwd/val_migrator'; exit 0; fi
@@ -169,7 +170,7 @@ if [[ "$sql" == *schemaname*count* ]]; then printf 'public|2\nvalorant|2\n'; exi
 if [[ "$sql" == *pg_policies* ]]; then printf 'public\tusers\tt\tusers_runtime_all\tquest_runtime\tALL\ttrue\ttrue\npublic\tevents\tt\tevents_runtime_all\tquest_runtime\tALL\ttrue\ttrue\nvalorant\tmatches\tt\tmatches_runtime_all\tval_runtime\tALL\ttrue\ttrue\nvalorant\tteams\tt\tteams_runtime_all\tval_runtime\tALL\ttrue\ttrue\nvalorant\t_migration_ledger\tf\t<none>\t<none>\t<none>\t<none>\t<none>\n'; exit 0; fi
 case "$sql" in
   *FROM\ valorant.*) printf 'quest_runtime|quest_runtime|cross_schema_denied|%s|12347|on\n' "${PGAPPNAME:?}"; printf '%s\n' 'ERROR: 42501: permission denied for schema valorant' >&2; exit 1 ;;
-  *INSERT\ INTO\ public.\"users\"*) printf '%s\n' 'BEGIN' 'INSERT 0 1' "quest_runtime|quest_runtime|write_verified|${PGAPPNAME:?}|12346|on" 'ROLLBACK' ;;
+  *INSERT\ INTO\ public.\"users\"*) if (( quiet )); then printf '%s\n' "quest_runtime|quest_runtime|write_verified|${PGAPPNAME:?}|12346|on"; else printf '%s\n' 'BEGIN' 'INSERT 0 1' "quest_runtime|quest_runtime|write_verified|${PGAPPNAME:?}|12346|on" 'ROLLBACK'; fi ;;
   *current_database*session_user*) printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n' ;;
   *pg_stat_ssl*public.\"users\"*) printf 'quest_runtime|quest_runtime|2|%s|12345|on\n' "${PGAPPNAME:?}" ;;
   *pg_stat_ssl*) printf 'quest_restore|170004|on|%s|12345\n' "${PGAPPNAME:?}" ;;
@@ -193,7 +194,7 @@ case "$sql" in
   *IS\ NULL*) printf '%s\n' 'quest_migrator|<global>|f|quest_migrator=X/quest_migrator' 'quest_migrator|<global>|T|quest_migrator=U/quest_migrator' 'val_migrator|<global>|f|val_migrator=X/val_migrator' 'val_migrator|<global>|T|val_migrator=U/val_migrator' ;;
   *defaclobjtype*) printf '%s\n' 'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' 'quest_migrator|public|S|quest_runtime=rwU/quest_migrator' 'quest_migrator|public|f|quest_migrator=X/quest_migrator' 'quest_migrator|public|T|quest_migrator=U/quest_migrator' 'val_migrator|valorant|r|val_runtime=arwd/val_migrator' 'val_migrator|valorant|S|val_runtime=rwU/val_migrator' 'val_migrator|valorant|f|val_migrator=X/val_migrator' 'val_migrator|valorant|T|val_migrator=U/val_migrator' ;;
   *pg_database_size*) printf '4096\n' ;;
-  *INSERT\ INTO\ public.\"users\"*) printf '%s\n' 'BEGIN' 'INSERT 0 1' "quest_runtime|quest_runtime|write_verified|${PGAPPNAME:?}|12346|on" 'ROLLBACK' ;;
+  *INSERT\ INTO\ public.\"users\"*) if (( quiet )); then printf '%s\n' "quest_runtime|quest_runtime|write_verified|${PGAPPNAME:?}|12346|on"; else printf '%s\n' 'BEGIN' 'INSERT 0 1' "quest_runtime|quest_runtime|write_verified|${PGAPPNAME:?}|12346|on" 'ROLLBACK'; fi ;;
   *FROM\ valorant.*) printf 'quest_runtime|quest_runtime|cross_schema_denied|%s|12347|on\n' "${PGAPPNAME:?}"; printf '%s\n' 'ERROR: 42501: permission denied for schema valorant' >&2; exit 1 ;;
   *public.\"users\"*) printf 'quest_runtime|quest_runtime|2\n' ;;
   *schemaname*count*) printf 'public|2\nvalorant|2\n' ;;
@@ -323,6 +324,7 @@ expect_new_artifact_refusal() { local label="$1" artifact="$2" expression="$3" e
 expect_new_artifact_refusal "unprotected public table" rls 's/public\tusers\tt/public\tusers\tf/' 'Quest RLS policy is incomplete'
 expect_new_artifact_refusal "policy-count/artifact mismatch" policy-counts 's/^public|2$/public|3/' 'public policy count is not recomputed from the signed artifact'
 expect_new_artifact_refusal "non-permission denial error" cross-schema-denial 's/^error_class=permission_denied$/error_class=timeout/' 'signed cross-schema denial is not bound to its nonce session and TLS'
+expect_new_artifact_refusal "quiet-mode write output" quest-write-probe '/^BEGIN$/d; /^ROLLBACK$/d' 'signed write probe artifact is invalid'
 expect_new_artifact_refusal "plaintext session" target-session-tls 's/|on$/|off/' 'session-level pg_stat_ssl evidence is invalid or nonce-unbound'
 expect_new_artifact_refusal "failed cleanup" upload-cleanup 's/^status=verified$/status=failed/' 'signed disposable upload cleanup evidence is invalid'
 cp "$tmp/evidence/rehearsal-evidence.env" "$tmp/summary.good"; sed -i 's/^quest_write_probe_status=verified$/quest_write_probe_status=failed/' "$tmp/evidence/rehearsal-evidence.env"; resign_fixture; evidence_refused "summary/observation status mismatch" "runtime security probe evidence is incomplete" verify_fixture; mv "$tmp/summary.good" "$tmp/evidence/rehearsal-evidence.env"; resign_fixture
