@@ -37,15 +37,23 @@ make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
-  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL DATABASE_URL DIRECT_URL || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
   mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private" "$fixture/postgres/17/data"
   : > "$fixture/release.lock"
-  : > "$fixture/ca.crt"
-  : > "$fixture/postgres.crt"
-  : > "$fixture/postgres.key"
+  printf '%s\n' fixture-ca > "$fixture/ca.crt"
+  printf '%s\n' fixture-cert > "$fixture/postgres.crt"
+  printf '%s\n' fixture-key > "$fixture/postgres.key"
+  printf '%s\n' fixture-alternate-cert > "$fixture/alternate.crt"
+  chmod 644 "$fixture/ca.crt" "$fixture/postgres.crt" "$fixture/alternate.crt"
+  chmod 600 "$fixture/postgres.key"
   : > "$fixture/current-supabase.env"
+  cat > "$fixture/quest.production.env" <<'EOF'
+DATABASE_URL=postgresql://quest_runtime:fixture@quest-postgres:5432/quest?schema=public&sslmode=verify-full
+DIRECT_URL=postgresql://quest_migrator:fixture@quest-postgres:5432/quest?schema=public&sslmode=verify-full
+EOF
+  chmod 600 "$fixture/quest.production.env"
   printf '%s\n' active > "$fixture/old-quest.state"
   printf '%s\n' active > "$fixture/old-valorant.state"
   printf '%s\n' unmasked > "$fixture/old-valorant.persistence"
@@ -192,6 +200,20 @@ elif [[ " $* " == *' up '* || " $* " == *' down '* || " $* " == *' pull '* ]]; t
 fi
 EOF
   make_executable "$fixture/bin/docker"
+  cat > "$fixture/bin/stat" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${SENTINEL_WRITABLE:-0}" == 1 && "$1" == -c && "$2" == %a && "$3" == *postgres-target ]]; then
+  printf '%s\n' 777
+  exit 0
+fi
+if [[ "${TLS_KEY_WORLD_READABLE:-0}" == 1 && "$1" == -c && "$2" == %a && "$*" == *postgres.key* ]]; then
+  printf '%s\n' 644
+  exit 0
+fi
+exec /usr/bin/stat "$@"
+EOF
+  make_executable "$fixture/bin/stat"
   cat > "$fixture/bin/flock" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -309,7 +331,7 @@ case "$(basename "$0")" in
   freeze-status) printf 'acknowledged\n' ;;
   validate-host) printf 'validated\n' ;;
   service-ownership) [[ "${FAIL_SERVICE_OWNERSHIP:-0}" != 1 ]] || { printf 'owned\n'; exit 0; }; printf 'file=/etc/quest-esports/release.env service=quest-prod owner=root mode=0640 observed_at=20260828T120000Z\nfile=/etc/quest-esports/release.env service=valorant-prod owner=root mode=0640 observed_at=20260828T120000Z\n' ;;
-  cutover-restore) printf 'restored\n' ;;
+  cutover-restore) printf 'cutover-restore\n' >> "$TEST_LOG"; printf 'restored\n' ;;
   cutover-abort) printf 'aborted\n' >> "$TEST_LOG" ;;
   quest-ready|valorant-ready) printf 'ready\n' ;;
   quest-migrate|valorant-migrate) [[ "${BAD_MIGRATOR:-0}" == 1 || "${MIGRATOR_IMAGE:-}" != "${EXPECTED_MIGRATOR_IMAGE:-}" ]] && exit 1; ack_target="${TARGET_AUTHORITY:-none}"; [[ "${TARGET_ACK_LIES:-0}" == 1 ]] && ack_target=wrong-postgres; schema=public; [[ "$(basename "$0")" == valorant-migrate ]] && schema=valorant; printf 'migrator repo=%s target=%s\n' "${MIGRATION_REPOSITORY:-unknown}" "$ack_target" >> "$TEST_LOG"; printf 'migrate\n' >> "$TEST_LOG"; if [[ "${TARGET_ACK_MODE:-0}" == 1 ]]; then printf 'migrated image=%s target=%s schema=%s repository=%s\n' "${MIGRATOR_IMAGE:?}" "$ack_target" "$schema" "${MIGRATION_REPOSITORY:-unknown}"; else printf 'migrated image=%s schema=%s\n' "${MIGRATOR_IMAGE:?}" "$schema"; fi ;;
@@ -337,6 +359,10 @@ EOF
   cat > "$fixture/bin/postgres-target" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' postgres-target >> "\${TEST_LOG:?}"
+if [[ "\${SENTINEL_FAIL:-0}" == 1 ]]; then exit 1; fi
+if [[ "\${SENTINEL_MALFORMED:-0}" == 1 ]]; then printf '%s\n' malformed; exit 0; fi
+if [[ "\${SENTINEL_MISMATCH:-0}" == 1 ]]; then printf 'target_kind=postgresql17 database=wrong host=127.0.0.1 port=55432 major=17 data_root=%s\n' "$fixture/postgres/17/data"; exit 0; fi
 printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=17 data_root=%s\n' \
   "$fixture/postgres/17/data"
 EOF
@@ -356,7 +382,7 @@ DOCKER_BIN=$fixture/bin/docker
 DATABASE_HEALTH_COMMAND=$fixture/bin/db-health
 DATABASE_READINESS_COMMAND=$fixture/bin/db-ready
 REGISTRY_CHECK_COMMAND=$fixture/bin/registry
-VALIDATE_HOST_COMMAND=$fixture/bin/validate-host
+VALIDATE_HOST_COMMAND=$fixture/bin/validate-host-real
 SERVICE_OWNERSHIP_COMMAND=$fixture/bin/service-ownership
 CURRENT_SUPABASE_ENV_FILE=$fixture/current-supabase.env
 CUTOVER_RESTORE_COMMAND=$fixture/bin/cutover-restore
@@ -410,6 +436,10 @@ VALORANT_HEALTH_URL=https://valorant-platform:8000/api/v1/health
 VALORANT_CA_FILE=$fixture/ca.crt
 POSTGRES_CERT_FILE=$fixture/postgres.crt
 POSTGRES_KEY_FILE=$fixture/postgres.key
+POSTGRES_COMPOSE_CA_FILE=$fixture/ca.crt
+POSTGRES_COMPOSE_CERT_FILE=$fixture/postgres.crt
+POSTGRES_COMPOSE_KEY_FILE=$fixture/postgres.key
+QUEST_RUNTIME_ENV_FILE=$fixture/quest.production.env
 POSTGRES_TARGET_HOST=127.0.0.1
 POSTGRES_TARGET_PORT=55432
 POSTGRES_TARGET_DATABASE=quest
@@ -434,6 +464,12 @@ EOF
   export MIGRATION_STATUS_COUNT_FILE
   : > "$TEST_LOG"
   export PATH="$fixture/bin:$base_path"
+  cat > "$fixture/bin/validate-host-real" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec "$host_validation_script"
+EOF
+  make_executable "$fixture/bin/validate-host-real"
   cat > "$fixture/manifest.txt" <<'EOF'
 commit_sha=1111111111111111111111111111111111111111
 frontend_image=ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111
@@ -445,6 +481,7 @@ EOF
 }
 
 run_release() { DATABASE_AUTHORITY=quest-postgres bash "$release_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"; }
+run_host_validation() { RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script"; }
 
 make_failed_bundle() {
   local sha="$1"
@@ -807,12 +844,56 @@ rm -f -- "$fixture/postgres.key"
 assert_failed missing-postgres-tls-key run_release
 
 setup_fixture nonquest-target-url
-printf '%s\n' 'DATABASE_URL=postgresql://127.0.0.1:55432/notquest' >> "$fixture/release.env"
+printf '%s\n' 'DATABASE_URL=postgresql://127.0.0.1:55432/notquest' > "$fixture/quest.production.env"
 assert_failed nonquest-target-url run_release
 
 setup_fixture cutover-target-sentinel
 sed -i 's/^POSTGRES_TARGET_HOST=.*/POSTGRES_TARGET_HOST=10.0.0.7/' "$fixture/release.env"
 assert_failed cutover-target-sentinel env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+
+# Focused host-validator fixtures exercise the real validator rather than the
+# release wrapper acknowledgement used by older release-path cases.
+setup_fixture host-validator-unsafe-port
+sed -i 's/^POSTGRES_TARGET_PORT=.*/POSTGRES_TARGET_PORT=5432/' "$fixture/release.env"
+assert_failed host-validator-unsafe-port run_host_validation
+
+setup_fixture host-validator-unsafe-major
+sed -i 's/^POSTGRES_TARGET_MAJOR=.*/POSTGRES_TARGET_MAJOR=16/' "$fixture/release.env"
+assert_failed host-validator-unsafe-major run_host_validation
+
+setup_fixture host-validator-unsafe-data-root
+ln -s "$fixture/postgres/17/data" "$fixture/postgres/17/data-link"
+sed -i "s#^POSTGRES_TARGET_DATA_ROOT=.*#POSTGRES_TARGET_DATA_ROOT=$fixture/postgres/17/data-link#" "$fixture/release.env"
+assert_failed host-validator-unsafe-data-root run_host_validation
+
+setup_fixture host-validator-malformed-sentinel
+export SENTINEL_MALFORMED=1
+assert_failed host-validator-malformed-sentinel run_host_validation
+
+setup_fixture host-validator-failing-sentinel
+export SENTINEL_FAIL=1
+assert_failed host-validator-failing-sentinel run_host_validation
+
+setup_fixture host-validator-mismatched-sentinel
+export SENTINEL_MISMATCH=1
+assert_failed host-validator-mismatched-sentinel run_host_validation
+
+setup_fixture host-validator-writable-sentinel
+export SENTINEL_WRITABLE=1
+assert_failed host-validator-writable-sentinel run_host_validation
+
+setup_fixture host-validator-runtime-url
+printf '%s\n' 'DATABASE_URL=postgresql://127.0.0.1:55432/notquest' > "$fixture/quest.production.env"
+assert_failed host-validator-runtime-url run_host_validation
+
+setup_fixture host-validator-canonical-tls
+sed -i "s#^POSTGRES_CERT_FILE=.*#POSTGRES_CERT_FILE=$fixture/alternate.crt#" "$fixture/release.env"
+: > "$fixture/postgres.crt"
+assert_failed host-validator-canonical-tls run_host_validation
+
+setup_fixture host-validator-key-mode
+export TLS_KEY_WORLD_READABLE=1
+assert_failed host-validator-key-mode run_host_validation
 
 setup_fixture first-cutover
 [[ "$(RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script")" == validated ]] || {
@@ -838,6 +919,11 @@ assert_contains "$TEST_LOG" 'quest-writer-enable'
 [[ "$(grep -n 'freeze-enable' "$TEST_LOG" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'old-stop' "$TEST_LOG" | cut -d: -f1 | head -n1)" ]] || { printf 'FAIL: cutover froze writers after stopping them\n' >&2; exit 1; }
 [[ "$(grep -n 'old-stop' "$TEST_LOG" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'candidate-start' "$TEST_LOG" | cut -d: -f1 | head -n1)" ]] || { printf 'FAIL: candidate started before old writers stopped\n' >&2; exit 1; }
 [[ "$(grep -n 'candidate-start' "$TEST_LOG" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'writer-enable' "$TEST_LOG" | cut -d: -f1 | head -n1)" ]] || { printf 'FAIL: writer admission preceded candidate validation\n' >&2; exit 1; }
+restore_line="$(grep -nF 'cutover-restore' "$TEST_LOG" | cut -d: -f1 | head -n1)"
+candidate_line="$(grep -nF 'candidate-start' "$TEST_LOG" | cut -d: -f1 | head -n1)"
+sentinel_before_restore="$(awk -v boundary="$restore_line" 'NR < boundary && $0 == "postgres-target" { line=NR } END { print line }' "$TEST_LOG")"
+sentinel_after_restore="$(awk -v boundary="$restore_line" -v limit="$candidate_line" 'NR > boundary && NR < limit && $0 == "postgres-target" { line=NR } END { print line }' "$TEST_LOG")"
+[[ -n "$sentinel_before_restore" && -n "$sentinel_after_restore" ]] || { printf 'FAIL: cutover did not execute the target sentinel before restore and again before candidate switching\n' >&2; exit 1; }
 
 [[ -x "$cutover_script" ]] || { printf 'FAIL: cutover.sh is missing or not executable\n' >&2; exit 1; }
 [[ -x "$host_validation_script" ]] || { printf 'FAIL: validate-host.sh is missing or not executable\n' >&2; exit 1; }

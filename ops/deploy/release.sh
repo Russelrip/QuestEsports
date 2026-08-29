@@ -43,6 +43,7 @@ if [[ "$fixture_mode" != 1 ]]; then
 fi
 # shellcheck disable=SC1090
 source "$release_env_file"
+runtime_env_file="${QUEST_RUNTIME_ENV_FILE:-/etc/quest-esports/quest.production.env}"
 
 require_setting() { [[ -n "${!1:-}" ]] || die "missing release setting: $1"; }
 absolute_nonroot() { [[ "$2" == /* && "$2" != / ]] || die "$1 must be an absolute non-root path."; }
@@ -64,6 +65,23 @@ root_file() {
     [[ "$(stat -c '%u' "$1" 2>/dev/null)" == 0 ]] || die "required file is not root-owned: $1"
   fi
 }
+validate_compose_tls_material() {
+  local ca_file cert_file key_file key_mode tls_file
+  if [[ "$fixture_mode" == 1 ]]; then
+    ca_file="${POSTGRES_COMPOSE_CA_FILE:-${POSTGRES_CERT_FILE:-}}"
+    cert_file="${POSTGRES_COMPOSE_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
+    key_file="${POSTGRES_COMPOSE_KEY_FILE:-${POSTGRES_KEY_FILE:-}}"
+  else
+    ca_file=/etc/quest-esports/tls/quest-private-ca.crt
+    cert_file=/etc/quest-esports/tls/quest-postgres.crt
+    key_file=/etc/quest-esports/tls/quest-postgres.key
+  fi
+  for tls_file in "$ca_file" "$cert_file" "$key_file"; do
+    [[ -f "$tls_file" && -r "$tls_file" && -s "$tls_file" && ! -L "$tls_file" ]] || die 'Compose-mounted PostgreSQL TLS material is missing or unsafe.'
+  done
+  key_mode="$(stat -c '%a' "$key_file" 2>/dev/null)" || die 'Compose-mounted PostgreSQL key mode cannot be inspected.'
+  [[ "$key_mode" == 600 ]] || die 'Compose-mounted PostgreSQL key mode is unsafe.'
+}
 validate_postgres_target() {
   local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
   require_setting POSTGRES_TARGET_HOST; require_setting POSTGRES_TARGET_PORT; require_setting POSTGRES_TARGET_DATABASE
@@ -79,6 +97,9 @@ validate_postgres_target() {
     [[ "$POSTGRES_TARGET_SENTINEL_COMMAND" == /usr/local/sbin/quest-release-postgres-target ]] || die 'PostgreSQL target sentinel path is not canonical.'
     [[ ! -L "$POSTGRES_TARGET_SENTINEL_COMMAND" && "$(stat -c '%u' "$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" == 0 ]] || die 'PostgreSQL target sentinel must be root-owned and non-symlinked.'
   fi
+  sentinel_mode="$(stat -c '%a' "$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" || die 'PostgreSQL target sentinel mode cannot be inspected.'
+  [[ "$sentinel_mode" =~ ^[0-7]{3,4}$ ]] || die 'PostgreSQL target sentinel mode is invalid.'
+  case "$sentinel_mode" in *[2367][0-7]|*[0-7][2367]) die 'PostgreSQL target sentinel is writable by a group or other actor.' ;; esac
   [[ "$POSTGRES_TARGET_SENTINEL_COMMAND" == /* && "$POSTGRES_TARGET_SENTINEL_COMMAND" != / && -x "$POSTGRES_TARGET_SENTINEL_COMMAND" && ! -L "$POSTGRES_TARGET_SENTINEL_COMMAND" ]] || die 'PostgreSQL target sentinel is missing or unsafe.'
   sentinel_output="$("$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" || die 'PostgreSQL target sentinel failed.'
   [[ "$sentinel_output" =~ ^target_kind=([a-z0-9_-]+)[[:space:]]+database=([a-z_][a-z0-9_]*)[[:space:]]+host=([^[:space:]]+)[[:space:]]+port=([0-9]+)[[:space:]]+major=([0-9]+)[[:space:]]+data_root=([^[:space:]]+)$ ]] || die 'PostgreSQL target sentinel output is ambiguous.'
@@ -86,10 +107,27 @@ validate_postgres_target() {
   [[ "$sentinel_kind" == postgresql17 && "$sentinel_database" == "$POSTGRES_TARGET_DATABASE" && "$sentinel_host" == "$POSTGRES_TARGET_HOST" && "$sentinel_port" == "$POSTGRES_TARGET_PORT" && "$sentinel_major" == "$POSTGRES_TARGET_MAJOR" && "$sentinel_data_root" == "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL target sentinel does not identify the approved target.'
 }
 validate_database_urls() {
-  local variable url authority path database
+  local line variable url authority path database
+  [[ "$runtime_env_file" == /* && "$runtime_env_file" != / && -f "$runtime_env_file" && -r "$runtime_env_file" && ! -L "$runtime_env_file" ]] || die 'protected Quest runtime environment is missing or unsafe.'
+  if [[ "$fixture_mode" != 1 ]]; then
+    [[ "$(stat -c '%u' "$runtime_env_file" 2>/dev/null)" == 0 ]] || die 'protected Quest runtime environment is not root-owned.'
+    runtime_env_mode="$(stat -c '%a' "$runtime_env_file" 2>/dev/null)" || die 'protected Quest runtime environment mode cannot be inspected.'
+    [[ "$runtime_env_mode" == 600 || "$runtime_env_mode" == 640 ]] || die 'protected Quest runtime environment mode is unsafe.'
+    [[ "$(realpath "$runtime_env_file" 2>/dev/null)" == /etc/quest-esports/quest.production.env ]] || die 'protected Quest runtime environment path is not canonical.'
+  fi
+  declare -A runtime_urls=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      DATABASE_URL=*|DIRECT_URL=*)
+        variable="${line%%=*}"; url="${line#*=}"
+        [[ -z "${runtime_urls[$variable]+present}" && -n "$url" ]] || die 'protected Quest runtime environment contains a duplicate or empty database URL.'
+        runtime_urls["$variable"]="$url"
+        ;;
+    esac
+  done < "$runtime_env_file"
   for variable in DATABASE_URL DIRECT_URL; do
-    url="${!variable:-}"
-    [[ -z "$url" ]] && continue
+    url="${runtime_urls[$variable]:-}"
+    [[ -n "$url" ]] || die "protected Quest runtime environment is missing $variable."
     [[ "$url" != *[[:space:]]* && "$url" =~ ^postgres(ql)?://[^/]+/[^/?#]+([?#].*)?$ ]] || die "$variable is not a valid PostgreSQL target URL."
     authority="${url#*://}"; path="${authority#*/}"; database="${path%%[?#]*}"
     [[ "$database" == quest ]] || die "$variable must target the quest database."
@@ -152,6 +190,7 @@ for setting in POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
   require_setting "$setting"
   root_file "${!setting}"
 done
+validate_compose_tls_material
 validate_postgres_target
 validate_database_urls
 
@@ -672,6 +711,9 @@ if [[ "$quest_migration_pending" == true || "$valorant_migration_pending" == tru
 fi
 
 command_setting CANDIDATE_FROZEN_START_COMMAND
+validate_compose_tls_material
+validate_postgres_target
+validate_database_urls
 require_setting CANDIDATE_START_CONTRACT
 require_setting CANDIDATE_FREEZE_FLAG
 require_setting CANDIDATE_READ_ONLY_FLAG
@@ -712,6 +754,9 @@ command_setting VALORANT_READINESS_ACK_COMMAND
 [[ "$("$VALORANT_READINESS_ACK_COMMAND" 2>/dev/null)" == ready ]] || die 'VALORANT did not acknowledge frozen readiness.'
 
 command_setting POST_COMMIT_RECOVERY_ARM_COMMAND
+validate_compose_tls_material
+validate_postgres_target
+validate_database_urls
 run_hook POST_COMMIT_RECOVERY_ARM_COMMAND armed
 postcommit_armed=true
 commit_timestamp=not-recorded
