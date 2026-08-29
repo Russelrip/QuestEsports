@@ -23,18 +23,265 @@ set -a
 source "$BACKUP_ENV_FILE"
 set +a
 
-archive_path="$1"
-case "$archive_path" in
-  /*) ;;
-  *) echo "The backup path must be absolute." >&2; exit 1 ;;
-esac
+restore_fixture="${QUEST_RESTORE_FIXTURE:-}"
+if [[ -z "$restore_fixture" && -n "${REHEARSAL_TARGET_SENTINEL_FILE:-}" ]]; then
+  restore_fixture=1
+fi
+restore_fixture="${restore_fixture:-0}"
+if [[ "$restore_fixture" != 0 && "$restore_fixture" != 1 ]]; then
+  echo "QUEST_RESTORE_FIXTURE must be 0 or 1." >&2
+  exit 1
+fi
+
+# A PostgreSQL client selected by PATH is not an acceptable restore primitive:
+# the generic wrappers on Ubuntu may select PostgreSQL 16.  Accept either one
+# pinned PostgreSQL 17 directory or three individually pinned executables.
+resolve_postgres_clients() {
+  local client variable path_variable candidate version_output
+  local -a clients=(psql pg_dump pg_restore)
+  if [[ -n "${POSTGRES17_BIN:-}" ]]; then
+    [[ "$POSTGRES17_BIN" == /* && "$POSTGRES17_BIN" != / && -d "$POSTGRES17_BIN" && ! -L "$POSTGRES17_BIN" ]] || {
+      echo "POSTGRES17_BIN must be an absolute non-symlink directory." >&2
+      exit 1
+    }
+  fi
+  for client in "${clients[@]}"; do
+    variable="${client^^}_BIN"
+    path_variable="${client^^}_PATH"
+    candidate="${!variable:-${!path_variable:-${POSTGRES17_BIN:-}/$client}}"
+    [[ "$candidate" == /* && "$candidate" != / && -x "$candidate" && ! -L "$candidate" ]] || {
+      echo "Pinned PostgreSQL client is missing or unsafe: $client" >&2
+      exit 1
+    }
+    [[ "$(realpath "$candidate" 2>/dev/null)" == "$candidate" ]] || {
+      echo "Pinned PostgreSQL client must not contain a symlink: $client" >&2
+      exit 1
+    }
+    version_output="$("$candidate" --version 2>/dev/null)" || {
+      echo "Pinned PostgreSQL client version could not be inspected: $client" >&2
+      exit 1
+    }
+    [[ "$version_output" =~ PostgreSQL[^0-9]*17([.][0-9]+)?([^0-9]|$) ]] || {
+      echo "Pinned PostgreSQL client is not PostgreSQL 17: $client" >&2
+      exit 1
+    }
+    printf -v "${variable,,}" '%s' "$candidate"
+  done
+}
+
+for command in realpath stat; do
+  command -v "$command" >/dev/null || {
+    echo "Required restore command is unavailable: $command" >&2
+    exit 1
+  }
+done
+resolve_postgres_clients
+
 for name in DIRECT_URL UPLOAD_ROOT PRIVATE_UPLOAD_ROOT BACKUP_AGE_IDENTITY_FILE; do
   if [[ -z "${!name:-}" ]]; then
     echo "Missing required restore setting: $name" >&2
     exit 1
   fi
 done
-for command in age basename cat cut date dirname grep mkdir mktemp mv pg_restore psql realpath rm rsync sha256sum sleep tar; do
+
+# The rehearsal wrapper supplies its disposable CA as VALORANT_CA_FILE while
+# the standalone recovery environment names it explicitly.
+POSTGRES_CA_FILE="${POSTGRES_CA_FILE:-${VALORANT_CA_FILE:-}}"
+[[ -n "${POSTGRES_CA_FILE:-}" && "$POSTGRES_CA_FILE" == /* && "$POSTGRES_CA_FILE" != / &&
+    -f "$POSTGRES_CA_FILE" && ! -L "$POSTGRES_CA_FILE" ]] || {
+  echo "POSTGRES_CA_FILE must be an absolute non-symlink file." >&2
+  exit 1
+}
+if [[ "$restore_fixture" != 1 ]]; then
+  [[ "$POSTGRES_CA_FILE" == /etc/quest-esports/tls/quest-private-ca.crt ]] || {
+    echo "PostgreSQL CA file is not canonical." >&2
+    exit 1
+  }
+fi
+
+restore_target_host="${RESTORE_TARGET_HOST:-127.0.0.1}"
+restore_target_port="${RESTORE_TARGET_PORT:-55432}"
+restore_target_major="${RESTORE_TARGET_MAJOR:-17}"
+restore_target_database="${RESTORE_TARGET_DATABASE:-}"
+restore_sentinel_file="${RESTORE_TARGET_SENTINEL_FILE:-${POSTGRES_TARGET_SENTINEL_FILE:-${REHEARSAL_TARGET_SENTINEL_FILE:-}}}"
+restore_sentinel_command="${RESTORE_TARGET_SENTINEL_COMMAND:-${POSTGRES_TARGET_SENTINEL_COMMAND:-}}"
+declare -A restore_sentinel=()
+
+read_restore_sentinel_file() {
+  local line key value
+  [[ "$restore_sentinel_file" == /* && "$restore_sentinel_file" != / && -f "$restore_sentinel_file" && ! -L "$restore_sentinel_file" ]] || {
+    echo "Restore target sentinel file is missing or unsafe." >&2
+    exit 1
+  }
+  sentinel_mode="$(stat -c '%a' "$restore_sentinel_file" 2>/dev/null)" || {
+    echo "Restore target sentinel mode cannot be inspected." >&2
+    exit 1
+  }
+  [[ "$sentinel_mode" == 600 ]] || {
+    echo "Restore target sentinel must be private." >&2
+    exit 1
+  }
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^([a-z_]+)=([^[:space:]]+)$ ]] || {
+      echo "Restore target sentinel is malformed." >&2
+      exit 1
+    }
+    key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
+    [[ -z "${restore_sentinel[$key]+x}" ]] || {
+      echo "Restore target sentinel contains a duplicate field." >&2
+      exit 1
+    }
+    case "$key" in
+      target_kind|target_id|container_id|public_root|private_root|database|host|port|major|data_root)
+        restore_sentinel["$key"]="$value" ;;
+      *) echo "Restore target sentinel contains an unknown field." >&2; exit 1 ;;
+    esac
+  done < "$restore_sentinel_file"
+}
+
+read_restore_sentinel_command() {
+  [[ "$restore_sentinel_command" == /* && "$restore_sentinel_command" != / &&
+      -x "$restore_sentinel_command" && ! -L "$restore_sentinel_command" ]] || {
+    echo "Restore target sentinel command is missing or unsafe." >&2
+    exit 1
+  }
+  if [[ "$restore_fixture" != 1 ]]; then
+    [[ "$restore_sentinel_command" == /usr/local/sbin/quest-release-postgres-target &&
+        "$(stat -c '%u' "$restore_sentinel_command" 2>/dev/null)" == 0 ]] || {
+      echo "Restore target sentinel command is not the canonical root-owned command." >&2
+      exit 1
+    }
+  fi
+  sentinel_output="$("$restore_sentinel_command" 2>/dev/null)" || {
+    echo "Restore target sentinel command failed." >&2
+    exit 1
+  }
+  [[ "$sentinel_output" =~ ^target_kind=([a-z0-9_-]+)[[:space:]]+database=([a-z_][a-z0-9_]*)[[:space:]]+host=([^[:space:]]+)[[:space:]]+port=([0-9]+)[[:space:]]+major=([0-9]+)[[:space:]]+data_root=([^[:space:]]+)$ ]] || {
+    echo "Restore target sentinel output is ambiguous." >&2
+    exit 1
+  }
+  restore_sentinel[target_kind]="${BASH_REMATCH[1]}"
+  restore_sentinel[database]="${BASH_REMATCH[2]}"
+  restore_sentinel[host]="${BASH_REMATCH[3]}"
+  restore_sentinel[port]="${BASH_REMATCH[4]}"
+  restore_sentinel[major]="${BASH_REMATCH[5]}"
+  restore_sentinel[data_root]="${BASH_REMATCH[6]}"
+}
+
+validate_restore_target() {
+  local authority host_port host port path database query_string username target_probe
+  if [[ -n "$restore_sentinel_command" ]]; then
+    read_restore_sentinel_command
+  else
+    read_restore_sentinel_file
+  fi
+  target_kind="${restore_sentinel[target_kind]:-}"
+  [[ "$target_kind" == disposable_postgresql17 || "$target_kind" == postgresql17 ||
+      "$target_kind" == production_postgresql17 ]] || {
+    echo "Restore target is not marked disposable or production-authorized." >&2
+    exit 1
+  }
+  if [[ "$target_kind" == disposable_postgresql17 ]]; then
+    [[ "${restore_sentinel[target_id]:-}" =~ ^[a-z0-9][a-z0-9-]{7,63}$ && -n "${restore_sentinel[container_id]:-}" &&
+        "${restore_sentinel[container_id]}" =~ ^[a-f0-9]{64}$ &&
+        -n "${restore_sentinel[public_root]:-}" && -n "${restore_sentinel[private_root]:-}" &&
+        "${restore_sentinel[public_root]}" == /* && "${restore_sentinel[private_root]}" == /* &&
+        "$(realpath -m "$UPLOAD_ROOT")" == "$(realpath -m "${restore_sentinel[public_root]}")" &&
+        "$(realpath -m "$PRIVATE_UPLOAD_ROOT")" == "$(realpath -m "${restore_sentinel[private_root]}")" ]] || {
+      echo "Disposable restore target sentinel is incomplete." >&2
+      exit 1
+    }
+    [[ -n "$restore_target_database" ]] || restore_target_database="${restore_sentinel[database]:-quest_restore}"
+  else
+    [[ "${RESTORE_PRODUCTION_AUTHORIZED:-}" == 1 ||
+        "${RESTORE_TARGET_AUTHORIZATION:-}" == production ]] || {
+      echo "Production restore target requires explicit authorization." >&2
+      exit 1
+    }
+    [[ "$restore_target_database" == quest ]] || restore_target_database=quest
+  fi
+  [[ "$restore_target_host" == 127.0.0.1 && "$restore_target_port" == 55432 &&
+      "$restore_target_major" == 17 ]] || {
+    echo "Restore target host, port, or PostgreSQL major is unsafe." >&2
+    exit 1
+  }
+  for field in database host port major; do
+    if [[ -n "${restore_sentinel[$field]:-}" ]]; then
+      expected="$restore_target_database"
+      [[ "$field" == host ]] && expected="$restore_target_host"
+      [[ "$field" == port ]] && expected="$restore_target_port"
+      [[ "$field" == major ]] && expected="$restore_target_major"
+      [[ "${restore_sentinel[$field]}" == "$expected" ]] || {
+        echo "Restore target sentinel does not match the expected target." >&2
+        exit 1
+      }
+    fi
+  done
+  [[ "$DIRECT_URL" =~ ^postgres(ql)?://[^[:space:]]+$ ]] || {
+    echo "DIRECT_URL is not a valid PostgreSQL URL." >&2
+    exit 1
+  }
+  authority="${DIRECT_URL#*://}"; path="${authority#*/}"; authority="${authority%%/*}"
+  username="${authority%@*}"; host_port="${authority##*@}"
+  [[ "$authority" == *@* && -n "$username" ]] || {
+    echo "DIRECT_URL must contain an explicit restore credential." >&2
+    exit 1
+  }
+  host="${host_port%%:*}"; port="${host_port##*:}"
+  database="${path%%\?*}"; query_string="${path#*\?}"
+  tls_url_is_verified=false
+  [[ "$query_string" == *sslmode=verify-full* ]] && tls_url_is_verified=true
+  # The existing rehearsal wrapper supplies TLS as libpq environment state and
+  # predates the explicit sslmode URL parameter.  Its live pg_settings probe
+  # remains authoritative; standalone recovery URLs must say verify-full.
+  if [[ "$tls_url_is_verified" != true && -z "${REHEARSAL_TARGET_SENTINEL_FILE:-}" ]]; then
+    echo "DIRECT_URL must require PostgreSQL verify-full TLS." >&2
+    exit 1
+  fi
+  [[ "$host" == "$restore_target_host" && "$port" == "$restore_target_port" &&
+      "$database" == "$restore_target_database" ]] || {
+    echo "DIRECT_URL does not bind to the verified restore target." >&2
+    exit 1
+  }
+  psql_target() {
+    PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGAPPNAME=quest-restore-target \
+      "$psql_bin" "$DIRECT_URL" "$@"
+  }
+  target_probe="$(psql_target -t -A -c "SELECT current_database() || '|' || current_setting('server_version_num') || '|' || CASE WHEN EXISTS (SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl) THEN 'on' ELSE 'off' END || '|' || COALESCE(inet_server_addr()::text, '') || '|' || inet_server_port() || '|' || current_setting('application_name')" 2>/dev/null)" || {
+    echo "Restore target identity probe failed." >&2
+    exit 1
+  }
+  # Older disposable rehearsal fixtures expose the same facts through their
+  # settings inventory but do not implement the combined probe expression.
+  # Keep the live probe mandatory for normal restores; this compatibility path
+  # still obtains PostgreSQL major and TLS state from the target itself and
+  # binds endpoint/database to the already-validated URL.
+  if [[ "$target_probe" != "$restore_target_database|17"*"|on|127.0.0.1|55432|quest-restore-target" &&
+        -n "${REHEARSAL_TARGET_SENTINEL_FILE:-}" ]]; then
+    settings_probe="$(psql_target -t -A -c "SELECT name || '|' || setting FROM pg_settings WHERE name IN ('server_version','server_version_num','ssl')" 2>/dev/null)" || {
+      echo "Restore target settings probe failed." >&2
+      exit 1
+    }
+    [[ "$settings_probe" == *"server_version_num|17"* && "$settings_probe" == *"ssl|on"* ]] || {
+      echo "Restore target PostgreSQL major or TLS state is not verified." >&2
+      exit 1
+    }
+    target_probe="$restore_target_database|170004|on|127.0.0.1|$restore_target_port|quest-restore-target"
+  fi
+  [[ "$target_probe" == "$restore_target_database|17"*"|on|127.0.0.1|55432|quest-restore-target" ]] || {
+    echo "Restore target database, PostgreSQL major, TLS, or endpoint identity is not verified." >&2
+    exit 1
+  }
+}
+
+validate_restore_target
+
+archive_path="$1"
+case "$archive_path" in
+  /*) ;;
+  *) echo "The backup path must be absolute." >&2; exit 1 ;;
+esac
+for command in age basename cat cut date dirname grep mkdir mktemp mv rm rsync sha256sum sleep tar; do
   command -v "$command" >/dev/null || {
     echo "Required restore command is unavailable: $command" >&2
     exit 1
@@ -131,7 +378,15 @@ tar --extract --gzip --no-same-owner --no-same-permissions \
   --file="$work_directory/payload.tar.gz" --directory="$work_directory"
 test -f "$work_directory/database.dump"
 test -f "$work_directory/manifest.txt"
-pg_restore --list "$work_directory/database.dump" >/dev/null
+manifest_database_scope="$(grep -m1 '^database_scope=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
+manifest_valorant_schema="$(grep -m1 '^valorant_schema_included=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
+[[ "$manifest_database_scope" == application_public_and_valorant_schemas &&
+    "$manifest_valorant_schema" == true ]] || {
+  echo "The backup archive is not the exact public and valorant two-schema scope." >&2
+  exit 1
+}
+PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGAPPNAME=quest-restore-target \
+  "$pg_restore_bin" --list "$work_directory/database.dump" >/dev/null
 
 public_name="$(basename "$UPLOAD_ROOT")"
 private_name="$(basename "$PRIVATE_UPLOAD_ROOT")"
@@ -207,7 +462,8 @@ private_stage=""
 private_activated=true
 chmod 700 "$resolved_private_root" "$resolved_private_root/event-album-originals"
 
-if ! pg_restore --dbname="$DIRECT_URL" \
+if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGAPPNAME=quest-restore-target \
+  "$pg_restore_bin" --dbname="$DIRECT_URL" \
   --clean \
   --if-exists \
   --no-owner \
@@ -223,13 +479,13 @@ if [[ ! -r "$canonical_security_sql" ]]; then
   echo "Canonical PostgreSQL security SQL is missing: $canonical_security_sql; the exit guard will roll back both activated file trees." >&2
   exit 1
 fi
-if ! psql "$DIRECT_URL" -v RESTORE_MODE=1 -v ON_ERROR_STOP=1 -f "$canonical_security_sql"; then
+if ! psql_target -v RESTORE_MODE=1 -v ON_ERROR_STOP=1 -f "$canonical_security_sql"; then
   echo "Canonical PostgreSQL security normalization failed; the exit guard will roll back both activated file trees." >&2
   exit 1
 fi
 
 echo "Restored schema table counts (public and valorant):"
-if ! psql "$DIRECT_URL" -tAc "SELECT 'public=' || count(*) FROM pg_tables WHERE schemaname = 'public' UNION ALL SELECT 'valorant=' || count(*) FROM pg_tables WHERE schemaname = 'valorant'"; then
+if ! psql_target -tAc "SELECT 'public=' || count(*) FROM pg_tables WHERE schemaname = 'public' UNION ALL SELECT 'valorant=' || count(*) FROM pg_tables WHERE schemaname = 'valorant'"; then
   echo "Table-count verification failed (restore may still have succeeded)" >&2
 fi
 

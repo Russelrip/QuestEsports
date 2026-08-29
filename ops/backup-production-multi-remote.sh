@@ -23,6 +23,142 @@ command -v readlink >/dev/null || {
   echo "Required backup command is unavailable: readlink" >&2
   exit 1
 }
+
+backup_fixture="${QUEST_BACKUP_FIXTURE:-0}"
+if [[ "$backup_fixture" != 0 && "$backup_fixture" != 1 ]]; then
+  echo "QUEST_BACKUP_FIXTURE must be 0 or 1." >&2
+  exit 1
+fi
+
+# Never resolve PostgreSQL clients through PATH.  Ubuntu's generic wrappers can
+# select an older major even when a PostgreSQL 17 installation is present.
+resolve_postgres_clients() {
+  local client variable path_variable candidate version_output
+  local -a clients=(psql pg_dump pg_restore)
+  if [[ -n "${POSTGRES17_BIN:-}" ]]; then
+    [[ "$POSTGRES17_BIN" == /* && "$POSTGRES17_BIN" != / && -d "$POSTGRES17_BIN" && ! -L "$POSTGRES17_BIN" ]] || {
+      echo "POSTGRES17_BIN must be an absolute non-symlink directory." >&2
+      exit 1
+    }
+  fi
+  for client in "${clients[@]}"; do
+    variable="${client^^}_BIN"
+    path_variable="${client^^}_PATH"
+    candidate="${!variable:-${!path_variable:-${POSTGRES17_BIN:-}/$client}}"
+    [[ "$candidate" == /* && "$candidate" != / && -x "$candidate" && ! -L "$candidate" ]] || {
+      echo "Pinned PostgreSQL client is missing or unsafe: $client" >&2
+      exit 1
+    }
+    [[ "$(realpath "$candidate" 2>/dev/null)" == "$candidate" ]] || {
+      echo "Pinned PostgreSQL client must not contain a symlink: $client" >&2
+      exit 1
+    }
+    version_output="$("$candidate" --version 2>/dev/null)" || {
+      echo "Pinned PostgreSQL client version could not be inspected: $client" >&2
+      exit 1
+    }
+    [[ "$version_output" =~ PostgreSQL[^0-9]*17([.][0-9]+)?([^0-9]|$) ]] || {
+      echo "Pinned PostgreSQL client is not PostgreSQL 17: $client" >&2
+      exit 1
+    }
+    printf -v "${variable,,}" '%s' "$candidate"
+  done
+}
+
+validate_database_target() {
+  local authority host_port host port path database query_string username
+  local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
+  [[ -n "${POSTGRES_TARGET_HOST:-}" && -n "${POSTGRES_TARGET_PORT:-}" &&
+      -n "${POSTGRES_TARGET_DATABASE:-}" && -n "${POSTGRES_TARGET_MAJOR:-}" &&
+      -n "${POSTGRES_TARGET_DATA_ROOT:-}" && -n "${POSTGRES_TARGET_SENTINEL_COMMAND:-}" ]] || {
+    echo "Explicit PostgreSQL target settings are required." >&2
+    exit 1
+  }
+  [[ "$POSTGRES_TARGET_HOST" == 127.0.0.1 && "$POSTGRES_TARGET_PORT" == 55432 &&
+      "$POSTGRES_TARGET_DATABASE" == quest && "$POSTGRES_TARGET_MAJOR" == 17 ]] || {
+    echo "Backup target is not the approved PostgreSQL 17 loopback target." >&2
+    exit 1
+  }
+  [[ "$POSTGRES_TARGET_DATA_ROOT" == /* && "$POSTGRES_TARGET_DATA_ROOT" != / &&
+      -d "$POSTGRES_TARGET_DATA_ROOT" && ! -L "$POSTGRES_TARGET_DATA_ROOT" ]] || {
+    echo "PostgreSQL target data root is missing or unsafe." >&2
+    exit 1
+  }
+  if [[ "$backup_fixture" != 1 ]]; then
+    [[ "$POSTGRES_TARGET_DATA_ROOT" == /srv/quest-esports/postgres/17/data ]] || {
+      echo "PostgreSQL target data root is not canonical." >&2
+      exit 1
+    }
+    [[ "$POSTGRES_TARGET_SENTINEL_COMMAND" == /usr/local/sbin/quest-release-postgres-target ]] || {
+      echo "PostgreSQL target sentinel path is not canonical." >&2
+      exit 1
+    }
+    [[ ! -L "$POSTGRES_TARGET_SENTINEL_COMMAND" && "$(stat -c '%u' "$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" == 0 ]] || {
+      echo "PostgreSQL target sentinel must be root-owned and non-symlinked." >&2
+      exit 1
+    }
+  fi
+  [[ "$POSTGRES_TARGET_SENTINEL_COMMAND" == /* && "$POSTGRES_TARGET_SENTINEL_COMMAND" != / &&
+      -x "$POSTGRES_TARGET_SENTINEL_COMMAND" && ! -L "$POSTGRES_TARGET_SENTINEL_COMMAND" ]] || {
+    echo "PostgreSQL target sentinel is missing or unsafe." >&2
+    exit 1
+  }
+  sentinel_output="$("$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" || {
+    echo "PostgreSQL target sentinel failed." >&2
+    exit 1
+  }
+  [[ "$sentinel_output" =~ ^target_kind=([a-z0-9_-]+)[[:space:]]+database=([a-z_][a-z0-9_]*)[[:space:]]+host=([^[:space:]]+)[[:space:]]+port=([0-9]+)[[:space:]]+major=([0-9]+)[[:space:]]+data_root=([^[:space:]]+)$ ]] || {
+    echo "PostgreSQL target sentinel output is ambiguous." >&2
+    exit 1
+  }
+  sentinel_kind="${BASH_REMATCH[1]}"; sentinel_database="${BASH_REMATCH[2]}"; sentinel_host="${BASH_REMATCH[3]}"; sentinel_port="${BASH_REMATCH[4]}"; sentinel_major="${BASH_REMATCH[5]}"; sentinel_data_root="${BASH_REMATCH[6]}"
+  [[ "$sentinel_kind" == postgresql17 && "$sentinel_database" == "$POSTGRES_TARGET_DATABASE" &&
+      "$sentinel_host" == "$POSTGRES_TARGET_HOST" && "$sentinel_port" == "$POSTGRES_TARGET_PORT" &&
+      "$sentinel_major" == "$POSTGRES_TARGET_MAJOR" && "$sentinel_data_root" == "$POSTGRES_TARGET_DATA_ROOT" ]] || {
+    echo "PostgreSQL target sentinel does not identify the approved target." >&2
+    exit 1
+  }
+
+  [[ "$DIRECT_URL" =~ ^postgres(ql)?://[^[:space:]]+$ ]] || {
+    echo "DIRECT_URL is not a valid PostgreSQL URL." >&2
+    exit 1
+  }
+  authority="${DIRECT_URL#*://}"; path="${authority#*/}"; authority="${authority%%/*}"
+  username="${authority%@*}"; host_port="${authority##*@}"
+  [[ "$authority" == *@* && "$username" == quest_backup:* ]] || {
+    echo "DIRECT_URL must use the quest_backup credential." >&2
+    exit 1
+  }
+  host="${host_port%%:*}"; port="${host_port##*:}"
+  database="${path%%\?*}"; query_string="${path#*\?}"
+  [[ "$host" == "$POSTGRES_TARGET_HOST" && "$port" == "$POSTGRES_TARGET_PORT" &&
+      "$database" == "$POSTGRES_TARGET_DATABASE" && "$query_string" == *sslmode=verify-full* ]] || {
+    echo "DIRECT_URL does not bind to the verified PostgreSQL 17 target." >&2
+    exit 1
+  }
+}
+
+resolve_postgres_clients
+for setting in POSTGRES_CA_FILE POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
+  [[ -n "${!setting:-}" && "${!setting}" == /* && "${!setting}" != / && -f "${!setting}" && ! -L "${!setting}" ]] || {
+    echo "Required PostgreSQL TLS material is missing or unsafe: $setting" >&2
+    exit 1
+  }
+done
+if [[ "$backup_fixture" != 1 ]]; then
+  [[ "$POSTGRES_CA_FILE" == /etc/quest-esports/tls/quest-private-ca.crt &&
+      "$POSTGRES_CERT_FILE" == /etc/quest-esports/tls/quest-postgres.crt &&
+      "$POSTGRES_KEY_FILE" == /etc/quest-esports/tls/quest-postgres.key ]] || {
+    echo "PostgreSQL TLS material is not canonical." >&2
+    exit 1
+  }
+  [[ "$(stat -c '%u %a' "$POSTGRES_KEY_FILE" 2>/dev/null)" == '0 600' ]] || {
+    echo "PostgreSQL private key ownership or mode is unsafe." >&2
+    exit 1
+  }
+fi
+validate_database_target
+
 if [[ ! "$BACKUP_AGE_RECIPIENT" =~ ^age1[0-9a-z]{58}$ ]]; then
   echo "BACKUP_AGE_RECIPIENT must be a valid age public recipient." >&2
   exit 1
@@ -172,7 +308,7 @@ if [[ "$BACKUP_ROOT" == "/" || -L "$BACKUP_ROOT" ]]; then
   echo "BACKUP_ROOT must not be the filesystem root or a symbolic link." >&2
   exit 1
 fi
-for command in age basename cat chmod date find flock hostname mkdir mktemp pg_dump psql realpath rm rclone rsync sha256sum tar; do
+for command in age basename cat chmod date find flock hostname mkdir mktemp realpath rm rclone rsync sha256sum stat tar; do
   command -v "$command" >/dev/null || {
     echo "Required backup command is unavailable: $command" >&2
     exit 1
@@ -221,12 +357,27 @@ result_path="$BACKUP_ROOT/$archive_name.results"
 work_directory="$(mktemp -d "$BACKUP_ROOT/.quest-backup-${timestamp}-XXXXXX")"
 trap 'rm -rf -- "$work_directory"' EXIT
 
-if ! valorant_probe="$(psql "$DIRECT_URL" -tAc "SELECT 1 FROM pg_namespace WHERE nspname = 'valorant'" 2>/dev/null)"; then
+psql_target() {
+  PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGAPPNAME=quest-backup-target \
+    "$psql_bin" "$DIRECT_URL" "$@"
+}
+if ! target_probe="$(psql_target -tAc "SELECT current_database() || '|' || current_setting('server_version_num') || '|' || CASE WHEN EXISTS (SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl) THEN 'on' ELSE 'off' END || '|' || COALESCE(inet_server_addr()::text, '') || '|' || inet_server_port() || '|' || current_setting('application_name')" 2>/dev/null)"; then
+  echo "PostgreSQL target identity probe failed" >&2
+  exit 1
+fi
+[[ "$target_probe" == "quest|17"*"|on|127.0.0.1|55432|quest-backup-target" ]] || {
+  echo "PostgreSQL target identity is not verified." >&2
+  exit 1
+}
+if ! valorant_probe="$(psql_target -tAc "SELECT 1 FROM pg_namespace WHERE nspname = 'valorant'" 2>/dev/null)"; then
   echo "valorant schema probe failed" >&2
   exit 1
 fi
-valorant_schema_exists=false
-[[ "$valorant_probe" == "1" ]] && valorant_schema_exists=true
+[[ "$valorant_probe" == "1" ]] || {
+  echo "valorant schema is required for a complete recovery point" >&2
+  exit 1
+}
+valorant_schema_exists=true
 
 public_name="$(basename "$resolved_upload_root")"
 private_name="$(basename "$resolved_private_root")"
@@ -235,14 +386,9 @@ mkdir -p "$work_directory/$public_name" "$work_directory/$private_name"
 rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
 rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
 
-if [[ "$valorant_schema_exists" == true ]]; then
-  pg_dump "$DIRECT_URL" --format=custom --schema=public --schema=valorant \
-    --no-owner --no-acl --file="$work_directory/database.dump" 2>/dev/null
-else
-  # Transitional state: retain a public-only snapshot until the second schema exists.
-  pg_dump "$DIRECT_URL" --format=custom --schema=public --no-owner --no-acl \
-    --file="$work_directory/database.dump" 2>/dev/null
-fi
+PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGAPPNAME=quest-backup-dump \
+  "$pg_dump_bin" "$DIRECT_URL" --format=custom --schema=public --schema=valorant \
+  --no-owner --no-acl --file="$work_directory/database.dump" 2>/dev/null
 rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
 rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
 
