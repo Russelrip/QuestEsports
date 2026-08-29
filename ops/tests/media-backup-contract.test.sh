@@ -123,44 +123,44 @@ printf '%s\n' "pg_restore $*" >> "$TEST_ROOT/pg_restore.log"
 dump="${@: -1}"
 emit_schema_base() {
   printf '%s\n' \
-    '3; 2615 2200 SCHEMA - public' \
-    '4; 1259 2201 TABLE public users' \
-    '5; 2615 2202 SCHEMA - valorant' \
-    '6; 1259 2203 TABLE valorant matches'
+    '3; 2615 2200 SCHEMA - public postgres' \
+    '4; 1259 2201 TABLE public users postgres' \
+    '5; 2615 2202 SCHEMA - valorant postgres' \
+    '6; 1259 2203 TABLE valorant matches postgres'
 }
 if grep -q public-only "$dump"; then
-  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users'
+  printf '%s\n' '3; 2615 2200 SCHEMA - public postgres' '4; 1259 2201 TABLE public users postgres'
 elif grep -q extra-schema "$dump"; then
-  printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches' '7; 2615 2204 SCHEMA - analytics'
+  printf '%s\n' '3; 2615 2200 SCHEMA - public postgres' '4; 1259 2201 TABLE public users postgres' '5; 2615 2202 SCHEMA - valorant postgres' '6; 1259 2203 TABLE valorant matches postgres' '7; 2615 2204 SCHEMA - analytics postgres'
 elif grep -q scoped-fk-constraint "$dump"; then
   emit_schema_base
-  printf '%s\n' '7; 2606 2204 FK CONSTRAINT analytics cross_schema'
+  printf '%s\n' '7; 2606 2204 FK CONSTRAINT analytics cross_schema postgres'
 elif grep -q scoped-row-security "$dump"; then
   emit_schema_base
-  printf '%s\n' '7; 0 2204 ROW SECURITY analytics cross_schema'
+  printf '%s\n' '7; 0 2204 ROW SECURITY analytics cross_schema postgres'
 elif grep -q scoped-policy "$dump"; then
   emit_schema_base
-  printf '%s\n' '7; 0 2204 POLICY analytics cross_schema'
+  printf '%s\n' '7; 0 2204 POLICY analytics cross_schema postgres'
 elif grep -q scoped-acl "$dump"; then
   emit_schema_base
-  printf '%s\n' '7; 0 2204 ACL analytics cross_schema TABLE'
+  printf '%s\n' '7; 0 2204 ACL analytics TABLE cross_schema postgres'
 elif grep -q scoped-comment "$dump"; then
   emit_schema_base
-  printf '%s\n' '7; 0 2204 COMMENT analytics cross_schema TABLE'
+  printf '%s\n' '7; 0 2204 COMMENT analytics TABLE cross_schema postgres'
 elif grep -q scoped-default-acl "$dump"; then
   emit_schema_base
-  printf '%s\n' '7; 0 2204 DEFAULT ACL analytics DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA analytics'
+  printf '%s\n' '7; 0 2204 DEFAULT ACL analytics IN SCHEMA analytics postgres'
 elif grep -q materialized-view-data "$dump"; then
   printf '%s\n' \
-    '3; 2615 2200 SCHEMA - public' \
-    '4; 1259 2201 TABLE public users' \
-    '5; 2615 2202 SCHEMA - valorant' \
-    '6; 1259 2203 TABLE valorant matches' \
-    '7; 1259 2204 MATERIALIZED VIEW public standings' \
-    '8; 0 2204 MATERIALIZED VIEW DATA public standings' \
-    '9; 0 2205 DEFAULT public users status' \
-    '10; 0 2206 DEFAULT ACL - DEFAULT PRIVILEGES FOR ROLE postgres' \
-    '11; 0 2207 DEFAULT ACL public DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public'
+    '3; 2615 2200 SCHEMA - public postgres' \
+    '4; 1259 2201 TABLE public users postgres' \
+    '5; 2615 2202 SCHEMA - valorant postgres' \
+    '6; 1259 2203 TABLE valorant matches postgres' \
+    '7; 1259 2204 MATERIALIZED VIEW public standings postgres' \
+    '8; 0 2204 MATERIALIZED VIEW DATA public standings postgres' \
+    '9; 0 2205 DEFAULT public users status postgres' \
+    '10; 0 2206 DEFAULT ACL - GLOBAL postgres' \
+    '11; 0 2207 DEFAULT ACL public IN SCHEMA public postgres'
 else
   emit_schema_base
 fi

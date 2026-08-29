@@ -186,7 +186,7 @@ EOF
   cat > "$tmp/bin/pg_restore" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$1" == --version ]]; then echo 'pg_restore (PostgreSQL) 17.4'; exit 0; fi
-if [[ "$1" == --list ]]; then printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches'; exit 0; fi
+if [[ "$1" == --list ]]; then printf '%s\n' '3; 2615 2200 SCHEMA - public postgres' '4; 1259 2201 TABLE public users postgres' '5; 2615 2202 SCHEMA - valorant postgres' '6; 1259 2203 TABLE valorant matches postgres'; exit 0; fi
 exit 0
 EOF
   chmod 700 "$tmp/bin/pg_restore"

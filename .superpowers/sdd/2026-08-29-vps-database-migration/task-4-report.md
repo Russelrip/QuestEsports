@@ -672,7 +672,9 @@ STATUS:0
 git diff --check
 ```
 
-Output: no diff errors (`STATUS:0`).
+Output: no diff errors; Git emitted the working-copy LF-to-CRLF warning for
+`.superpowers/sdd/2026-08-29-vps-database-migration/task-4-report.md`
+(`STATUS:0`).
 
 ### Self-review
 
@@ -692,6 +694,148 @@ Output: no diff errors (`STATUS:0`).
   confirmation, cleanup, explicit fixture seam, and secret-free behavior are
   unchanged. No VPS, production database, remote, credential, or private key
   was contacted or changed.
+
+### Concerns
+
+- A live production backup or restore was not exercised; deployment-host
+  verification of PostgreSQL 17 clients, TLS material, sentinel, and Compose
+  endpoint remains required.
+- The normal recovery example still requires protected TLS material, age
+  identity, sentinel authorization, and confirmation out of band.
+
+## Fix round 5
+
+### Changed files
+
+- `ops/restore-production-backup.sh` — corrected `DEFAULT ACL` parsing to the
+  PostgreSQL 17 TOC grammar (`schema`, `GLOBAL` or `IN SCHEMA <schema>` tag,
+  and owner), accepting only exact global or allowed-schema forms and rejecting
+  malformed or ambiguous entries before activation.
+- `ops/tests/media-backup-contract.test.sh` — replaced fabricated TOC forms
+  with PostgreSQL 17-style owner/tag fields for FK CONSTRAINT, ROW SECURITY,
+  POLICY, ACL, COMMENT, DEFAULT ACL, column DEFAULT, and MATERIALIZED VIEW
+  DATA coverage; retained independent refusal archives and valid global and
+  schema-specific default ACL coverage.
+- `ops/tests/restore-production-backup.test.sh` — made the baseline custom
+  archive TOC entries use PostgreSQL 17 owner fields.
+- `ops/tests/postgres17-rehearsal.test.sh` — made the baseline custom archive
+  TOC entries use PostgreSQL 17 owner fields.
+- `.superpowers/sdd/2026-08-29-vps-database-migration/task-4-report.md` —
+  appended this fix-round record.
+
+### Commands and exact outputs
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" -n ops/backup-production.sh ops/backup-production-multi-remote.sh ops/restore-production-backup.sh ops/rehearsal/postgres17-restore-rehearsal.sh ops/tests/media-backup-contract.test.sh ops/tests/restore-production-backup.test.sh ops/tests/backup-multi-remote.test.sh ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output: none; passed.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/media-backup-contract.test.sh
+```
+
+Output:
+
+```text
+media backup contract fixture tests passed
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/restore-production-backup.test.sh
+```
+
+Output:
+
+```text
+File activation and a transactional database restore begin in 0 seconds. Press Ctrl+C to abort.
+restore schema ownership regression test passed
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/backup-multi-remote.test.sh
+```
+
+Output:
+
+```text
+Encrypted production backup uploaded successfully: quest-production-20260829T145149Z.tar.gz.enc
+Another release operation is already running.
+Production backup configuration is not canonical or private.
+Rclone configuration paths must be readable and unique.
+Production backup was created but one or more required remotes failed; see the per-run result record.
+No locally valid and remotely verified production backup/checksum pair newer than 2160 minutes was found.
+No locally valid and remotely verified production backup/checksum pair newer than 2160 minutes was found.
+Inspected remote label primary.
+Inspected remote label secondary.
+Remote retention candidate archives for label primary: 1; recovery points retained: 4.
+Remote retention deletion was incomplete for label primary; the recovery pair was retained.
+Remote retention candidate archives for label secondary: 1; recovery points retained: 3.
+Encrypted production backup uploaded successfully: quest-production-20260829T145236Z.tar.gz.enc
+backup multi-remote fixture tests passed
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output:
+
+```text
+ok: missing confirmation
+ok: production-looking target
+ok: missing target sentinel
+ok: world-readable target sentinel
+ok: group-readable target sentinel
+ok: existing generic upload parent
+ok: URL/container port mismatch
+ok: nested roots
+ok: traversal target
+ok: bad checksum
+ok: decryption failure
+ok: successful wrapper-path pre/post evidence generation
+ok: valid signed evidence
+ok: arbitrary ACL payload
+ok: wrong ACL grantee
+ok: wrong ACL privilege
+ok: PUBLIC default ACL grant
+ok: extra default ACL row
+ok: unsafe extension version
+ok: unsafe PostgreSQL setting
+ok: uncontained wrong-CA evidence
+ok: unknown failed-service identity
+ok: summary without raw observations
+ok: incomplete manifest evidence
+ok: wrong health evidence
+ok: wrong CA evidence
+ok: blocked writer/freeze evidence
+PostgreSQL 17 rehearsal fixture tests passed (no Docker, database, VPS, or remote contacted).
+```
+
+```text
+git diff --check
+```
+
+Output: no diff errors; Git emitted the working-copy LF-to-CRLF warning for
+`.superpowers/sdd/2026-08-29-vps-database-migration/task-4-report.md`
+(`STATUS:0`).
+
+### Self-review
+
+- `DEFAULT ACL` now requires the exact PostgreSQL 17 TOC field sequence. The
+  global `- GLOBAL owner` form has no schema scope; `schema IN SCHEMA schema
+  owner` is checked against exactly `public` and `valorant`. SQL privilege
+  subtypes are not incorrectly parsed as TOC fields.
+- The accepted descriptor fixture independently covers FK CONSTRAINT, ROW
+  SECURITY, POLICY, ACL, COMMENT, DEFAULT ACL, column DEFAULT, and
+  MATERIALIZED VIEW DATA using realistic owner/tag positions. Unexpected
+  schema descriptors remain separate refusal archives, so an early failure
+  cannot mask descriptor coverage.
+- PostgreSQL 17 client pinning, strict target/TLS/session/endpoint binding,
+  exact two-schema scope, explicit fixture seam, encryption, rclone/checksum/
+  upload verification, confirmation, cleanup, and secret-free output remain
+  unchanged. No VPS, production database, remote, credential, or private key
+  was contacted.
 
 ### Concerns
 

@@ -87,7 +87,7 @@ if [[ "${1:-}" == --version ]]; then
 fi
 printf '%s\n' "pg_restore $*" >> "$TEST_ROOT/pg_restore.log"
 dump="${@: -1}"
-printf '%s\n' '3; 2615 2200 SCHEMA - public' '4; 1259 2201 TABLE public users' '5; 2615 2202 SCHEMA - valorant' '6; 1259 2203 TABLE valorant matches'
+printf '%s\n' '3; 2615 2200 SCHEMA - public postgres' '4; 1259 2201 TABLE public users postgres' '5; 2615 2202 SCHEMA - valorant postgres' '6; 1259 2203 TABLE valorant matches postgres'
 exit 0
 EOF
 
