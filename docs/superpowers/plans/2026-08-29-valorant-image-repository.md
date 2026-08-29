@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Source copying is authorized by the user.
-- Destination repository is private and owned by `Russelrip`.
+- Destination repository is public and owned by `Russelrip`; this supersedes the original private-visibility requirement by explicit user instruction.
 - Preserve the authorized sibling repository's current `main` history at the copy point.
 - Do not copy secrets into new files; do not print token values, private keys, or environment values containing secrets.
 - The new image workflow is build-only, owner-only, and must not configure SSH, invoke a VPS, run migrations, or deploy the VALORANT service.
@@ -29,7 +29,7 @@
 
 **Files:**
 - Source read-only: `D:\Work\Projects\valorant-platform-backend\*`
-- Destination created remotely: `Russelrip/valorant-platform-backend`
+- Destination created remotely: public `Russelrip/valorant-platform-backend`
 - Destination local checkout: `D:\Work\Projects\valorant-platform-backend-owner`
 
 **Interfaces:**
@@ -58,7 +58,7 @@ gh repo create Russelrip/valorant-platform-backend --private --description 'Owne
 gh api repos/Russelrip/valorant-platform-backend --jq '{full_name,private,default_branch}'
 ```
 
-Expected: the API reports `full_name` as `Russelrip/valorant-platform-backend`, `private` as `true`, and the repository is not initialized with an unrelated commit.
+Expected: the API reports `full_name` as `Russelrip/valorant-platform-backend`, `private` as `false`, and the repository is not initialized with an unrelated commit.
 
 - [ ] **Step 3: Push the complete authorized Git history**
 
@@ -85,7 +85,7 @@ gh api repos/Russelrip/valorant-platform-backend --jq '{full_name,private,defaul
 git -C 'D:\Work\Projects\valorant-platform-backend-owner.git' fsck --full --no-reflogs
 ```
 
-Expected: the source and destination `main` SHAs are identical, the destination is private, and mirror integrity succeeds. Record the SHA in the implementation notes and use that exact SHA for later CI/build verification.
+Expected: the source and destination `main` SHAs are identical, the destination is public, and mirror integrity succeeds. Record the SHA in the implementation notes and use that exact SHA for later CI/build verification.
 
 - [ ] **Step 5: Commit no Quest changes and preserve a rollback boundary**
 
@@ -461,7 +461,7 @@ gh run list --repo Russelrip/valorant-platform-backend --workflow ci --branch ma
 gh run list --repo Russelrip/valorant-platform-backend --workflow build-image.yml --branch main --limit 2 --json databaseId,headSha,status,conclusion
 ```
 
-Expected: the Quest worktree contains only the intended plan/spec documentation changes; the destination is private; destination CI and build runs are successful; and no production service or DNS operation was performed.
+Expected: the Quest worktree contains only the intended plan/spec documentation changes; the destination is public; destination CI and build runs are successful; and no production service or DNS operation was performed.
 
 ## Completion Evidence
 

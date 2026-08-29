@@ -1,13 +1,13 @@
 # VALORANT Image Repository Design
 
 **Date:** 2026-08-29  
-**Status:** Approved for implementation  
-**Scope:** Create an owner-controlled private image source for the VALORANT
+**Status:** Approved for implementation; public visibility authorized by user  
+**Scope:** Create an owner-controlled public image source for the VALORANT
 platform so Quest can reference a verifiable immutable GHCR digest.
 
 ## Goal
 
-Create a private `Russelrip/valorant-platform-backend` repository from the
+Create a public `Russelrip/valorant-platform-backend` repository from the
 authorized `naheedroomy/valorant-platform-backend` source, preserve its Git
 history, and publish a signed immutable image at:
 
@@ -22,7 +22,7 @@ cut over as part of this work.
 ## Boundaries and safety
 
 - Source copying is authorized by the user.
-- Destination repository is private and owned by `Russelrip`.
+- Destination repository is public and owned by `Russelrip`; this supersedes the original private-visibility requirement by explicit user instruction.
 - The source history is preserved; no secrets are copied into new files.
 - The new image workflow is build-only, owner-only, and does not SSH to a VPS.
 - The existing sibling CD workflow's deployment behavior is not invoked.
@@ -33,7 +33,7 @@ cut over as part of this work.
 
 ## Repository migration
 
-1. Create private `Russelrip/valorant-platform-backend`.
+1. Create public `Russelrip/valorant-platform-backend`.
 2. Copy the authorized sibling repository's current `main` history into it.
 3. Update repository-specific workflow identity and image naming so the new
    repository publishes under `ghcr.io/russelrip/valorant-platform-backend`.
@@ -96,7 +96,7 @@ host-readiness checks; this work does not enable or perform the VPS cutover.
 
 The implementation is complete only when all of the following evidence exists:
 
-1. The new private repository exists under `Russelrip` and its source history
+1. The new public repository exists under `Russelrip` and its source history
    matches the authorized sibling `main` history at the copy point.
 2. The new repository's CI passes for the image source commit.
 3. The build-only workflow succeeds and uploads a manifest with a full SHA and
