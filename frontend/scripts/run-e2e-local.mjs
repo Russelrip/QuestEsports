@@ -25,4 +25,7 @@ const env = {
 };
 
 await run("npm", ["run", "build"], env);
-await run("npx", ["playwright", "test"], env);
+await run("npx", ["playwright", "test"], {
+  ...env,
+  INTERNAL_API_URL: "http://127.0.0.1:5011",
+});

@@ -138,6 +138,8 @@ jobs:
         run: npm run build
 
       - name: Run frontend E2E tests
+        env:
+          INTERNAL_API_URL: http://127.0.0.1:5011
         run: npm run test:e2e
 
   mobile-admin:

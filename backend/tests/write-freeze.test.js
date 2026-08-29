@@ -15,18 +15,30 @@ const testEnvironment = (overrides = {}) => {
     SESSION_COOKIE_NAME: "quest_session",
   };
   delete environment.WRITE_FREEZE_MODE;
+  delete environment.NODE_V8_COVERAGE;
   return { ...environment, ...overrides };
 };
 
-const runNode = (script, overrides) =>
-  spawnSync(process.execPath, ["-e", script], {
+const runNode = (script, overrides) => {
+  const environment = testEnvironment(overrides);
+  // An explicit empty value also prevents Node 22's test runner from
+  // re-injecting its temporary coverage directory into spawned children.
+  environment.NODE_V8_COVERAGE = "";
+  return spawnSync(process.execPath, ["-e", script], {
     cwd: backendRoot,
-    env: testEnvironment(overrides),
+    env: environment,
     encoding: "utf8",
   });
+};
 
 const parseLastJsonLine = (output) =>
   JSON.parse(output.trim().split(/\r?\n/).at(-1));
+
+test("child test processes do not inherit the parent coverage directory", () => {
+  const result = runNode("process.stdout.write(process.env.NODE_V8_COVERAGE || '')");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+});
 
 test("validation mode allows GET/HEAD health probes and reports writers disabled", () => {
   const result = runNode(`
