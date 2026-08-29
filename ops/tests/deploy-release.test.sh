@@ -37,7 +37,7 @@ make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
-  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
   mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private" "$fixture/postgres/17/data"
@@ -45,9 +45,11 @@ setup_fixture() {
   printf '%s\n' fixture-ca > "$fixture/ca.crt"
   printf '%s\n' fixture-cert > "$fixture/postgres.crt"
   printf '%s\n' fixture-key > "$fixture/postgres.key"
+  printf '%s\n' fixture-alternate-key > "$fixture/alternate.key"
   printf '%s\n' fixture-alternate-cert > "$fixture/alternate.crt"
   chmod 644 "$fixture/ca.crt" "$fixture/postgres.crt" "$fixture/alternate.crt"
   chmod 600 "$fixture/postgres.key"
+  chmod 600 "$fixture/alternate.key"
   : > "$fixture/current-supabase.env"
   cat > "$fixture/quest.production.env" <<'EOF'
 DATABASE_URL=postgresql://quest_runtime:fixture@quest-postgres:5432/quest?schema=public&sslmode=verify-full
@@ -894,6 +896,21 @@ assert_failed host-validator-canonical-tls run_host_validation
 setup_fixture host-validator-key-mode
 export TLS_KEY_WORLD_READABLE=1
 assert_failed host-validator-key-mode run_host_validation
+
+setup_fixture host-validator-canonical-tls-ownership
+sed -i "s#^POSTGRES_CERT_FILE=.*#POSTGRES_CERT_FILE=$fixture/alternate.crt#; s#^POSTGRES_KEY_FILE=.*#POSTGRES_KEY_FILE=$fixture/alternate.key#; s#^VALIDATE_HOST_COMMAND=.*#VALIDATE_HOST_COMMAND=$fixture/bin/validate-host#" "$fixture/release.env"
+ownership_fixture_supported=1
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ownership_fixture_supported=0 ;; esac
+if (( ownership_fixture_supported == 0 )); then
+  printf '%s\n' 'SKIP: canonical TLS ownership fixture skipped because Windows Git Bash cannot create or observe POSIX ownership changes.'
+elif [[ "$(stat -c '%u' "$fixture/postgres.key" 2>/dev/null)" == 0 ]] && chown 1000 "$fixture/postgres.key" 2>/dev/null && [[ "$(stat -c '%u' "$fixture/postgres.key" 2>/dev/null)" == 1000 ]]; then
+  export QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP=1
+  assert_failed host-validator-canonical-tls-ownership run_host_validation
+  assert_failed release-canonical-tls-ownership run_release
+  assert_failed cutover-canonical-tls-ownership env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+else
+  printf '%s\n' 'SKIP: canonical TLS ownership fixture skipped because this platform cannot create or observe a non-root-owned fixture file.'
+fi
 
 setup_fixture first-cutover
 [[ "$(RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script")" == validated ]] || {

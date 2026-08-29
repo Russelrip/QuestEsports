@@ -39,9 +39,10 @@ if [[ "$fixture_mode" != 1 ]]; then
 fi
 
 root_file() {
-  [[ -f "$1" && -r "$1" && ! -L "$1" ]] || die 'required host file is missing or unsafe.'
-  if [[ "$fixture_mode" != 1 ]]; then
-    [[ "$(stat -c '%u' "$1" 2>/dev/null)" == 0 ]] || die 'required host file is not root-owned.'
+  local file="$1" enforce_owner="${2:-0}"
+  [[ -f "$file" && -r "$file" && ! -L "$file" ]] || die 'required host file is missing or unsafe.'
+  if [[ "$fixture_mode" != 1 || "$enforce_owner" == 1 ]]; then
+    [[ "$(stat -c '%u' "$file" 2>/dev/null)" == 0 ]] || die 'required host file is not root-owned.'
   fi
 }
 
@@ -57,7 +58,8 @@ validate_compose_tls_material() {
     key_file=/etc/quest-esports/tls/quest-postgres.key
   fi
   for tls_file in "$ca_file" "$cert_file" "$key_file"; do
-    [[ -f "$tls_file" && -r "$tls_file" && -s "$tls_file" && ! -L "$tls_file" ]] || die 'Compose-mounted PostgreSQL TLS material is missing or unsafe.'
+    root_file "$tls_file" "${QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP:-0}"
+    [[ -s "$tls_file" ]] || die 'Compose-mounted PostgreSQL TLS material is missing or unsafe.'
   done
   key_mode="$(stat -c '%a' "$key_file" 2>/dev/null)" || die 'Compose-mounted PostgreSQL key mode cannot be inspected.'
   [[ "$key_mode" == 600 ]] || die 'Compose-mounted PostgreSQL key mode is unsafe.'
