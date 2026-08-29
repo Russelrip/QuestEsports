@@ -103,6 +103,7 @@ Expected: no Quest application or workflow files have changed during repository 
 **Files:**
 - Create: `D:\Work\Projects\valorant-platform-backend-owner\.github\workflows\build-image.yml`
 - Modify: `D:\Work\Projects\valorant-platform-backend-owner\.github\workflows\cd.yml:19-20`
+- Modify: `D:\Work\Projects\valorant-platform-backend-owner\tests\test_production_contract.py:111-114`
 - Validate unchanged: `D:\Work\Projects\valorant-platform-backend-owner\Dockerfile`
 - Validate unchanged: `D:\Work\Projects\valorant-platform-backend-owner\.github\workflows\ci.yml`
 
@@ -112,7 +113,8 @@ Expected: no Quest application or workflow files have changed during repository 
 
 - [ ] **Step 1: Update copied workflow identity without changing deployment behavior**
 
-Change only the copied CD workflow's static Cosign identity from:
+Change the copied CD workflow's static Cosign identity and the corresponding
+repository-specific contract-test assertion from:
 
 ```text
 https://github.com/naheedroomy/valorant-platform-backend/.github/workflows/cd.yml@refs/heads/main

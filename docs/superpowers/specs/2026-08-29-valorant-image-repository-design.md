@@ -38,7 +38,9 @@ cut over as part of this work.
 3. Update repository-specific workflow identity and image naming so the new
    repository publishes under `ghcr.io/russelrip/valorant-platform-backend`.
 4. Preserve the existing application source, Dockerfile, tests, and runtime
-   contract. Do not alter application behavior solely to change ownership.
+   contract. Update only repository-specific owner/identity assertions needed
+   to keep those tests aligned with the new destination workflow identity; do
+   not alter application behavior solely to change ownership.
 5. Add a separate build-only workflow instead of reusing the existing workflow
    that performs an SSH production deployment.
 
