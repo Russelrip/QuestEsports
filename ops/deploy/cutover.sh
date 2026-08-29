@@ -234,6 +234,7 @@ old_valorant_stop_attempted=false
 old_quest_stop_attempted=false
 old_quest_was_active=false
 postcommit_armed=false
+writer_admission_started=false
 
 compose() { "$DOCKER_BIN" compose "$@"; }
 
@@ -336,6 +337,12 @@ run_url_switch() {
   expected="switched target=quest-postgres writer_group=$group"
   [[ "$output" == "$expected" ]] || die "$variable command acknowledgement was invalid."
 }
+run_url_effective_check() {
+  local variable="$1" group="$2" output
+  command_setting "$variable"
+  output="$(DATABASE_URL_SWITCH_GROUP="$group" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres CURRENT_RUNTIME_ENV_FILE="$runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  [[ "$output" == "url-state group=$group host=quest-postgres database=quest authority=quest-postgres" ]] || die "$variable returned an invalid post-switch URL state."
+}
 run_service_restart() {
   local variable="$1" group="$2" project="$3" output expected
   command_setting "$variable"
@@ -411,6 +418,7 @@ validate_reboot_persistence() {
 
 record_commit_point() {
   local quest_started="$1" quest_admitted="$2" quest_timestamp="$3" valorant_started="$4" valorant_admitted="$5" valorant_timestamp="$6" temporary_file
+  [[ -z "${TEST_LOG:-}" ]] || printf 'commit-point\n' >> "$TEST_LOG"
   temporary_file="$stage_dir/.commit-point.$$.tmp"
   {
     printf 'writer_admission_starting=true\n'
@@ -429,6 +437,28 @@ record_commit_point() {
   } > "$temporary_file" 2>/dev/null || return 1
   chmod 600 "$temporary_file" 2>/dev/null || return 1
   mv -Tf -- "$temporary_file" "$stage_dir/commit-point.txt" 2>/dev/null || return 1
+}
+
+record_admission_state() {
+  local quest_started="$1" quest_admitted="$2" quest_timestamp="$3" valorant_started="$4" valorant_admitted="$5" valorant_timestamp="$6" temporary_file
+  temporary_file="$stage_dir/.writer-admission-state.$$.tmp"
+  {
+    printf 'writer_admission_starting=true\n'
+    printf 'commit_sha=%s\n' "$release_sha"
+    printf 'commit_point_utc=not-recorded\n'
+    printf 'quest_writer_admission_started=%s\n' "$quest_started"
+    printf 'quest_writer_admitted=%s\n' "$quest_admitted"
+    printf 'quest_writer_ack_utc=%s\n' "${quest_timestamp:-not-recorded}"
+    printf 'valorant_writer_admission_started=%s\n' "$valorant_started"
+    printf 'valorant_writer_admitted=%s\n' "$valorant_admitted"
+    printf 'valorant_writer_ack_utc=%s\n' "${valorant_timestamp:-not-recorded}"
+    printf 'writer_admitted=%s\n' "$writer_admitted"
+    printf 'previous_release=%s\n' "$previous_release"
+    printf 'cutover_type=first-supabase-cutover\n'
+    printf 'quest_project=%s\nvalorant_project=%s\nshared_network=%s\n' "$quest_project" "$valorant_project" "$shared_network"
+  } > "$temporary_file" 2>/dev/null || return 1
+  chmod 600 "$temporary_file" 2>/dev/null || return 1
+  mv -Tf -- "$temporary_file" "$stage_dir/writer-admission-state.txt" 2>/dev/null || return 1
 }
 
 write_release_metadata() {
@@ -504,8 +534,10 @@ precommit_rollback() {
       [[ "$output" == restarted ]] || status=1
     fi
   fi
-  if [[ "$freeze_active" == true && -n "${FREEZE_DISABLE_COMMAND:-}" ]]; then
-    recovery_hook FREEZE_DISABLE_COMMAND || status=1
+  if [[ "$freeze_active" == true ]]; then
+    for freeze_disable in QUEST_FREEZE_DISABLE_COMMAND VALORANT_FREEZE_DISABLE_COMMAND; do
+      recovery_hook "$freeze_disable" || status=1
+    done
   fi
   (( status == 0 )) || printf '%s\n' 'URGENT: pre-commit cutover rollback was incomplete.' >&2
   return "$status"
@@ -528,13 +560,17 @@ postcommit_boundary() {
       status=1
     fi
   done
-  hook="${FREEZE_ENABLE_COMMAND:-}"
-  if [[ -z "$hook" || ! -x "$hook" ]]; then
-    printf '%s\n' 'URGENT: post-commit freeze-enable hook is missing or not executable.' >&2
-    status=1
-  else
-    "$hook" >/dev/null 2>&1 || { printf '%s\n' 'URGENT: post-commit freeze-enable failed.' >&2; status=1; }
-  fi
+  for freeze_enable in QUEST_FREEZE_ENABLE_COMMAND VALORANT_FREEZE_ENABLE_COMMAND; do
+    hook="${!freeze_enable:-}"
+    if [[ -z "$hook" || ! -x "$hook" ]]; then
+      printf 'URGENT: post-commit freeze-enable hook %s is missing or not executable.\n' "$freeze_enable" >&2
+      status=1
+    else
+      output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" "$hook" 2>/dev/null)"
+      hook_rc=$?
+      (( hook_rc == 0 )) || { printf 'URGENT: post-commit freeze-enable hook %s failed.\n' "$freeze_enable" >&2; status=1; }
+    fi
+  done
   if [[ -n "${CURRENT_STATE_CAPTURE_COMMAND:-}" ]]; then
     hook="$CURRENT_STATE_CAPTURE_COMMAND"
     if [[ ! -x "$hook" ]]; then
@@ -569,6 +605,11 @@ record_recovery_evidence() {
     printf 'valorant_url_switched=%s\n' "$valorant_url_switched"
     printf 'supabase_authority_boundary=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf stale-after-first-vps-write || printf preserved-before-first-vps-write)"
     printf 'supabase_url_rollback=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf prohibited || printf allowed-before-writer-admission)"
+    printf 'reconciliation_decision=%s\n' "${SUPABASE_RECONCILIATION_DECISION:-not-recorded}"
+    printf 'selected_recovery_action=%s\n' "${RECOVERY_ACTION_SELECTED:-not-selected}"
+    printf 'expected_loss_rpo=%s\n' "${EXPECTED_LOSS_RPO:-not-recorded}"
+    printf 'incident_owner_approval=%s\n' "${INCIDENT_OWNER_APPROVAL:-not-recorded}"
+    printf 'supabase_url_rollback_command=%s\n' "$([[ -n "${SUPABASE_URL_ROLLBACK_COMMAND:-}" ]] && printf rejected || printf not-configured)"
   } > "$stage_dir/recovery-evidence.txt" 2>/dev/null || return 1
   chmod 600 "$stage_dir/recovery-evidence.txt" 2>/dev/null || return 1
 }
@@ -577,7 +618,7 @@ on_exit() {
   original_status="$status"
   trap - EXIT
   if (( status != 0 )); then
-    if [[ "$postcommit_armed" == true || "$writer_admitted" == true || "$commit_recorded" == true ]]; then
+    if [[ "$writer_admission_started" == true || "$writer_admitted" == true ]]; then
       record_recovery_evidence post-commit-recovery started "$original_status" running || true
       postcommit_boundary; recovery_status=$?
       record_recovery_evidence post-commit-recovery "$([[ "$recovery_status" == 0 ]] && printf completed || printf incomplete)" "$original_status" "$recovery_status" || recovery_status=1
@@ -601,9 +642,13 @@ validate_images "$stage_dir/valorant.compose.yml" "$valorant_project" "$compose_
 
 # Freeze and stop old writers before the final archive. Nothing below this
 # point can make the old source authoritative again after writer admission.
-run_hook FREEZE_ENABLE_COMMAND validation
 freeze_active=true
-run_hook FREEZE_STATUS_COMMAND acknowledged
+for freeze_group in quest valorant; do
+  freeze_enable="${freeze_group^^}_FREEZE_ENABLE_COMMAND"
+  freeze_status="${freeze_group^^}_FREEZE_STATUS_COMMAND"
+  run_hook "$freeze_enable" validation
+  run_hook "$freeze_status" acknowledged
+done
 command_setting OLD_VALORANT_ACTIVE_CHECK
 require_setting OLD_VALORANT_UNITS
 [[ "$OLD_VALORANT_UNITS" == valorant-platform,valorant-updater,valorant-discord-bot ]] || die 'old VALORANT unit identity is not the fixed three-unit transition set.'
@@ -642,6 +687,8 @@ backup_evidence="$(BACKUP_RELEASE_SHA="$release_sha" "$BACKUP_EVIDENCE_COMMAND" 
 # Restore and migrate before candidate startup. The candidate cannot observe a
 # half-restored database and no writer is enabled while validation runs.
 run_hook CUTOVER_RESTORE_COMMAND restored
+command_setting SECURITY_VERIFY_COMMAND
+[[ "$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres "$SECURITY_VERIFY_COMMAND" 2>/dev/null)" == security-verified ]] || die 'post-restore role, privilege, schema, or migration security verification failed.'
 quest_status=none
 valorant_status=none
 run_migration_status QUEST_MIGRATION_STATUS_COMMAND quest quest-postgres public || quest_status=pending
@@ -660,18 +707,22 @@ validate_compose_tls_material
 validate_postgres_target
 validate_database_urls
 
-command_setting CANDIDATE_FROZEN_START_COMMAND
-require_setting CANDIDATE_START_CONTRACT
 require_setting CANDIDATE_FREEZE_FLAG
 require_setting CANDIDATE_READ_ONLY_FLAG
-[[ "$CANDIDATE_START_CONTRACT" == frozen-read-only ]] || die 'candidate start contract must be frozen-read-only.'
-candidate_output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" COMPOSE_ENV_FILE="$compose_env_file" \
-  QUEST_COMPOSE_FILE="$stage_dir/compose.production.yml" VALORANT_COMPOSE_FILE="$stage_dir/valorant.compose.yml" \
-  QUEST_PROJECT=quest-prod VALORANT_PROJECT=valorant-prod WRITE_FREEZE_MODE=validation CANDIDATE_READ_ONLY=1 \
-  "$CANDIDATE_FROZEN_START_COMMAND" --contract "$CANDIDATE_START_CONTRACT" \
-  --freeze-flag "$CANDIDATE_FREEZE_FLAG" --read-only-flag "$CANDIDATE_READ_ONLY_FLAG" 2>/dev/null)" \
-  || die 'CANDIDATE_FROZEN_START_COMMAND command failed.'
-[[ "$candidate_output" == started-frozen-read-only ]] || die 'candidate start acknowledgement was invalid.'
+run_candidate_start() {
+  local variable="$1" group="$2" project="$3" output
+  command_setting "$variable"
+  output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" COMPOSE_ENV_FILE="$compose_env_file" \
+    QUEST_COMPOSE_FILE="$stage_dir/compose.production.yml" VALORANT_COMPOSE_FILE="$stage_dir/valorant.compose.yml" \
+    CANDIDATE_GROUP="$group" CANDIDATE_PROJECT="$project" WRITE_FREEZE_MODE=validation CANDIDATE_READ_ONLY=1 \
+    "${!variable}" --contract frozen-read-only --freeze-flag "$CANDIDATE_FREEZE_FLAG" --read-only-flag "$CANDIDATE_READ_ONLY_FLAG" 2>/dev/null)" \
+    || die "$variable command failed."
+  [[ "$output" == "started-frozen-read-only group=$group" ]] || die "$variable acknowledgement was invalid."
+}
+run_candidate_start QUEST_CANDIDATE_FROZEN_START_COMMAND quest quest-prod
+run_candidate_start VALORANT_CANDIDATE_FROZEN_START_COMMAND valorant valorant-prod
+run_hook QUEST_FROZEN_READ_ONLY_ACK_COMMAND frozen-read-only
+run_hook VALORANT_FROZEN_READ_ONLY_ACK_COMMAND frozen-read-only
 command_setting CURL_BIN
 command_setting VALORANT_CONTAINER_HEALTH_COMMAND
 for setting in QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE; do require_setting "$setting"; done
@@ -700,6 +751,9 @@ run_url_switch QUEST_DATABASE_URL_SWITCH_COMMAND quest
 quest_url_switched=true
 run_url_switch VALORANT_DATABASE_URL_SWITCH_COMMAND valorant
 valorant_url_switched=true
+run_url_effective_check QUEST_DATABASE_URL_EFFECTIVE_COMMAND quest
+run_url_effective_check VALORANT_DATABASE_URL_EFFECTIVE_COMMAND valorant
+validate_database_urls
 run_service_restart QUEST_SERVICE_RESTART_COMMAND quest quest-prod
 run_service_restart VALORANT_SERVICE_RESTART_COMMAND valorant valorant-prod
 validate_postgres_target
@@ -708,24 +762,26 @@ run_hook QUEST_READINESS_ACK_COMMAND ready
 run_hook VALORANT_READINESS_ACK_COMMAND ready
 
 command_setting POST_COMMIT_RECOVERY_ARM_COMMAND
+write_release_metadata not-recorded false false || die 'could not record provisional first-cutover metadata.'
 run_hook POST_COMMIT_RECOVERY_ARM_COMMAND armed
 postcommit_armed=true
-write_release_metadata not-recorded false false || die 'could not record provisional first-cutover metadata.'
 commit_timestamp=not-recorded
-record_commit_point false false not-recorded false false not-recorded || die 'could not record the armed writer-admission boundary.'
+record_admission_state false false not-recorded false false not-recorded || die 'could not record the armed writer-admission boundary.'
 command_setting QUEST_WRITER_ENABLE_COMMAND
-record_commit_point true false not-recorded false false not-recorded || die 'could not record the Quest writer-admission start boundary.'
+record_admission_state true false not-recorded false false not-recorded || die 'could not record the Quest writer-admission start boundary.'
+writer_admission_started=true
 [[ "$(RELEASE_SHA="$release_sha" "$QUEST_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'Quest writer admission failed.'
 writer_admitted=true
-commit_recorded=true
 commit_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 quest_writer_ack_timestamp="$commit_timestamp"
-record_commit_point true true "$quest_writer_ack_timestamp" false false not-recorded || die 'could not record the Quest writer admission boundary.'
+record_admission_state true true "$quest_writer_ack_timestamp" false false not-recorded || die 'could not record the Quest writer admission boundary.'
 command_setting VALORANT_WRITER_ENABLE_COMMAND
-record_commit_point true true "$quest_writer_ack_timestamp" true false not-recorded || die 'could not record the VALORANT writer-admission start boundary.'
+record_admission_state true true "$quest_writer_ack_timestamp" true false not-recorded || die 'could not record the VALORANT writer-admission start boundary.'
+writer_admission_started=true
 [[ "$(RELEASE_SHA="$release_sha" "$VALORANT_WRITER_ENABLE_COMMAND" 2>/dev/null)" == admitted ]] || die 'VALORANT writer admission failed.'
 valorant_writer_ack_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-record_commit_point true true "$quest_writer_ack_timestamp" true true "$valorant_writer_ack_timestamp" || die 'could not record the VALORANT writer admission boundary.'
+record_commit_point true true "$quest_writer_ack_timestamp" true true "$valorant_writer_ack_timestamp" || die 'could not record the final writer-admission commit point.'
+commit_recorded=true
 command_setting OLD_QUEST_MASK_COMMAND
 run_hook OLD_QUEST_MASK_COMMAND
 command_setting OLD_VALORANT_MASK_COMMAND
