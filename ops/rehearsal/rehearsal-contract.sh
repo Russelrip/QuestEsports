@@ -36,6 +36,20 @@ rehearsal_failure_endpoint_id() {
   esac
 }
 
+rehearsal_runtime_role() {
+  case "$1" in
+    public) printf '%s' 'quest_runtime' ;;
+    valorant) printf '%s' 'val_runtime' ;;
+    *) return 1 ;;
+  esac
+}
+
+rehearsal_runtime_policy_name() {
+  local table="$2"
+  [[ "$table" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+  printf '%s_runtime_all' "$table"
+}
+
 rehearsal_canonical_acl_rows() {
   printf '%s\n' \
     'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' \
