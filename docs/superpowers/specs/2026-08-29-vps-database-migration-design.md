@@ -126,17 +126,15 @@ The service environment must not carry migrator or owner credentials. A release
 runner injects the migrator URL only for `prisma migrate deploy` and security
 verification, then starts the application with runtime credentials.
 
-The initial runtime authorization model remains behavior-compatible with the
-existing Prisma application: application authorization remains in the API,
-while each runtime role receives only the required DML grants and no DDL or
-role privileges. Because current Supabase migrations enable RLS and revoke
-Data API roles without defining complete policies for a new vanilla runtime
-role, the initial approved model gives the runtime roles `BYPASSRLS` while
-keeping them non-owner, non-superuser, and restricted to their schema/object
-grants. The security verifier must assert this exact model, including the
-absence of public/Data API grants. Policy-driven RLS is a separate hardening
-project; no role with neither applicable policies nor an explicit approved RLS
-bypass is admitted to production.
+The owner-approved runtime authorization model remains behavior-compatible with
+the existing Prisma application: application authorization remains in the API,
+while each runtime role remains `NOBYPASSRLS` and receives only the required
+DML grants and no DDL or role privileges. Explicit per-table RLS policies
+provide behavior-compatible access for application tables, while
+`_prisma_migrations` remains migrator-only. Runtime roles stay non-owner,
+non-superuser, and schema-isolated. The security verifier must assert this
+exact model, including revoked public/Data API grants; no runtime role receives
+RLS bypass.
 
 ## Data migration flow
 

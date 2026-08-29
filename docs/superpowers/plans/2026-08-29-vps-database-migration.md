@@ -131,6 +131,7 @@ git commit -m "feat: add staged VPS postgres compose contract"
 ### Task 2: Make runtime RLS and role security portable
 
 **Files:**
+- Modify: `docs/superpowers/specs/2026-08-29-vps-database-migration-design.md`
 - Create: `backend/prisma/migrations/20260829120000_add_quest_runtime_rls_policies/migration.sql`
 - Modify: `ops/docker/postgres/init/001-bootstrap-roles.sql:37-183`
 - Modify: `backend/scripts/verify-database-security.js:3-70`
