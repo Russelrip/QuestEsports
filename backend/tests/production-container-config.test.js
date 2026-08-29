@@ -1117,6 +1117,9 @@ test("PostgreSQL runtime roles use explicit non-bypass policies and keep the Pri
   assert.match(databaseSecurityVerifier, /tablesWithoutRuntimePolicy/);
   assert.match(databaseSecurityVerifier, /rolbypassrls/);
   assert.match(databaseSecurityVerifier, /crossSchemaGrants/);
+  assert.match(databaseSecurityVerifier, /p\.roles && ARRAY\['quest_runtime', 'val_runtime'\]::name\[\]/);
+  assert.match(databaseSecurityVerifier, /'public' = ANY \(p\.roles\)/);
+  assert.match(databaseSecurityVerifier, /n\.nspname IN \('public', 'valorant'\)/);
   assert.match(databaseSecurityVerifier, /_prisma_migrations/);
 });
 
@@ -1129,7 +1132,18 @@ test(
     const runPsql = (role, sql) => docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", role, "-d", "postgres", "-At", "-c", sql]);
     const started = spawnSync(
       "docker",
-      ["run", "--detach", "--rm", "--name", container, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "postgres:17-bookworm"],
+      [
+        "run",
+        "--detach",
+        "--rm",
+        "--name",
+        container,
+        "-e",
+        "POSTGRES_HOST_AUTH_METHOD=trust",
+        "-p",
+        "127.0.0.1::5432",
+        "postgres:17-bookworm",
+      ],
       { encoding: "utf8" },
     );
     assert.equal(started.status, 0, `could not start PostgreSQL fixture:\n${started.stdout}\n${started.stderr}`);
@@ -1144,6 +1158,18 @@ test(
         }
       }
       assert.equal(ready, true, "PostgreSQL fixture did not become ready");
+
+      const publishedPort = spawnSync("docker", ["port", container, "5432/tcp"], { encoding: "utf8" });
+      assert.equal(publishedPort.status, 0, `could not determine fixture port:\n${publishedPort.stdout}\n${publishedPort.stderr}`);
+      const portMatch = publishedPort.stdout.match(/:(\d+)\s*$/m);
+      assert.ok(portMatch, `fixture port was not published:\n${publishedPort.stdout}`);
+      const databaseUrl = `postgresql://quest_migrator@127.0.0.1:${portMatch[1]}/postgres?schema=public`;
+      const runVerifier = () =>
+        spawnSync(process.execPath, [path.join(repoRoot, "backend/scripts/verify-database-security.js")], {
+          cwd: path.join(repoRoot, "backend"),
+          encoding: "utf8",
+          env: { ...process.env, DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl },
+        });
 
       const bootstrapPath = path.join(repoRoot, "ops/docker/postgres/init/001-bootstrap-roles.sql");
       const migrationPath = path.join(
@@ -1160,8 +1186,15 @@ test(
 
       let result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-v", "RESTORE_MODE=1", "-U", "postgres", "-d", "postgres", "-f", "/tmp/bootstrap.sql"]);
       assert.equal(result.status, 0, `bootstrap fixture failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql(
+        "postgres",
+        "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;",
+      );
+      assert.equal(result.status, 0, `Data API fixture roles failed:\n${result.stdout}\n${result.stderr}`);
       result = runPsql("quest_migrator", 'CREATE TABLE public.fixture_application (id integer PRIMARY KEY); CREATE TABLE public."_prisma_migrations" (id text PRIMARY KEY);');
       assert.equal(result.status, 0, `fixture tables failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("val_migrator", "CREATE TABLE valorant.fixture_application (id integer PRIMARY KEY);");
+      assert.equal(result.status, 0, `sibling fixture table failed:\n${result.stdout}\n${result.stderr}`);
       result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "quest_migrator", "-d", "postgres", "-f", "/tmp/runtime-policies.sql"]);
       assert.equal(result.status, 0, `runtime policy migration failed:\n${result.stdout}\n${result.stderr}`);
 
@@ -1177,6 +1210,58 @@ test(
       assert.notEqual(result.status, 0, "Quest runtime unexpectedly accessed valorant");
       result = runPsql("val_runtime", "SELECT count(*) FROM public.fixture_application;");
       assert.notEqual(result.status, 0, "VAL runtime unexpectedly accessed public");
+
+      result = runVerifier();
+      assert.equal(result.status, 0, `security verifier rejected the secure fixture:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql("quest_migrator", "DROP POLICY fixture_application_runtime_all ON public.fixture_application;");
+      assert.equal(result.status, 0, `could not remove fixture policy:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a table with a missing runtime policy");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Public tables without quest_runtime policy/);
+      result = runPsql(
+        "quest_migrator",
+        "CREATE POLICY fixture_application_runtime_all ON public.fixture_application FOR ALL TO quest_runtime USING (true) WITH CHECK (true);",
+      );
+      assert.equal(result.status, 0, `could not restore fixture policy:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql(
+        "quest_migrator",
+        'CREATE POLICY ledger_val_runtime ON public."_prisma_migrations" FOR SELECT TO val_runtime USING (true);',
+      );
+      assert.equal(result.status, 0, `could not create runtime ledger policy:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a val_runtime ledger policy");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected runtime\/PUBLIC access to _prisma_migrations/);
+      result = runPsql("quest_migrator", "DROP POLICY ledger_val_runtime ON public.\"_prisma_migrations\";");
+      assert.equal(result.status, 0, `could not remove runtime ledger policy:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql(
+        "quest_migrator",
+        'CREATE POLICY ledger_public_mixed ON public."_prisma_migrations" FOR SELECT TO PUBLIC, quest_migrator USING (true);',
+      );
+      assert.equal(result.status, 0, `could not create mixed PUBLIC ledger policy:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a mixed PUBLIC ledger policy");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected runtime\/PUBLIC access to _prisma_migrations/);
+      result = runPsql("quest_migrator", "DROP POLICY ledger_public_mixed ON public.\"_prisma_migrations\";");
+      assert.equal(result.status, 0, `could not remove mixed PUBLIC ledger policy:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql(
+        "postgres",
+        "GRANT SELECT ON valorant.fixture_application TO anon, authenticated, service_role, PUBLIC;",
+      );
+      assert.equal(result.status, 0, `could not create cross-schema Data API grants:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted cross-schema Data API table grants");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected Data API table grants/);
+      result = runPsql(
+        "postgres",
+        "REVOKE ALL PRIVILEGES ON valorant.fixture_application FROM anon, authenticated, service_role, PUBLIC;",
+      );
+      assert.equal(result.status, 0, `could not remove cross-schema Data API grants:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.equal(result.status, 0, `security verifier rejected the restored secure fixture:\n${result.stdout}\n${result.stderr}`);
     } finally {
       spawnSync("docker", ["rm", "--force", container], { encoding: "utf8" });
     }

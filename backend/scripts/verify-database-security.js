@@ -36,11 +36,16 @@ const verify = async () => {
     FROM pg_policies p
     WHERE p.schemaname = 'public'
       AND p.tablename = '_prisma_migrations'
-      AND ('quest_runtime' = ANY (p.roles) OR p.roles = ARRAY['public']::name[])
+      AND (
+        p.roles && ARRAY['quest_runtime', 'val_runtime']::name[]
+        OR 'public' = ANY (p.roles)
+      )
     UNION ALL
-    SELECT '_prisma_migrations:' || privilege
-    FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) privilege
-    WHERE has_table_privilege('quest_runtime', 'public."_prisma_migrations"', privilege)
+    SELECT '_prisma_migrations:' || runtime_role.role_name || ':' || privilege AS "policyName"
+    FROM (VALUES ('quest_runtime'::name), ('val_runtime'::name)) runtime_role(role_name)
+    CROSS JOIN
+      unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) privilege
+    WHERE has_table_privilege(runtime_role.role_name, 'public."_prisma_migrations"', privilege)
     ORDER BY 1
   `;
   const bypassRoles = await prisma.$queryRaw`
@@ -56,29 +61,29 @@ const verify = async () => {
       FROM pg_roles
       WHERE rolname IN ('anon', 'authenticated', 'service_role')
     ), effective_table_grants AS (
-      SELECT r.rolname AS grantee, c.relname AS object_name, privilege
+      SELECT r.rolname AS grantee, n.nspname AS schema_name, c.relname AS object_name, privilege
       FROM protected_roles r
       CROSS JOIN pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
       CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) privilege
-      WHERE n.nspname = 'public'
+      WHERE n.nspname IN ('public', 'valorant')
         AND c.relkind IN ('r', 'p')
         AND has_table_privilege(r.oid, c.oid, privilege)
     ), public_table_grants AS (
-      SELECT 'PUBLIC'::name AS grantee, c.relname AS object_name, acl.privilege_type AS privilege
+      SELECT 'PUBLIC'::name AS grantee, n.nspname AS schema_name, c.relname AS object_name, acl.privilege_type AS privilege
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
       CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl
-      WHERE n.nspname = 'public'
+      WHERE n.nspname IN ('public', 'valorant')
         AND c.relkind IN ('r', 'p')
         AND acl.grantee = 0
     )
-    SELECT grantee, object_name AS "objectName", privilege
+    SELECT grantee, schema_name AS "schemaName", object_name AS "objectName", privilege
     FROM effective_table_grants
     UNION ALL
-    SELECT grantee, object_name AS "objectName", privilege
+    SELECT grantee, schema_name AS "schemaName", object_name AS "objectName", privilege
     FROM public_table_grants
-    ORDER BY grantee, "objectName", privilege
+    ORDER BY grantee, "schemaName", "objectName", privilege
   `;
   const crossSchemaGrants = await prisma.$queryRaw`
     WITH cross_schema_roles(role_name, schema_name) AS (
@@ -121,7 +126,7 @@ const verify = async () => {
     if (dataApiGrants.length) {
       console.error(
         `Unexpected Data API table grants: ${dataApiGrants
-          .map(({ grantee, objectName, privilege }) => `${grantee}:${objectName}:${privilege}`)
+          .map(({ grantee, schemaName, objectName, privilege }) => `${grantee}:${schemaName}:${objectName}:${privilege}`)
           .join(", ")}`
       );
     }
@@ -134,7 +139,7 @@ const verify = async () => {
     }
     if (migrationRuntimeAccess.length) {
       console.error(
-        `Unexpected quest_runtime access to _prisma_migrations: ${migrationRuntimeAccess
+        `Unexpected runtime/PUBLIC access to _prisma_migrations: ${migrationRuntimeAccess
           .map(({ policyName, objectName, privilege }) => policyName || `${objectName || "_prisma_migrations"}:${privilege}`)
           .join(", ")}`
       );
