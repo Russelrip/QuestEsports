@@ -37,10 +37,10 @@ make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
-  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL DATABASE_URL DIRECT_URL || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
-  mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private"
+  mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private" "$fixture/postgres/17/data"
   : > "$fixture/release.lock"
   : > "$fixture/ca.crt"
   : > "$fixture/postgres.crt"
@@ -334,6 +334,14 @@ EOF
   done
   chmod 755 "$fixture/bin/status" "${command_paths[@]}"
 
+  cat > "$fixture/bin/postgres-target" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=17 data_root=%s\n' \
+  "$fixture/postgres/17/data"
+EOF
+  make_executable "$fixture/bin/postgres-target"
+
   cat > "$fixture/release.env" <<EOF
 QUEST_DEPLOY_FIXTURE=1
 RELEASE_ROOT=$fixture
@@ -402,6 +410,12 @@ VALORANT_HEALTH_URL=https://valorant-platform:8000/api/v1/health
 VALORANT_CA_FILE=$fixture/ca.crt
 POSTGRES_CERT_FILE=$fixture/postgres.crt
 POSTGRES_KEY_FILE=$fixture/postgres.key
+POSTGRES_TARGET_HOST=127.0.0.1
+POSTGRES_TARGET_PORT=55432
+POSTGRES_TARGET_DATABASE=quest
+POSTGRES_TARGET_MAJOR=17
+POSTGRES_TARGET_DATA_ROOT=$fixture/postgres/17/data
+POSTGRES_TARGET_SENTINEL_COMMAND=$fixture/bin/postgres-target
 CURL_BIN=$fixture/bin/curl
 VALORANT_CONTAINER_HEALTH_COMMAND=$fixture/bin/valorant-health
 QUEST_READINESS_ACK_COMMAND=$fixture/bin/quest-ready
@@ -771,6 +785,34 @@ grep -Eq 'workflowName.*CI' <<<"$deploy_workflow_source" || {
   printf 'FAIL: deploy workflow does not validate the upstream CI workflow identity\n' >&2
   exit 1
 }
+
+setup_fixture external-postgres-bind
+sed -i 's/^POSTGRES_TARGET_HOST=.*/POSTGRES_TARGET_HOST=10.0.0.7/' "$fixture/release.env"
+assert_failed external-postgres-bind run_release
+
+setup_fixture postgres-port-collision
+sed -i 's/^POSTGRES_TARGET_PORT=.*/POSTGRES_TARGET_PORT=5432/' "$fixture/release.env"
+assert_failed postgres-port-collision run_release
+
+setup_fixture missing-postgres-data-root
+rm -rf -- "$fixture/postgres/17/data"
+assert_failed missing-postgres-data-root run_release
+
+setup_fixture mismatched-postgres-digest
+sed -i 's/^postgres_image=.*/postgres_image=postgres:17-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/' "$fixture/manifest.txt"
+assert_failed mismatched-postgres-digest run_release
+
+setup_fixture missing-postgres-tls-key
+rm -f -- "$fixture/postgres.key"
+assert_failed missing-postgres-tls-key run_release
+
+setup_fixture nonquest-target-url
+printf '%s\n' 'DATABASE_URL=postgresql://127.0.0.1:55432/notquest' >> "$fixture/release.env"
+assert_failed nonquest-target-url run_release
+
+setup_fixture cutover-target-sentinel
+sed -i 's/^POSTGRES_TARGET_HOST=.*/POSTGRES_TARGET_HOST=10.0.0.7/' "$fixture/release.env"
+assert_failed cutover-target-sentinel env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
 
 setup_fixture first-cutover
 [[ "$(RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script")" == validated ]] || {

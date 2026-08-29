@@ -44,7 +44,43 @@ root_file() {
   fi
 }
 
+validate_postgres_target() {
+  local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
+  [[ "$POSTGRES_TARGET_HOST" == 127.0.0.1 ]] || die 'PostgreSQL target host must be the fixed loopback address.'
+  [[ "$POSTGRES_TARGET_PORT" == 55432 ]] || die 'PostgreSQL target port must be the dedicated loopback port.'
+  [[ "$POSTGRES_TARGET_DATABASE" == quest ]] || die 'PostgreSQL target database must be quest.'
+  [[ "$POSTGRES_TARGET_MAJOR" == 17 ]] || die 'PostgreSQL target must be PostgreSQL 17.'
+  [[ "$POSTGRES_TARGET_DATA_ROOT" == /* && "$POSTGRES_TARGET_DATA_ROOT" != / && -d "$POSTGRES_TARGET_DATA_ROOT" && ! -L "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL durable data root is missing or unsafe.'
+  if [[ "$fixture_mode" != 1 ]]; then
+    [[ "$POSTGRES_TARGET_DATA_ROOT" == /srv/quest-esports/postgres/17/data ]] || die 'PostgreSQL durable data root is not canonical.'
+    [[ "$(realpath "$POSTGRES_TARGET_DATA_ROOT" 2>/dev/null)" == "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL durable data root must not contain a symlink.'
+    [[ "$POSTGRES_TARGET_SENTINEL_COMMAND" == /usr/local/sbin/quest-release-postgres-target ]] || die 'PostgreSQL target sentinel path is not canonical.'
+    [[ ! -L "$POSTGRES_TARGET_SENTINEL_COMMAND" && "$(stat -c '%u' "$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" == 0 ]] || die 'PostgreSQL target sentinel must be root-owned and non-symlinked.'
+  fi
+  [[ "$POSTGRES_TARGET_SENTINEL_COMMAND" == /* && "$POSTGRES_TARGET_SENTINEL_COMMAND" != / && -x "$POSTGRES_TARGET_SENTINEL_COMMAND" && ! -L "$POSTGRES_TARGET_SENTINEL_COMMAND" ]] || die 'PostgreSQL target sentinel is missing or unsafe.'
+  sentinel_output="$("$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" || die 'PostgreSQL target sentinel failed.'
+  [[ "$sentinel_output" =~ ^target_kind=([a-z0-9_-]+)[[:space:]]+database=([a-z_][a-z0-9_]*)[[:space:]]+host=([^[:space:]]+)[[:space:]]+port=([0-9]+)[[:space:]]+major=([0-9]+)[[:space:]]+data_root=([^[:space:]]+)$ ]] || die 'PostgreSQL target sentinel output is ambiguous.'
+  sentinel_kind="${BASH_REMATCH[1]}"; sentinel_database="${BASH_REMATCH[2]}"; sentinel_host="${BASH_REMATCH[3]}"; sentinel_port="${BASH_REMATCH[4]}"; sentinel_major="${BASH_REMATCH[5]}"; sentinel_data_root="${BASH_REMATCH[6]}"
+  [[ "$sentinel_kind" == postgresql17 && "$sentinel_database" == "$POSTGRES_TARGET_DATABASE" && "$sentinel_host" == "$POSTGRES_TARGET_HOST" && "$sentinel_port" == "$POSTGRES_TARGET_PORT" && "$sentinel_major" == "$POSTGRES_TARGET_MAJOR" && "$sentinel_data_root" == "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL target sentinel does not identify the approved target.'
+}
+
+validate_database_urls() {
+  local variable url authority path database
+  for variable in DATABASE_URL DIRECT_URL; do
+    url="${!variable:-}"
+    [[ -z "$url" ]] && continue
+    [[ "$url" != *[[:space:]]* && "$url" =~ ^postgres(ql)?://[^/]+/[^/?#]+([?#].*)?$ ]] || die "$variable is not a valid PostgreSQL target URL."
+    authority="${url#*://}"
+    path="${authority#*/}"
+    database="${path%%[?#]*}"
+    [[ "$database" == quest ]] || die "$variable must target the quest database."
+  done
+}
+
 for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND; do
+  require_setting "$setting"
+done
+for setting in POSTGRES_TARGET_HOST POSTGRES_TARGET_PORT POSTGRES_TARGET_DATABASE POSTGRES_TARGET_MAJOR POSTGRES_TARGET_DATA_ROOT POSTGRES_TARGET_SENTINEL_COMMAND; do
   require_setting "$setting"
 done
 [[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must not reuse the Quest signer identity.'
@@ -99,6 +135,8 @@ for setting in VALORANT_CA_FILE POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
   require_setting "$setting"
   root_file "${!setting}"
 done
+validate_postgres_target
+validate_database_urls
 if [[ "$fixture_mode" != 1 ]]; then
   [[ "$(stat -c '%u %a' "$RELEASE_LOCK_PATH" 2>/dev/null)" == '0 660' ]] || die 'canonical release lock ownership or mode is invalid.'
 fi

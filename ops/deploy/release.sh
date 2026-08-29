@@ -64,6 +64,37 @@ root_file() {
     [[ "$(stat -c '%u' "$1" 2>/dev/null)" == 0 ]] || die "required file is not root-owned: $1"
   fi
 }
+validate_postgres_target() {
+  local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
+  require_setting POSTGRES_TARGET_HOST; require_setting POSTGRES_TARGET_PORT; require_setting POSTGRES_TARGET_DATABASE
+  require_setting POSTGRES_TARGET_MAJOR; require_setting POSTGRES_TARGET_DATA_ROOT; require_setting POSTGRES_TARGET_SENTINEL_COMMAND
+  [[ "$POSTGRES_TARGET_HOST" == 127.0.0.1 ]] || die 'PostgreSQL target host must be the fixed loopback address.'
+  [[ "$POSTGRES_TARGET_PORT" == 55432 ]] || die 'PostgreSQL target port must be the dedicated loopback port.'
+  [[ "$POSTGRES_TARGET_DATABASE" == quest ]] || die 'PostgreSQL target database must be quest.'
+  [[ "$POSTGRES_TARGET_MAJOR" == 17 ]] || die 'PostgreSQL target must be PostgreSQL 17.'
+  [[ "$POSTGRES_TARGET_DATA_ROOT" == /* && "$POSTGRES_TARGET_DATA_ROOT" != / && -d "$POSTGRES_TARGET_DATA_ROOT" && ! -L "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL durable data root is missing or unsafe.'
+  if [[ "$fixture_mode" != 1 ]]; then
+    [[ "$POSTGRES_TARGET_DATA_ROOT" == /srv/quest-esports/postgres/17/data ]] || die 'PostgreSQL durable data root is not canonical.'
+    [[ "$(realpath "$POSTGRES_TARGET_DATA_ROOT" 2>/dev/null)" == "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL durable data root must not contain a symlink.'
+    [[ "$POSTGRES_TARGET_SENTINEL_COMMAND" == /usr/local/sbin/quest-release-postgres-target ]] || die 'PostgreSQL target sentinel path is not canonical.'
+    [[ ! -L "$POSTGRES_TARGET_SENTINEL_COMMAND" && "$(stat -c '%u' "$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" == 0 ]] || die 'PostgreSQL target sentinel must be root-owned and non-symlinked.'
+  fi
+  [[ "$POSTGRES_TARGET_SENTINEL_COMMAND" == /* && "$POSTGRES_TARGET_SENTINEL_COMMAND" != / && -x "$POSTGRES_TARGET_SENTINEL_COMMAND" && ! -L "$POSTGRES_TARGET_SENTINEL_COMMAND" ]] || die 'PostgreSQL target sentinel is missing or unsafe.'
+  sentinel_output="$("$POSTGRES_TARGET_SENTINEL_COMMAND" 2>/dev/null)" || die 'PostgreSQL target sentinel failed.'
+  [[ "$sentinel_output" =~ ^target_kind=([a-z0-9_-]+)[[:space:]]+database=([a-z_][a-z0-9_]*)[[:space:]]+host=([^[:space:]]+)[[:space:]]+port=([0-9]+)[[:space:]]+major=([0-9]+)[[:space:]]+data_root=([^[:space:]]+)$ ]] || die 'PostgreSQL target sentinel output is ambiguous.'
+  sentinel_kind="${BASH_REMATCH[1]}"; sentinel_database="${BASH_REMATCH[2]}"; sentinel_host="${BASH_REMATCH[3]}"; sentinel_port="${BASH_REMATCH[4]}"; sentinel_major="${BASH_REMATCH[5]}"; sentinel_data_root="${BASH_REMATCH[6]}"
+  [[ "$sentinel_kind" == postgresql17 && "$sentinel_database" == "$POSTGRES_TARGET_DATABASE" && "$sentinel_host" == "$POSTGRES_TARGET_HOST" && "$sentinel_port" == "$POSTGRES_TARGET_PORT" && "$sentinel_major" == "$POSTGRES_TARGET_MAJOR" && "$sentinel_data_root" == "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL target sentinel does not identify the approved target.'
+}
+validate_database_urls() {
+  local variable url authority path database
+  for variable in DATABASE_URL DIRECT_URL; do
+    url="${!variable:-}"
+    [[ -z "$url" ]] && continue
+    [[ "$url" != *[[:space:]]* && "$url" =~ ^postgres(ql)?://[^/]+/[^/?#]+([?#].*)?$ ]] || die "$variable is not a valid PostgreSQL target URL."
+    authority="${url#*://}"; path="${authority#*/}"; database="${path%%[?#]*}"
+    [[ "$database" == quest ]] || die "$variable must target the quest database."
+  done
+}
 validate_release_environment
 for setting in QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL; do require_setting "$setting"; done
 validate_endpoint_identities
@@ -77,6 +108,7 @@ require_setting RELEASE_ROOT
 require_setting QUEST_COMPOSE_TEMPLATE
 require_setting VALORANT_COMPOSE_SOURCE
 require_setting DOCKER_BIN
+require_setting POSTGRES_IMAGE_APPROVED_REF
 absolute_nonroot RELEASE_ROOT "$RELEASE_ROOT"
 absolute_nonroot RELEASE_LOCK_PATH "$release_lock_path"
 root_file "$QUEST_COMPOSE_TEMPLATE"
@@ -115,6 +147,13 @@ for manifest_key in frontend_image backend_image migrator_image valorant_image; 
   [[ "${manifest[$manifest_key]}" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die "$manifest_key must be an exact GHCR digest reference."
 done
 [[ "${manifest[postgres_image]}" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die 'postgres_image must be the exact PostgreSQL 17 Bookworm digest.'
+[[ "${manifest[postgres_image]}" == "$POSTGRES_IMAGE_APPROVED_REF" ]] || die 'approved PostgreSQL image does not match the manifest.'
+for setting in POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
+  require_setting "$setting"
+  root_file "${!setting}"
+done
+validate_postgres_target
+validate_database_urls
 
 quest_project="quest-prod"
 valorant_project="valorant-prod"
