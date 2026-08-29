@@ -161,3 +161,124 @@ test("event photo route uses the preview normally and the original for an allowe
     restore();
   }
 });
+
+test("event album controllers pass request data through and return their response envelopes", async () => {
+  const calls = [];
+  const streamedPaths = [];
+  const adminPhoto = {
+    contentType: "image/jpeg",
+    size: 12,
+    path: "private/event-photo.jpg",
+    originalName: "event-photo.jpg",
+  };
+  const { module: controller, restore } = loadModuleWithMocks(albumControllerPath, {
+    [albumServicePath]: {
+      listPublicEventAlbums: async (query) => ({ items: [query], pagination: { page: 1 }, totalPhotos: 2 }),
+      getPublicEventAlbumBySlug: async (slug, query) => ({ slug, query }),
+      getAdminEventAlbumPhoto: async (options) => {
+        calls.push(["getAdminEventAlbumPhoto", options]);
+        return adminPhoto;
+      },
+      listAdminEventAlbums: async (query) => ({ items: [query], pagination: { page: 2 } }),
+      getAdminEventAlbumById: async (albumId) => ({ id: albumId }),
+      createEventAlbum: async (body) => {
+        calls.push(["createEventAlbum", body]);
+        return { id: "created", title: body.title };
+      },
+      updateEventAlbum: async (albumId, body) => {
+        calls.push(["updateEventAlbum", albumId, body]);
+        return { id: albumId, title: body.title };
+      },
+      deleteEventAlbum: async (albumId) => calls.push(["deleteEventAlbum", albumId]),
+      uploadEventAlbumPhotos: async (options) => {
+        calls.push(["uploadEventAlbumPhotos", options]);
+        return { id: options.albumId, photoCount: options.files.length };
+      },
+      reorderEventAlbumPhotos: async (albumId, photoIds) => {
+        calls.push(["reorderEventAlbumPhotos", albumId, photoIds]);
+        return { id: albumId, photoIds };
+      },
+      deleteEventAlbumPhoto: async (albumId, photoId) => calls.push(["deleteEventAlbumPhoto", albumId, photoId]),
+      getPublicEventAlbumPhoto: async () => ({ contentType: "image/jpeg", data: Buffer.from("public") }),
+    },
+    [downloadPath]: { prepareEventAlbumPhotoDownload: async (image) => image },
+    [streamResponsePath]: {
+      streamFileToResponse: async (filePath) => streamedPaths.push(filePath),
+    },
+  });
+
+  const response = () => ({
+    headers: {},
+    body: null,
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; },
+    send(body) { this.body = body; },
+  });
+  const invoke = async (name, req) => {
+    const res = response();
+    let nextError;
+    await controller[name](req, res, (error) => { nextError = error; });
+    assert.equal(nextError, undefined, `${name} should not call next with an error`);
+    return res;
+  };
+
+  try {
+    assert.deepEqual((await invoke("getEventAlbums", { query: { page: "2" } })).body, {
+      success: true,
+      albums: [{ page: "2" }],
+      pagination: { page: 1 },
+      totalPhotos: 2,
+    });
+    assert.deepEqual((await invoke("getEventAlbum", { params: { slug: "finals" }, query: { photoPage: "2" } })).body, {
+      success: true,
+      album: { slug: "finals", query: { photoPage: "2" } },
+    });
+    assert.deepEqual((await invoke("getAdminEventAlbums", { query: { search: "finals" } })).body, {
+      success: true,
+      albums: [{ search: "finals" }],
+      pagination: { page: 2 },
+    });
+    assert.deepEqual((await invoke("getAdminEventAlbum", { params: { albumId: "album-1" } })).body, {
+      success: true,
+      album: { id: "album-1" },
+    });
+    assert.equal((await invoke("createAdminEventAlbum", { body: { title: "Finals" } })).statusCode, 201);
+    assert.equal((await invoke("updateAdminEventAlbum", { params: { albumId: "album-1" }, body: { title: "Updated" } })).statusCode, 200);
+    assert.equal((await invoke("deleteAdminEventAlbum", { params: { albumId: "album-1" } })).body.message, "Event album deleted.");
+    assert.equal((await invoke("uploadAdminEventAlbumPhotos", {
+      params: { albumId: "album-1" },
+      body: { title: "Stage" },
+      files: [{ originalname: "stage.jpg" }],
+    })).statusCode, 201);
+    assert.equal((await invoke("reorderAdminEventAlbumPhotos", {
+      params: { albumId: "album-1" },
+      body: { photoIds: ["photo-1"] },
+    })).statusCode, 200);
+    assert.equal((await invoke("deleteAdminEventAlbumPhoto", {
+      params: { albumId: "album-1", photoId: "photo-1" },
+    })).body.message, "Album photo deleted.");
+
+    const adminStream = await invoke("streamAdminEventAlbumPhoto", {
+      params: { albumId: "album-1", photoId: "photo-1" },
+    });
+    assert.equal(adminStream.headers["Cache-Control"], "private, max-age=31536000, immutable");
+    assert.equal(adminStream.headers["Content-Length"], 12);
+    assert.deepEqual(streamedPaths, ["private/event-photo.jpg"]);
+    assert.deepEqual(calls, [
+      ["createEventAlbum", { title: "Finals" }],
+      ["updateEventAlbum", "album-1", { title: "Updated" }],
+      ["deleteEventAlbum", "album-1"],
+      ["uploadEventAlbumPhotos", {
+        albumId: "album-1",
+        body: { title: "Stage" },
+        files: [{ originalname: "stage.jpg" }],
+      }],
+      ["reorderEventAlbumPhotos", "album-1", ["photo-1"]],
+      ["deleteEventAlbumPhoto", "album-1", "photo-1"],
+      ["getAdminEventAlbumPhoto", { albumId: "album-1", photoId: "photo-1" }],
+    ]);
+  } finally {
+    restore();
+  }
+});

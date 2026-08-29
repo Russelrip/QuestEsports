@@ -17,6 +17,7 @@ const nginxConfig = fs.existsSync(nginxConfigPath) ? fs.readFileSync(nginxConfig
 const verifyRelease = read("ops/deploy/verify-release.sh");
 const releaseEnv = read("ops/deploy/release.env.example");
 const frontendApi = read("frontend/lib/api.ts");
+const ciWorkflow = read(".github/workflows/ci.yml");
 const imageWorkflow = read(".github/workflows/build-container-images.yml");
 const deployWorkflow = read(".github/workflows/deploy-compose.yml");
 const postgresBootstrap = read("ops/docker/postgres/init/001-bootstrap-roles.sql");
@@ -565,6 +566,7 @@ test("deployment rejects a downstream build SHA that differs from its upstream C
 
 test("frontend SSR selects an explicit internal API origin while browsers keep the public origin", () => {
   const frontend = serviceBlock("frontend");
+  const frontendCiJob = ciWorkflow.match(/(?:^|\n)  frontend:[\s\S]*?(?=\n  [a-z-]+:|$)/)?.[0] || "";
   assert.match(
     frontend,
     /(?:INTERNAL_API_URL|SERVER_API_URL|API_INTERNAL_ORIGIN):\s*["']?https?:\/\/(?:backend|quest-backend):\d+/,
@@ -584,6 +586,11 @@ test("frontend SSR selects an explicit internal API origin while browsers keep t
     frontendApi,
     /typeof window[\s\S]{0,500}NEXT_PUBLIC_API_URL|NEXT_PUBLIC_API_URL[\s\S]{0,500}typeof window/,
     "browser URL selection must remain based on the public API origin",
+  );
+  assert.match(
+    frontendCiJob,
+    /^\s+INTERNAL_API_URL:\s*http:\/\/127\.0\.0\.1:5011\s*$/m,
+    "frontend CI must provide the server-only backend origin for SSR requests",
   );
 });
 

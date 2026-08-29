@@ -17,6 +17,7 @@ const run = (command, args, env) =>
 
 const env = {
   ...process.env,
+  INTERNAL_API_URL: "http://127.0.0.1:5011",
   NEXT_PUBLIC_API_URL: "http://127.0.0.1:5011",
   NEXT_PUBLIC_SITE_URL: "http://127.0.0.1:3000",
   PLAYWRIGHT_MOCK_API_PORT: "5011",
