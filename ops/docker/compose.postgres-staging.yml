@@ -1,0 +1,7 @@
+# Temporary staging overlay. Do not include this file in the final production
+# topology; use it only while PM2 or host-run backup tools need database access.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}:5432"

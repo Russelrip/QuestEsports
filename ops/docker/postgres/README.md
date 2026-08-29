@@ -1,10 +1,28 @@
 # Quest PostgreSQL 17 production contract
 
 This directory contains the first-boot role bootstrap and the PostgreSQL
-healthcheck used by `ops/docker/compose.production.yml`. The Compose file is
-the only production database topology: PostgreSQL 17 Bookworm is supplied as
-`POSTGRES_IMAGE` by the signed release manifest and is never built or exposed
-on a host port.
+healthcheck used by `ops/docker/compose.production.yml`. The base Compose file
+is the final production database topology: PostgreSQL 17 Bookworm is supplied
+as `POSTGRES_IMAGE` by the signed release manifest and is never built or
+exposed on a host port.
+
+`ops/docker/compose.postgres-staging.yml` is a temporary overlay, not part of
+the final base topology. Apply it only while PM2 or a host-run backup tool
+needs database access during staging. It publishes PostgreSQL exactly on the
+host loopback interface at `127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}` and
+must be removed from the Compose invocation when staging access is no longer
+needed:
+
+```bash
+docker compose \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml \
+  up -d postgres
+```
+
+The base file must continue to be used alone for the final production
+topology. The overlay must never be copied into that file or used to expose
+PostgreSQL on a non-loopback interface.
 
 ## Host preparation
 

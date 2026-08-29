@@ -87,7 +87,12 @@ services:
           - quest-backend
 
   postgres:
-    # The release manifest must resolve this to postgres:17-bookworm@sha256:<digest>.
+    # PostgreSQL is private to the internal database and quest-shared networks.
+    # Do not publish a host port here. The temporary compose.postgres-staging.yml
+    # overlay is the only approved host-run access path during staging.
+    # The release manifest must resolve this to the approved PostgreSQL 17
+    # Bookworm digest:
+    # postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
     image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be supplied by the release manifest (PostgreSQL 17 Bookworm digest)}
     environment:
       POSTGRES_DB: quest

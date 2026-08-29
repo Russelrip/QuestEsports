@@ -11,6 +11,7 @@ const read = (relative) =>
 const dockerfile = read("ops/docker/backend.production.Dockerfile");
 const dockerignore = read("backend/.dockerignore");
 const productionCompose = read("ops/docker/compose.production.yml");
+const stagingCompose = read("ops/docker/compose.postgres-staging.yml");
 const productionEnv = read("ops/docker/quest.production.env.example");
 const nginxConfigPath = path.join(repoRoot, "ops/docker/nginx/quest.conf");
 const nginxConfig = fs.existsSync(nginxConfigPath) ? fs.readFileSync(nginxConfigPath, "utf8").replace(/\r\n/g, "\n") : "";
@@ -22,6 +23,27 @@ const imageWorkflow = read(".github/workflows/build-container-images.yml");
 const deployWorkflow = read(".github/workflows/deploy-compose.yml");
 const postgresBootstrap = read("ops/docker/postgres/init/001-bootstrap-roles.sql");
 const postgresHealthcheck = read("ops/docker/postgres/healthcheck.sh");
+
+const composeImageFixtures = {
+  QUEST_FRONTEND_IMAGE:
+    "ghcr.io/questesports/quest-frontend@sha256:" + "a".repeat(64),
+  QUEST_BACKEND_IMAGE:
+    "ghcr.io/questesports/quest-backend@sha256:" + "b".repeat(64),
+  QUEST_MIGRATOR_IMAGE:
+    "ghcr.io/questesports/quest-migrator@sha256:" + "c".repeat(64),
+  POSTGRES_IMAGE:
+    "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0",
+  VALORANT_IMAGE:
+    "ghcr.io/valorant/valorant-platform@sha256:" + "d".repeat(64),
+};
+
+const renderComposeImages = (source) =>
+  source.replace(
+    /\$\{([A-Z_]+):\?[^}]+\}/g,
+    (_, variable) => composeImageFixtures[variable] || "",
+  );
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const unquote = (value) => {
   const trimmed = value.trim();
@@ -420,6 +442,38 @@ test("production Compose has a fixed project and exact loopback publications", (
   assert.doesNotMatch(productionCompose, /-\s+\.{1,2}\//);
   assert.match(productionCompose, /quest-shared:[\s\S]*?name:\s*quest-shared/);
   assert.match(productionCompose, /quest-shared:[\s\S]*?external:\s*true/);
+});
+
+test("production and staging Compose render the private PostgreSQL topology", () => {
+  const renderedProductionCompose = renderComposeImages(productionCompose);
+  assert.match(renderedProductionCompose, /name:\s+quest-prod/);
+  assert.match(
+    productionCompose,
+    /postgres:\s*\n(?:.|\n)*image:\s*\$\{POSTGRES_IMAGE/,
+  );
+  assert.doesNotMatch(serviceBlock("postgres"), /\bports:/);
+  assert.match(
+    stagingCompose,
+    /127\.0\.0\.1:\$\{POSTGRES_STAGING_HOST_PORT:-55432\}:5432/,
+  );
+  assert.match(stagingCompose, /services:\s*\n\s+postgres:/);
+
+  // Rendered image assertions prove the required variables are replaced in
+  // the Compose fixture rather than merely repeating expected constants.
+  for (const image of [
+    composeImageFixtures.QUEST_FRONTEND_IMAGE,
+    composeImageFixtures.QUEST_BACKEND_IMAGE,
+    composeImageFixtures.POSTGRES_IMAGE,
+  ]) {
+    assert.match(renderedProductionCompose, new RegExp(`image:\\s*${escapeRegExp(image)}`));
+  }
+
+  const stagingPortMappings = [...stagingCompose.matchAll(/^\s+-\s+"([^"]+)"\s*$/gm)].map(
+    (match) => match[1],
+  );
+  assert.deepEqual(stagingPortMappings, [
+    "127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}:5432",
+  ]);
 });
 
 test("production backend receives mandatory runtime configuration", () => {
@@ -963,8 +1017,14 @@ test("production images are manifest-supplied and digest-oriented", () => {
   }
   assert.match(productionEnv, /^QUEST_MIGRATOR_IMAGE=$/m);
   assert.match(productionEnv, /^POSTGRES_IMAGE=$/m);
-  assert.match(productionCompose, /postgres:17-bookworm@sha256:<digest>/);
-  assert.match(productionEnv, /postgres:17-bookworm@sha256:<64-hex-digest>/);
+  assert.match(
+    productionCompose,
+    /postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0/,
+  );
+  assert.match(
+    productionEnv,
+    /postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0/,
+  );
   const fallbackManifest = {
     QUEST_FRONTEND_IMAGE: `ghcr.io/questesports/quest-frontend@sha256:${"a".repeat(64)}`,
     QUEST_BACKEND_IMAGE: `ghcr.io/questesports/quest-backend@sha256:${"b".repeat(64)}`,
