@@ -63,7 +63,14 @@ recovery_command() {
 record_recovery_evidence() {
   local bundle="$1" boundary="$2" result="$3"
   [[ -n "$bundle" && -d "$bundle" ]] || return 0
-  printf 'boundary=%s\nresult=%s\nlegacy_restart_allowed=%s\n' "$boundary" "$result" "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)" > "$bundle/recovery-evidence.txt" 2>/dev/null || return 1
+  {
+    printf 'boundary=%s\n' "$boundary"
+    printf 'result=%s\n' "$result"
+    printf 'legacy_restart_allowed=%s\n' "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)"
+    printf 'supabase_authority_boundary=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf stale-after-first-vps-write || printf preserved-before-first-vps-write)"
+    printf 'supabase_url_rollback=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf prohibited || printf allowed-before-writer-admission)"
+    printf 'reconciliation_decision=%s\n' "${SUPABASE_RECONCILIATION_DECISION:-not-required}"
+  } > "$bundle/recovery-evidence.txt" 2>/dev/null || return 1
   chmod 600 "$bundle/recovery-evidence.txt" 2>/dev/null || return 1
 }
 
@@ -257,6 +264,10 @@ safe_bundle "$recovery_bundle" 'post-commit evidence bundle'
 validate_commit_point "$recovery_bundle"
 validate_predecessor_metadata "$recovery_bundle"
 [[ "$commit_point_requires_postcommit" == true ]] || { printf '%s\n' 'URGENT: post-commit recovery requires durable writer-admission evidence.' >&2; postcommit_status=1; }
+if [[ -n "${SUPABASE_URL_ROLLBACK_COMMAND:-}" ]]; then
+  printf '%s\n' 'URGENT: blind Supabase URL rollback is prohibited after the first VPS write; an explicit reconciliation/data-loss decision is required.' >&2
+  postcommit_status=1
+fi
 record_recovery_evidence "$recovery_bundle" post-commit-recovery started || postcommit_status=1
 recovery_command "${QUEST_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1
 recovery_command "${VALORANT_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1
@@ -276,6 +287,10 @@ else
   action_rc=1
 fi
 if (( action_rc != 0 )) || [[ "$action" != fix-forward && "$action" != controlled-restore ]]; then postcommit_status=1; fi
+if [[ "$action" == return-to-supabase ]]; then
+  printf '%s\n' 'URGENT: return to Supabase requires explicit reconciliation/data-loss approval; refusing a blind URL rollback.' >&2
+  postcommit_status=1
+fi
 record_recovery_evidence "$recovery_bundle" post-commit-recovery "$([[ "$postcommit_status" == 0 ]] && printf completed || printf incomplete)" || postcommit_status=1
 (( postcommit_status == 0 )) || die 'post-commit recovery was incomplete; inspect recovery-evidence.txt.'
 printf 'Post-commit recovery boundary recorded: action=%s expected_loss_rpo=%s\n' "$action" "$EXPECTED_LOSS_RPO"

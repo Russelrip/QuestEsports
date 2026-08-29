@@ -535,6 +535,8 @@ record_recovery_evidence() {
     printf 'release_sha=%s\n' "$release_sha"
     printf 'legacy_restart_allowed=%s\n' "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)"
     printf 'writer_admitted=%s\n' "$writer_admitted"
+    printf 'supabase_authority_boundary=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf stale-after-first-vps-write || printf preserved-before-first-vps-write)"
+    printf 'supabase_url_rollback=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf prohibited || printf allowed-before-writer-admission)"
   } > "$evidence_file" 2>/dev/null || return 1
   chmod 600 "$evidence_file" 2>/dev/null || return 1
 }

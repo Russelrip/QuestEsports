@@ -224,6 +224,9 @@ chmod 600 "$compose_env_file"
 freeze_active=false
 writer_admitted=false
 commit_recorded=false
+url_switch_started=false
+quest_url_switched=false
+valorant_url_switched=false
 old_units_stopped=false
 old_valorant_was_active=false
 old_quest_stopped=false
@@ -322,8 +325,23 @@ validate_aliases() {
 run_hook() {
   local variable="$1" expected="${2:-}" output
   command_setting "$variable"
-  output="$(TARGET_AUTHORITY=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" POSTGRES_IMAGE="${manifest[postgres_image]:-}" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" POSTGRES_IMAGE="${manifest[postgres_image]:-}" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
   if [[ -n "$expected" ]]; then [[ "$output" == "$expected" ]] || die "$variable command acknowledgement was invalid."; fi
+}
+run_url_switch() {
+  local variable="$1" group="$2" output expected
+  command_setting "$variable"
+  url_switch_started=true
+  output="$(DATABASE_URL_SWITCH_GROUP="$group" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  expected="switched target=quest-postgres writer_group=$group"
+  [[ "$output" == "$expected" ]] || die "$variable command acknowledgement was invalid."
+}
+run_service_restart() {
+  local variable="$1" group="$2" project="$3" output expected
+  command_setting "$variable"
+  output="$(SERVICE_RESTART_GROUP="$group" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  expected="restarted target=quest-postgres project=$project writer_group=$group"
+  [[ "$output" == "$expected" ]] || die "$variable command acknowledgement was invalid."
 }
 run_migrator() {
   # The migrator acknowledgement is `migrated image=<digest> target=quest-postgres`.
@@ -445,7 +463,7 @@ precommit_rollback() {
       printf 'URGENT: pre-commit recovery hook %s is missing or not executable.\n' "$variable" >&2
       return 1
     fi
-    output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" "$command" 2>/dev/null)"; rc=$?
+    output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$runtime_env_file" "$command" 2>/dev/null)"; rc=$?
     if (( rc != 0 )) || [[ -n "$expected" && "$output" != "$expected" ]]; then
       printf 'URGENT: pre-commit recovery hook %s failed or returned an invalid acknowledgement.\n' "$variable" >&2
       return 1
@@ -454,6 +472,14 @@ precommit_rollback() {
   }
   if [[ -n "${CUTOVER_ABORT_COMMAND:-}" ]]; then
     recovery_hook CUTOVER_ABORT_COMMAND || status=1
+  fi
+  if [[ "$url_switch_started" == true ]]; then
+    if [[ -z "${CUTOVER_SUPABASE_URL_RESTORE_COMMAND:-}" ]]; then
+      printf '%s\n' 'URGENT: database URL switching started but no pre-commit Supabase URL restore contract is configured.' >&2
+      status=1
+    else
+      recovery_hook CUTOVER_SUPABASE_URL_RESTORE_COMMAND restored || status=1
+    fi
   fi
   if [[ -f "$stage_dir/compose.production.yml" && -f "$stage_dir/valorant.compose.yml" ]]; then
     compose --env-file "$compose_env_file" -f "$stage_dir/compose.production.yml" --project-name quest-prod down --remove-orphans >/dev/null 2>&1 || status=1
@@ -538,6 +564,11 @@ record_recovery_evidence() {
     printf 'release_sha=%s\n' "$release_sha"
     printf 'legacy_restart_allowed=%s\n' "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)"
     printf 'writer_admitted=%s\n' "$writer_admitted"
+    printf 'url_switch_started=%s\n' "$url_switch_started"
+    printf 'quest_url_switched=%s\n' "$quest_url_switched"
+    printf 'valorant_url_switched=%s\n' "$valorant_url_switched"
+    printf 'supabase_authority_boundary=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf stale-after-first-vps-write || printf preserved-before-first-vps-write)"
+    printf 'supabase_url_rollback=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf prohibited || printf allowed-before-writer-admission)"
   } > "$stage_dir/recovery-evidence.txt" 2>/dev/null || return 1
   chmod 600 "$stage_dir/recovery-evidence.txt" 2>/dev/null || return 1
 }
@@ -658,10 +689,23 @@ validate_active_project "$stage_dir/valorant.compose.yml" "$valorant_project" "$
   "valorant-platform=${manifest[valorant_image]}"
 validate_aliases
 
-command_setting QUEST_READINESS_ACK_COMMAND
-command_setting VALORANT_READINESS_ACK_COMMAND
-[[ "$("$QUEST_READINESS_ACK_COMMAND" 2>/dev/null)" == ready ]] || die 'Quest frozen readiness was not acknowledged.'
-[[ "$("$VALORANT_READINESS_ACK_COMMAND" 2>/dev/null)" == ready ]] || die 'VALORANT frozen readiness was not acknowledged.'
+# The candidates have only been proven frozen/read-only so far. The authority
+# switch is two explicit writer-group operations, followed by two explicit
+# service restarts. No writer can be admitted while either URL or service is
+# still on the pre-switch state.
+for setting in QUEST_DATABASE_URL_SWITCH_COMMAND VALORANT_DATABASE_URL_SWITCH_COMMAND QUEST_SERVICE_RESTART_COMMAND VALORANT_SERVICE_RESTART_COMMAND QUEST_READINESS_ACK_COMMAND VALORANT_READINESS_ACK_COMMAND; do
+  command_setting "$setting"
+done
+run_url_switch QUEST_DATABASE_URL_SWITCH_COMMAND quest
+quest_url_switched=true
+run_url_switch VALORANT_DATABASE_URL_SWITCH_COMMAND valorant
+valorant_url_switched=true
+run_service_restart QUEST_SERVICE_RESTART_COMMAND quest quest-prod
+run_service_restart VALORANT_SERVICE_RESTART_COMMAND valorant valorant-prod
+validate_postgres_target
+run_database_readiness
+run_hook QUEST_READINESS_ACK_COMMAND ready
+run_hook VALORANT_READINESS_ACK_COMMAND ready
 
 command_setting POST_COMMIT_RECOVERY_ARM_COMMAND
 run_hook POST_COMMIT_RECOVERY_ARM_COMMAND armed
