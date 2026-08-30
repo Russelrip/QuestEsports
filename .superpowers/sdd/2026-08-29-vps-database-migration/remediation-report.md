@@ -74,7 +74,7 @@ Passed:
 - `git diff --check` — passed; only normal Git LF/CRLF conversion warnings were
   emitted.
 
-Current follow-up validation for the uncommitted pass:
+Validation rerun for the committed follow-up pass:
 
 - `node --test backend/tests/production-container-config.test.js` — 35/35,
   including asyncpg TLS contract and composite-type owner normalization.
