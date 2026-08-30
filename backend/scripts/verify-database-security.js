@@ -1,11 +1,40 @@
+const fs = require("node:fs");
 const { prisma } = require("../src/lib/prisma");
+
+const verifySecurityUrl = () => {
+  if (!process.env.SECURITY_VERIFY_TARGET && !process.env.TARGET_AUTHORITY) return;
+  const rawUrl = process.env.SECURITY_VERIFY_DATABASE_URL ||
+    (process.env.SECURITY_VERIFY_DATABASE_URL_FILE &&
+      fs.readFileSync(process.env.SECURITY_VERIFY_DATABASE_URL_FILE, "utf8").trim()) ||
+    process.env.DATABASE_URL;
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error("security verification database URL is invalid");
+  }
+  if (!["postgres:", "postgresql:"].includes(url.protocol)) {
+    throw new Error("security verification requires a libpq PostgreSQL URL");
+  }
+  const isCompose = url.hostname === "quest-postgres" && url.port === "5432";
+  const isStagedLoopback = url.hostname === "127.0.0.1" && url.port === "55432";
+  if ((!isCompose && !isStagedLoopback) || (url.hostname === "127.0.0.1" && url.port === 5432)) {
+    throw new Error("security verification URL must target quest-postgres:5432 or staged 127.0.0.1:55432");
+  }
+  if (url.pathname !== "/quest" || url.username !== "quest_recovery_admin" || !url.password) {
+    throw new Error("security verification URL must use the protected quest_recovery_admin identity");
+  }
+};
 
 const verifyTargetBinding = async () => {
   if (!process.env.TARGET_AUTHORITY && !process.env.SECURITY_VERIFY_TARGET) return;
+  verifySecurityUrl();
+  const expectedHost = process.env.TARGET_AUTHORITY === "staged-loopback" ? "127.0.0.1" : "quest-postgres";
+  const expectedPort = process.env.TARGET_AUTHORITY === "staged-loopback" ? "55432" : "5432";
   if (
-    process.env.TARGET_AUTHORITY !== "quest-postgres" ||
-    process.env.TARGET_DATABASE_HOST !== "quest-postgres" ||
-    process.env.TARGET_DATABASE_PORT !== "5432" ||
+    !["quest-postgres", "staged-loopback"].includes(process.env.TARGET_AUTHORITY) ||
+    process.env.TARGET_DATABASE_HOST !== expectedHost ||
+    process.env.TARGET_DATABASE_PORT !== expectedPort ||
     process.env.TARGET_DATABASE_NAME !== "quest" ||
     process.env.TARGET_POSTGRES_MAJOR !== "17"
   ) {
@@ -15,6 +44,8 @@ const verifyTargetBinding = async () => {
     SELECT current_database() AS "databaseName",
            current_setting('server_version_num') AS "serverVersionNum",
            inet_server_port() AS "serverPort",
+           session_user AS "sessionUser",
+           current_user AS "currentUser",
            CASE WHEN EXISTS (
              SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl
            ) THEN 'on' ELSE 'off' END AS "sslStatus"
@@ -23,7 +54,9 @@ const verifyTargetBinding = async () => {
     !observed ||
     observed.databaseName !== "quest" ||
     !/^17\d{4,}$/.test(String(observed.serverVersionNum)) ||
-    String(observed.serverPort) !== "5432" ||
+    String(observed.serverPort) !== expectedPort ||
+    observed.sessionUser !== "quest_recovery_admin" ||
+    observed.currentUser !== "quest_recovery_admin" ||
     observed.sslStatus !== "on"
   ) {
     throw new Error("security verification connected to an unexpected database target");
@@ -86,16 +119,19 @@ const verify = async () => {
       AND rolbypassrls
     ORDER BY rolname
   `;
+  const unsafeRuntimeOrMigratorRoles = await prisma.$queryRaw`
+    SELECT rolname AS "roleName"
+    FROM pg_roles
+    WHERE rolname IN ('quest_runtime', 'quest_migrator', 'val_runtime', 'val_migrator')
+      AND (NOT rolcanlogin OR rolinherit OR rolsuper OR rolcreatedb OR rolcreaterole
+           OR rolreplication OR rolbypassrls)
+    ORDER BY rolname
+  `;
   const recoveryAdminContract = await prisma.$queryRaw`
-    SELECT CASE WHEN r.rolcanlogin AND NOT r.rolsuper AND NOT r.rolcreatedb
-      AND r.rolcreaterole AND NOT r.rolreplication AND NOT r.rolbypassrls
+    SELECT CASE WHEN r.rolcanlogin AND r.rolsuper AND NOT r.rolcreatedb
+      AND r.rolcreaterole AND NOT r.rolreplication AND r.rolbypassrls
       AND NOT r.rolinherit AND r.rolconnlimit = 1
-      AND EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles parent ON parent.oid = m.roleid
-                  WHERE m.member = r.oid AND parent.rolname = 'quest_migrator')
-      AND EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles parent ON parent.oid = m.roleid
-                  WHERE m.member = r.oid AND parent.rolname = 'val_migrator')
-      AND NOT EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles parent ON parent.oid = m.roleid
-                      WHERE m.member = r.oid AND parent.rolname IN ('quest_runtime', 'val_runtime'))
+      AND NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid)
       THEN 'verified' ELSE 'failed' END AS status
     FROM pg_roles r WHERE r.rolname = 'quest_recovery_admin'
   `;
@@ -127,6 +163,36 @@ const verify = async () => {
     UNION ALL
     SELECT grantee, schema_name AS "schemaName", object_name AS "objectName", privilege
     FROM public_table_grants
+    UNION ALL
+    SELECT r.rolname, n.nspname, p.proname, 'EXECUTE'
+    FROM protected_roles r
+    JOIN pg_proc p ON has_function_privilege(r.oid, p.oid, 'EXECUTE')
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname IN ('public', 'valorant')
+    UNION ALL
+    SELECT r.rolname, n.nspname, t.typname, 'USAGE'
+    FROM protected_roles r
+    JOIN pg_type t ON has_type_privilege(r.oid, t.oid, 'USAGE')
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE n.nspname IN ('public', 'valorant') AND t.typelem = 0
+    UNION ALL
+    SELECT 'PUBLIC'::name, n.nspname, p.proname, acl.privilege_type
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+    WHERE n.nspname IN ('public', 'valorant') AND acl.grantee = 0
+    UNION ALL
+    SELECT 'PUBLIC'::name, n.nspname, t.typname, acl.privilege_type
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    CROSS JOIN LATERAL aclexplode(COALESCE(t.typacl, acldefault('T', t.typowner))) acl
+    WHERE n.nspname IN ('public', 'valorant') AND t.typelem = 0 AND acl.grantee = 0
+    UNION ALL
+    SELECT 'PUBLIC'::name, n.nspname, c.relname, acl.privilege_type
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('S', c.relowner))) acl
+    WHERE n.nspname IN ('public', 'valorant') AND c.relkind = 'S' AND acl.grantee = 0
     ORDER BY grantee, "schemaName", "objectName", privilege
   `;
   const crossSchemaGrants = await prisma.$queryRaw`
@@ -151,6 +217,18 @@ const verify = async () => {
     SELECT "roleName", "schemaName", NULL::name AS "objectName", privilege FROM schema_grants
     UNION ALL
     SELECT "roleName", "schemaName", "objectName", privilege FROM table_grants
+    UNION ALL
+    SELECT r.role_name, r.schema_name, p.proname, 'EXECUTE'
+    FROM cross_schema_roles r
+    JOIN pg_namespace n ON n.nspname = r.schema_name
+    JOIN pg_proc p ON p.pronamespace = n.oid
+    WHERE has_function_privilege(r.role_name, p.oid, 'EXECUTE')
+    UNION ALL
+    SELECT r.role_name, r.schema_name, t.typname, 'USAGE'
+    FROM cross_schema_roles r
+    JOIN pg_namespace n ON n.nspname = r.schema_name
+    JOIN pg_type t ON t.typnamespace = n.oid AND t.typelem = 0
+    WHERE has_type_privilege(r.role_name, t.oid, 'USAGE')
     ORDER BY "roleName", "schemaName", "objectName", privilege
   `;
   const objectOwnership = await prisma.$queryRaw`
@@ -223,6 +301,7 @@ const verify = async () => {
     objectOwnership.length
     || recoveryAdminContract.length !== 1
     || recoveryAdminContract[0].status !== "verified"
+    || unsafeRuntimeOrMigratorRoles.length
   ) {
     if (tablesWithoutRls.length) {
       console.error(
@@ -253,6 +332,9 @@ const verify = async () => {
     if (bypassRoles.length) {
       console.error(`Runtime roles with BYPASSRLS: ${bypassRoles.map(({ roleName }) => roleName).join(", ")}`);
     }
+    if (unsafeRuntimeOrMigratorRoles.length) {
+      console.error(`Runtime or migrator roles with unsafe attributes: ${unsafeRuntimeOrMigratorRoles.map(({ roleName }) => roleName).join(", ")}`);
+    }
     if (crossSchemaGrants.length) {
       console.error(
         `Unexpected cross-schema runtime grants: ${crossSchemaGrants
@@ -270,7 +352,7 @@ const verify = async () => {
       );
     }
     if (recoveryAdminContract.length !== 1 || recoveryAdminContract[0].status !== "verified") {
-      console.error("Recovery administrator role contract is missing, over-privileged, or lacks migrator ownership memberships.");
+      console.error("Recovery administrator role contract is missing or does not match the protected direct-superuser model.");
     }
     process.exitCode = 1;
     return;

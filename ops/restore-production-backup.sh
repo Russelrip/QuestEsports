@@ -91,10 +91,8 @@ for name in UPLOAD_ROOT PRIVATE_UPLOAD_ROOT BACKUP_AGE_IDENTITY_FILE; do
   fi
 done
 
-# Production restores use a dedicated recovery administrator credential. The
-# legacy DIRECT_URL name remains accepted only by disposable test fixtures so
-# rehearsal contracts cannot accidentally become the production credential
-# path.
+# Production restores and disposable rehearsals use the same dedicated recovery
+# administrator credential. The runtime DIRECT_URL is never a restore input.
 if [[ "$restore_test_fixture" == false ]]; then
   [[ -n "${RECOVERY_ADMIN_URL:-}" ]] || {
     echo "RECOVERY_ADMIN_URL is required for a production restore." >&2
@@ -106,7 +104,7 @@ if [[ "$restore_test_fixture" == false ]]; then
   }
   restore_url="$RECOVERY_ADMIN_URL"
 else
-  restore_url="${RECOVERY_ADMIN_URL:-${DIRECT_URL:-}}"
+  restore_url="${RECOVERY_ADMIN_URL:-}"
 fi
 [[ -n "$restore_url" ]] || {
   echo "A restore administrator URL is required." >&2
@@ -364,7 +362,8 @@ validate_restore_target() {
   }
   IFS='|' read -r observed_database observed_version observed_ssl observed_session_user server_addr server_port observed_appname <<< "$target_probe"
   [[ "$observed_database" == "$restore_target_database" && "$observed_version" =~ ^17[0-9]*$ &&
-      "$observed_ssl" == on && "$observed_session_user" == "$restore_role" && -n "$server_addr" &&
+      "$observed_ssl" == on &&
+      "$observed_session_user" == "$restore_role" && -n "$server_addr" &&
       "$server_port" == 5432 && "$observed_appname" == quest-restore-target &&
       "$server_addr" =~ ^((10|192\.168)\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[0-1])\.[0-9]+\.[0-9]+)$ ]] || {
     echo "Restore target database, PostgreSQL major, TLS, or endpoint identity is not verified." >&2
@@ -822,12 +821,10 @@ if [[ ! -r "$canonical_security_sql" ]]; then
   echo "Canonical PostgreSQL security SQL is missing: $canonical_security_sql; the exit guard will roll back both activated file trees." >&2
   exit 1
 fi
-for ownership_role in quest_migrator val_migrator; do
-  if ! psql_target -v RESTORE_MODE=1 -v ON_ERROR_STOP=1 -c "SET ROLE $ownership_role" -f "$canonical_security_sql"; then
-    echo "Canonical PostgreSQL security normalization failed for $ownership_role; the exit guard will roll back both activated file trees." >&2
-    exit 1
-  fi
-done
+if ! psql_target -v RESTORE_MODE=1 -v ON_ERROR_STOP=1 -f "$canonical_security_sql"; then
+  echo "Canonical PostgreSQL security normalization failed for quest_recovery_admin; the exit guard will roll back both activated file trees." >&2
+  exit 1
+fi
 
 # The --no-owner restore deliberately creates objects as the recovery role. The
 # canonical bootstrap normalizes every application object to its schema's

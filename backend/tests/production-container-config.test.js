@@ -1086,9 +1086,10 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator/);
   assert.match(postgresBootstrap, /CREATE ROLE quest_recovery_admin LOGIN/);
-  assert.match(postgresBootstrap, /ALTER ROLE quest_recovery_admin LOGIN NOINHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 1/);
-  assert.match(postgresBootstrap, /GRANT quest_migrator TO quest_recovery_admin/);
-  assert.match(postgresBootstrap, /GRANT val_migrator TO quest_recovery_admin/);
+  assert.match(postgresBootstrap, /ALTER ROLE quest_recovery_admin LOGIN NOINHERIT SUPERUSER NOCREATEDB CREATEROLE NOREPLICATION BYPASSRLS CONNECTION LIMIT 1/);
+  assert.match(postgresBootstrap, /RESTORE_MODE must run directly as quest_recovery_admin without SET ROLE/);
+  assert.doesNotMatch(postgresBootstrap, /GRANT quest_migrator TO quest_recovery_admin/);
+  assert.doesNotMatch(postgresBootstrap, /GRANT val_migrator TO quest_recovery_admin/);
   assert.doesNotMatch(productionCompose, /quest_recovery_admin/);
   assert.doesNotMatch(productionEnv, /quest_recovery_admin/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES[\s\S]*REVOKE ALL ON TABLES FROM PUBLIC/);
@@ -1131,6 +1132,12 @@ test("VALORANT runtime uses asyncpg SSL context semantics, not libpq URL options
   assert.match(valorantProductionEnv, /check_hostname=True/);
   assert.match(valorantProductionEnv, /verify_mode=ssl\.CERT_REQUIRED/);
   assert.match(valorantProductionEnv, /asyncpg's `ssl` connect argument/);
+  assert.match(read("ops/docker/valorant.production.compose.yml"), /env_file:/);
+  assert.match(read("ops/docker/valorant.production.compose.yml"), /quest-private-ca\.crt:.*quest-private-ca\.crt:ro/);
+  assert.match(releaseEnv, /^VALORANT_RUNTIME_COMPOSE_CONTRACT=/m);
+  assert.match(releaseScript, /VALORANT Compose source does not satisfy the asyncpg TLS runtime contract/);
+  assert.match(databaseSecurityVerifier, /127\.0\.0\.1.*55432/);
+  assert.match(databaseSecurityVerifier, /127\.0\.0\.1.*5432/);
 });
 
 test("PostgreSQL runtime roles use explicit non-bypass policies and keep the Prisma ledger private", () => {
@@ -1241,10 +1248,8 @@ test(
         "ALTER TABLE valorant.fixture_application ENABLE ROW LEVEL SECURITY; CREATE POLICY fixture_application_runtime_all ON valorant.fixture_application FOR ALL TO val_runtime USING (true) WITH CHECK (true);",
       );
       assert.equal(result.status, 0, `sibling runtime policy failed:\n${result.stdout}\n${result.stderr}`);
-      for (const ownerRole of ["quest_migrator", "val_migrator"]) {
-        result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-v", "RESTORE_MODE=1", "-U", "quest_recovery_admin", "-d", "quest", "-c", `SET ROLE ${ownerRole};`, "-f", "/tmp/bootstrap.sql"]);
-        assert.equal(result.status, 0, `${ownerRole} recovery ownership fixture failed:\n${result.stdout}\n${result.stderr}`);
-      }
+      result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-v", "RESTORE_MODE=1", "-U", "quest_recovery_admin", "-d", "quest", "-f", "/tmp/bootstrap.sql"]);
+      assert.equal(result.status, 0, `recovery ownership fixture failed:\n${result.stdout}\n${result.stderr}`);
       result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "quest_migrator", "-d", "quest", "-f", "/tmp/runtime-policies.sql"]);
       assert.equal(result.status, 0, `runtime policy migration failed:\n${result.stdout}\n${result.stderr}`);
 

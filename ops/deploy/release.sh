@@ -98,6 +98,30 @@ validate_compose_tls_material() {
     [[ -f "$password_file" && ! -L "$password_file" && "$(stat -c '%u:%g %a' "$password_file" 2>/dev/null)" == '0:999 640' ]] || die 'canonical PostgreSQL password file must be root-owned, group-readable by 999, mode 0640.'
   fi
 }
+validate_valorant_runtime_compose() {
+  local compose_source="${VALORANT_COMPOSE_SOURCE:-}" contract="${VALORANT_RUNTIME_COMPOSE_CONTRACT:-}"
+  [[ -n "$compose_source" && -f "$compose_source" && ! -L "$compose_source" ]] || die 'VALORANT Compose source is missing or unsafe.'
+  [[ -n "$contract" && -f "$contract" && ! -L "$contract" ]] || die 'VALORANT runtime Compose contract is missing or unsafe.'
+  for required in \
+    'image: ${VALORANT_IMAGE:' \
+    'env_file:' \
+    'VALORANT_DATABASE_SSL_CA_FILE' \
+    'VALORANT_DATABASE_SSL_SERVER_HOSTNAME' \
+    'VALORANT_DATABASE_SSL_VERIFY' \
+    '/run/secrets/quest-private-ca.crt:ro' \
+    'quest-shared'; do
+    grep -F "$required" "$compose_source" >/dev/null || die 'VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'
+  done
+  grep -F 'sslmode=' "$compose_source" >/dev/null && die 'VALORANT Compose source contains libpq-only sslmode settings.' || true
+  grep -F 'sslrootcert=' "$compose_source" >/dev/null && die 'VALORANT Compose source contains libpq-only sslrootcert settings.' || true
+  cmp -s "$contract" "$compose_source" || {
+    # The sibling repository owns its Compose file; compare the required
+    # contract fields rather than demanding byte-for-byte repository identity.
+    for required in 'VALORANT_DATABASE_SSL_CA_FILE' 'VALORANT_DATABASE_SSL_SERVER_HOSTNAME' 'VALORANT_DATABASE_SSL_VERIFY'; do
+      grep -F "$required" "$contract" >/dev/null || die 'checked-in VALORANT runtime contract is incomplete.'
+    done
+  }
+}
 validate_postgres_target() {
   local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
   require_setting POSTGRES_TARGET_HOST; require_setting POSTGRES_TARGET_PORT; require_setting POSTGRES_TARGET_DATABASE
@@ -206,7 +230,9 @@ try:
 except ValueError:
     raise SystemExit(1)
 if (parsed.scheme not in ("postgres", "postgresql") or parsed.username != "quest_recovery_admin" or
-        not parsed.password or parsed.hostname not in ("quest-postgres", "127.0.0.1") or parsed.port != 5432 or
+        not parsed.password or
+        not ((parsed.hostname == "quest-postgres" and parsed.port == 5432) or
+             (parsed.hostname == "127.0.0.1" and parsed.port == 55432)) or
         parsed.path != "/quest" or parsed.query or parsed.fragment):
     raise SystemExit(1)
 PY
@@ -226,6 +252,7 @@ require_setting VALORANT_COMPOSE_SOURCE
 require_setting DOCKER_BIN
 require_setting POSTGRES_IMAGE_APPROVED_REF
 require_setting RECOVERY_ADMIN_URL_FILE
+require_setting VALORANT_RUNTIME_COMPOSE_CONTRACT
 absolute_nonroot RELEASE_ROOT "$RELEASE_ROOT"
 absolute_nonroot RELEASE_LOCK_PATH "$release_lock_path"
 root_file "$QUEST_COMPOSE_TEMPLATE"
@@ -272,6 +299,7 @@ done
 root_file "$RECOVERY_ADMIN_URL_FILE"
 validate_recovery_admin_url_file "$RECOVERY_ADMIN_URL_FILE"
 validate_compose_tls_material
+validate_valorant_runtime_compose
 validate_postgres_target
 validate_database_urls
 
@@ -479,7 +507,7 @@ run_security_verify() {
     admin_stat="$(stat -c '%u %a' "$RECOVERY_ADMIN_URL_FILE" 2>/dev/null)" || die 'recovery administrator URL file ownership cannot be inspected.'
     [[ "$admin_stat" == '0 600' || "$admin_stat" == '0 640' ]] || die 'recovery administrator URL file must be root-owned and private.'
   fi
-  output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" SECURITY_VERIFY_TARGET=quest-postgres TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres TARGET_DATABASE_PORT=5432 TARGET_DATABASE_NAME=quest TARGET_POSTGRES_MAJOR=17 RECOVERY_ADMIN_URL_FILE="$RECOVERY_ADMIN_URL_FILE" DATABASE_URL_FILE="$RECOVERY_ADMIN_URL_FILE" "$SECURITY_VERIFY_COMMAND" 2>/dev/null)" || die 'post-restore role, privilege, schema, or migration security verification failed.'
+  output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" SECURITY_VERIFY_TARGET=quest-postgres TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres TARGET_DATABASE_PORT=5432 TARGET_DATABASE_NAME=quest TARGET_POSTGRES_MAJOR=17 RECOVERY_ADMIN_URL_FILE="$RECOVERY_ADMIN_URL_FILE" SECURITY_VERIFY_DATABASE_URL_FILE="$RECOVERY_ADMIN_URL_FILE" DATABASE_URL_FILE="$RECOVERY_ADMIN_URL_FILE" "$SECURITY_VERIFY_COMMAND" 2>/dev/null)" || die 'post-restore role, privilege, schema, or migration security verification failed.'
   [[ "$output" == security-verified ]] || die 'security verifier returned an invalid acknowledgement.'
 }
 

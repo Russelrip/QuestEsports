@@ -21,9 +21,10 @@ private Compose network, RLS/NOBYPASSRLS requirements, pinned clients, and
 ## Implemented controls
 
 - `ops/docker/postgres/init/001-bootstrap-roles.sql` defines the recovery role
-  without a password, establishes migrator memberships during normal bootstrap,
-  and runs restore owner normalization through the two migrator roles while
-  retaining `session_user=quest_recovery_admin`.
+  without a password, establishes the four application roles without inherited
+  memberships, and runs restore owner normalization directly as the protected
+  `quest_recovery_admin` superuser while retaining
+  `session_user=quest_recovery_admin`.
 - Ownership checks cover relations, routines, user-defined types, operators,
   collations, conversions, extended statistics, operator classes/families,
   text-search dictionaries, and text-search configurations. PostgreSQL catalog
@@ -32,13 +33,16 @@ private Compose network, RLS/NOBYPASSRLS requirements, pinned clients, and
   object-owner classes before activation is considered complete.
 - Runtime security verification rejects wrong database, host, port, major
   version, TLS/session identity, role attributes, cross-schema grants, missing
-  RLS policies, and incomplete ownership normalization.
+  RLS policies, and incomplete ownership normalization. Its URL parser accepts
+  only the Compose `quest-postgres:5432` or staged `127.0.0.1:55432` endpoint,
+  and its observed server-port check follows the selected target authority.
 - VALORANT runtime configuration uses `postgresql+asyncpg://...?ssl=require`
   with explicit CA, hostname, and full-verification settings; libpq-only URL
   parameters are rejected for the target PostgreSQL runtime.
-- Host/release/cutover validation checks password-file ownership/mode and the
-  exact target binding. A disposable container fixture covers UID/GID 999
-  password readability.
+- Host/release/cutover validation checks password-file ownership/mode, the
+  exact target binding, and the VALORANT asyncpg Compose contract. A disposable
+  container fixture covers UID/GID 999 password, CA, certificate, and server-key
+  readability.
 
 ## Validation evidence
 
@@ -49,8 +53,17 @@ Passed:
   tests require external E2E configuration).
 - `npm test` from `frontend` — 294 passed, 0 failed.
 - `ops/tests/restore-production-backup.test.sh` — passed.
+- `ops/tests/media-backup-contract.test.sh` — passed.
+- `ops/tests/backup-multi-remote.test.sh` — passed.
+- `ops/tests/postgres17-rehearsal.test.sh` — passed on the clean rerun through
+  Git Bash after the fixture session identity was aligned with the direct
+  recovery-admin contract.
+- `node --check backend/scripts/verify-database-security.js` and
+  `node --check backend/src/lib/prisma.js` — passed.
+- `docker compose config` for the production topology and the staged
+  PostgreSQL overlay, using temporary fixture environment files — passed.
 - Git Bash `bash -n` checks for restore, rehearsal, host validation, release,
-  cutover, and release verification scripts — passed.
+  cutover, release verification, and related contract-test scripts — passed.
 - `git diff --check` — passed; only normal Git LF/CRLF conversion warnings were
   emitted.
 
@@ -58,14 +71,18 @@ Skipped or unresolved locally:
 
 - `ops/tests/postgres-container-readability.test.sh` — skipped because the
   pinned PostgreSQL 17 image was not available locally.
-- `ops/tests/postgres17-rehearsal.test.sh` — the Windows test harness terminated
-  its child process (`ChildProcess.kill`); no VPS or remote target was touched.
-- `ops/tests/deploy-release.test.sh` — the Windows-hosted Git Bash run did not
-  complete within the local timeout; it exercised local fixtures only.
+- `ops/tests/deploy-release.test.sh` — the Windows-hosted Git Bash harness did
+  not complete reliably within the local timeout and emitted a
+  `ChildProcess.kill` termination on one run; no VPS or remote target was
+  touched. A prior partial run also reported old-service cutover fixture
+  assertions before the harness became resource constrained; this remains
+  unresolved locally.
 
 ## Operational conclusion
 
 Source-level contracts and disposable PostgreSQL security behavior pass the
-available local validation. Before production use, run the full rehearsal on a
-disposable PostgreSQL 17 host with the pinned image available, then capture the
-signed evidence bundle and operator approvals required by the migration plan.
+available local validation; the deployment integration fixture remains an
+environment-specific Windows-harness concern. Before production use, run the
+full rehearsal on a disposable PostgreSQL 17 host with the pinned image
+available, then capture the signed evidence bundle and operator approvals
+required by the migration plan.

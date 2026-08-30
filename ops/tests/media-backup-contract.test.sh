@@ -38,7 +38,7 @@ if [[ "${1:-}" == --version ]]; then
 fi
 printf '%s\n' "psql $*" >> "$TEST_ROOT/psql.log"
 if [[ "$*" == *current_database* && "${PGAPPNAME:-}" == quest-restore-target ]]; then
-  printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n'
+  printf 'quest_restore|170004|on|quest_recovery_admin|172.18.0.2|5432|quest-restore-target\n'
 elif [[ "$*" == *owner_name* ]]; then
   printf '0\n'
 elif [[ "$*" == *current_database* ]]; then
@@ -300,7 +300,7 @@ POSTGRES17_BIN=$fake_bin
 POSTGRES_CA_FILE=$test_root/ca.crt
 POSTGRES_CERT_FILE=$test_root/postgres.crt
 POSTGRES_KEY_FILE=$test_root/postgres.key
-DIRECT_URL=postgresql://restore:fixture@127.0.0.1:55432/quest_restore
+RECOVERY_ADMIN_URL=postgresql://quest_recovery_admin:fixture@127.0.0.1:55432/quest_restore
 UPLOAD_ROOT=$test_root/restore/uploads
 PRIVATE_UPLOAD_ROOT=$test_root/restore/private
 BACKUP_AGE_IDENTITY_FILE=$test_root/identity
@@ -434,6 +434,7 @@ printf 'fixture checksum\n' > "$materialized_archive.sha256"
 if ! RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
     BACKUP_ENV_FILE="$test_root/restore.env" \
     RESTORE_COUNTDOWN_SECONDS=0 \
+    OBSERVED_SESSION_USER=quest_recovery_admin \
     bash "$root/ops/restore-production-backup.sh" --test-fixture "$materialized_archive" \
     >"$test_root/materialized-view-data.out" 2>&1; then
   cat "$test_root/materialized-view-data.out" >&2

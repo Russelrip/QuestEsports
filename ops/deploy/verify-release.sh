@@ -78,6 +78,11 @@ release_dir="${1:-$current_target}"
 [[ "$(realpath "$release_dir" 2>/dev/null)" == "$release_dir" ]] || die 'release directory is not canonical.'
 [[ "$current_target" == "$release_dir" ]] || die 'current pointer does not identify the verified release.'
 [[ -f "$release_dir/compose.production.yml" && -f "$release_dir/.env" && -f "$release_dir/valorant.compose.yml" ]] || die 'release bundle is incomplete.'
+for contract_field in 'image: ${VALORANT_IMAGE:' 'env_file:' 'VALORANT_DATABASE_SSL_CA_FILE' 'VALORANT_DATABASE_SSL_SERVER_HOSTNAME' 'VALORANT_DATABASE_SSL_VERIFY' '/run/secrets/quest-private-ca.crt:ro' 'quest-shared'; do
+  grep -F "$contract_field" "$release_dir/valorant.compose.yml" >/dev/null || die 'release VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'
+done
+grep -F 'sslmode=' "$release_dir/valorant.compose.yml" >/dev/null && die 'release VALORANT Compose source contains libpq-only sslmode settings.' || true
+grep -F 'sslrootcert=' "$release_dir/valorant.compose.yml" >/dev/null && die 'release VALORANT Compose source contains libpq-only sslrootcert settings.' || true
 for bundle_file in compose.production.yml valorant.compose.yml .env release-metadata.txt; do
   [[ -f "$release_dir/$bundle_file" && ! -L "$release_dir/$bundle_file" && -r "$release_dir/$bundle_file" ]] || die "release bundle has an unsafe $bundle_file."
   if [[ "$fixture_mode" != 1 ]]; then

@@ -38,13 +38,13 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
   [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || fail "BACKUP_ENV_FILE contains a control character"
   case "$key" in
-    DIRECT_URL|QUEST_RUNTIME_DATABASE_URL|UPLOAD_ROOT|PRIVATE_UPLOAD_ROOT|BACKUP_AGE_IDENTITY_FILE) [[ -z "${cfg[$key]+x}" ]] || fail "BACKUP_ENV_FILE contains a duplicate"; cfg["$key"]="$value" ;;
+    RECOVERY_ADMIN_URL|QUEST_RUNTIME_DATABASE_URL|UPLOAD_ROOT|PRIVATE_UPLOAD_ROOT|BACKUP_AGE_IDENTITY_FILE) [[ -z "${cfg[$key]+x}" ]] || fail "BACKUP_ENV_FILE contains a duplicate"; cfg["$key"]="$value" ;;
     PATH) [[ "$value" =~ ^/[A-Za-z0-9._/-]+(:/[A-Za-z0-9._/-]+)*$ ]] || fail "BACKUP_ENV_FILE PATH is unsafe" ;;
     *) fail "BACKUP_ENV_FILE contains an unapproved setting" ;;
   esac
 done < "$env_file"
-for key in DIRECT_URL UPLOAD_ROOT PRIVATE_UPLOAD_ROOT BACKUP_AGE_IDENTITY_FILE; do [[ -n "${cfg[$key]:-}" ]] || fail "BACKUP_ENV_FILE is missing a required setting"; done
-db_url="${cfg[DIRECT_URL]}"; runtime_db_url="${cfg[QUEST_RUNTIME_DATABASE_URL]:-}"; public_root="${cfg[UPLOAD_ROOT]}"; private_root="${cfg[PRIVATE_UPLOAD_ROOT]}"; identity="${cfg[BACKUP_AGE_IDENTITY_FILE]}"
+for key in RECOVERY_ADMIN_URL UPLOAD_ROOT PRIVATE_UPLOAD_ROOT BACKUP_AGE_IDENTITY_FILE; do [[ -n "${cfg[$key]:-}" ]] || fail "BACKUP_ENV_FILE is missing a required setting"; done
+db_url="${cfg[RECOVERY_ADMIN_URL]}"; runtime_db_url="${cfg[QUEST_RUNTIME_DATABASE_URL]:-}"; public_root="${cfg[UPLOAD_ROOT]}"; private_root="${cfg[PRIVATE_UPLOAD_ROOT]}"; identity="${cfg[BACKUP_AGE_IDENTITY_FILE]}"
 
 looks_production() {
   local x="${1,,}"
@@ -53,13 +53,20 @@ looks_production() {
 }
 looks_production "$db_url" || fail "database URL looks like production"
 [[ "$db_url" =~ ^postgres(ql)?:// && "$db_url" != *[[:space:]]* ]] || fail "target is not a safe PostgreSQL URL"
-[[ "$db_url" != *\?* && "$db_url" != *\#* ]] || fail "DIRECT_URL query/fragment overrides are not allowed"
+[[ "$db_url" != *\?* && "$db_url" != *\#* ]] || fail "RECOVERY_ADMIN_URL query/fragment overrides are not allowed"
+need python3
+python3 - "$db_url" <<'PY' || fail "rehearsal recovery URL must use quest_recovery_admin"
+from urllib.parse import urlsplit
+import sys
+u = urlsplit(sys.argv[1])
+if u.username != "quest_recovery_admin" or not u.password or u.path != "/quest_restore":
+    raise SystemExit(1)
+PY
 host="${db_url#*://}"; host="${host%%/*}"; host="${host##*@}"; host="${host%%:*}"
 case "${host,,}" in ""|questesports*|api.*|*.lk|supabase*|*.supabase.*|production*|prod*|paris*) fail "database host looks like production" ;; esac
 [[ "$runtime_db_url" =~ ^postgres(ql)?:// && "$runtime_db_url" != *[[:space:]]* ]] || fail "QUEST_RUNTIME_DATABASE_URL is required and unsafe"
 [[ "$runtime_db_url" != *\?* && "$runtime_db_url" != *\#* ]] || fail "QUEST_RUNTIME_DATABASE_URL query/fragment overrides are not allowed"
 looks_production "$runtime_db_url" || fail "runtime database URL looks like production"
-need python3
 runtime_endpoint="$(python3 - "$db_url" "$runtime_db_url" <<'PY'
 from urllib.parse import urlsplit
 import sys
@@ -229,7 +236,7 @@ if u.scheme not in ("postgres", "postgresql") or u.hostname != "127.0.0.1" or u.
     raise SystemExit(1)
 print(f"{u.hostname}|{u.port}")
 PY
-)" || fail "DIRECT_URL must use the exact disposable loopback endpoint"
+)" || fail "RECOVERY_ADMIN_URL must use the exact disposable loopback endpoint"
 IFS='|' read -r url_host url_port <<< "$url_endpoint"
 mapping_json="$(docker container inspect --format '{{json .NetworkSettings.Ports}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "disposable target port mapping could not be inspected"
 printf '%s\n' "$mapping_json" > "$scratch/target-port-mapping"
@@ -291,9 +298,9 @@ source_major="$(grep -m1 '^source_major=' "$source_record" | cut -d= -f2-)"; sou
 gate=none; if [[ "$source_major" != 17 ]]; then [[ "${SOURCE_MAJOR_MISMATCH_APPROVAL:-}" == approved ]] || fail "source-major mismatch lacks approved logical-migration gate"; gate=approved_logical_major_migration; fi
 
 isolated="$scratch/BACKUP_ENV_FILE"
-{ printf 'DIRECT_URL='; printf '%q' "$db_url"; printf '\nUPLOAD_ROOT='; printf '%q' "$public_root"; printf '\nPRIVATE_UPLOAD_ROOT='; printf '%q' "$private_root"; printf '\nBACKUP_AGE_IDENTITY_FILE='; printf '%q' "$identity"; printf '\n'; } > "$isolated"; chmod 600 "$isolated"
+{ printf 'RECOVERY_ADMIN_URL='; printf '%q' "$db_url"; printf '\nUPLOAD_ROOT='; printf '%q' "$public_root"; printf '\nPRIVATE_UPLOAD_ROOT='; printf '%q' "$private_root"; printf '\nBACKUP_AGE_IDENTITY_FILE='; printf '%q' "$identity"; printf '\n'; } > "$isolated"; chmod 600 "$isolated"
 time_command="${REHEARSAL_TIME_COMMAND:-/usr/bin/time}"; [[ "$time_command" == /* && -x "$time_command" && ! -L "$time_command" ]] || fail "REHEARSAL_TIME_COMMAND must be an absolute executable resource timer"; check_path "$time_command" REHEARSAL_TIME_COMMAND
-env -u BASH_ENV -u ENV RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION BACKUP_ENV_FILE="$isolated" RESTORE_COUNTDOWN_SECONDS=0 "$time_command" -f 'cpu_seconds=%U\npeak_memory_kb=%M' -o "$scratch/resource" bash "$restore" --test-fixture "$archive" >"$scratch/restore.log" 2>&1 || { cat "$scratch/restore.log" >&2; fail "existing restore primitive failed"; }
+env -u BASH_ENV -u ENV RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION BACKUP_ENV_FILE="$isolated" RESTORE_COUNTDOWN_SECONDS=0 OBSERVED_SESSION_USER=quest_recovery_admin "$time_command" -f 'cpu_seconds=%U\npeak_memory_kb=%M' -o "$scratch/resource" bash "$restore" --test-fixture "$archive" >"$scratch/restore.log" 2>&1 || { cat "$scratch/restore.log" >&2; fail "existing restore primitive failed"; }
 cpu="$(grep -m1 '^cpu_seconds=' "$scratch/resource" | cut -d= -f2)"; memory="$(grep -m1 '^peak_memory_kb=' "$scratch/resource" | cut -d= -f2)"
 [[ "$cpu" =~ ^[0-9]+([.][0-9]+)?$ && "$memory" =~ ^[0-9]+$ ]] || fail "resource measurement is incomplete"
 target_identity_after="$(docker container inspect --size --format '{{.Id}}|{{.Name}}|{{.State.Running}}|{{.Config.Image}}|{{.SizeRw}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "disposable target container could not be re-inspected"

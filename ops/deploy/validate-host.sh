@@ -78,6 +78,16 @@ validate_compose_tls_material() {
     [[ -f "$password_file" && ! -L "$password_file" && "$(stat -c '%u:%g %a' "$password_file" 2>/dev/null)" == '0:999 640' ]] || die 'canonical PostgreSQL password file must be root-owned, group-readable by 999, mode 0640.'
   fi
 }
+validate_valorant_runtime_compose() {
+  local compose_source="${VALORANT_COMPOSE_SOURCE:-}" contract="${VALORANT_RUNTIME_COMPOSE_CONTRACT:-}"
+  [[ -n "$compose_source" && -f "$compose_source" && ! -L "$compose_source" ]] || die 'VALORANT Compose source is missing or unsafe.'
+  [[ -n "$contract" && -f "$contract" && ! -L "$contract" ]] || die 'VALORANT runtime Compose contract is missing or unsafe.'
+  for required in 'image: ${VALORANT_IMAGE:' 'env_file:' 'VALORANT_DATABASE_SSL_CA_FILE' 'VALORANT_DATABASE_SSL_SERVER_HOSTNAME' 'VALORANT_DATABASE_SSL_VERIFY' '/run/secrets/quest-private-ca.crt:ro' 'quest-shared'; do
+    grep -F "$required" "$compose_source" >/dev/null || die 'VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'
+  done
+  grep -F 'sslmode=' "$compose_source" >/dev/null && die 'VALORANT Compose source contains libpq-only sslmode settings.' || true
+  grep -F 'sslrootcert=' "$compose_source" >/dev/null && die 'VALORANT Compose source contains libpq-only sslrootcert settings.' || true
+}
 
 validate_postgres_target() {
   local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
@@ -175,7 +185,7 @@ validate_database_urls() {
   validate_runtime_url_file "$valorant_runtime_env_file" val_runtime valorant "${RUNTIME_DATABASE_AUTHORITY:-quest-postgres}" VALORANT
 }
 
-for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND; do
+for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND VALORANT_COMPOSE_SOURCE VALORANT_RUNTIME_COMPOSE_CONTRACT; do
   require_setting "$setting"
 done
 for setting in POSTGRES_TARGET_HOST POSTGRES_TARGET_PORT POSTGRES_TARGET_DATABASE POSTGRES_TARGET_MAJOR POSTGRES_TARGET_DATA_ROOT POSTGRES_TARGET_SENTINEL_COMMAND; do
@@ -234,6 +244,7 @@ for setting in VALORANT_CA_FILE POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
   root_file "${!setting}"
 done
 validate_compose_tls_material
+validate_valorant_runtime_compose
 validate_postgres_target
 validate_database_urls
 if [[ "$fixture_mode" != 1 ]]; then

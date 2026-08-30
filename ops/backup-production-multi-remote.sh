@@ -41,10 +41,9 @@ for name in "${required[@]}"; do
   fi
 done
 
-# The PostgreSQL server key is readable by the UID/GID 999 server container and
-# is never a client credential. Production backups use a separately provisioned
-# client certificate/key pair so backup access does not depend on the server's
-# private key permissions.
+# The PostgreSQL server key/certificate are container-only identities. Backups
+# use a separately provisioned client certificate/key pair, so backup access does
+# not depend on server-key ownership or permissions.
 if [[ "$backup_test_fixture" == true ]]; then
   backup_client_cert_file="${BACKUP_CLIENT_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
   backup_client_key_file="${BACKUP_CLIENT_KEY_FILE:-${POSTGRES_KEY_FILE:-}}"
@@ -213,7 +212,7 @@ validate_database_target() {
 }
 
 resolve_postgres_clients
-for setting in POSTGRES_CA_FILE POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
+for setting in POSTGRES_CA_FILE; do
   [[ -n "${!setting:-}" && "${!setting}" == /* && "${!setting}" != / && -f "${!setting}" && ! -L "${!setting}" ]] || {
     echo "Required PostgreSQL TLS material is missing or unsafe: $setting" >&2
     exit 1
@@ -235,27 +234,10 @@ for tls_file in "$POSTGRES_CA_FILE" "$POSTGRES_CERT_FILE" "$POSTGRES_KEY_FILE"; 
 done
 if [[ "$backup_test_fixture" == false ]]; then
   [[ "$POSTGRES_CA_FILE" == /etc/quest-esports/tls/quest-private-ca.crt &&
-      "$POSTGRES_CERT_FILE" == /etc/quest-esports/tls/quest-postgres.crt &&
-      "$POSTGRES_KEY_FILE" == /etc/quest-esports/tls/quest-postgres.key ]] || {
-    echo "PostgreSQL TLS material is not canonical." >&2
+      "$(stat -c '%u' "$POSTGRES_CA_FILE" 2>/dev/null)" == 0 ]] || {
+    echo "PostgreSQL CA material is not canonical root-owned trust material." >&2
     exit 1
   }
-  [[ "$(stat -c '%u %a' "$POSTGRES_KEY_FILE" 2>/dev/null)" == '0 600' ]] || {
-    echo "PostgreSQL private key ownership or mode is unsafe." >&2
-    exit 1
-  }
-  for tls_file in "$POSTGRES_CA_FILE" "$POSTGRES_CERT_FILE"; do
-    tls_stat="$(stat -c '%u %a' "$tls_file" 2>/dev/null)" || {
-      echo "PostgreSQL TLS material ownership or mode cannot be inspected." >&2
-      exit 1
-    }
-    read -r tls_uid tls_mode <<< "$tls_stat"
-    [[ "$tls_uid" == 0 && "$tls_mode" =~ ^[0-7]{3,4}$ &&
-        $((8#$tls_mode & 022)) -eq 0 ]] || {
-      echo "PostgreSQL TLS material must be root-owned and not group/other-writable." >&2
-      exit 1
-    }
-  done
 fi
 validate_database_target
 

@@ -1,8 +1,12 @@
+const fs = require("node:fs");
 const { PrismaClient } = require("../generated/prisma");
 const { buildRuntimeDatabaseUrl } = require("./database-url");
 const { logger } = require("./logger");
 
 const globalForPrisma = globalThis;
+const securityDatabaseUrl =
+  process.env.SECURITY_VERIFY_DATABASE_URL_FILE &&
+  fs.readFileSync(process.env.SECURITY_VERIFY_DATABASE_URL_FILE, "utf8").trim();
 const prismaLogConfig =
   process.env.NODE_ENV === "development"
     ? [
@@ -16,7 +20,7 @@ const prismaLogConfig =
 const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
-    datasourceUrl: buildRuntimeDatabaseUrl(process.env.DATABASE_URL),
+    datasourceUrl: buildRuntimeDatabaseUrl(securityDatabaseUrl || process.env.DATABASE_URL),
     log: prismaLogConfig,
   });
 

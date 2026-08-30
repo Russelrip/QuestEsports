@@ -159,6 +159,13 @@ restore rehearsal requires the immutable PostgreSQL 17 target, exact two-schema
 scope, and owner/deployment-host evidence gate. The job renders Compose with
 synthetic image digests and a disposable empty env-file placeholder; it does
 not contact a VPS, database, registry, backup remote, or hosted endpoint.
+The external VALORANT image is released only with the checked-in
+`ops/docker/valorant.production.compose.yml` contract: its asyncpg URL uses
+`ssl=require`, while the mounted CA, `quest-postgres` hostname, and full
+verification settings are passed explicitly. The repository validates that the
+owner-supplied Compose source contains those inputs but cannot claim to inspect
+the image's Python SSL-context implementation; validation fails closed when
+the contract is absent.
 
 Frontend:
 

@@ -75,6 +75,17 @@ name: valorant-prod
 services:
   valorant-platform:
     image: ${VALORANT_IMAGE:?required}
+    env_file:
+      - path: /etc/quest-esports/valorant.production.env
+        required: true
+    environment:
+      VALORANT_DATABASE_SSL_CA_FILE: /run/secrets/quest-private-ca.crt
+      VALORANT_DATABASE_SSL_SERVER_HOSTNAME: quest-postgres
+      VALORANT_DATABASE_SSL_VERIFY: full
+    volumes:
+      - /etc/quest-esports/tls/quest-private-ca.crt:/run/secrets/quest-private-ca.crt:ro
+    networks:
+      quest-shared: {}
 EOF
   cp "$script_directory/docker/compose.production.yml" "$fixture/quest.compose.yml"
   cat > "$fixture/releases/$previous_sha/compose.production.yml" <<'EOF'
@@ -92,6 +103,17 @@ name: valorant-prod
 services:
   valorant-platform:
     image: ${VALORANT_IMAGE:?required}
+    env_file:
+      - path: /etc/quest-esports/valorant.production.env
+        required: true
+    environment:
+      VALORANT_DATABASE_SSL_CA_FILE: /run/secrets/quest-private-ca.crt
+      VALORANT_DATABASE_SSL_SERVER_HOSTNAME: quest-postgres
+      VALORANT_DATABASE_SSL_VERIFY: full
+    volumes:
+      - /etc/quest-esports/tls/quest-private-ca.crt:/run/secrets/quest-private-ca.crt:ro
+    networks:
+      quest-shared: {}
 EOF
   cat > "$fixture/releases/$previous_sha/.env" <<EOF
 QUEST_FRONTEND_IMAGE=ghcr.io/quest/frontend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -408,6 +430,7 @@ RELEASE_ENVIRONMENT=production
 RELEASE_ENVIRONMENT_PROTECTED=1
 QUEST_COMPOSE_TEMPLATE=$fixture/quest.compose.yml
 VALORANT_COMPOSE_SOURCE=$fixture/valorant.compose.yml
+VALORANT_RUNTIME_COMPOSE_CONTRACT=$script_directory/docker/valorant.production.compose.yml
 DOCKER_BIN=$fixture/bin/docker
 DATABASE_HEALTH_COMMAND=$fixture/bin/db-health
 DATABASE_READINESS_COMMAND=$fixture/bin/db-ready
@@ -938,6 +961,14 @@ assert_failed missing-postgres-tls-key run_release
 setup_fixture nonquest-target-url
 printf '%s\n' 'DATABASE_URL=postgresql://127.0.0.1:55432/notquest' > "$fixture/quest.production.env"
 assert_failed nonquest-target-url run_release
+
+setup_fixture recovery-pg16-url
+printf '%s\n' 'postgresql://quest_recovery_admin:fixture@127.0.0.1:5432/quest' > "$fixture/recovery-admin-url"
+assert_failed recovery-pg16-url run_release
+
+setup_fixture missing-valorant-asyncpg-contract
+sed -i '/VALORANT_DATABASE_SSL_VERIFY/d' "$fixture/valorant.compose.yml"
+assert_failed missing-valorant-asyncpg-contract run_release
 
 setup_fixture cutover-target-sentinel
 sed -i 's/^POSTGRES_TARGET_HOST=.*/POSTGRES_TARGET_HOST=10.0.0.7/' "$fixture/release.env"

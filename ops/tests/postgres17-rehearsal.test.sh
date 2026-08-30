@@ -66,8 +66,10 @@ extension_count_computation="$(grep -F 'extensions_count="$(wc -l < "$scratch/ex
 [[ -n "$extension_count_computation" ]] || { echo "FAIL: extension count must be computed from the inventory" >&2; exit 1; }
 summary_extension_count="$(grep -F 'extensions_count=%s' "$rehearsal" 2>/dev/null || true)"
 [[ "$summary_extension_count" == *'"$extensions_count"'* ]] || { echo "FAIL: summary must emit the computed extension count" >&2; exit 1; }
-grep -F 'DIRECT_URL does not match the inspected container port mapping' "$rehearsal" >/dev/null || { echo "FAIL: rehearsal must bind URL endpoint to container mapping" >&2; exit 1; }
+grep -F 'DIRECT_URL does not match the inspected container port mapping' "$rehearsal" >/dev/null || { echo "FAIL: rehearsal must bind recovery URL endpoint to container mapping" >&2; exit 1; }
 grep -F 'QUEST_RUNTIME_DATABASE_URL is required and unsafe' "$rehearsal" >/dev/null || { echo "FAIL: rehearsal must require a least-privileged runtime URL" >&2; exit 1; }
+grep -F 'RECOVERY_ADMIN_URL' "$rehearsal" >/dev/null || { echo "FAIL: rehearsal must use the protected recovery URL contract" >&2; exit 1; }
+! grep -F 'SET ROLE' "$rehearsal" >/dev/null || { echo "FAIL: rehearsal must not use a contradictory SET ROLE path" >&2; exit 1; }
 grep -F 'pg_stat_activity' "$rehearsal" >/dev/null || { echo "FAIL: rehearsal must independently inspect target connection binding" >&2; exit 1; }
 grep -F "current_database()" "$rehearsal" | grep -F "current_setting('server_version_num')" | grep -F "pg_stat_ssl" >/dev/null || { echo "FAIL: rehearsal must record session-level target database TLS" >&2; exit 1; }
 grep -F 'VERBOSITY=verbose' "$rehearsal" >/dev/null && ! grep -F 'VERBOSITY=sqlstate' "$rehearsal" >/dev/null || { echo "FAIL: denial probe must retain SQLSTATE and permission-denied text" >&2; exit 1; }
@@ -99,7 +101,7 @@ grep -F 'source "$contract"' "$verify" >/dev/null || { echo 'FAIL: verifier does
 printf 'source_major=17\nsource_version=PostgreSQL_17.4\nprovenance=operator_recorded\n' > "$tmp/source-version.env"; chmod 600 "$tmp/source-version.env"
 printf 'target_kind=disposable_postgresql17\ntarget_id=quest-fixture-20260827\ncontainer_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\npublic_root=%s\nprivate_root=%s\n' "$tmp/wrapper-parent/public" "$tmp/wrapper-parent/private" > "$tmp/target-sentinel.env"; chmod 600 "$tmp/target-sentinel.env"
 printf 'not an archive\n' > "$tmp/quest-production-20260827T000000Z.tar.gz.enc"; cat > "$tmp/recovery.env" <<EOF
-DIRECT_URL=postgresql://restore:fixture@127.0.0.1:55432/quest_restore
+RECOVERY_ADMIN_URL=postgresql://quest_recovery_admin:fixture@127.0.0.1:55432/quest_restore
 QUEST_RUNTIME_DATABASE_URL=postgresql://quest_runtime:fixture@127.0.0.1:55432/quest_restore
 UPLOAD_ROOT=$tmp/wrapper-parent/public
 PRIVATE_UPLOAD_ROOT=$tmp/wrapper-parent/private
@@ -163,7 +165,7 @@ EOF
 if [[ "$1" == --version ]]; then echo 'fixture (PostgreSQL) 17.4'; exit 0; fi
 for arg in "$@"; do [[ "$arg" == -f || "$arg" == --file=* ]] && exit 0; done
 has_c=0; quiet=0; sql=''; for ((i=1; i<=$#; i++)); do arg="${!i}"; if [[ "$arg" == -c || "$arg" == -tAc ]]; then has_c=1; j=$((i+1)); sql="${!j}"; fi; [[ "$arg" == -q ]] && quiet=1; done
-if (( ! has_c )); then printf '%s|quest_restore|restore|restore|5432|12345\n' "${PGAPPNAME:?}" >> "${TARGET_BINDING_MARKER:?}"; printf '%s\n' "${PGAPPNAME:?}|quest_restore|restore|restore|5432|12345" "quest_restore|170004|on|${PGAPPNAME:?}|12345"; sleep 5; exit 0; fi
+if (( ! has_c )); then printf '%s|quest_restore|quest_recovery_admin|quest_recovery_admin|5432|12345\n' "${PGAPPNAME:?}" >> "${TARGET_BINDING_MARKER:?}"; printf '%s\n' "${PGAPPNAME:?}|quest_restore|quest_recovery_admin|quest_recovery_admin|5432|12345" "quest_restore|170004|on|${PGAPPNAME:?}|12345"; sleep 5; exit 0; fi
 if [[ "$sql" == *defaclnamespace* && "$sql" == *IS\ NULL* ]]; then printf '%s\n' 'quest_migrator|<global>|T|quest_migrator=U/quest_migrator' 'quest_migrator|<global>|f|quest_migrator=X/quest_migrator' 'val_migrator|<global>|T|val_migrator=U/val_migrator' 'val_migrator|<global>|f|val_migrator=X/val_migrator'; exit 0; fi
 if [[ "$sql" == *defaclobjtype* ]]; then printf '%s\n' 'quest_migrator|public|S|quest_runtime=rwU/quest_migrator' 'quest_migrator|public|T|quest_migrator=U/quest_migrator' 'quest_migrator|public|f|quest_migrator=X/quest_migrator' 'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' 'val_migrator|valorant|S|val_runtime=rwU/val_migrator' 'val_migrator|valorant|T|val_migrator=U/val_migrator' 'val_migrator|valorant|f|val_migrator=X/val_migrator' 'val_migrator|valorant|r|val_runtime=arwd/val_migrator'; exit 0; fi
 if [[ "$sql" == *schemaname*count* ]]; then printf 'public|2\nvalorant|2\n'; exit 0; fi
@@ -171,11 +173,11 @@ if [[ "$sql" == *pg_policies* ]]; then printf 'public\tusers\tt\tusers_runtime_a
 case "$sql" in
   *FROM\ valorant.*) printf 'quest_runtime|quest_runtime|cross_schema_denied|%s|12347|on\n' "${PGAPPNAME:?}"; printf '%s\n' 'ERROR: 42501: permission denied for schema valorant' >&2; exit 1 ;;
   *INSERT\ INTO\ public.\"users\"*) if (( quiet )); then printf '%s\n' "quest_runtime|quest_runtime|write_verified|${PGAPPNAME:?}|12346|on"; else printf '%s\n' 'BEGIN' 'INSERT 0 1' "quest_runtime|quest_runtime|write_verified|${PGAPPNAME:?}|12346|on" 'ROLLBACK'; fi ;;
-  *current_database*session_user*) printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n' ;;
+  *current_database*session_user*) printf 'quest_restore|170004|on|quest_recovery_admin|172.18.0.2|5432|quest-restore-target\n' ;;
   *pg_stat_ssl*public.\"users\"*) printf 'quest_runtime|quest_runtime|2|%s|12345|on\n' "${PGAPPNAME:?}" ;;
   *pg_stat_ssl*) printf 'quest_restore|170004|on|%s|12345\n' "${PGAPPNAME:?}" ;;
   *current_database*ssl*) printf 'quest_restore|170004|on\n' ;;
-  *current_setting*session_user*) printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n' ;;
+  *current_setting*session_user*) printf 'quest_restore|170004|on|quest_recovery_admin|172.18.0.2|5432|quest-restore-target\n' ;;
   *quest.rehearsal_target_id*) printf 'quest-fixture-20260827\n' ;;
   *pg_settings*) printf '%s\n' 'server_version|17.4_Debian_17.4-1.pgdg' 'server_version_num|170004' 'ssl|on' 'ssl_min_protocol_version|TLSv1.2' 'row_security|on' 'default_transaction_read_only|off' 'listen_addresses|*' ;;
   *server_version_num*) printf '170004\n' ;;
@@ -212,7 +214,7 @@ EOF
   chmod 700 "$tmp/bin/pg_restore"
   cat > "$tmp/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-if [[ "$*" == *'container exec'* ]]; then printf '%s|quest_restore|restore|active|5432|12345\n' "${PGAPPNAME:?}" >> "${TARGET_BINDING_MARKER:?}"; printf '%s|quest_restore|restore|active|5432|12345\n' "${PGAPPNAME:?}"; exit 0; fi
+if [[ "$*" == *'container exec'* ]]; then printf '%s|quest_restore|quest_recovery_admin|active|5432|12345\n' "${PGAPPNAME:?}" >> "${TARGET_BINDING_MARKER:?}"; printf '%s|quest_restore|quest_recovery_admin|active|5432|12345\n' "${PGAPPNAME:?}"; exit 0; fi
 if [[ "$*" == *NetworkSettings.Ports* ]]; then printf '%s\n' '{"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"55432"}]}'; else printf '%s\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|/quest-rehearsal-fixture|true|postgres:17-bookworm@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|0'; fi
 EOF
   cat > "$tmp/bin/rsync" <<'EOF'
@@ -242,8 +244,8 @@ EOF
   : > "$tmp/target-binding.log"
   if ! env PATH="$tmp/bin:$PATH" REHEARSAL_TIME_COMMAND="$tmp/bin/time" FIXTURE_PAYLOAD_DIR="$tmp/wrapper-payload" TARGET_BINDING_MARKER="$tmp/target-binding.log" SECURITY_VERIFY_COMMAND="$tmp/security-hook" NO_WRITER_ADMISSION_COMMAND="$tmp/no-admission-hook" QUEST_LIVENESS_URL=https://quest-live.test/health QUEST_READINESS_URL=https://quest-ready.test/health VALORANT_HEALTH_URL=https://valorant-health.test/health VALORANT_CA_FILE="$tmp/ca/ca.crt" FREEZE_STATUS_URL=https://freeze.test/status FREEZE_MUTATION_URL=https://freeze.test/mutation FREEZE_CALLBACK_URL=https://freeze.test/callback FAILURE_INJECTION_BAD_CHECKSUM_COMMAND="$tmp/bad_checksum-hook" FAILURE_INJECTION_BAD_DECRYPTION_COMMAND="$tmp/bad_decryption-hook" FAILURE_INJECTION_WRONG_CA_COMMAND="$tmp/wrong_ca-hook" FAILURE_INJECTION_BLOCKED_NETWORK_COMMAND="$tmp/blocked_network-hook" FAILURE_INJECTION_FAILED_SERVICE_HEALTH_COMMAND="$tmp/failed_service_health-hook" FAILURE_INJECTION_ATTEMPTED_MUTATION_CALLBACK_COMMAND="$tmp/attempted_mutation_callback-hook" REHEARSAL_CONFIRMATION=DISPOSABLE_QUEST_REHEARSAL REHEARSAL_EVIDENCE_DIR="$tmp/evidence" BACKUP_ENV_FILE="$tmp/recovery.env" SOURCE_VERSION_EVIDENCE_FILE="$tmp/source-version.env" REHEARSAL_TARGET_SENTINEL_FILE="$tmp/target-sentinel.env" REHEARSAL_SIGNING_PRIVATE_KEY="$tmp/wrapper-signing-private.pem" REHEARSAL_RPO_SECONDS=86400 REHEARSAL_RPO_DECISION=met REHEARSAL_RTO_SECONDS=60 REHEARSAL_RTO_DECISION=met POSTGRES17_BIN="$tmp/bin" bash "$rehearsal" "$tmp/quest-production-20260827T000000Z.tar.gz.enc" >"$tmp/wrapper.log" 2>&1; then echo 'FAIL: wrapper-path target-binding fixture failed' >&2; cat "$tmp/wrapper.log" >&2; exit 1; fi
   env REHEARSAL_TRUSTED_SIGNING_PUBLIC_KEY="$tmp/wrapper-signing-public.pem" bash "$verify" "$tmp/quest-production-20260827T000000Z.tar.gz.enc" "$tmp/evidence" >/dev/null || { echo 'FAIL: wrapper-generated evidence did not pass its verifier' >&2; exit 1; }
-  [[ "$(grep -Ec 'quest-rehearsal-[0-9a-f]{64}\|quest_restore\|restore\|restore\|5432\|12345' "$tmp/target-binding.log")" -ge 2 ]] || { echo 'FAIL: wrapper-path fixture did not establish both direct bindings' >&2; cat "$tmp/target-binding.log" >&2; exit 1; }
-  [[ "$(grep -Ec 'quest-rehearsal-[0-9a-f]{64}\|quest_restore\|restore\|active\|5432\|12345' "$tmp/target-binding.log")" -ge 2 ]] || { echo 'FAIL: wrapper-path fixture did not establish both independent bindings' >&2; cat "$tmp/target-binding.log" >&2; exit 1; }
+  [[ "$(grep -Ec 'quest-rehearsal-[0-9a-f]{64}\|quest_restore\|quest_recovery_admin\|quest_recovery_admin\|5432\|12345' "$tmp/target-binding.log")" -ge 2 ]] || { echo 'FAIL: wrapper-path fixture did not establish both direct bindings' >&2; cat "$tmp/target-binding.log" >&2; exit 1; }
+  [[ "$(grep -Ec 'quest-rehearsal-[0-9a-f]{64}\|quest_restore\|quest_recovery_admin\|active\|5432\|12345' "$tmp/target-binding.log")" -ge 2 ]] || { echo 'FAIL: wrapper-path fixture did not establish both independent bindings' >&2; cat "$tmp/target-binding.log" >&2; exit 1; }
   echo 'ok: successful wrapper-path pre/post evidence generation'
   [[ ! -e "$tmp/wrapper-parent" && ! -e "$tmp/wrapper-parent/public" && ! -e "$tmp/wrapper-parent/private" ]] || { echo 'FAIL: successful rehearsal did not remove disposable wrapper parent and roots' >&2; exit 1; }
 fi

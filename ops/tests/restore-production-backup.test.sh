@@ -19,7 +19,7 @@ POSTGRES17_BIN=$test_root/bin
 POSTGRES_CA_FILE=$test_root/ca.crt
 POSTGRES_CERT_FILE=$test_root/postgres.crt
 POSTGRES_KEY_FILE=$test_root/postgres.key
-DIRECT_URL=postgresql://restore:fixture@127.0.0.1:55432/quest_restore
+RECOVERY_ADMIN_URL=postgresql://quest_recovery_admin:fixture@127.0.0.1:55432/quest_restore
 UPLOAD_ROOT=$test_root/public
 PRIVATE_UPLOAD_ROOT=$test_root/private
 BACKUP_AGE_IDENTITY_FILE=$test_root/identity
@@ -141,6 +141,7 @@ PATH="$test_root/bin:$PATH" \
   BACKUP_ENV_FILE="$test_root/recovery.env" \
   RESTORE_COUNTDOWN_SECONDS=0 \
   TEST_ROOT="$test_root" \
+  OBSERVED_SESSION_USER=quest_recovery_admin \
   bash "$root/ops/restore-production-backup.sh" \
   --test-fixture "$test_root/quest-production-fixture.tar.gz.enc" >/dev/null
 
@@ -148,8 +149,10 @@ grep -F -- '--no-owner' "$test_root/pg_restore.log" >/dev/null
 grep -F -- '--no-acl' "$test_root/pg_restore.log" >/dev/null
 grep -F -- '-X' "$test_root/psql.log" >/dev/null
 grep -F -- '-v RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
+! grep -F -- 'SET ROLE' "$test_root/psql.log" >/dev/null
+grep -F -- 'quest_recovery_admin' "$test_root/psql.log" >/dev/null
 grep -F -- "REVOKE ALL ON DATABASE %I FROM PUBLIC" "$test_root/psql.log" >/dev/null
-grep -F -- "GRANT CONNECT ON DATABASE %I TO quest_migrator, quest_runtime, val_migrator, val_runtime" "$test_root/psql.log" >/dev/null
+grep -F -- 'GRANT CONNECT ON DATABASE quest TO quest_migrator, quest_runtime, val_migrator, val_runtime' "$test_root/psql.log" >/dev/null
 grep -F -- 'current_database()' "$test_root/psql.log" >/dev/null
 grep -F -- 'REVOKE ALL ON DATABASE quest FROM PUBLIC' "$test_root/psql.log" >/dev/null
 grep -F -- 'ALTER ROLE quest_runtime LOGIN NOINHERIT' "$test_root/psql.log" >/dev/null

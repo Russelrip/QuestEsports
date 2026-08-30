@@ -142,8 +142,10 @@ install -o root -g root -m 0644 /secure/tls/quest-postgres.crt /etc/quest-esport
 
 Backup and recovery client certificates/keys remain separate `root:root` mode
 `0600` files and are never mounted into the PostgreSQL server container. A
-disposable readability fixture runs the pinned image as `999:999` and checks
-the password, certificate, and key mounts without exposing their contents.
+disposable readability fixture runs the exact pinned image as `999:999` and
+checks the password, CA, certificate, and server-key mounts without exposing
+their contents. The server key is never required to satisfy a backup-client
+contract.
 
 The backend readiness probe writes a process-specific
 `.quest-readiness-*` file with mode `0600` in both roots and removes it on
@@ -192,7 +194,8 @@ runtime role receives privileges on the other service's schema. `PUBLIC` has no
 privileges on `valorant`. Default privileges are set for each migrator so new
 tables and sequences retain this posture. Every role is normalized to
 `NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT` by
-the bootstrap, including roles that already existed.
+the bootstrap, including roles that already existed. The recovery-only
+`quest_recovery_admin` is the explicit superuser exception described below.
 
 The SQL creates login roles without embedding passwords. Before admitting a
 runtime or migrator writer, the operator sets each role password through the
@@ -201,6 +204,12 @@ password operation or an approved secret-injection command). Passwords must
 never be placed in this repository, the Compose file, an image layer, or an
 image tag. The two database URL variables in the production env file then use
 those secret-managed values.
+
+`quest_recovery_admin` is the separate recovery-only superuser contract. It is
+used only by guarded restore and post-restore security verification, has a
+connection limit of one, has no migrator memberships, and is never placed in a
+runtime environment. Restore and rehearsal both connect directly as this role;
+neither path uses `SET ROLE`.
 
 Run the bootstrap only as the PostgreSQL bootstrap administrator. It is
 idempotent and is intended for a fresh data directory or an explicit,
@@ -213,8 +222,11 @@ Quest's `DATABASE_URL` and `DIRECT_URL` use libpq's
 `sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt` and the
 stable host `quest-postgres`. The Quest backend receives the CA as a read-only
 runtime file and also exposes it through `NODE_EXTRA_CA_CERTS` for the private
-VALORANT HTTPS client. The sibling VALORANT Compose deployment must mount the
-same approved CA trust material and use its asyncpg SSL-context equivalent;
+VALORANT HTTPS client. The sibling VALORANT Compose deployment must preserve
+the checked-in `valorant.production.compose.yml` service contract: required
+runtime env file, CA mount at `/run/secrets/quest-private-ca.crt`, and explicit
+hostname/full-verification settings consumed by the image. It must use its
+asyncpg SSL-context equivalent;
 `sslmode` is not an asyncpg URL parameter. The backend receives only runtime
 role URLs; migrator and recovery-administrator URL files are read only by
 one-shot migration, security, and restore commands.

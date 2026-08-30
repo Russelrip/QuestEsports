@@ -5,12 +5,12 @@
 -- admission. Quest owns public; the sibling VALORANT service owns valorant.
 --
 -- quest_recovery_admin is a break-glass login used only by guarded restore and
--- post-restore security wrappers. It is deliberately not a superuser and is
--- not granted to either runtime role. Membership in the two migrator roles
--- lets it normalize restored object ownership without making it an
--- application credential. The initial bootstrap is run by the PostgreSQL
--- bootstrap administrator; RESTORE_MODE is run by quest_recovery_admin after
--- the --no-owner restore.
+-- post-restore security wrappers. It is a recovery-only superuser: it is never
+-- copied into a runtime environment, never used by an application, and has a
+-- connection limit of one. This explicit model is required because
+-- --no-owner restore and ownership/ACL normalization span both schemas and
+-- object classes that cannot be repaired through contradictory SET ROLE
+-- memberships. RESTORE_MODE is run directly by this role after the restore.
 
 DO $$
 BEGIN
@@ -54,27 +54,19 @@ END
 $$;
 
 -- Normalize attributes even when a role already existed. In particular,
--- bootstrap must not preserve inherited memberships or elevated capabilities.
-\if :{?RESTORE_MODE}
--- Restore mode runs as quest_recovery_admin, which intentionally cannot alter
--- superuser attributes. The normal bootstrap has already established this
--- contract before the guarded --no-owner restore begins.
-\else
+-- bootstrap and restore must not preserve inherited memberships or elevated
+-- capabilities on application/migrator roles.
 ALTER ROLE quest_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 ALTER ROLE quest_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 ALTER ROLE val_migrator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
--- The recovery role is the only privileged non-superuser contract. Its
--- password is set out of band; never add a PASSWORD clause here.
-ALTER ROLE quest_recovery_admin LOGIN NOINHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 1;
+-- The recovery role is the only privileged database login. Its password is set
+-- out of band; never add a PASSWORD clause here.
+ALTER ROLE quest_recovery_admin LOGIN NOINHERIT SUPERUSER NOCREATEDB CREATEROLE NOREPLICATION BYPASSRLS CONNECTION LIMIT 1;
 ALTER ROLE val_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-\endif
 
--- Remove pre-existing memberships as well as INHERIT. NOINHERIT alone would
--- still allow an explicit SET ROLE into a role that was already granted.
-\if :{?RESTORE_MODE}
--- Preserve the recovery administrator's two ownership memberships while it
--- performs the post-restore normalization pass.
-\else
+-- There are deliberately no migrator SET ROLE memberships. The recovery
+-- superuser operates directly, with session_user=quest_recovery_admin, so the
+-- restore and disposable rehearsal use one unambiguous identity contract.
 DO $$
 DECLARE
   membership record;
@@ -85,13 +77,12 @@ BEGIN
     JOIN pg_roles AS granted_role ON granted_role.oid = pg_auth_members.roleid
     JOIN pg_roles AS member_role ON member_role.oid = pg_auth_members.member
     WHERE granted_role.rolname IN ('quest_migrator', 'quest_runtime', 'val_migrator', 'val_runtime')
-       OR member_role.rolname IN ('quest_migrator', 'quest_runtime', 'val_migrator', 'val_runtime')
+       OR member_role.rolname IN ('quest_migrator', 'quest_runtime', 'val_migrator', 'val_runtime', 'quest_recovery_admin')
   LOOP
     EXECUTE format('REVOKE %I FROM %I', membership.granted_role, membership.member_role);
   END LOOP;
 END
 $$;
-\endif
 
 \if :{?RESTORE_MODE}
 -- The schema already exists during the guarded restore and recovery is not a
@@ -124,7 +115,7 @@ BEGIN
     SELECT namespace.nspname, relation.relname, relation.relkind
     FROM pg_class AS relation
     JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
       AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
   LOOP
     schema_owner := CASE relation_record.nspname
@@ -150,7 +141,7 @@ BEGIN
            procedure.prokind
     FROM pg_proc AS procedure
     JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
       AND procedure.prokind IN ('f', 'p', 'a')
   LOOP
     schema_owner := CASE routine_record.nspname
@@ -177,7 +168,7 @@ BEGIN
     SELECT namespace.nspname, type_object.typname
     FROM pg_type AS type_object
     JOIN pg_namespace AS namespace ON namespace.oid = type_object.typnamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
       AND type_object.typisdefined
       AND type_object.typtype IN ('b', 'd', 'e', 'r')
       AND type_object.typelem = 0
@@ -201,7 +192,7 @@ BEGIN
            CASE WHEN operator_object.oprright = 0 THEN 'NONE' ELSE format_type(operator_object.oprright, NULL) END AS right_type
     FROM pg_operator AS operator_object
     JOIN pg_namespace AS namespace ON namespace.oid = operator_object.oprnamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
   LOOP
     schema_owner := CASE operator_record.nspname
       WHEN 'public' THEN 'quest_migrator'
@@ -219,17 +210,17 @@ BEGIN
            'COLLATION' AS object_kind
     FROM pg_collation AS collation_object
     JOIN pg_namespace AS namespace ON namespace.oid = collation_object.collnamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
     UNION ALL
     SELECT namespace.nspname, conversion_object.conname, 'CONVERSION'
     FROM pg_conversion AS conversion_object
     JOIN pg_namespace AS namespace ON namespace.oid = conversion_object.connamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
     UNION ALL
     SELECT namespace.nspname, statistics_object.stxname, 'STATISTICS'
     FROM pg_statistic_ext AS statistics_object
     JOIN pg_namespace AS namespace ON namespace.oid = statistics_object.stxnamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
   LOOP
     schema_owner := CASE named_object.nspname
       WHEN 'public' THEN 'quest_migrator'
@@ -246,12 +237,12 @@ BEGIN
     SELECT namespace.nspname, dictionary.dictname AS object_name, 'DICTIONARY' AS object_kind
     FROM pg_ts_dict AS dictionary
     JOIN pg_namespace AS namespace ON namespace.oid = dictionary.dictnamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
     UNION ALL
     SELECT namespace.nspname, configuration.cfgname, 'CONFIGURATION'
     FROM pg_ts_config AS configuration
     JOIN pg_namespace AS namespace ON namespace.oid = configuration.cfgnamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
   LOOP
     schema_owner := CASE named_object.nspname
       WHEN 'public' THEN 'quest_migrator'
@@ -270,13 +261,13 @@ BEGIN
     FROM pg_opclass AS opclass
     JOIN pg_namespace AS namespace ON namespace.oid = opclass.opcnamespace
     JOIN pg_am AS access_method ON access_method.oid = opclass.opcmethod
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
     UNION ALL
     SELECT namespace.nspname, opfamily.opfname, access_method.amname, 'FAMILY'
     FROM pg_opfamily AS opfamily
     JOIN pg_namespace AS namespace ON namespace.oid = opfamily.opfnamespace
     JOIN pg_am AS access_method ON access_method.oid = opfamily.opfmethod
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
   LOOP
     schema_owner := CASE named_object.nspname
       WHEN 'public' THEN 'quest_migrator'
@@ -293,32 +284,21 @@ $$;
 
 \endif
 
--- Only the bootstrap administrator may establish these memberships. They are
--- intentionally absent from runtime roles and are skipped during RESTORE_MODE,
--- which is authenticated as quest_recovery_admin itself.
+-- RESTORE_MODE must use the protected recovery identity directly. There is no
+-- SET ROLE path and no recovery-to-migrator membership to drift.
 \if :{?RESTORE_MODE}
 DO $$
 BEGIN
-  IF session_user <> 'quest_recovery_admin' THEN
-    RAISE EXCEPTION 'RESTORE_MODE must run as quest_recovery_admin';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles granted ON granted.oid = m.roleid JOIN pg_roles member ON member.oid = m.member WHERE granted.rolname = 'quest_migrator' AND member.rolname = 'quest_recovery_admin')
-     OR NOT EXISTS (SELECT 1 FROM pg_auth_members m JOIN pg_roles granted ON granted.oid = m.roleid JOIN pg_roles member ON member.oid = m.member WHERE granted.rolname = 'val_migrator' AND member.rolname = 'quest_recovery_admin') THEN
-    RAISE EXCEPTION 'quest_recovery_admin lacks migrator ownership memberships';
+  IF session_user <> 'quest_recovery_admin' OR current_user <> 'quest_recovery_admin' THEN
+    RAISE EXCEPTION 'RESTORE_MODE must run directly as quest_recovery_admin without SET ROLE';
   END IF;
 END
 $$;
-\else
-GRANT quest_migrator TO quest_recovery_admin;
-GRANT val_migrator TO quest_recovery_admin;
-REVOKE quest_runtime FROM quest_recovery_admin;
-REVOKE val_runtime FROM quest_recovery_admin;
 \endif
 
--- The normal bootstrap has already established grants/default privileges. A
--- --no-acl restore must not replay ACL work as the non-owner recovery role.
-\if :{?RESTORE_MODE}
-\else
+-- Apply the canonical grants/default privileges after both normal bootstrap and
+-- the --no-acl restore. Recovery is a superuser, so this is executable in the
+-- exact session that performed ownership normalization.
 GRANT CONNECT ON DATABASE quest TO quest_migrator, quest_runtime, val_migrator, val_runtime;
 GRANT TEMPORARY ON DATABASE quest TO quest_migrator, val_migrator;
 
@@ -345,7 +325,7 @@ BEGIN
     SELECT namespace.nspname, type_object.typname
     FROM pg_type AS type_object
     JOIN pg_namespace AS namespace ON namespace.oid = type_object.typnamespace
-    WHERE namespace.nspname IN ('public', 'valorant') AND ((namespace.nspname = 'public' AND current_user = 'quest_migrator') OR (namespace.nspname = 'valorant' AND current_user = 'val_migrator'))
+    WHERE namespace.nspname IN ('public', 'valorant')
       AND type_object.typisdefined
       AND type_object.typtype <> 'p'
       AND type_object.typtype <> 'm'
@@ -448,4 +428,3 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA valorant FROM quest_runtime;
 REVOKE ALL ON SCHEMA public FROM val_runtime;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM val_runtime;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM val_runtime;
-\endif
