@@ -458,7 +458,7 @@ Output: exit status 0; Git printed only existing LF-to-CRLF working-copy
 warnings for the modified Markdown files.
 
 ```text
-Get-Command actionlint, docker, npx
+$commands = @('actionlint','docker','npx'); foreach ($command in $commands) { $found = Get-Command $command -ErrorAction SilentlyContinue; if ($found) { "$command=$($found.Source)" } else { "$command=unavailable" } }
 ```
 
 Output:
