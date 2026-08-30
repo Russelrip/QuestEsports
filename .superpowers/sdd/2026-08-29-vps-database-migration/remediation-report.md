@@ -2,6 +2,8 @@
 
 Date: 2026-08-30
 
+Implementation commit: `32ec14e fix: close PostgreSQL migration recovery gaps`
+
 ## Scope
 
 This remediation addresses the final review blockers without contacting the VPS,
