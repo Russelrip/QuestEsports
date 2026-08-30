@@ -547,7 +547,33 @@ postcommit_boundary() {
     printf '%s\n' 'URGENT: no current PostgreSQL 17/uploads capture command was configured.' >&2
     capture_status=1
   fi
-  printf '%s\n' 'Expected loss/RPO and incident-owner approval are required before fix-forward or controlled restore.' >&2
+  if [[ -n "${SUPABASE_URL_ROLLBACK_COMMAND:-}" ]]; then
+    printf '%s\n' 'URGENT: blind Supabase URL rollback is prohibited after the first VPS write.' >&2
+    capture_status=1
+  fi
+  if [[ "${SUPABASE_RECONCILIATION_DECISION:-}" != fix-forward && "${SUPABASE_RECONCILIATION_DECISION:-}" != controlled-restore ]]; then
+    printf '%s\n' 'URGENT: post-commit recovery requires an explicit reconciliation/data-loss decision.' >&2
+    capture_status=1
+  fi
+  if [[ -z "${EXPECTED_LOSS_RPO:-}" ]]; then
+    printf '%s\n' 'URGENT: post-commit recovery requires an explicit expected-loss/RPO record.' >&2
+    capture_status=1
+  fi
+  if [[ "${INCIDENT_OWNER_APPROVAL:-}" != INCIDENT_OWNER_APPROVAL ]]; then
+    printf '%s\n' 'URGENT: post-commit recovery requires incident-owner approval.' >&2
+    capture_status=1
+  fi
+  RECOVERY_ACTION_SELECTED=not-selected
+  if [[ -z "${RECOVERY_ACTION_COMMAND:-}" || ! -x "$RECOVERY_ACTION_COMMAND" ]]; then
+    printf '%s\n' 'URGENT: recovery action command is missing or not executable.' >&2
+    capture_status=1
+  elif (( capture_status == 0 )); then
+    RECOVERY_ACTION_SELECTED="$($RECOVERY_ACTION_COMMAND 2>/dev/null)"; action_rc=$?
+    if (( action_rc != 0 )) || [[ "$RECOVERY_ACTION_SELECTED" != "$SUPABASE_RECONCILIATION_DECISION" ]]; then
+      printf '%s\n' 'URGENT: recovery action did not match the explicit reconciliation decision.' >&2
+      capture_status=1
+    fi
+  fi
   return "$capture_status"
 }
 

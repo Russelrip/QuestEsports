@@ -37,7 +37,9 @@ if [[ "$fixture_mode" != 1 ]]; then
 fi
 # shellcheck disable=SC1090
 source "$release_env_file"
-runtime_env_file="${QUEST_RUNTIME_ENV_FILE:-/etc/quest-esports/quest.production.env}"
+quest_runtime_env_file="${QUEST_RUNTIME_ENV_FILE:-/etc/quest-esports/quest.production.env}"
+valorant_runtime_env_file="${VALORANT_RUNTIME_ENV_FILE:-/etc/quest-esports/valorant.production.env}"
+runtime_env_file="$quest_runtime_env_file"
 
 require_setting() { [[ -n "${!1:-}" ]] || die 'required cutover setting is missing.'; }
 command_setting() { require_setting "$1"; [[ -x "${!1}" ]] || die 'required cutover command is not executable.'; }
@@ -112,13 +114,18 @@ validate_postgres_target() {
   [[ "$sentinel_kind" == postgresql17 && "$sentinel_database" == "$POSTGRES_TARGET_DATABASE" && "$sentinel_host" == "$POSTGRES_TARGET_HOST" && "$sentinel_port" == "$POSTGRES_TARGET_PORT" && "$sentinel_major" == "$POSTGRES_TARGET_MAJOR" && "$sentinel_data_root" == "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL target sentinel does not identify the approved target.'
 }
 validate_database_urls() {
-  local line variable url authority path database
-  [[ "$runtime_env_file" == /* && "$runtime_env_file" != / && -f "$runtime_env_file" && -r "$runtime_env_file" && ! -L "$runtime_env_file" ]] || die 'protected Quest runtime environment is missing or unsafe.'
+  local file="${1:-$runtime_env_file}" expected_authority="${2:-any}" label="${3:-Quest}"
+  local line variable url authority host_port host path database
+  [[ "$file" == /* && "$file" != / && -f "$file" && -r "$file" && ! -L "$file" ]] || die "protected $label runtime environment is missing or unsafe."
   if [[ "$fixture_mode" != 1 ]]; then
-    [[ "$(stat -c '%u' "$runtime_env_file" 2>/dev/null)" == 0 ]] || die 'protected Quest runtime environment is not root-owned.'
-    runtime_env_mode="$(stat -c '%a' "$runtime_env_file" 2>/dev/null)" || die 'protected Quest runtime environment mode cannot be inspected.'
-    [[ "$runtime_env_mode" == 600 || "$runtime_env_mode" == 640 ]] || die 'protected Quest runtime environment mode is unsafe.'
-    [[ "$(realpath "$runtime_env_file" 2>/dev/null)" == /etc/quest-esports/quest.production.env ]] || die 'protected Quest runtime environment path is not canonical.'
+    [[ "$(stat -c '%u' "$file" 2>/dev/null)" == 0 ]] || die "protected $label runtime environment is not root-owned."
+    runtime_env_mode="$(stat -c '%a' "$file" 2>/dev/null)" || die "protected $label runtime environment mode cannot be inspected."
+    [[ "$runtime_env_mode" == 600 || "$runtime_env_mode" == 640 ]] || die "protected $label runtime environment mode is unsafe."
+    if [[ "$label" == Quest ]]; then
+      [[ "$(realpath "$file" 2>/dev/null)" == /etc/quest-esports/quest.production.env ]] || die 'protected Quest runtime environment path is not canonical.'
+    else
+      [[ "$(realpath "$file" 2>/dev/null)" == /etc/quest-esports/valorant.production.env ]] || die 'protected VALORANT runtime environment path is not canonical.'
+    fi
   fi
   declare -A runtime_urls=()
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -129,13 +136,20 @@ validate_database_urls() {
         runtime_urls["$variable"]="$url"
         ;;
     esac
-  done < "$runtime_env_file"
+  done < "$file"
   for variable in DATABASE_URL DIRECT_URL; do
     url="${runtime_urls[$variable]:-}"
-    [[ -n "$url" ]] || die "protected Quest runtime environment is missing $variable."
+    [[ -n "$url" ]] || die "protected $label runtime environment is missing $variable."
     [[ "$url" != *[[:space:]]* && "$url" =~ ^postgres(ql)?://[^/]+/[^/?#]+([?#].*)?$ ]] || die "$variable is not a valid PostgreSQL target URL."
-    authority="${url#*://}"; path="${authority#*/}"; database="${path%%[?#]*}"
+    authority="${url#*://}"; host_port="${authority%%/*}"; host_port="${host_port##*@}"; host="${host_port%%:*}"
+    path="${authority#*/}"; database="${path%%[?#]*}"
     [[ "$database" == quest ]] || die "$variable must target the quest database."
+    case "$expected_authority" in
+      supabase) [[ "$host" != quest-postgres ]] || die "$label $variable unexpectedly targets VPS PostgreSQL." ;;
+      quest-postgres) [[ "$host" == quest-postgres ]] || die "$label $variable did not transition to VPS PostgreSQL." ;;
+      any) : ;;
+      *) die 'database URL authority expectation is invalid.' ;;
+    esac
   done
 }
 
@@ -199,7 +213,8 @@ root_file "$POSTGRES_CERT_FILE"
 root_file "$POSTGRES_KEY_FILE"
 validate_compose_tls_material
 validate_postgres_target
-validate_database_urls
+validate_database_urls "$quest_runtime_env_file" supabase Quest
+validate_database_urls "$valorant_runtime_env_file" supabase VALORANT
 
 quest_project=quest-prod
 valorant_project=valorant-prod
@@ -326,21 +341,25 @@ validate_aliases() {
 run_hook() {
   local variable="$1" expected="${2:-}" output
   command_setting "$variable"
-  output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" POSTGRES_IMAGE="${manifest[postgres_image]:-}" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" POSTGRES_IMAGE="${manifest[postgres_image]:-}" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$quest_runtime_env_file" QUEST_RUNTIME_ENV_FILE="$quest_runtime_env_file" VALORANT_RUNTIME_ENV_FILE="$valorant_runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
   if [[ -n "$expected" ]]; then [[ "$output" == "$expected" ]] || die "$variable command acknowledgement was invalid."; fi
 }
 run_url_switch() {
-  local variable="$1" group="$2" output expected
+  local variable="$1" group="$2" output expected runtime_file
   command_setting "$variable"
+  if [[ "$group" == quest ]]; then runtime_file="$quest_runtime_env_file"; else runtime_file="$valorant_runtime_env_file"; fi
+  validate_database_urls "$runtime_file" supabase "$group"
   url_switch_started=true
-  output="$(DATABASE_URL_SWITCH_GROUP="$group" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  output="$(DATABASE_URL_SWITCH_GROUP="$group" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$runtime_file" QUEST_RUNTIME_ENV_FILE="$quest_runtime_env_file" VALORANT_RUNTIME_ENV_FILE="$valorant_runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
   expected="switched target=quest-postgres writer_group=$group"
   [[ "$output" == "$expected" ]] || die "$variable command acknowledgement was invalid."
 }
 run_url_effective_check() {
-  local variable="$1" group="$2" output
+  local variable="$1" group="$2" output runtime_file
   command_setting "$variable"
-  output="$(DATABASE_URL_SWITCH_GROUP="$group" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres CURRENT_RUNTIME_ENV_FILE="$runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  if [[ "$group" == quest ]]; then runtime_file="$quest_runtime_env_file"; else runtime_file="$valorant_runtime_env_file"; fi
+  output="$(DATABASE_URL_SWITCH_GROUP="$group" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres CURRENT_RUNTIME_ENV_FILE="$runtime_file" QUEST_RUNTIME_ENV_FILE="$quest_runtime_env_file" VALORANT_RUNTIME_ENV_FILE="$valorant_runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  validate_database_urls "$runtime_file" quest-postgres "$group"
   [[ "$output" == "url-state group=$group host=quest-postgres database=quest authority=quest-postgres" ]] || die "$variable returned an invalid post-switch URL state."
 }
 run_service_restart() {
@@ -493,7 +512,7 @@ precommit_rollback() {
       printf 'URGENT: pre-commit recovery hook %s is missing or not executable.\n' "$variable" >&2
       return 1
     fi
-    output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$runtime_env_file" "$command" 2>/dev/null)"; rc=$?
+    output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$quest_runtime_env_file" QUEST_RUNTIME_ENV_FILE="$quest_runtime_env_file" VALORANT_RUNTIME_ENV_FILE="$valorant_runtime_env_file" "$command" 2>/dev/null)"; rc=$?
     if (( rc != 0 )) || [[ -n "$expected" && "$output" != "$expected" ]]; then
       printf 'URGENT: pre-commit recovery hook %s failed or returned an invalid acknowledgement.\n' "$variable" >&2
       return 1
@@ -586,7 +605,33 @@ postcommit_boundary() {
     printf '%s\n' 'URGENT: no current PostgreSQL 17/uploads capture command was configured.' >&2
     status=1
   fi
-  printf '%s\n' 'Expected loss/RPO and incident-owner approval are required before recovery.' >&2
+  if [[ -n "${SUPABASE_URL_ROLLBACK_COMMAND:-}" ]]; then
+    printf '%s\n' 'URGENT: blind Supabase URL rollback is prohibited after the first VPS write.' >&2
+    status=1
+  fi
+  if [[ "${SUPABASE_RECONCILIATION_DECISION:-}" != fix-forward && "${SUPABASE_RECONCILIATION_DECISION:-}" != controlled-restore ]]; then
+    printf '%s\n' 'URGENT: post-commit recovery requires an explicit reconciliation/data-loss decision.' >&2
+    status=1
+  fi
+  if [[ -z "${EXPECTED_LOSS_RPO:-}" ]]; then
+    printf '%s\n' 'URGENT: post-commit recovery requires an explicit expected-loss/RPO record.' >&2
+    status=1
+  fi
+  if [[ "${INCIDENT_OWNER_APPROVAL:-}" != INCIDENT_OWNER_APPROVAL ]]; then
+    printf '%s\n' 'URGENT: post-commit recovery requires incident-owner approval.' >&2
+    status=1
+  fi
+  RECOVERY_ACTION_SELECTED=not-selected
+  if [[ -z "${RECOVERY_ACTION_COMMAND:-}" || ! -x "$RECOVERY_ACTION_COMMAND" ]]; then
+    printf '%s\n' 'URGENT: recovery action command is missing or not executable.' >&2
+    status=1
+  elif (( status == 0 )); then
+    RECOVERY_ACTION_SELECTED="$($RECOVERY_ACTION_COMMAND 2>/dev/null)"; action_rc=$?
+    if (( action_rc != 0 )) || [[ "$RECOVERY_ACTION_SELECTED" != "$SUPABASE_RECONCILIATION_DECISION" ]]; then
+      printf '%s\n' 'URGENT: recovery action did not match the explicit reconciliation decision.' >&2
+      status=1
+    fi
+  fi
   return "$status"
 }
 record_recovery_evidence() {
@@ -705,7 +750,8 @@ fi
 run_database_readiness
 validate_compose_tls_material
 validate_postgres_target
-validate_database_urls
+validate_database_urls "$quest_runtime_env_file" supabase Quest
+validate_database_urls "$valorant_runtime_env_file" supabase VALORANT
 
 require_setting CANDIDATE_FREEZE_FLAG
 require_setting CANDIDATE_READ_ONLY_FLAG
@@ -749,11 +795,12 @@ for setting in QUEST_DATABASE_URL_SWITCH_COMMAND VALORANT_DATABASE_URL_SWITCH_CO
 done
 run_url_switch QUEST_DATABASE_URL_SWITCH_COMMAND quest
 quest_url_switched=true
+run_url_effective_check QUEST_DATABASE_URL_EFFECTIVE_COMMAND quest
 run_url_switch VALORANT_DATABASE_URL_SWITCH_COMMAND valorant
 valorant_url_switched=true
-run_url_effective_check QUEST_DATABASE_URL_EFFECTIVE_COMMAND quest
 run_url_effective_check VALORANT_DATABASE_URL_EFFECTIVE_COMMAND valorant
-validate_database_urls
+validate_database_urls "$quest_runtime_env_file" quest-postgres Quest
+validate_database_urls "$valorant_runtime_env_file" quest-postgres VALORANT
 run_service_restart QUEST_SERVICE_RESTART_COMMAND quest quest-prod
 run_service_restart VALORANT_SERVICE_RESTART_COMMAND valorant valorant-prod
 validate_postgres_target

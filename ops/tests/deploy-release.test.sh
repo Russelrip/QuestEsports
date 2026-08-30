@@ -37,7 +37,7 @@ make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
-  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP INCOMPLETE_BACKUP FAIL_FREEZE FAIL_QUEST_FREEZE FAIL_VALORANT_FREEZE FAIL_SECURITY_VERIFY MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_CANDIDATE_START FAIL_VALORANT_CANDIDATE_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL SUPABASE_RECONCILIATION_DECISION SUPABASE_URL_ROLLBACK_COMMAND TRY_SUPABASE_URL_ROLLBACK DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP FAIL_QUEST_URL_SWITCH FAIL_VALORANT_URL_SWITCH FAIL_QUEST_SERVICE_RESTART FAIL_VALORANT_SERVICE_RESTART FAIL_QUEST_READINESS_ACK FAIL_VALORANT_READINESS_ACK FAIL_QUEST_FROZEN_ACK FAIL_VALORANT_FROZEN_ACK FAIL_QUEST_URL_EFFECTIVE FAIL_VALORANT_URL_EFFECTIVE || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP INCOMPLETE_BACKUP FAIL_FREEZE FAIL_QUEST_FREEZE FAIL_VALORANT_FREEZE FAIL_SECURITY_VERIFY MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_CANDIDATE_START FAIL_VALORANT_CANDIDATE_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL SUPABASE_RECONCILIATION_DECISION SUPABASE_URL_ROLLBACK_COMMAND TRY_SUPABASE_URL_ROLLBACK DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP FAIL_QUEST_URL_SWITCH FAIL_VALORANT_URL_SWITCH NOOP_VALORANT_URL_SWITCH FAIL_QUEST_SERVICE_RESTART FAIL_VALORANT_SERVICE_RESTART FAIL_QUEST_READINESS_ACK FAIL_VALORANT_READINESS_ACK FAIL_QUEST_FROZEN_ACK FAIL_VALORANT_FROZEN_ACK FAIL_QUEST_URL_EFFECTIVE FAIL_VALORANT_URL_EFFECTIVE || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
   mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private" "$fixture/postgres/17/data"
@@ -55,7 +55,12 @@ setup_fixture() {
 DATABASE_URL=postgresql://quest_runtime:fixture@db.supabase.test:5432/quest?schema=public&sslmode=verify-full
 DIRECT_URL=postgresql://quest_migrator:fixture@db.supabase.test:5432/quest?schema=public&sslmode=verify-full
 EOF
+  cat > "$fixture/valorant.production.env" <<'EOF'
+DATABASE_URL=postgresql://valorant_runtime:fixture@db.supabase.test:5432/quest?schema=valorant&sslmode=verify-full
+DIRECT_URL=postgresql://valorant_migrator:fixture@db.supabase.test:5432/quest?schema=valorant&sslmode=verify-full
+EOF
   chmod 600 "$fixture/quest.production.env"
+  chmod 600 "$fixture/valorant.production.env"
   printf '%s\n' active > "$fixture/old-quest.state"
   printf '%s\n' active > "$fixture/old-valorant.state"
   printf '%s\n' unmasked > "$fixture/old-valorant.persistence"
@@ -342,12 +347,12 @@ case "$(basename "$0")" in
   service-ownership) [[ "${FAIL_SERVICE_OWNERSHIP:-0}" != 1 ]] || { printf 'owned\n'; exit 0; }; printf 'file=/etc/quest-esports/release.env service=quest-prod owner=root mode=0640 observed_at=20260828T120000Z\nfile=/etc/quest-esports/release.env service=valorant-prod owner=root mode=0640 observed_at=20260828T120000Z\n' ;;
   cutover-restore) printf 'cutover-restore\n' >> "$TEST_LOG"; printf 'restored\n' ;;
   cutover-abort) printf 'aborted\n' >> "$TEST_LOG" ;;
-  cutover-url-restore) printf 'cutover-url-restore\n' >> "$TEST_LOG"; sed -i 's#@quest-postgres:#@db.supabase.test:#g' "${CURRENT_RUNTIME_ENV_FILE:?}"; printf 'restored\n' ;;
+  cutover-url-restore) printf 'cutover-url-restore\n' >> "$TEST_LOG"; sed -i 's#@quest-postgres:#@db.supabase.test:#g' "${QUEST_RUNTIME_ENV_FILE:?}"; sed -i 's#@quest-postgres:#@db.supabase.test:#g' "${VALORANT_RUNTIME_ENV_FILE:?}"; printf 'restored\n' ;;
   quest-ready) printf 'quest-readiness-ack\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_READINESS_ACK:-0}" == 1 ]] && exit 1; printf 'ready\n' ;;
   valorant-ready) printf 'valorant-readiness-ack\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_READINESS_ACK:-0}" == 1 ]] && exit 1; printf 'ready\n' ;;
-  quest-url-switch) printf 'quest-url-switch\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_URL_SWITCH:-0}" == 1 ]] && exit 1; sed -i 's#@db\.supabase\.test:#@quest-postgres:#g' "${CURRENT_RUNTIME_ENV_FILE:?}"; printf 'switched target=quest-postgres writer_group=quest\n' ;;
-  valorant-url-switch) printf 'valorant-url-switch\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_URL_SWITCH:-0}" == 1 ]] && exit 1; sed -i 's#@db\.supabase\.test:#@quest-postgres:#g' "${CURRENT_RUNTIME_ENV_FILE:?}"; printf 'switched target=quest-postgres writer_group=valorant\n' ;;
-  quest-url-effective|valorant-url-effective) group=quest; [[ "$(basename "$0")" == valorant-url-effective ]] && group=valorant; printf '%s-url-effective\n' "$group" >> "$TEST_LOG"; [[ "${FAIL_QUEST_URL_EFFECTIVE:-0}" == 1 && "$group" == quest || "${FAIL_VALORANT_URL_EFFECTIVE:-0}" == 1 && "$group" == valorant ]] && exit 1; printf 'url-state group=%s host=quest-postgres database=quest authority=quest-postgres\n' "$group" ;;
+  quest-url-switch) printf 'quest-url-switch\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_URL_SWITCH:-0}" == 1 ]] && exit 1; sed -i 's#@db\.supabase\.test:#@quest-postgres:#g' "${QUEST_RUNTIME_ENV_FILE:?}"; printf 'switched target=quest-postgres writer_group=quest\n' ;;
+  valorant-url-switch) printf 'valorant-url-switch\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_URL_SWITCH:-0}" == 1 ]] && exit 1; [[ "${NOOP_VALORANT_URL_SWITCH:-0}" == 1 ]] || sed -i 's#@db\.supabase\.test:#@quest-postgres:#g' "${VALORANT_RUNTIME_ENV_FILE:?}"; printf 'switched target=quest-postgres writer_group=valorant\n' ;;
+  quest-url-effective|valorant-url-effective) group=quest; [[ "$(basename "$0")" == valorant-url-effective ]] && group=valorant; printf '%s-url-effective\n' "$group" >> "$TEST_LOG"; [[ "${FAIL_QUEST_URL_EFFECTIVE:-0}" == 1 && "$group" == quest || "${FAIL_VALORANT_URL_EFFECTIVE:-0}" == 1 && "$group" == valorant ]] && exit 1; runtime_file="$QUEST_RUNTIME_ENV_FILE"; [[ "$group" == valorant ]] && runtime_file="$VALORANT_RUNTIME_ENV_FILE"; database_url="$(awk -F= '$1 == "DATABASE_URL" { print $2; exit }' "$runtime_file")"; authority="${database_url#*://}"; host_port="${authority%%/*}"; host_port="${host_port##*@}"; host="${host_port%%:*}"; path="${authority#*/}"; database="${path%%[?#]*}"; [[ "$host" == quest-postgres && "$database" == quest ]] || exit 1; printf 'url-state group=%s host=%s database=%s authority=quest-postgres\n' "$group" "$host" "$database" ;;
   quest-service-restart) printf 'quest-service-restart\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_SERVICE_RESTART:-0}" == 1 ]] && exit 1; printf 'restarted target=quest-postgres project=quest-prod writer_group=quest\n' ;;
   valorant-service-restart) printf 'valorant-service-restart\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_SERVICE_RESTART:-0}" == 1 ]] && exit 1; printf 'restarted target=quest-postgres project=valorant-prod writer_group=valorant\n' ;;
   quest-migrate|valorant-migrate) [[ "${BAD_MIGRATOR:-0}" == 1 || "${MIGRATOR_IMAGE:-}" != "${EXPECTED_MIGRATOR_IMAGE:-}" ]] && exit 1; ack_target="${TARGET_AUTHORITY:-none}"; [[ "${TARGET_ACK_LIES:-0}" == 1 ]] && ack_target=wrong-postgres; schema=public; [[ "$(basename "$0")" == valorant-migrate ]] && schema=valorant; printf 'migrator repo=%s target=%s\n' "${MIGRATION_REPOSITORY:-unknown}" "$ack_target" >> "$TEST_LOG"; printf 'migrate\n' >> "$TEST_LOG"; if [[ "${TARGET_ACK_MODE:-0}" == 1 ]]; then printf 'migrated image=%s target=%s schema=%s repository=%s\n' "${MIGRATOR_IMAGE:?}" "$ack_target" "$schema" "${MIGRATION_REPOSITORY:-unknown}"; else printf 'migrated image=%s schema=%s\n' "${MIGRATOR_IMAGE:?}" "$schema"; fi ;;
@@ -465,6 +470,7 @@ POSTGRES_COMPOSE_CA_FILE=$fixture/ca.crt
 POSTGRES_COMPOSE_CERT_FILE=$fixture/postgres.crt
 POSTGRES_COMPOSE_KEY_FILE=$fixture/postgres.key
 QUEST_RUNTIME_ENV_FILE=$fixture/quest.production.env
+VALORANT_RUNTIME_ENV_FILE=$fixture/valorant.production.env
 POSTGRES_TARGET_HOST=127.0.0.1
 POSTGRES_TARGET_PORT=55432
 POSTGRES_TARGET_DATABASE=quest
@@ -728,13 +734,15 @@ sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=tr
 assert_failed post-commit-capture-failure bash "$script_directory/deploy/rollback.sh" post-commit
 assert_contains "$rollback_fixture/recovery-evidence.txt" 'result=incomplete'
 
-setup_fixture post-commit-requires-reconciliation-decision
+setup_fixture post-commit-missing-reconciliation-decision
 make_failed_bundle 8989898989898989898989898989898989898989
 export ROLLBACK_RELEASE_DIR="$rollback_fixture" EXPECTED_LOSS_RPO=owner-approved INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL
 sed -i '/^SUPABASE_RECONCILIATION_DECISION=/d' "$fixture/release.env"
 sed -i 's/quest_writer_admission_started=false/quest_writer_admission_started=true/; s/quest_writer_admitted=false/quest_writer_admitted=true/; s/quest_writer_ack_utc=not-recorded/quest_writer_ack_utc=20260828T120000Z/; s/valorant_writer_admission_started=false/valorant_writer_admission_started=true/; s/valorant_writer_admitted=false/valorant_writer_admitted=true/; s/valorant_writer_ack_utc=not-recorded/valorant_writer_ack_utc=20260828T120000Z/; s/writer_admitted=false/writer_admitted=true/' "$rollback_fixture/commit-point.txt"
-assert_failed post-commit-requires-reconciliation-decision bash "$script_directory/deploy/rollback.sh" post-commit
-assert_contains "$rollback_fixture/recovery-evidence.txt" 'reconciliation_decision=not-required'
+assert_failed post-commit-missing-reconciliation-decision bash "$script_directory/deploy/rollback.sh" post-commit
+assert_contains "$failure_output" 'explicit reconciliation/data-loss decision'
+assert_contains "$rollback_fixture/recovery-evidence.txt" 'reconciliation_decision=not-recorded'
+assert_contains "$rollback_fixture/recovery-evidence.txt" 'selected_recovery_action=not-selected'
 
 setup_fixture post-commit-rejects-supabase-url-rollback
 make_failed_bundle 8989898989898989898989898989898989898989
@@ -1077,6 +1085,16 @@ gate_log_before "$TEST_LOG" 'valorant-health' 'quest-url-switch' 'first cutover 
 gate_log_contains "$TEST_LOG" 'quest-url-effective' 'first cutover did not validate the effective Quest URL host and database'
 gate_log_contains "$TEST_LOG" 'valorant-url-effective' 'first cutover did not validate the effective VALORANT URL host and database'
 gate_log_before "$TEST_LOG" 'valorant-writer-enable' 'commit-point' 'first cutover recorded its final commit point before both writer admissions completed'
+gate_log_before "$TEST_LOG" 'validate-host' 'old-authoritative' 'first cutover did not validate the host before checking database authority'
+gate_log_before "$TEST_LOG" 'old-authoritative' 'quest-freeze-enable' 'first cutover did not check authority before Quest freeze'
+gate_log_before "$TEST_LOG" 'quest-freeze-enable' 'valorant-freeze-enable' 'first cutover did not complete Quest freeze before VALORANT freeze'
+gate_log_before "$TEST_LOG" 'backup-evidence' 'cutover-restore' 'first cutover restored before durable backup evidence'
+gate_log_before "$TEST_LOG" 'valorant-health' 'quest-url-switch' 'first cutover switched URLs before smoke validation'
+gate_log_before "$TEST_LOG" 'quest-url-switch' 'quest-url-effective' 'first cutover did not verify Quest URL state immediately after its switch'
+gate_log_before "$TEST_LOG" 'valorant-url-switch' 'valorant-url-effective' 'first cutover did not verify VALORANT URL state immediately after its switch'
+gate_log_before "$TEST_LOG" 'quest-readiness-ack' 'valorant-readiness-ack' 'first cutover did not complete both readiness acknowledgements in order'
+gate_log_before "$TEST_LOG" 'valorant-readiness-ack' 'quest-writer-enable' 'first cutover admitted Quest before both readiness acknowledgements'
+gate_log_before "$TEST_LOG" 'quest-writer-enable' 'valorant-writer-enable' 'first cutover did not admit writer groups in order'
 
 cutover_release_dir="$fixture/releases/1111111111111111111111111111111111111111"
 gate_file_contains "$cutover_release_dir/release-metadata.txt" 'previous_release=supabase' 'first cutover metadata did not name Supabase as the predecessor'
@@ -1141,6 +1159,28 @@ export FAIL_QUEST_URL_SWITCH=1
 assert_failed cutover-quest-url-switch-failure env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
 if grep -Fq 'valorant-url-switch' "$TEST_LOG"; then gate_failure 'cutover switched VALORANT URLs after Quest URL switch refusal'; fi
 
+setup_fixture cutover-valorant-url-switch-failure
+export FAIL_VALORANT_URL_SWITCH=1
+assert_failed cutover-valorant-url-switch-failure env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+gate_log_contains "$TEST_LOG" 'quest-url-switch' 'cutover did not complete the independent Quest URL switch before VALORANT failure'
+gate_log_contains "$TEST_LOG" 'cutover-url-restore' 'cutover did not restore Supabase URLs after independent VALORANT switch failure'
+if grep -Fq 'valorant-service-restart' "$TEST_LOG"; then gate_failure 'cutover restarted VALORANT after its URL switch refusal'; fi
+
+setup_fixture cutover-rejects-noop-valorant-url-switch
+export NOOP_VALORANT_URL_SWITCH=1
+assert_failed cutover-rejects-noop-valorant-url-switch env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+gate_log_contains "$TEST_LOG" 'valorant-url-effective' 'cutover did not inspect the effective VALORANT URL after a no-op switch'
+if grep -Fq 'valorant-service-restart' "$TEST_LOG"; then gate_failure 'cutover restarted VALORANT after a no-op URL switch'; fi
+grep -q '@db\.supabase\.test:' "$fixture/quest.production.env" || gate_failure 'cutover did not restore Quest Supabase URLs after no-op transition refusal'
+grep -q '@db\.supabase\.test:' "$fixture/valorant.production.env" || gate_failure 'cutover did not restore VALORANT Supabase URLs after no-op transition refusal'
+
+setup_fixture cutover-rejects-missing-valorant-url-switch
+sed -i '/^VALORANT_DATABASE_URL_SWITCH_COMMAND=/d' "$fixture/release.env"
+export VALORANT_DATABASE_URL_SWITCH_COMMAND="$fixture/bin/missing-valorant-url-switch"
+assert_failed cutover-rejects-missing-valorant-url-switch env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+if grep -Fxq 'quest-url-switch' "$TEST_LOG"; then gate_failure 'cutover switched Quest when the independent VALORANT switch contract was missing'; fi
+if grep -Fxq 'valorant-url-switch' "$TEST_LOG"; then gate_failure 'cutover switched VALORANT when its switch contract was missing'; fi
+
 setup_fixture cutover-valorant-url-effective-failure
 export FAIL_VALORANT_URL_EFFECTIVE=1
 assert_failed cutover-valorant-url-effective-failure env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
@@ -1171,10 +1211,22 @@ export FAIL_QUEST_SERVICE_RESTART=1
 assert_failed cutover-quest-restart-failure env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
 if grep -Fq 'valorant-service-restart' "$TEST_LOG" || grep -Fq 'quest-writer-enable' "$TEST_LOG"; then gate_failure 'cutover continued after Quest service restart refusal'; fi
 
+setup_fixture cutover-valorant-restart-failure
+export FAIL_VALORANT_SERVICE_RESTART=1
+assert_failed cutover-valorant-restart-failure env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+gate_log_contains "$TEST_LOG" 'quest-service-restart' 'cutover did not restart Quest before independent VALORANT restart failure'
+if grep -Fq 'quest-readiness-ack' "$TEST_LOG" || grep -Fq 'valorant-readiness-ack' "$TEST_LOG"; then gate_failure 'cutover acknowledged readiness after VALORANT service restart refusal'; fi
+
 setup_fixture cutover-quest-readiness-failure
 export FAIL_QUEST_READINESS_ACK=1
 assert_failed cutover-quest-readiness-failure env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
 if grep -Fq 'quest-writer-enable' "$TEST_LOG" || grep -Fq 'valorant-writer-enable' "$TEST_LOG"; then gate_failure 'cutover admitted writers after Quest readiness refusal'; fi
+
+setup_fixture cutover-valorant-readiness-failure
+export FAIL_VALORANT_READINESS_ACK=1
+assert_failed cutover-valorant-readiness-failure env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+gate_log_contains "$TEST_LOG" 'quest-readiness-ack' 'cutover did not request Quest readiness before independent VALORANT readiness failure'
+if grep -Fq 'quest-writer-enable' "$TEST_LOG" || grep -Fq 'valorant-writer-enable' "$TEST_LOG"; then gate_failure 'cutover admitted writers after VALORANT readiness refusal'; fi
 
 setup_fixture cutover-requires-both-readiness-acks
 export FAIL_VALORANT_READINESS_ACK=1
