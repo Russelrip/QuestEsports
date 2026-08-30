@@ -192,8 +192,9 @@ sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-fre
 sudo systemctl stop quest-esports-backup.service quest-esports-backup-freshness.service
 ```
 
-Before any subsequent host backup, freshness check, or restore, reapply the
-overlay, start PostgreSQL, and re-enable the timers with these exact controls:
+Before a subsequent host backup or freshness check, reapply the overlay, start
+PostgreSQL, and re-enable the timers with these exact controls. These timer
+controls are for backup/freshness operations only:
 
 ```bash
 COMPOSE_ENV=/etc/quest-esports/quest.production.env
@@ -205,6 +206,12 @@ docker compose --env-file "$COMPOSE_ENV" \
   -f ops/docker/compose.postgres-staging.yml ps postgres
 sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
 ```
+
+For a destructive restore, keep both timers and both oneshot services disabled
+from before the restore through target/security validation and service
+recovery. Do not re-enable them as part of this generic staging sequence;
+re-enable them only after the dedicated restore procedure has passed validation
+and recorded the selected recovery point.
 
 Never replace this lifecycle with a Supabase URL or an unimplemented utility.
 
@@ -1015,9 +1022,9 @@ the PostgreSQL service is started with the staging overlay's loopback-only
 `127.0.0.1:55432:5432` publication. It must never target Supabase. No
 private-network backup utility is implemented or supported. If host backup or
 restore access is suspended, disable the timers and stop both oneshot services
-before changing the Compose invocation; reapply the overlay and start
-PostgreSQL before the next host backup, freshness check, or restore. Use these
-exact controls:
+before changing the Compose invocation. For the next host backup or freshness
+check, reapply the overlay, start PostgreSQL, verify the endpoint, and enable
+the timers with these exact controls:
 
 ```bash
 sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
@@ -1032,11 +1039,18 @@ docker compose --env-file "$COMPOSE_ENV" \
 sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
 ```
 
+For a destructive restore, use the same disable/stop controls before the
+restore, but keep both timers and both oneshot services disabled through the
+restore, target/security validation, and service recovery. Do not execute the
+enable command above for restore preparation. The dedicated restore procedure
+re-enables the timers only after successful validation and after the selected
+recovery point is recorded.
+
 Never substitute a Supabase URL. Run the manual backup from an
 accessible working directory; launching `sudo -u deploy` while still in `/root`
 makes GNU `find` fail when it tries to restore that inaccessible working
 directory. Then verify the systemd service, test one failure notification, and
-enable both timers:
+enable both timers for the backup/freshness schedule:
 
 ```bash
 cd /var/www/QuestEsports

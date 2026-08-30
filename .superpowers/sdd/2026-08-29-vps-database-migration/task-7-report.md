@@ -498,3 +498,87 @@ npx=C:\Program Files\nodejs\npx.ps1
 - Docker and Compose are installed locally, but Compose rendering cannot reach
   the workflow's Linux `/etc/quest-esports/quest.production.env` placeholder on
   Windows. No production or live-state command was attempted.
+
+## Fix round 3
+
+### Changed files
+
+- `docs/backup-and-disaster-recovery.md` — split backup/freshness timer
+  enablement from destructive restore lifecycle; keep timers and oneshot
+  services disabled through restore, target/security validation, and service
+  recovery, then require a recorded recovery point before re-enabling them.
+- `docs/production-runbook.md` — clarified both generic staging and backup
+  quick-reference procedures so timer enablement applies only to backup and
+  freshness operations, not restore preparation.
+- `ops/docker/postgres/README.md` — aligned the PostgreSQL overlay lifecycle
+  with the same timer distinction and post-validation recovery-point gate.
+
+### Commands and exact outputs
+
+```text
+git diff --check
+```
+
+Output:
+
+```text
+warning: in the working copy of 'docs/backup-and-disaster-recovery.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/production-runbook.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ops/docker/postgres/README.md', LF will be replaced by CRLF the next time Git touches it
+```
+
+Exit status: 0.
+
+```text
+python -c "from pathlib import Path; refs=['docs/developer-guide.md','docs/environment-reference.md','docs/valorant-local-development.md','docs/backup-and-disaster-recovery.md','docs/production-runbook.md','docs/setup-and-deployment.md','docs/ci-cd.md','ops/docker/compose.production.yml','ops/docker/compose.postgres-staging.yml','ops/quest-esports-backup.env.example']; missing=[ref for ref in refs if not Path(ref).exists()]; assert not missing, missing; print('checked relative Markdown targets; missing=[]')"
+```
+
+Output:
+
+```text
+checked relative Markdown targets; missing=[]
+```
+
+```text
+npx --no-install markdown-link-check docs/production-runbook.md docs/setup-and-deployment.md docs/backup-and-disaster-recovery.md docs/ci-cd.md ops/docker/postgres/README.md
+```
+
+Output:
+
+```text
+npm error npx canceled due to missing packages and no YES option: ["markdown-link-check@3.15.0"]
+npm error A complete log of this run can be found in: C:\Users\russel\AppData\Local\npm-cache\_logs\2026-08-30T03_05_47_912Z-debug-0.log
+```
+
+The local relative-target check passed; the package was unavailable and no
+network installation was attempted.
+
+```text
+python -c "import yaml; from pathlib import Path; p=yaml.safe_load(Path('.github/workflows/ci.yml').read_text(encoding='utf-8')); b=p['jobs']['backend']['services']['postgres']; imgs=[s['image'] for j in p['jobs'].values() for s in j.get('services',{}).values() if isinstance(s,dict) and 'image' in s]; assert b['image']=='postgres:16'; assert imgs==['postgres:16'], imgs; print('Workflow YAML parsed; exactly one PostgreSQL service fixture is postgres:16; rendered PG17 checks remain in job script')"
+```
+
+Output:
+
+```text
+Workflow YAML parsed; exactly one PostgreSQL service fixture is postgres:16; rendered PG17 checks remain in job script
+```
+
+### Self-review
+
+- Generic instructions now enable timers only for backup/freshness operations.
+  Destructive restore instructions explicitly keep timers and oneshot services
+  disabled through restore, target/security validation, and service recovery.
+- Post-first-write recovery re-enables timers only after successful validation,
+  a documented archive/checksum recovery point, writer admission, and
+  post-recovery readiness. The loopback-only `127.0.0.1:55432` overlay, no
+  private-network utility, no-public-port contract, Supabase prohibition, and
+  exact restore command/token contracts remain intact.
+- Prior Task 7 documentation and CI fixes were preserved. No secrets, live
+  state, production endpoint, database, backup remote, or VPS was contacted or
+  mutated.
+
+### Concerns
+
+- `markdown-link-check` is unavailable locally; the repository-local relative
+  target check passed. YAML parsing passed. `git diff --check` passed with only
+  the existing LF-to-CRLF working-copy warnings.

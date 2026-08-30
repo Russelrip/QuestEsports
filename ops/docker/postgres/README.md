@@ -36,17 +36,19 @@ checked-in example is only a template.
 
 The base file must continue to be used alone for the final production
 topology. The overlay must never be copied into that file or used to expose
-PostgreSQL on a non-loopback interface. The supported host-run backup and
-restore path is to keep or reapply this overlay while those operations or their
-timers are enabled. No private-network backup utility is implemented or
-supported, and Supabase is never a replacement target.
+PostgreSQL on a non-loopback interface. For host backup and freshness
+operations, keep or reapply this overlay while PostgreSQL and their timers are
+enabled. A destructive restore also uses this loopback overlay, but its timers
+and oneshot services must remain disabled through restore, target/security
+validation, and service recovery. No private-network backup utility is
+implemented or supported, and Supabase is never a replacement target.
 
 When host-run staging tools no longer need database access, remove the overlay
 from every subsequent application, migration, and release Compose invocation
 and render the base file alone. If the host backup or restore path is also
 suspended, stop its timers and services before changing the database
-invocation, then use the same controls to reapply the overlay before the next
-host backup, freshness check, or restore:
+invocation. For the next host backup or freshness check, reapply the overlay,
+start PostgreSQL, and enable the timers with these exact controls:
 
 ```bash
 sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
@@ -59,6 +61,13 @@ docker compose \
   up -d postgres
 sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
 ```
+
+For a destructive restore, use the disable/stop controls above before the
+restore and keep the timers and oneshot services disabled through the restore,
+target/security validation, and service recovery. Re-enable them only after
+successful validation and after the selected recovery point is documented in
+the incident record; do not use the enable command above as restore
+preparation.
 
 The final topology reaches PostgreSQL only through the private
 `quest-postgres` alias; there is no public PostgreSQL port or firewall

@@ -180,12 +180,12 @@ The checked-in host backup service uses the exact PostgreSQL 17 VPS target in
 `ops/quest-esports-backup.env.example`: `127.0.0.1:55432`, database `quest`,
 and role `quest_backup`. It must never use the Paris Supabase session pooler.
 The supported host-run backup and restore path is to keep or reapply
-`ops/docker/compose.postgres-staging.yml` while the PostgreSQL service and the
-host backup/freshness timers are in use. It remains bound to `127.0.0.1` only;
-it is never a public database port. No private-network backup utility is
-implemented or supported. There is no supported transition back to Supabase:
-after the first VPS writer, every backup and restore must target PostgreSQL 17
-or the change is a release blocker.
+`ops/docker/compose.postgres-staging.yml` while the PostgreSQL service is in
+use. It remains bound to `127.0.0.1` only; it is never a public database port.
+No private-network backup utility is implemented or supported. There is no
+supported transition back to Supabase: after the first VPS writer, every
+backup and restore must target PostgreSQL 17 or the change is a release
+blocker.
 
 If host backup or restore access is intentionally suspended, use these exact
 controls before stopping PostgreSQL or changing the Compose invocation:
@@ -195,9 +195,9 @@ sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-fre
 sudo systemctl stop quest-esports-backup.service quest-esports-backup-freshness.service
 ```
 
-Before any subsequent host backup, freshness check, or restore, reapply the
-overlay, start PostgreSQL, verify the loopback endpoint, and re-enable the
-timers:
+Before a subsequent host backup or freshness check, reapply the overlay, start
+PostgreSQL, verify the loopback endpoint, and re-enable the timers. This
+enablement is for backup/freshness operations only:
 
 ```bash
 COMPOSE_ENV=/etc/quest-esports/quest.production.env
@@ -209,6 +209,13 @@ docker compose --env-file "$COMPOSE_ENV" \
   -f ops/docker/compose.postgres-staging.yml ps postgres
 sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
 ```
+
+Destructive restore is a separate lifecycle. Keep both timers and both oneshot
+services disabled from before the restore through target, security, and
+service-recovery validation. Do not run the enable command above for a restore;
+re-enable the timers only after the restore has passed validation and the
+selected recovery point (archive/checksum and outcome) has been recorded in
+the incident record, as required by [Intentional production restore](#intentional-production-restore).
 
 Set `BACKUP_RCLONE_REMOTES` to newline-separated `label=remote:path` entries and
 `BACKUP_RCLONE_CONFIGS` to matching newline-separated `label=/path/to/config`
@@ -310,7 +317,10 @@ sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
 
 Confirm exactly one safe alert arrives. The message contains only the host and failed unit name. Rotate the webhook immediately if its URL appears in terminal output, chat, logs, or screenshots.
 
-Set `BACKUP_MAX_AGE_MINUTES=2160` in the protected environment, then verify and enable the independent freshness path. Freshness passes only when the same recent local pair verifies independently on every required remote:
+Set `BACKUP_MAX_AGE_MINUTES=2160` in the protected environment, then verify and
+enable the independent freshness path. This is a backup/freshness procedure,
+not a restore step. Freshness passes only when the same recent local pair
+verifies independently on every required remote:
 
 ```bash
 sudo -u deploy -H env BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
@@ -595,12 +605,12 @@ Supabase URL toggle on this path.
    target identity, TLS files, and `quest_backup`/restore credential contract;
    verify them without printing values. Never point this command at Supabase.
 6. Do not set either runtime URL to Supabase and do not invoke `SUPABASE_URL_ROLLBACK_COMMAND`. The post-first-write release contract rejects that command. Complete either the approved fix-forward action or the controlled restore action, then start and validate both Compose candidates frozen before any writer admission.
-7. Restore ownership and permissions, run both migration-status checks and the database security verifier, then verify Quest readiness, VALORANT HTTPS health (`status=ok`, `db=up`), uploads, authentication, admin access, and enabled mail/payment paths. Re-enable both host backup timers only after the restore and validation complete:
+7. Restore ownership and permissions, run both migration-status checks and the database security verifier, then verify Quest readiness, VALORANT HTTPS health (`status=ok`, `db=up`), uploads, authentication, admin access, and enabled mail/payment paths. Keep both host backup timers and both oneshot services disabled throughout the destructive restore, target/security validation, and service recovery. Record the selected recovery point (archive/checksum and outcome) in the incident record after successful validation.
+8. Only after incident-owner sign-off and both readiness gates may the exact coordinated writer-enable controls be used. Never restart `OLD_QUEST_RESTART_COMMAND` or `OLD_VALORANT_RESTART_COMMAND` against the PostgreSQL 17 state, and never run either old mask command as a recovery substitute. After both writer-enable controls succeed and post-recovery service readiness is confirmed, re-enable the host backup timers:
 
    ```bash
    sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
    ```
-8. Only after incident-owner sign-off and both readiness gates may the exact coordinated writer-enable controls be used. Never restart `OLD_QUEST_RESTART_COMMAND` or `OLD_VALORANT_RESTART_COMMAND` against the PostgreSQL 17 state, and never run either old mask command as a recovery substitute.
 
 ## Rebuilding a lost VPS
 
