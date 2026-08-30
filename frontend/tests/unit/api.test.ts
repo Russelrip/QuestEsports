@@ -49,6 +49,20 @@ describe("API helpers", () => {
     }
   });
 
+  it("falls back to the public API origin for SSR when no internal origin is configured", () => {
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+    try {
+      Object.defineProperty(globalThis, "window", { value: undefined, configurable: true });
+      delete process.env.INTERNAL_API_URL;
+      process.env.NEXT_PUBLIC_API_URL = "https://api.example.com";
+
+      expect(buildApiUrl("/api/events")).toBe("https://api.example.com/api/events");
+    } finally {
+      if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
+      else delete (globalThis as { window?: unknown }).window;
+    }
+  });
+
   it("does not use malformed configured API values as URL prefixes", () => {
     for (const configuredApiUrl of [
       "https://api.example.com/base",

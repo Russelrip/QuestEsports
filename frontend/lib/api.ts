@@ -23,7 +23,7 @@ export class ApiRequestError extends Error {
 const getConfiguredApiOrigin = () => {
   const configuredApiUrl =
     typeof window === "undefined"
-      ? process.env.INTERNAL_API_URL?.trim()
+      ? process.env.INTERNAL_API_URL?.trim() || process.env.NEXT_PUBLIC_API_URL?.trim()
       : process.env.NEXT_PUBLIC_API_URL?.trim();
   if (!configuredApiUrl) return null;
 
