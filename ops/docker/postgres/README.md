@@ -140,8 +140,9 @@ install -o root -g 999 -m 0640 /secure/secrets/postgres-admin-password /etc/ques
 install -o root -g 999 -m 0640 /secure/tls/quest-postgres.key /etc/quest-esports/tls/quest-postgres.key
 install -o root -g root -m 0644 /secure/tls/quest-private-ca.crt /etc/quest-esports/tls/quest-private-ca.crt
 install -o root -g root -m 0644 /secure/tls/quest-postgres.crt /etc/quest-esports/tls/quest-postgres.crt
-install -o root -g deploy -m 0640 /secure/tls/backup-client.crt /etc/quest-esports/secrets/backup-client.crt
-install -o root -g deploy -m 0640 /secure/tls/backup-client.key /etc/quest-esports/secrets/backup-client.key
+install -d -o root -g deploy -m 0750 /etc/quest-esports-backup
+install -o root -g deploy -m 0640 /secure/tls/backup-client.crt /etc/quest-esports-backup/backup-client.crt
+install -o root -g deploy -m 0640 /secure/tls/backup-client.key /etc/quest-esports-backup/backup-client.key
 ```
 
 Install backup client certificates/keys separately as `root:deploy` mode `0640`;

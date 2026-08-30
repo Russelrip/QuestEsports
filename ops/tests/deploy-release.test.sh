@@ -37,6 +37,8 @@ make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
+  unset BAD_VALORANT_ALIASES || true
+  unset BACKUP_CLIENT_DIR_MODE || true
   unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP INCOMPLETE_BACKUP FAIL_FREEZE FAIL_QUEST_FREEZE FAIL_VALORANT_FREEZE FAIL_SECURITY_VERIFY MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_CANDIDATE_START FAIL_VALORANT_CANDIDATE_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL SUPABASE_RECONCILIATION_DECISION SUPABASE_URL_ROLLBACK_COMMAND TRY_SUPABASE_URL_ROLLBACK DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP FAIL_QUEST_URL_SWITCH FAIL_VALORANT_URL_SWITCH NOOP_VALORANT_URL_SWITCH FAIL_QUEST_SERVICE_RESTART FAIL_VALORANT_SERVICE_RESTART FAIL_QUEST_READINESS_ACK FAIL_VALORANT_READINESS_ACK FAIL_QUEST_FROZEN_ACK FAIL_VALORANT_FROZEN_ACK FAIL_QUEST_URL_EFFECTIVE FAIL_VALORANT_URL_EFFECTIVE || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
@@ -47,6 +49,9 @@ setup_fixture() {
   printf '%s\n' fixture-key > "$fixture/postgres.key"
   printf '%s\n' fixture-backup-cert > "$fixture/backup-client.crt"
   printf '%s\n' fixture-backup-key > "$fixture/backup-client.key"
+  mkdir -p "$fixture/backup-client"
+  mv "$fixture/backup-client.crt" "$fixture/backup-client/backup-client.crt"
+  mv "$fixture/backup-client.key" "$fixture/backup-client/backup-client.key"
   printf '%s\n' fixture-alternate-key > "$fixture/alternate.key"
   printf '%s\n' 'postgresql://quest_recovery_admin:fixture@quest-postgres:5432/quest?sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt' > "$fixture/recovery-admin-url"
   printf '%s\n' 'postgresql://quest_migrator:fixture@quest-postgres:5432/quest' > "$fixture/quest-migrator-url"
@@ -54,7 +59,8 @@ setup_fixture() {
   printf '%s\n' fixture-alternate-cert > "$fixture/alternate.crt"
   chmod 644 "$fixture/ca.crt" "$fixture/postgres.crt" "$fixture/alternate.crt"
   chmod 600 "$fixture/postgres.key"
-  chmod 640 "$fixture/backup-client.crt" "$fixture/backup-client.key"
+  chmod 750 "$fixture/backup-client"
+  chmod 640 "$fixture/backup-client/backup-client.crt" "$fixture/backup-client/backup-client.key"
   chmod 600 "$fixture/alternate.key"
   : > "$fixture/current-supabase.env"
   cat > "$fixture/quest.production.env" <<'EOF'
@@ -88,7 +94,12 @@ services:
     volumes:
       - /etc/quest-esports/tls/quest-private-ca.crt:/run/secrets/quest-private-ca.crt:ro
     networks:
-      quest-shared: {}
+      quest-shared:
+        aliases:
+          - valorant-platform
+          - valorant-updater
+          - valorant-discord-bot
+          - valorant-name-audit
 EOF
   cp "$script_directory/docker/compose.production.yml" "$fixture/quest.compose.yml"
   cat > "$fixture/releases/$previous_sha/compose.production.yml" <<'EOF'
@@ -116,7 +127,12 @@ services:
     volumes:
       - /etc/quest-esports/tls/quest-private-ca.crt:/run/secrets/quest-private-ca.crt:ro
     networks:
-      quest-shared: {}
+      quest-shared:
+        aliases:
+          - valorant-platform
+          - valorant-updater
+          - valorant-discord-bot
+          - valorant-name-audit
 EOF
   cat > "$fixture/releases/$previous_sha/.env" <<EOF
 QUEST_FRONTEND_IMAGE=ghcr.io/quest/frontend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -212,7 +228,16 @@ elif [[ " $* " == *' config --no-env-resolution --format json '* || " $* " == *'
   printf 'compose project=%s action=config-json\n' "$project" >> "$log"
   if [[ "$project" == valorant-prod ]]; then
     if [[ -f "$compose_file" ]] && grep -Fq 'VALORANT_DATABASE_SSL_VERIFY' "$compose_file" && ! grep -Eq 'sslmode=|sslrootcert=' "$compose_file"; then
-      printf '{"name":"valorant-prod","services":{"valorant-platform":{"image":"%s","env_file":[{"path":"/etc/quest-esports/valorant.production.env","required":true}],"environment":{"VALORANT_DATABASE_SSL_CA_FILE":"/run/secrets/quest-private-ca.crt","VALORANT_DATABASE_SSL_SERVER_HOSTNAME":"quest-postgres","VALORANT_DATABASE_SSL_VERIFY":"full"},"volumes":[{"type":"bind","source":"/etc/quest-esports/tls/quest-private-ca.crt","target":"/run/secrets/quest-private-ca.crt","read_only":true}],"networks":{"quest-shared":{}}}},"networks":{"quest-shared":{"name":"quest-shared","external":true}}}\n' "${VALORANT_IMAGE:?required}"
+      alias_name=valorant-name-audit
+      [[ "${BAD_VALORANT_ALIASES:-0}" == 1 ]] && alias_name=valorant-altered
+      [[ "${BAD_VALORANT_ALIASES:-0}" == missing ]] && alias_name=''
+      python3 - "${VALORANT_IMAGE:?required}" "$alias_name" <<'PY'
+import json
+import sys
+aliases = ["valorant-platform", "valorant-updater", "valorant-discord-bot", sys.argv[2]]
+print(json.dumps({"name": "valorant-prod", "services": {"valorant-platform": {"image": sys.argv[1], "env_file": [{"path": "/etc/quest-esports/valorant.production.env", "required": True}], "environment": {"VALORANT_DATABASE_SSL_CA_FILE": "/run/secrets/quest-private-ca.crt", "VALORANT_DATABASE_SSL_SERVER_HOSTNAME": "quest-postgres", "VALORANT_DATABASE_SSL_VERIFY": "full"}, "volumes": [{"type": "bind", "source": "/etc/quest-esports/tls/quest-private-ca.crt", "target": "/run/secrets/quest-private-ca.crt", "read_only": True}], "networks": {"quest-shared": {"aliases": aliases}}}}, "networks": {"quest-shared": {"name": "quest-shared", "external": True}}}))
+PY
+      exit 0
     else
       printf '{}\n'
     fi
@@ -266,6 +291,10 @@ if [[ "${SENTINEL_WRITABLE:-0}" == 1 && "$1" == -c && "$2" == %a && "$3" == *pos
 fi
 if [[ "${TLS_KEY_WORLD_READABLE:-0}" == 1 && "$1" == -c && "$2" == %a && "$*" == *postgres.key* ]]; then
   printf '%s\n' 644
+  exit 0
+fi
+if [[ "$1" == -c && "$2" == %a && "$3" == *backup-client && "$3" != *backup-client.crt && "$3" != *backup-client.key ]]; then
+  printf '%s\n' "${BACKUP_CLIENT_DIR_MODE:-750}"
   exit 0
 fi
 if [[ "$1" == -c && "$2" == %a && ( "$3" == *backup-client.crt || "$3" == *backup-client.key ) ]]; then
@@ -524,8 +553,9 @@ VALORANT_CA_FILE=$fixture/ca.crt
 POSTGRES_COMPOSE_CA_FILE=$fixture/ca.crt
 POSTGRES_COMPOSE_CERT_FILE=$fixture/postgres.crt
 POSTGRES_COMPOSE_KEY_FILE=$fixture/postgres.key
-BACKUP_CLIENT_CERT_FILE=$fixture/backup-client.crt
-BACKUP_CLIENT_KEY_FILE=$fixture/backup-client.key
+BACKUP_CLIENT_TLS_DIR=$fixture/backup-client
+BACKUP_CLIENT_CERT_FILE=$fixture/backup-client/backup-client.crt
+BACKUP_CLIENT_KEY_FILE=$fixture/backup-client/backup-client.key
 QUEST_RUNTIME_ENV_FILE=$fixture/quest.production.env
 VALORANT_RUNTIME_ENV_FILE=$fixture/valorant.production.env
 POSTGRES_TARGET_HOST=127.0.0.1
@@ -996,6 +1026,14 @@ setup_fixture missing-valorant-asyncpg-contract
 sed -i '/VALORANT_DATABASE_SSL_VERIFY/d' "$fixture/valorant.compose.yml"
 assert_failed missing-valorant-asyncpg-contract run_release
 
+setup_fixture missing-valorant-network-alias
+export BAD_VALORANT_ALIASES=missing
+assert_failed missing-valorant-network-alias run_release
+
+setup_fixture altered-valorant-network-alias
+export BAD_VALORANT_ALIASES=1
+assert_failed altered-valorant-network-alias run_release
+
 setup_fixture valorant-libpq-url-rejected
 sed -i 's#postgresql+asyncpg://val_runtime:fixture@db\.supabase\.test:5432/quest?ssl=require#postgresql+asyncpg://val_runtime:fixture@db.supabase.test:5432/quest?sslmode=verify-full\&sslrootcert=/run/secrets/quest-private-ca.crt#' "$fixture/valorant.production.env"
 assert_failed valorant-libpq-url-rejected run_release
@@ -1049,12 +1087,17 @@ assert_failed host-validator-valorant-runtime-role run_host_validation
 
 setup_fixture host-validator-canonical-tls
 sed -i "s#^POSTGRES_COMPOSE_CERT_FILE=.*#POSTGRES_COMPOSE_CERT_FILE=$fixture/alternate.crt#" "$fixture/release.env"
-: > "$fixture/postgres.crt"
+: > "$fixture/alternate.crt"
 assert_failed host-validator-canonical-tls run_host_validation
 
 setup_fixture host-validator-key-mode
 export TLS_KEY_WORLD_READABLE=1
 assert_failed host-validator-key-mode run_host_validation
+
+setup_fixture host-validator-backup-client-hierarchy
+chmod 700 "$fixture/backup-client"
+export BACKUP_CLIENT_DIR_MODE=700
+assert_failed host-validator-backup-client-hierarchy run_host_validation
 
 setup_fixture host-validator-canonical-tls-ownership
 sed -i "s#^POSTGRES_COMPOSE_CERT_FILE=.*#POSTGRES_COMPOSE_CERT_FILE=$fixture/alternate.crt#; s#^POSTGRES_COMPOSE_KEY_FILE=.*#POSTGRES_COMPOSE_KEY_FILE=$fixture/alternate.key#; s#^VALIDATE_HOST_COMMAND=.*#VALIDATE_HOST_COMMAND=$fixture/bin/validate-host#" "$fixture/release.env"

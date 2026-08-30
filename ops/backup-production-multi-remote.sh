@@ -47,10 +47,30 @@ done
 # production path depend on the server key's container readability contract.
 backup_client_cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
 backup_client_key_file="${BACKUP_CLIENT_KEY_FILE:-}"
+backup_client_tls_dir="${BACKUP_CLIENT_TLS_DIR:-/etc/quest-esports-backup}"
 [[ -n "$backup_client_cert_file" && -n "$backup_client_key_file" ]] || {
   echo "BACKUP_CLIENT_CERT_FILE and BACKUP_CLIENT_KEY_FILE are required for production backup." >&2
   exit 1
 }
+[[ "$backup_client_tls_dir" == /* && "$backup_client_tls_dir" != / && -d "$backup_client_tls_dir" && ! -L "$backup_client_tls_dir" ]] || {
+  echo "Backup client TLS directory is missing or unsafe." >&2
+  exit 1
+}
+[[ "$(stat -c '%a' "$backup_client_tls_dir" 2>/dev/null)" == 750 ]] || {
+  echo "Backup client TLS directory must be mode 0750." >&2
+  exit 1
+}
+if [[ "$backup_test_fixture" == false ]]; then
+  backup_group_id="$(id -g deploy 2>/dev/null)" || {
+    echo "The deploy service group is unavailable." >&2
+    exit 1
+  }
+  [[ "$backup_client_tls_dir" == /etc/quest-esports-backup &&
+      "$(stat -c '%u:%g %a' "$backup_client_tls_dir" 2>/dev/null)" == "0:${backup_group_id} 750" ]] || {
+    echo "Backup client TLS directory is not canonical root-owned deploy-group material." >&2
+    exit 1
+  }
+fi
 for client_file in "$backup_client_cert_file" "$backup_client_key_file"; do
   [[ "$client_file" == /* && "$client_file" != / && -f "$client_file" && -r "$client_file" && ! -L "$client_file" ]] || {
     echo "Backup client TLS material is missing or unsafe." >&2
@@ -66,12 +86,8 @@ for client_file in "$backup_client_cert_file" "$backup_client_key_file"; do
   }
 done
 if [[ "$backup_test_fixture" == false ]]; then
-  backup_group_id="$(id -g deploy 2>/dev/null)" || {
-    echo "The deploy service group is unavailable." >&2
-    exit 1
-  }
-  [[ "$backup_client_cert_file" == /etc/quest-esports/secrets/backup-client.crt &&
-      "$backup_client_key_file" == /etc/quest-esports/secrets/backup-client.key &&
+  [[ "$backup_client_cert_file" == /etc/quest-esports-backup/backup-client.crt &&
+      "$backup_client_key_file" == /etc/quest-esports-backup/backup-client.key &&
       "$(stat -c '%u:%g %a' "$backup_client_cert_file" 2>/dev/null)" == "0:${backup_group_id} 640" &&
       "$(stat -c '%u:%g %a' "$backup_client_key_file" 2>/dev/null)" == "0:${backup_group_id} 640" ]] || {
     echo "Backup client TLS identity is not canonical root-owned deploy-group material." >&2

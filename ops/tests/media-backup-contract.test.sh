@@ -20,10 +20,12 @@ printf 'fixture identity\n' > "$test_root/identity"
 printf 'fixture ca\n' > "$test_root/ca.crt"
 printf 'fixture cert\n' > "$test_root/postgres.crt"
 printf 'fixture key\n' > "$test_root/postgres.key"
-printf 'fixture backup cert\n' > "$test_root/backup-client.crt"
-printf 'fixture backup key\n' > "$test_root/backup-client.key"
+mkdir -p "$test_root/backup-client"
+printf 'fixture backup cert\n' > "$test_root/backup-client/backup-client.crt"
+printf 'fixture backup key\n' > "$test_root/backup-client/backup-client.key"
 chmod 600 "$test_root/identity" "$test_root/ca.crt" "$test_root/postgres.crt" "$test_root/postgres.key"
-chmod 640 "$test_root/backup-client.crt" "$test_root/backup-client.key"
+chmod 750 "$test_root/backup-client"
+chmod 640 "$test_root/backup-client/backup-client.crt" "$test_root/backup-client/backup-client.key"
 cat > "$fake_bin/postgres-target" <<EOF
 #!/usr/bin/env bash
 printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=17 data_root=%s\n' "$backup_root"
@@ -184,8 +186,9 @@ env_file="$test_root/backup.env"
 cat > "$env_file" <<EOF
 POSTGRES17_BIN=$fake_bin
 POSTGRES_CA_FILE=$test_root/ca.crt
-BACKUP_CLIENT_CERT_FILE=$test_root/backup-client.crt
-BACKUP_CLIENT_KEY_FILE=$test_root/backup-client.key
+BACKUP_CLIENT_TLS_DIR=$test_root/backup-client
+BACKUP_CLIENT_CERT_FILE=$test_root/backup-client/backup-client.crt
+BACKUP_CLIENT_KEY_FILE=$test_root/backup-client/backup-client.key
 POSTGRES_TARGET_HOST=127.0.0.1
 POSTGRES_TARGET_PORT=55432
 POSTGRES_TARGET_DATABASE=quest
@@ -205,7 +208,9 @@ export PATH="$fake_bin:$PATH" REMOTE_ROOT="$remote_root" TEST_ROOT="$test_root"
 REAL_STAT="$(command -v stat)"; export REAL_STAT
 cat > "$fake_bin/stat" <<'FAKE'
 #!/usr/bin/env bash
-if [[ "$1" == -c && "$2" == %a && ( "$3" == *backup-client.crt || "$3" == *backup-client.key ) ]]; then
+if [[ "$1" == -c && "$2" == %a && "$3" == *backup-client && "$3" != *backup-client.crt && "$3" != *backup-client.key ]]; then
+  printf '750\n'
+elif [[ "$1" == -c && "$2" == %a && ( "$3" == *backup-client.crt || "$3" == *backup-client.key ) ]]; then
   printf '640\n'
 else
   exec "$REAL_STAT" "$@"
@@ -244,7 +249,8 @@ cat > "$fake_bin/stat" <<'FAKE'
 #!/usr/bin/env bash
 case "$*" in
   *postgres-target*) [[ "${MISSING_VALORANT:-0}" != 1 ]] && { printf '702\n'; exit 0; } ;;
-  *backup-client.crt*|*backup-client.key*) printf '640\n'; exit 0 ;;
+  *backup-client/backup-client.crt*|*backup-client/backup-client.key*) printf '640\n'; exit 0 ;;
+  *backup-client*) printf '750\n'; exit 0 ;;
 esac
 exec "$REAL_STAT" "$@"
 FAKE

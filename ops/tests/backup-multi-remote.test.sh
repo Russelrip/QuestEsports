@@ -11,10 +11,12 @@ BACKUP_ROOT="$TEST_ROOT/backups"
 REMOTE_ROOT="$TEST_ROOT/remotes"
 mkdir -p "$FAKE_BIN" "$UPLOAD_ROOT" "$PRIVATE_ROOT" "$BACKUP_ROOT" "$REMOTE_ROOT"
 printf 'fixture ca\n' > "$TEST_ROOT/ca.crt"
-printf 'fixture cert\n' > "$TEST_ROOT/postgres.crt"
-printf 'fixture key\n' > "$TEST_ROOT/postgres.key"
+mkdir -p "$TEST_ROOT/backup-client"
+printf 'fixture cert\n' > "$TEST_ROOT/backup-client/backup-client.crt"
+printf 'fixture key\n' > "$TEST_ROOT/backup-client/backup-client.key"
 chmod 600 "$TEST_ROOT/ca.crt"
-chmod 640 "$TEST_ROOT/postgres.crt" "$TEST_ROOT/postgres.key"
+chmod 750 "$TEST_ROOT/backup-client"
+chmod 640 "$TEST_ROOT/backup-client/backup-client.crt" "$TEST_ROOT/backup-client/backup-client.key"
 printf 'public fixture\n' > "$UPLOAD_ROOT/public.txt"
 printf 'private fixture\n' > "$PRIVATE_ROOT/private.txt"
 printf 'fixture\n' > "$TEST_ROOT/primary.conf"
@@ -133,8 +135,9 @@ BACKUP_ROOT=$BACKUP_ROOT
 BACKUP_AGE_RECIPIENT=age1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 POSTGRES17_BIN=$FAKE_BIN
 POSTGRES_CA_FILE=$TEST_ROOT/ca.crt
-BACKUP_CLIENT_CERT_FILE=$TEST_ROOT/postgres.crt
-BACKUP_CLIENT_KEY_FILE=$TEST_ROOT/postgres.key
+BACKUP_CLIENT_TLS_DIR=$TEST_ROOT/backup-client
+BACKUP_CLIENT_CERT_FILE=$TEST_ROOT/backup-client/backup-client.crt
+BACKUP_CLIENT_KEY_FILE=$TEST_ROOT/backup-client/backup-client.key
 POSTGRES_TARGET_HOST=127.0.0.1
 POSTGRES_TARGET_PORT=55432
 POSTGRES_TARGET_DATABASE=quest
@@ -159,7 +162,9 @@ export PATH="$FAKE_BIN:$PATH" FLOCK_LOG="$TEST_ROOT/flock.log" REMOTE_ROOT FLOCK
 REAL_STAT="$(command -v stat)"; export REAL_STAT
 cat > "$FAKE_BIN/stat" <<'FAKE'
 #!/usr/bin/env bash
-if [[ "$1" == -c && "$2" == %a && ( "$3" == *postgres.crt || "$3" == *postgres.key ) ]]; then
+if [[ "$1" == -c && "$2" == %a && "$3" == *backup-client && "$3" != *backup-client.crt && "$3" != *backup-client.key ]]; then
+  printf '%s\n' "${BACKUP_DIR_MODE:-750}"
+elif [[ "$1" == -c && "$2" == %a && ( "$3" == *backup-client.crt || "$3" == *backup-client.key ) ]]; then
   printf '%s\n' "${BACKUP_TLS_MODE:-640}"
 else
   exec "$REAL_STAT" "$@"
@@ -176,7 +181,16 @@ if run_backup; then
   exit 1
 fi
 : > "$FLOCK_LOG"
-BACKUP_TLS_MODE=640; export BACKUP_TLS_MODE
+BACKUP_TLS_MODE=640 BACKUP_DIR_MODE=750; export BACKUP_TLS_MODE BACKUP_DIR_MODE
+chmod 700 "$TEST_ROOT/backup-client"
+BACKUP_DIR_MODE=700; export BACKUP_DIR_MODE
+if run_backup; then
+  printf 'expected backup client TLS directory mode rejection\n' >&2
+  exit 1
+fi
+chmod 750 "$TEST_ROOT/backup-client"
+BACKUP_DIR_MODE=750; export BACKUP_DIR_MODE
+: > "$FLOCK_LOG"
 run_backup
 archive_path="$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'quest-production-*.tar.gz.enc' -print -quit)"
 assert_file "$archive_path"

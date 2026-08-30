@@ -999,8 +999,9 @@ sudo apt install -y postgresql-client-17
 sudo install -d -o deploy -g deploy -m 700 /srv/quest-esports/backups
 sudo install -d -o deploy -g deploy -m 700 /srv/quest-esports/rclone
 sudo install -o root -g deploy -m 640 ops/quest-esports-backup.env.example /etc/quest-esports-backup.env
-sudo install -o root -g deploy -m 640 /secure/tls/backup-client.crt /etc/quest-esports/secrets/backup-client.crt
-sudo install -o root -g deploy -m 640 /secure/tls/backup-client.key /etc/quest-esports/secrets/backup-client.key
+sudo install -d -o root -g deploy -m 750 /etc/quest-esports-backup
+sudo install -o root -g deploy -m 640 /secure/tls/backup-client.crt /etc/quest-esports-backup/backup-client.crt
+sudo install -o root -g deploy -m 640 /secure/tls/backup-client.key /etc/quest-esports-backup/backup-client.key
 sudo install -o deploy -g deploy -m 600 /path/to/verified-rclone.conf /srv/quest-esports/rclone/quest-esports.conf
 sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.service /etc/systemd/system/
 sudo install -o root -g root -m 644 ops/systemd/quest-esports-backup.timer /etc/systemd/system/

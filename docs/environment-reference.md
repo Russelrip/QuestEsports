@@ -321,7 +321,8 @@ tracked application examples.
 | `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS` | Conditional; required for retention | Operations owner | D/P | Public/non-secret | `<minimum recovery-point count>` | Per prune run |
 | `RETENTION_CONFIRMATION` | Conditional; required to delete | Operations owner | D/P | Destructive control | `PRUNE_QUEST_PRODUCTION` only for an approved deletion | Per prune run |
 | `BACKUP_AGE_IDENTITY_FILE` | Yes for restore | Recovery owner | D/P | Secret/path-sensitive | `<offline age identity path>` | Per restore run |
-| `BACKUP_CLIENT_CERT_FILE` / `BACKUP_CLIENT_KEY_FILE` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports/secrets/backup-client.{crt,key}` | Per backup run |
+| `BACKUP_CLIENT_TLS_DIR` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports-backup` (`root:deploy` `0750`) | Per backup run |
+| `BACKUP_CLIENT_CERT_FILE` / `BACKUP_CLIENT_KEY_FILE` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports-backup/backup-client.{crt,key}` (`root:deploy` `0640`) | Per backup run |
 | `RECOVERY_CLIENT_CERT_FILE` / `RECOVERY_CLIENT_KEY_FILE` | Yes for production restore | Recovery owner | D/P | Secret/path-sensitive | `/etc/quest-esports/secrets/recovery-client.{crt,key}` | Per restore/security run |
 | `RESTORE_CONFIRMATION` | Yes for restore | Recovery owner | D/P | Destructive control | `RESTORE_QUEST_PRODUCTION` only for an approved restore | Per restore run |
 | `RESTORE_COUNTDOWN_SECONDS` | No | Recovery owner | D/P | Public/non-secret | `10` | Per restore run |

@@ -107,9 +107,12 @@ test("scheduled backup TLS client material is readable by deploy without weakeni
   );
   assert.match(backupScript, /client_mode.*== 640/);
   assert.match(backupScript, /0:\$\{backup_group_id\} 640/);
+  assert.match(backupScript, /backup_client_tls_dir.*\/etc\/quest-esports-backup/);
   assert.match(service, /^User=deploy$/m);
   assert.match(service, /^Group=deploy$/m);
-  assert.match(example, /root:deploy mode 0640/);
+  assert.match(service, /\/etc\/quest-esports-backup.*0750/);
+  assert.match(example, /root:deploy 0640/);
+  assert.match(example, /^BACKUP_CLIENT_TLS_DIR=\/etc\/quest-esports-backup$/m);
 });
 
 test("production restore reports restored table counts for both schemas", () => {

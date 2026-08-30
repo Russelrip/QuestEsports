@@ -80,22 +80,29 @@ validate_compose_tls_material() {
   fi
 }
 validate_backup_tls_material() {
-  local cert_file key_file tls_file tls_stat
+  local cert_file key_file tls_file tls_stat client_tls_dir
   if [[ "$fixture_mode" == 1 ]]; then
     cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
     key_file="${BACKUP_CLIENT_KEY_FILE:-}"
+    client_tls_dir="${BACKUP_CLIENT_TLS_DIR:-}"
   else
-    cert_file=/etc/quest-esports/secrets/backup-client.crt
-    key_file=/etc/quest-esports/secrets/backup-client.key
+    client_tls_dir=/etc/quest-esports-backup
+    cert_file=/etc/quest-esports-backup/backup-client.crt
+    key_file=/etc/quest-esports-backup/backup-client.key
   fi
+  [[ "$client_tls_dir" == /* && "$client_tls_dir" != / && -d "$client_tls_dir" && ! -L "$client_tls_dir" ]] || die 'backup PostgreSQL TLS directory is missing or unsafe.'
+  [[ "$(stat -c '%a' "$client_tls_dir" 2>/dev/null)" == 750 ]] || die 'backup PostgreSQL TLS directory must be mode 0750.'
   for tls_file in "$cert_file" "$key_file"; do
     root_file "$tls_file" "${QUEST_DEPLOY_FIXTURE_ENFORCE_BACKUP_TLS_OWNERSHIP:-0}"
     [[ -s "$tls_file" ]] || die 'backup PostgreSQL TLS material is missing or unsafe.'
     [[ "$(stat -c '%a' "$tls_file" 2>/dev/null)" == 640 ]] || die 'backup PostgreSQL TLS material must be mode 0640.'
   done
   if [[ "$fixture_mode" != 1 ]]; then
-    [[ "$cert_file" == /etc/quest-esports/secrets/backup-client.crt &&
-       "$key_file" == /etc/quest-esports/secrets/backup-client.key ]] || die 'backup PostgreSQL TLS files are not the canonical client mounts.'
+    [[ "$client_tls_dir" == /etc/quest-esports-backup &&
+       "$cert_file" == /etc/quest-esports-backup/backup-client.crt &&
+       "$key_file" == /etc/quest-esports-backup/backup-client.key ]] || die 'backup PostgreSQL TLS files are not the canonical client mounts.'
+    tls_stat="$(stat -c '%U:%G %a' "$client_tls_dir" 2>/dev/null)" || die 'backup PostgreSQL TLS directory ownership cannot be inspected.'
+    [[ "$tls_stat" == 'root:deploy 750' ]] || die 'backup PostgreSQL TLS directory must be root-owned, deploy-group-traversable, mode 0750.'
     tls_stat="$(stat -c '%U:%G %a' "$cert_file" 2>/dev/null)" || die 'backup PostgreSQL certificate ownership cannot be inspected.'
     [[ "$tls_stat" == 'root:deploy 640' ]] || die 'backup PostgreSQL certificate must be root-owned, deploy-group-readable, mode 0640.'
     tls_stat="$(stat -c '%U:%G %a' "$key_file" 2>/dev/null)" || die 'backup PostgreSQL key ownership cannot be inspected.'
@@ -129,6 +136,11 @@ def contract(raw, expected_image):
     if service.get("environment", {}).get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres": raise SystemExit(1)
     if service.get("environment", {}).get("VALORANT_DATABASE_SSL_VERIFY") != "full": raise SystemExit(1)
     if set(service.get("networks", {})) != {"quest-shared"}: raise SystemExit(1)
+    network_entry = service.get("networks", {}).get("quest-shared")
+    expected_aliases = ("valorant-discord-bot", "valorant-name-audit", "valorant-platform", "valorant-updater")
+    if not isinstance(network_entry, dict): raise SystemExit(1)
+    aliases = network_entry.get("aliases")
+    if not isinstance(aliases, list) or tuple(sorted(aliases)) != expected_aliases: raise SystemExit(1)
     network = doc.get("networks", {}).get("quest-shared", {})
     if network.get("name") != "quest-shared" or network.get("external") is not True: raise SystemExit(1)
     env_files = service.get("env_file", [])
@@ -137,7 +149,7 @@ def contract(raw, expected_image):
     if env_file.get("path") != "/etc/quest-esports/valorant.production.env" or env_file.get("required") is not True: raise SystemExit(1)
     mounts = service.get("volumes", [])
     if not any(isinstance(m, dict) and m.get("source") == "/etc/quest-esports/tls/quest-private-ca.crt" and m.get("target") == "/run/secrets/quest-private-ca.crt" and m.get("read_only") is True for m in mounts): raise SystemExit(1)
-    return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())), tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))), tuple(sorted(service["networks"])))
+    return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())), tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))), tuple(sorted(service["networks"])), tuple(sorted(aliases)))
 if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]): raise SystemExit(1)
 PY
   rm -f "$source_json_file" "$contract_json_file"
