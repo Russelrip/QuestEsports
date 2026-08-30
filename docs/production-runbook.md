@@ -176,13 +176,37 @@ public firewall rule. Do not start application writers during this stage.
 After host-run staging clients no longer need access, remove the overlay from
 application, migration, and release invocations. The base file has no
 PostgreSQL host publication; applications use the private `quest-postgres`
-network alias. The one documented exception is the checked-in host backup
-service: until a private-network backup utility is installed and owner-verified,
-the `quest-prod` PostgreSQL service must remain started with the staging overlay
-so the host backup contract can reach exactly `127.0.0.1:55432`. That
-publication is loopback-only and is never a public database port. Once the
-private utility replaces the host service, remove the overlay and disable the
-loopback-dependent host timer together; do not silently point it at Supabase.
+network alias. The supported host-run backup and restore path is to keep or
+reapply the staging overlay while the PostgreSQL service and the host backup
+tools are in use. No private-network backup utility is implemented or
+supported. This keeps the checked-in backup and restore primitives connected to
+exactly `127.0.0.1:55432`; the publication is loopback-only and is never a
+public database port.
+
+If host backup or restore access is intentionally suspended, stop the timers
+and oneshot services before stopping PostgreSQL or changing the Compose
+invocation:
+
+```bash
+sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+sudo systemctl stop quest-esports-backup.service quest-esports-backup-freshness.service
+```
+
+Before any subsequent host backup, freshness check, or restore, reapply the
+overlay, start PostgreSQL, and re-enable the timers with these exact controls:
+
+```bash
+COMPOSE_ENV=/etc/quest-esports/quest.production.env
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml up -d postgres
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml ps postgres
+sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+```
+
+Never replace this lifecycle with a Supabase URL or an unimplemented utility.
 
 ### Rehearse before the maintenance window
 
@@ -988,10 +1012,27 @@ the active off-site `rclone` remote, `BACKUP_MAX_AGE_MINUTES=2160`, approved
 remote retention values, and the approved backup-failure webhook. This host
 backup path is supported during staging and after authority cutover only while
 the PostgreSQL service is started with the staging overlay's loopback-only
-`127.0.0.1:55432:5432` publication. It must never target Supabase. If the
-overlay is removed, disable this host service/timer before removal and use an
-owner-verified private-network backup utility on the `quest-postgres` alias
-instead; never substitute a Supabase URL. Run the manual backup from an
+`127.0.0.1:55432:5432` publication. It must never target Supabase. No
+private-network backup utility is implemented or supported. If host backup or
+restore access is suspended, disable the timers and stop both oneshot services
+before changing the Compose invocation; reapply the overlay and start
+PostgreSQL before the next host backup, freshness check, or restore. Use these
+exact controls:
+
+```bash
+sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+sudo systemctl stop quest-esports-backup.service quest-esports-backup-freshness.service
+COMPOSE_ENV=/etc/quest-esports/quest.production.env
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml up -d postgres
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml ps postgres
+sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+```
+
+Never substitute a Supabase URL. Run the manual backup from an
 accessible working directory; launching `sudo -u deploy` while still in `/root`
 makes GNU `find` fail when it tries to restore that inaccessible working
 directory. Then verify the systemd service, test one failure notification, and

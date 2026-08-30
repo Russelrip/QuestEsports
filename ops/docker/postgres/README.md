@@ -12,11 +12,11 @@ bind mount and is not a production target. The owner must verify that
 coexistence on the VPS before staging; the repository cannot prove live state.
 
 `ops/docker/compose.postgres-staging.yml` is a temporary overlay, not part of
-the final base topology. Apply it only while PM2 or a host-run backup tool
-needs database access during staging. It publishes PostgreSQL exactly on the
-host loopback interface at `127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}` and
-must be removed from the Compose invocation when staging access is no longer
-needed:
+the final base topology. Apply it while PM2 or a host-run backup or restore
+tool needs database access. It publishes PostgreSQL exactly on the host
+loopback interface at `127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}` and must
+be removed from application, migration, and release invocations when those
+clients no longer need staging access:
 
 ```bash
 docker compose \
@@ -36,12 +36,33 @@ checked-in example is only a template.
 
 The base file must continue to be used alone for the final production
 topology. The overlay must never be copied into that file or used to expose
-PostgreSQL on a non-loopback interface.
+PostgreSQL on a non-loopback interface. The supported host-run backup and
+restore path is to keep or reapply this overlay while those operations or their
+timers are enabled. No private-network backup utility is implemented or
+supported, and Supabase is never a replacement target.
 
 When host-run staging tools no longer need database access, remove the overlay
-from every subsequent Compose invocation and render the base file alone. The
-final topology reaches PostgreSQL only through the private `quest-postgres`
-alias; there is no public PostgreSQL port or firewall publication.
+from every subsequent application, migration, and release Compose invocation
+and render the base file alone. If the host backup or restore path is also
+suspended, stop its timers and services before changing the database
+invocation, then use the same controls to reapply the overlay before the next
+host backup, freshness check, or restore:
+
+```bash
+sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+sudo systemctl stop quest-esports-backup.service quest-esports-backup-freshness.service
+
+docker compose \
+  --env-file /etc/quest-esports/quest.production.env \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml \
+  up -d postgres
+sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+```
+
+The final topology reaches PostgreSQL only through the private
+`quest-postgres` alias; there is no public PostgreSQL port or firewall
+publication.
 
 ## Host preparation
 

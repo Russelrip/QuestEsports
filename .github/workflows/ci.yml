@@ -111,10 +111,28 @@ jobs:
           backup='ops/quest-esports-backup.env.example'
           rehearsal='ops/rehearsal/postgres17-restore-rehearsal.sh'
 
-          # The disposable backend fixture remains PostgreSQL 16. The
-          # production PostgreSQL 17 contract is checked separately below.
-          test "$(grep -Fc 'image: postgres:16' .github/workflows/ci.yml)" -eq 1
-          ! grep -Eq 'image:[[:space:]]*postgres:17' .github/workflows/ci.yml
+          # Parse the workflow so this assertion inspects service definitions,
+          # not the command text that performs the assertion itself. The
+          # disposable backend fixture remains PostgreSQL 16. The production
+          # PostgreSQL 17 contract is checked separately below.
+          python - <<'PY'
+          import yaml
+
+          with open('.github/workflows/ci.yml', encoding='utf-8') as workflow_file:
+              workflow = yaml.safe_load(workflow_file)
+          backend_services = workflow['jobs']['backend'].get('services', {})
+          postgres_service = backend_services.get('postgres')
+          assert postgres_service is not None
+          assert postgres_service['image'] == 'postgres:16'
+          service_images = [
+              service['image']
+              for job in workflow['jobs'].values()
+              for service in job.get('services', {}).values()
+              if isinstance(service, dict) and 'image' in service
+          ]
+          assert service_images == ['postgres:16'], service_images
+          print('Workflow YAML parsed; exactly one PostgreSQL service fixture is postgres:16')
+          PY
 
           grep -F 'postgres:17-bookworm@sha256:' "$compose" >/dev/null
           grep -F 'POSTGRES_IMAGE must be supplied by the release manifest' "$compose" >/dev/null
@@ -157,6 +175,10 @@ jobs:
           grep -F 'PostgreSQL 16.15 cluster remains untouched' docs/production-runbook.md >/dev/null
           grep -F '127.0.0.1:55432' docs/production-runbook.md >/dev/null
           grep -F 'no public database port' docs/production-runbook.md >/dev/null
+          grep -F 'No private-network backup utility is implemented or' docs/production-runbook.md >/dev/null
+          grep -F 'No private-network backup utility is' docs/backup-and-disaster-recovery.md >/dev/null
+          grep -F 'sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer' docs/backup-and-disaster-recovery.md >/dev/null
+          grep -F 'sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer' docs/backup-and-disaster-recovery.md >/dev/null
           grep -F 'Post-first-write rollback boundary' docs/backup-and-disaster-recovery.md >/dev/null
           grep -F 'supabase_url_rollback=prohibited' docs/backup-and-disaster-recovery.md >/dev/null
 

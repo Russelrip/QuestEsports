@@ -721,9 +721,11 @@ validation. The target is PostgreSQL 17 Bookworm with durable data at
    Verify the owner-approved exact PostgreSQL 17 digest, target sentinel,
    healthcheck, durable mount, TLS, and loopback-only `127.0.0.1:55432:5432`.
    Do not start application writers. Remove the staging overlay from
-   application and release invocations; retain it for the host backup service
-   only under the documented loopback exception in the [Production Operations
+   application and release invocations; keep or reapply it for the host backup
+   and restore path under the documented loopback lifecycle in the [Production Operations
    Runbook](./production-runbook.md#stage-postgresql-17-beside-postgresql-16).
+   No private-network backup utility is implemented, and Supabase is never a
+   replacement target for host backup or restore connectivity.
 4. Run the signed disposable two-schema restore rehearsal with pinned
    PostgreSQL 17 clients. Require the exact evidence and owner/live gate
    described in [Backup and Disaster Recovery](./backup-and-disaster-recovery.md#phase-8-rehearsal-boundary).

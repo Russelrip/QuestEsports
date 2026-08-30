@@ -179,18 +179,36 @@ The backup takes an exclusive `flock`, copies both immutable upload trees, runs 
 The checked-in host backup service uses the exact PostgreSQL 17 VPS target in
 `ops/quest-esports-backup.env.example`: `127.0.0.1:55432`, database `quest`,
 and role `quest_backup`. It must never use the Paris Supabase session pooler.
-The loopback publication is supported during staging and after authority
-cutover only while the PostgreSQL service is started with
-`ops/docker/compose.postgres-staging.yml` and the host backup/freshness timers
-are the active backup utility. It remains bound to `127.0.0.1` only; it is never
-a public database port.
+The supported host-run backup and restore path is to keep or reapply
+`ops/docker/compose.postgres-staging.yml` while the PostgreSQL service and the
+host backup/freshness timers are in use. It remains bound to `127.0.0.1` only;
+it is never a public database port. No private-network backup utility is
+implemented or supported. There is no supported transition back to Supabase:
+after the first VPS writer, every backup and restore must target PostgreSQL 17
+or the change is a release blocker.
 
-If the staging overlay is removed, disable the loopback-dependent host backup
-and freshness timers as part of the same change, then replace them with an
-owner-verified private-network backup utility attached to `quest-shared` and
-targeting the `quest-postgres` alias. There is no supported transition back to
-Supabase: after the first VPS writer, every backup must target PostgreSQL 17 or
-the backup change is a release blocker.
+If host backup or restore access is intentionally suspended, use these exact
+controls before stopping PostgreSQL or changing the Compose invocation:
+
+```bash
+sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+sudo systemctl stop quest-esports-backup.service quest-esports-backup-freshness.service
+```
+
+Before any subsequent host backup, freshness check, or restore, reapply the
+overlay, start PostgreSQL, verify the loopback endpoint, and re-enable the
+timers:
+
+```bash
+COMPOSE_ENV=/etc/quest-esports/quest.production.env
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml up -d postgres
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml ps postgres
+sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+```
 
 Set `BACKUP_RCLONE_REMOTES` to newline-separated `label=remote:path` entries and
 `BACKUP_RCLONE_CONFIGS` to matching newline-separated `label=/path/to/config`
@@ -542,7 +560,26 @@ Supabase URL toggle on this path.
    ```
 3. Capture and checksum the current PostgreSQL 17 database and both upload roots with the configured `CURRENT_STATE_CAPTURE_COMMAND`. Record expected loss/RPO before selecting fix-forward or controlled restore.
 4. Restore-test the selected complete two-schema archive on disposable infrastructure first. Confirm the manifest scope, checksum, `--no-owner --no-acl --single-transaction --exit-on-error` contract, and separate security verification.
-5. Keep the Quest and VALORANT Compose writer controls stopped while the guarded restore targets `127.0.0.1:55432`, database `quest`, PostgreSQL 17, and the canonical `/srv/quest-esports/postgres/17/data`. After the post-commit containment wrapper completes, an explicitly authorized production restore uses the protected target environment and the existing guarded primitive:
+5. Keep the Quest and VALORANT Compose writer controls stopped. Before the guarded restore, reapply the staging overlay and stop both backup timers/services so no backup races the restore; then start PostgreSQL with the overlay and verify the exact `127.0.0.1:55432` endpoint:
+
+   ```bash
+   sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+   sudo systemctl stop quest-esports-backup.service quest-esports-backup-freshness.service
+   COMPOSE_ENV=/etc/quest-esports/quest.production.env
+   docker compose --env-file "$COMPOSE_ENV" \
+     -f ops/docker/compose.production.yml \
+     -f ops/docker/compose.postgres-staging.yml up -d postgres
+   docker compose --env-file "$COMPOSE_ENV" \
+     -f ops/docker/compose.production.yml \
+     -f ops/docker/compose.postgres-staging.yml ps postgres
+   ```
+
+   The supported host-run restore target is `127.0.0.1:55432`, database
+   `quest`, PostgreSQL 17, and the canonical
+   `/srv/quest-esports/postgres/17/data`; no private-network utility is
+   implemented. After the post-commit containment wrapper completes, an
+   explicitly authorized production restore uses the protected target
+   environment and the existing guarded primitive:
 
    ```bash
    sudo env \
@@ -558,7 +595,11 @@ Supabase URL toggle on this path.
    target identity, TLS files, and `quest_backup`/restore credential contract;
    verify them without printing values. Never point this command at Supabase.
 6. Do not set either runtime URL to Supabase and do not invoke `SUPABASE_URL_ROLLBACK_COMMAND`. The post-first-write release contract rejects that command. Complete either the approved fix-forward action or the controlled restore action, then start and validate both Compose candidates frozen before any writer admission.
-7. Restore ownership and permissions, run both migration-status checks and the database security verifier, then verify Quest readiness, VALORANT HTTPS health (`status=ok`, `db=up`), uploads, authentication, admin access, and enabled mail/payment paths.
+7. Restore ownership and permissions, run both migration-status checks and the database security verifier, then verify Quest readiness, VALORANT HTTPS health (`status=ok`, `db=up`), uploads, authentication, admin access, and enabled mail/payment paths. Re-enable both host backup timers only after the restore and validation complete:
+
+   ```bash
+   sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer
+   ```
 8. Only after incident-owner sign-off and both readiness gates may the exact coordinated writer-enable controls be used. Never restart `OLD_QUEST_RESTART_COMMAND` or `OLD_VALORANT_RESTART_COMMAND` against the PostgreSQL 17 state, and never run either old mask command as a recovery substitute.
 
 ## Rebuilding a lost VPS
