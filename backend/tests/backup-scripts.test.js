@@ -107,12 +107,37 @@ test("scheduled backup TLS client material is readable by deploy without weakeni
   );
   assert.match(backupScript, /client_mode.*== 640/);
   assert.match(backupScript, /0:\$\{backup_group_id\} 640/);
+  assert.match(backupScript, /backup-client-ca\.crt/);
   assert.match(backupScript, /backup_client_tls_dir.*\/etc\/quest-esports-backup/);
   assert.match(service, /^User=deploy$/m);
   assert.match(service, /^Group=deploy$/m);
   assert.match(service, /\/etc\/quest-esports-backup.*0750/);
   assert.match(example, /root:deploy 0640/);
   assert.match(example, /^BACKUP_CLIENT_TLS_DIR=\/etc\/quest-esports-backup$/m);
+  assert.match(example, /^POSTGRES_CA_FILE=\/etc\/quest-esports-backup\/backup-client-ca\.crt$/m);
+  assert.doesNotMatch(example, /^POSTGRES_CA_FILE=\/etc\/quest-esports\/tls\//m);
+});
+
+test("pinned PostgreSQL server files match the UID/GID 999 readability contract", () => {
+  const postgresReadme = fs.readFileSync(
+    path.join(__dirname, "../../ops/docker/postgres/README.md"),
+    "utf8",
+  );
+  const compose = fs.readFileSync(
+    path.join(__dirname, "../../ops/docker/compose.production.yml"),
+    "utf8",
+  );
+  const readabilityFixture = fs.readFileSync(
+    path.join(__dirname, "../../ops/tests/postgres-container-readability.test.sh"),
+    "utf8",
+  );
+  assert.match(postgresReadme, /quest-postgres\.crt.*root -g 999 -m 0640/s);
+  assert.match(postgresReadme, /postgres-admin-password.*root -g 999 -m 0640/s);
+  assert.match(compose, /user: "999:999"/);
+  assert.match(compose, /quest-postgres\.crt:\/run\/postgresql\/tls\/server\.crt:ro/);
+  assert.match(readabilityFixture, /--user 999:999/);
+  assert.match(readabilityFixture, /test -r \/run\/postgresql\/tls\/server\.crt/);
+  assert.match(readabilityFixture, /test -r \/run\/secrets\/postgres-admin-password/);
 });
 
 test("production restore reports restored table counts for both schemas", () => {

@@ -17,15 +17,16 @@ printf 'RIFFpreviewWEBP\n' > "$upload_root/poster-images/photo-preview.webp"
 printf '\xff\xd8\xfforiginal-JPEG\n' > "$private_root/event-album-originals/photo-preview.original.jpg"
 printf 'fixture\n' > "$test_root/rclone.conf"
 printf 'fixture identity\n' > "$test_root/identity"
-printf 'fixture ca\n' > "$test_root/ca.crt"
+printf 'fixture server ca\n' > "$test_root/server-ca.crt"
 printf 'fixture cert\n' > "$test_root/postgres.crt"
 printf 'fixture key\n' > "$test_root/postgres.key"
 mkdir -p "$test_root/backup-client"
+printf 'fixture ca\n' > "$test_root/backup-client/backup-client-ca.crt"
 printf 'fixture backup cert\n' > "$test_root/backup-client/backup-client.crt"
 printf 'fixture backup key\n' > "$test_root/backup-client/backup-client.key"
-chmod 600 "$test_root/identity" "$test_root/ca.crt" "$test_root/postgres.crt" "$test_root/postgres.key"
+chmod 600 "$test_root/identity" "$test_root/server-ca.crt" "$test_root/postgres.crt" "$test_root/postgres.key"
 chmod 750 "$test_root/backup-client"
-chmod 640 "$test_root/backup-client/backup-client.crt" "$test_root/backup-client/backup-client.key"
+chmod 640 "$test_root/backup-client/backup-client-ca.crt" "$test_root/backup-client/backup-client.crt" "$test_root/backup-client/backup-client.key"
 cat > "$fake_bin/postgres-target" <<EOF
 #!/usr/bin/env bash
 printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=17 data_root=%s\n' "$backup_root"
@@ -185,7 +186,7 @@ chmod 700 "$fake_bin"/*
 env_file="$test_root/backup.env"
 cat > "$env_file" <<EOF
 POSTGRES17_BIN=$fake_bin
-POSTGRES_CA_FILE=$test_root/ca.crt
+POSTGRES_CA_FILE=$test_root/backup-client/backup-client-ca.crt
 BACKUP_CLIENT_TLS_DIR=$test_root/backup-client
 BACKUP_CLIENT_CERT_FILE=$test_root/backup-client/backup-client.crt
 BACKUP_CLIENT_KEY_FILE=$test_root/backup-client/backup-client.key
@@ -318,7 +319,7 @@ EOF
 chmod 600 "$test_root/restore-target-sentinel.env"
 cat > "$test_root/restore.env" <<EOF
 POSTGRES17_BIN=$fake_bin
-POSTGRES_CA_FILE=$test_root/ca.crt
+POSTGRES_CA_FILE=$test_root/server-ca.crt
 RECOVERY_CLIENT_CERT_FILE=$test_root/postgres.crt
 RECOVERY_CLIENT_KEY_FILE=$test_root/postgres.key
 RECOVERY_ADMIN_URL=postgresql://quest_recovery_admin:fixture@127.0.0.1:55432/quest_restore

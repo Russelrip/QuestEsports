@@ -43,6 +43,7 @@ docker run --rm --user 999:999 --entrypoint sh \
     test -r /run/postgresql/tls/server.key
     test "$(stat -c %a /run/secrets/postgres-admin-password)" = 640
     test "$(stat -c %a /run/postgresql/tls/server.crt)" = 640
+    test "$(stat -c %a /run/postgresql/tls/ca.crt)" = 644
     test "$(stat -c %a /run/postgresql/tls/server.key)" = 640
   '
 

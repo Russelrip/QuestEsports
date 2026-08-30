@@ -249,9 +249,9 @@ for tls_file in "$POSTGRES_CA_FILE"; do
   }
 done
 if [[ "$backup_test_fixture" == false ]]; then
-  [[ "$POSTGRES_CA_FILE" == /etc/quest-esports/tls/quest-private-ca.crt &&
-      "$(stat -c '%u' "$POSTGRES_CA_FILE" 2>/dev/null)" == 0 ]] || {
-    echo "PostgreSQL CA material is not canonical root-owned trust material." >&2
+  [[ "$POSTGRES_CA_FILE" == /etc/quest-esports-backup/backup-client-ca.crt &&
+      "$(stat -c '%u:%g %a' "$POSTGRES_CA_FILE" 2>/dev/null)" == "0:${backup_group_id} 640" ]] || {
+    echo "Backup client CA material is not canonical deploy-readable trust material." >&2
     exit 1
   }
 fi

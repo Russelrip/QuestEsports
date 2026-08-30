@@ -10,13 +10,12 @@ PRIVATE_ROOT="$TEST_ROOT/private"
 BACKUP_ROOT="$TEST_ROOT/backups"
 REMOTE_ROOT="$TEST_ROOT/remotes"
 mkdir -p "$FAKE_BIN" "$UPLOAD_ROOT" "$PRIVATE_ROOT" "$BACKUP_ROOT" "$REMOTE_ROOT"
-printf 'fixture ca\n' > "$TEST_ROOT/ca.crt"
 mkdir -p "$TEST_ROOT/backup-client"
+printf 'fixture ca\n' > "$TEST_ROOT/backup-client/backup-client-ca.crt"
 printf 'fixture cert\n' > "$TEST_ROOT/backup-client/backup-client.crt"
 printf 'fixture key\n' > "$TEST_ROOT/backup-client/backup-client.key"
-chmod 600 "$TEST_ROOT/ca.crt"
 chmod 750 "$TEST_ROOT/backup-client"
-chmod 640 "$TEST_ROOT/backup-client/backup-client.crt" "$TEST_ROOT/backup-client/backup-client.key"
+chmod 640 "$TEST_ROOT/backup-client/backup-client-ca.crt" "$TEST_ROOT/backup-client/backup-client.crt" "$TEST_ROOT/backup-client/backup-client.key"
 printf 'public fixture\n' > "$UPLOAD_ROOT/public.txt"
 printf 'private fixture\n' > "$PRIVATE_ROOT/private.txt"
 printf 'fixture\n' > "$TEST_ROOT/primary.conf"
@@ -134,7 +133,7 @@ PRIVATE_UPLOAD_ROOT=$PRIVATE_ROOT
 BACKUP_ROOT=$BACKUP_ROOT
 BACKUP_AGE_RECIPIENT=age1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 POSTGRES17_BIN=$FAKE_BIN
-POSTGRES_CA_FILE=$TEST_ROOT/ca.crt
+POSTGRES_CA_FILE=$TEST_ROOT/backup-client/backup-client-ca.crt
 BACKUP_CLIENT_TLS_DIR=$TEST_ROOT/backup-client
 BACKUP_CLIENT_CERT_FILE=$TEST_ROOT/backup-client/backup-client.crt
 BACKUP_CLIENT_KEY_FILE=$TEST_ROOT/backup-client/backup-client.key

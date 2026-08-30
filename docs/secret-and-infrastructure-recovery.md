@@ -12,6 +12,13 @@ The guarded `ops/create-secret-recovery-package.sh` script allowlists these requ
 - `/srv/quest-esports/rclone/quest-esports.conf`
 - `/etc/quest-esports-backup.env`
 
+The scheduled backup TLS client CA, certificate, and key are provisioned
+separately at `/etc/quest-esports-backup/backup-client-ca.crt` and
+`backup-client.{crt,key}` as `root:deploy` mode `0640`; they are not the
+PostgreSQL server TLS files under `/etc/quest-esports/tls`. Reissue or transfer
+these files through the approved infrastructure-secret channel rather than
+putting them in the encrypted package or repository.
+
 It also includes the recognized Nginx site, installed QuestEsports backup systemd units, and the `deploy` user's PM2 dump when present. The private `age` identity is deliberately excluded.
 
 The package does not export configuration held only by Supabase, Vercel, GitHub, the DNS registrar, Google Cloud, the mail provider, PayHere, the VPS provider, or a firewall control panel. Maintain a non-secret recovery inventory that names each owner/account, MFA method, recovery-code custodian, project identifier, region, DNS zone, domain, and support route. Store provider recovery codes separately from the package.
@@ -58,7 +65,10 @@ A package is not considered verified merely because it exists or decrypts. The d
 3. Build a replacement Paris-compatible database and French VPS without admitting public writes.
 4. Restore the application database and upload trees using [Backup and Disaster Recovery](./backup-and-disaster-recovery.md).
 5. Retrieve and decrypt the secret recovery package on the controlled recovery host, then transfer only the required files over an authenticated channel with restrictive ownership and modes.
-6. Recreate Nginx/TLS, PM2, systemd, firewall, DNS, GitHub/Vercel, Supabase, mail, payment, and monitoring settings from the inventory. Reissue TLS rather than preserving old private certificate keys.
+6. Recreate Nginx/TLS, the separate PostgreSQL server TLS hierarchy, the
+   deploy-traversable backup client TLS hierarchy, PM2, systemd, firewall, DNS,
+   GitHub/Vercel, Supabase, mail, payment, and monitoring settings from the
+   inventory. Reissue TLS rather than preserving old private certificate keys.
 7. Rotate database passwords, API keys, OAuth tokens, webhook secrets, session/encryption material where data compatibility permits, and any credential suspected of exposure. Follow the documented compatibility procedure before changing `AUTH_ENCRYPTION_KEY` because it protects stored encrypted data.
 8. Run migrations, the database security verifier, readiness checks, public smoke checks, authentication, mail/payment tests, backup, failure-notification test, and an immediate new recovery package.
 

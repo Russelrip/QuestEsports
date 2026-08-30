@@ -50,6 +50,7 @@ setup_fixture() {
   printf '%s\n' fixture-backup-cert > "$fixture/backup-client.crt"
   printf '%s\n' fixture-backup-key > "$fixture/backup-client.key"
   mkdir -p "$fixture/backup-client"
+  printf '%s\n' fixture-backup-ca > "$fixture/backup-client/backup-client-ca.crt"
   mv "$fixture/backup-client.crt" "$fixture/backup-client/backup-client.crt"
   mv "$fixture/backup-client.key" "$fixture/backup-client/backup-client.key"
   printf '%s\n' fixture-alternate-key > "$fixture/alternate.key"
@@ -60,7 +61,7 @@ setup_fixture() {
   chmod 644 "$fixture/ca.crt" "$fixture/postgres.crt" "$fixture/alternate.crt"
   chmod 600 "$fixture/postgres.key"
   chmod 750 "$fixture/backup-client"
-  chmod 640 "$fixture/backup-client/backup-client.crt" "$fixture/backup-client/backup-client.key"
+  chmod 640 "$fixture/backup-client/backup-client-ca.crt" "$fixture/backup-client/backup-client.crt" "$fixture/backup-client/backup-client.key"
   chmod 600 "$fixture/alternate.key"
   : > "$fixture/current-supabase.env"
   cat > "$fixture/quest.production.env" <<'EOF'
@@ -297,7 +298,7 @@ if [[ "$1" == -c && "$2" == %a && "$3" == *backup-client && "$3" != *backup-clie
   printf '%s\n' "${BACKUP_CLIENT_DIR_MODE:-750}"
   exit 0
 fi
-if [[ "$1" == -c && "$2" == %a && ( "$3" == *backup-client.crt || "$3" == *backup-client.key ) ]]; then
+if [[ "$1" == -c && "$2" == %a && ( "$3" == *backup-client-ca.crt || "$3" == *backup-client.crt || "$3" == *backup-client.key ) ]]; then
   printf '%s\n' 640
   exit 0
 fi
@@ -554,6 +555,7 @@ POSTGRES_COMPOSE_CA_FILE=$fixture/ca.crt
 POSTGRES_COMPOSE_CERT_FILE=$fixture/postgres.crt
 POSTGRES_COMPOSE_KEY_FILE=$fixture/postgres.key
 BACKUP_CLIENT_TLS_DIR=$fixture/backup-client
+BACKUP_CLIENT_CA_FILE=$fixture/backup-client/backup-client-ca.crt
 BACKUP_CLIENT_CERT_FILE=$fixture/backup-client/backup-client.crt
 BACKUP_CLIENT_KEY_FILE=$fixture/backup-client/backup-client.key
 QUEST_RUNTIME_ENV_FILE=$fixture/quest.production.env
@@ -1098,6 +1100,10 @@ setup_fixture host-validator-backup-client-hierarchy
 chmod 700 "$fixture/backup-client"
 export BACKUP_CLIENT_DIR_MODE=700
 assert_failed host-validator-backup-client-hierarchy run_host_validation
+
+setup_fixture host-validator-backup-client-ca
+rm -f "$fixture/backup-client/backup-client-ca.crt"
+assert_failed host-validator-backup-client-ca run_host_validation
 
 setup_fixture host-validator-canonical-tls-ownership
 sed -i "s#^POSTGRES_COMPOSE_CERT_FILE=.*#POSTGRES_COMPOSE_CERT_FILE=$fixture/alternate.crt#; s#^POSTGRES_COMPOSE_KEY_FILE=.*#POSTGRES_COMPOSE_KEY_FILE=$fixture/alternate.key#; s#^VALIDATE_HOST_COMMAND=.*#VALIDATE_HOST_COMMAND=$fixture/bin/validate-host#" "$fixture/release.env"

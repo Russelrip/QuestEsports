@@ -84,6 +84,7 @@ the stack:
 /srv/quest-esports/uploads
 /srv/quest-esports/private
 /etc/quest-esports/tls
+/etc/quest-esports-backup
 /etc/quest-esports/postgres-healthcheck.sh
 /etc/quest-esports/secrets/postgres-admin-password
 ```
@@ -102,10 +103,11 @@ Quest application env file. The host operator must provision
 `/etc/quest-esports/tls/quest-postgres.crt`, and
 `/etc/quest-esports/tls/quest-postgres.key` from the private CA process; no
 certificate or key is stored in this repository. Mounts are read-only runtime
-files. The canonical server files are root-owned: CA and certificate are
-`root:root` mode `0644`, and the private key is `root:999` mode `0640`. This
-lets the pinned image's PostgreSQL UID/GID `999:999` read the bind-mounted key
-without weakening host ownership. A server key is not a backup-client key.
+files. The canonical server files are root-owned: the CA is `root:root` mode
+`0644`, while the server certificate and private key are both `root:999` mode
+`0640`. This lets the pinned image's PostgreSQL UID/GID `999:999` read every
+bind-mounted server credential without weakening host ownership. A server key
+is not a backup-client key.
 
 The writable application roots must be owned by the backend runtime UID/GID
 `1001:1001`. Host bootstrap should apply the following ownership and modes:
@@ -119,16 +121,16 @@ chmod 0700 /srv/quest-esports/private
 ```
 
 The host keeps the canonical PostgreSQL server TLS files root-owned. The server
-key is group-readable only by GID `999` as described above; the CA and
-certificate are mode `0644`. The password file and server key are the only
-server files readable by GID `999`; both are mounted read-only and must be
-installed with `root:999` and mode `0640`. The healthcheck script is installed root-owned
+certificate and key are group-readable only by GID `999` as described above;
+the CA is mode `0644`. The password file, server certificate, and server key
+are the server files readable by GID `999`; all three are mounted read-only and
+must be installed with `root:999` and mode `0640`. The healthcheck script is installed root-owned
 with mode `0755`. These modes are prerequisites for the read-only runtime
 mounts and are checked during host bootstrap. Backup and recovery client
 identity files are separate root-owned files and are never used to satisfy the
-canonical server mount contract. Backup client files are `root:deploy` mode
-`0640` so the scheduled `deploy:deploy` service can read them; recovery client
-files remain `root:root` mode `0600`. Backups use
+canonical server mount contract. The backup client CA, certificate, and key are
+`root:deploy` mode `0640` so the scheduled `deploy:deploy` service can read
+them; recovery client files remain `root:root` mode `0600`. Backups use
 `backup-client.crt`/`backup-client.key`; destructive restores and post-restore
 security verification use the separately controlled
 `recovery-client.crt`/`recovery-client.key` identity.
@@ -137,15 +139,17 @@ The host bootstrap must establish the exact server-file contract before startup:
 
 ```bash
 install -o root -g 999 -m 0640 /secure/secrets/postgres-admin-password /etc/quest-esports/secrets/postgres-admin-password
+install -o root -g 999 -m 0640 /secure/tls/quest-postgres.crt /etc/quest-esports/tls/quest-postgres.crt
 install -o root -g 999 -m 0640 /secure/tls/quest-postgres.key /etc/quest-esports/tls/quest-postgres.key
 install -o root -g root -m 0644 /secure/tls/quest-private-ca.crt /etc/quest-esports/tls/quest-private-ca.crt
-install -o root -g root -m 0644 /secure/tls/quest-postgres.crt /etc/quest-esports/tls/quest-postgres.crt
 install -d -o root -g deploy -m 0750 /etc/quest-esports-backup
+install -o root -g deploy -m 0640 /secure/tls/backup-client-ca.crt /etc/quest-esports-backup/backup-client-ca.crt
 install -o root -g deploy -m 0640 /secure/tls/backup-client.crt /etc/quest-esports-backup/backup-client.crt
 install -o root -g deploy -m 0640 /secure/tls/backup-client.key /etc/quest-esports-backup/backup-client.key
 ```
 
-Install backup client certificates/keys separately as `root:deploy` mode `0640`;
+Install the backup client CA, certificate, and key separately as `root:deploy`
+mode `0640`;
 they are readable only by root and the scheduled `deploy` service and are never
 mounted into the PostgreSQL server container. Recovery certificates/keys remain
 `root:root` mode `0600`. A
