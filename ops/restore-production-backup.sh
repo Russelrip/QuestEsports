@@ -805,7 +805,7 @@ private_stage=""
 private_activated=true
 chmod 700 "$resolved_private_root" "$resolved_private_root/event-album-originals"
 
-if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="${POSTGRES_CERT_FILE:-}" PGSSLKEY="${POSTGRES_KEY_FILE:-}" PGAPPNAME=quest-restore-target \
+if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$recovery_client_cert_file" PGSSLKEY="$recovery_client_key_file" PGAPPNAME=quest-restore-target \
   "$pg_restore_bin" --dbname="$restore_url" \
   --clean \
   --if-exists \
@@ -822,22 +822,33 @@ if [[ ! -r "$canonical_security_sql" ]]; then
   echo "Canonical PostgreSQL security SQL is missing: $canonical_security_sql; the exit guard will roll back both activated file trees." >&2
   exit 1
 fi
-if ! psql_target -v RESTORE_MODE=1 -v ON_ERROR_STOP=1 -f "$canonical_security_sql"; then
-  echo "Canonical PostgreSQL security normalization failed; the exit guard will roll back both activated file trees." >&2
-  exit 1
-fi
+for ownership_role in quest_migrator val_migrator; do
+  if ! psql_target -v RESTORE_MODE=1 -v ON_ERROR_STOP=1 -c "SET ROLE $ownership_role" -f "$canonical_security_sql"; then
+    echo "Canonical PostgreSQL security normalization failed for $ownership_role; the exit guard will roll back both activated file trees." >&2
+    exit 1
+  fi
+done
 
 # The --no-owner restore deliberately creates objects as the recovery role. The
 # canonical bootstrap normalizes every application object to its schema's
 # migrator; require a non-secret, exact zero-mismatch probe before declaring
 # the restore complete.
-owner_mismatches="$(psql_target -tAc "WITH relation_owners AS (SELECT n.nspname, c.relname, r.rolname AS owner_name, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS expected_owner FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname IN ('public','valorant') AND c.relkind IN ('r','p','v','m','S','f')), routine_owners AS (SELECT n.nspname, p.proname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname IN ('public','valorant') AND p.prokind IN ('f','p','a')), type_owners AS (SELECT n.nspname, t.typname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_roles r ON r.oid = t.typowner WHERE n.nspname IN ('public','valorant') AND t.typisdefined AND t.typtype IN ('b','d','e') AND t.typelem = 0 AND t.typrelid = 0) SELECT count(*) FROM (SELECT * FROM relation_owners UNION ALL SELECT * FROM routine_owners UNION ALL SELECT * FROM type_owners) objects WHERE owner_name <> expected_owner")" || {
+owner_mismatches="$(psql_target -tAc "WITH relation_owners AS (SELECT n.nspname, c.relname, r.rolname AS owner_name, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS expected_owner FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname IN ('public','valorant') AND c.relkind IN ('r','p','v','m','S','f')), routine_owners AS (SELECT n.nspname, p.proname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname IN ('public','valorant') AND p.prokind IN ('f','p','a')), type_owners AS (SELECT n.nspname, t.typname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_roles r ON r.oid = t.typowner WHERE n.nspname IN ('public','valorant') AND t.typisdefined AND t.typtype IN ('b','d','e','r') AND t.typelem = 0 AND t.typrelid = 0) SELECT count(*) FROM (SELECT * FROM relation_owners UNION ALL SELECT * FROM routine_owners UNION ALL SELECT * FROM type_owners) objects WHERE owner_name <> expected_owner")" || {
   echo "Restored object-owner verification failed; the exit guard will roll back both activated file trees." >&2
   exit 1
 }
 owner_mismatches="$(printf '%s' "$owner_mismatches" | tr -d '[:space:]')"
 [[ "$owner_mismatches" == 0 ]] || {
   echo "Restored object-owner normalization is incomplete; the exit guard will roll back both activated file trees." >&2
+  exit 1
+}
+extended_owner_mismatches="$(psql_target -tAc "WITH objects AS (SELECT n.nspname AS schema_name, pg_get_userbyid(o.oprowner) AS owner_name, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS expected_owner FROM pg_operator o JOIN pg_namespace n ON n.oid = o.oprnamespace WHERE n.nspname IN ('public','valorant') UNION ALL SELECT n.nspname, pg_get_userbyid(c.collowner), CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_collation c JOIN pg_namespace n ON n.oid = c.collnamespace WHERE n.nspname IN ('public','valorant') UNION ALL SELECT n.nspname, pg_get_userbyid(c.conowner), CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_conversion c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname IN ('public','valorant') UNION ALL SELECT n.nspname, pg_get_userbyid(s.stxowner), CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_statistic_ext s JOIN pg_namespace n ON n.oid = s.stxnamespace WHERE n.nspname IN ('public','valorant') UNION ALL SELECT n.nspname, pg_get_userbyid(o.opcowner), CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_opclass o JOIN pg_namespace n ON n.oid = o.opcnamespace WHERE n.nspname IN ('public','valorant') UNION ALL SELECT n.nspname, pg_get_userbyid(o.opfowner), CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_opfamily o JOIN pg_namespace n ON n.oid = o.opfnamespace WHERE n.nspname IN ('public','valorant') UNION ALL SELECT n.nspname, pg_get_userbyid(d.dictowner), CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_ts_dict d JOIN pg_namespace n ON n.oid = d.dictnamespace WHERE n.nspname IN ('public','valorant') UNION ALL SELECT n.nspname, pg_get_userbyid(c.cfgowner), CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_ts_config c JOIN pg_namespace n ON n.oid = c.cfgnamespace WHERE n.nspname IN ('public','valorant')) SELECT count(*) FROM objects WHERE owner_name <> expected_owner")" || {
+  echo "Extended restored object-owner verification failed; the exit guard will roll back both activated file trees." >&2
+  exit 1
+}
+extended_owner_mismatches="$(printf '%s' "$extended_owner_mismatches" | tr -d '[:space:]')"
+[[ "$extended_owner_mismatches" == 0 ]] || {
+  echo "Restored non-relation object owners do not match their schema migrators; the exit guard will roll back both activated file trees." >&2
   exit 1
 }
 echo "Restored object-owner verification: passed (0 mismatches)."

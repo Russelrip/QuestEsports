@@ -59,8 +59,11 @@ DATABASE_URL=postgresql://quest_runtime:fixture@db.supabase.test:5432/quest?sche
 DIRECT_URL=postgresql://quest_runtime:fixture@db.supabase.test:5432/quest?schema=public&sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
 EOF
   cat > "$fixture/valorant.production.env" <<'EOF'
-DATABASE_URL=postgresql://val_runtime:fixture@db.supabase.test:5432/quest?schema=valorant&sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
-DIRECT_URL=postgresql://val_runtime:fixture@db.supabase.test:5432/quest?schema=valorant&sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
+DATABASE_URL=postgresql+asyncpg://val_runtime:fixture@db.supabase.test:5432/quest?ssl=require
+DIRECT_URL=postgresql+asyncpg://val_runtime:fixture@db.supabase.test:5432/quest?ssl=require
+VALORANT_DATABASE_SSL_CA_FILE=/run/secrets/quest-private-ca.crt
+VALORANT_DATABASE_SSL_SERVER_HOSTNAME=quest-postgres
+VALORANT_DATABASE_SSL_VERIFY=full
 EOF
   chmod 600 "$fixture/quest.production.env" "$fixture/valorant.production.env" "$fixture/recovery-admin-url" "$fixture/quest-migrator-url" "$fixture/valorant-migrator-url"
   printf '%s\n' active > "$fixture/old-quest.state"
@@ -353,7 +356,7 @@ case "$(basename "$0")" in
   quest-ready) printf 'quest-readiness-ack\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_READINESS_ACK:-0}" == 1 ]] && exit 1; printf 'ready\n' ;;
   valorant-ready) printf 'valorant-readiness-ack\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_READINESS_ACK:-0}" == 1 ]] && exit 1; printf 'ready\n' ;;
   quest-url-switch) printf 'quest-url-switch\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_URL_SWITCH:-0}" == 1 ]] && exit 1; sed -i 's#@db\.supabase\.test:#@quest-postgres:#g' "${QUEST_RUNTIME_ENV_FILE:?}"; printf 'switched target=quest-postgres writer_group=quest\n' ;;
-  valorant-url-switch) printf 'valorant-url-switch\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_URL_SWITCH:-0}" == 1 ]] && exit 1; [[ "${NOOP_VALORANT_URL_SWITCH:-0}" == 1 ]] || sed -i 's#@db\.supabase\.test:#@quest-postgres:#g' "${VALORANT_RUNTIME_ENV_FILE:?}"; printf 'switched target=quest-postgres writer_group=valorant\n' ;;
+  valorant-url-switch) printf 'valorant-url-switch\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_URL_SWITCH:-0}" == 1 ]] && exit 1; [[ "${NOOP_VALORANT_URL_SWITCH:-0}" == 1 ]] || sed -i 's#@db\.supabase\.test:#@quest-postgres:#g' "${VALORANT_RUNTIME_ENV_FILE:?}"; sed -i 's#schema=valorant&sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt#ssl=require#' "${VALORANT_RUNTIME_ENV_FILE:?}"; printf 'switched target=quest-postgres writer_group=valorant\n' ;;
   quest-url-effective|valorant-url-effective) group=quest; [[ "$(basename "$0")" == valorant-url-effective ]] && group=valorant; printf '%s-url-effective\n' "$group" >> "$TEST_LOG"; [[ "${FAIL_QUEST_URL_EFFECTIVE:-0}" == 1 && "$group" == quest || "${FAIL_VALORANT_URL_EFFECTIVE:-0}" == 1 && "$group" == valorant ]] && exit 1; runtime_file="$QUEST_RUNTIME_ENV_FILE"; [[ "$group" == valorant ]] && runtime_file="$VALORANT_RUNTIME_ENV_FILE"; database_url="$(awk -F= '$1 == "DATABASE_URL" { print $2; exit }' "$runtime_file")"; authority="${database_url#*://}"; host_port="${authority%%/*}"; host_port="${host_port##*@}"; host="${host_port%%:*}"; path="${authority#*/}"; database="${path%%[?#]*}"; [[ "$host" == quest-postgres && "$database" == quest ]] || exit 1; printf 'url-state group=%s host=%s database=%s authority=quest-postgres\n' "$group" "$host" "$database" ;;
   quest-service-restart) printf 'quest-service-restart\n' >> "$TEST_LOG"; [[ "${FAIL_QUEST_SERVICE_RESTART:-0}" == 1 ]] && exit 1; printf 'restarted target=quest-postgres project=quest-prod writer_group=quest\n' ;;
   valorant-service-restart) printf 'valorant-service-restart\n' >> "$TEST_LOG"; [[ "${FAIL_VALORANT_SERVICE_RESTART:-0}" == 1 ]] && exit 1; printf 'restarted target=quest-postgres project=valorant-prod writer_group=valorant\n' ;;

@@ -93,7 +93,8 @@ The checked-in `001-bootstrap-roles.sql` is copied to
 also installs `healthcheck.sh` as
 `/etc/quest-esports/postgres-healthcheck.sh` before startup. The host operator
 stores the PostgreSQL administrator password at
-`/etc/quest-esports/secrets/postgres-admin-password` with mode `0400`; Compose
+`/etc/quest-esports/secrets/postgres-admin-password` as `root:999` mode `0640`;
+Compose
 mounts it only in the PostgreSQL container as
 `/run/secrets/postgres-admin-password`. It is never included in the shared
 Quest application env file. The host operator must provision
@@ -119,7 +120,9 @@ chmod 0700 /srv/quest-esports/private
 
 The host keeps the canonical PostgreSQL server TLS files root-owned. The server
 key is group-readable only by GID `999` as described above; the CA and
-certificate are mode `0644`. The healthcheck script is installed root-owned
+certificate are mode `0644`. The password file and server key are the only
+server files readable by GID `999`; both are mounted read-only and must be
+installed with `root:999` and mode `0640`. The healthcheck script is installed root-owned
 with mode `0755`. These modes are prerequisites for the read-only runtime
 mounts and are checked during host bootstrap. Backup and recovery client
 identity files are separate root-owned `root:root` mode `0600` files and are
@@ -127,6 +130,20 @@ never used to satisfy the canonical server mount contract. Backups use
 `backup-client.crt`/`backup-client.key`; destructive restores and post-restore
 security verification use the separately controlled
 `recovery-client.crt`/`recovery-client.key` identity.
+
+The host bootstrap must establish the exact server-file contract before startup:
+
+```bash
+install -o root -g 999 -m 0640 /secure/secrets/postgres-admin-password /etc/quest-esports/secrets/postgres-admin-password
+install -o root -g 999 -m 0640 /secure/tls/quest-postgres.key /etc/quest-esports/tls/quest-postgres.key
+install -o root -g root -m 0644 /secure/tls/quest-private-ca.crt /etc/quest-esports/tls/quest-private-ca.crt
+install -o root -g root -m 0644 /secure/tls/quest-postgres.crt /etc/quest-esports/tls/quest-postgres.crt
+```
+
+Backup and recovery client certificates/keys remain separate `root:root` mode
+`0600` files and are never mounted into the PostgreSQL server container. A
+disposable readability fixture runs the pinned image as `999:999` and checks
+the password, certificate, and key mounts without exposing their contents.
 
 The backend readiness probe writes a process-specific
 `.quest-readiness-*` file with mode `0600` in both roots and removes it on

@@ -47,12 +47,13 @@ root_file() {
 }
 
 validate_compose_tls_material() {
-  local ca_file cert_file key_file key_mode tls_stat tls_uid tls_gid
+  local ca_file cert_file key_file password_file key_mode tls_stat tls_uid tls_gid
   if [[ "$fixture_mode" == 1 ]]; then
     ca_file="${POSTGRES_COMPOSE_CA_FILE:-${POSTGRES_CERT_FILE:-}}"
     cert_file="${POSTGRES_COMPOSE_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
     key_file="${POSTGRES_COMPOSE_KEY_FILE:-${POSTGRES_KEY_FILE:-}}"
   else
+    password_file=/etc/quest-esports/secrets/postgres-admin-password
     ca_file=/etc/quest-esports/tls/quest-private-ca.crt
     cert_file=/etc/quest-esports/tls/quest-postgres.crt
     key_file=/etc/quest-esports/tls/quest-postgres.key
@@ -74,6 +75,7 @@ validate_compose_tls_material() {
     [[ "$tls_stat" == '0:0 644' ]] || die 'canonical PostgreSQL certificate must be root-owned mode 0644.'
     tls_stat="$(stat -c '%u:%g %a' "$key_file" 2>/dev/null)" || die 'canonical PostgreSQL key ownership cannot be inspected.'
     [[ "$tls_stat" == '0:999 640' ]] || die 'canonical PostgreSQL key must be root-owned, group-readable by 999, mode 0640.'
+    [[ -f "$password_file" && ! -L "$password_file" && "$(stat -c '%u:%g %a' "$password_file" 2>/dev/null)" == '0:999 640' ]] || die 'canonical PostgreSQL password file must be root-owned, group-readable by 999, mode 0640.'
   fi
 }
 
@@ -128,34 +130,40 @@ validate_runtime_url_file() {
     esac
   done < "$file"
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for runtime database URL validation.'
+  if [[ "${label,,}" == valorant && "$authority_mode" == quest-postgres ]]; then
+    grep -Fxq 'VALORANT_DATABASE_SSL_CA_FILE=/run/secrets/quest-private-ca.crt' "$file" || die 'VALORANT runtime environment must name the mounted asyncpg CA file.'
+    grep -Fxq 'VALORANT_DATABASE_SSL_SERVER_HOSTNAME=quest-postgres' "$file" || die 'VALORANT runtime environment must name the asyncpg TLS server hostname.'
+    grep -Fxq 'VALORANT_DATABASE_SSL_VERIFY=full' "$file" || die 'VALORANT runtime environment must require full asyncpg certificate verification.'
+  fi
   for variable in DATABASE_URL DIRECT_URL; do
     url="${runtime_urls[$variable]:-}"
     [[ -n "$url" ]] || die "protected $label runtime environment is missing $variable."
-    if ! python3 - "$url" "$expected_role" "$expected_schema" "$authority_mode" <<'PY'
+    if ! python3 - "$url" "$expected_role" "$expected_schema" "$authority_mode" "$label" <<'PY'
 from urllib.parse import parse_qs, urlsplit
 import sys
 
-url, expected_role, expected_schema, authority = sys.argv[1:]
+url, expected_role, expected_schema, authority, label = sys.argv[1:]
 try:
     parsed = urlsplit(url)
     query = parse_qs(parsed.query, strict_parsing=True)
 except ValueError:
     raise SystemExit(1)
-if parsed.scheme not in ("postgres", "postgresql") or parsed.hostname is None:
+if parsed.scheme not in ("postgres", "postgresql", "postgresql+asyncpg") or parsed.hostname is None:
     raise SystemExit(1)
 if parsed.password is None or parsed.username is None or parsed.path != "/quest" or parsed.fragment:
     raise SystemExit(1)
 if authority == "supabase":
-    if parsed.hostname == "quest-postgres" or parsed.username != expected_role or query.get("schema") != [expected_schema]:
+    if parsed.hostname == "quest-postgres" or parsed.username != expected_role or query not in ({"schema": [expected_schema]}, {"schema": [expected_schema], "sslmode": ["verify-full"], "sslrootcert": ["/run/secrets/quest-private-ca.crt"]}, {"ssl": ["require"]}):
         raise SystemExit(1)
     raise SystemExit(0)
 if authority != "quest-postgres" or parsed.hostname != "quest-postgres" or parsed.port != 5432:
     raise SystemExit(1)
 if parsed.username != expected_role:
     raise SystemExit(1)
-if query.get("schema") != [expected_schema] or query.get("sslmode") != ["verify-full"]:
-    raise SystemExit(1)
-if query.get("sslrootcert") != ["/run/secrets/quest-private-ca.crt"]:
+if label.lower() == "valorant":
+    if parsed.scheme != "postgresql+asyncpg" or query != {"ssl": ["require"]}:
+        raise SystemExit(1)
+elif query != {"schema": [expected_schema], "sslmode": ["verify-full"], "sslrootcert": ["/run/secrets/quest-private-ca.crt"]}:
     raise SystemExit(1)
 PY
     then die "$label $variable does not satisfy the runtime PostgreSQL endpoint contract."; fi

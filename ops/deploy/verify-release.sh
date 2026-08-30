@@ -31,7 +31,7 @@ require_setting() { [[ -n "${!1:-}" ]] || die "missing release setting: $1"; }
 require_setting RELEASE_ENVIRONMENT
 require_setting RELEASE_ENVIRONMENT_PROTECTED
 [[ "$RELEASE_ENVIRONMENT" == production && "$RELEASE_ENVIRONMENT_PROTECTED" == 1 ]] || die 'release environment is not the protected production environment.'
-for setting in RELEASE_ROOT DOCKER_BIN QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE CURL_BIN DATABASE_READINESS_COMMAND VALORANT_CONTAINER_HEALTH_COMMAND COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER QUEST_FRONTEND_IMAGE_APPROVED_REF QUEST_BACKEND_IMAGE_APPROVED_REF MIGRATOR_IMAGE_APPROVED_REF POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF; do require_setting "$setting"; done
+for setting in RELEASE_ROOT DOCKER_BIN QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE CURL_BIN DATABASE_READINESS_COMMAND SECURITY_VERIFY_COMMAND VALORANT_CONTAINER_HEALTH_COMMAND COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER QUEST_FRONTEND_IMAGE_APPROVED_REF QUEST_BACKEND_IMAGE_APPROVED_REF MIGRATOR_IMAGE_APPROVED_REF POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF; do require_setting "$setting"; done
 [[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must not reuse the Quest signer identity.'
 [[ "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'VALORANT trust policy must not reuse the Quest signer identity.'
 [[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must remain independent of VALORANT.'
@@ -44,7 +44,7 @@ releases_root="${RELEASES_ROOT:-$RELEASE_ROOT/releases}"
 [[ -d "$releases_root" && ! -L "$releases_root" ]] || die 'RELEASES_ROOT must be an existing non-symlink directory.'
 canonical_releases_root="$(realpath "$releases_root" 2>/dev/null)" || die 'RELEASES_ROOT cannot be canonicalized.'
 [[ "$canonical_releases_root" == "$releases_root" ]] || die 'RELEASES_ROOT must not contain a symlink.'
-[[ -x "$DOCKER_BIN" && -x "$CURL_BIN" && -x "$DATABASE_READINESS_COMMAND" && -x "$VALORANT_CONTAINER_HEALTH_COMMAND" && -x "$COSIGN_BIN" ]] || die 'verification command is not executable.'
+[[ -x "$DOCKER_BIN" && -x "$CURL_BIN" && -x "$DATABASE_READINESS_COMMAND" && -x "$SECURITY_VERIFY_COMMAND" && -x "$VALORANT_CONTAINER_HEALTH_COMMAND" && -x "$COSIGN_BIN" ]] || die 'verification command is not executable.'
 [[ -f "$VALORANT_CA_FILE" && -r "$VALORANT_CA_FILE" && ! -L "$VALORANT_CA_FILE" ]] || die 'VALORANT_CA_FILE is missing or unsafe.'
 
 verify_quest_readiness_response() {
@@ -254,4 +254,6 @@ valorant_json="$(VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$V
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$valorant_json" && grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' <<< "$valorant_json" || die 'VALORANT health JSON was not status ok/db up.'
 database_readiness_output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres "$DATABASE_READINESS_COMMAND" 2>/dev/null)" || die 'database readiness failed.'
 [[ "$database_readiness_output" =~ ^ready[[:space:]]+target=quest-postgres[[:space:]]+schemas=public,valorant([[:space:]]|$) ]] || die 'database readiness did not identify both target schemas.'
+security_output="$(SECURITY_VERIFY_TARGET=quest-postgres TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres TARGET_DATABASE_PORT=5432 TARGET_DATABASE_NAME=quest TARGET_POSTGRES_MAJOR=17 RELEASE_SHA="$(basename "$release_dir")" "$SECURITY_VERIFY_COMMAND" 2>/dev/null)" || die 'database security verification failed.'
+[[ "$security_output" == security-verified ]] || die 'database security verifier returned an invalid acknowledgement.'
 printf '%s\n' 'release verification passed: quest-prod, valorant-prod, health, readiness, HTTPS JSON health, and database readiness.'

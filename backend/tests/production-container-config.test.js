@@ -13,6 +13,7 @@ const dockerignore = read("backend/.dockerignore");
 const productionCompose = read("ops/docker/compose.production.yml");
 const stagingCompose = read("ops/docker/compose.postgres-staging.yml");
 const productionEnv = read("ops/docker/quest.production.env.example");
+const valorantProductionEnv = read("ops/docker/valorant.production.env.example");
 const releaseScript = read("ops/deploy/release.sh");
 const nginxConfigPath = path.join(repoRoot, "ops/docker/nginx/quest.conf");
 const nginxConfig = fs.existsSync(nginxConfigPath) ? fs.readFileSync(nginxConfigPath, "utf8").replace(/\r\n/g, "\n") : "";
@@ -1084,6 +1085,12 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(postgresBootstrap, /REVOKE %I FROM %I/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator/);
+  assert.match(postgresBootstrap, /CREATE ROLE quest_recovery_admin LOGIN/);
+  assert.match(postgresBootstrap, /ALTER ROLE quest_recovery_admin LOGIN NOINHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 1/);
+  assert.match(postgresBootstrap, /GRANT quest_migrator TO quest_recovery_admin/);
+  assert.match(postgresBootstrap, /GRANT val_migrator TO quest_recovery_admin/);
+  assert.doesNotMatch(productionCompose, /quest_recovery_admin/);
+  assert.doesNotMatch(productionEnv, /quest_recovery_admin/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES[\s\S]*REVOKE ALL ON TABLES FROM PUBLIC/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES[\s\S]*REVOKE ALL ON SEQUENCES FROM PUBLIC/);
   assert.match(postgresBootstrap, /REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC/);
@@ -1108,6 +1115,22 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(postgresHealthcheck, /host=\$host port=\$port/);
   assert.match(productionEnv, /sslmode=verify-full/);
   assert.match(productionEnv, /sslrootcert=/);
+  assert.match(productionCompose, /user:\s*["']?999:999/);
+  assert.match(postgresBootstrap, /pg_operator/);
+  assert.match(postgresBootstrap, /pg_collation/);
+  assert.match(postgresBootstrap, /pg_statistic_ext/);
+});
+
+test("VALORANT runtime uses asyncpg SSL context semantics, not libpq URL options", () => {
+  assert.match(valorantProductionEnv, /^DATABASE_URL=$/m);
+  assert.match(valorantProductionEnv, /postgresql\+asyncpg:\/\/.*\?ssl=require/);
+  assert.doesNotMatch(valorantProductionEnv, /[?&]sslmode=|[?&]sslrootcert=/);
+  assert.match(valorantProductionEnv, /^VALORANT_DATABASE_SSL_CA_FILE=\/run\/secrets\/quest-private-ca\.crt$/m);
+  assert.match(valorantProductionEnv, /^VALORANT_DATABASE_SSL_SERVER_HOSTNAME=quest-postgres$/m);
+  assert.match(valorantProductionEnv, /^VALORANT_DATABASE_SSL_VERIFY=full$/m);
+  assert.match(valorantProductionEnv, /check_hostname=True/);
+  assert.match(valorantProductionEnv, /verify_mode=ssl\.CERT_REQUIRED/);
+  assert.match(valorantProductionEnv, /asyncpg's `ssl` connect argument/);
 });
 
 test("PostgreSQL runtime roles use explicit non-bypass policies and keep the Prisma ledger private", () => {
@@ -1138,7 +1161,7 @@ test(
   () => {
     const container = `quest-security-contract-${process.pid}`;
     const docker = (args) => spawnSync("docker", ["exec", container, ...args], { encoding: "utf8" });
-    const runPsql = (role, sql) => docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", role, "-d", "postgres", "-At", "-c", sql]);
+    const runPsql = (role, sql) => docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", role, "-d", "quest", "-At", "-c", sql]);
     const started = spawnSync(
       "docker",
       [
@@ -1149,6 +1172,8 @@ test(
         container,
         "-e",
         "POSTGRES_HOST_AUTH_METHOD=trust",
+        "-e",
+        "POSTGRES_DB=quest",
         "-p",
         "127.0.0.1::5432",
         "postgres:17-bookworm",
@@ -1172,15 +1197,15 @@ test(
       assert.equal(publishedPort.status, 0, `could not determine fixture port:\n${publishedPort.stdout}\n${publishedPort.stderr}`);
       const portMatch = publishedPort.stdout.match(/:(\d+)\s*$/m);
       assert.ok(portMatch, `fixture port was not published:\n${publishedPort.stdout}`);
-      const databaseUrl = `postgresql://quest_migrator@127.0.0.1:${portMatch[1]}/postgres?schema=public`;
+      const databaseUrl = `postgresql://quest_migrator@127.0.0.1:${portMatch[1]}/quest?schema=public`;
       const runVerifier = () =>
         spawnSync(process.execPath, [path.join(repoRoot, "backend/scripts/verify-database-security.js")], {
           cwd: path.join(repoRoot, "backend"),
           encoding: "utf8",
           env: {
             ...process.env,
-            DATABASE_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/postgres?schema=public`,
-            DIRECT_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/postgres?schema=public`,
+            DATABASE_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/quest?schema=public`,
+            DIRECT_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/quest?schema=public`,
           },
         });
 
@@ -1197,7 +1222,7 @@ test(
         assert.equal(copied.status, 0, `could not copy fixture SQL:\n${copied.stdout}\n${copied.stderr}`);
       }
 
-      let result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-v", "RESTORE_MODE=1", "-U", "postgres", "-d", "postgres", "-f", "/tmp/bootstrap.sql"]);
+      let result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "quest", "-f", "/tmp/bootstrap.sql"]);
       assert.equal(result.status, 0, `bootstrap fixture failed:\n${result.stdout}\n${result.stderr}`);
       result = runPsql(
         "postgres",
@@ -1216,7 +1241,11 @@ test(
         "ALTER TABLE valorant.fixture_application ENABLE ROW LEVEL SECURITY; CREATE POLICY fixture_application_runtime_all ON valorant.fixture_application FOR ALL TO val_runtime USING (true) WITH CHECK (true);",
       );
       assert.equal(result.status, 0, `sibling runtime policy failed:\n${result.stdout}\n${result.stderr}`);
-      result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "quest_migrator", "-d", "postgres", "-f", "/tmp/runtime-policies.sql"]);
+      for (const ownerRole of ["quest_migrator", "val_migrator"]) {
+        result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-v", "RESTORE_MODE=1", "-U", "quest_recovery_admin", "-d", "quest", "-c", `SET ROLE ${ownerRole};`, "-f", "/tmp/bootstrap.sql"]);
+        assert.equal(result.status, 0, `${ownerRole} recovery ownership fixture failed:\n${result.stdout}\n${result.stderr}`);
+      }
+      result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "quest_migrator", "-d", "quest", "-f", "/tmp/runtime-policies.sql"]);
       assert.equal(result.status, 0, `runtime policy migration failed:\n${result.stdout}\n${result.stderr}`);
 
       result = runPsql("postgres", "SELECT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'fixture_application' AND policyname = 'fixture_application_runtime_all' AND cmd = 'ALL' AND 'quest_runtime' = ANY (roles) AND qual = 'true' AND with_check = 'true');");
