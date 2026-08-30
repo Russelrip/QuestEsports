@@ -13,7 +13,8 @@ mkdir -p "$FAKE_BIN" "$UPLOAD_ROOT" "$PRIVATE_ROOT" "$BACKUP_ROOT" "$REMOTE_ROOT
 printf 'fixture ca\n' > "$TEST_ROOT/ca.crt"
 printf 'fixture cert\n' > "$TEST_ROOT/postgres.crt"
 printf 'fixture key\n' > "$TEST_ROOT/postgres.key"
-chmod 600 "$TEST_ROOT/ca.crt" "$TEST_ROOT/postgres.crt" "$TEST_ROOT/postgres.key"
+chmod 600 "$TEST_ROOT/ca.crt"
+chmod 640 "$TEST_ROOT/postgres.crt" "$TEST_ROOT/postgres.key"
 printf 'public fixture\n' > "$UPLOAD_ROOT/public.txt"
 printf 'private fixture\n' > "$PRIVATE_ROOT/private.txt"
 printf 'fixture\n' > "$TEST_ROOT/primary.conf"
@@ -155,10 +156,27 @@ printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=
 EOF
 chmod 700 "$FAKE_BIN/postgres-target"
 export PATH="$FAKE_BIN:$PATH" FLOCK_LOG="$TEST_ROOT/flock.log" REMOTE_ROOT FLOCK_OWNER_TOKEN=owner-a TEST_ROOT
+REAL_STAT="$(command -v stat)"; export REAL_STAT
+cat > "$FAKE_BIN/stat" <<'FAKE'
+#!/usr/bin/env bash
+if [[ "$1" == -c && "$2" == %a && ( "$3" == *postgres.crt || "$3" == *postgres.key ) ]]; then
+  printf '%s\n' "${BACKUP_TLS_MODE:-640}"
+else
+  exec "$REAL_STAT" "$@"
+fi
+FAKE
+chmod +x "$FAKE_BIN/stat"
 assert_file() { [[ -f "$1" ]] || { printf 'missing fixture file: %s\n' "$1" >&2; exit 1; }; }
 assert_contains() { grep -F -- "$1" "$2" >/dev/null || { printf 'missing fixture result\n' >&2; exit 1; }; }
 run_backup() { BACKUP_ENV_FILE="$ENV_FILE" BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/release.lock" bash "$ROOT/ops/backup-production.sh" --test-fixture; }
 
+BACKUP_TLS_MODE=600; export BACKUP_TLS_MODE
+if run_backup; then
+  printf 'expected backup client TLS mode rejection\n' >&2
+  exit 1
+fi
+: > "$FLOCK_LOG"
+BACKUP_TLS_MODE=640; export BACKUP_TLS_MODE
 run_backup
 archive_path="$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'quest-production-*.tar.gz.enc' -print -quit)"
 assert_file "$archive_path"

@@ -112,6 +112,7 @@ Consequently, the production `.env` and infrastructure credentials require a sep
 | `age` public recipient | `/etc/quest-esports-backup.env` | Safe for encryption; not sufficient to decrypt |
 | `age` private identity | Secured offline recovery package | Maintain at least two controlled offline copies; never keep it permanently on the VPS |
 | Backup environment | `/etc/quest-esports-backup.env`, `root:deploy`, mode `640` | Contains the database URL; never print the file |
+| Backup TLS client certificate/key | `/etc/quest-esports/secrets/backup-client.{crt,key}`, `root:deploy`, mode `640` | Readable by the scheduled `deploy` service; never reuse the server key; no group/other write |
 | rclone configurations | One mode-`600` protected config per configured remote | Contains OAuth material; inspect only through safe rclone commands |
 | Google OAuth client | Google Cloud project `QuestEsports Backups` | Do not commit/download/store its JSON unnecessarily; rotate if exposed |
 | Production application secrets | Approved encrypted secret store | Not included in the backup archive |

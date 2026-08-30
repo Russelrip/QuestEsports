@@ -1120,6 +1120,7 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(postgresBootstrap, /pg_operator/);
   assert.match(postgresBootstrap, /pg_collation/);
   assert.match(postgresBootstrap, /pg_statistic_ext/);
+  assert.match(postgresBootstrap, /procedure\.prokind IN \('f', 'p', 'a', 'w'\)/);
   assert.match(postgresBootstrap, /relation\.relkind IN \('r', 'p', 'v', 'm', 'S', 'f', 'c'\)/);
   assert.match(postgresBootstrap, /current_database\(\)/);
   assert.doesNotMatch(postgresBootstrap, /ON DATABASE quest/);
@@ -1144,6 +1145,11 @@ test("VALORANT runtime uses asyncpg SSL context semantics, not libpq URL options
   assert.match(releaseScript, /VALORANT Compose source does not satisfy the asyncpg TLS runtime contract/);
   assert.match(releaseScript, /parsed\.scheme != "postgresql\+asyncpg"/);
   assert.match(releaseScript, /query != \{"ssl": \["require"\]\}/);
+  for (const deploymentScript of [releaseScript, verifyRelease, read("ops/deploy/cutover.sh"), read("ops/deploy/validate-host.sh")]) {
+    assert.match(deploymentScript, /config --no-env-resolution --format json/);
+    assert.match(deploymentScript, /with open\(raw, encoding="utf-8"\)/);
+    assert.doesNotMatch(deploymentScript, /python3 - \"\$source_json\"/);
+  }
   assert.match(databaseSecurityVerifier, /127\.0\.0\.1.*55432/);
   assert.match(databaseSecurityVerifier, /127\.0\.0\.1.*5432/);
 });
@@ -1168,6 +1174,7 @@ test("PostgreSQL runtime roles use explicit non-bypass policies and keep the Pri
   assert.match(databaseSecurityVerifier, /'public' = ANY \(p\.roles\)/);
   assert.match(databaseSecurityVerifier, /n\.nspname IN \('public', 'valorant'\)/);
   assert.match(databaseSecurityVerifier, /_prisma_migrations/);
+  assert.match(databaseSecurityVerifier, /p\.prokind IN \('f', 'p', 'a', 'w'\)/);
 });
 
 test(
@@ -1256,12 +1263,14 @@ test(
         "ALTER TABLE valorant.fixture_application ENABLE ROW LEVEL SECURITY; CREATE POLICY fixture_application_runtime_all ON valorant.fixture_application FOR ALL TO val_runtime USING (true) WITH CHECK (true);",
       );
       assert.equal(result.status, 0, `sibling runtime policy failed:\n${result.stdout}\n${result.stderr}`);
-      result = runPsql("postgres", "CREATE TYPE public.fixture_composite AS (value integer); ALTER TYPE public.fixture_composite OWNER TO postgres;");
+      result = runPsql("postgres", "CREATE TYPE public.fixture_composite AS (value integer); ALTER TYPE public.fixture_composite OWNER TO postgres; CREATE FUNCTION public.fixture_window(value integer) RETURNS integer LANGUAGE SQL IMMUTABLE WINDOW AS 'SELECT $1'; ALTER FUNCTION public.fixture_window(integer) OWNER TO postgres;");
       assert.equal(result.status, 0, `composite type fixture failed:\n${result.stdout}\n${result.stderr}`);
       result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-v", "RESTORE_MODE=1", "-U", "quest_recovery_admin", "-d", "quest", "-f", "/tmp/bootstrap.sql"]);
       assert.equal(result.status, 0, `recovery ownership fixture failed:\n${result.stdout}\n${result.stderr}`);
       result = runPsql("postgres", "SELECT pg_get_userbyid(t.typowner), pg_get_userbyid(c.relowner) FROM pg_type t JOIN pg_class c ON c.oid = t.typrelid WHERE t.typnamespace = 'public'::regnamespace AND t.typname = 'fixture_composite';");
       assert.equal(result.stdout.trim(), "quest_migrator|quest_migrator", `composite type ownership was not normalized:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("postgres", "SELECT p.prokind, pg_get_userbyid(p.proowner) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'fixture_window' AND p.prokind = 'w';");
+      assert.equal(result.stdout.trim(), "w|quest_migrator", `window function ownership was not normalized:\n${result.stdout}\n${result.stderr}`);
       result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "quest_migrator", "-d", "quest", "-f", "/tmp/runtime-policies.sql"]);
       assert.equal(result.status, 0, `runtime policy migration failed:\n${result.stdout}\n${result.stderr}`);
 
@@ -1337,6 +1346,13 @@ test(
       assert.match(`${result.stdout}\n${result.stderr}`, /Objects with unexpected schema owners/);
       result = runPsql("postgres", "ALTER TYPE public.fixture_composite OWNER TO quest_migrator;");
       assert.equal(result.status, 0, `could not restore composite owner:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("postgres", "ALTER FUNCTION public.fixture_window(integer) OWNER TO postgres;");
+      assert.equal(result.status, 0, `could not create a wrong window-function owner:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a wrong window function owner");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Objects with unexpected schema owners/);
+      result = runPsql("postgres", "ALTER FUNCTION public.fixture_window(integer) OWNER TO quest_migrator;");
+      assert.equal(result.status, 0, `could not restore window function owner:\n${result.stdout}\n${result.stderr}`);
     } finally {
       spawnSync("docker", ["rm", "--force", container], { encoding: "utf8" });
     }

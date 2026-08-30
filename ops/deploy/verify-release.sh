@@ -63,14 +63,18 @@ PY
 }
 validate_security_url_file
 validate_rendered_valorant_compose() {
-  local source_json contract_json expected_image
+  local source_json_file contract_json_file expected_image
   expected_image="$(awk -F= '$1 == "VALORANT_IMAGE" { print substr($0, index($0,"=")+1); exit }' "$release_dir/.env")"
-  source_json="$($DOCKER_BIN compose --env-file "$release_dir/.env" -f "$release_dir/valorant.compose.yml" --project-name valorant-prod config --format json 2>/dev/null)" || die 'rendered release VALORANT Compose source is invalid.'
-  contract_json="$($DOCKER_BIN compose --env-file "$release_dir/.env" -f "$VALORANT_RUNTIME_COMPOSE_CONTRACT" --project-name valorant-prod config --format json 2>/dev/null)" || die 'rendered VALORANT Compose contract is invalid.'
-  python3 - "$source_json" "$contract_json" "$expected_image" <<'PY' || die 'rendered release VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'
+  source_json_file="$(mktemp)" || die 'could not create the rendered VALORANT Compose source file.'
+  contract_json_file="$(mktemp)" || { rm -f "$source_json_file"; die 'could not create the rendered VALORANT Compose contract file.'; }
+  chmod 600 "$source_json_file" "$contract_json_file"
+  "$DOCKER_BIN" compose --env-file "$release_dir/.env" -f "$release_dir/valorant.compose.yml" --project-name valorant-prod config --no-env-resolution --format json >"$source_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source is invalid.'; }
+  "$DOCKER_BIN" compose --env-file "$release_dir/.env" -f "$VALORANT_RUNTIME_COMPOSE_CONTRACT" --project-name valorant-prod config --no-env-resolution --format json >"$contract_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose contract is invalid.'; }
+  python3 - "$source_json_file" "$contract_json_file" "$expected_image" <<'PY' 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
 import json, sys
 def contract(raw, expected_image):
-    doc = json.loads(raw)
+    with open(raw, encoding="utf-8") as rendered:
+        doc = json.load(rendered)
     if doc.get("name") != "valorant-prod": raise SystemExit(1)
     service = doc.get("services", {}).get("valorant-platform")
     if not isinstance(service, dict) or service.get("image") != expected_image: raise SystemExit(1)
@@ -89,8 +93,8 @@ def contract(raw, expected_image):
     return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())), tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))), tuple(sorted(service["networks"])))
 if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]): raise SystemExit(1)
 PY
+  rm -f "$source_json_file" "$contract_json_file"
 }
-
 verify_quest_readiness_response() {
   local response="$1"
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for exact Quest readiness validation.'
@@ -122,7 +126,6 @@ release_dir="${1:-$current_target}"
 [[ "$(realpath "$release_dir" 2>/dev/null)" == "$release_dir" ]] || die 'release directory is not canonical.'
 [[ "$current_target" == "$release_dir" ]] || die 'current pointer does not identify the verified release.'
 [[ -f "$release_dir/compose.production.yml" && -f "$release_dir/.env" && -f "$release_dir/valorant.compose.yml" ]] || die 'release bundle is incomplete.'
-validate_rendered_valorant_compose
 for bundle_file in compose.production.yml valorant.compose.yml .env release-metadata.txt; do
   [[ -f "$release_dir/$bundle_file" && ! -L "$release_dir/$bundle_file" && -r "$release_dir/$bundle_file" ]] || die "release bundle has an unsafe $bundle_file."
   if [[ "$fixture_mode" != 1 ]]; then
@@ -132,6 +135,7 @@ for bundle_file in compose.production.yml valorant.compose.yml .env release-meta
     [[ "$bundle_mode" == 600 || "$bundle_mode" == 640 ]] || die "release bundle $bundle_file has an unsafe mode."
   fi
 done
+validate_rendered_valorant_compose
 
 validate_metadata() {
   local metadata_file="$1" release_name="$2" metadata_line metadata_key

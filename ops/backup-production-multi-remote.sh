@@ -60,17 +60,21 @@ for client_file in "$backup_client_cert_file" "$backup_client_key_file"; do
     echo "Backup client TLS material mode cannot be inspected." >&2
     exit 1
   }
-  [[ "$client_mode" == 600 ]] || {
-    echo "Backup client TLS material must be mode 0600." >&2
+  [[ "$client_mode" == 640 ]] || {
+    echo "Backup client TLS material must be mode 0640." >&2
     exit 1
   }
 done
 if [[ "$backup_test_fixture" == false ]]; then
+  backup_group_id="$(id -g deploy 2>/dev/null)" || {
+    echo "The deploy service group is unavailable." >&2
+    exit 1
+  }
   [[ "$backup_client_cert_file" == /etc/quest-esports/secrets/backup-client.crt &&
-     "$backup_client_key_file" == /etc/quest-esports/secrets/backup-client.key &&
-     "$(stat -c '%u:%g' "$backup_client_cert_file" 2>/dev/null)" == 0:0 &&
-     "$(stat -c '%u:%g' "$backup_client_key_file" 2>/dev/null)" == 0:0 ]] || {
-    echo "Backup client TLS identity is not canonical root-owned material." >&2
+      "$backup_client_key_file" == /etc/quest-esports/secrets/backup-client.key &&
+      "$(stat -c '%u:%g %a' "$backup_client_cert_file" 2>/dev/null)" == "0:${backup_group_id} 640" &&
+      "$(stat -c '%u:%g %a' "$backup_client_key_file" 2>/dev/null)" == "0:${backup_group_id} 640" ]] || {
+    echo "Backup client TLS identity is not canonical root-owned deploy-group material." >&2
     exit 1
   }
 fi

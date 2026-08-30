@@ -79,6 +79,29 @@ validate_compose_tls_material() {
     [[ -f "$password_file" && ! -L "$password_file" && "$(stat -c '%u:%g %a' "$password_file" 2>/dev/null)" == '0:999 640' ]] || die 'canonical PostgreSQL password file must be root-owned, group-readable by 999, mode 0640.'
   fi
 }
+validate_backup_tls_material() {
+  local cert_file key_file tls_file tls_stat
+  if [[ "$fixture_mode" == 1 ]]; then
+    cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
+    key_file="${BACKUP_CLIENT_KEY_FILE:-}"
+  else
+    cert_file=/etc/quest-esports/secrets/backup-client.crt
+    key_file=/etc/quest-esports/secrets/backup-client.key
+  fi
+  for tls_file in "$cert_file" "$key_file"; do
+    root_file "$tls_file" "${QUEST_DEPLOY_FIXTURE_ENFORCE_BACKUP_TLS_OWNERSHIP:-0}"
+    [[ -s "$tls_file" ]] || die 'backup PostgreSQL TLS material is missing or unsafe.'
+    [[ "$(stat -c '%a' "$tls_file" 2>/dev/null)" == 640 ]] || die 'backup PostgreSQL TLS material must be mode 0640.'
+  done
+  if [[ "$fixture_mode" != 1 ]]; then
+    [[ "$cert_file" == /etc/quest-esports/secrets/backup-client.crt &&
+       "$key_file" == /etc/quest-esports/secrets/backup-client.key ]] || die 'backup PostgreSQL TLS files are not the canonical client mounts.'
+    tls_stat="$(stat -c '%U:%G %a' "$cert_file" 2>/dev/null)" || die 'backup PostgreSQL certificate ownership cannot be inspected.'
+    [[ "$tls_stat" == 'root:deploy 640' ]] || die 'backup PostgreSQL certificate must be root-owned, deploy-group-readable, mode 0640.'
+    tls_stat="$(stat -c '%U:%G %a' "$key_file" 2>/dev/null)" || die 'backup PostgreSQL key ownership cannot be inspected.'
+    [[ "$tls_stat" == 'root:deploy 640' ]] || die 'backup PostgreSQL key must be root-owned, deploy-group-readable, mode 0640.'
+  fi
+}
 validate_valorant_runtime_compose() {
   local compose_source="${VALORANT_COMPOSE_SOURCE:-}" contract="${VALORANT_RUNTIME_COMPOSE_CONTRACT:-}" render_env rendered contract_rendered expected_image
   [[ -n "$compose_source" && -f "$compose_source" && ! -L "$compose_source" ]] || die 'VALORANT Compose source is missing or unsafe.'
@@ -88,12 +111,17 @@ validate_valorant_runtime_compose() {
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for rendered VALORANT Compose validation.'
   render_env="$(mktemp)" || die 'could not create the VALORANT Compose render environment.'
   printf 'VALORANT_IMAGE=%s\n' "$expected_image" > "$render_env"
-  rendered="$($DOCKER_BIN compose --env-file "$render_env" -f "$compose_source" --project-name valorant-prod config --format json 2>/dev/null)" || { rm -f "$render_env"; die 'rendered VALORANT Compose source is invalid.'; }
-  contract_rendered="$($DOCKER_BIN compose --env-file "$render_env" -f "$contract" --project-name valorant-prod config --format json 2>/dev/null)" || { rm -f "$render_env"; die 'rendered VALORANT Compose contract is invalid.'; }
-  python3 - "$rendered" "$contract_rendered" "$expected_image" <<'PY' || { rm -f "$render_env"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
+  chmod 600 "$render_env"
+  source_json_file="$(mktemp)" || die 'could not create the rendered VALORANT Compose source file.'
+  contract_json_file="$(mktemp)" || { rm -f "$source_json_file"; die 'could not create the rendered VALORANT Compose contract file.'; }
+  chmod 600 "$source_json_file" "$contract_json_file"
+  "$DOCKER_BIN" compose --env-file "$render_env" -f "$compose_source" --project-name valorant-prod config --no-env-resolution --format json >"$source_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source is invalid.'; }
+  "$DOCKER_BIN" compose --env-file "$render_env" -f "$contract" --project-name valorant-prod config --no-env-resolution --format json >"$contract_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose contract is invalid.'; }
+  python3 - "$source_json_file" "$contract_json_file" "$expected_image" <<'PY' 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
 import json, sys
 def contract(raw, expected_image):
-    doc = json.loads(raw)
+    with open(raw, encoding="utf-8") as rendered:
+        doc = json.load(rendered)
     if doc.get("name") != "valorant-prod": raise SystemExit(1)
     service = doc.get("services", {}).get("valorant-platform")
     if not isinstance(service, dict) or service.get("image") != expected_image: raise SystemExit(1)
@@ -112,9 +140,9 @@ def contract(raw, expected_image):
     return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())), tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))), tuple(sorted(service["networks"])))
 if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]): raise SystemExit(1)
 PY
+  rm -f "$source_json_file" "$contract_json_file"
   rm -f "$render_env"
 }
-
 validate_postgres_target() {
   local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
   [[ "$POSTGRES_TARGET_HOST" == 127.0.0.1 ]] || die 'PostgreSQL target host must be the fixed loopback address.'
@@ -275,6 +303,7 @@ for setting in VALORANT_CA_FILE; do
   root_file "${!setting}"
 done
 validate_compose_tls_material
+validate_backup_tls_material
 validate_valorant_runtime_compose
 validate_postgres_target
 validate_database_urls

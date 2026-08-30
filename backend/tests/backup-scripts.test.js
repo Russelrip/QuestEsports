@@ -92,6 +92,26 @@ test("production backup dumps both schemas when the valorant schema exists", () 
   assert.match(backupScript, /printf 'valorant_schema_included=%s\\n' "\$valorant_schema_exists"/);
 });
 
+test("scheduled backup TLS client material is readable by deploy without weakening key protection", () => {
+  const backupScript = fs.readFileSync(
+    path.join(__dirname, "../../ops/backup-production-multi-remote.sh"),
+    "utf8",
+  );
+  const service = fs.readFileSync(
+    path.join(__dirname, "../../ops/systemd/quest-esports-backup.service"),
+    "utf8",
+  );
+  const example = fs.readFileSync(
+    path.join(__dirname, "../../ops/quest-esports-backup.env.example"),
+    "utf8",
+  );
+  assert.match(backupScript, /client_mode.*== 640/);
+  assert.match(backupScript, /0:\$\{backup_group_id\} 640/);
+  assert.match(service, /^User=deploy$/m);
+  assert.match(service, /^Group=deploy$/m);
+  assert.match(example, /root:deploy mode 0640/);
+});
+
 test("production restore reports restored table counts for both schemas", () => {
   const restoreScript = fs.readFileSync(
     path.join(__dirname, "../../ops/restore-production-backup.sh"),

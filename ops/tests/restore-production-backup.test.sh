@@ -169,6 +169,7 @@ grep -F -- 'ALTER ROLE quest_runtime LOGIN NOINHERIT' "$test_root/psql.log" >/de
 grep -F -- 'FROM pg_auth_members' "$test_root/psql.log" >/dev/null
 grep -F -- 'ALTER SCHEMA public OWNER TO quest_migrator' "$test_root/psql.log" >/dev/null
 grep -F -- 'ALTER SCHEMA valorant OWNER TO val_migrator' "$test_root/psql.log" >/dev/null
+grep -F -- "p.prokind IN ('f','p','a','w')" "$root/ops/restore-production-backup.sh" >/dev/null
 grep -F -- 'REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC' "$test_root/psql.log" >/dev/null
 grep -F -- 'REVOKE ALL ON TYPE %I.%I FROM PUBLIC' "$test_root/psql.log" >/dev/null
 grep -F -- 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quest_runtime' "$test_root/psql.log" >/dev/null

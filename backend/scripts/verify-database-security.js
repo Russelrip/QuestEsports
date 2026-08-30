@@ -262,7 +262,7 @@ const verify = async () => {
       SELECT n.nspname AS "schemaName", p.proname AS "objectName", r.rolname AS "ownerName",
         CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner
-      WHERE n.nspname IN ('public', 'valorant') AND p.prokind IN ('f', 'p', 'a')
+      WHERE n.nspname IN ('public', 'valorant') AND p.prokind IN ('f', 'p', 'a', 'w')
     ), type_owners AS (
       SELECT n.nspname AS "schemaName", t.typname AS "objectName", r.rolname AS "ownerName",
         CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"

@@ -19,6 +19,7 @@ grep -F 'REHEARSAL_RPO_SECONDS' "$rehearsal" >/dev/null || { echo "FAIL: rehears
 grep -F 'quest_migration_ledger_before_status' "$verify" >/dev/null || { echo "FAIL: verifier must require pre-restore ledger evidence" >&2; exit 1; }
 role_query="$(grep -F 'psql_query "$scratch/roles"' "$rehearsal" 2>/dev/null || true)"; for attribute in rolcanlogin rolinherit rolsuper rolcreatedb rolcreaterole rolreplication rolbypassrls; do [[ "$role_query" == *"CASE WHEN $attribute THEN 't' ELSE 'f' END"* ]] || { echo "FAIL: role query does not emit canonical t/f for $attribute" >&2; exit 1; }; done
 [[ "$role_query" == *"ORDER BY rolname"* ]] || { echo "FAIL: role inventory ordering changed" >&2; exit 1; }
+owner_query_contract="$(grep -F 'psql_query "$scratch/object-owners"' "$rehearsal" 2>/dev/null || true)"; [[ "$owner_query_contract" == *"prokind IN ('f','p','a','w')"* ]] || { echo "FAIL: rehearsal owner query does not include window functions" >&2; exit 1; }
 membership_query="$(grep -F 'psql_query "$scratch/memberships"' "$rehearsal" 2>/dev/null || true)"
 [[ "$membership_query" == *'SELECT count(*) FROM'* ]] || { echo "FAIL: membership query must emit an explicit count" >&2; exit 1; }
 for role in quest_migrator quest_runtime val_migrator val_runtime; do [[ "$membership_query" == *"'$role'"* ]] || { echo "FAIL: membership query is not restricted to the four database roles" >&2; exit 1; }; done

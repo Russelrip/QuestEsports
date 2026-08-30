@@ -8,6 +8,8 @@ OnFailure=quest-esports-backup-failure@%n.service
 Type=oneshot
 User=deploy
 Group=deploy
+# /etc/quest-esports/secrets/backup-client.{crt,key} are root:deploy 0640;
+# deploy is the only non-root identity permitted to read the client key.
 Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
 WorkingDirectory=/var/www/QuestEsports
 ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/backup-production.sh

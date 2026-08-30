@@ -158,7 +158,7 @@ BEGIN
     FROM pg_proc AS procedure
     JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
     WHERE namespace.nspname IN ('public', 'valorant')
-      AND procedure.prokind IN ('f', 'p', 'a')
+      AND procedure.prokind IN ('f', 'p', 'a', 'w')
   LOOP
     schema_owner := CASE routine_record.nspname
       WHEN 'public' THEN 'quest_migrator'

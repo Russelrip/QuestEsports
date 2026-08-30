@@ -45,6 +45,8 @@ setup_fixture() {
   printf '%s\n' fixture-ca > "$fixture/ca.crt"
   printf '%s\n' fixture-cert > "$fixture/postgres.crt"
   printf '%s\n' fixture-key > "$fixture/postgres.key"
+  printf '%s\n' fixture-backup-cert > "$fixture/backup-client.crt"
+  printf '%s\n' fixture-backup-key > "$fixture/backup-client.key"
   printf '%s\n' fixture-alternate-key > "$fixture/alternate.key"
   printf '%s\n' 'postgresql://quest_recovery_admin:fixture@quest-postgres:5432/quest?sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt' > "$fixture/recovery-admin-url"
   printf '%s\n' 'postgresql://quest_migrator:fixture@quest-postgres:5432/quest' > "$fixture/quest-migrator-url"
@@ -52,6 +54,7 @@ setup_fixture() {
   printf '%s\n' fixture-alternate-cert > "$fixture/alternate.crt"
   chmod 644 "$fixture/ca.crt" "$fixture/postgres.crt" "$fixture/alternate.crt"
   chmod 600 "$fixture/postgres.key"
+  chmod 640 "$fixture/backup-client.crt" "$fixture/backup-client.key"
   chmod 600 "$fixture/alternate.key"
   : > "$fixture/current-supabase.env"
   cat > "$fixture/quest.production.env" <<'EOF'
@@ -205,7 +208,7 @@ if [[ " $* " == *' config --images '* ]]; then
       'ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222' \
       'postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333'
   fi
-elif [[ " $* " == *' config --format json '* || " $* " == *' config --format json' ]]; then
+elif [[ " $* " == *' config --no-env-resolution --format json '* || " $* " == *' config --no-env-resolution --format json' ]]; then
   printf 'compose project=%s action=config-json\n' "$project" >> "$log"
   if [[ "$project" == valorant-prod ]]; then
     if [[ -f "$compose_file" ]] && grep -Fq 'VALORANT_DATABASE_SSL_VERIFY' "$compose_file" && ! grep -Eq 'sslmode=|sslrootcert=' "$compose_file"; then
@@ -263,6 +266,10 @@ if [[ "${SENTINEL_WRITABLE:-0}" == 1 && "$1" == -c && "$2" == %a && "$3" == *pos
 fi
 if [[ "${TLS_KEY_WORLD_READABLE:-0}" == 1 && "$1" == -c && "$2" == %a && "$*" == *postgres.key* ]]; then
   printf '%s\n' 644
+  exit 0
+fi
+if [[ "$1" == -c && "$2" == %a && ( "$3" == *backup-client.crt || "$3" == *backup-client.key ) ]]; then
+  printf '%s\n' 640
   exit 0
 fi
 exec /usr/bin/stat "$@"
@@ -517,6 +524,8 @@ VALORANT_CA_FILE=$fixture/ca.crt
 POSTGRES_COMPOSE_CA_FILE=$fixture/ca.crt
 POSTGRES_COMPOSE_CERT_FILE=$fixture/postgres.crt
 POSTGRES_COMPOSE_KEY_FILE=$fixture/postgres.key
+BACKUP_CLIENT_CERT_FILE=$fixture/backup-client.crt
+BACKUP_CLIENT_KEY_FILE=$fixture/backup-client.key
 QUEST_RUNTIME_ENV_FILE=$fixture/quest.production.env
 VALORANT_RUNTIME_ENV_FILE=$fixture/valorant.production.env
 POSTGRES_TARGET_HOST=127.0.0.1

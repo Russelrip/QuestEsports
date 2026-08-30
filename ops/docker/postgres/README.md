@@ -125,8 +125,10 @@ server files readable by GID `999`; both are mounted read-only and must be
 installed with `root:999` and mode `0640`. The healthcheck script is installed root-owned
 with mode `0755`. These modes are prerequisites for the read-only runtime
 mounts and are checked during host bootstrap. Backup and recovery client
-identity files are separate root-owned `root:root` mode `0600` files and are
-never used to satisfy the canonical server mount contract. Backups use
+identity files are separate root-owned files and are never used to satisfy the
+canonical server mount contract. Backup client files are `root:deploy` mode
+`0640` so the scheduled `deploy:deploy` service can read them; recovery client
+files remain `root:root` mode `0600`. Backups use
 `backup-client.crt`/`backup-client.key`; destructive restores and post-restore
 security verification use the separately controlled
 `recovery-client.crt`/`recovery-client.key` identity.
@@ -138,10 +140,14 @@ install -o root -g 999 -m 0640 /secure/secrets/postgres-admin-password /etc/ques
 install -o root -g 999 -m 0640 /secure/tls/quest-postgres.key /etc/quest-esports/tls/quest-postgres.key
 install -o root -g root -m 0644 /secure/tls/quest-private-ca.crt /etc/quest-esports/tls/quest-private-ca.crt
 install -o root -g root -m 0644 /secure/tls/quest-postgres.crt /etc/quest-esports/tls/quest-postgres.crt
+install -o root -g deploy -m 0640 /secure/tls/backup-client.crt /etc/quest-esports/secrets/backup-client.crt
+install -o root -g deploy -m 0640 /secure/tls/backup-client.key /etc/quest-esports/secrets/backup-client.key
 ```
 
-Backup and recovery client certificates/keys remain separate `root:root` mode
-`0600` files and are never mounted into the PostgreSQL server container. A
+Install backup client certificates/keys separately as `root:deploy` mode `0640`;
+they are readable only by root and the scheduled `deploy` service and are never
+mounted into the PostgreSQL server container. Recovery certificates/keys remain
+`root:root` mode `0600`. A
 disposable readability fixture runs the exact pinned image as `999:999` and
 checks the password, CA, certificate, and server-key mounts without exposing
 their contents. The server key is never required to satisfy a backup-client

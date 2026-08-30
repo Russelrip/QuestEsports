@@ -108,46 +108,36 @@ validate_valorant_runtime_compose() {
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for rendered VALORANT Compose validation.'
   render_env="$(mktemp)" || die 'could not create the VALORANT Compose render environment.'
   printf 'VALORANT_IMAGE=%s\n' "$expected_image" > "$render_env"
-  rendered="$($DOCKER_BIN compose --env-file "$render_env" -f "$compose_source" --project-name valorant-prod config --format json 2>/dev/null)" || { rm -f "$render_env"; die 'rendered VALORANT Compose source is invalid.'; }
-  contract_rendered="$($DOCKER_BIN compose --env-file "$render_env" -f "$contract" --project-name valorant-prod config --format json 2>/dev/null)" || { rm -f "$render_env"; die 'rendered VALORANT Compose contract is invalid.'; }
-  python3 - "$rendered" "$contract_rendered" "$expected_image" <<'PY' || { rm -f "$render_env"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
+  chmod 600 "$render_env"
+  source_json_file="$(mktemp)" || die 'could not create the rendered VALORANT Compose source file.'
+  contract_json_file="$(mktemp)" || { rm -f "$source_json_file"; die 'could not create the rendered VALORANT Compose contract file.'; }
+  chmod 600 "$source_json_file" "$contract_json_file"
+  "$DOCKER_BIN" compose --env-file "$render_env" -f "$compose_source" --project-name valorant-prod config --no-env-resolution --format json >"$source_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source is invalid.'; }
+  "$DOCKER_BIN" compose --env-file "$render_env" -f "$contract" --project-name valorant-prod config --no-env-resolution --format json >"$contract_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose contract is invalid.'; }
+  python3 - "$source_json_file" "$contract_json_file" "$expected_image" <<'PY' 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
 import json, sys
-
 def contract(raw, expected_image):
-    doc = json.loads(raw)
-    if doc.get("name") != "valorant-prod":
-        raise SystemExit(1)
+    with open(raw, encoding="utf-8") as rendered:
+        doc = json.load(rendered)
+    if doc.get("name") != "valorant-prod": raise SystemExit(1)
     service = doc.get("services", {}).get("valorant-platform")
-    if not isinstance(service, dict) or service.get("image") != expected_image:
-        raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_CA_FILE") != "/run/secrets/quest-private-ca.crt":
-        raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres":
-        raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_VERIFY") != "full":
-        raise SystemExit(1)
-    if set(service.get("networks", {})) != {"quest-shared"}:
-        raise SystemExit(1)
+    if not isinstance(service, dict) or service.get("image") != expected_image: raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_CA_FILE") != "/run/secrets/quest-private-ca.crt": raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres": raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_VERIFY") != "full": raise SystemExit(1)
+    if set(service.get("networks", {})) != {"quest-shared"}: raise SystemExit(1)
     network = doc.get("networks", {}).get("quest-shared", {})
-    if network.get("name") != "quest-shared" or network.get("external") is not True:
-        raise SystemExit(1)
+    if network.get("name") != "quest-shared" or network.get("external") is not True: raise SystemExit(1)
     env_files = service.get("env_file", [])
-    if len(env_files) != 1:
-        raise SystemExit(1)
+    if len(env_files) != 1: raise SystemExit(1)
     env_file = env_files[0] if isinstance(env_files[0], dict) else {"path": env_files[0], "required": True}
-    if env_file.get("path") != "/etc/quest-esports/valorant.production.env" or env_file.get("required") is not True:
-        raise SystemExit(1)
+    if env_file.get("path") != "/etc/quest-esports/valorant.production.env" or env_file.get("required") is not True: raise SystemExit(1)
     mounts = service.get("volumes", [])
-    if not any(isinstance(m, dict) and m.get("source") == "/etc/quest-esports/tls/quest-private-ca.crt" and
-               m.get("target") == "/run/secrets/quest-private-ca.crt" and m.get("read_only") is True for m in mounts):
-        raise SystemExit(1)
-    return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())),
-            tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))),
-            tuple(sorted(service["networks"])))
-
-if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]):
-    raise SystemExit(1)
+    if not any(isinstance(m, dict) and m.get("source") == "/etc/quest-esports/tls/quest-private-ca.crt" and m.get("target") == "/run/secrets/quest-private-ca.crt" and m.get("read_only") is True for m in mounts): raise SystemExit(1)
+    return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())), tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))), tuple(sorted(service["networks"])))
+if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]): raise SystemExit(1)
 PY
+  rm -f "$source_json_file" "$contract_json_file"
   rm -f "$render_env"
 }
 validate_postgres_target() {
