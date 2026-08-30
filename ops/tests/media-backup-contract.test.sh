@@ -181,8 +181,8 @@ env_file="$test_root/backup.env"
 cat > "$env_file" <<EOF
 POSTGRES17_BIN=$fake_bin
 POSTGRES_CA_FILE=$test_root/ca.crt
-POSTGRES_CERT_FILE=$test_root/postgres.crt
-POSTGRES_KEY_FILE=$test_root/postgres.key
+BACKUP_CLIENT_CERT_FILE=$test_root/postgres.crt
+BACKUP_CLIENT_KEY_FILE=$test_root/postgres.key
 POSTGRES_TARGET_HOST=127.0.0.1
 POSTGRES_TARGET_PORT=55432
 POSTGRES_TARGET_DATABASE=quest
@@ -298,8 +298,8 @@ chmod 600 "$test_root/restore-target-sentinel.env"
 cat > "$test_root/restore.env" <<EOF
 POSTGRES17_BIN=$fake_bin
 POSTGRES_CA_FILE=$test_root/ca.crt
-POSTGRES_CERT_FILE=$test_root/postgres.crt
-POSTGRES_KEY_FILE=$test_root/postgres.key
+RECOVERY_CLIENT_CERT_FILE=$test_root/postgres.crt
+RECOVERY_CLIENT_KEY_FILE=$test_root/postgres.key
 RECOVERY_ADMIN_URL=postgresql://quest_recovery_admin:fixture@127.0.0.1:55432/quest_restore
 UPLOAD_ROOT=$test_root/restore/uploads
 PRIVATE_UPLOAD_ROOT=$test_root/restore/private

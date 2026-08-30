@@ -122,11 +122,13 @@ openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt -noout -checkhost que
 openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt -noout -checkip 127.0.0.1
 ```
 
-Use `sslmode=verify-full` with the mounted private CA. Keep the key at mode
-`0600`, keep the CA/certificate root-owned and non-writable by group/other, and
-mount all TLS material read-only. The administrator password is a mode-`0400`
-file mounted only as `/run/secrets/postgres-admin-password`; it is not part of
-the application env file.
+Use `sslmode=verify-full` with the mounted private CA. Keep the server
+certificate, server key, and administrator password root-owned by group `999`
+with mode `0640` so the UID/GID `999:999` PostgreSQL process can read them;
+keep the CA root-owned and non-writable by group/other. Mount all TLS material
+read-only. The administrator password is mounted only as
+`/run/secrets/postgres-admin-password`; it is not part of the application env
+file.
 
 The bootstrap creates `quest_migrator`/`quest_runtime` for `public` and
 `val_migrator`/`val_runtime` for `valorant`. Runtime roles are non-owner,

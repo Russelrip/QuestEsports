@@ -46,7 +46,7 @@ setup_fixture() {
   printf '%s\n' fixture-cert > "$fixture/postgres.crt"
   printf '%s\n' fixture-key > "$fixture/postgres.key"
   printf '%s\n' fixture-alternate-key > "$fixture/alternate.key"
-  printf '%s\n' 'postgresql://quest_recovery_admin:fixture@quest-postgres:5432/quest' > "$fixture/recovery-admin-url"
+  printf '%s\n' 'postgresql://quest_recovery_admin:fixture@quest-postgres:5432/quest?sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt' > "$fixture/recovery-admin-url"
   printf '%s\n' 'postgresql://quest_migrator:fixture@quest-postgres:5432/quest' > "$fixture/quest-migrator-url"
   printf '%s\n' 'postgresql://val_migrator:fixture@quest-postgres:5432/quest' > "$fixture/valorant-migrator-url"
   printf '%s\n' fixture-alternate-cert > "$fixture/alternate.crt"
@@ -173,6 +173,7 @@ fi
 [[ "$1" == compose ]] || exit 1
 project=""
 env_file=""
+compose_file=""
 args=("$@")
 for ((i=0; i<${#args[@]}; i++)); do
   arg="${args[$i]}"
@@ -180,8 +181,15 @@ for ((i=0; i<${#args[@]}; i++)); do
     project="${args[$((i + 1))]}"
   elif [[ "$arg" == --env-file ]]; then
     env_file="${args[$((i + 1))]}"
+  elif [[ "$arg" == -f ]]; then
+    compose_file="${args[$((i + 1))]}"
   fi
 done
+if [[ -n "$env_file" && -f "$env_file" ]]; then
+  set -a
+  source "$env_file"
+  set +a
+fi
 if [[ "${WRONG_PROJECT:-0}" == 1 ]]; then project=wrong-project; fi
 if [[ " $* " == *' config --images '* ]]; then
   printf 'compose project=%s action=config-images\n' "$project" >> "$log"
@@ -196,6 +204,17 @@ if [[ " $* " == *' config --images '* ]]; then
       'ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111' \
       'ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222' \
       'postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333'
+  fi
+elif [[ " $* " == *' config --format json '* || " $* " == *' config --format json' ]]; then
+  printf 'compose project=%s action=config-json\n' "$project" >> "$log"
+  if [[ "$project" == valorant-prod ]]; then
+    if [[ -f "$compose_file" ]] && grep -Fq 'VALORANT_DATABASE_SSL_VERIFY' "$compose_file" && ! grep -Eq 'sslmode=|sslrootcert=' "$compose_file"; then
+      printf '{"name":"valorant-prod","services":{"valorant-platform":{"image":"%s","env_file":[{"path":"/etc/quest-esports/valorant.production.env","required":true}],"environment":{"VALORANT_DATABASE_SSL_CA_FILE":"/run/secrets/quest-private-ca.crt","VALORANT_DATABASE_SSL_SERVER_HOSTNAME":"quest-postgres","VALORANT_DATABASE_SSL_VERIFY":"full"},"volumes":[{"type":"bind","source":"/etc/quest-esports/tls/quest-private-ca.crt","target":"/run/secrets/quest-private-ca.crt","read_only":true}],"networks":{"quest-shared":{}}}},"networks":{"quest-shared":{"name":"quest-shared","external":true}}}\n' "${VALORANT_IMAGE:?required}"
+    else
+      printf '{}\n'
+    fi
+  else
+    printf '{"name":"%s","services":{},"networks":{}}\n' "$project"
   fi
 elif [[ " $* " == *' config '* ]]; then
   printf 'compose project=%s action=config\n' "$project" >> "$log"
@@ -495,8 +514,6 @@ QUEST_HEALTH_URL=http://127.0.0.1:5001/api/health/live
 QUEST_READINESS_URL=http://127.0.0.1:5001/api/health/ready
 VALORANT_HEALTH_URL=https://valorant-platform:8000/api/v1/health
 VALORANT_CA_FILE=$fixture/ca.crt
-POSTGRES_CERT_FILE=$fixture/postgres.crt
-POSTGRES_KEY_FILE=$fixture/postgres.key
 POSTGRES_COMPOSE_CA_FILE=$fixture/ca.crt
 POSTGRES_COMPOSE_CERT_FILE=$fixture/postgres.crt
 POSTGRES_COMPOSE_KEY_FILE=$fixture/postgres.key
@@ -970,6 +987,10 @@ setup_fixture missing-valorant-asyncpg-contract
 sed -i '/VALORANT_DATABASE_SSL_VERIFY/d' "$fixture/valorant.compose.yml"
 assert_failed missing-valorant-asyncpg-contract run_release
 
+setup_fixture valorant-libpq-url-rejected
+sed -i 's#postgresql+asyncpg://val_runtime:fixture@db\.supabase\.test:5432/quest?ssl=require#postgresql+asyncpg://val_runtime:fixture@db.supabase.test:5432/quest?sslmode=verify-full\&sslrootcert=/run/secrets/quest-private-ca.crt#' "$fixture/valorant.production.env"
+assert_failed valorant-libpq-url-rejected run_release
+
 setup_fixture cutover-target-sentinel
 sed -i 's/^POSTGRES_TARGET_HOST=.*/POSTGRES_TARGET_HOST=10.0.0.7/' "$fixture/release.env"
 assert_failed cutover-target-sentinel env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
@@ -1018,7 +1039,7 @@ sed -i 's#val_runtime:fixture#val_wrong_role:fixture#g' "$fixture/valorant.produ
 assert_failed host-validator-valorant-runtime-role run_host_validation
 
 setup_fixture host-validator-canonical-tls
-sed -i "s#^POSTGRES_CERT_FILE=.*#POSTGRES_CERT_FILE=$fixture/alternate.crt#" "$fixture/release.env"
+sed -i "s#^POSTGRES_COMPOSE_CERT_FILE=.*#POSTGRES_COMPOSE_CERT_FILE=$fixture/alternate.crt#" "$fixture/release.env"
 : > "$fixture/postgres.crt"
 assert_failed host-validator-canonical-tls run_host_validation
 
@@ -1027,7 +1048,7 @@ export TLS_KEY_WORLD_READABLE=1
 assert_failed host-validator-key-mode run_host_validation
 
 setup_fixture host-validator-canonical-tls-ownership
-sed -i "s#^POSTGRES_CERT_FILE=.*#POSTGRES_CERT_FILE=$fixture/alternate.crt#; s#^POSTGRES_KEY_FILE=.*#POSTGRES_KEY_FILE=$fixture/alternate.key#; s#^VALIDATE_HOST_COMMAND=.*#VALIDATE_HOST_COMMAND=$fixture/bin/validate-host#" "$fixture/release.env"
+sed -i "s#^POSTGRES_COMPOSE_CERT_FILE=.*#POSTGRES_COMPOSE_CERT_FILE=$fixture/alternate.crt#; s#^POSTGRES_COMPOSE_KEY_FILE=.*#POSTGRES_COMPOSE_KEY_FILE=$fixture/alternate.key#; s#^VALIDATE_HOST_COMMAND=.*#VALIDATE_HOST_COMMAND=$fixture/bin/validate-host#" "$fixture/release.env"
 ownership_fixture_supported=1
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ownership_fixture_supported=0 ;; esac
 if (( ownership_fixture_supported == 0 )); then
@@ -1067,6 +1088,9 @@ assert_contains "$TEST_LOG" 'quest-writer-enable'
 [[ "$(grep -n 'candidate-start' "$TEST_LOG" | cut -d: -f1 | head -n1)" -lt "$(grep -n 'writer-enable' "$TEST_LOG" | cut -d: -f1 | head -n1)" ]] || { printf 'FAIL: writer admission preceded candidate validation\n' >&2; exit 1; }
 restore_line="$(grep -nF 'cutover-restore' "$TEST_LOG" | cut -d: -f1 | head -n1)"
 candidate_line="$(grep -nF 'candidate-start' "$TEST_LOG" | cut -d: -f1 | head -n1)"
+security_line="$(grep -nF 'security-verify' "$TEST_LOG" | cut -d: -f1 | tail -n1)"
+first_migration_line="$(grep -nF 'migrator repo=' "$TEST_LOG" | cut -d: -f1 | head -n1)"
+[[ -n "$security_line" && -n "$first_migration_line" && "$restore_line" -lt "$first_migration_line" && "$first_migration_line" -lt "$security_line" && "$security_line" -lt "$candidate_line" ]] || { printf 'FAIL: final security verification was not ordered after migrations and before candidate startup\n' >&2; exit 1; }
 sentinel_before_restore="$(awk -v boundary="$restore_line" 'NR < boundary && $0 == "postgres-target" { line=NR } END { print line }' "$TEST_LOG")"
 sentinel_after_restore="$(awk -v boundary="$restore_line" -v limit="$candidate_line" 'NR > boundary && NR < limit && $0 == "postgres-target" { line=NR } END { print line }' "$TEST_LOG")"
 [[ -n "$sentinel_before_restore" && -n "$sentinel_after_restore" ]] || { printf 'FAIL: cutover did not execute the target sentinel before restore and again before candidate switching\n' >&2; exit 1; }

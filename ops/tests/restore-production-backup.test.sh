@@ -17,8 +17,8 @@ printf 'checksum\n' > "$test_root/quest-production-fixture.tar.gz.enc.sha256"
 cat > "$test_root/recovery.env" <<EOF
 POSTGRES17_BIN=$test_root/bin
 POSTGRES_CA_FILE=$test_root/ca.crt
-POSTGRES_CERT_FILE=$test_root/postgres.crt
-POSTGRES_KEY_FILE=$test_root/postgres.key
+RECOVERY_CLIENT_CERT_FILE=$test_root/postgres.crt
+RECOVERY_CLIENT_KEY_FILE=$test_root/postgres.key
 RECOVERY_ADMIN_URL=postgresql://quest_recovery_admin:fixture@127.0.0.1:55432/quest_restore
 UPLOAD_ROOT=$test_root/public
 PRIVATE_UPLOAD_ROOT=$test_root/private
@@ -107,6 +107,15 @@ fi
 for ((index = 1; index <= $#; index++)); do
   if [[ "${!index}" == -f ]]; then
     next=$((index + 1))
+    if [[ "$*" == *'RESTORE_MODE=1'* ]]; then
+      bootstrap="${!next}"
+      grep -F '\if :{?RESTORE_MODE}' "$bootstrap" >/dev/null
+      grep -F "session_user <> 'quest_recovery_admin' OR current_user <> 'quest_recovery_admin'" "$bootstrap" >/dev/null
+      grep -F 'EXECUTE format(' "$bootstrap" >/dev/null
+      grep -F 'current_database()' "$bootstrap" >/dev/null
+      ! grep -F 'GRANT CONNECT ON DATABASE quest TO' "$bootstrap" >/dev/null
+      [[ "${BOOTSTRAP_SESSION_USER:-quest_recovery_admin}" == quest_recovery_admin ]] || exit 1
+    fi
     cat "${!next}" >> "$TEST_ROOT/psql.log"
   fi
 done
@@ -152,9 +161,10 @@ grep -F -- '-v RESTORE_MODE=1' "$test_root/psql.log" >/dev/null
 ! grep -F -- 'SET ROLE' "$test_root/psql.log" >/dev/null
 grep -F -- 'quest_recovery_admin' "$test_root/psql.log" >/dev/null
 grep -F -- "REVOKE ALL ON DATABASE %I FROM PUBLIC" "$test_root/psql.log" >/dev/null
-grep -F -- 'GRANT CONNECT ON DATABASE quest TO quest_migrator, quest_runtime, val_migrator, val_runtime' "$test_root/psql.log" >/dev/null
+grep -F -- 'GRANT CONNECT ON DATABASE %I TO quest_migrator, quest_runtime, val_migrator, val_runtime' "$test_root/psql.log" >/dev/null
 grep -F -- 'current_database()' "$test_root/psql.log" >/dev/null
-grep -F -- 'REVOKE ALL ON DATABASE quest FROM PUBLIC' "$test_root/psql.log" >/dev/null
+grep -F -- 'current_database()' "$test_root/psql.log" >/dev/null
+! grep -F -- 'REVOKE ALL ON DATABASE quest FROM PUBLIC' "$test_root/psql.log" >/dev/null
 grep -F -- 'ALTER ROLE quest_runtime LOGIN NOINHERIT' "$test_root/psql.log" >/dev/null
 grep -F -- 'FROM pg_auth_members' "$test_root/psql.log" >/dev/null
 grep -F -- 'ALTER SCHEMA public OWNER TO quest_migrator' "$test_root/psql.log" >/dev/null

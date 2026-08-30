@@ -42,19 +42,15 @@ for name in "${required[@]}"; do
 done
 
 # The PostgreSQL server key/certificate are container-only identities. Backups
-# use a separately provisioned client certificate/key pair, so backup access does
-# not depend on server-key ownership or permissions.
-if [[ "$backup_test_fixture" == true ]]; then
-  backup_client_cert_file="${BACKUP_CLIENT_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
-  backup_client_key_file="${BACKUP_CLIENT_KEY_FILE:-${POSTGRES_KEY_FILE:-}}"
-else
-  backup_client_cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
-  backup_client_key_file="${BACKUP_CLIENT_KEY_FILE:-}"
-  [[ -n "$backup_client_cert_file" && -n "$backup_client_key_file" ]] || {
-    echo "BACKUP_CLIENT_CERT_FILE and BACKUP_CLIENT_KEY_FILE are required for production backup." >&2
-    exit 1
-  }
-fi
+# use only the separately provisioned client certificate/key pair; falling back
+# to server TLS variables would both violate identity separation and make the
+# production path depend on the server key's container readability contract.
+backup_client_cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
+backup_client_key_file="${BACKUP_CLIENT_KEY_FILE:-}"
+[[ -n "$backup_client_cert_file" && -n "$backup_client_key_file" ]] || {
+  echo "BACKUP_CLIENT_CERT_FILE and BACKUP_CLIENT_KEY_FILE are required for production backup." >&2
+  exit 1
+}
 for client_file in "$backup_client_cert_file" "$backup_client_key_file"; do
   [[ "$client_file" == /* && "$client_file" != / && -f "$client_file" && -r "$client_file" && ! -L "$client_file" ]] || {
     echo "Backup client TLS material is missing or unsafe." >&2
@@ -218,7 +214,7 @@ for setting in POSTGRES_CA_FILE; do
     exit 1
   }
 done
-for tls_file in "$POSTGRES_CA_FILE" "$POSTGRES_CERT_FILE" "$POSTGRES_KEY_FILE"; do
+for tls_file in "$POSTGRES_CA_FILE"; do
   tls_mode="$(stat -c '%a' "$tls_file" 2>/dev/null)" || {
     echo "PostgreSQL TLS material mode cannot be inspected." >&2
     exit 1

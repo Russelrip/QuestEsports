@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const { prisma } = require("../src/lib/prisma");
 
-const verifySecurityUrl = () => {
+const verifySecurityUrl = (authority) => {
   if (!process.env.SECURITY_VERIFY_TARGET && !process.env.TARGET_AUTHORITY) return;
   const rawUrl = process.env.SECURITY_VERIFY_DATABASE_URL ||
     (process.env.SECURITY_VERIFY_DATABASE_URL_FILE &&
@@ -16,21 +16,32 @@ const verifySecurityUrl = () => {
   if (!["postgres:", "postgresql:"].includes(url.protocol)) {
     throw new Error("security verification requires a libpq PostgreSQL URL");
   }
-  const isCompose = url.hostname === "quest-postgres" && url.port === "5432";
-  const isStagedLoopback = url.hostname === "127.0.0.1" && url.port === "55432";
-  if ((!isCompose && !isStagedLoopback) || (url.hostname === "127.0.0.1" && url.port === 5432)) {
-    throw new Error("security verification URL must target quest-postgres:5432 or staged 127.0.0.1:55432");
+  const expected = {
+    "quest-postgres": { host: "quest-postgres", port: "5432", ca: "/run/secrets/quest-private-ca.crt" },
+    "staged-loopback": { host: "127.0.0.1", port: "55432", ca: "/etc/quest-esports/tls/quest-private-ca.crt" },
+  }[authority];
+  if (!expected || url.hostname !== expected.host || url.port !== expected.port) {
+    throw new Error("security verification URL does not match the selected PostgreSQL target authority");
   }
   if (url.pathname !== "/quest" || url.username !== "quest_recovery_admin" || !url.password) {
     throw new Error("security verification URL must use the protected quest_recovery_admin identity");
+  }
+  const query = [...url.searchParams.entries()];
+  if (query.length !== 2 || query[0][0] !== "sslmode" || query[0][1] !== "verify-full" ||
+      query[1][0] !== "sslrootcert" || query[1][1] !== expected.ca) {
+    throw new Error("security verification URL must require the canonical CA and sslmode=verify-full");
   }
 };
 
 const verifyTargetBinding = async () => {
   if (!process.env.TARGET_AUTHORITY && !process.env.SECURITY_VERIFY_TARGET) return;
-  verifySecurityUrl();
-  const expectedHost = process.env.TARGET_AUTHORITY === "staged-loopback" ? "127.0.0.1" : "quest-postgres";
-  const expectedPort = process.env.TARGET_AUTHORITY === "staged-loopback" ? "55432" : "5432";
+  const authority = process.env.TARGET_AUTHORITY;
+  if (process.env.SECURITY_VERIFY_TARGET && process.env.SECURITY_VERIFY_TARGET !== authority) {
+    throw new Error("security verification target and authority disagree");
+  }
+  verifySecurityUrl(authority);
+  const expectedHost = authority === "staged-loopback" ? "127.0.0.1" : "quest-postgres";
+  const expectedPort = authority === "staged-loopback" ? "55432" : "5432";
   if (
     !["quest-postgres", "staged-loopback"].includes(process.env.TARGET_AUTHORITY) ||
     process.env.TARGET_DATABASE_HOST !== expectedHost ||
@@ -43,21 +54,27 @@ const verifyTargetBinding = async () => {
   const [observed] = await prisma.$queryRaw`
     SELECT current_database() AS "databaseName",
            current_setting('server_version_num') AS "serverVersionNum",
+           inet_server_addr() AS "serverAddress",
            inet_server_port() AS "serverPort",
            session_user AS "sessionUser",
            current_user AS "currentUser",
            CASE WHEN EXISTS (
              SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl
-           ) THEN 'on' ELSE 'off' END AS "sslStatus"
+           ) THEN 'on' ELSE 'off' END AS "sslStatus",
+           (SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()) AS "sslVersion",
+           (SELECT cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid()) AS "sslCipher"
   `;
   if (
     !observed ||
     observed.databaseName !== "quest" ||
     !/^17\d{4,}$/.test(String(observed.serverVersionNum)) ||
-    String(observed.serverPort) !== expectedPort ||
+    String(observed.serverPort) !== "5432" ||
+    !observed.serverAddress ||
     observed.sessionUser !== "quest_recovery_admin" ||
     observed.currentUser !== "quest_recovery_admin" ||
-    observed.sslStatus !== "on"
+    observed.sslStatus !== "on" ||
+    !observed.sslVersion ||
+    !observed.sslCipher
   ) {
     throw new Error("security verification connected to an unexpected database target");
   }
@@ -175,6 +192,7 @@ const verify = async () => {
     JOIN pg_type t ON has_type_privilege(r.oid, t.oid, 'USAGE')
     JOIN pg_namespace n ON n.oid = t.typnamespace
     WHERE n.nspname IN ('public', 'valorant') AND t.typelem = 0
+      AND (t.typrelid = 0 OR EXISTS (SELECT 1 FROM pg_class composite_relation WHERE composite_relation.oid = t.typrelid AND composite_relation.relkind = 'c'))
     UNION ALL
     SELECT 'PUBLIC'::name, n.nspname, p.proname, acl.privilege_type
     FROM pg_proc p
@@ -186,7 +204,9 @@ const verify = async () => {
     FROM pg_type t
     JOIN pg_namespace n ON n.oid = t.typnamespace
     CROSS JOIN LATERAL aclexplode(COALESCE(t.typacl, acldefault('T', t.typowner))) acl
-    WHERE n.nspname IN ('public', 'valorant') AND t.typelem = 0 AND acl.grantee = 0
+    WHERE n.nspname IN ('public', 'valorant') AND t.typelem = 0
+      AND (t.typrelid = 0 OR EXISTS (SELECT 1 FROM pg_class composite_relation WHERE composite_relation.oid = t.typrelid AND composite_relation.relkind = 'c'))
+      AND acl.grantee = 0
     UNION ALL
     SELECT 'PUBLIC'::name, n.nspname, c.relname, acl.privilege_type
     FROM pg_class c
@@ -228,6 +248,7 @@ const verify = async () => {
     FROM cross_schema_roles r
     JOIN pg_namespace n ON n.nspname = r.schema_name
     JOIN pg_type t ON t.typnamespace = n.oid AND t.typelem = 0
+      AND (t.typrelid = 0 OR EXISTS (SELECT 1 FROM pg_class composite_relation WHERE composite_relation.oid = t.typrelid AND composite_relation.relkind = 'c'))
     WHERE has_type_privilege(r.role_name, t.oid, 'USAGE')
     ORDER BY "roleName", "schemaName", "objectName", privilege
   `;
@@ -236,7 +257,7 @@ const verify = async () => {
       SELECT n.nspname AS "schemaName", c.relname AS "objectName", r.rolname AS "ownerName",
         CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner
-      WHERE n.nspname IN ('public', 'valorant') AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+      WHERE n.nspname IN ('public', 'valorant') AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f', 'c')
     ), routine_owners AS (
       SELECT n.nspname AS "schemaName", p.proname AS "objectName", r.rolname AS "ownerName",
         CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
@@ -246,8 +267,12 @@ const verify = async () => {
       SELECT n.nspname AS "schemaName", t.typname AS "objectName", r.rolname AS "ownerName",
         CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
       FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_roles r ON r.oid = t.typowner
-      WHERE n.nspname IN ('public', 'valorant') AND t.typisdefined AND t.typtype IN ('b', 'd', 'e', 'r')
-        AND t.typelem = 0 AND t.typrelid = 0
+      WHERE n.nspname IN ('public', 'valorant') AND t.typisdefined
+        AND t.typtype IN ('b', 'c', 'd', 'e', 'r') AND t.typtype <> 'm' AND t.typelem = 0
+        AND (t.typrelid = 0 OR EXISTS (
+          SELECT 1 FROM pg_class composite_relation
+          WHERE composite_relation.oid = t.typrelid AND composite_relation.relkind = 'c'
+        ))
     ), operator_owners AS (
       SELECT n.nspname AS "schemaName", o.oprname AS "objectName", r.rolname AS "ownerName",
         CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
@@ -291,6 +316,16 @@ const verify = async () => {
     ORDER BY "schemaName", "objectName", "ownerName"
   `;
 
+  const schemaOwnership = await prisma.$queryRaw`
+    SELECT n.nspname AS "schemaName", r.rolname AS "ownerName",
+      CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
+    FROM pg_namespace n
+    JOIN pg_roles r ON r.oid = n.nspowner
+    WHERE n.nspname IN ('public', 'valorant')
+      AND r.rolname <> CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END
+    ORDER BY n.nspname
+  `;
+
   if (
     tablesWithoutRls.length ||
     tablesWithoutRuntimePolicy.length ||
@@ -298,7 +333,8 @@ const verify = async () => {
     bypassRoles.length ||
     dataApiGrants.length ||
     crossSchemaGrants.length ||
-    objectOwnership.length
+    objectOwnership.length ||
+    schemaOwnership.length
     || recoveryAdminContract.length !== 1
     || recoveryAdminContract[0].status !== "verified"
     || unsafeRuntimeOrMigratorRoles.length
@@ -347,6 +383,15 @@ const verify = async () => {
         `Objects with unexpected schema owners: ${objectOwnership
           .map(({ schemaName, objectName, ownerName, expectedOwner }) =>
             `${schemaName}:${objectName}:${ownerName} (expected ${expectedOwner})`,
+          )
+          .join(", ")}`,
+      );
+    }
+    if (schemaOwnership.length) {
+      console.error(
+        `Schemas with unexpected owners: ${schemaOwnership
+          .map(({ schemaName, ownerName, expectedOwner }) =>
+            `${schemaName}:${ownerName} (expected ${expectedOwner})`,
           )
           .join(", ")}`,
       );

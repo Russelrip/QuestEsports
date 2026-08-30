@@ -84,7 +84,7 @@ grep -Eq '\^postgres:17-bookworm@sha256:\[0-9a-f\]\{64\}\$' "$rehearsal" >/dev/n
 grep -Eq '\^postgres:17-bookworm@sha256:\[0-9a-f\]\{64\}\$' "$verify" >/dev/null || { echo "FAIL: verifier image allowlist does not match producer" >&2; exit 1; }
 ! grep -Eq "server_version.*PostgreSQL_17" "$rehearsal" "$verify" || { echo "FAIL: server_version contract still uses fabricated PostgreSQL_17 text" >&2; exit 1; }
 mkdir -p "$tmp/bin" "$tmp/evidence" "$tmp/ca"; chmod 700 "$tmp" "$tmp/evidence" "$tmp/ca"
-printf 'fixture identity\n' > "$tmp/identity"; printf 'fixture ca\n' > "$tmp/ca/ca.crt"; chmod 600 "$tmp/identity" "$tmp/ca/ca.crt"
+printf 'fixture identity\n' > "$tmp/identity"; printf 'fixture ca\n' > "$tmp/ca/ca.crt"; printf 'fixture recovery cert\n' > "$tmp/recovery-client.crt"; printf 'fixture recovery key\n' > "$tmp/recovery-client.key"; chmod 600 "$tmp/identity" "$tmp/ca/ca.crt" "$tmp/recovery-client.crt" "$tmp/recovery-client.key"
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/prerequisite-signing-private.pem" >/dev/null 2>&1; chmod 600 "$tmp/prerequisite-signing-private.pem"
 source "$root/ops/rehearsal/rehearsal-contract.sh"
 [[ "$(rehearsal_runtime_role public)" == quest_runtime && "$(rehearsal_runtime_role valorant)" == val_runtime && "$(rehearsal_runtime_policy_name public users)" == users_runtime_all ]] || { echo 'FAIL: shared runtime policy contract changed' >&2; exit 1; }
@@ -102,6 +102,8 @@ printf 'source_major=17\nsource_version=PostgreSQL_17.4\nprovenance=operator_rec
 printf 'target_kind=disposable_postgresql17\ntarget_id=quest-fixture-20260827\ncontainer_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\npublic_root=%s\nprivate_root=%s\n' "$tmp/wrapper-parent/public" "$tmp/wrapper-parent/private" > "$tmp/target-sentinel.env"; chmod 600 "$tmp/target-sentinel.env"
 printf 'not an archive\n' > "$tmp/quest-production-20260827T000000Z.tar.gz.enc"; cat > "$tmp/recovery.env" <<EOF
 RECOVERY_ADMIN_URL=postgresql://quest_recovery_admin:fixture@127.0.0.1:55432/quest_restore
+RECOVERY_CLIENT_CERT_FILE=$tmp/recovery-client.crt
+RECOVERY_CLIENT_KEY_FILE=$tmp/recovery-client.key
 QUEST_RUNTIME_DATABASE_URL=postgresql://quest_runtime:fixture@127.0.0.1:55432/quest_restore
 UPLOAD_ROOT=$tmp/wrapper-parent/public
 PRIVATE_UPLOAD_ROOT=$tmp/wrapper-parent/private

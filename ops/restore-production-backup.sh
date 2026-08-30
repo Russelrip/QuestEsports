@@ -119,17 +119,12 @@ POSTGRES_CA_FILE="${POSTGRES_CA_FILE:-${VALORANT_CA_FILE:-}}"
   echo "POSTGRES_CA_FILE must be an absolute non-symlink file." >&2
   exit 1
 }
-if [[ "$restore_test_fixture" == true ]]; then
-  recovery_client_cert_file="${RECOVERY_CLIENT_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
-  recovery_client_key_file="${RECOVERY_CLIENT_KEY_FILE:-${POSTGRES_KEY_FILE:-}}"
-else
-  recovery_client_cert_file="${RECOVERY_CLIENT_CERT_FILE:-}"
-  recovery_client_key_file="${RECOVERY_CLIENT_KEY_FILE:-}"
-  [[ -n "$recovery_client_cert_file" && -n "$recovery_client_key_file" ]] || {
-    echo "RECOVERY_CLIENT_CERT_FILE and RECOVERY_CLIENT_KEY_FILE are required for production restore." >&2
-    exit 1
-  }
-fi
+recovery_client_cert_file="${RECOVERY_CLIENT_CERT_FILE:-}"
+recovery_client_key_file="${RECOVERY_CLIENT_KEY_FILE:-}"
+[[ -n "$recovery_client_cert_file" && -n "$recovery_client_key_file" ]] || {
+  echo "RECOVERY_CLIENT_CERT_FILE and RECOVERY_CLIENT_KEY_FILE are required for restore." >&2
+  exit 1
+}
 for tls_file in "$POSTGRES_CA_FILE" "$recovery_client_cert_file" "$recovery_client_key_file"; do
   [[ -z "$tls_file" ]] && continue
   tls_mode="$(stat -c '%a' "$tls_file" 2>/dev/null)" || {
@@ -830,7 +825,7 @@ fi
 # canonical bootstrap normalizes every application object to its schema's
 # migrator; require a non-secret, exact zero-mismatch probe before declaring
 # the restore complete.
-owner_mismatches="$(psql_target -tAc "WITH relation_owners AS (SELECT n.nspname, c.relname, r.rolname AS owner_name, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS expected_owner FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname IN ('public','valorant') AND c.relkind IN ('r','p','v','m','S','f')), routine_owners AS (SELECT n.nspname, p.proname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname IN ('public','valorant') AND p.prokind IN ('f','p','a')), type_owners AS (SELECT n.nspname, t.typname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_roles r ON r.oid = t.typowner WHERE n.nspname IN ('public','valorant') AND t.typisdefined AND t.typtype IN ('b','d','e','r') AND t.typelem = 0 AND t.typrelid = 0) SELECT count(*) FROM (SELECT * FROM relation_owners UNION ALL SELECT * FROM routine_owners UNION ALL SELECT * FROM type_owners) objects WHERE owner_name <> expected_owner")" || {
+owner_mismatches="$(psql_target -tAc "WITH relation_owners AS (SELECT n.nspname, c.relname, r.rolname AS owner_name, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS expected_owner FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname IN ('public','valorant') AND c.relkind IN ('r','p','v','m','S','f','c')), routine_owners AS (SELECT n.nspname, p.proname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname IN ('public','valorant') AND p.prokind IN ('f','p','a')), type_owners AS (SELECT n.nspname, t.typname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_roles r ON r.oid = t.typowner WHERE n.nspname IN ('public','valorant') AND t.typisdefined AND t.typtype IN ('b','c','d','e','r') AND t.typtype <> 'm' AND t.typelem = 0 AND (t.typrelid = 0 OR EXISTS (SELECT 1 FROM pg_class composite_relation WHERE composite_relation.oid = t.typrelid AND composite_relation.relkind = 'c'))) SELECT count(*) FROM (SELECT * FROM relation_owners UNION ALL SELECT * FROM routine_owners UNION ALL SELECT * FROM type_owners) objects WHERE owner_name <> expected_owner")" || {
   echo "Restored object-owner verification failed; the exit guard will roll back both activated file trees." >&2
   exit 1
 }

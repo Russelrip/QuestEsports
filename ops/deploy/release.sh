@@ -44,6 +44,7 @@ fi
 # shellcheck disable=SC1090
 source "$release_env_file"
 runtime_env_file="${QUEST_RUNTIME_ENV_FILE:-/etc/quest-esports/quest.production.env}"
+valorant_runtime_env_file="${VALORANT_RUNTIME_ENV_FILE:-/etc/quest-esports/valorant.production.env}"
 
 require_setting() { [[ -n "${!1:-}" ]] || die "missing release setting: $1"; }
 absolute_nonroot() { [[ "$2" == /* && "$2" != / ]] || die "$1 must be an absolute non-root path."; }
@@ -69,9 +70,9 @@ root_file() {
 validate_compose_tls_material() {
   local ca_file cert_file key_file password_file key_mode tls_file tls_stat
   if [[ "$fixture_mode" == 1 ]]; then
-    ca_file="${POSTGRES_COMPOSE_CA_FILE:-${POSTGRES_CERT_FILE:-}}"
-    cert_file="${POSTGRES_COMPOSE_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
-    key_file="${POSTGRES_COMPOSE_KEY_FILE:-${POSTGRES_KEY_FILE:-}}"
+    ca_file="${POSTGRES_COMPOSE_CA_FILE:-}"
+    cert_file="${POSTGRES_COMPOSE_CERT_FILE:-}"
+    key_file="${POSTGRES_COMPOSE_KEY_FILE:-}"
   else
     password_file=/etc/quest-esports/secrets/postgres-admin-password
     ca_file=/etc/quest-esports/tls/quest-private-ca.crt
@@ -92,35 +93,62 @@ validate_compose_tls_material() {
     tls_stat="$(stat -c '%u:%g %a' "$ca_file" 2>/dev/null)" || die 'canonical PostgreSQL CA ownership cannot be inspected.'
     [[ "$tls_stat" == '0:0 644' ]] || die 'canonical PostgreSQL CA must be root-owned mode 0644.'
     tls_stat="$(stat -c '%u:%g %a' "$cert_file" 2>/dev/null)" || die 'canonical PostgreSQL certificate ownership cannot be inspected.'
-    [[ "$tls_stat" == '0:0 644' ]] || die 'canonical PostgreSQL certificate must be root-owned mode 0644.'
+    [[ "$tls_stat" == '0:999 640' ]] || die 'canonical PostgreSQL certificate must be root-owned, group-readable by 999, mode 0640.'
     tls_stat="$(stat -c '%u:%g %a' "$key_file" 2>/dev/null)" || die 'canonical PostgreSQL key ownership cannot be inspected.'
     [[ "$tls_stat" == '0:999 640' ]] || die 'canonical PostgreSQL key must be root-owned, group-readable by 999, mode 0640.'
     [[ -f "$password_file" && ! -L "$password_file" && "$(stat -c '%u:%g %a' "$password_file" 2>/dev/null)" == '0:999 640' ]] || die 'canonical PostgreSQL password file must be root-owned, group-readable by 999, mode 0640.'
   fi
 }
 validate_valorant_runtime_compose() {
-  local compose_source="${VALORANT_COMPOSE_SOURCE:-}" contract="${VALORANT_RUNTIME_COMPOSE_CONTRACT:-}"
+  local compose_source="${VALORANT_COMPOSE_SOURCE:-}" contract="${VALORANT_RUNTIME_COMPOSE_CONTRACT:-}" render_env rendered contract_rendered expected_image
   [[ -n "$compose_source" && -f "$compose_source" && ! -L "$compose_source" ]] || die 'VALORANT Compose source is missing or unsafe.'
   [[ -n "$contract" && -f "$contract" && ! -L "$contract" ]] || die 'VALORANT runtime Compose contract is missing or unsafe.'
-  for required in \
-    'image: ${VALORANT_IMAGE:' \
-    'env_file:' \
-    'VALORANT_DATABASE_SSL_CA_FILE' \
-    'VALORANT_DATABASE_SSL_SERVER_HOSTNAME' \
-    'VALORANT_DATABASE_SSL_VERIFY' \
-    '/run/secrets/quest-private-ca.crt:ro' \
-    'quest-shared'; do
-    grep -F "$required" "$compose_source" >/dev/null || die 'VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'
-  done
-  grep -F 'sslmode=' "$compose_source" >/dev/null && die 'VALORANT Compose source contains libpq-only sslmode settings.' || true
-  grep -F 'sslrootcert=' "$compose_source" >/dev/null && die 'VALORANT Compose source contains libpq-only sslrootcert settings.' || true
-  cmp -s "$contract" "$compose_source" || {
-    # The sibling repository owns its Compose file; compare the required
-    # contract fields rather than demanding byte-for-byte repository identity.
-    for required in 'VALORANT_DATABASE_SSL_CA_FILE' 'VALORANT_DATABASE_SSL_SERVER_HOSTNAME' 'VALORANT_DATABASE_SSL_VERIFY'; do
-      grep -F "$required" "$contract" >/dev/null || die 'checked-in VALORANT runtime contract is incomplete.'
-    done
-  }
+  expected_image="${manifest[valorant_image]:-${VALORANT_IMAGE_APPROVED_REF:-}}"
+  [[ "$expected_image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die 'VALORANT image is not an exact approved digest.'
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for rendered VALORANT Compose validation.'
+  render_env="$(mktemp)" || die 'could not create the VALORANT Compose render environment.'
+  printf 'VALORANT_IMAGE=%s\n' "$expected_image" > "$render_env"
+  rendered="$($DOCKER_BIN compose --env-file "$render_env" -f "$compose_source" --project-name valorant-prod config --format json 2>/dev/null)" || { rm -f "$render_env"; die 'rendered VALORANT Compose source is invalid.'; }
+  contract_rendered="$($DOCKER_BIN compose --env-file "$render_env" -f "$contract" --project-name valorant-prod config --format json 2>/dev/null)" || { rm -f "$render_env"; die 'rendered VALORANT Compose contract is invalid.'; }
+  python3 - "$rendered" "$contract_rendered" "$expected_image" <<'PY' || { rm -f "$render_env"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
+import json, sys
+
+def contract(raw, expected_image):
+    doc = json.loads(raw)
+    if doc.get("name") != "valorant-prod":
+        raise SystemExit(1)
+    service = doc.get("services", {}).get("valorant-platform")
+    if not isinstance(service, dict) or service.get("image") != expected_image:
+        raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_CA_FILE") != "/run/secrets/quest-private-ca.crt":
+        raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres":
+        raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_VERIFY") != "full":
+        raise SystemExit(1)
+    if set(service.get("networks", {})) != {"quest-shared"}:
+        raise SystemExit(1)
+    network = doc.get("networks", {}).get("quest-shared", {})
+    if network.get("name") != "quest-shared" or network.get("external") is not True:
+        raise SystemExit(1)
+    env_files = service.get("env_file", [])
+    if len(env_files) != 1:
+        raise SystemExit(1)
+    env_file = env_files[0] if isinstance(env_files[0], dict) else {"path": env_files[0], "required": True}
+    if env_file.get("path") != "/etc/quest-esports/valorant.production.env" or env_file.get("required") is not True:
+        raise SystemExit(1)
+    mounts = service.get("volumes", [])
+    if not any(isinstance(m, dict) and m.get("source") == "/etc/quest-esports/tls/quest-private-ca.crt" and
+               m.get("target") == "/run/secrets/quest-private-ca.crt" and m.get("read_only") is True for m in mounts):
+        raise SystemExit(1)
+    return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())),
+            tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))),
+            tuple(sorted(service["networks"])))
+
+if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]):
+    raise SystemExit(1)
+PY
+  rm -f "$render_env"
 }
 validate_postgres_target() {
   local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
@@ -174,10 +202,10 @@ validate_runtime_url_file() {
     esac
   done < "$file"
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for runtime database URL validation.'
-  if [[ "${label,,}" == valorant && "$authority_mode" == quest-postgres ]]; then
-    grep -Fxq 'VALORANT_DATABASE_SSL_CA_FILE=/run/secrets/quest-private-ca.crt' "$file" || die 'VALORANT runtime environment must name the mounted asyncpg CA file.'
-    grep -Fxq 'VALORANT_DATABASE_SSL_SERVER_HOSTNAME=quest-postgres' "$file" || die 'VALORANT runtime environment must name the asyncpg TLS server hostname.'
-    grep -Fxq 'VALORANT_DATABASE_SSL_VERIFY=full' "$file" || die 'VALORANT runtime environment must require full asyncpg certificate verification.'
+  if [[ "${label,,}" == valorant ]]; then
+    [[ "$(grep -Fxc 'VALORANT_DATABASE_SSL_CA_FILE=/run/secrets/quest-private-ca.crt' "$file" || true)" == 1 ]] || die 'VALORANT runtime environment must name the mounted asyncpg CA file exactly once.'
+    [[ "$(grep -Fxc 'VALORANT_DATABASE_SSL_SERVER_HOSTNAME=quest-postgres' "$file" || true)" == 1 ]] || die 'VALORANT runtime environment must name the asyncpg TLS server hostname exactly once.'
+    [[ "$(grep -Fxc 'VALORANT_DATABASE_SSL_VERIFY=full' "$file" || true)" == 1 ]] || die 'VALORANT runtime environment must require full asyncpg certificate verification exactly once.'
   fi
   for variable in DATABASE_URL DIRECT_URL; do
     url="${runtime_urls[$variable]:-}"
@@ -196,7 +224,12 @@ if parsed.scheme not in ("postgres", "postgresql", "postgresql+asyncpg") or pars
 if parsed.password is None or parsed.password == "" or parsed.username is None or parsed.username == "" or parsed.path != "/quest" or parsed.fragment:
     raise SystemExit(1)
 if authority == "supabase":
-    if parsed.hostname == "quest-postgres" or parsed.username != expected_role or query not in ({"schema": [expected_schema]}, {"schema": [expected_schema], "sslmode": ["verify-full"], "sslrootcert": ["/run/secrets/quest-private-ca.crt"]}, {"ssl": ["require"]}):
+    if parsed.hostname == "quest-postgres" or parsed.username != expected_role:
+        raise SystemExit(1)
+    if label.lower() == "valorant":
+        if parsed.scheme != "postgresql+asyncpg" or query != {"ssl": ["require"]}:
+            raise SystemExit(1)
+    elif query not in ({"schema": [expected_schema]}, {"schema": [expected_schema], "sslmode": ["verify-full"], "sslrootcert": ["/run/secrets/quest-private-ca.crt"]}, {"ssl": ["require"]}):
         raise SystemExit(1)
     raise SystemExit(0)
 if authority != "quest-postgres" or parsed.hostname != "quest-postgres" or parsed.port != 5432:
@@ -233,7 +266,11 @@ if (parsed.scheme not in ("postgres", "postgresql") or parsed.username != "quest
         not parsed.password or
         not ((parsed.hostname == "quest-postgres" and parsed.port == 5432) or
              (parsed.hostname == "127.0.0.1" and parsed.port == 55432)) or
-        parsed.path != "/quest" or parsed.query or parsed.fragment):
+        parsed.path != "/quest" or parsed.fragment):
+    raise SystemExit(1)
+query = parsed.query.split("&") if parsed.query else []
+expected_ca = "/run/secrets/quest-private-ca.crt" if parsed.hostname == "quest-postgres" else "/etc/quest-esports/tls/quest-private-ca.crt"
+if query != ["sslmode=verify-full", f"sslrootcert={expected_ca}"]:
     raise SystemExit(1)
 PY
 }
@@ -292,10 +329,6 @@ for manifest_key in frontend_image backend_image migrator_image valorant_image; 
 done
 [[ "${manifest[postgres_image]}" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die 'postgres_image must be the exact PostgreSQL 17 Bookworm digest.'
 [[ "${manifest[postgres_image]}" == "$POSTGRES_IMAGE_APPROVED_REF" ]] || die 'approved PostgreSQL image does not match the manifest.'
-for setting in POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
-  require_setting "$setting"
-  root_file "${!setting}"
-done
 root_file "$RECOVERY_ADMIN_URL_FILE"
 validate_recovery_admin_url_file "$RECOVERY_ADMIN_URL_FILE"
 validate_compose_tls_material

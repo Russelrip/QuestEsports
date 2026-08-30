@@ -12,6 +12,20 @@
 -- object classes that cannot be repaired through contradictory SET ROLE
 -- memberships. RESTORE_MODE is run directly by this role after the restore.
 
+-- Refuse a recovery invocation before it can create roles, revoke privileges, or
+-- touch any application object.  The database name is intentionally not part
+-- of this identity check: disposable rehearsals use a database such as
+-- quest_restore while production uses quest.
+\if :{?RESTORE_MODE}
+DO $$
+BEGIN
+  IF session_user <> 'quest_recovery_admin' OR current_user <> 'quest_recovery_admin' THEN
+    RAISE EXCEPTION 'RESTORE_MODE must run directly as quest_recovery_admin without SET ROLE';
+  END IF;
+END
+$$;
+\endif
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quest_migrator') THEN
@@ -34,16 +48,13 @@ $$;
 
 -- Remove the database-level defaults before granting only the service roles.
 -- This also repairs databases initialized with PostgreSQL's PUBLIC CONNECT and
--- TEMP privileges.
-\if :{?RESTORE_MODE}
+-- TEMP privileges. Always address the database selected by this connection;
+-- restore rehearsals intentionally use a disposable database name.
 DO $$
 BEGIN
   EXECUTE format('REVOKE ALL ON DATABASE %I FROM PUBLIC', current_database());
 END
 $$;
-\else
-REVOKE ALL ON DATABASE quest FROM PUBLIC;
-\endif
 
 -- The guarded restore connection is not an application role, but it must be
 -- able to reconnect after PUBLIC CONNECT is revoked.
@@ -116,7 +127,7 @@ BEGIN
     FROM pg_class AS relation
     JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
     WHERE namespace.nspname IN ('public', 'valorant')
-      AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+      AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f', 'c')
   LOOP
     schema_owner := CASE relation_record.nspname
       WHEN 'public' THEN 'quest_migrator'
@@ -125,6 +136,11 @@ BEGIN
     IF relation_record.relkind = 'S' THEN
       EXECUTE format(
         'ALTER SEQUENCE %I.%I OWNER TO %I',
+        relation_record.nspname, relation_record.relname, schema_owner
+      );
+    ELSIF relation_record.relkind = 'c' THEN
+      EXECUTE format(
+        'ALTER TYPE %I.%I OWNER TO %I',
         relation_record.nspname, relation_record.relname, schema_owner
       );
     ELSE
@@ -164,15 +180,24 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Composite types have both a pg_type row and a pg_class relation of
+  -- relkind=c.  ALTER TYPE repairs the owner for both representations.  Array
+  -- companions and multiranges are generated PostgreSQL objects and cannot be
+  -- altered independently, so they remain excluded by typelem/typtype.
   FOR type_record IN
     SELECT namespace.nspname, type_object.typname
     FROM pg_type AS type_object
     JOIN pg_namespace AS namespace ON namespace.oid = type_object.typnamespace
     WHERE namespace.nspname IN ('public', 'valorant')
       AND type_object.typisdefined
-      AND type_object.typtype IN ('b', 'd', 'e', 'r')
+      AND type_object.typtype IN ('b', 'c', 'd', 'e', 'r')
+      AND type_object.typtype <> 'm'
       AND type_object.typelem = 0
-      AND type_object.typrelid = 0
+      AND (type_object.typrelid = 0 OR EXISTS (
+        SELECT 1 FROM pg_class AS composite_relation
+        WHERE composite_relation.oid = type_object.typrelid
+          AND composite_relation.relkind = 'c'
+      ))
   LOOP
     schema_owner := CASE type_record.nspname
       WHEN 'public' THEN 'quest_migrator'
@@ -284,23 +309,21 @@ $$;
 
 \endif
 
--- RESTORE_MODE must use the protected recovery identity directly. There is no
--- SET ROLE path and no recovery-to-migrator membership to drift.
-\if :{?RESTORE_MODE}
-DO $$
-BEGIN
-  IF session_user <> 'quest_recovery_admin' OR current_user <> 'quest_recovery_admin' THEN
-    RAISE EXCEPTION 'RESTORE_MODE must run directly as quest_recovery_admin without SET ROLE';
-  END IF;
-END
-$$;
-\endif
-
 -- Apply the canonical grants/default privileges after both normal bootstrap and
 -- the --no-acl restore. Recovery is a superuser, so this is executable in the
 -- exact session that performed ownership normalization.
-GRANT CONNECT ON DATABASE quest TO quest_migrator, quest_runtime, val_migrator, val_runtime;
-GRANT TEMPORARY ON DATABASE quest TO quest_migrator, val_migrator;
+DO $$
+BEGIN
+  EXECUTE format(
+    'GRANT CONNECT ON DATABASE %I TO quest_migrator, quest_runtime, val_migrator, val_runtime',
+    current_database()
+  );
+  EXECUTE format(
+    'GRANT TEMPORARY ON DATABASE %I TO quest_migrator, val_migrator',
+    current_database()
+  );
+END
+$$;
 
 REVOKE ALL ON SCHEMA valorant FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA valorant FROM PUBLIC;
@@ -327,9 +350,14 @@ BEGIN
     JOIN pg_namespace AS namespace ON namespace.oid = type_object.typnamespace
     WHERE namespace.nspname IN ('public', 'valorant')
       AND type_object.typisdefined
-      AND type_object.typtype <> 'p'
+      AND type_object.typtype IN ('b', 'c', 'd', 'e', 'r')
       AND type_object.typtype <> 'm'
       AND type_object.typelem = 0
+      AND (type_object.typrelid = 0 OR EXISTS (
+        SELECT 1 FROM pg_class AS composite_relation
+        WHERE composite_relation.oid = type_object.typrelid
+          AND composite_relation.relkind = 'c'
+      ))
   LOOP
     EXECUTE format('REVOKE ALL ON TYPE %I.%I FROM PUBLIC', object_type.nspname, object_type.typname);
     IF object_type.nspname = 'public' THEN
