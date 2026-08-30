@@ -2,7 +2,10 @@
 
 Date: 2026-08-30
 
-Implementation commit: `32ec14e fix: close PostgreSQL migration recovery gaps`
+Implementation commits: `32ec14e fix: close PostgreSQL migration recovery gaps`,
+`e7fdde2 fix: close remaining PostgreSQL migration gaps`
+
+This report records the validation state for both implementation passes.
 
 ## Scope
 
@@ -30,7 +33,9 @@ private Compose network, RLS/NOBYPASSRLS requirements, pinned clients, and
 - Ownership checks cover relations, routines, user-defined types, operators,
   collations, conversions, extended statistics, operator classes/families,
   text-search dictionaries, and text-search configurations. PostgreSQL catalog
-  objects without owner columns (parsers/templates) are not queried.
+  objects without owner columns (parsers/templates) are not queried; generated
+  table row types are excluded while standalone and user-defined composite types
+  remain covered.
 - Restore verification checks both the common owner classes and extended
   object-owner classes before activation is considered complete.
 - Runtime security verification rejects wrong database, host, port, major
@@ -68,6 +73,25 @@ Passed:
   cutover, release verification, and related contract-test scripts — passed.
 - `git diff --check` — passed; only normal Git LF/CRLF conversion warnings were
   emitted.
+
+Current follow-up validation for the uncommitted pass:
+
+- `node --test backend/tests/production-container-config.test.js` — 35/35,
+  including asyncpg TLS contract and composite-type owner normalization.
+- `npm test` from `backend` — 1124 passed, 0 failed, 11 skipped.
+- `ops/tests/restore-production-backup.test.sh` — passed under Git Bash.
+- `ops/tests/media-backup-contract.test.sh` and
+  `ops/tests/backup-multi-remote.test.sh` — passed under Git Bash.
+- Git Bash `bash -n` checks for the changed restore, rehearsal, deployment, and
+  contract-test scripts — passed.
+- `git diff --check` — passed; only normal Git LF/CRLF conversion warnings were
+  emitted.
+- `ops/tests/postgres17-rehearsal.test.sh` — unresolved locally: the fixture
+  reached the signed-evidence mutation checks but the wrong-ACL case reported
+  an evidence-manifest hash mismatch, then the Windows harness timed out.
+- `ops/tests/deploy-release.test.sh` — unresolved locally: the Windows-hosted
+  Git Bash harness emitted `ChildProcess.kill` and timed out; no VPS or remote
+  target was touched.
 
 Skipped or unresolved locally:
 
