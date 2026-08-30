@@ -21,7 +21,9 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 
 | Component | Current state |
 | --- | --- |
-| Database | Supabase PostgreSQL, Paris `eu-west-3` |
+| Migration source/rollback material | Owner-verified Supabase PostgreSQL, Paris `eu-west-3`, unchanged until the cutover observation gate passes |
+| Production target | PostgreSQL 17 Bookworm on the VPS in `quest-prod`, private `quest-postgres` alias, durable data at `/srv/quest-esports/postgres/17/data` |
+| Staging coexistence | Native PostgreSQL 16.15 remains on `127.0.0.1:5432` during staging and initial validation |
 | Backend | France VPS, `/var/www/QuestEsports`, PM2 process `quest-backend` owned by `deploy` |
 | Public uploads | `/srv/quest-esports/uploads` |
 | Public event-album previews | `/srv/quest-esports/uploads/poster-images` (WebP previews) |
@@ -39,6 +41,12 @@ The checked-in record describes the configured remotes as using separate,
 QuestEsports-owned credentials. Remote labels, destinations, and token state
 remain owner-verification items and must never be printed in alerts or logs.
 
+The production archive restore deliberately uses PostgreSQL 17
+`pg_restore --no-owner --no-acl --single-transaction --exit-on-error`. ACL
+replay from the archive remains a parked compatibility issue; the canonical
+bootstrap SQL and security verifier apply and prove the approved roles, grants,
+and default ACLs separately. Do not change this `--no-acl` decision implicitly.
+
 ## Recovery objectives and limitations
 
 - The timer provides a technical recovery-point interval of approximately 24 hours plus up to 15 minutes when the timer, VPS, database, and Drive destination are healthy. A migration-changing CD run creates an additional backup immediately before migration.
@@ -50,6 +58,23 @@ remain owner-verification items and must never be printed in alerts or logs.
 - Local encrypted copies older than `BACKUP_LOCAL_RETENTION_DAYS` are removed by the script; the current value is seven days.
 - The repository includes a dry-run-first, per-remote retention tool with a minimum-recovery-point guard. Production deletion remains disabled until the owner approves the retention values and runs the exact confirmation-gated command for object-locked destinations.
 - The repository includes a systemd `OnFailure` notifier. It pages an operator only after the failure unit is installed and an approved Discord-compatible HTTPS webhook is added to the protected backup environment and tested.
+
+### Post-first-write rollback boundary
+
+Before the first PostgreSQL 17 writer is admitted, a failed cutover keeps
+writers frozen, restores the source URLs, and restarts only the previously
+active legacy writers. Supabase is the temporary rollback source at that
+boundary, not a second writable production database.
+
+Once PostgreSQL 17 writer admission starts, Supabase is stale recovery material.
+There is no automatic or one-service Supabase URL rollback. A post-first-write
+incident requires both writer groups to stop, coordinated freeze to be
+re-enabled, current PostgreSQL 17 and both upload roots to be captured, the
+expected loss/RPO to be recorded, and incident-owner approval for either
+fix-forward or a controlled restore. Never restart an old writer against the
+new state or redirect only one service to Supabase. The release records this
+boundary as `supabase_authority_boundary=stale-after-first-vps-write` and
+`supabase_url_rollback=prohibited` in private recovery evidence.
 
 ## What a full production archive contains
 

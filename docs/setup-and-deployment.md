@@ -422,11 +422,13 @@ docker compose -f docker-compose.local.yml --profile valorant up    # + the sibl
 The frontend deliberately stays outside the stack — `cd frontend && npm run dev`
 gives better fast refresh than a bind-mounted container.
 
-**This is a development convenience, not a deployment path.** Production runs
-Quest Express under PM2 on the API VPS through `.github/workflows/cd.yml` gated
-by `MIGRATION_APPROVAL_SHA`, the frontend on Vercel, and backup, restore, and
-secret recovery out of `ops/`. Containerising production means redesigning those
-controls first, and nothing in `ops/docker/` is wired into them.
+**This is a development convenience, not a production deployment path.** The
+production target is the owner-gated PostgreSQL 17 Compose topology under
+`ops/docker/`, with the frontend/backend release path described in the
+[Production Operations Runbook](./production-runbook.md). The existing PM2,
+native PostgreSQL 16, Supabase, and Vercel paths remain rollback/staging
+material until the cutover observation and retirement gates pass. Nothing in
+this local stack authorizes a VPS mutation.
 
 Three properties are asserted by `backend/tests/local-docker-compose.test.js`
 rather than left to convention: every published port binds to `127.0.0.1`; the
@@ -508,7 +510,17 @@ Expected smoke output: `VALORANT local smoke: PASS`.
 
 ## Recommended Production Topology
 
-### Option A: Two-process deployment behind a reverse proxy
+For this repository, production uses Vercel for the frontend and the Ubuntu VPS
+for the immutable `quest-prod` and sibling `valorant-prod` Compose projects.
+PostgreSQL 17 is private to the Compose networks and uses the stable
+`quest-postgres` alias. Nginx exposes application traffic only. The temporary
+staging overlay may publish PostgreSQL only at `127.0.0.1:55432`; the final base
+Compose file has no PostgreSQL host publication and no public database port is
+allowed. See the runbook for the owner gates and exact cutover order.
+
+### Generic alternatives for non-production environments
+
+#### Option A: Two-process deployment behind a reverse proxy
 
 - Next.js frontend on one process/container
 - Express API on one process/container
@@ -516,7 +528,7 @@ Expected smoke output: `VALORANT local smoke: PASS`.
 - Nginx or a platform load balancer in front
 - persistent volume mounted to backend uploads
 
-### Option B: Frontend on Vercel, backend on a VM/container platform
+#### Option B: Frontend on Vercel, backend on a VM/container platform
 
 - deploy `frontend/` to Vercel
 - deploy `backend/` to Render, Railway, Fly.io, a VPS, or Kubernetes
@@ -580,7 +592,7 @@ DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback
 Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
-- The repository records the current French VPS as using the Paris Supavisor session pooler on port `5432` for both database URLs because the direct Supabase endpoint is IPv6. Verify the live host, region, and pooler configuration with the owner; checked-in documentation cannot prove current infrastructure state.
+- During migration, Supabase is the owner-verified source and temporary rollback material. The PostgreSQL 17 target uses the private `quest-postgres` Compose alias; host-run staging tools may use only loopback `127.0.0.1:55432`. Verify the live host, target, and URL authority with the owner; checked-in documentation cannot prove current infrastructure state.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
 - Mobile administrator OAuth requires the verified API-origin App Link and the colon-separated SHA-256 fingerprint of the release signing certificate.
 - `AUTH_ENCRYPTION_KEY` must be exactly 64 hexadecimal characters; do not rotate an existing key without a data migration plan.
@@ -673,9 +685,67 @@ Production notes:
 4. Run `npm run lint`, `npm test`, and `npm run build`.
 5. Start with `npm run start`.
 
-## VPS Backend-Only Deploy Flow
+These generic steps are not the PostgreSQL 17 production cutover. For
+production, use the immutable Compose release and the owner-gated migration
+procedure below instead of pointing the application at an unmanaged database.
 
-This repository can be cloned in full on a VPS even when only the backend is served there.
+## VPS PostgreSQL 17 migration and deployment
+
+The migration source is the owner-verified Supabase PostgreSQL database. It
+remains unchanged and is temporary rollback material until the final commit;
+Supabase and PostgreSQL 17 must never be co-authoritative. Existing native
+PostgreSQL 16.15 remains on `127.0.0.1:5432` during staging and initial
+validation. The target is PostgreSQL 17 Bookworm with durable data at
+`/srv/quest-esports/postgres/17/data`.
+
+1. Record owner-supplied RPO/RTO, maintenance window, bootstrap/release actors,
+   narrow sudo rule, backup destination, host capacity, TLS evidence, and the
+   current PG16 observation. Blank or inferred values are a stop condition.
+2. As root, create the documented paths, install the root-owned wrappers and
+   TLS material, and create `quest-shared` without stopping PM2, VALORANT, or
+   PostgreSQL 16. The PostgreSQL certificate must contain
+   `DNS:quest-postgres` and `IP:127.0.0.1` and clients must use
+   `sslmode=verify-full`.
+3. Render and start only the staged PostgreSQL service:
+
+   ```bash
+   COMPOSE_ENV=/etc/quest-esports/quest.production.env
+   docker compose --env-file "$COMPOSE_ENV" \
+     -f ops/docker/compose.production.yml \
+     -f ops/docker/compose.postgres-staging.yml config
+   docker compose --env-file "$COMPOSE_ENV" \
+     -f ops/docker/compose.production.yml \
+     -f ops/docker/compose.postgres-staging.yml up -d postgres
+   ```
+
+   Verify the owner-approved exact PostgreSQL 17 digest, target sentinel,
+   healthcheck, durable mount, TLS, and loopback-only `127.0.0.1:55432:5432`.
+   Do not start application writers. Remove the staging overlay from every
+   final-topology invocation; the base file publishes no PostgreSQL host port.
+4. Run the signed disposable two-schema restore rehearsal with pinned
+   PostgreSQL 17 clients. Require the exact evidence and owner/live gate
+   described in [Backup and Disaster Recovery](./backup-and-disaster-recovery.md#phase-8-rehearsal-boundary).
+5. In the approved maintenance window, invoke the root-owned cutover wrapper.
+   Freeze both writers, stop old writers, create and remotely verify the final
+   archive, restore with `--no-owner --no-acl --single-transaction
+   --exit-on-error`, apply security checks and both migrations, then start both
+   candidates frozen. Admit Quest and VALORANT only after independent readiness
+   and health checks. The operator records the commit point before masking old
+   units.
+6. Observe health/error rates, database connections/locks/latency/disk,
+   backups/freshness, uploads/permissions, and Supabase connection absence.
+   Retire PostgreSQL 16 or delete/rotate Supabase only after the owner-approved
+   observation period and final verified backup. Use the exact PostgreSQL 16
+   cluster unit; never use broad `postgresql.service` controls while majors
+   coexist.
+
+## Legacy PM2 VPS recovery flow (pre-cutover only)
+
+This repository can be cloned in full on a VPS even when only the backend is
+served there. This is the pre-cutover/legacy recovery path, not the PostgreSQL
+17 Compose cutover or a post-first-write rollback. After writer admission,
+follow the post-first-write recovery boundary in the [Production Operations
+Runbook](./production-runbook.md#final-coordinated-cutover-order).
 
 For a private repository, configure a read-only GitHub deploy key on the VPS and use an SSH origin such as `git@github.com:Russelrip/QuestEsports.git`. The SSH key used by GitHub Actions to log into the VPS is separate from the key the VPS uses to pull from GitHub. See [CI/CD Pipeline](./ci-cd.md#private-repository-access-from-the-vps).
 

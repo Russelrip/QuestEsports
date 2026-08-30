@@ -148,6 +148,18 @@ npm run lint
 
 CI also runs `npm audit --omit=dev --audit-level=moderate`. The backend suite enforces line, branch, and function coverage thresholds and includes database integration tests against PostgreSQL 16.
 
+The PostgreSQL 16 service is a disposable CI fixture and remains intentionally
+unchanged. It does not represent the production database major. The separate
+`postgres17-contracts` job performs static, secret-free checks for the
+PostgreSQL 17 production contract: the base Compose file has no database host
+publication, the staging overlay uses only loopback `127.0.0.1:55432`, the
+bootstrap contains the four-role/schema and default-ACL contract, the backup
+target is `127.0.0.1:55432`/`quest` with pinned PostgreSQL 17 clients, and the
+restore rehearsal requires the immutable PostgreSQL 17 target, exact two-schema
+scope, and owner/deployment-host evidence gate. The job renders Compose with
+synthetic image digests and a disposable empty env-file placeholder; it does
+not contact a VPS, database, registry, backup remote, or hosted endpoint.
+
 Frontend:
 
 ```bash

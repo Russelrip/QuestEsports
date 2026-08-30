@@ -1,6 +1,6 @@
 # Production Operations Runbook
 
-This is the operational source of truth for the current Quest Esports production deployment. It covers the Ubuntu VPS backend, Vercel frontend, Supabase PostgreSQL database, GitHub Actions deployment, persistent uploads, service recovery, and reboots. Use [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) as the authoritative backup, restore-drill, key-custody, and full-disaster procedure. For contributor setup and variables, use the [Developer Guide](developer-guide.md) and [Environment Reference](environment-reference.md); the [VALORANT Local Development](valorant-local-development.md) guide is the local integration source.
+This is the operational source of truth for the owner-gated transition to the Quest PostgreSQL 17 VPS target. It covers the Ubuntu VPS backend, Vercel frontend, the temporary Supabase rollback source, GitHub Actions deployment, persistent uploads, service recovery, and reboots. This document records repository contracts and target-state procedure; it does not prove live VPS, database, certificate, backup, or service state. Use [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) as the authoritative backup, restore-drill, key-custody, and full-disaster procedure. For contributor setup and variables, use the [Developer Guide](developer-guide.md) and [Environment Reference](environment-reference.md); the [VALORANT Local Development](valorant-local-development.md) guide is the local integration source.
 
 ## Current Topology
 
@@ -15,13 +15,16 @@ prove those facts.
 - Backend checkout: `/var/www/QuestEsports`
 - Backend service user: `deploy` (never `root`)
 - Process manager: PM2 supervised by `pm2-deploy.service`
-- Database: Supabase PostgreSQL in Paris (`eu-west-3`) through Supavisor session mode on port `5432` for both `DATABASE_URL` and `DIRECT_URL`
+- Migration source/rollback material: the owner-verified Supabase PostgreSQL project in Paris (`eu-west-3`), unchanged until the observation and retirement gates pass
+- Production target: PostgreSQL 17 Bookworm in the `quest-prod` Compose project, with the private `quest-postgres` alias and durable data at `/srv/quest-esports/postgres/17/data`
+- Staging coexistence: the existing native PostgreSQL 16.15 cluster remains untouched on `127.0.0.1:5432` during staging and initial validation; it is not the PostgreSQL 17 target
+- PostgreSQL 17 staging access: only `127.0.0.1:55432` through the temporary overlay; the final base Compose file publishes no PostgreSQL host port and no public database port is allowed
 - Email: Amazon SES in Tokyo (`ap-northeast-1`) when `MAIL_PROVIDER=smtp`; SMTP credentials are region-specific
 - Public uploads: `/srv/quest-esports/uploads`
 - Private payment evidence: `/srv/quest-esports/private`
 - CI/CD: GitHub Actions; the normal flow is `main` push -> CI -> backend CD -> frontend deployment
 
-The Paris database became production on July 29, 2026. The previous Tokyo project is a temporary rollback copy, not a second writable production database. Keep it unchanged only until the Paris backup and restore drill succeeds, then delete it and rotate its database credentials.
+Supabase remains the source of truth until the final maintenance-window commit. During that transition it is temporary rollback material, not a second writable production database. After the first VPS writer is admitted, Supabase is stale recovery material and must not be selected by an automatic URL toggle. Deletion and credential rotation require a final verified backup, the completed observation gate, and explicit owner approval.
 
 ## Required Ownership And Permissions
 
@@ -60,6 +63,198 @@ installs Docker/Compose, Nginx, systemd/tmpfiles, and the narrow release sudo
 rule without stopping PM2 or legacy VALORANT services. No bootstrap, service
 stop, production restore, migration, or database-authority change is performed
 by the repository rehearsal flow.
+
+## VPS PostgreSQL 17 migration procedure
+
+The following procedure is the live-operator handoff for Task 8. It is not a
+claim that any command has been run. Record each result in a private change
+record before continuing. Never put credentials, private keys, populated env
+files, credential-bearing URLs, or production archive names in that record.
+
+### Owner inputs and stop conditions
+
+Before root bootstrap or migration, the operator supplies and retains:
+
+| Input | Required treatment |
+| --- | --- |
+| Root bootstrap actor and date | Owner-supplied evidence; do not infer from file ownership in this worktree |
+| Release actor and narrow sudo rule | Exact non-root actor and fixed release command |
+| Maintenance window | Business-approved start/end time and freeze owner |
+| RPO/RTO | Business-approved values; `PENDING_OWNER_RECORD` until recorded |
+| Live host evidence | Host capacity/swap, PG16 listener, TLS/SAN, target sentinel, service ownership, and current health observations |
+| Backup evidence | Final archive/checksum, both-schema scope, remote verification, and freshness |
+
+Stop before mutation if egress has an unexplained category, the corrected rate
+exceeds the applicable quota, no-402 evidence is absent, the archive pair is
+not independently remote-verified, TLS or target identity is unverified, or an
+RPO/RTO/approval input is blank. A successful checked-in contract test is not
+live evidence.
+
+### Non-disruptive host preparation
+
+The root-capable operator creates and records the required ownership and modes:
+
+```text
+/srv/quest-esports/postgres/17/data       postgres:postgres 0700
+/srv/quest-esports/uploads                deploy:deploy     0750
+/srv/quest-esports/private                deploy:deploy     0700
+/srv/quest-esports/backups                deploy:deploy     0700
+/opt/quest-esports/releases               root:deploy       0750
+/etc/quest-esports                        root:root         0750
+/var/lock/quest-esports-release.lock      root:deploy       0660
+```
+
+Install Docker/Compose, PostgreSQL client 17, Nginx, systemd/tmpfiles, the
+root-owned release wrappers, the checked-in bootstrap SQL, and the healthcheck.
+Create the external `quest-shared` network. Bootstrap must not stop PM2, the
+legacy VALORANT units, PostgreSQL 16, or Vercel, and must not restore data or
+change database authority.
+
+### TLS, roles, and password delivery
+
+Provision the private CA and server certificate outside this repository. The
+PostgreSQL certificate must contain both `DNS:quest-postgres` and
+`IP:127.0.0.1`; a common name without both SANs is insufficient. Verify the
+actual host files before startup:
+
+```bash
+openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt -noout -checkhost quest-postgres
+openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt -noout -checkip 127.0.0.1
+```
+
+Use `sslmode=verify-full` with the mounted private CA. Keep the key at mode
+`0600`, keep the CA/certificate root-owned and non-writable by group/other, and
+mount all TLS material read-only. The administrator password is a mode-`0400`
+file mounted only as `/run/secrets/postgres-admin-password`; it is not part of
+the application env file.
+
+The bootstrap creates `quest_migrator`/`quest_runtime` for `public` and
+`val_migrator`/`val_runtime` for `valorant`. Runtime roles are non-owner,
+non-superuser, `NOBYPASSRLS`, schema-isolated DML roles. Set all role passwords
+through the approved secret-management or interactive `psql` procedure before
+writer admission. Never place a password in SQL, Compose, an image layer, an
+image tag, or this repository. Inject migrator credentials only for the
+one-shot migration/security commands. The separate `quest_backup` role is
+dump-only and is used by routine backups; the database owner/admin is reserved
+for bootstrap and recovery and never belongs in an application environment.
+
+### Stage PostgreSQL 17 beside PostgreSQL 16
+
+Verify the owner-supplied PG16 observation without using broad service controls:
+
+```bash
+pg_lsclusters
+systemctl is-active postgresql@16-main
+ss -ltn | grep -E '127\.0\.0\.1:5432([[:space:]]|$)'
+```
+
+The cluster unit name may be confirmed from `pg_lsclusters`; do not stop,
+restart, disable, or mask the broad `postgresql.service` while both majors
+coexist. Render and start only the PostgreSQL 17 service with the temporary
+overlay:
+
+```bash
+COMPOSE_ENV=/etc/quest-esports/quest.production.env
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml config
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml up -d postgres
+docker compose --env-file "$COMPOSE_ENV" \
+  -f ops/docker/compose.production.yml \
+  -f ops/docker/compose.postgres-staging.yml ps postgres
+```
+
+The rendered PostgreSQL image must be the owner-approved exact
+`postgres:17-bookworm@sha256:<64 lowercase hex>` reference. Verify the target
+sentinel, durable bind mount, healthcheck, TLS chain/SANs, and the single
+loopback publication `127.0.0.1:55432:5432`. This port is host-run staging
+access only; it must never bind to `0.0.0.0`, an external interface, or a
+public firewall rule. Do not start application writers during this stage.
+
+After host-run staging clients no longer need access, remove the overlay from
+every subsequent invocation and render the base file alone. The base file has
+no PostgreSQL host publication; applications use the private `quest-postgres`
+network alias.
+
+### Rehearse before the maintenance window
+
+Use a current encrypted two-schema archive and its exact `.sha256` sibling on
+an isolated recovery host. Use pinned PostgreSQL 17 `psql`, `pg_restore`, and
+`pg_dump`, a disposable target sentinel, private disposable upload roots, and
+the signed evidence procedure in [Backup and Disaster Recovery](./backup-and-disaster-recovery.md#phase-8-rehearsal-boundary).
+The rehearsal must record schema/object counts, both migration ledgers, role
+and default-ACL inventories, RLS, TLS, upload checksums, health/freeze results,
+failure injections, resource use, elapsed recovery time, and owner-approved
+RPO/RTO. Its live gate token is
+`owner_deployment_host_evidence_required`; repository fixtures cannot provide
+that evidence.
+
+### Final coordinated cutover order
+
+Run the root-owned `cutover.sh` wrapper with the full approved release SHA and
+manifest. It must perform these actions in order:
+
+1. Acquire the canonical release lock and verify the previous authority is
+   Supabase, both services' source URLs, target `127.0.0.1:55432`/database
+   `quest`/major `17`, image digest, TLS, and owner approval.
+2. Enable and acknowledge Quest and VALORANT validation freeze, then stop the
+   old VALORANT units and old Quest/PM2 process. Confirm both legacy unit sets
+   are inactive and reboot-persistent. Keep them **unmasked** at this point.
+3. Create the final age-encrypted archive after the freeze and verify the exact
+   evidence line:
+   `verified-complete release_sha=<full-sha> schemas=verified:public,valorant uploads=verified:public,private archive=verified checksum=verified remote=verified`.
+4. Restore the archive with `--no-owner --no-acl --single-transaction
+   --exit-on-error`, apply canonical security verification, and run both
+   migrators before candidate startup. Required acknowledgements include
+   `restored`, `security-verified`, and `none target=quest-postgres
+   schema=<public|valorant> repository=<quest|valorant>` after status checks.
+   `--no-acl` is intentional for the production archive: the canonical
+   bootstrap applies the approved role/default-privilege contract separately.
+   Do not replace it with archive ACL replay without reopening the PostgreSQL
+   17 TOC compatibility decision.
+5. Start both candidates frozen. Each start must return
+   `started-frozen-read-only group=quest|valorant`; each freeze acknowledgement
+   must return `frozen-read-only`. Verify Quest liveness/readiness,
+   PostgreSQL readiness `ready target=quest-postgres schemas=public,valorant`,
+   and VALORANT HTTPS health with JSON `status=ok` and `db=up`.
+6. Switch Quest and VALORANT database URLs independently, verify each
+   effective URL reports `url-state group=<quest|valorant> host=quest-postgres
+   database=quest authority=quest-postgres`, restart both services, and require
+   both `ready` acknowledgements.
+7. Write `writer_admission_starting=true` before either writer enable command.
+   Admit Quest and then VALORANT only after both readiness gates. Each writer
+   command must return `admitted`; retain `commit-point.txt` with the commit
+   timestamp, both writer acknowledgements, `writer_admitted=true`,
+   `previous_release=supabase`, `database_schemas=public,valorant`, and
+   `cutover_type=first-supabase-cutover`.
+8. Only after the commit-point record exists, invoke the old Quest and old
+   VALORANT mask commands and update the current release pointer. The final
+   success token is `First production cutover admitted: <full-sha>`.
+
+Before writer admission, any failed gate preserves Supabase authority, removes
+the candidate projects, restores the source URLs if switching began, and
+restarts only the previously active, still-unmasked legacy writers. After
+writer admission starts, use the post-first-write recovery boundary below;
+never restart an old writer against the PostgreSQL 17 state.
+
+### Observation and PostgreSQL 16 retirement
+
+The observation window and thresholds are owner inputs, not facts inferred from
+this file. Monitor and retain timestamps for Quest/VALORANT readiness and error
+rates, PostgreSQL connections/locks/query latency, disk and inode growth,
+backup completion/checksum/remote freshness, upload visibility and private
+directory permissions, absence of Supabase connections, and representative
+public/auth/admin/payment paths. Repeat the health and backup checks after each
+observation milestone.
+
+Retire the native PostgreSQL 16 cluster only after the owner-approved
+observation period, a final verified two-schema backup, and explicit retirement
+approval. Use the exact cluster unit identified by `pg_lsclusters`; do not use
+the broad `postgresql.service`, and do not delete its data directory until the
+retention decision is separately recorded. Delete or rotate Supabase only after
+the same approval gate confirms the rollback window has closed.
 
 ## Production Environment Invariants
 
@@ -705,7 +900,7 @@ After reconnecting, repeat the verification commands. PM2/systemd should restore
 
 Back up and restore these together:
 
-- Supabase PostgreSQL database.
+- The owner-verified migration source during transition, or the PostgreSQL 17 VPS target after cutover.
 - `/srv/quest-esports/uploads`.
 - `/srv/quest-esports/private`.
 - production `.env` through a secure secret-management process.

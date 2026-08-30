@@ -93,6 +93,99 @@ jobs:
       - name: Run backend lint
         run: npm run lint
 
+  postgres17-contracts:
+    name: PostgreSQL 17 production contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Validate PostgreSQL 17 contracts statically
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose='ops/docker/compose.production.yml'
+          staging='ops/docker/compose.postgres-staging.yml'
+          bootstrap='ops/docker/postgres/init/001-bootstrap-roles.sql'
+          backup='ops/quest-esports-backup.env.example'
+          rehearsal='ops/rehearsal/postgres17-restore-rehearsal.sh'
+
+          # The disposable backend fixture remains PostgreSQL 16. The
+          # production PostgreSQL 17 contract is checked separately below.
+          test "$(grep -Fc 'image: postgres:16' .github/workflows/ci.yml)" -eq 1
+          ! grep -Eq 'image:[[:space:]]*postgres:17' .github/workflows/ci.yml
+
+          grep -F 'postgres:17-bookworm@sha256:' "$compose" >/dev/null
+          grep -F 'POSTGRES_IMAGE must be supplied by the release manifest' "$compose" >/dev/null
+          grep -F '127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}:5432' "$staging" >/dev/null
+          ! awk '
+            /^  postgres:/ { in_postgres=1; next }
+            in_postgres && /^  [A-Za-z0-9_-]+:/ { exit }
+            in_postgres && /^[[:space:]]+ports:/ { bad=1 }
+            END { exit bad+0 }
+          ' "$compose"
+
+          for role in quest_migrator quest_runtime val_migrator val_runtime; do
+            grep -F "ALTER ROLE $role LOGIN NOINHERIT" "$bootstrap" >/dev/null
+            grep -F "NOBYPASSRLS" "$bootstrap" >/dev/null
+          done
+          grep -F 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO quest_runtime;' "$bootstrap" >/dev/null
+          grep -F 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO val_runtime;' "$bootstrap" >/dev/null
+          grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;' "$bootstrap" >/dev/null
+          grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;' "$bootstrap" >/dev/null
+
+          for setting in \
+            'POSTGRES_TARGET_HOST=127.0.0.1' \
+            'POSTGRES_TARGET_PORT=55432' \
+            'POSTGRES_TARGET_DATABASE=quest' \
+            'POSTGRES_TARGET_MAJOR=17' \
+            'POSTGRES_TARGET_DATA_ROOT=/srv/quest-esports/postgres/17/data'; do
+            grep -Fx "$setting" "$backup" >/dev/null
+          done
+          grep -F 'POSTGRES17_BIN' ops/backup-production-multi-remote.sh >/dev/null
+          grep -F 'quest_backup' ops/backup-production-multi-remote.sh >/dev/null
+          grep -F -- '--no-acl' ops/restore-production-backup.sh >/dev/null
+          grep -F 'DISPOSABLE_QUEST_REHEARSAL' "$rehearsal" >/dev/null
+          grep -F 'disposable_postgresql17' "$rehearsal" >/dev/null
+          grep -F 'POSTGRES17_BIN' "$rehearsal" >/dev/null
+          grep -F 'owner_deployment_host_evidence_required' ops/rehearsal/rehearsal-contract.sh >/dev/null
+
+          # Keep the operator contract visible and prevent a future document
+          # edit from reintroducing Supabase/VPS ambiguity.
+          grep -F 'PostgreSQL 17 VPS target' docs/production-runbook.md >/dev/null
+          grep -F 'temporary Supabase rollback material' docs/production-runbook.md >/dev/null
+          grep -F 'PostgreSQL 16.15 cluster remains untouched' docs/production-runbook.md >/dev/null
+          grep -F '127.0.0.1:55432' docs/production-runbook.md >/dev/null
+          grep -F 'no public database port' docs/production-runbook.md >/dev/null
+          grep -F 'Post-first-write rollback boundary' docs/backup-and-disaster-recovery.md >/dev/null
+          grep -F 'supabase_url_rollback=prohibited' docs/backup-and-disaster-recovery.md >/dev/null
+
+          compose_env="$RUNNER_TEMP/quest-compose-contract.env"
+          printf '%s\n' \
+            'QUEST_FRONTEND_IMAGE=ghcr.io/russelrip/quest-frontend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+            'QUEST_BACKEND_IMAGE=ghcr.io/russelrip/quest-backend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+            'POSTGRES_IMAGE=postgres:17-bookworm@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' \
+            'VALORANT_IMAGE=ghcr.io/example/valorant@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' \
+            'POSTGRES_STAGING_HOST_PORT=55432' > "$compose_env"
+          sudo install -d -m 0755 /etc/quest-esports
+          sudo install -m 0644 /dev/null /etc/quest-esports/quest.production.env
+          docker compose --env-file "$compose_env" -f "$compose" config --quiet
+
+          bash -n \
+            ops/backup-production.sh \
+            ops/backup-production-multi-remote.sh \
+            ops/restore-production-backup.sh \
+            ops/rehearsal/postgres17-restore-rehearsal.sh
+
+      - name: Run PostgreSQL 17 disposable contract suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ops/tests/media-backup-contract.test.sh
+          bash ops/tests/restore-production-backup.test.sh
+          bash ops/tests/postgres17-rehearsal.test.sh
+
   frontend:
     name: Frontend audit, test, and build
     runs-on: ubuntu-latest

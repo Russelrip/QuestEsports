@@ -6,6 +6,11 @@ is the final production database topology: PostgreSQL 17 Bookworm is supplied
 as `POSTGRES_IMAGE` by the signed release manifest and is never built or
 exposed on a host port.
 
+The existing native PostgreSQL 16.15 cluster remains on `127.0.0.1:5432`
+during staging and initial validation. It is separate from the PostgreSQL 17
+bind mount and is not a production target. The owner must verify that
+coexistence on the VPS before staging; the repository cannot prove live state.
+
 `ops/docker/compose.postgres-staging.yml` is a temporary overlay, not part of
 the final base topology. Apply it only while PM2 or a host-run backup tool
 needs database access during staging. It publishes PostgreSQL exactly on the
@@ -32,6 +37,11 @@ checked-in example is only a template.
 The base file must continue to be used alone for the final production
 topology. The overlay must never be copied into that file or used to expose
 PostgreSQL on a non-loopback interface.
+
+When host-run staging tools no longer need database access, remove the overlay
+from every subsequent Compose invocation and render the base file alone. The
+final topology reaches PostgreSQL only through the private `quest-postgres`
+alias; there is no public PostgreSQL port or firewall publication.
 
 ## Host preparation
 
@@ -101,6 +111,14 @@ openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt \
 
 Both commands must report a matching identity. A common name without both SANs
 is not sufficient for `sslmode=verify-full`.
+
+Before writer admission, retain private evidence for the image digest, target
+sentinel, durable mount, CA chain, both SAN checks, and the successful
+healthcheck. The exact release-bound backup acknowledgement is:
+
+```text
+verified-complete release_sha=<full-sha> schemas=verified:public,valorant uploads=verified:public,private archive=verified checksum=verified remote=verified
+```
 
 ## Four-role and schema contract
 
