@@ -720,8 +720,10 @@ validation. The target is PostgreSQL 17 Bookworm with durable data at
 
    Verify the owner-approved exact PostgreSQL 17 digest, target sentinel,
    healthcheck, durable mount, TLS, and loopback-only `127.0.0.1:55432:5432`.
-   Do not start application writers. Remove the staging overlay from every
-   final-topology invocation; the base file publishes no PostgreSQL host port.
+   Do not start application writers. Remove the staging overlay from
+   application and release invocations; retain it for the host backup service
+   only under the documented loopback exception in the [Production Operations
+   Runbook](./production-runbook.md#stage-postgresql-17-beside-postgresql-16).
 4. Run the signed disposable two-schema restore rehearsal with pinned
    PostgreSQL 17 clients. Require the exact evidence and owner/live gate
    described in [Backup and Disaster Recovery](./backup-and-disaster-recovery.md#phase-8-rehearsal-boundary).
@@ -744,8 +746,7 @@ validation. The target is PostgreSQL 17 Bookworm with durable data at
 This repository can be cloned in full on a VPS even when only the backend is
 served there. This is the pre-cutover/legacy recovery path, not the PostgreSQL
 17 Compose cutover or a post-first-write rollback. After writer admission,
-follow the post-first-write recovery boundary in the [Production Operations
-Runbook](./production-runbook.md#final-coordinated-cutover-order).
+follow the [post-first-write rollback boundary](./backup-and-disaster-recovery.md#post-first-write-rollback-boundary).
 
 For a private repository, configure a read-only GitHub deploy key on the VPS and use an SSH origin such as `git@github.com:Russelrip/QuestEsports.git`. The SSH key used by GitHub Actions to log into the VPS is separate from the key the VPS uses to pull from GitHub. See [CI/CD Pipeline](./ci-cd.md#private-repository-access-from-the-vps).
 

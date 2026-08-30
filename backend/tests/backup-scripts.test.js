@@ -9,17 +9,17 @@ test("production restore passes the target database through pg_restore --dbname"
     "utf8"
   );
 
-  assert.match(restoreScript, /pg_restore --dbname="\$DIRECT_URL"/);
+  assert.match(restoreScript, /"\$pg_restore_bin" --dbname="\$DIRECT_URL"/);
   assert.doesNotMatch(restoreScript, /pg_restore "\$DIRECT_URL"/);
   assert.match(restoreScript, /--single-transaction/);
   assert.ok(
     restoreScript.indexOf('rsync -a --delete "$work_directory/$public_name/" "$public_stage/"') <
-      restoreScript.indexOf('pg_restore --dbname="$DIRECT_URL"'),
+      restoreScript.indexOf('"$pg_restore_bin" --dbname="$DIRECT_URL"'),
     "file restore preflight must complete before the database is changed"
   );
   assert.ok(
     restoreScript.indexOf('swap_directory "$public_stage" "$resolved_upload_root"') <
-      restoreScript.indexOf('pg_restore --dbname="$DIRECT_URL"'),
+      restoreScript.indexOf('"$pg_restore_bin" --dbname="$DIRECT_URL"'),
     "file activation must be rollback-guarded before the transactional database restore"
   );
   assert.match(restoreScript, /rollback_activated_directory/);
@@ -41,7 +41,7 @@ test("production backup wrapper locks before delegated two-pass snapshot", () =>
   const firstUploadCopy = implementationScript.indexOf(
     'rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"'
   );
-  const databaseDump = implementationScript.indexOf('pg_dump "$DIRECT_URL"');
+  const databaseDump = implementationScript.indexOf('"$pg_dump_bin" "$DIRECT_URL"');
   const secondUploadCopy = implementationScript.indexOf(
     'rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"',
     firstUploadCopy + 1

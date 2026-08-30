@@ -174,9 +174,15 @@ access only; it must never bind to `0.0.0.0`, an external interface, or a
 public firewall rule. Do not start application writers during this stage.
 
 After host-run staging clients no longer need access, remove the overlay from
-every subsequent invocation and render the base file alone. The base file has
-no PostgreSQL host publication; applications use the private `quest-postgres`
-network alias.
+application, migration, and release invocations. The base file has no
+PostgreSQL host publication; applications use the private `quest-postgres`
+network alias. The one documented exception is the checked-in host backup
+service: until a private-network backup utility is installed and owner-verified,
+the `quest-prod` PostgreSQL service must remain started with the staging overlay
+so the host backup contract can reach exactly `127.0.0.1:55432`. That
+publication is loopback-only and is never a public database port. Once the
+private utility replaces the host service, remove the overlay and disable the
+loopback-dependent host timer together; do not silently point it at Supabase.
 
 ### Rehearse before the maintenance window
 
@@ -238,6 +244,30 @@ the candidate projects, restores the source URLs if switching began, and
 restarts only the previously active, still-unmasked legacy writers. After
 writer admission starts, use the post-first-write recovery boundary below;
 never restart an old writer against the PostgreSQL 17 state.
+
+### Exact legacy and current writer controls
+
+These are the four legacy Quest/VALORANT stop/mask controls. The values below
+are the required release-environment variables and the owner-installed wrapper
+paths; do not replace them with generic service names or broad service-manager
+commands:
+
+| Control | Exact variable and wrapper | Allowed boundary |
+| --- | --- | --- |
+| Stop old Quest/PM2 | `OLD_QUEST_STOP_COMMAND=/usr/local/sbin/quest-release-old-quest-stop` | After both validation freezes are acknowledged and before the final archive; before either writer-admission command |
+| Stop old VALORANT | `OLD_VALORANT_STOP_COMMAND=/usr/local/sbin/quest-release-old-valorant-stop` | After both validation freezes are acknowledged and before the final archive; before either writer-admission command |
+| Mask old Quest/PM2 | `OLD_QUEST_MASK_COMMAND=/usr/local/sbin/quest-release-old-quest-mask` | Only after durable `commit-point.txt` exists with both writer acknowledgements; never during pre-commit rollback |
+| Mask old VALORANT | `OLD_VALORANT_MASK_COMMAND=/usr/local/sbin/quest-release-old-valorant-mask` | Only after durable `commit-point.txt` exists with both writer acknowledgements; never during pre-commit rollback |
+
+After the durable commit point, a recovery stops the new writer groups through
+`QUEST_WRITER_STOP_COMMAND=/usr/local/sbin/quest-release-quest-writer-stop` and
+`VALORANT_WRITER_STOP_COMMAND=/usr/local/sbin/quest-release-valorant-writer-stop`.
+Those current-writer controls are not substitutes for the old stop controls,
+and the old restart controls must never be used against PostgreSQL 17 state.
+Before the durable commit point, only the old stop controls may run and a
+failed gate may restart a previously active, still-unmasked old writer through
+`OLD_QUEST_RESTART_COMMAND=/usr/local/sbin/quest-release-old-quest-restart` or
+`OLD_VALORANT_RESTART_COMMAND=/usr/local/sbin/quest-release-old-valorant-restart`.
 
 ### Observation and PostgreSQL 16 retirement
 
@@ -948,7 +978,24 @@ The PostgreSQL repository helper is provided by the PostgreSQL project and promp
 
 Use a dedicated Google Cloud project and OAuth desktop client for the Drive remote. Enable the Google Drive API, configure an External consent screen, add only the `drive.file` scope, create a Desktop client, and move the app to **In production** so refresh tokens do not inherit the seven-day Testing limit. Enter the client ID, client secret, and authorization token only through interactive `rclone config`; never print, commit, or copy the rclone configuration into documentation. Create and validate a second remote before changing `BACKUP_RCLONE_REMOTE`, so the existing remote remains an immediate rollback path.
 
-Edit `/etc/quest-esports-backup.env` without printing its values. Set the Paris session-pooler `DIRECT_URL`, both upload roots, the offline `age` public recipient, `RCLONE_CONFIG=/srv/quest-esports/rclone/quest-esports.conf`, the active off-site `rclone` remote, `BACKUP_MAX_AGE_MINUTES=2160`, approved remote retention values, and the approved backup-failure webhook. Run the manual backup from an accessible working directory; launching `sudo -u deploy` while still in `/root` makes GNU `find` fail when it tries to restore that inaccessible working directory. Then verify the systemd service, test one failure notification, and enable both timers:
+Edit `/etc/quest-esports-backup.env` without printing its values. The
+checked-in backup service contract is for the PostgreSQL 17 VPS target, not the
+Paris Supabase session pooler: set `DIRECT_URL` to the exact
+`quest_backup@127.0.0.1:55432/quest` target represented by
+`ops/quest-esports-backup.env.example`, plus both upload roots, the offline
+`age` public recipient, `RCLONE_CONFIG=/srv/quest-esports/rclone/quest-esports.conf`,
+the active off-site `rclone` remote, `BACKUP_MAX_AGE_MINUTES=2160`, approved
+remote retention values, and the approved backup-failure webhook. This host
+backup path is supported during staging and after authority cutover only while
+the PostgreSQL service is started with the staging overlay's loopback-only
+`127.0.0.1:55432:5432` publication. It must never target Supabase. If the
+overlay is removed, disable this host service/timer before removal and use an
+owner-verified private-network backup utility on the `quest-postgres` alias
+instead; never substitute a Supabase URL. Run the manual backup from an
+accessible working directory; launching `sudo -u deploy` while still in `/root`
+makes GNU `find` fail when it tries to restore that inaccessible working
+directory. Then verify the systemd service, test one failure notification, and
+enable both timers:
 
 ```bash
 cd /var/www/QuestEsports

@@ -174,6 +174,24 @@ Install PostgreSQL client 17, `age`, `rclone`, and `rsync`. The generic Ubuntu `
 
 The backup takes an exclusive `flock`, copies both immutable upload trees, runs the database dump, and copies the upload trees a second time before packaging. This closes the common gap where a database row commits while its file is omitted from the archive. PostgreSQL and the VPS filesystem still cannot participate in one distributed transaction, so the application must keep random upload filenames immutable and quarterly restore verification remains required.
 
+### Backup endpoint lifecycle
+
+The checked-in host backup service uses the exact PostgreSQL 17 VPS target in
+`ops/quest-esports-backup.env.example`: `127.0.0.1:55432`, database `quest`,
+and role `quest_backup`. It must never use the Paris Supabase session pooler.
+The loopback publication is supported during staging and after authority
+cutover only while the PostgreSQL service is started with
+`ops/docker/compose.postgres-staging.yml` and the host backup/freshness timers
+are the active backup utility. It remains bound to `127.0.0.1` only; it is never
+a public database port.
+
+If the staging overlay is removed, disable the loopback-dependent host backup
+and freshness timers as part of the same change, then replace them with an
+owner-verified private-network backup utility attached to `quest-shared` and
+targeting the `quest-postgres` alias. There is no supported transition back to
+Supabase: after the first VPS writer, every backup must target PostgreSQL 17 or
+the backup change is a release blocker.
+
 Set `BACKUP_RCLONE_REMOTES` to newline-separated `label=remote:path` entries and
 `BACKUP_RCLONE_CONFIGS` to matching newline-separated `label=/path/to/config`
 entries. Each remote must have a separate rclone config and credential/token.
@@ -464,37 +482,84 @@ After the script finishes:
 
 ## Intentional production restore
 
-A production restore requires an incident decision because it replaces application database objects and makes both upload trees exactly match the selected archive.
+A production restore requires an incident decision because it replaces application database objects and makes both upload trees exactly match the selected archive. The recovery procedure is split at the durable post-first-write boundary; do not use the legacy PM2 procedure for a PostgreSQL 17-authoritative deployment.
 
-1. Declare the incident, recovery owner, archive timestamp, expected data loss, and approval.
-2. Stop writes to the API. On the current VPS:
+### Pre-cutover legacy PM2 recovery (before first PostgreSQL 17 writer)
+
+This path applies only while the durable release evidence still says
+`previous_release=supabase`, no PostgreSQL 17 writer admission has started, and
+the legacy Quest PM2 process remains the active application. It is not a
+Compose recovery and must not make PostgreSQL 17 authoritative.
+
+1. Declare the incident, recovery owner, archive timestamp, expected data loss, and approval. Confirm the pre-cutover boundary in the private release evidence.
+2. Stop the legacy Quest writer and preserve the failed state:
 
    ```bash
    sudo -u deploy -H pm2 stop quest-backend
    ```
 
-3. Preserve the current database and upload state when it is safe; evidence from the failed state may be needed for targeted recovery.
-4. Restore-test the selected archive on disposable infrastructure first. Confirm the manifest database scope before restoring; an archive without `valorant` must not be used as a replacement for a project that already contains VALORANT data, because restoring a public-only archive leaves the project's `valorant` schema inconsistent with the archive's recovery point.
-5. Prefer running the guarded restore from an isolated recovery host. Point `DIRECT_URL` at the approved database target and use empty recovery-host upload directories; keep the private identity off the production VPS. The script stages both upload trees, activates them before the transactional `pg_restore`, and its exit guard rolls them back if activation or database restore fails.
-6. If recovery was performed off-VPS, securely synchronize the verified recovered upload trees to the stopped VPS. Treat any deletion or directory replacement as destructive and verify exact absolute targets first. If the guarded script was run on the target host, record and retain the printed `.quest-previous-*` directories until business verification is complete, then remove them only under a separate approved cleanup.
-7. If a new Supabase project is used, update both production database URLs and rotate project/database credentials. Recreate required Supabase-managed settings separately.
-8. On the VPS, restore ownership and permissions:
+   If the legacy VALORANT service is active, stop it through its owner-installed
+   `OLD_VALORANT_STOP_COMMAND=/usr/local/sbin/quest-release-old-valorant-stop`
+   wrapper as part of the same freeze; do not use a broad service stop.
+3. Restore-test the selected archive on disposable infrastructure first. Confirm the manifest database scope before restoring; an archive without `valorant` must not be used as a replacement for a project that already contains VALORANT data.
+4. Restore only to the approved pre-cutover database target using the guarded procedure. Keep the private identity off the production VPS, stage both upload roots, and retain the failed-state preservation copy.
+5. Restore ownership and permissions, then run migration status and the database security verifier before service restart:
 
    ```bash
    chown -R deploy:deploy /srv/quest-esports/uploads /srv/quest-esports/private
    chmod 700 /srv/quest-esports/private
    ```
 
-9. From `/var/www/QuestEsports/backend`, run migration status, deploy any forward-compatible pending migrations, and run the database security verifier.
-10. Restart and persist the backend process:
+6. Restart only the previously active, still-unmasked legacy writers after the restore and all checks pass. For Quest use `OLD_QUEST_RESTART_COMMAND=/usr/local/sbin/quest-release-old-quest-restart`; for VALORANT use `OLD_VALORANT_RESTART_COMMAND=/usr/local/sbin/quest-release-old-valorant-restart`. Do not mask either legacy writer on this path.
+7. Verify `/api/health/ready`, tournaments, products, commerce capabilities, authentication, admin access, uploads, and enabled mail/payment paths. Retain the incident and preservation copy until business sign-off.
 
-    ```bash
-    sudo -u deploy -H pm2 restart quest-backend --update-env
-    sudo -u deploy -H pm2 save
-    ```
+### Post-first-write Compose recovery (after first PostgreSQL 17 writer)
 
-11. Verify `/api/health/ready`, tournaments, products, commerce capabilities, authentication, admin access, uploads, and any enabled mail/payment paths.
-12. Monitor logs and retain the incident record. Do not destroy the preservation copy until business sign-off.
+This path applies as soon as either PostgreSQL 17 writer admission starts, even
+if the final commit-point file was not completed. Supabase is then stale
+recovery material. There is no PM2 restart, old-writer restart, or one-service
+Supabase URL toggle on this path.
+
+1. Declare the incident, recovery owner, archive timestamp, expected loss/RPO, and incident-owner approval. Keep both Compose writer groups stopped for the entire recovery decision.
+2. Stop both current writer groups through the exact root-owned controls, and require both `stopped` acknowledgements:
+
+   ```text
+   QUEST_WRITER_STOP_COMMAND=/usr/local/sbin/quest-release-quest-writer-stop
+   VALORANT_WRITER_STOP_COMMAND=/usr/local/sbin/quest-release-valorant-writer-stop
+   ```
+
+   Re-enable and acknowledge both coordinated freezes. The corresponding
+   `QUEST_FREEZE_ENABLE_COMMAND` and `VALORANT_FREEZE_ENABLE_COMMAND` wrappers
+   must succeed; maintenance mode alone is not a freeze. Run the coordinated
+   post-commit containment wrapper, not either old PM2/service control:
+
+   ```bash
+   sudo env \
+     EXPECTED_LOSS_RPO='<owner-approved statement>' \
+     INCIDENT_OWNER_APPROVAL=INCIDENT_OWNER_APPROVAL \
+     SUPABASE_RECONCILIATION_DECISION=controlled-restore \
+     /usr/local/sbin/quest-esports-rollback post-commit
+   ```
+3. Capture and checksum the current PostgreSQL 17 database and both upload roots with the configured `CURRENT_STATE_CAPTURE_COMMAND`. Record expected loss/RPO before selecting fix-forward or controlled restore.
+4. Restore-test the selected complete two-schema archive on disposable infrastructure first. Confirm the manifest scope, checksum, `--no-owner --no-acl --single-transaction --exit-on-error` contract, and separate security verification.
+5. Keep the Quest and VALORANT Compose writer controls stopped while the guarded restore targets `127.0.0.1:55432`, database `quest`, PostgreSQL 17, and the canonical `/srv/quest-esports/postgres/17/data`. After the post-commit containment wrapper completes, an explicitly authorized production restore uses the protected target environment and the existing guarded primitive:
+
+   ```bash
+   sudo env \
+     RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
+     RESTORE_PRODUCTION_AUTHORIZED=1 \
+     RESTORE_TARGET_AUTHORIZATION=production \
+     BACKUP_ENV_FILE=/etc/quest-esports-backup.env \
+     bash /var/www/QuestEsports/ops/restore-production-backup.sh \
+     /secure/archives/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
+   ```
+
+   The protected backup environment and canonical sentinel supply the exact
+   target identity, TLS files, and `quest_backup`/restore credential contract;
+   verify them without printing values. Never point this command at Supabase.
+6. Do not set either runtime URL to Supabase and do not invoke `SUPABASE_URL_ROLLBACK_COMMAND`. The post-first-write release contract rejects that command. Complete either the approved fix-forward action or the controlled restore action, then start and validate both Compose candidates frozen before any writer admission.
+7. Restore ownership and permissions, run both migration-status checks and the database security verifier, then verify Quest readiness, VALORANT HTTPS health (`status=ok`, `db=up`), uploads, authentication, admin access, and enabled mail/payment paths.
+8. Only after incident-owner sign-off and both readiness gates may the exact coordinated writer-enable controls be used. Never restart `OLD_QUEST_RESTART_COMMAND` or `OLD_VALORANT_RESTART_COMMAND` against the PostgreSQL 17 state, and never run either old mask command as a recovery substitute.
 
 ## Rebuilding a lost VPS
 
