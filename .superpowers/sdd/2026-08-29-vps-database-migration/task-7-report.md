@@ -1,0 +1,243 @@
+# Task 7 implementation report
+
+## Implementation
+
+- Updated the production runbook to identify PostgreSQL 17 on the VPS as the
+  target, keep Supabase as temporary rollback material, retain native
+  PostgreSQL 16.15 during staging, and document loopback-only staging access at
+  `127.0.0.1:55432` with no public database port.
+- Added owner-input gates, host preparation, TLS/SAN, role/password delivery,
+  staged Compose commands, exact cutover acknowledgements, observation metrics,
+  PG16 retirement rules, and pre/post-writer stop/mask behavior.
+- Added the post-first-write recovery boundary and explicit `--no-acl` parked
+  compatibility decision to the recovery documentation.
+- Clarified the setup guide's production Compose target and kept the legacy
+  PM2 flow explicitly pre-cutover-only.
+- Added a `postgres17-contracts` CI job with static Compose/bootstrap/backup/
+  rehearsal assertions and disposable PostgreSQL 17 contract suites. The
+  existing CI `postgres:16` service remains unchanged.
+
+## Commands and exact outputs
+
+```text
+git diff --check
+```
+
+Output: exit status 0; Git printed only existing LF-to-CRLF working-copy
+warnings for the modified Markdown files.
+
+```text
+python -c "import yaml; p=yaml.safe_load(open('.github/workflows/ci.yml')); assert 'postgres17-contracts' in p['jobs']; assert p['jobs']['backend']['services']['postgres']['image']=='postgres:16'; print('CI YAML parsed; PG16 fixture retained; postgres17-contracts job present')"
+```
+
+Output:
+
+```text
+CI YAML parsed; PG16 fixture retained; postgres17-contracts job present
+```
+
+```text
+python -c "from pathlib import Path; files=['docs/production-runbook.md','docs/setup-and-deployment.md','docs/backup-and-disaster-recovery.md','docs/ci-cd.md','ops/docker/postgres/README.md']; refs=['docs/developer-guide.md','docs/environment-reference.md','docs/valorant-local-development.md','docs/backup-and-disaster-recovery.md','docs/production-runbook.md','docs/setup-and-deployment.md','docs/ci-cd.md','ops/docker/compose.production.yml','ops/docker/compose.postgres-staging.yml','ops/quest-esports-backup.env.example']; missing=[ref for ref in refs if not Path(ref).exists()]; assert not missing, missing; print('checked relative Markdown targets; missing=[]')"
+```
+
+Output:
+
+```text
+checked relative Markdown targets; missing=[]
+```
+
+```text
+npx --no-install markdown-link-check docs/production-runbook.md docs/setup-and-deployment.md docs/backup-and-disaster-recovery.md docs/ci-cd.md ops/docker/postgres/README.md
+```
+
+Output: unavailable; `markdown-link-check@3.15.0` was not installed and npx
+cancelled without downloading packages. The local relative-target check passed.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" -n ops/tests/deploy-release.test.sh ops/tests/media-backup-contract.test.sh ops/tests/restore-production-backup.test.sh ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output: none; passed.
+
+```text
+npm test --prefix frontend
+```
+
+Output: `46 passed` test files, `294 passed` tests; passed.
+
+```text
+npm test --prefix backend
+```
+
+Output: `1121 passed`, `2 failed`, `11 skipped` (1134 tests). The failures were
+the existing `production restore passes the target database through pg_restore
+--dbname` assertion, which expected `/pg_restore --dbname="$DIRECT_URL"/`,
+and `production backup wrapper locks before delegated two-pass snapshot`,
+which did not observe the expected fixture ordering. No application source was
+changed to address these unrelated failures.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/media-backup-contract.test.sh
+```
+
+Output: `media backup contract fixture tests passed`; passed.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/restore-production-backup.test.sh
+```
+
+Output: `File activation and a transactional database restore begin in 0
+seconds.`, followed by `restore schema ownership regression test passed`;
+passed.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/deploy-release.test.sh
+```
+
+Output: the Windows ownership fixture printed
+`SKIP: canonical TLS ownership fixture skipped because Windows Git Bash cannot
+create or observe POSIX ownership changes.`; the process did not complete within
+300 seconds and was terminated by the validation harness.
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/postgres17-rehearsal.test.sh
+```
+
+Output: the process did not complete within the available Windows Git Bash
+validation window; the negative fixture output reached `ok: decryption failure`
+before the harness terminated the process. It was not reported as passed.
+
+## Self-review
+
+- The CI fixture remains exactly `postgres:16`; PostgreSQL 17 is checked through
+  a separate job and synthetic, non-secret Compose values.
+- The documentation preserves the required `--no-acl` restore decision and
+  says ACL normalization is performed by the canonical bootstrap/verifier.
+- Owner-supplied RPO/RTO and live host evidence are labelled as inputs; no
+  checked-in file is described as proof of live VPS state.
+- No VPS, production database, backup remote, hosted endpoint, credential,
+  private key, or production archive was contacted or changed.
+
+## Concerns
+
+- `markdown-link-check` and actionlint are not installed in this environment;
+  YAML parsing and a local relative Markdown-target check were used instead.
+- Backend tests retain two unrelated existing failures, and the deployment and
+  rehearsal shell suites could not complete under Windows Git Bash within the
+  available validation windows. The controller should rerun those suites in
+  the intended Linux/GitHub Actions environment.
+- The CI Compose render uses an empty disposable `/etc/quest-esports/quest.production.env`
+  placeholder on Linux runners; it does not assert or imply production secret
+  availability.
+
+## Fix round 1
+
+### Changed files
+
+- `docs/backup-and-disaster-recovery.md` — split intentional production restore
+  into pre-cutover legacy PM2 recovery and post-first-write Compose recovery;
+  require both current Quest/VALORANT writer stops, coordinated freeze,
+  PostgreSQL 17 recovery, and no Supabase URL rollback. Documented the exact
+  loopback backup endpoint lifecycle and the four legacy stop/mask controls.
+- `docs/production-runbook.md` — documented the exact old Quest/VALORANT
+  stop/mask wrappers and durable-commit ordering, clarified the loopback-overlay
+  exception for the host backup service, and removed the Paris session-pooler
+  backup instruction.
+- `docs/setup-and-deployment.md` — linked directly to the post-first-write
+  rollback boundary and clarified the backup-only staging-overlay exception.
+- `.github/workflows/ci.yml` — rendered base and staging Compose JSON with fake
+  immutable values, asserted no base PostgreSQL publication and exactly
+  loopback `55432` staging publication, and bound `NOBYPASSRLS` to each exact
+  role ALTER ROLE statement while retaining the `postgres:16` fixture.
+- `backend/tests/backup-scripts.test.js` — updated only stale expectations for
+  the intentional pinned PostgreSQL client invocations.
+
+### Commands and exact outputs
+
+```text
+npm test --prefix backend
+```
+
+```text
+1..1113
+# tests 1134
+# suites 0
+# pass 1123
+# fail 0
+# cancelled 0
+# skipped 11
+# todo 0
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/deploy-release.test.sh
+```
+
+```text
+SKIP: canonical TLS ownership fixture skipped because Windows Git Bash cannot create or observe POSIX ownership changes.
+deploy release fixture tests passed
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" ops/tests/postgres17-rehearsal.test.sh
+```
+
+```text
+ok: successful wrapper-path pre/post evidence generation
+ok: valid signed evidence
+...
+ok: blocked writer/freeze evidence
+PostgreSQL 17 rehearsal fixture tests passed (no Docker, database, VPS, or remote contacted).
+```
+
+```text
+& "C:\Program Files\Git\bin\bash.exe" -n ops/tests/deploy-release.test.sh ops/tests/postgres17-rehearsal.test.sh ops/backup-production.sh ops/backup-production-multi-remote.sh ops/restore-production-backup.sh
+```
+
+```text
+(no output; exit status 0)
+```
+
+```text
+git diff --check
+```
+
+```text
+exit status 0; Git printed only existing LF-to-CRLF working-copy warnings for modified files.
+```
+
+```text
+python -c "import yaml; p=yaml.safe_load(open('.github/workflows/ci.yml')); assert 'postgres17-contracts' in p['jobs']; assert p['jobs']['backend']['services']['postgres']['image']=='postgres:16'; print('CI YAML parsed; PG16 fixture retained; postgres17-contracts job present')"
+```
+
+```text
+CI YAML parsed; PG16 fixture retained; postgres17-contracts job present
+```
+
+### Self-review
+
+- Production behavior was not changed; the backend test changes only match the
+  existing pinned `pg_dump`/`pg_restore` variables.
+- The restore boundary now has separate PM2-before-cutover and Compose-after-
+  first-write procedures. Post-first-write recovery stops both current writer
+  groups, captures current PostgreSQL 17/upload state, and prohibits blind
+  Supabase URL rollback.
+- Backup instructions now bind the host service to the documented PostgreSQL 17
+  loopback target and state the precise overlay condition; the base Compose file
+  remains without a host PostgreSQL publication.
+- CI keeps the existing PostgreSQL 16 service unchanged and checks each runtime
+  role's complete `ALTER ROLE ... NOBYPASSRLS` contract.
+- No secrets, production URLs, VPS state, production database, backup remote,
+  or live service were contacted or mutated.
+
+### Concerns
+
+- The Windows Git Bash deployment suite passed, with only its documented
+  POSIX-ownership fixture skipped. The PostgreSQL 17 rehearsal suite passed
+  without Docker/database/VPS/remote access.
+- `markdown-link-check` and actionlint were not installed; link validation was
+  limited to the direct anchor edits, repository-local references, YAML parsing,
+  and shell syntax checks.
+- The CI-only Docker Compose JSON render was not executed locally; Docker is
+  installed, but the workflow assertion is intended for its Ubuntu runner and
+  uses the runner's `/etc/quest-esports/quest.production.env` placeholder.
