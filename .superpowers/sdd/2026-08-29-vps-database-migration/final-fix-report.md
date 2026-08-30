@@ -6,6 +6,8 @@ Implemented the final security/readiness fix wave in the existing worktree. No
 VPS, production database, live upload root, hosted service, or remote backup
 was contacted.
 
+Commit: `a70c176` (`fix: close VPS PostgreSQL migration security gaps`).
+
 ## Changes
 
 - Enforced separate backup and recovery TLS client identities.
