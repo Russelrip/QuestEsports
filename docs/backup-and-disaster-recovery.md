@@ -178,7 +178,9 @@ The backup takes an exclusive `flock`, copies both immutable upload trees, runs 
 
 The checked-in host backup service uses the exact PostgreSQL 17 VPS target in
 `ops/quest-esports-backup.env.example`: `127.0.0.1:55432`, database `quest`,
-and role `quest_backup`. It must never use the Paris Supabase session pooler.
+and role `quest_backup`. It uses the separately provisioned backup client
+certificate/key, never the PostgreSQL server key. It must never use the Paris
+Supabase session pooler.
 The supported host-run backup and restore path is to keep or reapply
 `ops/docker/compose.postgres-staging.yml` while the PostgreSQL service is in
 use. It remains bound to `127.0.0.1` only; it is never a public database port.
@@ -467,7 +469,9 @@ transparent compatible restore.
 1. Select one archive and its exact `.sha256` sibling from the active remote.
 2. Download both through the Google Drive UI or a recovery-only rclone configuration to an access-controlled recovery host.
 3. Copy `ops/quest-esports-recovery.env.example` outside the repository and set:
-   - `DIRECT_URL` to disposable PostgreSQL 17, never Paris production.
+   - `DIRECT_URL` to disposable PostgreSQL 17, never Paris production. This
+     fixture-only name is not accepted by the production restore primitive;
+     production restores use the separately protected `RECOVERY_ADMIN_URL`.
    - `QUEST_RUNTIME_DATABASE_URL` to the `quest_runtime` credential for the same
      disposable database endpoint.
    - `UPLOAD_ROOT` and `PRIVATE_UPLOAD_ROOT` below a new, dedicated parent that
@@ -602,7 +606,8 @@ Supabase URL toggle on this path.
    ```
 
    The protected backup environment and canonical sentinel supply the exact
-   target identity, TLS files, and `quest_backup`/restore credential contract;
+   target identity, TLS files, and the dedicated `quest_recovery_admin` restore
+   credential contract;
    verify them without printing values. Never point this command at Supabase.
 6. Do not set either runtime URL to Supabase and do not invoke `SUPABASE_URL_ROLLBACK_COMMAND`. The post-first-write release contract rejects that command. Complete either the approved fix-forward action or the controlled restore action, then start and validate both Compose candidates frozen before any writer admission.
 7. Restore ownership and permissions, run both migration-status checks and the database security verifier, then verify Quest readiness, VALORANT HTTPS health (`status=ok`, `db=up`), uploads, authentication, admin access, and enabled mail/payment paths. Keep both host backup timers and both oneshot services disabled throughout the destructive restore, target/security validation, and service recovery. Record the selected recovery point (archive/checksum and outcome) in the incident record after successful validation.

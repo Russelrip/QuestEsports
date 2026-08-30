@@ -39,6 +39,8 @@ fi
 printf '%s\n' "psql $*" >> "$TEST_ROOT/psql.log"
 if [[ "$*" == *current_database* && "${PGAPPNAME:-}" == quest-restore-target ]]; then
   printf 'quest_restore|170004|on|restore|172.18.0.2|5432|quest-restore-target\n'
+elif [[ "$*" == *owner_name* ]]; then
+  printf '0\n'
 elif [[ "$*" == *current_database* ]]; then
   printf 'quest|170004|on|quest_backup|172.18.0.2|5432|quest-backup-target\n'
 elif [[ "$*" == *"nspname = 'valorant'"* ]]; then

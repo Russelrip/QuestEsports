@@ -13,6 +13,7 @@ const dockerignore = read("backend/.dockerignore");
 const productionCompose = read("ops/docker/compose.production.yml");
 const stagingCompose = read("ops/docker/compose.postgres-staging.yml");
 const productionEnv = read("ops/docker/quest.production.env.example");
+const releaseScript = read("ops/deploy/release.sh");
 const nginxConfigPath = path.join(repoRoot, "ops/docker/nginx/quest.conf");
 const nginxConfig = fs.existsSync(nginxConfigPath) ? fs.readFileSync(nginxConfigPath, "utf8").replace(/\r\n/g, "\n") : "";
 const verifyRelease = read("ops/deploy/verify-release.sh");
@@ -976,6 +977,7 @@ run_case() {
   if PATH="$tmp/bin:$PATH" \\
     POSTGRES_CERT_RUNTIME_FILE="$tmp/$label.crt" \\
     POSTGRES_CA_RUNTIME_FILE="$tmp/$label.crt" \\
+    POSTGRES_KEY_RUNTIME_FILE="$tmp/$label.key" \\
     sh /fixture/healthcheck.sh; then
     printf '%s\\n' "$label:pass"
   else
@@ -1024,10 +1026,17 @@ test("production images are manifest-supplied and digest-oriented", () => {
       new RegExp(`image:\\s*\\$\\{${variable}:\\?`),
       `${variable} must be required from the release manifest`,
     );
-    assert.match(productionEnv, new RegExp(`^${variable}=`, "m"), `${variable} must be a release variable`);
+    assert.match(
+      releaseScript,
+      new RegExp(`${variable}=%s`),
+      `${variable} must be emitted into the signed release bundle`,
+    );
   }
-  assert.match(productionEnv, /^QUEST_MIGRATOR_IMAGE=$/m);
-  assert.match(productionEnv, /^POSTGRES_IMAGE=$/m);
+  assert.doesNotMatch(
+    productionEnv,
+    /^(QUEST_FRONTEND_IMAGE|QUEST_BACKEND_IMAGE|QUEST_MIGRATOR_IMAGE|POSTGRES_IMAGE|VALORANT_IMAGE)=/m,
+    "runtime environment must not carry release image variables",
+  );
   assert.match(
     productionCompose,
     /postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0/,
@@ -1168,7 +1177,11 @@ test(
         spawnSync(process.execPath, [path.join(repoRoot, "backend/scripts/verify-database-security.js")], {
           cwd: path.join(repoRoot, "backend"),
           encoding: "utf8",
-          env: { ...process.env, DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl },
+          env: {
+            ...process.env,
+            DATABASE_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/postgres?schema=public`,
+            DIRECT_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/postgres?schema=public`,
+          },
         });
 
       const bootstrapPath = path.join(repoRoot, "ops/docker/postgres/init/001-bootstrap-roles.sql");
@@ -1193,8 +1206,16 @@ test(
       assert.equal(result.status, 0, `Data API fixture roles failed:\n${result.stdout}\n${result.stderr}`);
       result = runPsql("quest_migrator", 'CREATE TABLE public.fixture_application (id integer PRIMARY KEY); CREATE TABLE public."_prisma_migrations" (id text PRIMARY KEY);');
       assert.equal(result.status, 0, `fixture tables failed:\n${result.stdout}\n${result.stderr}`);
-      result = runPsql("val_migrator", "CREATE TABLE valorant.fixture_application (id integer PRIMARY KEY);");
+      result = runPsql(
+        "val_migrator",
+        "CREATE TABLE valorant.fixture_application (id integer PRIMARY KEY); CREATE TABLE valorant.\"_migration_ledger\" (id text PRIMARY KEY); REVOKE ALL PRIVILEGES ON TABLE valorant.\"_migration_ledger\" FROM val_runtime;",
+      );
       assert.equal(result.status, 0, `sibling fixture table failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql(
+        "val_migrator",
+        "ALTER TABLE valorant.fixture_application ENABLE ROW LEVEL SECURITY; CREATE POLICY fixture_application_runtime_all ON valorant.fixture_application FOR ALL TO val_runtime USING (true) WITH CHECK (true);",
+      );
+      assert.equal(result.status, 0, `sibling runtime policy failed:\n${result.stdout}\n${result.stderr}`);
       result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "quest_migrator", "-d", "postgres", "-f", "/tmp/runtime-policies.sql"]);
       assert.equal(result.status, 0, `runtime policy migration failed:\n${result.stdout}\n${result.stderr}`);
 
@@ -1218,7 +1239,7 @@ test(
       assert.equal(result.status, 0, `could not remove fixture policy:\n${result.stdout}\n${result.stderr}`);
       result = runVerifier();
       assert.notEqual(result.status, 0, "security verifier accepted a table with a missing runtime policy");
-      assert.match(`${result.stdout}\n${result.stderr}`, /Public tables without quest_runtime policy/);
+      assert.match(`${result.stdout}\n${result.stderr}`, /Application tables without their runtime policy/);
       result = runPsql(
         "quest_migrator",
         "CREATE POLICY fixture_application_runtime_all ON public.fixture_application FOR ALL TO quest_runtime USING (true) WITH CHECK (true);",
@@ -1232,7 +1253,7 @@ test(
       assert.equal(result.status, 0, `could not create runtime ledger policy:\n${result.stdout}\n${result.stderr}`);
       result = runVerifier();
       assert.notEqual(result.status, 0, "security verifier accepted a val_runtime ledger policy");
-      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected runtime\/PUBLIC access to _prisma_migrations/);
+      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected runtime\/PUBLIC access to a migration ledger/);
       result = runPsql("quest_migrator", "DROP POLICY ledger_val_runtime ON public.\"_prisma_migrations\";");
       assert.equal(result.status, 0, `could not remove runtime ledger policy:\n${result.stdout}\n${result.stderr}`);
 
@@ -1243,7 +1264,7 @@ test(
       assert.equal(result.status, 0, `could not create mixed PUBLIC ledger policy:\n${result.stdout}\n${result.stderr}`);
       result = runVerifier();
       assert.notEqual(result.status, 0, "security verifier accepted a mixed PUBLIC ledger policy");
-      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected runtime\/PUBLIC access to _prisma_migrations/);
+      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected runtime\/PUBLIC access to a migration ledger/);
       result = runPsql("quest_migrator", "DROP POLICY ledger_public_mixed ON public.\"_prisma_migrations\";");
       assert.equal(result.status, 0, `could not remove mixed PUBLIC ledger policy:\n${result.stdout}\n${result.stderr}`);
 

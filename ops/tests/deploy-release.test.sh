@@ -46,21 +46,23 @@ setup_fixture() {
   printf '%s\n' fixture-cert > "$fixture/postgres.crt"
   printf '%s\n' fixture-key > "$fixture/postgres.key"
   printf '%s\n' fixture-alternate-key > "$fixture/alternate.key"
+  printf '%s\n' 'postgresql://quest_recovery_admin:fixture@quest-postgres:5432/quest' > "$fixture/recovery-admin-url"
+  printf '%s\n' 'postgresql://quest_migrator:fixture@quest-postgres:5432/quest' > "$fixture/quest-migrator-url"
+  printf '%s\n' 'postgresql://val_migrator:fixture@quest-postgres:5432/quest' > "$fixture/valorant-migrator-url"
   printf '%s\n' fixture-alternate-cert > "$fixture/alternate.crt"
   chmod 644 "$fixture/ca.crt" "$fixture/postgres.crt" "$fixture/alternate.crt"
   chmod 600 "$fixture/postgres.key"
   chmod 600 "$fixture/alternate.key"
   : > "$fixture/current-supabase.env"
   cat > "$fixture/quest.production.env" <<'EOF'
-DATABASE_URL=postgresql://quest_runtime:fixture@db.supabase.test:5432/quest?schema=public&sslmode=verify-full
-DIRECT_URL=postgresql://quest_migrator:fixture@db.supabase.test:5432/quest?schema=public&sslmode=verify-full
+DATABASE_URL=postgresql://quest_runtime:fixture@db.supabase.test:5432/quest?schema=public&sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
+DIRECT_URL=postgresql://quest_runtime:fixture@db.supabase.test:5432/quest?schema=public&sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
 EOF
   cat > "$fixture/valorant.production.env" <<'EOF'
-DATABASE_URL=postgresql://valorant_runtime:fixture@db.supabase.test:5432/quest?schema=valorant&sslmode=verify-full
-DIRECT_URL=postgresql://valorant_migrator:fixture@db.supabase.test:5432/quest?schema=valorant&sslmode=verify-full
+DATABASE_URL=postgresql://val_runtime:fixture@db.supabase.test:5432/quest?schema=valorant&sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
+DIRECT_URL=postgresql://val_runtime:fixture@db.supabase.test:5432/quest?schema=valorant&sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
 EOF
-  chmod 600 "$fixture/quest.production.env"
-  chmod 600 "$fixture/valorant.production.env"
+  chmod 600 "$fixture/quest.production.env" "$fixture/valorant.production.env" "$fixture/recovery-admin-url" "$fixture/quest-migrator-url" "$fixture/valorant-migrator-url"
   printf '%s\n' active > "$fixture/old-quest.state"
   printf '%s\n' active > "$fixture/old-valorant.state"
   printf '%s\n' unmasked > "$fixture/old-valorant.persistence"
@@ -256,7 +258,7 @@ if [[ "${FAIL_QUEST_HEALTH:-0}" == 1 && "$url" == *127.0.0.1:5001/api/health/liv
 if [[ "${FAIL_VALORANT_HEALTH:-0}" == 1 && "$url" == *valorant-platform* ]]; then exit 1; fi
 if [[ "$url" == *valorant-platform* && "${BAD_VALORANT_HEALTH:-0}" == 1 ]]; then printf '{"status":"ok","db":"down"}\n'; exit 0; fi
 if [[ "$url" == *valorant-platform* ]]; then printf '{"status":"ok","db":"up"}\n'; exit 0; fi
-if [[ "$url" == *ready* ]]; then printf '{"status":"ok","ready":true}\n'; exit 0; fi
+if [[ "$url" == *ready* ]]; then printf '{"success":true,"message":"Quest E-sports API is healthy.","timestamp":"2026-08-28T12:00:00.000Z","readiness":{"database":"ready","storage":"ready"}}\n'; exit 0; fi
 printf '{"status":"ok"}\n'
 EOF
   make_executable "$fixture/bin/curl"
@@ -412,6 +414,9 @@ SERVICE_OWNERSHIP_COMMAND=$fixture/bin/service-ownership
 CURRENT_SUPABASE_ENV_FILE=$fixture/current-supabase.env
 CUTOVER_RESTORE_COMMAND=$fixture/bin/cutover-restore
 SECURITY_VERIFY_COMMAND=$fixture/bin/security-verify
+RECOVERY_ADMIN_URL_FILE=$fixture/recovery-admin-url
+QUEST_MIGRATOR_DATABASE_URL_FILE=$fixture/quest-migrator-url
+VALORANT_MIGRATOR_DATABASE_URL_FILE=$fixture/valorant-migrator-url
 CUTOVER_ABORT_COMMAND=$fixture/bin/cutover-abort
 CUTOVER_SUPABASE_URL_RESTORE_COMMAND=$fixture/bin/cutover-url-restore
 COSIGN_BIN=$fixture/bin/cosign
@@ -522,8 +527,22 @@ valorant_image=ghcr.io/quest/valorant@sha256:55555555555555555555555555555555555
 EOF
 }
 
-run_release() { DATABASE_AUTHORITY=quest-postgres bash "$release_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"; }
-run_host_validation() { RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script"; }
+run_release() {
+  sed -i -e 's#@db\.supabase\.test:5432#@quest-postgres:5432#g' \
+    -e 's#quest_migrator:fixture#quest_runtime:fixture#g' \
+    -e 's#valorant_runtime:fixture#val_runtime:fixture#g' \
+    -e 's#valorant_migrator:fixture#val_runtime:fixture#g' \
+    "$fixture/quest.production.env" "$fixture/valorant.production.env"
+  DATABASE_AUTHORITY=quest-postgres bash "$release_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+}
+run_host_validation() {
+  sed -i -e 's#@db\.supabase\.test:5432#@quest-postgres:5432#g' \
+    -e 's#quest_migrator:fixture#quest_runtime:fixture#g' \
+    -e 's#valorant_runtime:fixture#val_runtime:fixture#g' \
+    -e 's#valorant_migrator:fixture#val_runtime:fixture#g' \
+    "$fixture/quest.production.env" "$fixture/valorant.production.env"
+  RUNTIME_DATABASE_AUTHORITY=quest-postgres RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script"
+}
 
 make_failed_bundle() {
   local sha="$1"
@@ -956,6 +975,14 @@ setup_fixture host-validator-runtime-url
 printf '%s\n' 'DATABASE_URL=postgresql://127.0.0.1:55432/notquest' > "$fixture/quest.production.env"
 assert_failed host-validator-runtime-url run_host_validation
 
+setup_fixture host-validator-quest-runtime-role
+sed -i 's#quest_runtime:fixture#quest_wrong_role:fixture#g' "$fixture/quest.production.env"
+assert_failed host-validator-quest-runtime-role run_host_validation
+
+setup_fixture host-validator-valorant-runtime-role
+sed -i 's#val_runtime:fixture#val_wrong_role:fixture#g' "$fixture/valorant.production.env"
+assert_failed host-validator-valorant-runtime-role run_host_validation
+
 setup_fixture host-validator-canonical-tls
 sed -i "s#^POSTGRES_CERT_FILE=.*#POSTGRES_CERT_FILE=$fixture/alternate.crt#" "$fixture/release.env"
 : > "$fixture/postgres.crt"
@@ -981,7 +1008,7 @@ else
 fi
 
 setup_fixture first-cutover
-[[ "$(RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script")" == validated ]] || {
+[[ "$(run_host_validation)" == validated ]] || {
   printf 'FAIL: host trust fixture did not validate the signed exact manifest\n' >&2
   exit 1
 }
@@ -1080,7 +1107,7 @@ gate_log_before "$TEST_LOG" 'validate-host' 'old-authoritative' 'first cutover c
 gate_log_before "$TEST_LOG" 'old-authoritative' 'quest-freeze-enable' 'first cutover did not establish authority before freezing writers'
 gate_log_before "$TEST_LOG" 'cutover-restore' 'security-verify' 'first cutover did not verify restored roles and privileges after restore'
 gate_log_before "$TEST_LOG" 'backup-evidence' 'cutover-restore' 'first cutover restored before final backup evidence'
-gate_log_before "$TEST_LOG" 'security-verify' 'migration-status' 'first cutover ran migrations before post-restore security verification'
+gate_log_before "$TEST_LOG" 'migration-status repo=quest target=quest-postgres state=none' 'security-verify' 'first cutover did not verify security after migration status was clean'
 gate_log_before "$TEST_LOG" 'valorant-health' 'quest-url-switch' 'first cutover switched URLs before smoke validation'
 gate_log_contains "$TEST_LOG" 'quest-url-effective' 'first cutover did not validate the effective Quest URL host and database'
 gate_log_contains "$TEST_LOG" 'valorant-url-effective' 'first cutover did not validate the effective VALORANT URL host and database'

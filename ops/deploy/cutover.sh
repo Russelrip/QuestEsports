@@ -72,7 +72,7 @@ protected_file() {
   fi
 }
 validate_compose_tls_material() {
-  local ca_file cert_file key_file key_mode tls_file
+  local ca_file cert_file key_file key_mode tls_file tls_stat
   if [[ "$fixture_mode" == 1 ]]; then
     ca_file="${POSTGRES_COMPOSE_CA_FILE:-${POSTGRES_CERT_FILE:-}}"
     cert_file="${POSTGRES_COMPOSE_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
@@ -87,7 +87,19 @@ validate_compose_tls_material() {
     [[ -s "$tls_file" ]] || die 'Compose-mounted PostgreSQL TLS material is missing or unsafe.'
   done
   key_mode="$(stat -c '%a' "$key_file" 2>/dev/null)" || die 'Compose-mounted PostgreSQL key mode cannot be inspected.'
-  [[ "$key_mode" == 600 ]] || die 'Compose-mounted PostgreSQL key mode is unsafe.'
+  if [[ "$fixture_mode" == 1 ]]; then
+    [[ "$key_mode" == 600 || "$key_mode" == 640 ]] || die 'Compose-mounted PostgreSQL key mode is unsafe.'
+  else
+    [[ "$ca_file" == /etc/quest-esports/tls/quest-private-ca.crt &&
+       "$cert_file" == /etc/quest-esports/tls/quest-postgres.crt &&
+       "$key_file" == /etc/quest-esports/tls/quest-postgres.key ]] || die 'Compose PostgreSQL TLS files are not the canonical server mounts.'
+    tls_stat="$(stat -c '%u:%g %a' "$ca_file" 2>/dev/null)" || die 'canonical PostgreSQL CA ownership cannot be inspected.'
+    [[ "$tls_stat" == '0:0 644' ]] || die 'canonical PostgreSQL CA must be root-owned mode 0644.'
+    tls_stat="$(stat -c '%u:%g %a' "$cert_file" 2>/dev/null)" || die 'canonical PostgreSQL certificate ownership cannot be inspected.'
+    [[ "$tls_stat" == '0:0 644' ]] || die 'canonical PostgreSQL certificate must be root-owned mode 0644.'
+    tls_stat="$(stat -c '%u:%g %a' "$key_file" 2>/dev/null)" || die 'canonical PostgreSQL key ownership cannot be inspected.'
+    [[ "$tls_stat" == '0:999 640' ]] || die 'canonical PostgreSQL key must be root-owned, group-readable by 999, mode 0640.'
+  fi
 }
 validate_postgres_target() {
   local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
@@ -115,7 +127,7 @@ validate_postgres_target() {
 }
 validate_database_urls() {
   local file="${1:-$runtime_env_file}" expected_authority="${2:-any}" label="${3:-Quest}"
-  local line variable url authority host_port host path database
+  local line variable url expected_role expected_schema
   [[ "$file" == /* && "$file" != / && -f "$file" && -r "$file" && ! -L "$file" ]] || die "protected $label runtime environment is missing or unsafe."
   if [[ "$fixture_mode" != 1 ]]; then
     [[ "$(stat -c '%u' "$file" 2>/dev/null)" == 0 ]] || die "protected $label runtime environment is not root-owned."
@@ -129,6 +141,10 @@ validate_database_urls() {
   fi
   declare -A runtime_urls=()
   while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+      variable="${BASH_REMATCH[1]}"
+      [[ "$variable" != *MIGRATOR* && "$variable" != *RECOVERY* && "$variable" != *ADMIN_URL* ]] || die "protected $label runtime environment contains a privileged database setting."
+    fi
     case "$line" in
       DATABASE_URL=*|DIRECT_URL=*)
         variable="${line%%=*}"; url="${line#*=}"
@@ -137,23 +153,59 @@ validate_database_urls() {
         ;;
     esac
   done < "$file"
+  expected_role=quest_runtime; expected_schema=public
+  [[ "${label,,}" == valorant ]] && expected_role=val_runtime && expected_schema=valorant
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for runtime database URL validation.'
   for variable in DATABASE_URL DIRECT_URL; do
     url="${runtime_urls[$variable]:-}"
     [[ -n "$url" ]] || die "protected $label runtime environment is missing $variable."
-    [[ "$url" != *[[:space:]]* && "$url" =~ ^postgres(ql)?://[^/]+/[^/?#]+([?#].*)?$ ]] || die "$variable is not a valid PostgreSQL target URL."
-    authority="${url#*://}"; host_port="${authority%%/*}"; host_port="${host_port##*@}"; host="${host_port%%:*}"
-    path="${authority#*/}"; database="${path%%[?#]*}"
-    [[ "$database" == quest ]] || die "$variable must target the quest database."
-    case "$expected_authority" in
-      supabase) [[ "$host" != quest-postgres ]] || die "$label $variable unexpectedly targets VPS PostgreSQL." ;;
-      quest-postgres) [[ "$host" == quest-postgres ]] || die "$label $variable did not transition to VPS PostgreSQL." ;;
-      any) : ;;
-      *) die 'database URL authority expectation is invalid.' ;;
-    esac
+    if ! python3 - "$url" "$expected_role" "$expected_schema" "$expected_authority" <<'PY'
+from urllib.parse import parse_qs, urlsplit
+import sys
+url, expected_role, expected_schema, authority = sys.argv[1:]
+try:
+    parsed = urlsplit(url)
+    query = parse_qs(parsed.query, strict_parsing=True)
+except ValueError:
+    raise SystemExit(1)
+if parsed.scheme not in ("postgres", "postgresql") or parsed.hostname is None:
+    raise SystemExit(1)
+if parsed.username is None or parsed.username == "" or parsed.password is None or parsed.password == "" or parsed.path != "/quest" or parsed.fragment:
+    raise SystemExit(1)
+if authority == "supabase":
+    if parsed.hostname == "quest-postgres" or parsed.username != expected_role or query.get("schema") != [expected_schema]:
+        raise SystemExit(1)
+    raise SystemExit(0)
+if authority != "quest-postgres" or parsed.hostname != "quest-postgres" or parsed.port != 5432:
+    raise SystemExit(1)
+if parsed.username != expected_role:
+    raise SystemExit(1)
+if query != {"schema": [expected_schema], "sslmode": ["verify-full"], "sslrootcert": ["/run/secrets/quest-private-ca.crt"]}:
+    raise SystemExit(1)
+PY
+    then die "$label $variable does not satisfy the runtime PostgreSQL endpoint contract."; fi
   done
 }
+validate_recovery_admin_url_file() {
+  local file="$1" recovery_url
+  [[ "$file" == /* && "$file" != / && -f "$file" && -r "$file" && ! -L "$file" ]] || die 'recovery administrator URL file is missing or unsafe.'
+  recovery_url="$(< "$file")"
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for recovery administrator URL validation.'
+  python3 - "$recovery_url" <<'PY' || die 'recovery administrator URL is not the dedicated Quest PostgreSQL recovery credential.'
+from urllib.parse import urlsplit
+import sys
+try:
+    parsed = urlsplit(sys.argv[1])
+except ValueError:
+    raise SystemExit(1)
+if (parsed.scheme not in ("postgres", "postgresql") or parsed.username != "quest_recovery_admin" or
+        not parsed.password or parsed.hostname not in ("quest-postgres", "127.0.0.1") or parsed.port != 5432 or
+        parsed.path != "/quest" or parsed.query or parsed.fragment):
+    raise SystemExit(1)
+PY
+}
 
-for setting in RELEASE_ROOT RELEASES_ROOT QUEST_COMPOSE_TEMPLATE VALORANT_COMPOSE_SOURCE DOCKER_BIN CURRENT_SUPABASE_ENV_FILE VALIDATE_HOST_COMMAND CUTOVER_RESTORE_COMMAND POSTGRES_IMAGE_APPROVED_REF POSTGRES_CERT_FILE POSTGRES_KEY_FILE; do
+for setting in RELEASE_ROOT RELEASES_ROOT QUEST_COMPOSE_TEMPLATE VALORANT_COMPOSE_SOURCE DOCKER_BIN CURRENT_SUPABASE_ENV_FILE VALIDATE_HOST_COMMAND CUTOVER_RESTORE_COMMAND POSTGRES_IMAGE_APPROVED_REF POSTGRES_CERT_FILE POSTGRES_KEY_FILE RECOVERY_ADMIN_URL_FILE; do
   require_setting "$setting"
 done
 [[ "$RELEASE_ROOT" == /* && "$RELEASE_ROOT" != / && -d "$RELEASE_ROOT" && ! -L "$RELEASE_ROOT" ]] || die 'release root is invalid.'
@@ -162,7 +214,7 @@ done
 root_file "$manifest_path"
 protected_file "$CURRENT_SUPABASE_ENV_FILE"
 command_setting VALIDATE_HOST_COMMAND
-[[ "$(RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" "$VALIDATE_HOST_COMMAND" 2>/dev/null)" == validated ]] || die 'host/artifact validation did not acknowledge the cutover manifest.'
+[[ "$(RUNTIME_DATABASE_AUTHORITY=supabase RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" "$VALIDATE_HOST_COMMAND" 2>/dev/null)" == validated ]] || die 'host/artifact validation did not acknowledge the cutover manifest.'
 require_setting SERVICE_OWNERSHIP_COMMAND
 command_setting SERVICE_OWNERSHIP_COMMAND
 validate_service_ownership() {
@@ -211,6 +263,8 @@ done
 [[ "${manifest[postgres_image]}" == "$POSTGRES_IMAGE_APPROVED_REF" ]] || die 'approved PostgreSQL image does not match the cutover manifest.'
 root_file "$POSTGRES_CERT_FILE"
 root_file "$POSTGRES_KEY_FILE"
+root_file "$RECOVERY_ADMIN_URL_FILE"
+validate_recovery_admin_url_file "$RECOVERY_ADMIN_URL_FILE"
 validate_compose_tls_material
 validate_postgres_target
 validate_database_urls "$quest_runtime_env_file" supabase Quest
@@ -341,7 +395,7 @@ validate_aliases() {
 run_hook() {
   local variable="$1" expected="${2:-}" output
   command_setting "$variable"
-  output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" POSTGRES_IMAGE="${manifest[postgres_image]:-}" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$quest_runtime_env_file" QUEST_RUNTIME_ENV_FILE="$quest_runtime_env_file" VALORANT_RUNTIME_ENV_FILE="$valorant_runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
+  output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_MANIFEST="$manifest_path" RELEASE_DIR="$stage_dir" POSTGRES_IMAGE="${manifest[postgres_image]:-}" RECOVERY_ADMIN_URL_FILE="${RECOVERY_ADMIN_URL_FILE:-}" CURRENT_SUPABASE_ENV_FILE="$CURRENT_SUPABASE_ENV_FILE" CURRENT_RUNTIME_ENV_FILE="$quest_runtime_env_file" QUEST_RUNTIME_ENV_FILE="$quest_runtime_env_file" VALORANT_RUNTIME_ENV_FILE="$valorant_runtime_env_file" "${!variable}" 2>/dev/null)" || die "$variable command failed."
   if [[ -n "$expected" ]]; then [[ "$output" == "$expected" ]] || die "$variable command acknowledgement was invalid."; fi
 }
 run_url_switch() {
@@ -371,11 +425,19 @@ run_service_restart() {
 }
 run_migrator() {
   # The migrator acknowledgement is `migrated image=<digest> target=quest-postgres`.
-  local variable="$1" repository="$2" target_authority="$3" schema="$4" output expected
+  local variable="$1" repository="$2" target_authority="$3" schema="$4" output expected url_file_setting admin_stat
   command_setting "$variable"
   [[ "$target_authority" == quest-postgres ]] || die 'migrator target authority is not the fixed Quest PostgreSQL target.'
   [[ "$schema" == public || "$schema" == valorant ]] || die 'migrator schema is not an approved service schema.'
-  output="$(MIGRATION_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" MIGRATOR_IMAGE="${manifest[migrator_image]}" EXPECTED_MIGRATOR_IMAGE="${manifest[migrator_image]}" "${!variable}" 2>/dev/null)" || die 'migration command failed.'
+  url_file_setting=QUEST_MIGRATOR_DATABASE_URL_FILE
+  [[ "$repository" == valorant ]] && url_file_setting=VALORANT_MIGRATOR_DATABASE_URL_FILE
+  require_setting "$url_file_setting"
+  [[ "${!url_file_setting}" == /* && -f "${!url_file_setting}" && ! -L "${!url_file_setting}" ]] || die 'migrator URL file is missing or unsafe.'
+  if [[ "$fixture_mode" != 1 ]]; then
+    admin_stat="$(stat -c '%u %a' "${!url_file_setting}" 2>/dev/null)" || die 'migrator URL file ownership cannot be inspected.'
+    [[ "$admin_stat" == '0 600' || "$admin_stat" == '0 640' ]] || die 'migrator URL file must be root-owned and private.'
+  fi
+  output="$(MIGRATION_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" MIGRATOR_IMAGE="${manifest[migrator_image]}" EXPECTED_MIGRATOR_IMAGE="${manifest[migrator_image]}" MIGRATOR_DATABASE_URL_FILE="${!url_file_setting}" DIRECT_URL_FILE="${!url_file_setting}" "${!variable}" 2>/dev/null)" || die 'migration command failed.'
   expected="migrated image=${manifest[migrator_image]} target=quest-postgres schema=$schema repository=$repository"
   [[ "$output" == "$expected" ]] || die 'migration command did not acknowledge the exact migrator image, target, schema, and repository.'
 }
@@ -396,6 +458,43 @@ run_database_readiness() {
   command_setting DATABASE_READINESS_COMMAND
   output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" "$DATABASE_READINESS_COMMAND" 2>/dev/null)" || die 'PostgreSQL 17 database readiness command failed.'
   [[ "$output" =~ ^ready[[:space:]]+target=quest-postgres[[:space:]]+schemas=public,valorant([[:space:]]|$) ]] || die 'PostgreSQL 17 database readiness did not identify both target schemas.'
+}
+
+verify_quest_readiness_response() {
+  local response="$1"
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for exact Quest readiness validation.'
+  python3 - "$response" <<'PY' || die 'Quest readiness response was malformed or not the exact supported success shape.'
+import json
+import sys
+try:
+    payload = json.loads(sys.argv[1])
+except (TypeError, ValueError):
+    raise SystemExit(1)
+if not isinstance(payload, dict) or set(payload) != {"success", "message", "timestamp", "readiness"} or payload.get("success") is not True:
+    raise SystemExit(1)
+if payload.get("message") != "Quest E-sports API is healthy." or not isinstance(payload.get("timestamp"), str):
+    raise SystemExit(1)
+readiness = payload.get("readiness")
+if not isinstance(readiness, dict) or set(readiness) not in ({"database", "storage"}, {"database", "storage", "realtime"}) or readiness.get("database") != "ready" or readiness.get("storage") != "ready":
+    raise SystemExit(1)
+if "realtime" in readiness and readiness["realtime"] != "ready":
+    raise SystemExit(1)
+if not __import__("re").fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", payload["timestamp"]):
+    raise SystemExit(1)
+PY
+}
+
+run_security_verify() {
+  local output admin_stat
+  command_setting SECURITY_VERIFY_COMMAND
+  require_setting RECOVERY_ADMIN_URL_FILE
+  [[ "$RECOVERY_ADMIN_URL_FILE" == /* && "$RECOVERY_ADMIN_URL_FILE" != / && -f "$RECOVERY_ADMIN_URL_FILE" && ! -L "$RECOVERY_ADMIN_URL_FILE" ]] || die 'recovery administrator URL file is missing or unsafe.'
+  if [[ "$fixture_mode" != 1 ]]; then
+    admin_stat="$(stat -c '%u %a' "$RECOVERY_ADMIN_URL_FILE" 2>/dev/null)" || die 'recovery administrator URL file ownership cannot be inspected.'
+    [[ "$admin_stat" == '0 600' || "$admin_stat" == '0 640' ]] || die 'recovery administrator URL file must be root-owned and private.'
+  fi
+  output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RECOVERY_ADMIN_URL_FILE="$RECOVERY_ADMIN_URL_FILE" DATABASE_URL_FILE="$RECOVERY_ADMIN_URL_FILE" "$SECURITY_VERIFY_COMMAND" 2>/dev/null)" || die 'post-restore role, privilege, schema, or migration security verification failed.'
+  [[ "$output" == security-verified ]] || die 'security verifier returned an invalid acknowledgement.'
 }
 
 validate_legacy_states() {
@@ -732,8 +831,6 @@ backup_evidence="$(BACKUP_RELEASE_SHA="$release_sha" "$BACKUP_EVIDENCE_COMMAND" 
 # Restore and migrate before candidate startup. The candidate cannot observe a
 # half-restored database and no writer is enabled while validation runs.
 run_hook CUTOVER_RESTORE_COMMAND restored
-command_setting SECURITY_VERIFY_COMMAND
-[[ "$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres "$SECURITY_VERIFY_COMMAND" 2>/dev/null)" == security-verified ]] || die 'post-restore role, privilege, schema, or migration security verification failed.'
 quest_status=none
 valorant_status=none
 run_migration_status QUEST_MIGRATION_STATUS_COMMAND quest quest-postgres public || quest_status=pending
@@ -747,6 +844,7 @@ if [[ "$quest_status" == pending || "$valorant_status" == pending ]]; then
   run_migration_status QUEST_MIGRATION_STATUS_COMMAND quest quest-postgres public || die 'Quest migrations remain pending after the cutover migrator.'
   run_migration_status VALORANT_MIGRATION_STATUS_COMMAND valorant quest-postgres valorant || die 'VALORANT migrations remain pending after the cutover migrator.'
 fi
+run_security_verify
 run_database_readiness
 validate_compose_tls_material
 validate_postgres_target
@@ -777,7 +875,7 @@ root_file "$VALORANT_CA_FILE"
 quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health failed.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health was not healthy.'
 quest_ready="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" 2>/dev/null)" || die 'Quest readiness failed.'
-grep -Eq '"ready"[[:space:]]*:[[:space:]]*true|"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$quest_ready" || die 'Quest readiness was not ready.'
+verify_quest_readiness_response "$quest_ready"
 valorant_health="$(VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$VALORANT_CA_FILE" "$VALORANT_CONTAINER_HEALTH_COMMAND" 2>/dev/null)" || die 'VALORANT HTTPS health failed from the Quest network boundary.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$valorant_health" && grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' <<< "$valorant_health" || die 'VALORANT health was not status ok/db up.'
 validate_active_project "$stage_dir/compose.production.yml" "$quest_project" "$compose_env_file" \

@@ -1,7 +1,7 @@
 -- Quest production PostgreSQL 17 role/schema bootstrap.
 --
--- This file contains no passwords. The bootstrap administrator must set the
--- four role passwords through the secret-management procedure before writer
+-- This file contains no passwords. The bootstrap/recovery administrator must
+-- set role passwords through the secret-management procedure before writer
 -- admission. Quest owns public; the sibling VALORANT service owns valorant.
 
 DO $$
@@ -64,6 +64,97 @@ CREATE SCHEMA IF NOT EXISTS valorant AUTHORIZATION val_migrator;
 
 ALTER SCHEMA public OWNER TO quest_migrator;
 ALTER SCHEMA valorant OWNER TO val_migrator;
+
+-- A --no-owner restore creates objects as the restore connection role. The
+-- recovery administrator runs this bootstrap in RESTORE_MODE after the dump,
+-- so every restorable object has the schema migrator as its owner before any
+-- runtime role is admitted. Keep the two schemas independent. Indexes,
+-- constraints, triggers, and row types follow their owning relation; explicit
+-- relation, routine, and user-defined type passes cover the independently
+-- owned object classes that a logical archive can contain.
+\if :{?RESTORE_MODE}
+DO $$
+DECLARE
+  relation_record record;
+  routine_record record;
+  type_record record;
+  schema_owner name;
+BEGIN
+  FOR relation_record IN
+    SELECT namespace.nspname, relation.relname, relation.relkind
+    FROM pg_class AS relation
+    JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname IN ('public', 'valorant')
+      AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+  LOOP
+    schema_owner := CASE relation_record.nspname
+      WHEN 'public' THEN 'quest_migrator'
+      ELSE 'val_migrator'
+    END;
+    IF relation_record.relkind = 'S' THEN
+      EXECUTE format(
+        'ALTER SEQUENCE %I.%I OWNER TO %I',
+        relation_record.nspname, relation_record.relname, schema_owner
+      );
+    ELSE
+      EXECUTE format(
+        'ALTER TABLE %I.%I OWNER TO %I',
+        relation_record.nspname, relation_record.relname, schema_owner
+      );
+    END IF;
+  END LOOP;
+
+  FOR routine_record IN
+    SELECT namespace.nspname, procedure.proname,
+           pg_get_function_identity_arguments(procedure.oid) AS identity_arguments,
+           procedure.prokind
+    FROM pg_proc AS procedure
+    JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname IN ('public', 'valorant')
+      AND procedure.prokind IN ('f', 'p', 'a')
+  LOOP
+    schema_owner := CASE routine_record.nspname
+      WHEN 'public' THEN 'quest_migrator'
+      ELSE 'val_migrator'
+    END;
+    IF routine_record.prokind = 'a' THEN
+      EXECUTE format(
+        'ALTER AGGREGATE %I.%I(%s) OWNER TO %I',
+        routine_record.nspname, routine_record.proname,
+        routine_record.identity_arguments, schema_owner
+      );
+    ELSE
+      EXECUTE format(
+        'ALTER %s %I.%I(%s) OWNER TO %I',
+        CASE WHEN routine_record.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,
+        routine_record.nspname, routine_record.proname,
+        routine_record.identity_arguments, schema_owner
+      );
+    END IF;
+  END LOOP;
+
+  FOR type_record IN
+    SELECT namespace.nspname, type_object.typname
+    FROM pg_type AS type_object
+    JOIN pg_namespace AS namespace ON namespace.oid = type_object.typnamespace
+    WHERE namespace.nspname IN ('public', 'valorant')
+      AND type_object.typisdefined
+      AND type_object.typtype IN ('b', 'd', 'e')
+      AND type_object.typelem = 0
+      AND type_object.typrelid = 0
+  LOOP
+    schema_owner := CASE type_record.nspname
+      WHEN 'public' THEN 'quest_migrator'
+      ELSE 'val_migrator'
+    END;
+    EXECUTE format(
+      'ALTER TYPE %I.%I OWNER TO %I',
+      type_record.nspname, type_record.typname, schema_owner
+    );
+  END LOOP;
+END
+$$;
+\endif
 
 \if :{?RESTORE_MODE}
 DO $$
@@ -146,6 +237,19 @@ $$;
 GRANT USAGE ON SCHEMA valorant TO val_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA valorant TO val_runtime;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA valorant TO val_runtime;
+
+-- The sibling VALORANT migrator creates this ledger. Repair an existing target
+-- without requiring the table to exist during first bootstrap.
+DO $$
+BEGIN
+  IF to_regclass('valorant._migration_ledger') IS NOT NULL THEN
+    EXECUTE format(
+      'REVOKE ALL PRIVILEGES ON TABLE %I.%I FROM %I',
+      'valorant', '_migration_ledger', 'val_runtime'
+    );
+  END IF;
+END
+$$;
 
 -- PostgreSQL's built-in PUBLIC defaults are global. Schema-local revokes alone
 -- do not remove those defaults from future routines and types, so revoke them

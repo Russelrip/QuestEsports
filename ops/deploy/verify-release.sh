@@ -46,6 +46,30 @@ canonical_releases_root="$(realpath "$releases_root" 2>/dev/null)" || die 'RELEA
 [[ "$canonical_releases_root" == "$releases_root" ]] || die 'RELEASES_ROOT must not contain a symlink.'
 [[ -x "$DOCKER_BIN" && -x "$CURL_BIN" && -x "$DATABASE_READINESS_COMMAND" && -x "$VALORANT_CONTAINER_HEALTH_COMMAND" && -x "$COSIGN_BIN" ]] || die 'verification command is not executable.'
 [[ -f "$VALORANT_CA_FILE" && -r "$VALORANT_CA_FILE" && ! -L "$VALORANT_CA_FILE" ]] || die 'VALORANT_CA_FILE is missing or unsafe.'
+
+verify_quest_readiness_response() {
+  local response="$1"
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for exact Quest readiness validation.'
+  python3 - "$response" <<'PY' || die 'Quest readiness response was malformed or not the exact supported success shape.'
+import json
+import sys
+try:
+    payload = json.loads(sys.argv[1])
+except (TypeError, ValueError):
+    raise SystemExit(1)
+if not isinstance(payload, dict) or set(payload) != {"success", "message", "timestamp", "readiness"} or payload.get("success") is not True:
+    raise SystemExit(1)
+if payload.get("message") != "Quest E-sports API is healthy." or not isinstance(payload.get("timestamp"), str):
+    raise SystemExit(1)
+readiness = payload.get("readiness")
+if not isinstance(readiness, dict) or set(readiness) not in ({"database", "storage"}, {"database", "storage", "realtime"}) or readiness.get("database") != "ready" or readiness.get("storage") != "ready":
+    raise SystemExit(1)
+if "realtime" in readiness and readiness["realtime"] != "ready":
+    raise SystemExit(1)
+if not __import__("re").fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", payload["timestamp"]):
+    raise SystemExit(1)
+PY
+}
 current_link="${CURRENT_LINK:-$RELEASE_ROOT/current}"
 current_target="$(realpath "$current_link" 2>/dev/null || true)"
 release_dir="${1:-$current_target}"
@@ -224,7 +248,8 @@ validate_active_project "$release_dir/valorant.compose.yml" valorant-prod "$rele
 validate_aliases
 quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health failed.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health JSON was not healthy.'
-"$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" >/dev/null 2>&1 || die 'Quest readiness failed.'
+quest_readiness="$($CURL_BIN --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" 2>/dev/null)" || die 'Quest readiness failed.'
+verify_quest_readiness_response "$quest_readiness"
 valorant_json="$(VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$VALORANT_CA_FILE" "$VALORANT_CONTAINER_HEALTH_COMMAND" 2>/dev/null)" || die 'VALORANT HTTPS health failed from the Quest network boundary.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$valorant_json" && grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' <<< "$valorant_json" || die 'VALORANT health JSON was not status ok/db up.'
 database_readiness_output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres "$DATABASE_READINESS_COMMAND" 2>/dev/null)" || die 'database readiness failed.'

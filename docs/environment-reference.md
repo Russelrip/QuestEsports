@@ -26,7 +26,8 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `TZ` | No | Backend | L/D/CI/P | Public/non-secret | `Asia/Colombo` | Restart backend |
 | `CORS_ORIGIN` | Conditional — production must resolve to HTTPS origins | Backend/web owner | L/D/P | Public/non-secret | `http://localhost:3000` locally; `<approved origin>` otherwise | Restart backend |
 | `DATABASE_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | `postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require` | Restart backend; migration-sensitive |
-| `DIRECT_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | `postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require` | Restart backend; migration-sensitive |
+| `DIRECT_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | Runtime-role PostgreSQL URL; production uses `quest_runtime`/`val_runtime`, not a migrator or recovery administrator | Restart backend; migration-sensitive |
+| `RECOVERY_ADMIN_URL` | Production restore only | Recovery operator | D/P | Secret | `postgresql://quest_recovery_admin:PASSWORD@127.0.0.1:55432/quest` | One-shot restore/security command only; never inject into runtime containers |
 | `CACHE_DRIVER` | No — defaults to memory; required `upstash` when `API_PROCESS_COUNT>1` | Backend | L/D/CI/P | Public/non-secret | `memory` for one process; `upstash` for a cluster | Restart backend |
 | `CACHE_TTL_SECONDS` | No — defaults to `300` | Backend | L/D/CI/P | Public/non-secret | `300` | Restart backend |
 | `CACHE_MAX_ENTRIES` | No — defaults to `1000` | Backend | L/D/CI/P | Public/non-secret | `1000` | Restart backend |
@@ -320,6 +321,8 @@ tracked application examples.
 | `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS` | Conditional; required for retention | Operations owner | D/P | Public/non-secret | `<minimum recovery-point count>` | Per prune run |
 | `RETENTION_CONFIRMATION` | Conditional; required to delete | Operations owner | D/P | Destructive control | `PRUNE_QUEST_PRODUCTION` only for an approved deletion | Per prune run |
 | `BACKUP_AGE_IDENTITY_FILE` | Yes for restore | Recovery owner | D/P | Secret/path-sensitive | `<offline age identity path>` | Per restore run |
+| `BACKUP_CLIENT_CERT_FILE` / `BACKUP_CLIENT_KEY_FILE` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports/secrets/backup-client.{crt,key}` | Per backup run |
+| `RECOVERY_CLIENT_CERT_FILE` / `RECOVERY_CLIENT_KEY_FILE` | Yes for production restore | Recovery owner | D/P | Secret/path-sensitive | `/etc/quest-esports/secrets/recovery-client.{crt,key}` | Per restore/security run |
 | `RESTORE_CONFIRMATION` | Yes for restore | Recovery owner | D/P | Destructive control | `RESTORE_QUEST_PRODUCTION` only for an approved restore | Per restore run |
 | `RESTORE_COUNTDOWN_SECONDS` | No | Recovery owner | D/P | Public/non-secret | `10` | Per restore run |
 

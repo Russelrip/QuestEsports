@@ -40,6 +40,45 @@ for name in "${required[@]}"; do
     exit 1
   fi
 done
+
+# The PostgreSQL server key is readable by the UID/GID 999 server container and
+# is never a client credential. Production backups use a separately provisioned
+# client certificate/key pair so backup access does not depend on the server's
+# private key permissions.
+if [[ "$backup_test_fixture" == true ]]; then
+  backup_client_cert_file="${BACKUP_CLIENT_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
+  backup_client_key_file="${BACKUP_CLIENT_KEY_FILE:-${POSTGRES_KEY_FILE:-}}"
+else
+  backup_client_cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
+  backup_client_key_file="${BACKUP_CLIENT_KEY_FILE:-}"
+  [[ -n "$backup_client_cert_file" && -n "$backup_client_key_file" ]] || {
+    echo "BACKUP_CLIENT_CERT_FILE and BACKUP_CLIENT_KEY_FILE are required for production backup." >&2
+    exit 1
+  }
+fi
+for client_file in "$backup_client_cert_file" "$backup_client_key_file"; do
+  [[ "$client_file" == /* && "$client_file" != / && -f "$client_file" && -r "$client_file" && ! -L "$client_file" ]] || {
+    echo "Backup client TLS material is missing or unsafe." >&2
+    exit 1
+  }
+  client_mode="$(stat -c '%a' "$client_file" 2>/dev/null)" || {
+    echo "Backup client TLS material mode cannot be inspected." >&2
+    exit 1
+  }
+  [[ "$client_mode" == 600 ]] || {
+    echo "Backup client TLS material must be mode 0600." >&2
+    exit 1
+  }
+done
+if [[ "$backup_test_fixture" == false ]]; then
+  [[ "$backup_client_cert_file" == /etc/quest-esports/secrets/backup-client.crt &&
+     "$backup_client_key_file" == /etc/quest-esports/secrets/backup-client.key &&
+     "$(stat -c '%u:%g' "$backup_client_cert_file" 2>/dev/null)" == 0:0 &&
+     "$(stat -c '%u:%g' "$backup_client_key_file" 2>/dev/null)" == 0:0 ]] || {
+    echo "Backup client TLS identity is not canonical root-owned material." >&2
+    exit 1
+  }
+fi
 command -v readlink >/dev/null || {
   echo "Required backup command is unavailable: readlink" >&2
   exit 1
@@ -419,7 +458,7 @@ work_directory="$(mktemp -d "$BACKUP_ROOT/.quest-backup-${timestamp}-XXXXXX")"
 trap 'rm -rf -- "$work_directory"' EXIT
 
 psql_target() {
-  PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$POSTGRES_CERT_FILE" PGSSLKEY="$POSTGRES_KEY_FILE" PGAPPNAME=quest-backup-target \
+  PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$backup_client_cert_file" PGSSLKEY="$backup_client_key_file" PGAPPNAME=quest-backup-target \
     "$psql_bin" -X "$DIRECT_URL" "$@"
 }
 if ! target_probe="$(psql_target -tAc "SELECT current_database() || '|' || current_setting('server_version_num') || '|' || CASE WHEN EXISTS (SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl) THEN 'on' ELSE 'off' END || '|' || session_user || '|' || COALESCE(inet_server_addr()::text, '') || '|' || inet_server_port() || '|' || current_setting('application_name')" 2>/dev/null)"; then
@@ -447,7 +486,7 @@ mkdir -p "$work_directory/$public_name" "$work_directory/$private_name"
 rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
 rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
 
-PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$POSTGRES_CERT_FILE" PGSSLKEY="$POSTGRES_KEY_FILE" PGAPPNAME=quest-backup-dump \
+PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$backup_client_cert_file" PGSSLKEY="$backup_client_key_file" PGAPPNAME=quest-backup-dump \
   "$pg_dump_bin" "$DIRECT_URL" --format=custom --schema=public --schema=valorant \
   --no-owner --no-acl --file="$work_directory/database.dump" 2>/dev/null
 rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"

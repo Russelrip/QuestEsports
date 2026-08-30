@@ -47,7 +47,7 @@ root_file() {
 }
 
 validate_compose_tls_material() {
-  local ca_file cert_file key_file key_mode
+  local ca_file cert_file key_file key_mode tls_stat tls_uid tls_gid
   if [[ "$fixture_mode" == 1 ]]; then
     ca_file="${POSTGRES_COMPOSE_CA_FILE:-${POSTGRES_CERT_FILE:-}}"
     cert_file="${POSTGRES_COMPOSE_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
@@ -62,7 +62,19 @@ validate_compose_tls_material() {
     [[ -s "$tls_file" ]] || die 'Compose-mounted PostgreSQL TLS material is missing or unsafe.'
   done
   key_mode="$(stat -c '%a' "$key_file" 2>/dev/null)" || die 'Compose-mounted PostgreSQL key mode cannot be inspected.'
-  [[ "$key_mode" == 600 ]] || die 'Compose-mounted PostgreSQL key mode is unsafe.'
+  if [[ "$fixture_mode" == 1 ]]; then
+    [[ "$key_mode" == 600 || "$key_mode" == 640 ]] || die 'Compose-mounted PostgreSQL key mode is unsafe.'
+  else
+    [[ "$ca_file" == /etc/quest-esports/tls/quest-private-ca.crt &&
+       "$cert_file" == /etc/quest-esports/tls/quest-postgres.crt &&
+       "$key_file" == /etc/quest-esports/tls/quest-postgres.key ]] || die 'Compose PostgreSQL TLS files are not the canonical server mounts.'
+    tls_stat="$(stat -c '%u:%g %a' "$ca_file" 2>/dev/null)" || die 'canonical PostgreSQL CA ownership cannot be inspected.'
+    [[ "$tls_stat" == '0:0 644' ]] || die 'canonical PostgreSQL CA must be root-owned mode 0644.'
+    tls_stat="$(stat -c '%u:%g %a' "$cert_file" 2>/dev/null)" || die 'canonical PostgreSQL certificate ownership cannot be inspected.'
+    [[ "$tls_stat" == '0:0 644' ]] || die 'canonical PostgreSQL certificate must be root-owned mode 0644.'
+    tls_stat="$(stat -c '%u:%g %a' "$key_file" 2>/dev/null)" || die 'canonical PostgreSQL key ownership cannot be inspected.'
+    [[ "$tls_stat" == '0:999 640' ]] || die 'canonical PostgreSQL key must be root-owned, group-readable by 999, mode 0640.'
+  fi
 }
 
 validate_postgres_target() {
@@ -88,34 +100,71 @@ validate_postgres_target() {
   [[ "$sentinel_kind" == postgresql17 && "$sentinel_database" == "$POSTGRES_TARGET_DATABASE" && "$sentinel_host" == "$POSTGRES_TARGET_HOST" && "$sentinel_port" == "$POSTGRES_TARGET_PORT" && "$sentinel_major" == "$POSTGRES_TARGET_MAJOR" && "$sentinel_data_root" == "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL target sentinel does not identify the approved target.'
 }
 
-validate_database_urls() {
-  local line variable url authority path database
-  [[ "$runtime_env_file" == /* && "$runtime_env_file" != / && -f "$runtime_env_file" && -r "$runtime_env_file" && ! -L "$runtime_env_file" ]] || die 'protected Quest runtime environment is missing or unsafe.'
+validate_runtime_url_file() {
+  local file="$1" expected_role="$2" expected_schema="$3" authority_mode="$4" label="$5"
+  local line variable url
+  [[ "$file" == /* && "$file" != / && -f "$file" && -r "$file" && ! -L "$file" ]] || die "protected $label runtime environment is missing or unsafe."
   if [[ "$fixture_mode" != 1 ]]; then
-    [[ "$(stat -c '%u' "$runtime_env_file" 2>/dev/null)" == 0 ]] || die 'protected Quest runtime environment is not root-owned.'
-    runtime_env_mode="$(stat -c '%a' "$runtime_env_file" 2>/dev/null)" || die 'protected Quest runtime environment mode cannot be inspected.'
-    [[ "$runtime_env_mode" == 600 || "$runtime_env_mode" == 640 ]] || die 'protected Quest runtime environment mode is unsafe.'
-    [[ "$(realpath "$runtime_env_file" 2>/dev/null)" == /etc/quest-esports/quest.production.env ]] || die 'protected Quest runtime environment path is not canonical.'
+    [[ "$(stat -c '%u' "$file" 2>/dev/null)" == 0 ]] || die "protected $label runtime environment is not root-owned."
+    runtime_env_mode="$(stat -c '%a' "$file" 2>/dev/null)" || die "protected $label runtime environment mode cannot be inspected."
+    [[ "$runtime_env_mode" == 600 || "$runtime_env_mode" == 640 ]] || die "protected $label runtime environment mode is unsafe."
+    case "$label" in
+      Quest) [[ "$(realpath "$file" 2>/dev/null)" == /etc/quest-esports/quest.production.env ]] || die 'protected Quest runtime environment path is not canonical.' ;;
+      VALORANT) [[ "$(realpath "$file" 2>/dev/null)" == /etc/quest-esports/valorant.production.env ]] || die 'protected VALORANT runtime environment path is not canonical.' ;;
+    esac
   fi
   declare -A runtime_urls=()
   while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+      variable="${BASH_REMATCH[1]}"
+      [[ "$variable" != *MIGRATOR* && "$variable" != *RECOVERY* && "$variable" != *ADMIN_URL* ]] || die "protected $label runtime environment contains a privileged database setting."
+    fi
     case "$line" in
       DATABASE_URL=*|DIRECT_URL=*)
         variable="${line%%=*}"; url="${line#*=}"
-        [[ -z "${runtime_urls[$variable]+present}" && -n "$url" ]] || die 'protected Quest runtime environment contains a duplicate or empty database URL.'
+        [[ -z "${runtime_urls[$variable]+present}" && -n "$url" ]] || die "protected $label runtime environment contains a duplicate or empty database URL."
         runtime_urls["$variable"]="$url"
         ;;
     esac
-  done < "$runtime_env_file"
+  done < "$file"
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for runtime database URL validation.'
   for variable in DATABASE_URL DIRECT_URL; do
     url="${runtime_urls[$variable]:-}"
-    [[ -n "$url" ]] || die "protected Quest runtime environment is missing $variable."
-    [[ "$url" != *[[:space:]]* && "$url" =~ ^postgres(ql)?://[^/]+/[^/?#]+([?#].*)?$ ]] || die "$variable is not a valid PostgreSQL target URL."
-    authority="${url#*://}"
-    path="${authority#*/}"
-    database="${path%%[?#]*}"
-    [[ "$database" == quest ]] || die "$variable must target the quest database."
+    [[ -n "$url" ]] || die "protected $label runtime environment is missing $variable."
+    if ! python3 - "$url" "$expected_role" "$expected_schema" "$authority_mode" <<'PY'
+from urllib.parse import parse_qs, urlsplit
+import sys
+
+url, expected_role, expected_schema, authority = sys.argv[1:]
+try:
+    parsed = urlsplit(url)
+    query = parse_qs(parsed.query, strict_parsing=True)
+except ValueError:
+    raise SystemExit(1)
+if parsed.scheme not in ("postgres", "postgresql") or parsed.hostname is None:
+    raise SystemExit(1)
+if parsed.password is None or parsed.username is None or parsed.path != "/quest" or parsed.fragment:
+    raise SystemExit(1)
+if authority == "supabase":
+    if parsed.hostname == "quest-postgres" or parsed.username != expected_role or query.get("schema") != [expected_schema]:
+        raise SystemExit(1)
+    raise SystemExit(0)
+if authority != "quest-postgres" or parsed.hostname != "quest-postgres" or parsed.port != 5432:
+    raise SystemExit(1)
+if parsed.username != expected_role:
+    raise SystemExit(1)
+if query.get("schema") != [expected_schema] or query.get("sslmode") != ["verify-full"]:
+    raise SystemExit(1)
+if query.get("sslrootcert") != ["/run/secrets/quest-private-ca.crt"]:
+    raise SystemExit(1)
+PY
+    then die "$label $variable does not satisfy the runtime PostgreSQL endpoint contract."; fi
   done
+}
+validate_database_urls() {
+  validate_runtime_url_file "$runtime_env_file" quest_runtime public "${RUNTIME_DATABASE_AUTHORITY:-quest-postgres}" Quest
+  valorant_runtime_env_file="${VALORANT_RUNTIME_ENV_FILE:-/etc/quest-esports/valorant.production.env}"
+  validate_runtime_url_file "$valorant_runtime_env_file" val_runtime valorant "${RUNTIME_DATABASE_AUTHORITY:-quest-postgres}" VALORANT
 }
 
 for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND; do

@@ -2,50 +2,50 @@ const { prisma } = require("../src/lib/prisma");
 
 const verify = async () => {
   const tablesWithoutRls = await prisma.$queryRaw`
-    SELECT c.relname AS "tableName"
+    SELECT n.nspname AS "schemaName", c.relname AS "tableName"
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public'
+    WHERE n.nspname IN ('public', 'valorant')
       AND c.relkind IN ('r', 'p')
-      AND c.relname <> '_prisma_migrations'
+      AND c.relname NOT IN ('_prisma_migrations', '_migration_ledger')
       AND NOT c.relrowsecurity
     ORDER BY c.relname
   `;
   const tablesWithoutRuntimePolicy = await prisma.$queryRaw`
-    SELECT c.relname AS "tableName"
+    SELECT n.nspname AS "schemaName", c.relname AS "tableName"
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public'
+    WHERE n.nspname IN ('public', 'valorant')
       AND c.relkind IN ('r', 'p')
-      AND c.relname <> '_prisma_migrations'
+      AND c.relname NOT IN ('_prisma_migrations', '_migration_ledger')
       AND NOT EXISTS (
         SELECT 1
         FROM pg_policies p
-        WHERE p.schemaname = 'public'
+        WHERE p.schemaname = n.nspname
           AND p.tablename = c.relname
           AND p.policyname = c.relname || '_runtime_all'
           AND p.cmd = 'ALL'
-          AND 'quest_runtime' = ANY (p.roles)
+          AND (CASE WHEN n.nspname = 'public' THEN 'quest_runtime' ELSE 'val_runtime' END) = ANY (p.roles)
           AND p.qual = 'true'
           AND p.with_check = 'true'
       )
     ORDER BY c.relname
   `;
   const migrationRuntimeAccess = await prisma.$queryRaw`
-    SELECT p.policyname AS "policyName"
-    FROM pg_policies p
-    WHERE p.schemaname = 'public'
-      AND p.tablename = '_prisma_migrations'
-      AND (
-        p.roles && ARRAY['quest_runtime', 'val_runtime']::name[]
-        OR 'public' = ANY (p.roles)
-      )
+    WITH ledgers(schema_name, table_name, runtime_role) AS (
+      VALUES ('public'::name, '_prisma_migrations'::name, 'quest_runtime'::name),
+             ('valorant'::name, '_migration_ledger'::name, 'val_runtime'::name)
+    )
+    SELECT l.schema_name || '.' || l.table_name || ':' || p.policyname AS "access"
+    FROM ledgers l
+    JOIN pg_policies p ON p.schemaname = l.schema_name AND p.tablename = l.table_name
+    WHERE p.roles && ARRAY['quest_runtime', 'val_runtime']::name[]
+       OR 'public' = ANY (p.roles)
     UNION ALL
-    SELECT '_prisma_migrations:' || runtime_role.role_name || ':' || privilege AS "policyName"
-    FROM (VALUES ('quest_runtime'::name), ('val_runtime'::name)) runtime_role(role_name)
-    CROSS JOIN
-      unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) privilege
-    WHERE has_table_privilege(runtime_role.role_name, 'public."_prisma_migrations"', privilege)
+    SELECT l.schema_name || '.' || l.table_name || ':' || l.runtime_role || ':' || privilege AS "access"
+    FROM ledgers l
+    CROSS JOIN unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) privilege
+    WHERE has_table_privilege(l.runtime_role, format('%I.%I', l.schema_name, l.table_name), privilege)
     ORDER BY 1
   `;
   const bypassRoles = await prisma.$queryRaw`
@@ -109,6 +109,47 @@ const verify = async () => {
     SELECT "roleName", "schemaName", "objectName", privilege FROM table_grants
     ORDER BY "roleName", "schemaName", "objectName", privilege
   `;
+  const objectOwnership = await prisma.$queryRaw`
+    WITH relation_owners AS (
+      SELECT n.nspname AS "schemaName", c.relname AS "objectName",
+        r.rolname AS "ownerName",
+        CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_roles r ON r.oid = c.relowner
+      WHERE n.nspname IN ('public', 'valorant')
+        AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+    ), routine_owners AS (
+      SELECT n.nspname AS "schemaName", p.proname AS "objectName",
+        r.rolname AS "ownerName",
+        CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      JOIN pg_roles r ON r.oid = p.proowner
+      WHERE n.nspname IN ('public', 'valorant')
+        AND p.prokind IN ('f', 'p', 'a')
+    ), type_owners AS (
+      SELECT n.nspname AS "schemaName", t.typname AS "objectName",
+        r.rolname AS "ownerName",
+        CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS "expectedOwner"
+      FROM pg_type t
+      JOIN pg_namespace n ON n.oid = t.typnamespace
+      JOIN pg_roles r ON r.oid = t.typowner
+      WHERE n.nspname IN ('public', 'valorant')
+        AND t.typisdefined
+        AND t.typtype IN ('b', 'd', 'e')
+        AND t.typelem = 0
+        AND t.typrelid = 0
+    )
+    SELECT "schemaName", "objectName", "ownerName", "expectedOwner"
+    FROM (
+      SELECT * FROM relation_owners
+      UNION ALL SELECT * FROM routine_owners
+      UNION ALL SELECT * FROM type_owners
+    ) objects
+    WHERE "ownerName" <> "expectedOwner"
+    ORDER BY "schemaName", "objectName", "ownerName"
+  `;
 
   if (
     tablesWithoutRls.length ||
@@ -116,7 +157,8 @@ const verify = async () => {
     migrationRuntimeAccess.length ||
     bypassRoles.length ||
     dataApiGrants.length ||
-    crossSchemaGrants.length
+    crossSchemaGrants.length ||
+    objectOwnership.length
   ) {
     if (tablesWithoutRls.length) {
       console.error(
@@ -132,15 +174,15 @@ const verify = async () => {
     }
     if (tablesWithoutRuntimePolicy.length) {
       console.error(
-        `Public tables without quest_runtime policy: ${tablesWithoutRuntimePolicy
-          .map(({ tableName }) => tableName)
+        `Application tables without their runtime policy: ${tablesWithoutRuntimePolicy
+          .map(({ schemaName, tableName }) => `${schemaName}.${tableName}`)
           .join(", ")}`
       );
     }
     if (migrationRuntimeAccess.length) {
       console.error(
-        `Unexpected runtime/PUBLIC access to _prisma_migrations: ${migrationRuntimeAccess
-          .map(({ policyName, objectName, privilege }) => policyName || `${objectName || "_prisma_migrations"}:${privilege}`)
+        `Unexpected runtime/PUBLIC access to a migration ledger: ${migrationRuntimeAccess
+          .map(({ access }) => access)
           .join(", ")}`
       );
     }
@@ -154,11 +196,20 @@ const verify = async () => {
           .join(", ")}`
       );
     }
+    if (objectOwnership.length) {
+      console.error(
+        `Objects with unexpected schema owners: ${objectOwnership
+          .map(({ schemaName, objectName, ownerName, expectedOwner }) =>
+            `${schemaName}:${objectName}:${ownerName} (expected ${expectedOwner})`,
+          )
+          .join(", ")}`,
+      );
+    }
     process.exitCode = 1;
     return;
   }
 
-  console.log("Database security verification passed: public RLS enabled and Data API table grants absent.");
+  console.log("Database security verification passed: RLS, runtime isolation, object ownership, and Data API grants are compliant.");
 };
 
 verify()

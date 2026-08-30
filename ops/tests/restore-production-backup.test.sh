@@ -110,6 +110,9 @@ for ((index = 1; index <= $#; index++)); do
     cat "${!next}" >> "$TEST_ROOT/psql.log"
   fi
 done
+if [[ "$*" == *owner_name* ]]; then
+  printf '0\n'
+fi
 exit 0
 EOF
 

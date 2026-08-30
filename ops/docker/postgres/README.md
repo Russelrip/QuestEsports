@@ -96,13 +96,15 @@ stores the PostgreSQL administrator password at
 `/etc/quest-esports/secrets/postgres-admin-password` with mode `0400`; Compose
 mounts it only in the PostgreSQL container as
 `/run/secrets/postgres-admin-password`. It is never included in the shared
-Quest application env file. The host operator
-must provision `/etc/quest-esports/tls/quest-private-ca.crt`,
+Quest application env file. The host operator must provision
+`/etc/quest-esports/tls/quest-private-ca.crt`,
 `/etc/quest-esports/tls/quest-postgres.crt`, and
 `/etc/quest-esports/tls/quest-postgres.key` from the private CA process; no
 certificate or key is stored in this repository. Mounts are read-only runtime
-files. The key must be readable by the PostgreSQL container user and must not
-be group/world writable.
+files. The canonical server files are root-owned: CA and certificate are
+`root:root` mode `0644`, and the private key is `root:999` mode `0640`. This
+lets the pinned image's PostgreSQL UID/GID `999:999` read the bind-mounted key
+without weakening host ownership. A server key is not a backup-client key.
 
 The writable application roots must be owned by the backend runtime UID/GID
 `1001:1001`. Host bootstrap should apply the following ownership and modes:
@@ -115,11 +117,16 @@ chmod 0750 /srv/quest-esports/uploads
 chmod 0700 /srv/quest-esports/private
 ```
 
-The host keeps the PostgreSQL TLS key owned by the PostgreSQL container UID
-(the official image uses `999:999`) with mode `0600`; the CA and certificate
-may be root-owned with mode `0644`. The healthcheck script is installed
-root-owned with mode `0755`. These modes are prerequisites for the read-only
-runtime mounts and are checked during host bootstrap.
+The host keeps the canonical PostgreSQL server TLS files root-owned. The server
+key is group-readable only by GID `999` as described above; the CA and
+certificate are mode `0644`. The healthcheck script is installed root-owned
+with mode `0755`. These modes are prerequisites for the read-only runtime
+mounts and are checked during host bootstrap. Backup and recovery client
+identity files are separate root-owned `root:root` mode `0600` files and are
+never used to satisfy the canonical server mount contract. Backups use
+`backup-client.crt`/`backup-client.key`; destructive restores and post-restore
+security verification use the separately controlled
+`recovery-client.crt`/`recovery-client.key` identity.
 
 The backend readiness probe writes a process-specific
 `.quest-readiness-*` file with mode `0600` in both roots and removes it on
@@ -191,7 +198,9 @@ stable host `quest-postgres`. The Quest backend receives the CA as a read-only
 runtime file and also exposes it through `NODE_EXTRA_CA_CERTS` for the private
 VALORANT HTTPS client. The sibling VALORANT Compose deployment must mount the
 same approved CA trust material and use its asyncpg SSL-context equivalent;
-`sslmode` is not an asyncpg URL parameter.
+`sslmode` is not an asyncpg URL parameter. The backend receives only runtime
+role URLs; migrator and recovery-administrator URL files are read only by
+one-shot migration, security, and restore commands.
 
 The database healthcheck connects to the live `quest-postgres` listener with
 `pg_isready`, `sslmode=verify-full`, and the mounted CA, then checks the

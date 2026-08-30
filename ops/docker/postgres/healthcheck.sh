@@ -3,6 +3,7 @@ set -eu
 
 certificate=${POSTGRES_CERT_RUNTIME_FILE:-/run/postgresql/tls/server.crt}
 ca_certificate=${POSTGRES_CA_RUNTIME_FILE:-/run/postgresql/tls/ca.crt}
+private_key=${POSTGRES_KEY_RUNTIME_FILE:-/run/postgresql/tls/server.key}
 database=${POSTGRES_DB:-quest}
 user=${POSTGRES_USER:-postgres}
 host=quest-postgres
@@ -10,6 +11,7 @@ port=5432
 
 test -r "$certificate"
 test -r "$ca_certificate"
+test -r "$private_key"
 
 # Check the live listener, not merely the mounted certificate. verify-full
 # validates both the private CA chain and the hostname SAN during the actual

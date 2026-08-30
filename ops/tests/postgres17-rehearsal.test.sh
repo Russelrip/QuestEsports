@@ -162,7 +162,7 @@ EOF
 #!/usr/bin/env bash
 if [[ "$1" == --version ]]; then echo 'fixture (PostgreSQL) 17.4'; exit 0; fi
 for arg in "$@"; do [[ "$arg" == -f || "$arg" == --file=* ]] && exit 0; done
-has_c=0; quiet=0; sql=''; for ((i=1; i<=$#; i++)); do arg="${!i}"; if [[ "$arg" == -c ]]; then has_c=1; j=$((i+1)); sql="${!j}"; fi; [[ "$arg" == -q ]] && quiet=1; done
+has_c=0; quiet=0; sql=''; for ((i=1; i<=$#; i++)); do arg="${!i}"; if [[ "$arg" == -c || "$arg" == -tAc ]]; then has_c=1; j=$((i+1)); sql="${!j}"; fi; [[ "$arg" == -q ]] && quiet=1; done
 if (( ! has_c )); then printf '%s|quest_restore|restore|restore|5432|12345\n' "${PGAPPNAME:?}" >> "${TARGET_BINDING_MARKER:?}"; printf '%s\n' "${PGAPPNAME:?}|quest_restore|restore|restore|5432|12345" "quest_restore|170004|on|${PGAPPNAME:?}|12345"; sleep 5; exit 0; fi
 if [[ "$sql" == *defaclnamespace* && "$sql" == *IS\ NULL* ]]; then printf '%s\n' 'quest_migrator|<global>|T|quest_migrator=U/quest_migrator' 'quest_migrator|<global>|f|quest_migrator=X/quest_migrator' 'val_migrator|<global>|T|val_migrator=U/val_migrator' 'val_migrator|<global>|f|val_migrator=X/val_migrator'; exit 0; fi
 if [[ "$sql" == *defaclobjtype* ]]; then printf '%s\n' 'quest_migrator|public|S|quest_runtime=rwU/quest_migrator' 'quest_migrator|public|T|quest_migrator=U/quest_migrator' 'quest_migrator|public|f|quest_migrator=X/quest_migrator' 'quest_migrator|public|r|quest_runtime=arwd/quest_migrator' 'val_migrator|valorant|S|val_runtime=rwU/val_migrator' 'val_migrator|valorant|T|val_migrator=U/val_migrator' 'val_migrator|valorant|f|val_migrator=X/val_migrator' 'val_migrator|valorant|r|val_runtime=arwd/val_migrator'; exit 0; fi

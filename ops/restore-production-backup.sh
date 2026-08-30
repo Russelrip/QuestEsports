@@ -34,7 +34,7 @@ source "$config_file"
 set +a
 
 if [[ "$restore_test_fixture" == false ]]; then
-  [[ "$(stat -c '%a' "$config_file" 2>/dev/null)" =~ ^(600|640)$ ]] || {
+  [[ "$(stat -c '%u %a' "$config_file" 2>/dev/null)" =~ ^0\ (600|640)$ ]] || {
     echo "Restore configuration is not private." >&2
     exit 1
   }
@@ -84,12 +84,34 @@ for command in realpath stat; do
 done
 resolve_postgres_clients
 
-for name in DIRECT_URL UPLOAD_ROOT PRIVATE_UPLOAD_ROOT BACKUP_AGE_IDENTITY_FILE; do
+for name in UPLOAD_ROOT PRIVATE_UPLOAD_ROOT BACKUP_AGE_IDENTITY_FILE; do
   if [[ -z "${!name:-}" ]]; then
     echo "Missing required restore setting: $name" >&2
     exit 1
   fi
 done
+
+# Production restores use a dedicated recovery administrator credential. The
+# legacy DIRECT_URL name remains accepted only by disposable test fixtures so
+# rehearsal contracts cannot accidentally become the production credential
+# path.
+if [[ "$restore_test_fixture" == false ]]; then
+  [[ -n "${RECOVERY_ADMIN_URL:-}" ]] || {
+    echo "RECOVERY_ADMIN_URL is required for a production restore." >&2
+    exit 1
+  }
+  [[ -z "${DIRECT_URL:-}" ]] || {
+    echo "DIRECT_URL is not permitted in the production restore configuration; use RECOVERY_ADMIN_URL." >&2
+    exit 1
+  }
+  restore_url="$RECOVERY_ADMIN_URL"
+else
+  restore_url="${RECOVERY_ADMIN_URL:-${DIRECT_URL:-}}"
+fi
+[[ -n "$restore_url" ]] || {
+  echo "A restore administrator URL is required." >&2
+  exit 1
+}
 
 # The rehearsal wrapper supplies its disposable CA as VALORANT_CA_FILE while
 # the standalone recovery environment names it explicitly.
@@ -99,7 +121,18 @@ POSTGRES_CA_FILE="${POSTGRES_CA_FILE:-${VALORANT_CA_FILE:-}}"
   echo "POSTGRES_CA_FILE must be an absolute non-symlink file." >&2
   exit 1
 }
-for tls_file in "$POSTGRES_CA_FILE" "${POSTGRES_CERT_FILE:-}" "${POSTGRES_KEY_FILE:-}"; do
+if [[ "$restore_test_fixture" == true ]]; then
+  recovery_client_cert_file="${RECOVERY_CLIENT_CERT_FILE:-${POSTGRES_CERT_FILE:-}}"
+  recovery_client_key_file="${RECOVERY_CLIENT_KEY_FILE:-${POSTGRES_KEY_FILE:-}}"
+else
+  recovery_client_cert_file="${RECOVERY_CLIENT_CERT_FILE:-}"
+  recovery_client_key_file="${RECOVERY_CLIENT_KEY_FILE:-}"
+  [[ -n "$recovery_client_cert_file" && -n "$recovery_client_key_file" ]] || {
+    echo "RECOVERY_CLIENT_CERT_FILE and RECOVERY_CLIENT_KEY_FILE are required for production restore." >&2
+    exit 1
+  }
+fi
+for tls_file in "$POSTGRES_CA_FILE" "$recovery_client_cert_file" "$recovery_client_key_file"; do
   [[ -z "$tls_file" ]] && continue
   tls_mode="$(stat -c '%a' "$tls_file" 2>/dev/null)" || {
     echo "PostgreSQL TLS material mode cannot be inspected." >&2
@@ -113,19 +146,24 @@ for tls_file in "$POSTGRES_CA_FILE" "${POSTGRES_CERT_FILE:-}" "${POSTGRES_KEY_FI
     echo "PostgreSQL TLS material must not be group/other-writable." >&2
     exit 1
   }
+  [[ "$tls_mode" == 600 || "$tls_file" == "$POSTGRES_CA_FILE" ]] || {
+    echo "Recovery client TLS material must be mode 0600." >&2
+    exit 1
+  }
 done
 if [[ "$restore_test_fixture" == false ]]; then
   [[ "$POSTGRES_CA_FILE" == /etc/quest-esports/tls/quest-private-ca.crt ]] || {
     echo "PostgreSQL CA file is not canonical." >&2
     exit 1
   }
-  [[ "${POSTGRES_CERT_FILE:-}" == /etc/quest-esports/tls/quest-postgres.crt &&
-     "${POSTGRES_KEY_FILE:-}" == /etc/quest-esports/tls/quest-postgres.key &&
-     -f "$POSTGRES_CERT_FILE" && -f "$POSTGRES_KEY_FILE" &&
-     ! -L "$POSTGRES_CERT_FILE" && ! -L "$POSTGRES_KEY_FILE" &&
-     "$(stat -c '%u %a' "$POSTGRES_KEY_FILE" 2>/dev/null)" == '0 600' &&
+  [[ "$recovery_client_cert_file" == /etc/quest-esports/secrets/recovery-client.crt &&
+     "$recovery_client_key_file" == /etc/quest-esports/secrets/recovery-client.key &&
+     -f "$recovery_client_cert_file" && -f "$recovery_client_key_file" &&
+     ! -L "$recovery_client_cert_file" && ! -L "$recovery_client_key_file" &&
+     "$(stat -c '%u %a' "$recovery_client_cert_file" 2>/dev/null)" == '0 600' &&
+     "$(stat -c '%u %a' "$recovery_client_key_file" 2>/dev/null)" == '0 600' &&
      "$(stat -c '%u' "$POSTGRES_CA_FILE" 2>/dev/null)" == 0 &&
-     "$(stat -c '%u' "$POSTGRES_CERT_FILE" 2>/dev/null)" == 0 ]] || {
+     "$(stat -c '%u' "$recovery_client_cert_file" 2>/dev/null)" == 0 ]] || {
     echo "PostgreSQL TLS certificate or key is not canonical and private." >&2
     exit 1
   }
@@ -287,32 +325,38 @@ validate_restore_target() {
       }
     fi
   done
-  [[ "$DIRECT_URL" =~ ^postgres(ql)?://[^[:space:]#]+$ && "$DIRECT_URL" != *\?* ]] || {
-    echo "DIRECT_URL is not a valid PostgreSQL URL." >&2
+  [[ "$restore_url" =~ ^postgres(ql)?://[^[:space:]#]+$ && "$restore_url" != *\?* ]] || {
+    echo "Recovery administrator URL is not a valid PostgreSQL URL." >&2
     exit 1
   }
-  authority="${DIRECT_URL#*://}"; path="${authority#*/}"; authority="${authority%%/*}"
+  authority="${restore_url#*://}"; path="${authority#*/}"; authority="${authority%%/*}"
   username="${authority%@*}"; host_port="${authority##*@}"
   [[ "$authority" == *@* && -n "$username" && "$username" != *'@'* &&
       "$host_port" == *:* && "$host_port" != *:*:* ]] || {
-    echo "DIRECT_URL must contain an explicit restore credential." >&2
+    echo "Recovery administrator URL must contain an explicit restore credential." >&2
     exit 1
   }
   restore_role="${username%%:*}"
   [[ "$restore_role" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
-    echo "DIRECT_URL restore credential has an invalid role." >&2
+    echo "Recovery administrator URL credential has an invalid role." >&2
     exit 1
   }
+  if [[ "$restore_test_fixture" == false ]]; then
+    [[ "$restore_role" == quest_recovery_admin ]] || {
+      echo "Production restore must use the dedicated quest_recovery_admin role." >&2
+      exit 1
+    }
+  fi
   host="${host_port%%:*}"; port="${host_port##*:}"
   database="$path"
   [[ "$host" == "$restore_target_host" && "$port" == "$restore_target_port" &&
       "$database" == "$restore_target_database" ]] || {
-    echo "DIRECT_URL does not bind to the verified restore target." >&2
+    echo "Recovery administrator URL does not bind to the verified restore target." >&2
     exit 1
   }
   psql_target() {
-    PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="${POSTGRES_CERT_FILE:-}" PGSSLKEY="${POSTGRES_KEY_FILE:-}" PGAPPNAME=quest-restore-target \
-      "$psql_bin" -X "$DIRECT_URL" "$@"
+    PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$recovery_client_cert_file" PGSSLKEY="$recovery_client_key_file" PGAPPNAME=quest-restore-target \
+      "$psql_bin" -X "$restore_url" "$@"
   }
   target_probe="$(psql_target -t -A -c "SELECT current_database() || '|' || current_setting('server_version_num') || '|' || CASE WHEN EXISTS (SELECT 1 FROM pg_stat_ssl WHERE pid = pg_backend_pid() AND ssl) THEN 'on' ELSE 'off' END || '|' || session_user || '|' || COALESCE(inet_server_addr()::text, '') || '|' || inet_server_port() || '|' || current_setting('application_name')" 2>/dev/null)" || {
     echo "Restore target identity probe failed." >&2
@@ -440,7 +484,7 @@ manifest_valorant_schema="$(grep -m1 '^valorant_schema_included=' "$work_directo
   exit 1
 }
 toc_path="$work_directory/database.toc"
-if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="${POSTGRES_CERT_FILE:-}" PGSSLKEY="${POSTGRES_KEY_FILE:-}" PGAPPNAME=quest-restore-target \
+if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$recovery_client_cert_file" PGSSLKEY="$recovery_client_key_file" PGAPPNAME=quest-restore-target \
   "$pg_restore_bin" --list "$work_directory/database.dump" > "$toc_path"; then
   echo "The database archive TOC could not be inspected." >&2
   exit 1
@@ -762,7 +806,7 @@ private_activated=true
 chmod 700 "$resolved_private_root" "$resolved_private_root/event-album-originals"
 
 if ! PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="${POSTGRES_CERT_FILE:-}" PGSSLKEY="${POSTGRES_KEY_FILE:-}" PGAPPNAME=quest-restore-target \
-  "$pg_restore_bin" --dbname="$DIRECT_URL" \
+  "$pg_restore_bin" --dbname="$restore_url" \
   --clean \
   --if-exists \
   --no-owner \
@@ -782,6 +826,21 @@ if ! psql_target -v RESTORE_MODE=1 -v ON_ERROR_STOP=1 -f "$canonical_security_sq
   echo "Canonical PostgreSQL security normalization failed; the exit guard will roll back both activated file trees." >&2
   exit 1
 fi
+
+# The --no-owner restore deliberately creates objects as the recovery role. The
+# canonical bootstrap normalizes every application object to its schema's
+# migrator; require a non-secret, exact zero-mismatch probe before declaring
+# the restore complete.
+owner_mismatches="$(psql_target -tAc "WITH relation_owners AS (SELECT n.nspname, c.relname, r.rolname AS owner_name, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END AS expected_owner FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname IN ('public','valorant') AND c.relkind IN ('r','p','v','m','S','f')), routine_owners AS (SELECT n.nspname, p.proname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_roles r ON r.oid = p.proowner WHERE n.nspname IN ('public','valorant') AND p.prokind IN ('f','p','a')), type_owners AS (SELECT n.nspname, t.typname, r.rolname, CASE WHEN n.nspname = 'public' THEN 'quest_migrator' ELSE 'val_migrator' END FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_roles r ON r.oid = t.typowner WHERE n.nspname IN ('public','valorant') AND t.typisdefined AND t.typtype IN ('b','d','e') AND t.typelem = 0 AND t.typrelid = 0) SELECT count(*) FROM (SELECT * FROM relation_owners UNION ALL SELECT * FROM routine_owners UNION ALL SELECT * FROM type_owners) objects WHERE owner_name <> expected_owner")" || {
+  echo "Restored object-owner verification failed; the exit guard will roll back both activated file trees." >&2
+  exit 1
+}
+owner_mismatches="$(printf '%s' "$owner_mismatches" | tr -d '[:space:]')"
+[[ "$owner_mismatches" == 0 ]] || {
+  echo "Restored object-owner normalization is incomplete; the exit guard will roll back both activated file trees." >&2
+  exit 1
+}
+echo "Restored object-owner verification: passed (0 mismatches)."
 
 echo "Restored schema table counts (public and valorant):"
 if ! psql_target -tAc "SELECT 'public=' || count(*) FROM pg_tables WHERE schemaname = 'public' UNION ALL SELECT 'valorant=' || count(*) FROM pg_tables WHERE schemaname = 'valorant'"; then
