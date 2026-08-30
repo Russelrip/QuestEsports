@@ -37,7 +37,7 @@ make_executable() { chmod 755 "$1"; }
 
 setup_fixture() {
   local case_name="$1"
-  unset BAD_VALORANT_ALIASES || true
+  unset BAD_VALORANT_ALIASES QUEST_DEPLOY_FIXTURE_ENFORCE_BACKUP_CA_CHAIN || true
   unset BACKUP_CLIENT_DIR_MODE || true
   unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP INCOMPLETE_BACKUP FAIL_FREEZE FAIL_QUEST_FREEZE FAIL_VALORANT_FREEZE FAIL_SECURITY_VERIFY MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_CANDIDATE_START FAIL_VALORANT_CANDIDATE_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL SUPABASE_RECONCILIATION_DECISION SUPABASE_URL_ROLLBACK_COMMAND TRY_SUPABASE_URL_ROLLBACK DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP FAIL_QUEST_URL_SWITCH FAIL_VALORANT_URL_SWITCH NOOP_VALORANT_URL_SWITCH FAIL_QUEST_SERVICE_RESTART FAIL_VALORANT_SERVICE_RESTART FAIL_QUEST_READINESS_ACK FAIL_VALORANT_READINESS_ACK FAIL_QUEST_FROZEN_ACK FAIL_VALORANT_FROZEN_ACK FAIL_QUEST_URL_EFFECTIVE FAIL_VALORANT_URL_EFFECTIVE || true
   fixture="$work_directory/$case_name"
@@ -1104,6 +1104,22 @@ assert_failed host-validator-backup-client-hierarchy run_host_validation
 setup_fixture host-validator-backup-client-ca
 rm -f "$fixture/backup-client/backup-client-ca.crt"
 assert_failed host-validator-backup-client-ca run_host_validation
+
+setup_fixture host-validator-backup-ca-chain
+if command -v openssl >/dev/null 2>&1; then
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/issuer.key" -out "$fixture/issuer.crt" -subj //CN=fixture-issuer -days 1 >/dev/null 2>&1
+  openssl req -new -newkey rsa:2048 -nodes -keyout "$fixture/postgres.key" -subj //CN=quest-postgres -out "$fixture/postgres.csr" >/dev/null 2>&1
+  openssl x509 -req -in "$fixture/postgres.csr" -CA "$fixture/issuer.crt" -CAkey "$fixture/issuer.key" -CAcreateserial -out "$fixture/postgres.crt" -days 1 -sha256 >/dev/null 2>&1
+  cp "$fixture/issuer.crt" "$fixture/backup-client/backup-client-ca.crt"
+  chmod 640 "$fixture/backup-client/backup-client-ca.crt"
+  export QUEST_DEPLOY_FIXTURE_ENFORCE_BACKUP_CA_CHAIN=1
+  [[ "$(run_host_validation)" == validated ]] || { printf 'FAIL: valid backup CA issuer bundle was rejected\n' >&2; exit 1; }
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/wrong-issuer.key" -out "$fixture/wrong-issuer.crt" -subj //CN=wrong-issuer -days 1 >/dev/null 2>&1
+  cp "$fixture/wrong-issuer.crt" "$fixture/backup-client/backup-client-ca.crt"
+  assert_failed host-validator-wrong-backup-ca-issuer run_host_validation
+else
+  printf '%s\n' 'SKIP: backup CA issuer-bundle fixture skipped because openssl is unavailable.'
+fi
 
 setup_fixture host-validator-canonical-tls-ownership
 sed -i "s#^POSTGRES_COMPOSE_CERT_FILE=.*#POSTGRES_COMPOSE_CERT_FILE=$fixture/alternate.crt#; s#^POSTGRES_COMPOSE_KEY_FILE=.*#POSTGRES_COMPOSE_KEY_FILE=$fixture/alternate.key#; s#^VALIDATE_HOST_COMMAND=.*#VALIDATE_HOST_COMMAND=$fixture/bin/validate-host#" "$fixture/release.env"

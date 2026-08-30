@@ -113,7 +113,7 @@ Consequently, the production `.env` and infrastructure credentials require a sep
 | `age` private identity | Secured offline recovery package | Maintain at least two controlled offline copies; never keep it permanently on the VPS |
 | Backup environment | `/etc/quest-esports-backup.env`, `root:deploy`, mode `640` | Contains the database URL; never print the file |
 | Backup TLS client directory | `/etc/quest-esports-backup`, `root:deploy`, mode `750` | Dedicated deploy-traversable parent; no broader secret exposure; separate from server TLS |
-| Backup TLS client CA | `/etc/quest-esports-backup/backup-client-ca.crt`, `root:deploy`, mode `640` | Trust material for scheduled backups; separate from the server/container CA |
+| Backup TLS trust bundle | `/etc/quest-esports-backup/backup-client-ca.crt`, `root:deploy`, mode `640` | Deploy-readable copy/bundle containing the issuer of `quest-postgres.crt`; separate path from server TLS, never client identity material |
 | Backup TLS client certificate/key | `/etc/quest-esports-backup/backup-client.{crt,key}`, `root:deploy`, mode `640` | Readable by the scheduled `deploy` service; never reuse the server key; no group/other write |
 | rclone configurations | One mode-`600` protected config per configured remote | Contains OAuth material; inspect only through safe rclone commands |
 | Google OAuth client | Google Cloud project `QuestEsports Backups` | Do not commit/download/store its JSON unnecessarily; rotate if exposed |
@@ -180,11 +180,20 @@ server/container TLS and cannot be traversed by the `deploy:deploy` systemd
 service. Bootstrap must create `/etc/quest-esports-backup` as `root:deploy 0750`,
 then install `backup-client-ca.crt`, `backup-client.crt`, and
 `backup-client.key` there as `root:deploy 0640`. `POSTGRES_CA_FILE` in the
-scheduled backup environment points to the backup client CA in this hierarchy;
-it must never point at the server CA. The PostgreSQL server
-CA/certificate/key remain under `/etc/quest-esports/tls` with the existing
-UID999-readable ownership contract. Host validation and the backup script reject
-any other production hierarchy or permissions.
+scheduled backup environment points to the trust bundle in this hierarchy.
+`backup-client-ca.crt` is a deploy-readable copy/bundle containing the issuer of
+`/etc/quest-esports/tls/quest-postgres.crt`, including any intermediate
+certificates required to build that chain. It may be copied from the server CA
+material when that is the issuer; it is a separate-path trust copy, not the
+PostgreSQL server certificate/key and not the `backup-client.crt` or
+`backup-client.key` identity. If separate server/client PKIs are used, the
+bundle must contain the PostgreSQL server issuer; alternatively, document both
+chains and validate them. Host validation verifies this relationship
+with `openssl verify -purpose sslserver`; the backup connection retains
+`sslmode=verify-full`. The PostgreSQL server CA/certificate/key remain under
+`/etc/quest-esports/tls` with the existing UID999-readable ownership contract.
+Host validation and the backup script reject any other production hierarchy or
+permissions.
 
 Install PostgreSQL client 17, `age`, `rclone`, and `rsync`. The generic Ubuntu `pg_dump` may still resolve to PostgreSQL 16, so the backup environment pins `/usr/lib/postgresql/17/bin` at the start of `PATH`.
 
@@ -195,8 +204,9 @@ The backup takes an exclusive `flock`, copies both immutable upload trees, runs 
 The checked-in host backup service uses the exact PostgreSQL 17 VPS target in
 `ops/quest-esports-backup.env.example`: `127.0.0.1:55432`, database `quest`,
 and role `quest_backup`. It uses the separately provisioned backup client
-CA, certificate, and key from `/etc/quest-esports-backup`, never the PostgreSQL
-server CA or key. It must never use the Paris
+trust bundle, certificate, and key from `/etc/quest-esports-backup`, with the
+bundle containing the PostgreSQL server issuer and the certificate/key remaining
+a separate client identity. It must never use the Paris
 Supabase session pooler.
 The supported host-run backup and restore path is to keep or reapply
 `ops/docker/compose.postgres-staging.yml` while the PostgreSQL service is in

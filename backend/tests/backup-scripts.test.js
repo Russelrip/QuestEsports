@@ -181,3 +181,36 @@ test("all remote probes use exact unique per-label configurations", () => {
     assert.match(script, /BACKUP_RCLONE_CONFIGS must exactly match BACKUP_RCLONE_REMOTES/);
   }
 });
+
+test("backup CA bundle is the PostgreSQL server trust chain, not client identity", () => {
+  const backupScript = fs.readFileSync(
+    path.join(__dirname, "../../ops/backup-production-multi-remote.sh"),
+    "utf8",
+  );
+  const hostValidator = fs.readFileSync(
+    path.join(__dirname, "../../ops/deploy/validate-host.sh"),
+    "utf8",
+  );
+  const environmentExample = fs.readFileSync(
+    path.join(__dirname, "../../ops/quest-esports-backup.env.example"),
+    "utf8",
+  );
+  const documentation = [
+    fs.readFileSync(path.join(__dirname, "../../docs/backup-and-disaster-recovery.md"), "utf8"),
+    fs.readFileSync(path.join(__dirname, "../../docs/production-runbook.md"), "utf8"),
+    fs.readFileSync(path.join(__dirname, "../../ops/README.md"), "utf8"),
+    fs.readFileSync(path.join(__dirname, "../../ops/docker/postgres/README.md"), "utf8"),
+  ].join("\n");
+
+  assert.match(environmentExample, /trust bundle/);
+  assert.match(environmentExample, /issuer of \/etc\/quest-esports\/tls\/quest-postgres\.crt/);
+  assert.match(backupScript, /trust bundle containing the issuer of quest-postgres\.crt/);
+  assert.match(hostValidator, /openssl verify -purpose sslserver -CAfile "\$ca_file" "\$server_cert_file"/);
+  assert.match(documentation, /If separate server\/client PKIs are used/);
+  assert.match(documentation, /issuer of `quest-postgres\.crt`/);
+  assert.match(documentation, /sslmode=verify-full/);
+  assert.doesNotMatch(
+    documentation,
+    /(?:must|should)\s+(?:never|not)\s+(?:point at|use|be)\s+(?:the\s+)?server CA/i,
+  );
+});

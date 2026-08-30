@@ -121,6 +121,9 @@ actual host files before startup:
 ```bash
 openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt -noout -checkhost quest-postgres
 openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt -noout -checkip 127.0.0.1
+openssl verify -purpose sslserver \
+  -CAfile /etc/quest-esports-backup/backup-client-ca.crt \
+  /etc/quest-esports/tls/quest-postgres.crt
 ```
 
 Use `sslmode=verify-full` with the mounted private CA. Keep the server
@@ -129,8 +132,13 @@ with mode `0640` so the UID/GID `999:999` PostgreSQL process can read them;
 keep the server CA root-owned and non-writable by group/other. Mount all server
 TLS material read-only. The scheduled backup service uses a separate
 `root:deploy` `0750` directory containing `backup-client-ca.crt`,
-`backup-client.crt`, and `backup-client.key`, each `root:deploy` `0640`; its
-`POSTGRES_CA_FILE` must point to that backup client CA, never the server CA. The
+`backup-client.crt`, and `backup-client.key`, each `root:deploy` `0640`.
+`backup-client-ca.crt` is a copy/bundle containing the issuer of
+`quest-postgres.crt`; it may be copied from the server CA when that CA issued
+the certificate, but it is not the client certificate/key identity. If server
+and client PKIs are separate, include the PostgreSQL server issuer; alternatively,
+document both chains and validate them. Host validation performs that
+check, and the backup connection remains `sslmode=verify-full`. The
 administrator password is mounted only as
 `/run/secrets/postgres-admin-password`; it is not part of the application env
 file.
@@ -1005,7 +1013,7 @@ sudo install -d -o deploy -g deploy -m 700 /srv/quest-esports/backups
 sudo install -d -o deploy -g deploy -m 700 /srv/quest-esports/rclone
 sudo install -o root -g deploy -m 640 ops/quest-esports-backup.env.example /etc/quest-esports-backup.env
 sudo install -d -o root -g deploy -m 750 /etc/quest-esports-backup
-sudo install -o root -g deploy -m 640 /secure/tls/backup-client-ca.crt /etc/quest-esports-backup/backup-client-ca.crt
+sudo install -o root -g deploy -m 640 /secure/tls/postgres-server-issuer-bundle.crt /etc/quest-esports-backup/backup-client-ca.crt
 sudo install -o root -g deploy -m 640 /secure/tls/backup-client.crt /etc/quest-esports-backup/backup-client.crt
 sudo install -o root -g deploy -m 640 /secure/tls/backup-client.key /etc/quest-esports-backup/backup-client.key
 sudo install -o deploy -g deploy -m 600 /path/to/verified-rclone.conf /srv/quest-esports/rclone/quest-esports.conf

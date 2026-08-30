@@ -322,7 +322,7 @@ tracked application examples.
 | `RETENTION_CONFIRMATION` | Conditional; required to delete | Operations owner | D/P | Destructive control | `PRUNE_QUEST_PRODUCTION` only for an approved deletion | Per prune run |
 | `BACKUP_AGE_IDENTITY_FILE` | Yes for restore | Recovery owner | D/P | Secret/path-sensitive | `<offline age identity path>` | Per restore run |
 | `BACKUP_CLIENT_TLS_DIR` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports-backup` (`root:deploy` `0750`) | Per backup run |
-| `POSTGRES_CA_FILE` | Yes for backup/recovery | Operations or recovery owner | D/P | Path-sensitive trust material | Backup: `/etc/quest-esports-backup/backup-client-ca.crt` (`root:deploy` `0640`); recovery: server CA supplied by the recovery host | Per command |
+| `POSTGRES_CA_FILE` | Yes for backup/recovery | Operations or recovery owner | D/P | Path-sensitive trust material | Backup: `/etc/quest-esports-backup/backup-client-ca.crt` (`root:deploy` `0640`) containing the issuer of `quest-postgres.crt`; recovery: server CA supplied by the recovery host | Per command |
 | `BACKUP_CLIENT_CERT_FILE` / `BACKUP_CLIENT_KEY_FILE` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports-backup/backup-client.{crt,key}` (`root:deploy` `0640`) | Per backup run |
 | `RECOVERY_CLIENT_CERT_FILE` / `RECOVERY_CLIENT_KEY_FILE` | Yes for production restore | Recovery owner | D/P | Secret/path-sensitive | `/etc/quest-esports/secrets/recovery-client.{crt,key}` | Per restore/security run |
 | `RESTORE_CONFIRMATION` | Yes for restore | Recovery owner | D/P | Destructive control | `RESTORE_QUEST_PRODUCTION` only for an approved restore | Per restore run |

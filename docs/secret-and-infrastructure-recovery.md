@@ -12,11 +12,13 @@ The guarded `ops/create-secret-recovery-package.sh` script allowlists these requ
 - `/srv/quest-esports/rclone/quest-esports.conf`
 - `/etc/quest-esports-backup.env`
 
-The scheduled backup TLS client CA, certificate, and key are provisioned
+The scheduled backup TLS trust bundle, certificate, and key are provisioned
 separately at `/etc/quest-esports-backup/backup-client-ca.crt` and
-`backup-client.{crt,key}` as `root:deploy` mode `0640`; they are not the
-PostgreSQL server TLS files under `/etc/quest-esports/tls`. Reissue or transfer
-these files through the approved infrastructure-secret channel rather than
+`backup-client.{crt,key}` as `root:deploy` mode `0640`. The trust bundle contains
+the issuer of the PostgreSQL server certificate under
+`/etc/quest-esports/tls`; it is a separate deploy-readable copy/bundle, while
+the certificate/key remain client identity material. Reissue or transfer these
+files through the approved infrastructure-secret channel rather than
 putting them in the encrypted package or repository.
 
 It also includes the recognized Nginx site, installed QuestEsports backup systemd units, and the `deploy` user's PM2 dump when present. The private `age` identity is deliberately excluded.

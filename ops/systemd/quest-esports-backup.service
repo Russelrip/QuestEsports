@@ -8,11 +8,12 @@ OnFailure=quest-esports-backup-failure@%n.service
 Type=oneshot
 User=deploy
 Group=deploy
-# /etc/quest-esports-backup is root:deploy 0750 and
-# backup-client-ca.crt plus backup-client.{crt,key} are root:deploy 0640;
-# deploy is the only non-root identity permitted to traverse/read the client
-# TLS material. Server TLS remains under /etc/quest-esports/tls for the UID999
-# PostgreSQL container contract.
+# /etc/quest-esports-backup is root:deploy 0750. backup-client-ca.crt is a
+# root:deploy 0640 trust bundle containing the issuer of quest-postgres.crt;
+# backup-client.{crt,key} are separate root:deploy 0640 client identity files.
+# Deploy is the only non-root identity permitted to traverse/read this material.
+# Server TLS remains under /etc/quest-esports/tls for the UID999 PostgreSQL
+# container contract.
 Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
 WorkingDirectory=/var/www/QuestEsports
 ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/backup-production.sh

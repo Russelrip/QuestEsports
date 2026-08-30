@@ -42,9 +42,11 @@ for name in "${required[@]}"; do
 done
 
 # The PostgreSQL server key/certificate are container-only identities. Backups
-# use only the separately provisioned client certificate/key pair; falling back
-# to server TLS variables would both violate identity separation and make the
-# production path depend on the server key's container readability contract.
+# use the separate client certificate/key pair, while POSTGRES_CA_FILE is a
+# deploy-readable trust bundle containing the issuer of quest-postgres.crt.
+# The bundle may be a copy of the server trust CA (or a bundle containing that
+# issuer); it is never a client certificate or private key. Host validation
+# proves the bundle verifies the server certificate before scheduled use.
 backup_client_cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
 backup_client_key_file="${BACKUP_CLIENT_KEY_FILE:-}"
 backup_client_tls_dir="${BACKUP_CLIENT_TLS_DIR:-/etc/quest-esports-backup}"
@@ -234,6 +236,11 @@ for setting in POSTGRES_CA_FILE; do
     exit 1
   }
 done
+[[ "$POSTGRES_CA_FILE" != "$backup_client_cert_file" &&
+   "$POSTGRES_CA_FILE" != "$backup_client_key_file" ]] || {
+  echo "POSTGRES_CA_FILE must be a trust bundle, not client identity material." >&2
+  exit 1
+}
 for tls_file in "$POSTGRES_CA_FILE"; do
   tls_mode="$(stat -c '%a' "$tls_file" 2>/dev/null)" || {
     echo "PostgreSQL TLS material mode cannot be inspected." >&2
@@ -251,7 +258,7 @@ done
 if [[ "$backup_test_fixture" == false ]]; then
   [[ "$POSTGRES_CA_FILE" == /etc/quest-esports-backup/backup-client-ca.crt &&
       "$(stat -c '%u:%g %a' "$POSTGRES_CA_FILE" 2>/dev/null)" == "0:${backup_group_id} 640" ]] || {
-    echo "Backup client CA material is not canonical deploy-readable trust material." >&2
+    echo "Backup CA bundle is not canonical deploy-readable trust material." >&2
     exit 1
   }
 fi

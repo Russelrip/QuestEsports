@@ -80,17 +80,19 @@ validate_compose_tls_material() {
   fi
 }
 validate_backup_tls_material() {
-  local ca_file cert_file key_file tls_file tls_stat client_tls_dir
+  local ca_file cert_file key_file server_cert_file tls_file tls_stat client_tls_dir
   if [[ "$fixture_mode" == 1 ]]; then
     ca_file="${BACKUP_CLIENT_CA_FILE:-}"
     cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
     key_file="${BACKUP_CLIENT_KEY_FILE:-}"
+    server_cert_file="${POSTGRES_COMPOSE_CERT_FILE:-}"
     client_tls_dir="${BACKUP_CLIENT_TLS_DIR:-}"
   else
     client_tls_dir=/etc/quest-esports-backup
     ca_file=/etc/quest-esports-backup/backup-client-ca.crt
     cert_file=/etc/quest-esports-backup/backup-client.crt
     key_file=/etc/quest-esports-backup/backup-client.key
+    server_cert_file=/etc/quest-esports/tls/quest-postgres.crt
   fi
   [[ "$client_tls_dir" == /* && "$client_tls_dir" != / && -d "$client_tls_dir" && ! -L "$client_tls_dir" ]] || die 'backup PostgreSQL TLS directory is missing or unsafe.'
   [[ "$(stat -c '%a' "$client_tls_dir" 2>/dev/null)" == 750 ]] || die 'backup PostgreSQL TLS directory must be mode 0750.'
@@ -99,6 +101,11 @@ validate_backup_tls_material() {
     [[ -s "$tls_file" ]] || die 'backup PostgreSQL TLS material is missing or unsafe.'
     [[ "$(stat -c '%a' "$tls_file" 2>/dev/null)" == 640 ]] || die 'backup PostgreSQL TLS material must be mode 0640.'
   done
+  if [[ "$fixture_mode" != 1 || "${QUEST_DEPLOY_FIXTURE_ENFORCE_BACKUP_CA_CHAIN:-0}" == 1 ]]; then
+    command -v openssl >/dev/null 2>&1 || die 'openssl is required to validate the backup PostgreSQL CA bundle.'
+    [[ -f "$server_cert_file" && -r "$server_cert_file" && ! -L "$server_cert_file" ]] || die 'PostgreSQL server certificate is missing or unsafe for backup CA validation.'
+    openssl verify -purpose sslserver -CAfile "$ca_file" "$server_cert_file" >/dev/null 2>&1 || die 'backup PostgreSQL CA bundle does not validate the PostgreSQL server certificate issuer.'
+  fi
   if [[ "$fixture_mode" != 1 ]]; then
     [[ "$client_tls_dir" == /etc/quest-esports-backup &&
        "$ca_file" == /etc/quest-esports-backup/backup-client-ca.crt &&

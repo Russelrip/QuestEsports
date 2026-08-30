@@ -128,9 +128,13 @@ must be installed with `root:999` and mode `0640`. The healthcheck script is ins
 with mode `0755`. These modes are prerequisites for the read-only runtime
 mounts and are checked during host bootstrap. Backup and recovery client
 identity files are separate root-owned files and are never used to satisfy the
-canonical server mount contract. The backup client CA, certificate, and key are
-`root:deploy` mode `0640` so the scheduled `deploy:deploy` service can read
-them; recovery client files remain `root:root` mode `0600`. Backups use
+canonical server mount contract. The backup trust bundle, certificate, and key
+are `root:deploy` mode `0640` so the scheduled `deploy:deploy` service can read
+them. The bundle at `backup-client-ca.crt` is a copy/bundle containing the
+issuer of `quest-postgres.crt`, not the backup client certificate/key identity.
+If server and client PKIs are separate, it must include the PostgreSQL server
+issuer; alternatively, document both chains and validate them. Recovery client files
+remain `root:root` mode `0600`. Backups use
 `backup-client.crt`/`backup-client.key`; destructive restores and post-restore
 security verification use the separately controlled
 `recovery-client.crt`/`recovery-client.key` identity.
@@ -143,15 +147,17 @@ install -o root -g 999 -m 0640 /secure/tls/quest-postgres.crt /etc/quest-esports
 install -o root -g 999 -m 0640 /secure/tls/quest-postgres.key /etc/quest-esports/tls/quest-postgres.key
 install -o root -g root -m 0644 /secure/tls/quest-private-ca.crt /etc/quest-esports/tls/quest-private-ca.crt
 install -d -o root -g deploy -m 0750 /etc/quest-esports-backup
-install -o root -g deploy -m 0640 /secure/tls/backup-client-ca.crt /etc/quest-esports-backup/backup-client-ca.crt
+install -o root -g deploy -m 0640 /secure/tls/postgres-server-issuer-bundle.crt /etc/quest-esports-backup/backup-client-ca.crt
 install -o root -g deploy -m 0640 /secure/tls/backup-client.crt /etc/quest-esports-backup/backup-client.crt
 install -o root -g deploy -m 0640 /secure/tls/backup-client.key /etc/quest-esports-backup/backup-client.key
 ```
 
-Install the backup client CA, certificate, and key separately as `root:deploy`
-mode `0640`;
-they are readable only by root and the scheduled `deploy` service and are never
-mounted into the PostgreSQL server container. Recovery certificates/keys remain
+Install the PostgreSQL-server-issuer trust bundle, client certificate, and key
+separately as `root:deploy` mode `0640`; they are readable only by root and the
+scheduled `deploy` service and are never mounted into the PostgreSQL server
+container. The host validator must verify the bundle against
+`quest-postgres.crt` with `openssl verify -purpose sslserver` before backup
+service enablement. Recovery certificates/keys remain
 `root:root` mode `0600`. A
 disposable readability fixture runs the exact pinned image as `999:999` and
 checks the password, CA, certificate, and server-key mounts without exposing
@@ -174,6 +180,9 @@ openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt \
   -noout -checkhost quest-postgres
 openssl x509 -in /etc/quest-esports/tls/quest-postgres.crt \
   -noout -checkip 127.0.0.1
+openssl verify -purpose sslserver \
+  -CAfile /etc/quest-esports-backup/backup-client-ca.crt \
+  /etc/quest-esports/tls/quest-postgres.crt
 ```
 
 Both commands must report a matching identity. A common name without both SANs
