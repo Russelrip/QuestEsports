@@ -3,6 +3,10 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { normalizeText } = require("../../lib/validation");
 const { recordAuditInTransaction } = require("../../lib/audit");
+const {
+  resolveEffectiveTeamLogoName,
+  getTeamLogoUrl,
+} = require("../teams/team-logo");
 
 const FORMATS = new Set(["bo1", "bo3", "bo5", "premier", "custom"]);
 const CONTROL_MODES = new Set(["captain_or_link", "link_only", "staff_only"]);
@@ -225,6 +229,7 @@ const mapRoom = (room, access = { kind: "public", slot: null }) => {
   const snapshot = room.configSnapshot || {};
   const activeActions = room.actions || [];
   const steps = Array.isArray(snapshot.steps) ? snapshot.steps : [];
+  const participantSnapshots = Array.isArray(snapshot.participants) ? snapshot.participants : [];
   const selectedSlugs = new Set(activeActions.map((action) => action.mapSlug).filter(Boolean));
   const currentStep = steps[room.currentStep] || null;
   return {
@@ -256,6 +261,7 @@ const mapRoom = (room, access = { kind: "public", slot: null }) => {
       displayName: entry.displayName,
       seed: entry.seed,
       accentColor: entry.accentColor,
+      logoUrl: participantSnapshots.find((snapshotEntry) => snapshotEntry.slot === entry.slot)?.logoUrl ?? null,
       ready: Boolean(entry.readyAt),
       joined: Boolean(entry.joinedAt),
       team: room.teamASlot === entry.slot ? "A" : room.teamASlot ? "B" : null,
@@ -397,9 +403,33 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
   let tournamentId = normalizeText(body.tournamentId) || null;
   let match = null;
   if (body.matchId) {
-    match = await prisma.match.findUnique({ where: { id: body.matchId }, include: { participants: { orderBy: { slot: "asc" } }, tournament: { select: { id: true, title: true } }, vetoRoom: { select: { id: true } } } });
+    match = await prisma.match.findUnique({
+      where: { id: body.matchId },
+      include: {
+        participants: {
+          orderBy: { slot: "asc" },
+          include: {
+            registration: {
+              select: {
+                id: true,
+                teamLogoName: true,
+                savedTeam: { select: { logoName: true } },
+              },
+            },
+          },
+        },
+        tournament: { select: { id: true, title: true, game: true } },
+        vetoRoom: { select: { id: true } },
+      },
+    });
     if (!match) throw new HttpError(404, "Match not found.");
     if (match.vetoRoom) throw new HttpError(409, "This match already has a veto room.");
+    if (String(match.tournament?.game || "").toLowerCase() !== "valorant") {
+      throw new HttpError(400, "Linked veto rooms require a Valorant tournament.");
+    }
+    if (match.participants.length !== 2 || match.participants.some((participant, index) => participant.slot !== index + 1)) {
+      throw new HttpError(400, "Linked veto rooms require exactly two ordered match participants.");
+    }
     tournamentId = match.tournamentId;
   }
   await requireRoomStaff(user, { tournamentId });
@@ -414,6 +444,10 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
     prisma.vetoRulePreset.findUnique({ where: { id: rulePresetId } }),
   ]);
   if (!pool || !preset) throw new HttpError(400, "Choose a valid map pool and rule preset.");
+  if (match && (String(pool.game || "").toLowerCase() !== "valorant"
+    || pool.maps.some(({ map }) => String(map?.game || "").toLowerCase() !== "valorant"))) {
+    throw new HttpError(400, "Linked veto rooms require a Valorant map pool and active Valorant maps.");
+  }
   if ((pool.tournamentId && pool.tournamentId !== tournamentId) || (preset.tournamentId && preset.tournamentId !== tournamentId)) {
     throw new HttpError(403, "Pool and preset scope must match the room tournament.");
   }
@@ -428,10 +462,17 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
     steps = validateSteps(preset.steps, format, pool.maps.length);
   }
   const settings = normalizeSettings({ ...(template?.settings || {}), ...body });
-  const sourceParticipants = Array.isArray(body.participants) && body.participants.length
-    ? body.participants
-    : match?.participants || [];
+  const sourceParticipants = match
+    ? match.participants
+    : (Array.isArray(body.participants) && body.participants.length ? body.participants : []);
   const participants = [participantInput(sourceParticipants[0], 1), participantInput(sourceParticipants[1], 2)];
+  const participantSnapshots = participants.map((participant, index) => ({
+    slot: participant.slot,
+    displayName: participant.displayName,
+    seed: participant.seed,
+    registrationId: participant.registrationId,
+    logoUrl: match ? getTeamLogoUrl(resolveEffectiveTeamLogoName(sourceParticipants[index].registration)) : null,
+  }));
   const issuedTokens = { team1: randomToken(), team2: randomToken(), caster: randomToken(), viewer: settings.viewerEnabled ? randomToken() : null };
   const code = randomCode();
   const title = (normalizeText(body.title) || (match ? `${participants[0].displayName} vs ${participants[1].displayName}` : `${format.toUpperCase()} Veto Room`)).slice(0, 180);
@@ -446,6 +487,7 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
           maps: pool.maps.map(({ map }) => ({ slug: map.slug, name: map.name, artworkUrl: map.artworkUrl, accentColor: map.accentColor })),
           steps,
           settings,
+          participants: participantSnapshots,
         },
         participants: { create: participants },
         grants: { create: [
