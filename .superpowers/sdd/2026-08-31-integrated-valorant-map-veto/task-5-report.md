@@ -116,3 +116,40 @@ Exact fix-wave commands and results:
 Migration status is unchanged: `npx prisma migrate deploy` and `npx prisma
 migrate status` remain skipped because no isolated verification database is
 available. No migration was reset or edited.
+
+## Fix round 2 verification
+
+Production-code publication evidence was added in
+`backend/tests/match-publication.test.js`. It exercises
+`match.service.listPublicMatches` with a completed linked match and proves the
+public projection omits `veto` when `publishResult` is false and exposes the
+completed BO3 veto when it is true. The E2E remains a deterministic browser
+contract test because this environment does not provide the isolated seeded
+backend database needed to run the real browser-to-database workflow.
+
+The E2E route fixture was narrowed around the action boundary: the first team
+map ban and all remaining feasible BO3 decisions are now performed through the
+real `VetoRoomView` controls. The fixture only advances the minimum
+production-shaped room response required by those UI requests, including the
+automatic decider transition. The first action still asserts the team token,
+map slug, and expected revision. Caster and viewer updates are observed after
+that action with EventSource disabled, so the five-second polling fallback is
+actually exercised for both pages.
+
+Exact round-2 commands and results:
+
+- `backend: node --test tests/match-publication.test.js tests/veto-routes.test.js`
+  — PASS; 4 tests passed.
+- `frontend: npm run test` — PASS; 49 test files and 307 tests passed.
+- `frontend: npm run typecheck` — PASS.
+- `frontend: npm run lint` — PASS with the existing two warnings in
+  `frontend/tests/unit/veto-room-view.test.tsx` (`no-img-element` and missing
+  `alt`).
+- `frontend: NODE_ENV=development NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
+  INTERNAL_API_URL=http://127.0.0.1:3000 npm run test:e2e --
+  tests/e2e/integrated-veto.spec.ts` — PASS; Chromium, Firefox, and mobile
+  Safari passed in 40.5 seconds.
+
+Migration deploy/status remain a release blocker/follow-up: they were not run
+because no isolated verification database is available. No data was reset and
+no migration was edited.

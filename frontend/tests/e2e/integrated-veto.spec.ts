@@ -116,7 +116,7 @@ const roomFor = (state: FixtureState, accessKind: string, accessSlot: number | n
   steps,
   currentStep: state.actions.length,
   currentAction: state.status === "in_progress" ? steps[state.actions.length] || null : null,
-  actions: state.actions,
+  actions: state.actions.map((action) => ({ ...action, payload: { ...action.payload } })),
   access: { kind: accessKind, slot: accessSlot },
   timestamps: { openedAt: null, startedAt: null, completedAt: state.status === "completed" ? "2026-08-31T00:05:00.000Z" : null, cancelledAt: null, updatedAt: "2026-08-31T00:05:00.000Z" },
 });
@@ -174,6 +174,48 @@ const readBody = (route: Route) => {
   } catch {
     return {};
   }
+};
+
+const appendFixtureAction = (state: FixtureState, body: Record<string, unknown>) => {
+  const step = steps[state.actions.length];
+  if (!step || step.kind === "decider") return false;
+  const map = step.kind === "side"
+    ? maps.find((entry) => state.actions.some((action) => action.mapSlug === entry.slug && action.payload.seriesIndex === step.seriesIndex))
+    : maps.find((entry) => entry.slug === body.mapSlug);
+  if (!map) return false;
+  const actorSlot = step.actor === "A"
+    ? state.teamASlot
+    : step.actor === "B" && state.teamASlot
+      ? state.teamASlot === 1 ? 2 : 1
+      : null;
+  state.actions.push({
+    id: `action-${state.actions.length + 1}`,
+    sequence: state.actions.length + 1,
+    kind: step.kind,
+    actorSlot,
+    mapSlug: map.slug,
+    mapName: map.name,
+    side: typeof body.side === "string" ? body.side : null,
+    payload: { seriesIndex: step.seriesIndex },
+    createdAt: "2026-08-31T00:05:00.000Z",
+  });
+  if (steps[state.actions.length]?.kind === "decider") {
+    const deciderMap = maps.find((entry) => !state.actions.some((action) => action.mapSlug === entry.slug));
+    if (!deciderMap) return false;
+    state.actions.push({
+      id: `action-${state.actions.length + 1}`,
+      sequence: state.actions.length + 1,
+      kind: "decider",
+      actorSlot: null,
+      mapSlug: deciderMap.slug,
+      mapName: deciderMap.name,
+      side: null,
+      payload: { seriesIndex: 3 },
+      createdAt: "2026-08-31T00:05:00.000Z",
+    });
+  }
+  if (state.actions.length >= steps.length) state.status = "completed";
+  return true;
 };
 
 const installFixture = async (context: BrowserContext, state: FixtureState, staffContext = false) => {
@@ -299,21 +341,7 @@ const installFixture = async (context: BrowserContext, state: FixtureState, staf
         state.participants.forEach((participant) => { participant.team = participant.slot === state.teamASlot ? "A" : "B"; });
         state.status = "in_progress";
       } else {
-        const step = steps[state.actions.length] || { kind: "ban", actor: null, seriesIndex: null };
-        const map = maps.find((entry) => entry.slug === body.mapSlug) || maps[state.actions.length % maps.length];
-        const actorSlot = step.actor === "A" ? state.teamASlot : step.actor === "B" && state.teamASlot ? state.teamASlot === 1 ? 2 : 1 : null;
-        state.actions.push({
-          id: `action-${state.actions.length + 1}`,
-          sequence: state.actions.length + 1,
-          kind: String(step.kind),
-          actorSlot,
-          mapSlug: map.slug,
-          mapName: map.name,
-          side: typeof body.side === "string" ? body.side : null,
-          payload: { seriesIndex: step.seriesIndex },
-          createdAt: "2026-08-31T00:05:00.000Z",
-        });
-        if (state.actions.length >= steps.length) state.status = "completed";
+        if (!appendFixtureAction(state, body)) return errorResponse("The fixture received an invalid action.", 400);
       }
       state.revision += 1;
       return vetoResponse(access.kind, access.slot);
@@ -462,23 +490,24 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
 
     await expect(page.getByText("Banned", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     await expect(casterPage.getByText("Banned", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(viewerPage.getByText("Banned", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
     await expectCasterControlsAbsent(casterPage);
 
-    for (let index = 1; index < steps.length; index += 1) {
-      const step = steps[index];
-      const body = step.kind === "side"
-        ? { side: "attack", expectedRevision: state.revision }
-        : { mapSlug: maps[index % maps.length].slug, expectedRevision: state.revision };
-      const status = await page.evaluate(async (actionBody) => {
-        const response = await fetch("/api/v1/veto-rooms/ALPHAB/actions", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(actionBody),
-        });
-        return response.status;
-      }, body);
-      expect(status).toBe(200);
+    while (state.actions.length < steps.length) {
+      const step = steps[state.actions.length];
+      if (step.kind === "side") {
+        await expect(page.getByRole("button", { name: "Attack", exact: true })).toBeVisible({ timeout: 15_000 });
+        await page.getByRole("button", { name: "Attack", exact: true }).click();
+      } else {
+        const map = maps.find((entry) => !state.actions.some((action) => action.mapSlug === entry.slug));
+        expect(map).toBeDefined();
+        const mapButton = page.getByRole("button", { name: new RegExp(`Select to ${step.kind} ${map?.name}`, "i") });
+        await expect(mapButton).toBeEnabled({ timeout: 15_000 });
+        await mapButton.click();
+      }
+      await page.getByRole("dialog").getByRole("button", { name: /Confirm/i }).click();
     }
+    expect(state.actionRequests).toHaveLength(9);
     expect(state.status).toBe("completed");
     await expect(page.getByRole("heading", { name: "Veto complete" })).toBeVisible({ timeout: 15_000 });
     await expect(casterPage.getByRole("heading", { name: "Veto complete" })).toBeVisible({ timeout: 15_000 });
