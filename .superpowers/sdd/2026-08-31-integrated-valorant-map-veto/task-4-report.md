@@ -22,3 +22,20 @@ Implemented the caster-facing Valorant veto presentation.
 ## Concerns
 
 The focused admin integration test still fails independently in `keeps a caster token isolated when the viewer token is absent`; that flow is outside the Task 4 files and was not changed.
+
+## Round 1 fixes
+
+- Moved the room status announcement to a real `div[aria-live="polite"]` wrapper and added a visually hidden real live-region wrapper for current-turn changes. Neither announcement moves focus.
+- Removed the unconditional match-room `Live view` / read-only cue. The ordinary player, captain, and staff match-room context now keeps the normal `Map veto` tab; caster labeling remains owned by the actual veto access context.
+- Replaced the generic logo fallback with an accent-colored initials fallback that appears both when no snapshot logo exists and when an image errors.
+- Strengthened component rendering tests for live regions, caster control isolation, team map access, and invalid snapshot logo fallback.
+
+## Round 1 validation output
+
+- `npx vitest run tests/unit/veto-room-view.test.tsx tests/unit/admin-veto-integration.test.tsx`: passed — 2 files, 10 tests.
+- `npm run typecheck`: passed.
+- `npm run lint`: passed with two warnings from the mocked test `<img>` (`@next/next/no-img-element` and `jsx-a11y/alt-text`).
+
+## Round 1 concerns
+
+No functional concerns remain. The two lint warnings are confined to the test-only Next Image mock.
