@@ -81,7 +81,7 @@ export type VetoCatalog = {
   templates: Array<{ id: string; name: string; format: VetoRoom["format"]; version: number; mapPoolId: string; rulePresetId: string; settings: Record<string, unknown>; tournamentId?: string | null }>;
 };
 
-export type IssuedTokens = { team1: string; team2: string; viewer: string | null; caster: string | null };
+export type IssuedTokens = { team1: string; team2: string; viewer: string | null; caster: string };
 
 type Envelope<T> = { success?: boolean; message?: string; data?: T };
 
