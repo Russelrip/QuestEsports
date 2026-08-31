@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { resolveImageUrl } from "@/lib/media";
 import { type MatchRoom, type RoomMessage, type SupportRequest, roomRequest } from "@/lib/match-rooms";
+import type { VetoRoom } from "@/lib/veto";
 import { subscribeToRealtimeUpdates } from "@/lib/realtime";
 import { cn, getInitials } from "@/lib/utils";
 
@@ -49,7 +50,9 @@ export default function MatchRoomView({ code }: { code: string }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [vetoAccessKind, setVetoAccessKind] = useState<VetoRoom["access"]["kind"] | null>(null);
   const roomReady = Boolean(room?.id);
+  const isCasterVeto = vetoAccessKind === "caster";
 
   const loadRoom = useCallback(async () => {
     try {
@@ -66,6 +69,7 @@ export default function MatchRoomView({ code }: { code: string }) {
   const loadSupport = useCallback(async () => setSupport(await roomRequest<SupportRequest[]>(`/api/v1/match-rooms/${encodeURIComponent(code)}/support`)), [code]);
 
   useEffect(() => { void loadRoom(); }, [loadRoom]);
+  useEffect(() => { setVetoAccessKind(null); }, [code]);
   useEffect(() => {
     if (!roomReady) return;
     void Promise.all([loadMessages(), loadSupport()]).catch(() => undefined);
@@ -106,14 +110,14 @@ export default function MatchRoomView({ code }: { code: string }) {
       </Card>
 
       <div className="mt-5 flex gap-2 overflow-x-auto border-b border-white/10 pb-3" role="tablist">
-        {tabs.map((item) => <button key={item.id} type="button" onClick={() => setTab(item.id)} className={cn("shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition", tab === item.id ? "bg-cyan-300 text-slate-950" : "bg-white/5 text-slate-300 hover:bg-white/10")}>{item.label}{item.id === "chat" && messages.length ? <span className="ml-2 text-xs opacity-60">{messages.length}</span> : null}</button>)}
+        {tabs.map((item) => <button key={item.id} type="button" aria-label={item.id === "veto" && isCasterVeto ? "Map veto · read-only broadcast" : item.label} onClick={() => setTab(item.id)} className={cn("shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition", tab === item.id ? "bg-cyan-300 text-slate-950" : "bg-white/5 text-slate-300 hover:bg-white/10")}>{item.label}{item.id === "veto" && isCasterVeto ? <span className="ml-2 text-[10px] uppercase tracking-wider opacity-60">Live view</span> : null}{item.id === "chat" && messages.length ? <span className="ml-2 text-xs opacity-60">{messages.length}</span> : null}</button>)}
       </div>
       {error ? <p className="mt-4 rounded-xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{error}</p> : null}
 
       <section className="mt-6">
         {tab === "overview" ? <div className="grid gap-5 lg:grid-cols-2">{teams.map((team, index) => { const participantLogoUrl = resolveImageUrl(team.participant?.logoUrl); return <Card key={index} className="p-6"><div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-[.18em] text-slate-500">Team {index + 1}</p><h2 className="mt-2 text-2xl text-white">{team.participant?.displayName || `Team ${index + 1}`}</h2></div>{participantLogoUrl ? <Image src={participantLogoUrl} alt="" width={56} height={56} unoptimized className="size-14 object-contain" onError={(event) => { const image = event.currentTarget; if (image.dataset.fallbackApplied === "true") image.style.display = "none"; else { image.dataset.fallbackApplied = "true"; image.src = "/images/logo.png"; } }} /> : null}</div><div className="mt-5 grid gap-3">{team.members.length ? team.members.map((member) => <div key={member.id} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[.03] p-3"><MemberAvatar member={member} />{room.access.role === "staff" && member.role !== "staff" ? <Button variant="ghost" size="sm" disabled={busy === `mute-${member.id}`} onClick={() => void run(`mute-${member.id}`, () => roomRequest(`/api/v1/match-rooms/${code}/members/${member.id}/mute`, { method: "PATCH", json: { mutedUntil: member.mutedUntil ? null : new Date(Date.now() + 15 * 60_000).toISOString() } }), loadRoom)}>{member.mutedUntil ? "Unmute" : "Mute 15m"}</Button> : null}</div>) : <p className="text-sm text-slate-500">Roster profiles will appear after invitations are accepted.</p>}</div></Card>; })}</div> : null}
 
-        {tab === "veto" ? room.match.veto ? <VetoRoomView code={room.match.veto.code} /> : <Card className="p-10 text-center"><h2 className="text-2xl text-white">Veto has not been created</h2><p className="mt-2 text-sm text-slate-400">Match staff will select the pool and format before the veto begins.</p></Card> : null}
+        {tab === "veto" ? room.match.veto ? <VetoRoomView code={room.match.veto.code} onRoomChange={(nextRoom) => setVetoAccessKind(nextRoom.access.kind)} /> : <Card className="p-10 text-center"><h2 className="text-2xl text-white">Veto has not been created</h2><p className="mt-2 text-sm text-slate-400">Match staff will select the pool and format before the veto begins.</p></Card> : null}
 
         {tab === "chat" ? <Card className="p-4 sm:p-6"><div className="max-h-[34rem] space-y-3 overflow-y-auto pr-1" aria-live="polite">{messages.length ? messages.map((entry) => <div key={entry.id} className={cn("rounded-xl border p-3", entry.kind === "staff" ? "border-cyan-300/25 bg-cyan-400/10" : "border-white/8 bg-white/[.025]", entry.hidden && "opacity-60")}><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold text-slate-300">{entry.kind === "staff" ? "Official · " : ""}{entry.sender?.username || "System"}</p><time className="text-[10px] text-slate-600">{formatDate(entry.createdAt)}</time></div><p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-100">{entry.body}</p>{room.access.role === "staff" && !entry.hidden ? <button type="button" className="mt-2 text-xs text-rose-200" onClick={() => void run(`hide-${entry.id}`, () => roomRequest(`/api/v1/match-rooms/${code}/messages/${entry.id}/hide`, { method: "POST", json: { reason: "Hidden by match staff" } }), loadMessages)}>Hide message</button> : null}</div>) : <p className="py-16 text-center text-sm text-slate-500">No messages yet. Use this room for match coordination.</p>}</div><form className="mt-5 border-t border-white/8 pt-5" onSubmit={(event) => { event.preventDefault(); if (!message.trim()) return; void run("send", () => roomRequest(`/api/v1/match-rooms/${code}/messages`, { method: "POST", json: { body: message, official } }), async () => { setMessage(""); await loadMessages(); }); }}><textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={1000} disabled={room.chatLocked} placeholder={room.chatLocked ? "Chat is read-only" : "Message the match room"} className="min-h-24 w-full rounded-xl border border-white/10 bg-black/25 p-3 text-sm text-white outline-none focus:border-cyan-300/50" />{room.access.role === "staff" ? <label className="mt-2 flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={official} onChange={(event) => setOfficial(event.target.checked)} /> Send as an official announcement</label> : null}<div className="mt-3 flex items-center justify-between"><span className="text-xs text-slate-500">{message.length}/1000</span><Button type="submit" disabled={room.chatLocked || busy === "send"}>{busy === "send" ? "Sending…" : "Send"}</Button></div></form></Card> : null}
 

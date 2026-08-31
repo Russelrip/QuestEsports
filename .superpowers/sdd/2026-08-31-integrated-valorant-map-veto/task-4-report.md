@@ -39,3 +39,20 @@ The focused admin integration test still fails independently in `keeps a caster 
 ## Round 1 concerns
 
 No functional concerns remain. The two lint warnings are confined to the test-only Next Image mock.
+
+## Round 2 fixes
+
+- Added an access-state bridge from `VetoRoomView` through `onRoomChange` into `MatchRoomView`.
+- The match-room veto tab now shows `Live view` and the read-only broadcast label only after the nested veto room reports `access.kind === "caster"`.
+- Ordinary player, captain, and staff match-room users retain the plain `Map veto` tab with no read-only claim.
+- Reset the bridged access state when switching match-room codes to prevent stale caster labeling.
+
+## Round 2 validation output
+
+- `npx vitest run tests/unit/veto-room-view.test.tsx tests/unit/admin-veto-integration.test.tsx`: veto suite passed (3 tests); admin suite passed 6 tests and retains the existing caster-link wizard failure (1 failed test: `keeps a caster token isolated when the viewer token is absent`).
+- `npm run typecheck`: passed.
+- `npm run lint`: passed with two warnings from the mocked test `<img>` (`@next/next/no-img-element` and `jsx-a11y/alt-text`).
+
+## Round 2 concerns
+
+The remaining admin integration failure is pre-existing and concerns the Task 3 caster-link wizard, outside the Task 4 files.
