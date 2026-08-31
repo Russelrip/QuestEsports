@@ -106,7 +106,7 @@ export default function MatchRoomView({ code }: { code: string }) {
       </Card>
 
       <div className="mt-5 flex gap-2 overflow-x-auto border-b border-white/10 pb-3" role="tablist">
-        {tabs.map((item) => <button key={item.id} type="button" onClick={() => setTab(item.id)} className={cn("shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition", tab === item.id ? "bg-cyan-300 text-slate-950" : "bg-white/5 text-slate-300 hover:bg-white/10")}>{item.label}{item.id === "chat" && messages.length ? <span className="ml-2 text-xs opacity-60">{messages.length}</span> : null}</button>)}
+        {tabs.map((item) => <button key={item.id} type="button" aria-label={item.id === "veto" ? "Map veto · read-only for broadcast links" : item.label} onClick={() => setTab(item.id)} className={cn("shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition", tab === item.id ? "bg-cyan-300 text-slate-950" : "bg-white/5 text-slate-300 hover:bg-white/10")}>{item.label}{item.id === "veto" ? <span className="ml-2 text-[10px] uppercase tracking-wider opacity-60">Live view</span> : null}{item.id === "chat" && messages.length ? <span className="ml-2 text-xs opacity-60">{messages.length}</span> : null}</button>)}
       </div>
       {error ? <p className="mt-4 rounded-xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{error}</p> : null}
 

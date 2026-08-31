@@ -11,6 +11,7 @@ import { readVetoToken, type VetoAction, type VetoRoom, vetoRequest, vetoTokenHe
 import { getPremierBanSlotLabel, getPremierMapPresentation } from "@/lib/veto-premier";
 
 const label = (value: string) => value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+const initials = (value: string) => value.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
 
 function useCountdown(deadline: string | null) {
   const [now, setNow] = useState(0);
@@ -127,9 +128,11 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
   if (!room) return <Card className="p-8 text-center"><div className="mx-auto size-10 animate-spin rounded-full border-2 border-white/10 border-t-purple-300" /><p className="mt-4 text-sm text-slate-400">{error || "Connecting to veto room…"}</p></Card>;
 
   const myParticipant = room.participants.find((entry) => entry.slot === room.access.slot);
-  const canCall = room.status === "toss_pending" && !room.toss.result && canAct(room, room.toss.callerSlot);
-  const canChooseOrder = room.status === "toss_pending" && Boolean(room.toss.winnerSlot) && !room.toss.teamASlot && canAct(room, room.toss.winnerSlot);
-  const actionAllowed = room.status === "in_progress" && canAct(room, currentSlot);
+  const isCaster = room.access.kind === "caster";
+  const roleLabel = isCaster ? "Live broadcast" : room.access.kind === "viewer" || room.access.kind === "public" ? "Spectator" : label(room.access.kind);
+  const canCall = !isCaster && room.status === "toss_pending" && !room.toss.result && canAct(room, room.toss.callerSlot);
+  const canChooseOrder = !isCaster && room.status === "toss_pending" && Boolean(room.toss.winnerSlot) && !room.toss.teamASlot && canAct(room, room.toss.winnerSlot);
+  const actionAllowed = !isCaster && room.status === "in_progress" && canAct(room, currentSlot);
   const firstActor = room.steps.find((step) => step.actor)?.actor || "A";
   const premierBanSteps = room.steps.filter((step) => step.kind === "ban");
   const premierBans = room.actions.filter((action) => action.kind === "ban");
@@ -171,15 +174,15 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
   };
 
   return (
-    <div className="veto-stage grid min-w-0 gap-5">
+    <div className={`veto-stage grid min-w-0 gap-5 ${isCaster ? "veto-stage--caster" : ""}`}>
       <Card className="overflow-hidden border-white/10 bg-[#090a11] p-0">
         <div className="relative overflow-hidden px-5 py-6 sm:px-8 sm:py-8">
           <div className="pointer-events-none absolute inset-0 opacity-70 [background:radial-gradient(circle_at_15%_0%,rgba(34,211,238,.13),transparent_34%),radial-gradient(circle_at_85%_0%,rgba(251,113,133,.13),transparent_34%)]" />
           <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="flex flex-wrap gap-2"><Badge>{room.format.toUpperCase()}</Badge><Badge>{label(room.status)}</Badge>{room.tournament ? <Badge>{room.tournament.title}</Badge> : null}</div>
+              <div className="flex flex-wrap gap-2"><Badge>{room.format.toUpperCase()}</Badge><Badge aria-live="polite">{label(room.status)}</Badge><Badge>{roleLabel}</Badge>{room.tournament ? <Badge>{room.tournament.title}</Badge> : null}</div>
               <h1 className="mt-4 text-2xl text-white sm:text-4xl">{room.title}</h1>
-              <p className="mt-2 text-sm text-slate-400">Room {room.code} · Revision {room.revision}</p>
+              <p className="mt-2 text-sm text-slate-400">Room {room.code}{!isCaster ? ` · Revision ${room.revision}` : " · Follow the live veto below"}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="ghost" onClick={() => setSound((value) => !value)}>{sound ? "Sound on" : "Sound muted"}</Button>
@@ -189,12 +192,12 @@ export default function VetoRoomView({ code, onRoomChange }: { code: string; onR
         </div>
       </Card>
 
-      {error ? <div className="border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{error}</div> : null}
+      {error ? <div className="border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100" role="alert">{error}</div> : null}
 
       <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
         {room.participants.map((participant, index) => (
           <div key={participant.id} className={`${index === 1 ? "md:col-start-3" : ""} border border-white/10 bg-[#11131c] p-5`} style={{ borderTopColor: participant.accentColor }}>
-            <div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Slot {participant.slot}{participant.team ? ` · Team ${participant.team}` : ""}</p><h2 className="mt-2 text-xl text-white">{participant.displayName}</h2></div><span className={`size-3 rounded-full ${participant.ready ? "bg-emerald-400 shadow-[0_0_18px_#34d399]" : "bg-slate-700"}`} /></div>
+            <div className="flex items-start justify-between gap-4"><div className="flex min-w-0 items-center gap-3"><div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-xl border text-sm font-black text-white" style={{ borderColor: `${participant.accentColor}88`, backgroundColor: `${participant.accentColor}22` }}>{participant.logoUrl ? <Image src={resolveImageUrl(participant.logoUrl) || "/images/logo.png"} alt="" width={48} height={48} unoptimized className="size-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}<span aria-hidden={Boolean(participant.logoUrl)}>{initials(participant.displayName)}</span></div><div className="min-w-0"><p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Slot {participant.slot}{participant.team ? ` · Team ${participant.team}` : ""}</p><h2 className="mt-2 truncate text-xl text-white">{participant.displayName}</h2></div></div><span className={`size-3 shrink-0 rounded-full ${participant.ready ? "bg-emerald-400 shadow-[0_0_18px_#34d399]" : "bg-slate-700"}`} /></div>
             <p className="mt-4 text-xs uppercase tracking-[0.16em] text-slate-400">{participant.team ? `Team ${participant.team} · ${participant.team === firstActor ? "takes the first veto action" : "waits for the first veto action"}` : participant.ready ? "Ready" : "Waiting"}</p>
             {participant.team ? <p className="mt-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">{participant.ready ? "Ready" : "Waiting"}</p> : null}
             {(room.access.kind === "staff" || myParticipant?.slot === participant.slot) && ["open", "toss_pending", "toss_complete"].includes(room.status) ? <Button className="mt-4 w-full" size="sm" variant={participant.ready ? "ghost" : "secondary"} disabled={Boolean(busy)} onClick={() => mutate(`ready-${participant.slot}`, `/api/v1/veto-rooms/${room.code}/ready`, { slot: participant.slot, ready: !participant.ready })}>{participant.ready ? "Not ready" : "Ready up"}</Button> : null}
