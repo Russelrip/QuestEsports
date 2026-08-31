@@ -585,7 +585,7 @@ test("linked Valorant rooms use match participants and snapshot registration log
         slot: 2,
         registrationId: "registration-bravo",
         displayName: "Bravo",
-        seed: 2,
+        seed: null,
         registration: { id: "registration-bravo", teamName: "Bravo", teamLogoName: "old.svg", savedTeam: { logoName: "bravo.svg" } },
       },
     ],
@@ -627,8 +627,10 @@ test("linked Valorant rooms use match participants and snapshot registration log
       },
     });
     assert.equal(result.room.participants[0].displayName, "Alpha");
+    assert.equal(result.room.participants[1].seed, null);
     assert.equal(created[0].configSnapshot.participants[0].logoUrl, "/api/uploads/team-logos/alpha.svg");
     assert.equal(created[0].configSnapshot.participants[1].logoUrl, "/api/uploads/team-logos/bravo.svg");
+    assert.equal(created[0].configSnapshot.participants[1].seed, null);
     assert.equal(result.room.participants[0].logoUrl, "/api/uploads/team-logos/alpha.svg");
   } finally { restore(); }
 });
@@ -678,6 +680,9 @@ test("linked rooms reject non-Valorant matches, incomplete participants, and non
 
     currentPool = { ...currentPool, game: "Valorant", maps: [...maps.slice(0, 6), { displayOrder: 6, map: { ...maps[6].map, game: "CS2" } }] };
     await assert.rejects(() => service.createRoom({ user: { id: "admin-1", role: "admin" }, body }), { statusCode: 400 });
+
+    currentPool = { ...currentPool, game: "CS2" };
+    await assert.rejects(() => service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { ...body, matchId: null } }), { statusCode: 400 });
     assert.equal(transactionCalls, 0);
   } finally { restore(); }
 });

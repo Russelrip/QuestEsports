@@ -15,6 +15,9 @@ const TOSS_METHODS = new Set(["digital", "manual"]);
 const ACTION_KINDS = new Set(["ban", "pick", "side"]);
 const SIDES = new Set(["attack", "defense"]);
 const TEAM_COLORS = ["#22d3ee", "#fb7185"];
+const isValorantPool = (pool) => String(pool?.game || "").toLowerCase() === "valorant"
+  && Array.isArray(pool?.maps)
+  && pool.maps.every((entry) => String(entry?.map?.game || "").toLowerCase() === "valorant");
 
 const roomInclude = {
   tournament: { select: { id: true, slug: true, title: true, game: true } },
@@ -395,7 +398,9 @@ const participantInput = (input, slot) => ({
   slot,
   registrationId: normalizeText(input?.registrationId) || null,
   displayName: (normalizeText(input?.displayName) || `Team ${slot}`).slice(0, 160),
-  seed: Number.isInteger(Number(input?.seed)) ? Number(input.seed) : null,
+  seed: input?.seed === null || input?.seed === undefined || (typeof input.seed === "string" && input.seed.trim() === "")
+    ? null
+    : Number.isInteger(Number(input.seed)) ? Number(input.seed) : null,
   accentColor: normalizeText(input?.accentColor) || TEAM_COLORS[slot - 1],
 });
 
@@ -444,9 +449,10 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
     prisma.vetoRulePreset.findUnique({ where: { id: rulePresetId } }),
   ]);
   if (!pool || !preset) throw new HttpError(400, "Choose a valid map pool and rule preset.");
-  if (match && (String(pool.game || "").toLowerCase() !== "valorant"
-    || pool.maps.some(({ map }) => String(map?.game || "").toLowerCase() !== "valorant"))) {
-    throw new HttpError(400, "Linked veto rooms require a Valorant map pool and active Valorant maps.");
+  if (!isValorantPool(pool)) {
+    throw new HttpError(400, match
+      ? "Linked veto rooms require a Valorant map pool and active Valorant maps."
+      : "Veto rooms require a Valorant map pool and active Valorant maps.");
   }
   if ((pool.tournamentId && pool.tournamentId !== tournamentId) || (preset.tournamentId && preset.tournamentId !== tournamentId)) {
     throw new HttpError(403, "Pool and preset scope must match the room tournament.");
@@ -454,9 +460,7 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
   if (preset.format !== format && preset.format !== "custom") throw new HttpError(400, "The rule preset does not match the selected format.");
   let steps;
   if (format === "premier") {
-    const isValorantPool = String(pool.game || "").toLowerCase() === "valorant"
-      && pool.maps.every(({ map }) => String(map.game || "").toLowerCase() === "valorant");
-    if (!isValorantPool || pool.maps.length !== 7) throw new HttpError(400, "Premier rooms require exactly seven active Valorant maps.");
+    if (pool.maps.length !== 7) throw new HttpError(400, "Premier rooms require exactly seven active Valorant maps.");
     steps = validateSteps(getBuiltInSteps("premier"), "premier", 7);
   } else {
     steps = validateSteps(preset.steps, format, pool.maps.length);
