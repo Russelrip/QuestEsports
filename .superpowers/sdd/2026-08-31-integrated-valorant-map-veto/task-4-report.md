@@ -56,3 +56,18 @@ No functional concerns remain. The two lint warnings are confined to the test-on
 ## Round 2 concerns
 
 The remaining admin integration failure is pre-existing and concerns the Task 3 caster-link wizard, outside the Task 4 files.
+
+## Round 3 fixes
+
+- Wrapped the match-room `onRoomChange` bridge in a stable `useCallback` with no changing dependencies.
+- Continued passing the callback to `VetoRoomView`, so its realtime/polling effect no longer restarts on ordinary parent renders.
+
+## Round 3 validation output
+
+- `npx vitest run tests/unit/veto-room-view.test.tsx tests/unit/admin-veto-integration.test.tsx`: passed — 2 files, 10 tests.
+- `npm run typecheck`: passed.
+- `npm run lint`: passed with two warnings from the mocked test `<img>` (`@next/next/no-img-element` and `jsx-a11y/alt-text`).
+
+## Round 3 concerns
+
+No functional concerns. The two lint warnings remain confined to the test-only Next Image mock.
