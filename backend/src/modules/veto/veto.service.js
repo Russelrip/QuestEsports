@@ -211,6 +211,7 @@ const resolveAccess = async ({ room, user, token }) => {
     });
     if (grant && (!grant.expiresAt || grant.expiresAt > new Date())) {
       void prisma.vetoAccessGrant.update({ where: { id: grant.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+      if (grant.role === "caster") return { kind: "caster", slot: null };
       if (grant.role === "viewer") return { kind: "viewer", slot: null };
       if (room.controlMode === "staff_only") return { kind: "viewer", slot: null };
       return { kind: "team", slot: grant.role === "team_1" ? 1 : 2 };
@@ -431,7 +432,7 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
     ? body.participants
     : match?.participants || [];
   const participants = [participantInput(sourceParticipants[0], 1), participantInput(sourceParticipants[1], 2)];
-  const issuedTokens = { team1: randomToken(), team2: randomToken(), viewer: settings.viewerEnabled ? randomToken() : null };
+  const issuedTokens = { team1: randomToken(), team2: randomToken(), caster: randomToken(), viewer: settings.viewerEnabled ? randomToken() : null };
   const code = randomCode();
   const title = (normalizeText(body.title) || (match ? `${participants[0].displayName} vs ${participants[1].displayName}` : `${format.toUpperCase()} Veto Room`)).slice(0, 180);
   const room = await prisma.$transaction(async (tx) => {
@@ -450,6 +451,7 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
         grants: { create: [
           { role: "team_1", tokenHash: hashToken(issuedTokens.team1) },
           { role: "team_2", tokenHash: hashToken(issuedTokens.team2) },
+          { role: "caster", tokenHash: hashToken(issuedTokens.caster) },
           ...(issuedTokens.viewer ? [{ role: "viewer", tokenHash: hashToken(issuedTokens.viewer) }] : []),
         ] },
       },
@@ -792,7 +794,7 @@ const cancelRoom = async ({ user, roomId, body, auditContext = {} }) => {
 const rotateGrant = async ({ user, roomId, role, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
-  if (!["team_1", "team_2", "viewer"].includes(role)) throw new HttpError(400, "Invalid access-link role.");
+  if (!["team_1", "team_2", "viewer", "caster"].includes(role)) throw new HttpError(400, "Invalid access-link role.");
   const token = randomToken();
   await prisma.$transaction(async (tx) => {
     await tx.vetoAccessGrant.updateMany({ where: { roomId, role, revokedAt: null }, data: { revokedAt: new Date() } });

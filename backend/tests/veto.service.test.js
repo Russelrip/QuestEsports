@@ -187,6 +187,37 @@ test("veto access permits captain accounts, valid grants, and published complete
   }
 });
 
+test("veto access resolves a live caster grant from its hashed token", async () => {
+  const room = {
+    id: "caster-room",
+    code: "caster-room",
+    tournamentId: "tournament-1",
+    status: "open",
+    controlMode: "link_only",
+    publishResult: false,
+    participants: [],
+    actions: [],
+    configSnapshot: { maps: [], steps: [] },
+  };
+  const casterTokenHash = crypto.createHash("sha256").update("caster-grant").digest("hex");
+  const prisma = {
+    vetoRoom: { findUnique: async () => room },
+    tournamentStaffAssignment: { findFirst: async () => null },
+    teamRegistration: { findMany: async () => [] },
+    vetoAccessGrant: {
+      findFirst: async ({ where }) => where.tokenHash === casterTokenHash
+        ? { id: "caster-grant-1", role: "caster", expiresAt: new Date(Date.now() + 60_000) }
+        : null,
+      update: async () => undefined,
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await service.getRoom({ code: room.code, user: null, token: "caster-grant" });
+    assert.deepEqual(result.access, { kind: "caster", slot: null });
+  } finally { restore(); }
+});
+
 test("an authorized slot-2 captain cannot submit slot-1's current veto action", async () => {
   const room = {
     id: "wrong-turn-room",
@@ -529,8 +560,31 @@ test("manually created Premier rooms accept exactly seven active Valorant maps a
   try {
     const result = await service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { format: "premier", mapPoolId: "pool-1", rulePresetId: "preset-1" } });
     assert.equal(result.room.format, "premier");
+    assert.ok(result.issuedTokens.caster);
+    assert.ok(createArgs.data.grants.create.some((grant) => grant.role === "caster"));
     assert.deepEqual(createArgs.data.configSnapshot.steps, service.getBuiltInSteps("premier"));
     assert.equal(createArgs.data.configSnapshot.maps.length, 7);
+  } finally { restore(); }
+});
+
+test("caster access grants can be rotated", async () => {
+  const grants = [];
+  const room = { id: "rotate-room", tournamentId: null };
+  const prisma = {
+    vetoRoom: { findUnique: async () => room },
+    vetoAccessGrant: {
+      updateMany: async ({ where }) => { grants.push({ operation: "revoke", where }); return { count: 1 }; },
+      create: async ({ data }) => { grants.push({ operation: "create", data }); return data; },
+    },
+    $transaction: async (callback) => callback(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await service.rotateGrant({ user: { id: "admin-1", role: "admin" }, roomId: room.id, role: "caster" });
+    assert.equal(result.role, "caster");
+    assert.ok(result.token);
+    assert.equal(grants[0].where.role, "caster");
+    assert.equal(grants[1].data.role, "caster");
   } finally { restore(); }
 });
 
