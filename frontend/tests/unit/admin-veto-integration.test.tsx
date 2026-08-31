@@ -131,6 +131,7 @@ describe("admin veto launch navigation", () => {
     });
     render(<AdminVetoRoomsManager />);
     await screen.findByText("Alpha vs Bravo");
+    await screen.findByRole("link", { name: "Open live room" });
     const user = userEvent.setup();
     const caster = screen.getByText("Caster link").parentElement!;
     const viewer = screen.getByText("Viewer link").parentElement!;

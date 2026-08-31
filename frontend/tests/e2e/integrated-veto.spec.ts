@@ -43,8 +43,8 @@ const tournament = {
 };
 
 const matchParticipants = [
-  { id: "participant-1", slot: 1, registrationId: "registration-1", displayName: "Alpha", score: null, result: null, logoUrl: null },
-  { id: "participant-2", slot: 2, registrationId: "registration-2", displayName: "Bravo", score: null, result: null, logoUrl: null },
+  { id: "participant-1", slot: 1, registrationId: "registration-1", externalParticipantId: null, displayName: "Alpha", score: null, result: null, logoUrl: null },
+  { id: "participant-2", slot: 2, registrationId: "registration-2", externalParticipantId: null, displayName: "Bravo", score: null, result: null, logoUrl: null },
 ];
 
 type FixtureState = {
@@ -57,6 +57,8 @@ type FixtureState = {
   participants: Array<{ slot: number; displayName: string; ready: boolean; joined: boolean; team: string | null }>;
   actions: Array<{ id: string; sequence: number; kind: string; actorSlot: number | null; mapSlug: string | null; mapName: string | null; side: string | null; payload: { seriesIndex: number | null }; createdAt: string }>;
   actionRoles: string[];
+  createRequest: Record<string, unknown> | null;
+  actionRequests: Array<{ body: Record<string, unknown>; token: string }>;
 };
 
 const makeFixtureState = (): FixtureState => ({
@@ -72,6 +74,8 @@ const makeFixtureState = (): FixtureState => ({
   ],
   actions: [],
   actionRoles: [],
+  createRequest: null,
+  actionRequests: [],
 });
 
 const roomFor = (state: FixtureState, accessKind: string, accessSlot: number | null = null) => ({
@@ -110,7 +114,7 @@ const roomFor = (state: FixtureState, accessKind: string, accessSlot: number | n
   })),
   maps,
   steps,
-  currentStep: state.status === "in_progress" ? state.actions.length : state.actions.length,
+  currentStep: state.actions.length,
   currentAction: state.status === "in_progress" ? steps[state.actions.length] || null : null,
   actions: state.actions,
   access: { kind: accessKind, slot: accessSlot },
@@ -132,6 +136,36 @@ const matchRoomSummary = (state: FixtureState) => ({
     participants: matchParticipants,
     veto: state.created ? { id: "veto-1", code: "ALPHAB", status: state.status, format: "bo3", revision: state.revision } : null,
   },
+});
+
+const publicMatchProjection = (state: FixtureState) => ({
+  id: "match-1",
+  tournament: { id: tournament.id, slug: tournament.slug, title: tournament.title, game: tournament.game, status: "published", isPublished: true },
+  source: "quest",
+  externalId: null,
+  identifier: "M-001",
+  roundNumber: null,
+  status: state.status === "completed" ? "completed" : "veto_in_progress",
+  scheduledAt: null,
+  estimatedAt: null,
+  station: null,
+  checkInDeadline: null,
+  vetoStartAt: null,
+  assignedStaff: null,
+  localNotes: null,
+  scoreData: {},
+  winnerSlot: null,
+  completedAt: state.status === "completed" ? "2026-08-31T00:05:00.000Z" : null,
+  participants: matchParticipants,
+  veto: state.status === "completed" && state.publishResult ? {
+    code: "ALPHAB",
+    status: "completed",
+    format: "bo3",
+    toss: { call: state.toss.call, result: state.toss.result, winnerSlot: state.toss.winnerSlot, teamASlot: state.teamASlot },
+    actions: state.actions,
+    completedAt: "2026-08-31T00:05:00.000Z",
+  } : null,
+  updatedAt: "2026-08-31T00:05:00.000Z",
 });
 
 const readBody = (route: Route) => {
@@ -218,6 +252,7 @@ const installFixture = async (context: BrowserContext, state: FixtureState, staf
 
     if (pathname === "/api/v1/admin/veto-rooms" && request.method() === "POST") {
       const body = readBody(route);
+      state.createRequest = body;
       state.created = true;
       state.publishResult = body.publishResult === true;
       state.toss.callerSlot = Number(body.tossCallerSlot) || 1;
@@ -233,6 +268,10 @@ const installFixture = async (context: BrowserContext, state: FixtureState, staf
       return vetoResponse("staff");
     }
 
+    if (pathname === "/api/v1/matches" && request.method() === "GET") {
+      return respond({ success: true, data: [publicMatchProjection(state)], meta: { pagination: { page: 1, pageSize: 50, total: 1, totalPages: 1 } } });
+    }
+
     if (pathname === "/api/v1/veto-rooms/ALPHAB") {
       if (!state.created) return errorResponse("Veto room not found.", 404);
       if (!access) return errorResponse("Veto access requires a private link.", 401);
@@ -243,6 +282,7 @@ const installFixture = async (context: BrowserContext, state: FixtureState, staf
       if (access.kind === "caster" || access.kind === "viewer" || access.kind === "public") return errorResponse("This veto link is read-only.", 403);
       const body = readBody(route);
       if (Number(body.expectedRevision) !== state.revision) return errorResponse("The room changed. Refresh and try again.", 409);
+      if (pathname.endsWith("/actions")) state.actionRequests.push({ body, token });
       state.actionRoles.push(access.kind === "team" ? `team_${access.slot}` : "staff");
       if (pathname.endsWith("/ready")) {
         const slot = Number(body.slot);
@@ -333,6 +373,20 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
   await expect(page.getByRole("heading", { name: "Review and create" })).toBeVisible();
   await page.getByRole("button", { name: "Create room" }).click();
   await expect(page.getByText("Room created.")).toBeVisible();
+  expect(state.createRequest).toMatchObject({
+    matchId: "match-1",
+    format: "bo3",
+    mapPoolId: "pool-1",
+    rulePresetId: "preset-bo3",
+    controlMode: "captain_or_link",
+    teamOrderMethod: "toss",
+    tossMethod: "digital",
+    tossCallerSlot: 1,
+    turnSeconds: 60,
+    viewerEnabled: true,
+    publishResult: false,
+  });
+  expect(state.createRequest).not.toHaveProperty("participants");
 
   const roleLinks = ["Team 1 link", "Team 2 link", "Viewer link", "Caster link"];
   const hrefs: string[] = [];
@@ -353,12 +407,15 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
 
   const teamContext = await browser.newContext();
   const teamTwoContext = await browser.newContext();
+  const viewerContext = await browser.newContext();
   const casterContext = await browser.newContext();
   await installFixture(teamContext, state);
   await installFixture(teamTwoContext, state);
+  await installFixture(viewerContext, state);
   await installFixture(casterContext, state);
   const teamPage = await teamContext.newPage();
   const teamTwoPage = await teamTwoContext.newPage();
+  const viewerPage = await viewerContext.newPage();
   const casterPage = await casterContext.newPage();
 
   try {
@@ -369,6 +426,10 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
     await teamTwoPage.goto(hrefs[1], { waitUntil: "domcontentloaded" });
     await expect(teamTwoPage.getByRole("heading", { name: "Alpha vs Bravo" })).toBeVisible();
     await teamTwoPage.getByRole("button", { name: "Ready up" }).click();
+
+    await viewerPage.goto(hrefs[2], { waitUntil: "domcontentloaded" });
+    await expect(viewerPage.getByText("Spectator", { exact: true })).toBeVisible();
+    await expectCasterControlsAbsent(viewerPage);
 
     await refreshVeto(page);
     await expect(page.getByText("Toss Pending", { exact: true })).toBeVisible();
@@ -385,16 +446,18 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
     await casterPage.goto(hrefs[3], { waitUntil: "domcontentloaded" });
     await expect(casterPage.getByText("Live broadcast", { exact: true })).toBeVisible();
     await expectCasterControlsAbsent(casterPage);
+    const casterMapButtons = casterPage.locator("button.veto-map-card");
+    await expect(casterMapButtons).toHaveCount(maps.length);
+    expect(await casterMapButtons.evaluateAll((buttons) => buttons.every((button) => (button as HTMLButtonElement).disabled))).toBe(true);
 
-    const teamActionStatus = await teamPage.evaluate(async (expectedRevision) => {
-      const response = await fetch("/api/v1/veto-rooms/ALPHAB/actions", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-veto-token": "team-one-secret" },
-        body: JSON.stringify({ expectedRevision, mapSlug: "ascent" }),
-      });
-      return response.status;
-    }, state.revision);
-    expect(teamActionStatus).toBe(200);
+    const teamActionRevision = state.revision;
+    await ascent.click();
+    await teamPage.getByRole("dialog").getByRole("button", { name: /Confirm/i }).click();
+    await expect.poll(() => state.actionRequests.length).toBe(1);
+    expect(state.actionRequests[0]).toEqual({
+      token: "team-one-secret",
+      body: { expectedRevision: teamActionRevision, mapSlug: "ascent" },
+    });
     expect(state.actionRoles).toContain("team_1");
 
     await expect(page.getByText("Banned", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
@@ -421,19 +484,24 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
     await expect(casterPage.getByRole("heading", { name: "Veto complete" })).toBeVisible({ timeout: 15_000 });
     await expectCasterControlsAbsent(casterPage);
 
-    const unpublished = await casterPage.evaluate(async () => {
+    const fetchPublicMatch = () => casterPage.evaluate(async () => {
+      const response = await fetch("/api/v1/matches?status=completed&pageSize=50");
+      return { status: response.status, body: await response.json() };
+    });
+    const unpublished = await fetchPublicMatch();
+    expect(unpublished.status).toBe(200);
+    expect(unpublished.body.data[0]).toMatchObject({ id: "match-1", status: "completed", veto: null });
+
+    state.publishResult = true;
+    const published = await fetchPublicMatch();
+    expect(published.status).toBe(200);
+    expect(published.body.data[0].veto).toMatchObject({ code: "ALPHAB", status: "completed", format: "bo3" });
+
+    const publishedRoom = await casterPage.evaluate(async () => {
       const response = await fetch("/api/v1/veto-rooms/ALPHAB");
       return response.status;
     });
-    expect(unpublished).toBe(401);
-
-    state.publishResult = true;
-    const published = await casterPage.evaluate(async () => {
-      const response = await fetch("/api/v1/veto-rooms/ALPHAB");
-      return { status: response.status, body: await response.json() };
-    });
-    expect(published.status).toBe(200);
-    expect(published.body.data.access).toEqual({ kind: "public", slot: null });
+    expect(publishedRoom).toBe(200);
 
     const casterMutation = await casterPage.evaluate(async () => {
       const response = await fetch("/api/v1/veto-rooms/ALPHAB/actions", {
@@ -451,7 +519,7 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
     else expect(viewport?.width).toBeGreaterThanOrEqual(700);
     await expectNoHorizontalOverflow(casterPage);
   } finally {
-    await Promise.allSettled([teamPage.close(), teamTwoPage.close(), casterPage.close()]);
-    await Promise.allSettled([casterContext.close(), teamTwoContext.close(), teamContext.close()]);
+    await Promise.allSettled([teamPage.close(), teamTwoPage.close(), viewerPage.close(), casterPage.close()]);
+    await Promise.allSettled([casterContext.close(), viewerContext.close(), teamTwoContext.close(), teamContext.close()]);
   }
 });

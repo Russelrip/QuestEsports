@@ -3,10 +3,11 @@
 ## Scope
 
 Task 5 added an integrated Playwright workflow and final backend caster-access
-assertions. Only these task files were changed:
+assertions. The implementation changes are limited to these task files:
 
 - `frontend/tests/e2e/integrated-veto.spec.ts`
 - `backend/tests/veto-routes.test.js`
+- `frontend/tests/unit/admin-veto-integration.test.tsx`
 
 The shared E2E fixture and codemaps were left unchanged.
 
@@ -70,6 +71,48 @@ intentionally skipped. No migration was reset or edited.
 
 ## Follow-up
 
-Resolve the unrelated backend workflow assertion and frontend unit assertion,
-then rerun the full suites. Run migration deploy/status against an isolated
-verification database before release.
+Resolve the unrelated backend workflow assertion, then rerun the backend full
+suite. Run migration deploy/status against an isolated verification database
+before release.
+
+## Fix-wave verification
+
+The review fix wave made the following changes:
+
+- The create request is now captured and asserted as a linked BO3 request with
+  `matchId`, `mapPoolId`, `rulePresetId`, flattened room settings, and no
+  manually supplied `participants` field.
+- Team-one's first map action is driven through the real `VetoRoomView` map
+  button and confirmation dialog. The intercepted production-shaped request
+  verifies the team token, map slug, and current revision.
+- Remaining completion steps use only the narrowly scoped action endpoint
+  needed to finish the deterministic scenario; the caster and viewer pages
+  receive updates through the five-second polling fallback.
+- Caster map buttons are asserted disabled and all mutation controls are
+  absent. The viewer link is opened and asserted to render the spectator view.
+- Public match publication is checked through a production-shaped request to
+  `/api/v1/matches?status=completed&pageSize=50`, asserting `veto: null` before
+  publication and the completed veto projection after publication is enabled.
+  This remains a contract test: the route is intercepted and publication is
+  toggled in deterministic fixture state because the current public match page
+  uses VALORANT series IDs and the repository has no live linked-match E2E
+  database fixture. It does not claim live database persistence.
+- The frontend caster-link unit failure was reproducible and fixed by waiting
+  for the selected room's `Open live room` link before inspecting role links.
+
+Exact fix-wave commands and results:
+
+- `backend: node --test tests/veto-routes.test.js` — PASS; 3 tests passed.
+- `frontend: npm run test` — PASS; 49 test files and 307 tests passed.
+- `frontend: npm run typecheck` — PASS.
+- `frontend: npm run lint` — PASS with the existing two warnings in
+  `frontend/tests/unit/veto-room-view.test.tsx` (`no-img-element` and missing
+  `alt`).
+- `frontend: NODE_ENV=development NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
+  INTERNAL_API_URL=http://127.0.0.1:3000 npm run test:e2e --
+  tests/e2e/integrated-veto.spec.ts` — PASS; 3 projects passed (Chromium,
+  Firefox, mobile Safari) in 35.6 seconds.
+
+Migration status is unchanged: `npx prisma migrate deploy` and `npx prisma
+migrate status` remain skipped because no isolated verification database is
+available. No migration was reset or edited.
