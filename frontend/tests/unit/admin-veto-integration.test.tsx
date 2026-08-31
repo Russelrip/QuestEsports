@@ -1,4 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AdminMatchRoomsManager from "../../components/admin/AdminMatchRoomsManager";
 import { buildVetoShareUrl } from "../../lib/veto";
@@ -47,5 +49,18 @@ describe("admin veto launch navigation", () => {
     expect(buildVetoShareUrl("https://admin.example", "room code", "caster/token")).toBe(
       "https://admin.example/veto/room%20code#access=caster%2Ftoken",
     );
+  });
+
+  it("keeps the linked-flow safeguards and query-context behavior explicit", () => {
+    const source = readFileSync(resolve(process.cwd(), "components/admin/AdminVetoRoomsManager.tsx"), "utf8");
+    expect(source).toContain("const queryKey = `${queryRoomId}|${queryMatchId}|${queryTournamentId}`;");
+    expect(source).toContain("appliedQueryKey.current === queryKey");
+    expect(source).toContain("setForm((current) => ({ ...current, matchId: queryMatchId, tournamentId: queryTournamentId }))");
+    expect(source).toContain("issued?.caster");
+    expect(source).toContain("[\"bo1\", \"bo3\", \"bo5\"]");
+    expect(source).toContain("selectedMatch.participants.map((entry) => entry.displayName)");
+    expect(source).toContain("resolveImageUrl(entry.logoUrl)");
+    expect(source).toContain("status === 409");
+    expect(source).toContain("setIssued(null)");
   });
 });
