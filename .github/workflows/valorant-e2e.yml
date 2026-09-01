@@ -1,0 +1,110 @@
+name: VALORANT E2E (protected)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-character SHA currently at main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valorant-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-main:
+    name: Validate the approved main revision
+    if: ${{ github.actor == github.repository_owner }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.validate.outputs.source_sha }}
+    steps:
+      - name: Check out main for revision validation
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate the approved main revision
+        id: validate
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          case "$SOURCE_SHA" in
+            ''|*[!0-9a-fA-F]*)
+              echo 'source_sha must be a 40-character hexadecimal SHA' >&2
+              exit 1
+              ;;
+          esac
+          test "${#SOURCE_SHA}" -eq 40
+          checked_out_sha="$(git rev-parse --verify HEAD)"
+          test "$SOURCE_SHA" = "$checked_out_sha"
+          printf 'source_sha=%s\n' "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+  valorant-e2e:
+    name: VALORANT two-service E2E
+    if: ${{ github.actor == github.repository_owner && needs.validate-main.result == 'success' }}
+    needs:
+      - validate-main
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: valorant-e2e
+    steps:
+      - name: Check out the approved main revision
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.validate-main.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Check out valorant-platform-backend
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: naheedroomy/valorant-platform-backend
+          token: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}
+          ref: e8a8f056a52fcbfb08e453bc6b51723c7b4b949c
+          path: valorant-platform-backend
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.7"
+
+      - name: Prepare FastAPI dependencies
+        working-directory: valorant-platform-backend
+        run: uv sync --extra dev --locked
+
+      - name: Run two-service E2E
+        working-directory: backend
+        env:
+          VALORANT_PLATFORM_REPO: ${{ github.workspace }}/valorant-platform-backend
+          E2E_VAL_DATABASE_URL: ${{ secrets.E2E_VAL_DATABASE_URL }}
+          E2E_QUEST_DATABASE_URL: ${{ secrets.E2E_QUEST_DATABASE_URL }}
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_SAVED_TEAM_A_ID: ${{ secrets.E2E_SAVED_TEAM_A_ID }}
+          E2E_SAVED_TEAM_B_ID: ${{ secrets.E2E_SAVED_TEAM_B_ID }}
+          E2E_PLAYER_A: ${{ secrets.E2E_PLAYER_A }}
+          E2E_PLAYER_B: ${{ secrets.E2E_PLAYER_B }}
+          E2E_MATCH_HENRIK_ID: ${{ secrets.E2E_MATCH_HENRIK_ID }}
+          E2E_MATCH_UUIDS: ${{ secrets.E2E_MATCH_UUIDS }}
+          E2E_ANCHOR_MISMATCH_SERIES: ${{ secrets.E2E_ANCHOR_MISMATCH_SERIES }}
+        run: npm run test:valorant:e2e

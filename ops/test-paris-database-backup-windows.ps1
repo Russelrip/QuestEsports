@@ -47,7 +47,7 @@ try {
     -v "${RecoveryRoot}:/keys:ro" `
     -v "${resolvedBackupRoot}:/backups:ro" `
     -v "${workDirectory}:/restore" `
-    alpine:3.22 sh -lc "apk add --no-cache age >/dev/null && age --decrypt --identity /keys/quest-esports-production-age-identity.txt /backups/$([IO.Path]::GetFileName($BackupPath)) | tar -xzf - -C /restore"
+    alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce sh -lc "apk add --no-cache age=1.2.1-r0 >/dev/null && age --decrypt --identity /keys/quest-esports-production-age-identity.txt /backups/$([IO.Path]::GetFileName($BackupPath)) | tar -xzf - -C /restore"
   if ($LASTEXITCODE -ne 0) {
     throw "Could not decrypt and extract the backup."
   }
@@ -66,12 +66,15 @@ try {
   if ($existingContainer) {
     throw "Refusing to reuse an existing Docker container: $containerName"
   }
+  # Use the approved multi-architecture PostgreSQL 17 Bookworm index. Any
+  # platform child digest is explanatory only; this index is the release
+  # contract and must remain the image passed to Docker.
   docker run --name $containerName `
     -e POSTGRES_USER=quest_restore `
     -e POSTGRES_PASSWORD=$restorePassword `
     -e POSTGRES_DB=quest_restore `
     -p 127.0.0.1::5432 `
-    -d postgres:17-alpine | Out-Null
+    -d postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0 | Out-Null
   if ($LASTEXITCODE -ne 0) {
     throw "Could not start the disposable PostgreSQL container."
   }

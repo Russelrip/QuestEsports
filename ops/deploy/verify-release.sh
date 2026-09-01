@@ -31,10 +31,7 @@ require_setting() { [[ -n "${!1:-}" ]] || die "missing release setting: $1"; }
 require_setting RELEASE_ENVIRONMENT
 require_setting RELEASE_ENVIRONMENT_PROTECTED
 [[ "$RELEASE_ENVIRONMENT" == production && "$RELEASE_ENVIRONMENT_PROTECTED" == 1 ]] || die 'release environment is not the protected production environment.'
-for setting in RELEASE_ROOT DOCKER_BIN QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE CURL_BIN DATABASE_READINESS_COMMAND VALORANT_CONTAINER_HEALTH_COMMAND COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER QUEST_FRONTEND_IMAGE_APPROVED_REF QUEST_BACKEND_IMAGE_APPROVED_REF MIGRATOR_IMAGE_APPROVED_REF POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF; do require_setting "$setting"; done
-[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must not reuse the Quest signer identity.'
-[[ "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'VALORANT trust policy must not reuse the Quest signer identity.'
-[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must remain independent of VALORANT.'
+for setting in RELEASE_ROOT DOCKER_BIN QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE CURL_BIN DATABASE_READINESS_COMMAND SECURITY_VERIFY_COMMAND VALORANT_CONTAINER_HEALTH_COMMAND COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER QUEST_FRONTEND_IMAGE_APPROVED_REF QUEST_BACKEND_IMAGE_APPROVED_REF MIGRATOR_IMAGE_APPROVED_REF POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF VALORANT_RUNTIME_COMPOSE_CONTRACT RECOVERY_ADMIN_URL_FILE; do require_setting "$setting"; done
 [[ "${QUEST_HEALTH_URL}" == http://127.0.0.1:5001/api/health/live ]] || die 'Quest liveness endpoint identity is not fixed.'
 [[ "${QUEST_READINESS_URL}" == http://127.0.0.1:5001/api/health/ready ]] || die 'Quest readiness endpoint identity is not fixed.'
 [[ "${VALORANT_HEALTH_URL}" == https://valorant-platform:8000/api/v1/health ]] || die 'VALORANT health endpoint identity is not fixed.'
@@ -44,8 +41,85 @@ releases_root="${RELEASES_ROOT:-$RELEASE_ROOT/releases}"
 [[ -d "$releases_root" && ! -L "$releases_root" ]] || die 'RELEASES_ROOT must be an existing non-symlink directory.'
 canonical_releases_root="$(realpath "$releases_root" 2>/dev/null)" || die 'RELEASES_ROOT cannot be canonicalized.'
 [[ "$canonical_releases_root" == "$releases_root" ]] || die 'RELEASES_ROOT must not contain a symlink.'
-[[ -x "$DOCKER_BIN" && -x "$CURL_BIN" && -x "$DATABASE_READINESS_COMMAND" && -x "$VALORANT_CONTAINER_HEALTH_COMMAND" && -x "$COSIGN_BIN" ]] || die 'verification command is not executable.'
+[[ -x "$DOCKER_BIN" && -x "$CURL_BIN" && -x "$DATABASE_READINESS_COMMAND" && -x "$SECURITY_VERIFY_COMMAND" && -x "$VALORANT_CONTAINER_HEALTH_COMMAND" && -x "$COSIGN_BIN" ]] || die 'verification command is not executable.'
 [[ -f "$VALORANT_CA_FILE" && -r "$VALORANT_CA_FILE" && ! -L "$VALORANT_CA_FILE" ]] || die 'VALORANT_CA_FILE is missing or unsafe.'
+[[ -f "$RECOVERY_ADMIN_URL_FILE" && -r "$RECOVERY_ADMIN_URL_FILE" && ! -L "$RECOVERY_ADMIN_URL_FILE" ]] || die 'recovery administrator URL file is missing or unsafe.'
+if [[ "$fixture_mode" != 1 ]]; then
+  [[ "$(stat -c '%u %a' "$RECOVERY_ADMIN_URL_FILE" 2>/dev/null)" == '0 600' || "$(stat -c '%u %a' "$RECOVERY_ADMIN_URL_FILE" 2>/dev/null)" == '0 640' ]] || die 'recovery administrator URL file must be root-owned and private.'
+fi
+validate_security_url_file() {
+  python3 - "$(< "$RECOVERY_ADMIN_URL_FILE")" <<'PY' || die 'recovery administrator URL is not the canonical verify-full private target.'
+from urllib.parse import urlsplit
+import sys
+u = urlsplit(sys.argv[1])
+if (u.scheme not in ("postgres", "postgresql") or u.hostname != "quest-postgres" or u.port != 5432 or
+        u.username != "quest_recovery_admin" or not u.password or u.path != "/quest" or u.fragment or
+        u.query.split("&") != ["sslmode=verify-full", "sslrootcert=/run/secrets/quest-private-ca.crt"]):
+    raise SystemExit(1)
+PY
+}
+validate_security_url_file
+validate_rendered_valorant_compose() {
+  local source_json_file contract_json_file expected_image
+  expected_image="$(awk -F= '$1 == "VALORANT_IMAGE" { print substr($0, index($0,"=")+1); exit }' "$release_dir/.env")"
+  source_json_file="$(mktemp)" || die 'could not create the rendered VALORANT Compose source file.'
+  contract_json_file="$(mktemp)" || { rm -f "$source_json_file"; die 'could not create the rendered VALORANT Compose contract file.'; }
+  chmod 600 "$source_json_file" "$contract_json_file"
+  "$DOCKER_BIN" compose --env-file "$release_dir/.env" -f "$release_dir/valorant.compose.yml" --project-name valorant-prod config --no-env-resolution --format json >"$source_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source is invalid.'; }
+  "$DOCKER_BIN" compose --env-file "$release_dir/.env" -f "$VALORANT_RUNTIME_COMPOSE_CONTRACT" --project-name valorant-prod config --no-env-resolution --format json >"$contract_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose contract is invalid.'; }
+  python3 - "$source_json_file" "$contract_json_file" "$expected_image" <<'PY' 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
+import json, sys
+def contract(raw, expected_image):
+    with open(raw, encoding="utf-8") as rendered:
+        doc = json.load(rendered)
+    if doc.get("name") != "valorant-prod": raise SystemExit(1)
+    service = doc.get("services", {}).get("valorant-platform")
+    if not isinstance(service, dict) or service.get("image") != expected_image: raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_CA_FILE") != "/run/secrets/quest-private-ca.crt": raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres": raise SystemExit(1)
+    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_VERIFY") != "full": raise SystemExit(1)
+    if set(service.get("networks", {})) != {"quest-shared"}: raise SystemExit(1)
+    network_entry = service.get("networks", {}).get("quest-shared")
+    expected_aliases = ("valorant-discord-bot", "valorant-name-audit", "valorant-platform", "valorant-updater")
+    if not isinstance(network_entry, dict): raise SystemExit(1)
+    aliases = network_entry.get("aliases")
+    if not isinstance(aliases, list) or tuple(sorted(aliases)) != expected_aliases: raise SystemExit(1)
+    network = doc.get("networks", {}).get("quest-shared", {})
+    if network.get("name") != "quest-shared" or network.get("external") is not True: raise SystemExit(1)
+    env_files = service.get("env_file", [])
+    if len(env_files) != 1: raise SystemExit(1)
+    env_file = env_files[0] if isinstance(env_files[0], dict) else {"path": env_files[0], "required": True}
+    if env_file.get("path") != "/etc/quest-esports/valorant.production.env" or env_file.get("required") is not True: raise SystemExit(1)
+    mounts = service.get("volumes", [])
+    if not any(isinstance(m, dict) and m.get("source") == "/etc/quest-esports/tls/quest-private-ca.crt" and m.get("target") == "/run/secrets/quest-private-ca.crt" and m.get("read_only") is True for m in mounts): raise SystemExit(1)
+    return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())), tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))), tuple(sorted(service["networks"])), tuple(sorted(aliases)))
+if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]): raise SystemExit(1)
+PY
+  rm -f "$source_json_file" "$contract_json_file"
+}
+verify_quest_readiness_response() {
+  local response="$1"
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for exact Quest readiness validation.'
+  python3 - "$response" <<'PY' || die 'Quest readiness response was malformed or not the exact supported success shape.'
+import json
+import sys
+try:
+    payload = json.loads(sys.argv[1])
+except (TypeError, ValueError):
+    raise SystemExit(1)
+if not isinstance(payload, dict) or set(payload) != {"success", "message", "timestamp", "readiness"} or payload.get("success") is not True:
+    raise SystemExit(1)
+if payload.get("message") != "Quest E-sports API is healthy." or not isinstance(payload.get("timestamp"), str):
+    raise SystemExit(1)
+readiness = payload.get("readiness")
+if not isinstance(readiness, dict) or set(readiness) not in ({"database", "storage"}, {"database", "storage", "realtime"}) or readiness.get("database") != "ready" or readiness.get("storage") != "ready":
+    raise SystemExit(1)
+if "realtime" in readiness and readiness["realtime"] != "ready":
+    raise SystemExit(1)
+if not __import__("re").fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", payload["timestamp"]):
+    raise SystemExit(1)
+PY
+}
 current_link="${CURRENT_LINK:-$RELEASE_ROOT/current}"
 current_target="$(realpath "$current_link" 2>/dev/null || true)"
 release_dir="${1:-$current_target}"
@@ -63,6 +137,7 @@ for bundle_file in compose.production.yml valorant.compose.yml .env release-meta
     [[ "$bundle_mode" == 600 || "$bundle_mode" == 640 ]] || die "release bundle $bundle_file has an unsafe mode."
   fi
 done
+validate_rendered_valorant_compose
 
 validate_metadata() {
   local metadata_file="$1" release_name="$2" metadata_line metadata_key
@@ -152,29 +227,20 @@ validate_bundle_images() {
   for key in QUEST_FRONTEND_IMAGE QUEST_BACKEND_IMAGE MIGRATOR_IMAGE POSTGRES_IMAGE VALORANT_IMAGE; do
     value="$(awk -F= -v k="$key" '$1 == k { print substr($0, index($0,"=")+1); found=1 } END { if (!found) exit 1 }' "$bundle/.env")" || die "$bundle/.env is missing $key."
     case "$key" in
-      POSTGRES_IMAGE) [[ "$value" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe PostgreSQL image." ;;
+      POSTGRES_IMAGE) [[ "$value" == 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' ]] || die "$bundle/.env has an unapproved PostgreSQL image." ;;
       *) [[ "$value" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe $key." ;;
     esac
     approved="${key}_APPROVED_REF"
     [[ "${!approved}" == "$value" ]] || die "$approved does not exactly approve $key."
     case "$key" in
       QUEST_FRONTEND_IMAGE|QUEST_BACKEND_IMAGE|MIGRATOR_IMAGE)
-        cosign_identity="$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP"
-        cosign_issuer="$QUEST_COSIGN_OIDC_ISSUER"
+        RELEASE_IMAGE="$value" "$COSIGN_BIN" verify \
+          --certificate-identity-regexp "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" \
+          --certificate-oidc-issuer "$QUEST_COSIGN_OIDC_ISSUER" "$value" >/dev/null 2>&1 \
+          || die "Cosign signature verification failed for $key."
         ;;
-      VALORANT_IMAGE)
-        cosign_identity="$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP"
-        cosign_issuer="$VALORANT_COSIGN_OIDC_ISSUER"
-        ;;
-      POSTGRES_IMAGE)
-        cosign_identity="$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP"
-        cosign_issuer="$POSTGRES_COSIGN_OIDC_ISSUER"
-        ;;
+      POSTGRES_IMAGE|VALORANT_IMAGE) : ;; # External images use exact digest equality above.
     esac
-    RELEASE_IMAGE="$value" "$COSIGN_BIN" verify \
-      --certificate-identity-regexp "$cosign_identity" \
-      --certificate-oidc-issuer "$cosign_issuer" "$value" >/dev/null 2>&1 \
-      || die "Cosign signature verification failed for $key."
   done
 }
 bundle_image() {
@@ -224,9 +290,12 @@ validate_active_project "$release_dir/valorant.compose.yml" valorant-prod "$rele
 validate_aliases
 quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health failed.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health JSON was not healthy.'
-"$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" >/dev/null 2>&1 || die 'Quest readiness failed.'
+quest_readiness="$($CURL_BIN --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" 2>/dev/null)" || die 'Quest readiness failed.'
+verify_quest_readiness_response "$quest_readiness"
 valorant_json="$(VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$VALORANT_CA_FILE" "$VALORANT_CONTAINER_HEALTH_COMMAND" 2>/dev/null)" || die 'VALORANT HTTPS health failed from the Quest network boundary.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$valorant_json" && grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' <<< "$valorant_json" || die 'VALORANT health JSON was not status ok/db up.'
 database_readiness_output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres "$DATABASE_READINESS_COMMAND" 2>/dev/null)" || die 'database readiness failed.'
 [[ "$database_readiness_output" =~ ^ready[[:space:]]+target=quest-postgres[[:space:]]+schemas=public,valorant([[:space:]]|$) ]] || die 'database readiness did not identify both target schemas.'
+security_output="$(SECURITY_VERIFY_TARGET=quest-postgres TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres TARGET_DATABASE_PORT=5432 TARGET_DATABASE_NAME=quest TARGET_POSTGRES_MAJOR=17 SECURITY_VERIFY_DATABASE_URL_FILE="$RECOVERY_ADMIN_URL_FILE" DATABASE_URL_FILE="$RECOVERY_ADMIN_URL_FILE" RELEASE_SHA="$(basename "$release_dir")" "$SECURITY_VERIFY_COMMAND" 2>/dev/null)" || die 'database security verification failed.'
+[[ "$security_output" == security-verified ]] || die 'database security verifier returned an invalid acknowledgement.'
 printf '%s\n' 'release verification passed: quest-prod, valorant-prod, health, readiness, HTTPS JSON health, and database readiness.'

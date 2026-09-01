@@ -20,16 +20,593 @@ env:
   CI: true
 
 jobs:
+  production-deployment-contracts:
+    name: Production deployment workflow contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Assert the Compose-only production authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+          import yaml
+
+          root = Path('.')
+
+          def expression(body):
+              return '$' + '{{' + body + '}}'
+
+          def shell_statements(run):
+              return {line.strip() for line in run.splitlines() if line.strip()}
+
+          def require_statements(run, *required):
+              statements = shell_statements(run)
+              assert set(required) <= statements, set(required) - statements
+
+          def workflow(name):
+              with (root / '.github' / 'workflows' / name).open(encoding='utf-8') as workflow_file:
+                  return yaml.safe_load(workflow_file)
+
+          # Every executable action is immutable and carries a human-readable
+          # release comment. Parse workflow values and source lines rather than
+          # accepting a loose substring such as ``@v4``.
+          action_ref = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$')
+          action_comment = re.compile(r'\s+#\s+v[0-9]+(?:\.[0-9]+){0,2}\s*$')
+          workflow_paths = sorted(
+              set((root / '.github' / 'workflows').glob('*.yml'))
+              | set((root / '.github' / 'workflows').glob('*.yaml'))
+          )
+          assert workflow_paths
+          for workflow_path in workflow_paths:
+              source = workflow_path.read_text(encoding='utf-8')
+              action_lines = [line for line in source.splitlines() if re.match(r'^\s+uses:\s*', line)]
+              assert action_lines, workflow_path
+              for line in action_lines:
+                  value = line.split('uses:', 1)[1].split('#', 1)[0].strip()
+                  assert action_ref.fullmatch(value), (workflow_path.name, line)
+                  assert action_comment.search(line), (workflow_path.name, line)
+              document = workflow(workflow_path.name)
+              def assert_action_values(value):
+                  if isinstance(value, dict):
+                      if 'uses' in value:
+                          assert action_ref.fullmatch(value['uses']), (workflow_path.name, value['uses'])
+                      for child in value.values():
+                          assert_action_values(child)
+                  elif isinstance(value, list):
+                      for child in value:
+                          assert_action_values(child)
+              assert_action_values(document)
+
+          expected_postgres16 = 'postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825'
+          expected_playwright = 'mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48'
+          backend_service = workflow('ci.yml')['jobs']['backend']['services']['postgres']
+          assert backend_service['image'] == expected_postgres16
+          service_images = [
+              service['image']
+              for job in workflow('ci.yml')['jobs'].values()
+              for service in job.get('services', {}).values()
+              if isinstance(service, dict) and 'image' in service
+          ]
+          assert service_images == [expected_postgres16], service_images
+          assert workflow('ci.yml')['jobs']['frontend']['container'] == expected_playwright
+          assert ':' + 'latest' not in '\n'.join(path.read_text(encoding='utf-8') for path in workflow_paths)
+
+          frontend_package = json.loads((root / 'frontend' / 'package.json').read_text(encoding='utf-8'))
+          frontend_lock = json.loads((root / 'frontend' / 'package-lock.json').read_text(encoding='utf-8'))
+          assert frontend_package['devDependencies']['@playwright/test'] == '1.61.1'
+          assert 'vercel' not in frontend_package['devDependencies']
+          assert frontend_lock['packages']['']['devDependencies']['@playwright/test'] == '1.61.1'
+          assert 'vercel' not in frontend_lock['packages']['']['devDependencies']
+          assert frontend_lock['packages']['node_modules/playwright']['version'] == '1.61.1'
+          assert 'node_modules/vercel' not in frontend_lock['packages']
+
+          e2e_path = root / '.github' / 'workflows' / 'valorant-e2e.yml'
+          e2e_source = e2e_path.read_text(encoding='utf-8')
+          e2e = workflow('valorant-e2e.yml')
+          uv_step = next(
+              step for step in e2e['jobs']['valorant-e2e']['steps']
+              if step.get('name') == 'Set up uv'
+          )
+          assert uv_step['uses'] == 'astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d'
+          assert uv_step['with']['version'] == '0.12.7'
+          assert re.search(
+              r'uses:\s*astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d\s+#\s+v10\.0\.1\s*$',
+              e2e_source,
+              re.MULTILINE,
+          )
+          sibling_checkout = next(
+              step for step in e2e['jobs']['valorant-e2e']['steps']
+              if step.get('name') == 'Check out valorant-platform-backend'
+          )
+          assert sibling_checkout['with']['repository'] == 'naheedroomy/valorant-platform-backend'
+          assert re.fullmatch(r'[0-9a-f]{40}', sibling_checkout['with']['ref'])
+          assert sibling_checkout['with']['ref'] == 'e8a8f056a52fcbfb08e453bc6b51723c7b4b949c'
+          assert sibling_checkout['with']['token'] == expression(' secrets.VALORANT_PLATFORM_ACCESS_TOKEN ')
+          sync_step = next(
+              step for step in e2e['jobs']['valorant-e2e']['steps']
+              if step.get('name') == 'Prepare FastAPI dependencies'
+          )
+          assert sync_step['run'] == 'uv sync --extra dev --locked'
+
+          cd = workflow('cd.yml')
+          compose = workflow('deploy-compose.yml')
+          frontend = workflow('deploy-frontend.yml')
+          build = workflow('build-container-images.yml')
+
+          frontend_steps = frontend['jobs']['deploy']['steps']
+          vercel_build = next(step for step in frontend_steps if step.get('name') == 'Build exact Vercel artifact')
+          assert vercel_build['run'].splitlines() == [
+              'npx --yes vercel@54.17.3 pull --yes --environment=production --token="$VERCEL_TOKEN"',
+              'npx --yes vercel@54.17.3 build --prod --token="$VERCEL_TOKEN"',
+          ]
+          vercel_promote = next(step for step in frontend_steps if step.get('name') == 'Promote tested artifact')
+          assert vercel_promote['run'] == 'npx --yes vercel@54.17.3 deploy --prebuilt --prod --token="$VERCEL_TOKEN"'
+          assert not any('frontend/node_modules/.bin/vercel' in step.get('run', '') for step in frontend_steps)
+          install_step = next(step for step in frontend_steps if step.get('name') == 'Install and validate')
+          assert 'npm ci' in install_step['run']
+
+          cd_if = expression(" vars.PRODUCTION_DEPLOYMENT_MODE == 'legacy-pm2' && vars.BACKEND_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) ")
+          compose_if = expression(" vars.PRODUCTION_DEPLOYMENT_MODE == 'compose' && vars.COMPOSE_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Build container images' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_run' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) ")
+          frontend_if = expression(" vars.PRODUCTION_DEPLOYMENT_MODE == 'compose' && vars.FRONTEND_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Deploy immutable Compose release' && github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.event == 'workflow_run' || github.event.workflow_run.event == 'workflow_dispatch') && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) ")
+
+          assert cd['concurrency'] == {'group': 'production-release', 'cancel-in-progress': False}
+          assert cd['jobs']['backend-deploy']['if'] == cd_if
+          legacy_identity = cd['jobs']['backend-deploy']['steps'][0]['run']
+          require_statements(
+              legacy_identity,
+              'test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq \'.object.sha\')" = "$DEPLOY_SHA"',
+              'ci_run_path="$(jq -er \'.path\' <<< "$ci_run_json")"',
+              'test "$(jq -er \'.repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "${ci_run_path%@*}" = \'.github/workflows/ci.yml\'',
+              'test "$(jq -er \'.workflow_id | tostring\' <<< "$ci_run_json")" = "$ci_workflow_id"',
+              'test "$(jq -er \'.repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "$(jq -er \'.head_repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "$(jq -er \'.head_sha | select(test("^[0-9a-f]{40}$"))\' <<< "$ci_run_json")" = "$DEPLOY_SHA"',
+          )
+          assert 'git/ref/heads/main' in legacy_identity
+          assert 'event=push' in legacy_identity
+          assert 'head_repository.full_name' in legacy_identity
+          assert 'actions/workflows/ci.yml' in legacy_identity
+          assert 'actions/runs/$ci_run_id' in legacy_identity
+          assert 'test "$(jq -er \'.head_sha | select(test("^[0-9a-f]{40}$"))\' <<< "$ci_run_json")" = "$DEPLOY_SHA"' in legacy_identity
+          build_if = expression(" github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository ")
+          assert build['jobs']['build']['if'] == build_if
+          build_validation = next(step for step in build['jobs']['build']['steps'] if step.get('name') == 'Validate release inputs')
+          assert {'RELEASE_WORKFLOW_NAME', 'RELEASE_CONCLUSION', 'RELEASE_HEAD_BRANCH', 'RELEASE_HEAD_SHA'} <= set(build_validation['env'])
+          assert 'RELEASE_HEAD_SHA" == "$RELEASE_SHA' in build_validation['run']
+          manifest_upload = next(step for step in build['jobs']['build']['steps'] if step.get('name') == 'Upload the SHA-bound release manifest')
+          assert 'container-release-manifest-' in manifest_upload['with']['name']
+          assert 'github.event.workflow_run.id' in manifest_upload['with']['name']
+          assert 'github.event.workflow_run.head_sha' in manifest_upload['with']['name']
+
+          assert compose['concurrency'] == {'group': 'production-release', 'cancel-in-progress': False}
+          assert compose['jobs']['resolve-build']['if'] == compose_if
+          compose_triggers = compose.get('on', compose.get(True))
+          assert compose_triggers['workflow_dispatch']['inputs']['rollback_sha']['required'] is False
+          resolve_run = compose['jobs']['resolve-build']['steps'][0]['run']
+          require_statements(
+              resolve_run,
+              'build_run_path="$(jq -er \'.path\' <<< "$build_run_json")"',
+              'test "${build_run_path%@*}" = \'.github/workflows/build-container-images.yml\'',
+              'test "$(jq -er \'.workflow_id | tostring\' <<< "$build_run_json")" = "$build_workflow_id"',
+              'test "$(jq -er \'.repository.full_name\' <<< "$build_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "$(jq -er \'.head_repository.full_name\' <<< "$build_run_json")" = "$GITHUB_REPOSITORY"',
+              'ci_run_path="$(jq -er \'.path\' <<< "$ci_run_json")"',
+              'test "${ci_run_path%@*}" = \'.github/workflows/ci.yml\'',
+              'test "$(jq -er \'.workflow_id | tostring\' <<< "$ci_run_json")" = "$ci_workflow_id"',
+              'test "$(jq -er \'.repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "$(jq -er \'.head_repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "$(jq -er \'.workflow_run.id | tostring\' <<< "$artifact_json")" = "$build_run_id"',
+              'test "$(jq -er \'.workflow_run.head_sha\' <<< "$artifact_json")" = "$release_sha"',
+          )
+          assert 'REQUESTED_ROLLBACK_SHA' in resolve_run
+          assert 'gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main"' in resolve_run
+          assert 'test "$main_head_sha" = "$release_sha"' in resolve_run
+          assert 'test "$release_sha" = "$REQUESTED_ROLLBACK_SHA"' in resolve_run
+          assert 'actions/workflows/build-container-images.yml' in resolve_run
+          assert 'actions/runs/$build_run_id' in resolve_run
+          assert 'actions/workflows/ci.yml' in resolve_run
+          assert 'actions/runs/$ci_run_id' in resolve_run
+          assert 'ci_run_id' in resolve_run
+          assert '.head_repository.full_name' in resolve_run
+          assert '.workflow_id' in resolve_run
+          assert 'gh run view' not in resolve_run
+          assert 'build_run_json' in resolve_run and 'ci_run_json' in resolve_run
+          assert 'ci_run_id' in compose['jobs']['resolve-build']['outputs']
+          release_success = compose['jobs']['release-success']
+          assert release_success['needs'] == ['resolve-build', 'deploy']
+          assert release_success['if'] == expression(' always() ')
+          release_steps = release_success['steps']
+          result_step = release_steps[0]
+          assert result_step['name'] == 'Require the actual deploy job to succeed'
+          assert 'test "$RESOLVE_RESULT" = success' in result_step['run']
+          assert 'test "$DEPLOY_RESULT" = success' in result_step['run']
+          proof_writer = next(step for step in release_steps if step.get('name') == 'Write the exact Compose deployment proof')
+          assert "'compose_workflow=Deploy_immutable_Compose_release'" in proof_writer['run']
+          upload_steps = [step for step in release_steps if step.get('uses', '').startswith('actions/upload-artifact@')]
+          assert {step['with']['name'] for step in upload_steps} == {'compose-release-success', 'frontend-release', 'frontend-release-mode'}
+          frontend_sha_writer = next(step for step in release_steps if step.get('name') == 'Write the frontend release lineage')
+          assert 'release-lineage.txt' in frontend_sha_writer['run']
+          assert 'ci_run_id=$CI_RUN_ID' in frontend_sha_writer['run']
+          frontend_mode_writer = next(step for step in release_steps if step.get('name') == 'Write the frontend release mode')
+          assert 'release-mode.txt' in frontend_mode_writer['run']
+
+          assert frontend['concurrency'] == {'group': 'production-release', 'cancel-in-progress': False}
+          frontend_triggers = frontend.get('on', frontend.get(True))
+          frontend_trigger = frontend_triggers['workflow_run']
+          assert frontend_trigger['workflows'] == ['Deploy immutable Compose release']
+          assert len(frontend_trigger['workflows']) == 1
+          assert 'CD' not in frontend_trigger['workflows']
+          assert set(frontend_triggers) == {'workflow_dispatch', 'workflow_run'}
+          assert frontend['jobs']['deploy']['if'] == frontend_if
+          assert 'deploy_sha' not in frontend_triggers['workflow_dispatch']['inputs']
+          assert frontend_triggers['workflow_dispatch']['inputs']['compose_run_id']['required'] is True
+          download_steps = [step for step in frontend['jobs']['deploy']['steps'] if step.get('uses', '').startswith('actions/download-artifact@')]
+          assert len(download_steps) == 6
+          assert all(step['uses'] == 'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093' for step in download_steps)
+          automatic_downloads = [step for step in download_steps if step['if'] == expression(" github.event_name == 'workflow_run' ")]
+          assert {step['with']['name'] for step in automatic_downloads} == {'compose-release-success', 'frontend-release', 'frontend-release-mode'}
+          assert all(step['with']['run-id'] == expression(' github.event.workflow_run.id ') for step in automatic_downloads)
+          identity_step = next(step for step in frontend['jobs']['deploy']['steps'] if step.get('name') == 'Validate the exact Compose workflow run identity')
+          require_statements(
+              identity_step['run'],
+              'compose_run_path="$(jq -er \'.path\' <<< "$compose_run_json")"',
+              'test "${compose_run_path%@*}" = \'.github/workflows/deploy-compose.yml\'',
+              'test "$(jq -er \'.workflow_id | tostring\' <<< "$compose_run_json")" = "$compose_workflow_id"',
+              'test "$(jq -er \'.repository.full_name\' <<< "$compose_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "$(jq -er \'.head_repository.full_name\' <<< "$compose_run_json")" = "$GITHUB_REPOSITORY"',
+              'compose_repository_id="$(jq -er \'.repository.id | tostring\' <<< "$compose_run_json")"',
+              'compose_head_repository_id="$(jq -er \'.head_repository.id | tostring\' <<< "$compose_run_json")"',
+              'compose_artifacts_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$COMPOSE_RUN_ID/artifacts?per_page=100")"',
+              '[[ "$compose_event" == workflow_run || "$compose_event" == workflow_dispatch ]]',
+              'test "$(jq -er \'.workflow_run.id | tostring\' <<< "$artifact_json")" = "$COMPOSE_RUN_ID"',
+              'test "$(jq -er \'.workflow_run.repository_id | tostring\' <<< "$artifact_json")" = "$compose_repository_id"',
+              'test "$(jq -er \'.workflow_run.head_repository_id | tostring\' <<< "$artifact_json")" = "$compose_head_repository_id"',
+              'test "$(jq -er \'.workflow_run.head_branch\' <<< "$artifact_json")" = main',
+              'test "$(jq -er \'.workflow_run.head_sha\' <<< "$artifact_json")" = "$resolved_compose_head_sha"',
+              '[[ "$(jq -er \'.id | tostring\' <<< "$artifact_json")" =~ ^[0-9]+$ ]]',
+              'test "$(jq -er \'.name\' <<< "$artifact_json")" = "$expected_artifact"',
+              'test "$(jq -er \'.expired\' <<< "$artifact_json")" = false',
+          )
+          assert 'actions/workflows/deploy-compose.yml' in identity_step['run']
+          assert 'actions/runs/$COMPOSE_RUN_ID' in identity_step['run']
+          assert '.workflow_id' in identity_step['run']
+          assert '.head_repository.full_name' in identity_step['run']
+          proof_step = next(step for step in frontend['jobs']['deploy']['steps'] if step.get('name') == 'Validate the actual Compose deploy job proof')
+          assert 'release-lineage.txt' in proof_step['run']
+          assert 'expected_lineage_keys' in proof_step['run']
+          assert 'test "$proof_sha" = "$release_sha"' in proof_step['run']
+          assert 'test "$COMPOSE_RELEASE_HEAD_SHA" = "$release_sha"' in proof_step['run']
+          assert 'release_mode' in proof_step['run']
+          identity_step = next(step for step in frontend['jobs']['deploy']['steps'] if step.get('name') == 'Validate the exact Compose workflow run identity')
+          assert 'gh run view' not in identity_step['run']
+          assert 'actions/workflows/deploy-compose.yml' in identity_step['run']
+          compatibility_step = next(step for step in frontend['jobs']['deploy']['steps'] if step.get('name') == 'Validate approved commit and backend compatibility')
+          require_statements(
+              compatibility_step['run'],
+              'ci_run_path="$(jq -er \'.path\' <<< "$ci_run_json")"',
+              'test "${ci_run_path%@*}" = \'.github/workflows/ci.yml\'',
+              'test "$(jq -er \'.workflow_id | tostring\' <<< "$ci_run_json")" = "$ci_workflow_id"',
+              'test "$(jq -er \'.repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "$(jq -er \'.head_repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
+              'test "$(jq -er \'.head_sha | select(test("^[0-9a-f]{40}$"))\' <<< "$ci_run_json")" = "$DEPLOY_SHA"',
+          )
+          assert 'actions/runs/$resolved_ci_run_id' in compatibility_step['run']
+          assert 'resolved_ci_run_id="$CI_RUN_ID"' in compatibility_step['run']
+          assert 'ci_runs_json' not in compatibility_step['run']
+          assert '.head_repository.full_name' in compatibility_step['run']
+          assert '.workflow_id' in compatibility_step['run']
+          assert 'gh run view' not in compatibility_step['run']
+          assert 'git/ref/heads/main' not in compatibility_step['run']
+
+          for name, document in [('cd.yml', cd), ('deploy-compose.yml', compose), ('deploy-frontend.yml', frontend)]:
+              assert document['concurrency'] == {'group': 'production-release', 'cancel-in-progress': False}, name
+
+          print('Compose-only production deployment workflow contracts passed')
+          PY
+
+      - name: Assert the VALORANT E2E secret boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import yaml
+
+          workflow_dir = Path('.github/workflows')
+
+          def expression(body):
+              return '$' + '{{' + body + '}}'
+
+          def load(name):
+              path = workflow_dir / name
+              source = path.read_text(encoding='utf-8')
+              document = yaml.safe_load(source)
+              return source, document
+
+          def events(document):
+              return document.get('on', document.get(True, {})) or {}
+
+          def event_names(document):
+              trigger = events(document)
+              if isinstance(trigger, dict):
+                  return {str(name) for name in trigger}
+              if isinstance(trigger, list):
+                  return {str(name) for name in trigger}
+              if isinstance(trigger, str):
+                  return {trigger}
+              return set()
+
+          expression_prefix = '$' + '{{'
+          expression_suffix = '}}'
+          secret_word = 'secret' + 's'
+          secret_ref = secret_word + '.'
+          secret_expression = re.compile(
+              re.escape(expression_prefix) + r'\s*' + re.escape(secret_ref) + r'([A-Z0-9_]+)\s*' + re.escape(expression_suffix)
+          )
+          untrusted_pr_events = {'pull_request', 'pull_request_target'}
+          assert untrusted_pr_events <= event_names({'on': {name: None for name in untrusted_pr_events}})
+
+          def is_step_env(path):
+              return 'steps' in path and len(path) >= 2 and path[-2] == 'env'
+
+          def suspicious_secret_paths(value, path=()):
+              findings = []
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      child_path = path + (str(key),)
+                      if str(key) == secret_word:
+                          findings.append((child_path, 'secret mapping'))
+                      findings.extend(suspicious_secret_paths(child, child_path))
+              elif isinstance(value, list):
+                  for index, child in enumerate(value):
+                      findings.extend(suspicious_secret_paths(child, path + (str(index),)))
+              elif isinstance(value, str) and expression_prefix in value and secret_word in value:
+                  direct_token = re.fullmatch(
+                      re.escape(expression_prefix) + r'\s*' + re.escape(secret_ref) + r'GITHUB_TOKEN\s*' + re.escape(expression_suffix),
+                      value,
+                  )
+                  if not (direct_token and is_step_env(path)):
+                      findings.append((path, value))
+              return findings
+
+          ci_source, ci = load('ci.yml')
+          assert 'pull_request' in event_names(ci)
+          assert not secret_expression.search(ci_source), 'ordinary PR CI must not reference secrets'
+          assert all('environment' not in job for job in ci['jobs'].values()), 'ordinary PR CI must not enter a protected environment'
+
+          workflow_paths = sorted(set(workflow_dir.glob('*.yml')) | set(workflow_dir.glob('*.yaml')))
+          for path in workflow_paths:
+              source, document = load(path.name)
+              if not event_names(document) & untrusted_pr_events:
+                  continue
+              findings = suspicious_secret_paths(document)
+              assert not findings, f'{path.name} exposes credentials on an untrusted PR path: {findings}'
+
+          synthetic_cases = [
+              {'jobs': {'job': {'steps': [{'run': expression_prefix + ' toJSON(' + secret_word + ') ' + expression_suffix}]}}},
+              {'jobs': {'job': {'steps': [{'run': expression_prefix + " secrets['TOKEN'] " + expression_suffix}]}}},
+              {'jobs': {'call': {'uses': './reusable.yml', secret_word: 'inherit'}}},
+              {'jobs': {'call': {'uses': './reusable.yml', secret_word: {'token': expression_prefix + ' secrets.TOKEN ' + expression_suffix}}}},
+          ]
+          for sample in synthetic_cases:
+              assert suspicious_secret_paths(sample), sample
+          safe_github_token = {
+              'jobs': {'scan': {'steps': [{'env': {'GITHUB_TOKEN': expression_prefix + ' ' + secret_ref + 'GITHUB_TOKEN ' + expression_suffix}}]}}
+          }
+          assert suspicious_secret_paths(safe_github_token) == []
+
+          e2e_source, e2e = load('valorant-e2e.yml')
+          e2e_events = event_names(e2e)
+          assert set(e2e_events) == {'workflow_dispatch'}
+          assert not e2e_events & untrusted_pr_events
+          assert e2e['permissions'] == {'contents': 'read'}
+
+          validate = e2e['jobs']['validate-main']
+          run_e2e = e2e['jobs']['valorant-e2e']
+          assert validate['if'] == expression(' github.actor == github.repository_owner ')
+          assert run_e2e['if'] == expression(" github.actor == github.repository_owner && needs.validate-main.result == 'success' ")
+          assert run_e2e['needs'] == ['validate-main']
+          assert run_e2e['environment'] == 'valorant-e2e'
+          assert 'environment' not in validate
+
+          validate_checkout = next(step for step in validate['steps'] if step.get('uses', '').startswith('actions/checkout@'))
+          assert validate_checkout['with']['ref'] == 'main'
+          assert validate_checkout['with']['persist-credentials'] is False
+          validate_run = next(step for step in validate['steps'] if step.get('name') == 'Validate the approved main revision')
+          assert 'git fetch origin main' not in validate_run['run']
+          assert 'git rev-parse --verify origin/main' not in validate_run['run']
+          assert 'checked_out_sha="$(git rev-parse --verify HEAD)"' in validate_run['run']
+          assert 'test "$SOURCE_SHA" = "$checked_out_sha"' in validate_run['run']
+          assert validate['outputs']['source_sha'] == expression(' steps.validate.outputs.source_sha ')
+
+          quest_checkout = next(step for step in run_e2e['steps'] if step.get('uses', '').startswith('actions/checkout@'))
+          assert quest_checkout['with']['ref'] == expression(' needs.validate-main.outputs.source_sha ')
+          assert quest_checkout['with']['persist-credentials'] is False
+          sibling_checkout = next(
+              step for step in run_e2e['steps']
+              if step.get('uses', '').startswith('actions/checkout@') and 'repository' in step.get('with', {})
+          )
+          assert sibling_checkout['with']['persist-credentials'] is False
+          assert sibling_checkout['with']['token'] == expression(' secrets.VALORANT_PLATFORM_ACCESS_TOKEN ')
+          assert sibling_checkout['with']['repository'] == 'naheedroomy/valorant-platform-backend'
+          assert re.fullmatch(r'[0-9a-f]{40}', sibling_checkout['with']['ref'])
+          assert sibling_checkout['with']['ref'] == 'e8a8f056a52fcbfb08e453bc6b51723c7b4b949c'
+          uv_step = next(step for step in run_e2e['steps'] if step.get('name') == 'Set up uv')
+          assert uv_step['uses'] == 'astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d'
+          assert uv_step['with']['version'] == '0.12.7'
+          assert re.search(
+              r'uses:\s*astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d\s+#\s+v10\.0\.1\s*$',
+              e2e_source,
+              re.MULTILINE,
+          )
+          assert 'env' not in run_e2e
+          run_step = next(step for step in run_e2e['steps'] if step.get('name') == 'Run two-service E2E')
+          expected_run_env = {
+              'VALORANT_PLATFORM_REPO',
+              'E2E_VAL_DATABASE_URL',
+              'E2E_QUEST_DATABASE_URL',
+              'E2E_ADMIN_EMAIL',
+              'E2E_ADMIN_PASSWORD',
+              'E2E_SAVED_TEAM_A_ID',
+              'E2E_SAVED_TEAM_B_ID',
+              'E2E_PLAYER_A',
+              'E2E_PLAYER_B',
+              'E2E_MATCH_HENRIK_ID',
+              'E2E_MATCH_UUIDS',
+              'E2E_ANCHOR_MISMATCH_SERIES',
+          }
+          assert set(run_step['env']) == expected_run_env
+          assert 'VALORANT_PLATFORM_ACCESS_TOKEN' not in run_step['env']
+
+          all_secret_values = []
+          def collect(value, path=()):
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      collect(child, path + (str(key),))
+              elif isinstance(value, list):
+                  for index, child in enumerate(value):
+                      collect(child, path + (str(index),))
+              elif isinstance(value, str) and expression_prefix in value and secret_word in value:
+                  all_secret_values.append((path, value))
+
+          collect(e2e)
+          sibling_index = next(index for index, step in enumerate(run_e2e['steps']) if step.get('name') == 'Check out valorant-platform-backend')
+          run_index = next(index for index, step in enumerate(run_e2e['steps']) if step.get('name') == 'Run two-service E2E')
+          token_path = ('jobs', 'valorant-e2e', 'steps', str(sibling_index), 'with', 'token')
+          token_values = [(path, value) for path, value in all_secret_values if 'VALORANT_PLATFORM_ACCESS_TOKEN' in value]
+          assert token_values == [(token_path, expression(' secrets.VALORANT_PLATFORM_ACCESS_TOKEN '))], token_values
+          for path, value in all_secret_values:
+              if path == token_path:
+                  assert value == expression(' secrets.VALORANT_PLATFORM_ACCESS_TOKEN ')
+              else:
+                  assert path[:4] == ('jobs', 'valorant-e2e', 'steps', str(run_index)) and path[-2] == 'env', (path, value)
+              assert secret_expression.fullmatch(value), (path, value)
+          expected_secrets = {
+              'VALORANT_PLATFORM_ACCESS_TOKEN',
+              'E2E_VAL_DATABASE_URL',
+              'E2E_QUEST_DATABASE_URL',
+              'E2E_ADMIN_EMAIL',
+              'E2E_ADMIN_PASSWORD',
+              'E2E_SAVED_TEAM_A_ID',
+              'E2E_SAVED_TEAM_B_ID',
+              'E2E_PLAYER_A',
+              'E2E_PLAYER_B',
+              'E2E_MATCH_HENRIK_ID',
+              'E2E_MATCH_UUIDS',
+              'E2E_ANCHOR_MISMATCH_SERIES',
+          }
+          assert {match.group(1) for match in secret_expression.finditer(e2e_source)} == expected_secrets
+          for path in workflow_dir.glob('*.yml'):
+              if path.name == 'valorant-e2e.yml':
+                  continue
+              source = path.read_text(encoding='utf-8')
+              references = {match.group(1) for match in secret_expression.finditer(source)}
+              assert not any(name.startswith('VALORANT_') or name.startswith('E2E_') for name in references), path.name
+          assert 'npm ci' in e2e_source
+          assert 'npm run test:valorant:e2e' in e2e_source
+          print('VALORANT E2E secret boundary contracts passed')
+          PY
+
+  workflow-lint:
+    name: Lint workflows and changed shell scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install workflow contract dependencies
+        working-directory: backend
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install pinned workflow lint tooling
+        env:
+          ACTIONLINT_IMAGE: rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+          SHELLCHECK_IMAGE: koalaman/shellcheck:v0.9.0@sha256:f35e8987b02760d4e76fc99a68ad5c42cc10bb32f3dd2143a3cf92f1e5446a45
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$ACTIONLINT_IMAGE"
+          docker pull "$SHELLCHECK_IMAGE"
+          docker image inspect "$ACTIONLINT_IMAGE" >/dev/null
+          docker image inspect "$SHELLCHECK_IMAGE" >/dev/null
+
+      - name: Run workflow and shell lint
+        env:
+          ACTIONLINT_IMAGE: rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+          SHELLCHECK_IMAGE: koalaman/shellcheck:v0.9.0@sha256:f35e8987b02760d4e76fc99a68ad5c42cc10bb32f3dd2143a3cf92f1e5446a45
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow_files=()
+          mapfile -d '' -t workflow_files < <(
+            git ls-files -z -- \
+              ':(glob).github/workflows/*.yml' \
+              ':(glob).github/workflows/*.yaml'
+          )
+          if ((${#workflow_files[@]} == 0)); then
+            echo 'No tracked workflow files found' >&2
+            exit 1
+          fi
+          workflow_args=()
+          for workflow_file in "${workflow_files[@]}"; do
+            workflow_args+=("/repo/$workflow_file")
+          done
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" "${workflow_args[@]}"
+
+          shell_files=()
+          mapfile -d '' -t shell_files < <(git ls-files -z -- '*.sh' '*.bash')
+          if ((${#shell_files[@]} == 0)); then
+            echo 'No tracked shell files found' >&2
+            exit 1
+          fi
+          shellcheck_args=()
+          for shell_file in "${shell_files[@]}"; do
+            shellcheck_args+=("/repo/$shell_file")
+          done
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/repo:ro" -w /repo "$SHELLCHECK_IMAGE" --format=gcc "${shellcheck_args[@]}"
+
+      - name: Run workflow and documentation contracts
+        run: node --test backend/tests/workflow-and-docs.test.js
+
+      - name: Run direct Task 6 attestation and SSH contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f ops/tests/task-6-attestation-ssh.test.sh
+          timeout --foreground 300s bash ops/tests/task-6-attestation-ssh.test.sh
+
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825 # PostgreSQL 16.15 Bookworm CI fixture
         env:
           POSTGRES_USER: ci
-          POSTGRES_PASSWORD: ci
+          POSTGRES_HOST_AUTH_METHOD: trust # Ephemeral CI-only service; no credential is committed.
           POSTGRES_DB: quest_ci
         ports:
           - 5432:5432
@@ -40,8 +617,8 @@ jobs:
           --health-retries 5
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci?schema=public
-      DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci?schema=public
+      DATABASE_URL: postgresql://ci@localhost:5432/quest_ci?schema=public
+      DIRECT_URL: postgresql://ci@localhost:5432/quest_ci?schema=public
       SESSION_COOKIE_NAME: quest_session
       RUN_DATABASE_INTEGRATION_TESTS: true
     defaults:
@@ -51,6 +628,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -68,7 +647,24 @@ jobs:
       - name: Generate Prisma client
         run: npm run prisma:generate
 
+      - name: Bootstrap CI PostgreSQL roles and schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql --dbname="${DATABASE_URL%%\?*}" \
+            --set=ON_ERROR_STOP=1 \
+            --file="$GITHUB_WORKSPACE/ops/docker/postgres/init/001-bootstrap-roles.sql"
+          # The CI fixture has no sibling VALORANT migrator, so provide only
+          # the ledger shape that the shared security verifier expects. Keep it
+          # migrator-owned and runtime-inaccessible, matching production.
+          psql --dbname="${DATABASE_URL%%\?*}" \
+            --set=ON_ERROR_STOP=1 \
+            --command='SET ROLE val_migrator; CREATE TABLE IF NOT EXISTS valorant._migration_ledger (id text PRIMARY KEY); REVOKE ALL PRIVILEGES ON TABLE valorant._migration_ledger FROM val_runtime; RESET ROLE;'
+
       - name: Apply Prisma migrations
+        env:
+          DATABASE_URL: postgresql://quest_migrator@localhost:5432/quest_ci?schema=public
+          DIRECT_URL: postgresql://quest_migrator@localhost:5432/quest_ci?schema=public
         run: npm run prisma:migrate:deploy
 
       - name: Verify no Prisma migrations are pending
@@ -93,11 +689,210 @@ jobs:
       - name: Run backend lint
         run: npm run lint
 
+  postgres17-contracts:
+    name: PostgreSQL 17 production contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Validate PostgreSQL 17 contracts statically
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose='ops/docker/compose.production.yml'
+          staging='ops/docker/compose.postgres-staging.yml'
+          bootstrap='ops/docker/postgres/init/001-bootstrap-roles.sql'
+          backup='ops/quest-esports-backup.env.example'
+          rehearsal='ops/rehearsal/postgres17-restore-rehearsal.sh'
+
+          # Parse the workflow so this assertion inspects service definitions,
+          # not the command text that performs the assertion itself. The
+          # disposable backend fixture remains PostgreSQL 16.15. The production
+          # PostgreSQL 17 contract is checked separately below.
+          python - <<'PY'
+          import re
+          import yaml
+
+          with open('.github/workflows/ci.yml', encoding='utf-8') as workflow_file:
+              workflow = yaml.safe_load(workflow_file)
+          with open('.github/workflows/build-container-images.yml', encoding='utf-8') as image_workflow_file:
+              image_workflow = yaml.safe_load(image_workflow_file)
+          with open('.github/workflows/deploy-compose.yml', encoding='utf-8') as deploy_workflow_file:
+              deploy_workflow = yaml.safe_load(deploy_workflow_file)
+          backend_services = workflow['jobs']['backend'].get('services', {})
+          postgres_service = backend_services.get('postgres')
+          assert postgres_service is not None
+          assert postgres_service['image'] == 'postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825'
+          service_images = [
+              service['image']
+              for job in workflow['jobs'].values()
+              for service in job.get('services', {}).values()
+              if isinstance(service, dict) and 'image' in service
+          ]
+          assert service_images == ['postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825'], service_images
+          build_steps = image_workflow['jobs']['build']['steps']
+          postgres_assignment = re.compile(r"(^|\n)\s*approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'\s*(\n|$)")
+          for step_name in ('Validate release inputs', 'Write the exact release manifest'):
+              step = next(step for step in build_steps if step.get('name') == step_name)
+              assignment = postgres_assignment.search(step['run'])
+              first_use = step['run'].find('$approved_postgres_ref')
+              assert assignment and first_use > assignment.start(), step_name
+
+          trust_step = next(step for step in deploy_workflow['jobs']['deploy']['steps'] if step.get('name') == 'Verify Quest signatures and BuildKit attestations')
+          image_list = re.search(r"done <<'IMAGES'\n([\s\S]*?)\n\s*IMAGES", trust_step['run'])
+          assert image_list
+          assert [line.strip() for line in image_list.group(1).splitlines() if line.strip()] == ['frontend_image', 'backend_image', 'migrator_image']
+          assert len(re.findall(r'"\$COSIGN_IMAGE" verify\b', trust_step['run'])) == 1
+          assert not re.search(r'postgres|valorant', trust_step['run'], re.IGNORECASE)
+
+          print('Workflow YAML parsed; exactly one immutable PostgreSQL 16.15 service fixture; image trust boundaries passed')
+          PY
+
+          approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+          for trust_file in \
+            .github/workflows/build-container-images.yml \
+            .github/workflows/deploy-compose.yml \
+            ops/deploy/validate-host.sh \
+            ops/deploy/release.env.example; do
+            grep -F "$approved_postgres_ref" "$trust_file" >/dev/null
+          done
+          if grep -F 'postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675' .github/workflows/build-container-images.yml .github/workflows/deploy-compose.yml ops/deploy/validate-host.sh ops/deploy/release.env.example >/dev/null; then
+            printf '%s\n' 'Found a revoked PostgreSQL image reference.' >&2
+            exit 1
+          fi
+          if grep -E '^(POSTGRES|VALORANT)_COSIGN_' ops/deploy/validate-host.sh ops/deploy/verify-release.sh ops/deploy/release.env.example >/dev/null; then
+            printf '%s\n' 'Found deprecated PostgreSQL or VALORANT cosign variables.' >&2
+            exit 1
+          fi
+          grep -F "$approved_postgres_ref" "$compose" >/dev/null
+          grep -F 'POSTGRES_IMAGE must be supplied by the release manifest' "$compose" >/dev/null
+          grep -F "127.0.0.1:\${POSTGRES_STAGING_HOST_PORT:-55432}:5432" "$staging" >/dev/null
+          awk '
+            /^  postgres:/ { in_postgres=1; next }
+            in_postgres && /^  [A-Za-z0-9_-]+:/ { exit }
+            in_postgres && /^[[:space:]]+ports:/ { bad=1 }
+            END { if (bad) exit 1 }
+          ' "$compose"
+
+          for role in quest_migrator quest_runtime val_migrator val_runtime; do
+            grep -Fx "ALTER ROLE $role LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;" "$bootstrap" >/dev/null
+          done
+          grep -F 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO quest_runtime;' "$bootstrap" >/dev/null
+          grep -F 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO val_runtime;' "$bootstrap" >/dev/null
+          grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;' "$bootstrap" >/dev/null
+          grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;' "$bootstrap" >/dev/null
+
+          for setting in \
+            'POSTGRES_TARGET_HOST=127.0.0.1' \
+            'POSTGRES_TARGET_PORT=55432' \
+            'POSTGRES_TARGET_DATABASE=quest' \
+            'POSTGRES_TARGET_MAJOR=17' \
+            'POSTGRES_TARGET_DATA_ROOT=/srv/quest-esports/postgres/17/data'; do
+            grep -Fx "$setting" "$backup" >/dev/null
+          done
+          grep -F 'POSTGRES17_BIN' ops/backup-production-multi-remote.sh >/dev/null
+          grep -F 'quest_backup' ops/backup-production-multi-remote.sh >/dev/null
+          grep -F -- '--no-acl' ops/restore-production-backup.sh >/dev/null
+          grep -F 'DISPOSABLE_QUEST_REHEARSAL' "$rehearsal" >/dev/null
+          grep -F 'disposable_postgresql17' "$rehearsal" >/dev/null
+          grep -F 'POSTGRES17_BIN' "$rehearsal" >/dev/null
+          grep -F 'owner_deployment_host_evidence_required' ops/rehearsal/rehearsal-contract.sh >/dev/null
+
+          # Keep the operator contract visible and prevent a future document
+          # edit from reintroducing Supabase/VPS ambiguity.
+          grep -F 'PostgreSQL 17 VPS target' docs/production-runbook.md >/dev/null
+          grep -F 'temporary Supabase rollback material' docs/production-runbook.md >/dev/null
+          grep -F 'PostgreSQL 16.15 cluster remains untouched' docs/production-runbook.md >/dev/null
+          grep -F '127.0.0.1:55432' docs/production-runbook.md >/dev/null
+          grep -F 'no public database port' docs/production-runbook.md >/dev/null
+          grep -F 'No private-network backup utility is implemented or' docs/production-runbook.md >/dev/null
+          grep -F 'No private-network backup utility is' docs/backup-and-disaster-recovery.md >/dev/null
+          grep -F 'sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer' docs/backup-and-disaster-recovery.md >/dev/null
+          grep -F 'sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer' docs/backup-and-disaster-recovery.md >/dev/null
+          python - <<'PY'
+          from pathlib import Path
+
+          recovery = Path('docs/backup-and-disaster-recovery.md').read_text(encoding='utf-8')
+          headings = {
+              line
+              for line in recovery.splitlines()
+              if line.startswith('### ')
+          }
+          assert '### Historical pre-first-write rollback boundary (superseded 2026-08-31)' in headings
+          assert '### Post-first-write Compose recovery (after first PostgreSQL 17 writer)' in headings
+          post_first_write = recovery.split(
+              '### Post-first-write Compose recovery (after first PostgreSQL 17 writer)',
+              1,
+          )[1]
+          post_first_write_normalized = ' '.join(post_first_write.split())
+          assert 'Supabase is then stale recovery material' in post_first_write_normalized
+          assert 'supabase_url_rollback=prohibited' in recovery
+          assert 'Do not set either runtime URL to Supabase' in post_first_write_normalized
+          print('Recovery headings and post-first-write Supabase prohibition passed')
+          PY
+
+          compose_env="$RUNNER_TEMP/quest-compose-contract.env"
+          base_render="$RUNNER_TEMP/quest-compose-base.json"
+          staging_render="$RUNNER_TEMP/quest-compose-staging.json"
+          printf '%s\n' \
+            'QUEST_FRONTEND_IMAGE=ghcr.io/russelrip/quest-frontend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+            'QUEST_BACKEND_IMAGE=ghcr.io/russelrip/quest-backend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+            'POSTGRES_IMAGE=postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' \
+            'VALORANT_IMAGE=ghcr.io/example/valorant@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' \
+            'POSTGRES_STAGING_HOST_PORT=55432' > "$compose_env"
+          sudo install -d -m 0755 /etc/quest-esports
+          sudo install -m 0644 /dev/null /etc/quest-esports/quest.production.env
+          docker compose --env-file "$compose_env" -f "$compose" config --format json > "$base_render"
+          docker compose --env-file "$compose_env" -f "$compose" -f "$staging" config --format json > "$staging_render"
+          python - "$base_render" "$staging_render" <<'PY'
+          import json
+          import sys
+
+          base = json.load(open(sys.argv[1]))
+          staging = json.load(open(sys.argv[2]))
+          base_ports = base["services"]["postgres"].get("ports", [])
+          assert base_ports == [], f"base PostgreSQL host publication: {base_ports!r}"
+          staging_ports = staging["services"]["postgres"].get("ports", [])
+          assert len(staging_ports) == 1, f"staging PostgreSQL publication count: {staging_ports!r}"
+          port = staging_ports[0]
+          assert port.get("host_ip") == "127.0.0.1", port
+          assert str(port.get("published")) == "55432", port
+          assert str(port.get("target")) == "5432", port
+          print("Compose renders verified: base PostgreSQL ports=[]; staging PostgreSQL ports=127.0.0.1:55432->5432")
+          PY
+
+          bash -n \
+            ops/backup-production.sh \
+            ops/backup-production-multi-remote.sh \
+            ops/restore-production-backup.sh \
+            ops/rehearsal/postgres17-restore-rehearsal.sh
+
+      - name: Run PostgreSQL 17 disposable contract suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+          docker pull "$approved_postgres_ref"
+          readability_output="$(bash ops/tests/postgres-container-readability.test.sh)"
+          printf '%s\n' "$readability_output"
+          if grep -Eq '^SKIP:' <<< "$readability_output"; then
+            printf '%s\n' 'The PostgreSQL 17 readability gate must execute, not skip.' >&2
+            exit 1
+          fi
+          grep -Fx 'PostgreSQL UID/GID 999 server-file readability fixture passed' <<< "$readability_output" >/dev/null
+          bash ops/tests/media-backup-contract.test.sh
+          bash ops/tests/restore-production-backup.test.sh
+          bash ops/tests/postgres17-rehearsal.test.sh
+
   frontend:
     name: Frontend audit, test, and build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    container: mcr.microsoft.com/playwright:v1.61.1-noble
+    container: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48 # Playwright v1.61.1 Noble CI image
     defaults:
       run:
         working-directory: frontend
@@ -111,6 +906,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -156,6 +953,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -178,55 +977,3 @@ jobs:
 
       - name: Validate Expo dependencies and configuration
         run: npm run doctor
-
-  valorant-e2e:
-    name: VALORANT two-service E2E
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      VALORANT_PLATFORM_ACCESS_TOKEN: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}
-    steps:
-      - name: Skip VALORANT E2E when platform token is unset
-        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN == '' }}
-        run: echo "VALORANT_PLATFORM_ACCESS_TOKEN not set; skipping VALORANT two-service E2E."
-      - name: Check out repository
-        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - name: Check out valorant-platform-backend
-        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          repository: naheedroomy/valorant-platform-backend
-          token: ${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}
-          path: valorant-platform-backend
-      - name: Set up Node.js
-        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - name: Set up uv
-        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
-        uses: astral-sh/setup-uv@v3
-      - name: Prepare FastAPI deps and env
-        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
-        working-directory: valorant-platform-backend
-        run: uv sync --extra dev
-      - name: Run two-service E2E
-        if: ${{ env.VALORANT_PLATFORM_ACCESS_TOKEN != '' }}
-        working-directory: backend
-        run: >-
-          VALORANT_PLATFORM_REPO=$GITHUB_WORKSPACE/valorant-platform-backend
-          E2E_VAL_DATABASE_URL=${{ secrets.E2E_VAL_DATABASE_URL }}
-          E2E_QUEST_DATABASE_URL=${{ secrets.E2E_QUEST_DATABASE_URL }}
-          E2E_ADMIN_EMAIL=${{ secrets.E2E_ADMIN_EMAIL }}
-          E2E_ADMIN_PASSWORD=${{ secrets.E2E_ADMIN_PASSWORD }}
-          E2E_SAVED_TEAM_A_ID=${{ secrets.E2E_SAVED_TEAM_A_ID }}
-          E2E_SAVED_TEAM_B_ID=${{ secrets.E2E_SAVED_TEAM_B_ID }}
-          E2E_PLAYER_A='${{ secrets.E2E_PLAYER_A }}'
-          E2E_PLAYER_B='${{ secrets.E2E_PLAYER_B }}'
-          E2E_MATCH_HENRIK_ID=${{ secrets.E2E_MATCH_HENRIK_ID }}
-          E2E_MATCH_UUIDS=${{ secrets.E2E_MATCH_UUIDS }}
-          E2E_ANCHOR_MISMATCH_SERIES=${{ secrets.E2E_ANCHOR_MISMATCH_SERIES }}
-          npm run test:valorant:e2e

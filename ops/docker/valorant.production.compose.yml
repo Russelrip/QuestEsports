@@ -1,0 +1,29 @@
+# Reference contract for the sibling VALORANT image deployment. The sibling
+# release must preserve these service-level inputs when it supplies its own
+# Compose source; the host validators reject a source that omits them.
+name: valorant-prod
+
+services:
+  valorant-platform:
+    image: ${VALORANT_IMAGE:?VALORANT_IMAGE must be supplied by the release manifest}
+    env_file:
+      - path: /etc/quest-esports/valorant.production.env
+        required: true
+    environment:
+      VALORANT_DATABASE_SSL_CA_FILE: /run/secrets/quest-private-ca.crt
+      VALORANT_DATABASE_SSL_SERVER_HOSTNAME: quest-postgres
+      VALORANT_DATABASE_SSL_VERIFY: full
+    volumes:
+      - /etc/quest-esports/tls/quest-private-ca.crt:/run/secrets/quest-private-ca.crt:ro
+    networks:
+      quest-shared:
+        aliases:
+          - valorant-platform
+          - valorant-updater
+          - valorant-discord-bot
+          - valorant-name-audit
+
+networks:
+  quest-shared:
+    external: true
+    name: quest-shared

@@ -63,7 +63,18 @@ recovery_command() {
 record_recovery_evidence() {
   local bundle="$1" boundary="$2" result="$3"
   [[ -n "$bundle" && -d "$bundle" ]] || return 0
-  printf 'boundary=%s\nresult=%s\nlegacy_restart_allowed=%s\n' "$boundary" "$result" "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)" > "$bundle/recovery-evidence.txt" 2>/dev/null || return 1
+  {
+    printf 'boundary=%s\n' "$boundary"
+    printf 'result=%s\n' "$result"
+    printf 'legacy_restart_allowed=%s\n' "$([[ "$boundary" == pre-commit-rollback ]] && printf true || printf false)"
+    printf 'supabase_authority_boundary=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf stale-after-first-vps-write || printf preserved-before-first-vps-write)"
+    printf 'supabase_url_rollback=%s\n' "$([[ "$boundary" == post-commit-recovery ]] && printf prohibited || printf allowed-before-writer-admission)"
+    printf 'reconciliation_decision=%s\n' "${SUPABASE_RECONCILIATION_DECISION:-not-recorded}"
+    printf 'selected_recovery_action=%s\n' "${RECOVERY_ACTION_SELECTED:-not-selected}"
+    printf 'expected_loss_rpo=%s\n' "${EXPECTED_LOSS_RPO:-not-recorded}"
+    printf 'incident_owner_approval=%s\n' "${INCIDENT_OWNER_APPROVAL:-not-recorded}"
+    printf 'supabase_url_rollback_command=%s\n' "$([[ -n "${SUPABASE_URL_ROLLBACK_COMMAND:-}" ]] && printf rejected || printf not-configured)"
+  } > "$bundle/recovery-evidence.txt" 2>/dev/null || return 1
   chmod 600 "$bundle/recovery-evidence.txt" 2>/dev/null || return 1
 }
 
@@ -81,7 +92,7 @@ validate_bundle_images() {
   for key in "${image_keys[@]}"; do
     value="$(awk -F= -v k="$key" '$1 == k { print substr($0, index($0,"=")+1); found=1 } END { if (!found) exit 1 }' "$bundle/.env")" || die "$bundle/.env is missing $key."
     case "$key" in
-      POSTGRES_IMAGE) [[ "$value" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe PostgreSQL image." ;;
+      POSTGRES_IMAGE) [[ "$value" == 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' ]] || die "$bundle/.env has an unapproved PostgreSQL image." ;;
       *) [[ "$value" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe $key." ;;
     esac
   done
@@ -143,9 +154,11 @@ validate_predecessor_metadata() {
 }
 
 validate_commit_point() {
-  local bundle="$1" line key value
+  local bundle="$1" line key value state_file
   declare -A point=()
-  [[ -f "$bundle/commit-point.txt" && ! -L "$bundle/commit-point.txt" && -r "$bundle/commit-point.txt" ]] || die "$bundle is missing a durable commit-point record."
+  state_file="$bundle/commit-point.txt"
+  if [[ ! -f "$state_file" ]]; then state_file="$bundle/writer-admission-state.txt"; fi
+  [[ -f "$state_file" && ! -L "$state_file" && -r "$state_file" ]] || die "$bundle is missing durable writer-admission evidence."
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^([a-z][a-z0-9_]*)=([^[:space:]]+)$ ]] || die 'durable commit-point record contains an ambiguous entry.'
     key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
@@ -155,7 +168,7 @@ validate_commit_point() {
     esac
     [[ -z "${point[$key]+present}" ]] || die "durable commit-point record contains a duplicate entry: $key"
     point["$key"]="$value"
-  done < "$bundle/commit-point.txt"
+  done < "$state_file"
   for key in writer_admission_starting commit_sha commit_point_utc quest_writer_admission_started quest_writer_admitted quest_writer_ack_utc valorant_writer_admission_started valorant_writer_admitted valorant_writer_ack_utc writer_admitted previous_release cutover_type quest_project valorant_project shared_network; do
     [[ -n "${point[$key]:-}" ]] || die "durable commit-point record is missing $key."
   done
@@ -257,14 +270,21 @@ safe_bundle "$recovery_bundle" 'post-commit evidence bundle'
 validate_commit_point "$recovery_bundle"
 validate_predecessor_metadata "$recovery_bundle"
 [[ "$commit_point_requires_postcommit" == true ]] || { printf '%s\n' 'URGENT: post-commit recovery requires durable writer-admission evidence.' >&2; postcommit_status=1; }
+if [[ -n "${SUPABASE_URL_ROLLBACK_COMMAND:-}" ]]; then
+  printf '%s\n' 'URGENT: blind Supabase URL rollback is prohibited after the first VPS write; an explicit reconciliation/data-loss decision is required.' >&2
+  postcommit_status=1
+fi
 record_recovery_evidence "$recovery_bundle" post-commit-recovery started || postcommit_status=1
 recovery_command "${QUEST_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1
 recovery_command "${VALORANT_WRITER_STOP_COMMAND:-}" stopped || postcommit_status=1
-RELEASE_DIR="$recovery_bundle" recovery_command "${FREEZE_ENABLE_COMMAND:-}" || postcommit_status=1
+for freeze_enable in QUEST_FREEZE_ENABLE_COMMAND VALORANT_FREEZE_ENABLE_COMMAND; do
+  RELEASE_DIR="$recovery_bundle" recovery_command "${!freeze_enable:-}" validation || postcommit_status=1
+done
 if capture_output="$(RELEASE_DIR="$recovery_bundle" "${CURRENT_STATE_CAPTURE_COMMAND:-}" 2>/dev/null)"; then capture_rc=0; else capture_rc=$?; fi
 (( capture_rc == 0 )) && [[ "$capture_output" == "captured evidence_bundle=$recovery_bundle" ]] || postcommit_status=1
 [[ -n "${EXPECTED_LOSS_RPO:-}" ]] || { printf '%s\n' 'URGENT: post-commit recovery requires an explicit expected-loss/RPO record.' >&2; postcommit_status=1; }
 [[ "${INCIDENT_OWNER_APPROVAL:-}" == INCIDENT_OWNER_APPROVAL ]] || { printf '%s\n' 'URGENT: post-commit recovery requires incident-owner approval.' >&2; postcommit_status=1; }
+[[ "${SUPABASE_RECONCILIATION_DECISION:-}" == fix-forward || "${SUPABASE_RECONCILIATION_DECISION:-}" == controlled-restore ]] || { printf '%s\n' 'URGENT: post-commit recovery requires an explicit reconciliation/data-loss decision.' >&2; postcommit_status=1; }
 if [[ -z "${RECOVERY_ACTION_COMMAND:-}" || ! -x "$RECOVERY_ACTION_COMMAND" ]]; then
   printf '%s\n' 'URGENT: recovery action command is missing or not executable.' >&2
   postcommit_status=1
@@ -276,6 +296,15 @@ else
   action_rc=1
 fi
 if (( action_rc != 0 )) || [[ "$action" != fix-forward && "$action" != controlled-restore ]]; then postcommit_status=1; fi
+RECOVERY_ACTION_SELECTED="$action"
+if [[ -n "${SUPABASE_RECONCILIATION_DECISION:-}" && "${SUPABASE_RECONCILIATION_DECISION}" != "$action" ]]; then
+  printf '%s\n' 'URGENT: selected recovery action does not match the explicit reconciliation decision.' >&2
+  postcommit_status=1
+fi
+if [[ "$action" == return-to-supabase ]]; then
+  printf '%s\n' 'URGENT: return to Supabase requires explicit reconciliation/data-loss approval; refusing a blind URL rollback.' >&2
+  postcommit_status=1
+fi
 record_recovery_evidence "$recovery_bundle" post-commit-recovery "$([[ "$postcommit_status" == 0 ]] && printf completed || printf incomplete)" || postcommit_status=1
 (( postcommit_status == 0 )) || die 'post-commit recovery was incomplete; inspect recovery-evidence.txt.'
 printf 'Post-commit recovery boundary recorded: action=%s expected_loss_rpo=%s\n' "$action" "$EXPECTED_LOSS_RPO"

@@ -7,6 +7,9 @@ OnFailure=quest-esports-backup-failure@%n.service
 Type=oneshot
 User=deploy
 Group=deploy
+# Keep the freshness check on the same root:deploy 0750 directory. The
+# root:deploy 0640 backup-client-ca.crt trust bundle contains the PostgreSQL
+# server issuer; the client certificate/key remain separate identity material.
 Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
 WorkingDirectory=/var/www/QuestEsports
 ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/check-backup-freshness.sh

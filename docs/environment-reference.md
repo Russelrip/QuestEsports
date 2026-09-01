@@ -17,6 +17,27 @@ effect.
 For provisioning and deployment, see [Setup and Deployment](./setup-and-deployment.md).
 For runtime changes and incidents, see [Production Operations Runbook](./production-runbook.md).
 
+## Production database status
+
+The database cutover completed on **2026-08-31**. Quest and VALORANT currently
+use PostgreSQL **17.11** in VPS container `quest-postgres` at
+`127.0.0.1:5433`. Supabase is intact but stale and is not a rollback target.
+No rehearsal was performed; the rehearsal gate was skipped and cannot be
+satisfied retroactively.
+
+The current service is ad hoc rather than Compose-managed. Missing TLS
+material blocks Compose adoption and the real backup pipeline; the scheduled
+backup has failed since **2026-08-30 04:20** and the interim
+`quest-pg17-interim-backup.{service,timer}` unit covers the gap. Host bootstrap,
+TLS/backup provisioning, and remediation of unrestricted deploy-root access and
+two GitHub Actions keys remain operator gates. Production URLs must use
+`sslmode=verify-full` with the private CA once the Compose target is adopted.
+External PostgreSQL/VALORANT Cosign signer settings are not required.
+Production `DATABASE_URL` and `DIRECT_URL` must use `sslmode=verify-full` with
+the private CA; local and staging examples may use `sslmode=require`.
+The interim and restored backup services use `BACKUP_CLIENT_CERT_FILE` and
+`BACKUP_CLIENT_KEY_FILE` alongside the CA bundle.
+
 ## Backend — process, database, cache, and sessions
 
 | Variable | Required? | Owner | Applies | Classification | Safe placeholder/default | Restart/redeploy impact |
@@ -25,8 +46,9 @@ For runtime changes and incidents, see [Production Operations Runbook](./product
 | `PORT` | No — defaults to `5001` | Backend | L/D/CI/P | Public/non-secret | `5001` | Restart backend |
 | `TZ` | No | Backend | L/D/CI/P | Public/non-secret | `Asia/Colombo` | Restart backend |
 | `CORS_ORIGIN` | Conditional — production must resolve to HTTPS origins | Backend/web owner | L/D/P | Public/non-secret | `http://localhost:3000` locally; `<approved origin>` otherwise | Restart backend |
-| `DATABASE_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | `postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require` | Restart backend; migration-sensitive |
-| `DIRECT_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | `postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require` | Restart backend; migration-sensitive |
+| `DATABASE_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | `sslmode=require` for local/staging; `sslmode=verify-full` with the private CA in production | Restart backend; migration-sensitive |
+| `DIRECT_URL` | Yes | Backend/database owner | L/D/CI/P | Secret | Runtime-role PostgreSQL URL; production uses `quest_runtime`/`val_runtime`, not a migrator or recovery administrator | Restart backend; migration-sensitive |
+| `RECOVERY_ADMIN_URL` | Production restore only | Recovery operator | D/P | Secret | `postgresql://quest_recovery_admin:PASSWORD@127.0.0.1:55432/quest` | One-shot restore/security command only; never inject into runtime containers |
 | `CACHE_DRIVER` | No — defaults to memory; required `upstash` when `API_PROCESS_COUNT>1` | Backend | L/D/CI/P | Public/non-secret | `memory` for one process; `upstash` for a cluster | Restart backend |
 | `CACHE_TTL_SECONDS` | No — defaults to `300` | Backend | L/D/CI/P | Public/non-secret | `300` | Restart backend |
 | `CACHE_MAX_ENTRIES` | No — defaults to `1000` | Backend | L/D/CI/P | Public/non-secret | `1000` | Restart backend |
@@ -231,9 +253,10 @@ to have been created with the same `NEXT_PUBLIC_API_URL` and
 
 ## VALORANT two-service E2E contract
 
-The CI job skips this E2E when `VALORANT_PLATFORM_ACCESS_TOKEN` is unset. When
-enabled, it checks out the sibling repository and passes the following contract
-to `npm run test:valorant:e2e`. All values are owner-maintained dedicated-test
+This is a protected, manual, owner-gated E2E workflow, not ordinary CI or a
+pull-request check. It requires `VALORANT_PLATFORM_ACCESS_TOKEN` to check out
+the sibling repository and passes the following contract to
+`npm run test:valorant:e2e`. All values are owner-maintained dedicated-test
 values; none are repository facts.
 
 | Variable | Required? | Owner | Applies | Classification | Safe placeholder/default | Restart/redeploy impact |
@@ -269,15 +292,15 @@ operators can distinguish required enablement from generated workflow values.
 | --- | --- | --- | --- | --- | --- | --- |
 | `BACKEND_DEPLOY_ENABLED` | Conditional; required to enable CD | Repository owner | CI/P | Public control | `false` | Per deployment workflow |
 | `DEPLOY_SHA` | No — generated from `github.sha` by backend CD | GitHub Actions | CI | Generated control | `<full 40-character commit SHA>` | Per deployment workflow |
-| `deploy_sha` | Yes for a frontend deploy dispatch | Repository owner | CI/P | Public workflow input | `<full 40-character main commit SHA>` | Per deployment workflow |
+| `compose_run_id` | Yes for a frontend deploy dispatch | Repository owner | CI/P | Public workflow input | `<successful Compose workflow run ID>` | Per deployment workflow |
 | `BACKEND_SSH_HOST` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<pinned backend host>` | Per deployment |
-| `BACKEND_SSH_PORT` | No — workflow defaults to `22` | Repository owner | CI/P | Secret/environment value | `22` | Per deployment |
+| `BACKEND_SSH_PORT` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<required SSH port, usually 22>` | Per deployment |
 | `BACKEND_SSH_USER` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `deploy` | Per deployment |
 | `BACKEND_SSH_PRIVATE_KEY` | Yes when backend CD enabled | Repository owner | CI/P | Secret | `<deploy SSH private key>` | Per deployment |
 | `BACKEND_SSH_HOST_KEY` | Yes when backend CD enabled | Repository owner | CI/P | Secret | `<pinned known_hosts line>` | Per deployment |
 | `BACKEND_APP_DIR` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<backend checkout path>` | Per deployment |
-| `BACKEND_PM2_PROCESS` | No — workflow defaults to `quest-backend` | Repository owner | CI/P | Secret/environment value | `quest-backend` | Per deployment |
-| `BACKEND_HEALTHCHECK_URL` | No — workflow defaults to `http://127.0.0.1:5001/api/health` | Repository owner | CI/P | Secret/environment value | `http://127.0.0.1:5001/api/health` | Per deployment |
+| `BACKEND_PM2_PROCESS` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<required PM2 process name>` | Per deployment |
+| `BACKEND_HEALTHCHECK_URL` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `http://127.0.0.1:5001/api/health` (exact required value) | Per deployment |
 | `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` | Conditional; required for destructive migrations | Repository owner | CI/P | Secret | `<40-character approved commit SHA>` | Per deployment |
 | `FRONTEND_DEPLOY_ENABLED` | Conditional; required to enable frontend deploy | Repository owner | CI/P | Public control | `false` | Per deployment workflow |
 | `PRODUCTION_API_URL` | Yes when frontend deploy enabled | Repository owner | CI/P | Public/environment value | `<production API origin>` | Per deployment |
@@ -320,6 +343,10 @@ tracked application examples.
 | `BACKUP_REMOTE_MINIMUM_RECOVERY_POINTS` | Conditional; required for retention | Operations owner | D/P | Public/non-secret | `<minimum recovery-point count>` | Per prune run |
 | `RETENTION_CONFIRMATION` | Conditional; required to delete | Operations owner | D/P | Destructive control | `PRUNE_QUEST_PRODUCTION` only for an approved deletion | Per prune run |
 | `BACKUP_AGE_IDENTITY_FILE` | Yes for restore | Recovery owner | D/P | Secret/path-sensitive | `<offline age identity path>` | Per restore run |
+| `BACKUP_CLIENT_TLS_DIR` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports-backup` (`root:deploy` `0750`) | Per backup run |
+| `POSTGRES_CA_FILE` | Yes for backup/recovery | Operations or recovery owner | D/P | Path-sensitive trust material | Backup: `/etc/quest-esports-backup/backup-client-ca.crt` (`root:deploy` `0640`) containing the issuer of `quest-postgres.crt`; recovery: server CA supplied by the recovery host | Per command |
+| `BACKUP_CLIENT_CERT_FILE` / `BACKUP_CLIENT_KEY_FILE` | Yes for production backup | Operations owner | D/P | Secret/path-sensitive | `/etc/quest-esports-backup/backup-client.{crt,key}` (`root:deploy` `0640`) | Per backup run |
+| `RECOVERY_CLIENT_CERT_FILE` / `RECOVERY_CLIENT_KEY_FILE` | Yes for production restore | Recovery owner | D/P | Secret/path-sensitive | `/etc/quest-esports/secrets/recovery-client.{crt,key}` | Per restore/security run |
 | `RESTORE_CONFIRMATION` | Yes for restore | Recovery owner | D/P | Destructive control | `RESTORE_QUEST_PRODUCTION` only for an approved restore | Per restore run |
 | `RESTORE_COUNTDOWN_SECONDS` | No | Recovery owner | D/P | Public/non-secret | `10` | Per restore run |
 

@@ -42,9 +42,9 @@ The API routes and aggregate definitions are mapped in
   release-bound backup-evidence contracts; it does not build images or own the
   sibling repository's release.
 - `ops/docker/` — immutable production Compose topology, PostgreSQL 17 role/TLS
-  bootstrap, and durable upload/database mount contracts. The production
-  project is fixed as `quest-prod`; its pre-created external network is
-  `quest-shared`.
+  bootstrap, VALORANT asyncpg/TLS runtime contract, and durable upload/database
+  mount contracts. The production project is fixed as `quest-prod`; its
+  pre-created external network is `quest-shared`.
 
 PostgreSQL and uploads are backend/operations concerns. Public event responses
 contain only published event and child projections; captain/contact data,

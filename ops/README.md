@@ -26,6 +26,15 @@ These scripts support encrypted backup and recovery for Quest Esports production
 
 Never commit a filled environment file, archive, checksum, database dump, rclone configuration, OAuth credential, or private `age` identity. Never use the production database or live upload paths for a restore drill.
 
+The scheduled backup TLS contract keeps `/etc/quest-esports-backup` separate
+from the server TLS hierarchy so `deploy` can traverse it. Its
+`backup-client-ca.crt` is a `root:deploy` `0640` copy/bundle containing the
+issuer of `quest-postgres.crt` (including required intermediates), while
+`backup-client.crt` and `backup-client.key` are separate client identity
+material. A separate server/client PKI must still include the PostgreSQL
+server issuer in that bundle, and host validation checks it with
+`openssl verify -purpose sslserver`; connections retain `sslmode=verify-full`.
+
 ## Host bootstrap and owner gate
 
 Root VPS bootstrap is an operator-gated prerequisite and is intentionally not

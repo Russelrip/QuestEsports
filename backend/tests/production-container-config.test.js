@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const yaml = require("js-yaml");
 
 const repoRoot = path.join(__dirname, "../..");
 const read = (relative) =>
@@ -11,7 +12,13 @@ const read = (relative) =>
 const dockerfile = read("ops/docker/backend.production.Dockerfile");
 const dockerignore = read("backend/.dockerignore");
 const productionCompose = read("ops/docker/compose.production.yml");
+const stagingCompose = read("ops/docker/compose.postgres-staging.yml");
 const productionEnv = read("ops/docker/quest.production.env.example");
+const valorantProductionEnv = read("ops/docker/valorant.production.env.example");
+const releaseScript = read("ops/deploy/release.sh");
+const validateHost = read("ops/deploy/validate-host.sh");
+const rollbackScript = read("ops/deploy/rollback.sh");
+const cutoverScript = read("ops/deploy/cutover.sh");
 const nginxConfigPath = path.join(repoRoot, "ops/docker/nginx/quest.conf");
 const nginxConfig = fs.existsSync(nginxConfigPath) ? fs.readFileSync(nginxConfigPath, "utf8").replace(/\r\n/g, "\n") : "";
 const verifyRelease = read("ops/deploy/verify-release.sh");
@@ -20,8 +27,49 @@ const frontendApi = read("frontend/lib/api.ts");
 const ciWorkflow = read(".github/workflows/ci.yml");
 const imageWorkflow = read(".github/workflows/build-container-images.yml");
 const deployWorkflow = read(".github/workflows/deploy-compose.yml");
+const frontendDeployWorkflow = read(".github/workflows/deploy-frontend.yml");
+const valorantE2eWorkflow = read(".github/workflows/valorant-e2e.yml");
+const imageWorkflowDocument = yaml.load(imageWorkflow);
+const deployWorkflowDocument = yaml.load(deployWorkflow);
+const ciWorkflowDocument = yaml.load(ciWorkflow);
 const postgresBootstrap = read("ops/docker/postgres/init/001-bootstrap-roles.sql");
 const postgresHealthcheck = read("ops/docker/postgres/healthcheck.sh");
+const questRuntimeRlsMigration = read(
+  "backend/prisma/migrations/20260829120000_add_quest_runtime_rls_policies/migration.sql",
+);
+const databaseSecurityVerifier = read("backend/scripts/verify-database-security.js");
+const approvedPostgres17Ref =
+  "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0";
+const approvedPostgres16CiRef =
+  "postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825";
+const approvedPlaywrightRef =
+  "mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48";
+const approvedAlpine322Ref =
+  "alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce";
+const approvedValorantPlatformRef = "e8a8f056a52fcbfb08e453bc6b51723c7b4b949c";
+const approvedCosignImage =
+  "ghcr.io/sigstore/cosign/cosign:v2.4.1@sha256:b03690aa52bfe94054187142fba24dc54137650682810633901767d8a3e15b31";
+
+const composeImageFixtures = {
+  QUEST_FRONTEND_IMAGE:
+    "ghcr.io/questesports/quest-frontend@sha256:" + "a".repeat(64),
+  QUEST_BACKEND_IMAGE:
+    "ghcr.io/questesports/quest-backend@sha256:" + "b".repeat(64),
+  QUEST_MIGRATOR_IMAGE:
+    "ghcr.io/questesports/quest-migrator@sha256:" + "c".repeat(64),
+  POSTGRES_IMAGE:
+    "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0",
+  VALORANT_IMAGE:
+    "ghcr.io/valorant/valorant-platform@sha256:" + "d".repeat(64),
+};
+
+const renderComposeImages = (source) =>
+  source.replace(
+    /\$\{([A-Z_]+):\?[^}]+\}/g,
+    (_, variable) => composeImageFixtures[variable] || "",
+  );
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const unquote = (value) => {
   const trimmed = value.trim();
@@ -254,7 +302,7 @@ const dockerFixture = (() => {
   if (version.error || version.status !== 0) {
     return { skip: "Docker daemon/CLI unavailable for the certificate healthcheck fixture" };
   }
-  const image = spawnSync("docker", ["image", "inspect", "postgres:17-bookworm"], {
+  const image = spawnSync("docker", ["image", "inspect", approvedPostgres17Ref], {
     encoding: "utf8",
   });
   if (image.error || image.status !== 0) {
@@ -422,6 +470,38 @@ test("production Compose has a fixed project and exact loopback publications", (
   assert.match(productionCompose, /quest-shared:[\s\S]*?external:\s*true/);
 });
 
+test("production and staging Compose render the private PostgreSQL topology", () => {
+  const renderedProductionCompose = renderComposeImages(productionCompose);
+  assert.match(renderedProductionCompose, /name:\s+quest-prod/);
+  assert.match(
+    productionCompose,
+    /postgres:\s*\n(?:.|\n)*image:\s*\$\{POSTGRES_IMAGE/,
+  );
+  assert.doesNotMatch(serviceBlock("postgres"), /\bports:/);
+  assert.match(
+    stagingCompose,
+    /127\.0\.0\.1:\$\{POSTGRES_STAGING_HOST_PORT:-55432\}:5432/,
+  );
+  assert.match(stagingCompose, /services:\s*\n\s+postgres:/);
+
+  // Rendered image assertions prove the required variables are replaced in
+  // the Compose fixture rather than merely repeating expected constants.
+  for (const image of [
+    composeImageFixtures.QUEST_FRONTEND_IMAGE,
+    composeImageFixtures.QUEST_BACKEND_IMAGE,
+    composeImageFixtures.POSTGRES_IMAGE,
+  ]) {
+    assert.match(renderedProductionCompose, new RegExp(`image:\\s*${escapeRegExp(image)}`));
+  }
+
+  const stagingPortMappings = [...stagingCompose.matchAll(/^\s+-\s+"([^"]+)"\s*$/gm)].map(
+    (match) => match[1],
+  );
+  assert.deepEqual(stagingPortMappings, [
+    "127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}:5432",
+  ]);
+});
+
 test("production backend receives mandatory runtime configuration", () => {
   const backend = serviceBlock("backend");
   assert.match(backend, /env_file:[\s\S]*required:\s*true/);
@@ -445,24 +525,32 @@ test("host verification requires exact image identity and Cosign verification", 
   assert.match(verifyRelease, /POSTGRES_IMAGE.*postgres:17-bookworm@sha256/);
 });
 
-test("artifact trust keeps VALORANT on an independent signer policy", () => {
+test("artifact trust scopes Cosign to Quest images and uses exact external references", () => {
+  const approvedPostgresRef =
+    "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0";
+  const rejectedPostgresRef =
+    "postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675";
+  for (const source of [imageWorkflow, deployWorkflow, releaseScript, validateHost, rollbackScript, cutoverScript, verifyRelease]) {
+    assert.match(source, new RegExp(escapeRegExp(approvedPostgresRef)));
+    assert.doesNotMatch(source, new RegExp(escapeRegExp(rejectedPostgresRef)));
+  }
+  assert.match(imageWorkflow, /POSTGRES_17_BOOKWORM_DIGEST.*approved_postgres_ref/);
+  assert.match(deployWorkflow, /test \"\$postgres_image\" = \"\$approved_postgres_ref\"/);
+  assert.match(validateHost, /manifest\[postgres_image\].*approved_postgres_ref/);
+  assert.doesNotMatch(validateHost, /POSTGRES_COSIGN|VALORANT_COSIGN/);
+  assert.doesNotMatch(verifyRelease, /POSTGRES_COSIGN|VALORANT_COSIGN/);
+  assert.doesNotMatch(releaseEnv, /^(?:POSTGRES|VALORANT)_COSIGN_/m);
+  assert.doesNotMatch(validateHost, /for key in frontend_image backend_image migrator_image postgres_image valorant_image/);
+  assert.match(validateHost, /for key in frontend_image backend_image migrator_image; do/);
+  assert.match(verifyRelease, /POSTGRES_IMAGE\).*unapproved PostgreSQL image/);
+
   const assignment = (name) => {
     const match = releaseEnv.match(new RegExp(`^${name}=(.*)$`, "m"));
     assert.ok(match, `${name} must be documented`);
     return match[1];
   };
-  assert.notEqual(
-    assignment("VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP"),
-    assignment("QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP"),
-    "VALORANT must not inherit the Quest signer identity",
-  );
-  assert.equal(
-    assignment("VALORANT_COSIGN_OIDC_ISSUER"),
-    assignment("QUEST_COSIGN_OIDC_ISSUER"),
-    "VALORANT may use the shared documented GitHub OIDC issuer",
-  );
-  assert.match(verifyRelease, /VALORANT trust policy must not reuse the Quest signer identity/);
-  assert.doesNotMatch(verifyRelease, /VALORANT trust policy must not reuse the Quest signer issuer/);
+  assert.equal(assignment("QUEST_COSIGN_OIDC_ISSUER"), "https://token.actions.githubusercontent.com");
+  assert.equal(assignment("POSTGRES_IMAGE_APPROVED_REF"), approvedPostgresRef);
   const questSigningStep = imageWorkflow.match(
     /Sign each Quest image digest with keyless OIDC[\s\S]*?(?=\n\s*- name:|$)/,
   )?.[0] || "";
@@ -472,6 +560,34 @@ test("artifact trust keeps VALORANT on an independent signer policy", () => {
     "the Quest workflow signing loop must not sign VALORANT with Quest policy",
   );
   assert.match(imageWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
+});
+
+test("workflow image trust contracts respect step boundaries and Quest-only deploy verification", () => {
+  const buildSteps = imageWorkflowDocument.jobs.build.steps;
+  const validateInputs = buildSteps.find((step) => step.name === "Validate release inputs");
+  const writeManifest = buildSteps.find((step) => step.name === "Write the exact release manifest");
+  assert.ok(validateInputs?.run && writeManifest?.run, "expected release input and manifest steps");
+
+  const postgresAssignment = /(^|\n)\s*approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'\s*($|\n)/;
+  for (const step of [validateInputs, writeManifest]) {
+    const assignment = step.run.search(postgresAssignment);
+    const firstUse = step.run.indexOf("$approved_postgres_ref");
+    assert.ok(assignment >= 0, `${step.name} must define the PostgreSQL reference in its own shell`);
+    assert.ok(firstUse > assignment, `${step.name} must define the reference before using it`);
+  }
+
+  const deploySteps = deployWorkflowDocument.jobs.deploy.steps;
+  const trustStep = deploySteps.find((step) => step.name === "Verify Quest signatures and BuildKit attestations");
+  assert.ok(trustStep?.run, "expected deploy-time image trust step");
+  const imageList = trustStep.run.match(/done <<'IMAGES'\n([\s\S]*?)\n\s*IMAGES/);
+  assert.ok(imageList, "deploy-time Cosign verification must use a structured image list");
+  assert.deepEqual(
+    imageList[1].split("\n").map((line) => line.trim()).filter(Boolean),
+    ["frontend_image", "backend_image", "migrator_image"],
+  );
+  assert.match(trustStep.run, /while IFS= read -r image_key; do/);
+  assert.equal((trustStep.run.match(/"\$COSIGN_IMAGE" verify/g) || []).length, 1);
+  assert.doesNotMatch(trustStep.run, /postgres|valorant/i, "external images must not enter Quest Cosign verification");
 });
 
 test("immutable image CI binds successful repository CI and publishes all signed Quest digests", () => {
@@ -498,43 +614,71 @@ test("immutable image CI binds successful repository CI and publishes all signed
     assert.match(imageWorkflow, new RegExp(`ghcr\.io/\\$\\{\\{ github\.repository_owner \\}\\}/${image}`));
   }
   assert.equal((imageWorkflow.match(/--provenance=mode=max/g) || []).length, 3);
+  assert.equal((imageWorkflow.match(/builder-id=https:\/\/github\.com\/Russelrip\/QuestEsports\/\.github\/workflows\/build-container-images\.yml@refs\/heads\/main/g) || []).length, 3);
+  assert.equal(
+    (imageWorkflow.match(/--provenance=mode=max,builder-id=https:\/\/github\.com\/Russelrip\/QuestEsports\/\.github\/workflows\/build-container-images\.yml@refs\/heads\/main/g) || []).length,
+    3,
+  );
   assert.equal((imageWorkflow.match(/--sbom=true/g) || []).length, 3);
   assert.match(imageWorkflow, /containerimage\.digest.*sha256:\[0-9a-f\]\{64\}/);
   assert.match(imageWorkflow, /Sign each Quest image digest with keyless OIDC/);
-  assert.match(imageWorkflow, /cosign sign --yes "\$image_reference"/);
+  assert.match(
+    imageWorkflow,
+    /docker run --rm --pull=never --network host[\s\S]*"\$COSIGN_IMAGE" sign --yes "\$image_reference"/,
+  );
   assert.match(imageWorkflow, /printf 'frontend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'backend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'migrator_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
 
   const buildArgs = [...imageWorkflow.matchAll(/--build-arg ([^\n]+)/g)].map((match) => match[1]);
-  assert.ok(buildArgs.length > 0, "public frontend build arguments must be explicit");
-  assert.ok(buildArgs.every((argument) => argument.includes("NEXT_PUBLIC_")));
-  assert.doesNotMatch(imageWorkflow, /--build-arg[^\n]*(?:SECRET|PASSWORD|TOKEN|PRIVATE_KEY)/i);
+  const buildArgNames = buildArgs.map((argument) => argument.match(/^"?([A-Z][A-Z0-9_]*)=/)?.[1]);
+  const allowedBuildArgNames = new Set([
+    "NEXT_PUBLIC_API_URL",
+    "NEXT_PUBLIC_SITE_URL",
+    "QUEST_BUILD_REVISION",
+    "QUEST_BUILD_REPOSITORY",
+    "QUEST_BUILD_BRANCH",
+    "QUEST_BUILD_WORKFLOW",
+  ]);
+  assert.ok(buildArgNames.every(Boolean), buildArgNames);
+  assert.ok(buildArgNames.every((name) => allowedBuildArgNames.has(name)), buildArgNames);
+  assert.equal(new Set(buildArgNames).size, allowedBuildArgNames.size);
+  assert.deepEqual([...new Set(buildArgNames)].sort(), [...allowedBuildArgNames].sort());
+  assert.doesNotMatch(
+    imageWorkflow,
+    /--build-arg\s+"?[A-Z][A-Z0-9_]*(?:SECRET|PASSWORD|TOKEN|PRIVATE_KEY)[A-Z0-9_]*=/i,
+  );
 });
 
 test("Compose deployment consumes only a protected, successful, signed digest release", () => {
   assert.match(deployWorkflow, /^permissions:\n  actions: read\n  contents: read\n  packages: read$/m);
   assert.match(deployWorkflow, /environment: production-compose/);
-  assert.match(deployWorkflow, /gh run view "\$build_run_id"/);
+  assert.match(deployWorkflow, /gh api "repos\/\$GITHUB_REPOSITORY\/actions\/runs\/\$build_run_id"/);
+  assert.match(deployWorkflow, /actions\/workflows\/build-container-images\.yml/);
+  assert.match(deployWorkflow, /\.workflow_id \| tostring/);
   assert.match(deployWorkflow, /actions\/runs\/\$build_run_id\/artifacts\?per_page=100/);
   assert.match(deployWorkflow, /container-release-manifest-\[0-9\]\+\-\[0-9a-f\]\{40\}/);
   assert.match(deployWorkflow, /ci_run_id="\$\{BASH_REMATCH\[1\]\}"/);
   assert.match(deployWorkflow, /release_sha="\$\{BASH_REMATCH\[2\]\}"/);
-  assert.match(deployWorkflow, /workflowName.*Build container images/);
+  assert.match(deployWorkflow, /\.name.*Build container images/);
   assert.match(deployWorkflow, /conclusion.*success/);
   assert.match(deployWorkflow, /event.*workflow_run/);
-  assert.match(deployWorkflow, /headBranch.*main/);
-  assert.match(deployWorkflow, /headSha.*ci_run_json/);
+  assert.match(deployWorkflow, /head_branch.*main/);
+  assert.match(deployWorkflow, /head_repository\.full_name/);
+  assert.match(deployWorkflow, /head_sha.*ci_run_json/);
   assert.match(deployWorkflow, /name: \$\{\{ needs\.resolve-build\.outputs\.artifact_name \}\}/);
   assert.match(deployWorkflow, /run-id: \$\{\{ needs\.resolve-build\.outputs\.build_run_id \}\}/);
-  assert.match(deployWorkflow, /workflowName.*CI/);
+  assert.match(deployWorkflow, /actions\/workflows\/ci\.yml/);
+  assert.match(deployWorkflow, /\.name.*CI/);
   assert.match(
     deployWorkflow,
     /COSIGN_CERTIFICATE_IDENTITY: https:\/\/github\.com\/Russelrip\/QuestEsports\/.github\/workflows\/build-container-images\.yml@refs\/heads\/main/,
   );
   assert.match(deployWorkflow, /COSIGN_OIDC_ISSUER: https:\/\/token\.actions\.githubusercontent\.com/);
-  assert.match(deployWorkflow, /cosign verify/);
+  assert.match(deployWorkflow, /"\$COSIGN_IMAGE" verify/);
   assert.match(deployWorkflow, /verify_buildkit_attestations/);
+  assert.match(deployWorkflow, /get\(predicate, \('builder', 'id'\)\)/);
+  assert.match(deployWorkflow, /get\(predicate, \('runDetails', 'builder', 'id'\)\)/);
   assert.match(deployWorkflow, /https:\/\/spdx\.dev\/Document/);
   assert.match(deployWorkflow, /https:\/\/slsa\.dev\/provenance\/v1/);
   assert.match(deployWorkflow, /quest-frontend@sha256/);
@@ -542,7 +686,17 @@ test("Compose deployment consumes only a protected, successful, signed digest re
   assert.match(deployWorkflow, /quest-migrator@sha256/);
   assert.match(deployWorkflow, /POSTGRES_IMAGE_APPROVED_REF/);
   assert.match(deployWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
-  assert.match(deployWorkflow, /sudo -n -- \/usr\/local\/sbin\/quest-esports-release '\$RELEASE_SHA' '\$remote_manifest'/);
+  const composeTransferStep = deployWorkflow.match(
+    /- name: Transfer the verified manifest and invoke the fixed root release script[\s\S]*?(?=\n      - name:)/,
+  )?.[0] || "";
+  assert.match(
+    composeTransferStep,
+    /timeout --foreground 120s ssh "\$\{ssh_options\[@\]\}" -p "\$SSH_PORT" -- "deploy@\$SSH_HOST" sudo -n -- \/usr\/local\/sbin\/quest-esports-release "\$RELEASE_SHA" "\$remote_manifest"/,
+  );
+  assert.match(composeTransferStep, /ssh_options=\(/);
+  assert.match(composeTransferStep, /-- "deploy@\$SSH_HOST" sudo -n -- \/usr\/local\/sbin\/quest-esports-release/);
+  assert.doesNotMatch(composeTransferStep, /bash\s+-c|sh\s+-c|eval\b|remote_command/);
+  assert.doesNotMatch(composeTransferStep, /sudo -n -- \/usr\/local\/sbin\/quest-esports-release '\$/);
   assert.doesNotMatch(deployWorkflow, /:latest/);
   assert.doesNotMatch(deployWorkflow, /npm ci|\bpm2\b|docker group/);
   const shellSecretOutputLines = deployWorkflow
@@ -559,8 +713,8 @@ test("deployment rejects a downstream build SHA that differs from its upstream C
   const artifactBinding = artifactName.match(/^container-release-manifest-([0-9]+)-([0-9a-f]{40})$/);
   assert.ok(artifactBinding, "the fixture artifact must carry an upstream run ID and full SHA");
   assert.notEqual(downstreamBuildSha, artifactBinding[2]);
-  assert.match(deployWorkflow, /\.headSha.*ci_run_json/);
-  assert.match(deployWorkflow, /\.headSha.*release_sha/);
+  assert.match(deployWorkflow, /\.head_sha.*ci_run_json/);
+  assert.match(deployWorkflow, /\.head_sha.*release_sha/);
   assert.match(deployWorkflow, /artifact_name/);
 });
 
@@ -895,7 +1049,12 @@ chmod +x "$tmp/bin/pg_isready"
 
 make_certificate() {
   certificate="$1"
-  if [ "$2" = san ]; then
+  if [ "$2" = both ]; then
+    openssl req -x509 -newkey rsa:2048 -nodes -days 1 \\
+      -subj '/CN=quest-postgres' \\
+      -addext 'subjectAltName=DNS:quest-postgres,IP:127.0.0.1' \\
+      -keyout "$certificate.key" -out "$certificate.crt" >/dev/null 2>&1
+  elif [ "$2" = dns ]; then
     openssl req -x509 -newkey rsa:2048 -nodes -days 1 \\
       -subj '/CN=quest-postgres' \\
       -addext 'subjectAltName=DNS:quest-postgres' \\
@@ -913,6 +1072,7 @@ run_case() {
   if PATH="$tmp/bin:$PATH" \\
     POSTGRES_CERT_RUNTIME_FILE="$tmp/$label.crt" \\
     POSTGRES_CA_RUNTIME_FILE="$tmp/$label.crt" \\
+    POSTGRES_KEY_RUNTIME_FILE="$tmp/$label.key" \\
     sh /fixture/healthcheck.sh; then
     printf '%s\\n' "$label:pass"
   else
@@ -920,9 +1080,11 @@ run_case() {
   fi
 }
 
-san_result=$(run_case san)
+both_result=$(run_case both both)
+dns_result=$(run_case dns dns)
 cn_result=$(run_case cn)
-[ "$san_result" = 'san:pass' ]
+[ "$both_result" = 'both:pass' ]
+[ "$dns_result" = 'dns:fail' ]
 [ "$cn_result" = 'cn:fail' ]
 `;
     const result = spawnSync(
@@ -934,7 +1096,7 @@ cn_result=$(run_case cn)
         "sh",
         "--volume",
         scriptMount,
-        "postgres:17-bookworm",
+        approvedPostgres17Ref,
         "-c",
         fixture,
       ],
@@ -959,16 +1121,30 @@ test("production images are manifest-supplied and digest-oriented", () => {
       new RegExp(`image:\\s*\\$\\{${variable}:\\?`),
       `${variable} must be required from the release manifest`,
     );
-    assert.match(productionEnv, new RegExp(`^${variable}=`, "m"), `${variable} must be a release variable`);
+    assert.match(
+      releaseScript,
+      new RegExp(`${variable}=%s`),
+      `${variable} must be emitted into the signed release bundle`,
+    );
   }
-  assert.match(productionEnv, /^QUEST_MIGRATOR_IMAGE=$/m);
-  assert.match(productionEnv, /^POSTGRES_IMAGE=$/m);
-  assert.match(productionCompose, /postgres:17-bookworm@sha256:<digest>/);
-  assert.match(productionEnv, /postgres:17-bookworm@sha256:<64-hex-digest>/);
+  assert.doesNotMatch(
+    productionEnv,
+    /^(QUEST_FRONTEND_IMAGE|QUEST_BACKEND_IMAGE|QUEST_MIGRATOR_IMAGE|POSTGRES_IMAGE|VALORANT_IMAGE)=/m,
+    "runtime environment must not carry release image variables",
+  );
+  assert.match(
+    productionCompose,
+    /postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0/,
+  );
+  assert.match(
+    productionEnv,
+    /postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0/,
+  );
   const fallbackManifest = {
     QUEST_FRONTEND_IMAGE: `ghcr.io/questesports/quest-frontend@sha256:${"a".repeat(64)}`,
     QUEST_BACKEND_IMAGE: `ghcr.io/questesports/quest-backend@sha256:${"b".repeat(64)}`,
-    POSTGRES_IMAGE: `postgres:17-bookworm@sha256:${"c".repeat(64)}`,
+    POSTGRES_IMAGE:
+      "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0",
   };
   const releaseManifest = Object.fromEntries(
     imageVariables.map((variable) => [variable, process.env[variable] || fallbackManifest[variable]]),
@@ -980,6 +1156,10 @@ test("production images are manifest-supplied and digest-oriented", () => {
       `${variable} release value must be an immutable digest reference`,
     );
   }
+  assert.equal(
+    releaseManifest.POSTGRES_IMAGE,
+    "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0",
+  );
   const renderedImageLines = [...productionCompose.replace(
     /\$\{([A-Z_]+):\?[^}]+\}/g,
     (_, variable) => releaseManifest[variable] || "",
@@ -988,12 +1168,86 @@ test("production images are manifest-supplied and digest-oriented", () => {
   assert.doesNotMatch(productionCompose, /image:\s*(?:postgres|node|ghcr\.io)[^$\n]*:[\w.-]+\s*$/m);
 });
 
+test("CI and deployment tooling use immutable infrastructure and locked CLIs", () => {
+  const backendService = ciWorkflowDocument.jobs.backend.services.postgres;
+  assert.equal(backendService.image, approvedPostgres16CiRef);
+  assert.equal(ciWorkflowDocument.jobs.frontend.container, approvedPlaywrightRef);
+
+  const frontendPackage = JSON.parse(read("frontend/package.json"));
+  const frontendLock = JSON.parse(read("frontend/package-lock.json"));
+  assert.equal(frontendPackage.devDependencies["@playwright/test"], "1.61.1");
+  assert.equal("vercel" in frontendPackage.devDependencies, false);
+  assert.equal(frontendLock.packages[""].devDependencies["@playwright/test"], "1.61.1");
+  assert.equal("vercel" in frontendLock.packages[""].devDependencies, false);
+  assert.equal(frontendLock.packages["node_modules/playwright"].version, "1.61.1");
+  assert.equal("node_modules/vercel" in frontendLock.packages, false);
+
+  assert.match(frontendDeployWorkflow, /npx --yes vercel@54\.17\.3 pull --yes/);
+  assert.match(frontendDeployWorkflow, /npx --yes vercel@54\.17\.3 build --prod/);
+  assert.match(frontendDeployWorkflow, /run: npx --yes vercel@54\.17\.3 deploy --prebuilt --prod/);
+  assert.doesNotMatch(frontendDeployWorkflow, /frontend\/node_modules\/\.bin\/vercel/);
+  assert.match(frontendDeployWorkflow, /npm ci/);
+
+  assert.match(
+    valorantE2eWorkflow,
+    /astral-sh\/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d\s+#\s+v10\.0\.1/,
+  );
+  const parsedValorantE2e = yaml.load(valorantE2eWorkflow);
+  const valorantSteps = parsedValorantE2e.jobs["valorant-e2e"].steps;
+  const uvStep = valorantSteps.find((step) => step.name === "Set up uv");
+  assert.equal(uvStep.with.version, "0.12.7");
+  const siblingCheckout = valorantSteps.find((step) => step.name === "Check out valorant-platform-backend");
+  assert.match(siblingCheckout.with.ref, /^[0-9a-f]{40}$/);
+  assert.equal(siblingCheckout.with.ref, approvedValorantPlatformRef);
+  assert.equal(siblingCheckout.with.token, "${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}");
+  assert.match(
+    ciWorkflow,
+    /docker pull "\$approved_postgres_ref"[\s\S]*bash ops\/tests\/postgres-container-readability\.test\.sh/,
+  );
+  assert.match(ciWorkflow, /grep -Eq '\^SKIP:' <<< "\$readability_output"/);
+
+  const windowsRestoreDrill = read("ops/test-paris-database-backup-windows.ps1");
+  assert.match(windowsRestoreDrill, new RegExp(escapeRegExp(approvedPostgres17Ref)));
+  assert.doesNotMatch(windowsRestoreDrill, /postgres:17-alpine/);
+  const alpineReference = /alpine:3\.22@sha256:[0-9a-f]{64}/g;
+  assert.equal(windowsRestoreDrill.match(alpineReference)?.length, 1);
+  assert.match(windowsRestoreDrill, new RegExp(escapeRegExp(approvedAlpine322Ref)));
+  assert.match(windowsRestoreDrill, /apk add --no-cache age=1\.2\.1-r0/);
+  assert.doesNotMatch(windowsRestoreDrill, /apk add --no-cache age(?![=])/);
+  const windowsBackup = read("ops/backup-paris-database-windows.ps1");
+  assert.equal(windowsBackup.match(alpineReference)?.length, 2);
+  assert.match(windowsBackup, new RegExp(escapeRegExp(approvedAlpine322Ref)));
+  assert.equal(windowsBackup.match(/apk add --no-cache age=1\.2\.1-r0/g)?.length, 2);
+  assert.doesNotMatch(windowsBackup, /apk add --no-cache age(?![=])/);
+});
+
+test("Cosign signing and verification use the same immutable official container", () => {
+  for (const [name, document, source, jobName] of [
+    ["build-container-images.yml", imageWorkflowDocument, imageWorkflow, "build"],
+    ["deploy-compose.yml", deployWorkflowDocument, deployWorkflow, "deploy"],
+  ]) {
+    const steps = document.jobs[jobName].steps;
+    const cosignStep = steps.find((step) => step.name === "Pull the immutable Cosign container");
+    assert.ok(cosignStep?.run, `${name} must pull Cosign before use`);
+    assert.deepEqual(cosignStep.env, { COSIGN_IMAGE: approvedCosignImage });
+    assert.match(cosignStep.run, /docker pull "\$COSIGN_IMAGE"/);
+    assert.match(cosignStep.run, /docker image inspect "\$COSIGN_IMAGE"/);
+    assert.match(source, new RegExp(escapeRegExp(approvedCosignImage)));
+    assert.doesNotMatch(source, /go\s+install\s+github\.com\/sigstore\/cosign\/v2\/cmd\/cosign@v2\.4\.1/);
+    assert.doesNotMatch(source, /COSIGN_VERSION/);
+    assert.match(source, /docker run --rm --pull=never --network host/);
+    assert.match(source, /-v "\$HOME\/\.docker:\/root\/.docker:ro"/);
+  }
+  assert.match(imageWorkflow, /"\$COSIGN_IMAGE" sign --yes "\$image_reference"/);
+  assert.match(deployWorkflow, /"\$COSIGN_IMAGE" verify/);
+});
+
 test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate", () => {
   for (const role of ["quest_runtime", "quest_migrator", "val_runtime", "val_migrator"]) {
     assert.match(postgresBootstrap, new RegExp(`CREATE ROLE ${role} LOGIN`));
   }
   assert.match(postgresBootstrap, /CREATE SCHEMA IF NOT EXISTS valorant AUTHORIZATION val_migrator/);
-  assert.match(postgresBootstrap, /REVOKE ALL ON DATABASE quest FROM PUBLIC/);
+  assert.match(postgresBootstrap, /REVOKE ALL ON DATABASE %I FROM PUBLIC/);
   assert.match(postgresBootstrap, /ALTER SCHEMA public OWNER TO quest_migrator/);
   assert.match(postgresBootstrap, /ALTER SCHEMA valorant OWNER TO val_migrator/);
   for (const role of ["quest_migrator", "quest_runtime", "val_migrator", "val_runtime"]) {
@@ -1004,6 +1258,13 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(postgresBootstrap, /REVOKE %I FROM %I/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator/);
+  assert.match(postgresBootstrap, /CREATE ROLE quest_recovery_admin LOGIN/);
+  assert.match(postgresBootstrap, /ALTER ROLE quest_recovery_admin LOGIN NOINHERIT SUPERUSER NOCREATEDB CREATEROLE NOREPLICATION BYPASSRLS CONNECTION LIMIT 1/);
+  assert.match(postgresBootstrap, /RESTORE_MODE must run directly as quest_recovery_admin without SET ROLE/);
+  assert.doesNotMatch(postgresBootstrap, /GRANT quest_migrator TO quest_recovery_admin/);
+  assert.doesNotMatch(postgresBootstrap, /GRANT val_migrator TO quest_recovery_admin/);
+  assert.doesNotMatch(productionCompose, /quest_recovery_admin/);
+  assert.doesNotMatch(productionEnv, /quest_recovery_admin/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES[\s\S]*REVOKE ALL ON TABLES FROM PUBLIC/);
   assert.match(postgresBootstrap, /ALTER DEFAULT PRIVILEGES[\s\S]*REVOKE ALL ON SEQUENCES FROM PUBLIC/);
   assert.match(postgresBootstrap, /REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC/);
@@ -1011,21 +1272,267 @@ test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate
   assert.match(postgresBootstrap, /REVOKE ALL ON TYPE %I\.%I FROM PUBLIC/);
   assert.match(postgresBootstrap, /type_object\.typelem = 0/);
   assert.match(postgresBootstrap, /type_object\.typtype <> 'm'/);
+  assert.match(postgresBootstrap, /GRANT TEMPORARY ON DATABASE .* TO quest_migrator, val_migrator/);
   assert.doesNotMatch(postgresBootstrap, /PASSWORD\s+'[^']+'/i);
   assert.match(productionCompose, /ssl=on/);
   assert.match(productionCompose, /sslrootcert|ssl_ca_file/);
   assert.match(productionCompose, /ssl_cert_file[\s\S]*server\.crt/);
   assert.match(productionCompose, /ssl_key_file[\s\S]*server\.key/);
   assert.match(postgresHealthcheck, /-checkhost quest-postgres/);
+  assert.match(postgresHealthcheck, /-checkip 127\.0\.0\.1/);
   assert.match(postgresHealthcheck, /-ext subjectAltName/);
   assert.match(postgresHealthcheck, /grep -Eq ['"]DNS:quest-postgres/);
+  assert.match(postgresHealthcheck, /grep -Eq ['"]IP Address:127\\\.0\\\.0\\\.1/);
   assert.match(postgresHealthcheck, /pg_isready/);
   assert.match(postgresHealthcheck, /sslmode=verify-full/);
   assert.match(postgresHealthcheck, /sslrootcert=\$ca_certificate/);
   assert.match(postgresHealthcheck, /host=\$host port=\$port/);
   assert.match(productionEnv, /sslmode=verify-full/);
   assert.match(productionEnv, /sslrootcert=/);
+  assert.match(productionCompose, /user:\s*["']?999:999/);
+  assert.match(postgresBootstrap, /pg_operator/);
+  assert.match(postgresBootstrap, /pg_collation/);
+  assert.match(postgresBootstrap, /pg_statistic_ext/);
+  assert.match(postgresBootstrap, /procedure\.prokind IN \('f', 'p', 'a', 'w'\)/);
+  assert.match(postgresBootstrap, /relation\.relkind IN \('r', 'p', 'v', 'm', 'S', 'f', 'c'\)/);
+  assert.match(postgresBootstrap, /current_database\(\)/);
+  assert.doesNotMatch(postgresBootstrap, /ON DATABASE quest/);
+  assert.doesNotMatch(read("ops/deploy/release.sh"), /POSTGRES_CERT_FILE|POSTGRES_KEY_FILE/);
+  assert.doesNotMatch(read("ops/deploy/cutover.sh"), /POSTGRES_CERT_FILE|POSTGRES_KEY_FILE/);
+  assert.doesNotMatch(read("ops/deploy/validate-host.sh"), /POSTGRES_CERT_FILE|POSTGRES_KEY_FILE/);
 });
+
+test("VALORANT runtime uses asyncpg SSL context semantics, not libpq URL options", () => {
+  assert.match(valorantProductionEnv, /^DATABASE_URL=$/m);
+  assert.match(valorantProductionEnv, /postgresql\+asyncpg:\/\/.*\?ssl=require/);
+  assert.doesNotMatch(valorantProductionEnv, /[?&]sslmode=|[?&]sslrootcert=/);
+  assert.match(valorantProductionEnv, /^VALORANT_DATABASE_SSL_CA_FILE=\/run\/secrets\/quest-private-ca\.crt$/m);
+  assert.match(valorantProductionEnv, /^VALORANT_DATABASE_SSL_SERVER_HOSTNAME=quest-postgres$/m);
+  assert.match(valorantProductionEnv, /^VALORANT_DATABASE_SSL_VERIFY=full$/m);
+  assert.match(valorantProductionEnv, /check_hostname=True/);
+  assert.match(valorantProductionEnv, /verify_mode=ssl\.CERT_REQUIRED/);
+  assert.match(valorantProductionEnv, /asyncpg's `ssl` connect argument/);
+  assert.match(read("ops/docker/valorant.production.compose.yml"), /env_file:/);
+  assert.match(read("ops/docker/valorant.production.compose.yml"), /quest-private-ca\.crt:.*quest-private-ca\.crt:ro/);
+  assert.match(releaseEnv, /^VALORANT_RUNTIME_COMPOSE_CONTRACT=/m);
+  assert.match(releaseScript, /VALORANT Compose source does not satisfy the asyncpg TLS runtime contract/);
+  assert.match(releaseScript, /parsed\.scheme != "postgresql\+asyncpg"/);
+  assert.match(releaseScript, /query != \{"ssl": \["require"\]\}/);
+  for (const deploymentScript of [releaseScript, verifyRelease, read("ops/deploy/cutover.sh"), read("ops/deploy/validate-host.sh")]) {
+    assert.match(deploymentScript, /config --no-env-resolution --format json/);
+    assert.match(deploymentScript, /with open\(raw, encoding="utf-8"\)/);
+    assert.doesNotMatch(deploymentScript, /python3 - \"\$source_json\"/);
+  }
+  assert.match(databaseSecurityVerifier, /127\.0\.0\.1.*55432/);
+  assert.match(databaseSecurityVerifier, /127\.0\.0\.1.*5432/);
+});
+
+test("PostgreSQL runtime roles use explicit non-bypass policies and keep the Prisma ledger private", () => {
+  const roleAttributes = "LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS";
+  for (const role of ["quest_runtime", "val_runtime", "quest_migrator", "val_migrator"]) {
+    assert.match(postgresBootstrap, new RegExp(`ALTER ROLE ${role} ${roleAttributes}`));
+  }
+  assert.match(questRuntimeRlsMigration, /GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO quest_runtime/);
+  assert.match(questRuntimeRlsMigration, /GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO quest_runtime/);
+  assert.match(questRuntimeRlsMigration, /DROP POLICY IF EXISTS %I ON %I\.%I/);
+  assert.match(questRuntimeRlsMigration, /CREATE POLICY %I ON %I\.%I FOR ALL TO %I USING \(true\) WITH CHECK \(true\)/);
+  assert.match(questRuntimeRlsMigration, /c\.relname <> '_prisma_migrations'/);
+  assert.match(questRuntimeRlsMigration, /REVOKE ALL PRIVILEGES ON TABLE public\."_prisma_migrations" FROM quest_runtime/);
+  assert.match(postgresBootstrap, /to_regclass\('public\._prisma_migrations'\)/);
+  assert.match(databaseSecurityVerifier, /FROM pg_policies/);
+  assert.match(databaseSecurityVerifier, /tablesWithoutRuntimePolicy/);
+  assert.match(databaseSecurityVerifier, /rolbypassrls/);
+  assert.match(databaseSecurityVerifier, /crossSchemaGrants/);
+  assert.match(databaseSecurityVerifier, /p\.roles && ARRAY\['quest_runtime', 'val_runtime'\]::name\[\]/);
+  assert.match(databaseSecurityVerifier, /'public' = ANY \(p\.roles\)/);
+  assert.match(databaseSecurityVerifier, /n\.nspname IN \('public', 'valorant'\)/);
+  assert.match(databaseSecurityVerifier, /_prisma_migrations/);
+  assert.match(databaseSecurityVerifier, /p\.prokind IN \('f', 'p', 'a', 'w'\)/);
+});
+
+test(
+  "the runtime policy migration gives Quest access without exposing the Prisma ledger or sibling schema",
+  { skip: dockerFixture.skip || false },
+  () => {
+    const container = `quest-security-contract-${process.pid}`;
+    const docker = (args) => spawnSync("docker", ["exec", container, ...args], { encoding: "utf8" });
+    const runPsql = (role, sql) => docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", role, "-d", "quest", "-At", "-c", sql]);
+    const started = spawnSync(
+      "docker",
+      [
+        "run",
+        "--detach",
+        "--rm",
+        "--name",
+        container,
+        "-e",
+        "POSTGRES_HOST_AUTH_METHOD=trust",
+        "-e",
+        "POSTGRES_DB=quest",
+        "-p",
+        "127.0.0.1::5432",
+        approvedPostgres17Ref,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(started.status, 0, `could not start PostgreSQL fixture:\n${started.stdout}\n${started.stderr}`);
+
+    try {
+      let ready = false;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const result = docker(["pg_isready", "-U", "postgres", "-d", "quest"]);
+        if (result.status === 0) {
+          ready = true;
+          break;
+        }
+      }
+      assert.equal(ready, true, "PostgreSQL fixture did not become ready");
+
+      const publishedPort = spawnSync("docker", ["port", container, "5432/tcp"], { encoding: "utf8" });
+      assert.equal(publishedPort.status, 0, `could not determine fixture port:\n${publishedPort.stdout}\n${publishedPort.stderr}`);
+      const portMatch = publishedPort.stdout.match(/:(\d+)\s*$/m);
+      assert.ok(portMatch, `fixture port was not published:\n${publishedPort.stdout}`);
+      const databaseUrl = `postgresql://quest_migrator@127.0.0.1:${portMatch[1]}/quest?schema=public`;
+      const runVerifier = () =>
+        spawnSync(process.execPath, [path.join(repoRoot, "backend/scripts/verify-database-security.js")], {
+          cwd: path.join(repoRoot, "backend"),
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            DATABASE_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/quest?schema=public`,
+            DIRECT_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/quest?schema=public`,
+            SESSION_COOKIE_NAME: "quest_session",
+            NODE_ENV: "test",
+          },
+        });
+
+      const bootstrapPath = path.join(repoRoot, "ops/docker/postgres/init/001-bootstrap-roles.sql");
+      const migrationPath = path.join(
+        repoRoot,
+        "backend/prisma/migrations/20260829120000_add_quest_runtime_rls_policies/migration.sql",
+      );
+      for (const [source, target] of [
+        [bootstrapPath, "/tmp/bootstrap.sql"],
+        [migrationPath, "/tmp/runtime-policies.sql"],
+      ]) {
+        const copied = spawnSync("docker", ["cp", source, `${container}:${target}`], { encoding: "utf8" });
+        assert.equal(copied.status, 0, `could not copy fixture SQL:\n${copied.stdout}\n${copied.stderr}`);
+      }
+
+      let result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "quest", "-f", "/tmp/bootstrap.sql"]);
+      assert.equal(result.status, 0, `bootstrap fixture failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql(
+        "postgres",
+        "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;",
+      );
+      assert.equal(result.status, 0, `Data API fixture roles failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("quest_migrator", 'CREATE TABLE public.fixture_application (id integer PRIMARY KEY); CREATE TABLE public."_prisma_migrations" (id text PRIMARY KEY);');
+      assert.equal(result.status, 0, `fixture tables failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql(
+        "val_migrator",
+        "CREATE TABLE valorant.fixture_application (id integer PRIMARY KEY); CREATE TABLE valorant.\"_migration_ledger\" (id text PRIMARY KEY); REVOKE ALL PRIVILEGES ON TABLE valorant.\"_migration_ledger\" FROM val_runtime;",
+      );
+      assert.equal(result.status, 0, `sibling fixture table failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql(
+        "val_migrator",
+        "ALTER TABLE valorant.fixture_application ENABLE ROW LEVEL SECURITY; CREATE POLICY fixture_application_runtime_all ON valorant.fixture_application FOR ALL TO val_runtime USING (true) WITH CHECK (true);",
+      );
+      assert.equal(result.status, 0, `sibling runtime policy failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("postgres", "CREATE TYPE public.fixture_composite AS (value integer); ALTER TYPE public.fixture_composite OWNER TO postgres; CREATE FUNCTION public.fixture_window(value integer) RETURNS integer LANGUAGE SQL IMMUTABLE WINDOW AS 'SELECT $1'; ALTER FUNCTION public.fixture_window(integer) OWNER TO postgres;");
+      assert.equal(result.status, 0, `composite type fixture failed:\n${result.stdout}\n${result.stderr}`);
+      result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-v", "RESTORE_MODE=1", "-U", "quest_recovery_admin", "-d", "quest", "-f", "/tmp/bootstrap.sql"]);
+      assert.equal(result.status, 0, `recovery ownership fixture failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("postgres", "SELECT pg_get_userbyid(t.typowner), pg_get_userbyid(c.relowner) FROM pg_type t JOIN pg_class c ON c.oid = t.typrelid WHERE t.typnamespace = 'public'::regnamespace AND t.typname = 'fixture_composite';");
+      assert.equal(result.stdout.trim(), "quest_migrator|quest_migrator", `composite type ownership was not normalized:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("postgres", "SELECT p.prokind, pg_get_userbyid(p.proowner) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'fixture_window' AND p.prokind = 'w';");
+      assert.equal(result.stdout.trim(), "w|quest_migrator", `window function ownership was not normalized:\n${result.stdout}\n${result.stderr}`);
+      result = docker(["psql", "-v", "ON_ERROR_STOP=1", "-U", "quest_migrator", "-d", "quest", "-f", "/tmp/runtime-policies.sql"]);
+      assert.equal(result.status, 0, `runtime policy migration failed:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql("postgres", "SELECT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'fixture_application' AND policyname = 'fixture_application_runtime_all' AND cmd = 'ALL' AND 'quest_runtime' = ANY (roles) AND qual = 'true' AND with_check = 'true');");
+      assert.equal(result.stdout.trim(), "t", `fixture policy was not created:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("postgres", "SELECT has_table_privilege('quest_runtime', 'public.fixture_application', 'SELECT'), has_table_privilege('quest_runtime', 'public.\"_prisma_migrations\"', 'SELECT'), NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = '_prisma_migrations');");
+      assert.equal(result.stdout.trim(), "t|f|t", `ledger privilege contract failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("quest_runtime", "INSERT INTO public.fixture_application VALUES (1); SELECT count(*) FROM public.fixture_application;");
+      assert.equal(result.status, 0, `Quest runtime positive probe failed:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("quest_runtime", 'SELECT count(*) FROM public."_prisma_migrations";');
+      assert.notEqual(result.status, 0, "Quest runtime unexpectedly accessed _prisma_migrations");
+      result = runPsql("quest_runtime", "SELECT count(*) FROM valorant.fixture_application;");
+      assert.notEqual(result.status, 0, "Quest runtime unexpectedly accessed valorant");
+      result = runPsql("val_runtime", "SELECT count(*) FROM public.fixture_application;");
+      assert.notEqual(result.status, 0, "VAL runtime unexpectedly accessed public");
+
+      result = runVerifier();
+      assert.equal(result.status, 0, `security verifier rejected the secure fixture:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql("quest_migrator", "DROP POLICY fixture_application_runtime_all ON public.fixture_application;");
+      assert.equal(result.status, 0, `could not remove fixture policy:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a table with a missing runtime policy");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Application tables without their runtime policy/);
+      result = runPsql(
+        "quest_migrator",
+        "CREATE POLICY fixture_application_runtime_all ON public.fixture_application FOR ALL TO quest_runtime USING (true) WITH CHECK (true);",
+      );
+      assert.equal(result.status, 0, `could not restore fixture policy:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql(
+        "quest_migrator",
+        'CREATE POLICY ledger_val_runtime ON public."_prisma_migrations" FOR SELECT TO val_runtime USING (true);',
+      );
+      assert.equal(result.status, 0, `could not create runtime ledger policy:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a val_runtime ledger policy");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected runtime\/PUBLIC access to a migration ledger/);
+      result = runPsql("quest_migrator", "DROP POLICY ledger_val_runtime ON public.\"_prisma_migrations\";");
+      assert.equal(result.status, 0, `could not remove runtime ledger policy:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql(
+        "quest_migrator",
+        'CREATE POLICY ledger_public_mixed ON public."_prisma_migrations" FOR SELECT TO PUBLIC, quest_migrator USING (true);',
+      );
+      assert.equal(result.status, 0, `could not create mixed PUBLIC ledger policy:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a mixed PUBLIC ledger policy");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected runtime\/PUBLIC access to a migration ledger/);
+      result = runPsql("quest_migrator", "DROP POLICY ledger_public_mixed ON public.\"_prisma_migrations\";");
+      assert.equal(result.status, 0, `could not remove mixed PUBLIC ledger policy:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql(
+        "postgres",
+        "GRANT SELECT ON valorant.fixture_application TO anon, authenticated, service_role, PUBLIC;",
+      );
+      assert.equal(result.status, 0, `could not create cross-schema Data API grants:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted cross-schema Data API table grants");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Unexpected Data API table grants/);
+      result = runPsql(
+        "postgres",
+        "REVOKE ALL PRIVILEGES ON valorant.fixture_application FROM anon, authenticated, service_role, PUBLIC;",
+      );
+      assert.equal(result.status, 0, `could not remove cross-schema Data API grants:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.equal(result.status, 0, `security verifier rejected the restored secure fixture:\n${result.stdout}\n${result.stderr}`);
+
+      result = runPsql("postgres", "ALTER TYPE public.fixture_composite OWNER TO postgres;");
+      assert.equal(result.status, 0, `could not create a wrong composite owner:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a wrong composite type owner");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Objects with unexpected schema owners/);
+      result = runPsql("postgres", "ALTER TYPE public.fixture_composite OWNER TO quest_migrator;");
+      assert.equal(result.status, 0, `could not restore composite owner:\n${result.stdout}\n${result.stderr}`);
+      result = runPsql("postgres", "ALTER FUNCTION public.fixture_window(integer) OWNER TO postgres;");
+      assert.equal(result.status, 0, `could not create a wrong window-function owner:\n${result.stdout}\n${result.stderr}`);
+      result = runVerifier();
+      assert.notEqual(result.status, 0, "security verifier accepted a wrong window function owner");
+      assert.match(`${result.stdout}\n${result.stderr}`, /Objects with unexpected schema owners/);
+      result = runPsql("postgres", "ALTER FUNCTION public.fixture_window(integer) OWNER TO quest_migrator;");
+      assert.equal(result.status, 0, `could not restore window function owner:\n${result.stdout}\n${result.stderr}`);
+    } finally {
+      spawnSync("docker", ["rm", "--force", container], { encoding: "utf8" });
+    }
+  },
+);
 
 test("production environment template contains no credential values", () => {
   const sensitiveAssignment = /^(?:AUTH_ENCRYPTION_KEY|VALORANT_SERVICE_KEY_ID|VALORANT_SERVICE_SECRET|DATABASE_URL|DIRECT_URL|SMTP_HOST|SMTP_USER|SMTP_PASS)=/;

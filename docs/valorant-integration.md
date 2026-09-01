@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-The VALORANT integration lets Quest admins run standalone competitive VALORANT series (BO1/BO3/BO5) with Riot-sourced results and ELO ratings. Quest Esports is the authenticated admin/BFF layer: the browser talks **only** to Quest Express, which proxies to a sibling FastAPI service (`valorant-platform-backend`) over a private internal API using a signed HMAC service token. FastAPI owns the canonical match data, series correctness/finalization, rating events, and rankings (it is the only component that talks to HenrikDev); Quest owns admin identity, permissions, UX, durable `SavedTeam`→VAL team bindings, and read projections. Both services connect to the **same** Supabase PostgreSQL project but in **two owned schemas** (`public` for Quest Prisma, `valorant` for FastAPI) with separate runtime roles.
+The VALORANT integration lets Quest admins run standalone competitive VALORANT series (BO1/BO3/BO5) with Riot-sourced results and ELO ratings. Quest Esports is the authenticated admin/BFF layer: the browser talks **only** to Quest Express, which proxies to a sibling FastAPI service (`valorant-platform-backend`) over a private internal API using a signed HMAC service token. FastAPI owns the canonical match data, series correctness/finalization, rating events, and rankings (it is the only component that talks to HenrikDev); Quest owns admin identity, permissions, UX, durable `SavedTeam`→VAL team bindings, and read projections. In production both services use the live VPS PostgreSQL 17.11 service (`quest-postgres` at `127.0.0.1:5433`) with **two owned schemas** (`public` for Quest Prisma, `valorant` for FastAPI) and separate runtime roles. Isolated local testing uses a dedicated Supabase test project instead.
 
 ---
 
@@ -29,7 +29,7 @@ HenrikDev API   (only FastAPI speaks Henrik)
 ```
 
 - Quest Express is the **only** caller of FastAPI; FastAPI binds to a private interface / internal ingress, has no browser-facing CORS surface, and `GET /api/v1/health` is its only unauthenticated route (asserted by the route-inventory test, `2389a69`).
-- Production topology: browser → CDN/Next.js (Vercel) → Quest Express (private VPC / internal LB) → FastAPI (private network, IP allowlist, mTLS deferred) → Supabase project (`0dc556a` Quest docs, `2389a69` FastAPI ADR).
+- Production topology: browser → CDN/Next.js (Vercel) → Quest Express (private VPC / internal LB) → FastAPI (private network, IP allowlist, mTLS deferred) → VPS PostgreSQL 17.11 (`quest-postgres`, `127.0.0.1:5433`).
 
 ### 2.2 Two schemas, four roles
 
@@ -49,7 +49,7 @@ HenrikDev API   (only FastAPI speaks Henrik)
 |---|---|
 | A1 | QuestEsports is the authenticated product/admin/BFF layer; the browser talks only to Quest. |
 | A2 | `valorant-platform-backend` is a separate FastAPI repository/service, called only by the Quest backend. |
-| A3 | One Supabase project, two schema owners (`public` Quest, `valorant` FastAPI); no cross-schema FKs. |
+| A3 | One PostgreSQL 17.11 VPS service, two schema owners (`public` Quest, `valorant` FastAPI); no cross-schema FKs. |
 | A4 | Quest `SavedTeam` is the team-selection source; the binding is durable and one-way (deleting a Quest team never deletes VALORANT history). |
 | A5 | Standalone admin series is the MVP (no tournament fixtures, Challonge, public stats, seasons, roster automation, mobile). |
 | A6 | FastAPI is authoritative for matches, series correctness/finalization, rating events, and rankings. |
@@ -99,7 +99,7 @@ Test surface includes `tests/integration/test_anchor_verification.py`, `test_bac
 |---|---|
 | 1 — RLS (a) + runner grants | `7b56ac4` (FastAPI): `_apply_security_posture` grants + per-table `FOR ALL … USING (true) WITH CHECK (true)` policies; `POLICY_EXCLUDED_TABLES = {"_migration_ledger"}`; `--runtime-role`/`DATABASE_RUNTIME_ROLE`; `docs/runtime-access-posture.md`. |
 | 2 — Verify script + CI | `98742a1` (FastAPI): `scripts/verify_runtime_access.py` (+ `--expect-denied`) and the `roles-rls` CI job creating `val_runtime`/`quest_runtime` (with `PGPASSWORD`, per the fix round). |
-| 3 — Local topology | `8e511ef` (Quest): same-Supabase two-service topology in `docs/setup-and-deployment.md` + `backend/.env.example` VALORANT block. |
+| 3 — Local topology | `8e511ef` (Quest): dedicated-Supabase-test two-service topology in `docs/setup-and-deployment.md` + `backend/.env.example` VALORANT block. |
 | 4 — Env plumbing | `34c4d0d` (Quest): `VALORANT_*` vars + fail-fast (secret/key required when base URL set; HTTPS origin in production; `READ_RETRIES` 0..5), `backend/tests/valorant-env.test.js`. |
 | 5 — Backup | `1ba6a86` (Quest): `ops/backup-production.sh` two-schema custom dump + manifest `database_scope`/`valorant_schema_included`; restore prints both-schema table counts (non-fatal per Ruling R3); backup scripts test + docs. |
 | 6 — Schema-scope CI guards | `78b30ae` (Quest) + `705bae3` (FastAPI): `verify-prisma-schema-scope.js` (narrowed regex per Ruling R5) and the migrations `public.` grep guard; `docs/DEPLOYMENT_SAFETY.md` two-schema expand-first rules. |
@@ -258,7 +258,7 @@ The E2E harness (`backend/tests/valorant-e2e/valorant-e2e.test.js`) boots the He
 
 - **Live two-service E2E run** against a provisioned test project (`npm run test:valorant:e2e`) — needs `E2E_*` env + FastAPI checkout (deployment plan Task 8, release blocker 4). The timeout/unknown-outcome scenario (`E2E_DROP_FINALIZE_RESPONSE`) is a tracked follow-up, not implemented.
 - **Production backup restore drill** — two-schema dump code shipped (`1ba6a86`) but the isolated restore drill with manifest `database_scope=application_public_and_valorant_schemas` + non-zero table counts for both schemas has not been run against production (release blocker 1).
-- **Prod RLS verify** — `scripts.verify_runtime_access` (positive + `--expect-denied`) and `npm run prisma:security:verify` must pass against the production Supabase project before FastAPI runs with `APP_ENV=production` (release blocker 2).
+- **Prod RLS verify** — `scripts.verify_runtime_access` (positive + `--expect-denied`) and `npm run prisma:security:verify` must pass against the live VPS PostgreSQL 17.11 service (`quest-postgres`) before FastAPI runs with `APP_ENV=production` (release blocker 2).
 - **Live gitleaks** — local Docker run skipped (macOS keychain credential error); the CI `secret-scan` run on the next push is the recorded evidence (deployment ledger Task 9, release blocker 5).
 - **CI green on pushed branches** — per-task commits exist locally; QuestEsports head `037142a` and FastAPI head `5fe4ecc` were not pushed as part of this work.
 - UI flows verified via Playwright MCP / manual browser per `docs/valorant-ui-verification.md` (browser install deferred by design).
@@ -277,7 +277,7 @@ The E2E harness (`backend/tests/valorant-e2e/valorant-e2e.test.js`) boots the He
 **Release blockers — evidence to produce before promoting to production:**
 
 1. Two-schema production backup deployed and a restore drill passed (manifest `application_public_and_valorant_schemas`, both-schema table counts).
-2. Four-role/RLS verified against the production Supabase project (`verify_runtime_access` PASS, `--expect-denied` PASS, `prisma:security:verify` PASS).
+2. Four-role/RLS verified against the live VPS PostgreSQL 17.11 service (`quest-postgres`) (`verify_runtime_access` PASS, `--expect-denied` PASS, `prisma:security:verify` PASS).
 3. Service token (D1) merged and the route-inventory test green — **done** (`2389a69`).
 4. Two-service E2E journey green on a provisioned project.
 5. Secret scanning green on both repos (live gitleaks run / CI evidence).
