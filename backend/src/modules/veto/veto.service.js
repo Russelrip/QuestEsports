@@ -9,6 +9,8 @@ const {
 } = require("../teams/team-logo");
 
 const FORMATS = new Set(["bo1", "bo3", "bo5", "premier", "custom"]);
+const LINKED_MATCH_FORMATS = new Set(["bo1", "bo3", "bo5"]);
+const TERMINAL_MATCH_STATUSES = new Set(["completed", "cancelled", "walkover"]);
 const CONTROL_MODES = new Set(["captain_or_link", "link_only", "staff_only"]);
 const ORDER_METHODS = new Set(["toss", "slot_order", "higher_seed", "lower_seed", "staff_assignment"]);
 const TOSS_METHODS = new Set(["digital", "manual"]);
@@ -429,6 +431,7 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
     });
     if (!match) throw new HttpError(404, "Match not found.");
     if (match.vetoRoom) throw new HttpError(409, "This match already has a veto room.");
+    if (TERMINAL_MATCH_STATUSES.has(match.status)) throw new HttpError(400, "Linked veto rooms cannot be created for terminal matches.");
     if (String(match.tournament?.game || "").toLowerCase() !== "valorant") {
       throw new HttpError(400, "Linked veto rooms require a Valorant tournament.");
     }
@@ -440,6 +443,7 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
   await requireRoomStaff(user, { tournamentId });
   const format = normalizeText(body.format).toLowerCase();
   if (!FORMATS.has(format)) throw new HttpError(400, "Choose BO1, BO3, BO5, Premier, or Custom.");
+  if (match && !LINKED_MATCH_FORMATS.has(format)) throw new HttpError(400, "Linked veto rooms support BO1, BO3, or BO5 formats only.");
   let template = null;
   if (body.templateId) template = await prisma.vetoRoomTemplate.findUnique({ where: { id: body.templateId } });
   const mapPoolId = normalizeText(body.mapPoolId || template?.mapPoolId);

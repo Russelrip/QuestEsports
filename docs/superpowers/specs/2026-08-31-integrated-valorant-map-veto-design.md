@@ -1,7 +1,7 @@
 # Integrated Valorant Map Veto Design
 
 **Date:** 2026-08-31  
-**Status:** Design approved in chat; implementation not started
+**Status:** Design approved; implementation complete pending isolated database rollout verification
 
 ## Goal
 

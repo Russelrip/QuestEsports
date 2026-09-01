@@ -687,6 +687,48 @@ test("linked rooms reject non-Valorant matches, incomplete participants, and non
   } finally { restore(); }
 });
 
+test("linked rooms reject unsupported formats and terminal matches before creating a room", async () => {
+  const match = {
+    id: "match-ineligible",
+    tournamentId: "tournament-linked",
+    status: "scheduled",
+    tournament: { id: "tournament-linked", title: "Linked Cup", game: "Valorant" },
+    participants: [
+      { slot: 1, registrationId: "registration-1", displayName: "Alpha", seed: 1, registration: null },
+      { slot: 2, registrationId: "registration-2", displayName: "Bravo", seed: 2, registration: null },
+    ],
+    vetoRoom: null,
+  };
+  const maps = Array.from({ length: 7 }, (_, index) => ({
+    displayOrder: index,
+    map: { slug: `map-${index + 1}`, name: `Map ${index + 1}`, game: "Valorant", isActive: true },
+  }));
+  let currentMatch = match;
+  let transactionCalls = 0;
+  const prisma = {
+    match: { findUnique: async () => currentMatch },
+    tournamentStaffAssignment: { findFirst: async () => ({ id: "assignment-1" }) },
+    vetoMapPool: { findUnique: async () => ({ id: "pool-1", name: "Pool", version: 1, game: "Valorant", tournamentId: null, maps }) },
+    vetoRulePreset: { findUnique: async ({ where }) => ({ id: where.id, name: where.id, version: 1, format: where.id === "preset-premier" ? "premier" : where.id === "preset-custom" ? "custom" : "bo1", steps: serviceSteps() }) },
+    $transaction: async () => { transactionCalls += 1; },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    for (const format of ["premier", "custom"]) {
+      await assert.rejects(
+        () => service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { matchId: match.id, format, mapPoolId: "pool-1", rulePresetId: `preset-${format}` } }),
+        { statusCode: 400 },
+      );
+    }
+    currentMatch = { ...match, status: "completed" };
+    await assert.rejects(
+      () => service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { matchId: match.id, format: "bo1", mapPoolId: "pool-1", rulePresetId: "preset-bo1" } }),
+      { statusCode: 400 },
+    );
+    assert.equal(transactionCalls, 0);
+  } finally { restore(); }
+});
+
 test("linked room duplicate keeps the existing 409 contract", async () => {
   let transactionCalls = 0;
   const prisma = {

@@ -7,6 +7,7 @@ assertions. The implementation changes are limited to these task files:
 
 - `frontend/tests/e2e/integrated-veto.spec.ts`
 - `backend/tests/veto-routes.test.js`
+- `backend/tests/match-publication.test.js`
 - `frontend/tests/unit/admin-veto-integration.test.tsx`
 
 The shared E2E fixture and codemaps were left unchanged.
@@ -153,3 +154,18 @@ Exact round-2 commands and results:
 Migration deploy/status remain a release blocker/follow-up: they were not run
 because no isolated verification database is available. No data was reset and
 no migration was edited.
+
+## Final review fixes
+
+- Linked room creation now enforces BO1/BO3/BO5 at the service boundary, so
+  direct API requests cannot bypass the frontend's linked-format restriction.
+- Linked room creation now rejects completed, cancelled, and walkover matches
+  before opening a transaction, matching the existing match-room terminal
+  status policy.
+- Local disposable PostgreSQL verification and the VPS migration rollout are
+  complete. The browser E2E remains a deterministic contract fixture rather
+  than a live seeded database workflow.
+
+Validation for these fixes:
+
+- `node --test --test-name-pattern="linked rooms reject unsupported formats and terminal matches" tests/veto.service.test.js` — PASS.
