@@ -208,6 +208,19 @@ jobs:
           docker image inspect "$COSIGN_IMAGE" >/dev/null
           printf 'COSIGN_IMAGE=%s\n' "$COSIGN_IMAGE" >> "$GITHUB_ENV"
 
+      - name: Prepare Cosign GHCR credentials
+        shell: bash
+        env:
+          COSIGN_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cosign_docker_config="$RUNNER_TEMP/cosign-docker"
+          mkdir -p "$cosign_docker_config"
+          printf '%s' "$COSIGN_REGISTRY_TOKEN" |
+            docker --config "$cosign_docker_config" login ghcr.io \
+              --username "$GITHUB_ACTOR" \
+              --password-stdin
+
       - name: Sign each Quest image digest with keyless OIDC
         shell: bash
         env:
@@ -223,9 +236,12 @@ jobs:
             esac
             [[ "$image_reference" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || exit 1
             docker run --rm --pull=never --network host \
+              --user 0:0 \
               -e ACTIONS_ID_TOKEN_REQUEST_URL -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
               -e COSIGN_YES -e COSIGN_EXPERIMENTAL \
-              -v "$HOME/.docker:/root/.docker:ro" \
+              -e HOME=/tmp/cosign-home \
+              -e DOCKER_CONFIG=/tmp/cosign-home/.docker \
+              -v "$RUNNER_TEMP/cosign-docker:/tmp/cosign-home/.docker:ro" \
               "$COSIGN_IMAGE" sign --yes "$image_reference"
           done < "$RUNNER_TEMP/release-manifest.entries"
 

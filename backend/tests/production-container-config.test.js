@@ -626,6 +626,17 @@ test("immutable image CI binds successful repository CI and publishes all signed
     imageWorkflow,
     /docker run --rm --pull=never --network host[\s\S]*"\$COSIGN_IMAGE" sign --yes "\$image_reference"/,
   );
+  assert.ok(
+    imageWorkflow.includes('name: Prepare Cosign GHCR credentials') &&
+      imageWorkflow.includes('cosign_docker_config="$RUNNER_TEMP/cosign-docker"') &&
+      imageWorkflow.includes('docker --config "$cosign_docker_config" login ghcr.io'),
+    "Cosign must prepare a dedicated GHCR Docker config",
+  );
+  assert.ok(
+    imageWorkflow.includes("-e DOCKER_CONFIG=/tmp/cosign-home/.docker") &&
+      imageWorkflow.includes('-v "$RUNNER_TEMP/cosign-docker:/tmp/cosign-home/.docker:ro"'),
+    "Cosign must use the dedicated Docker config inside the container",
+  );
   assert.match(imageWorkflow, /printf 'frontend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'backend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'migrator_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
@@ -1236,7 +1247,17 @@ test("Cosign signing and verification use the same immutable official container"
     assert.doesNotMatch(source, /go\s+install\s+github\.com\/sigstore\/cosign\/v2\/cmd\/cosign@v2\.4\.1/);
     assert.doesNotMatch(source, /COSIGN_VERSION/);
     assert.match(source, /docker run --rm --pull=never --network host/);
-    assert.match(source, /-v "\$HOME\/\.docker:\/root\/.docker:ro"/);
+    assert.ok(
+      source.includes("name: Prepare Cosign GHCR credentials") &&
+        source.includes('COSIGN_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}') &&
+        source.includes('cosign_docker_config="$RUNNER_TEMP/cosign-docker"') &&
+        source.includes('docker --config "$cosign_docker_config" login ghcr.io'),
+      `${name} must prepare a dedicated GHCR Docker config`,
+    );
+    assert.match(source, /-e HOME=\/tmp\/cosign-home/);
+    assert.match(source, /-e DOCKER_CONFIG=\/tmp\/cosign-home\/\.docker/);
+    assert.match(source, /-v "\$RUNNER_TEMP\/cosign-docker:\/tmp\/cosign-home\/\.docker:ro"/);
+    assert.doesNotMatch(source, /-v "\$HOME\/\.docker:\/root\/.docker:ro"/);
   }
   assert.match(imageWorkflow, /"\$COSIGN_IMAGE" sign --yes "\$image_reference"/);
   assert.match(deployWorkflow, /"\$COSIGN_IMAGE" verify/);

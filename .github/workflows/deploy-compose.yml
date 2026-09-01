@@ -181,6 +181,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare Cosign GHCR credentials
+        shell: bash
+        env:
+          COSIGN_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cosign_docker_config="$RUNNER_TEMP/cosign-docker"
+          mkdir -p "$cosign_docker_config"
+          printf '%s' "$COSIGN_REGISTRY_TOKEN" |
+            docker --config "$cosign_docker_config" login ghcr.io \
+              --username "$GITHUB_ACTOR" \
+              --password-stdin
+
       - name: Verify the immutable release manifest
         shell: bash
         run: |
@@ -415,8 +428,11 @@ jobs:
             expected_digest="${image_reference##*@}"
             proof_file="$RUNNER_TEMP/$image_key.cosign.json"
             docker run --rm --pull=never --network host \
+              --user 0:0 \
               -e COSIGN_CERTIFICATE_IDENTITY -e COSIGN_OIDC_ISSUER \
-              -v "$HOME/.docker:/root/.docker:ro" \
+              -e HOME=/tmp/cosign-home \
+              -e DOCKER_CONFIG=/tmp/cosign-home/.docker \
+              -v "$RUNNER_TEMP/cosign-docker:/tmp/cosign-home/.docker:ro" \
               "$COSIGN_IMAGE" verify \
               --certificate-identity "$COSIGN_CERTIFICATE_IDENTITY" \
               --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
