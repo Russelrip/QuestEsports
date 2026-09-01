@@ -223,6 +223,7 @@ jobs:
             esac
             [[ "$image_reference" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || exit 1
             docker run --rm --pull=never --network host \
+              -e ACTIONS_ID_TOKEN_REQUEST_URL -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
               -e COSIGN_YES -e COSIGN_EXPERIMENTAL \
               -v "$HOME/.docker:/root/.docker:ro" \
               "$COSIGN_IMAGE" sign --yes "$image_reference"
