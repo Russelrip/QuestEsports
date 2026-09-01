@@ -3,14 +3,23 @@ const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { normalizeText } = require("../../lib/validation");
 const { recordAuditInTransaction } = require("../../lib/audit");
+const {
+  resolveEffectiveTeamLogoName,
+  getTeamLogoUrl,
+} = require("../teams/team-logo");
 
 const FORMATS = new Set(["bo1", "bo3", "bo5", "premier", "custom"]);
+const LINKED_MATCH_FORMATS = new Set(["bo1", "bo3", "bo5"]);
+const TERMINAL_MATCH_STATUSES = new Set(["completed", "cancelled", "walkover"]);
 const CONTROL_MODES = new Set(["captain_or_link", "link_only", "staff_only"]);
 const ORDER_METHODS = new Set(["toss", "slot_order", "higher_seed", "lower_seed", "staff_assignment"]);
 const TOSS_METHODS = new Set(["digital", "manual"]);
 const ACTION_KINDS = new Set(["ban", "pick", "side"]);
 const SIDES = new Set(["attack", "defense"]);
 const TEAM_COLORS = ["#22d3ee", "#fb7185"];
+const isValorantPool = (pool) => String(pool?.game || "").toLowerCase() === "valorant"
+  && Array.isArray(pool?.maps)
+  && pool.maps.every((entry) => String(entry?.map?.game || "").toLowerCase() === "valorant");
 
 const roomInclude = {
   tournament: { select: { id: true, slug: true, title: true, game: true } },
@@ -211,6 +220,7 @@ const resolveAccess = async ({ room, user, token }) => {
     });
     if (grant && (!grant.expiresAt || grant.expiresAt > new Date())) {
       void prisma.vetoAccessGrant.update({ where: { id: grant.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+      if (grant.role === "caster") return { kind: "caster", slot: null };
       if (grant.role === "viewer") return { kind: "viewer", slot: null };
       if (room.controlMode === "staff_only") return { kind: "viewer", slot: null };
       return { kind: "team", slot: grant.role === "team_1" ? 1 : 2 };
@@ -224,6 +234,7 @@ const mapRoom = (room, access = { kind: "public", slot: null }) => {
   const snapshot = room.configSnapshot || {};
   const activeActions = room.actions || [];
   const steps = Array.isArray(snapshot.steps) ? snapshot.steps : [];
+  const participantSnapshots = Array.isArray(snapshot.participants) ? snapshot.participants : [];
   const selectedSlugs = new Set(activeActions.map((action) => action.mapSlug).filter(Boolean));
   const currentStep = steps[room.currentStep] || null;
   return {
@@ -255,6 +266,7 @@ const mapRoom = (room, access = { kind: "public", slot: null }) => {
       displayName: entry.displayName,
       seed: entry.seed,
       accentColor: entry.accentColor,
+      logoUrl: participantSnapshots.find((snapshotEntry) => snapshotEntry.slot === entry.slot)?.logoUrl ?? null,
       ready: Boolean(entry.readyAt),
       joined: Boolean(entry.joinedAt),
       team: room.teamASlot === entry.slot ? "A" : room.teamASlot ? "B" : null,
@@ -388,7 +400,9 @@ const participantInput = (input, slot) => ({
   slot,
   registrationId: normalizeText(input?.registrationId) || null,
   displayName: (normalizeText(input?.displayName) || `Team ${slot}`).slice(0, 160),
-  seed: Number.isInteger(Number(input?.seed)) ? Number(input.seed) : null,
+  seed: input?.seed === null || input?.seed === undefined || (typeof input.seed === "string" && input.seed.trim() === "")
+    ? null
+    : Number.isInteger(Number(input.seed)) ? Number(input.seed) : null,
   accentColor: normalizeText(input?.accentColor) || TEAM_COLORS[slot - 1],
 });
 
@@ -396,14 +410,40 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
   let tournamentId = normalizeText(body.tournamentId) || null;
   let match = null;
   if (body.matchId) {
-    match = await prisma.match.findUnique({ where: { id: body.matchId }, include: { participants: { orderBy: { slot: "asc" } }, tournament: { select: { id: true, title: true } }, vetoRoom: { select: { id: true } } } });
+    match = await prisma.match.findUnique({
+      where: { id: body.matchId },
+      include: {
+        participants: {
+          orderBy: { slot: "asc" },
+          include: {
+            registration: {
+              select: {
+                id: true,
+                teamLogoName: true,
+                savedTeam: { select: { logoName: true } },
+              },
+            },
+          },
+        },
+        tournament: { select: { id: true, title: true, game: true } },
+        vetoRoom: { select: { id: true } },
+      },
+    });
     if (!match) throw new HttpError(404, "Match not found.");
     if (match.vetoRoom) throw new HttpError(409, "This match already has a veto room.");
+    if (TERMINAL_MATCH_STATUSES.has(match.status)) throw new HttpError(400, "Linked veto rooms cannot be created for terminal matches.");
+    if (String(match.tournament?.game || "").toLowerCase() !== "valorant") {
+      throw new HttpError(400, "Linked veto rooms require a Valorant tournament.");
+    }
+    if (match.participants.length !== 2 || match.participants.some((participant, index) => participant.slot !== index + 1)) {
+      throw new HttpError(400, "Linked veto rooms require exactly two ordered match participants.");
+    }
     tournamentId = match.tournamentId;
   }
   await requireRoomStaff(user, { tournamentId });
   const format = normalizeText(body.format).toLowerCase();
   if (!FORMATS.has(format)) throw new HttpError(400, "Choose BO1, BO3, BO5, Premier, or Custom.");
+  if (match && !LINKED_MATCH_FORMATS.has(format)) throw new HttpError(400, "Linked veto rooms support BO1, BO3, or BO5 formats only.");
   let template = null;
   if (body.templateId) template = await prisma.vetoRoomTemplate.findUnique({ where: { id: body.templateId } });
   const mapPoolId = normalizeText(body.mapPoolId || template?.mapPoolId);
@@ -413,25 +453,35 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
     prisma.vetoRulePreset.findUnique({ where: { id: rulePresetId } }),
   ]);
   if (!pool || !preset) throw new HttpError(400, "Choose a valid map pool and rule preset.");
+  if (!isValorantPool(pool)) {
+    throw new HttpError(400, match
+      ? "Linked veto rooms require a Valorant map pool and active Valorant maps."
+      : "Veto rooms require a Valorant map pool and active Valorant maps.");
+  }
   if ((pool.tournamentId && pool.tournamentId !== tournamentId) || (preset.tournamentId && preset.tournamentId !== tournamentId)) {
     throw new HttpError(403, "Pool and preset scope must match the room tournament.");
   }
   if (preset.format !== format && preset.format !== "custom") throw new HttpError(400, "The rule preset does not match the selected format.");
   let steps;
   if (format === "premier") {
-    const isValorantPool = String(pool.game || "").toLowerCase() === "valorant"
-      && pool.maps.every(({ map }) => String(map.game || "").toLowerCase() === "valorant");
-    if (!isValorantPool || pool.maps.length !== 7) throw new HttpError(400, "Premier rooms require exactly seven active Valorant maps.");
+    if (pool.maps.length !== 7) throw new HttpError(400, "Premier rooms require exactly seven active Valorant maps.");
     steps = validateSteps(getBuiltInSteps("premier"), "premier", 7);
   } else {
     steps = validateSteps(preset.steps, format, pool.maps.length);
   }
   const settings = normalizeSettings({ ...(template?.settings || {}), ...body });
-  const sourceParticipants = Array.isArray(body.participants) && body.participants.length
-    ? body.participants
-    : match?.participants || [];
+  const sourceParticipants = match
+    ? match.participants
+    : (Array.isArray(body.participants) && body.participants.length ? body.participants : []);
   const participants = [participantInput(sourceParticipants[0], 1), participantInput(sourceParticipants[1], 2)];
-  const issuedTokens = { team1: randomToken(), team2: randomToken(), viewer: settings.viewerEnabled ? randomToken() : null };
+  const participantSnapshots = participants.map((participant, index) => ({
+    slot: participant.slot,
+    displayName: participant.displayName,
+    seed: participant.seed,
+    registrationId: participant.registrationId,
+    logoUrl: match ? getTeamLogoUrl(resolveEffectiveTeamLogoName(sourceParticipants[index].registration)) : null,
+  }));
+  const issuedTokens = { team1: randomToken(), team2: randomToken(), caster: randomToken(), viewer: settings.viewerEnabled ? randomToken() : null };
   const code = randomCode();
   const title = (normalizeText(body.title) || (match ? `${participants[0].displayName} vs ${participants[1].displayName}` : `${format.toUpperCase()} Veto Room`)).slice(0, 180);
   const room = await prisma.$transaction(async (tx) => {
@@ -445,11 +495,13 @@ const createRoom = async ({ user, body, auditContext = {} }) => {
           maps: pool.maps.map(({ map }) => ({ slug: map.slug, name: map.name, artworkUrl: map.artworkUrl, accentColor: map.accentColor })),
           steps,
           settings,
+          participants: participantSnapshots,
         },
         participants: { create: participants },
         grants: { create: [
           { role: "team_1", tokenHash: hashToken(issuedTokens.team1) },
           { role: "team_2", tokenHash: hashToken(issuedTokens.team2) },
+          { role: "caster", tokenHash: hashToken(issuedTokens.caster) },
           ...(issuedTokens.viewer ? [{ role: "viewer", tokenHash: hashToken(issuedTokens.viewer) }] : []),
         ] },
       },
@@ -792,7 +844,7 @@ const cancelRoom = async ({ user, roomId, body, auditContext = {} }) => {
 const rotateGrant = async ({ user, roomId, role, auditContext = {} }) => {
   const room = await getRoomRecord({ id: roomId });
   await requireRoomStaff(user, room);
-  if (!["team_1", "team_2", "viewer"].includes(role)) throw new HttpError(400, "Invalid access-link role.");
+  if (!["team_1", "team_2", "viewer", "caster"].includes(role)) throw new HttpError(400, "Invalid access-link role.");
   const token = randomToken();
   await prisma.$transaction(async (tx) => {
     await tx.vetoAccessGrant.updateMany({ where: { roomId, role, revokedAt: null }, data: { revokedAt: new Date() } });

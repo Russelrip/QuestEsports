@@ -187,6 +187,37 @@ test("veto access permits captain accounts, valid grants, and published complete
   }
 });
 
+test("veto access resolves a live caster grant from its hashed token", async () => {
+  const room = {
+    id: "caster-room",
+    code: "caster-room",
+    tournamentId: "tournament-1",
+    status: "open",
+    controlMode: "link_only",
+    publishResult: false,
+    participants: [],
+    actions: [],
+    configSnapshot: { maps: [], steps: [] },
+  };
+  const casterTokenHash = crypto.createHash("sha256").update("caster-grant").digest("hex");
+  const prisma = {
+    vetoRoom: { findUnique: async () => room },
+    tournamentStaffAssignment: { findFirst: async () => null },
+    teamRegistration: { findMany: async () => [] },
+    vetoAccessGrant: {
+      findFirst: async ({ where }) => where.tokenHash === casterTokenHash
+        ? { id: "caster-grant-1", role: "caster", expiresAt: new Date(Date.now() + 60_000) }
+        : null,
+      update: async () => undefined,
+    },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await service.getRoom({ code: room.code, user: null, token: "caster-grant" });
+    assert.deepEqual(result.access, { kind: "caster", slot: null });
+  } finally { restore(); }
+});
+
 test("an authorized slot-2 captain cannot submit slot-1's current veto action", async () => {
   const room = {
     id: "wrong-turn-room",
@@ -529,8 +560,222 @@ test("manually created Premier rooms accept exactly seven active Valorant maps a
   try {
     const result = await service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { format: "premier", mapPoolId: "pool-1", rulePresetId: "preset-1" } });
     assert.equal(result.room.format, "premier");
+    assert.ok(result.issuedTokens.caster);
+    assert.ok(createArgs.data.grants.create.some((grant) => grant.role === "caster"));
     assert.deepEqual(createArgs.data.configSnapshot.steps, service.getBuiltInSteps("premier"));
     assert.equal(createArgs.data.configSnapshot.maps.length, 7);
+  } finally { restore(); }
+});
+
+test("linked Valorant rooms use match participants and snapshot registration logos", async () => {
+  const match = {
+    id: "match-valorant",
+    tournamentId: "tournament-valorant",
+    status: "scheduled",
+    tournament: { id: "tournament-valorant", title: "Valorant Cup", game: "Valorant" },
+    participants: [
+      {
+        slot: 1,
+        registrationId: "registration-alpha",
+        displayName: "Alpha",
+        seed: 1,
+        registration: { id: "registration-alpha", teamName: "Alpha", teamLogoName: "alpha.svg", savedTeam: null },
+      },
+      {
+        slot: 2,
+        registrationId: "registration-bravo",
+        displayName: "Bravo",
+        seed: null,
+        registration: { id: "registration-bravo", teamName: "Bravo", teamLogoName: "old.svg", savedTeam: { logoName: "bravo.svg" } },
+      },
+    ],
+    vetoRoom: null,
+  };
+  const maps = Array.from({ length: 7 }, (_, index) => ({
+    displayOrder: index,
+    map: { slug: `valorant-map-${index + 1}`, name: `Valorant Map ${index + 1}`, game: "Valorant", artworkUrl: null, accentColor: "#8b5cf6", isActive: true },
+  }));
+  const created = [];
+  const prisma = {
+    match: { findUnique: async () => match },
+    tournamentStaffAssignment: { findFirst: async () => ({ id: "assignment-1" }) },
+    vetoMapPool: { findUnique: async () => ({ id: "pool-valorant", name: "Valorant Seven", version: 1, game: "Valorant", tournamentId: null, maps }) },
+    vetoRulePreset: { findUnique: async () => ({ id: "preset-bo1", name: "BO1", version: 1, format: "bo1", steps: [
+      ...serviceSteps().slice(0, 6),
+      { kind: "decider", actor: null, seriesIndex: 1 },
+      { kind: "side", actor: "A", seriesIndex: 1 },
+    ] }) },
+    $transaction: async (callback) => callback({
+      vetoRoom: {
+        create: async ({ data }) => {
+          created.push(data);
+          return { ...data, participants: data.participants.create, actions: [], tournament: match.tournament, match };
+        },
+      },
+    }),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await service.createRoom({
+      user: { id: "admin-1", role: "admin" },
+      body: {
+        matchId: match.id,
+        format: "bo1",
+        mapPoolId: "pool-valorant",
+        rulePresetId: "preset-bo1",
+        participants: [{ displayName: "Client replacement", seed: 99 }, { displayName: "Another replacement" }],
+      },
+    });
+    assert.equal(result.room.participants[0].displayName, "Alpha");
+    assert.equal(result.room.participants[1].seed, null);
+    assert.equal(created[0].configSnapshot.participants[0].logoUrl, "/api/uploads/team-logos/alpha.svg");
+    assert.equal(created[0].configSnapshot.participants[1].logoUrl, "/api/uploads/team-logos/bravo.svg");
+    assert.equal(created[0].configSnapshot.participants[1].seed, null);
+    assert.equal(result.room.participants[0].logoUrl, "/api/uploads/team-logos/alpha.svg");
+  } finally { restore(); }
+});
+
+test("linked rooms reject non-Valorant matches, incomplete participants, and non-Valorant pools without transactions", async () => {
+  const baseMatch = {
+    id: "match-linked",
+    tournamentId: "tournament-linked",
+    status: "scheduled",
+    tournament: { id: "tournament-linked", title: "Linked Cup", game: "Valorant" },
+    participants: [
+      { slot: 1, registrationId: "registration-1", displayName: "Alpha", seed: 1, registration: null },
+      { slot: 2, registrationId: "registration-2", displayName: "Bravo", seed: 2, registration: null },
+    ],
+    vetoRoom: null,
+  };
+  const maps = Array.from({ length: 7 }, (_, index) => ({
+    displayOrder: index,
+    map: { slug: `map-${index + 1}`, name: `Map ${index + 1}`, game: "Valorant", isActive: true },
+  }));
+  let currentMatch = baseMatch;
+  let currentPool = { id: "pool-1", name: "Pool", version: 1, game: "Valorant", tournamentId: null, maps };
+  let transactionCalls = 0;
+  const prisma = {
+    match: { findUnique: async () => currentMatch },
+    tournamentStaffAssignment: { findFirst: async () => ({ id: "assignment-1" }) },
+    vetoMapPool: { findUnique: async () => currentPool },
+    vetoRulePreset: { findUnique: async () => ({ id: "preset-1", name: "BO1", version: 1, format: "bo1", steps: [
+      ...serviceSteps().slice(0, 6),
+      { kind: "decider", actor: null, seriesIndex: 1 },
+      { kind: "side", actor: "A", seriesIndex: 1 },
+    ] }) },
+    $transaction: async () => { transactionCalls += 1; },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  const body = { matchId: baseMatch.id, format: "bo1", mapPoolId: "pool-1", rulePresetId: "preset-1" };
+  try {
+    currentMatch = { ...baseMatch, tournament: { ...baseMatch.tournament, game: "CS2" } };
+    await assert.rejects(() => service.createRoom({ user: { id: "admin-1", role: "admin" }, body }), { statusCode: 400 });
+
+    currentMatch = { ...baseMatch, participants: [baseMatch.participants[0]] };
+    await assert.rejects(() => service.createRoom({ user: { id: "admin-1", role: "admin" }, body }), { statusCode: 400 });
+
+    currentMatch = baseMatch;
+    currentPool = { ...currentPool, game: "CS2" };
+    await assert.rejects(() => service.createRoom({ user: { id: "admin-1", role: "admin" }, body }), { statusCode: 400 });
+
+    currentPool = { ...currentPool, game: "Valorant", maps: [...maps.slice(0, 6), { displayOrder: 6, map: { ...maps[6].map, game: "CS2" } }] };
+    await assert.rejects(() => service.createRoom({ user: { id: "admin-1", role: "admin" }, body }), { statusCode: 400 });
+
+    currentPool = { ...currentPool, game: "CS2" };
+    await assert.rejects(() => service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { ...body, matchId: null } }), { statusCode: 400 });
+    assert.equal(transactionCalls, 0);
+  } finally { restore(); }
+});
+
+test("linked rooms reject unsupported formats and terminal matches before creating a room", async () => {
+  const match = {
+    id: "match-ineligible",
+    tournamentId: "tournament-linked",
+    status: "scheduled",
+    tournament: { id: "tournament-linked", title: "Linked Cup", game: "Valorant" },
+    participants: [
+      { slot: 1, registrationId: "registration-1", displayName: "Alpha", seed: 1, registration: null },
+      { slot: 2, registrationId: "registration-2", displayName: "Bravo", seed: 2, registration: null },
+    ],
+    vetoRoom: null,
+  };
+  const maps = Array.from({ length: 7 }, (_, index) => ({
+    displayOrder: index,
+    map: { slug: `map-${index + 1}`, name: `Map ${index + 1}`, game: "Valorant", isActive: true },
+  }));
+  let currentMatch = match;
+  let transactionCalls = 0;
+  const prisma = {
+    match: { findUnique: async () => currentMatch },
+    tournamentStaffAssignment: { findFirst: async () => ({ id: "assignment-1" }) },
+    vetoMapPool: { findUnique: async () => ({ id: "pool-1", name: "Pool", version: 1, game: "Valorant", tournamentId: null, maps }) },
+    vetoRulePreset: { findUnique: async ({ where }) => ({ id: where.id, name: where.id, version: 1, format: where.id === "preset-premier" ? "premier" : where.id === "preset-custom" ? "custom" : "bo1", steps: serviceSteps() }) },
+    $transaction: async () => { transactionCalls += 1; },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    for (const format of ["premier", "custom"]) {
+      await assert.rejects(
+        () => service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { matchId: match.id, format, mapPoolId: "pool-1", rulePresetId: `preset-${format}` } }),
+        { statusCode: 400 },
+      );
+    }
+    currentMatch = { ...match, status: "completed" };
+    await assert.rejects(
+      () => service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { matchId: match.id, format: "bo1", mapPoolId: "pool-1", rulePresetId: "preset-bo1" } }),
+      { statusCode: 400 },
+    );
+    assert.equal(transactionCalls, 0);
+  } finally { restore(); }
+});
+
+test("linked room duplicate keeps the existing 409 contract", async () => {
+  let transactionCalls = 0;
+  const prisma = {
+    match: { findUnique: async () => ({ id: "match-duplicate", tournamentId: "tournament-1", vetoRoom: { id: "room-existing" } }) },
+    $transaction: async () => { transactionCalls += 1; },
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    await assert.rejects(
+      () => service.createRoom({ user: { id: "admin-1", role: "admin" }, body: { matchId: "match-duplicate" } }),
+      { statusCode: 409, message: "This match already has a veto room." },
+    );
+    assert.equal(transactionCalls, 0);
+  } finally { restore(); }
+});
+
+test("old veto room snapshots map missing participant logos to null", () => {
+  const { module: service, restore } = loadService();
+  try {
+    const room = service.mapRoom({
+      id: "old-room",
+      participants: [{ id: "participant-1", slot: 1, registrationId: null, displayName: "Alpha", seed: 1, accentColor: "#22d3ee" }],
+      actions: [],
+      configSnapshot: { maps: [], steps: [] },
+    });
+    assert.equal(room.participants[0].logoUrl, null);
+  } finally { restore(); }
+});
+
+test("caster access grants can be rotated", async () => {
+  const grants = [];
+  const room = { id: "rotate-room", tournamentId: null };
+  const prisma = {
+    vetoRoom: { findUnique: async () => room },
+    vetoAccessGrant: {
+      updateMany: async ({ where }) => { grants.push({ operation: "revoke", where }); return { count: 1 }; },
+      create: async ({ data }) => { grants.push({ operation: "create", data }); return data; },
+    },
+    $transaction: async (callback) => callback(prisma),
+  };
+  const { module: service, restore } = loadModuleWithMocks(servicePath, { [prismaPath]: { prisma } });
+  try {
+    const result = await service.rotateGrant({ user: { id: "admin-1", role: "admin" }, roomId: room.id, role: "caster" });
+    assert.equal(result.role, "caster");
+    assert.ok(result.token);
+    assert.equal(grants[0].where.role, "caster");
+    assert.equal(grants[1].data.role, "caster");
   } finally { restore(); }
 });
 

@@ -345,6 +345,7 @@ enum VetoAccessRole {
   team_1
   team_2
   viewer
+  caster
 }
 
 enum MatchRoomMemberRole {

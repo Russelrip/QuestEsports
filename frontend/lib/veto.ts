@@ -11,6 +11,7 @@ export type VetoMap = {
   slug: string;
   name: string;
   artworkUrl?: string | null;
+  logoUrl?: string | null;
   accentColor: string;
   isActive?: boolean;
   available?: boolean;
@@ -23,6 +24,7 @@ export type VetoParticipant = {
   displayName: string;
   seed?: number | null;
   accentColor: string;
+  logoUrl?: string | null;
   ready: boolean;
   joined: boolean;
   team: "A" | "B" | null;
@@ -68,7 +70,7 @@ export type VetoRoom = {
   currentStep: number;
   currentAction: VetoStep | null;
   actions: VetoAction[];
-  access: { kind: "staff" | "team" | "viewer" | "public"; slot: 1 | 2 | null };
+  access: { kind: "staff" | "team" | "viewer" | "caster" | "public"; slot: 1 | 2 | null };
   timestamps: { openedAt: string | null; startedAt: string | null; completedAt: string | null; cancelledAt: string | null; updatedAt: string };
 };
 
@@ -79,12 +81,14 @@ export type VetoCatalog = {
   templates: Array<{ id: string; name: string; format: VetoRoom["format"]; version: number; mapPoolId: string; rulePresetId: string; settings: Record<string, unknown>; tournamentId?: string | null }>;
 };
 
+export type IssuedTokens = { team1: string; team2: string; viewer: string | null; caster: string };
+
 type Envelope<T> = { success?: boolean; message?: string; data?: T };
 
 export async function vetoRequest<T>(path: string, options: Parameters<typeof apiFetch>[1] = {}) {
   const { response, data } = await apiFetchJson<Envelope<T>>(path, options);
   if (!response.ok || data.success === false || data.data === undefined) {
-    throw new Error(data.message || "Veto request failed.");
+    throw Object.assign(new Error(data.message || "Veto request failed."), { status: response.status });
   }
   return data.data;
 }
@@ -102,3 +106,6 @@ export const readVetoToken = (code: string) => {
 };
 
 export const vetoTokenHeaders = (token: string): Record<string, string> => token ? { "X-Veto-Token": token } : {};
+
+export const buildVetoShareUrl = (origin: string, code: string, token: string) =>
+  `${origin}/veto/${encodeURIComponent(code)}#access=${encodeURIComponent(token)}`;

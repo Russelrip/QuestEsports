@@ -344,7 +344,12 @@ test("public veto code routes use real captain, grant, and published-room access
       code: "captain-room",
       participants: [{ id: "participant-1", slot: 1, registrationId: "registration-1", displayName: "Captain Team", seed: 1, accentColor: "#22d3ee", readyAt: null, joinedAt: null }],
     }),
-    room({ code: "token-room", controlMode: "link_only" }),
+    room({
+      code: "token-room",
+      controlMode: "link_only",
+      status: "in_progress",
+      configSnapshot: { maps: [{ slug: "ascent", name: "Ascent" }], steps: [{ kind: "ban", seriesIndex: 0 }] },
+    }),
     room({ code: "public-room", status: "completed", publishResult: true }),
   ];
   const prisma = {
@@ -358,6 +363,8 @@ test("public veto code routes use real captain, grant, and published-room access
     vetoAccessGrant: {
       findFirst: async ({ where }) => where.tokenHash === tokenHash("valid-grant")
         ? { id: "grant-1", role: "team_1", expiresAt: new Date(Date.now() + 60_000) }
+        : where.tokenHash === tokenHash("caster-grant")
+          ? { id: "grant-caster", role: "caster", expiresAt: new Date(Date.now() + 60_000) }
         : where.tokenHash === tokenHash("expired-grant")
           ? { id: "grant-expired", role: "team_1", expiresAt: new Date(Date.now() - 60_000) }
         : null,
@@ -410,6 +417,18 @@ test("public veto code routes use real captain, grant, and published-room access
     assert.equal(await runRoute(getRoom, grantRequest), null);
     assert.equal(grantRequest.responseBody.data.access.kind, "team");
     assert.equal(grantRequest.responseBody.data.access.slot, 1);
+
+    const casterRequest = { user: null, params: { code: "token-room" }, headers: { "x-veto-token": "caster-grant" } };
+    assert.equal(await runRoute(getRoom, casterRequest), null);
+    assert.deepEqual(casterRequest.responseBody.data.access, { kind: "caster", slot: null });
+
+    const casterMutation = {
+      user: null,
+      params: { code: "token-room" },
+      headers: { "x-veto-token": "caster-grant" },
+      body: { expectedRevision: 1, mapSlug: "ascent" },
+    };
+    assert.equal((await runRoute(route(loaded.module, "post", "/veto-rooms/:code/actions"), casterMutation))?.statusCode, 403);
 
     const publicRequest = { user: null, params: { code: "public-room" }, headers: {} };
     assert.equal(await runRoute(getRoom, publicRequest), null);

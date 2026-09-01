@@ -14,6 +14,9 @@ existing contact, match-room, notification, or OAuth tables.
 
 ## Quest Ascension migrations
 
+- `20260831120000_add_caster_veto_access_role` adds the additive `caster`
+  value to `VetoAccessRole`; `prisma migrate deploy` must apply this migration
+  before application code writes caster grants.
 - `20260817120000_extend_event_series_quest_ascension` adds nullable event
   presentation fields, `featured`, tournament `waitlistEnabled`, registration
   `waitlisted`/`waitlistPosition`/`publicReference`, and supporting indexes.
