@@ -10,9 +10,7 @@ restore, key-custody, and disaster procedure. For contributor setup and
 variables, use the [Developer Guide](developer-guide.md) and [Environment
 Reference](environment-reference.md).
 
-Historical note: before cutover, Supabase was temporary Supabase rollback
-material. It is now intact but stale recovery material and is not a rollback
-target.
+Historical note: before cutover, Supabase was the temporary Supabase rollback material. It is now intact but stale recovery material and is not a rollback target.
 
 ## Current production status
 
