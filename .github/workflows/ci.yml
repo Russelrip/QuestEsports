@@ -585,7 +585,7 @@ jobs:
           for shell_file in "${shell_files[@]}"; do
             shellcheck_args+=("/repo/$shell_file")
           done
-          docker run --rm --network none -v "$GITHUB_WORKSPACE:/repo:ro" -w /repo "$SHELLCHECK_IMAGE" --format=gcc "${shellcheck_args[@]}"
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/repo:ro" -w /repo "$SHELLCHECK_IMAGE" --severity=error --format=gcc "${shellcheck_args[@]}"
 
       - name: Run workflow and documentation contracts
         run: node --test backend/tests/workflow-and-docs.test.js
@@ -783,8 +783,8 @@ jobs:
           done
           grep -F 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO quest_runtime;' "$bootstrap" >/dev/null
           grep -F 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO val_runtime;' "$bootstrap" >/dev/null
-          grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;' "$bootstrap" >/dev/null
-          grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;' "$bootstrap" >/dev/null
+          grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE quest_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC' "$bootstrap" >/dev/null
+          grep -F 'ALTER DEFAULT PRIVILEGES FOR ROLE val_migrator REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC' "$bootstrap" >/dev/null
 
           for setting in \
             'POSTGRES_TARGET_HOST=127.0.0.1' \

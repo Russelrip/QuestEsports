@@ -207,7 +207,7 @@ test("CI owns pinned workflow lint tooling and discovers every tracked workflow 
   );
   assert.match(
     lintStep.run,
-    /docker run --rm --network none -v "\$GITHUB_WORKSPACE:\/repo:ro" -w \/repo "\$SHELLCHECK_IMAGE" --format=gcc "\$\{shellcheck_args\[@\]\}"/,
+    /docker run --rm --network none -v "\$GITHUB_WORKSPACE:\/repo:ro" -w \/repo "\$SHELLCHECK_IMAGE" --severity=error --format=gcc "\$\{shellcheck_args\[@\]\}"/,
   );
   assert.doesNotMatch(lintStep.run, /actionlint\s+-shellcheck=|\bcommand -v shellcheck\b|git diff --name-only/);
 
