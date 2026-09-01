@@ -1,11 +1,38 @@
 # VPS PostgreSQL Migration Design
 
 **Date:** 2026-08-29
-**Status:** Draft for review
+**Status:** Superseded historical design; live-state addendum below
 **Scope:** Move Quest and its VALORANT database integration from Supabase
 PostgreSQL to PostgreSQL 17 hosted on the Quest VPS.
 
-## Goal
+> ## Live-state addendum — 2026-08-31
+>
+> The cutover completed on **2026-08-31**. VPS container `quest-postgres`,
+> PostgreSQL **17.11** at `127.0.0.1:5433`, is the current database authority for
+> Quest and VALORANT; immutable Compose is the repository's current production
+> deployment authority. Supabase is stale staging/recovery material only and is
+> not a rollback target. The rehearsal was skipped and cannot be performed
+> retroactively; this document does not fabricate rehearsal, owner-approval, or
+> live-verification evidence.
+>
+> The current PostgreSQL container is ad hoc rather than Compose-managed.
+> TLS material blocks Compose adoption and the real backup pipeline. The
+> scheduled backup has failed since **2026-08-30 04:20**; the
+> interim `quest-pg17-interim-backup.{service,timer}` unit covers the gap.
+> Unrestricted deploy-root access and two GitHub Actions keys remain host trust
+> risks. TLS provisioning, backup recovery, host bootstrap, and removal of the
+> interim unit are operator gates. Live VPS, hosted GitHub, registry, and
+> Linux-only checks remain unverified and unavailable in this worktree.
+>
+> The procedure and prerequisites below are preserved as historical context.
+> References to a future cutover, Supabase rollback source, rehearsal proof, or
+> pre-cutover host state are obsolete and must not be treated as current
+> authorization. VPS PostgreSQL remains the current database authority, and
+> immutable Compose is the repository's current production deployment authority;
+> the legacy PM2 path is rollback-only. The recorded TLS, backup, and host gates
+> are outstanding Compose-adoption requirements, not a pending database cutover.
+
+## Historical goal (superseded)
 
 Make PostgreSQL 17 on the VPS the authoritative production database while
 preserving the existing Supabase database as a temporary rollback source. The
@@ -18,7 +45,7 @@ The migration includes the Quest `public` schema and the sibling VALORANT
 authority together; neither service may continue writing to Supabase after the
 cutover.
 
-## Confirmed decisions
+## Historical confirmed decisions (superseded)
 
 - PostgreSQL on the VPS becomes the production authority.
 - The cutover uses a short maintenance window rather than replication or
@@ -33,7 +60,7 @@ cutover.
   completes.
 - No public PostgreSQL port is opened.
 
-## Current state and boundaries
+## Historical pre-cutover state and boundaries (superseded)
 
 The repository-recorded production topology is an Ubuntu VPS backend with
 Supabase PostgreSQL in Paris. The current Compose contract already defines a
@@ -59,12 +86,12 @@ Relevant boundaries are:
 This work does not expose PostgreSQL to the browser, move uploads into the
 database, or make Supabase and the VPS co-authoritative.
 
-## Chosen deployment approach
+## Historical chosen deployment approach (superseded)
 
 Use a phased PostgreSQL-only Docker Compose deployment, later consumed by the
 full `quest-prod` Compose topology.
 
-### Staging topology
+### Historical staging topology
 
 1. Keep native PostgreSQL 16 on `127.0.0.1:5432` untouched.
 2. Start the pinned PostgreSQL 17 Compose service with data at:
@@ -83,7 +110,7 @@ volume. PostgreSQL receives explicit conservative memory and connection
 settings appropriate for the VPS capacity; it must not starve the application
 or the legacy cluster.
 
-### Final topology
+### Historical final topology
 
 - `frontend` reaches only the backend app network.
 - `backend` reaches PostgreSQL through `quest-postgres` on the private
@@ -93,7 +120,7 @@ or the legacy cluster.
 - Nginx exposes HTTP application endpoints only.
 - No PostgreSQL address is firewall-exposed.
 
-## PostgreSQL initialization and security
+## Historical PostgreSQL initialization and security procedure
 
 The root-capable bootstrap creates and protects the host paths, TLS material,
 database roles, extensions, and initialization scripts. It does not reuse the
@@ -137,9 +164,9 @@ non-superuser, and schema-isolated. The security verifier must assert this
 exact model, including revoked public/Data API grants; no runtime role receives
 RLS bypass.
 
-## Data migration flow
+## Historical data migration flow
 
-### Rehearsal
+### Historical rehearsal procedure (superseded; no rehearsal evidence)
 
 1. Capture a verified encrypted Supabase database archive and upload snapshot.
 2. Restore both schemas into disposable PostgreSQL 17 using pinned
@@ -154,7 +181,7 @@ RLS bypass.
    validation, and service restart. The maintenance window is not considered
    proven until this evidence exists.
 
-### Production cutover
+### Historical production cutover procedure (superseded; cutover completed)
 
 1. Confirm owner gates: approved maintenance window, backup destination,
    credential separation, host capacity, disk headroom, TLS material, and
@@ -177,7 +204,7 @@ The cutover stops immediately on any restore, role, TLS, schema, health, or
 data-integrity failure. It never silently falls back to a mutable image tag,
 wrong database, or wrong PostgreSQL major version.
 
-## Backup and restore
+## Historical backup and restore procedure
 
 The current age-encrypted, rclone-verified, two-pass backup process remains the
 authoritative backup path. It must be adjusted to use pinned PostgreSQL 17
@@ -196,7 +223,7 @@ Compose network.
 - Raw data-directory snapshots are only a stopped-server recovery fallback,
   never the normal backup.
 
-## Rollback and observation
+## Historical rollback and observation procedure
 
 Before the first VPS write, rollback is straightforward: keep writers frozen,
 restore Supabase URLs, restart the previous writer groups, and record the
@@ -221,7 +248,7 @@ backup, and explicit owner approval. Cluster-specific systemd commands are
 used; broad `postgresql.service` operations are prohibited while both majors
 coexist.
 
-## Validation gates
+## Historical validation gates (not current evidence)
 
 Implementation is complete only when all gates have evidence:
 

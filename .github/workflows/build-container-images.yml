@@ -45,6 +45,10 @@ jobs:
         shell: bash
         env:
           RELEASE_EVENT: ${{ github.event.workflow_run.event }}
+          RELEASE_WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RELEASE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RELEASE_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RELEASE_CI_RUN_ID: ${{ github.event.workflow_run.id }}
           RELEASE_REPOSITORY: ${{ github.event.workflow_run.repository.full_name }}
           RELEASE_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
@@ -54,7 +58,7 @@ jobs:
             printf '%s\n' 'Container signing must run from the documented Quest repository identity.' >&2
             exit 1
           }
-          [[ "$RELEASE_EVENT" == push && "$RELEASE_REPOSITORY" == "$GITHUB_REPOSITORY" && "$RELEASE_HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" ]] || {
+          [[ "$RELEASE_WORKFLOW_NAME" == CI && "$RELEASE_CONCLUSION" == success && "$RELEASE_EVENT" == push && "$RELEASE_HEAD_BRANCH" == main && "$RELEASE_HEAD_SHA" == "$RELEASE_SHA" && "$RELEASE_REPOSITORY" == "$GITHUB_REPOSITORY" && "$RELEASE_HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" ]] || {
             printf '%s\n' 'Container signing requires a successful push CI run from this repository.' >&2
             exit 1
           }
@@ -79,12 +83,12 @@ jobs:
             printf '%s\n' 'PRODUCTION_SITE_URL must be a non-empty HTTPS public URL.' >&2
             exit 1
           }
-          [[ "$POSTGRES_17_BOOKWORM_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+          approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+          [[ "$POSTGRES_17_BOOKWORM_DIGEST" == "${approved_postgres_ref##*@}" ]] || {
             printf '%s\n' 'POSTGRES_17_BOOKWORM_DIGEST must be an exact sha256 digest.' >&2
             exit 1
           }
-          postgres_ref="postgres:17-bookworm@$POSTGRES_17_BOOKWORM_DIGEST"
-          [[ "$POSTGRES_IMAGE_APPROVED_REF" == "$postgres_ref" ]] || {
+          [[ "$POSTGRES_IMAGE_APPROVED_REF" == "$approved_postgres_ref" ]] || {
             printf '%s\n' 'POSTGRES_IMAGE_APPROVED_REF must exactly approve the PostgreSQL manifest reference.' >&2
             exit 1
           }
@@ -126,9 +130,13 @@ jobs:
             --tag "$IMAGE:$RELEASE_SHA" \
             --build-arg "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" \
             --build-arg "NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL" \
+            --build-arg "QUEST_BUILD_WORKFLOW=Build container images" \
+            --build-arg "QUEST_BUILD_REPOSITORY=$GITHUB_REPOSITORY" \
+            --build-arg "QUEST_BUILD_BRANCH=main" \
+            --build-arg "QUEST_BUILD_REVISION=$RELEASE_SHA" \
             --cache-from type=gha,scope=quest-frontend \
             --cache-to type=gha,mode=max,scope=quest-frontend \
-            --provenance=mode=max \
+            --provenance=mode=max,builder-id=https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main \
             --sbom=true \
             --metadata-file "$metadata_file" \
             --push \
@@ -149,9 +157,13 @@ jobs:
             --file ops/docker/backend.production.Dockerfile \
             --target runtime \
             --tag "$IMAGE:$RELEASE_SHA" \
+            --build-arg "QUEST_BUILD_WORKFLOW=Build container images" \
+            --build-arg "QUEST_BUILD_REPOSITORY=$GITHUB_REPOSITORY" \
+            --build-arg "QUEST_BUILD_BRANCH=main" \
+            --build-arg "QUEST_BUILD_REVISION=$RELEASE_SHA" \
             --cache-from type=gha,scope=quest-backend-runtime \
             --cache-to type=gha,mode=max,scope=quest-backend-runtime \
-            --provenance=mode=max \
+            --provenance=mode=max,builder-id=https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main \
             --sbom=true \
             --metadata-file "$metadata_file" \
             --push \
@@ -172,9 +184,13 @@ jobs:
             --file ops/docker/backend.production.Dockerfile \
             --target migrator \
             --tag "$IMAGE:$RELEASE_SHA" \
+            --build-arg "QUEST_BUILD_WORKFLOW=Build container images" \
+            --build-arg "QUEST_BUILD_REPOSITORY=$GITHUB_REPOSITORY" \
+            --build-arg "QUEST_BUILD_BRANCH=main" \
+            --build-arg "QUEST_BUILD_REVISION=$RELEASE_SHA" \
             --cache-from type=gha,scope=quest-migrator \
             --cache-to type=gha,mode=max,scope=quest-migrator \
-            --provenance=mode=max \
+            --provenance=mode=max,builder-id=https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main \
             --sbom=true \
             --metadata-file "$metadata_file" \
             --push \
@@ -182,18 +198,15 @@ jobs:
           digest="$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$metadata_file")"
           printf 'migrator_image=%s@%s\n' "$IMAGE" "$digest" >> "$RUNNER_TEMP/release-manifest.entries"
 
-      - name: Install pinned cosign
+      - name: Pull the immutable Cosign container
         shell: bash
         env:
-          COSIGN_VERSION: v2.4.1
+          COSIGN_IMAGE: ghcr.io/sigstore/cosign/cosign:v2.4.1@sha256:b03690aa52bfe94054187142fba24dc54137650682810633901767d8a3e15b31
         run: |
           set -euo pipefail
-          command -v go >/dev/null
-          install_dir="$RUNNER_TEMP/cosign-bin"
-          mkdir -p "$install_dir"
-          GOBIN="$install_dir" go install "github.com/sigstore/cosign/v2/cmd/cosign@$COSIGN_VERSION"
-          test -x "$install_dir/cosign"
-          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+          docker pull "$COSIGN_IMAGE"
+          docker image inspect "$COSIGN_IMAGE" >/dev/null
+          printf 'COSIGN_IMAGE=%s\n' "$COSIGN_IMAGE" >> "$GITHUB_ENV"
 
       - name: Sign each Quest image digest with keyless OIDC
         shell: bash
@@ -209,18 +222,22 @@ jobs:
               *) printf 'unexpected manifest image key: %s\n' "$image_name" >&2; exit 1 ;;
             esac
             [[ "$image_reference" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || exit 1
-            cosign sign --yes "$image_reference"
+            docker run --rm --pull=never --network host \
+              -e COSIGN_YES -e COSIGN_EXPERIMENTAL \
+              -v "$HOME/.docker:/root/.docker:ro" \
+              "$COSIGN_IMAGE" sign --yes "$image_reference"
           done < "$RUNNER_TEMP/release-manifest.entries"
 
       - name: Write the exact release manifest
         shell: bash
         run: |
           set -euo pipefail
+          approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
           manifest="$RUNNER_TEMP/release-manifest.txt"
           : > "$manifest"
           printf 'commit_sha=%s\n' "$RELEASE_SHA" >> "$manifest"
           cat "$RUNNER_TEMP/release-manifest.entries" >> "$manifest"
-          printf 'postgres_image=postgres:17-bookworm@%s\n' "$POSTGRES_17_BOOKWORM_DIGEST" >> "$manifest"
+          printf 'postgres_image=%s\n' "$approved_postgres_ref" >> "$manifest"
           printf 'valorant_image=%s\n' "$VALORANT_IMAGE" >> "$manifest"
 
           expected_keys='commit_sha frontend_image backend_image migrator_image postgres_image valorant_image'
@@ -244,3 +261,11 @@ jobs:
           path: ${{ runner.temp }}/release-manifest.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Remove the temporary BuildKit builder
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx rm --force quest-container-builder >/dev/null 2>&1 || true
+          rm -f -- "$RUNNER_TEMP/release-manifest.entries" "$RUNNER_TEMP/release-manifest.txt"

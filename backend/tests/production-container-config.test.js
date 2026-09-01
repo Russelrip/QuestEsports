@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const yaml = require("js-yaml");
 
 const repoRoot = path.join(__dirname, "../..");
 const read = (relative) =>
@@ -15,6 +16,9 @@ const stagingCompose = read("ops/docker/compose.postgres-staging.yml");
 const productionEnv = read("ops/docker/quest.production.env.example");
 const valorantProductionEnv = read("ops/docker/valorant.production.env.example");
 const releaseScript = read("ops/deploy/release.sh");
+const validateHost = read("ops/deploy/validate-host.sh");
+const rollbackScript = read("ops/deploy/rollback.sh");
+const cutoverScript = read("ops/deploy/cutover.sh");
 const nginxConfigPath = path.join(repoRoot, "ops/docker/nginx/quest.conf");
 const nginxConfig = fs.existsSync(nginxConfigPath) ? fs.readFileSync(nginxConfigPath, "utf8").replace(/\r\n/g, "\n") : "";
 const verifyRelease = read("ops/deploy/verify-release.sh");
@@ -23,12 +27,28 @@ const frontendApi = read("frontend/lib/api.ts");
 const ciWorkflow = read(".github/workflows/ci.yml");
 const imageWorkflow = read(".github/workflows/build-container-images.yml");
 const deployWorkflow = read(".github/workflows/deploy-compose.yml");
+const frontendDeployWorkflow = read(".github/workflows/deploy-frontend.yml");
+const valorantE2eWorkflow = read(".github/workflows/valorant-e2e.yml");
+const imageWorkflowDocument = yaml.load(imageWorkflow);
+const deployWorkflowDocument = yaml.load(deployWorkflow);
+const ciWorkflowDocument = yaml.load(ciWorkflow);
 const postgresBootstrap = read("ops/docker/postgres/init/001-bootstrap-roles.sql");
 const postgresHealthcheck = read("ops/docker/postgres/healthcheck.sh");
 const questRuntimeRlsMigration = read(
   "backend/prisma/migrations/20260829120000_add_quest_runtime_rls_policies/migration.sql",
 );
 const databaseSecurityVerifier = read("backend/scripts/verify-database-security.js");
+const approvedPostgres17Ref =
+  "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0";
+const approvedPostgres16CiRef =
+  "postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825";
+const approvedPlaywrightRef =
+  "mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48";
+const approvedAlpine322Ref =
+  "alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce";
+const approvedValorantPlatformRef = "e8a8f056a52fcbfb08e453bc6b51723c7b4b949c";
+const approvedCosignImage =
+  "ghcr.io/sigstore/cosign/cosign:v2.4.1@sha256:b03690aa52bfe94054187142fba24dc54137650682810633901767d8a3e15b31";
 
 const composeImageFixtures = {
   QUEST_FRONTEND_IMAGE:
@@ -282,7 +302,7 @@ const dockerFixture = (() => {
   if (version.error || version.status !== 0) {
     return { skip: "Docker daemon/CLI unavailable for the certificate healthcheck fixture" };
   }
-  const image = spawnSync("docker", ["image", "inspect", "postgres:17-bookworm"], {
+  const image = spawnSync("docker", ["image", "inspect", approvedPostgres17Ref], {
     encoding: "utf8",
   });
   if (image.error || image.status !== 0) {
@@ -505,24 +525,32 @@ test("host verification requires exact image identity and Cosign verification", 
   assert.match(verifyRelease, /POSTGRES_IMAGE.*postgres:17-bookworm@sha256/);
 });
 
-test("artifact trust keeps VALORANT on an independent signer policy", () => {
+test("artifact trust scopes Cosign to Quest images and uses exact external references", () => {
+  const approvedPostgresRef =
+    "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0";
+  const rejectedPostgresRef =
+    "postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675";
+  for (const source of [imageWorkflow, deployWorkflow, releaseScript, validateHost, rollbackScript, cutoverScript, verifyRelease]) {
+    assert.match(source, new RegExp(escapeRegExp(approvedPostgresRef)));
+    assert.doesNotMatch(source, new RegExp(escapeRegExp(rejectedPostgresRef)));
+  }
+  assert.match(imageWorkflow, /POSTGRES_17_BOOKWORM_DIGEST.*approved_postgres_ref/);
+  assert.match(deployWorkflow, /test \"\$postgres_image\" = \"\$approved_postgres_ref\"/);
+  assert.match(validateHost, /manifest\[postgres_image\].*approved_postgres_ref/);
+  assert.doesNotMatch(validateHost, /POSTGRES_COSIGN|VALORANT_COSIGN/);
+  assert.doesNotMatch(verifyRelease, /POSTGRES_COSIGN|VALORANT_COSIGN/);
+  assert.doesNotMatch(releaseEnv, /^(?:POSTGRES|VALORANT)_COSIGN_/m);
+  assert.doesNotMatch(validateHost, /for key in frontend_image backend_image migrator_image postgres_image valorant_image/);
+  assert.match(validateHost, /for key in frontend_image backend_image migrator_image; do/);
+  assert.match(verifyRelease, /POSTGRES_IMAGE\).*unapproved PostgreSQL image/);
+
   const assignment = (name) => {
     const match = releaseEnv.match(new RegExp(`^${name}=(.*)$`, "m"));
     assert.ok(match, `${name} must be documented`);
     return match[1];
   };
-  assert.notEqual(
-    assignment("VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP"),
-    assignment("QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP"),
-    "VALORANT must not inherit the Quest signer identity",
-  );
-  assert.equal(
-    assignment("VALORANT_COSIGN_OIDC_ISSUER"),
-    assignment("QUEST_COSIGN_OIDC_ISSUER"),
-    "VALORANT may use the shared documented GitHub OIDC issuer",
-  );
-  assert.match(verifyRelease, /VALORANT trust policy must not reuse the Quest signer identity/);
-  assert.doesNotMatch(verifyRelease, /VALORANT trust policy must not reuse the Quest signer issuer/);
+  assert.equal(assignment("QUEST_COSIGN_OIDC_ISSUER"), "https://token.actions.githubusercontent.com");
+  assert.equal(assignment("POSTGRES_IMAGE_APPROVED_REF"), approvedPostgresRef);
   const questSigningStep = imageWorkflow.match(
     /Sign each Quest image digest with keyless OIDC[\s\S]*?(?=\n\s*- name:|$)/,
   )?.[0] || "";
@@ -532,6 +560,34 @@ test("artifact trust keeps VALORANT on an independent signer policy", () => {
     "the Quest workflow signing loop must not sign VALORANT with Quest policy",
   );
   assert.match(imageWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
+});
+
+test("workflow image trust contracts respect step boundaries and Quest-only deploy verification", () => {
+  const buildSteps = imageWorkflowDocument.jobs.build.steps;
+  const validateInputs = buildSteps.find((step) => step.name === "Validate release inputs");
+  const writeManifest = buildSteps.find((step) => step.name === "Write the exact release manifest");
+  assert.ok(validateInputs?.run && writeManifest?.run, "expected release input and manifest steps");
+
+  const postgresAssignment = /(^|\n)\s*approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'\s*($|\n)/;
+  for (const step of [validateInputs, writeManifest]) {
+    const assignment = step.run.search(postgresAssignment);
+    const firstUse = step.run.indexOf("$approved_postgres_ref");
+    assert.ok(assignment >= 0, `${step.name} must define the PostgreSQL reference in its own shell`);
+    assert.ok(firstUse > assignment, `${step.name} must define the reference before using it`);
+  }
+
+  const deploySteps = deployWorkflowDocument.jobs.deploy.steps;
+  const trustStep = deploySteps.find((step) => step.name === "Verify Quest signatures and BuildKit attestations");
+  assert.ok(trustStep?.run, "expected deploy-time image trust step");
+  const imageList = trustStep.run.match(/done <<'IMAGES'\n([\s\S]*?)\n\s*IMAGES/);
+  assert.ok(imageList, "deploy-time Cosign verification must use a structured image list");
+  assert.deepEqual(
+    imageList[1].split("\n").map((line) => line.trim()).filter(Boolean),
+    ["frontend_image", "backend_image", "migrator_image"],
+  );
+  assert.match(trustStep.run, /while IFS= read -r image_key; do/);
+  assert.equal((trustStep.run.match(/"\$COSIGN_IMAGE" verify/g) || []).length, 1);
+  assert.doesNotMatch(trustStep.run, /postgres|valorant/i, "external images must not enter Quest Cosign verification");
 });
 
 test("immutable image CI binds successful repository CI and publishes all signed Quest digests", () => {
@@ -558,43 +614,71 @@ test("immutable image CI binds successful repository CI and publishes all signed
     assert.match(imageWorkflow, new RegExp(`ghcr\.io/\\$\\{\\{ github\.repository_owner \\}\\}/${image}`));
   }
   assert.equal((imageWorkflow.match(/--provenance=mode=max/g) || []).length, 3);
+  assert.equal((imageWorkflow.match(/builder-id=https:\/\/github\.com\/Russelrip\/QuestEsports\/\.github\/workflows\/build-container-images\.yml@refs\/heads\/main/g) || []).length, 3);
+  assert.equal(
+    (imageWorkflow.match(/--provenance=mode=max,builder-id=https:\/\/github\.com\/Russelrip\/QuestEsports\/\.github\/workflows\/build-container-images\.yml@refs\/heads\/main/g) || []).length,
+    3,
+  );
   assert.equal((imageWorkflow.match(/--sbom=true/g) || []).length, 3);
   assert.match(imageWorkflow, /containerimage\.digest.*sha256:\[0-9a-f\]\{64\}/);
   assert.match(imageWorkflow, /Sign each Quest image digest with keyless OIDC/);
-  assert.match(imageWorkflow, /cosign sign --yes "\$image_reference"/);
+  assert.match(
+    imageWorkflow,
+    /docker run --rm --pull=never --network host[\s\S]*"\$COSIGN_IMAGE" sign --yes "\$image_reference"/,
+  );
   assert.match(imageWorkflow, /printf 'frontend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'backend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'migrator_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
 
   const buildArgs = [...imageWorkflow.matchAll(/--build-arg ([^\n]+)/g)].map((match) => match[1]);
-  assert.ok(buildArgs.length > 0, "public frontend build arguments must be explicit");
-  assert.ok(buildArgs.every((argument) => argument.includes("NEXT_PUBLIC_")));
-  assert.doesNotMatch(imageWorkflow, /--build-arg[^\n]*(?:SECRET|PASSWORD|TOKEN|PRIVATE_KEY)/i);
+  const buildArgNames = buildArgs.map((argument) => argument.match(/^"?([A-Z][A-Z0-9_]*)=/)?.[1]);
+  const allowedBuildArgNames = new Set([
+    "NEXT_PUBLIC_API_URL",
+    "NEXT_PUBLIC_SITE_URL",
+    "QUEST_BUILD_REVISION",
+    "QUEST_BUILD_REPOSITORY",
+    "QUEST_BUILD_BRANCH",
+    "QUEST_BUILD_WORKFLOW",
+  ]);
+  assert.ok(buildArgNames.every(Boolean), buildArgNames);
+  assert.ok(buildArgNames.every((name) => allowedBuildArgNames.has(name)), buildArgNames);
+  assert.equal(new Set(buildArgNames).size, allowedBuildArgNames.size);
+  assert.deepEqual([...new Set(buildArgNames)].sort(), [...allowedBuildArgNames].sort());
+  assert.doesNotMatch(
+    imageWorkflow,
+    /--build-arg\s+"?[A-Z][A-Z0-9_]*(?:SECRET|PASSWORD|TOKEN|PRIVATE_KEY)[A-Z0-9_]*=/i,
+  );
 });
 
 test("Compose deployment consumes only a protected, successful, signed digest release", () => {
   assert.match(deployWorkflow, /^permissions:\n  actions: read\n  contents: read\n  packages: read$/m);
   assert.match(deployWorkflow, /environment: production-compose/);
-  assert.match(deployWorkflow, /gh run view "\$build_run_id"/);
+  assert.match(deployWorkflow, /gh api "repos\/\$GITHUB_REPOSITORY\/actions\/runs\/\$build_run_id"/);
+  assert.match(deployWorkflow, /actions\/workflows\/build-container-images\.yml/);
+  assert.match(deployWorkflow, /\.workflow_id \| tostring/);
   assert.match(deployWorkflow, /actions\/runs\/\$build_run_id\/artifacts\?per_page=100/);
   assert.match(deployWorkflow, /container-release-manifest-\[0-9\]\+\-\[0-9a-f\]\{40\}/);
   assert.match(deployWorkflow, /ci_run_id="\$\{BASH_REMATCH\[1\]\}"/);
   assert.match(deployWorkflow, /release_sha="\$\{BASH_REMATCH\[2\]\}"/);
-  assert.match(deployWorkflow, /workflowName.*Build container images/);
+  assert.match(deployWorkflow, /\.name.*Build container images/);
   assert.match(deployWorkflow, /conclusion.*success/);
   assert.match(deployWorkflow, /event.*workflow_run/);
-  assert.match(deployWorkflow, /headBranch.*main/);
-  assert.match(deployWorkflow, /headSha.*ci_run_json/);
+  assert.match(deployWorkflow, /head_branch.*main/);
+  assert.match(deployWorkflow, /head_repository\.full_name/);
+  assert.match(deployWorkflow, /head_sha.*ci_run_json/);
   assert.match(deployWorkflow, /name: \$\{\{ needs\.resolve-build\.outputs\.artifact_name \}\}/);
   assert.match(deployWorkflow, /run-id: \$\{\{ needs\.resolve-build\.outputs\.build_run_id \}\}/);
-  assert.match(deployWorkflow, /workflowName.*CI/);
+  assert.match(deployWorkflow, /actions\/workflows\/ci\.yml/);
+  assert.match(deployWorkflow, /\.name.*CI/);
   assert.match(
     deployWorkflow,
     /COSIGN_CERTIFICATE_IDENTITY: https:\/\/github\.com\/Russelrip\/QuestEsports\/.github\/workflows\/build-container-images\.yml@refs\/heads\/main/,
   );
   assert.match(deployWorkflow, /COSIGN_OIDC_ISSUER: https:\/\/token\.actions\.githubusercontent\.com/);
-  assert.match(deployWorkflow, /cosign verify/);
+  assert.match(deployWorkflow, /"\$COSIGN_IMAGE" verify/);
   assert.match(deployWorkflow, /verify_buildkit_attestations/);
+  assert.match(deployWorkflow, /get\(predicate, \('builder', 'id'\)\)/);
+  assert.match(deployWorkflow, /get\(predicate, \('runDetails', 'builder', 'id'\)\)/);
   assert.match(deployWorkflow, /https:\/\/spdx\.dev\/Document/);
   assert.match(deployWorkflow, /https:\/\/slsa\.dev\/provenance\/v1/);
   assert.match(deployWorkflow, /quest-frontend@sha256/);
@@ -602,7 +686,17 @@ test("Compose deployment consumes only a protected, successful, signed digest re
   assert.match(deployWorkflow, /quest-migrator@sha256/);
   assert.match(deployWorkflow, /POSTGRES_IMAGE_APPROVED_REF/);
   assert.match(deployWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
-  assert.match(deployWorkflow, /sudo -n -- \/usr\/local\/sbin\/quest-esports-release '\$RELEASE_SHA' '\$remote_manifest'/);
+  const composeTransferStep = deployWorkflow.match(
+    /- name: Transfer the verified manifest and invoke the fixed root release script[\s\S]*?(?=\n      - name:)/,
+  )?.[0] || "";
+  assert.match(
+    composeTransferStep,
+    /timeout --foreground 120s ssh "\$\{ssh_options\[@\]\}" -p "\$SSH_PORT" -- "deploy@\$SSH_HOST" sudo -n -- \/usr\/local\/sbin\/quest-esports-release "\$RELEASE_SHA" "\$remote_manifest"/,
+  );
+  assert.match(composeTransferStep, /ssh_options=\(/);
+  assert.match(composeTransferStep, /-- "deploy@\$SSH_HOST" sudo -n -- \/usr\/local\/sbin\/quest-esports-release/);
+  assert.doesNotMatch(composeTransferStep, /bash\s+-c|sh\s+-c|eval\b|remote_command/);
+  assert.doesNotMatch(composeTransferStep, /sudo -n -- \/usr\/local\/sbin\/quest-esports-release '\$/);
   assert.doesNotMatch(deployWorkflow, /:latest/);
   assert.doesNotMatch(deployWorkflow, /npm ci|\bpm2\b|docker group/);
   const shellSecretOutputLines = deployWorkflow
@@ -619,8 +713,8 @@ test("deployment rejects a downstream build SHA that differs from its upstream C
   const artifactBinding = artifactName.match(/^container-release-manifest-([0-9]+)-([0-9a-f]{40})$/);
   assert.ok(artifactBinding, "the fixture artifact must carry an upstream run ID and full SHA");
   assert.notEqual(downstreamBuildSha, artifactBinding[2]);
-  assert.match(deployWorkflow, /\.headSha.*ci_run_json/);
-  assert.match(deployWorkflow, /\.headSha.*release_sha/);
+  assert.match(deployWorkflow, /\.head_sha.*ci_run_json/);
+  assert.match(deployWorkflow, /\.head_sha.*release_sha/);
   assert.match(deployWorkflow, /artifact_name/);
 });
 
@@ -1002,7 +1096,7 @@ cn_result=$(run_case cn)
         "sh",
         "--volume",
         scriptMount,
-        "postgres:17-bookworm",
+        approvedPostgres17Ref,
         "-c",
         fixture,
       ],
@@ -1049,7 +1143,8 @@ test("production images are manifest-supplied and digest-oriented", () => {
   const fallbackManifest = {
     QUEST_FRONTEND_IMAGE: `ghcr.io/questesports/quest-frontend@sha256:${"a".repeat(64)}`,
     QUEST_BACKEND_IMAGE: `ghcr.io/questesports/quest-backend@sha256:${"b".repeat(64)}`,
-    POSTGRES_IMAGE: `postgres:17-bookworm@sha256:${"c".repeat(64)}`,
+    POSTGRES_IMAGE:
+      "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0",
   };
   const releaseManifest = Object.fromEntries(
     imageVariables.map((variable) => [variable, process.env[variable] || fallbackManifest[variable]]),
@@ -1061,12 +1156,90 @@ test("production images are manifest-supplied and digest-oriented", () => {
       `${variable} release value must be an immutable digest reference`,
     );
   }
+  assert.equal(
+    releaseManifest.POSTGRES_IMAGE,
+    "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0",
+  );
   const renderedImageLines = [...productionCompose.replace(
     /\$\{([A-Z_]+):\?[^}]+\}/g,
     (_, variable) => releaseManifest[variable] || "",
   ).matchAll(/^\s+image:\s*(.+)$/gm)].map((entry) => entry[1]);
   assert.deepEqual(renderedImageLines, Object.values(releaseManifest));
   assert.doesNotMatch(productionCompose, /image:\s*(?:postgres|node|ghcr\.io)[^$\n]*:[\w.-]+\s*$/m);
+});
+
+test("CI and deployment tooling use immutable infrastructure and locked CLIs", () => {
+  const backendService = ciWorkflowDocument.jobs.backend.services.postgres;
+  assert.equal(backendService.image, approvedPostgres16CiRef);
+  assert.equal(ciWorkflowDocument.jobs.frontend.container, approvedPlaywrightRef);
+
+  const frontendPackage = JSON.parse(read("frontend/package.json"));
+  const frontendLock = JSON.parse(read("frontend/package-lock.json"));
+  assert.equal(frontendPackage.devDependencies["@playwright/test"], "1.61.1");
+  assert.equal(frontendPackage.devDependencies.vercel, "58.9.0");
+  assert.equal(frontendLock.packages[""].devDependencies["@playwright/test"], "1.61.1");
+  assert.equal(frontendLock.packages[""].devDependencies.vercel, "58.9.0");
+  assert.equal(frontendLock.packages["node_modules/playwright"].version, "1.61.1");
+  assert.equal(frontendLock.packages["node_modules/vercel"].version, "58.9.0");
+
+  assert.match(frontendDeployWorkflow, /frontend\/node_modules\/\.bin\/vercel pull --yes/);
+  assert.match(frontendDeployWorkflow, /frontend\/node_modules\/\.bin\/vercel build --prod/);
+  assert.match(frontendDeployWorkflow, /run: frontend\/node_modules\/\.bin\/vercel deploy --prebuilt --prod/);
+  assert.doesNotMatch(frontendDeployWorkflow, /npx\s+--yes\s+vercel@/);
+  assert.match(frontendDeployWorkflow, /npm ci/);
+
+  assert.match(
+    valorantE2eWorkflow,
+    /astral-sh\/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d\s+#\s+v10\.0\.1/,
+  );
+  const parsedValorantE2e = yaml.load(valorantE2eWorkflow);
+  const valorantSteps = parsedValorantE2e.jobs["valorant-e2e"].steps;
+  const uvStep = valorantSteps.find((step) => step.name === "Set up uv");
+  assert.equal(uvStep.with.version, "0.12.7");
+  const siblingCheckout = valorantSteps.find((step) => step.name === "Check out valorant-platform-backend");
+  assert.match(siblingCheckout.with.ref, /^[0-9a-f]{40}$/);
+  assert.equal(siblingCheckout.with.ref, approvedValorantPlatformRef);
+  assert.equal(siblingCheckout.with.token, "${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}");
+  assert.match(
+    ciWorkflow,
+    /docker pull "\$approved_postgres_ref"[\s\S]*bash ops\/tests\/postgres-container-readability\.test\.sh/,
+  );
+  assert.match(ciWorkflow, /grep -Eq '\^SKIP:' <<< "\$readability_output"/);
+
+  const windowsRestoreDrill = read("ops/test-paris-database-backup-windows.ps1");
+  assert.match(windowsRestoreDrill, new RegExp(escapeRegExp(approvedPostgres17Ref)));
+  assert.doesNotMatch(windowsRestoreDrill, /postgres:17-alpine/);
+  const alpineReference = /alpine:3\.22@sha256:[0-9a-f]{64}/g;
+  assert.equal(windowsRestoreDrill.match(alpineReference)?.length, 1);
+  assert.match(windowsRestoreDrill, new RegExp(escapeRegExp(approvedAlpine322Ref)));
+  assert.match(windowsRestoreDrill, /apk add --no-cache age=1\.2\.1-r0/);
+  assert.doesNotMatch(windowsRestoreDrill, /apk add --no-cache age(?![=])/);
+  const windowsBackup = read("ops/backup-paris-database-windows.ps1");
+  assert.equal(windowsBackup.match(alpineReference)?.length, 2);
+  assert.match(windowsBackup, new RegExp(escapeRegExp(approvedAlpine322Ref)));
+  assert.equal(windowsBackup.match(/apk add --no-cache age=1\.2\.1-r0/g)?.length, 2);
+  assert.doesNotMatch(windowsBackup, /apk add --no-cache age(?![=])/);
+});
+
+test("Cosign signing and verification use the same immutable official container", () => {
+  for (const [name, document, source, jobName] of [
+    ["build-container-images.yml", imageWorkflowDocument, imageWorkflow, "build"],
+    ["deploy-compose.yml", deployWorkflowDocument, deployWorkflow, "deploy"],
+  ]) {
+    const steps = document.jobs[jobName].steps;
+    const cosignStep = steps.find((step) => step.name === "Pull the immutable Cosign container");
+    assert.ok(cosignStep?.run, `${name} must pull Cosign before use`);
+    assert.deepEqual(cosignStep.env, { COSIGN_IMAGE: approvedCosignImage });
+    assert.match(cosignStep.run, /docker pull "\$COSIGN_IMAGE"/);
+    assert.match(cosignStep.run, /docker image inspect "\$COSIGN_IMAGE"/);
+    assert.match(source, new RegExp(escapeRegExp(approvedCosignImage)));
+    assert.doesNotMatch(source, /go\s+install\s+github\.com\/sigstore\/cosign\/v2\/cmd\/cosign@v2\.4\.1/);
+    assert.doesNotMatch(source, /COSIGN_VERSION/);
+    assert.match(source, /docker run --rm --pull=never --network host/);
+    assert.match(source, /-v "\$HOME\/\.docker:\/root\/.docker:ro"/);
+  }
+  assert.match(imageWorkflow, /"\$COSIGN_IMAGE" sign --yes "\$image_reference"/);
+  assert.match(deployWorkflow, /"\$COSIGN_IMAGE" verify/);
 });
 
 test("PostgreSQL bootstrap and TLS contract keep four roles and schemas separate", () => {
@@ -1198,7 +1371,7 @@ test(
         "POSTGRES_DB=quest",
         "-p",
         "127.0.0.1::5432",
-        "postgres:17-bookworm",
+        approvedPostgres17Ref,
       ],
       { encoding: "utf8" },
     );

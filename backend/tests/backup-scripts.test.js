@@ -138,6 +138,10 @@ test("pinned PostgreSQL server files match the UID/GID 999 readability contract"
   assert.match(readabilityFixture, /--user 999:999/);
   assert.match(readabilityFixture, /test -r \/run\/postgresql\/tls\/server\.crt/);
   assert.match(readabilityFixture, /test -r \/run\/secrets\/postgres-admin-password/);
+  assert.doesNotMatch(
+    readabilityFixture,
+    /--entrypoint sh[\s\S]*"\$image" sh -ec/,
+  );
 });
 
 test("production restore reports restored table counts for both schemas", () => {

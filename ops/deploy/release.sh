@@ -322,8 +322,9 @@ done
 for manifest_key in frontend_image backend_image migrator_image valorant_image; do
   [[ "${manifest[$manifest_key]}" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die "$manifest_key must be an exact GHCR digest reference."
 done
-[[ "${manifest[postgres_image]}" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die 'postgres_image must be the exact PostgreSQL 17 Bookworm digest.'
-[[ "${manifest[postgres_image]}" == "$POSTGRES_IMAGE_APPROVED_REF" ]] || die 'approved PostgreSQL image does not match the manifest.'
+approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+[[ "${manifest[postgres_image]}" == "$approved_postgres_ref" ]] || die 'postgres_image must be the approved PostgreSQL 17 Bookworm reference.'
+[[ "$POSTGRES_IMAGE_APPROVED_REF" == "$approved_postgres_ref" ]] || die 'approved PostgreSQL image is not the approved reference.'
 root_file "$RECOVERY_ADMIN_URL_FILE"
 validate_recovery_admin_url_file "$RECOVERY_ADMIN_URL_FILE"
 validate_compose_tls_material

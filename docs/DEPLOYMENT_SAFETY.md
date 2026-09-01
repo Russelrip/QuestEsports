@@ -1,6 +1,37 @@
 # Deployment and migration safety
 
-Production deployments are promoted only from a successful `CI` run on the exact dispatched commit (normally `main`). The deploy workflow uses that exact tested commit and rejects newly introduced destructive migration statements. It does not enforce that the dispatched ref is `main`; the owner must dispatch from `main` to preserve the documented main-only promotion intent. A commit that changes migration SQL is approved through the `Production` environment's required reviewer, which pauses the deployment until the owner approves it in the Actions UI, and must complete an encrypted off-site backup before migration.
+The normal production authority is immutable Docker Compose. Production promotions
+are accepted only from a successful `CI` push on the exact current `main` head,
+then enter the protected `production-compose` environment. After approval, the
+workflow revalidates that `main` still exactly equals `RELEASE_SHA` immediately
+before SSH/scp. An explicit `rollback_sha` is the only exemption from that
+post-approval freshness check and must identify an older successful main release.
+Normal manual dispatch is restricted to `main`; the legacy PM2 path is not a
+normal dispatch alternative.
+The legacy PM2 path is rollback-only and must not be enabled alongside Compose.
+Migration-changing releases also require the protected reviewer and an encrypted
+off-site backup before migration.
+
+## Current production status (2026-08-31)
+
+The Quest/VALORANT database cutover completed on 2026-08-31. VPS container
+`quest-postgres`, PostgreSQL **17.11**, is the current database authority for
+both services through `127.0.0.1:5433`; immutable Compose is the repository's
+current production deployment authority. Supabase is intact but stale
+staging/recovery material only and is not a rollback target. The current
+database container is ad hoc, so Compose adoption remains blocked by missing
+PostgreSQL TLS material, which also blocks the real backup pipeline. The
+scheduled backup has failed since **2026-08-30 04:20** and the interim
+`quest-pg17-interim-backup.{service,timer}` unit covers the gap.
+
+Host bootstrap, TLS and backup provisioning, and removal of the interim unit
+remain operator gates. Unrestricted deploy-root access and two GitHub Actions
+keys remain active host trust risks. These are repository-recorded facts and
+risks, not evidence of live verification or owner approval. No rehearsal was
+performed. Live VPS, hosted GitHub, registry, and Linux-only checks remain
+unverified and unavailable in this worktree. Once Compose is
+adopted, PostgreSQL TLS must use `sslmode=verify-full` with the private CA;
+VALORANT asyncpg uses separate CA, hostname, and full-verification settings.
 
 The gate checks both Git migration changes and migrations actually pending in production. This prevents a previously interrupted checkout from making a pending migration appear already deployed. A successful-deploy SHA marker is written only after migration, security verification, restart, health checks, and smoke checks succeed.
 
@@ -9,10 +40,10 @@ The gate checks both Git migration changes and migrations actually pending in pr
 1. Use expand-and-contract changes. Add nullable columns or new tables first, deploy code that can read both shapes, backfill separately, and remove the old shape only in a later release.
 2. Never edit a migration that has been applied to any shared environment. Create a new forward migration instead.
 3. Wrap new PostgreSQL migrations in `BEGIN;` and `COMMIT;` when every statement is transaction-safe. Operations such as `CREATE INDEX CONCURRENTLY` require a deliberately non-transactional migration and an explicit recovery procedure.
-4. Take and verify a restorable encrypted off-site database and upload backup before every production migration. Use `ops/backup-production.sh`; a schema-changing CD run enforces this gate.
+4. Take and verify a restorable encrypted off-site database and upload backup before every production migration. Use `ops/backup-production.sh`; a schema-changing Compose release enforces this gate.
 5. Run migrations against a production-like staging snapshot before production and record the expected duration and lock behavior.
 6. Application rollback is allowed only while the new schema remains compatible with the previous release. Recover migration failures by fixing forward unless a tested database restore is being performed.
-7. Run `npm run prisma:security:verify` after migration so every public table retains RLS and unused Supabase Data API roles retain no table privileges.
+7. Run `npm run prisma:security:verify` after migration so every public table retains RLS and unused external Data API roles retain no table privileges.
 
 Do not set the approval secret broadly or permanently. Set it only after reviewing one exact commit, deploy it once, then clear it. Backup success means the encrypted archive and matching checksum are visible on the configured off-site remote; a local file alone is insufficient.
 
@@ -24,13 +55,15 @@ Maintenance mode is not a migration write freeze because background jobs and the
 
 Before enabling commerce after a release, smoke-test product quoting, order creation in the payment sandbox, payment notification reconciliation, reservation expiration, and bank-transfer proof access.
 
-The [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) guide contains timer verification, encryption/key custody, isolated drills, and production recovery. Never test restoration against the live Paris database or live upload roots.
+The [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) guide contains timer verification, encryption/key custody, isolated drills, and production recovery. Never test restoration against the live VPS PostgreSQL database or live upload roots.
 
 ## VALORANT two-schema expand-first rules (Quest + valorant-platform-backend)
 
-The VALORANT integration runs both services against one Supabase project but
-keeps two owned schemas: Quest Prisma owns `public`; FastAPI's plain-SQL ledger
-owns `valorant`. Deployment follows the same expand-and-contract discipline:
+The production VALORANT integration runs both services against the live VPS
+PostgreSQL 17.11 service `quest-postgres` and keeps two owned schemas: Quest
+Prisma owns `public`; FastAPI's plain-SQL ledger owns `valorant`. Deployment
+follows the same expand-and-contract discipline. Isolated local testing may use
+a dedicated Supabase test project, which is not a production target:
 
 1. Quest Prisma migrations touch only `public`; FastAPI `supabase/migrations/*.sql`
    touch only `valorant`. CI enforces both directions: `verify-prisma-schema-scope.js`

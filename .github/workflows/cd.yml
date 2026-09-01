@@ -51,7 +51,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-deploy
+  group: production-release
   cancel-in-progress: false
 
 env:
@@ -63,7 +63,7 @@ jobs:
     name: Deploy backend
     runs-on: ubuntu-latest
     environment: production
-    if: ${{ vars.BACKEND_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')) }}
+    if: ${{ vars.PRODUCTION_DEPLOYMENT_MODE == 'legacy-pm2' && vars.BACKEND_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) }}
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci
@@ -78,15 +78,40 @@ jobs:
       - name: Verify manual deployment commit passed CI
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_CI_RUN_ID: ${{ github.event.workflow_run.id }}
         working-directory: .
         run: |
-          SUCCESSFUL_RUNS="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow CI --commit "$DEPLOY_SHA" --status success --limit 1 --json databaseId --jq 'length')"
-          test "$SUCCESSFUL_RUNS" = "1"
+          set -euo pipefail
+          printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$DEPLOY_SHA"
+          ci_workflow_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml")"
+          ci_workflow_id="$(jq -er '.id | tostring' <<< "$ci_workflow_json")"
+          test "$(jq -er '.path' <<< "$ci_workflow_json")" = '.github/workflows/ci.yml'
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run ]]; then
+            ci_run_id="$EVENT_CI_RUN_ID"
+          else
+            ci_runs_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$ci_workflow_id/runs?branch=main&event=push&status=success&per_page=100")"
+            ci_run_id="$(jq -er --arg sha "$DEPLOY_SHA" '[.workflow_runs[] | select(.head_sha == $sha)] | if length == 1 then .[0].id else error("expected one successful CI run") end' <<< "$ci_runs_json")"
+          fi
+          [[ "$ci_run_id" =~ ^[0-9]+$ ]]
+          ci_run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ci_run_id")"
+          test "$(jq -er '.id | tostring' <<< "$ci_run_json")" = "$ci_run_id"
+          ci_run_path="$(jq -er '.path' <<< "$ci_run_json")"
+          test "${ci_run_path%@*}" = '.github/workflows/ci.yml'
+          test "$(jq -er '.workflow_id | tostring' <<< "$ci_run_json")" = "$ci_workflow_id"
+          test "$(jq -er '.name' <<< "$ci_run_json")" = CI
+          test "$(jq -er '.conclusion' <<< "$ci_run_json")" = success
+          test "$(jq -er '.event' <<< "$ci_run_json")" = push
+          test "$(jq -er '.head_branch' <<< "$ci_run_json")" = main
+          test "$(jq -er '.head_repository.full_name' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"
+          test "$(jq -er '.repository.full_name' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"
+          test "$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "$ci_run_json")" = "$DEPLOY_SHA"
 
       - name: Check out repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -109,17 +134,28 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
           SSH_HOST: ${{ secrets.BACKEND_SSH_HOST }}
           SSH_PORT: ${{ secrets.BACKEND_SSH_PORT }}
+          SSH_USER: ${{ secrets.BACKEND_SSH_USER }}
           SSH_HOST_KEY: ${{ secrets.BACKEND_SSH_HOST_KEY }}
         run: |
-          test -n "$SSH_PRIVATE_KEY"
-          test -n "$SSH_HOST"
-          test -n "$SSH_HOST_KEY"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/backend_deploy_key
-          chmod 600 ~/.ssh/backend_deploy_key
-          printf '%s\n' "$SSH_HOST_KEY" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+          set -euo pipefail
+          command -v mktemp >/dev/null
+          command -v timeout >/dev/null
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] || { echo 'SSH host is missing or unsafe.' >&2; exit 1; }
+          [[ "$SSH_PORT" =~ ^[1-9][0-9]{0,4}$ && "$SSH_PORT" -le 65535 ]] || { echo 'SSH port is missing or unsafe.' >&2; exit 1; }
+          [[ "$SSH_USER" == deploy ]] || { echo 'SSH user must be the dedicated deploy user.' >&2; exit 1; }
+          [[ -n "$SSH_PRIVATE_KEY" && "$SSH_PRIVATE_KEY" != *$'\r'* ]] || { echo 'SSH private key is missing or unsafe.' >&2; exit 1; }
+          [[ -n "$SSH_HOST_KEY" && "$SSH_HOST_KEY" != *$'\r'* && "$SSH_HOST_KEY" != *$'\n'* ]] || { echo 'pinned SSH host key is missing or ambiguous.' >&2; exit 1; }
+          expected_host_key="$SSH_HOST"
+          [[ "$SSH_PORT" != 22 ]] && expected_host_key="[$SSH_HOST]:$SSH_PORT"
+          ssh_material_dir="$(mktemp -d "$RUNNER_TEMP/quest-legacy-ssh.XXXXXX")"
+          cleanup_ssh_material() { local status=$?; trap - EXIT; rm -rf -- "$ssh_material_dir"; exit "$status"; }
+          trap cleanup_ssh_material EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_material_dir/id_ed25519"
+          printf '%s\n' "$SSH_HOST_KEY" > "$ssh_material_dir/known_hosts"
+          chmod 600 "$ssh_material_dir/id_ed25519" "$ssh_material_dir/known_hosts"
+          test "$(awk -v expected="$expected_host_key" 'NF >= 3 { count=0; n=split($1, names, ","); for (i=1; i<=n; i++) if (names[i] == expected) count++ } END { print count + 0 }' "$ssh_material_dir/known_hosts")" = 1 || { echo 'pinned SSH host key does not identify the configured host and port.' >&2; exit 1; }
+          printf 'SSH_MATERIAL_DIR=%s\n' "$ssh_material_dir" >> "$GITHUB_ENV"
+          trap - EXIT
 
       - name: Deploy backend over SSH
         env:
@@ -180,8 +216,34 @@ jobs:
             echo "MOBILE_ADMIN_ANDROID_CERT_SHA256 must contain the verified release certificate fingerprint." >&2
             exit 1
           fi
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -i ~/.ssh/backend_deploy_key -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' PM2_PROCESS='${PM2_PROCESS:-quest-backend}' HEALTHCHECK_URL='${HEALTHCHECK_URL:-http://127.0.0.1:5001/api/health}' DESTRUCTIVE_MIGRATION_APPROVAL_SHA='$DESTRUCTIVE_MIGRATION_APPROVAL_SHA' MOBILE_ANDROID_CERT_SHA256='$MOBILE_ANDROID_CERT_SHA256' REPAIR_LEGACY_MEDIA='$REPAIR_LEGACY_MEDIA' OPTIMIZE_TOURNAMENT_BANNERS='$OPTIMIZE_TOURNAMENT_BANNERS' OPTIMIZE_EVENT_ALBUM_PHOTOS='$OPTIMIZE_EVENT_ALBUM_PHOTOS' INITIALIZE_MATCH_ROOMS='$INITIALIZE_MATCH_ROOMS' REPAIR_DATABASE_SSL='$REPAIR_DATABASE_SSL' REPAIR_MOBILE_ANDROID_FINGERPRINT='$REPAIR_MOBILE_ANDROID_FINGERPRINT' REPAIR_MOBILE_OAUTH_REDIRECT='$REPAIR_MOBILE_OAUTH_REDIRECT' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'SCRIPT'
+          [[ -n "${SSH_MATERIAL_DIR:-}" && -f "$SSH_MATERIAL_DIR/id_ed25519" && -f "$SSH_MATERIAL_DIR/known_hosts" && ! -L "$SSH_MATERIAL_DIR/id_ed25519" && ! -L "$SSH_MATERIAL_DIR/known_hosts" ]] || { echo 'SSH material is missing or unsafe.' >&2; exit 1; }
+          [[ "$APP_DIR" =~ ^/[A-Za-z0-9._/-]+$ && "$APP_DIR" != / && "$APP_DIR" != *'/../'* && "$APP_DIR" != */.. ]] || { echo 'APP_DIR is missing or unsafe.' >&2; exit 1; }
+          [[ "$PM2_PROCESS" =~ ^[A-Za-z0-9_.@-]+$ ]] || { echo 'PM2_PROCESS is missing or unsafe.' >&2; exit 1; }
+          [[ "$HEALTHCHECK_URL" == http://127.0.0.1:5001/api/health ]] || { echo 'HEALTHCHECK_URL is not the fixed loopback endpoint.' >&2; exit 1; }
+          [[ -z "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" || "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'destructive migration approval is unsafe.' >&2; exit 1; }
+          [[ -z "$MOBILE_ANDROID_CERT_SHA256" || "$MOBILE_ANDROID_CERT_SHA256" =~ ^([0-9a-fA-F]{2}:){31}[0-9a-fA-F]{2}$ ]] || { echo 'mobile certificate fingerprint is unsafe.' >&2; exit 1; }
+          ssh_options=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_MATERIAL_DIR/known_hosts" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i "$SSH_MATERIAL_DIR/id_ed25519")
+          remote_command=(bash -s -- "$APP_DIR" "$PM2_PROCESS" "$HEALTHCHECK_URL" "$DESTRUCTIVE_MIGRATION_APPROVAL_SHA" "$MOBILE_ANDROID_CERT_SHA256" "$REPAIR_LEGACY_MEDIA" "$OPTIMIZE_TOURNAMENT_BANNERS" "$OPTIMIZE_EVENT_ALBUM_PHOTOS" "$INITIALIZE_MATCH_ROOMS" "$REPAIR_DATABASE_SSL" "$REPAIR_MOBILE_ANDROID_FINGERPRINT" "$REPAIR_MOBILE_OAUTH_REDIRECT" "$DEPLOY_SHA")
+          remote_command_shell=''
+          for remote_argument in "${remote_command[@]}"; do
+            printf -v quoted_remote_argument '%q' "$remote_argument"
+            remote_command_shell+="${remote_command_shell:+ }$quoted_remote_argument"
+          done
+          timeout --foreground 180s ssh "${ssh_options[@]}" -p "$SSH_PORT" -- "$SSH_USER@$SSH_HOST" "$remote_command_shell" <<'SCRIPT'
           set -euo pipefail
+           APP_DIR="$1"
+           PM2_PROCESS="$2"
+           HEALTHCHECK_URL="$3"
+           DESTRUCTIVE_MIGRATION_APPROVAL_SHA="$4"
+           MOBILE_ANDROID_CERT_SHA256="$5"
+           REPAIR_LEGACY_MEDIA="$6"
+           OPTIMIZE_TOURNAMENT_BANNERS="$7"
+           OPTIMIZE_EVENT_ALBUM_PHOTOS="$8"
+           INITIALIZE_MATCH_ROOMS="$9"
+           REPAIR_DATABASE_SSL="${10}"
+           REPAIR_MOBILE_ANDROID_FINGERPRINT="${11}"
+           REPAIR_MOBILE_OAUTH_REDIRECT="${12}"
+           DEPLOY_SHA="${13}"
           if [ "$(id -u)" -eq 0 ]; then
             echo "Refusing to deploy as root. Configure the dedicated deploy user." >&2
             exit 1
@@ -204,7 +266,7 @@ jobs:
               echo "Problem directory: $PROBLEM_DIR" >&2
               ls -ld "$PROBLEM_DIR" >&2 || true
               echo "Repair ownership on the VPS, then rerun this deployment:" >&2
-              printf "  sudo chown -R %q:%q %q\n" "$DEPLOY_USER" "$DEPLOY_GROUP" "$APP_DIR/backend/node_modules" >&2
+               printf "  sudo chown -R %q:%q %q\n" "$DEPLOY_USER" "$DEPLOY_GROUP" "$APP_DIR/backend/node_modules" >&2
               exit 1
             fi
           fi
@@ -221,7 +283,7 @@ jobs:
           fi
           REMOTE_URL="$(git remote get-url origin)"
           if ! git fetch --prune origin "$DEPLOY_SHA"; then
-            echo "The VPS could not fetch origin: $REMOTE_URL" >&2
+            echo "The VPS could not fetch the configured origin." >&2
             echo "For a private GitHub repository, configure a read-only deploy key on the VPS and use the repository SSH URL." >&2
             exit 1
           fi
@@ -384,3 +446,13 @@ jobs:
           chmod 600 "$DEPLOYED_SHA_FILE"
           trap - EXIT
           SCRIPT
+
+      - name: Cleanup temporary legacy SSH material
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${SSH_MATERIAL_DIR:-}" ]]; then
+            [[ "$SSH_MATERIAL_DIR" == "$RUNNER_TEMP"/* && "$SSH_MATERIAL_DIR" != "$RUNNER_TEMP/" ]] || { echo 'SSH material cleanup path is unsafe.' >&2; exit 1; }
+            rm -rf -- "$SSH_MATERIAL_DIR"
+          fi

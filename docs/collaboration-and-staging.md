@@ -15,9 +15,20 @@ GitHub Free does not enforce branch protection or protected-environment approval
 
 Confirm current plan support against GitHub's [deployment environments documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments) before storing any production secret in an Environment.
 
+## Current production database boundary
+
+Production is the VPS PostgreSQL **17.11** container `quest-postgres`, reached
+by the services at `127.0.0.1:5433`. The separate isolated staging Supabase
+project is for contributor and test data only. The former production Supabase
+project is a different, stale project retained only as recovery material; it is
+not the staging project, is not a production rollback target, and is not used
+for normal application writes. Production database changes are made through
+the protected Compose/release path, not a Supabase production SQL editor.
+
 ## Staging Data
 
-- Use a separate Supabase project and database password.
+- Use the separate isolated staging Supabase project and its own database
+  password; never use the stale former-production Supabase project for staging.
 - Disable the Supabase Data API because the application connects through Prisma.
 - Do not copy production users, sessions, payment evidence, recruitment IDs, email addresses, phone numbers, OAuth grants, tokens, or uploaded private files.
 - Prefer schema-only migrations plus synthetic test records.
@@ -25,15 +36,17 @@ Confirm current plan support against GitHub's [deployment environments documenta
 
 The repository includes a guarded copier for the limited public-data subset. It copies published game categories, event series, tournaments and sponsors, referenced rulebooks, active products and variants, and non-draft ticket events. It removes media file references and bank details, changes copied tournament payment methods to free, clears product stock, and never reads identity or transaction tables.
 
-After applying migrations, mark each database once using its real Supabase project reference. Run the production statement only in the production SQL editor and the staging statement only in staging:
+After applying migrations, mark the isolated staging database once using its
+real Supabase project reference. Run this statement only in the staging SQL
+editor; it is not a production procedure:
 
 ```sql
 INSERT INTO deployment_environment (id, environment, project_ref, updated_at)
-VALUES (1, 'production', 'PRODUCTION_PROJECT_REF', CURRENT_TIMESTAMP)
+VALUES (1, 'staging', 'STAGING_PROJECT_REF', CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET environment = EXCLUDED.environment, project_ref = EXCLUDED.project_ref, updated_at = CURRENT_TIMESTAMP;
 ```
 
-Use `staging` and the staging project reference for the staging database. The copier refuses missing, swapped, inconsistent, or matching markers.
+The copier refuses missing, swapped, inconsistent, or matching markers.
 
 Preview the source and target row counts before writing:
 
@@ -49,7 +62,16 @@ $env:STAGING_COPY_CONFIRMATION="COPY_PRODUCTION_TO_STAGING:STAGING_PROJECT_REF"
 npm run data:copy-public-to-staging:apply
 ```
 
-The command reads production from the ignored `backend/.env` and staging from the ignored `backend/.env.staging.local`. It validates database-resident environment markers and Supabase project references, enforces TLS, and remains read-only on production. Normal apply does not delete staging rows. To remove stale public rows, first back up staging, review the dry run, then use `STAGING_COPY_CONFIRMATION=PRUNE_AND_COPY_PRODUCTION_TO_STAGING:STAGING_PROJECT_REF` with `npm run data:copy-public-to-staging:prune`. Pruning is intentionally a separate destructive operation.
+The command reads live production from the ignored `backend/.env` and the
+isolated staging Supabase project from the ignored
+`backend/.env.staging.local`. It must never be pointed at the stale
+former-production Supabase project. It validates database-resident environment
+markers and Supabase project references, enforces TLS, and remains read-only on
+production. Normal apply does not delete staging rows. To remove stale public
+rows, first back up staging, review the dry run, then use
+`STAGING_COPY_CONFIRMATION=PRUNE_AND_COPY_PRODUCTION_TO_STAGING:STAGING_PROJECT_REF`
+with `npm run data:copy-public-to-staging:prune`. Pruning is intentionally a
+separate destructive operation.
 
 ## Local Configuration
 

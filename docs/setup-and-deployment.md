@@ -2,6 +2,27 @@
 
 This guide covers local setup, environment configuration, and a practical production deployment approach for the current codebase. Use the [Developer Guide](developer-guide.md) for contributor workflows, the [Environment Reference](environment-reference.md) for the variable inventory, and [VALORANT Local Development](valorant-local-development.md) for the dedicated-test integration workflow.
 
+## Current production status
+
+The database cutover completed on **2026-08-31**. Quest and VALORANT currently
+use PostgreSQL **17.11** in VPS container `quest-postgres` at
+`127.0.0.1:5433`. Supabase is intact but stale and is not a rollback target.
+No rehearsal was performed, and that gate cannot be satisfied retroactively.
+
+The current database container is an ad-hoc host deployment, not the target
+Compose topology. Compose adoption remains blocked by missing PostgreSQL TLS
+material, which also blocks the real backup pipeline. The scheduled backup has
+failed since **2026-08-30 04:20**; the interim
+`quest-pg17-interim-backup.{service,timer}` unit covers the gap. TLS and backup
+provisioning, host bootstrap, and remediation of unrestricted deploy-root
+access and two GitHub Actions keys remain operator gates. Nothing here claims
+live verification or owner approval.
+
+The production Compose target requires `sslmode=verify-full` with the mounted
+private CA (and equivalent full certificate/hostname verification for the
+VALORANT asyncpg client). External PostgreSQL/VALORANT Cosign signer settings
+are not required; only Quest-owned images use the Quest Cosign identity.
+
 ## Requirements
 
 - Node.js 24.x (backend and frontend declare `24.x`; mobile-admin follows project Node 24 guidance without a package `engines` field)
@@ -321,6 +342,10 @@ Production requirement:
 - keep private storage mode `700` and exclude it from Nginx/static routes
 - back up PostgreSQL and both storage roots as one consistency set
 
+The production PostgreSQL URLs must use `sslmode=verify-full` and the
+provisioned private CA. The current loopback `127.0.0.1:5433` ad-hoc runtime
+does not yet have that TLS material, so it is not the Compose-adoption state.
+
 Do not deploy this backend on fully ephemeral disk unless you replace the upload strategy with object storage.
 
 ## Build Commands
@@ -425,10 +450,11 @@ gives better fast refresh than a bind-mounted container.
 **This is a development convenience, not a production deployment path.** The
 production target is the owner-gated PostgreSQL 17 Compose topology under
 `ops/docker/`, with the frontend/backend release path described in the
-[Production Operations Runbook](./production-runbook.md). The existing PM2,
-native PostgreSQL 16, Supabase, and Vercel paths remain rollback/staging
-material until the cutover observation and retirement gates pass. Nothing in
-this local stack authorizes a VPS mutation.
+[Production Operations Runbook](./production-runbook.md). The existing PM2 path
+is retained only for explicitly gated historical recovery; native PostgreSQL 16
+and Vercel remain staging material until their retirement gates pass. Supabase is
+stale non-rollback context, not current rollback material. Nothing in this local
+stack authorizes a VPS mutation.
 
 Three properties are asserted by `backend/tests/local-docker-compose.test.js`
 rather than left to convention: every published port binds to `127.0.0.1`; the
@@ -510,8 +536,10 @@ Expected smoke output: `VALORANT local smoke: PASS`.
 
 ## Recommended Production Topology
 
-For this repository, production uses Vercel for the frontend and the Ubuntu VPS
-for the immutable `quest-prod` and sibling `valorant-prod` Compose projects.
+For this repository, the target production topology uses Vercel for the frontend
+and the Ubuntu VPS for the immutable `quest-prod` and sibling `valorant-prod`
+Compose projects. The current PostgreSQL service remains an ad-hoc host
+container until the documented owner gates are complete.
 PostgreSQL 17 is private to the Compose networks and uses the stable
 `quest-postgres` alias. Nginx exposes application traffic only. The temporary
 staging overlay may publish PostgreSQL only at `127.0.0.1:55432`; the final base
@@ -544,8 +572,8 @@ NODE_ENV=production
 API_PROCESS_COUNT=1
 PORT=5001
 CORS_ORIGIN=https://questesports.lk
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
-DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
+DIRECT_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=verify-full&sslrootcert=/run/secrets/quest-private-ca.crt
 LOG_LEVEL=info
 SESSION_COOKIE_NAME=quest_session
 SESSION_TTL_DAYS=1
@@ -592,7 +620,7 @@ DISCORD_CALLBACK_URL=https://api.questesports.lk/api/auth/discord/callback
 Notes:
 
 - `DATABASE_URL`, `DIRECT_URL`, and `SESSION_COOKIE_NAME` are required.
-- During migration, Supabase is the owner-verified source and temporary rollback material. The PostgreSQL 17 target uses the private `quest-postgres` Compose alias; host-run staging tools may use only loopback `127.0.0.1:55432`. Verify the live host, target, and URL authority with the owner; checked-in documentation cannot prove current infrastructure state.
+- The cutover completed on 2026-08-31; Supabase is stale recovery material and is not a rollback target. The current PostgreSQL 17 service uses `quest-postgres` at `127.0.0.1:5433`; the target Compose alias and host-run staging tools use only loopback `127.0.0.1:55432`. Verify the live host, target, and URL authority with the owner; checked-in documentation cannot prove current infrastructure state.
 - `APP_URL` must point to the frontend origin because email links are generated from it.
 - Mobile administrator OAuth requires the verified API-origin App Link and the colon-separated SHA-256 fingerprint of the release signing certificate.
 - `AUTH_ENCRYPTION_KEY` must be exactly 64 hexadecimal characters; do not rotate an existing key without a data migration plan.
@@ -601,7 +629,7 @@ Notes:
 - Payment evidence accepts PNG, JPEG, and WebP screenshots; image receipts are decoded and re-encoded before storage.
 - `CORS_ORIGIN` can be a comma-separated allowlist.
 - `REQUIRE_API_ORIGIN=true` blocks API requests without an allowed `Origin` or `Referer`; use `CORS_ORIGIN=https://questesports.lk` for the public site domain.
-- The Supabase Data API is unused and should be disabled for the Paris project. `npm run prisma:security:verify` confirms all public tables use RLS and Data API roles have no table privileges.
+- The live production database is VPS PostgreSQL 17.11 in `quest-postgres`; `npm run prisma:security:verify` confirms all public tables use RLS and unneeded external Data API roles have no table privileges. Any Supabase Data API setting belongs to isolated test or historical context, not production rollback.
 - Install and verify the encrypted off-site backup timer before approving any production migration. Follow [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) and the [Production Operations Runbook](./production-runbook.md#automated-encrypted-off-site-backups).
 - The full archive excludes the backend `.env`, OAuth/rclone material, Supabase-managed settings, and infrastructure credentials. Maintain and test a separate encrypted, access-controlled recovery process for those values.
 
@@ -689,13 +717,14 @@ These generic steps are not the PostgreSQL 17 production cutover. For
 production, use the immutable Compose release and the owner-gated migration
 procedure below instead of pointing the application at an unmanaged database.
 
-## VPS PostgreSQL 17 migration and deployment
+## VPS PostgreSQL 17 migration and deployment (historical procedure; cutover completed)
 
-The migration source is the owner-verified Supabase PostgreSQL database. It
-remains unchanged and is temporary rollback material until the final commit;
-Supabase and PostgreSQL 17 must never be co-authoritative. Existing native
+The database cutover described by this procedure completed on 2026-08-31.
+This section is retained as the historical operator procedure for the remaining
+Compose adoption work; it is not evidence that these steps were performed.
+Supabase is intact but stale and is not a rollback target. Existing native
 PostgreSQL 16.15 remains on `127.0.0.1:5432` during staging and initial
-validation. The target is PostgreSQL 17 Bookworm with durable data at
+validation. The Compose target is PostgreSQL 17 Bookworm with durable data at
 `/srv/quest-esports/postgres/17/data`.
 
 1. Record owner-supplied RPO/RTO, maintenance window, bootstrap/release actors,
@@ -726,10 +755,13 @@ validation. The target is PostgreSQL 17 Bookworm with durable data at
    Runbook](./production-runbook.md#stage-postgresql-17-beside-postgresql-16).
    No private-network backup utility is implemented, and Supabase is never a
    replacement target for host backup or restore connectivity.
-4. Run the signed disposable two-schema restore rehearsal with pinned
-   PostgreSQL 17 clients. Require the exact evidence and owner/live gate
-   described in [Backup and Disaster Recovery](./backup-and-disaster-recovery.md#phase-8-rehearsal-boundary).
-5. In the approved maintenance window, invoke the root-owned cutover wrapper.
+4. The signed disposable two-schema restore rehearsal was **not performed**.
+   It remains a required gate for future recovery/Compose adoption work, but
+   cannot be satisfied retroactively. Use the exact evidence and owner/live
+   gate described in [Backup and Disaster Recovery](./backup-and-disaster-recovery.md#phase-8-rehearsal-boundary).
+5. The following cutover sequence is retained for historical reference only;
+   the database cutover already completed. For remaining Compose adoption, use
+   the root-owned release path after all current host gates pass.
    Freeze both writers, stop old writers, create and remotely verify the final
    archive, restore with `--no-owner --no-acl --single-transaction
    --exit-on-error`, apply security checks and both migrations, then start both

@@ -1,13 +1,15 @@
 # Backup and Disaster Recovery
 
-Repository record date: July 29, 2026. Live backup, destination, timer, and
-restore-drill status require owner verification.
+Repository record date: August 31, 2026. The PostgreSQL 17 VPS cutover is
+closed as completed on 2026-08-31; this record still does not replace live
+verification of backup, destination, timer, or service state.
 
 This is the source of truth for Quest Esports production backup, restore testing, and disaster recovery. The [Production Operations Runbook](./production-runbook.md) covers the surrounding VPS and deployment procedures.
 
 ## Safety rules
 
-1. Never test a restore against the live Paris database or live upload directories.
+1. Never test a restore against live production: PostgreSQL 17.11 in VPS
+   `quest-postgres` at `127.0.0.1:5433`, or the live upload directories.
 2. Never print or commit `/etc/quest-esports-backup.env` or any protected per-remote rclone configuration.
 3. Never place the private `age` identity in Git, Google Drive, email, chat, support tickets, or a normal cloud-synced folder.
 4. Always require both an encrypted archive and its matching `.sha256` file.
@@ -21,8 +23,9 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 
 | Component | Current state |
 | --- | --- |
-| Migration source/rollback material | Owner-verified Supabase PostgreSQL, Paris `eu-west-3`, unchanged until the cutover observation gate passes |
-| Production target | PostgreSQL 17 Bookworm on the VPS in `quest-prod`, private `quest-postgres` alias, durable data at `/srv/quest-esports/postgres/17/data` |
+| Cutover status | Completed on 2026-08-31; PostgreSQL 17 on the VPS is the current production target |
+| Migration source/rollback material | Supabase remains intact but stale recovery material; it is not a rollback target after the first VPS writer |
+| Production target | PostgreSQL 17.11 in VPS container `quest-postgres`, reached at `127.0.0.1:5433`, with durable data at `/srv/quest-esports/postgres/17/data` |
 | Staging coexistence | Native PostgreSQL 16.15 remains on `127.0.0.1:5432` during staging and initial validation |
 | Backend | France VPS, `/var/www/QuestEsports`, PM2 process `quest-backend` owned by `deploy` |
 | Public uploads | `/srv/quest-esports/uploads` |
@@ -33,9 +36,14 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 | Active off-site destinations | Protected environment labels and destinations; owner verification required |
 | Historical destination | Retained only according to the protected multi-remote configuration; owner verification required |
 | Encryption | `age` public-recipient encryption; private identity kept offline |
-| Automation | Repository provides locked backup/freshness services and timers; owner must verify installation and state |
+| Automation | Repository provides locked backup/freshness services and timers; the scheduled backup has failed since `2026-08-30 04:20` because the host lacks the certificate and `POSTGRES_TARGET_*` settings required by `backup-production-multi-remote.sh` |
+| Interim backup coverage | `quest-pg17-interim-backup.{service,timer}` covers the gap and must be removed once the real backup pipeline is provisioned |
 | Schedule | Daily at 02:15 UTC with up to 15 minutes randomized delay; missed runs are persistent |
-| Restore-drill status | Not proven by checked-in files; owner verification and an isolated drill are required |
+| Restore-drill status | Skipped; the hard rehearsal gate was not performed and cannot be satisfied retroactively |
+| Remaining trust risks | Missing TLS material blocks Compose adoption and the backup pipeline; unrestricted deploy-root access and two GitHub Actions keys remain active risks for Tasks 3 and 6 |
+
+The backup pipeline requires `POSTGRES_CA_FILE`, `BACKUP_CLIENT_CERT_FILE`, and
+`BACKUP_CLIENT_KEY_FILE` before the real scheduled service can be restored.
 
 The checked-in record describes the configured remotes as using separate,
 QuestEsports-owned credentials. Remote labels, destinations, and token state
@@ -59,12 +67,13 @@ and default ACLs separately. Do not change this `--no-acl` decision implicitly.
 - The repository includes a dry-run-first, per-remote retention tool with a minimum-recovery-point guard. Production deletion remains disabled until the owner approves the retention values and runs the exact confirmation-gated command for object-locked destinations.
 - The repository includes a systemd `OnFailure` notifier. It pages an operator only after the failure unit is installed and an approved Discord-compatible HTTPS webhook is added to the protected backup environment and tested.
 
-### Post-first-write rollback boundary
+### Historical pre-first-write rollback boundary (superseded 2026-08-31)
 
-Before the first PostgreSQL 17 writer is admitted, a failed cutover keeps
-writers frozen, restores the source URLs, and restarts only the previously
-active legacy writers. Supabase is the temporary rollback source at that
-boundary, not a second writable production database.
+Before the first PostgreSQL 17 writer was admitted, a failed cutover would have
+kept writers frozen, restored the source URLs, and restarted only the previously
+active legacy writers. Supabase was the temporary rollback source at that
+historical boundary, not a second writable production database. That boundary
+has passed and is not an available recovery path.
 
 Once PostgreSQL 17 writer admission starts, Supabase is stale recovery material.
 There is no automatic or one-service Supabase URL rollback. A post-first-write
@@ -206,8 +215,8 @@ The checked-in host backup service uses the exact PostgreSQL 17 VPS target in
 and role `quest_backup`. It uses the separately provisioned backup client
 trust bundle, certificate, and key from `/etc/quest-esports-backup`, with the
 bundle containing the PostgreSQL server issuer and the certificate/key remaining
-a separate client identity. It must never use the Paris
-Supabase session pooler.
+a separate client identity. It must never use the former Paris Supabase
+session pooler.
 The supported host-run backup and restore path is to keep or reapply
 `ops/docker/compose.postgres-staging.yml` while the PostgreSQL service is in
 use. It remains bound to `127.0.0.1` only; it is never a public database port.
@@ -386,9 +395,11 @@ Do not automate this deletion until at least one newer archive has passed a full
 
 The database/upload archive is not a complete environment backup. Follow [Secret and Infrastructure Recovery](./secret-and-infrastructure-recovery.md) to create, transfer, and independently restore-test the separately encrypted backend environment, rclone configuration, and installed infrastructure configuration. Its private identity must remain offline and separate from the normal backup identity and destination.
 
-## Database-only Windows recovery snapshot
+## Historical pre-cutover Windows recovery snapshot
 
-The secured Windows recovery PC can create and restore-test a Paris database-only snapshot:
+The following Windows commands are retained as historical pre-cutover tooling
+only. They must not be treated as a current production backup or recovery
+target; current production is the VPS PostgreSQL 17 target recorded above:
 
 ```powershell
 Set-Location D:\Work\Projects\QuestEsports
@@ -405,7 +416,7 @@ This workflow validates an encrypted application-database snapshot in disposable
 | One missing upload | Recover the matching file from an archive on an isolated host, verify it, then copy only that file back |
 | Upload tree corruption | Stop writes, restore both upload roots from one consistent archive, and verify database/file references |
 | Accidental application-table change | Restore the archive into disposable PostgreSQL first, inspect the required rows, then choose targeted SQL recovery or an approved full restore |
-| Paris database loss | Create a compatible PostgreSQL/Supabase target, restore the application schemas recorded by the archive manifest (`public` and `valorant` when included), update secrets, run migrations/security checks, then switch the backend |
+| VPS PostgreSQL 17 database loss | Replace or recover the VPS PostgreSQL 17 target (`quest-postgres`, `127.0.0.1:5433`) from a verified complete archive, restore the application schemas recorded by the archive manifest (`public` and `valorant` when included), update protected secrets, run migrations/security checks, then switch the backend only after validation; never select stale Supabase |
 | VPS loss with database intact | Rebuild the VPS from Git and the secret store, restore public/private uploads, reinstall PM2/Nginx/systemd/rclone, then verify health |
 | Complete environment loss | Rebuild database and VPS, restore database/uploads, restore external configuration from its separate secret recovery process, then update DNS and verify every integration |
 | OAuth token revoked | Re-authorize the affected configured remote and run a manual plus systemd backup test; do not change archive encryption keys |
@@ -496,7 +507,7 @@ transparent compatible restore.
 1. Select one archive and its exact `.sha256` sibling from the active remote.
 2. Download both through the Google Drive UI or a recovery-only rclone configuration to an access-controlled recovery host.
 3. Copy `ops/quest-esports-recovery.env.example` outside the repository and set:
-   - `DIRECT_URL` to disposable PostgreSQL 17, never Paris production. This
+   - `DIRECT_URL` to disposable PostgreSQL 17, never live production. This
      fixture-only name is not accepted by the production restore primitive;
      production restores use the separately protected `RECOVERY_ADMIN_URL`.
    - `QUEST_RUNTIME_DATABASE_URL` to the `quest_runtime` credential for the same

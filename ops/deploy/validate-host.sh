@@ -82,7 +82,7 @@ validate_compose_tls_material() {
 validate_backup_tls_material() {
   local ca_file cert_file key_file server_cert_file tls_file tls_stat client_tls_dir
   if [[ "$fixture_mode" == 1 ]]; then
-    ca_file="${BACKUP_CLIENT_CA_FILE:-}"
+    ca_file="${POSTGRES_CA_FILE:-}"
     cert_file="${BACKUP_CLIENT_CERT_FILE:-}"
     key_file="${BACKUP_CLIENT_KEY_FILE:-}"
     server_cert_file="${POSTGRES_COMPOSE_CERT_FILE:-}"
@@ -268,22 +268,21 @@ validate_database_urls() {
   validate_runtime_url_file "$valorant_runtime_env_file" val_runtime valorant "${RUNTIME_DATABASE_AUTHORITY:-quest-postgres}" VALORANT
 }
 
-for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP VALORANT_COSIGN_OIDC_ISSUER POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP POSTGRES_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND VALORANT_COMPOSE_SOURCE VALORANT_RUNTIME_COMPOSE_CONTRACT; do
+for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND VALORANT_COMPOSE_SOURCE VALORANT_RUNTIME_COMPOSE_CONTRACT; do
   require_setting "$setting"
 done
 for setting in POSTGRES_TARGET_HOST POSTGRES_TARGET_PORT POSTGRES_TARGET_DATABASE POSTGRES_TARGET_MAJOR POSTGRES_TARGET_DATA_ROOT POSTGRES_TARGET_SENTINEL_COMMAND; do
   require_setting "$setting"
 done
-[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must not reuse the Quest signer identity.'
-[[ "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'VALORANT trust policy must not reuse the Quest signer identity.'
-[[ "$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP" != "$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP" ]] || die 'PostgreSQL trust policy must remain independent of VALORANT.'
 [[ "$RELEASE_LOCK_PATH" == /* && "$RELEASE_LOCK_PATH" != / && -e "$RELEASE_LOCK_PATH" && ! -L "$RELEASE_LOCK_PATH" ]] || die 'canonical release lock is invalid.'
 if [[ "$fixture_mode" != 1 ]]; then
   [[ "$RELEASE_LOCK_PATH" == /var/lock/quest-esports-release.lock ]] || die 'canonical release lock path cannot be overridden.'
 fi
 [[ "$RELEASE_ROOT" == /* && "$RELEASE_ROOT" != / && -d "$RELEASE_ROOT" && ! -L "$RELEASE_ROOT" ]] || die 'release root is invalid.'
 [[ "$RELEASES_ROOT" == /* && "$RELEASES_ROOT" != / && -d "$RELEASES_ROOT" && ! -L "$RELEASES_ROOT" ]] || die 'release storage root is invalid.'
-[[ -x "$DOCKER_BIN" && -x "$COSIGN_BIN" && -x "$SERVICE_OWNERSHIP_COMMAND" ]] || die 'required host command is not executable.'
+for command_setting_name in DOCKER_BIN COSIGN_BIN SERVICE_OWNERSHIP_COMMAND; do
+  [[ -x "${!command_setting_name}" ]] || die "required host command is not executable: $command_setting_name."
+done
 if [[ "$fixture_mode" != 1 ]]; then
   [[ "$(stat -c '%u' "$RELEASE_ROOT" 2>/dev/null)" == 0 && "$(stat -c '%u' "$RELEASES_ROOT" 2>/dev/null)" == 0 ]] || die 'release directories are not root-owned.'
 fi
@@ -309,8 +308,9 @@ done
 for key in frontend_image backend_image migrator_image valorant_image; do
   [[ "${manifest[$key]}" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die 'manifest contains a mutable or malformed registry image.'
 done
-[[ "${manifest[postgres_image]}" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die 'manifest PostgreSQL image is not an exact PostgreSQL 17 digest.'
-[[ "${POSTGRES_IMAGE_APPROVED_REF}" == "${manifest[postgres_image]}" ]] || die 'approved PostgreSQL image does not match the manifest.'
+approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+[[ "${manifest[postgres_image]}" == "$approved_postgres_ref" ]] || die 'manifest PostgreSQL image is not the approved PostgreSQL 17 Bookworm reference.'
+[[ "$POSTGRES_IMAGE_APPROVED_REF" == "$approved_postgres_ref" ]] || die 'approved PostgreSQL image setting is not the approved reference.'
 [[ "${VALORANT_IMAGE_APPROVED_REF}" == "${manifest[valorant_image]}" ]] || die 'approved VALORANT image does not match the manifest.'
 for key in frontend_image backend_image migrator_image; do
   case "$key" in
@@ -371,22 +371,10 @@ if [[ "${REQUIRE_SHARED_ALIASES:-0}" == 1 ]]; then
   done
 fi
 
-for key in frontend_image backend_image migrator_image postgres_image valorant_image; do
+for key in frontend_image backend_image migrator_image; do
   image="${manifest[$key]}"
-  case "$key" in
-    frontend_image|backend_image|migrator_image)
-      cosign_identity="$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP"
-      cosign_issuer="$QUEST_COSIGN_OIDC_ISSUER"
-      ;;
-    valorant_image)
-      cosign_identity="$VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP"
-      cosign_issuer="$VALORANT_COSIGN_OIDC_ISSUER"
-      ;;
-    postgres_image)
-      cosign_identity="$POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP"
-      cosign_issuer="$POSTGRES_COSIGN_OIDC_ISSUER"
-      ;;
-  esac
+  cosign_identity="$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP"
+  cosign_issuer="$QUEST_COSIGN_OIDC_ISSUER"
   "$COSIGN_BIN" verify \
     --certificate-identity-regexp "$cosign_identity" \
     --certificate-oidc-issuer "$cosign_issuer" "$image" >/dev/null 2>&1 \

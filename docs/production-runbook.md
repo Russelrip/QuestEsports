@@ -1,6 +1,41 @@
 # Production Operations Runbook
 
-This is the operational source of truth for the owner-gated transition to the Quest PostgreSQL 17 VPS target. It covers the Ubuntu VPS backend, Vercel frontend, the temporary Supabase rollback source, GitHub Actions deployment, persistent uploads, service recovery, and reboots. This document records repository contracts and target-state procedure; it does not prove live VPS, database, certificate, backup, or service state. Use [Backup and Disaster Recovery](./backup-and-disaster-recovery.md) as the authoritative backup, restore-drill, key-custody, and full-disaster procedure. For contributor setup and variables, use the [Developer Guide](developer-guide.md) and [Environment Reference](environment-reference.md); the [VALORANT Local Development](valorant-local-development.md) guide is the local integration source.
+This is the operational source of truth for the Quest PostgreSQL 17 VPS runtime,
+recovery, and the still-pending Compose adoption. The database cutover already
+occurred on 2026-08-31. The PostgreSQL 17 VPS target is now serving the
+application through the recorded host topology. This document records repository contracts and operator
+status; it does not replace live verification. Use [Backup and Disaster
+Recovery](./backup-and-disaster-recovery.md) for the authoritative backup,
+restore, key-custody, and disaster procedure. For contributor setup and
+variables, use the [Developer Guide](developer-guide.md) and [Environment
+Reference](environment-reference.md).
+
+Historical note: before cutover, Supabase was temporary Supabase rollback
+material. It is now intact but stale recovery material and is not a rollback
+target.
+
+## Current production status
+
+The database cutover completed on **2026-08-31**. Quest and VALORANT use
+PostgreSQL **17.11** in VPS container `quest-postgres` through
+`127.0.0.1:5433`. The current service is an ad-hoc host container, not the
+target Compose topology. No rehearsal was performed; the hard rehearsal gate
+was skipped and cannot be satisfied retroactively.
+
+Missing PostgreSQL TLS material blocks Compose adoption and the real backup
+pipeline. The scheduled backup has failed since **2026-08-30 04:20** because
+the certificate and `POSTGRES_TARGET_*` settings are missing; the interim
+`quest-pg17-interim-backup.{service,timer}` unit covers the gap. Host bootstrap,
+TLS provisioning, backup recovery, and removal of the interim unit remain
+operator gates. Unrestricted deploy-root access and two GitHub Actions keys
+also require host remediation. These statements are repository records, not
+live verification or owner approvals.
+
+Once adopted, Compose production clients must use `sslmode=verify-full` with
+the private CA; VALORANT's asyncpg client must use equivalent full certificate
+and hostname verification. External PostgreSQL/VALORANT Cosign signer settings
+are not required. Supabase remains stale recovery material and is not a
+rollback target.
 
 ## Current Topology
 
@@ -15,16 +50,44 @@ prove those facts.
 - Backend checkout: `/var/www/QuestEsports`
 - Backend service user: `deploy` (never `root`)
 - Process manager: PM2 supervised by `pm2-deploy.service`
-- Migration source/rollback material: the owner-verified Supabase PostgreSQL project in Paris (`eu-west-3`), unchanged until the observation and retirement gates pass
-- Production target: PostgreSQL 17 Bookworm in the `quest-prod` Compose project, with the private `quest-postgres` alias and durable data at `/srv/quest-esports/postgres/17/data`
+- Database: PostgreSQL 17.11 in VPS container `quest-postgres`, reached by Quest and VALORANT through `127.0.0.1:5433`
+- Supabase: intact but stale; it is not a rollback target
+- Planned Compose target: PostgreSQL 17 Bookworm in the `quest-prod` Compose project, with the private `quest-postgres` alias and durable data at `/srv/quest-esports/postgres/17/data`; TLS gaps currently block Compose adoption
 - Staging coexistence: the existing native PostgreSQL 16.15 cluster remains untouched on `127.0.0.1:5432` during staging and initial validation; it is not the PostgreSQL 17 target
 - PostgreSQL 17 staging access: only `127.0.0.1:55432` through the temporary overlay; the final base Compose file publishes no PostgreSQL host port and no public database port is allowed
 - Email: Amazon SES in Tokyo (`ap-northeast-1`) when `MAIL_PROVIDER=smtp`; SMTP credentials are region-specific
 - Public uploads: `/srv/quest-esports/uploads`
 - Private payment evidence: `/srv/quest-esports/private`
-- CI/CD: GitHub Actions; the normal flow is `main` push -> CI -> backend CD -> frontend deployment
+- CI/CD: GitHub Actions; the normal flow is `main` push -> CI -> container image build -> immutable Compose release -> frontend deployment
 
-Supabase remains the source of truth until the final maintenance-window commit. During that transition it is temporary rollback material, not a second writable production database. After the first VPS writer is admitted, Supabase is stale recovery material and must not be selected by an automatic URL toggle. Deletion and credential rotation require a final verified backup, the completed observation gate, and explicit owner approval.
+The database cutover already occurred on 2026-08-31. Supabase is intact but
+stale recovery material, not a rollback target, and must not be selected by an
+automatic URL toggle. No rehearsal was performed: the hard rehearsal gate was
+skipped and cannot be satisfied retroactively. Deletion and credential rotation
+remain separate owner decisions after a verified backup and observation record.
+
+The scheduled backup has failed since 2026-08-30 04:20 because the host is
+missing the certificate and `POSTGRES_TARGET_*` settings required by
+`backup-production-multi-remote.sh`. The interim
+`quest-pg17-interim-backup.{service,timer}` unit covers the gap and must be
+removed once the real pipeline is provisioned. The missing TLS material blocks
+both Compose adoption and the backup pipeline. Unrestricted deploy-root access
+and two GitHub Actions keys remain active trust risks for Tasks 3 and 6.
+
+The official PostgreSQL and VALORANT images do not require external Cosign
+signer settings. PostgreSQL is trusted by the exact approved digest, while
+Quest frontend/backend/migrator images use Quest-only Cosign verification.
+
+### Production deployment authority
+
+The protected repository variable `PRODUCTION_DEPLOYMENT_MODE` selects the
+production deployment path. The intended Compose authority is
+`deploy-compose.yml`, and the frontend workflow follows only its successful
+`Deploy immutable Compose release` run; however, TLS gaps currently block
+Compose adoption on the live host. Do not create a second automatic production
+trigger. The legacy PM2 `CD` workflow remains runnable only when the variable is
+explicitly set to `legacy-pm2` for historical recovery. All production
+deployment workflows use the shared `production-release` concurrency group.
 
 ## Required Ownership And Permissions
 
@@ -37,7 +100,7 @@ chmod 700 /srv/quest-esports/private
 
 The backend creates the required child directories. Never expose `PRIVATE_UPLOAD_ROOT` through Nginx or `/api/uploads`.
 
-## Owner gates before VPS mutation
+## Historical pre-cutover owner gates (already passed or skipped)
 
 This worktree records the procedure, not live host evidence. Before any root
 bootstrap or migration, the owner must record the categorized Supabase egress
@@ -65,7 +128,7 @@ rule without stopping PM2 or legacy VALORANT services. No bootstrap, service
 stop, production restore, migration, or database-authority change is performed
 by the repository rehearsal flow.
 
-## VPS PostgreSQL 17 migration procedure
+## Historical pre-cutover PostgreSQL 17 migration procedure
 
 The following procedure is the live-operator handoff for Task 8. It is not a
 claim that any command has been run. Record each result in a private change
@@ -230,7 +293,7 @@ and recorded the selected recovery point.
 
 Never replace this lifecycle with a Supabase URL or an unimplemented utility.
 
-### Rehearse before the maintenance window
+### Historical rehearsal gate (not performed)
 
 Use a current encrypted two-schema archive and its exact `.sha256` sibling on
 an isolated recovery host. Use pinned PostgreSQL 17 `psql`, `pg_restore`, and
@@ -243,7 +306,7 @@ RPO/RTO. Its live gate token is
 `owner_deployment_host_evidence_required`; repository fixtures cannot provide
 that evidence.
 
-### Final coordinated cutover order
+### Historical final coordinated cutover order (superseded; not performed)
 
 Run the root-owned `cutover.sh` wrapper with the full approved release SHA and
 manifest. It must perform these actions in order:
@@ -513,6 +576,15 @@ Store the output securely in `AUTH_ENCRYPTION_KEY`; never paste it into tickets,
 Repository variable:
 
 ```text
+PRODUCTION_DEPLOYMENT_MODE=compose
+COMPOSE_DEPLOY_ENABLED=true
+FRONTEND_DEPLOY_ENABLED=true
+```
+
+The legacy PM2 rollback path alone may use:
+
+```text
+PRODUCTION_DEPLOYMENT_MODE=legacy-pm2
 BACKEND_DEPLOY_ENABLED=true
 ```
 
@@ -540,11 +612,14 @@ VERCEL_ORG_ID=<Vercel organization ID>
 VERCEL_PROJECT_ID=<Vercel project ID>
 ```
 
-The automatic workflows promote the exact successful upstream SHA: backend CD
-uses the successful `CI` run's `main` commit, and frontend deployment uses the
-successful backend CD run's same commit. A failed CI run prevents backend and
-frontend deployment; a failed backend CD run prevents frontend deployment.
-Both workflows retain manual dispatch for emergency/manual redeploys.
+The Compose workflow promotes the exact successful upstream SHA from its
+immutable manifest. Frontend deployment follows only a successful `Deploy
+immutable Compose release` run and promotes that run's exact `main` SHA. A
+failed CI or Compose release prevents frontend deployment. The legacy PM2 CD
+workflow retains its manual/CI triggers only for rollback history and is gated
+by `PRODUCTION_DEPLOYMENT_MODE=legacy-pm2`; it must remain disabled before and
+after the Compose cutover. All workflows retain manual dispatch subject to
+their protected mode gate.
 
 Generate the pinned host line only from a trusted VPS session:
 
@@ -562,9 +637,39 @@ Two different SSH directions are involved:
 
 The repository deploy key remains read-only.
 
-If a deployment reports that the production mobile OAuth redirect is stale or missing, manually dispatch `CD` with `repair_mobile_oauth_redirect=true`. The repair derives the required `/mobile-admin-oauth` App Link from the existing HTTPS `API_PUBLIC_URL`, adds or updates the entry while refusing duplicates, preserves `.env` permissions, and does not print environment values.
+### Legacy PM2 repair exception
 
-Store the SHA-256 fingerprint verified from a signed Quest Admin APK as the production environment secret `MOBILE_ADMIN_ANDROID_CERT_SHA256`. If the VPS value is stale or missing, manually dispatch `CD` with `repair_mobile_android_fingerprint=true`. The repair validates the secret format, adds or updates exactly one environment entry, preserves `.env` permissions, and never prints the fingerprint or environment contents.
+The `repair_mobile_oauth_redirect`, `repair_mobile_android_fingerprint`,
+`repair_database_ssl`, `repair_legacy_media`,
+`optimize_tournament_banners`, `optimize_event_album_photos`, and
+`initialize_match_rooms` inputs belong to the legacy PM2 `CD` workflow. They
+must not be dispatched while `PRODUCTION_DEPLOYMENT_MODE=compose`, because the
+Compose workflow is the production authority and the frontend follows only a
+successful Compose release. For a repair that cannot wait for the Compose
+path, the owner must explicitly perform this temporary rollback transition:
+
+1. Confirm no Compose release or frontend promotion is in flight.
+2. Change the protected **repository** variable to
+   `PRODUCTION_DEPLOYMENT_MODE=legacy-pm2`.
+3. Dispatch `CD` with only the required repair input, review its owner-gated
+   result, and do not treat it as a normal production release.
+4. Restore the protected repository variable to
+   `PRODUCTION_DEPLOYMENT_MODE=compose` immediately after the repair, including
+   after a failed or cancelled run, before resuming Compose releases.
+
+If a deployment reports that the production mobile OAuth redirect is stale or
+missing, use that explicit transition before dispatching `CD` with
+`repair_mobile_oauth_redirect=true`. The repair derives the required
+`/mobile-admin-oauth` App Link from the existing HTTPS `API_PUBLIC_URL`, adds or
+updates the entry while refusing duplicates, preserves `.env` permissions, and
+does not print environment values.
+
+Store the SHA-256 fingerprint verified from a signed Quest Admin APK as the
+production environment secret `MOBILE_ADMIN_ANDROID_CERT_SHA256`. If the VPS
+value is stale or missing, use the same explicit transition before dispatching
+`CD` with `repair_mobile_android_fingerprint=true`. The repair validates the
+secret format, adds or updates exactly one environment entry, preserves `.env`
+permissions, and never prints the fingerprint or environment contents.
 
 ## PM2 And Automatic Boot
 
@@ -767,18 +872,19 @@ systemd, registry, or sibling-repository verification.
 
 1. Push to `main`.
 2. CI runs backend audit, migrations against PostgreSQL 16, migration/schema verification, coverage, lint, frontend audit/lint/unit tests/build, and Playwright.
-3. After CI succeeds, automatic backend CD deploys the exact successful CI commit SHA.
-4. CD pauses for approval before its first step. Open `Actions -> the CD run -> Review deployments`, tick **Production**, and approve. This is the `Production` environment's required-reviewer rule, so it applies to every backend deployment, not only migrations, and needs nothing set up per release. A pending deployment shows as `Waiting`.
+3. After CI succeeds, the image workflow publishes the immutable manifest and the Compose workflow deploys the exact approved release when `PRODUCTION_DEPLOYMENT_MODE=compose`.
+4. Compose pauses for approval before its first deployment step. Open `Actions -> the Deploy immutable Compose release run -> Review deployments`, tick **production-compose**, and approve. The protected environment approval and mode gate apply to every Compose deployment.
 
-   Destructive or backward-incompatible migrations additionally require the `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` secret to equal the exact 40-character deploying commit SHA. One click approves a deployment; dropping a column deserves a second, deliberate act that names the commit. Set it on the **`Production` environment**, not repository secrets — the `backend-deploy` job declares `environment: production`, and an environment secret of the same name overrides the repository one, so with both present the repository value is never read and editing it appears to do nothing. A populated value logs as `***`; an empty one logs as blank, which is the quickest way to tell whether CD received it. That SHA must match the commit being deployed, so any push to `main` between setting it and deploying invalidates it.
+   A Compose release with a destructive or backward-incompatible migration requires the protected owner approval and the exact release-bound migration approval contract before applying it. The legacy PM2 rollback path additionally requires `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` to equal the exact 40-character deploying commit SHA. One click approves a deployment; dropping a column deserves a second, deliberate act that names the commit. That SHA must match the commit being deployed, so any push to `main` between setting it and deploying invalidates it.
 
-   When migrations are pending, CD creates an encrypted off-site backup before applying them.
-5. CD installs backend dependencies, generates Prisma, lints, applies production migrations, verifies RLS/Data API privileges, restarts PM2, checks health plus public tournament/product/capability reads, and saves the process list.
-6. After backend CD succeeds, automatic frontend deployment promotes that same exact SHA after validating the successful CI run and live API compatibility.
+   When migrations are pending, the release-bound Compose backup contract must succeed before applying them. The legacy PM2 CD backup contract applies only when `PRODUCTION_DEPLOYMENT_MODE=legacy-pm2` is explicitly selected.
+5. Compose invokes the root-owned immutable release contract, validates the exact image manifest and protected approvals, and performs the coordinated production release without source checkout, npm, or PM2 on the VPS.
+6. The Compose workflow's final `release-success` job requires both the resolver and actual `deploy` job to succeed and uploads the exact `compose-release-success` proof artifact. Its stable workflow identifier is the whitespace-free `compose_workflow=Deploy_immutable_Compose_release`; a skipped/no-op Compose release cannot produce that proof or a successful workflow completion.
+7. After Compose succeeds, automatic frontend deployment follows that successful `Deploy immutable Compose release` run, downloads and validates the proof from that exact run, and promotes the same exact SHA only after validating the successful CI run and live API compatibility.
 
-Emergency/manual redeploy: GitHub `Actions -> CD -> Run workflow` or `Actions -> Deploy frontend -> Run workflow`. Each manual job redeploys the exact supplied commit and refuses to continue unless the required successful upstream checks pass. The CD workflow does not enforce that a manually dispatched ref is `main`; dispatch from `main` to preserve the documented main-only promotion intent.
+Emergency/manual redeploy: GitHub `Actions -> Deploy immutable Compose release -> Run workflow` or `Actions -> Deploy frontend -> Run workflow`. Use `Actions -> CD -> Run workflow` only for explicit legacy PM2 rollback with `PRODUCTION_DEPLOYMENT_MODE=legacy-pm2`. Each manual job refuses to continue unless its protected mode and required successful upstream checks pass. The owner should dispatch from `main` to preserve the documented main-only promotion intent.
 
-The `repair_database_ssl` input is a narrowly scoped recovery option for an older VPS `.env` whose `DATABASE_URL` or `DIRECT_URL` predates the explicit TLS requirement. It updates only those two URL entries to `sslmode=require`, preserves `.env` permissions, and never prints credentials. Leave it disabled during normal deployments. After a successful repair deployment, future deployments validate the stored values without changing them.
+The `repair_database_ssl` input is a narrowly scoped recovery option for an older VPS `.env` whose `DATABASE_URL` or `DIRECT_URL` predates the explicit TLS requirement. It updates only those two URL entries to `sslmode=verify-full` with the provisioned private CA, preserves `.env` permissions, and never prints credentials. Leave it disabled during normal deployments. After a successful repair deployment, future deployments validate the stored values without changing them.
 
 For a confirmed missing-file incident affecting packaged legacy posters, enable
 the `repair_legacy_media` workflow input. The deployment then runs the idempotent
@@ -1001,7 +1107,7 @@ The repository provides:
 - `ops/systemd/quest-esports-backup-freshness.service`
 - `ops/systemd/quest-esports-backup-freshness.timer`
 
-The backup includes a portable custom-format dump of the application-owned PostgreSQL `public` and `valorant` schemas, public uploads, private payment evidence, and a manifest (which records `valorant_schema_included`). Supabase-managed schemas and extensions are intentionally excluded because they are provisioned by Supabase and prevent portable restores on ordinary PostgreSQL. The archive is encrypted with an offline `age` recipient before upload through `rclone`. Keep the `age` private identity off the production VPS.
+The backup includes a portable custom-format dump of the application-owned PostgreSQL `public` and `valorant` schemas, public uploads, private payment evidence, and a manifest (which records `valorant_schema_included`). Non-application schemas and extensions are intentionally excluded from the portable dump so it can be restored on ordinary PostgreSQL; this is not a dependency on Supabase. The archive is encrypted with an offline `age` recipient before upload through `rclone`. Keep the `age` private identity off the production VPS.
 
 Install the prerequisites and configuration:
 
@@ -1030,7 +1136,7 @@ Use a dedicated Google Cloud project and OAuth desktop client for the Drive remo
 
 Edit `/etc/quest-esports-backup.env` without printing its values. The
 checked-in backup service contract is for the PostgreSQL 17 VPS target, not the
-Paris Supabase session pooler: set `DIRECT_URL` to the exact
+retired Supabase session pooler: set `DIRECT_URL` to the exact
 `quest_backup@127.0.0.1:55432/quest` target represented by
 `ops/quest-esports-backup.env.example`, plus both upload roots, the offline
 `age` public recipient, `RCLONE_CONFIG=/srv/quest-esports/rclone/quest-esports.conf`,
@@ -1138,7 +1244,7 @@ not an implicit compatibility claim. No live VPS, Supabase, rclone remote,
 hosted health endpoint, or sibling repository is contacted by the fixture
 rehearsal.
 
-### Local Paris database snapshot on Windows
+### Historical/local Paris database snapshot on Windows
 
 For an immediate database-only snapshot from the secured development PC, run:
 
@@ -1148,7 +1254,7 @@ cd D:\Work\Projects\QuestEsports
 .\ops\test-paris-database-backup-windows.ps1
 ```
 
-The first command reads the Paris `DIRECT_URL` without printing it, dumps only the application `public` schema, encrypts the result with the offline recovery recipient, writes a checksum, and removes plaintext staging data. The second command verifies the checksum and restores the latest archive into a disposable PostgreSQL 17 container. Files are stored under `D:\Work\QuestEsports-backups\paris-database` with restricted ACLs.
+The first command reads the historical/local Paris `DIRECT_URL` without printing it, dumps only the application `public` schema, encrypts the result with the offline recovery recipient, writes a checksum, and removes plaintext staging data. The second command verifies the checksum and restores the latest archive into a disposable PostgreSQL 17 container. Files are stored under `D:\Work\QuestEsports-backups\paris-database` with restricted ACLs. This is not the live VPS backup or recovery path.
 
 This Windows snapshot does not contain production VPS uploads and is not a substitute for the scheduled full VPS backup or its off-site copy.
 
@@ -1164,7 +1270,7 @@ RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION \
   bash ops/restore-production-backup.sh /absolute/path/to/quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc
 ```
 
-Do not point a restore drill at Paris production. The rehearsal must use pinned
+Do not point a restore drill at live VPS production. The rehearsal must use pinned
 PostgreSQL 17 clients and the existing restore primitive's
 `pg_restore --no-owner --no-acl --single-transaction --exit-on-error` path,
 then verify the roles/default privileges/grants separately. Record the
@@ -1190,9 +1296,14 @@ archive/checksum upload and restricted systemd service run after the switch.
 These records are not current proof of remote, token, or service state; the
 owner must verify them before relying on the destination.
 
-### Supabase Data API
+### Historical/test Supabase Data API
 
-The application uses Prisma, not the Supabase Data API. Disable Data API for the Paris project in Supabase Dashboard. The database migration also enables RLS and revokes table privileges from `anon`, `authenticated`, and `service_role`; `npm run prisma:security:verify` enforces that state during CI and deployment.
+The application uses Prisma, not the Supabase Data API. If an isolated test or
+historical Supabase project is retained, disable its Data API and verify its
+settings separately; it is not the production database or rollback target. The
+database migration also enables RLS and revokes table privileges from `anon`,
+`authenticated`, and `service_role`; `npm run prisma:security:verify` enforces
+that state during CI and deployment.
 
 ## External-Service Readiness
 

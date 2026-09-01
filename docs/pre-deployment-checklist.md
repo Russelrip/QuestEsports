@@ -18,7 +18,7 @@ configuration and smoke check in the final column.
 | Maintenance mode | The frontend serves a branded non-cacheable `503` page; the backend protects ordinary API routes while preserving liveness and PayHere notifications; CD recognizes intentional maintenance readiness. | Test enable/disable ordering in preview or locally. Keep frontend and backend values identical, and use a PM2 stop—not maintenance mode—for any true write freeze. |
 | Migration approval and backup | Every backend deploy pauses for the `Production` environment's required reviewer, and a migration-changing deploy creates an overlap-safe, remotely content-verified encrypted database/upload backup before migration. Destructive SQL additionally requires the exact-SHA `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` approval. | Confirm `/etc/quest-esports-backup.env`, the offline `age` recipient, the project-owned Google OAuth client and least-privilege `rclone` destination, a tested `OnFailure` alert, approved/dry-run retention, and a recent restore drill before setting either one-release approval SHA. |
 | Disaster credentials | The archive deliberately excludes the backend `.env`, OAuth/rclone material, platform keys, and infrastructure configuration. | Confirm a separate encrypted, access-controlled recovery copy exists and can be retrieved by the approved custodian without using Git, chat, tickets, or ordinary cloud storage. |
-| Database API exposure | The hardening migration enables RLS and revokes Data API table grants; `npm run prisma:security:verify` fails if exposure returns. | Disable the unused Data API in the Paris Supabase dashboard and run the verifier against production after migration. |
+| Database API exposure | The hardening migration enables RLS and revokes unneeded table grants; `npm run prisma:security:verify` fails if exposure returns. | Verify the live VPS PostgreSQL 17.11 service in `quest-postgres` and run the verifier against production after migration. The separate isolated staging Supabase project is test-only; the stale Supabase project retained from the former production environment is recovery material only. Neither is the production database. |
 | Search discovery | Next.js generates `/sitemap.xml`; `/robots.txt` advertises it; canonical public and dynamic routes are covered by sitemap unit tests. | Confirm both production endpoints return `200`, parse the sitemap XML, verify only canonical/indexable URLs are present, and review the Search Console Sitemaps report. |
 
 ## Required External Evidence
@@ -28,7 +28,7 @@ Repository checks do not prove that production control-plane services are config
 - an encrypted off-site backup and an isolated restore drill using the current backup/restore scripts
 - a separately encrypted secret/infrastructure recovery package and an independent retrieval/decryption test
 - backup failure and freshness alerts, approved retention values, and a reviewed retention dry run
-- production Supabase health, disabled Data API, RLS verification, and capacity
+- live VPS PostgreSQL/`quest-postgres` health, RLS verification, and capacity
 - mail delivery, monitoring/alert delivery, persistent upload mounts, DNS, TLS, and Vercel/backend readiness
 - enabled PayHere callbacks, return/cancel behavior, reconciliation, and refund handling
 

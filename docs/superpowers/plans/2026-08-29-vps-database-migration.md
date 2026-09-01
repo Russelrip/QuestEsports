@@ -10,6 +10,24 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-29-vps-database-migration-design.md`
 
+## Execution reconciliation (2026-08-31)
+
+The database cutover completed on 2026-08-31 ahead of the remaining Compose
+adoption work. Quest and VALORANT currently use PostgreSQL 17.11 in VPS
+container `quest-postgres` at `127.0.0.1:5433`; Supabase is intact but stale and
+is not a rollback target. No rehearsal was performed, and the rehearsal gate
+cannot be satisfied retroactively.
+
+The current PostgreSQL container is ad hoc rather than Compose-managed. Missing
+TLS material blocks both Compose adoption and the real backup pipeline; the
+scheduled backup has failed since 2026-08-30 04:20 and the interim
+`quest-pg17-interim-backup.{service,timer}` unit covers the gap. Host bootstrap,
+TLS/backup provisioning, and remediation of unrestricted deploy-root access and
+two GitHub Actions keys remain operator gates. External PostgreSQL/VALORANT
+Cosign signer settings are not required. This reconciliation records state and
+constraints only; it does not invent live verification, rehearsal evidence, or
+owner approval.
+
 ## Global Constraints
 
 - PostgreSQL 17 image: `postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0`.

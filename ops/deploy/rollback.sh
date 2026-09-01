@@ -92,7 +92,7 @@ validate_bundle_images() {
   for key in "${image_keys[@]}"; do
     value="$(awk -F= -v k="$key" '$1 == k { print substr($0, index($0,"=")+1); found=1 } END { if (!found) exit 1 }' "$bundle/.env")" || die "$bundle/.env is missing $key."
     case "$key" in
-      POSTGRES_IMAGE) [[ "$value" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe PostgreSQL image." ;;
+      POSTGRES_IMAGE) [[ "$value" == 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' ]] || die "$bundle/.env has an unapproved PostgreSQL image." ;;
       *) [[ "$value" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe $key." ;;
     esac
   done

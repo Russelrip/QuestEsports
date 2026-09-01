@@ -28,14 +28,14 @@ chmod 644 "$root/ca.crt"
 # test process below is not privileged and must read the files as 999:999.
 docker run --rm --user 0:0 --entrypoint sh \
   --mount "type=bind,source=$root,target=/fixture" \
-  "$image" sh -ec 'chown 0:999 /fixture/password /fixture/server.crt /fixture/server.key; chmod 0640 /fixture/password /fixture/server.crt /fixture/server.key; chown 0:0 /fixture/ca.crt; chmod 0644 /fixture/ca.crt'
+  "$image" -ec 'chown 0:999 /fixture/password /fixture/server.crt /fixture/server.key; chmod 0640 /fixture/password /fixture/server.crt /fixture/server.key; chown 0:0 /fixture/ca.crt; chmod 0644 /fixture/ca.crt'
 
 docker run --rm --user 999:999 --entrypoint sh \
   --mount "type=bind,source=$root/password,target=/run/secrets/postgres-admin-password,readonly" \
   --mount "type=bind,source=$root/server.crt,target=/run/postgresql/tls/server.crt,readonly" \
   --mount "type=bind,source=$root/ca.crt,target=/run/postgresql/tls/ca.crt,readonly" \
   --mount "type=bind,source=$root/server.key,target=/run/postgresql/tls/server.key,readonly" \
-  "$image" sh -ec '
+  "$image" -ec '
     test "$(id -u):$(id -g)" = 999:999
     test -r /run/secrets/postgres-admin-password
     test -r /run/postgresql/tls/server.crt

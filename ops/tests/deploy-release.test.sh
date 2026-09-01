@@ -7,6 +7,7 @@ cutover_script="$script_directory/deploy/cutover.sh"
 host_validation_script="$script_directory/deploy/validate-host.sh"
 workflow_file="$script_directory/../.github/workflows/build-container-images.yml"
 deploy_workflow_file="$script_directory/../.github/workflows/deploy-compose.yml"
+frontend_workflow_file="$script_directory/../.github/workflows/deploy-frontend.yml"
 work_directory="$(mktemp -d)"
 trap 'rm -rf -- "$work_directory"' EXIT
 base_path="$PATH"
@@ -138,7 +139,7 @@ EOF
   cat > "$fixture/releases/$previous_sha/.env" <<EOF
 QUEST_FRONTEND_IMAGE=ghcr.io/quest/frontend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 QUEST_BACKEND_IMAGE=ghcr.io/quest/backend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-POSTGRES_IMAGE=postgres:17-bookworm@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+POSTGRES_IMAGE=postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
 VALORANT_IMAGE=ghcr.io/quest/valorant@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 MIGRATOR_IMAGE=ghcr.io/quest/migrator@sha256:4444444444444444444444444444444444444444444444444444444444444444
 EOF
@@ -184,7 +185,7 @@ fi
 if [[ "$1" == inspect ]]; then
   case "$2" in
     quest-backend-1) [[ "${BAD_ALIAS_BINDING:-0}" != 1 ]] || printf 'valorant-prod|valorant-platform|ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555\n'; [[ "${BAD_ALIAS_BINDING:-0}" == 1 ]] || printf 'quest-prod|backend|ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222\n' ;;
-    quest-postgres-1) printf 'quest-prod|postgres|postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333\n' ;;
+    quest-postgres-1) printf 'quest-prod|postgres|postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0\n' ;;
     valorant-platform-1) printf 'valorant-prod|valorant-platform|ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555\n' ;;
     *) exit 1 ;;
   esac
@@ -223,7 +224,7 @@ if [[ " $* " == *' config --images '* ]]; then
     printf '%s\n' \
       'ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111' \
       'ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222' \
-      'postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333'
+      'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
   fi
 elif [[ " $* " == *' config --no-env-resolution --format json '* || " $* " == *' config --no-env-resolution --format json' ]]; then
   printf 'compose project=%s action=config-json\n' "$project" >> "$log"
@@ -264,7 +265,7 @@ elif [[ " $* " == *' ps '* ]]; then
       fi
       printf '{"Name":"quest-backend-1","Service":"backend","State":"%s","Image":"%s","Project":"quest-prod"}\n' "$backend_state" "$backend_image"
       if [[ "${TOPOLOGY_MISSING:-0}" != 1 ]]; then
-        printf '%s\n' '{"Name":"quest-postgres-1","Service":"postgres","State":"running","Image":"postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333","Project":"quest-prod"}'
+        printf '%s\n' '{"Name":"quest-postgres-1","Service":"postgres","State":"running","Image":"postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0","Project":"quest-prod"}'
       fi
       [[ "${TOPOLOGY_STALE:-0}" == 1 ]] && printf '%s\n' '{"Name":"quest-old-worker-1","Service":"old-worker","State":"running","Image":"ghcr.io/quest/old@sha256:9999999999999999999999999999999999999999999999999999999999999999","Project":"quest-prod"}' || true
     else
@@ -298,9 +299,13 @@ if [[ "$1" == -c && "$2" == %a && "$3" == *backup-client && "$3" != *backup-clie
   printf '%s\n' "${BACKUP_CLIENT_DIR_MODE:-750}"
   exit 0
 fi
-if [[ "$1" == -c && "$2" == %a && ( "$3" == *backup-client-ca.crt || "$3" == *backup-client.crt || "$3" == *backup-client.key ) ]]; then
-  printf '%s\n' 640
-  exit 0
+if [[ "$1" == -c && "$2" == %a ]]; then
+  case "${3##*/}" in
+    backup-client-ca.crt|backup-client.crt|backup-client.key)
+      printf '%s\n' 640
+      exit 0
+      ;;
+  esac
 fi
 exec /usr/bin/stat "$@"
 EOF
@@ -361,8 +366,11 @@ done
 printf 'cosign image=%s identity=%s issuer=%s\n' "$image" "$identity" "$issuer" >> "$log"
 if [[ "${REQUIRE_ARTIFACT_TRUST_POLICY:-0}" == 1 ]]; then
   case "$image" in
-    postgres:17-bookworm@*) [[ "$identity" == postgres-fixture-identity && "$issuer" == postgres-fixture-issuer ]] || exit 1 ;;
-    ghcr.io/quest/valorant@*) [[ "$identity" == valorant-fixture-identity && "$issuer" == valorant-fixture-issuer ]] || exit 1 ;;
+    ghcr.io/quest/frontend@*|ghcr.io/quest/backend@*|ghcr.io/quest/migrator@*)
+      [[ "$identity" == fixture-identity && "$issuer" == fixture-issuer ]] || exit 1 ;;
+    *)
+      printf 'FAIL: external image reached Quest Cosign verifier: %s\n' "$image" >&2
+      exit 1 ;;
   esac
 fi
 exit 0
@@ -504,14 +512,10 @@ CUTOVER_SUPABASE_URL_RESTORE_COMMAND=$fixture/bin/cutover-url-restore
 COSIGN_BIN=$fixture/bin/cosign
 QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP=fixture-identity
 QUEST_COSIGN_OIDC_ISSUER=fixture-issuer
-POSTGRES_COSIGN_CERTIFICATE_IDENTITY_REGEXP=postgres-fixture-identity
-POSTGRES_COSIGN_OIDC_ISSUER=postgres-fixture-issuer
-VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP=valorant-fixture-identity
-VALORANT_COSIGN_OIDC_ISSUER=valorant-fixture-issuer
 QUEST_FRONTEND_IMAGE_APPROVED_REF=ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111
 QUEST_BACKEND_IMAGE_APPROVED_REF=ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222
 MIGRATOR_IMAGE_APPROVED_REF=ghcr.io/quest/migrator@sha256:4444444444444444444444444444444444444444444444444444444444444444
-POSTGRES_IMAGE_APPROVED_REF=postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333
+POSTGRES_IMAGE_APPROVED_REF=postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
 VALORANT_IMAGE_APPROVED_REF=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555
 BACKUP_FRESHNESS_COMMAND=$fixture/bin/backup-freshness
 BACKUP_COMMAND=$fixture/bin/backup
@@ -555,7 +559,7 @@ POSTGRES_COMPOSE_CA_FILE=$fixture/ca.crt
 POSTGRES_COMPOSE_CERT_FILE=$fixture/postgres.crt
 POSTGRES_COMPOSE_KEY_FILE=$fixture/postgres.key
 BACKUP_CLIENT_TLS_DIR=$fixture/backup-client
-BACKUP_CLIENT_CA_FILE=$fixture/backup-client/backup-client-ca.crt
+POSTGRES_CA_FILE=$fixture/backup-client/backup-client-ca.crt
 BACKUP_CLIENT_CERT_FILE=$fixture/backup-client/backup-client.crt
 BACKUP_CLIENT_KEY_FILE=$fixture/backup-client/backup-client.key
 QUEST_RUNTIME_ENV_FILE=$fixture/quest.production.env
@@ -606,7 +610,7 @@ commit_sha=1111111111111111111111111111111111111111
 frontend_image=ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111
 backend_image=ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222
 migrator_image=ghcr.io/quest/migrator@sha256:4444444444444444444444444444444444444444444444444444444444444444
-postgres_image=postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333
+postgres_image=postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
 valorant_image=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555
 EOF
 }
@@ -779,6 +783,10 @@ setup_fixture valorant-digest-mismatch
 export BAD_VALORANT_DIGEST=1
 assert_failed valorant-digest-mismatch run_release
 
+setup_fixture wrong-postgres-approved-reference
+sed -i 's#^POSTGRES_IMAGE_APPROVED_REF=.*#POSTGRES_IMAGE_APPROVED_REF=postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333#' "$fixture/release.env"
+assert_failed wrong-postgres-approved-reference run_release
+
 setup_fixture migrator-digest-mismatch
 export MIGRATION_PENDING=1 REQUIRE_MIGRATION_RECHECK=1 BACKUP_APPROVAL=BACKUP_QUEST_PRODUCTION
 export QUEST_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
@@ -877,12 +885,70 @@ if grep -Fq 'POSTGRES_17_BOOKWORM_DIGEST#sha256' <<<"$workflow_source"; then
   printf 'FAIL: workflow strips the PostgreSQL sha256 algorithm prefix\n' >&2
   exit 1
 fi
-grep -Eq "postgres_image=postgres:17-bookworm@%s.*POSTGRES_17_BOOKWORM_DIGEST" "$workflow_file" || {
-  printf 'FAIL: workflow does not emit the complete PostgreSQL digest reference\n' >&2
+approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+grep -Fq "$approved_postgres_ref" "$workflow_file" || {
+  printf 'FAIL: workflow does not pin the approved PostgreSQL digest reference\n' >&2
   exit 1
 }
+if grep -Eq 'postgres:17-bookworm@sha256:\[0-9a-f\]\{64\}|postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675' "$workflow_file"; then
+  printf 'FAIL: workflow retains a flexible or rejected PostgreSQL digest contract\n' >&2
+  exit 1
+fi
 
 deploy_workflow_source="$(< "$deploy_workflow_file")"
+frontend_workflow_source="$(< "$frontend_workflow_file")"
+grep -Fq 'vnd.docker.reference.digest' "$deploy_workflow_file" || { printf 'FAIL: attestation descriptors are not bound to the image digest\n' >&2; exit 1; }
+grep -Fq 'subject' "$deploy_workflow_file" || { printf 'FAIL: deploy workflow does not decode attestation subjects\n' >&2; exit 1; }
+grep -Fq 'predicateType' "$deploy_workflow_file" || { printf 'FAIL: deploy workflow does not inspect the in-toto predicate type\n' >&2; exit 1; }
+grep -Fq 'QUEST_BUILD_WORKFLOW' "$workflow_file" || { printf 'FAIL: build workflow does not carry the expected workflow identity into provenance\n' >&2; exit 1; }
+builder_identity='https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main'
+[[ "$(grep -Fc 'builder-id=https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main' "$workflow_file")" == 3 ]] || { printf 'FAIL: build workflow does not carry the stable builder identity into all provenance builds\n' >&2; exit 1; }
+grep -Fq "$builder_identity" "$deploy_workflow_file" || { printf 'FAIL: deploy workflow does not enforce the approved stable builder identity\n' >&2; exit 1; }
+for ssh_contract in 'StrictHostKeyChecking=yes' 'BatchMode=yes' 'ConnectTimeout=10' 'timeout --foreground' 'UserKnownHostsFile=' 'GlobalKnownHostsFile=/dev/null'; do
+  grep -Fq -- "$ssh_contract" "$deploy_workflow_file" || { printf 'FAIL: Compose SSH contract lacks %s\n' "$ssh_contract" >&2; exit 1; }
+done
+if grep -Fq '"sudo -n -- /usr/local/sbin/quest-esports-release' "$deploy_workflow_file"; then
+  printf 'FAIL: Compose remote command is still generated as a quote-breaking shell string\n' >&2
+  exit 1
+fi
+if grep -Fq "APP_DIR='" "$script_directory/../.github/workflows/cd.yml"; then
+  printf 'FAIL: legacy remote invocation still interpolates configuration into shell source\n' >&2
+  exit 1
+fi
+
+# Execute the exact embedded in-toto statement validator against malformed,
+# missing, and mismatched fixtures. This test never contacts a registry.
+attestation_validator="$work_directory/attestation-validator.sh"
+awk '/^          validate_buildkit_statement\(\) \{$/ { capture=1 } capture && /^          while IFS= read -r image_key; do$/ { exit } capture { sub(/^          /, ""); print }' "$deploy_workflow_file" > "$attestation_validator"
+printf '%s\n' 'validate_buildkit_statement "$@"' >> "$attestation_validator"
+chmod 755 "$attestation_validator"
+attestation_digest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+attestation_sha=1111111111111111111111111111111111111111
+attestation_repo=Russelrip/QuestEsports
+attestation_image=ghcr.io/russelrip/quest-backend
+attestation_valid="$work_directory/attestation-valid.json"
+python3 -c "import json,sys; p,d,s,r,i,b=sys.argv[1:]; json.dump({'_type':'https://in-toto.io/Statement/v1','subject':[{'name':'_','digest':{'sha256':d}}],'predicateType':'https://slsa.dev/provenance/v1','predicate':{'buildDefinition':{'buildType':'https://mobyproject.org/buildkit@v1','externalParameters':{'request':{'args':{'QUEST_BUILD_REVISION':s,'QUEST_BUILD_REPOSITORY':r,'QUEST_BUILD_BRANCH':'main','QUEST_BUILD_WORKFLOW':'Build container images'}}}},'runDetails':{'builder':{'id':b}}}},open(p,'w',encoding='utf-8'))" "$attestation_valid" "$attestation_digest" "$attestation_sha" "$attestation_repo" "$attestation_image" 'https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main'
+run_attestation_validator() { "$attestation_validator" "$1" 'https://slsa.dev/provenance/v1' "$attestation_image" "sha256:$attestation_digest" "$attestation_sha" "$attestation_repo" main 'Build container images' 'https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main'; }
+run_attestation_validator "$attestation_valid"
+printf '%s\n' '{not-json}' > "$work_directory/attestation-malformed.json"
+assert_failed malformed-attestation run_attestation_validator "$work_directory/attestation-malformed.json"
+python3 -c "import json,sys; d=json.load(open(sys.argv[2],encoding='utf-8')); d.pop('subject'); json.dump(d,open(sys.argv[1],'w',encoding='utf-8'))" "$work_directory/attestation-missing-subject.json" "$attestation_valid"
+assert_failed missing-attestation-subject run_attestation_validator "$work_directory/attestation-missing-subject.json"
+for mismatch in digest repository branch workflow revision buildtype builder; do
+  python3 -c "import json,sys; p,s,m=sys.argv[1:]; d=json.load(open(s,encoding='utf-8')); a=d['predicate']['buildDefinition']['externalParameters']['request']['args']; d['subject'][0]['digest']['sha256']='b'*64 if m=='digest' else None; a['QUEST_BUILD_REPOSITORY']='attacker/other' if m=='repository' else a['QUEST_BUILD_REPOSITORY']; a['QUEST_BUILD_BRANCH']='feature' if m=='branch' else a['QUEST_BUILD_BRANCH']; a['QUEST_BUILD_WORKFLOW']='Untrusted workflow' if m=='workflow' else a['QUEST_BUILD_WORKFLOW']; a['QUEST_BUILD_REVISION']='2'*40 if m=='revision' else a['QUEST_BUILD_REVISION']; d['predicate']['buildDefinition']['buildType']='https://attacker.invalid/build' if m=='buildtype' else d['predicate']['buildDefinition']['buildType']; d['predicate']['runDetails']['builder']['id']='wrong-builder' if m=='builder' else d['predicate']['runDetails']['builder']['id']; json.dump(d,open(p,'w',encoding='utf-8'))" "$work_directory/attestation-$mismatch.json" "$attestation_valid" "$mismatch"
+  assert_failed "wrong-attestation-$mismatch" run_attestation_validator "$work_directory/attestation-$mismatch.json"
+done
+setup_fixture host-validator-backup-client-active-name
+[[ "$(run_host_validation)" == validated ]] || { printf 'FAIL: active POSTGRES_CA_FILE backup contract was rejected\n' >&2; exit 1; }
+
+setup_fixture host-validator-backup-client-stale-name
+sed -i '/^POSTGRES_CA_FILE=/d' "$fixture/release.env"
+printf '%s\n' "BACKUP_CLIENT_CA_FILE=$fixture/backup-client/backup-client-ca.crt" >> "$fixture/release.env"
+assert_failed host-validator-backup-client-stale-name run_host_validation
+if grep -Fq 'BACKUP_CLIENT_CA_FILE' "$host_validation_script"; then
+  printf 'FAIL: host validator still references stale BACKUP_CLIENT_CA_FILE\n' >&2
+  exit 1
+fi
 if grep -Eq '^\s+attestations:\s+write$' "$workflow_file"; then
   printf 'FAIL: image workflow requests unnecessary GitHub attestations write permission\n' >&2
   exit 1
@@ -903,10 +969,19 @@ if grep -Eq 'release_sha=.*headSha|release_sha=.*head_sha' "$deploy_workflow_fil
   printf 'FAIL: deploy workflow derives release SHA from the downstream build run SHA\n' >&2
   exit 1
 fi
+grep -Fq 'actions/runs/$COMPOSE_RUN_ID/artifacts?per_page=100' "$frontend_workflow_file" || {
+  printf 'FAIL: frontend workflow does not enumerate artifacts from the exact Compose run\n' >&2
+  exit 1
+}
+grep -Fq 'release_mode" == rollback && "$COMPOSE_EVENT" != workflow_dispatch' "$frontend_workflow_file" || {
+  printf 'FAIL: frontend workflow does not reject a rollback without an explicit Compose dispatch lineage\n' >&2
+  exit 1
+}
 
 # Executable binding fixture: extract and run the resolver body from the actual
-# deployment workflow with mocked GitHub CLI responses. The downstream build
-# head SHA is deliberately different from the upstream CI artifact SHA.
+# deployment workflow with mocked GitHub REST responses. The successful fixture
+# uses one matching SHA through CI, image build, artifact, and main head; the
+# following cases deliberately break that lineage.
 resolver_script="$work_directory/resolve-release.sh"
 awk '
   /^        run: \|$/ { capture=1; next }
@@ -919,23 +994,65 @@ mkdir -p "$resolver_bin"
 cat > "$resolver_bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == run && "$2" == view ]]; then
-  [[ "$4" == --repo && "$5" == Russelrip/QuestEsports ]] || exit 1
-  case "$3" in
-    999)
-      printf '%s\n' '{"databaseId":999,"headSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","headBranch":"main","conclusion":"success","event":"workflow_run","workflowName":"Build container images","repository":{"fullName":"Russelrip/QuestEsports"}}'
-      ;;
-    123456)
-      ci_sha="${RESOLVER_CI_SHA:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
-      printf '{"databaseId":123456,"headSha":"%s","headBranch":"main","conclusion":"success","event":"push","workflowName":"CI","repository":{"fullName":"Russelrip/QuestEsports"}}\n' "$ci_sha"
-      ;;
-    *) exit 1 ;;
+if [[ "$1" == run && "$2" == list ]]; then
+  [[ "$*" == *"--repo Russelrip/QuestEsports"* ]] || exit 1
+  [[ "$*" == *"--workflow build-container-images.yml"* ]] || exit 1
+  [[ "$*" == *"--branch main"* ]] || exit 1
+  if [[ -n "${REQUESTED_ROLLBACK_SHA:-}" ]]; then
+    [[ "$*" == *"--commit $RESOLVER_EXPECTED_ROLLBACK_SHA"* ]] || exit 1
+  else
+    [[ "$*" != *'--commit '* ]] || exit 1
+  fi
+  [[ "$*" == *"--status success"* ]] || exit 1
+  [[ "$*" == *"--json databaseId"* ]] || exit 1
+  printf '%s\n' '[{"databaseId":999}]'
+  exit 0
+fi
+[[ "$1" == api ]] || exit 1
+endpoint="$2"
+jq_filter=""
+shift 2
+while (($#)); do
+  case "$1" in
+    --jq) jq_filter="$2"; shift 2 ;;
+    *) shift ;;
   esac
-elif [[ "$1" == api ]]; then
-  [[ "$2" == repos/Russelrip/QuestEsports/actions/runs/999/artifacts\?per_page=100 ]] || exit 1
-  printf '%s\n' '{"artifacts":[{"expired":false,"name":"container-release-manifest-123456-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}'
+done
+response=""
+case "$endpoint" in
+  repos/Russelrip/QuestEsports/actions/workflows/build-container-images.yml)
+    response='{"id":7001,"name":"Build container images","path":".github/workflows/build-container-images.yml"}'
+    ;;
+  repos/Russelrip/QuestEsports/actions/workflows/ci.yml)
+    response='{"id":7002,"name":"CI","path":".github/workflows/ci.yml"}'
+    ;;
+  repos/Russelrip/QuestEsports/actions/runs/999)
+    build_sha="${RESOLVER_BUILD_SHA:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
+    repository="${RESOLVER_REPOSITORY:-Russelrip/QuestEsports}"
+    head_repository="${RESOLVER_HEAD_REPOSITORY:-Russelrip/QuestEsports}"
+    response="$(printf '{\"id\":999,\"name\":\"Build container images\",\"path\":\".github/workflows/build-container-images.yml@refs/heads/main\",\"workflow_id\":7001,\"head_sha\":\"%s\",\"head_branch\":\"main\",\"conclusion\":\"success\",\"event\":\"workflow_run\",\"repository\":{\"id\":4242,\"full_name\":\"%s\"},\"head_repository\":{\"id\":4242,\"full_name\":\"%s\"}}' "$build_sha" "$repository" "$head_repository")"
+    ;;
+  repos/Russelrip/QuestEsports/actions/runs/123456)
+    ci_sha="${RESOLVER_CI_SHA:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
+    response="$(printf '{\"id\":123456,\"name\":\"CI\",\"path\":\".github/workflows/ci.yml@refs/heads/main\",\"workflow_id\":7002,\"head_sha\":\"%s\",\"head_branch\":\"main\",\"conclusion\":\"success\",\"event\":\"push\",\"repository\":{\"id\":4242,\"full_name\":\"Russelrip/QuestEsports\"},\"head_repository\":{\"id\":4242,\"full_name\":\"Russelrip/QuestEsports\"}}' "$ci_sha")"
+    ;;
+  repos/Russelrip/QuestEsports/actions/runs/999/artifacts\?per_page=100)
+    artifact_sha="${RESOLVER_ARTIFACT_SHA:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
+    artifact_run_id="${RESOLVER_ARTIFACT_RUN_ID:-999}"
+    artifact_repository_id="${RESOLVER_ARTIFACT_REPOSITORY_ID:-4242}"
+    artifact_head_repository_id="${RESOLVER_ARTIFACT_HEAD_REPOSITORY_ID:-4242}"
+    response="$(printf '{\"artifacts\":[{\"id\":7654321,\"expired\":false,\"name\":\"container-release-manifest-123456-%s\",\"workflow_run\":{\"id\":%s,\"repository_id\":%s,\"head_repository_id\":%s,\"head_branch\":\"main\",\"head_sha\":\"%s\"}}]}' "$artifact_sha" "$artifact_run_id" "$artifact_repository_id" "$artifact_head_repository_id" "$artifact_sha")"
+    ;;
+  repos/Russelrip/QuestEsports/git/ref/heads/main)
+    response="$(printf '{\"object\":{\"sha\":\"%s\"}}' "${RESOLVER_MAIN_SHA:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}")"
+    ;;
+  *) exit 1 ;;
+esac
+if [[ "$jq_filter" == '.object.sha' ]]; then
+  [[ "$endpoint" == repos/Russelrip/QuestEsports/git/ref/heads/main ]] || exit 1
+  printf '%s\n' "${RESOLVER_MAIN_SHA:-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb}"
 else
-  exit 1
+  printf '%s\n' "$response"
 fi
 EOF
 chmod 755 "$resolver_bin/gh"
@@ -950,20 +1067,35 @@ const matchingArtifacts = artifacts.filter(
   (artifact) => artifact.expired === false && /^container-release-manifest-[0-9]+-[0-9a-f]{40}$/.test(artifact.name),
 );
 
-if (filter.includes(".databaseId | tostring")) process.stdout.write(`${input.databaseId}\n`);
-else if (filter.includes(".workflowName")) process.stdout.write(`${input.workflowName}\n`);
+if (filter.includes("| length") && !filter.includes("if length == 1")) {
+  process.stdout.write(`${matchingArtifacts.length}\n`);
+} else if (filter.includes("if length == 1")) {
+  if (matchingArtifacts.length !== 1) process.exit(1);
+  process.stdout.write(`${JSON.stringify(matchingArtifacts[0])}\n`);
+} else if (filter.includes(".workflow_run.id")) process.stdout.write(`${input.workflow_run.id}\n`);
+else if (filter.includes(".workflow_run.head_sha")) process.stdout.write(`${input.workflow_run.head_sha}\n`);
+else if (filter.includes(".databaseId")) process.stdout.write(`${Array.isArray(input) ? input[0].databaseId : input.databaseId}\n`);
+else if (filter.includes(".head_repository.id | tostring")) process.stdout.write(`${input.head_repository.id}\n`);
+else if (filter.includes(".repository.id | tostring")) process.stdout.write(`${input.repository.id}\n`);
+else if (filter.includes(".id | tostring")) process.stdout.write(`${input.id}\n`);
+else if (filter.includes(".workflow_id | tostring")) process.stdout.write(`${input.workflow_id}\n`);
+else if (filter.includes(".path")) process.stdout.write(`${input.path}\n`);
+else if (filter.includes(".name")) process.stdout.write(`${input.name}\n`);
 else if (filter.includes(".conclusion")) process.stdout.write(`${input.conclusion}\n`);
 else if (filter.includes(".event")) process.stdout.write(`${input.event}\n`);
-else if (filter.includes(".headBranch")) process.stdout.write(`${input.headBranch}\n`);
-else if (filter.includes(".headSha")) {
-  if (/^[0-9a-f]{40}$/.test(input.headSha)) process.stdout.write(`${input.headSha}\n`);
+else if (filter.includes(".workflow_run.repository_id")) process.stdout.write(`${input.workflow_run.repository_id}\n`);
+else if (filter.includes(".workflow_run.head_repository_id")) process.stdout.write(`${input.workflow_run.head_repository_id}\n`);
+else if (filter.includes(".workflow_run.head_branch")) process.stdout.write(`${input.workflow_run.head_branch}\n`);
+else if (filter.includes(".head_branch")) process.stdout.write(`${input.head_branch}\n`);
+else if (filter.includes(".head_repository.full_name")) process.stdout.write(`${input.head_repository.full_name}\n`);
+else if (filter.includes(".repository.full_name")) process.stdout.write(`${input.repository.full_name}\n`);
+else if (filter.includes(".head_repository.id")) process.stdout.write(`${input.head_repository.id}\n`);
+else if (filter.includes(".repository.id")) process.stdout.write(`${input.repository.id}\n`);
+else if (filter.includes(".head_sha")) {
+  if (/^[0-9a-f]{40}$/.test(input.head_sha)) process.stdout.write(`${input.head_sha}\n`);
   else process.exit(1);
-} else if (filter.includes("| length")) {
-  process.stdout.write(`${matchingArtifacts.length}\n`);
-} else if (filter.includes(".[0].name")) {
-  if (matchingArtifacts.length !== 1) process.exit(1);
-  process.stdout.write(`${matchingArtifacts[0].name}\n`);
-} else {
+} else if (filter.includes(".expired")) process.stdout.write(`${input.expired}\n`);
+else {
   process.exit(1);
 }
 EOF
@@ -971,30 +1103,76 @@ chmod 755 "$resolver_bin/jq"
 resolver_output="$work_directory/resolver-good.out"
 resolver_environment=(
   "PATH=$resolver_bin:$base_path"
-  GITHUB_EVENT_NAME=workflow_run
+  GITHUB_EVENT_NAME=workflow_dispatch
   GITHUB_REPOSITORY=Russelrip/QuestEsports
-  EVENT_BUILD_RUN_ID=999
+  REQUESTED_ROLLBACK_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  RESOLVER_EXPECTED_ROLLBACK_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   "GITHUB_OUTPUT=$resolver_output"
 )
 env "${resolver_environment[@]}" bash "$resolver_script"
-assert_contains "$resolver_output" 'artifact_name=container-release-manifest-123456-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-assert_contains "$resolver_output" 'release_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-assert_contains "$resolver_output" 'build_run_id=999'
+test -s "$resolver_output"
+grep -Fxq -- 'artifact_name=container-release-manifest-123456-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' "$resolver_output" || exit 1
+grep -Fxq -- 'release_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' "$resolver_output" || exit 1
+grep -Fxq -- 'build_run_id=999' "$resolver_output" || exit 1
+grep -Fxq -- 'ci_run_id=123456' "$resolver_output" || exit 1
+grep -Fxq -- 'release_mode=rollback' "$resolver_output" || exit 1
 if grep -Fq 'release_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$resolver_output"; then
   printf 'FAIL: resolver selected downstream build headSha instead of upstream CI SHA\n' >&2
   exit 1
 fi
+resolver_normal_output="$work_directory/resolver-normal.out"
+env "${resolver_environment[@]}" REQUESTED_ROLLBACK_SHA= RESOLVER_EXPECTED_ROLLBACK_SHA= GITHUB_OUTPUT="$resolver_normal_output" bash "$resolver_script"
+test -s "$resolver_normal_output"
+grep -Fxq -- 'release_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' "$resolver_normal_output" || exit 1
+grep -Fxq -- 'release_mode=normal' "$resolver_normal_output" || exit 1
 resolver_mismatch_output="$work_directory/resolver-mismatch.out"
 assert_failed resolver-ci-sha-mismatch env "${resolver_environment[@]}" RESOLVER_CI_SHA=cccccccccccccccccccccccccccccccccccccccc GITHUB_OUTPUT="$resolver_mismatch_output" bash "$resolver_script"
 if [[ -s "$resolver_mismatch_output" ]]; then
   printf 'FAIL: resolver emitted deployment outputs after rejecting the CI/artifact SHA mismatch\n' >&2
   exit 1
 fi
+resolver_artifact_mismatch_output="$work_directory/resolver-artifact-mismatch.out"
+assert_failed resolver-artifact-sha-mismatch env "${resolver_environment[@]}" RESOLVER_ARTIFACT_SHA=cccccccccccccccccccccccccccccccccccccccc GITHUB_OUTPUT="$resolver_artifact_mismatch_output" bash "$resolver_script"
+if [[ -s "$resolver_artifact_mismatch_output" ]]; then
+  printf 'FAIL: resolver emitted deployment outputs after rejecting the artifact lineage mismatch\n' >&2
+  exit 1
+fi
+resolver_head_repository_mismatch_output="$work_directory/resolver-head-repository-mismatch.out"
+assert_failed resolver-head-repository-mismatch env "${resolver_environment[@]}" RESOLVER_HEAD_REPOSITORY=evil/fork GITHUB_OUTPUT="$resolver_head_repository_mismatch_output" bash "$resolver_script"
+if [[ -s "$resolver_head_repository_mismatch_output" ]]; then
+  printf 'FAIL: resolver emitted deployment outputs after rejecting the head repository mismatch\n' >&2
+  exit 1
+fi
+resolver_repository_mismatch_output="$work_directory/resolver-repository-mismatch.out"
+assert_failed resolver-repository-mismatch env "${resolver_environment[@]}" RESOLVER_REPOSITORY=evil/repository GITHUB_OUTPUT="$resolver_repository_mismatch_output" bash "$resolver_script"
+if [[ -s "$resolver_repository_mismatch_output" ]]; then
+  printf 'FAIL: resolver emitted deployment outputs after rejecting the repository mismatch\n' >&2
+  exit 1
+fi
+resolver_artifact_run_mismatch_output="$work_directory/resolver-artifact-run-mismatch.out"
+assert_failed resolver-artifact-run-mismatch env "${resolver_environment[@]}" RESOLVER_ARTIFACT_RUN_ID=998 GITHUB_OUTPUT="$resolver_artifact_run_mismatch_output" bash "$resolver_script"
+if [[ -s "$resolver_artifact_run_mismatch_output" ]]; then
+  printf 'FAIL: resolver emitted deployment outputs after rejecting the artifact run mismatch\n' >&2
+  exit 1
+fi
+resolver_artifact_head_repository_mismatch_output="$work_directory/resolver-artifact-head-repository-mismatch.out"
+assert_failed resolver-artifact-head-repository-mismatch env "${resolver_environment[@]}" RESOLVER_ARTIFACT_HEAD_REPOSITORY_ID=999 GITHUB_OUTPUT="$resolver_artifact_head_repository_mismatch_output" bash "$resolver_script"
+if [[ -s "$resolver_artifact_head_repository_mismatch_output" ]]; then
+  printf 'FAIL: resolver emitted deployment outputs after rejecting the artifact head-repository mismatch\n' >&2
+  exit 1
+fi
 
-grep -Eq 'workflowName.*CI' <<<"$deploy_workflow_source" || {
+if ! grep -Fq 'test "${ci_run_path%@*}" = '\''.github/workflows/ci.yml'\''' "$deploy_workflow_file" || ! grep -Fq 'test "$(jq -er '\''.workflow_id | tostring'\'' <<< "$ci_run_json")" = "$ci_workflow_id"' "$deploy_workflow_file"; then
   printf 'FAIL: deploy workflow does not validate the upstream CI workflow identity\n' >&2
   exit 1
-}
+fi
+
+resolver_artifact_repository_mismatch_output="$work_directory/resolver-artifact-repository-mismatch.out"
+assert_failed resolver-artifact-repository-mismatch env "${resolver_environment[@]}" RESOLVER_ARTIFACT_REPOSITORY_ID=999 GITHUB_OUTPUT="$resolver_artifact_repository_mismatch_output" bash "$resolver_script"
+if [[ -s "$resolver_artifact_repository_mismatch_output" ]]; then
+  printf 'FAIL: resolver emitted deployment outputs after rejecting the artifact repository mismatch\n' >&2
+  exit 1
+fi
 
 setup_fixture external-postgres-bind
 sed -i 's/^POSTGRES_TARGET_HOST=.*/POSTGRES_TARGET_HOST=10.0.0.7/' "$fixture/release.env"
@@ -1011,6 +1189,14 @@ assert_failed missing-postgres-data-root run_release
 setup_fixture mismatched-postgres-digest
 sed -i 's/^postgres_image=.*/postgres_image=postgres:17-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/' "$fixture/manifest.txt"
 assert_failed mismatched-postgres-digest run_release
+
+setup_fixture rejected-postgres-index-digest
+sed -i 's/^postgres_image=.*/postgres_image=postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675/' "$fixture/manifest.txt"
+assert_failed rejected-postgres-index-digest run_release
+
+setup_fixture tag-only-postgres-image
+sed -i 's/^postgres_image=.*/postgres_image=postgres:17/' "$fixture/manifest.txt"
+assert_failed tag-only-postgres-image run_release
 
 setup_fixture missing-postgres-tls-key
 rm -f -- "$fixture/postgres.key"
@@ -1430,8 +1616,12 @@ if bash "$script_directory/deploy/verify-release.sh" >"$work_directory/artifact-
 else
   gate_failure 'release verification rejected the artifact-specific PostgreSQL/VALORANT trust policy'
 fi
-gate_log_contains "$TEST_LOG" 'cosign image=postgres:17-bookworm@sha256:3333333333333333333333333333333333333333333333333333333333333333 identity=postgres-fixture-identity issuer=postgres-fixture-issuer' 'host/release verification did not use the PostgreSQL-specific signer'
-gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555 identity=valorant-fixture-identity issuer=valorant-fixture-issuer' 'host/release verification did not use the VALORANT-specific signer'
+gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111 identity=fixture-identity issuer=fixture-issuer' 'host verification did not use the Quest signer for the frontend image'
+gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222 identity=fixture-identity issuer=fixture-issuer' 'host verification did not use the Quest signer for the backend image'
+gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/migrator@sha256:4444444444444444444444444444444444444444444444444444444444444444 identity=fixture-identity issuer=fixture-issuer' 'host verification did not use the Quest signer for the migrator image'
+if grep -Eq 'cosign image=(postgres:|ghcr.io/quest/valorant@)' "$TEST_LOG"; then
+  gate_failure 'external PostgreSQL or VALORANT image reached the Quest Cosign verifier'
+fi
 
 check_migration_contract() {
   local label="$1" migration_count
@@ -1561,15 +1751,23 @@ export QUEST_MIGRATION_OWNER_APPROVAL_SHA=11111111111111111111111111111111111111
 export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
 assert_failed target-identity-lies run_release
 
-setup_fixture artifact-trust-quest-policy-reuse
-sed -i 's/^VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP=.*/VALORANT_COSIGN_CERTIFICATE_IDENTITY_REGEXP=fixture-identity/' "$fixture/release.env"
-sed -i 's/^VALORANT_COSIGN_OIDC_ISSUER=.*/VALORANT_COSIGN_OIDC_ISSUER=fixture-issuer/' "$fixture/release.env"
+setup_fixture artifact-trust-external-images
 export REQUIRE_ARTIFACT_TRUST_POLICY=1
-assert_failed artifact-trust-quest-policy-reuse RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script"
-if grep -Fq -- 'VALORANT trust policy must not reuse the Quest signer identity' "$script_directory/deploy/verify-release.sh"; then
+sed -i -e 's#@db\.supabase\.test:5432#@quest-postgres:5432#g' \
+  -e 's#quest_migrator:fixture#quest_runtime:fixture#g' \
+  -e 's#valorant_runtime:fixture#val_runtime:fixture#g' \
+  -e 's#valorant_migrator:fixture#val_runtime:fixture#g' \
+  "$fixture/quest.production.env" "$fixture/valorant.production.env"
+if RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixture/manifest.txt" bash "$host_validation_script" >"$work_directory/external-image-trust.out" 2>&1; then
   :
 else
-  gate_failure 'verify-release.sh does not reject VALORANT reusing the Quest signer policy'
+  gate_failure 'host verification rejected exact-digest external-image trust'
+fi
+if grep -Eq 'cosign image=(postgres:|ghcr.io/quest/valorant@)' "$TEST_LOG"; then
+  gate_failure 'external image was passed to the Quest Cosign verifier'
+fi
+if grep -Eq 'POSTGRES_COSIGN|VALORANT_COSIGN' "$fixture/release.env"; then
+  gate_failure 'external-image Cosign policy settings remain in the host trust configuration'
 fi
 if grep -Fq -- 'VALORANT_IMAGE_APPROVED_REF' "$workflow_file" && grep -Fq -- 'VALORANT_IMAGE_APPROVED_REF" == "$VALORANT_IMAGE"' "$workflow_file"; then
   :
@@ -1603,4 +1801,5 @@ if (( new_gate_failures != 0 )); then
   exit 1
 fi
 
+bash "$script_directory/tests/task-6-attestation-ssh.test.sh"
 printf '%s\n' 'deploy release fixture tests passed'

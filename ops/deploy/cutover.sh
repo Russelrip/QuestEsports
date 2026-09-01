@@ -326,8 +326,9 @@ done
 for key in frontend_image backend_image migrator_image valorant_image; do
   [[ "${manifest[$key]}" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die 'cutover manifest contains a mutable or malformed registry image.'
 done
-[[ "${manifest[postgres_image]}" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || die 'cutover manifest PostgreSQL image is not an exact PostgreSQL 17 digest.'
-[[ "${manifest[postgres_image]}" == "$POSTGRES_IMAGE_APPROVED_REF" ]] || die 'approved PostgreSQL image does not match the cutover manifest.'
+approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+[[ "${manifest[postgres_image]}" == "$approved_postgres_ref" ]] || die 'cutover manifest PostgreSQL image is not the approved PostgreSQL 17 Bookworm reference.'
+[[ "$POSTGRES_IMAGE_APPROVED_REF" == "$approved_postgres_ref" ]] || die 'approved PostgreSQL image is not the approved reference.'
 root_file "$RECOVERY_ADMIN_URL_FILE"
 validate_recovery_admin_url_file "$RECOVERY_ADMIN_URL_FILE"
 validate_valorant_runtime_compose

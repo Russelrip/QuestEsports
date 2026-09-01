@@ -1,7 +1,13 @@
 name: Deploy immutable Compose release
 
+
 on:
   workflow_dispatch:
+    inputs:
+      rollback_sha:
+        description: Full SHA of an older successful main release for an intentional rollback
+        required: false
+        type: string
   workflow_run:
     workflows:
       - Build container images
@@ -16,67 +22,116 @@ permissions:
   packages: read
 
 concurrency:
-  group: production-compose-deploy
+  group: production-release
   cancel-in-progress: false
 
 jobs:
   resolve-build:
     name: Resolve a successful image build
-    if: ${{ vars.COMPOSE_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Build container images' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')) }}
+    if: ${{ vars.PRODUCTION_DEPLOYMENT_MODE == 'compose' && vars.COMPOSE_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Build container images' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_run' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       build_run_id: ${{ steps.resolve.outputs.build_run_id }}
+      ci_run_id: ${{ steps.resolve.outputs.ci_run_id }}
       artifact_name: ${{ steps.resolve.outputs.artifact_name }}
       release_sha: ${{ steps.resolve.outputs.release_sha }}
+      release_mode: ${{ steps.resolve.outputs.release_mode }}
     steps:
       - name: Resolve only the successful build run
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
+          REQUESTED_ROLLBACK_SHA: ${{ inputs.rollback_sha }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            runs_json="$(gh run list \
-              --repo "$GITHUB_REPOSITORY" \
-              --workflow build-container-images.yml \
-              --branch main \
-              --status success \
-              --limit 1 \
-              --json databaseId)"
+            [[ -z "$REQUESTED_ROLLBACK_SHA" || "$REQUESTED_ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+              printf '%s\n' 'rollback_sha must be empty or a full lowercase 40-character SHA.' >&2
+              exit 1
+            }
+            if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
+              runs_json="$(gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow build-container-images.yml \
+                --branch main \
+                --commit "$REQUESTED_ROLLBACK_SHA" \
+                --status success \
+                --limit 20 \
+                --json databaseId)"
+            else
+              runs_json="$(gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow build-container-images.yml \
+                --branch main \
+                --status success \
+                --limit 20 \
+                --json databaseId)"
+            fi
             build_run_id="$(jq -er '.[0].databaseId | select(type == "number")' <<< "$runs_json")"
           else
             [[ "$EVENT_BUILD_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
             build_run_id="$EVENT_BUILD_RUN_ID"
           fi
-          build_run_json="$(gh run view "$build_run_id" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json databaseId,headSha,headBranch,conclusion,event,workflowName)"
-          test "$(jq -er '.databaseId | tostring' <<< "$build_run_json")" = "$build_run_id"
-          test "$(jq -er '.workflowName' <<< "$build_run_json")" = 'Build container images'
+          build_workflow_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build-container-images.yml")"
+          build_workflow_id="$(jq -er '.id | tostring' <<< "$build_workflow_json")"
+          test "$(jq -er '.path' <<< "$build_workflow_json")" = '.github/workflows/build-container-images.yml'
+          build_run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$build_run_id")"
+          test "$(jq -er '.id | tostring' <<< "$build_run_json")" = "$build_run_id"
+          build_run_path="$(jq -er '.path' <<< "$build_run_json")"
+          test "${build_run_path%@*}" = '.github/workflows/build-container-images.yml'
+          test "$(jq -er '.workflow_id | tostring' <<< "$build_run_json")" = "$build_workflow_id"
+          test "$(jq -er '.name' <<< "$build_run_json")" = 'Build container images'
           test "$(jq -er '.conclusion' <<< "$build_run_json")" = success
           test "$(jq -er '.event' <<< "$build_run_json")" = workflow_run
-          test "$(jq -er '.headBranch' <<< "$build_run_json")" = main
+          test "$(jq -er '.head_branch' <<< "$build_run_json")" = main
+          test "$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "$build_run_json")" = "$(jq -er '.head_sha' <<< "$build_run_json")"
+          test "$(jq -er '.repository.full_name' <<< "$build_run_json")" = "$GITHUB_REPOSITORY"
+          test "$(jq -er '.head_repository.full_name' <<< "$build_run_json")" = "$GITHUB_REPOSITORY"
+          build_repository_id="$(jq -er '.repository.id | tostring' <<< "$build_run_json")"
+          build_head_repository_id="$(jq -er '.head_repository.id | tostring' <<< "$build_run_json")"
 
           artifacts_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$build_run_id/artifacts?per_page=100")"
           artifact_count="$(jq '[.artifacts[] | select(.expired == false and (.name | test("^container-release-manifest-[0-9]+-[0-9a-f]{40}$")))] | length' <<< "$artifacts_json")"
           test "$artifact_count" = 1
-          artifact_name="$(jq -er '[.artifacts[] | select(.expired == false and (.name | test("^container-release-manifest-[0-9]+-[0-9a-f]{40}$")))] | .[0].name' <<< "$artifacts_json")"
+          artifact_json="$(jq -er '[.artifacts[] | select(.expired == false and (.name | test("^container-release-manifest-[0-9]+-[0-9a-f]{40}$")))] | if length == 1 then .[0] else error("expected one release manifest") end' <<< "$artifacts_json")"
+          [[ "$(jq -er '.id | tostring' <<< "$artifact_json")" =~ ^[0-9]+$ ]]
+          artifact_name="$(jq -er '.name' <<< "$artifact_json")"
           [[ "$artifact_name" =~ ^container-release-manifest-([0-9]+)-([0-9a-f]{40})$ ]] || exit 1
           ci_run_id="${BASH_REMATCH[1]}"
           release_sha="${BASH_REMATCH[2]}"
+          test "$(jq -er '.expired' <<< "$artifact_json")" = false
+          test "$(jq -er '.workflow_run.id | tostring' <<< "$artifact_json")" = "$build_run_id"
+          test "$(jq -er '.workflow_run.repository_id | tostring' <<< "$artifact_json")" = "$build_repository_id"
+          test "$(jq -er '.workflow_run.head_repository_id | tostring' <<< "$artifact_json")" = "$build_head_repository_id"
+          test "$(jq -er '.workflow_run.head_branch' <<< "$artifact_json")" = main
+          test "$(jq -er '.workflow_run.head_sha' <<< "$artifact_json")" = "$release_sha"
 
-          ci_run_json="$(gh run view "$ci_run_id" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json databaseId,headSha,headBranch,conclusion,event,workflowName)"
-          test "$(jq -er '.databaseId | tostring' <<< "$ci_run_json")" = "$ci_run_id"
-          test "$(jq -er '.workflowName' <<< "$ci_run_json")" = CI
+          ci_workflow_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml")"
+          ci_workflow_id="$(jq -er '.id | tostring' <<< "$ci_workflow_json")"
+          test "$(jq -er '.path' <<< "$ci_workflow_json")" = '.github/workflows/ci.yml'
+          ci_run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ci_run_id")"
+          test "$(jq -er '.id | tostring' <<< "$ci_run_json")" = "$ci_run_id"
+          ci_run_path="$(jq -er '.path' <<< "$ci_run_json")"
+          test "${ci_run_path%@*}" = '.github/workflows/ci.yml'
+          test "$(jq -er '.workflow_id | tostring' <<< "$ci_run_json")" = "$ci_workflow_id"
+          test "$(jq -er '.name' <<< "$ci_run_json")" = CI
           test "$(jq -er '.conclusion' <<< "$ci_run_json")" = success
           test "$(jq -er '.event' <<< "$ci_run_json")" = push
-          test "$(jq -er '.headBranch' <<< "$ci_run_json")" = main
-          test "$(jq -er '.headSha | select(test("^[0-9a-f]{40}$"))' <<< "$ci_run_json")" = "$release_sha"
+          test "$(jq -er '.head_branch' <<< "$ci_run_json")" = main
+          test "$(jq -er '.repository.full_name' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"
+          test "$(jq -er '.head_repository.full_name' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"
+          test "$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "$ci_run_json")" = "$release_sha"
+          test "$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "$build_run_json")" = "$release_sha"
+          printf 'ci_run_id=%s\n' "$ci_run_id" >> "$GITHUB_OUTPUT"
+          if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
+            test "$release_sha" = "$REQUESTED_ROLLBACK_SHA"
+          else
+            main_head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+            test "$main_head_sha" = "$release_sha"
+          fi
           [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || {
             printf '%s\n' 'The upstream CI artifact did not provide a full lowercase SHA.' >&2
             exit 1
@@ -84,6 +139,11 @@ jobs:
           printf 'artifact_name=%s\n' "$artifact_name" >> "$GITHUB_OUTPUT"
           printf 'build_run_id=%s\n' "$build_run_id" >> "$GITHUB_OUTPUT"
           printf 'release_sha=%s\n' "$release_sha" >> "$GITHUB_OUTPUT"
+          if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
+            printf 'release_mode=rollback\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'release_mode=normal\n' >> "$GITHUB_OUTPUT"
+          fi
 
   deploy:
     name: Deploy signed Compose release
@@ -124,6 +184,8 @@ jobs:
         run: |
           set -euo pipefail
           manifest='release-manifest/release-manifest.txt'
+          attestation_tmp_dir="$(mktemp -d "$RUNNER_TEMP/quest-attestation.XXXXXX")"
+          trap 'rm -rf -- "$attestation_tmp_dir"' EXIT
           test -f "$manifest" && test ! -L "$manifest"
           test "$(find release-manifest -type f -print | wc -l)" -eq 1
           expected_keys='commit_sha frontend_image backend_image migrator_image postgres_image valorant_image'
@@ -141,23 +203,21 @@ jobs:
           [[ "$(awk -F= '$1 == "backend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-backend@sha256:[0-9a-f]{64}$ ]] || exit 1
           [[ "$(awk -F= '$1 == "migrator_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-migrator@sha256:[0-9a-f]{64}$ ]] || exit 1
           postgres_image="$(awk -F= '$1 == "postgres_image" { print $2 }' "$manifest")"
-          [[ "$postgres_image" =~ ^postgres:17-bookworm@sha256:[0-9a-f]{64}$ ]] || exit 1
-          test "$postgres_image" = "$POSTGRES_IMAGE_APPROVED_REF"
+          approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+          test "$postgres_image" = "$approved_postgres_ref"
+          test "$POSTGRES_IMAGE_APPROVED_REF" = "$approved_postgres_ref"
           valorant_image="$(awk -F= '$1 == "valorant_image" { print $2 }' "$manifest")"
           test "$valorant_image" = "$VALORANT_IMAGE_APPROVED_REF"
 
-      - name: Install the same fixed-version cosign tooling
+      - name: Pull the immutable Cosign container
         shell: bash
         env:
-          COSIGN_VERSION: v2.4.1
+          COSIGN_IMAGE: ghcr.io/sigstore/cosign/cosign:v2.4.1@sha256:b03690aa52bfe94054187142fba24dc54137650682810633901767d8a3e15b31
         run: |
           set -euo pipefail
-          command -v go >/dev/null
-          install_dir="$RUNNER_TEMP/cosign-bin"
-          mkdir -p "$install_dir"
-          GOBIN="$install_dir" go install "github.com/sigstore/cosign/v2/cmd/cosign@$COSIGN_VERSION"
-          test -x "$install_dir/cosign"
-          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+          docker pull "$COSIGN_IMAGE"
+          docker image inspect "$COSIGN_IMAGE" >/dev/null
+          printf 'COSIGN_IMAGE=%s\n' "$COSIGN_IMAGE" >> "$GITHUB_ENV"
 
       - name: Verify Quest signatures and BuildKit attestations
         shell: bash
@@ -167,47 +227,195 @@ jobs:
         run: |
           set -euo pipefail
           manifest='release-manifest/release-manifest.txt'
+          attestation_tmp_dir="$(mktemp -d "$RUNNER_TEMP/quest-attestation.XXXXXX")"
+          trap 'rm -rf -- "$attestation_tmp_dir"' EXIT
 
           verify_buildkit_attestations() {
             local image_reference="$1"
             local image_repository="${image_reference%@*}"
-            local index_json attestation_digests attestation_digest attestation_json
-            local sbom_found=0 provenance_found=0
-
-            index_json="$(docker buildx imagetools inspect --raw "$image_reference")"
-            attestation_digests="$(jq -er '
-              [.manifests[]? |
-                select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") |
-                .digest] |
-              if length > 0 then .[] else error("no BuildKit attestations") end
-            ' <<< "$index_json")"
+            local expected_digest="${image_reference##*@}" index_file attestation_digests platform_digest
+            local attestation_digest attestation_file predicate_type layer_digest layer_size blob_file actual_size actual_digest
+            local registry_netrc="" sbom_found=0 provenance_found=0
+            [[ "$image_repository" =~ ^ghcr\.io/[A-Za-z0-9._/-]+$ ]] || exit 1
+            [[ "$expected_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+            index_file="$(mktemp "$attestation_tmp_dir/index.XXXXXX.json")"
+            docker buildx imagetools inspect --raw "$image_reference" > "$index_file"
+            platform_digest="$(jq -er '
+              if (.manifests | type) != "array" then error("image is not an OCI index") else . end |
+              [.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and (.digest | type) == "string" and test("^sha256:[0-9a-f]{64}$")) | .digest] |
+              if length == 1 then .[0] else error("expected exactly one linux/amd64 platform manifest") end
+            ' "$index_file")"
+            attestation_digests="$(jq -er --arg platform_digest "$platform_digest" '
+              [.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest" and .annotations["vnd.docker.reference.digest"] == $platform_digest and (.mediaType == "application/vnd.oci.image.manifest.v1+json" or .mediaType == "application/vnd.docker.distribution.manifest.v2+json"))] |
+              if length == 1 and (map(.digest) | unique | length) == 1 and all(.[]; (.digest | type) == "string" and test("^sha256:[0-9a-f]{64}$"))
+              then .[].digest else error("expected exactly one unique image-bound attestation") end
+            ' "$index_file")"
+            if [[ -f "$HOME/.docker/config.json" && ! -L "$HOME/.docker/config.json" ]]; then
+              registry_netrc="$(mktemp "$attestation_tmp_dir/ghcr-netrc.XXXXXX")"
+              chmod 600 "$registry_netrc"
+              python3 - "$HOME/.docker/config.json" "$registry_netrc" <<'PY'
+          import base64, json, sys
+          try:
+              with open(sys.argv[1], encoding="utf-8") as source:
+                  encoded = json.load(source).get("auths", {}).get("ghcr.io", {}).get("auth")
+              if encoded:
+                  user, password = base64.b64decode(encoded, validate=True).decode().split(":", 1)
+                  if any(c in user + password for c in "\r\n"):
+                      raise ValueError
+                  with open(sys.argv[2], "w", encoding="utf-8") as target:
+                      target.write(f"machine ghcr.io\nlogin {user}\npassword {password}\n")
+          except (OSError, ValueError, TypeError, json.JSONDecodeError):
+              open(sys.argv[2], "w", encoding="utf-8").close()
+          PY
+            fi
+            registry_blob() {
+              local digest="$1" output="$2" repository_path="${image_repository#ghcr.io}"
+              local blob_url="https://ghcr.io/v2$repository_path/blobs/$digest"
+              local -a curl_args=(--fail --silent --show-error --location --max-time 15
+                -H 'Accept: application/vnd.in-toto+json, application/octet-stream')
+              [[ -s "$registry_netrc" ]] && curl_args+=(--netrc-file "$registry_netrc")
+              curl "${curl_args[@]}" "$blob_url" > "$output" || exit 1
+            }
             while IFS= read -r attestation_digest; do
-              [[ "$attestation_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
-              attestation_json="$(docker buildx imagetools inspect --raw "$image_repository@$attestation_digest")"
-              if jq -e '
-                [.layers[]?.annotations["in-toto.io/predicate-type"] // empty]
-                | map(select(. == "https://spdx.dev/Document" or . == "https://cyclonedx.org/bom"))
-                | length > 0
-              ' <<< "$attestation_json" >/dev/null; then
-                sbom_found=1
-              fi
-              if jq -e '
-                [.layers[]?.annotations["in-toto.io/predicate-type"] // empty]
-                | map(select(. == "https://slsa.dev/provenance/v1" or . == "https://slsa.dev/provenance/v0.2"))
-                | length > 0
-              ' <<< "$attestation_json" >/dev/null; then
-                provenance_found=1
-              fi
+              attestation_file="$(mktemp "$attestation_tmp_dir/attestation.XXXXXX.json")"
+              docker buildx imagetools inspect --raw "$image_repository@$attestation_digest" > "$attestation_file"
+              jq -e --arg platform_digest "$platform_digest" '
+                (.mediaType == "application/vnd.oci.image.manifest.v1+json") and
+                (.artifactType == "application/vnd.docker.attestation.manifest.v1+json") and
+                (.subject | type == "object") and
+                (.subject.digest == $platform_digest) and
+                (.subject.mediaType == "application/vnd.oci.image.manifest.v1+json" or .subject.mediaType == "application/vnd.docker.distribution.manifest.v2+json") and
+                (.subject.size | type == "number" and floor == . and . > 0) and
+                (.config | type == "object") and
+                (.config.mediaType == "application/vnd.oci.empty.v1+json") and
+                (.config.size == 2) and
+                (.config.digest == "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a") and
+                (.layers | type == "array" and length > 0) and
+                all(.layers[]; .mediaType == "application/vnd.in-toto+json" and (.digest | type == "string" and test("^sha256:[0-9a-f]{64}$")) and (.size | type == "number" and floor == . and . >= 0) and (.annotations["in-toto.io/predicate-type"] == "https://spdx.dev/Document" or .annotations["in-toto.io/predicate-type"] == "https://cyclonedx.org/bom" or .annotations["in-toto.io/predicate-type"] == "https://slsa.dev/provenance/v1" or .annotations["in-toto.io/predicate-type"] == "https://slsa.dev/provenance/v0.2"))
+              ' "$attestation_file" >/dev/null
+              while IFS=$'\t' read -r layer_digest layer_size predicate_type; do
+                blob_file="$(mktemp "$attestation_tmp_dir/blob.XXXXXX")"
+                registry_blob "$layer_digest" "$blob_file"
+                actual_size="$(wc -c < "$blob_file")"
+                test "$actual_size" = "$layer_size"
+                actual_digest="sha256:$(sha256sum "$blob_file" | awk '{print $1}')"
+                test "$actual_digest" = "$layer_digest"
+                validate_buildkit_statement "$blob_file" "$predicate_type" "$image_repository" "$platform_digest" "$RELEASE_SHA" "$GITHUB_REPOSITORY" 'main' 'Build container images' 'https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main'
+                rm -f -- "$blob_file"
+                case "$predicate_type" in
+                  https://spdx.dev/Document|https://cyclonedx.org/bom) ((sbom_found += 1)) ;;
+                  https://slsa.dev/provenance/v1|https://slsa.dev/provenance/v0.2) ((provenance_found += 1)) ;;
+                  *) exit 1 ;;
+                esac
+              done < <(jq -r '.layers[] | [.digest, (.size | tostring), .annotations["in-toto.io/predicate-type"]] | @tsv' "$attestation_file")
+              rm -f -- "$attestation_file"
             done <<< "$attestation_digests"
-            test "$sbom_found" = 1
-            test "$provenance_found" = 1
+            test "$sbom_found" = 1 && test "$provenance_found" = 1
+          }
+
+          validate_buildkit_statement() {
+            python3 - "$@" <<'PY'
+          import json, sys
+
+          def fail():
+              raise SystemExit(1)
+
+          def get(obj, path):
+              for key in path:
+                  if not isinstance(obj, dict) or key not in obj:
+                      return []
+                  obj = obj[key]
+              return [str(obj)] if isinstance(obj, (str, int)) else []
+
+          def argument_values(value, name):
+              names = {name, 'build-arg:' + name}
+              if isinstance(value, dict):
+                  values = []
+                  for key in names:
+                      if key in value and isinstance(value[key], (str, int)):
+                          values.append(str(value[key]))
+                  for child in value.values():
+                      values.extend(argument_values(child, name))
+                  return values
+              if isinstance(value, list):
+                  values = []
+                  for child in value:
+                      if isinstance(child, str) and any(child.startswith(key + '=') for key in names):
+                          values.append(child.split('=', 1)[1])
+                      elif isinstance(child, dict) and child.get('name') in names and isinstance(child.get('value'), (str, int)):
+                          values.append(str(child['value']))
+                      else:
+                          values.extend(argument_values(child, name))
+                  return values
+              return []
+
+          def repository_name(value):
+              for prefix in ('git+https://github.com/', 'https://github.com/', 'git@github.com:'):
+                  if value.startswith(prefix):
+                      value = value[len(prefix):]
+              return value.removesuffix('.git').strip('/')
+
+          def exact(label, values, expected, normalize=lambda value: value):
+              if not values or {normalize(value) for value in values} != {normalize(expected)}:
+                  print('ambiguous or mismatched attestation ' + label, file=sys.stderr)
+                  fail()
+
+          statement_file, expected_type, image_repository, image_digest, release_sha, repository, branch, workflow, builder_id = sys.argv[1:]
+          try:
+              with open(statement_file, encoding='utf-8') as source:
+                  statement = json.load(source)
+          except (OSError, ValueError):
+              fail()
+          if not isinstance(statement, dict) or statement.get('_type') not in ('https://in-toto.io/Statement/v0.1', 'https://in-toto.io/Statement/v1') or statement.get('predicateType') != expected_type:
+              fail()
+          subjects = statement.get('subject')
+          if not isinstance(subjects, list) or len(subjects) != 1 or not isinstance(subjects[0], dict):
+              fail()
+          subject = subjects[0]
+          digest = subject.get('digest')
+          if not isinstance(digest, dict) or set(digest) != {'sha256'} or digest.get('sha256') != image_digest.removeprefix('sha256:'):
+              fail()
+          name = subject.get('name')
+          if not isinstance(name, str) or not name:
+              fail()
+          name = name.removeprefix('pkg:docker/')
+          if '@sha256:' in name and name.rsplit('@', 1)[1] != image_digest:
+              fail()
+          predicate = statement.get('predicate')
+          if not isinstance(predicate, dict):
+              fail()
+          if expected_type.startswith('https://slsa.dev/'):
+              build_types = get(predicate, ('buildDefinition', 'buildType')) + get(predicate, ('buildType',))
+              exact('build type', build_types, 'https://mobyproject.org/buildkit@v1')
+              invocation = predicate.get('invocation', {})
+              external_parameters = predicate.get('buildDefinition', {}).get('externalParameters', {})
+              revisions = argument_values(external_parameters.get('request', {}).get('args', {}), 'QUEST_BUILD_REVISION') + argument_values(external_parameters.get('args', {}), 'QUEST_BUILD_REVISION') + argument_values(invocation.get('parameters', {}), 'QUEST_BUILD_REVISION')
+              revisions += get(predicate, ('invocation', 'environment', 'sha')) + get(predicate, ('invocation', 'environment', 'GITHUB_SHA')) + get(predicate, ('invocation', 'configSource', 'digest', 'sha1'))
+              exact('revision', revisions, release_sha)
+              builders = get(predicate, ('builder', 'id')) + get(predicate, ('runDetails', 'builder', 'id'))
+              exact('builder identity', builders, builder_id)
+              repositories = argument_values(external_parameters.get('request', {}).get('args', {}), 'QUEST_BUILD_REPOSITORY') + argument_values(external_parameters.get('args', {}), 'QUEST_BUILD_REPOSITORY') + argument_values(invocation.get('parameters', {}), 'QUEST_BUILD_REPOSITORY')
+              repositories += get(predicate, ('invocation', 'environment', 'repository')) + get(predicate, ('invocation', 'environment', 'GITHUB_REPOSITORY')) + get(predicate, ('buildDefinition', 'externalParameters', 'repository'))
+              exact('repository', repositories, repository, repository_name)
+              branches = argument_values(external_parameters.get('request', {}).get('args', {}), 'QUEST_BUILD_BRANCH') + argument_values(external_parameters.get('args', {}), 'QUEST_BUILD_BRANCH') + argument_values(invocation.get('parameters', {}), 'QUEST_BUILD_BRANCH')
+              branches += get(predicate, ('invocation', 'environment', 'ref')) + get(predicate, ('invocation', 'environment', 'GITHUB_REF')) + get(predicate, ('invocation', 'environment', 'branch'))
+              exact('branch', branches, branch, lambda value: value.removeprefix('refs/heads/'))
+              workflows = argument_values(external_parameters.get('request', {}).get('args', {}), 'QUEST_BUILD_WORKFLOW') + argument_values(external_parameters.get('args', {}), 'QUEST_BUILD_WORKFLOW') + argument_values(invocation.get('parameters', {}), 'QUEST_BUILD_WORKFLOW')
+              workflows += get(predicate, ('invocation', 'environment', 'workflow')) + get(predicate, ('invocation', 'environment', 'workflow_name')) + get(predicate, ('invocation', 'environment', 'GITHUB_WORKFLOW'))
+              allowed = {workflow, '.github/workflows/build-container-images.yml', repository + '/.github/workflows/build-container-images.yml@refs/heads/main'}
+              if not workflows or set(workflows) - allowed:
+                  fail()
+          PY
           }
 
           while IFS= read -r image_key; do
             image_reference="$(awk -F= -v key="$image_key" '$1 == key { print $2 }' "$manifest")"
             expected_digest="${image_reference##*@}"
             proof_file="$RUNNER_TEMP/$image_key.cosign.json"
-            cosign verify \
+            docker run --rm --pull=never --network host \
+              -e COSIGN_CERTIFICATE_IDENTITY -e COSIGN_OIDC_ISSUER \
+              -v "$HOME/.docker:/root/.docker:ro" \
+              "$COSIGN_IMAGE" verify \
               --certificate-identity "$COSIGN_CERTIFICATE_IDENTITY" \
               --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
               "$image_reference" > "$proof_file"
@@ -226,15 +434,47 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$SSH_HOST"
-          test -n "$SSH_PRIVATE_KEY"
-          test -n "$SSH_HOST_KEY"
-          test "$SSH_USER" = deploy
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/quest-deploy-key"
-          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/quest-deploy-key" "$HOME/.ssh/known_hosts"
+          command -v mktemp >/dev/null
+          command -v timeout >/dev/null
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] || { printf '%s\n' 'SSH host is missing or unsafe.' >&2; exit 1; }
+          [[ "$SSH_PORT" =~ ^[1-9][0-9]{0,4}$ && "$SSH_PORT" -le 65535 ]] || { printf '%s\n' 'SSH port is missing or unsafe.' >&2; exit 1; }
+          [[ "$SSH_USER" == deploy ]] || { printf '%s\n' 'SSH user must be the dedicated deploy user.' >&2; exit 1; }
+          [[ -n "$SSH_PRIVATE_KEY" && "$SSH_PRIVATE_KEY" != *$'\r'* ]] || { printf '%s\n' 'SSH private key is missing or unsafe.' >&2; exit 1; }
+          [[ -n "$SSH_HOST_KEY" && "$SSH_HOST_KEY" != *$'\r'* && "$SSH_HOST_KEY" != *$'\n'* ]] || { printf '%s\n' 'pinned SSH host key is missing or ambiguous.' >&2; exit 1; }
+          expected_host_key="$SSH_HOST"
+          [[ "$SSH_PORT" != 22 ]] && expected_host_key="[$SSH_HOST]:$SSH_PORT"
+          ssh_material_dir="$(mktemp -d "$RUNNER_TEMP/quest-deploy-ssh.XXXXXX")"
+          cleanup_ssh_material() { local status=$?; trap - EXIT; rm -rf -- "$ssh_material_dir"; exit "$status"; }
+          trap cleanup_ssh_material EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_material_dir/id_ed25519"
+          printf '%s\n' "$SSH_HOST_KEY" > "$ssh_material_dir/known_hosts"
+          chmod 600 "$ssh_material_dir/id_ed25519" "$ssh_material_dir/known_hosts"
+          test "$(awk -v expected="$expected_host_key" 'NF >= 3 { count=0; n=split($1, names, ","); for (i=1; i<=n; i++) if (names[i] == expected) count++ } END { print count + 0 }' "$ssh_material_dir/known_hosts")" = 1 || { printf '%s\n' 'pinned SSH host key does not identify the configured host and port.' >&2; exit 1; }
+          printf 'SSH_MATERIAL_DIR=%s\n' "$ssh_material_dir" >> "$GITHUB_ENV"
+          trap - EXIT
+
+      - name: Revalidate normal release against current main after approval
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MODE: ${{ needs.resolve-build.outputs.release_mode }}
+          RELEASE_SHA: ${{ needs.resolve-build.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          case "$RELEASE_MODE" in
+            normal)
+              main_head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+              [[ "$main_head_sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
+              test "$main_head_sha" = "$RELEASE_SHA"
+              ;;
+            rollback)
+              ;;
+            *)
+              printf '%s\n' 'release mode is not an approved normal or rollback mode.' >&2
+              exit 1
+              ;;
+          esac
 
       - name: Transfer the verified manifest and invoke the fixed root release script
         shell: bash
@@ -244,14 +484,98 @@ jobs:
           # inode. scp truncates the existing inode, preserving the ownership
           # required by release.sh; it must not be replaced with a deploy-owned
           # temporary file.
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { printf '%s\n' 'release SHA is missing or unsafe.' >&2; exit 1; }
+          [[ -n "${SSH_MATERIAL_DIR:-}" && -f "$SSH_MATERIAL_DIR/id_ed25519" && -f "$SSH_MATERIAL_DIR/known_hosts" && ! -L "$SSH_MATERIAL_DIR/id_ed25519" && ! -L "$SSH_MATERIAL_DIR/known_hosts" ]] || { printf '%s\n' 'SSH material is missing or unsafe.' >&2; exit 1; }
           remote_manifest='/var/lib/quest-esports/incoming/release-manifest'
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            -i "$HOME/.ssh/quest-deploy-key" -P "${SSH_PORT:-22}" \
-            release-manifest/release-manifest.txt \
-            "deploy@$SSH_HOST:$remote_manifest"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            -i "$HOME/.ssh/quest-deploy-key" -p "${SSH_PORT:-22}" \
-            "deploy@$SSH_HOST" \
-            "sudo -n -- /usr/local/sbin/quest-esports-release '$RELEASE_SHA' '$remote_manifest'"
+          [[ "$remote_manifest" == /var/lib/quest-esports/incoming/release-manifest ]] || exit 1
+          ssh_options=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_MATERIAL_DIR/known_hosts" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i "$SSH_MATERIAL_DIR/id_ed25519")
+          timeout --foreground 120s scp "${ssh_options[@]}" -P "$SSH_PORT" -- release-manifest/release-manifest.txt "deploy@$SSH_HOST:$remote_manifest"
+          timeout --foreground 120s ssh "${ssh_options[@]}" -p "$SSH_PORT" -- "deploy@$SSH_HOST" sudo -n -- /usr/local/sbin/quest-esports-release "$RELEASE_SHA" "$remote_manifest"
+
+      - name: Cleanup temporary deploy SSH material
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${SSH_MATERIAL_DIR:-}" ]]; then
+            [[ "$SSH_MATERIAL_DIR" == "$RUNNER_TEMP"/* && "$SSH_MATERIAL_DIR" != "$RUNNER_TEMP/" ]] || { printf '%s\n' 'SSH material cleanup path is unsafe.' >&2; exit 1; }
+            rm -rf -- "$SSH_MATERIAL_DIR"
+          fi
+
+  release-success:
+    name: Record successful Compose deployment
+    needs:
+      - resolve-build
+      - deploy
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the actual deploy job to succeed
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve-build.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          set -euo pipefail
+          test "$RESOLVE_RESULT" = success
+          test "$DEPLOY_RESULT" = success
+
+      - name: Write the exact Compose deployment proof
+        env:
+          RELEASE_SHA: ${{ needs.resolve-build.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir -p compose-release-success
+          printf '%s\n' \
+            'compose_workflow=Deploy_immutable_Compose_release' \
+            'deploy_job=deploy' \
+            "release_sha=$RELEASE_SHA" \
+            > compose-release-success/release-success.txt
+
+      - name: Upload the successful Compose deployment proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: compose-release-success
+          path: compose-release-success/release-success.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Write the frontend release lineage
+        env:
+          CI_RUN_ID: ${{ needs.resolve-build.outputs.ci_run_id }}
+          RELEASE_SHA: ${{ needs.resolve-build.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir -p frontend-release
+          printf '%s\n' \
+            "release_sha=$RELEASE_SHA" \
+            "ci_run_id=$CI_RUN_ID" \
+            > frontend-release/release-lineage.txt
+
+      - name: Upload the frontend release lineage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-release
+          path: frontend-release/release-lineage.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Write the frontend release mode
+        env:
+          RELEASE_MODE: ${{ needs.resolve-build.outputs.release_mode }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_MODE" == normal || "$RELEASE_MODE" == rollback ]]
+          mkdir -p frontend-release-mode
+          printf 'release_mode=%s\n' "$RELEASE_MODE" > frontend-release-mode/release-mode.txt
+
+      - name: Upload the frontend release mode
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-release-mode
+          path: frontend-release-mode/release-mode.txt
+          if-no-files-found: error
+          retention-days: 7
