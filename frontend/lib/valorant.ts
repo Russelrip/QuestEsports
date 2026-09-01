@@ -250,7 +250,7 @@ export type ValorantPlayerLeaderboardPage = {
 
 // Registration flow types — snake_case, consumed as-is from the Quest backend.
 export type ValorantRegistrationDiscordUser = {
-  discord_id: number;
+  discord_id: string;
   discord_username: string;
   discord_discriminator: string | null;
   discord_avatar: string | null;

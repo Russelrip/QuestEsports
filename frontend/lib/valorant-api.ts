@@ -291,7 +291,7 @@ export const previewValorantRegistration = (puuid: string) =>
   );
 
 export const submitValorantRegistration = (input: {
-  discord_id: number;
+  discord_id: string;
   discord_username: string;
   puuid: string;
 }) =>

@@ -117,6 +117,7 @@ describe("admin veto launch navigation", () => {
     mocks.vetoRequest.mockImplementation((path: string) => path === "/api/v1/admin/veto-rooms" ? Promise.resolve([room]) : path.includes("/catalog") ? Promise.resolve(catalog) : Promise.resolve({}));
     render(<AdminVetoRoomsManager />);
     expect(await screen.findByText("Alpha vs Bravo")).toBeInTheDocument();
+    await screen.findByRole("link", { name: "Open live room" });
     expect(screen.getByRole("button", { name: /open room/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open live room" })).toHaveAttribute("href", "/veto/ROOM1");
   });

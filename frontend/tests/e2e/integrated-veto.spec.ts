@@ -35,6 +35,19 @@ const steps: FixtureStep[] = [
   { kind: "side", actor: "A", seriesIndex: 3 },
 ];
 
+const actionFixtures = [
+  { kind: "ban", actorSlot: 1, mapSlug: "ascent", mapName: "Ascent", side: null, seriesIndex: null },
+  { kind: "ban", actorSlot: 2, mapSlug: "bind", mapName: "Bind", side: null, seriesIndex: null },
+  { kind: "pick", actorSlot: 1, mapSlug: "haven", mapName: "Haven", side: null, seriesIndex: 1 },
+  { kind: "side", actorSlot: 2, mapSlug: "haven", mapName: "Haven", side: "attack", seriesIndex: 1 },
+  { kind: "pick", actorSlot: 2, mapSlug: "icebox", mapName: "Icebox", side: null, seriesIndex: 2 },
+  { kind: "side", actorSlot: 1, mapSlug: "icebox", mapName: "Icebox", side: "attack", seriesIndex: 2 },
+  { kind: "ban", actorSlot: 1, mapSlug: "lotus", mapName: "Lotus", side: null, seriesIndex: null },
+  { kind: "ban", actorSlot: 2, mapSlug: "sunset", mapName: "Sunset", side: null, seriesIndex: null },
+  { kind: "decider", actorSlot: null, mapSlug: "split", mapName: "Split", side: null, seriesIndex: 3 },
+  { kind: "side", actorSlot: 1, mapSlug: "split", mapName: "Split", side: "attack", seriesIndex: 3 },
+] as const;
+
 const tournament = {
   id: "tournament-1",
   slug: "valorant-cup",
@@ -176,45 +189,35 @@ const readBody = (route: Route) => {
   }
 };
 
-const appendFixtureAction = (state: FixtureState, body: Record<string, unknown>) => {
-  const step = steps[state.actions.length];
-  if (!step || step.kind === "decider") return false;
-  const map = step.kind === "side"
-    ? maps.find((entry) => state.actions.some((action) => action.mapSlug === entry.slug && action.payload.seriesIndex === step.seriesIndex))
-    : maps.find((entry) => entry.slug === body.mapSlug);
-  if (!map) return false;
-  const actorSlot = step.actor === "A"
-    ? state.teamASlot
-    : step.actor === "B" && state.teamASlot
-      ? state.teamASlot === 1 ? 2 : 1
-      : null;
+const appendFixtureAction = (state: FixtureState, requestIndex: number) => {
+  const fixture = actionFixtures[requestIndex];
+  if (!fixture) return false;
   state.actions.push({
     id: `action-${state.actions.length + 1}`,
     sequence: state.actions.length + 1,
-    kind: step.kind,
-    actorSlot,
-    mapSlug: map.slug,
-    mapName: map.name,
-    side: typeof body.side === "string" ? body.side : null,
-    payload: { seriesIndex: step.seriesIndex },
+    kind: fixture.kind,
+    actorSlot: fixture.actorSlot,
+    mapSlug: fixture.mapSlug,
+    mapName: fixture.mapName,
+    side: fixture.side,
+    payload: { seriesIndex: fixture.seriesIndex },
     createdAt: "2026-08-31T00:05:00.000Z",
   });
-  if (steps[state.actions.length]?.kind === "decider") {
-    const deciderMap = maps.find((entry) => !state.actions.some((action) => action.mapSlug === entry.slug));
-    if (!deciderMap) return false;
+  if (requestIndex === 7) {
+    const decider = actionFixtures[8];
     state.actions.push({
       id: `action-${state.actions.length + 1}`,
       sequence: state.actions.length + 1,
-      kind: "decider",
-      actorSlot: null,
-      mapSlug: deciderMap.slug,
-      mapName: deciderMap.name,
-      side: null,
-      payload: { seriesIndex: 3 },
+      kind: decider.kind,
+      actorSlot: decider.actorSlot,
+      mapSlug: decider.mapSlug,
+      mapName: decider.mapName,
+      side: decider.side,
+      payload: { seriesIndex: decider.seriesIndex },
       createdAt: "2026-08-31T00:05:00.000Z",
     });
   }
-  if (state.actions.length >= steps.length) state.status = "completed";
+  if (state.actions.length >= actionFixtures.length) state.status = "completed";
   return true;
 };
 
@@ -324,6 +327,7 @@ const installFixture = async (context: BrowserContext, state: FixtureState, staf
       if (access.kind === "caster" || access.kind === "viewer" || access.kind === "public") return errorResponse("This veto link is read-only.", 403);
       const body = readBody(route);
       if (Number(body.expectedRevision) !== state.revision) return errorResponse("The room changed. Refresh and try again.", 409);
+      const actionRequestIndex = state.actionRequests.length;
       if (pathname.endsWith("/actions")) state.actionRequests.push({ body, token });
       state.actionRoles.push(access.kind === "team" ? `team_${access.slot}` : "staff");
       if (pathname.endsWith("/ready")) {
@@ -341,7 +345,7 @@ const installFixture = async (context: BrowserContext, state: FixtureState, staf
         state.participants.forEach((participant) => { participant.team = participant.slot === state.teamASlot ? "A" : "B"; });
         state.status = "in_progress";
       } else {
-        if (!appendFixtureAction(state, body)) return errorResponse("The fixture received an invalid action.", 400);
+        if (!appendFixtureAction(state, actionRequestIndex)) return errorResponse("The fixture received an invalid action.", 400);
       }
       state.revision += 1;
       return vetoResponse(access.kind, access.slot);
@@ -363,7 +367,10 @@ const expectCasterControlsAbsent = async (page: Page) => {
 };
 
 const refreshVeto = async (page: Page) => {
-  await page.getByRole("button", { name: "Refresh" }).click();
+  await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/v1/veto-rooms/ALPHAB") && response.request().method() === "GET"),
+    page.getByRole("button", { name: "Refresh" }).click(),
+  ]);
 };
 
 test("staff launches an integrated BO3 veto and role views stay correctly isolated", async ({ page, browser }, testInfo: TestInfo) => {
@@ -495,6 +502,7 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
 
     while (state.actions.length < steps.length) {
       const step = steps[state.actions.length];
+      await refreshVeto(page);
       if (step.kind === "side") {
         await expect(page.getByRole("button", { name: "Attack", exact: true })).toBeVisible({ timeout: 15_000 });
         await page.getByRole("button", { name: "Attack", exact: true }).click();
