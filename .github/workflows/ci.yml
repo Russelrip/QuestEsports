@@ -224,7 +224,7 @@ jobs:
           assert 'ci_run_id' in compose['jobs']['resolve-build']['outputs']
           release_success = compose['jobs']['release-success']
           assert release_success['needs'] == ['resolve-build', 'deploy']
-          assert release_success['if'] == expression(' always() ')
+          assert release_success['if'] == expression(" always() && needs.resolve-build.result == 'success' ")
           release_steps = release_success['steps']
           result_step = release_steps[0]
           assert result_step['name'] == 'Require the actual deploy job to succeed'

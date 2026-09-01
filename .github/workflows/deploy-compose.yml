@@ -525,7 +525,7 @@ jobs:
     needs:
       - resolve-build
       - deploy
-    if: ${{ always() }}
+    if: ${{ always() && needs.resolve-build.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
