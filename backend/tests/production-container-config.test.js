@@ -1380,7 +1380,7 @@ test(
     try {
       let ready = false;
       for (let attempt = 0; attempt < 30; attempt += 1) {
-        const result = docker(["pg_isready", "-U", "postgres", "-d", "postgres"]);
+        const result = docker(["pg_isready", "-U", "postgres", "-d", "quest"]);
         if (result.status === 0) {
           ready = true;
           break;
@@ -1401,6 +1401,8 @@ test(
             ...process.env,
             DATABASE_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/quest?schema=public`,
             DIRECT_URL: `postgresql://postgres@127.0.0.1:${portMatch[1]}/quest?schema=public`,
+            SESSION_COOKIE_NAME: "quest_session",
+            NODE_ENV: "test",
           },
         });
 

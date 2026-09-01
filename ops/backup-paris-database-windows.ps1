@@ -106,7 +106,7 @@ try {
     -v "${workDirectory}:/stage:ro" `
     -v "${RecoveryRoot}:/keys:ro" `
     -v "${resolvedBackupRoot}:/out" `
-    alpine:3.22 sh -lc "apk add --no-cache age >/dev/null && tar -C /stage -czf /tmp/payload.tar.gz database.dump manifest.txt && age --recipients-file /keys/quest-esports-production-age-recipient.txt --output /out/$finalBase.tar.gz.age /tmp/payload.tar.gz"
+    alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce sh -lc "apk add --no-cache age=1.2.1-r0 >/dev/null && tar -C /stage -czf /tmp/payload.tar.gz database.dump manifest.txt && age --recipients-file /keys/quest-esports-production-age-recipient.txt --output /out/$finalBase.tar.gz.age /tmp/payload.tar.gz"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $encryptedPath -PathType Leaf)) {
     throw "Encryption did not create the expected backup archive."
   }
@@ -114,7 +114,7 @@ try {
   docker run --rm `
     -v "${RecoveryRoot}:/keys:ro" `
     -v "${resolvedBackupRoot}:/out:ro" `
-    alpine:3.22 sh -lc "apk add --no-cache age >/dev/null && age --decrypt --identity /keys/quest-esports-production-age-identity.txt /out/$finalBase.tar.gz.age | tar -tzf - | grep -Fx database.dump >/dev/null && age --decrypt --identity /keys/quest-esports-production-age-identity.txt /out/$finalBase.tar.gz.age | tar -tzf - | grep -Fx manifest.txt >/dev/null"
+    alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce sh -lc "apk add --no-cache age=1.2.1-r0 >/dev/null && age --decrypt --identity /keys/quest-esports-production-age-identity.txt /out/$finalBase.tar.gz.age | tar -tzf - | grep -Fx database.dump >/dev/null && age --decrypt --identity /keys/quest-esports-production-age-identity.txt /out/$finalBase.tar.gz.age | tar -tzf - | grep -Fx manifest.txt >/dev/null"
   if ($LASTEXITCODE -ne 0) {
     throw "Encrypted backup validation failed."
   }

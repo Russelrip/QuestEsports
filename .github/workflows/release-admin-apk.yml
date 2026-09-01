@@ -32,12 +32,17 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify tag is the tested main commit
         env:
           GH_TOKEN: ${{ github.token }}
         working-directory: .
         run: |
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.extraheader
+          export GIT_CONFIG_VALUE_0="Authorization: Bearer $GH_TOKEN"
+          trap 'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GH_TOKEN' EXIT
           git fetch --no-tags origin main
           RELEASE_SHA="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
           test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
