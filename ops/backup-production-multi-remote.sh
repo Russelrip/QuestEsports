@@ -241,20 +241,19 @@ done
   echo "POSTGRES_CA_FILE must be a trust bundle, not client identity material." >&2
   exit 1
 }
-for tls_file in "$POSTGRES_CA_FILE"; do
-  tls_mode="$(stat -c '%a' "$tls_file" 2>/dev/null)" || {
-    echo "PostgreSQL TLS material mode cannot be inspected." >&2
-    exit 1
-  }
-  [[ "$tls_mode" =~ ^[0-7]{3,4}$ ]] || {
-    echo "PostgreSQL TLS material mode is invalid." >&2
-    exit 1
-  }
-  (( (8#$tls_mode & 022) == 0 )) || {
-    echo "PostgreSQL TLS material must not be group/other-writable." >&2
-    exit 1
-  }
-done
+tls_file="$POSTGRES_CA_FILE"
+tls_mode="$(stat -c '%a' "$tls_file" 2>/dev/null)" || {
+  echo "PostgreSQL TLS material mode cannot be inspected." >&2
+  exit 1
+}
+[[ "$tls_mode" =~ ^[0-7]{3,4}$ ]] || {
+  echo "PostgreSQL TLS material mode is invalid." >&2
+  exit 1
+}
+(( (8#$tls_mode & 022) == 0 )) || {
+  echo "PostgreSQL TLS material must not be group/other-writable." >&2
+  exit 1
+}
 if [[ "$backup_test_fixture" == false ]]; then
   [[ "$POSTGRES_CA_FILE" == /etc/quest-esports-backup/backup-client-ca.crt &&
       "$(stat -c '%u:%g %a' "$POSTGRES_CA_FILE" 2>/dev/null)" == "0:${backup_group_id} 640" ]] || {

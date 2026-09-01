@@ -103,11 +103,11 @@ jobs:
           frontend_package = json.loads((root / 'frontend' / 'package.json').read_text(encoding='utf-8'))
           frontend_lock = json.loads((root / 'frontend' / 'package-lock.json').read_text(encoding='utf-8'))
           assert frontend_package['devDependencies']['@playwright/test'] == '1.61.1'
-          assert frontend_package['devDependencies']['vercel'] == '58.9.0'
+          assert 'vercel' not in frontend_package['devDependencies']
           assert frontend_lock['packages']['']['devDependencies']['@playwright/test'] == '1.61.1'
-          assert frontend_lock['packages']['']['devDependencies']['vercel'] == '58.9.0'
+          assert 'vercel' not in frontend_lock['packages']['']['devDependencies']
           assert frontend_lock['packages']['node_modules/playwright']['version'] == '1.61.1'
-          assert frontend_lock['packages']['node_modules/vercel']['version'] == '58.9.0'
+          assert 'node_modules/vercel' not in frontend_lock['packages']
 
           e2e_path = root / '.github' / 'workflows' / 'valorant-e2e.yml'
           e2e_source = e2e_path.read_text(encoding='utf-8')
@@ -145,12 +145,12 @@ jobs:
           frontend_steps = frontend['jobs']['deploy']['steps']
           vercel_build = next(step for step in frontend_steps if step.get('name') == 'Build exact Vercel artifact')
           assert vercel_build['run'].splitlines() == [
-              'frontend/node_modules/.bin/vercel pull --yes --environment=production --token="$VERCEL_TOKEN"',
-              'frontend/node_modules/.bin/vercel build --prod --token="$VERCEL_TOKEN"',
+              'npx --yes vercel@54.17.3 pull --yes --environment=production --token="$VERCEL_TOKEN"',
+              'npx --yes vercel@54.17.3 build --prod --token="$VERCEL_TOKEN"',
           ]
           vercel_promote = next(step for step in frontend_steps if step.get('name') == 'Promote tested artifact')
-          assert vercel_promote['run'] == 'frontend/node_modules/.bin/vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"'
-          assert not any('npx --yes vercel@' in step.get('run', '') for step in frontend_steps)
+          assert vercel_promote['run'] == 'npx --yes vercel@54.17.3 deploy --prebuilt --prod --token="$VERCEL_TOKEN"'
+          assert not any('frontend/node_modules/.bin/vercel' in step.get('run', '') for step in frontend_steps)
           install_step = next(step for step in frontend_steps if step.get('name') == 'Install and validate')
           assert 'npm ci' in install_step['run']
 
@@ -272,7 +272,7 @@ jobs:
               'test "$(jq -er \'.workflow_run.repository_id | tostring\' <<< "$artifact_json")" = "$compose_repository_id"',
               'test "$(jq -er \'.workflow_run.head_repository_id | tostring\' <<< "$artifact_json")" = "$compose_head_repository_id"',
               'test "$(jq -er \'.workflow_run.head_branch\' <<< "$artifact_json")" = main',
-              'test "$(jq -er \'.workflow_run.head_sha\' <<< "$artifact_json")" = "$compose_head_sha"',
+              'test "$(jq -er \'.workflow_run.head_sha\' <<< "$artifact_json")" = "$resolved_compose_head_sha"',
               '[[ "$(jq -er \'.id | tostring\' <<< "$artifact_json")" =~ ^[0-9]+$ ]]',
               'test "$(jq -er \'.name\' <<< "$artifact_json")" = "$expected_artifact"',
               'test "$(jq -er \'.expired\' <<< "$artifact_json")" = false',
@@ -300,8 +300,8 @@ jobs:
               'test "$(jq -er \'.head_repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
               'test "$(jq -er \'.head_sha | select(test("^[0-9a-f]{40}$"))\' <<< "$ci_run_json")" = "$DEPLOY_SHA"',
           )
-          assert 'actions/runs/$ci_run_id' in compatibility_step['run']
-          assert 'ci_run_id="$CI_RUN_ID"' in compatibility_step['run']
+          assert 'actions/runs/$resolved_ci_run_id' in compatibility_step['run']
+          assert 'resolved_ci_run_id="$CI_RUN_ID"' in compatibility_step['run']
           assert 'ci_runs_json' not in compatibility_step['run']
           assert '.head_repository.full_name' in compatibility_step['run']
           assert '.workflow_id' in compatibility_step['run']
@@ -606,7 +606,7 @@ jobs:
         image: postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825 # PostgreSQL 16.15 Bookworm CI fixture
         env:
           POSTGRES_USER: ci
-          POSTGRES_PASSWORD: ci
+          POSTGRES_HOST_AUTH_METHOD: trust # Ephemeral CI-only service; no credential is committed.
           POSTGRES_DB: quest_ci
         ports:
           - 5432:5432
@@ -617,8 +617,8 @@ jobs:
           --health-retries 5
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://ci:ci@localhost:5432/quest_ci?schema=public
-      DIRECT_URL: postgresql://ci:ci@localhost:5432/quest_ci?schema=public
+      DATABASE_URL: postgresql://ci@localhost:5432/quest_ci?schema=public
+      DIRECT_URL: postgresql://ci@localhost:5432/quest_ci?schema=public
       SESSION_COOKIE_NAME: quest_session
       RUN_DATABASE_INTEGRATION_TESTS: true
     defaults:
@@ -647,7 +647,24 @@ jobs:
       - name: Generate Prisma client
         run: npm run prisma:generate
 
+      - name: Bootstrap CI PostgreSQL roles and schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql --dbname="${DATABASE_URL%%\?*}" \
+            --set=ON_ERROR_STOP=1 \
+            --file="$GITHUB_WORKSPACE/ops/docker/postgres/init/001-bootstrap-roles.sql"
+          # The CI fixture has no sibling VALORANT migrator, so provide only
+          # the ledger shape that the shared security verifier expects. Keep it
+          # migrator-owned and runtime-inaccessible, matching production.
+          psql --dbname="${DATABASE_URL%%\?*}" \
+            --set=ON_ERROR_STOP=1 \
+            --command='SET ROLE val_migrator; CREATE TABLE IF NOT EXISTS valorant._migration_ledger (id text PRIMARY KEY); REVOKE ALL PRIVILEGES ON TABLE valorant._migration_ledger FROM val_runtime; RESET ROLE;'
+
       - name: Apply Prisma migrations
+        env:
+          DATABASE_URL: postgresql://quest_migrator@localhost:5432/quest_ci?schema=public
+          DIRECT_URL: postgresql://quest_migrator@localhost:5432/quest_ci?schema=public
         run: npm run prisma:migrate:deploy
 
       - name: Verify no Prisma migrations are pending
@@ -743,16 +760,22 @@ jobs:
             ops/deploy/release.env.example; do
             grep -F "$approved_postgres_ref" "$trust_file" >/dev/null
           done
-          ! grep -F 'postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675' .github/workflows/build-container-images.yml .github/workflows/deploy-compose.yml ops/deploy/validate-host.sh ops/deploy/release.env.example >/dev/null
-          ! grep -E '^(POSTGRES|VALORANT)_COSIGN_' ops/deploy/validate-host.sh ops/deploy/verify-release.sh ops/deploy/release.env.example >/dev/null
+          if grep -F 'postgres:17@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675' .github/workflows/build-container-images.yml .github/workflows/deploy-compose.yml ops/deploy/validate-host.sh ops/deploy/release.env.example >/dev/null; then
+            printf '%s\n' 'Found a revoked PostgreSQL image reference.' >&2
+            exit 1
+          fi
+          if grep -E '^(POSTGRES|VALORANT)_COSIGN_' ops/deploy/validate-host.sh ops/deploy/verify-release.sh ops/deploy/release.env.example >/dev/null; then
+            printf '%s\n' 'Found deprecated PostgreSQL or VALORANT cosign variables.' >&2
+            exit 1
+          fi
           grep -F "$approved_postgres_ref" "$compose" >/dev/null
           grep -F 'POSTGRES_IMAGE must be supplied by the release manifest' "$compose" >/dev/null
-          grep -F '127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}:5432' "$staging" >/dev/null
-          ! awk '
+          grep -F "127.0.0.1:\${POSTGRES_STAGING_HOST_PORT:-55432}:5432" "$staging" >/dev/null
+          awk '
             /^  postgres:/ { in_postgres=1; next }
             in_postgres && /^  [A-Za-z0-9_-]+:/ { exit }
             in_postgres && /^[[:space:]]+ports:/ { bad=1 }
-            END { exit bad+0 }
+            END { if (bad) exit 1 }
           ' "$compose"
 
           for role in quest_migrator quest_runtime val_migrator val_runtime; do

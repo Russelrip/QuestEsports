@@ -61,7 +61,7 @@ jobs:
           compose_event="$(jq -er '.event' <<< "$compose_run_json")"
           [[ "$compose_event" == workflow_dispatch || "$compose_event" == workflow_run ]]
           test "$(jq -er '.head_branch' <<< "$compose_run_json")" = main
-          compose_head_sha="$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "$compose_run_json")"
+          resolved_compose_head_sha="$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "$compose_run_json")"
           test "$(jq -er '.repository.full_name' <<< "$compose_run_json")" = "$GITHUB_REPOSITORY"
           test "$(jq -er '.head_repository.full_name' <<< "$compose_run_json")" = "$GITHUB_REPOSITORY"
           compose_repository_id="$(jq -er '.repository.id | tostring' <<< "$compose_run_json")"
@@ -76,14 +76,14 @@ jobs:
             test "$(jq -er '.workflow_run.repository_id | tostring' <<< "$artifact_json")" = "$compose_repository_id"
             test "$(jq -er '.workflow_run.head_repository_id | tostring' <<< "$artifact_json")" = "$compose_head_repository_id"
             test "$(jq -er '.workflow_run.head_branch' <<< "$artifact_json")" = main
-            test "$(jq -er '.workflow_run.head_sha' <<< "$artifact_json")" = "$compose_head_sha"
+            test "$(jq -er '.workflow_run.head_sha' <<< "$artifact_json")" = "$resolved_compose_head_sha"
           done
           printf 'COMPOSE_EVENT=%s\n' "$compose_event" >> "$GITHUB_ENV"
-          printf 'COMPOSE_RELEASE_HEAD_SHA=%s\n' "$compose_head_sha" >> "$GITHUB_ENV"
+          printf 'COMPOSE_RELEASE_HEAD_SHA=%s\n' "$resolved_compose_head_sha" >> "$GITHUB_ENV"
           if [[ "$GITHUB_EVENT_NAME" == workflow_run ]]; then
             [[ "$compose_event" == workflow_run || "$compose_event" == workflow_dispatch ]]
             if [[ "$compose_event" == workflow_run ]]; then
-              test "$COMPOSE_HEAD_SHA" = "$compose_head_sha"
+              test "$COMPOSE_HEAD_SHA" = "$resolved_compose_head_sha"
             fi
           fi
 
@@ -198,13 +198,13 @@ jobs:
           printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'
           release_mode="$(awk -F= '$1 == "release_mode" { print $2 }' frontend-release-mode/release-mode.txt)"
           [[ "$release_mode" == normal || "$release_mode" == rollback ]]
-          ci_run_id="$CI_RUN_ID"
+          resolved_ci_run_id="$CI_RUN_ID"
           ci_workflow_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml")"
           ci_workflow_id="$(jq -er '.id | tostring' <<< "$ci_workflow_json")"
           test "$(jq -er '.path' <<< "$ci_workflow_json")" = '.github/workflows/ci.yml'
-          [[ "$ci_run_id" =~ ^[0-9]+$ ]]
-          ci_run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ci_run_id")"
-          test "$(jq -er '.id | tostring' <<< "$ci_run_json")" = "$ci_run_id"
+          [[ "$resolved_ci_run_id" =~ ^[0-9]+$ ]]
+          ci_run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$resolved_ci_run_id")"
+          test "$(jq -er '.id | tostring' <<< "$ci_run_json")" = "$resolved_ci_run_id"
           ci_run_path="$(jq -er '.path' <<< "$ci_run_json")"
           test "${ci_run_path%@*}" = '.github/workflows/ci.yml'
           test "$(jq -er '.workflow_id | tostring' <<< "$ci_run_json")" = "$ci_workflow_id"
@@ -245,9 +245,9 @@ jobs:
           NEXT_PUBLIC_API_URL: ${{ vars.PRODUCTION_API_URL }}
           NEXT_PUBLIC_SITE_URL: https://questesports.lk
         run: |
-          frontend/node_modules/.bin/vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          frontend/node_modules/.bin/vercel build --prod --token="$VERCEL_TOKEN"
+          npx --yes vercel@54.17.3 pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx --yes vercel@54.17.3 build --prod --token="$VERCEL_TOKEN"
 
       - name: Promote tested artifact
         working-directory: .
-        run: frontend/node_modules/.bin/vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: npx --yes vercel@54.17.3 deploy --prebuilt --prod --token="$VERCEL_TOKEN"

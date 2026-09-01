@@ -125,7 +125,6 @@ jobs:
           test "$(jq -er '.head_repository.full_name' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"
           test "$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "$ci_run_json")" = "$release_sha"
           test "$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<< "$build_run_json")" = "$release_sha"
-          printf 'ci_run_id=%s\n' "$ci_run_id" >> "$GITHUB_OUTPUT"
           if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
             test "$release_sha" = "$REQUESTED_ROLLBACK_SHA"
           else
@@ -136,14 +135,17 @@ jobs:
             printf '%s\n' 'The upstream CI artifact did not provide a full lowercase SHA.' >&2
             exit 1
           }
-          printf 'artifact_name=%s\n' "$artifact_name" >> "$GITHUB_OUTPUT"
-          printf 'build_run_id=%s\n' "$build_run_id" >> "$GITHUB_OUTPUT"
-          printf 'release_sha=%s\n' "$release_sha" >> "$GITHUB_OUTPUT"
-          if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
-            printf 'release_mode=rollback\n' >> "$GITHUB_OUTPUT"
-          else
-            printf 'release_mode=normal\n' >> "$GITHUB_OUTPUT"
-          fi
+          {
+            printf 'ci_run_id=%s\n' "$ci_run_id"
+            printf 'artifact_name=%s\n' "$artifact_name"
+            printf 'build_run_id=%s\n' "$build_run_id"
+            printf 'release_sha=%s\n' "$release_sha"
+            if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
+              printf 'release_mode=rollback\n'
+            else
+              printf 'release_mode=normal\n'
+            fi
+          } >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy signed Compose release

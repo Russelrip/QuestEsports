@@ -1176,16 +1176,16 @@ test("CI and deployment tooling use immutable infrastructure and locked CLIs", (
   const frontendPackage = JSON.parse(read("frontend/package.json"));
   const frontendLock = JSON.parse(read("frontend/package-lock.json"));
   assert.equal(frontendPackage.devDependencies["@playwright/test"], "1.61.1");
-  assert.equal(frontendPackage.devDependencies.vercel, "58.9.0");
+  assert.equal("vercel" in frontendPackage.devDependencies, false);
   assert.equal(frontendLock.packages[""].devDependencies["@playwright/test"], "1.61.1");
-  assert.equal(frontendLock.packages[""].devDependencies.vercel, "58.9.0");
+  assert.equal("vercel" in frontendLock.packages[""].devDependencies, false);
   assert.equal(frontendLock.packages["node_modules/playwright"].version, "1.61.1");
-  assert.equal(frontendLock.packages["node_modules/vercel"].version, "58.9.0");
+  assert.equal("node_modules/vercel" in frontendLock.packages, false);
 
-  assert.match(frontendDeployWorkflow, /frontend\/node_modules\/\.bin\/vercel pull --yes/);
-  assert.match(frontendDeployWorkflow, /frontend\/node_modules\/\.bin\/vercel build --prod/);
-  assert.match(frontendDeployWorkflow, /run: frontend\/node_modules\/\.bin\/vercel deploy --prebuilt --prod/);
-  assert.doesNotMatch(frontendDeployWorkflow, /npx\s+--yes\s+vercel@/);
+  assert.match(frontendDeployWorkflow, /npx --yes vercel@54\.17\.3 pull --yes/);
+  assert.match(frontendDeployWorkflow, /npx --yes vercel@54\.17\.3 build --prod/);
+  assert.match(frontendDeployWorkflow, /run: npx --yes vercel@54\.17\.3 deploy --prebuilt --prod/);
+  assert.doesNotMatch(frontendDeployWorkflow, /frontend\/node_modules\/\.bin\/vercel/);
   assert.match(frontendDeployWorkflow, /npm ci/);
 
   assert.match(

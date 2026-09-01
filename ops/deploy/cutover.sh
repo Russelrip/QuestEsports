@@ -515,7 +515,7 @@ run_migration_status() {
   [[ "$target_authority" == quest-postgres ]] || die 'migration target authority is not the fixed Quest PostgreSQL target.'
   [[ "$schema" == public || "$schema" == valorant ]] || die 'migration schema is not an approved service schema.'
   output="$(CHECK_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" "${!variable}" 2>/dev/null)" || die "$variable failed."
-  [[ "$output" =~ ^(none|pending)[[:space:]]+target=quest-postgres[[:space:]]+schema=$schema[[:space:]]+repository=$repository$ ]] || die "$variable returned an ambiguous target/schema/status acknowledgement."
+  [[ "$output" =~ ^(none|pending)[[:space:]]+target=quest-postgres[[:space:]]+schema=${schema}[[:space:]]+repository=$repository$ ]] || die "$variable returned an ambiguous target/schema/status acknowledgement."
   [[ "$output" == none* ]] && return 0
   return 1
 }
