@@ -626,6 +626,17 @@ test("immutable image CI binds successful repository CI and publishes all signed
     imageWorkflow,
     /docker run --rm --pull=never --network host[\s\S]*"\$COSIGN_IMAGE" sign --yes "\$image_reference"/,
   );
+  assert.ok(
+    imageWorkflow.includes('name: Prepare Cosign GHCR credentials') &&
+      imageWorkflow.includes('cosign_docker_config="$RUNNER_TEMP/cosign-docker"') &&
+      imageWorkflow.includes('docker --config "$cosign_docker_config" login ghcr.io'),
+    "Cosign must prepare a dedicated GHCR Docker config",
+  );
+  assert.ok(
+    imageWorkflow.includes("-e DOCKER_CONFIG=/tmp/cosign-home/.docker") &&
+      imageWorkflow.includes('-v "$RUNNER_TEMP/cosign-docker:/tmp/cosign-home/.docker:ro"'),
+    "Cosign must use the dedicated Docker config inside the container",
+  );
   assert.match(imageWorkflow, /printf 'frontend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'backend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'migrator_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
