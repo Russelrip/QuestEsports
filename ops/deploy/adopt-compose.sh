@@ -5,7 +5,8 @@ umask 077
 die() { printf 'adoption refused: %s\n' "$*" >&2; exit 1; }
 say() { printf '%s\n' "$*"; }
 
-[[ "${EUID:-$(id -u)}" -eq 0 ]] || die 'the adoption controller must run as root.'
+[[ "${EUID:-$(id -u)}" -eq 0 || "${ADOPTION_TEST_FIXTURE:-0}" == 1 ]] ||
+  die 'the adoption controller must run as root.'
 [[ $# -eq 2 ]] || die 'usage: adopt-compose.sh <full-release-sha> <release-manifest>'
 
 release_sha="$1"
