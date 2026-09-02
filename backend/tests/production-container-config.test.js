@@ -13,6 +13,8 @@ const dockerfile = read("ops/docker/backend.production.Dockerfile");
 const dockerignore = read("backend/.dockerignore");
 const productionCompose = read("ops/docker/compose.production.yml");
 const stagingCompose = read("ops/docker/compose.postgres-staging.yml");
+const adoptionCompose = read("ops/docker/compose.adoption-candidate.yml");
+const valorantAdoptionCompose = read("ops/docker/valorant.adoption-candidate.yml");
 const productionEnv = read("ops/docker/quest.production.env.example");
 const valorantProductionEnv = read("ops/docker/valorant.production.env.example");
 const releaseScript = read("ops/deploy/release.sh");
@@ -500,6 +502,24 @@ test("production and staging Compose render the private PostgreSQL topology", ()
   assert.deepEqual(stagingPortMappings, [
     "127.0.0.1:${POSTGRES_STAGING_HOST_PORT:-55432}:5432",
   ]);
+});
+
+test("adoption candidates cannot inherit live ports, storage, or writer admission", () => {
+  assert.match(adoptionCompose, /^name: quest-adoption$/m);
+  assert.match(valorantAdoptionCompose, /^name: valorant-adoption$/m);
+  assert.match(adoptionCompose, /127\.0\.0\.1:55433:5432/);
+  assert.match(adoptionCompose, /127\.0\.0\.1:15001:5001/);
+  assert.match(valorantAdoptionCompose, /127\.0\.0\.1:18000:8000/);
+  assert.match(adoptionCompose, /\/srv\/quest-esports\/postgres\/17-adoption-candidate\/data/);
+  assert.doesNotMatch(adoptionCompose, /- \/srv\/quest-esports\/postgres\/17\/data:/);
+  assert.match(adoptionCompose, /ports: !override/);
+  assert.match(adoptionCompose, /volumes: !override/);
+  assert.match(adoptionCompose, /env_file: !override/);
+  assert.equal((valorantAdoptionCompose.match(/WRITE_FREEZE_MODE: validation/g) || []).length, 4);
+  assert.match(adoptionCompose, /WRITE_FREEZE_MODE: validation/);
+  assert.match(adoptionCompose, /name: quest-adoption-shared/);
+  assert.match(valorantAdoptionCompose, /name: quest-adoption-shared/);
+  assert.doesNotMatch(`${adoptionCompose}\n${valorantAdoptionCompose}`, /0\.0\.0\.0:/);
 });
 
 test("production backend receives mandatory runtime configuration", () => {

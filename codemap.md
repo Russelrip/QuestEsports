@@ -37,6 +37,9 @@ The API routes and aggregate definitions are mapped in
   executed through the gated implementation plan in
   `docs/superpowers/plans/2026-09-02-first-compose-adoption.md`; it must not be
   bootstrapped through the steady-state release command.
+  Its pre-cutover candidates use `ops/docker/compose.adoption-candidate.yml`
+  and `ops/docker/valorant.adoption-candidate.yml`; those overlays must never
+  become the steady-state production topology.
 - `ops/rehearsal/` — isolated PostgreSQL 17 restore rehearsal boundary. It may
   invoke the existing destructive restore primitive only through explicit
   disposable-target checks and emits private, machine-readable evidence; it

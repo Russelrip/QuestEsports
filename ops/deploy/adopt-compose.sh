@@ -44,7 +44,8 @@ root_file() {
 }
 
 for setting in RELEASE_ROOT RELEASES_ROOT CURRENT_LINK RELEASE_LOCK_PATH QUEST_COMPOSE_TEMPLATE \
-  VALORANT_COMPOSE_SOURCE ADOPTION_HOST_VALIDATE_COMMAND ADOPTION_AUTHORITY_AUDIT_COMMAND \
+  VALORANT_COMPOSE_SOURCE QUEST_ADOPTION_COMPOSE_OVERLAY VALORANT_ADOPTION_COMPOSE_OVERLAY \
+  ADOPTION_HOST_VALIDATE_COMMAND ADOPTION_AUTHORITY_AUDIT_COMMAND \
   ADOPTION_RECOVERY_VERIFY_COMMAND ADOPTION_CANDIDATE_VALIDATE_COMMAND ADOPTION_HANDOFF_ARM_COMMAND \
   ADOPTION_FREEZE_COMMAND ADOPTION_LEGACY_STOP_COMMAND ADOPTION_FINAL_BACKUP_COMMAND \
   ADOPTION_FINAL_RESTORE_COMMAND ADOPTION_COMPOSE_FROZEN_START_COMMAND \
@@ -82,6 +83,8 @@ flock -n 9 || die 'another release or backup operation is active.'
 root_file "$manifest_path"
 root_file "$QUEST_COMPOSE_TEMPLATE"
 root_file "$VALORANT_COMPOSE_SOURCE"
+root_file "$QUEST_ADOPTION_COMPOSE_OVERLAY"
+root_file "$VALORANT_ADOPTION_COMPOSE_OVERLAY"
 
 declare -A manifest=()
 while IFS= read -r line || [[ -n "$line" ]]; do
@@ -116,6 +119,8 @@ stage_dir="$RELEASES_ROOT/$release_sha"
 mkdir -m 0755 "$stage_dir"
 cp -- "$QUEST_COMPOSE_TEMPLATE" "$stage_dir/compose.production.yml"
 cp -- "$VALORANT_COMPOSE_SOURCE" "$stage_dir/valorant.compose.yml"
+cp -- "$QUEST_ADOPTION_COMPOSE_OVERLAY" "$stage_dir/compose.adoption-candidate.yml"
+cp -- "$VALORANT_ADOPTION_COMPOSE_OVERLAY" "$stage_dir/valorant.adoption-candidate.yml"
 cat > "$stage_dir/.env" <<EOF
 QUEST_FRONTEND_IMAGE=${manifest[frontend_image]}
 QUEST_BACKEND_IMAGE=${manifest[backend_image]}
@@ -123,7 +128,8 @@ QUEST_MIGRATOR_IMAGE=${manifest[migrator_image]}
 POSTGRES_IMAGE=${manifest[postgres_image]}
 VALORANT_IMAGE=${manifest[valorant_image]}
 EOF
-chmod 0644 "$stage_dir/compose.production.yml" "$stage_dir/valorant.compose.yml"
+chmod 0644 "$stage_dir/compose.production.yml" "$stage_dir/valorant.compose.yml" \
+  "$stage_dir/compose.adoption-candidate.yml" "$stage_dir/valorant.adoption-candidate.yml"
 chmod 0600 "$stage_dir/.env"
 
 state=undetermined

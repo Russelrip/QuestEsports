@@ -28,7 +28,7 @@ inventing steady-state release lineage.
 ## Phase 1: Repository contracts
 
 1. Add `ops/deploy/adopt-compose.sh` as the only one-time adoption controller.
-2. Add an adoption-only Compose overlay with isolated project/network names,
+2. Add adoption-only Compose overlays with isolated project/network names,
    candidate data root, and loopback ports `55433`, `15001`, and `18000`.
 3. Extend deployment fixtures with the complete adoption state machine:
    `undetermined`, `vps-authoritative-audited`, `recovery-verified`,
@@ -107,4 +107,3 @@ inventing steady-state release lineage.
 - GitHub production promotion remains disabled. Main protection, SHA-pinning,
   a main-only production environment, and a dedicated environment-scoped SSH
   identity are installed.
-

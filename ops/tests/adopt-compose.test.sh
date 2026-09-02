@@ -16,6 +16,8 @@ make_fixture() {
   : > "$fixture/release.lock"
   printf '%s\n' 'name: quest-prod' > "$fixture/source/compose.production.yml"
   printf '%s\n' 'name: valorant-prod' > "$fixture/source/valorant.compose.yml"
+  printf '%s\n' 'name: quest-adoption' > "$fixture/source/compose.adoption-candidate.yml"
+  printf '%s\n' 'name: valorant-adoption' > "$fixture/source/valorant.adoption-candidate.yml"
   cat > "$fixture/incoming/release-manifest" <<EOF
 commit_sha=$release_sha
 frontend_image=ghcr.io/russelrip/quest-frontend@sha256:$digest
@@ -63,6 +65,8 @@ CURRENT_LINK=$fixture/release/current
 RELEASE_LOCK_PATH=$fixture/release.lock
 QUEST_COMPOSE_TEMPLATE=$fixture/source/compose.production.yml
 VALORANT_COMPOSE_SOURCE=$fixture/source/valorant.compose.yml
+QUEST_ADOPTION_COMPOSE_OVERLAY=$fixture/source/compose.adoption-candidate.yml
+VALORANT_ADOPTION_COMPOSE_OVERLAY=$fixture/source/valorant.adoption-candidate.yml
 QUEST_FRONTEND_IMAGE_APPROVED_REF=ghcr.io/russelrip/quest-frontend@sha256:$digest
 QUEST_BACKEND_IMAGE_APPROVED_REF=ghcr.io/russelrip/quest-backend@sha256:$digest
 MIGRATOR_IMAGE_APPROVED_REF=ghcr.io/russelrip/quest-migrator@sha256:$digest
@@ -105,6 +109,8 @@ grep -Fxq 'state=compose-authoritative' "$success_fixture/release/current/adopti
 grep -Fxq 'writer_admitted=true' "$success_fixture/release/current/commit-point.txt"
 grep -Fxq 'current_pointer_updated=true' "$success_fixture/release/current/release-metadata.txt"
 grep -Fxq 'cutover_type=existing-vps-compose-adoption' "$success_fixture/release/current/release-metadata.txt"
+grep -Fxq 'name: quest-adoption' "$success_fixture/release/current/compose.adoption-candidate.yml"
+grep -Fxq 'name: valorant-adoption' "$success_fixture/release/current/valorant.adoption-candidate.yml"
 grep -Fxq 'mask-legacy' "$success_fixture/hooks.log"
 
 precommit_fixture="$work_directory/precommit"
