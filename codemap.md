@@ -29,7 +29,9 @@ The API routes and aggregate definitions are mapped in
 - `ops/` — production backup, restore, retention, and freshness tooling.
   - `ops/docker/` — immutable production Compose topology and host Nginx
     ingress; PostgreSQL stays private and application publications are
-    loopback-only.
+    loopback-only. The frontend joins the internal application network and a
+    frontend-only ingress bridge so Docker can implement its loopback port;
+    database and shared-service networks remain unavailable to it.
 - `ops/deploy/` — root-owned artifact verification, the one-time Supabase
   to PostgreSQL 17 cutover boundary, and digest-only steady-state releases.
   The existing-VPS first Compose adoption is specified in

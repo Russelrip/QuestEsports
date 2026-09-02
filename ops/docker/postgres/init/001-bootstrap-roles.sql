@@ -128,6 +128,21 @@ BEGIN
     JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
     WHERE namespace.nspname IN ('public', 'valorant')
       AND relation.relkind IN ('r', 'p', 'v', 'm', 'S', 'f', 'c')
+      -- An owned/identity sequence follows its table's owner automatically;
+      -- PostgreSQL rejects ALTER SEQUENCE OWNER while that dependency exists.
+      -- Keep standalone sequences in this pass, but let the table pass repair
+      -- attached sequence ownership.
+      AND (
+        relation.relkind <> 'S'
+        OR NOT EXISTS (
+          SELECT 1
+          FROM pg_depend AS sequence_dependency
+          WHERE sequence_dependency.classid = 'pg_class'::regclass
+            AND sequence_dependency.objid = relation.oid
+            AND sequence_dependency.refclassid = 'pg_class'::regclass
+            AND sequence_dependency.deptype IN ('a', 'i')
+        )
+      )
   LOOP
     schema_owner := CASE relation_record.nspname
       WHEN 'public' THEN 'quest_migrator'

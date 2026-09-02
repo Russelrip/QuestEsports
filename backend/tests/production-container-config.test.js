@@ -509,6 +509,7 @@ test("adoption candidates cannot inherit live ports, storage, or writer admissio
   assert.match(valorantAdoptionCompose, /^name: valorant-adoption$/m);
   assert.match(adoptionCompose, /127\.0\.0\.1:55433:5432/);
   assert.match(adoptionCompose, /127\.0\.0\.1:15001:5001/);
+  assert.match(adoptionCompose, /127\.0\.0\.1:13000:3000/);
   assert.match(valorantAdoptionCompose, /127\.0\.0\.1:18000:8000/);
   assert.match(adoptionCompose, /\/srv\/quest-esports\/postgres\/17-adoption-candidate\/data/);
   assert.doesNotMatch(adoptionCompose, /- \/srv\/quest-esports\/postgres\/17\/data:/);
@@ -533,7 +534,7 @@ test("frontend has deliberate outbound and cache behavior", () => {
   assert.match(frontend, /NEXT_TELEMETRY_DISABLED:\s*["']?1["']?/);
   assert.match(frontend, /tmpfs:[\s\S]*\/app\/\.next\/cache/);
   assert.doesNotMatch(frontend, /network_mode:\s*none/);
-  assert.deepEqual(serviceNetworks("frontend"), ["app"]);
+  assert.deepEqual(serviceNetworks("frontend"), ["app", "ingress"]);
 });
 
 test("host verification requires exact image identity and Cosign verification", () => {
@@ -893,11 +894,12 @@ test("production Compose uses stable aliases and durable, non-source mounts", ()
 });
 
 test("production services have exactly the required network memberships", () => {
-  assert.deepEqual(serviceNetworks("frontend"), ["app"]);
+  assert.deepEqual(serviceNetworks("frontend"), ["app", "ingress"]);
   assert.deepEqual(serviceNetworks("backend"), ["app", "database", "quest-shared"]);
   assert.deepEqual(serviceNetworks("postgres"), ["database", "quest-shared"]);
   assert.match(productionCompose, /app:\s*\n\s+internal:\s*true/);
   assert.match(productionCompose, /database:\s*\n\s+internal:\s*true/);
+  assert.match(productionCompose, /ingress:\s*\{\}/);
 });
 
 test("contract parsers accept valid Compose short/long port and mount forms", () => {

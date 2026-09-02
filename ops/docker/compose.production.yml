@@ -10,7 +10,10 @@ services:
   frontend:
     image: ${QUEST_FRONTEND_IMAGE:?QUEST_FRONTEND_IMAGE must be supplied by the release manifest}
     # Frontend server-side fetches may reach the backend over the internal app
-    # network. The frontend is not attached to database or quest-shared.
+    # network. The dedicated ingress bridge gives Docker a gateway on which to
+    # implement the loopback-only publication; Docker 29 does not activate a
+    # published port when every attached network is internal. The frontend is
+    # not attached to database or quest-shared.
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
       API_EGRESS_ALLOWED: "true"
@@ -40,6 +43,7 @@ services:
       start_period: 20s
     networks:
       app: {}
+      ingress: {}
 
   backend:
     image: ${QUEST_BACKEND_IMAGE:?QUEST_BACKEND_IMAGE must be supplied by the release manifest}
@@ -145,6 +149,9 @@ networks:
     internal: true
   database:
     internal: true
+  # Attached only to the frontend. Public reachability still comes exclusively
+  # through the explicit 127.0.0.1 publication and host Nginx.
+  ingress: {}
   quest-shared:
     name: quest-shared
     external: true

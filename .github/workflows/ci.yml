@@ -686,6 +686,16 @@ jobs:
           DIRECT_URL: postgresql://quest_migrator@localhost:5432/quest_ci?schema=public
         run: npm run prisma:migrate:deploy
 
+      - name: Reapply restore normalization as the recovery role
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql \
+            --dbname=postgresql://quest_recovery_admin@localhost:5432/quest_ci \
+            --set=ON_ERROR_STOP=1 \
+            --set=RESTORE_MODE=1 \
+            --file="$GITHUB_WORKSPACE/ops/docker/postgres/init/001-bootstrap-roles.sql"
+
       - name: Verify no Prisma migrations are pending
         run: npm run prisma:migrate:status
 
