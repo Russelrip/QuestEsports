@@ -30,6 +30,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Test the one-time Compose adoption controller
+        shell: bash
+        run: bash ops/tests/adopt-compose.test.sh
+
       - name: Assert the Compose-only production authority
         shell: bash
         run: |
@@ -192,6 +196,10 @@ jobs:
           assert compose['jobs']['resolve-build']['if'] == compose_if
           compose_triggers = compose.get('on', compose.get(True))
           assert compose_triggers['workflow_dispatch']['inputs']['rollback_sha']['required'] is False
+          adoption_input = compose_triggers['workflow_dispatch']['inputs']['adopt_existing_vps']
+          assert adoption_input['required'] is False
+          assert adoption_input['default'] is False
+          assert adoption_input['type'] == 'boolean'
           resolve_run = compose['jobs']['resolve-build']['steps'][0]['run']
           require_statements(
               resolve_run,
@@ -209,6 +217,9 @@ jobs:
               'test "$(jq -er \'.workflow_run.head_sha\' <<< "$artifact_json")" = "$release_sha"',
           )
           assert 'REQUESTED_ROLLBACK_SHA' in resolve_run
+          assert 'REQUESTED_ADOPTION' in resolve_run
+          assert 'adoption and rollback cannot be requested together.' in resolve_run
+          assert "printf 'release_mode=adoption" in resolve_run
           assert 'gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main"' in resolve_run
           assert 'test "$main_head_sha" = "$release_sha"' in resolve_run
           assert 'test "$release_sha" = "$REQUESTED_ROLLBACK_SHA"' in resolve_run
@@ -222,6 +233,14 @@ jobs:
           assert 'gh run view' not in resolve_run
           assert 'build_run_json' in resolve_run and 'ci_run_json' in resolve_run
           assert 'ci_run_id' in compose['jobs']['resolve-build']['outputs']
+          deploy_steps = compose['jobs']['deploy']['steps']
+          revalidation = next(step for step in deploy_steps if step.get('name') == 'Revalidate normal or adoption release against current main after approval')
+          assert 'normal|adoption)' in revalidation['run']
+          assert 'FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA' in revalidation['run']
+          transfer = next(step for step in deploy_steps if step.get('name') == 'Transfer the verified manifest and invoke the fixed root deployment script')
+          assert '/usr/local/sbin/quest-esports-adopt' in transfer['run']
+          assert '/usr/local/sbin/quest-esports-release' in transfer['run']
+          assert 'normal|rollback)' in transfer['run']
           release_success = compose['jobs']['release-success']
           assert release_success['needs'] == ['resolve-build', 'deploy']
           assert release_success['if'] == expression(" always() && needs.resolve-build.result == 'success' ")

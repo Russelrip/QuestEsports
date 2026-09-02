@@ -30,8 +30,13 @@ The API routes and aggregate definitions are mapped in
   - `ops/docker/` — immutable production Compose topology and host Nginx
     ingress; PostgreSQL stays private and application publications are
     loopback-only.
-  - `ops/deploy/` — root-owned artifact verification, the one-time Supabase
-    to PostgreSQL 17 cutover boundary, and digest-only steady-state releases.
+- `ops/deploy/` — root-owned artifact verification, the one-time Supabase
+  to PostgreSQL 17 cutover boundary, and digest-only steady-state releases.
+  The existing-VPS first Compose adoption is specified in
+  `docs/superpowers/specs/2026-09-02-first-compose-adoption-design.md` and
+  executed through the gated implementation plan in
+  `docs/superpowers/plans/2026-09-02-first-compose-adoption.md`; it must not be
+  bootstrapped through the steady-state release command.
 - `ops/rehearsal/` — isolated PostgreSQL 17 restore rehearsal boundary. It may
   invoke the existing destructive restore primitive only through explicit
   disposable-target checks and emits private, machine-readable evidence; it

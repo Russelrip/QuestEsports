@@ -8,6 +8,11 @@ on:
         description: Full SHA of an older successful main release for an intentional rollback
         required: false
         type: string
+      adopt_existing_vps:
+        description: Run the one-time, owner-approved existing-VPS Compose adoption
+        required: false
+        default: false
+        type: boolean
   workflow_run:
     workflows:
       - Build container images
@@ -44,12 +49,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
           REQUESTED_ROLLBACK_SHA: ${{ inputs.rollback_sha }}
+          REQUESTED_ADOPTION: ${{ inputs.adopt_existing_vps || false }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$REQUESTED_ADOPTION" == true || "$REQUESTED_ADOPTION" == false ]] || exit 1
             [[ -z "$REQUESTED_ROLLBACK_SHA" || "$REQUESTED_ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]] || {
               printf '%s\n' 'rollback_sha must be empty or a full lowercase 40-character SHA.' >&2
+              exit 1
+            }
+            [[ "$REQUESTED_ADOPTION" != true || -z "$REQUESTED_ROLLBACK_SHA" ]] || {
+              printf '%s\n' 'adoption and rollback cannot be requested together.' >&2
               exit 1
             }
             if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
@@ -140,7 +151,9 @@ jobs:
             printf 'artifact_name=%s\n' "$artifact_name"
             printf 'build_run_id=%s\n' "$build_run_id"
             printf 'release_sha=%s\n' "$release_sha"
-            if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
+            if [[ "$REQUESTED_ADOPTION" == true ]]; then
+              printf 'release_mode=adoption\n'
+            elif [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
               printf 'release_mode=rollback\n'
             else
               printf 'release_mode=normal\n'
@@ -164,6 +177,7 @@ jobs:
       SSH_HOST_KEY: ${{ secrets.BACKEND_SSH_HOST_KEY }}
       POSTGRES_IMAGE_APPROVED_REF: ${{ vars.POSTGRES_IMAGE_APPROVED_REF }}
       VALORANT_IMAGE_APPROVED_REF: ${{ vars.VALORANT_IMAGE_APPROVED_REF }}
+      FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA: ${{ vars.FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA }}
 
     steps:
       - name: Download the manifest from that exact successful build
@@ -471,7 +485,7 @@ jobs:
           printf 'SSH_MATERIAL_DIR=%s\n' "$ssh_material_dir" >> "$GITHUB_ENV"
           trap - EXIT
 
-      - name: Revalidate normal release against current main after approval
+      - name: Revalidate normal or adoption release against current main after approval
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -481,20 +495,25 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
           case "$RELEASE_MODE" in
-            normal)
+            normal|adoption)
               main_head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
               [[ "$main_head_sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
               test "$main_head_sha" = "$RELEASE_SHA"
+              if [[ "$RELEASE_MODE" == adoption ]]; then
+                test "$FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA" = "$RELEASE_SHA"
+              fi
               ;;
             rollback)
               ;;
             *)
-              printf '%s\n' 'release mode is not an approved normal or rollback mode.' >&2
+              printf '%s\n' 'release mode is not an approved normal, adoption, or rollback mode.' >&2
               exit 1
               ;;
           esac
 
-      - name: Transfer the verified manifest and invoke the fixed root release script
+      - name: Transfer the verified manifest and invoke the fixed root deployment script
+        env:
+          RELEASE_MODE: ${{ needs.resolve-build.outputs.release_mode }}
         shell: bash
         run: |
           set -euo pipefail
@@ -508,7 +527,12 @@ jobs:
           [[ "$remote_manifest" == /var/lib/quest-esports/incoming/release-manifest ]] || exit 1
           ssh_options=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_MATERIAL_DIR/known_hosts" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i "$SSH_MATERIAL_DIR/id_ed25519")
           timeout --foreground 120s scp "${ssh_options[@]}" -P "$SSH_PORT" -- release-manifest/release-manifest.txt "deploy@$SSH_HOST:$remote_manifest"
-          timeout --foreground 120s ssh "${ssh_options[@]}" -p "$SSH_PORT" -- "deploy@$SSH_HOST" sudo -n -- /usr/local/sbin/quest-esports-release "$RELEASE_SHA" "$remote_manifest"
+          case "$RELEASE_MODE" in
+            adoption) root_wrapper=/usr/local/sbin/quest-esports-adopt ;;
+            normal|rollback) root_wrapper=/usr/local/sbin/quest-esports-release ;;
+            *) printf '%s\n' 'unsupported deployment mode.' >&2; exit 1 ;;
+          esac
+          timeout --foreground 1800s ssh "${ssh_options[@]}" -p "$SSH_PORT" -- "deploy@$SSH_HOST" sudo -n -- "$root_wrapper" "$RELEASE_SHA" "$remote_manifest"
 
       - name: Cleanup temporary deploy SSH material
         if: ${{ always() }}
@@ -586,7 +610,7 @@ jobs:
           RELEASE_MODE: ${{ needs.resolve-build.outputs.release_mode }}
         run: |
           set -euo pipefail
-          [[ "$RELEASE_MODE" == normal || "$RELEASE_MODE" == rollback ]]
+          [[ "$RELEASE_MODE" == normal || "$RELEASE_MODE" == adoption || "$RELEASE_MODE" == rollback ]]
           mkdir -p frontend-release-mode
           printf 'release_mode=%s\n' "$RELEASE_MODE" > frontend-release-mode/release-mode.txt
 
