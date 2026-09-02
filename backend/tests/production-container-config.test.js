@@ -13,6 +13,8 @@ const dockerfile = read("ops/docker/backend.production.Dockerfile");
 const dockerignore = read("backend/.dockerignore");
 const productionCompose = read("ops/docker/compose.production.yml");
 const stagingCompose = read("ops/docker/compose.postgres-staging.yml");
+const adoptionCompose = read("ops/docker/compose.adoption-candidate.yml");
+const valorantAdoptionCompose = read("ops/docker/valorant.adoption-candidate.yml");
 const productionEnv = read("ops/docker/quest.production.env.example");
 const valorantProductionEnv = read("ops/docker/valorant.production.env.example");
 const releaseScript = read("ops/deploy/release.sh");
@@ -502,6 +504,24 @@ test("production and staging Compose render the private PostgreSQL topology", ()
   ]);
 });
 
+test("adoption candidates cannot inherit live ports, storage, or writer admission", () => {
+  assert.match(adoptionCompose, /^name: quest-adoption$/m);
+  assert.match(valorantAdoptionCompose, /^name: valorant-adoption$/m);
+  assert.match(adoptionCompose, /127\.0\.0\.1:55433:5432/);
+  assert.match(adoptionCompose, /127\.0\.0\.1:15001:5001/);
+  assert.match(valorantAdoptionCompose, /127\.0\.0\.1:18000:8000/);
+  assert.match(adoptionCompose, /\/srv\/quest-esports\/postgres\/17-adoption-candidate\/data/);
+  assert.doesNotMatch(adoptionCompose, /- \/srv\/quest-esports\/postgres\/17\/data:/);
+  assert.match(adoptionCompose, /ports: !override/);
+  assert.match(adoptionCompose, /volumes: !override/);
+  assert.match(adoptionCompose, /env_file: !override/);
+  assert.equal((valorantAdoptionCompose.match(/WRITE_FREEZE_MODE: validation/g) || []).length, 4);
+  assert.match(adoptionCompose, /WRITE_FREEZE_MODE: validation/);
+  assert.match(adoptionCompose, /name: quest-adoption-shared/);
+  assert.match(valorantAdoptionCompose, /name: quest-adoption-shared/);
+  assert.doesNotMatch(`${adoptionCompose}\n${valorantAdoptionCompose}`, /0\.0\.0\.0:/);
+});
+
 test("production backend receives mandatory runtime configuration", () => {
   const backend = serviceBlock("backend");
   assert.match(backend, /env_file:[\s\S]*required:\s*true/);
@@ -698,16 +718,18 @@ test("Compose deployment consumes only a protected, successful, signed digest re
   assert.match(deployWorkflow, /POSTGRES_IMAGE_APPROVED_REF/);
   assert.match(deployWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
   const composeTransferStep = deployWorkflow.match(
-    /- name: Transfer the verified manifest and invoke the fixed root release script[\s\S]*?(?=\n      - name:)/,
+    /- name: Transfer the verified manifest and invoke the fixed root deployment script[\s\S]*?(?=\n      - name:)/,
   )?.[0] || "";
   assert.match(
     composeTransferStep,
-    /timeout --foreground 120s ssh "\$\{ssh_options\[@\]\}" -p "\$SSH_PORT" -- "deploy@\$SSH_HOST" sudo -n -- \/usr\/local\/sbin\/quest-esports-release "\$RELEASE_SHA" "\$remote_manifest"/,
+    /timeout --foreground 1800s ssh "\$\{ssh_options\[@\]\}" -p "\$SSH_PORT" -- "deploy@\$SSH_HOST" sudo -n -- "\$root_wrapper" "\$RELEASE_SHA" "\$remote_manifest"/,
   );
   assert.match(composeTransferStep, /ssh_options=\(/);
-  assert.match(composeTransferStep, /-- "deploy@\$SSH_HOST" sudo -n -- \/usr\/local\/sbin\/quest-esports-release/);
+  assert.match(composeTransferStep, /adoption\) root_wrapper=\/usr\/local\/sbin\/quest-esports-adopt/);
+  assert.match(composeTransferStep, /normal\|rollback\) root_wrapper=\/usr\/local\/sbin\/quest-esports-release/);
+  assert.match(composeTransferStep, /-- "deploy@\$SSH_HOST" sudo -n -- "\$root_wrapper"/);
   assert.doesNotMatch(composeTransferStep, /bash\s+-c|sh\s+-c|eval\b|remote_command/);
-  assert.doesNotMatch(composeTransferStep, /sudo -n -- \/usr\/local\/sbin\/quest-esports-release '\$/);
+  assert.doesNotMatch(composeTransferStep, /sudo -n -- "?\$root_wrapper"? '\$/);
   assert.doesNotMatch(deployWorkflow, /:latest/);
   assert.doesNotMatch(deployWorkflow, /npm ci|\bpm2\b|docker group/);
   const shellSecretOutputLines = deployWorkflow

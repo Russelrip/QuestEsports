@@ -1,0 +1,29 @@
+# One-time VALORANT candidate overlay. Apply only with the protected sibling
+# production Compose source and candidate env file. The network is isolated
+# from production, and every writer receives validation freeze.
+
+name: valorant-adoption
+
+services:
+  valorant-platform:
+    environment:
+      WRITE_FREEZE_MODE: validation
+    ports: !override
+      - "127.0.0.1:18000:8000"
+
+  valorant-updater:
+    environment:
+      WRITE_FREEZE_MODE: validation
+
+  valorant-discord-bot:
+    environment:
+      WRITE_FREEZE_MODE: validation
+
+  valorant-name-audit:
+    environment:
+      WRITE_FREEZE_MODE: validation
+
+networks:
+  quest-shared:
+    name: quest-adoption-shared
+    external: true

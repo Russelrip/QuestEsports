@@ -226,14 +226,14 @@ test("CI owns pinned workflow lint tooling and discovers every tracked workflow 
   );
 });
 
-test("normal Compose releases revalidate main after protected approval and before transfer", () => {
+test("normal and adoption Compose releases revalidate main after protected approval and before transfer", () => {
   const { source, document } = loadWorkflow(path.join(workflowDirectory, "deploy-compose.yml"));
   const steps = document.jobs.deploy.steps;
   const revalidationIndex = steps.findIndex(
-    (step) => step.name === "Revalidate normal release against current main after approval",
+    (step) => step.name === "Revalidate normal or adoption release against current main after approval",
   );
   const transferIndex = steps.findIndex(
-    (step) => step.name === "Transfer the verified manifest and invoke the fixed root release script",
+    (step) => step.name === "Transfer the verified manifest and invoke the fixed root deployment script",
   );
   assert.ok(revalidationIndex >= 0);
   assert.equal(revalidationIndex + 1, transferIndex);
@@ -241,8 +241,9 @@ test("normal Compose releases revalidate main after protected approval and befor
   assert.equal(revalidation.env.RELEASE_MODE, "${{ needs.resolve-build.outputs.release_mode }}");
   assert.equal(revalidation.env.RELEASE_SHA, "${{ needs.resolve-build.outputs.release_sha }}");
   assert.match(revalidation.run, /case "\$RELEASE_MODE" in/);
-  assert.match(revalidation.run, /normal\)[\s\S]*gh api "repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/main"/);
+  assert.match(revalidation.run, /normal\|adoption\)[\s\S]*gh api "repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/main"/);
   assert.match(revalidation.run, /test "\$main_head_sha" = "\$RELEASE_SHA"/);
+  assert.match(revalidation.run, /test "\$FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA" = "\$RELEASE_SHA"/);
   assert.match(revalidation.run, /rollback\)\s*;\;/);
   assert.doesNotMatch(revalidation.run, /scp|ssh\b|sudo\b/);
   assert.match(source, /environment: production-compose/);

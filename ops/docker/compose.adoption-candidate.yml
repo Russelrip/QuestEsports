@@ -1,0 +1,40 @@
+# One-time, isolated candidate overlay for adopting the existing VPS stack.
+# Apply only with compose.production.yml. Compose's !override tag is required
+# so no live port or durable mount survives the merge by accident.
+
+name: quest-adoption
+
+services:
+  frontend:
+    ports: !override
+      - "127.0.0.1:13000:3000"
+
+  backend:
+    env_file: !override
+      - path: /etc/quest-esports/adoption/quest.candidate.env
+        required: true
+    environment:
+      WRITE_FREEZE_MODE: validation
+    ports: !override
+      - "127.0.0.1:15001:5001"
+    volumes: !override
+      - /srv/quest-esports/adoption-candidate/uploads:/srv/quest-esports/uploads
+      - /srv/quest-esports/adoption-candidate/private:/srv/quest-esports/private
+      - /etc/quest-esports/tls/quest-private-ca.crt:/run/secrets/quest-private-ca.crt:ro
+
+  postgres:
+    ports: !override
+      - "127.0.0.1:55433:5432"
+    volumes: !override
+      - /srv/quest-esports/postgres/17-adoption-candidate/data:/var/lib/postgresql/data
+      - /srv/quest-esports/postgres/init:/docker-entrypoint-initdb.d:ro
+      - /etc/quest-esports/postgres-healthcheck.sh:/usr/local/bin/quest-postgres-healthcheck:ro
+      - /etc/quest-esports/secrets/postgres-admin-password:/run/secrets/postgres-admin-password:ro
+      - /etc/quest-esports/tls/quest-private-ca.crt:/run/postgresql/tls/ca.crt:ro
+      - /etc/quest-esports/tls/quest-postgres.crt:/run/postgresql/tls/server.crt:ro
+      - /etc/quest-esports/tls/quest-postgres.key:/run/postgresql/tls/server.key:ro
+
+networks:
+  quest-shared:
+    name: quest-adoption-shared
+    external: true

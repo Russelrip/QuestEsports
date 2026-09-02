@@ -177,7 +177,7 @@ jobs:
           test -f "$release_mode_file" && test ! -L "$release_mode_file"
           test "$(find frontend-release-mode -type f -print | wc -l)" -eq 1
           release_mode="$(awk -F= '$1 == "release_mode" { print $2 }' "$release_mode_file")"
-          [[ "$release_mode" == normal || "$release_mode" == rollback ]]
+          [[ "$release_mode" == normal || "$release_mode" == adoption || "$release_mode" == rollback ]]
           if [[ "$release_mode" == rollback && "$COMPOSE_EVENT" != workflow_dispatch ]]; then
             echo 'A rollback release must be produced by an explicit Compose dispatch.' >&2
             exit 1
