@@ -698,16 +698,18 @@ test("Compose deployment consumes only a protected, successful, signed digest re
   assert.match(deployWorkflow, /POSTGRES_IMAGE_APPROVED_REF/);
   assert.match(deployWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
   const composeTransferStep = deployWorkflow.match(
-    /- name: Transfer the verified manifest and invoke the fixed root release script[\s\S]*?(?=\n      - name:)/,
+    /- name: Transfer the verified manifest and invoke the fixed root deployment script[\s\S]*?(?=\n      - name:)/,
   )?.[0] || "";
   assert.match(
     composeTransferStep,
-    /timeout --foreground 120s ssh "\$\{ssh_options\[@\]\}" -p "\$SSH_PORT" -- "deploy@\$SSH_HOST" sudo -n -- \/usr\/local\/sbin\/quest-esports-release "\$RELEASE_SHA" "\$remote_manifest"/,
+    /timeout --foreground 1800s ssh "\$\{ssh_options\[@\]\}" -p "\$SSH_PORT" -- "deploy@\$SSH_HOST" sudo -n -- "\$root_wrapper" "\$RELEASE_SHA" "\$remote_manifest"/,
   );
   assert.match(composeTransferStep, /ssh_options=\(/);
-  assert.match(composeTransferStep, /-- "deploy@\$SSH_HOST" sudo -n -- \/usr\/local\/sbin\/quest-esports-release/);
+  assert.match(composeTransferStep, /adoption\) root_wrapper=\/usr\/local\/sbin\/quest-esports-adopt/);
+  assert.match(composeTransferStep, /normal\|rollback\) root_wrapper=\/usr\/local\/sbin\/quest-esports-release/);
+  assert.match(composeTransferStep, /-- "deploy@\$SSH_HOST" sudo -n -- "\$root_wrapper"/);
   assert.doesNotMatch(composeTransferStep, /bash\s+-c|sh\s+-c|eval\b|remote_command/);
-  assert.doesNotMatch(composeTransferStep, /sudo -n -- \/usr\/local\/sbin\/quest-esports-release '\$/);
+  assert.doesNotMatch(composeTransferStep, /sudo -n -- "?\$root_wrapper"? '\$/);
   assert.doesNotMatch(deployWorkflow, /:latest/);
   assert.doesNotMatch(deployWorkflow, /npm ci|\bpm2\b|docker group/);
   const shellSecretOutputLines = deployWorkflow
