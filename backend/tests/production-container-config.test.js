@@ -627,7 +627,7 @@ test("immutable image CI binds successful repository CI and publishes all signed
   );
   assert.doesNotMatch(imageWorkflow, /^\s+attestations:\s+write$/m);
 
-  for (const image of ["quest-frontend", "quest-backend", "quest-migrator", "valorant-platform-backend"]) {
+  for (const image of ["quest-frontend", "quest-backend", "quest-migrator", "quest-valorant-backend"]) {
     assert.match(imageWorkflow, new RegExp(`ghcr\.io/\\$\\{\\{ github\.repository_owner \\}\\}/${image}`));
   }
   assert.equal((imageWorkflow.match(/--provenance=mode=max/g) || []).length, 4);
