@@ -212,6 +212,17 @@ run_attestation_case() {
     bash -c 'set -euo pipefail; source "$1"; attestation_tmp_dir="$(mktemp -d)"; trap "rm -rf -- \"$attestation_tmp_dir\"" EXIT; verify_buildkit_attestations ghcr.io/russelrip/quest-backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' _ "$attestation_helper"
 }
 run_attestation_case valid
+
+# Exercise the extracted production verifier with the runner's real jq as
+# well as the purpose-built negative-case mock above. This catches jq context
+# mistakes such as calling test() on an OCI descriptor instead of .digest.
+real_jq_mock_bin="$work_directory/real-jq-bin"
+mkdir -p "$real_jq_mock_bin"
+cp "$mock_bin/docker" "$mock_bin/curl" "$real_jq_mock_bin/"
+OCI_CASE_ROOT="$work_directory/oci/valid" PATH="$real_jq_mock_bin:$PATH" \
+  RELEASE_SHA=1111111111111111111111111111111111111111 GITHUB_REPOSITORY=Russelrip/QuestEsports \
+  bash -c 'set -euo pipefail; source "$1"; attestation_tmp_dir="$(mktemp -d)"; trap "rm -rf -- \"$attestation_tmp_dir\"" EXIT; verify_buildkit_attestations ghcr.io/russelrip/quest-backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' _ "$attestation_helper"
+
 for case_name in malformed-statement missing-attestation ambiguous-platform wrong-subject wrong-layer-digest wrong-layer-size unknown-layer wrong-provenance wrong-builder duplicate-provenance; do
   assert_failed "attestation-$case_name" run_attestation_case "$case_name"
 done

@@ -271,12 +271,12 @@ jobs:
             docker buildx imagetools inspect --raw "$image_reference" > "$index_file"
             platform_digest="$(jq -er '
               if (.manifests | type) != "array" then error("image is not an OCI index") else . end |
-              [.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and (.digest | type) == "string" and test("^sha256:[0-9a-f]{64}$")) | .digest] |
+              [.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and (.digest | type) == "string" and (.digest | test("^sha256:[0-9a-f]{64}$"))) | .digest] |
               if length == 1 then .[0] else error("expected exactly one linux/amd64 platform manifest") end
             ' "$index_file")"
             attestation_digests="$(jq -er --arg platform_digest "$platform_digest" '
               [.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest" and .annotations["vnd.docker.reference.digest"] == $platform_digest and (.mediaType == "application/vnd.oci.image.manifest.v1+json" or .mediaType == "application/vnd.docker.distribution.manifest.v2+json"))] |
-              if length == 1 and (map(.digest) | unique | length) == 1 and all(.[]; (.digest | type) == "string" and test("^sha256:[0-9a-f]{64}$"))
+              if length == 1 and (map(.digest) | unique | length) == 1 and all(.[]; (.digest | type) == "string" and (.digest | test("^sha256:[0-9a-f]{64}$")))
               then .[].digest else error("expected exactly one unique image-bound attestation") end
             ' "$index_file")"
             if [[ -f "$HOME/.docker/config.json" && ! -L "$HOME/.docker/config.json" ]]; then
