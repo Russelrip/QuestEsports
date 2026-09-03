@@ -181,7 +181,7 @@ jobs:
 
     steps:
       - name: Download the manifest from that exact successful build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ needs.resolve-build.outputs.artifact_name }}
           run-id: ${{ needs.resolve-build.outputs.build_run_id }}
@@ -189,7 +189,7 @@ jobs:
           path: release-manifest
 
       - name: Log in to GHCR for signature and attestation verification
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -576,7 +576,7 @@ jobs:
             > compose-release-success/release-success.txt
 
       - name: Upload the successful Compose deployment proof
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: compose-release-success
           path: compose-release-success/release-success.txt
@@ -598,7 +598,7 @@ jobs:
             > frontend-release/release-lineage.txt
 
       - name: Upload the frontend release lineage
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frontend-release
           path: frontend-release/release-lineage.txt
@@ -615,7 +615,7 @@ jobs:
           printf 'release_mode=%s\n' "$RELEASE_MODE" > frontend-release-mode/release-mode.txt
 
       - name: Upload the frontend release mode
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frontend-release-mode
           path: frontend-release-mode/release-mode.txt
