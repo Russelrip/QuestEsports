@@ -65,15 +65,16 @@ def make_case(case):
     revision = release_sha if case != 'wrong-provenance' else '2' * 40
     actual_builder_id = builder_id if case != 'wrong-builder' else 'wrong-builder'
     sbom_digest, sbom_size = write_blob(blobs / 'sbom', statement('https://spdx.dev/Document', {}))
-    provenance = statement('https://slsa.dev/provenance/v0.2', {
-        'buildType': 'https://mobyproject.org/buildkit@v1',
-        'builder': {'id': actual_builder_id},
-        'invocation': {'parameters': {
-            'build-arg:QUEST_BUILD_REVISION': revision,
-            'build-arg:QUEST_BUILD_REPOSITORY': repository,
-            'build-arg:QUEST_BUILD_BRANCH': 'main',
-            'build-arg:QUEST_BUILD_WORKFLOW': 'Build container images'}},
-        }, 'linux/amd64', 'v0.1')
+    provenance = statement('https://slsa.dev/provenance/v1', {
+        'buildDefinition': {
+            'buildType': 'https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md',
+            'externalParameters': {'request': {'args': {
+                'build-arg:QUEST_BUILD_REVISION': revision,
+                'build-arg:QUEST_BUILD_REPOSITORY': repository,
+                'build-arg:QUEST_BUILD_BRANCH': 'main',
+                'build-arg:QUEST_BUILD_WORKFLOW': 'Build container images'}}}},
+        'runDetails': {'builder': {'id': actual_builder_id}},
+        }, 'linux/amd64')
     provenance_digest, provenance_size = write_blob(blobs / 'provenance', provenance)
     if case == 'malformed-statement':
         data = b'{not-json}'
@@ -96,13 +97,13 @@ def make_case(case):
           'subject': {'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'digest': subject_digest, 'size': 123},
           'layers': layers}
 
-    layers = [layer(sbom_digest, sbom_size, 'https://spdx.dev/Document'), layer(provenance_digest, provenance_size, 'https://slsa.dev/provenance/v0.2')]
+    layers = [layer(sbom_digest, sbom_size, 'https://spdx.dev/Document'), layer(provenance_digest, provenance_size, 'https://slsa.dev/provenance/v1')]
     if case == 'wrong-layer-size':
         layers[0]['size'] += 1
     if case == 'unknown-layer':
         layers[0]['mediaType'] = 'application/octet-stream'
     if case == 'duplicate-provenance':
-        layers = [layer(provenance_digest, provenance_size, 'https://slsa.dev/provenance/v0.2'), layer(provenance_digest, provenance_size, 'https://slsa.dev/provenance/v0.2')]
+        layers = [layer(provenance_digest, provenance_size, 'https://slsa.dev/provenance/v1'), layer(provenance_digest, provenance_size, 'https://slsa.dev/provenance/v1')]
     (case_root / 'attestation-b.json').write_text(json.dumps(manifest(layers)), encoding='utf-8')
     descriptors = [
       {'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'digest': 'sha256:' + platform_digest, 'size': 123, 'platform': {'os': 'linux', 'architecture': 'amd64'}},
