@@ -1,0 +1,139 @@
+{
+  "data": [
+    {
+      "metadata": {
+        "is_completed": true,
+        "map": {
+          "id": "00000000-0000-0000-0000-000000000002",
+          "name": "Corrode"
+        },
+        "match_id": "00000000-0000-0000-0000-000000000001",
+        "mode": null,
+        "queue": {
+          "id": "swiftplay",
+          "mode_type": "Swiftplay",
+          "name": "Swiftplay"
+        },
+        "started_at": "2026-08-13T13:48:56.457Z"
+      },
+      "players": [
+        {
+          "name": "PlayerB",
+          "puuid": "puuid_p_b",
+          "stats": {
+            "assists": 0,
+            "bodyshots": 0,
+            "deaths": 0,
+            "headshots": 0,
+            "kills": 0,
+            "legshots": 0,
+            "score": 0
+          },
+          "tag": "B",
+          "team_id": "Blue"
+        },
+        {
+          "name": "PlayerA",
+          "puuid": "puuid_p_a",
+          "stats": {
+            "assists": 0,
+            "bodyshots": 0,
+            "deaths": 0,
+            "headshots": 0,
+            "kills": 0,
+            "legshots": 0,
+            "score": 0
+          },
+          "tag": "A",
+          "team_id": "Blue"
+        }
+      ],
+      "teams": [
+        {
+          "rounds": {
+            "lost": 5,
+            "won": 3
+          },
+          "team_id": "Red",
+          "won": false
+        },
+        {
+          "rounds": {
+            "lost": 3,
+            "won": 5
+          },
+          "team_id": "Blue",
+          "won": true
+        }
+      ]
+    },
+    {
+      "metadata": {
+        "is_completed": true,
+        "map": {
+          "id": "00000000-0000-0000-0000-000000000004",
+          "name": "Bind"
+        },
+        "match_id": "00000000-0000-0000-0000-000000000003",
+        "mode": null,
+        "queue": {
+          "id": "swiftplay",
+          "mode_type": "Swiftplay",
+          "name": "Swiftplay"
+        },
+        "started_at": "2026-08-13T13:31:48.351Z"
+      },
+      "players": [
+        {
+          "name": "PlayerK",
+          "puuid": "puuid_p_k",
+          "stats": {
+            "assists": 0,
+            "bodyshots": 0,
+            "deaths": 0,
+            "headshots": 0,
+            "kills": 0,
+            "legshots": 0,
+            "score": 0
+          },
+          "tag": "K",
+          "team_id": "Blue"
+        },
+        {
+          "name": "PlayerL",
+          "puuid": "puuid_p_l",
+          "stats": {
+            "assists": 0,
+            "bodyshots": 0,
+            "deaths": 0,
+            "headshots": 0,
+            "kills": 0,
+            "legshots": 0,
+            "score": 0
+          },
+          "tag": "L",
+          "team_id": "Red"
+        }
+      ],
+      "teams": [
+        {
+          "rounds": {
+            "lost": 5,
+            "won": 4
+          },
+          "team_id": "Red",
+          "won": false
+        },
+        {
+          "rounds": {
+            "lost": 4,
+            "won": 5
+          },
+          "team_id": "Blue",
+          "won": true
+        }
+      ]
+    }
+  ],
+  "status": 200
+}

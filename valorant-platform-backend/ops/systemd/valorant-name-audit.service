@@ -1,0 +1,11 @@
+[Unit]
+Description=VALORANT weekly name audit (Compose one-shot)
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/quest-esports/valorant-platform.env
+WorkingDirectory=/opt/quest-esports/valorant-platform-backend
+ExecStart=/usr/bin/bash -eu -c 'checkout_path="$${VALORANT_CHECKOUT_PATH:-/opt/quest-esports/valorant-platform-backend}"; test "$$checkout_path" = "/opt/quest-esports/valorant-platform-backend"; cd "$$checkout_path"; exec /usr/bin/docker compose --project-name valorant-prod -f "$$checkout_path/docker-compose.production.yml" run --rm --no-deps valorant-name-audit'

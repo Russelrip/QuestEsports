@@ -1,0 +1,9 @@
+{
+  "status": 400,
+  "errors": [
+    {
+      "message": "The provided UUID or PUUID is invalid",
+      "code": 43
+    }
+  ]
+}

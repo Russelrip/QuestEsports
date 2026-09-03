@@ -1,0 +1,48 @@
+{
+  "status": 200,
+  "data": {
+    "metadata": {
+      "match_id": "00000000-0000-0000-0000-000000000005",
+      "map": {
+        "id": "d960549e-485c-c861-8dbb-aaab266e06b3",
+        "name": "Haven"
+      },
+      "started_at": "2026-08-11T20:05:00Z",
+      "is_completed": true,
+      "mode": "Custom",
+      "queue": null
+    },
+    "players": [
+      {
+        "puuid": "puuid_p_e",
+        "name": "PlayerE",
+        "tag": "E",
+        "team_id": "Red"
+      },
+      {
+        "puuid": "puuid_p_f",
+        "name": "PlayerF",
+        "tag": "F",
+        "team_id": "Blue"
+      }
+    ],
+    "teams": [
+      {
+        "team_id": "Red",
+        "rounds": {
+          "won": 13,
+          "lost": 4
+        },
+        "won": true
+      },
+      {
+        "team_id": "Blue",
+        "rounds": {
+          "won": 4,
+          "lost": 13
+        },
+        "won": false
+      }
+    ]
+  }
+}

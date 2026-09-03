@@ -1,6 +1,6 @@
 # Quest Esports
 
-Quest Esports is a tournament, team, commerce, and event-operations platform. The repository contains the public website and admin dashboard, an Express API, a private Android admin client, PostgreSQL migrations, and production backup/deployment tooling.
+Quest Esports is a tournament, team, commerce, and event-operations platform. The monorepo contains the public website and admin dashboard, the Express API, the VALORANT FastAPI platform, a private Android admin client, PostgreSQL migrations, and production backup/deployment tooling.
 
 ## Applications
 
@@ -8,6 +8,7 @@ Quest Esports is a tournament, team, commerce, and event-operations platform. Th
 | ----------------- | ----------------------------------------------------------- | ------------------------- |
 | `frontend/`     | Next.js public site, account area, and web admin            | `http://localhost:3000` |
 | `backend/`      | Express API, Prisma, jobs, uploads, and integrations        | `http://localhost:5001` |
+| `valorant-platform-backend/` | FastAPI VALORANT API, updater, Discord bot, and rating workers | `https://localhost:8000` |
 | `mobile-admin/` | Private Expo/Android operations client                      | Expo development server   |
 | `ops/`          | Production backup, restore, retention, and recovery scripts | Not applicable            |
 
@@ -15,6 +16,7 @@ Quest Esports is a tournament, team, commerce, and event-operations platform. Th
 
 - Node.js 24.x (backend and frontend declare `24.x`; mobile-admin follows the project Node 24 guidance and has no `engines` field)
 - npm 10 or newer
+- Python 3.12 and uv (VALORANT backend)
 - PostgreSQL 15 or newer, or a Supabase PostgreSQL project
 - Android Studio/SDK only when working on `mobile-admin/`
 
@@ -24,6 +26,7 @@ Quest Esports is a tournament, team, commerce, and event-operations platform. Th
 
 ```powershell
 Copy-Item backend/.env.example backend/.env
+Copy-Item valorant-platform-backend/.env.example valorant-platform-backend/.env
 Copy-Item frontend/.env.example frontend/.env.local
 Copy-Item mobile-admin/.env.example mobile-admin/.env.local
 ```
@@ -41,6 +44,9 @@ npm ci
 
 Set-Location ../mobile-admin
 npm ci
+
+Set-Location ../valorant-platform-backend
+uv sync --extra dev --locked
 ```
 
 ### 3. Prepare the database
@@ -105,6 +111,14 @@ npm run lint
 npm run typecheck
 npm test
 npm run test:e2e:local
+```
+
+VALORANT backend:
+
+```powershell
+Set-Location valorant-platform-backend
+uv run ruff check app tests scripts
+uv run pytest -m "not live" -q
 ```
 
 Mobile admin:

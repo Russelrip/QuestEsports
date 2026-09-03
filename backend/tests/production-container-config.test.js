@@ -546,7 +546,7 @@ test("host verification requires exact image identity and Cosign verification", 
   assert.match(verifyRelease, /POSTGRES_IMAGE.*postgres:17-bookworm@sha256/);
 });
 
-test("artifact trust scopes Cosign to Quest images and uses exact external references", () => {
+test("artifact trust signs every Quest-owned application image and pins PostgreSQL", () => {
   const approvedPostgresRef =
     "postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0";
   const rejectedPostgresRef =
@@ -573,17 +573,13 @@ test("artifact trust scopes Cosign to Quest images and uses exact external refer
   assert.equal(assignment("QUEST_COSIGN_OIDC_ISSUER"), "https://token.actions.githubusercontent.com");
   assert.equal(assignment("POSTGRES_IMAGE_APPROVED_REF"), approvedPostgresRef);
   const questSigningStep = imageWorkflow.match(
-    /Sign each Quest image digest with keyless OIDC[\s\S]*?(?=\n\s*- name:|$)/,
+    /Sign each Quest-owned image digest with keyless OIDC[\s\S]*?(?=\n\s*- name:|$)/,
   )?.[0] || "";
-  assert.doesNotMatch(
-    questSigningStep,
-    /valorant_image|VALORANT_IMAGE/,
-    "the Quest workflow signing loop must not sign VALORANT with Quest policy",
-  );
-  assert.match(imageWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
+  assert.match(questSigningStep, /valorant_image/);
+  assert.match(imageWorkflow, /valorant-platform-backend\/Dockerfile/);
 });
 
-test("workflow image trust contracts respect step boundaries and Quest-only deploy verification", () => {
+test("workflow image trust contracts cover every monorepo application image", () => {
   const buildSteps = imageWorkflowDocument.jobs.build.steps;
   const validateInputs = buildSteps.find((step) => step.name === "Validate release inputs");
   const writeManifest = buildSteps.find((step) => step.name === "Write the exact release manifest");
@@ -598,17 +594,17 @@ test("workflow image trust contracts respect step boundaries and Quest-only depl
   }
 
   const deploySteps = deployWorkflowDocument.jobs.deploy.steps;
-  const trustStep = deploySteps.find((step) => step.name === "Verify Quest signatures and BuildKit attestations");
+  const trustStep = deploySteps.find((step) => step.name === "Verify Quest-owned signatures and BuildKit attestations");
   assert.ok(trustStep?.run, "expected deploy-time image trust step");
   const imageList = trustStep.run.match(/done <<'IMAGES'\n([\s\S]*?)\n\s*IMAGES/);
   assert.ok(imageList, "deploy-time Cosign verification must use a structured image list");
   assert.deepEqual(
     imageList[1].split("\n").map((line) => line.trim()).filter(Boolean),
-    ["frontend_image", "backend_image", "migrator_image"],
+    ["frontend_image", "backend_image", "migrator_image", "valorant_image"],
   );
   assert.match(trustStep.run, /while IFS= read -r image_key; do/);
   assert.equal((trustStep.run.match(/"\$COSIGN_IMAGE" verify/g) || []).length, 1);
-  assert.doesNotMatch(trustStep.run, /postgres|valorant/i, "external images must not enter Quest Cosign verification");
+  assert.doesNotMatch(trustStep.run, /postgres/i, "the external PostgreSQL image must not enter Quest Cosign verification");
 });
 
 test("immutable image CI binds successful repository CI and publishes all signed Quest digests", () => {
@@ -631,18 +627,18 @@ test("immutable image CI binds successful repository CI and publishes all signed
   );
   assert.doesNotMatch(imageWorkflow, /^\s+attestations:\s+write$/m);
 
-  for (const image of ["quest-frontend", "quest-backend", "quest-migrator"]) {
+  for (const image of ["quest-frontend", "quest-backend", "quest-migrator", "valorant-platform-backend"]) {
     assert.match(imageWorkflow, new RegExp(`ghcr\.io/\\$\\{\\{ github\.repository_owner \\}\\}/${image}`));
   }
-  assert.equal((imageWorkflow.match(/--provenance=mode=max/g) || []).length, 3);
-  assert.equal((imageWorkflow.match(/builder-id=https:\/\/github\.com\/Russelrip\/QuestEsports\/\.github\/workflows\/build-container-images\.yml@refs\/heads\/main/g) || []).length, 3);
+  assert.equal((imageWorkflow.match(/--provenance=mode=max/g) || []).length, 4);
+  assert.equal((imageWorkflow.match(/builder-id=https:\/\/github\.com\/Russelrip\/QuestEsports\/\.github\/workflows\/build-container-images\.yml@refs\/heads\/main/g) || []).length, 4);
   assert.equal(
     (imageWorkflow.match(/--provenance=mode=max,builder-id=https:\/\/github\.com\/Russelrip\/QuestEsports\/\.github\/workflows\/build-container-images\.yml@refs\/heads\/main/g) || []).length,
-    3,
+    4,
   );
-  assert.equal((imageWorkflow.match(/--sbom=true/g) || []).length, 3);
+  assert.equal((imageWorkflow.match(/--sbom=true/g) || []).length, 4);
   assert.match(imageWorkflow, /containerimage\.digest.*sha256:\[0-9a-f\]\{64\}/);
-  assert.match(imageWorkflow, /Sign each Quest image digest with keyless OIDC/);
+  assert.match(imageWorkflow, /Sign each Quest-owned image digest with keyless OIDC/);
   assert.match(
     imageWorkflow,
     /docker run --rm --pull=never --network host[\s\S]*"\$COSIGN_IMAGE" sign --yes "\$image_reference"/,
@@ -661,6 +657,7 @@ test("immutable image CI binds successful repository CI and publishes all signed
   assert.match(imageWorkflow, /printf 'frontend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'backend_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
   assert.match(imageWorkflow, /printf 'migrator_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
+  assert.match(imageWorkflow, /printf 'valorant_image=%s@%s\\n' "\$IMAGE" "\$digest"/);
 
   const buildArgs = [...imageWorkflow.matchAll(/--build-arg ([^\n]+)/g)].map((match) => match[1]);
   const buildArgNames = buildArgs.map((argument) => argument.match(/^"?([A-Z][A-Z0-9_]*)=/)?.[1]);
@@ -1359,6 +1356,11 @@ test("VALORANT runtime uses asyncpg SSL context semantics, not libpq URL options
   assert.match(valorantProductionEnv, /asyncpg's `ssl` connect argument/);
   assert.match(read("ops/docker/valorant.production.compose.yml"), /env_file:/);
   assert.match(read("ops/docker/valorant.production.compose.yml"), /quest-private-ca\.crt:.*quest-private-ca\.crt:ro/);
+  assert.equal(
+    read("ops/docker/valorant.production.compose.yml"),
+    read("valorant-platform-backend/docker-compose.production.yml"),
+    "the monorepo service Compose file and production release contract must not drift",
+  );
   assert.match(releaseEnv, /^VALORANT_RUNTIME_COMPOSE_CONTRACT=/m);
   assert.match(releaseScript, /VALORANT Compose source does not satisfy the asyncpg TLS runtime contract/);
   assert.match(releaseScript, /parsed\.scheme != "postgresql\+asyncpg"/);

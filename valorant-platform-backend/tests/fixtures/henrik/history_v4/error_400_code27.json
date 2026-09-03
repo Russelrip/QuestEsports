@@ -1,0 +1,9 @@
+{
+  "status": 400,
+  "errors": [
+    {
+      "message": "The provided mode is invalid",
+      "code": 27
+    }
+  ]
+}

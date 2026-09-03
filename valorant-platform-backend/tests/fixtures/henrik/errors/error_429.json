@@ -1,0 +1,14 @@
+{
+  "status": 429,
+  "errors": [
+    {
+      "message": "Rate limit reached. Please wait a moment before trying again",
+      "code": null
+    }
+  ],
+  "_headers": [
+    "Retry-After",
+    "X-RateLimit-Reset",
+    "X-Request-ID"
+  ]
+}

@@ -39,6 +39,7 @@ rclone.conf
 quest-esports.conf
 .vercel
 .env*
+!.env.example
 
 # Local container env. `.env*` does not match this name, and a filled-in copy
 # carries real OAuth credentials.

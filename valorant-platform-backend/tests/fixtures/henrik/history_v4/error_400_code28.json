@@ -1,0 +1,9 @@
+{
+  "status": 400,
+  "errors": [
+    {
+      "message": "The provided map is invalid",
+      "code": 28
+    }
+  ]
+}

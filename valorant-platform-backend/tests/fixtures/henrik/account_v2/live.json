@@ -1,0 +1,13 @@
+{
+  "data": {
+    "name": "PlayerA",
+    "platforms": [
+      "PC",
+      "CONSOLE"
+    ],
+    "puuid": "puuid_p_a",
+    "region": "ap",
+    "tag": "A"
+  },
+  "status": 200
+}
