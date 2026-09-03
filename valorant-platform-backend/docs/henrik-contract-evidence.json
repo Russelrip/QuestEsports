@@ -1,0 +1,427 @@
+{
+  "captured_at": "2026-08-13T14:07:32.090252+00:00",
+  "evidence": {
+    "auth_scheme": "bare",
+    "custom_mode_literal": null,
+    "custom_mode_status": "rejected",
+    "detail_is_completed": true,
+    "first_page_start": 0,
+    "first_page_start_resolved": true,
+    "history_has_completion": true,
+    "history_has_started_at": true,
+    "rate_headers_seen": [
+      "RateLimit-Policy",
+      "RateLimit",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+      "X-RateLimit-Bucket",
+      "X-Request-ID",
+      "X-Cache-Status",
+      "X-Cache-TTL"
+    ],
+    "raw_samples": {
+      "account": {
+        "data": {
+          "name": "PlayerM",
+          "platforms": [
+            "PC",
+            "CONSOLE"
+          ],
+          "puuid": "puuid_p_m",
+          "region": "ap",
+          "tag": "M"
+        },
+        "status": 200
+      },
+      "detail": {
+        "data": {
+          "metadata": {
+            "is_completed": true,
+            "map": {
+              "id": "00000000-0000-0000-0000-000000000006",
+              "name": "Corrode"
+            },
+            "match_id": "00000000-0000-0000-0000-000000000005",
+            "mode": null,
+            "queue": {
+              "id": "swiftplay",
+              "mode_type": "Swiftplay",
+              "name": "Swiftplay"
+            },
+            "started_at": "2026-08-13T13:48:56.457Z"
+          },
+          "players": [
+            {
+              "name": "PlayerN",
+              "puuid": "puuid_p_n",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "N",
+              "team_id": "Blue"
+            },
+            {
+              "name": "PlayerM",
+              "puuid": "puuid_p_m",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "M",
+              "team_id": "Blue"
+            },
+            {
+              "name": "PlayerO",
+              "puuid": "puuid_p_o",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "O",
+              "team_id": "Blue"
+            },
+            {
+              "name": "PlayerP",
+              "puuid": "puuid_p_p",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "P",
+              "team_id": "Blue"
+            },
+            {
+              "name": "PlayerQ",
+              "puuid": "puuid_p_q",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "Q",
+              "team_id": "Red"
+            },
+            {
+              "name": "PlayerR",
+              "puuid": "puuid_p_r",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "R",
+              "team_id": "Red"
+            },
+            {
+              "name": "PlayerS",
+              "puuid": "puuid_p_s",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "S",
+              "team_id": "Blue"
+            },
+            {
+              "name": "PlayerT",
+              "puuid": "puuid_p_t",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "T",
+              "team_id": "Red"
+            },
+            {
+              "name": "PlayerU",
+              "puuid": "puuid_p_u",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "U",
+              "team_id": "Red"
+            },
+            {
+              "name": "PlayerV",
+              "puuid": "puuid_p_v",
+              "stats": {
+                "assists": 0,
+                "bodyshots": 0,
+                "deaths": 0,
+                "headshots": 0,
+                "kills": 0,
+                "legshots": 0,
+                "score": 0
+              },
+              "tag": "V",
+              "team_id": "Red"
+            }
+          ],
+          "teams": [
+            {
+              "rounds": {
+                "lost": 5,
+                "won": 3
+              },
+              "team_id": "Red",
+              "won": false
+            },
+            {
+              "rounds": {
+                "lost": 3,
+                "won": 5
+              },
+              "team_id": "Blue",
+              "won": true
+            }
+          ]
+        },
+        "status": 200
+      },
+      "error_400_code27": {
+        "errors": [
+          {
+            "code": 27,
+            "message": "[REDACTED]"
+          }
+        ],
+        "status": null
+      },
+      "history": {
+        "data": [
+          {
+            "metadata": {
+              "is_completed": true,
+              "map": {
+                "id": "00000000-0000-0000-0000-000000000006",
+                "name": "Corrode"
+              },
+              "match_id": "00000000-0000-0000-0000-000000000005",
+              "mode": null,
+              "queue": {
+                "id": "swiftplay",
+                "mode_type": "Swiftplay",
+                "name": "Swiftplay"
+              },
+              "started_at": "2026-08-13T13:48:56.457Z"
+            },
+            "players": [
+              {
+                "name": "PlayerN",
+                "puuid": "puuid_p_n",
+                "stats": {
+                  "assists": 0,
+                  "bodyshots": 0,
+                  "deaths": 0,
+                  "headshots": 0,
+                  "kills": 0,
+                  "legshots": 0,
+                  "score": 0
+                },
+                "tag": "N",
+                "team_id": "Blue"
+              },
+              {
+                "name": "PlayerM",
+                "puuid": "puuid_p_m",
+                "stats": {
+                  "assists": 0,
+                  "bodyshots": 0,
+                  "deaths": 0,
+                  "headshots": 0,
+                  "kills": 0,
+                  "legshots": 0,
+                  "score": 0
+                },
+                "tag": "M",
+                "team_id": "Blue"
+              }
+            ],
+            "teams": [
+              {
+                "rounds": {
+                  "lost": 5,
+                  "won": 3
+                },
+                "team_id": "Red",
+                "won": false
+              },
+              {
+                "rounds": {
+                  "lost": 3,
+                  "won": 5
+                },
+                "team_id": "Blue",
+                "won": true
+              }
+            ]
+          },
+          {
+            "metadata": {
+              "is_completed": true,
+              "map": {
+                "id": "00000000-0000-0000-0000-000000000008",
+                "name": "Bind"
+              },
+              "match_id": "00000000-0000-0000-0000-000000000007",
+              "mode": null,
+              "queue": {
+                "id": "swiftplay",
+                "mode_type": "Swiftplay",
+                "name": "Swiftplay"
+              },
+              "started_at": "2026-08-13T13:31:48.351Z"
+            },
+            "players": [
+              {
+                "name": "PlayerW",
+                "puuid": "puuid_p_w",
+                "stats": {
+                  "assists": 0,
+                  "bodyshots": 0,
+                  "deaths": 0,
+                  "headshots": 0,
+                  "kills": 0,
+                  "legshots": 0,
+                  "score": 0
+                },
+                "tag": "W",
+                "team_id": "Blue"
+              },
+              {
+                "name": "PlayerX",
+                "puuid": "puuid_p_x",
+                "stats": {
+                  "assists": 0,
+                  "bodyshots": 0,
+                  "deaths": 0,
+                  "headshots": 0,
+                  "kills": 0,
+                  "legshots": 0,
+                  "score": 0
+                },
+                "tag": "X",
+                "team_id": "Red"
+              }
+            ],
+            "teams": [
+              {
+                "rounds": {
+                  "lost": 5,
+                  "won": 4
+                },
+                "team_id": "Red",
+                "won": false
+              },
+              {
+                "rounds": {
+                  "lost": 4,
+                  "won": 5
+                },
+                "team_id": "Blue",
+                "won": true
+              }
+            ]
+          }
+        ],
+        "status": 200
+      }
+    },
+    "side_literals": [
+      "Blue",
+      "Red"
+    ]
+  },
+  "note": "Live probe evidence captured as sanitized output; live-confirmed U-items are marked resolved, unconfirmed facts keep their documented fallbacks.",
+  "probe": "live",
+  "u_items": {
+    "U1": {
+      "fact": "auth header form",
+      "fallback": "bare",
+      "status": "resolved",
+      "value": "bare"
+    },
+    "U2": {
+      "fact": "side literals",
+      "fallback": "Red,Blue",
+      "status": "resolved",
+      "value": "Blue,Red"
+    },
+    "U3": {
+      "fact": "queue param absent from docs",
+      "fallback": "never sent",
+      "status": "resolved",
+      "value": "never sent"
+    },
+    "U4": {
+      "fact": "safe first page start",
+      "fallback": "0 (live-verified: start=0 returns newest; omission equals start=0)",
+      "status": "resolved",
+      "value": "0"
+    },
+    "U5": {
+      "fact": "custom-mode literal",
+      "fallback": "None (filter locally)",
+      "status": "resolved",
+      "value": "not accepted (rejected)"
+    },
+    "U6": {
+      "fact": "players[].stats sub-field presence",
+      "fallback": "optional; keys pinned to kills/deaths/assists/score/damage_dealt/damage_received/headshots/bodyshots/legshots; malformed (non-dict) stats mark unresolved",
+      "status": "resolved",
+      "value": "present"
+    },
+    "U7": {
+      "fact": "metadata/teams field optionality",
+      "fallback": "requires BOTH history-list and detail-dict evidence; required fields: match_id/map name/started_at/is_completed/players[].puuid/name/tag/team_id",
+      "status": "resolved",
+      "value": "present"
+    }
+  }
+}

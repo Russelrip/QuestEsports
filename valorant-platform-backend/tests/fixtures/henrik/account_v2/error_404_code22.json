@@ -1,0 +1,9 @@
+{
+  "status": 404,
+  "errors": [
+    {
+      "message": "The provided account data is invalid",
+      "code": 22
+    }
+  ]
+}

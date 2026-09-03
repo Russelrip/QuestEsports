@@ -1,0 +1,48 @@
+{
+  "status": 200,
+  "data": {
+    "metadata": {
+      "match_id": "00000000-0000-0000-0000-000000000006",
+      "map": {
+        "id": "2c9d57ec-4431-4a8e-9f2e-6d2a3e4f5a6b",
+        "name": "Bind"
+      },
+      "started_at": "2026-08-11T18:30:00Z",
+      "is_completed": true,
+      "mode": "Custom",
+      "queue": null
+    },
+    "players": [
+      {
+        "name": "PlayerG",
+        "tag": "G",
+        "team_id": "Red",
+        "character": "Viper"
+      },
+      {
+        "puuid": "puuid_p_h",
+        "name": "PlayerH",
+        "tag": "H",
+        "team_id": "Blue"
+      }
+    ],
+    "teams": [
+      {
+        "team_id": "Red",
+        "rounds": {
+          "won": 10,
+          "lost": 13
+        },
+        "won": false
+      },
+      {
+        "team_id": "Blue",
+        "rounds": {
+          "won": 13,
+          "lost": 10
+        },
+        "won": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "status": 200,
+  "data": {
+    "metadata": {
+      "match_id": "00000000-0000-0000-0000-000000000007",
+      "map": {
+        "id": "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319",
+        "name": "Ascent"
+      },
+      "started_at": "2026-08-11T16:00:00Z",
+      "is_completed": true,
+      "mode": "Custom",
+      "queue": null
+    },
+    "players": [
+      {
+        "puuid": "puuid_p_i",
+        "name": "PlayerI",
+        "tag": "I",
+        "team_id": "Green",
+        "character": "Raze"
+      },
+      {
+        "puuid": "puuid_p_j",
+        "name": "PlayerJ",
+        "tag": "J",
+        "team_id": "Yellow"
+      }
+    ],
+    "teams": [
+      {
+        "team_id": "Green",
+        "rounds": {
+          "won": 13,
+          "lost": 8
+        },
+        "won": true
+      },
+      {
+        "team_id": "Yellow",
+        "rounds": {
+          "won": 8,
+          "lost": 13
+        },
+        "won": false
+      }
+    ]
+  }
+}

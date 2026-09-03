@@ -1,0 +1,22 @@
+{
+  "status": 200,
+  "data": {
+    "puuid": "puuid_p_a",
+    "region": "eu",
+    "account_level": 128,
+    "name": "PlayerA",
+    "tag": "A",
+    "card": {
+      "small": "https://example.invalid/card_small.png",
+      "large": "https://example.invalid/card_large.png",
+      "wide": "https://example.invalid/card_wide.png",
+      "id": "card_1"
+    },
+    "title": "title_1",
+    "platforms": ["PC"],
+    "updated_at": "2026-08-12T18:40:00Z"
+  },
+  "_probe": {
+    "force": true
+  }
+}

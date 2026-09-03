@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore committed .env.example templates (placeholders only)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''^\.env\.example$''']
+regexes = ['''(?i)replace[-_a-z0-9]*|postgres:postgres|REPLACE_ME|^[A-Z_]+=$''']

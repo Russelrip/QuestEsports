@@ -1,0 +1,72 @@
+{
+  "status": 200,
+  "data": {
+    "metadata": {
+      "match_id": "00000000-0000-0000-0000-000000000001",
+      "map": {
+        "id": "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319",
+        "name": "Ascent"
+      },
+      "started_at": "2026-08-12T18:40:00Z",
+      "is_completed": true,
+      "mode": "Custom",
+      "queue": null
+    },
+    "players": [
+      {
+        "puuid": "puuid_p_a",
+        "name": "PlayerA",
+        "tag": "A",
+        "team_id": "Red",
+        "character": "Jett",
+        "stats": {
+          "kills": 21,
+          "deaths": 11,
+          "assists": 5,
+          "score": 3400,
+          "damage_dealt": 4200,
+          "damage_received": 2100,
+          "headshots": 12,
+          "bodyshots": 34,
+          "legshots": 8
+        }
+      },
+      {
+        "puuid": "puuid_p_b",
+        "name": "PlayerB",
+        "tag": "B",
+        "team_id": "Blue",
+        "character": "Sage",
+        "stats": {
+          "kills": 9,
+          "deaths": 19,
+          "assists": 14,
+          "score": 1800,
+          "damage_dealt": 2200,
+          "damage_received": 3900,
+          "headshots": 4,
+          "bodyshots": 26,
+          "legshots": 3
+        }
+      }
+    ],
+    "teams": [
+      {
+        "team_id": "Red",
+        "rounds": {
+          "won": 13,
+          "lost": 9
+        },
+        "won": true
+      },
+      {
+        "team_id": "Blue",
+        "rounds": {
+          "won": 9,
+          "lost": 13
+        },
+        "won": false
+      }
+    ]
+  }
+}

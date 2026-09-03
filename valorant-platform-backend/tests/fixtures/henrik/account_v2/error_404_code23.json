@@ -1,0 +1,9 @@
+{
+  "status": 404,
+  "errors": [
+    {
+      "message": "No region found for this account",
+      "code": 23
+    }
+  ]
+}

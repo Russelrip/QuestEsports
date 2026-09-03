@@ -1,0 +1,9 @@
+{
+  "status": 400,
+  "errors": [
+    {
+      "message": "The provided platform is invalid. Accepted platforms: pc, console",
+      "code": 42
+    }
+  ]
+}

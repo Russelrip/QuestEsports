@@ -1,0 +1,101 @@
+name: ci
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: valorant_platform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: uv sync --extra dev
+      - run: uv run ruff check app tests scripts
+      - name: Guard FastAPI migrations from the public schema and cross-schema FKs
+        run: |
+          if grep -RniE 'public\.|"public"' supabase/migrations; then
+            echo "FastAPI migrations must not reference the Quest-owned public schema." >&2
+            exit 1
+          fi
+          if grep -RniE 'references[[:space:]]+public\.' supabase/migrations; then
+            echo "FastAPI migrations must not create cross-schema foreign keys." >&2
+            exit 1
+          fi
+          echo "migration schema scope: PASS"
+      - run: TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/valorant_platform_test uv run pytest -m "not live" -q
+  roles-rls:
+    name: Roles and RLS verification
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: valorant_platform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: uv sync --extra dev
+      - name: Create runtime roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          psql -h localhost -U postgres -d valorant_platform_test -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE val_runtime LOGIN PASSWORD 'val_runtime';
+          CREATE ROLE quest_runtime LOGIN PASSWORD 'quest_runtime';
+          SQL
+      - name: Apply migrations as migrator with runtime-role grants
+        run: >-
+          uv run python -m scripts.apply_migrations
+          --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/valorant_platform_test
+          --runtime-role val_runtime
+      - name: VAL runtime role can read and write valorant
+        run: >-
+          DATABASE_URL=postgresql+asyncpg://val_runtime:val_runtime@localhost:5432/valorant_platform_test
+          uv run python -m scripts.verify_runtime_access
+      - name: VAL runtime role is denied the migration ledger
+        env:
+          PGPASSWORD: val_runtime
+        run: |
+          set -euo pipefail
+          if psql -h localhost -U val_runtime -d valorant_platform_test \
+            -c 'SELECT 1 FROM valorant._migration_ledger LIMIT 1'; then
+            echo "VAL runtime unexpectedly accessed the migration ledger." >&2
+            exit 1
+          fi
+      - name: Quest runtime role is denied on valorant
+        run: >-
+          DATABASE_URL=postgresql+asyncpg://quest_runtime:quest_runtime@localhost:5432/valorant_platform_test
+          uv run python -m scripts.verify_runtime_access --expect-denied

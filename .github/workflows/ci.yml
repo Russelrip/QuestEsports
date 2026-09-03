@@ -100,7 +100,8 @@ jobs:
               for service in job.get('services', {}).values()
               if isinstance(service, dict) and 'image' in service
           ]
-          assert service_images == [expected_postgres16], service_images
+          expected_postgres17 = 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
+          assert service_images == [expected_postgres16, expected_postgres17], service_images
           assert workflow('ci.yml')['jobs']['frontend']['container'] == expected_playwright
           assert ':' + 'latest' not in '\n'.join(path.read_text(encoding='utf-8') for path in workflow_paths)
 
@@ -762,7 +763,10 @@ jobs:
               for service in job.get('services', {}).values()
               if isinstance(service, dict) and 'image' in service
           ]
-          assert service_images == ['postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825'], service_images
+          assert service_images == [
+              'postgres:16.15-bookworm@sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825',
+              'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0',
+          ], service_images
           build_steps = image_workflow['jobs']['build']['steps']
           postgres_assignment = re.compile(r"(^|\n)\s*approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'\s*(\n|$)")
           for step_name in ('Validate release inputs', 'Write the exact release manifest'):
@@ -771,14 +775,14 @@ jobs:
               first_use = step['run'].find('$approved_postgres_ref')
               assert assignment and first_use > assignment.start(), step_name
 
-          trust_step = next(step for step in deploy_workflow['jobs']['deploy']['steps'] if step.get('name') == 'Verify Quest signatures and BuildKit attestations')
+          trust_step = next(step for step in deploy_workflow['jobs']['deploy']['steps'] if step.get('name') == 'Verify Quest-owned signatures and BuildKit attestations')
           image_list = re.search(r"done <<'IMAGES'\n([\s\S]*?)\n\s*IMAGES", trust_step['run'])
           assert image_list
-          assert [line.strip() for line in image_list.group(1).splitlines() if line.strip()] == ['frontend_image', 'backend_image', 'migrator_image']
+          assert [line.strip() for line in image_list.group(1).splitlines() if line.strip()] == ['frontend_image', 'backend_image', 'migrator_image', 'valorant_image']
           assert len(re.findall(r'"\$COSIGN_IMAGE" verify\b', trust_step['run'])) == 1
-          assert not re.search(r'postgres|valorant', trust_step['run'], re.IGNORECASE)
+          assert not re.search(r'postgres', trust_step['run'], re.IGNORECASE)
 
-          print('Workflow YAML parsed; exactly one immutable PostgreSQL 16.15 service fixture; image trust boundaries passed')
+          print('Workflow YAML parsed; immutable PostgreSQL service fixtures and image trust boundaries passed')
           PY
 
           approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
@@ -967,6 +971,92 @@ jobs:
         env:
           INTERNAL_API_URL: http://127.0.0.1:5011
         run: npm run test:e2e
+
+  valorant-backend:
+    name: VALORANT backend validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: valorant-platform-backend
+    services:
+      postgres:
+        image: postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: valorant_platform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install dependencies
+        run: uv sync --extra dev --locked
+
+      - name: Run Ruff
+        run: uv run ruff check app tests scripts
+
+      - name: Guard the VALORANT schema boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RniE 'public\.|"public"|references[[:space:]]+public\.' supabase/migrations; then
+            printf '%s\n' 'VALORANT migrations must not reference the Quest-owned public schema.' >&2
+            exit 1
+          fi
+
+      - name: Run non-live tests
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/valorant_platform_test
+        run: uv run pytest -m "not live" -q
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Verify runtime role isolation
+        shell: bash
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d valorant_platform_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'val_runtime') THEN
+              CREATE ROLE val_runtime LOGIN PASSWORD 'val_runtime';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'quest_runtime') THEN
+              CREATE ROLE quest_runtime LOGIN PASSWORD 'quest_runtime';
+            END IF;
+          END $$;
+          SQL
+          uv run python -m scripts.apply_migrations \
+            --database-url postgresql+asyncpg://postgres:postgres@localhost:5432/valorant_platform_test \
+            --runtime-role val_runtime
+          DATABASE_URL=postgresql+asyncpg://val_runtime:val_runtime@localhost:5432/valorant_platform_test \
+            uv run python -m scripts.verify_runtime_access
+          DATABASE_URL=postgresql+asyncpg://quest_runtime:quest_runtime@localhost:5432/valorant_platform_test \
+            uv run python -m scripts.verify_runtime_access --expect-denied
+          if PGPASSWORD=val_runtime psql -h localhost -U val_runtime -d valorant_platform_test \
+            -c 'SELECT 1 FROM valorant._migration_ledger LIMIT 1'; then
+            printf '%s\n' 'VALORANT runtime unexpectedly accessed the migration ledger.' >&2
+            exit 1
+          fi
 
   mobile-admin:
     name: Mobile admin validation

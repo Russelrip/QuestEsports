@@ -248,7 +248,7 @@ jobs:
           docker image inspect "$COSIGN_IMAGE" >/dev/null
           printf 'COSIGN_IMAGE=%s\n' "$COSIGN_IMAGE" >> "$GITHUB_ENV"
 
-      - name: Verify Quest signatures and BuildKit attestations
+      - name: Verify Quest-owned signatures and BuildKit attestations
         shell: bash
         env:
           COSIGN_CERTIFICATE_IDENTITY: https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main
@@ -469,6 +469,7 @@ jobs:
           frontend_image
           backend_image
           migrator_image
+          valorant_image
           IMAGES
 
       - name: Configure the pinned deploy SSH connection

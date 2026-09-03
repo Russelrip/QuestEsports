@@ -1,0 +1,212 @@
+{
+  "status": 200,
+  "data": [
+    {
+      "metadata": {
+        "match_id": "00000000-0000-0000-0000-000000000001",
+        "map": {
+          "id": "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319",
+          "name": "Ascent"
+        },
+        "started_at": "2026-08-12T18:40:00Z",
+        "is_completed": true,
+        "mode": "Custom",
+        "queue": null
+      },
+      "players": [
+        {
+          "puuid": "puuid_p_a",
+          "name": "PlayerA",
+          "tag": "A",
+          "team_id": "Red",
+          "character": "Jett",
+          "stats": {
+            "kills": 21,
+            "deaths": 11,
+            "assists": 5,
+            "score": 3400,
+            "damage_dealt": 4200,
+            "damage_received": 2100,
+            "headshots": 12,
+            "bodyshots": 34,
+            "legshots": 8
+          }
+        },
+        {
+          "puuid": "puuid_p_b",
+          "name": "PlayerB",
+          "tag": "B",
+          "team_id": "Blue",
+          "character": "Sage",
+          "stats": {
+            "kills": 9,
+            "deaths": 19,
+            "assists": 14,
+            "score": 1800,
+            "damage_dealt": 2200,
+            "damage_received": 3900,
+            "headshots": 4,
+            "bodyshots": 26,
+            "legshots": 3
+          }
+        }
+      ],
+      "teams": [
+        {
+          "team_id": "Red",
+          "rounds": {
+            "won": 13,
+            "lost": 9
+          },
+          "won": true
+        },
+        {
+          "team_id": "Blue",
+          "rounds": {
+            "won": 9,
+            "lost": 13
+          },
+          "won": false
+        }
+      ]
+    },
+    {
+      "metadata": {
+        "match_id": "00000000-0000-0000-0000-000000000002",
+        "map": {
+          "id": "2c9d57ec-4431-4a8e-9f2e-6d2a3e4f5a6b",
+          "name": "Bind"
+        },
+        "started_at": "2026-08-12T17:10:00Z",
+        "is_completed": true,
+        "mode": "Competitive",
+        "queue": "competitive"
+      },
+      "players": [
+        {
+          "puuid": "puuid_p_a",
+          "name": "PlayerA",
+          "tag": "A",
+          "team_id": "Blue",
+          "character": "Reyna",
+          "stats": {
+            "kills": 18,
+            "deaths": 12,
+            "assists": 6,
+            "score": 2900,
+            "damage_dealt": 3600,
+            "damage_received": 2300,
+            "headshots": 15,
+            "bodyshots": 28,
+            "legshots": 5
+          }
+        },
+        {
+          "puuid": "puuid_p_c",
+          "name": "PlayerC",
+          "tag": "C",
+          "team_id": "Red",
+          "character": "Omen",
+          "stats": {
+            "kills": 14,
+            "deaths": 14,
+            "assists": 9,
+            "score": 2400,
+            "damage_dealt": 3100,
+            "damage_received": 2800,
+            "headshots": 7,
+            "bodyshots": 31,
+            "legshots": 6
+          }
+        }
+      ],
+      "teams": [
+        {
+          "team_id": "Red",
+          "rounds": {
+            "won": 11,
+            "lost": 13
+          },
+          "won": false
+        },
+        {
+          "team_id": "Blue",
+          "rounds": {
+            "won": 13,
+            "lost": 11
+          },
+          "won": true
+        }
+      ]
+    },
+    {
+      "metadata": {
+        "match_id": "00000000-0000-0000-0000-000000000003",
+        "map": {
+          "id": "7eaecc1b-4337-bbf6-6ab9-04b8f06b3319",
+          "name": "Ascent"
+        },
+        "started_at": "2026-08-12T15:55:00Z",
+        "is_completed": false,
+        "mode": "Custom",
+        "queue": null
+      },
+      "players": [
+        {
+          "puuid": "puuid_p_a",
+          "name": "PlayerA",
+          "tag": "A",
+          "team_id": "Red",
+          "character": "Sova",
+          "stats": {
+            "kills": 7,
+            "deaths": 4,
+            "assists": 2,
+            "score": 900,
+            "damage_dealt": 1300,
+            "damage_received": 800,
+            "headshots": 3,
+            "bodyshots": 11,
+            "legshots": 2
+          }
+        },
+        {
+          "puuid": "puuid_p_b",
+          "name": "PlayerB",
+          "tag": "B",
+          "team_id": "Blue",
+          "character": "Brimstone",
+          "stats": {
+            "kills": 4,
+            "deaths": 6,
+            "assists": 5,
+            "score": 700,
+            "damage_dealt": 900,
+            "damage_received": 1100,
+            "headshots": 1,
+            "bodyshots": 9,
+            "legshots": 4
+          }
+        }
+      ],
+      "teams": [
+        {
+          "team_id": "Red",
+          "rounds": {
+            "won": 5,
+            "lost": 3
+          },
+          "won": null
+        },
+        {
+          "team_id": "Blue",
+          "rounds": {
+            "won": 3,
+            "lost": 5
+          },
+          "won": null
+        }
+      ]
+    }
+  ]
+}

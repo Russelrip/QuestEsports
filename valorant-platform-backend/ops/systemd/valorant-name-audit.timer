@@ -1,0 +1,10 @@
+[Unit]
+Description=Run VALORANT name audit weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 02:00:00 Asia/Colombo
+Persistent=true
+Unit=valorant-name-audit.service
+
+[Install]
+WantedBy=timers.target

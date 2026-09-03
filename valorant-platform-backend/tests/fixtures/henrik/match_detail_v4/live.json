@@ -1,0 +1,190 @@
+{
+  "data": {
+    "metadata": {
+      "is_completed": true,
+      "map": {
+        "id": "00000000-0000-0000-0000-000000000002",
+        "name": "Corrode"
+      },
+      "match_id": "00000000-0000-0000-0000-000000000001",
+      "mode": null,
+      "queue": {
+        "id": "swiftplay",
+        "mode_type": "Swiftplay",
+        "name": "Swiftplay"
+      },
+      "started_at": "2026-08-13T13:48:56.457Z"
+    },
+    "players": [
+      {
+        "name": "PlayerB",
+        "puuid": "puuid_p_b",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "B",
+        "team_id": "Blue"
+      },
+      {
+        "name": "PlayerA",
+        "puuid": "puuid_p_a",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "A",
+        "team_id": "Blue"
+      },
+      {
+        "name": "PlayerC",
+        "puuid": "puuid_p_c",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "C",
+        "team_id": "Blue"
+      },
+      {
+        "name": "PlayerD",
+        "puuid": "puuid_p_d",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "D",
+        "team_id": "Blue"
+      },
+      {
+        "name": "PlayerE",
+        "puuid": "puuid_p_e",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "E",
+        "team_id": "Red"
+      },
+      {
+        "name": "PlayerF",
+        "puuid": "puuid_p_f",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "F",
+        "team_id": "Red"
+      },
+      {
+        "name": "PlayerG",
+        "puuid": "puuid_p_g",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "G",
+        "team_id": "Blue"
+      },
+      {
+        "name": "PlayerH",
+        "puuid": "puuid_p_h",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "H",
+        "team_id": "Red"
+      },
+      {
+        "name": "PlayerI",
+        "puuid": "puuid_p_i",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "I",
+        "team_id": "Red"
+      },
+      {
+        "name": "PlayerJ",
+        "puuid": "puuid_p_j",
+        "stats": {
+          "assists": 0,
+          "bodyshots": 0,
+          "deaths": 0,
+          "headshots": 0,
+          "kills": 0,
+          "legshots": 0,
+          "score": 0
+        },
+        "tag": "J",
+        "team_id": "Red"
+      }
+    ],
+    "teams": [
+      {
+        "rounds": {
+          "lost": 5,
+          "won": 3
+        },
+        "team_id": "Red",
+        "won": false
+      },
+      {
+        "rounds": {
+          "lost": 3,
+          "won": 5
+        },
+        "team_id": "Blue",
+        "won": true
+      }
+    ]
+  },
+  "status": 200
+}

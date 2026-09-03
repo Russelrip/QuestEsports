@@ -31,8 +31,6 @@ jobs:
       NEXT_PUBLIC_SITE_URL: ${{ vars.PRODUCTION_SITE_URL }}
       POSTGRES_17_BOOKWORM_DIGEST: ${{ vars.POSTGRES_17_BOOKWORM_DIGEST }}
       POSTGRES_IMAGE_APPROVED_REF: ${{ vars.POSTGRES_IMAGE_APPROVED_REF }}
-      VALORANT_IMAGE: ${{ vars.VALORANT_IMAGE }}
-      VALORANT_IMAGE_APPROVED_REF: ${{ vars.VALORANT_IMAGE_APPROVED_REF }}
 
     steps:
       - name: Check out the exact successful CI commit
@@ -90,14 +88,6 @@ jobs:
           }
           [[ "$POSTGRES_IMAGE_APPROVED_REF" == "$approved_postgres_ref" ]] || {
             printf '%s\n' 'POSTGRES_IMAGE_APPROVED_REF must exactly approve the PostgreSQL manifest reference.' >&2
-            exit 1
-          }
-          [[ "$VALORANT_IMAGE" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || {
-            printf '%s\n' 'VALORANT_IMAGE must be an exact GHCR digest reference.' >&2
-            exit 1
-          }
-          [[ "$VALORANT_IMAGE_APPROVED_REF" == "$VALORANT_IMAGE" ]] || {
-            printf '%s\n' 'VALORANT_IMAGE_APPROVED_REF must exactly approve VALORANT_IMAGE.' >&2
             exit 1
           }
 
@@ -198,6 +188,34 @@ jobs:
           digest="$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$metadata_file")"
           printf 'migrator_image=%s@%s\n' "$IMAGE" "$digest" >> "$RUNNER_TEMP/release-manifest.entries"
 
+      - name: Build and publish VALORANT backend image
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/valorant-platform-backend
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE,,}"
+          metadata_file="$(mktemp)"
+          trap 'rm -f -- "$metadata_file"' EXIT
+          docker buildx build \
+            --file valorant-platform-backend/Dockerfile \
+            --tag "$IMAGE:$RELEASE_SHA" \
+            --build-arg "QUEST_BUILD_WORKFLOW=Build container images" \
+            --build-arg "QUEST_BUILD_REPOSITORY=$GITHUB_REPOSITORY" \
+            --build-arg "QUEST_BUILD_BRANCH=main" \
+            --build-arg "QUEST_BUILD_REVISION=$RELEASE_SHA" \
+            --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --cache-from type=gha,scope=valorant-platform-backend \
+            --cache-to type=gha,mode=max,scope=valorant-platform-backend \
+            --provenance=mode=max,builder-id=https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main \
+            --sbom=true \
+            --metadata-file "$metadata_file" \
+            --push \
+            valorant-platform-backend
+          digest="$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$metadata_file")"
+          printf 'valorant_image=%s@%s\n' "$IMAGE" "$digest" >> "$RUNNER_TEMP/release-manifest.entries"
+
       - name: Pull the immutable Cosign container
         shell: bash
         env:
@@ -221,7 +239,7 @@ jobs:
               --username "$GITHUB_ACTOR" \
               --password-stdin
 
-      - name: Sign each Quest image digest with keyless OIDC
+      - name: Sign each Quest-owned image digest with keyless OIDC
         shell: bash
         env:
           COSIGN_YES: 'true'
@@ -231,7 +249,7 @@ jobs:
           test -s "$RUNNER_TEMP/release-manifest.entries"
           while IFS='=' read -r image_name image_reference; do
             case "$image_name" in
-              frontend_image|backend_image|migrator_image) ;;
+              frontend_image|backend_image|migrator_image|valorant_image) ;;
               *) printf 'unexpected manifest image key: %s\n' "$image_name" >&2; exit 1 ;;
             esac
             [[ "$image_reference" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || exit 1
@@ -253,9 +271,9 @@ jobs:
           manifest="$RUNNER_TEMP/release-manifest.txt"
           {
             printf 'commit_sha=%s\n' "$RELEASE_SHA"
-            cat "$RUNNER_TEMP/release-manifest.entries"
+            grep -E '^(frontend_image|backend_image|migrator_image)=' "$RUNNER_TEMP/release-manifest.entries"
             printf 'postgres_image=%s\n' "$approved_postgres_ref"
-            printf 'valorant_image=%s\n' "$VALORANT_IMAGE"
+            grep -E '^valorant_image=' "$RUNNER_TEMP/release-manifest.entries"
           } > "$manifest"
 
           expected_keys='commit_sha frontend_image backend_image migrator_image postgres_image valorant_image'
@@ -271,6 +289,7 @@ jobs:
           [[ "$(awk -F= '$1 == "frontend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-frontend@sha256:[0-9a-f]{64}$ ]] || exit 1
           [[ "$(awk -F= '$1 == "backend_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-backend@sha256:[0-9a-f]{64}$ ]] || exit 1
           [[ "$(awk -F= '$1 == "migrator_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/quest-migrator@sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$(awk -F= '$1 == "valorant_image" { print $2 }' "$manifest")" =~ ^ghcr\.io/russelrip/valorant-platform-backend@sha256:[0-9a-f]{64}$ ]] || exit 1
 
       - name: Upload the SHA-bound release manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
