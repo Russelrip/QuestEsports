@@ -424,7 +424,7 @@ jobs:
               fail()
           if expected_type.startswith('https://slsa.dev/'):
               build_types = get(predicate, ('buildDefinition', 'buildType')) + get(predicate, ('buildType',))
-              exact('build type', build_types, 'https://mobyproject.org/buildkit@v1')
+              exact('build type', build_types, 'https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md')
               invocation = predicate.get('invocation', {})
               external_parameters = predicate.get('buildDefinition', {}).get('externalParameters', {})
               revisions = argument_values(external_parameters.get('request', {}).get('args', {}), 'QUEST_BUILD_REVISION') + argument_values(external_parameters.get('args', {}), 'QUEST_BUILD_REVISION') + argument_values(invocation.get('parameters', {}), 'QUEST_BUILD_REVISION')
