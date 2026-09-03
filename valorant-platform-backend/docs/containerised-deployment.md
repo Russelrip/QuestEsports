@@ -25,7 +25,7 @@ reach application startup even if a caller bypasses the CD workflow.
 At runtime provide these host values (normally in the deployment environment):
 
 ```text
-VALORANT_PLATFORM_IMAGE=ghcr.io/OWNER/valorant-platform-backend@sha256:<release-digest>
+VALORANT_PLATFORM_IMAGE=ghcr.io/OWNER/quest-valorant-backend@sha256:<release-digest>
 VALORANT_DATABASE_URL=postgresql+asyncpg://valorant_runtime:<secret>@quest-postgres:5432/valorant_platform
 VALORANT_TLS_CERT_FILE=/etc/quest-esports/tls/valorant-platform.crt
 VALORANT_TLS_KEY_FILE=/etc/quest-esports/tls/valorant-platform.key

@@ -18,5 +18,8 @@ maintained in `Russelrip/valorant-platform-backend`.
 
 The root `CI` workflow validates this code against PostgreSQL 17. After CI on
 `main`, `build-container-images.yml` builds, publishes, signs, and attests the
-VALORANT image together with the Quest images. The resulting digest is included
-in the same release manifest and deployed by the shared Compose controller.
+VALORANT image as `ghcr.io/Russelrip/quest-valorant-backend` together with the
+Quest images. The resulting digest is included in the same release manifest and
+deployed by the shared Compose controller. The distinct package name prevents
+the archived standalone repository's GHCR permissions from controlling
+monorepo releases.
