@@ -134,8 +134,17 @@ EOF
 cat > "$mock_bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-digest="${!#}"
-digest="${digest##*/}"
+url="${!#}"
+if [[ "$url" == "https://ghcr.io/token" ]]; then
+  printf '%s\n' '{"token":"mock-registry-token"}'
+  exit 0
+fi
+authorization_found=0
+for argument in "$@"; do
+  [[ "$argument" == 'Authorization: Bearer mock-registry-token' ]] && authorization_found=1
+done
+test "$authorization_found" = 1
+digest="${url##*/}"
 cat "$OCI_CASE_ROOT/blobs/${digest#sha256:}"
 EOF
 cat > "$mock_bin/jq" <<'EOF'
@@ -163,7 +172,12 @@ try:
 except Exception:
     raise SystemExit(1)
 
-if 'platform.os' in expression:
+if '.token // .access_token' in expression:
+    token = document.get('token') or document.get('access_token')
+    if not isinstance(token, str) or not token or any(character.isspace() for character in token):
+        raise SystemExit(1)
+    sys.stdout.buffer.write((token + '\n').encode())
+elif 'platform.os' in expression:
     values = [item['digest'] for item in document.get('manifests', [])
               if item.get('platform', {}).get('os') == 'linux'
               and item.get('platform', {}).get('architecture') == 'amd64']
