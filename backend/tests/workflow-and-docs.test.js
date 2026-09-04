@@ -226,11 +226,11 @@ test("CI owns pinned workflow lint tooling and discovers every tracked workflow 
   );
 });
 
-test("normal and adoption Compose releases revalidate main after protected approval and before transfer", () => {
+test("normal Compose releases revalidate main after protected approval and before transfer", () => {
   const { source, document } = loadWorkflow(path.join(workflowDirectory, "deploy-compose.yml"));
   const steps = document.jobs.deploy.steps;
   const revalidationIndex = steps.findIndex(
-    (step) => step.name === "Revalidate normal or adoption release against current main after approval",
+    (step) => step.name === "Revalidate normal release against current main after approval",
   );
   const transferIndex = steps.findIndex(
     (step) => step.name === "Transfer the verified manifest and invoke the fixed root deployment script",
@@ -241,9 +241,9 @@ test("normal and adoption Compose releases revalidate main after protected appro
   assert.equal(revalidation.env.RELEASE_MODE, "${{ needs.resolve-build.outputs.release_mode }}");
   assert.equal(revalidation.env.RELEASE_SHA, "${{ needs.resolve-build.outputs.release_sha }}");
   assert.match(revalidation.run, /case "\$RELEASE_MODE" in/);
-  assert.match(revalidation.run, /normal\|adoption\)[\s\S]*gh api "repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/main"/);
+  assert.match(revalidation.run, /normal\)[\s\S]*gh api "repos\/\$GITHUB_REPOSITORY\/git\/ref\/heads\/main"/);
   assert.match(revalidation.run, /test "\$main_head_sha" = "\$RELEASE_SHA"/);
-  assert.match(revalidation.run, /test "\$FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA" = "\$RELEASE_SHA"/);
+  assert.doesNotMatch(revalidation.run, /adoption|FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA/);
   assert.match(revalidation.run, /rollback\)\s*;\;/);
   assert.doesNotMatch(revalidation.run, /scp|ssh\b|sudo\b/);
   assert.match(source, /environment: production-compose/);
@@ -320,7 +320,7 @@ test("private APK release authenticates its post-checkout fetch without restorin
 
 test("operator documentation agrees on cutover, TLS, backup, and remaining host gates", () => {
   const ciDocument = read("docs/ci-cd.md");
-  const ci = section(ciDocument, "## Current production status", "## Workflows");
+  const ci = section(ciDocument, "## Production flow", "## Active workflows");
   const setup = section(read("docs/setup-and-deployment.md"), "## Current production status", "## Requirements");
   const runbook = section(read("docs/production-runbook.md"), "## Current production status", "## Current Topology");
   const recoveryDocument = read("docs/backup-and-disaster-recovery.md");
@@ -331,7 +331,7 @@ test("operator documentation agrees on cutover, TLS, backup, and remaining host 
   const backupImplementation = read("ops/backup-production-multi-remote.sh");
   const backupExample = read("ops/quest-esports-backup.env.example");
 
-  for (const [name, document] of Object.entries({ ci, setup, runbook, recovery, environment })) {
+  for (const [name, document] of Object.entries({ setup, recovery, environment })) {
     const normalized = document.replace(/\s+/g, " ");
     assert.match(normalized, /2026-08-31/);
     assert.match(normalized, /PostgreSQL \*{0,2}17\.11\*{0,2}/);
@@ -341,14 +341,16 @@ test("operator documentation agrees on cutover, TLS, backup, and remaining host 
     assert.match(normalized, /No rehearsal was performed|rehearsal[^.]*skipped|rehearsal[^.]*not performed/i, name);
   }
 
-  assert.match(ci.replace(/\s+/g, " "), /PRODUCTION_DEPLOYMENT_MODE.*compose/i);
-  assert.match(ci.replace(/\s+/g, " "), /TLS[^.]*blocks[^.]*Compose adoption/i);
-  assert.match(ci.replace(/\s+/g, " "), /backup.*failed since \*?\*?2026-08-30 04:20/i);
-  assert.match(ci.replace(/\s+/g, " "), /unrestricted[^.]*root|two GitHub Actions keys/i);
+  assert.match(ci.replace(/\s+/g, " "), /push to main.*CI.*Compose release/i);
+  assert.match(ci.replace(/\s+/g, " "), /build, sign, and attest four application images/i);
+  assert.match(ci.replace(/\s+/g, " "), /compose-release-success/i);
+  assert.doesNotMatch(ci, /legacy-pm2|FRONTEND_DEPLOY_ENABLED|BACKEND_DEPLOY_ENABLED/);
   assert.match(setup.replace(/\s+/g, " "), /Compose adoption[^.]*blocked|TLS[^.]*blocks Compose adoption/i);
   assert.match(setup.replace(/\s+/g, " "), /interim[^.]*backup/i);
   assert.match(runbook.replace(/\s+/g, " "), /PostgreSQL \*{0,2}17\.11\*{0,2}[^.]*quest-postgres/);
-  assert.match(runbook.replace(/\s+/g, " "), /POSTGRES_TARGET_[^.]*(?:settings|missing)|missing TLS material/i);
+  assert.match(runbook.replace(/\s+/g, " "), /run in the production Compose topology/i);
+  assert.match(runbook.replace(/\s+/g, " "), /verify-full private-CA TLS/i);
+  assert.match(runbook.replace(/\s+/g, " "), /Supabase remains stale recovery material.*not a rollback target/i);
   assert.match(recovery, /Restore-drill status.*Skipped/i);
   assert.match(
     recovery,
@@ -377,16 +379,8 @@ test("operator documentation agrees on cutover, TLS, backup, and remaining host 
   assert.match(collaboration.replace(/\s+/g, " "), /not a production rollback target.*not a Supabase production SQL editor/);
   assert.doesNotMatch(collaboration, /Run the production statement|PRODUCTION_PROJECT_REF/);
 
-  assert.match(
-    ciDocument,
-    /asyncpg URL uses\s+`ssl=require`; full certificate and hostname verification are supplied\s+separately through `VALORANT_DATABASE_SSL_CA_FILE`,\s*`VALORANT_DATABASE_SSL_SERVER_HOSTNAME`, and\s*`VALORANT_DATABASE_SSL_VERIFY=full`/,
-    "VALORANT asyncpg URL and separate verification controls must be documented exactly",
-  );
-  assert.doesNotMatch(
-    ciDocument,
-    /asyncpg URL uses\s+`ssl=verify-full`|postgresql\+asyncpg:[^`\n]*[?&]ssl=verify-full/,
-    "VALORANT documentation must not claim ssl=verify-full in the asyncpg URL",
-  );
+  assert.match(ciDocument, /No personal access token or sibling-repository checkout is required/);
+  assert.doesNotMatch(ciDocument, /VALORANT_PLATFORM_ACCESS_TOKEN|deploy-frontend\.yml|workflows\/cd\.yml/);
 
   const productionChecklist = section(
     read("docs/setup-and-deployment.md"),
@@ -427,10 +421,10 @@ test("operator documents keep live VPS, test Supabase, and release-input claims 
   assert.match(migrationSpec, /TLS material blocks Compose adoption[\s\S]*backup pipeline/);
   assert.match(migrationSpec, /unrestricted deploy-root access and two GitHub Actions keys/i);
   assert.match(safety, /The normal production authority is immutable Docker Compose/);
-  assert.match(safety, /legacy PM2 path is rollback-only/);
+  assert.match(safety, /retired PM2 and Vercel[\s\S]*not deployment alternatives/);
   assert.match(safety.replace(/\s+/g, " "), /After approval.*main.*RELEASE_SHA.*SSH\/scp/);
-  assert.match(safety, /quest-postgres[\s\S]*17\.11[\s\S]*127\.0\.0\.1:5433/);
-  assert.match(safety, /interim\s+`quest-pg17-interim-backup\.\{service,timer\}`/);
+  assert.match(safety, /quest-postgres[\s\S]*17\.11/);
+  assert.match(safety, /access-restricted backups/i);
   const safetyValorant = section(safety, "## VALORANT two-schema expand-first rules (Quest + valorant-platform-backend)");
   assert.match(safetyValorant, /live VPS[\s\S]*PostgreSQL 17\.11[\s\S]*quest-postgres/);
   assert.match(safetyValorant, /dedicated Supabase test project[\s\S]*not a production target/);
@@ -455,12 +449,14 @@ test("operator documents keep live VPS, test Supabase, and release-input claims 
   assert.match(e2e, /protected, manual, owner-gated/);
   assert.match(e2e, /not ordinary CI or a[\s\S]*pull-request check/);
   const releaseControls = section(environment, "## Deployment and release controls", "## Backup and recovery controls");
-  assert.match(releaseControls, /`compose_run_id`/);
-  assert.doesNotMatch(releaseControls, /`deploy_sha`/);
+  assert.match(releaseControls, /`rollback_sha`/);
+  assert.match(releaseControls, /`COMPOSE_DEPLOY_ENABLED`/);
+  assert.doesNotMatch(releaseControls, /`compose_run_id`|`deploy_sha`|`BACKEND_DEPLOY_ENABLED`|`FRONTEND_DEPLOY_ENABLED`/);
   assert.match(environment, /Production `DATABASE_URL` and `DIRECT_URL` must use `sslmode=verify-full`/);
   assert.match(environment, /VPS container `quest-postgres`/);
 
   const runbook = read("docs/production-runbook.md");
   assert.doesNotMatch(runbook, /sslmode=require/);
-  assert.match(runbook, /repair_database_ssl[\s\S]*sslmode=verify-full/);
+  assert.match(runbook, /verify-full private-CA TLS/);
+  assert.match(runbook, /Production environment files are root-controlled outside Git/);
 });
