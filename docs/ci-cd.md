@@ -118,6 +118,32 @@ enforces release-directory, Compose, TLS, database, backup, ownership, and
 health policies. A successful deployment uploads the `compose-release-success`
 artifact.
 
+## Host adapter
+
+Every `*_COMMAND` and `*_CHECK` setting in `/etc/quest-esports/release.env` is
+served by one reviewed script, `ops/deploy/host-hooks.sh`. It dispatches on its
+own basename, so each setting is installed as a root-owned `0755` alias of that
+one file:
+
+```bash
+install -o root -g root -m 0755 ops/deploy/host-hooks.sh /usr/local/sbin/quest-release-hooks
+grep -oE '^quest-release-[a-z0-9-]+' ops/deploy/host-hooks.aliases \
+  | xargs -I{} ln -f /usr/local/sbin/quest-release-hooks /usr/local/sbin/{}
+```
+
+The adapter refuses to run unless it is invoked as root with the canonical
+root-owned `release.env`, and it fails closed on any name it does not implement.
+Settings listed as deliberately unimplemented in `ops/deploy/host-hooks.aliases`
+— legacy PM2/VALORANT restart and unmask, and blind Supabase URL rollback — must
+stay unset on the host. `ops/tests/host-hooks.test.sh` pins the alias list, the
+dispatcher, and `ops/deploy/release.env.example` against each other, so a
+renamed hook fails CI instead of a release.
+
+Two settings deliberately point outside the adapter: `BACKUP_COMMAND` and
+`BACKUP_FRESHNESS_COMMAND` must name the same canonical backup and freshness
+scripts the `quest-esports-backup` timers run, so release evidence and scheduled
+backups cannot diverge.
+
 ## Normal deploy and rollback
 
 With deployment enabled, a successful image build starts the production workflow
@@ -163,6 +189,7 @@ Before enabling deployment or after changing the controller:
 bash -n ops/deploy/release.sh ops/deploy/validate-host.sh ops/deploy/verify-release.sh
 bash ops/tests/adopt-compose.test.sh
 bash ops/tests/deploy-release.test.sh
+bash ops/tests/host-hooks.test.sh
 ```
 
 Also verify that the installed root-owned host scripts match the reviewed

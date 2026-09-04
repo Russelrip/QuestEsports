@@ -1,0 +1,61 @@
+# Basename aliases for ops/deploy/host-hooks.sh.
+#
+# Install host-hooks.sh once, then create each name below as a root-owned 0755
+# hard link (or copy) under /usr/local/sbin. The script dispatches on its own
+# basename, so the alias name is the contract. Every name maps to exactly one
+# release.env setting; the settings that are deliberately NOT implemented are
+# listed at the bottom.
+#
+# alias                                            release.env setting
+quest-release-service-ownership                     # SERVICE_OWNERSHIP_COMMAND
+quest-release-database-health                       # DATABASE_HEALTH_COMMAND
+quest-release-database-ready                        # DATABASE_READINESS_COMMAND
+quest-release-registry-check                        # REGISTRY_CHECK_COMMAND
+quest-release-post-restore-security-verify          # SECURITY_VERIFY_COMMAND
+quest-release-backup-evidence                       # BACKUP_EVIDENCE_COMMAND
+quest-release-quest-migration-status                # QUEST_MIGRATION_STATUS_COMMAND
+quest-release-valorant-migration-status             # VALORANT_MIGRATION_STATUS_COMMAND
+quest-release-quest-migrate                         # QUEST_MIGRATOR_COMMAND
+quest-release-valorant-migrate                      # VALORANT_MIGRATOR_COMMAND
+quest-release-old-database-authoritative            # OLD_DATABASE_AUTHORITATIVE_COMMAND
+quest-release-old-valorant-active                   # OLD_VALORANT_ACTIVE_CHECK
+quest-release-old-quest-active                      # OLD_QUEST_ACTIVE_CHECK
+quest-release-old-valorant-stop                     # OLD_VALORANT_STOP_COMMAND
+quest-release-old-quest-stop                        # OLD_QUEST_STOP_COMMAND
+quest-release-old-valorant-mask                     # OLD_VALORANT_MASK_COMMAND
+quest-release-old-quest-mask                        # OLD_QUEST_MASK_COMMAND
+quest-release-old-valorant-reboot-persistence       # OLD_VALORANT_REBOOT_PERSISTENCE_CHECK
+quest-release-old-quest-reboot-persistence          # OLD_QUEST_REBOOT_PERSISTENCE_CHECK
+quest-release-quest-freeze-enable                   # QUEST_FREEZE_ENABLE_COMMAND
+quest-release-valorant-freeze-enable                # VALORANT_FREEZE_ENABLE_COMMAND
+quest-release-quest-freeze-disable                  # QUEST_FREEZE_DISABLE_COMMAND
+quest-release-valorant-freeze-disable               # VALORANT_FREEZE_DISABLE_COMMAND
+quest-release-quest-freeze-status                   # QUEST_FREEZE_STATUS_COMMAND
+quest-release-valorant-freeze-status                # VALORANT_FREEZE_STATUS_COMMAND
+quest-release-quest-candidate-start                 # QUEST_CANDIDATE_FROZEN_START_COMMAND
+quest-release-valorant-candidate-start              # VALORANT_CANDIDATE_FROZEN_START_COMMAND
+quest-release-quest-frozen-read-only-ack            # QUEST_FROZEN_READ_ONLY_ACK_COMMAND
+quest-release-valorant-frozen-read-only-ack         # VALORANT_FROZEN_READ_ONLY_ACK_COMMAND
+quest-release-valorant-health                       # VALORANT_CONTAINER_HEALTH_COMMAND
+quest-release-post-commit-recovery-arm              # POST_COMMIT_RECOVERY_ARM_COMMAND
+quest-release-quest-writer-enable                   # QUEST_WRITER_ENABLE_COMMAND
+quest-release-valorant-writer-enable                # VALORANT_WRITER_ENABLE_COMMAND
+quest-release-quest-writer-stop                     # QUEST_WRITER_STOP_COMMAND
+quest-release-valorant-writer-stop                  # VALORANT_WRITER_STOP_COMMAND
+quest-release-current-state-capture                 # CURRENT_STATE_CAPTURE_COMMAND
+quest-release-recovery-action                       # RECOVERY_ACTION_COMMAND
+#
+# Deliberately unimplemented, and therefore deliberately unset in release.env:
+#
+#   OLD_APPLICATION_RESTART_COMMAND
+#   OLD_QUEST_RESTART_COMMAND
+#   OLD_VALORANT_RESTART_COMMAND
+#   OLD_VALORANT_UNMASKED_CHECK
+#     Legacy PM2 and the legacy VALORANT units are stopped and masked; there is
+#     no supported path that restarts them. The controller only reaches these
+#     settings when a legacy unit was observed active at the start of a release,
+#     which cannot happen after adoption, and it treats an unset setting as an
+#     incomplete rollback rather than as success.
+#
+#   SUPABASE_URL_ROLLBACK_COMMAND
+#     Blind URL rollback to the retired Supabase project is prohibited.

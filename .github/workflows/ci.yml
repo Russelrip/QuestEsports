@@ -34,6 +34,10 @@ jobs:
         shell: bash
         run: bash ops/tests/adopt-compose.test.sh
 
+      - name: Test the production host hook contracts
+        shell: bash
+        run: bash ops/tests/host-hooks.test.sh
+
       - name: Assert the Compose-only production authority
         shell: bash
         run: |

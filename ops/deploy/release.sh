@@ -477,21 +477,25 @@ run_hook() {
 
 run_migrator() {
   # The migrator acknowledgement is `migrated image=<digest> target=quest-postgres`.
-  local variable="$1" repository="$2" target_authority="$3" schema="$4" output command expected url_file_setting admin_stat
+  local variable="$1" repository="$2" target_authority="$3" schema="$4" output command expected url_file_setting admin_stat selected_image
   command_setting "$variable"
   command="${!variable}"
   [[ "$target_authority" == quest-postgres ]] || die 'migrator target authority is not the fixed Quest PostgreSQL target.'
   [[ "$schema" == public || "$schema" == valorant ]] || die 'migrator schema is not an approved service schema.'
   url_file_setting=QUEST_MIGRATOR_DATABASE_URL_FILE
-  [[ "$repository" == valorant ]] && url_file_setting=VALORANT_MIGRATOR_DATABASE_URL_FILE
+  selected_image="${manifest[migrator_image]}"
+  if [[ "$repository" == valorant ]]; then
+    url_file_setting=VALORANT_MIGRATOR_DATABASE_URL_FILE
+    selected_image="${manifest[valorant_image]}"
+  fi
   require_setting "$url_file_setting"
   [[ "${!url_file_setting}" == /* && -f "${!url_file_setting}" && ! -L "${!url_file_setting}" ]] || die 'migrator URL file is missing or unsafe.'
   if [[ "$fixture_mode" != 1 ]]; then
     admin_stat="$(stat -c '%u %a' "${!url_file_setting}" 2>/dev/null)" || die 'migrator URL file ownership cannot be inspected.'
     [[ "$admin_stat" == '0 600' || "$admin_stat" == '0 640' ]] || die 'migrator URL file must be root-owned and private.'
   fi
-  output="$(MIGRATION_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" MIGRATOR_IMAGE="${manifest[migrator_image]}" EXPECTED_MIGRATOR_IMAGE="${manifest[migrator_image]}" MIGRATOR_DATABASE_URL_FILE="${!url_file_setting}" DIRECT_URL_FILE="${!url_file_setting}" "$command" 2>/dev/null)" || die "$variable failed."
-  expected="migrated image=${manifest[migrator_image]} target=quest-postgres schema=$schema repository=$repository"
+  output="$(MIGRATION_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" MIGRATOR_IMAGE="$selected_image" EXPECTED_MIGRATOR_IMAGE="$selected_image" MIGRATOR_DATABASE_URL_FILE="${!url_file_setting}" DIRECT_URL_FILE="${!url_file_setting}" "$command" 2>/dev/null)" || die "$variable failed."
+  expected="migrated image=$selected_image target=quest-postgres schema=$schema repository=$repository"
   [[ "$output" == "$expected" ]] || die "$variable did not acknowledge the exact migrator image, target, schema, and repository."
 }
 

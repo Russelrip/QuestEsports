@@ -50,7 +50,12 @@ The API routes and aggregate definitions are mapped in
   pre/post-commit rollback contracts. It consumes exact image-digest manifests,
   the canonical host lock, and explicit coordinated freeze/read-only and
   release-bound backup-evidence contracts; it does not build images or own the
-  sibling repository's release.
+  sibling repository's release. `ops/deploy/host-hooks.sh` is the single host
+  adapter behind every `*_COMMAND`/`*_CHECK` setting: it dispatches on its own
+  basename, so `ops/deploy/host-hooks.aliases` is the installation contract and
+  `ops/tests/host-hooks.test.sh` pins it against `ops/deploy/release.env.example`.
+  Settings the alias list marks unimplemented must stay unset on the host; the
+  controller treats them as an incomplete rollback rather than as success.
 - `ops/docker/` — immutable production Compose topology, PostgreSQL 17 role/TLS
   bootstrap, VALORANT asyncpg/TLS runtime contract, and durable upload/database
   mount contracts. The production project is fixed as `quest-prod`; its
