@@ -44,6 +44,10 @@ services:
     networks:
       app: {}
       ingress: {}
+    # Production must survive host reboot and Docker daemon restart without an
+    # operator. Compose's default is `no`, which left the whole Quest group down
+    # after a reboot while valorant-prod returned on its own.
+    restart: unless-stopped
 
   backend:
     image: ${QUEST_BACKEND_IMAGE:?QUEST_BACKEND_IMAGE must be supplied by the release manifest}
@@ -89,6 +93,7 @@ services:
       quest-shared:
         aliases:
           - quest-backend
+    restart: unless-stopped
 
   postgres:
     # PostgreSQL is private to the internal database and quest-shared networks.
@@ -143,6 +148,7 @@ services:
       quest-shared:
         aliases:
           - quest-postgres
+    restart: unless-stopped
 
 networks:
   app:
