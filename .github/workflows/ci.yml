@@ -705,14 +705,12 @@ jobs:
           grep -F 'POSTGRES17_BIN' "$rehearsal" >/dev/null
           grep -F 'owner_deployment_host_evidence_required' ops/rehearsal/rehearsal-contract.sh >/dev/null
 
-          # Keep the operator contract visible and prevent a future document
-          # edit from reintroducing Supabase/VPS ambiguity.
-          grep -F 'PostgreSQL 17 VPS target' docs/production-runbook.md >/dev/null
-          grep -F 'temporary Supabase rollback material' docs/production-runbook.md >/dev/null
-          grep -F 'PostgreSQL 16.15 cluster remains untouched' docs/production-runbook.md >/dev/null
-          grep -F '127.0.0.1:55432' docs/production-runbook.md >/dev/null
-          grep -F 'no public database port' docs/production-runbook.md >/dev/null
-          grep -F 'No private-network backup utility is implemented or' docs/production-runbook.md >/dev/null
+          # Keep the current operator contract visible and prevent a future
+          # document edit from reintroducing pre-Compose ambiguity.
+          grep -F 'Compose adoption is complete' docs/production-runbook.md >/dev/null
+          grep -F 'Supabase remains stale recovery material' docs/production-runbook.md >/dev/null
+          grep -F 'PostgreSQL is private to Compose; no public database port is allowed' docs/production-runbook.md >/dev/null
+          grep -F 'Access-restricted' docs/production-runbook.md >/dev/null
           grep -F 'No private-network backup utility is' docs/backup-and-disaster-recovery.md >/dev/null
           grep -F 'sudo systemctl disable --now quest-esports-backup.timer quest-esports-backup-freshness.timer' docs/backup-and-disaster-recovery.md >/dev/null
           grep -F 'sudo systemctl enable --now quest-esports-backup.timer quest-esports-backup-freshness.timer' docs/backup-and-disaster-recovery.md >/dev/null
