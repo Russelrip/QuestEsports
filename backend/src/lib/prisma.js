@@ -4,9 +4,13 @@ const { buildRuntimeDatabaseUrl } = require("./database-url");
 const { logger } = require("./logger");
 
 const globalForPrisma = globalThis;
+// The release host runs this verifier from a container that cannot read the
+// root-only URL file, so the credential may arrive directly. Mirror the
+// precedence used by scripts/verify-database-security.js.
 const securityDatabaseUrl =
-  process.env.SECURITY_VERIFY_DATABASE_URL_FILE &&
-  fs.readFileSync(process.env.SECURITY_VERIFY_DATABASE_URL_FILE, "utf8").trim();
+  process.env.SECURITY_VERIFY_DATABASE_URL ||
+  (process.env.SECURITY_VERIFY_DATABASE_URL_FILE &&
+    fs.readFileSync(process.env.SECURITY_VERIFY_DATABASE_URL_FILE, "utf8").trim());
 const prismaLogConfig =
   process.env.NODE_ENV === "development"
     ? [

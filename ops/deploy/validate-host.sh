@@ -395,16 +395,28 @@ validate_service_ownership() {
 validate_service_ownership
 
 "$DOCKER_BIN" info >/dev/null 2>&1 || die 'Docker daemon is unavailable.'
-network_output="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{.Name}}|{{join .Aliases ","}}{{"\n"}}{{end}}' 2>/dev/null)" || die 'shared network is unavailable.'
-declare -A seen_aliases=()
+# Docker 29 no longer reports Aliases from `network inspect`, so the shared
+# network lists container names and each container reports its own aliases. The
+# endpoint names must each resolve to a single container; the VALORANT worker
+# names are shared, because the platform declares them for its certificate SANs
+# while each worker also registers its own service name.
+network_output="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{println .Name}}{{end}}' 2>/dev/null)" || die 'shared network is unavailable.'
+declare -A seen_aliases=() alias_container=()
+unique_aliases=(quest-backend quest-postgres valorant-platform)
 while IFS= read -r record; do
   [[ -z "$record" ]] && continue
-  aliases="${record#*|}"
-  [[ "$aliases" != "$record" ]] || die 'shared network alias output is ambiguous.'
+  aliases="$("$DOCKER_BIN" inspect "$record" --format '{{join (index .NetworkSettings.Networks "quest-shared").Aliases ","}}' 2>/dev/null)" \
+    || die 'shared network container aliases are unavailable.'
+  [[ -n "$aliases" ]] || die 'shared network alias output is ambiguous.'
   IFS=',' read -r -a alias_values <<< "$aliases"
   for alias in "${alias_values[@]}"; do
     [[ -z "$alias" ]] && continue
-    [[ -z "${seen_aliases[$alias]+present}" ]] || die 'shared network aliases are not unique.'
+    for unique_alias in "${unique_aliases[@]}"; do
+      if [[ "$alias" == "$unique_alias" && -n "${alias_container[$alias]:-}" && "${alias_container[$alias]}" != "$record" ]]; then
+        die 'shared network endpoint aliases are not unique.'
+      fi
+    done
+    alias_container["$alias"]="$record"
     seen_aliases["$alias"]=1
   done
 done <<< "$network_output"

@@ -238,13 +238,22 @@ validate_project() {
   [[ "$(printf '%s\n' "$config" | awk -v p="$project" '$0 == "name: " p { n++ } END { print n+0 }')" == 1 ]] || die "Compose project identity is not exactly $project."
 }
 validate_active_project() {
+  # A "!" prefix marks a one-shot service, such as the weekly name audit, which
+  # may legitimately be absent or exited between runs. Every other expectation
+  # is a long-lived service that must be running on the approved image.
   local file="$1" project="$2" env_file="${3:-}" active record service state image record_project
   shift 3
-  local expected_count=$#
-  declare -A expected_images=() seen_services=()
+  local expected_count=0 running_count=0
+  declare -A expected_images=() one_shot_services=() seen_services=()
   for record in "$@"; do
     service="${record%%=*}"
     image="${record#*=}"
+    if [[ "$service" == "!"* ]]; then
+      service="${service#?}"
+      one_shot_services["$service"]=1
+    else
+      expected_count=$((expected_count + 1))
+    fi
     [[ -n "$service" && "$image" != "$record" ]] || die "active Compose topology expectation is invalid for $project."
     expected_images["$service"]="$image"
   done
@@ -265,15 +274,16 @@ validate_active_project() {
     record_project="$(printf '%s\n' "$record" | sed -nE 's/.*"Project"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')"
     [[ -n "$record_project" ]] || die "active Compose topology for $project lacks Project."
     [[ "$record_project" == "$project" ]] || die 'active Compose topology contains an unexpected project.'
-    [[ "$state" == running ]] || die "active Compose service $service is not running."
     [[ -n "${expected_images[$service]+present}" ]] || die "active Compose topology contains unexpected service $service."
     [[ -z "${seen_services[$service]+present}" ]] || die "active Compose topology contains duplicate service $service."
+    [[ -n "${one_shot_services[$service]+present}" || "$state" == running ]] || die "active Compose service $service is not running."
     [[ "$image" == "${expected_images[$service]}" ]] || die "active Compose service $service has an unexpected image."
     seen_services["$service"]=1
+    [[ -n "${one_shot_services[$service]+present}" ]] || running_count=$((running_count + 1))
   done <<< "$active"
-  [[ "${#seen_services[@]}" -eq "$expected_count" ]] || die "active Compose topology is missing an expected service."
+  [[ "$running_count" -eq "$expected_count" ]] || die "active Compose topology is missing an expected service."
   for service in "${!expected_images[@]}"; do
-    [[ -n "${seen_services[$service]+present}" ]] || die "active Compose topology is missing service $service."
+    [[ -n "${one_shot_services[$service]+present}" || -n "${seen_services[$service]+present}" ]] || die "active Compose topology is missing service $service."
   done
 }
 validate_bundle_images() {
@@ -300,33 +310,49 @@ bundle_image() {
   awk -F= -v k="$key" '$1 == k { print substr($0, index($0,"=")+1); exit }' "$release_dir/.env"
 }
 validate_aliases() {
-  local alias_output record alias_list alias container project service image expected metadata
-  declare -A seen_aliases=() expected_projects=() expected_services=() expected_images=()
-  expected_projects[quest-backend]=quest-prod; expected_services[quest-backend]=backend; expected_images[quest-backend]="$(bundle_image QUEST_BACKEND_IMAGE)"
-  expected_projects[quest-postgres]=quest-prod; expected_services[quest-postgres]=postgres; expected_images[quest-postgres]="$(bundle_image POSTGRES_IMAGE)"
-  for alias in valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
-    expected_projects[$alias]=valorant-prod; expected_services[$alias]=valorant-platform; expected_images[$alias]="$(bundle_image VALORANT_IMAGE)"
+  # Docker 29 no longer reports Aliases from `network inspect`, so they are read
+  # from each attached container. Only the names used as HTTPS and database
+  # endpoints are required to resolve to a single container: once the VALORANT
+  # writers are admitted they also register their own service names, so
+  # `valorant-updater` and `valorant-discord-bot` legitimately resolve to both
+  # the platform (which declares them for its certificate SANs) and the worker.
+  # Those shared names are still pinned to the VALORANT project and image, so no
+  # foreign container may claim them.
+  local containers container metadata project service image alias_list alias
+  local quest_backend_image postgres_image valorant_image
+  declare -A unique_expectation=() shared_expectation=() bound_container=() bound_metadata=()
+  declare -a aliases=()
+  quest_backend_image="$(bundle_image QUEST_BACKEND_IMAGE)"
+  postgres_image="$(bundle_image POSTGRES_IMAGE)"
+  valorant_image="$(bundle_image VALORANT_IMAGE)"
+  unique_expectation[quest-backend]="quest-prod|backend|$quest_backend_image"
+  unique_expectation[quest-postgres]="quest-prod|postgres|$postgres_image"
+  unique_expectation[valorant-platform]="valorant-prod|valorant-platform|$valorant_image"
+  for alias in valorant-updater valorant-discord-bot valorant-name-audit; do
+    shared_expectation["$alias"]="valorant-prod|$valorant_image"
   done
-  alias_output="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{.Name}}|{{join .Aliases ","}}{{"\n"}}{{end}}' 2>/dev/null)" || die 'shared-network inspection failed.'
-  [[ -n "$alias_output" ]] || die 'shared-network alias inspection returned no containers.'
-  while IFS= read -r record; do
-    [[ -z "$record" ]] && continue
-    IFS='|' read -r container alias_list <<< "$record"
-    metadata="$("$DOCKER_BIN" inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Config.Image}}' 2>/dev/null)" || die 'shared-network container metadata inspection failed.'
-    IFS='|' read -r project service image <<< "$metadata"
-    [[ -n "$container" && -n "$project" && -n "$service" && -n "$image" && -n "$alias_list" ]] || die 'shared-network alias inspection is ambiguous.'
+  containers="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{println .Name}}{{end}}' 2>/dev/null)" || die 'shared-network inspection failed.'
+  [[ -n "$containers" ]] || die 'shared-network inspection returned no containers.'
+  while IFS= read -r container; do
+    [[ -n "$container" ]] || continue
+    metadata="$("$DOCKER_BIN" inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Config.Image}}|{{join (index .NetworkSettings.Networks "quest-shared").Aliases ","}}' 2>/dev/null)" || die 'shared-network container metadata inspection failed.'
+    IFS='|' read -r project service image alias_list <<< "$metadata"
+    [[ -n "$project" && -n "$service" && -n "$image" && -n "$alias_list" ]] || die 'shared-network alias inspection is ambiguous.'
     IFS=',' read -r -a aliases <<< "$alias_list"
     for alias in "${aliases[@]}"; do
-      [[ -z "$alias" ]] && continue
-      [[ -z "${seen_aliases[$alias]+seen}" ]] || die "duplicate shared-network alias: $alias"
-      seen_aliases["$alias"]="$project|$service|$image|$container"
+      [[ -n "$alias" ]] || continue
+      if [[ -n "${unique_expectation[$alias]+present}" ]]; then
+        [[ -z "${bound_container[$alias]+present}" || "${bound_container[$alias]}" == "$container" ]] || die "shared-network alias $alias resolves to more than one container."
+        bound_container["$alias"]="$container"
+        bound_metadata["$alias"]="$project|$service|$image"
+      elif [[ -n "${shared_expectation[$alias]+present}" ]]; then
+        [[ "$project|$image" == "${shared_expectation[$alias]}" ]] || die "shared-network alias $alias is bound to an unexpected project or image."
+      fi
     done
-  done <<< "$alias_output"
-  for alias in quest-backend quest-postgres valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
-    expected="${seen_aliases[$alias]:-}"
-    [[ -n "$expected" ]] || die "required shared-network alias is missing: $alias"
-    IFS='|' read -r project service image container <<< "$expected"
-    [[ "$project" == "${expected_projects[$alias]}" && "$service" == "${expected_services[$alias]}" && "$image" == "${expected_images[$alias]}" ]] || die "shared-network alias $alias is bound to an unexpected project, service, or image."
+  done <<< "$containers"
+  for alias in "${!unique_expectation[@]}"; do
+    [[ -n "${bound_metadata[$alias]:-}" ]] || die "required shared-network alias is missing: $alias"
+    [[ "${bound_metadata[$alias]}" == "${unique_expectation[$alias]}" ]] || die "shared-network alias $alias is bound to an unexpected project, service, or image."
   done
 }
 validate_metadata "$release_dir/release-metadata.txt" "$(basename "$release_dir")"
@@ -338,7 +364,10 @@ validate_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir
 validate_active_project "$release_dir/compose.production.yml" quest-prod "$release_dir/.env" \
   "frontend=$(bundle_image QUEST_FRONTEND_IMAGE)" "backend=$(bundle_image QUEST_BACKEND_IMAGE)" "postgres=$(bundle_image POSTGRES_IMAGE)"
 validate_active_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir/.env" \
-  "valorant-platform=$(bundle_image VALORANT_IMAGE)"
+  "valorant-platform=$(bundle_image VALORANT_IMAGE)" \
+  "valorant-updater=$(bundle_image VALORANT_IMAGE)" \
+  "valorant-discord-bot=$(bundle_image VALORANT_IMAGE)" \
+  "!valorant-name-audit=$(bundle_image VALORANT_IMAGE)"
 validate_aliases
 quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health failed.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health JSON was not healthy.'
