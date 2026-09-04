@@ -410,8 +410,8 @@ case "$(basename "$0")" in
     ;;
   db-health|db-ready) ack_target="${TARGET_AUTHORITY:-quest-postgres}"; [[ "${TARGET_ACK_LIES:-0}" == 1 ]] && ack_target=wrong-postgres; printf 'ready target=%s schemas=public,valorant\n' "$ack_target" ;;
   registry) [[ "${FAIL_REGISTRY:-0}" == 1 ]] && exit 1 || exit 0 ;;
-  backup-freshness) [[ "${STALE_BACKUP:-0}" == 1 ]] && exit 1 || { printf 'freshness lock=%s\n' "${BACKUP_RELEASE_LOCK_PATH:?}" >> "$TEST_LOG"; printf 'fresh\n'; } ;;
-  backup) printf 'backup lock=%s\n' "${BACKUP_RELEASE_LOCK_PATH:?}" >> "$TEST_LOG"; printf 'backup\n' ;;
+  backup-freshness) [[ "${STALE_BACKUP:-0}" == 1 ]] && exit 1 || { printf 'freshness lock=%s held=%s inherited=%s\n' "${BACKUP_RELEASE_LOCK_PATH:?}" "${BACKUP_RELEASE_LOCK_HELD:-0}" "$(readlink -f /proc/self/fd/8 2>/dev/null || printf none)" >> "$TEST_LOG"; printf 'fresh\n'; } ;;
+  backup) printf 'backup lock=%s held=%s inherited=%s\n' "${BACKUP_RELEASE_LOCK_PATH:?}" "${BACKUP_RELEASE_LOCK_HELD:-0}" "$(readlink -f /proc/self/fd/8 2>/dev/null || printf none)" >> "$TEST_LOG"; printf 'backup\n' ;;
   backup-evidence) printf 'backup-evidence\n' >> "$TEST_LOG"; [[ "${INCOMPLETE_BACKUP:-0}" == 1 ]] && printf 'verified-complete release_sha=%s schemas=verified:public uploads=verified:public,private archive=verified checksum=verified remote=verified\n' "${BACKUP_RELEASE_SHA:?}" || printf 'verified-complete release_sha=%s schemas=verified:public,valorant uploads=verified:public,private archive=verified checksum=verified remote=verified\n' "${BACKUP_RELEASE_SHA:?}" ;;
   old-active) state="$(cat "${FIXTURE_OLD_VALORANT_STATE:?}")"; printf 'old-val-active-check state=%s\n' "$state" >> "$TEST_LOG"; [[ "${BAD_LEGACY_STATE:-0}" == 1 ]] && printf 'active\n' || for unit in valorant-platform valorant-updater valorant-discord-bot; do printf 'unit=%s state=%s observed_at=20260828T120000Z\n' "$unit" "$state"; done ;;
   old-quest-active) state="$(cat "${FIXTURE_OLD_QUEST_STATE:?}")"; printf 'old-quest-active-check state=%s\n' "$state" >> "$TEST_LOG"; printf 'unit=quest-pm2 state=%s observed_at=20260828T120000Z\n' "$state" ;;
@@ -799,8 +799,11 @@ export QUEST_MIGRATION_OWNER_APPROVAL_SHA=11111111111111111111111111111111111111
 export VALORANT_MIGRATION_OWNER_APPROVAL_SHA=1111111111111111111111111111111111111111
 run_release >/dev/null
 assert_contains "$TEST_LOG" 'candidate-start freeze=--write-freeze=validation readonly=--read-only'
-assert_contains "$TEST_LOG" 'freshness lock=/proc/self/fd/9'
-assert_contains "$TEST_LOG" 'backup lock=/proc/self/fd/9'
+# The held release lock must reach the backup scripts as descriptor 8.
+# Re-opening the canonical path, directly or through /proc/self/fd,
+# deadlocks against the lock this controller already holds.
+assert_contains "$TEST_LOG" "freshness lock=$fixture/release.lock held=1 inherited=$fixture/release.lock"
+assert_contains "$TEST_LOG" "backup lock=$fixture/release.lock held=1 inherited=$fixture/release.lock"
 assert_contains "$TEST_LOG" 'old-mask'
 [[ "$(grep -nm1 'freeze-enable' "$TEST_LOG" | cut -d: -f1)" -lt "$(grep -nm1 'old-stop' "$TEST_LOG" | cut -d: -f1)" ]] || { printf 'FAIL: freeze did not precede old VALORANT stop\n' >&2; exit 1; }
 [[ "$(grep -nm1 'old-stop' "$TEST_LOG" | cut -d: -f1)" -lt "$(grep -nm1 'candidate-start' "$TEST_LOG" | cut -d: -f1)" ]] || { printf 'FAIL: old VALORANT stop did not precede candidate start\n' >&2; exit 1; }

@@ -38,6 +38,10 @@ jobs:
         shell: bash
         run: bash ops/tests/host-hooks.test.sh
 
+      - name: Test the release-to-backup lock handoff
+        shell: bash
+        run: bash ops/tests/release-lock-handoff.test.sh
+
       - name: Assert the Compose-only production authority
         shell: bash
         run: |

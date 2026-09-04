@@ -34,6 +34,7 @@ quest_runtime_env="${QUEST_RUNTIME_ENV_FILE:-/etc/quest-esports/quest.production
 valorant_runtime_env="${VALORANT_RUNTIME_ENV_FILE:-/etc/quest-esports/valorant.production.env}"
 ca_file="${VALORANT_CA_FILE:-/etc/quest-esports/tls/quest-private-ca.crt}"
 shared_network=quest-shared
+release_lock_path="${RELEASE_LOCK_PATH:-/var/lock/quest-esports-release.lock}"
 postgres_container=quest-prod-postgres-1
 quest_backend_container=quest-prod-backend-1
 quest_frontend_container=quest-prod-frontend-1
@@ -176,6 +177,23 @@ legacy_mask() {
   done
 }
 
+
+# release.sh holds the canonical release lock on fd 9 and every hook inherits
+# that descriptor. The backup scripts expect the held lock on fd 8, so hand it
+# across instead of re-opening the path, which the same process cannot lock a
+# second time. A manual invocation has no inherited lock and takes its own.
+run_backup_command() {
+  local command="$1" expected inherited
+  [[ -n "$command" && -x "$command" ]] || die 'the configured backup command is missing or not executable.'
+  expected="$(readlink -f "$release_lock_path" 2>/dev/null || true)"
+  inherited="$(readlink -f /proc/self/fd/9 2>/dev/null || true)"
+  if [[ -n "$expected" && "$expected" == "$inherited" ]]; then
+    BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}"       BACKUP_RELEASE_LOCK_PATH="$release_lock_path" BACKUP_RELEASE_LOCK_HELD=1       "$command" >/dev/null 2>&1 8>&9
+  else
+    BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}"       BACKUP_RELEASE_LOCK_PATH="$release_lock_path"       "$command" >/dev/null 2>&1
+  fi
+}
+
 backup_setting() {
   local key="$1" value
   value="$(awk -F= -v wanted="$key" '$1 == wanted { print substr($0, index($0, "=") + 1); count++ } END { if (count != 1) exit 1 }' \
@@ -308,8 +326,7 @@ case "$wrapper" in
   quest-release-backup-evidence)
     backup_release_sha="${BACKUP_RELEASE_SHA:-}"
     [[ "$backup_release_sha" =~ ^[0-9a-f]{40}$ ]] || die 'the backup evidence SHA is invalid.'
-    BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}" \
-      "${BACKUP_FRESHNESS_COMMAND:?}" >/dev/null 2>&1 || die 'backup freshness verification failed.'
+    run_backup_command "${BACKUP_FRESHNESS_COMMAND:?}" || die 'backup freshness verification failed.'
     # Substantiate every claim the acknowledgement makes: freshness proves the
     # archive, its checksum, and remote-copy equality; the per-remote result
     # record proves no remote silently failed; and the live database and upload
@@ -471,8 +488,7 @@ case "$wrapper" in
     ;;
 
   quest-release-post-commit-recovery-arm)
-    BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}" \
-      "${BACKUP_FRESHNESS_COMMAND:?}" >/dev/null 2>&1 || die 'recovery backup freshness verification failed.'
+    run_backup_command "${BACKUP_FRESHNESS_COMMAND:?}" || die 'recovery backup freshness verification failed.'
     printf '%s\n' armed
     ;;
 
@@ -512,8 +528,7 @@ case "$wrapper" in
 
   quest-release-current-state-capture)
     bundle="$(release_bundle)"
-    BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}" \
-      "${BACKUP_COMMAND:?}" >/dev/null 2>&1 || die 'the emergency state backup failed.'
+    run_backup_command "${BACKUP_COMMAND:?}" || die 'the emergency state backup failed.'
     printf 'captured_at=%s\n' "$(utc_stamp)" > "$bundle/recovery-capture.txt"
     chmod 0600 "$bundle/recovery-capture.txt"
     printf 'captured evidence_bundle=%s\n' "$bundle"

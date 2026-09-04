@@ -142,7 +142,12 @@ renamed hook fails CI instead of a release.
 Two settings deliberately point outside the adapter: `BACKUP_COMMAND` and
 `BACKUP_FRESHNESS_COMMAND` must name the same canonical backup and freshness
 scripts the `quest-esports-backup` timers run, so release evidence and scheduled
-backups cannot diverge.
+backups cannot diverge. Because the controller already holds the canonical
+release lock, it hands that open descriptor to those scripts as fd 8 together
+with `BACKUP_RELEASE_LOCK_HELD=1`. A child that re-opens the lock path instead —
+including through `/proc/self/fd/N`, which is a re-open rather than a dup on
+Linux — blocks against the lock its own parent holds.
+`ops/tests/release-lock-handoff.test.sh` pins that.
 
 ## Normal deploy and rollback
 
