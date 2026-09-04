@@ -125,7 +125,7 @@ validate_valorant_runtime_compose() {
   local compose_source="${VALORANT_COMPOSE_SOURCE:-}" contract="${VALORANT_RUNTIME_COMPOSE_CONTRACT:-}" render_env rendered contract_rendered expected_image
   [[ -n "$compose_source" && -f "$compose_source" && ! -L "$compose_source" ]] || die 'VALORANT Compose source is missing or unsafe.'
   [[ -n "$contract" && -f "$contract" && ! -L "$contract" ]] || die 'VALORANT runtime Compose contract is missing or unsafe.'
-  expected_image="${manifest[valorant_image]:-${VALORANT_IMAGE_APPROVED_REF:-}}"
+  expected_image="${manifest[valorant_image]:-}"
   [[ "$expected_image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die 'VALORANT image is not an exact approved digest.'
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for rendered VALORANT Compose validation.'
   render_env="$(mktemp)" || die 'could not create the VALORANT Compose render environment.'
@@ -268,7 +268,7 @@ validate_database_urls() {
   validate_runtime_url_file "$valorant_runtime_env_file" val_runtime valorant "${RUNTIME_DATABASE_AUTHORITY:-quest-postgres}" VALORANT
 }
 
-for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND VALORANT_COMPOSE_SOURCE VALORANT_RUNTIME_COMPOSE_CONTRACT; do
+for setting in RELEASE_ROOT RELEASES_ROOT RELEASE_LOCK_PATH DOCKER_BIN COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF SERVICE_OWNERSHIP_COMMAND VALORANT_COMPOSE_SOURCE VALORANT_RUNTIME_COMPOSE_CONTRACT; do
   require_setting "$setting"
 done
 for setting in POSTGRES_TARGET_HOST POSTGRES_TARGET_PORT POSTGRES_TARGET_DATABASE POSTGRES_TARGET_MAJOR POSTGRES_TARGET_DATA_ROOT POSTGRES_TARGET_SENTINEL_COMMAND; do
@@ -311,17 +311,6 @@ done
 approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
 [[ "${manifest[postgres_image]}" == "$approved_postgres_ref" ]] || die 'manifest PostgreSQL image is not the approved PostgreSQL 17 Bookworm reference.'
 [[ "$POSTGRES_IMAGE_APPROVED_REF" == "$approved_postgres_ref" ]] || die 'approved PostgreSQL image setting is not the approved reference.'
-[[ "${VALORANT_IMAGE_APPROVED_REF}" == "${manifest[valorant_image]}" ]] || die 'approved VALORANT image does not match the manifest.'
-for key in frontend_image backend_image migrator_image; do
-  case "$key" in
-    frontend_image) approved=QUEST_FRONTEND_IMAGE_APPROVED_REF ;;
-    backend_image) approved=QUEST_BACKEND_IMAGE_APPROVED_REF ;;
-    migrator_image) approved=MIGRATOR_IMAGE_APPROVED_REF ;;
-  esac
-  require_setting "$approved"
-  [[ "${!approved}" == "${manifest[$key]}" ]] || die 'approved image does not match the manifest.'
-done
-
 for setting in VALORANT_CA_FILE; do
   require_setting "$setting"
   root_file "${!setting}"
@@ -371,7 +360,7 @@ if [[ "${REQUIRE_SHARED_ALIASES:-0}" == 1 ]]; then
   done
 fi
 
-for key in frontend_image backend_image migrator_image; do
+for key in frontend_image backend_image migrator_image valorant_image; do
   image="${manifest[$key]}"
   cosign_identity="$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP"
   cosign_issuer="$QUEST_COSIGN_OIDC_ISSUER"

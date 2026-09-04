@@ -434,27 +434,25 @@ Do not point this workflow at production and do not run destructive reset comman
 
 ### Optional: run the local stack in containers
 
-`docker-compose.local.yml` runs Quest Express, the sibling VALORANT service, and
+`docker-compose.local.yml` runs Quest Express, the monorepo VALORANT service, and
 a throwaway PostgreSQL together, so local work needs no shared remote Supabase
 test project at all:
 
 ```bash
 cp ops/docker/quest.local.env.example ops/docker/quest.local.env
 docker compose -f docker-compose.local.yml up                      # Quest + Postgres
-docker compose -f docker-compose.local.yml --profile valorant up    # + the sibling service
+docker compose -f docker-compose.local.yml --profile valorant up    # + the VALORANT service
 ```
 
 The frontend deliberately stays outside the stack — `cd frontend && npm run dev`
 gives better fast refresh than a bind-mounted container.
 
 **This is a development convenience, not a production deployment path.** The
-production target is the owner-gated PostgreSQL 17 Compose topology under
-`ops/docker/`, with the frontend/backend release path described in the
-[Production Operations Runbook](./production-runbook.md). The existing PM2 path
-is retained only for explicitly gated historical recovery; native PostgreSQL 16
-and Vercel remain staging material until their retirement gates pass. Supabase is
-stale non-rollback context, not current rollback material. Nothing in this local
-stack authorizes a VPS mutation.
+production path is the owner-gated PostgreSQL 17 Compose topology under
+`ops/docker/`, with the complete release flow described in the
+[Production Operations Runbook](./production-runbook.md). PM2 and Vercel
+deployment workflows are retired. Supabase is stale non-rollback context, not
+current rollback material. Nothing in this local stack authorizes a VPS mutation.
 
 Three properties are asserted by `backend/tests/local-docker-compose.test.js`
 rather than left to convention: every published port binds to `127.0.0.1`; the

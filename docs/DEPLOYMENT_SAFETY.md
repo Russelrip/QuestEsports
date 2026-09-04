@@ -6,32 +6,24 @@ then enter the protected `production-compose` environment. After approval, the
 workflow revalidates that `main` still exactly equals `RELEASE_SHA` immediately
 before SSH/scp. An explicit `rollback_sha` is the only exemption from that
 post-approval freshness check and must identify an older successful main release.
-Normal manual dispatch is restricted to `main`; the legacy PM2 path is not a
-normal dispatch alternative.
-The legacy PM2 path is rollback-only and must not be enabled alongside Compose.
+Normal manual dispatch is restricted to `main`; the retired PM2 and Vercel
+workflows are not deployment alternatives.
 Migration-changing releases also require the protected reviewer and an encrypted
 off-site backup before migration.
 
-## Current production status (2026-08-31)
+## Current production status (2026-09-04)
 
 The Quest/VALORANT database cutover completed on 2026-08-31. VPS container
-`quest-postgres`, PostgreSQL **17.11**, is the current database authority for
-both services through `127.0.0.1:5433`; immutable Compose is the repository's
-current production deployment authority. Supabase is intact but stale
-staging/recovery material only and is not a rollback target. The current
-database container is ad hoc, so Compose adoption remains blocked by missing
-PostgreSQL TLS material, which also blocks the real backup pipeline. The
-scheduled backup has failed since **2026-08-30 04:20** and the interim
-`quest-pg17-interim-backup.{service,timer}` unit covers the gap.
+`quest-postgres`, PostgreSQL **17.11**, is the database authority for both
+services. The frontend, Quest backend, migrator, VALORANT API, updater, and bot
+are managed by immutable Compose releases. Production runtime database URLs use
+the intended schema and verify-full private-CA TLS contract; VALORANT also has
+its dedicated TLS settings and admin API key. Supabase remains stale
+staging/recovery material and is not a production rollback target.
 
-Host bootstrap, TLS and backup provisioning, and removal of the interim unit
-remain operator gates. Unrestricted deploy-root access and two GitHub Actions
-keys remain active host trust risks. These are repository-recorded facts and
-risks, not evidence of live verification or owner approval. No rehearsal was
-performed. Live VPS, hosted GitHub, registry, and Linux-only checks remain
-unverified and unavailable in this worktree. Once Compose is
-adopted, PostgreSQL TLS must use `sslmode=verify-full` with the private CA;
-VALORANT asyncpg uses separate CA, hostname, and full-verification settings.
+Before CI/CD is enabled after a controller change, install the reviewed
+root-owned release scripts on the VPS and run host validation. Production env
+files remain outside Git and require access-restricted backups.
 
 The gate checks both Git migration changes and migrations actually pending in production. This prevents a previously interrupted checkout from making a pending migration appear already deployed. A successful-deploy SHA marker is written only after migration, security verification, restart, health checks, and smoke checks succeed.
 
@@ -51,7 +43,7 @@ Do not set the approval secret broadly or permanently. Set it only after reviewi
 
 The deployment first requires `/api/health/live` to return `200`, proving that the restarted Node process can answer. Liveness alone is never sufficient. During normal operation, the database-and-storage-backed `/api/health/ready` endpoint must also return `200`, followed by public API smoke reads. During an approved full-site maintenance window, readiness may instead return `503` only when `X-Maintenance-Mode: active` is present; CD then skips public reads that are intentionally protected. Any other `503` remains a deployment failure.
 
-Maintenance mode is not a migration write freeze because background jobs and the PayHere notification callback continue. Stop the backend PM2 process before any restore or operation that requires zero writes, following the [Production Operations Runbook](./production-runbook.md#full-stop-and-write-freeze-warning).
+Maintenance mode is not a migration write freeze because background jobs and the PayHere notification callback continue. Stop the relevant Compose writer services before any restore or operation that requires zero writes, following the [Production Operations Runbook](./production-runbook.md#full-stop-and-write-freeze-warning).
 
 Before enabling commerce after a release, smoke-test product quoting, order creation in the payment sandbox, payment notification reconciliation, reservation expiration, and bank-transfer proof access.
 

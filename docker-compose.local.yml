@@ -1,10 +1,8 @@
 # LOCAL DEVELOPMENT ONLY — this is not a deployment artefact.
 #
-# Production runs Quest Express under PM2 on the API VPS via
-# .github/workflows/cd.yml (gated by MIGRATION_APPROVAL_SHA), the frontend on
-# Vercel, and backup/restore/secret-recovery out of ops/. None of that is
-# containerised, and containerising it means redesigning those controls first.
-# This file exists for one narrow purpose: running Quest Express, the sibling
+# Production runs the complete application with the protected immutable Compose
+# workflow, separate production images, and the release controls under ops/.
+# This file exists for one narrow purpose: running Quest Express, the monorepo
 # VALORANT service, and a throwaway Postgres together on one machine, so a
 # developer no longer needs a shared remote Supabase test project.
 #

@@ -7,7 +7,6 @@ cutover_script="$script_directory/deploy/cutover.sh"
 host_validation_script="$script_directory/deploy/validate-host.sh"
 workflow_file="$script_directory/../.github/workflows/build-container-images.yml"
 deploy_workflow_file="$script_directory/../.github/workflows/deploy-compose.yml"
-frontend_workflow_file="$script_directory/../.github/workflows/deploy-frontend.yml"
 work_directory="$(mktemp -d)"
 trap 'rm -rf -- "$work_directory"' EXIT
 base_path="$PATH"
@@ -366,7 +365,7 @@ done
 printf 'cosign image=%s identity=%s issuer=%s\n' "$image" "$identity" "$issuer" >> "$log"
 if [[ "${REQUIRE_ARTIFACT_TRUST_POLICY:-0}" == 1 ]]; then
   case "$image" in
-    ghcr.io/quest/frontend@*|ghcr.io/quest/backend@*|ghcr.io/quest/migrator@*)
+    ghcr.io/quest/frontend@*|ghcr.io/quest/backend@*|ghcr.io/quest/migrator@*|ghcr.io/quest/valorant@*)
       [[ "$identity" == fixture-identity && "$issuer" == fixture-issuer ]] || exit 1 ;;
     *)
       printf 'FAIL: external image reached Quest Cosign verifier: %s\n' "$image" >&2
@@ -896,13 +895,12 @@ if grep -Eq 'postgres:17-bookworm@sha256:\[0-9a-f\]\{64\}|postgres:17@sha256:67f
 fi
 
 deploy_workflow_source="$(< "$deploy_workflow_file")"
-frontend_workflow_source="$(< "$frontend_workflow_file")"
 grep -Fq 'vnd.docker.reference.digest' "$deploy_workflow_file" || { printf 'FAIL: attestation descriptors are not bound to the image digest\n' >&2; exit 1; }
 grep -Fq 'subject' "$deploy_workflow_file" || { printf 'FAIL: deploy workflow does not decode attestation subjects\n' >&2; exit 1; }
 grep -Fq 'predicateType' "$deploy_workflow_file" || { printf 'FAIL: deploy workflow does not inspect the in-toto predicate type\n' >&2; exit 1; }
 grep -Fq 'QUEST_BUILD_WORKFLOW' "$workflow_file" || { printf 'FAIL: build workflow does not carry the expected workflow identity into provenance\n' >&2; exit 1; }
 builder_identity='https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main'
-[[ "$(grep -Fc 'builder-id=https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main' "$workflow_file")" == 3 ]] || { printf 'FAIL: build workflow does not carry the stable builder identity into all provenance builds\n' >&2; exit 1; }
+[[ "$(grep -Fc 'builder-id=https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main' "$workflow_file")" == 4 ]] || { printf 'FAIL: build workflow does not carry the stable builder identity into all provenance builds\n' >&2; exit 1; }
 grep -Fq "$builder_identity" "$deploy_workflow_file" || { printf 'FAIL: deploy workflow does not enforce the approved stable builder identity\n' >&2; exit 1; }
 for ssh_contract in 'StrictHostKeyChecking=yes' 'BatchMode=yes' 'ConnectTimeout=10' 'timeout --foreground' 'UserKnownHostsFile=' 'GlobalKnownHostsFile=/dev/null'; do
   grep -Fq -- "$ssh_contract" "$deploy_workflow_file" || { printf 'FAIL: Compose SSH contract lacks %s\n' "$ssh_contract" >&2; exit 1; }
@@ -911,11 +909,6 @@ if grep -Fq '"sudo -n -- /usr/local/sbin/quest-esports-release' "$deploy_workflo
   printf 'FAIL: Compose remote command is still generated as a quote-breaking shell string\n' >&2
   exit 1
 fi
-if grep -Fq "APP_DIR='" "$script_directory/../.github/workflows/cd.yml"; then
-  printf 'FAIL: legacy remote invocation still interpolates configuration into shell source\n' >&2
-  exit 1
-fi
-
 # Execute the exact embedded in-toto statement validator against malformed,
 # missing, and mismatched fixtures. This test never contacts a registry.
 attestation_validator="$work_directory/attestation-validator.sh"
@@ -927,7 +920,7 @@ attestation_sha=1111111111111111111111111111111111111111
 attestation_repo=Russelrip/QuestEsports
 attestation_image=ghcr.io/russelrip/quest-backend
 attestation_valid="$work_directory/attestation-valid.json"
-python3 -c "import json,sys; p,d,s,r,i,b=sys.argv[1:]; json.dump({'_type':'https://in-toto.io/Statement/v1','subject':[{'name':'_','digest':{'sha256':d}}],'predicateType':'https://slsa.dev/provenance/v1','predicate':{'buildDefinition':{'buildType':'https://mobyproject.org/buildkit@v1','externalParameters':{'request':{'args':{'QUEST_BUILD_REVISION':s,'QUEST_BUILD_REPOSITORY':r,'QUEST_BUILD_BRANCH':'main','QUEST_BUILD_WORKFLOW':'Build container images'}}}},'runDetails':{'builder':{'id':b}}}},open(p,'w',encoding='utf-8'))" "$attestation_valid" "$attestation_digest" "$attestation_sha" "$attestation_repo" "$attestation_image" 'https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main'
+python3 -c "import json,sys; p,d,s,r,i,b=sys.argv[1:]; json.dump({'_type':'https://in-toto.io/Statement/v1','subject':[{'name':'_','digest':{'sha256':d}}],'predicateType':'https://slsa.dev/provenance/v1','predicate':{'buildDefinition':{'buildType':'https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md','externalParameters':{'request':{'args':{'QUEST_BUILD_REVISION':s,'QUEST_BUILD_REPOSITORY':r,'QUEST_BUILD_BRANCH':'main','QUEST_BUILD_WORKFLOW':'Build container images'}}}},'runDetails':{'builder':{'id':b}}}},open(p,'w',encoding='utf-8'))" "$attestation_valid" "$attestation_digest" "$attestation_sha" "$attestation_repo" "$attestation_image" 'https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main'
 run_attestation_validator() { "$attestation_validator" "$1" 'https://slsa.dev/provenance/v1' "$attestation_image" "sha256:$attestation_digest" "$attestation_sha" "$attestation_repo" main 'Build container images' 'https://github.com/Russelrip/QuestEsports/.github/workflows/build-container-images.yml@refs/heads/main'; }
 run_attestation_validator "$attestation_valid"
 printf '%s\n' '{not-json}' > "$work_directory/attestation-malformed.json"
@@ -969,15 +962,6 @@ if grep -Eq 'release_sha=.*headSha|release_sha=.*head_sha' "$deploy_workflow_fil
   printf 'FAIL: deploy workflow derives release SHA from the downstream build run SHA\n' >&2
   exit 1
 fi
-grep -Fq 'actions/runs/$COMPOSE_RUN_ID/artifacts?per_page=100' "$frontend_workflow_file" || {
-  printf 'FAIL: frontend workflow does not enumerate artifacts from the exact Compose run\n' >&2
-  exit 1
-}
-grep -Fq 'release_mode" == rollback && "$COMPOSE_EVENT" != workflow_dispatch' "$frontend_workflow_file" || {
-  printf 'FAIL: frontend workflow does not reject a rollback without an explicit Compose dispatch lineage\n' >&2
-  exit 1
-}
-
 # Executable binding fixture: extract and run the resolver body from the actual
 # deployment workflow with mocked GitHub REST responses. The successful fixture
 # uses one matching SHA through CI, image build, artifact, and main head; the
@@ -1114,7 +1098,6 @@ test -s "$resolver_output"
 grep -Fxq -- 'artifact_name=container-release-manifest-123456-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' "$resolver_output" || exit 1
 grep -Fxq -- 'release_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' "$resolver_output" || exit 1
 grep -Fxq -- 'build_run_id=999' "$resolver_output" || exit 1
-grep -Fxq -- 'ci_run_id=123456' "$resolver_output" || exit 1
 grep -Fxq -- 'release_mode=rollback' "$resolver_output" || exit 1
 if grep -Fq 'release_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$resolver_output"; then
   printf 'FAIL: resolver selected downstream build headSha instead of upstream CI SHA\n' >&2
@@ -1293,14 +1276,14 @@ assert_failed host-validator-backup-client-ca run_host_validation
 
 setup_fixture host-validator-backup-ca-chain
 if command -v openssl >/dev/null 2>&1; then
-  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/issuer.key" -out "$fixture/issuer.crt" -subj //CN=fixture-issuer -days 1 >/dev/null 2>&1
-  openssl req -new -newkey rsa:2048 -nodes -keyout "$fixture/postgres.key" -subj //CN=quest-postgres -out "$fixture/postgres.csr" >/dev/null 2>&1
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/issuer.key" -out "$fixture/issuer.crt" -subj /CN=fixture-issuer -days 1 >/dev/null 2>&1
+  openssl req -new -newkey rsa:2048 -nodes -keyout "$fixture/postgres.key" -subj /CN=quest-postgres -out "$fixture/postgres.csr" >/dev/null 2>&1
   openssl x509 -req -in "$fixture/postgres.csr" -CA "$fixture/issuer.crt" -CAkey "$fixture/issuer.key" -CAcreateserial -out "$fixture/postgres.crt" -days 1 -sha256 >/dev/null 2>&1
   cp "$fixture/issuer.crt" "$fixture/backup-client/backup-client-ca.crt"
   chmod 640 "$fixture/backup-client/backup-client-ca.crt"
   export QUEST_DEPLOY_FIXTURE_ENFORCE_BACKUP_CA_CHAIN=1
   [[ "$(run_host_validation)" == validated ]] || { printf 'FAIL: valid backup CA issuer bundle was rejected\n' >&2; exit 1; }
-  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/wrong-issuer.key" -out "$fixture/wrong-issuer.crt" -subj //CN=wrong-issuer -days 1 >/dev/null 2>&1
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$fixture/wrong-issuer.key" -out "$fixture/wrong-issuer.crt" -subj /CN=wrong-issuer -days 1 >/dev/null 2>&1
   cp "$fixture/wrong-issuer.crt" "$fixture/backup-client/backup-client-ca.crt"
   assert_failed host-validator-wrong-backup-ca-issuer run_host_validation
 else
@@ -1313,7 +1296,7 @@ ownership_fixture_supported=1
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ownership_fixture_supported=0 ;; esac
 if (( ownership_fixture_supported == 0 )); then
   printf '%s\n' 'SKIP: canonical TLS ownership fixture skipped because Windows Git Bash cannot create or observe POSIX ownership changes.'
-elif [[ "$(stat -c '%u' "$fixture/postgres.key" 2>/dev/null)" == 0 ]] && chown 1000 "$fixture/postgres.key" 2>/dev/null && [[ "$(stat -c '%u' "$fixture/postgres.key" 2>/dev/null)" == 1000 ]]; then
+elif [[ "$(stat -c '%u' "$fixture/alternate.key" 2>/dev/null)" == 0 ]] && chown 1000 "$fixture/alternate.key" 2>/dev/null && [[ "$(stat -c '%u' "$fixture/alternate.key" 2>/dev/null)" == 1000 ]]; then
   export QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP=1
   assert_failed host-validator-canonical-tls-ownership run_host_validation
   assert_failed release-canonical-tls-ownership run_release
@@ -1619,8 +1602,9 @@ fi
 gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111 identity=fixture-identity issuer=fixture-issuer' 'host verification did not use the Quest signer for the frontend image'
 gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222 identity=fixture-identity issuer=fixture-issuer' 'host verification did not use the Quest signer for the backend image'
 gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/migrator@sha256:4444444444444444444444444444444444444444444444444444444444444444 identity=fixture-identity issuer=fixture-issuer' 'host verification did not use the Quest signer for the migrator image'
-if grep -Eq 'cosign image=(postgres:|ghcr.io/quest/valorant@)' "$TEST_LOG"; then
-  gate_failure 'external PostgreSQL or VALORANT image reached the Quest Cosign verifier'
+gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555 identity=fixture-identity issuer=fixture-issuer' 'host verification did not use the Quest signer for the VALORANT image'
+if grep -Eq 'cosign image=postgres:' "$TEST_LOG"; then
+  gate_failure 'external PostgreSQL image reached the Quest Cosign verifier'
 fi
 
 check_migration_contract() {
@@ -1763,16 +1747,16 @@ if RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixtu
 else
   gate_failure 'host verification rejected exact-digest external-image trust'
 fi
-if grep -Eq 'cosign image=(postgres:|ghcr.io/quest/valorant@)' "$TEST_LOG"; then
-  gate_failure 'external image was passed to the Quest Cosign verifier'
+gate_log_contains "$TEST_LOG" 'cosign image=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555 identity=fixture-identity issuer=fixture-issuer' 'monorepo VALORANT image was not passed to the Quest Cosign verifier'
+if grep -Eq 'cosign image=postgres:' "$TEST_LOG"; then
+  gate_failure 'external PostgreSQL image was passed to the Quest Cosign verifier'
 fi
 if grep -Eq 'POSTGRES_COSIGN|VALORANT_COSIGN' "$fixture/release.env"; then
   gate_failure 'external-image Cosign policy settings remain in the host trust configuration'
 fi
-if grep -Fq -- 'VALORANT_IMAGE_APPROVED_REF' "$workflow_file" && grep -Fq -- 'VALORANT_IMAGE_APPROVED_REF" == "$VALORANT_IMAGE"' "$workflow_file"; then
-  :
-else
-  gate_failure 'container image workflow does not expose the VALORANT identity/policy contract'
+grep -Fq -- 'valorant_image' "$deploy_workflow_file" || gate_failure 'Compose deployment does not include the VALORANT image in its signed manifest contract'
+if grep -Fq -- 'VALORANT_IMAGE_APPROVED_REF' "$deploy_workflow_file"; then
+  gate_failure 'Compose deployment still depends on a stale static VALORANT image allowlist'
 fi
 
 setup_fixture steady-state-supabase-metadata

@@ -1,9 +1,9 @@
 # Quest Express — LOCAL DEVELOPMENT ONLY.
 #
-# Production deploys from `.github/workflows/cd.yml` to PM2 on the API VPS,
-# gated by MIGRATION_APPROVAL_SHA, with ops/ owning backup, restore, and secret
-# recovery. This image is not part of that path and must not become part of it
-# without redesigning those controls first.
+# Production uses the immutable Compose workflow and
+# `ops/docker/backend.production.Dockerfile`. This local-development image is not
+# part of that path and must not become part of it without reviewing the release,
+# backup, restore, and secret-recovery controls.
 
 # Matches backend/package.json engines ("node": "24.x") and .nvmrc.
 FROM node:24-bookworm-slim
