@@ -89,12 +89,16 @@ done < <(sed -n '/Deliberately unimplemented/,$p' "$aliases" | grep -oE '^#   [A
 # 4. The dispatcher refuses to run outside its root-owned, canonical contract.
 install -m 0755 "$source_hooks" "$sandbox/quest-release-database-health"
 output="$(RELEASE_ENV_FILE="$sandbox/release.env" "$sandbox/quest-release-database-health" 2>&1)" && status=0 || status=$?
+# Unprivileged runners (CI) stop at the root guard; a root runner reaches the
+# canonical-environment guard. Either is a correct fail-closed refusal, but the
+# refusal must come from a guard and not from an unrelated error.
+if [[ "$(id -u)" == 0 ]]; then expected_guard='canonical release environment'; else expected_guard='root is required'; fi
 if (( status == 0 )); then
   fail 'the dispatcher ran with a non-canonical release environment'
-elif ! grep -q 'canonical release environment' <<< "$output"; then
+elif ! grep -q "$expected_guard" <<< "$output"; then
   fail "the non-canonical release environment was rejected for the wrong reason: $output"
 else
-  pass 'a non-canonical release environment is rejected'
+  pass "a non-canonical release environment is rejected ($expected_guard)"
 fi
 
 install -m 0755 "$source_hooks" "$sandbox/quest-release-unknown-hook"
