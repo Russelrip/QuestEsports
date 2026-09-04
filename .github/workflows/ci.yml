@@ -128,61 +128,22 @@ jobs:
               e2e_source,
               re.MULTILINE,
           )
-          sibling_checkout = next(
+          external_checkouts = [
               step for step in e2e['jobs']['valorant-e2e']['steps']
-              if step.get('name') == 'Check out valorant-platform-backend'
-          )
-          assert sibling_checkout['with']['repository'] == 'naheedroomy/valorant-platform-backend'
-          assert re.fullmatch(r'[0-9a-f]{40}', sibling_checkout['with']['ref'])
-          assert sibling_checkout['with']['ref'] == 'e8a8f056a52fcbfb08e453bc6b51723c7b4b949c'
-          assert sibling_checkout['with']['token'] == expression(' secrets.VALORANT_PLATFORM_ACCESS_TOKEN ')
+              if step.get('uses', '').startswith('actions/checkout@')
+              and 'repository' in step.get('with', {})
+          ]
+          assert external_checkouts == []
+          assert 'VALORANT_PLATFORM_ACCESS_TOKEN' not in e2e_source
           sync_step = next(
               step for step in e2e['jobs']['valorant-e2e']['steps']
               if step.get('name') == 'Prepare FastAPI dependencies'
           )
           assert sync_step['run'] == 'uv sync --extra dev --locked'
 
-          cd = workflow('cd.yml')
           compose = workflow('deploy-compose.yml')
-          frontend = workflow('deploy-frontend.yml')
           build = workflow('build-container-images.yml')
-
-          frontend_steps = frontend['jobs']['deploy']['steps']
-          vercel_build = next(step for step in frontend_steps if step.get('name') == 'Build exact Vercel artifact')
-          assert vercel_build['run'].splitlines() == [
-              'npx --yes vercel@54.17.3 pull --yes --environment=production --token="$VERCEL_TOKEN"',
-              'npx --yes vercel@54.17.3 build --prod --token="$VERCEL_TOKEN"',
-          ]
-          vercel_promote = next(step for step in frontend_steps if step.get('name') == 'Promote tested artifact')
-          assert vercel_promote['run'] == 'npx --yes vercel@54.17.3 deploy --prebuilt --prod --token="$VERCEL_TOKEN"'
-          assert not any('frontend/node_modules/.bin/vercel' in step.get('run', '') for step in frontend_steps)
-          install_step = next(step for step in frontend_steps if step.get('name') == 'Install and validate')
-          assert 'npm ci' in install_step['run']
-
-          cd_if = expression(" vars.PRODUCTION_DEPLOYMENT_MODE == 'legacy-pm2' && vars.BACKEND_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) ")
           compose_if = expression(" vars.PRODUCTION_DEPLOYMENT_MODE == 'compose' && vars.COMPOSE_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Build container images' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_run' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) ")
-          frontend_if = expression(" vars.PRODUCTION_DEPLOYMENT_MODE == 'compose' && vars.FRONTEND_DEPLOY_ENABLED == 'true' && github.actor == github.repository_owner && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Deploy immutable Compose release' && github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.event == 'workflow_run' || github.event.workflow_run.event == 'workflow_dispatch') && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) ")
-
-          assert cd['concurrency'] == {'group': 'production-release', 'cancel-in-progress': False}
-          assert cd['jobs']['backend-deploy']['if'] == cd_if
-          legacy_identity = cd['jobs']['backend-deploy']['steps'][0]['run']
-          require_statements(
-              legacy_identity,
-              'test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq \'.object.sha\')" = "$DEPLOY_SHA"',
-              'ci_run_path="$(jq -er \'.path\' <<< "$ci_run_json")"',
-              'test "$(jq -er \'.repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
-              'test "${ci_run_path%@*}" = \'.github/workflows/ci.yml\'',
-              'test "$(jq -er \'.workflow_id | tostring\' <<< "$ci_run_json")" = "$ci_workflow_id"',
-              'test "$(jq -er \'.repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
-              'test "$(jq -er \'.head_repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
-              'test "$(jq -er \'.head_sha | select(test("^[0-9a-f]{40}$"))\' <<< "$ci_run_json")" = "$DEPLOY_SHA"',
-          )
-          assert 'git/ref/heads/main' in legacy_identity
-          assert 'event=push' in legacy_identity
-          assert 'head_repository.full_name' in legacy_identity
-          assert 'actions/workflows/ci.yml' in legacy_identity
-          assert 'actions/runs/$ci_run_id' in legacy_identity
-          assert 'test "$(jq -er \'.head_sha | select(test("^[0-9a-f]{40}$"))\' <<< "$ci_run_json")" = "$DEPLOY_SHA"' in legacy_identity
           build_if = expression(" github.event.workflow_run.name == 'CI' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository ")
           assert build['jobs']['build']['if'] == build_if
           build_validation = next(step for step in build['jobs']['build']['steps'] if step.get('name') == 'Validate release inputs')
@@ -196,11 +157,9 @@ jobs:
           assert compose['concurrency'] == {'group': 'production-release', 'cancel-in-progress': False}
           assert compose['jobs']['resolve-build']['if'] == compose_if
           compose_triggers = compose.get('on', compose.get(True))
+          assert set(compose_triggers) == {'workflow_dispatch', 'workflow_run'}
+          assert set(compose_triggers['workflow_dispatch']['inputs']) == {'rollback_sha'}
           assert compose_triggers['workflow_dispatch']['inputs']['rollback_sha']['required'] is False
-          adoption_input = compose_triggers['workflow_dispatch']['inputs']['adopt_existing_vps']
-          assert adoption_input['required'] is False
-          assert adoption_input['default'] is False
-          assert adoption_input['type'] == 'boolean'
           resolve_run = compose['jobs']['resolve-build']['steps'][0]['run']
           require_statements(
               resolve_run,
@@ -218,9 +177,8 @@ jobs:
               'test "$(jq -er \'.workflow_run.head_sha\' <<< "$artifact_json")" = "$release_sha"',
           )
           assert 'REQUESTED_ROLLBACK_SHA' in resolve_run
-          assert 'REQUESTED_ADOPTION' in resolve_run
-          assert 'adoption and rollback cannot be requested together.' in resolve_run
-          assert "printf 'release_mode=adoption" in resolve_run
+          assert 'REQUESTED_ADOPTION' not in resolve_run
+          assert 'release_mode=adoption' not in resolve_run
           assert 'gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main"' in resolve_run
           assert 'test "$main_head_sha" = "$release_sha"' in resolve_run
           assert 'test "$release_sha" = "$REQUESTED_ROLLBACK_SHA"' in resolve_run
@@ -233,13 +191,12 @@ jobs:
           assert '.workflow_id' in resolve_run
           assert 'gh run view' not in resolve_run
           assert 'build_run_json' in resolve_run and 'ci_run_json' in resolve_run
-          assert 'ci_run_id' in compose['jobs']['resolve-build']['outputs']
           deploy_steps = compose['jobs']['deploy']['steps']
-          revalidation = next(step for step in deploy_steps if step.get('name') == 'Revalidate normal or adoption release against current main after approval')
-          assert 'normal|adoption)' in revalidation['run']
-          assert 'FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA' in revalidation['run']
+          revalidation = next(step for step in deploy_steps if step.get('name') == 'Revalidate normal release against current main after approval')
+          assert 'normal)' in revalidation['run']
+          assert 'adoption' not in revalidation['run']
           transfer = next(step for step in deploy_steps if step.get('name') == 'Transfer the verified manifest and invoke the fixed root deployment script')
-          assert '/usr/local/sbin/quest-esports-adopt' in transfer['run']
+          assert '/usr/local/sbin/quest-esports-adopt' not in transfer['run']
           assert '/usr/local/sbin/quest-esports-release' in transfer['run']
           assert 'normal|rollback)' in transfer['run']
           release_success = compose['jobs']['release-success']
@@ -253,83 +210,7 @@ jobs:
           proof_writer = next(step for step in release_steps if step.get('name') == 'Write the exact Compose deployment proof')
           assert "'compose_workflow=Deploy_immutable_Compose_release'" in proof_writer['run']
           upload_steps = [step for step in release_steps if step.get('uses', '').startswith('actions/upload-artifact@')]
-          assert {step['with']['name'] for step in upload_steps} == {'compose-release-success', 'frontend-release', 'frontend-release-mode'}
-          frontend_sha_writer = next(step for step in release_steps if step.get('name') == 'Write the frontend release lineage')
-          assert 'release-lineage.txt' in frontend_sha_writer['run']
-          assert 'ci_run_id=$CI_RUN_ID' in frontend_sha_writer['run']
-          frontend_mode_writer = next(step for step in release_steps if step.get('name') == 'Write the frontend release mode')
-          assert 'release-mode.txt' in frontend_mode_writer['run']
-
-          assert frontend['concurrency'] == {'group': 'production-release', 'cancel-in-progress': False}
-          frontend_triggers = frontend.get('on', frontend.get(True))
-          frontend_trigger = frontend_triggers['workflow_run']
-          assert frontend_trigger['workflows'] == ['Deploy immutable Compose release']
-          assert len(frontend_trigger['workflows']) == 1
-          assert 'CD' not in frontend_trigger['workflows']
-          assert set(frontend_triggers) == {'workflow_dispatch', 'workflow_run'}
-          assert frontend['jobs']['deploy']['if'] == frontend_if
-          assert 'deploy_sha' not in frontend_triggers['workflow_dispatch']['inputs']
-          assert frontend_triggers['workflow_dispatch']['inputs']['compose_run_id']['required'] is True
-          download_steps = [step for step in frontend['jobs']['deploy']['steps'] if step.get('uses', '').startswith('actions/download-artifact@')]
-          assert len(download_steps) == 6
-          assert all(step['uses'] == 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c' for step in download_steps)
-          automatic_downloads = [step for step in download_steps if step['if'] == expression(" github.event_name == 'workflow_run' ")]
-          assert {step['with']['name'] for step in automatic_downloads} == {'compose-release-success', 'frontend-release', 'frontend-release-mode'}
-          assert all(step['with']['run-id'] == expression(' github.event.workflow_run.id ') for step in automatic_downloads)
-          identity_step = next(step for step in frontend['jobs']['deploy']['steps'] if step.get('name') == 'Validate the exact Compose workflow run identity')
-          require_statements(
-              identity_step['run'],
-              'compose_run_path="$(jq -er \'.path\' <<< "$compose_run_json")"',
-              'test "${compose_run_path%@*}" = \'.github/workflows/deploy-compose.yml\'',
-              'test "$(jq -er \'.workflow_id | tostring\' <<< "$compose_run_json")" = "$compose_workflow_id"',
-              'test "$(jq -er \'.repository.full_name\' <<< "$compose_run_json")" = "$GITHUB_REPOSITORY"',
-              'test "$(jq -er \'.head_repository.full_name\' <<< "$compose_run_json")" = "$GITHUB_REPOSITORY"',
-              'compose_repository_id="$(jq -er \'.repository.id | tostring\' <<< "$compose_run_json")"',
-              'compose_head_repository_id="$(jq -er \'.head_repository.id | tostring\' <<< "$compose_run_json")"',
-              'compose_artifacts_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$COMPOSE_RUN_ID/artifacts?per_page=100")"',
-              '[[ "$compose_event" == workflow_run || "$compose_event" == workflow_dispatch ]]',
-              'test "$(jq -er \'.workflow_run.id | tostring\' <<< "$artifact_json")" = "$COMPOSE_RUN_ID"',
-              'test "$(jq -er \'.workflow_run.repository_id | tostring\' <<< "$artifact_json")" = "$compose_repository_id"',
-              'test "$(jq -er \'.workflow_run.head_repository_id | tostring\' <<< "$artifact_json")" = "$compose_head_repository_id"',
-              'test "$(jq -er \'.workflow_run.head_branch\' <<< "$artifact_json")" = main',
-              'test "$(jq -er \'.workflow_run.head_sha\' <<< "$artifact_json")" = "$resolved_compose_head_sha"',
-              '[[ "$(jq -er \'.id | tostring\' <<< "$artifact_json")" =~ ^[0-9]+$ ]]',
-              'test "$(jq -er \'.name\' <<< "$artifact_json")" = "$expected_artifact"',
-              'test "$(jq -er \'.expired\' <<< "$artifact_json")" = false',
-          )
-          assert 'actions/workflows/deploy-compose.yml' in identity_step['run']
-          assert 'actions/runs/$COMPOSE_RUN_ID' in identity_step['run']
-          assert '.workflow_id' in identity_step['run']
-          assert '.head_repository.full_name' in identity_step['run']
-          proof_step = next(step for step in frontend['jobs']['deploy']['steps'] if step.get('name') == 'Validate the actual Compose deploy job proof')
-          assert 'release-lineage.txt' in proof_step['run']
-          assert 'expected_lineage_keys' in proof_step['run']
-          assert 'test "$proof_sha" = "$release_sha"' in proof_step['run']
-          assert 'test "$COMPOSE_RELEASE_HEAD_SHA" = "$release_sha"' in proof_step['run']
-          assert 'release_mode' in proof_step['run']
-          identity_step = next(step for step in frontend['jobs']['deploy']['steps'] if step.get('name') == 'Validate the exact Compose workflow run identity')
-          assert 'gh run view' not in identity_step['run']
-          assert 'actions/workflows/deploy-compose.yml' in identity_step['run']
-          compatibility_step = next(step for step in frontend['jobs']['deploy']['steps'] if step.get('name') == 'Validate approved commit and backend compatibility')
-          require_statements(
-              compatibility_step['run'],
-              'ci_run_path="$(jq -er \'.path\' <<< "$ci_run_json")"',
-              'test "${ci_run_path%@*}" = \'.github/workflows/ci.yml\'',
-              'test "$(jq -er \'.workflow_id | tostring\' <<< "$ci_run_json")" = "$ci_workflow_id"',
-              'test "$(jq -er \'.repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
-              'test "$(jq -er \'.head_repository.full_name\' <<< "$ci_run_json")" = "$GITHUB_REPOSITORY"',
-              'test "$(jq -er \'.head_sha | select(test("^[0-9a-f]{40}$"))\' <<< "$ci_run_json")" = "$DEPLOY_SHA"',
-          )
-          assert 'actions/runs/$resolved_ci_run_id' in compatibility_step['run']
-          assert 'resolved_ci_run_id="$CI_RUN_ID"' in compatibility_step['run']
-          assert 'ci_runs_json' not in compatibility_step['run']
-          assert '.head_repository.full_name' in compatibility_step['run']
-          assert '.workflow_id' in compatibility_step['run']
-          assert 'gh run view' not in compatibility_step['run']
-          assert 'git/ref/heads/main' not in compatibility_step['run']
-
-          for name, document in [('cd.yml', cd), ('deploy-compose.yml', compose), ('deploy-frontend.yml', frontend)]:
-              assert document['concurrency'] == {'group': 'production-release', 'cancel-in-progress': False}, name
+          assert {step['with']['name'] for step in upload_steps} == {'compose-release-success'}
 
           print('Compose-only production deployment workflow contracts passed')
           PY
@@ -453,15 +334,12 @@ jobs:
           quest_checkout = next(step for step in run_e2e['steps'] if step.get('uses', '').startswith('actions/checkout@'))
           assert quest_checkout['with']['ref'] == expression(' needs.validate-main.outputs.source_sha ')
           assert quest_checkout['with']['persist-credentials'] is False
-          sibling_checkout = next(
+          external_checkouts = [
               step for step in run_e2e['steps']
               if step.get('uses', '').startswith('actions/checkout@') and 'repository' in step.get('with', {})
-          )
-          assert sibling_checkout['with']['persist-credentials'] is False
-          assert sibling_checkout['with']['token'] == expression(' secrets.VALORANT_PLATFORM_ACCESS_TOKEN ')
-          assert sibling_checkout['with']['repository'] == 'naheedroomy/valorant-platform-backend'
-          assert re.fullmatch(r'[0-9a-f]{40}', sibling_checkout['with']['ref'])
-          assert sibling_checkout['with']['ref'] == 'e8a8f056a52fcbfb08e453bc6b51723c7b4b949c'
+          ]
+          assert external_checkouts == []
+          assert 'VALORANT_PLATFORM_ACCESS_TOKEN' not in e2e_source
           uv_step = next(step for step in run_e2e['steps'] if step.get('name') == 'Set up uv')
           assert uv_step['uses'] == 'astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d'
           assert uv_step['with']['version'] == '0.12.7'
@@ -501,19 +379,11 @@ jobs:
                   all_secret_values.append((path, value))
 
           collect(e2e)
-          sibling_index = next(index for index, step in enumerate(run_e2e['steps']) if step.get('name') == 'Check out valorant-platform-backend')
           run_index = next(index for index, step in enumerate(run_e2e['steps']) if step.get('name') == 'Run two-service E2E')
-          token_path = ('jobs', 'valorant-e2e', 'steps', str(sibling_index), 'with', 'token')
-          token_values = [(path, value) for path, value in all_secret_values if 'VALORANT_PLATFORM_ACCESS_TOKEN' in value]
-          assert token_values == [(token_path, expression(' secrets.VALORANT_PLATFORM_ACCESS_TOKEN '))], token_values
           for path, value in all_secret_values:
-              if path == token_path:
-                  assert value == expression(' secrets.VALORANT_PLATFORM_ACCESS_TOKEN ')
-              else:
-                  assert path[:4] == ('jobs', 'valorant-e2e', 'steps', str(run_index)) and path[-2] == 'env', (path, value)
+              assert path[:4] == ('jobs', 'valorant-e2e', 'steps', str(run_index)) and path[-2] == 'env', (path, value)
               assert secret_expression.fullmatch(value), (path, value)
           expected_secrets = {
-              'VALORANT_PLATFORM_ACCESS_TOKEN',
               'E2E_VAL_DATABASE_URL',
               'E2E_QUEST_DATABASE_URL',
               'E2E_ADMIN_EMAIL',

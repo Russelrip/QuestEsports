@@ -114,7 +114,7 @@ The two-service E2E additionally requires these dedicated-test values:
 
 | Variable | Purpose |
 | --- | --- |
-| `VALORANT_PLATFORM_REPO` | Absolute or invocation-relative path to the sibling FastAPI checkout |
+| `VALORANT_PLATFORM_REPO` | Absolute or invocation-relative path to the monorepo FastAPI directory |
 | `E2E_VAL_DATABASE_URL` | FastAPI connection to the shared test project's `valorant` schema |
 | `E2E_QUEST_DATABASE_URL` | Quest connection to the same project's `public` schema |
 | `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` | Dedicated test admin credentials |
@@ -124,10 +124,9 @@ The two-service E2E additionally requires these dedicated-test values:
 | `E2E_MATCH_UUIDS` | Comma-separated fixture VAL match UUIDs |
 | `E2E_ANCHOR_MISMATCH_SERIES` | Seeded draft series identifier for the negative anchor test |
 
-CI also requires `VALORANT_PLATFORM_ACCESS_TOKEN` to check out the sibling
-repository; when it is unset, the workflow skips this E2E job. The local run
-does not need that checkout token when the sibling repository is already
-available. Do not put any of these values in tracked files. Use the
+CI uses the `valorant-platform-backend/` directory from the same approved
+monorepo checkout, so no personal access token or sibling checkout is required.
+Do not put any of these values in tracked files. Use the
 [E2E-specific README](../backend/tests/valorant-e2e/README.md) and
 [test source](../backend/tests/valorant-e2e/valorant-e2e.test.js) for the exact
 JSON, seed, and invocation semantics.

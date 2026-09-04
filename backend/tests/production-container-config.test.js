@@ -29,7 +29,6 @@ const frontendApi = read("frontend/lib/api.ts");
 const ciWorkflow = read(".github/workflows/ci.yml");
 const imageWorkflow = read(".github/workflows/build-container-images.yml");
 const deployWorkflow = read(".github/workflows/deploy-compose.yml");
-const frontendDeployWorkflow = read(".github/workflows/deploy-frontend.yml");
 const valorantE2eWorkflow = read(".github/workflows/valorant-e2e.yml");
 const imageWorkflowDocument = yaml.load(imageWorkflow);
 const deployWorkflowDocument = yaml.load(deployWorkflow);
@@ -48,7 +47,6 @@ const approvedPlaywrightRef =
   "mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48";
 const approvedAlpine322Ref =
   "alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce";
-const approvedValorantPlatformRef = "e8a8f056a52fcbfb08e453bc6b51723c7b4b949c";
 const approvedCosignImage =
   "ghcr.io/sigstore/cosign/cosign:v2.4.1@sha256:b03690aa52bfe94054187142fba24dc54137650682810633901767d8a3e15b31";
 
@@ -562,7 +560,7 @@ test("artifact trust signs every Quest-owned application image and pins PostgreS
   assert.doesNotMatch(verifyRelease, /POSTGRES_COSIGN|VALORANT_COSIGN/);
   assert.doesNotMatch(releaseEnv, /^(?:POSTGRES|VALORANT)_COSIGN_/m);
   assert.doesNotMatch(validateHost, /for key in frontend_image backend_image migrator_image postgres_image valorant_image/);
-  assert.match(validateHost, /for key in frontend_image backend_image migrator_image; do/);
+  assert.match(validateHost, /for key in frontend_image backend_image migrator_image valorant_image; do/);
   assert.match(verifyRelease, /POSTGRES_IMAGE\).*unapproved PostgreSQL image/);
 
   const assignment = (name) => {
@@ -714,7 +712,7 @@ test("Compose deployment consumes only a protected, successful, signed digest re
   assert.match(deployWorkflow, /quest-backend@sha256/);
   assert.match(deployWorkflow, /quest-migrator@sha256/);
   assert.match(deployWorkflow, /POSTGRES_IMAGE_APPROVED_REF/);
-  assert.match(deployWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
+  assert.doesNotMatch(deployWorkflow, /VALORANT_IMAGE_APPROVED_REF/);
   const composeTransferStep = deployWorkflow.match(
     /- name: Transfer the verified manifest and invoke the fixed root deployment script[\s\S]*?(?=\n      - name:)/,
   )?.[0] || "";
@@ -723,7 +721,7 @@ test("Compose deployment consumes only a protected, successful, signed digest re
     /timeout --foreground 1800s ssh "\$\{ssh_options\[@\]\}" -p "\$SSH_PORT" -- "deploy@\$SSH_HOST" sudo -n -- "\$root_wrapper" "\$RELEASE_SHA" "\$remote_manifest"/,
   );
   assert.match(composeTransferStep, /ssh_options=\(/);
-  assert.match(composeTransferStep, /adoption\) root_wrapper=\/usr\/local\/sbin\/quest-esports-adopt/);
+  assert.doesNotMatch(composeTransferStep, /quest-esports-adopt|release_mode=adoption/);
   assert.match(composeTransferStep, /normal\|rollback\) root_wrapper=\/usr\/local\/sbin\/quest-esports-release/);
   assert.match(composeTransferStep, /-- "deploy@\$SSH_HOST" sudo -n -- "\$root_wrapper"/);
   assert.doesNotMatch(composeTransferStep, /bash\s+-c|sh\s+-c|eval\b|remote_command/);
@@ -1214,12 +1212,6 @@ test("CI and deployment tooling use immutable infrastructure and locked CLIs", (
   assert.equal(frontendLock.packages["node_modules/playwright"].version, "1.61.1");
   assert.equal("node_modules/vercel" in frontendLock.packages, false);
 
-  assert.match(frontendDeployWorkflow, /npx --yes vercel@54\.17\.3 pull --yes/);
-  assert.match(frontendDeployWorkflow, /npx --yes vercel@54\.17\.3 build --prod/);
-  assert.match(frontendDeployWorkflow, /run: npx --yes vercel@54\.17\.3 deploy --prebuilt --prod/);
-  assert.doesNotMatch(frontendDeployWorkflow, /frontend\/node_modules\/\.bin\/vercel/);
-  assert.match(frontendDeployWorkflow, /npm ci/);
-
   assert.match(
     valorantE2eWorkflow,
     /astral-sh\/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d\s+#\s+v10\.0\.1/,
@@ -1228,10 +1220,16 @@ test("CI and deployment tooling use immutable infrastructure and locked CLIs", (
   const valorantSteps = parsedValorantE2e.jobs["valorant-e2e"].steps;
   const uvStep = valorantSteps.find((step) => step.name === "Set up uv");
   assert.equal(uvStep.with.version, "0.12.7");
-  const siblingCheckout = valorantSteps.find((step) => step.name === "Check out valorant-platform-backend");
-  assert.match(siblingCheckout.with.ref, /^[0-9a-f]{40}$/);
-  assert.equal(siblingCheckout.with.ref, approvedValorantPlatformRef);
-  assert.equal(siblingCheckout.with.token, "${{ secrets.VALORANT_PLATFORM_ACCESS_TOKEN }}");
+  const externalCheckouts = valorantSteps.filter(
+    (step) => step.uses?.startsWith("actions/checkout@") && step.with?.repository,
+  );
+  assert.deepEqual(externalCheckouts, []);
+  const e2eStep = valorantSteps.find((step) => step.name === "Run two-service E2E");
+  assert.equal(
+    e2eStep.env.VALORANT_PLATFORM_REPO,
+    "${{ github.workspace }}/valorant-platform-backend",
+  );
+  assert.doesNotMatch(valorantE2eWorkflow, /VALORANT_PLATFORM_ACCESS_TOKEN/);
   assert.match(
     ciWorkflow,
     /docker pull "\$approved_postgres_ref"[\s\S]*bash ops\/tests\/postgres-container-readability\.test\.sh/,

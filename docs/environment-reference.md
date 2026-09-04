@@ -254,14 +254,12 @@ to have been created with the same `NEXT_PUBLIC_API_URL` and
 ## VALORANT two-service E2E contract
 
 This is a protected, manual, owner-gated E2E workflow, not ordinary CI or a
-pull-request check. It requires `VALORANT_PLATFORM_ACCESS_TOKEN` to check out
-the sibling repository and passes the following contract to
-`npm run test:valorant:e2e`. All values are owner-maintained dedicated-test
-values; none are repository facts.
+pull-request check. It uses the `valorant-platform-backend/` directory in this
+monorepo and passes the following contract to `npm run test:valorant:e2e`. All
+values are owner-maintained dedicated-test values; none are repository facts.
 
 | Variable | Required? | Owner | Applies | Classification | Safe placeholder/default | Restart/redeploy impact |
 | --- | --- | --- | --- | --- | --- | --- |
-| `VALORANT_PLATFORM_ACCESS_TOKEN` | Conditional; required to enable CI job | CI/repository owner | CI | Secret | `<read-only checkout token>` | Per workflow |
 | `VALORANT_PLATFORM_REPO` | Yes for E2E | E2E owner/script | L/CI | Public/path-sensitive | `<absolute path to valorant-platform-backend>` | Per test run |
 | `E2E_VAL_DATABASE_URL` | Yes for E2E | E2E owner | L/CI | Secret | `<dedicated valorant-schema PostgreSQL URL>` | Per test run |
 | `E2E_QUEST_DATABASE_URL` | Yes for E2E | E2E owner | L/CI | Secret | `<dedicated public-schema PostgreSQL URL>` | Per test run |
@@ -290,23 +288,19 @@ operators can distinguish required enablement from generated workflow values.
 
 | Variable/control | Required? | Owner | Applies | Classification | Safe placeholder/default | Restart/redeploy impact |
 | --- | --- | --- | --- | --- | --- | --- |
-| `BACKEND_DEPLOY_ENABLED` | Conditional; required to enable CD | Repository owner | CI/P | Public control | `false` | Per deployment workflow |
-| `DEPLOY_SHA` | No — generated from `github.sha` by backend CD | GitHub Actions | CI | Generated control | `<full 40-character commit SHA>` | Per deployment workflow |
-| `compose_run_id` | Yes for a frontend deploy dispatch | Repository owner | CI/P | Public workflow input | `<successful Compose workflow run ID>` | Per deployment workflow |
-| `BACKEND_SSH_HOST` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<pinned backend host>` | Per deployment |
-| `BACKEND_SSH_PORT` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<required SSH port, usually 22>` | Per deployment |
-| `BACKEND_SSH_USER` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `deploy` | Per deployment |
-| `BACKEND_SSH_PRIVATE_KEY` | Yes when backend CD enabled | Repository owner | CI/P | Secret | `<deploy SSH private key>` | Per deployment |
-| `BACKEND_SSH_HOST_KEY` | Yes when backend CD enabled | Repository owner | CI/P | Secret | `<pinned known_hosts line>` | Per deployment |
-| `BACKEND_APP_DIR` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<backend checkout path>` | Per deployment |
-| `BACKEND_PM2_PROCESS` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `<required PM2 process name>` | Per deployment |
-| `BACKEND_HEALTHCHECK_URL` | Yes when backend CD enabled | Repository owner | CI/P | Secret/environment value | `http://127.0.0.1:5001/api/health` (exact required value) | Per deployment |
-| `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` | Conditional; required for destructive migrations | Repository owner | CI/P | Secret | `<40-character approved commit SHA>` | Per deployment |
-| `FRONTEND_DEPLOY_ENABLED` | Conditional; required to enable frontend deploy | Repository owner | CI/P | Public control | `false` | Per deployment workflow |
-| `PRODUCTION_API_URL` | Yes when frontend deploy enabled | Repository owner | CI/P | Public/environment value | `<production API origin>` | Per deployment |
-| `VERCEL_TOKEN` | Yes when frontend deploy enabled | Repository owner | CI/P | Secret | `<Vercel token>` | Per deployment |
-| `VERCEL_ORG_ID` | Yes when frontend deploy enabled | Repository owner | CI/P | Secret | `<Vercel organization ID>` | Per deployment |
-| `VERCEL_PROJECT_ID` | Yes when frontend deploy enabled | Repository owner | CI/P | Secret | `<Vercel project ID>` | Per deployment |
+| `PRODUCTION_DEPLOYMENT_MODE` | Yes | Repository owner | CI/P | Public control | `compose` | Per deployment workflow |
+| `COMPOSE_DEPLOY_ENABLED` | Yes to enable production CD | Repository owner | CI/P | Public control | `false` until host validation is complete | Per deployment workflow |
+| `rollback_sha` | No | Repository owner | CI | Workflow input | Blank for latest; otherwise a successful full 40-character `main` SHA | Per deployment workflow |
+| `RELEASE_SHA` | No — resolved from trusted build lineage | GitHub Actions | CI | Generated control | `<full 40-character commit SHA>` | Per deployment workflow |
+| `BACKEND_SSH_HOST` | Yes when Compose CD is enabled | Repository owner | CI/P | Secret/environment value | `<pinned VPS host>` | Per deployment |
+| `BACKEND_SSH_PORT` | Yes when Compose CD is enabled | Repository owner | CI/P | Secret/environment value | `22` | Per deployment |
+| `BACKEND_SSH_USER` | Yes when Compose CD is enabled | Repository owner | CI/P | Secret/environment value | `<restricted release user>` | Per deployment |
+| `BACKEND_SSH_PRIVATE_KEY` | Yes when Compose CD is enabled | Repository owner | CI/P | Secret | `<deployment SSH private key>` | Per deployment |
+| `BACKEND_SSH_HOST_KEY` | Yes when Compose CD is enabled | Repository owner | CI/P | Secret | `<pinned known_hosts line>` | Per deployment |
+| `PRODUCTION_API_URL` | Yes for image builds | Repository owner | CI/P | Public/environment value | `<production HTTPS API origin>` | Per image build |
+| `PRODUCTION_SITE_URL` | Yes for image builds | Repository owner | CI/P | Public/environment value | `<production HTTPS site origin>` | Per image build |
+| `POSTGRES_17_BOOKWORM_DIGEST` | Yes for image builds | Repository owner | CI/P | Public supply-chain pin | `<approved sha256 digest>` | Per image build |
+| `POSTGRES_IMAGE_APPROVED_REF` | Yes for image build and deployment | Repository owner | CI/P | Public supply-chain pin | `postgres:17-bookworm@sha256:<approved digest>` | Per image build/deployment |
 | `MOBILE_ADMIN_ANDROID_CERT_SHA256` | Conditional; required for certificate repair/release verification | Repository owner | CI/P | Public/non-secret fingerprint | `<colon-separated release certificate SHA-256>` | Per deployment |
 | `repair_mobile_android_fingerprint` | No | Repository owner | CI | Workflow input | `false` | Per workflow |
 | `repair_mobile_oauth_redirect` | No | Repository owner | CI | Workflow input | `false` | Per workflow |

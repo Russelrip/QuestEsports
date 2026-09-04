@@ -4,7 +4,6 @@ set -euo pipefail
 script_directory="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 repository_root="$script_directory/.."
 deploy_workflow_file="$repository_root/.github/workflows/deploy-compose.yml"
-legacy_workflow_file="$repository_root/.github/workflows/cd.yml"
 work_directory="$(mktemp -d)"
 trap 'rm -rf -- "$work_directory"' EXIT
 
@@ -243,17 +242,11 @@ for case_name in malformed-statement missing-attestation ambiguous-platform wron
 done
 
 compose_config="$work_directory/compose-configure.sh"
-legacy_config="$work_directory/legacy-configure.sh"
 compose_transfer="$work_directory/compose-transfer.sh"
-legacy_deploy="$work_directory/legacy-deploy.sh"
 compose_cleanup="$work_directory/compose-cleanup.sh"
-legacy_cleanup="$work_directory/legacy-cleanup.sh"
 extract_step "$deploy_workflow_file" 'Configure the pinned deploy SSH connection' "$compose_config"
-extract_step "$legacy_workflow_file" 'Configure SSH' "$legacy_config"
 extract_step "$deploy_workflow_file" 'Transfer the verified manifest and invoke the fixed root deployment script' "$compose_transfer"
-extract_step "$legacy_workflow_file" 'Deploy backend over SSH' "$legacy_deploy"
 extract_step "$deploy_workflow_file" 'Cleanup temporary deploy SSH material' "$compose_cleanup"
-extract_step "$legacy_workflow_file" 'Cleanup temporary legacy SSH material' "$legacy_cleanup"
 
 ssh_runner_temp="$work_directory/runner-temp"
 mkdir -p "$ssh_runner_temp"
@@ -263,13 +256,11 @@ run_configure() {
   SSH_PRIVATE_KEY='private-key' SSH_HOST=example.test SSH_PORT="$port" SSH_USER=deploy SSH_HOST_KEY="$host_key" RUNNER_TEMP="$ssh_runner_temp" GITHUB_ENV="$env_file" bash "$script"
 }
 run_configure "$compose_config" 2222 "$valid_host_key" "$work_directory/compose.env"
-run_configure "$legacy_config" 2222 "$valid_host_key" "$work_directory/legacy.env"
 run_configure "$compose_config" 22 'example.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey task-6' "$work_directory/compose-default.env"
 bad_runner_temp="$work_directory/bad-runner-temp"
 mkdir -p "$bad_runner_temp"
 ssh_runner_temp="$bad_runner_temp"
 assert_failed compose-wrong-host-key run_configure "$compose_config" 2222 'wrong.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey task-6' "$work_directory/bad.env"
-assert_failed legacy-wrong-host-key run_configure "$legacy_config" 2222 'wrong.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey task-6' "$work_directory/bad-legacy.env"
 test "$(find "$bad_runner_temp" -mindepth 1 -maxdepth 1 -type d -print | wc -l)" = 0
 ssh_runner_temp="$work_directory/runner-temp"
 
@@ -354,20 +345,6 @@ grep -Fq '<1111111111111111111111111111111111111111>' "$ssh_log"
 grep -Fq '<-->' "$ssh_log"
 grep -Fq '<1800s>' "$ssh_log"
 
-: > "$ssh_log"
-SSH_LOG="$ssh_log" REMOTE_ARG_LOG="$remote_arg_log" FAKE_REMOTE_SCRIPT="$work_directory/fake-remote-script" SSH_MATERIAL_DIR="$ssh_material" RUNNER_TEMP="$ssh_runner_temp" DEPLOY_SHA=1111111111111111111111111111111111111111 SSH_HOST=example.test SSH_PORT=2222 SSH_USER=deploy APP_DIR=/var/www/QuestEsports PM2_PROCESS=quest-backend HEALTHCHECK_URL=http://127.0.0.1:5001/api/health DESTRUCTIVE_MIGRATION_APPROVAL_SHA='' MOBILE_ANDROID_CERT_SHA256='' REPAIR_LEGACY_MEDIA=false OPTIMIZE_TOURNAMENT_BANNERS=false OPTIMIZE_EVENT_ALBUM_PHOTOS=false INITIALIZE_MATCH_ROOMS=false REPAIR_DATABASE_SSL=false REPAIR_MOBILE_ANDROID_FINGERPRINT=false REPAIR_MOBILE_OAUTH_REDIRECT=false PATH="$mock_bin:$PATH" bash "$legacy_deploy"
-grep -Fq "''" "$ssh_log"
-grep -Fq '/var/www/QuestEsports' "$ssh_log"
-grep -Fq '1111111111111111111111111111111111111111' "$ssh_log"
-grep -Fq '<180s>' "$ssh_log"
-grep -Fq 'remote-argv:<arg[0]=/var/www/QuestEsports><arg[1]=quest-backend><arg[2]=http://127.0.0.1:5001/api/health><arg[3]=><arg[4]=><arg[5]=false><arg[6]=false><arg[7]=false><arg[8]=false><arg[9]=false><arg[10]=false><arg[11]=false><arg[12]=1111111111111111111111111111111111111111>' "$remote_arg_log"
-remote_invocations_before_rejection="$(grep -c '^remote-argv:' "$remote_arg_log")"
-assert_failed legacy-metacharacter env SSH_MATERIAL_DIR="$ssh_material" RUNNER_TEMP="$ssh_runner_temp" DEPLOY_SHA=1111111111111111111111111111111111111111 SSH_HOST=example.test SSH_PORT=2222 SSH_USER=deploy APP_DIR=/var/www/QuestEsports PM2_PROCESS='quest;touch' HEALTHCHECK_URL=http://127.0.0.1:5001/api/health DESTRUCTIVE_MIGRATION_APPROVAL_SHA='' MOBILE_ANDROID_CERT_SHA256='' REPAIR_LEGACY_MEDIA=false OPTIMIZE_TOURNAMENT_BANNERS=false OPTIMIZE_EVENT_ALBUM_PHOTOS=false INITIALIZE_MATCH_ROOMS=false REPAIR_DATABASE_SSL=false REPAIR_MOBILE_ANDROID_FINGERPRINT=false REPAIR_MOBILE_OAUTH_REDIRECT=false PATH="$mock_bin:$PATH" bash "$legacy_deploy"
-test "$(grep -c '^remote-argv:' "$remote_arg_log")" = "$remote_invocations_before_rejection"
-if grep -Fq 'quest;touch' "$remote_arg_log"; then
-  echo 'metacharacter reached the executable remote script' >&2
-  exit 1
-fi
 assert_failed compose-timeout env TIMEOUT_FAIL=1 SSH_LOG="$ssh_log" SSH_MATERIAL_DIR="$ssh_material" RUNNER_TEMP="$ssh_runner_temp" RELEASE_SHA=1111111111111111111111111111111111111111 SSH_HOST=example.test SSH_PORT=2222 SSH_USER=deploy PATH="$mock_bin:$PATH" bash "$compose_transfer"
 SSH_MATERIAL_DIR="$ssh_material" RUNNER_TEMP="$ssh_runner_temp" bash "$compose_cleanup"
 test ! -e "$ssh_material"

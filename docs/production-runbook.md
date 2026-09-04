@@ -1,9 +1,8 @@
 # Production Operations Runbook
 
 This is the operational source of truth for the Quest PostgreSQL 17 VPS runtime,
-recovery, and the still-pending Compose adoption. The database cutover already
-occurred on 2026-08-31. The PostgreSQL 17 VPS target is now serving the
-application through the recorded host topology. This document records repository contracts and operator
+immutable Compose deployment, and recovery. The database cutover occurred on
+2026-08-31 and Compose adoption is complete. This document records repository contracts and operator
 status; it does not replace live verification. Use [Backup and Disaster
 Recovery](./backup-and-disaster-recovery.md) for the authoritative backup,
 restore, key-custody, and disaster procedure. For contributor setup and
@@ -15,25 +14,15 @@ Historical note: before cutover, Supabase was the temporary Supabase rollback ma
 ## Current production status
 
 The database cutover completed on **2026-08-31**. Quest and VALORANT use
-PostgreSQL **17.11** in VPS container `quest-postgres` through
-`127.0.0.1:5433`. The current service is an ad-hoc host container, not the
-target Compose topology. No rehearsal was performed; the hard rehearsal gate
-was skipped and cannot be satisfied retroactively.
+PostgreSQL **17.11** in VPS container `quest-postgres`. The frontend, Quest API,
+VALORANT API, updater, and bot run in the production Compose topology. Runtime
+database URLs use their intended schemas and verify-full private-CA TLS;
+VALORANT also has its dedicated TLS settings and admin API key. Supabase remains
+stale recovery material and is not a rollback target.
 
-Missing PostgreSQL TLS material blocks Compose adoption and the real backup
-pipeline. The scheduled backup has failed since **2026-08-30 04:20** because
-the certificate and `POSTGRES_TARGET_*` settings are missing; the interim
-`quest-pg17-interim-backup.{service,timer}` unit covers the gap. Host bootstrap,
-TLS provisioning, backup recovery, and removal of the interim unit remain
-operator gates. Unrestricted deploy-root access and two GitHub Actions keys
-also require host remediation. These statements are repository records, not
-live verification or owner approvals.
-
-Once adopted, Compose production clients must use `sslmode=verify-full` with
-the private CA; VALORANT's asyncpg client must use equivalent full certificate
-and hostname verification. External PostgreSQL/VALORANT Cosign signer settings
-are not required. Supabase remains stale recovery material and is not a
-rollback target.
+Production environment files are root-controlled outside Git. Access-restricted
+local and VPS backups were refreshed on **2026-09-04**. Revalidate backup timer
+health and off-site evidence independently before a migration.
 
 ## Current Topology
 
@@ -43,20 +32,18 @@ host, deployment region, database region, storage paths, backup destination,
 and service state before each operational change; checked-in files alone cannot
 prove those facts.
 
-- Frontend: Vercel at `https://questesports.lk`, with the configured deployment region in Singapore and normal Vercel edge delivery
-- Backend: Ubuntu 24.04 VPS in France at `https://api.questesports.lk`
-- Backend checkout: `/var/www/QuestEsports`
-- Backend service user: `deploy` (never `root`)
-- Process manager: PM2 supervised by `pm2-deploy.service`
-- Database: PostgreSQL 17.11 in VPS container `quest-postgres`, reached by Quest and VALORANT through `127.0.0.1:5433`
+- Frontend: production Compose service at `https://questesports.lk`
+- Backend: production Compose service on the VPS at `https://api.questesports.lk`
+- Release controller: root-owned scripts under `/usr/local/sbin`, invoked by a restricted deployment account and narrow sudo rule
+- Application images: Quest frontend/backend/migrator and VALORANT backend, signed and digest-pinned from GHCR
+- Database: PostgreSQL 17.11 in Compose container `quest-postgres`
 - Supabase: intact but stale; it is not a rollback target
-- Planned Compose target: PostgreSQL 17 Bookworm in the `quest-prod` Compose project, with the private `quest-postgres` alias and durable data at `/srv/quest-esports/postgres/17/data`; TLS gaps currently block Compose adoption
-- Staging coexistence: the existing native PostgreSQL 16.15 cluster remains untouched on `127.0.0.1:5432` during staging and initial validation; it is not the PostgreSQL 17 target
-- PostgreSQL 17 staging access: only `127.0.0.1:55432` through the temporary overlay; the final base Compose file publishes no PostgreSQL host port and no public database port is allowed
+- Durable database data: `/srv/quest-esports/postgres/17/data`
+- Network policy: PostgreSQL is private to Compose; no public database port is allowed
 - Email: Amazon SES in Tokyo (`ap-northeast-1`) when `MAIL_PROVIDER=smtp`; SMTP credentials are region-specific
 - Public uploads: `/srv/quest-esports/uploads`
 - Private payment evidence: `/srv/quest-esports/private`
-- CI/CD: GitHub Actions; the normal flow is `main` push -> CI -> container image build -> immutable Compose release -> frontend deployment
+- CI/CD: GitHub Actions; the normal flow is `main` push -> CI -> signed image build -> protected immutable Compose release
 
 The database cutover already occurred on 2026-08-31. Supabase is intact but
 stale recovery material, not a rollback target, and must not be selected by an
@@ -64,28 +51,19 @@ automatic URL toggle. No rehearsal was performed: the hard rehearsal gate was
 skipped and cannot be satisfied retroactively. Deletion and credential rotation
 remain separate owner decisions after a verified backup and observation record.
 
-The scheduled backup has failed since 2026-08-30 04:20 because the host is
-missing the certificate and `POSTGRES_TARGET_*` settings required by
-`backup-production-multi-remote.sh`. The interim
-`quest-pg17-interim-backup.{service,timer}` unit covers the gap and must be
-removed once the real pipeline is provisioned. The missing TLS material blocks
-both Compose adoption and the backup pipeline. Unrestricted deploy-root access
-and two GitHub Actions keys remain active trust risks for Tasks 3 and 6.
-
-The official PostgreSQL and VALORANT images do not require external Cosign
-signer settings. PostgreSQL is trusted by the exact approved digest, while
-Quest frontend/backend/migrator images use Quest-only Cosign verification.
+PostgreSQL is trusted by its exact approved upstream digest. All four
+repository-built application images are verified with the Quest GitHub Actions
+Cosign identity; the deploy workflow additionally verifies BuildKit provenance
+and SBOM attestations.
 
 ### Production deployment authority
 
-The protected repository variable `PRODUCTION_DEPLOYMENT_MODE` selects the
-production deployment path. The intended Compose authority is
-`deploy-compose.yml`, and the frontend workflow follows only its successful
-`Deploy immutable Compose release` run; however, TLS gaps currently block
-Compose adoption on the live host. Do not create a second automatic production
-trigger. The legacy PM2 `CD` workflow remains runnable only when the variable is
-explicitly set to `legacy-pm2` for historical recovery. All production
-deployment workflows use the shared `production-release` concurrency group.
+`deploy-compose.yml` is the only production deployment authority. It requires
+`PRODUCTION_DEPLOYMENT_MODE=compose`, `COMPOSE_DEPLOY_ENABLED=true`, an exact
+successful `main` CI/build lineage, the repository owner as actor, and approval
+through the protected `production-compose` environment. The retired PM2 and
+Vercel workflows must not be restored as parallel production triggers. The
+deployment workflow uses the `production-release` concurrency group.
 
 ## Required Ownership And Permissions
 
@@ -576,17 +554,9 @@ Repository variable:
 ```text
 PRODUCTION_DEPLOYMENT_MODE=compose
 COMPOSE_DEPLOY_ENABLED=true
-FRONTEND_DEPLOY_ENABLED=true
 ```
 
-The legacy PM2 rollback path alone may use:
-
-```text
-PRODUCTION_DEPLOYMENT_MODE=legacy-pm2
-BACKEND_DEPLOY_ENABLED=true
-```
-
-Repository or `production` environment secrets:
+Protected `production-compose` environment secrets:
 
 ```text
 BACKEND_SSH_HOST=api.questesports.lk
@@ -594,30 +564,21 @@ BACKEND_SSH_PORT=22
 BACKEND_SSH_USER=deploy
 BACKEND_SSH_PRIVATE_KEY=<private key whose public key is authorized for deploy>
 BACKEND_SSH_HOST_KEY=<pinned known_hosts line>
-BACKEND_APP_DIR=/var/www/QuestEsports
-BACKEND_PM2_PROCESS=quest-backend
-BACKEND_HEALTHCHECK_URL=http://127.0.0.1:5001/api/health
-BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA=<exact approved destructive migration commit SHA, when required>
 ```
 
-Frontend deployment uses these repository/environment settings:
+Image building uses these repository/environment variables:
 
 ```text
-FRONTEND_DEPLOY_ENABLED=true
 PRODUCTION_API_URL=https://api.questesports.lk
-VERCEL_TOKEN=<Vercel deployment token>
-VERCEL_ORG_ID=<Vercel organization ID>
-VERCEL_PROJECT_ID=<Vercel project ID>
+PRODUCTION_SITE_URL=https://questesports.lk
+POSTGRES_17_BOOKWORM_DIGEST=<approved sha256 digest>
+POSTGRES_IMAGE_APPROVED_REF=postgres:17-bookworm@sha256:<approved digest>
 ```
 
 The Compose workflow promotes the exact successful upstream SHA from its
-immutable manifest. Frontend deployment follows only a successful `Deploy
-immutable Compose release` run and promotes that run's exact `main` SHA. A
-failed CI or Compose release prevents frontend deployment. The legacy PM2 CD
-workflow retains its manual/CI triggers only for rollback history and is gated
-by `PRODUCTION_DEPLOYMENT_MODE=legacy-pm2`; it must remain disabled before and
-after the Compose cutover. All workflows retain manual dispatch subject to
-their protected mode gate.
+immutable manifest. The frontend is one of the images in that same release. A
+failed CI, build, verification, approval, or Compose release prevents every
+application component from being promoted.
 
 Generate the pinned host line only from a trusted VPS session:
 
@@ -628,48 +589,11 @@ printf 'api.questesports.lk %s\n' "$KEY"
 
 For port 22, the known-hosts name must exactly match `BACKEND_SSH_HOST` and must not include brackets or `:22`. For a nonstandard port, use `[hostname]:port`.
 
-Two different SSH directions are involved:
+Only one SSH direction remains in deployment: `BACKEND_SSH_PRIVATE_KEY` connects
+the GitHub Actions runner to the restricted VPS release user. The VPS does not
+check out application source during a release.
 
-- `BACKEND_SSH_PRIVATE_KEY`: GitHub Actions runner to VPS.
-- Repository deploy key: VPS `deploy` user to the private GitHub repository.
-
-The repository deploy key remains read-only.
-
-### Legacy PM2 repair exception
-
-The `repair_mobile_oauth_redirect`, `repair_mobile_android_fingerprint`,
-`repair_database_ssl`, `repair_legacy_media`,
-`optimize_tournament_banners`, `optimize_event_album_photos`, and
-`initialize_match_rooms` inputs belong to the legacy PM2 `CD` workflow. They
-must not be dispatched while `PRODUCTION_DEPLOYMENT_MODE=compose`, because the
-Compose workflow is the production authority and the frontend follows only a
-successful Compose release. For a repair that cannot wait for the Compose
-path, the owner must explicitly perform this temporary rollback transition:
-
-1. Confirm no Compose release or frontend promotion is in flight.
-2. Change the protected **repository** variable to
-   `PRODUCTION_DEPLOYMENT_MODE=legacy-pm2`.
-3. Dispatch `CD` with only the required repair input, review its owner-gated
-   result, and do not treat it as a normal production release.
-4. Restore the protected repository variable to
-   `PRODUCTION_DEPLOYMENT_MODE=compose` immediately after the repair, including
-   after a failed or cancelled run, before resuming Compose releases.
-
-If a deployment reports that the production mobile OAuth redirect is stale or
-missing, use that explicit transition before dispatching `CD` with
-`repair_mobile_oauth_redirect=true`. The repair derives the required
-`/mobile-admin-oauth` App Link from the existing HTTPS `API_PUBLIC_URL`, adds or
-updates the entry while refusing duplicates, preserves `.env` permissions, and
-does not print environment values.
-
-Store the SHA-256 fingerprint verified from a signed Quest Admin APK as the
-production environment secret `MOBILE_ADMIN_ANDROID_CERT_SHA256`. If the VPS
-value is stale or missing, use the same explicit transition before dispatching
-`CD` with `repair_mobile_android_fingerprint=true`. The repair validates the
-secret format, adds or updates exactly one environment entry, preserves `.env`
-permissions, and never prints the fingerprint or environment contents.
-
-## PM2 And Automatic Boot
+## Historical retired PM2 reference
 
 The process must belong to the `deploy` user's PM2 daemon:
 
@@ -873,23 +797,14 @@ systemd, registry, or sibling-repository verification.
 3. After CI succeeds, the image workflow publishes the immutable manifest and the Compose workflow deploys the exact approved release when `PRODUCTION_DEPLOYMENT_MODE=compose`.
 4. Compose pauses for approval before its first deployment step. Open `Actions -> the Deploy immutable Compose release run -> Review deployments`, tick **production-compose**, and approve. The protected environment approval and mode gate apply to every Compose deployment.
 
-   A Compose release with a destructive or backward-incompatible migration requires the protected owner approval and the exact release-bound migration approval contract before applying it. The legacy PM2 rollback path additionally requires `BACKEND_DESTRUCTIVE_MIGRATION_APPROVAL_SHA` to equal the exact 40-character deploying commit SHA. One click approves a deployment; dropping a column deserves a second, deliberate act that names the commit. That SHA must match the commit being deployed, so any push to `main` between setting it and deploying invalidates it.
+   A Compose release with a destructive or backward-incompatible migration requires the protected owner approval and the exact release-bound migration approval contract before applying it. One click approves a deployment; dropping a column deserves a second, deliberate act that names the commit. That SHA must match the commit being deployed, so any push to `main` between setting it and deploying invalidates it.
 
-   When migrations are pending, the release-bound Compose backup contract must succeed before applying them. The legacy PM2 CD backup contract applies only when `PRODUCTION_DEPLOYMENT_MODE=legacy-pm2` is explicitly selected.
+   When migrations are pending, the release-bound Compose backup contract must succeed before applying them.
 5. Compose invokes the root-owned immutable release contract, validates the exact image manifest and protected approvals, and performs the coordinated production release without source checkout, npm, or PM2 on the VPS.
 6. The Compose workflow's final `release-success` job requires both the resolver and actual `deploy` job to succeed and uploads the exact `compose-release-success` proof artifact. Its stable workflow identifier is the whitespace-free `compose_workflow=Deploy_immutable_Compose_release`; a skipped/no-op Compose release cannot produce that proof or a successful workflow completion.
-7. After Compose succeeds, automatic frontend deployment follows that successful `Deploy immutable Compose release` run, downloads and validates the proof from that exact run, and promotes the same exact SHA only after validating the successful CI run and live API compatibility.
+7. The frontend is part of the same immutable Compose release; there is no second frontend promotion workflow.
 
-Emergency/manual redeploy: GitHub `Actions -> Deploy immutable Compose release -> Run workflow` or `Actions -> Deploy frontend -> Run workflow`. Use `Actions -> CD -> Run workflow` only for explicit legacy PM2 rollback with `PRODUCTION_DEPLOYMENT_MODE=legacy-pm2`. Each manual job refuses to continue unless its protected mode and required successful upstream checks pass. The owner should dispatch from `main` to preserve the documented main-only promotion intent.
-
-The `repair_database_ssl` input is a narrowly scoped recovery option for an older VPS `.env` whose `DATABASE_URL` or `DIRECT_URL` predates the explicit TLS requirement. It updates only those two URL entries to `sslmode=verify-full` with the provisioned private CA, preserves `.env` permissions, and never prints credentials. Leave it disabled during normal deployments. After a successful repair deployment, future deployments validate the stored values without changing them.
-
-For a confirmed missing-file incident affecting packaged legacy posters, enable
-the `repair_legacy_media` workflow input. The deployment then runs the idempotent
-legacy import after creating and verifying an encrypted off-site backup and
-checking database security. It restores missing packaged files, links posters to
-the oldest matching image records, removes importer-created duplicate image
-records, and leaves healthy files alone.
+Emergency/manual redeploy: GitHub `Actions -> Deploy immutable Compose release -> Run workflow`. Dispatch from `main`; leave `rollback_sha` empty for the newest approved release or provide the full SHA of an older successful `main` image build for an intentional rollback.
 
 The deployment refuses root SSH users, dirty tracked worktrees, insecure `.env` permissions, and unpinned SSH hosts.
 
@@ -1028,7 +943,7 @@ PowerShell aliases `curl` to `Invoke-WebRequest`, and Windows `sudo.exe` is not 
 
 ### Configure SSH exits on `test -n`
 
-A required Actions secret resolved to an empty value. Confirm the exact secret names in `.github/workflows/cd.yml`. Repository secrets are available to the workflow; `production` environment secrets may be used for tighter scoping.
+A required Actions secret resolved to an empty value. Confirm the exact secret names in `.github/workflows/deploy-compose.yml`. Deployment SSH secrets belong in the protected `production-compose` environment.
 
 ### `No ED25519 host key is known`
 
@@ -1307,5 +1222,5 @@ that state during CI and deployment.
 
 - Resend requires a verified sending domain for normal application recipients. If switching back, Amazon SES sandbox delivery remains restricted to verified recipients. Production startup always requires complete configuration for the selected provider while password authentication is enabled.
 - PayHere may remain completely unconfigured. Free registrations and bank-transfer tournaments continue to work; PayHere tournament checkout and merchandise checkout remain unavailable until all PayHere values are configured.
-- Vercel automatic production deployment is disabled. The protected `Deploy frontend` workflow promotes an exact CI-passed `main` SHA only after `/api/capabilities` confirms the compatible backend is live.
+- The frontend is deployed as part of the protected immutable Compose release; there is no separate Vercel promotion workflow.
 - The sitemap and crawler configuration are managed by the frontend deploy. After public-route or metadata changes, follow [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md) and confirm the existing Search Console submission remains healthy.

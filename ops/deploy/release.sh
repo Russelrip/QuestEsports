@@ -103,7 +103,7 @@ validate_valorant_runtime_compose() {
   local compose_source="${VALORANT_COMPOSE_SOURCE:-}" contract="${VALORANT_RUNTIME_COMPOSE_CONTRACT:-}" render_env rendered contract_rendered expected_image
   [[ -n "$compose_source" && -f "$compose_source" && ! -L "$compose_source" ]] || die 'VALORANT Compose source is missing or unsafe.'
   [[ -n "$contract" && -f "$contract" && ! -L "$contract" ]] || die 'VALORANT runtime Compose contract is missing or unsafe.'
-  expected_image="${manifest[valorant_image]:-${VALORANT_IMAGE_APPROVED_REF:-}}"
+  expected_image="${manifest[valorant_image]:-}"
   [[ "$expected_image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die 'VALORANT image is not an exact approved digest.'
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for rendered VALORANT Compose validation.'
   render_env="$(mktemp)" || die 'could not create the VALORANT Compose render environment.'

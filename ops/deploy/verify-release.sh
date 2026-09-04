@@ -31,7 +31,7 @@ require_setting() { [[ -n "${!1:-}" ]] || die "missing release setting: $1"; }
 require_setting RELEASE_ENVIRONMENT
 require_setting RELEASE_ENVIRONMENT_PROTECTED
 [[ "$RELEASE_ENVIRONMENT" == production && "$RELEASE_ENVIRONMENT_PROTECTED" == 1 ]] || die 'release environment is not the protected production environment.'
-for setting in RELEASE_ROOT DOCKER_BIN QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE CURL_BIN DATABASE_READINESS_COMMAND SECURITY_VERIFY_COMMAND VALORANT_CONTAINER_HEALTH_COMMAND COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER QUEST_FRONTEND_IMAGE_APPROVED_REF QUEST_BACKEND_IMAGE_APPROVED_REF MIGRATOR_IMAGE_APPROVED_REF POSTGRES_IMAGE_APPROVED_REF VALORANT_IMAGE_APPROVED_REF VALORANT_RUNTIME_COMPOSE_CONTRACT RECOVERY_ADMIN_URL_FILE; do require_setting "$setting"; done
+for setting in RELEASE_ROOT DOCKER_BIN QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE CURL_BIN DATABASE_READINESS_COMMAND SECURITY_VERIFY_COMMAND VALORANT_CONTAINER_HEALTH_COMMAND COSIGN_BIN QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP QUEST_COSIGN_OIDC_ISSUER POSTGRES_IMAGE_APPROVED_REF VALORANT_RUNTIME_COMPOSE_CONTRACT RECOVERY_ADMIN_URL_FILE; do require_setting "$setting"; done
 [[ "${QUEST_HEALTH_URL}" == http://127.0.0.1:5001/api/health/live ]] || die 'Quest liveness endpoint identity is not fixed.'
 [[ "${QUEST_READINESS_URL}" == http://127.0.0.1:5001/api/health/ready ]] || die 'Quest readiness endpoint identity is not fixed.'
 [[ "${VALORANT_HEALTH_URL}" == https://valorant-platform:8000/api/v1/health ]] || die 'VALORANT health endpoint identity is not fixed.'
@@ -223,23 +223,21 @@ validate_active_project() {
   done
 }
 validate_bundle_images() {
-  local bundle="$1" key value approved
+  local bundle="$1" key value
   for key in QUEST_FRONTEND_IMAGE QUEST_BACKEND_IMAGE MIGRATOR_IMAGE POSTGRES_IMAGE VALORANT_IMAGE; do
     value="$(awk -F= -v k="$key" '$1 == k { print substr($0, index($0,"=")+1); found=1 } END { if (!found) exit 1 }' "$bundle/.env")" || die "$bundle/.env is missing $key."
     case "$key" in
       POSTGRES_IMAGE) [[ "$value" == 'postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0' ]] || die "$bundle/.env has an unapproved PostgreSQL image." ;;
       *) [[ "$value" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] || die "$bundle/.env has an unsafe $key." ;;
     esac
-    approved="${key}_APPROVED_REF"
-    [[ "${!approved}" == "$value" ]] || die "$approved does not exactly approve $key."
     case "$key" in
-      QUEST_FRONTEND_IMAGE|QUEST_BACKEND_IMAGE|MIGRATOR_IMAGE)
+      QUEST_FRONTEND_IMAGE|QUEST_BACKEND_IMAGE|MIGRATOR_IMAGE|VALORANT_IMAGE)
         RELEASE_IMAGE="$value" "$COSIGN_BIN" verify \
           --certificate-identity-regexp "$QUEST_COSIGN_CERTIFICATE_IDENTITY_REGEXP" \
           --certificate-oidc-issuer "$QUEST_COSIGN_OIDC_ISSUER" "$value" >/dev/null 2>&1 \
           || die "Cosign signature verification failed for $key."
         ;;
-      POSTGRES_IMAGE|VALORANT_IMAGE) : ;; # External images use exact digest equality above.
+      POSTGRES_IMAGE) : ;; # PostgreSQL uses exact digest equality above.
     esac
   done
 }

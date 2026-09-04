@@ -1,6 +1,5 @@
 name: Deploy immutable Compose release
 
-
 on:
   workflow_dispatch:
     inputs:
@@ -8,11 +7,6 @@ on:
         description: Full SHA of an older successful main release for an intentional rollback
         required: false
         type: string
-      adopt_existing_vps:
-        description: Run the one-time, owner-approved existing-VPS Compose adoption
-        required: false
-        default: false
-        type: boolean
   workflow_run:
     workflows:
       - Build container images
@@ -38,7 +32,6 @@ jobs:
     timeout-minutes: 10
     outputs:
       build_run_id: ${{ steps.resolve.outputs.build_run_id }}
-      ci_run_id: ${{ steps.resolve.outputs.ci_run_id }}
       artifact_name: ${{ steps.resolve.outputs.artifact_name }}
       release_sha: ${{ steps.resolve.outputs.release_sha }}
       release_mode: ${{ steps.resolve.outputs.release_mode }}
@@ -49,18 +42,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_BUILD_RUN_ID: ${{ github.event.workflow_run.id }}
           REQUESTED_ROLLBACK_SHA: ${{ inputs.rollback_sha }}
-          REQUESTED_ADOPTION: ${{ inputs.adopt_existing_vps || false }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            [[ "$REQUESTED_ADOPTION" == true || "$REQUESTED_ADOPTION" == false ]] || exit 1
             [[ -z "$REQUESTED_ROLLBACK_SHA" || "$REQUESTED_ROLLBACK_SHA" =~ ^[0-9a-f]{40}$ ]] || {
               printf '%s\n' 'rollback_sha must be empty or a full lowercase 40-character SHA.' >&2
-              exit 1
-            }
-            [[ "$REQUESTED_ADOPTION" != true || -z "$REQUESTED_ROLLBACK_SHA" ]] || {
-              printf '%s\n' 'adoption and rollback cannot be requested together.' >&2
               exit 1
             }
             if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
@@ -147,13 +134,10 @@ jobs:
             exit 1
           }
           {
-            printf 'ci_run_id=%s\n' "$ci_run_id"
             printf 'artifact_name=%s\n' "$artifact_name"
             printf 'build_run_id=%s\n' "$build_run_id"
             printf 'release_sha=%s\n' "$release_sha"
-            if [[ "$REQUESTED_ADOPTION" == true ]]; then
-              printf 'release_mode=adoption\n'
-            elif [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
+            if [[ -n "$REQUESTED_ROLLBACK_SHA" ]]; then
               printf 'release_mode=rollback\n'
             else
               printf 'release_mode=normal\n'
@@ -176,8 +160,6 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.BACKEND_SSH_PRIVATE_KEY }}
       SSH_HOST_KEY: ${{ secrets.BACKEND_SSH_HOST_KEY }}
       POSTGRES_IMAGE_APPROVED_REF: ${{ vars.POSTGRES_IMAGE_APPROVED_REF }}
-      VALORANT_IMAGE_APPROVED_REF: ${{ vars.VALORANT_IMAGE_APPROVED_REF }}
-      FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA: ${{ vars.FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA }}
 
     steps:
       - name: Download the manifest from that exact successful build
@@ -235,8 +217,6 @@ jobs:
           approved_postgres_ref='postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0'
           test "$postgres_image" = "$approved_postgres_ref"
           test "$POSTGRES_IMAGE_APPROVED_REF" = "$approved_postgres_ref"
-          valorant_image="$(awk -F= '$1 == "valorant_image" { print $2 }' "$manifest")"
-          test "$valorant_image" = "$VALORANT_IMAGE_APPROVED_REF"
 
       - name: Pull the immutable Cosign container
         shell: bash
@@ -495,7 +475,7 @@ jobs:
           printf 'SSH_MATERIAL_DIR=%s\n' "$ssh_material_dir" >> "$GITHUB_ENV"
           trap - EXIT
 
-      - name: Revalidate normal or adoption release against current main after approval
+      - name: Revalidate normal release against current main after approval
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -505,18 +485,15 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
           case "$RELEASE_MODE" in
-            normal|adoption)
+            normal)
               main_head_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
               [[ "$main_head_sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
               test "$main_head_sha" = "$RELEASE_SHA"
-              if [[ "$RELEASE_MODE" == adoption ]]; then
-                test "$FIRST_COMPOSE_ADOPTION_OWNER_APPROVAL_SHA" = "$RELEASE_SHA"
-              fi
               ;;
             rollback)
               ;;
             *)
-              printf '%s\n' 'release mode is not an approved normal, adoption, or rollback mode.' >&2
+              printf '%s\n' 'release mode is not an approved normal or rollback mode.' >&2
               exit 1
               ;;
           esac
@@ -538,7 +515,6 @@ jobs:
           ssh_options=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_MATERIAL_DIR/known_hosts" -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i "$SSH_MATERIAL_DIR/id_ed25519")
           timeout --foreground 120s scp "${ssh_options[@]}" -P "$SSH_PORT" -- release-manifest/release-manifest.txt "deploy@$SSH_HOST:$remote_manifest"
           case "$RELEASE_MODE" in
-            adoption) root_wrapper=/usr/local/sbin/quest-esports-adopt ;;
             normal|rollback) root_wrapper=/usr/local/sbin/quest-esports-release ;;
             *) printf '%s\n' 'unsupported deployment mode.' >&2; exit 1 ;;
           esac
@@ -590,44 +566,5 @@ jobs:
         with:
           name: compose-release-success
           path: compose-release-success/release-success.txt
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Write the frontend release lineage
-        env:
-          CI_RUN_ID: ${{ needs.resolve-build.outputs.ci_run_id }}
-          RELEASE_SHA: ${{ needs.resolve-build.outputs.release_sha }}
-        run: |
-          set -euo pipefail
-          [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
-          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          mkdir -p frontend-release
-          printf '%s\n' \
-            "release_sha=$RELEASE_SHA" \
-            "ci_run_id=$CI_RUN_ID" \
-            > frontend-release/release-lineage.txt
-
-      - name: Upload the frontend release lineage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: frontend-release
-          path: frontend-release/release-lineage.txt
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Write the frontend release mode
-        env:
-          RELEASE_MODE: ${{ needs.resolve-build.outputs.release_mode }}
-        run: |
-          set -euo pipefail
-          [[ "$RELEASE_MODE" == normal || "$RELEASE_MODE" == adoption || "$RELEASE_MODE" == rollback ]]
-          mkdir -p frontend-release-mode
-          printf 'release_mode=%s\n' "$RELEASE_MODE" > frontend-release-mode/release-mode.txt
-
-      - name: Upload the frontend release mode
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: frontend-release-mode
-          path: frontend-release-mode/release-mode.txt
           if-no-files-found: error
           retention-days: 7
