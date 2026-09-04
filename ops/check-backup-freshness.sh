@@ -13,13 +13,28 @@ source "$BACKUP_ENV_FILE"
 set +a
 
 release_lock_path="${BACKUP_RELEASE_LOCK_PATH:-/var/lock/quest-esports-release.lock}"
-if [[ "$release_lock_path" != /* || "$release_lock_path" == "/" ]]; then
-  echo "BACKUP_RELEASE_LOCK_PATH must be an absolute non-root path." >&2
-  exit 1
-fi
-if ! exec 8>"$release_lock_path" || ! flock -n 8; then
-  echo "Another release operation is already running." >&2
-  exit 1
+# The release controller already holds this lock and hands its descriptor down
+# on fd 8; re-opening the same path would deadlock against that held lock.
+if [[ "${BACKUP_RELEASE_LOCK_HELD:-}" == 1 ]]; then
+  expected_lock_target="$(readlink -f "$release_lock_path" 2>/dev/null || true)"
+  inherited_lock_target="$(readlink -f /proc/self/fd/8 2>/dev/null || true)"
+  if [[ -z "$expected_lock_target" || "$expected_lock_target" != "$inherited_lock_target" ]]; then
+    echo "The inherited release lock descriptor is not the canonical lock." >&2
+    exit 1
+  fi
+  if ! flock -n 8; then
+    echo "The inherited release lock is not held." >&2
+    exit 1
+  fi
+else
+  if [[ "$release_lock_path" != /* || "$release_lock_path" == "/" ]]; then
+    echo "BACKUP_RELEASE_LOCK_PATH must be an absolute non-root path." >&2
+    exit 1
+  fi
+  if ! exec 8>"$release_lock_path" || ! flock -n 8; then
+    echo "Another release operation is already running." >&2
+    exit 1
+  fi
 fi
 
 if [[ -z "${BACKUP_ROOT:-}" ]]; then
