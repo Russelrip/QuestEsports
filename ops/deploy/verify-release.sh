@@ -67,33 +67,87 @@ validate_rendered_valorant_compose() {
   chmod 600 "$source_json_file" "$contract_json_file"
   "$DOCKER_BIN" compose --env-file "$release_dir/.env" -f "$release_dir/valorant.compose.yml" --project-name valorant-prod config --no-env-resolution --format json >"$source_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source is invalid.'; }
   "$DOCKER_BIN" compose --env-file "$release_dir/.env" -f "$VALORANT_RUNTIME_COMPOSE_CONTRACT" --project-name valorant-prod config --no-env-resolution --format json >"$contract_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose contract is invalid.'; }
-  python3 - "$source_json_file" "$contract_json_file" "$expected_image" <<'PY' 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
-import json, sys
-def contract(raw, expected_image):
+  python3 - "$source_json_file" "$contract_json_file" "$expected_image" "$release_dir/valorant.compose.yml" "$VALORANT_RUNTIME_COMPOSE_CONTRACT" <<'PY' || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
+import json, re, sys
+
+ENV_FILE_PATH = "/etc/quest-esports/valorant.production.env"
+CA_SOURCE = "/etc/quest-esports/tls/quest-private-ca.crt"
+CA_TARGET = "/run/secrets/quest-private-ca.crt"
+# Only these keys are compared. Compose >= 2.40 inlines the protected env file
+# into `environment` even under --no-env-resolution, so every other rendered key
+# may be a resolved secret and must never enter this comparison.
+CONTRACT_ENV_KEYS = ("APP_ENV", "VALORANT_PLATFORM_IMAGE", "VALORANT_DATABASE_SSL_CA_FILE",
+                     "VALORANT_DATABASE_SSL_SERVER_HOSTNAME", "VALORANT_DATABASE_SSL_VERIFY")
+ENV_FILE_BLOCK = re.compile(
+    r"^(?P<indent> +)env_file: *\n"
+    r"(?P=indent)  - path: (?P<path>\S+) *\n"
+    r"(?P=indent)    required: (?P<required>\S+) *$",
+    re.MULTILINE)
+SERVICES_BLOCK = re.compile(r"^services:[ ]*\n(?P<body>(?:[ \t].*\n|\n)*)", re.MULTILINE)
+SERVICE_NAME = re.compile(r"^  (?P<name>[A-Za-z0-9][A-Za-z0-9_.-]*):[ ]*$", re.MULTILINE)
+
+def fail(reason):
+    print("VALORANT Compose contract: " + reason, file=sys.stderr)
+    raise SystemExit(1)
+
+def declared_env_files(yaml_path):
+    # Compose >= 2.40 resolves env_file into `environment` and renders env_file
+    # as null even with --no-env-resolution, so the declaration is read from the
+    # pinned YAML. Line endings are normalised so a CRLF copy still validates.
+    with open(yaml_path, encoding="utf-8") as source:
+        text = source.read().replace("\r\n", "\n")
+    declarations = tuple((m.group("path"), m.group("required")) for m in ENV_FILE_BLOCK.finditer(text))
+    if not declarations:
+        fail("no env_file declaration was found in the pinned Compose file")
+    if len(declarations) != text.count("env_file:"):
+        fail("an env_file declaration is not the pinned single-entry form")
+    services = SERVICES_BLOCK.search(text)
+    if services is None:
+        fail("the pinned Compose file declares no services")
+    if len(declarations) != len(SERVICE_NAME.findall(services.group("body"))):
+        fail("a service does not load the protected runtime environment")
+    for path, required in declarations:
+        if path != ENV_FILE_PATH or required != "true":
+            fail("an env_file declaration is not the required protected runtime environment")
+    # Only distinct declarations are compared across files: the source and the
+    # contract may legitimately describe a different number of services, while
+    # per-file completeness is enforced against that file's own service list.
+    return tuple(sorted(set(declarations)))
+
+def contract(raw, expected_image, yaml_path):
     with open(raw, encoding="utf-8") as rendered:
         doc = json.load(rendered)
-    if doc.get("name") != "valorant-prod": raise SystemExit(1)
+    if doc.get("name") != "valorant-prod": fail("project name is not valorant-prod")
     service = doc.get("services", {}).get("valorant-platform")
-    if not isinstance(service, dict) or service.get("image") != expected_image: raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_CA_FILE") != "/run/secrets/quest-private-ca.crt": raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres": raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_VERIFY") != "full": raise SystemExit(1)
-    if set(service.get("networks", {})) != {"quest-shared"}: raise SystemExit(1)
+    if not isinstance(service, dict) or service.get("image") != expected_image: fail("image is not the approved digest")
+    environment = service.get("environment") or {}
+    if environment.get("VALORANT_DATABASE_SSL_CA_FILE") != CA_TARGET: fail("TLS CA file is not the mounted private CA")
+    if environment.get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres": fail("TLS server hostname is not quest-postgres")
+    if environment.get("VALORANT_DATABASE_SSL_VERIFY") != "full": fail("TLS verification is not full")
+    if set(service.get("networks", {})) != {"quest-shared"}: fail("service is not attached to quest-shared alone")
     network_entry = service.get("networks", {}).get("quest-shared")
     expected_aliases = ("valorant-discord-bot", "valorant-name-audit", "valorant-platform", "valorant-updater")
-    if not isinstance(network_entry, dict): raise SystemExit(1)
+    if not isinstance(network_entry, dict): fail("quest-shared attachment is malformed")
     aliases = network_entry.get("aliases")
-    if not isinstance(aliases, list) or tuple(sorted(aliases)) != expected_aliases: raise SystemExit(1)
+    if not isinstance(aliases, list) or tuple(sorted(aliases)) != expected_aliases: fail("quest-shared aliases are not the fixed writer set")
     network = doc.get("networks", {}).get("quest-shared", {})
-    if network.get("name") != "quest-shared" or network.get("external") is not True: raise SystemExit(1)
-    env_files = service.get("env_file", [])
-    if len(env_files) != 1: raise SystemExit(1)
-    env_file = env_files[0] if isinstance(env_files[0], dict) else {"path": env_files[0], "required": True}
-    if env_file.get("path") != "/etc/quest-esports/valorant.production.env" or env_file.get("required") is not True: raise SystemExit(1)
+    if network.get("name") != "quest-shared" or network.get("external") is not True: fail("quest-shared is not the external shared network")
+    rendered_env_files = service.get("env_file")
+    if rendered_env_files:
+        # Compose versions that preserve the declaration are still validated here.
+        if len(rendered_env_files) != 1: fail("rendered env_file is not a single entry")
+        entry = rendered_env_files[0] if isinstance(rendered_env_files[0], dict) else {"path": rendered_env_files[0], "required": True}
+        if entry.get("path") != ENV_FILE_PATH or entry.get("required") is not True: fail("rendered env_file is not the required protected runtime environment")
     mounts = service.get("volumes", [])
-    if not any(isinstance(m, dict) and m.get("source") == "/etc/quest-esports/tls/quest-private-ca.crt" and m.get("target") == "/run/secrets/quest-private-ca.crt" and m.get("read_only") is True for m in mounts): raise SystemExit(1)
-    return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())), tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))), tuple(sorted(service["networks"])), tuple(sorted(aliases)))
-if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]): raise SystemExit(1)
+    if not any(isinstance(m, dict) and m.get("source") == CA_SOURCE and m.get("target") == CA_TARGET and m.get("read_only") is True for m in mounts): fail("the private CA is not mounted read-only")
+    return (service["image"],
+            tuple((key, environment.get(key)) for key in CONTRACT_ENV_KEYS),
+            declared_env_files(yaml_path),
+            tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))),
+            tuple(sorted(service["networks"])),
+            tuple(sorted(aliases)))
+if contract(sys.argv[1], sys.argv[3], sys.argv[4]) != contract(sys.argv[2], sys.argv[3], sys.argv[5]):
+    fail("the source and contract renderings differ")
 PY
   rm -f "$source_json_file" "$contract_json_file"
 }
@@ -184,13 +238,22 @@ validate_project() {
   [[ "$(printf '%s\n' "$config" | awk -v p="$project" '$0 == "name: " p { n++ } END { print n+0 }')" == 1 ]] || die "Compose project identity is not exactly $project."
 }
 validate_active_project() {
+  # A "!" prefix marks a one-shot service, such as the weekly name audit, which
+  # may legitimately be absent or exited between runs. Every other expectation
+  # is a long-lived service that must be running on the approved image.
   local file="$1" project="$2" env_file="${3:-}" active record service state image record_project
   shift 3
-  local expected_count=$#
-  declare -A expected_images=() seen_services=()
+  local expected_count=0 running_count=0
+  declare -A expected_images=() one_shot_services=() seen_services=()
   for record in "$@"; do
     service="${record%%=*}"
     image="${record#*=}"
+    if [[ "$service" == "!"* ]]; then
+      service="${service#?}"
+      one_shot_services["$service"]=1
+    else
+      expected_count=$((expected_count + 1))
+    fi
     [[ -n "$service" && "$image" != "$record" ]] || die "active Compose topology expectation is invalid for $project."
     expected_images["$service"]="$image"
   done
@@ -211,15 +274,16 @@ validate_active_project() {
     record_project="$(printf '%s\n' "$record" | sed -nE 's/.*"Project"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')"
     [[ -n "$record_project" ]] || die "active Compose topology for $project lacks Project."
     [[ "$record_project" == "$project" ]] || die 'active Compose topology contains an unexpected project.'
-    [[ "$state" == running ]] || die "active Compose service $service is not running."
     [[ -n "${expected_images[$service]+present}" ]] || die "active Compose topology contains unexpected service $service."
     [[ -z "${seen_services[$service]+present}" ]] || die "active Compose topology contains duplicate service $service."
+    [[ -n "${one_shot_services[$service]+present}" || "$state" == running ]] || die "active Compose service $service is not running."
     [[ "$image" == "${expected_images[$service]}" ]] || die "active Compose service $service has an unexpected image."
     seen_services["$service"]=1
+    [[ -n "${one_shot_services[$service]+present}" ]] || running_count=$((running_count + 1))
   done <<< "$active"
-  [[ "${#seen_services[@]}" -eq "$expected_count" ]] || die "active Compose topology is missing an expected service."
+  [[ "$running_count" -eq "$expected_count" ]] || die "active Compose topology is missing an expected service."
   for service in "${!expected_images[@]}"; do
-    [[ -n "${seen_services[$service]+present}" ]] || die "active Compose topology is missing service $service."
+    [[ -n "${one_shot_services[$service]+present}" || -n "${seen_services[$service]+present}" ]] || die "active Compose topology is missing service $service."
   done
 }
 validate_bundle_images() {
@@ -246,33 +310,49 @@ bundle_image() {
   awk -F= -v k="$key" '$1 == k { print substr($0, index($0,"=")+1); exit }' "$release_dir/.env"
 }
 validate_aliases() {
-  local alias_output record alias_list alias container project service image expected metadata
-  declare -A seen_aliases=() expected_projects=() expected_services=() expected_images=()
-  expected_projects[quest-backend]=quest-prod; expected_services[quest-backend]=backend; expected_images[quest-backend]="$(bundle_image QUEST_BACKEND_IMAGE)"
-  expected_projects[quest-postgres]=quest-prod; expected_services[quest-postgres]=postgres; expected_images[quest-postgres]="$(bundle_image POSTGRES_IMAGE)"
-  for alias in valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
-    expected_projects[$alias]=valorant-prod; expected_services[$alias]=valorant-platform; expected_images[$alias]="$(bundle_image VALORANT_IMAGE)"
+  # Docker 29 no longer reports Aliases from `network inspect`, so they are read
+  # from each attached container. Only the names used as HTTPS and database
+  # endpoints are required to resolve to a single container: once the VALORANT
+  # writers are admitted they also register their own service names, so
+  # `valorant-updater` and `valorant-discord-bot` legitimately resolve to both
+  # the platform (which declares them for its certificate SANs) and the worker.
+  # Those shared names are still pinned to the VALORANT project and image, so no
+  # foreign container may claim them.
+  local containers container metadata project service image alias_list alias
+  local quest_backend_image postgres_image valorant_image
+  declare -A unique_expectation=() shared_expectation=() bound_container=() bound_metadata=()
+  declare -a aliases=()
+  quest_backend_image="$(bundle_image QUEST_BACKEND_IMAGE)"
+  postgres_image="$(bundle_image POSTGRES_IMAGE)"
+  valorant_image="$(bundle_image VALORANT_IMAGE)"
+  unique_expectation[quest-backend]="quest-prod|backend|$quest_backend_image"
+  unique_expectation[quest-postgres]="quest-prod|postgres|$postgres_image"
+  unique_expectation[valorant-platform]="valorant-prod|valorant-platform|$valorant_image"
+  for alias in valorant-updater valorant-discord-bot valorant-name-audit; do
+    shared_expectation["$alias"]="valorant-prod|$valorant_image"
   done
-  alias_output="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{.Name}}|{{join .Aliases ","}}{{"\n"}}{{end}}' 2>/dev/null)" || die 'shared-network inspection failed.'
-  [[ -n "$alias_output" ]] || die 'shared-network alias inspection returned no containers.'
-  while IFS= read -r record; do
-    [[ -z "$record" ]] && continue
-    IFS='|' read -r container alias_list <<< "$record"
-    metadata="$("$DOCKER_BIN" inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Config.Image}}' 2>/dev/null)" || die 'shared-network container metadata inspection failed.'
-    IFS='|' read -r project service image <<< "$metadata"
-    [[ -n "$container" && -n "$project" && -n "$service" && -n "$image" && -n "$alias_list" ]] || die 'shared-network alias inspection is ambiguous.'
+  containers="$("$DOCKER_BIN" network inspect quest-shared --format '{{range .Containers}}{{println .Name}}{{end}}' 2>/dev/null)" || die 'shared-network inspection failed.'
+  [[ -n "$containers" ]] || die 'shared-network inspection returned no containers.'
+  while IFS= read -r container; do
+    [[ -n "$container" ]] || continue
+    metadata="$("$DOCKER_BIN" inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Config.Image}}|{{join (index .NetworkSettings.Networks "quest-shared").Aliases ","}}' 2>/dev/null)" || die 'shared-network container metadata inspection failed.'
+    IFS='|' read -r project service image alias_list <<< "$metadata"
+    [[ -n "$project" && -n "$service" && -n "$image" && -n "$alias_list" ]] || die 'shared-network alias inspection is ambiguous.'
     IFS=',' read -r -a aliases <<< "$alias_list"
     for alias in "${aliases[@]}"; do
-      [[ -z "$alias" ]] && continue
-      [[ -z "${seen_aliases[$alias]+seen}" ]] || die "duplicate shared-network alias: $alias"
-      seen_aliases["$alias"]="$project|$service|$image|$container"
+      [[ -n "$alias" ]] || continue
+      if [[ -n "${unique_expectation[$alias]+present}" ]]; then
+        [[ -z "${bound_container[$alias]+present}" || "${bound_container[$alias]}" == "$container" ]] || die "shared-network alias $alias resolves to more than one container."
+        bound_container["$alias"]="$container"
+        bound_metadata["$alias"]="$project|$service|$image"
+      elif [[ -n "${shared_expectation[$alias]+present}" ]]; then
+        [[ "$project|$image" == "${shared_expectation[$alias]}" ]] || die "shared-network alias $alias is bound to an unexpected project or image."
+      fi
     done
-  done <<< "$alias_output"
-  for alias in quest-backend quest-postgres valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
-    expected="${seen_aliases[$alias]:-}"
-    [[ -n "$expected" ]] || die "required shared-network alias is missing: $alias"
-    IFS='|' read -r project service image container <<< "$expected"
-    [[ "$project" == "${expected_projects[$alias]}" && "$service" == "${expected_services[$alias]}" && "$image" == "${expected_images[$alias]}" ]] || die "shared-network alias $alias is bound to an unexpected project, service, or image."
+  done <<< "$containers"
+  for alias in "${!unique_expectation[@]}"; do
+    [[ -n "${bound_metadata[$alias]:-}" ]] || die "required shared-network alias is missing: $alias"
+    [[ "${bound_metadata[$alias]}" == "${unique_expectation[$alias]}" ]] || die "shared-network alias $alias is bound to an unexpected project, service, or image."
   done
 }
 validate_metadata "$release_dir/release-metadata.txt" "$(basename "$release_dir")"
@@ -284,7 +364,10 @@ validate_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir
 validate_active_project "$release_dir/compose.production.yml" quest-prod "$release_dir/.env" \
   "frontend=$(bundle_image QUEST_FRONTEND_IMAGE)" "backend=$(bundle_image QUEST_BACKEND_IMAGE)" "postgres=$(bundle_image POSTGRES_IMAGE)"
 validate_active_project "$release_dir/valorant.compose.yml" valorant-prod "$release_dir/.env" \
-  "valorant-platform=$(bundle_image VALORANT_IMAGE)"
+  "valorant-platform=$(bundle_image VALORANT_IMAGE)" \
+  "valorant-updater=$(bundle_image VALORANT_IMAGE)" \
+  "valorant-discord-bot=$(bundle_image VALORANT_IMAGE)" \
+  "!valorant-name-audit=$(bundle_image VALORANT_IMAGE)"
 validate_aliases
 quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health failed.'
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health JSON was not healthy.'

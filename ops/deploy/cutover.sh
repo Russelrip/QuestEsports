@@ -436,18 +436,22 @@ validate_aliases() {
   for alias in valorant-platform valorant-updater valorant-discord-bot valorant-name-audit; do
     expected_projects[$alias]=valorant-prod; expected_services[$alias]=valorant-platform; expected_images[$alias]="${manifest[valorant_image]}"
   done
-  alias_output="$("$DOCKER_BIN" network inspect "$shared_network" --format '{{range .Containers}}{{.Name}}|{{join .Aliases ","}}{{"\n"}}{{end}}' 2>/dev/null)" || die "could not inspect external network $shared_network."
+  # Docker 29 no longer reports Aliases from `network inspect`; each attached
+  # container reports its own aliases instead.
+  alias_output="$("$DOCKER_BIN" network inspect "$shared_network" --format '{{range .Containers}}{{println .Name}}{{end}}' 2>/dev/null)" || die "could not inspect external network $shared_network."
   [[ -n "$alias_output" ]] || die "external network $shared_network has no inspectable containers."
   while IFS= read -r record; do
     [[ -z "$record" ]] && continue
-    IFS='|' read -r container alias_list <<< "$record"
-    metadata="$("$DOCKER_BIN" inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Config.Image}}' 2>/dev/null)" || die 'shared-network container metadata inspection failed.'
-    IFS='|' read -r project service image <<< "$metadata"
+    container="$record"
+    metadata="$("$DOCKER_BIN" inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.Config.Image}}|{{join (index .NetworkSettings.Networks "quest-shared").Aliases ","}}' 2>/dev/null)" || die 'shared-network container metadata inspection failed.'
+    IFS='|' read -r project service image alias_list <<< "$metadata"
     [[ -n "$container" && -n "$project" && -n "$service" && -n "$image" && -n "$alias_list" ]] || die 'shared-network alias inspection is ambiguous.'
     IFS=',' read -r -a aliases <<< "$alias_list"
     for alias in "${aliases[@]}"; do
       [[ -n "$alias" ]] || continue
-      [[ -z "${seen_aliases[$alias]+seen}" ]] || die "duplicate shared-network alias: $alias"
+      # Docker repeats the service name as an alias, so a repeat only matters
+      # when the same alias resolves to a different container.
+      [[ -z "${seen_aliases[$alias]+seen}" || "${seen_aliases[$alias]##*|}" == "$container" ]] || die "duplicate shared-network alias: $alias"
       seen_aliases["$alias"]="$project|$service|$image|$container"
     done
   done <<< "$alias_output"

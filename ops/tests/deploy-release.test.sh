@@ -173,19 +173,30 @@ set -euo pipefail
 log="${TEST_LOG:?}"
 if [[ "$1" == pull ]]; then printf 'pull %s\n' "$2" >> "$log"; exit 0; fi
 if [[ "$1" == info ]]; then exit 0; fi
+VALORANT_IMAGE_DIGEST=ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555
+QUEST_BACKEND_DIGEST=ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222
+POSTGRES_DIGEST=postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+# Docker 29 dropped Aliases from `network inspect`, so the shared network only
+# lists container names and each container reports its own aliases.
 if [[ "$1" == network && "$2" == inspect ]]; then
-  if [[ "${DUPLICATE_ALIASES:-0}" == 1 ]]; then
-    printf 'quest-backend-1|quest-backend,quest-backend\n'
-  else
-    printf 'quest-backend-1|quest-backend\nquest-postgres-1|quest-postgres\nvalorant-platform-1|valorant-platform,valorant-updater,valorant-discord-bot,valorant-name-audit\n'
-  fi
+  printf 'quest-backend-1\nquest-postgres-1\nvalorant-platform-1\n'
+  if [[ "${DUPLICATE_ALIASES:-0}" == 1 ]]; then printf 'quest-backend-clone-1\n'; fi
+  if [[ "${VERIFY_STEADY_STATE:-0}" == 1 ]]; then printf 'valorant-updater-1\nvalorant-discord-bot-1\n'; fi
   exit 0
 fi
 if [[ "$1" == inspect ]]; then
   case "$2" in
-    quest-backend-1) [[ "${BAD_ALIAS_BINDING:-0}" != 1 ]] || printf 'valorant-prod|valorant-platform|ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555\n'; [[ "${BAD_ALIAS_BINDING:-0}" == 1 ]] || printf 'quest-prod|backend|ghcr.io/quest/backend@sha256:2222222222222222222222222222222222222222222222222222222222222222\n' ;;
-    quest-postgres-1) printf 'quest-prod|postgres|postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0\n' ;;
-    valorant-platform-1) printf 'valorant-prod|valorant-platform|ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555\n' ;;
+    quest-backend-1)
+      if [[ "${BAD_ALIAS_BINDING:-0}" == 1 ]]; then
+        printf 'valorant-prod|valorant-platform|%s|quest-backend-1,backend,quest-backend\n' "$VALORANT_IMAGE_DIGEST"
+      else
+        printf 'quest-prod|backend|%s|quest-backend-1,backend,quest-backend\n' "$QUEST_BACKEND_DIGEST"
+      fi ;;
+    quest-backend-clone-1) printf 'quest-prod|backend|%s|quest-backend-clone-1,quest-backend\n' "$QUEST_BACKEND_DIGEST" ;;
+    quest-postgres-1) printf 'quest-prod|postgres|%s|quest-postgres-1,postgres,quest-postgres\n' "$POSTGRES_DIGEST" ;;
+    valorant-platform-1) printf 'valorant-prod|valorant-platform|%s|valorant-platform-1,valorant-platform,valorant-updater,valorant-discord-bot,valorant-name-audit\n' "$VALORANT_IMAGE_DIGEST" ;;
+    valorant-updater-1) printf 'valorant-prod|valorant-updater|%s|valorant-updater-1,valorant-updater\n' "$VALORANT_IMAGE_DIGEST" ;;
+    valorant-discord-bot-1) printf 'valorant-prod|valorant-discord-bot|%s|valorant-discord-bot-1,valorant-discord-bot\n' "$VALORANT_IMAGE_DIGEST" ;;
     *) exit 1 ;;
   esac
   exit 0
@@ -269,6 +280,17 @@ elif [[ " $* " == *' ps '* ]]; then
       [[ "${TOPOLOGY_STALE:-0}" == 1 ]] && printf '%s\n' '{"Name":"quest-old-worker-1","Service":"old-worker","State":"running","Image":"ghcr.io/quest/old@sha256:9999999999999999999999999999999999999999999999999999999999999999","Project":"quest-prod"}' || true
     else
       printf '%s\n' '{"Name":"valorant-platform-1","Service":"valorant-platform","State":"running","Image":"ghcr.io/quest/valorant@sha256:5555555555555555555555555555555555555555555555555555555555555555","Project":"valorant-prod"}'
+      # release.sh validates the topology while the writers are still frozen;
+      # verify-release.sh validates the admitted steady state, where both
+      # long-lived writers run and the one-shot name audit has exited.
+      if [[ "${VERIFY_STEADY_STATE:-0}" == 1 ]]; then
+        printf '{"Name":"valorant-updater-1","Service":"valorant-updater","State":"running","Image":"%s","Project":"valorant-prod"}
+' "$VALORANT_IMAGE_DIGEST"
+        printf '{"Name":"valorant-discord-bot-1","Service":"valorant-discord-bot","State":"running","Image":"%s","Project":"valorant-prod"}
+' "$VALORANT_IMAGE_DIGEST"
+        printf '{"Name":"valorant-name-audit-1","Service":"valorant-name-audit","State":"exited","Image":"%s","Project":"valorant-prod"}
+' "$VALORANT_IMAGE_DIGEST"
+      fi
       [[ "${TOPOLOGY_STALE:-0}" == 1 ]] && printf '%s\n' '{"Name":"valorant-old-1","Service":"old-platform","State":"running","Image":"ghcr.io/quest/valorant-old@sha256:9999999999999999999999999999999999999999999999999999999999999999","Project":"valorant-prod"}' || true
     fi
   else
@@ -875,11 +897,11 @@ assert_contains "$TEST_LOG" 'project=quest-prod'
 assert_contains "$TEST_LOG" 'project=valorant-prod'
 [[ -e "$fixture/current" ]] || { printf 'FAIL: current pointer was not retained\n' >&2; exit 1; }
 export TEST_PREVIOUS="$fixture/releases/1111111111111111111111111111111111111111"
-bash "$script_directory/deploy/verify-release.sh" >/dev/null
+env VERIFY_STEADY_STATE=1 bash "$script_directory/deploy/verify-release.sh" >/dev/null
 metadata_backup="$fixture/release-metadata.good"
 cp "$TEST_PREVIOUS/release-metadata.txt" "$metadata_backup"
 printf '%s\n' 'unexpected=metadata' >> "$TEST_PREVIOUS/release-metadata.txt"
-assert_failed malformed-metadata bash "$script_directory/deploy/verify-release.sh"
+assert_failed malformed-metadata env VERIFY_STEADY_STATE=1 bash "$script_directory/deploy/verify-release.sh"
 mv "$metadata_backup" "$TEST_PREVIOUS/release-metadata.txt"
 
 workflow_source="$(cat "$workflow_file")"
@@ -1432,7 +1454,7 @@ gate_file_contains "$cutover_release_dir/release-metadata.txt" 'previous_release
 gate_file_contains "$cutover_release_dir/commit-point.txt" 'previous_release=supabase' 'first cutover commit-point did not name Supabase as the predecessor'
 gate_file_contains "$cutover_release_dir/commit-point.txt" 'cutover_type=first-supabase-cutover' 'first cutover commit-point did not identify the cutover type'
 export TEST_PREVIOUS="$cutover_release_dir"
-if bash "$script_directory/deploy/verify-release.sh" >"$work_directory/first-cutover-verify.out" 2>&1; then
+if env VERIFY_STEADY_STATE=1 bash "$script_directory/deploy/verify-release.sh" >"$work_directory/first-cutover-verify.out" 2>&1; then
   :
 else
   gate_failure 'first cutover metadata was not accepted by verify-release.sh'
@@ -1597,7 +1619,7 @@ if RELEASE_SHA=1111111111111111111111111111111111111111 RELEASE_MANIFEST="$fixtu
 else
   gate_failure 'host verification rejected the artifact-specific PostgreSQL/VALORANT trust policy'
 fi
-if bash "$script_directory/deploy/verify-release.sh" >"$work_directory/artifact-trust-verify.out" 2>&1; then
+if env VERIFY_STEADY_STATE=1 bash "$script_directory/deploy/verify-release.sh" >"$work_directory/artifact-trust-verify.out" 2>&1; then
   :
 else
   gate_failure 'release verification rejected the artifact-specific PostgreSQL/VALORANT trust policy'
@@ -1767,7 +1789,7 @@ run_release >/dev/null
 export TEST_PREVIOUS="$fixture/releases/1111111111111111111111111111111111111111"
 sed -i 's#^previous_release=.*#previous_release=supabase#' "$TEST_PREVIOUS/release-metadata.txt"
 steady_state_verify_output="$work_directory/steady-state-supabase-metadata.out"
-if bash "$script_directory/deploy/verify-release.sh" >"$steady_state_verify_output" 2>&1; then
+if env VERIFY_STEADY_STATE=1 bash "$script_directory/deploy/verify-release.sh" >"$steady_state_verify_output" 2>&1; then
   gate_failure 'verify-release.sh accepted previous_release=supabase for steady-state metadata'
 fi
 

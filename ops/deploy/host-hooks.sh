@@ -295,7 +295,11 @@ case "$wrapper" in
     url="$(protected_url "$url_file")"
     # The URL file is root-only and the image runs unprivileged, so the verifier
     # receives the credential directly instead of a mount it could not read.
+    # scripts/verify-database-security.js loads the backend configuration
+    # module, so the protected runtime environment is supplied as well; the
+    # security URL still overrides the Prisma datasource.
     run_quiet "$docker_bin" run --rm --network "$shared_network" \
+      --env-file "$quest_runtime_env" \
       -e "SECURITY_VERIFY_DATABASE_URL=$url" \
       -e SECURITY_VERIFY_TARGET=quest-postgres -e TARGET_AUTHORITY=quest-postgres \
       -e TARGET_DATABASE_HOST=quest-postgres -e TARGET_DATABASE_PORT=5432 \
