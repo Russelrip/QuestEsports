@@ -796,7 +796,12 @@ test("Nginx keeps public ingress on loopback and preserves SSE", () => {
   assert.match(nginxConfig, /proxy_buffering\s+off/);
   assert.match(nginxConfig, /proxy_read_timeout\s+(?:[3-9][0-9]|[1-9][0-9]{2,})s/);
   assert.match(nginxConfig, /proxy_send_timeout\s+(?:[3-9][0-9]|[1-9][0-9]{2,})s/);
-  assert.doesNotMatch(nginxConfig, /private|\/srv\/quest-esports/);
+  // The invariant is that public ingress never references an upload root.
+  // Matching the bare word "private" also rejected the CA path under
+  // /etc/quest-esports/tls, which is what pins the VALORANT origin hop, so the
+  // config could not verify that hop without failing this guard. Match the
+  // upload root itself; /srv/quest-esports/private stays forbidden.
+  assert.doesNotMatch(nginxConfig, /\/srv\/quest-esports/);
 });
 
 test("production Compose uses stable aliases and durable, non-source mounts", () => {
