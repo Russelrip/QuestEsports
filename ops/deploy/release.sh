@@ -542,10 +542,19 @@ run_migration_status() {
   return 1
 }
 
+# Hook stderr used to be discarded, so a failed hook reported only "<HOOK>
+# failed" and gave an operator nothing to act on. The hooks emit fixed
+# diagnostics, never credentials, so the tail of stderr is safe to surface.
 run_hook() {
-  local variable="$1" output expected="${2:-}"
+  local variable="$1" output expected="${2:-}" hook_stderr hook_reason
   command_setting "$variable"
-  output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" "${!variable}" 2>/dev/null)" || die "$variable failed."
+  hook_stderr="$(mktemp)" || die "$variable failed: could not capture hook diagnostics."
+  if ! output="$(RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" "${!variable}" 2>"$hook_stderr")"; then
+    hook_reason="$(tr '\012' ' ' < "$hook_stderr" | tail -c 300)"
+    rm -f -- "$hook_stderr"
+    die "$variable failed: ${hook_reason:-no diagnostic emitted}"
+  fi
+  rm -f -- "$hook_stderr"
   if [[ -n "$expected" ]]; then
     [[ "$output" == "$expected" ]] || die "$variable did not acknowledge $expected."
   fi
