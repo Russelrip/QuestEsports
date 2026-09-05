@@ -277,9 +277,23 @@ validate_release_environment
 for setting in QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL; do require_setting "$setting"; done
 validate_endpoint_identities
 root_file "$manifest_path"
-if [[ "$fixture_mode" != 1 ]]; then
+if [[ "$fixture_mode" != 1 || "${QUEST_DEPLOY_FIXTURE_ENFORCE_MANIFEST_MODE:-0}" == 1 ]]; then
   manifest_stat="$(stat -c '%u %a' "$manifest_path" 2>/dev/null)" || die 'cannot inspect release manifest ownership.'
-  [[ "$manifest_stat" == 0\ 600 || "$manifest_stat" == 0\ 640 ]] || die 'release manifest must be root-owned and mode 0600 or 0640.'
+  manifest_owner="${manifest_stat%% *}"
+  manifest_mode="${manifest_stat##* }"
+  # Fixtures cannot create root-owned files, so ownership is enforced only for a
+  # real release; the mode contract is enforced in both.
+  if [[ "$fixture_mode" != 1 ]]; then
+    [[ "$manifest_owner" == 0 ]] || die 'release manifest must be root-owned.'
+  fi
+  [[ "$manifest_mode" == 600 || "$manifest_mode" == 640 || "$manifest_mode" == 660 ]] || die 'release manifest mode must be 0600, 0640, or 0660.'
+  manifest_private="$(mktemp)" || die 'cannot stage a private release manifest.'
+  if [[ "$fixture_mode" != 1 ]]; then
+    install -o root -g root -m 0600 -- "$manifest_path" "$manifest_private" || die 'cannot snapshot the release manifest into a root-only copy.'
+  else
+    install -m 0600 -- "$manifest_path" "$manifest_private" || die 'cannot snapshot the release manifest.'
+  fi
+  manifest_path="$manifest_private"
 fi
 
 require_setting RELEASE_ROOT
@@ -796,6 +810,7 @@ record_recovery_evidence() {
 
 on_exit() {
   local status=$? original_status recovery_status
+  [[ -z "${manifest_private:-}" ]] || rm -f -- "$manifest_private"
   original_status="$status"
   trap - EXIT
   set +e
