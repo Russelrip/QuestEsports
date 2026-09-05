@@ -938,7 +938,13 @@ validate_service_ownership() {
 validate_service_ownership
 command_setting REGISTRY_CHECK_COMMAND
 for image in "${manifest[frontend_image]}" "${manifest[backend_image]}" "${manifest[migrator_image]}" "${manifest[postgres_image]}" "${manifest[valorant_image]}"; do
-  RELEASE_IMAGE="$image" "$REGISTRY_CHECK_COMMAND" >/dev/null 2>&1 || die "registry access or digest verification failed for $image."
+  registry_stderr="$(mktemp)" || die 'could not capture registry diagnostics.'
+  if ! RELEASE_IMAGE="$image" "$REGISTRY_CHECK_COMMAND" >/dev/null 2>"$registry_stderr"; then
+    registry_reason="$(tr '\012' ' ' < "$registry_stderr" | tail -c 300)"
+    rm -f -- "$registry_stderr"
+    die "registry access or digest verification failed for $image: ${registry_reason:-no diagnostic emitted}"
+  fi
+  rm -f -- "$registry_stderr"
 done
 command_setting BACKUP_FRESHNESS_COMMAND
 BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}" BACKUP_RELEASE_LOCK_PATH="$release_lock_path" BACKUP_RELEASE_LOCK_HELD=1 "$BACKUP_FRESHNESS_COMMAND" >/dev/null 2>&1 8>&9 || die 'verified multi-remote backup freshness check failed.'
