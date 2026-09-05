@@ -886,8 +886,26 @@ on_exit() {
 trap on_exit EXIT
 
 check_disk
-validate_project "$QUEST_COMPOSE_TEMPLATE" "$quest_project"
-validate_project "$VALORANT_COMPOSE_SOURCE" "$valorant_project"
+# The templates declare their images as required variables, so `compose config`
+# cannot render them without values. Validate them against the manifest images
+# that are about to be staged, exactly as the staged bundle is validated below.
+template_render_env="$(mktemp)" || die 'could not create the template render environment.'
+chmod 600 "$template_render_env"
+{
+  printf 'QUEST_FRONTEND_IMAGE=%s
+' "${manifest[frontend_image]}"
+  printf 'QUEST_BACKEND_IMAGE=%s
+' "${manifest[backend_image]}"
+  printf 'POSTGRES_IMAGE=%s
+' "${manifest[postgres_image]}"
+  printf 'VALORANT_IMAGE=%s
+' "${manifest[valorant_image]}"
+  printf 'MIGRATOR_IMAGE=%s
+' "${manifest[migrator_image]}"
+} > "$template_render_env"
+validate_project "$QUEST_COMPOSE_TEMPLATE" "$quest_project" "$template_render_env"
+validate_project "$VALORANT_COMPOSE_SOURCE" "$valorant_project" "$template_render_env"
+rm -f -- "$template_render_env"
 command_setting DATABASE_HEALTH_COMMAND
 database_health_output="$(DATABASE_URL="${DATABASE_URL:-fixture://database}" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres "$DATABASE_HEALTH_COMMAND" 2>/dev/null)" || die 'PostgreSQL health check failed.'
 [[ "$database_health_output" == 'ready target=quest-postgres schemas=public,valorant' ]] || die 'PostgreSQL health check did not identify both target schemas.'
