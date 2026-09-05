@@ -499,8 +499,8 @@ set -euo pipefail
 printf '%s\n' postgres-target >> "\${TEST_LOG:?}"
 if [[ "\${SENTINEL_FAIL:-0}" == 1 ]]; then exit 1; fi
 if [[ "\${SENTINEL_MALFORMED:-0}" == 1 ]]; then printf '%s\n' malformed; exit 0; fi
-if [[ "\${SENTINEL_MISMATCH:-0}" == 1 ]]; then printf 'target_kind=postgresql17 database=wrong host=127.0.0.1 port=55432 major=17 data_root=%s\n' "$fixture/postgres/17/data"; exit 0; fi
-printf 'target_kind=postgresql17 database=quest host=127.0.0.1 port=55432 major=17 data_root=%s\n' \
+if [[ "\${SENTINEL_MISMATCH:-0}" == 1 ]]; then printf 'target_kind=postgresql17 database=wrong host=quest-postgres port=5432 major=17 data_root=%s\n' "$fixture/postgres/17/data"; exit 0; fi
+printf 'target_kind=postgresql17 database=quest host=quest-postgres port=5432 major=17 data_root=%s\n' \
   "$fixture/postgres/17/data"
 EOF
   make_executable "$fixture/bin/postgres-target"
@@ -585,8 +585,8 @@ BACKUP_CLIENT_CERT_FILE=$fixture/backup-client/backup-client.crt
 BACKUP_CLIENT_KEY_FILE=$fixture/backup-client/backup-client.key
 QUEST_RUNTIME_ENV_FILE=$fixture/quest.production.env
 VALORANT_RUNTIME_ENV_FILE=$fixture/valorant.production.env
-POSTGRES_TARGET_HOST=127.0.0.1
-POSTGRES_TARGET_PORT=55432
+POSTGRES_TARGET_HOST=quest-postgres
+POSTGRES_TARGET_PORT=5432
 POSTGRES_TARGET_DATABASE=quest
 POSTGRES_TARGET_MAJOR=17
 POSTGRES_TARGET_DATA_ROOT=$fixture/postgres/17/data
@@ -1187,7 +1187,7 @@ sed -i 's/^POSTGRES_TARGET_HOST=.*/POSTGRES_TARGET_HOST=10.0.0.7/' "$fixture/rel
 assert_failed external-postgres-bind run_release
 
 setup_fixture postgres-port-collision
-sed -i 's/^POSTGRES_TARGET_PORT=.*/POSTGRES_TARGET_PORT=5432/' "$fixture/release.env"
+sed -i 's/^POSTGRES_TARGET_PORT=.*/POSTGRES_TARGET_PORT=55432/' "$fixture/release.env"
 assert_failed postgres-port-collision run_release
 
 setup_fixture missing-postgres-data-root
@@ -1241,7 +1241,7 @@ assert_failed cutover-target-sentinel env DATABASE_AUTHORITY=supabase bash "$cut
 # Focused host-validator fixtures exercise the real validator rather than the
 # release wrapper acknowledgement used by older release-path cases.
 setup_fixture host-validator-unsafe-port
-sed -i 's/^POSTGRES_TARGET_PORT=.*/POSTGRES_TARGET_PORT=5432/' "$fixture/release.env"
+sed -i 's/^POSTGRES_TARGET_PORT=.*/POSTGRES_TARGET_PORT=55432/' "$fixture/release.env"
 assert_failed host-validator-unsafe-port run_host_validation
 
 setup_fixture host-validator-unsafe-major

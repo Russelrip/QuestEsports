@@ -153,8 +153,12 @@ validate_postgres_target() {
   local sentinel_output sentinel_kind sentinel_database sentinel_host sentinel_port sentinel_major sentinel_data_root
   require_setting POSTGRES_TARGET_HOST; require_setting POSTGRES_TARGET_PORT; require_setting POSTGRES_TARGET_DATABASE
   require_setting POSTGRES_TARGET_MAJOR; require_setting POSTGRES_TARGET_DATA_ROOT; require_setting POSTGRES_TARGET_SENTINEL_COMMAND
-  [[ "$POSTGRES_TARGET_HOST" == 127.0.0.1 ]] || die 'PostgreSQL target host must be the fixed loopback address.'
-  [[ "$POSTGRES_TARGET_PORT" == 55432 ]] || die 'PostgreSQL target port must be the dedicated loopback port.'
+  # PostgreSQL is private to the Compose database and quest-shared networks and
+  # publishes no host port, so the approved target is the in-network endpoint.
+  # 127.0.0.1:55432 only ever existed under the staging overlay. The sentinel
+  # proves the running container is still not publishing a host port.
+  [[ "$POSTGRES_TARGET_HOST" == quest-postgres ]] || die 'PostgreSQL target host must be the private Compose endpoint.'
+  [[ "$POSTGRES_TARGET_PORT" == 5432 ]] || die 'PostgreSQL target port must be the private Compose port.'
   [[ "$POSTGRES_TARGET_DATABASE" == quest ]] || die 'PostgreSQL target database must be quest.'
   [[ "$POSTGRES_TARGET_MAJOR" == 17 ]] || die 'PostgreSQL target must be PostgreSQL 17.'
   [[ "$POSTGRES_TARGET_DATA_ROOT" == /* && "$POSTGRES_TARGET_DATA_ROOT" != / && -d "$POSTGRES_TARGET_DATA_ROOT" && ! -L "$POSTGRES_TARGET_DATA_ROOT" ]] || die 'PostgreSQL durable data root is missing or unsafe.'

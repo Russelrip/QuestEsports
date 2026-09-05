@@ -10,6 +10,7 @@
 quest-release-service-ownership                     # SERVICE_OWNERSHIP_COMMAND
 quest-release-database-health                       # DATABASE_HEALTH_COMMAND
 quest-release-database-ready                        # DATABASE_READINESS_COMMAND
+quest-release-postgres-target                       # POSTGRES_TARGET_SENTINEL_COMMAND
 quest-release-registry-check                        # REGISTRY_CHECK_COMMAND
 quest-release-post-restore-security-verify          # SECURITY_VERIFY_COMMAND
 quest-release-backup-evidence                       # BACKUP_EVIDENCE_COMMAND
