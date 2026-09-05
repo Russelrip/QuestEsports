@@ -307,7 +307,15 @@ case "$wrapper" in
     image="${RELEASE_IMAGE:-}"
     [[ "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ || "$image" =~ ^postgres(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]] \
       || die 'the registry image is not an exact digest reference.'
-    run_quiet "$docker_bin" pull "$image"
+    # A registry pull is a network operation and fails transiently; a single
+    # attempt aborting an entire release is too brittle. The digest is pinned,
+    # so retrying cannot change what is fetched.
+    pull_attempts=3
+    for pull_attempt in $(seq 1 "$pull_attempts"); do
+      "$docker_bin" pull "$image" >/dev/null 2>&1 && break
+      [[ "$pull_attempt" -lt "$pull_attempts" ]] || die "registry pull failed after $pull_attempts attempts: $image"
+      sleep $((pull_attempt * 5))
+    done
     run_quiet "$docker_bin" image inspect "$image"
     ;;
 

@@ -542,6 +542,30 @@ run_migration_status() {
   return 1
 }
 
+# Network- and timing-dependent steps fail transiently: a registry hiccup, or a
+# probe against a container that has only just restarted. A single attempt
+# aborting an entire release is too brittle. Every caller is safe to repeat --
+# reads, pinned-digest pulls, and health probes -- and the captured stderr means
+# a genuine failure reports why instead of just that it happened.
+retry_capturing() {
+  local out_var="$1" attempts="$2" delay="$3" description="$4"; shift 4
+  local attempt stderr_file reason value
+  stderr_file="$(mktemp)" || die "could not capture diagnostics for $description."
+  for (( attempt = 1; attempt <= attempts; attempt++ )); do
+    if value="$("$@" 2>"$stderr_file")"; then
+      rm -f -- "$stderr_file"
+      printf -v "$out_var" '%s' "$value"
+      return 0
+    fi
+    (( attempt < attempts )) || break
+    sleep $(( attempt * delay ))
+  done
+  reason="$(tr '
+' ' ' < "$stderr_file" | tail -c 300)"
+  rm -f -- "$stderr_file"
+  die "$description failed after $attempts attempts: ${reason:-no diagnostic emitted}"
+}
+
 # Hook stderr used to be discarded, so a failed hook reported only "<HOOK>
 # failed" and gave an operator nothing to act on. The hooks emit fixed
 # diagnostics, never credentials, so the tail of stderr is safe to surface.
@@ -587,7 +611,7 @@ run_migrator() {
 run_database_readiness() {
   local output
   command_setting DATABASE_READINESS_COMMAND
-  output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" "$DATABASE_READINESS_COMMAND" 2>/dev/null)" || die 'PostgreSQL 17 database readiness command failed.'
+  retry_capturing output 5 3 'PostgreSQL 17 database readiness'     env TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" "$DATABASE_READINESS_COMMAND"
   [[ "$output" =~ ^ready[[:space:]]+target=quest-postgres[[:space:]]+schemas=public,valorant([[:space:]]|$) ]] || die 'PostgreSQL 17 database readiness did not identify both target schemas.'
 }
 
@@ -938,7 +962,13 @@ validate_service_ownership() {
 validate_service_ownership
 command_setting REGISTRY_CHECK_COMMAND
 for image in "${manifest[frontend_image]}" "${manifest[backend_image]}" "${manifest[migrator_image]}" "${manifest[postgres_image]}" "${manifest[valorant_image]}"; do
-  RELEASE_IMAGE="$image" "$REGISTRY_CHECK_COMMAND" >/dev/null 2>&1 || die "registry access or digest verification failed for $image."
+  registry_stderr="$(mktemp)" || die 'could not capture registry diagnostics.'
+  if ! RELEASE_IMAGE="$image" "$REGISTRY_CHECK_COMMAND" >/dev/null 2>"$registry_stderr"; then
+    registry_reason="$(tr '\012' ' ' < "$registry_stderr" | tail -c 300)"
+    rm -f -- "$registry_stderr"
+    die "registry access or digest verification failed for $image: ${registry_reason:-no diagnostic emitted}"
+  fi
+  rm -f -- "$registry_stderr"
 done
 command_setting BACKUP_FRESHNESS_COMMAND
 BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}" BACKUP_RELEASE_LOCK_PATH="$release_lock_path" BACKUP_RELEASE_LOCK_HELD=1 "$BACKUP_FRESHNESS_COMMAND" >/dev/null 2>&1 8>&9 || die 'verified multi-remote backup freshness check failed.'
@@ -1051,8 +1081,8 @@ run_hook OLD_QUEST_STOP_COMMAND
 old_quest_state="$("$OLD_QUEST_ACTIVE_CHECK" 2>/dev/null)"
 validate_legacy_states "$old_quest_state" "$OLD_QUEST_UNITS" inactive 'old Quest/PM2 post-stop state check'
 
-compose --env-file "$compose_env_file" -f "$stage_dir/compose.production.yml" --project-name "$quest_project" pull >/dev/null 2>&1 || die 'staged Quest image pull failed.'
-compose --env-file "$compose_env_file" -f "$stage_dir/valorant.compose.yml" --project-name "$valorant_project" pull >/dev/null 2>&1 || die 'staged VALORANT image pull failed.'
+retry_capturing staged_quest_pull 3 5 'staged Quest image pull'   compose --env-file "$compose_env_file" -f "$stage_dir/compose.production.yml" --project-name "$quest_project" pull
+retry_capturing staged_valorant_pull 3 5 'staged VALORANT image pull'   compose --env-file "$compose_env_file" -f "$stage_dir/valorant.compose.yml" --project-name "$valorant_project" pull
 
 if [[ "$quest_migration_pending" == true ]]; then
   run_migrator QUEST_MIGRATOR_COMMAND quest quest-postgres public
@@ -1097,11 +1127,11 @@ command_setting DATABASE_READINESS_COMMAND
 for setting in QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL VALORANT_CA_FILE; do require_setting "$setting"; done
 validate_endpoint_identities
 root_file "$VALORANT_CA_FILE"
-quest_health="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL" 2>/dev/null)" || die 'Quest health gate failed.'
+retry_capturing quest_health 5 3 'Quest health gate'   "$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_HEALTH_URL"
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]]*true' <<< "$quest_health" || die 'Quest health response was not healthy.'
-quest_ready="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" 2>/dev/null)" || die 'Quest readiness gate failed.'
+retry_capturing quest_ready 5 3 'Quest readiness gate'   "$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL"
 verify_quest_readiness_response "$quest_ready"
-valorant_health="$(VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$VALORANT_CA_FILE" "$VALORANT_CONTAINER_HEALTH_COMMAND" 2>/dev/null)" || die 'VALORANT HTTPS health gate failed from the Quest network boundary.'
+retry_capturing valorant_health 5 3 'VALORANT HTTPS health gate from the Quest network boundary'   env VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$VALORANT_CA_FILE" "$VALORANT_CONTAINER_HEALTH_COMMAND"
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$valorant_health" && grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' <<< "$valorant_health" || die 'VALORANT HTTPS health did not return status ok and db up.'
 run_database_readiness
 validate_active_project "$stage_dir/compose.production.yml" "$quest_project" "$compose_env_file" \
