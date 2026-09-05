@@ -277,9 +277,17 @@ validate_release_environment
 for setting in QUEST_HEALTH_URL QUEST_READINESS_URL VALORANT_HEALTH_URL; do require_setting "$setting"; done
 validate_endpoint_identities
 root_file "$manifest_path"
-if [[ "$fixture_mode" != 1 ]]; then
+if [[ "$fixture_mode" != 1 || "${QUEST_DEPLOY_FIXTURE_ENFORCE_MANIFEST_MODE:-0}" == 1 ]]; then
   manifest_stat="$(stat -c '%u %a' "$manifest_path" 2>/dev/null)" || die 'cannot inspect release manifest ownership.'
-  [[ "$manifest_stat" == 0\ 600 || "$manifest_stat" == 0\ 640 ]] || die 'release manifest must be root-owned and mode 0600 or 0640.'
+  # The deploy account has to write the manifest into the pre-created root-owned
+  # inode, so the delivery drop is group-writable by design and can never be
+  # 0600/0640 at this point. Accept the delivery mode, then immediately snapshot
+  # the manifest into a root-only copy and read only that: this closes the window
+  # in which the delivering account could swap the content after validation.
+  [[ "$manifest_stat" == 0\ 600 || "$manifest_stat" == 0\ 640 || "$manifest_stat" == 0\ 660 ]] || die 'release manifest must be root-owned and mode 0600, 0640, or 0660.'
+  manifest_private="$(mktemp)" || die 'cannot stage a private release manifest.'
+  install -o root -g root -m 0600 -- "$manifest_path" "$manifest_private" || die 'cannot snapshot the release manifest into a root-only copy.'
+  manifest_path="$manifest_private"
 fi
 
 require_setting RELEASE_ROOT
@@ -796,6 +804,7 @@ record_recovery_evidence() {
 
 on_exit() {
   local status=$? original_status recovery_status
+  [[ -z "${manifest_private:-}" ]] || rm -f -- "$manifest_private"
   original_status="$status"
   trap - EXIT
   set +e

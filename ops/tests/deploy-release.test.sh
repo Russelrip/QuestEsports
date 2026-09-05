@@ -1190,6 +1190,17 @@ setup_fixture postgres-port-collision
 sed -i 's/^POSTGRES_TARGET_PORT=.*/POSTGRES_TARGET_PORT=55432/' "$fixture/release.env"
 assert_failed postgres-port-collision run_release
 
+# The deploy account writes the manifest into a pre-created root-owned inode, so
+# the delivery drop is group-writable and must still be accepted; anything wider
+# must not be. This block is skipped in plain fixture mode, so enforce it here.
+setup_fixture manifest-delivery-mode-accepted
+chmod 0660 "$fixture/manifest.txt"
+QUEST_DEPLOY_FIXTURE_ENFORCE_MANIFEST_MODE=1 run_release >/dev/null
+
+setup_fixture manifest-world-writable
+chmod 0666 "$fixture/manifest.txt"
+assert_failed manifest-world-writable env QUEST_DEPLOY_FIXTURE_ENFORCE_MANIFEST_MODE=1 run_release
+
 setup_fixture missing-postgres-data-root
 rm -rf -- "$fixture/postgres/17/data"
 assert_failed missing-postgres-data-root run_release
