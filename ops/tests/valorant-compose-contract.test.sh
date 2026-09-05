@@ -30,9 +30,15 @@ def extract(relative_path):
     return match.group("body")
 
 
-validate_host = extract("ops/deploy/validate-host.sh")
-if validate_host != extract("ops/deploy/verify-release.sh"):
-    raise SystemExit("validate-host.sh and verify-release.sh carry different VALORANT Compose contracts")
+# Four scripts each embed this contract. They drifted once already: a fix landed
+# in two of them and the release controller kept refusing on the stale copy, so
+# every copy is required to be byte-identical.
+CONTRACT_SCRIPTS = ("ops/deploy/validate-host.sh", "ops/deploy/verify-release.sh",
+                    "ops/deploy/release.sh", "ops/deploy/cutover.sh")
+validate_host = extract(CONTRACT_SCRIPTS[0])
+for other in CONTRACT_SCRIPTS[1:]:
+    if extract(other) != validate_host:
+        raise SystemExit(f"{CONTRACT_SCRIPTS[0]} and {other} carry different VALORANT Compose contracts")
 checker = work_directory / "contract.py"
 checker.write_text(validate_host, encoding="utf-8")
 

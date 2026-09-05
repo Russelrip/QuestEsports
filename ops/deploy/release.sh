@@ -114,33 +114,87 @@ validate_valorant_runtime_compose() {
   chmod 600 "$source_json_file" "$contract_json_file"
   "$DOCKER_BIN" compose --env-file "$render_env" -f "$compose_source" --project-name valorant-prod config --no-env-resolution --format json >"$source_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source is invalid.'; }
   "$DOCKER_BIN" compose --env-file "$render_env" -f "$contract" --project-name valorant-prod config --no-env-resolution --format json >"$contract_json_file" 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose contract is invalid.'; }
-  python3 - "$source_json_file" "$contract_json_file" "$expected_image" <<'PY' 2>/dev/null || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
-import json, sys
-def contract(raw, expected_image):
+  python3 - "$source_json_file" "$contract_json_file" "$expected_image" "$compose_source" "$contract" <<'PY' || { rm -f "$source_json_file" "$contract_json_file"; die 'rendered VALORANT Compose source does not satisfy the asyncpg TLS runtime contract.'; }
+import json, re, sys
+
+ENV_FILE_PATH = "/etc/quest-esports/valorant.production.env"
+CA_SOURCE = "/etc/quest-esports/tls/quest-private-ca.crt"
+CA_TARGET = "/run/secrets/quest-private-ca.crt"
+# Only these keys are compared. Compose >= 2.40 inlines the protected env file
+# into `environment` even under --no-env-resolution, so every other rendered key
+# may be a resolved secret and must never enter this comparison.
+CONTRACT_ENV_KEYS = ("APP_ENV", "VALORANT_PLATFORM_IMAGE", "VALORANT_DATABASE_SSL_CA_FILE",
+                     "VALORANT_DATABASE_SSL_SERVER_HOSTNAME", "VALORANT_DATABASE_SSL_VERIFY")
+ENV_FILE_BLOCK = re.compile(
+    r"^(?P<indent> +)env_file: *\n"
+    r"(?P=indent)  - path: (?P<path>\S+) *\n"
+    r"(?P=indent)    required: (?P<required>\S+) *$",
+    re.MULTILINE)
+SERVICES_BLOCK = re.compile(r"^services:[ ]*\n(?P<body>(?:[ \t].*\n|\n)*)", re.MULTILINE)
+SERVICE_NAME = re.compile(r"^  (?P<name>[A-Za-z0-9][A-Za-z0-9_.-]*):[ ]*$", re.MULTILINE)
+
+def fail(reason):
+    print("VALORANT Compose contract: " + reason, file=sys.stderr)
+    raise SystemExit(1)
+
+def declared_env_files(yaml_path):
+    # Compose >= 2.40 resolves env_file into `environment` and renders env_file
+    # as null even with --no-env-resolution, so the declaration is read from the
+    # pinned YAML. Line endings are normalised so a CRLF copy still validates.
+    with open(yaml_path, encoding="utf-8") as source:
+        text = source.read().replace("\r\n", "\n")
+    declarations = tuple((m.group("path"), m.group("required")) for m in ENV_FILE_BLOCK.finditer(text))
+    if not declarations:
+        fail("no env_file declaration was found in the pinned Compose file")
+    if len(declarations) != text.count("env_file:"):
+        fail("an env_file declaration is not the pinned single-entry form")
+    services = SERVICES_BLOCK.search(text)
+    if services is None:
+        fail("the pinned Compose file declares no services")
+    if len(declarations) != len(SERVICE_NAME.findall(services.group("body"))):
+        fail("a service does not load the protected runtime environment")
+    for path, required in declarations:
+        if path != ENV_FILE_PATH or required != "true":
+            fail("an env_file declaration is not the required protected runtime environment")
+    # Only distinct declarations are compared across files: the source and the
+    # contract may legitimately describe a different number of services, while
+    # per-file completeness is enforced against that file's own service list.
+    return tuple(sorted(set(declarations)))
+
+def contract(raw, expected_image, yaml_path):
     with open(raw, encoding="utf-8") as rendered:
         doc = json.load(rendered)
-    if doc.get("name") != "valorant-prod": raise SystemExit(1)
+    if doc.get("name") != "valorant-prod": fail("project name is not valorant-prod")
     service = doc.get("services", {}).get("valorant-platform")
-    if not isinstance(service, dict) or service.get("image") != expected_image: raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_CA_FILE") != "/run/secrets/quest-private-ca.crt": raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres": raise SystemExit(1)
-    if service.get("environment", {}).get("VALORANT_DATABASE_SSL_VERIFY") != "full": raise SystemExit(1)
-    if set(service.get("networks", {})) != {"quest-shared"}: raise SystemExit(1)
+    if not isinstance(service, dict) or service.get("image") != expected_image: fail("image is not the approved digest")
+    environment = service.get("environment") or {}
+    if environment.get("VALORANT_DATABASE_SSL_CA_FILE") != CA_TARGET: fail("TLS CA file is not the mounted private CA")
+    if environment.get("VALORANT_DATABASE_SSL_SERVER_HOSTNAME") != "quest-postgres": fail("TLS server hostname is not quest-postgres")
+    if environment.get("VALORANT_DATABASE_SSL_VERIFY") != "full": fail("TLS verification is not full")
+    if set(service.get("networks", {})) != {"quest-shared"}: fail("service is not attached to quest-shared alone")
     network_entry = service.get("networks", {}).get("quest-shared")
     expected_aliases = ("valorant-discord-bot", "valorant-name-audit", "valorant-platform", "valorant-updater")
-    if not isinstance(network_entry, dict): raise SystemExit(1)
+    if not isinstance(network_entry, dict): fail("quest-shared attachment is malformed")
     aliases = network_entry.get("aliases")
-    if not isinstance(aliases, list) or tuple(sorted(aliases)) != expected_aliases: raise SystemExit(1)
+    if not isinstance(aliases, list) or tuple(sorted(aliases)) != expected_aliases: fail("quest-shared aliases are not the fixed writer set")
     network = doc.get("networks", {}).get("quest-shared", {})
-    if network.get("name") != "quest-shared" or network.get("external") is not True: raise SystemExit(1)
-    env_files = service.get("env_file", [])
-    if len(env_files) != 1: raise SystemExit(1)
-    env_file = env_files[0] if isinstance(env_files[0], dict) else {"path": env_files[0], "required": True}
-    if env_file.get("path") != "/etc/quest-esports/valorant.production.env" or env_file.get("required") is not True: raise SystemExit(1)
+    if network.get("name") != "quest-shared" or network.get("external") is not True: fail("quest-shared is not the external shared network")
+    rendered_env_files = service.get("env_file")
+    if rendered_env_files:
+        # Compose versions that preserve the declaration are still validated here.
+        if len(rendered_env_files) != 1: fail("rendered env_file is not a single entry")
+        entry = rendered_env_files[0] if isinstance(rendered_env_files[0], dict) else {"path": rendered_env_files[0], "required": True}
+        if entry.get("path") != ENV_FILE_PATH or entry.get("required") is not True: fail("rendered env_file is not the required protected runtime environment")
     mounts = service.get("volumes", [])
-    if not any(isinstance(m, dict) and m.get("source") == "/etc/quest-esports/tls/quest-private-ca.crt" and m.get("target") == "/run/secrets/quest-private-ca.crt" and m.get("read_only") is True for m in mounts): raise SystemExit(1)
-    return (service["image"], tuple(sorted(service["environment"].items())), tuple(sorted(env_file.items())), tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))), tuple(sorted(service["networks"])), tuple(sorted(aliases)))
-if contract(sys.argv[1], sys.argv[3]) != contract(sys.argv[2], sys.argv[3]): raise SystemExit(1)
+    if not any(isinstance(m, dict) and m.get("source") == CA_SOURCE and m.get("target") == CA_TARGET and m.get("read_only") is True for m in mounts): fail("the private CA is not mounted read-only")
+    return (service["image"],
+            tuple((key, environment.get(key)) for key in CONTRACT_ENV_KEYS),
+            declared_env_files(yaml_path),
+            tuple(sorted((m.get("source"), m.get("target"), m.get("read_only")) for m in mounts if isinstance(m, dict))),
+            tuple(sorted(service["networks"])),
+            tuple(sorted(aliases)))
+if contract(sys.argv[1], sys.argv[3], sys.argv[4]) != contract(sys.argv[2], sys.argv[3], sys.argv[5]):
+    fail("the source and contract renderings differ")
 PY
   rm -f "$source_json_file" "$contract_json_file"
   rm -f "$render_env"
