@@ -280,6 +280,29 @@ case "$wrapper" in
     printf '%s\n' 'ready target=quest-postgres schemas=public,valorant'
     ;;
 
+  quest-release-postgres-target)
+    # The durable PostgreSQL 17 target is private to the Compose networks. This
+    # sentinel proves the running container is the approved image on the durable
+    # data root and, critically, that it publishes no host port: the deployment
+    # contract is the in-network endpoint, not the retired staging loopback.
+    [[ "$("$docker_bin" inspect --format '{{.State.Health.Status}}' "$postgres_container" 2>/dev/null)" == healthy ]] \
+      || die 'the PostgreSQL target container is not healthy.'
+    [[ "$("$docker_bin" inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$postgres_container" 2>/dev/null)" == quest-prod ]] \
+      || die 'the PostgreSQL target container is not part of quest-prod.'
+    [[ "$("$docker_bin" inspect --format '{{.Config.Image}}' "$postgres_container" 2>/dev/null)" == "${POSTGRES_IMAGE_APPROVED_REF:?}" ]] \
+      || die 'the PostgreSQL target container is not the approved image.'
+    [[ "$("$docker_bin" inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Source}}{{end}}{{end}}' "$postgres_container" 2>/dev/null)" == "${POSTGRES_TARGET_DATA_ROOT:?}" ]] \
+      || die 'the PostgreSQL target container is not on the durable data root.'
+    published="$("$docker_bin" inspect --format '{{json .HostConfig.PortBindings}}' "$postgres_container" 2>/dev/null)"
+    [[ "$published" == '{}' || "$published" == null ]] || die 'the PostgreSQL target container publishes a host port.'
+    [[ "$("$docker_bin" inspect --format '{{join (index .NetworkSettings.Networks "quest-shared").Aliases ","}}' "$postgres_container" 2>/dev/null)" == *quest-postgres* ]] \
+      || die 'the PostgreSQL target container does not answer to quest-postgres.'
+    [[ "$("$docker_bin" exec "$postgres_container" psql -U postgres -d "${POSTGRES_TARGET_DATABASE:?}" -Atqc 'show server_version_num' 2>/dev/null)" =~ ^17[0-9]{4,}$ ]] \
+      || die 'the PostgreSQL target is not PostgreSQL 17.'
+    printf 'target_kind=postgresql17 database=%s host=quest-postgres port=5432 major=17 data_root=%s\n' \
+      "$POSTGRES_TARGET_DATABASE" "$POSTGRES_TARGET_DATA_ROOT"
+    ;;
+
   quest-release-registry-check)
     image="${RELEASE_IMAGE:-}"
     [[ "$image" =~ ^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$ || "$image" =~ ^postgres(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]] \
