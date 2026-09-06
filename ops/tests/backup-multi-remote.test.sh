@@ -228,7 +228,9 @@ if RCLONE_FAIL_CONFIG=secondary.conf BACKUP_ENV_FILE="$ENV_FILE" \
   printf 'expected failed remote\n' >&2
   exit 1
 fi
-failed_result="$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name '*.results' -print | tail -n 1)"
+# Archive names carry a sortable UTC timestamp, so sort before taking the newest;
+# find alone returns directory order and picked an arbitrary record.
+failed_result="$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name '*.results' -print | sort | tail -n 1)"
 assert_contains $'primary\tsuccess' "$failed_result"
 assert_contains $'secondary\tfailure' "$failed_result"
 
