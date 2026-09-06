@@ -60,7 +60,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const eventEntries: MetadataRoute.Sitemap = events
     .filter((event) => event.isPublished)
     .map((event) => ({
-      url: absoluteUrl(`/events/${event.slug}`),
+      url: absoluteUrl(`/tournaments/events/${event.slug}`),
     }));
 
   const rulebookEntries: MetadataRoute.Sitemap = rulebooks.map((rulebook) => ({

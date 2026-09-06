@@ -1,13 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchPublicTournaments, fetchPublicGameCategories } = vi.hoisted(() => ({
+const { fetchPublicTournaments, fetchPublicEvents, fetchPublicGameCategories } = vi.hoisted(() => ({
   fetchPublicTournaments: vi.fn(),
+  fetchPublicEvents: vi.fn(),
   fetchPublicGameCategories: vi.fn(),
 }));
 
-vi.mock("@/lib/tournaments", () => ({
+vi.mock("@/lib/tournaments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tournaments")>()),
   fetchPublicTournaments,
+  fetchPublicEvents,
   fetchPublicGameCategories,
 }));
 
@@ -18,11 +21,13 @@ describe("tournaments page availability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchPublicTournaments.mockResolvedValue([]);
+    fetchPublicEvents.mockResolvedValue([]);
     fetchPublicGameCategories.mockResolvedValue([]);
   });
 
   it.each([
     ["tournaments", fetchPublicTournaments],
+    ["events", fetchPublicEvents],
     ["game categories", fetchPublicGameCategories],
   ])("renders PageLayout with an unavailable state when %s fetch fails", async (_dependency, rejectedFetch) => {
     rejectedFetch.mockRejectedValueOnce(new Error("backend unavailable"));

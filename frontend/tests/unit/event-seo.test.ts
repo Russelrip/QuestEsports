@@ -55,10 +55,10 @@ describe("event sitemap", () => {
     const entries = await sitemap();
 
     expect(entries).toContainEqual({
-      url: absoluteUrl("/events/quest-ascension"),
+      url: absoluteUrl("/tournaments/events/quest-ascension"),
     });
     expect(entries).not.toContainEqual({
-      url: absoluteUrl("/events/draft-event"),
+      url: absoluteUrl("/tournaments/events/draft-event"),
     });
   });
 });
@@ -71,7 +71,7 @@ describe("event metadata", () => {
       params: Promise.resolve({ slug: publishedEvent.slug }),
     });
 
-    expect(metadata.alternates?.canonical).toBe("/events/quest-ascension");
-    expect(metadata.openGraph?.url).toBe("/events/quest-ascension");
+    expect(metadata.alternates?.canonical).toBe("/tournaments/events/quest-ascension");
+    expect(metadata.openGraph?.url).toBe("/tournaments/events/quest-ascension");
   });
 });

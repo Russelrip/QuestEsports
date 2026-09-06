@@ -4,6 +4,7 @@ import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
 import { buildPageMetadata, defaultPageDescriptions } from "@/lib/site";
 import {
+  fetchPublicEvents,
   fetchPublicTournaments,
   fetchPublicGameCategories,
 } from "@/lib/tournaments";
@@ -19,6 +20,8 @@ export const metadata = buildPageMetadata({
     "VALORANT events Sri Lanka",
     "gaming brackets",
     "register team tournament",
+    "Quest E-sports events",
+    "multi-game tournament event",
   ],
 });
 
@@ -29,12 +32,14 @@ export default async function TournamentsPage({
 }) {
   const { game = "all" } = await searchParams;
   let tournaments: Awaited<ReturnType<typeof fetchPublicTournaments>> = [];
+  let events: Awaited<ReturnType<typeof fetchPublicEvents>> = [];
   let categories: Awaited<ReturnType<typeof fetchPublicGameCategories>> = [];
   let loadError = false;
 
   try {
-    [tournaments, categories] = await Promise.all([
+    [tournaments, events, categories] = await Promise.all([
       fetchPublicTournaments(),
+      fetchPublicEvents(),
       fetchPublicGameCategories(),
     ]);
   } catch {
@@ -53,6 +58,7 @@ export default async function TournamentsPage({
       ) : (
         <TournamentsContent
           tournaments={tournaments}
+          events={events}
           categories={categories}
           initialGameFilter={game}
         />

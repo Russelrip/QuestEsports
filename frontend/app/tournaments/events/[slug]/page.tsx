@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     return buildPageMetadata({
       title: event.title,
       description: event.shortDescription || event.description,
-      path: `/events/${event.slug}`,
+      path: `/tournaments/events/${event.slug}`,
       image: event.heroUrl || event.bannerUrl || undefined,
       keywords: [event.title, "Sri Lankan esports event", "multi-game tournament"],
     });

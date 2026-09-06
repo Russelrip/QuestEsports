@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     return buildPageMetadata({
       title: series.title,
       description: series.description,
-      path: `/events/${series.slug}`,
+      path: `/tournaments/events/${series.slug}`,
       image: series.heroUrl || undefined,
       keywords: [
         series.title,
