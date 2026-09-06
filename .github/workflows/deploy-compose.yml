@@ -245,7 +245,7 @@ jobs:
             local expected_digest="${image_reference##*@}" index_file attestation_digests platform_digest
             local attestation_digest attestation_file predicate_type layer_digest layer_size blob_file actual_size actual_digest
             local registry_netrc="" registry_token="" repository_path token_response sbom_found=0 provenance_found=0
-            local -a token_curl_args
+            local -a token_curl_args registry_retry_args
             [[ "$image_repository" =~ ^ghcr\.io/[A-Za-z0-9._/-]+$ ]] || exit 1
             [[ "$expected_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
             index_file="$(mktemp "$attestation_tmp_dir/index.XXXXXX.json")"
@@ -280,19 +280,35 @@ jobs:
             fi
             repository_path="${image_repository#ghcr.io/}"
             token_response="$(mktemp "$attestation_tmp_dir/ghcr-token.XXXXXX.json")"
+            # A transient registry hiccup must not fail a production release.
+            # These requests previously used a bare 15s timeout with `|| exit 1`,
+            # so one `curl: (28)` against ghcr.io failed an entire deploy and
+            # needed a manual re-run. curl's own retry keeps that inside one
+            # process rather than adding another shell loop to this workflow.
+            registry_retry_args=(--retry 5 --retry-delay 2 --retry-all-errors --retry-max-time 120)
             token_curl_args=(--fail --silent --show-error --location --max-time 15 --get
+              "${registry_retry_args[@]}"
               --data-urlencode "scope=repository:${repository_path}:pull"
               --data-urlencode 'service=ghcr.io')
             [[ -s "$registry_netrc" ]] && token_curl_args+=(--netrc-file "$registry_netrc")
-            curl "${token_curl_args[@]}" https://ghcr.io/token > "$token_response" || exit 1
+            curl "${token_curl_args[@]}" https://ghcr.io/token > "$token_response" || {
+              printf 'the ghcr.io pull token request failed for %s after retries.\n' "$repository_path" >&2
+              exit 1
+            }
             registry_token="$(jq -er '(.token // .access_token) | select(type == "string" and length > 0 and test("^[^[:space:]]+$"))' "$token_response")"
             registry_blob() {
               local digest="$1" output="$2"
               local blob_url="https://ghcr.io/v2/$repository_path/blobs/$digest"
               local -a curl_args=(--fail --silent --show-error --location --max-time 15
+                "${registry_retry_args[@]}"
                 -H "Authorization: Bearer $registry_token"
                 -H 'Accept: application/vnd.in-toto+json, application/octet-stream')
-              curl "${curl_args[@]}" "$blob_url" > "$output" || exit 1
+              # The digest and repository path are public identifiers; the bearer
+              # token is never echoed.
+              curl "${curl_args[@]}" "$blob_url" > "$output" || {
+                printf 'the ghcr.io attestation blob request failed after retries: %s %s\n' "$repository_path" "$digest" >&2
+                exit 1
+              }
             }
             while IFS= read -r attestation_digest; do
               attestation_file="$(mktemp "$attestation_tmp_dir/attestation.XXXXXX.json")"
