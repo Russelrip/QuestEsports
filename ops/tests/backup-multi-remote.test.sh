@@ -203,6 +203,29 @@ assert_contains $'primary\tsuccess' "$BACKUP_ROOT/$archive_name.results"
 assert_contains $'secondary\tsuccess' "$BACKUP_ROOT/$archive_name.results"
 [[ "$(sed -n '1p' "$FLOCK_LOG")" == 8 && "$(sed -n '2p' "$FLOCK_LOG")" == 8 &&
    "$(sed -n '3p' "$FLOCK_LOG")" == 9 ]] || exit 1
+
+# A run that clears the release lock but loses the backup lock never reaches
+# target, archive, or remote work, so it must not create or touch any result
+# record. Deriving the archive name and writing the record before the backup
+# lock let a losing run truncate — and, through its exit trap, mark failed —
+# the record belonging to the run that owned that name in the same second.
+results_before="$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name '*.results' | sort)"
+if FLOCK_OWNER_TOKEN=owner-c BACKUP_ENV_FILE="$ENV_FILE" \
+    BACKUP_RELEASE_LOCK_PATH="$TEST_ROOT/backup-lock-race.lock" \
+    bash "$ROOT/ops/backup-production.sh" --test-fixture; then
+  printf 'expected backup lock contention\n' >&2
+  exit 1
+fi
+results_after="$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name '*.results' | sort)"
+[[ "$results_before" == "$results_after" ]] || {
+  printf 'a run that lost the backup lock created a result record\n' >&2
+  exit 1
+}
+assert_contains 'status=success' "$BACKUP_ROOT/$archive_name.results"
+assert_contains 'exit_status=0' "$BACKUP_ROOT/$archive_name.results"
+assert_contains $'primary\tsuccess' "$BACKUP_ROOT/$archive_name.results"
+assert_contains $'secondary\tsuccess' "$BACKUP_ROOT/$archive_name.results"
+
 if FLOCK_OWNER_TOKEN=owner-b run_backup; then
   printf 'expected canonical lock contention\n' >&2
   exit 1

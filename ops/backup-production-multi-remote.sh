@@ -434,17 +434,36 @@ for command in age basename cat chmod date find flock hostname mkdir mktemp real
   }
 done
 
-# A result record is created before any target, archive, or remote operation.
-# The EXIT trap converts every later failure to a terminal record; no failed run
-# can leave a misleading pending status behind.
 mkdir -p "$BACKUP_ROOT"
 chmod 700 "$BACKUP_ROOT"
+
+exec 9>"$BACKUP_ROOT/.quest-backup.lock"
+if ! flock -n 9; then
+  echo "Another production backup is already running." >&2
+  exit 1
+fi
+
+# The archive name and its result record are derived only once this process holds
+# the backup lock. The name has one-second resolution, so deriving it earlier let
+# two runs in the same second agree on a name: the one that lost the lock
+# truncated the winner's record and then marked it failed on the way out.
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 hostname_value="$(hostname -f 2>/dev/null || hostname)"
 archive_name="quest-production-${timestamp}.tar.gz.enc"
 archive_path="$BACKUP_ROOT/$archive_name"
 checksum_path="$archive_path.sha256"
 result_path="$BACKUP_ROOT/$archive_name.results"
+# Sequential runs inside one second would still agree on the name after the lock
+# is released. Refuse rather than silently overwrite an existing recovery point.
+for existing_artifact in "$archive_path" "$checksum_path" "$result_path"; do
+  [[ ! -e "$existing_artifact" ]] || {
+    echo "A backup already exists for this second; refusing to overwrite it." >&2
+    exit 1
+  }
+done
+# A result record is created before any target, archive, or remote operation.
+# The EXIT trap converts every later failure to a terminal record; no failed run
+# can leave a misleading pending status behind.
 printf 'archive=%s\nrelease_sha=%s\nstatus=running\nexit_status=running\nremote_label\tstatus\n' "$archive_name" "$backup_release_sha" > "$result_path"
 chmod 600 "$result_path"
 finalize_result() {
@@ -462,12 +481,6 @@ finalize_result() {
   exit "$status"
 }
 trap finalize_result EXIT
-
-exec 9>"$BACKUP_ROOT/.quest-backup.lock"
-if ! flock -n 9; then
-  echo "Another production backup is already running." >&2
-  exit 1
-fi
 resolved_upload_root="$(realpath "$UPLOAD_ROOT")"
 resolved_private_root="$(realpath "$PRIVATE_UPLOAD_ROOT")"
 resolved_backup_root="$(realpath "$BACKUP_ROOT")"
