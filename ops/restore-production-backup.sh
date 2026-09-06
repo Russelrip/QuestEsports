@@ -731,6 +731,10 @@ manifest_public_root="$(grep -m1 '^public_upload_root=' "$work_directory/manifes
 manifest_private_root="$(grep -m1 '^private_upload_root=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
 manifest_public_preview_root="$(grep -m1 '^public_event_album_preview_root=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
 manifest_private_original_root="$(grep -m1 '^private_event_album_original_root=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
+manifest_public_inventory="$(grep -m1 '^public_upload_inventory=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
+manifest_public_inventory_sha256="$(grep -m1 '^public_upload_inventory_sha256=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
+manifest_private_inventory="$(grep -m1 '^private_upload_inventory=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
+manifest_private_inventory_sha256="$(grep -m1 '^private_upload_inventory_sha256=' "$work_directory/manifest.txt" | cut -d= -f2- || true)"
 if [[ -z "$manifest_public_root" || -z "$manifest_private_root" ||
        -z "$manifest_public_preview_root" || -z "$manifest_private_original_root" ||
        "$(basename "$manifest_public_root")" != "$public_name" ||
@@ -742,13 +746,65 @@ if [[ -z "$manifest_public_root" || -z "$manifest_private_root" ||
   echo "The backup manifest does not include the public previews and private event-album originals roots." >&2
   exit 1
 fi
+# Inventory binding is reported separately: an archive can name valid upload
+# roots and still carry no source inventory to prove the trees against.
+if [[ "$manifest_public_inventory" != public-upload-inventory.tsv ||
+      "$manifest_private_inventory" != private-upload-inventory.tsv ||
+      ! "$manifest_public_inventory_sha256" =~ ^[a-fA-F0-9]{64}$ ||
+      ! "$manifest_private_inventory_sha256" =~ ^[a-fA-F0-9]{64}$ ]]; then
+  echo "The backup manifest does not declare both upload source inventories." >&2
+  exit 1
+fi
 test -d "$work_directory/$public_name"
 test -d "$work_directory/$private_name"
+test -f "$work_directory/$manifest_public_inventory" && test ! -L "$work_directory/$manifest_public_inventory"
+test -f "$work_directory/$manifest_private_inventory" && test ! -L "$work_directory/$manifest_private_inventory"
+[[ "$(sha256sum "$work_directory/$manifest_public_inventory" | cut -d' ' -f1)" == "$manifest_public_inventory_sha256" &&
+   "$(sha256sum "$work_directory/$manifest_private_inventory" | cut -d' ' -f1)" == "$manifest_private_inventory_sha256" ]] || {
+  echo "The backup upload inventories are not bound to the archive manifest." >&2
+  exit 1
+}
 if [[ ! -d "$work_directory/$public_name/poster-images" ||
       ! -d "$work_directory/$private_name/event-album-originals" ]]; then
   echo "The backup archive is missing the public previews or private event-album originals root." >&2
   exit 1
 fi
+
+inventory_tree() {
+  local root="$1" output="$2" entry relative digest bytes
+  : > "$output"
+  while IFS= read -r -d '' entry; do
+    relative="${entry#"$root"/}"
+    [[ "$relative" != *$'\n'* && "$relative" != *$'\r'* && "$relative" != *$'\t'* ]] || return 1
+    if [[ -L "$entry" ]]; then
+      return 1
+    elif [[ -d "$entry" ]]; then
+      printf 'directory\t%s\n' "$relative" >> "$output"
+    elif [[ -f "$entry" ]]; then
+      digest="$(sha256sum -- "$entry" | awk '{print $1}')" || return 1
+      bytes="$(stat -c '%s' -- "$entry")" || return 1
+      printf 'file\t%s\t%s\t%s\n' "$relative" "$bytes" "$digest" >> "$output"
+    else
+      return 1
+    fi
+  done < <(find -P "$root" -mindepth 1 -print0 | sort -z)
+}
+inventory_tree "$work_directory/$public_name" "$work_directory/public-upload-inventory.actual" || {
+  echo "The public upload source inventory could not be calculated." >&2
+  exit 1
+}
+inventory_tree "$work_directory/$private_name" "$work_directory/private-upload-inventory.actual" || {
+  echo "The private upload source inventory could not be calculated." >&2
+  exit 1
+}
+cmp -s "$work_directory/$manifest_public_inventory" "$work_directory/public-upload-inventory.actual" || {
+  echo "The public upload tree does not match its decrypted source inventory." >&2
+  exit 1
+}
+cmp -s "$work_directory/$manifest_private_inventory" "$work_directory/private-upload-inventory.actual" || {
+  echo "The private upload tree does not match its decrypted source inventory." >&2
+  exit 1
+}
 
 mkdir -p "$(dirname "$UPLOAD_ROOT")" "$(dirname "$PRIVATE_UPLOAD_ROOT")"
 resolved_upload_root="$(realpath -m "$UPLOAD_ROOT")"
@@ -766,6 +822,22 @@ private_stage="$(mktemp -d "$(dirname "$resolved_private_root")/.quest-restore-$
 rsync -a --delete "$work_directory/$public_name/" "$public_stage/"
 rsync -a --delete "$work_directory/$private_name/" "$private_stage/"
 chmod 700 "$private_stage" "$private_stage/event-album-originals"
+inventory_tree "$public_stage" "$work_directory/public-upload-stage.inventory" || {
+  echo "The staged public upload tree could not be inventoried." >&2
+  exit 1
+}
+inventory_tree "$private_stage" "$work_directory/private-upload-stage.inventory" || {
+  echo "The staged private upload tree could not be inventoried." >&2
+  exit 1
+}
+cmp -s "$work_directory/$manifest_public_inventory" "$work_directory/public-upload-stage.inventory" || {
+  echo "The staged public upload tree does not equal the decrypted source inventory." >&2
+  exit 1
+}
+cmp -s "$work_directory/$manifest_private_inventory" "$work_directory/private-upload-stage.inventory" || {
+  echo "The staged private upload tree does not equal the decrypted source inventory." >&2
+  exit 1
+}
 
 echo "Restore manifest:"
 cat "$work_directory/manifest.txt"
@@ -844,6 +916,7 @@ extended_owner_mismatches="$(printf '%s' "$extended_owner_mismatches" | tr -d '[
   exit 1
 }
 echo "Restored object-owner verification: passed (0 mismatches)."
+echo "Upload source equivalence: verified:public,private."
 
 echo "Restored schema table counts (public and valorant):"
 if ! psql_target -tAc "SELECT 'public=' || count(*) FROM pg_tables WHERE schemaname = 'public' UNION ALL SELECT 'valorant=' || count(*) FROM pg_tables WHERE schemaname = 'valorant'"; then

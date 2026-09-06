@@ -15,7 +15,13 @@ Group=deploy
 # Server TLS remains under /etc/quest-esports/tls for the UID999 PostgreSQL
 # container contract.
 Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
+Environment=POSTGRES_CA_FILE=/etc/quest-esports-backup/backup-client-ca.crt
+Environment=BACKUP_CLIENT_TLS_DIR=/etc/quest-esports-backup
+Environment=BACKUP_CLIENT_CERT_FILE=/etc/quest-esports-backup/backup-client.crt
+Environment=BACKUP_CLIENT_KEY_FILE=/etc/quest-esports-backup/backup-client.key
 WorkingDirectory=/var/www/QuestEsports
+ExecStartPre=/usr/bin/test -d /var/www/QuestEsports
+ExecStartPre=/usr/bin/test -r /var/www/QuestEsports/ops/backup-production.sh
 ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/backup-production.sh
 PrivateTmp=true
 NoNewPrivileges=true

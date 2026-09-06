@@ -814,6 +814,8 @@ jobs:
           bash ops/tests/media-backup-contract.test.sh
           bash ops/tests/restore-production-backup.test.sh
           bash ops/tests/postgres17-rehearsal.test.sh
+          bash ops/tests/backup-multi-remote.test.sh
+          bash ops/tests/verify-backup-evidence.test.sh
 
   frontend:
     name: Frontend audit, test, and build

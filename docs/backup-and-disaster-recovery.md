@@ -44,6 +44,12 @@ Visitor maintenance mode alone is not a write freeze: background jobs and the Pa
 
 The backup pipeline requires `POSTGRES_CA_FILE`, `BACKUP_CLIENT_CERT_FILE`, and
 `BACKUP_CLIENT_KEY_FILE` before the real scheduled service can be restored.
+The checked-in systemd units pin these values to the deploy-readable paths
+`/etc/quest-esports-backup/backup-client-ca.crt`, `backup-client.crt`, and
+`backup-client.key`, and refuse to invoke the wrapper unless
+`/var/www/QuestEsports` is available as the working directory. A missing
+certificate, target setting, or working tree is a failed prerequisite; it is
+not evidence of a successful backup and must not be hidden by an interim job.
 
 The checked-in record describes the configured remotes as using separate,
 QuestEsports-owned credentials. Remote labels, destinations, and token state
@@ -90,7 +96,8 @@ boundary as `supabase_authority_boundary=stale-after-first-vps-write` and
 Each `quest-production-YYYYMMDDTHHMMSSZ.tar.gz.enc` contains:
 
 - `database.dump`: PostgreSQL custom-format dump of the application-owned `public` schema and, when the `valorant` schema exists, the application-owned `valorant` schema too. The manifest records the selected database scope.
-- `manifest.txt`: creation time, source host, dump format, public/private upload roots, explicit event-album preview/original roots, and the two-pass file snapshot strategy.
+- `manifest.txt`: creation time, exact release SHA, source host, dump format, public/private upload roots, explicit event-album preview/original roots, and the two-pass file snapshot strategy.
+- `public-upload-inventory.tsv` and `private-upload-inventory.tsv`: deterministic, secret-free file/directory inventories containing each relative name, byte count, and file SHA-256. Restore compares both decrypted inventories with the staged target trees before activation.
 - The entire public upload directory.
 - The entire private upload directory, including protected payment evidence.
 
@@ -103,6 +110,25 @@ event-album roots, and the archive contains both corresponding directories;
 a previews-only archive is rejected before restore staging.
 
 Each archive has a sibling `quest-production-....tar.gz.enc.sha256` checksum file.
+The checksum file must contain exactly one row naming that archive; unrelated or
+additional rows are rejected by freshness, restore, rehearsal, and release
+verification.
+
+## Release-bound backup evidence
+
+Release and cutover consume the repository implementation
+`ops/deploy/verify-backup-evidence.sh`, not an executable which merely prints a
+token. A root-created, secret-free contract at
+`/var/lib/quest-esports/backup-evidence/release.env` (`root:deploy`, mode `0640`)
+contains exactly one release SHA, archive name and hashes, the exact remote-label
+set, the rehearsal evidence directory, and the five status fields. The consumer
+recomputes the archive checksum and decrypted manifest release binding, verifies
+both upload inventories, requires terminal backup result `status=success` and
+`exit_status=0`, checks freshness, verifies every configured remote pair, and
+invokes the signed rehearsal verifier for the same archive. Only then does it
+emit the release-bound `verified-complete` line. The former
+`BACKUP_EVIDENCE_COMMAND` is retained only for fixture compatibility and is not
+the production release authority.
 
 The archive intentionally excludes:
 
@@ -120,7 +146,7 @@ Consequently, the production `.env` and infrastructure credentials require a sep
 | --- | --- | --- |
 | `age` public recipient | `/etc/quest-esports-backup.env` | Safe for encryption; not sufficient to decrypt |
 | `age` private identity | Secured offline recovery package | Maintain at least two controlled offline copies; never keep it permanently on the VPS |
-| Backup environment | `/etc/quest-esports-backup.env`, `root:deploy`, mode `640` | Contains the database URL; never print the file |
+| Backup environment | `/etc/quest-esports-backup.env`, `root:deploy`, mode `640` | Exact protected service contract; contains the database URL; never print the file |
 | Backup TLS client directory | `/etc/quest-esports-backup`, `root:deploy`, mode `750` | Dedicated deploy-traversable parent; no broader secret exposure; separate from server TLS |
 | Backup TLS trust bundle | `/etc/quest-esports-backup/backup-client-ca.crt`, `root:deploy`, mode `640` | Deploy-readable copy/bundle containing the issuer of `quest-postgres.crt`; separate path from server TLS, never client identity material |
 | Backup TLS client certificate/key | `/etc/quest-esports-backup/backup-client.{crt,key}`, `root:deploy`, mode `640` | Readable by the scheduled `deploy` service; never reuse the server key; no group/other write |
@@ -303,6 +329,12 @@ ActiveState=inactive
 ```
 
 `inactive` is expected after the oneshot exits. Confirm the newest archive and checksum have the same base name and a plausible non-zero size.
+The backup result record also retains `status=success`, `exit_status=0`, and a
+success row for every configured remote. A failed remote leaves the archive
+and checksum result record in place with `status=failed`; it is not a usable
+recovery point. Script success output is limited to the archive basename and
+the non-secret systemd result status; it never includes a remote URL,
+credential, or environment-file value.
 
 ### Create a manual full backup
 
@@ -319,6 +351,16 @@ sudo -u deploy -H env \
 Success is not established until the encrypted archive and matching checksum
 are visible and verified independently on every configured remote. A local
 encrypted file alone is insufficient.
+
+Before a release or cutover may migrate, the release-bound recovery command must
+return exactly:
+
+```text
+verified-complete release_sha=$RELEASE_SHA schemas=verified:public,valorant uploads=verified:public,private archive=verified checksum=verified remote=verified
+```
+
+The signed isolated PostgreSQL 17 rehearsal is additional evidence, not a
+substitute for this fresh local/remote pair and its exact release binding.
 
 ### Test the automated path
 

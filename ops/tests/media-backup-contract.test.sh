@@ -5,6 +5,39 @@ root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/quest-media-backup-contract.XXXXXXXX")"
 trap 'rm -rf -- "$test_root"' EXIT
 
+# Synthetic archives must carry the same upload source inventories the producer
+# writes, or the restore preflight refuses them before the behaviour each
+# fixture actually exercises. Keep this identical to the producer and restore
+# implementations of inventory_tree.
+fixture_inventory_tree() {
+  local tree_root="$1" output="$2" entry relative
+  : > "$output"
+  while IFS= read -r -d '' entry; do
+    relative="${entry#"$tree_root"/}"
+    if [[ -d "$entry" ]]; then
+      printf 'directory\t%s\n' "$relative" >> "$output"
+    else
+      printf 'file\t%s\t%s\t%s\n' "$relative" "$(stat -c '%s' -- "$entry")" "$(sha256sum -- "$entry" | awk '{print $1}')" >> "$output"
+    fi
+  done < <(find -P "$tree_root" -mindepth 1 -print0 | sort -z)
+}
+
+# Regenerate both inventories for a staged payload and (re)bind them to its
+# manifest, so a fixture may be built or copied in any order.
+stage_fixture_inventories() {
+  local payload="$1"
+  fixture_inventory_tree "$payload/uploads" "$payload/public-upload-inventory.tsv"
+  fixture_inventory_tree "$payload/private" "$payload/private-upload-inventory.tsv"
+  grep -v '^\(public\|private\)_upload_inventory\(_sha256\)\?=' "$payload/manifest.txt" > "$payload/manifest.rebound"
+  {
+    printf 'public_upload_inventory=public-upload-inventory.tsv\n'
+    printf 'public_upload_inventory_sha256=%s\n' "$(sha256sum "$payload/public-upload-inventory.tsv" | awk '{print $1}')"
+    printf 'private_upload_inventory=private-upload-inventory.tsv\n'
+    printf 'private_upload_inventory_sha256=%s\n' "$(sha256sum "$payload/private-upload-inventory.tsv" | awk '{print $1}')"
+  } >> "$payload/manifest.rebound"
+  mv -- "$payload/manifest.rebound" "$payload/manifest.txt"
+}
+
 fake_bin="$test_root/bin"
 upload_root="$test_root/uploads"
 private_root="$test_root/private"
@@ -176,10 +209,18 @@ exit 0
 FAKE
 cat > "$fake_bin/sha256sum" <<'FAKE'
 #!/usr/bin/env bash
+# Archive checksum files in this fixture are placeholders, so --check always
+# succeeds. Digests, however, must be real: the manifest binds each upload
+# source inventory by hash, and both the producer and the restore preflight
+# reject anything that is not 64 hexadecimal characters.
 if [[ "${1:-}" == --check ]]; then
   exit 0
 fi
-printf 'fixture checksum  %s\n' "${1:-}"
+for real in /usr/bin/sha256sum /bin/sha256sum; do
+  [[ -x "$real" ]] && exec "$real" "$@"
+done
+printf 'sha256sum is unavailable to the media backup fixture\n' >&2
+exit 1
 FAKE
 chmod 700 "$fake_bin"/*
 
@@ -302,8 +343,9 @@ public_event_album_preview_root=$test_root/restore/uploads/poster-images
 private_event_album_original_root=$test_root/restore/private/event-album-originals
 EOF
 preview_archive="$test_root/preview-only.tar.gz.enc"
+stage_fixture_inventories "$preview_only"
 tar --create --gzip --file="$test_root/preview-only.tar.gz" \
-  -C "$preview_only" database.dump manifest.txt uploads private
+  -C "$preview_only" database.dump manifest.txt public-upload-inventory.tsv private-upload-inventory.tsv uploads private
 cp -- "$test_root/preview-only.tar.gz" "$preview_archive"
 printf 'fixture checksum\n' > "$preview_archive.sha256"
 mkdir -p "$test_root/restore/uploads" "$test_root/restore/private"
@@ -372,8 +414,9 @@ cp -- "$preview_only/manifest.txt" "$extra_schema/manifest.txt"
 printf 'extra fixture\n' > "$extra_schema/uploads/poster-images/photo.webp"
 printf 'extra fixture\n' > "$extra_schema/private/event-album-originals/photo.jpg"
 extra_schema_archive="$test_root/extra-schema.tar.gz.enc"
+stage_fixture_inventories "$extra_schema"
 tar --create --gzip --file="$test_root/extra-schema.tar.gz" \
-  -C "$extra_schema" database.dump manifest.txt uploads private
+  -C "$extra_schema" database.dump manifest.txt public-upload-inventory.tsv private-upload-inventory.tsv uploads private
 cp -- "$test_root/extra-schema.tar.gz" "$extra_schema_archive"
 printf 'fixture checksum\n' > "$extra_schema_archive.sha256"
 : > "$test_root/pg_restore.log"
@@ -411,8 +454,9 @@ for descriptor in fk-constraint row-security policy acl comment default-acl; do
   printf 'scoped fixture\n' > "$scoped_descriptors/uploads/poster-images/photo.webp"
   printf 'scoped fixture\n' > "$scoped_descriptors/private/event-album-originals/photo.jpg"
   scoped_archive="$test_root/$marker.tar.gz.enc"
+  stage_fixture_inventories "$scoped_descriptors"
   tar --create --gzip --file="$test_root/$marker.tar.gz" \
-    -C "$scoped_descriptors" database.dump manifest.txt uploads private
+    -C "$scoped_descriptors" database.dump manifest.txt public-upload-inventory.tsv private-upload-inventory.tsv uploads private
   cp -- "$test_root/$marker.tar.gz" "$scoped_archive"
   printf 'fixture checksum\n' > "$scoped_archive.sha256"
   : > "$test_root/pg_restore.log"
@@ -447,8 +491,9 @@ cp -- "$preview_only/manifest.txt" "$materialized/manifest.txt"
 printf 'materialized fixture\n' > "$materialized/uploads/poster-images/photo.webp"
 printf 'materialized fixture\n' > "$materialized/private/event-album-originals/photo.jpg"
 materialized_archive="$test_root/materialized-view-data.tar.gz.enc"
+stage_fixture_inventories "$materialized"
 tar --create --gzip --file="$test_root/materialized-view-data.tar.gz" \
-  -C "$materialized" database.dump manifest.txt uploads private
+  -C "$materialized" database.dump manifest.txt public-upload-inventory.tsv private-upload-inventory.tsv uploads private
 cp -- "$test_root/materialized-view-data.tar.gz" "$materialized_archive"
 printf 'fixture checksum\n' > "$materialized_archive.sha256"
 : > "$test_root/pg_restore.log"

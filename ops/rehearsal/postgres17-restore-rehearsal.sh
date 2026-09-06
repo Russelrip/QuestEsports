@@ -21,15 +21,26 @@ checksum="$archive.sha256"
 evidence="${REHEARSAL_EVIDENCE_DIR:-}"
 env_file="${BACKUP_ENV_FILE:-}"
 sentinel="${REHEARSAL_TARGET_SENTINEL_FILE:-}"
-[[ "$evidence" == /* && "$evidence" != / && -d "$evidence" && ! -L "$evidence" ]] || fail "evidence directory must be an existing absolute non-root directory"
+[[ "$evidence" == /* && "$evidence" != / && ! -L "$evidence" ]] || fail "evidence directory must be an absolute non-root directory"
 [[ "$env_file" == /* && -f "$env_file" && ! -L "$env_file" ]] || fail "BACKUP_ENV_FILE must be an absolute regular file"
 [[ "$sentinel" == /* && -f "$sentinel" && ! -L "$sentinel" ]] || fail "REHEARSAL_TARGET_SENTINEL_FILE must be an absolute regular file"
 mode() { stat -c '%a' -- "$1" 2>/dev/null; }
 private() { local m; m="$(mode "$1")"; [[ "$m" =~ ^[0-7]+$ ]] && (( (8#$m & 077) == 0 )); }
+if [[ "${QUEST_REHEARSAL_FIXTURE:-0}" == 1 ]]; then
+  [[ -d "$evidence" ]] || fail "evidence directory must be an existing absolute non-root directory"
+  [[ -z "$(find -P "$evidence" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail "evidence directory must be empty"
+else
+  [[ ! -e "$evidence" ]] || fail "evidence directory must be newly created"
+  evidence_parent="$(dirname -- "$evidence")"
+  [[ -d "$evidence_parent" && ! -L "$evidence_parent" ]] || fail "evidence directory parent is missing or unsafe"
+  mkdir -m 700 -- "$evidence" || fail "evidence directory could not be created atomically"
+fi
 private "$evidence" || fail "evidence directory is not private"
+[[ "$(stat -c '%u:%g' -- "$evidence" 2>/dev/null)" == "$(id -u):$(id -g)" ]] || fail "evidence directory ownership is not private"
 private "$env_file" || fail "BACKUP_ENV_FILE is not private"
 private "$sentinel" || fail "target sentinel is not private"
 [[ "$(mode "$sentinel")" == 600 ]] || fail "target sentinel must have exact mode 600"
+[[ -z "$(find -P "$evidence" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail "evidence directory must be empty"
 
 declare -A cfg=()
 while IFS= read -r line || [[ -n "$line" ]]; do
@@ -305,6 +316,7 @@ isolated="$scratch/BACKUP_ENV_FILE"
 { printf 'RECOVERY_ADMIN_URL='; printf '%q' "$db_url"; printf '\nRECOVERY_CLIENT_CERT_FILE='; printf '%q' "$recovery_client_cert_file"; printf '\nRECOVERY_CLIENT_KEY_FILE='; printf '%q' "$recovery_client_key_file"; printf '\nUPLOAD_ROOT='; printf '%q' "$public_root"; printf '\nPRIVATE_UPLOAD_ROOT='; printf '%q' "$private_root"; printf '\nBACKUP_AGE_IDENTITY_FILE='; printf '%q' "$identity"; printf '\n'; } > "$isolated"; chmod 600 "$isolated"
 time_command="${REHEARSAL_TIME_COMMAND:-/usr/bin/time}"; [[ "$time_command" == /* && -x "$time_command" && ! -L "$time_command" ]] || fail "REHEARSAL_TIME_COMMAND must be an absolute executable resource timer"; check_path "$time_command" REHEARSAL_TIME_COMMAND
 env -u BASH_ENV -u ENV RESTORE_CONFIRMATION=RESTORE_QUEST_PRODUCTION BACKUP_ENV_FILE="$isolated" RESTORE_COUNTDOWN_SECONDS=0 OBSERVED_SESSION_USER=quest_recovery_admin "$time_command" -f 'cpu_seconds=%U\npeak_memory_kb=%M' -o "$scratch/resource" bash "$restore" --test-fixture "$archive" >"$scratch/restore.log" 2>&1 || { cat "$scratch/restore.log" >&2; fail "existing restore primitive failed"; }
+grep -Fqx 'Upload source equivalence: verified:public,private.' "$scratch/restore.log" || fail "restore did not verify both upload roots against decrypted source inventories"
 cpu="$(grep -m1 '^cpu_seconds=' "$scratch/resource" | cut -d= -f2)"; memory="$(grep -m1 '^peak_memory_kb=' "$scratch/resource" | cut -d= -f2)"
 [[ "$cpu" =~ ^[0-9]+([.][0-9]+)?$ && "$memory" =~ ^[0-9]+$ ]] || fail "resource measurement is incomplete"
 target_identity_after="$(docker container inspect --size --format '{{.Id}}|{{.Name}}|{{.State.Running}}|{{.Config.Image}}|{{.SizeRw}}' "${sentinel_cfg[container_id]}" 2>/dev/null)" || fail "disposable target container could not be re-inspected"
@@ -534,7 +546,7 @@ source_record_sha256="$(sha256sum "$source_record" | cut -d' ' -f1)"
 roles_sha256="$(sha256sum "$scratch/roles" | cut -d' ' -f1)"; memberships_sha256="$(sha256sum "$scratch/memberships" | cut -d' ' -f1)"; owners_sha256="$(sha256sum "$scratch/owners" | cut -d' ' -f1)"; grants_sha256="$(sha256sum "$scratch/grants" | cut -d' ' -f1)"; acl_sha256="$(sha256sum "$scratch/acl" | cut -d' ' -f1)"; rls_sha256="$(sha256sum "$scratch/rls" | cut -d' ' -f1)"
 schema_counts_sha256="$(sha256sum "$scratch/counts" | cut -d' ' -f1)"; policy_counts_sha256="$(sha256sum "$scratch/policy-counts" | cut -d' ' -f1)"; target_session_tls_sha256="$(sha256sum "$scratch/target-session-tls" | cut -d' ' -f1)"; quest_write_probe_sha256="$(sha256sum "$scratch/quest-write-probe" | cut -d' ' -f1)"; cross_schema_denial_sha256="$(sha256sum "$scratch/cross-schema-denial.tsv" | cut -d' ' -f1)"
 target_docker_before_sha256="$(sha256sum "$scratch/target-docker-before" | cut -d' ' -f1)"; target_mapping_sha256="$(sha256sum "$scratch/target-port-mapping" | cut -d' ' -f1)"; target_mapping_after_sha256="$(sha256sum "$scratch/target-port-mapping-after" | cut -d' ' -f1)"; target_connection_before_sha256="$(sha256sum "$scratch/connection-binding" | cut -d' ' -f1)"; target_docker_connection_before_sha256="$(sha256sum "$scratch/docker-connection-binding" | cut -d' ' -f1)"; target_docker_after_sha256="$(sha256sum "$scratch/target-docker-after" | cut -d' ' -f1)"; target_connection_after_sha256="$(sha256sum "$scratch/connection-binding-after" | cut -d' ' -f1)"; target_docker_connection_after_sha256="$(sha256sum "$scratch/docker-connection-binding-after" | cut -d' ' -f1)"
-upload_checksum_scope=post_restore_tree; upload_source_equivalence=not_claimed_without_source_inventory
+upload_checksum_scope=post_restore_tree; upload_source_equivalence=verified:public,private
 cleanup_upload_parent || fail "disposable upload cleanup failed"
 printf 'status=verified\npublic_root_removed=true\nprivate_root_removed=true\nparent_removed=true\n' > "$scratch/upload-cleanup"
 upload_cleanup_sha256="$(sha256sum "$scratch/upload-cleanup" | cut -d' ' -f1)"

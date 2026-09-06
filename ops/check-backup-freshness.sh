@@ -150,7 +150,7 @@ if [[ ! "$maximum_age_minutes" =~ ^[1-9][0-9]*$ ]]; then
   echo "BACKUP_MAX_AGE_MINUTES must be a positive integer." >&2
   exit 1
 fi
-for command in basename find flock realpath rclone sha256sum sort; do
+for command in awk basename find flock realpath rclone sha256sum sort stat tr wc; do
   command -v "$command" >/dev/null || {
     echo "Required freshness command is unavailable: $command" >&2
     exit 1
@@ -164,8 +164,15 @@ find "$BACKUP_ROOT" -maxdepth 1 -type f \
   -print0 | sort -z -r > "$candidate_file"
 recent_archive=""
 while IFS= read -r -d '' candidate; do
-  [[ -f "$candidate.sha256" ]] || continue
+  [[ -f "$candidate.sha256" && ! -L "$candidate.sha256" && -r "$candidate.sha256" ]] || continue
   archive_name="$(basename "$candidate")"
+  checksum_path="$candidate.sha256"
+  # A checksum file is an assertion about one specific recovery point. Do not
+  # let sha256sum --check select a valid row for an unrelated archive, or hide
+  # ambiguity behind an extra row.
+  [[ "$(wc -l < "$checksum_path" | tr -d ' ')" == 1 ]] || continue
+  checksum_line="$(tr -d '\r' < "$checksum_path")"
+  [[ "$checksum_line" =~ ^[a-fA-F0-9]{64}[[:space:]]+\*?${archive_name}$ ]] || continue
   if ! (cd "$BACKUP_ROOT" && sha256sum --check --status "$archive_name.sha256") 2>/dev/null; then
     continue
   fi

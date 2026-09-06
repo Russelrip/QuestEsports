@@ -21,6 +21,7 @@ for path in "$archive" "$checksum" "$dir"; do
   done < <(printf '%s\n' "$path" | tr / '\n')
 done
 mode="$(stat -c '%a' -- "$dir" 2>/dev/null)"; [[ "$mode" =~ ^[0-7]+$ ]] && (( (8#$mode & 077) == 0 )) || fail "evidence directory is not private"
+[[ "$(stat -c '%u:%g' -- "$dir" 2>/dev/null)" == "$(id -u):$(id -g)" ]] || fail "evidence directory ownership is not private"
 case "${dir,,}" in *questesports*|*supabase*|*production*|*/var/www/*|*/srv/quest-esports/*) fail "evidence directory looks like production" ;; esac
 file="$dir/rehearsal-evidence.env"; [[ -f "$file" && ! -L "$file" ]] || fail "machine-readable evidence is missing"
 mode="$(stat -c '%a' -- "$file" 2>/dev/null)"; [[ "$mode" =~ ^[0-7]+$ ]] && (( (8#$mode & 077) == 0 )) || fail "evidence file is not private"
@@ -44,7 +45,7 @@ required+=(target_database_name target_nonce_after_sha256 quest_read_probe_sessi
 required+=(target_server_version_num target_ssl_status target_ssl_session_status public_policy_count valorant_policy_count runtime_policy_status roles_nobypassrls_status quest_read_write_probe_status quest_write_probe_status cross_schema_denial_status quest_write_probe_session_user quest_write_probe_current_user quest_write_probe_application_name quest_write_probe_backend_pid quest_write_probe_ssl cross_schema_denial_session_user cross_schema_denial_current_user cross_schema_denial_application_name cross_schema_denial_backend_pid cross_schema_denial_ssl upload_cleanup_status schema_counts_observations_sha256 policy_counts_observations_sha256 quest_write_probe_observations_sha256 cross_schema_denial_observations_sha256 target_session_tls_observations_sha256 upload_cleanup_observations_sha256 live_disposable_rehearsal_gate)
 for key in "${required[@]}"; do [[ -n "${e[$key]:-}" ]] || fail "required field missing: $key"; done
 for key in "${!e[@]}"; do found=false; for known in "${required[@]}"; do [[ "$key" == "$known" ]] && found=true; done; [[ "$found" == true ]] || fail "unknown evidence field: $key"; done
-archive_line="$(tr -d '\r' < "$checksum")"; [[ "$archive_line" =~ ^[a-fA-F0-9]{64}[[:space:]]+\*?$(basename "$archive")$ ]] || fail "archive checksum does not identify selected archive"; (cd -- "$(dirname "$archive")" && sha256sum --check --status "$(basename "$checksum")") || fail "selected archive checksum failed"; [[ "$(sha256sum "$archive" | cut -d' ' -f1)" == "${e[archive_sha256]}" ]] || fail "summary is bound to a different archive"
+[[ "$(wc -l < "$checksum" | tr -d ' ')" == 1 ]] || fail "archive checksum must contain exactly one row"; archive_line="$(tr -d '\r' < "$checksum")"; [[ "$archive_line" =~ ^[a-fA-F0-9]{64}[[:space:]]+\*?$(basename "$archive")$ ]] || fail "archive checksum does not identify selected archive"; (cd -- "$(dirname "$archive")" && sha256sum --check --status "$(basename "$checksum")") || fail "selected archive checksum failed"; [[ "$(sha256sum "$archive" | cut -d' ' -f1)" == "${e[archive_sha256]}" ]] || fail "summary is bound to a different archive"
 expected_artifacts=(rehearsal-evidence.env rehearsal-observations.env rehearsal-source-version.env rehearsal-security-verifier.output rehearsal-target-sentinel.env rehearsal-failure-injections.tsv rehearsal-failure-bad_checksum.output rehearsal-failure-bad_decryption.output rehearsal-failure-wrong_ca.output rehearsal-failure-blocked_network.output rehearsal-failure-failed_service_health.output rehearsal-failure-attempted_mutation_callback.output rehearsal-failure-hook-bad_checksum.sh rehearsal-failure-hook-bad_decryption.sh rehearsal-failure-hook-wrong_ca.sh rehearsal-failure-hook-blocked_network.sh rehearsal-failure-hook-failed_service_health.sh rehearsal-failure-hook-attempted_mutation_callback.sh rehearsal-roles.tsv rehearsal-memberships.tsv rehearsal-owners.tsv rehearsal-grants.tsv rehearsal-acl.tsv rehearsal-ext-before.tsv rehearsal-ext.tsv rehearsal-settings-before.tsv rehearsal-settings.tsv rehearsal-rls.tsv rehearsal-schema-counts.tsv rehearsal-policy-counts.tsv rehearsal-target-session-tls.tsv rehearsal-quest-write-probe.tsv rehearsal-cross-schema-denial.tsv rehearsal-upload-cleanup.tsv rehearsal-quest-migrations-before.tsv rehearsal-valorant-migrations-before.tsv rehearsal-quest-migrations.tsv rehearsal-valorant-migrations.tsv rehearsal-target-docker-before.txt rehearsal-target-port-mapping.txt rehearsal-target-port-mapping-after.txt rehearsal-connection-binding.txt rehearsal-docker-connection-binding.txt rehearsal-target-docker-after.txt rehearsal-connection-binding-after.txt rehearsal-docker-connection-binding-after.txt rehearsal-quest-read-probe.tsv)
 declare -A listed=()
 while read -r listed_hash listed_name; do
@@ -57,6 +58,13 @@ while read -r listed_hash listed_name; do
   [[ "$(sha256sum "$dir/$listed_name" | cut -d' ' -f1)" == "$listed_hash" ]] || fail "evidence artifact hash does not match manifest"
 done < "$manifest"
 [[ "${#listed[@]}" == "${#expected_artifacts[@]}" ]] || fail "evidence manifest does not cover every required artifact"
+while IFS= read -r -d '' evidence_entry; do
+  evidence_name="$(basename "$evidence_entry")"
+  case "$evidence_name" in
+    rehearsal-evidence.manifest|rehearsal-evidence.sig) ;;
+    *) [[ -n "${listed[$evidence_name]+x}" ]] || fail "evidence directory contains an unlisted artifact" ;;
+  esac
+done < <(find -P "$dir" -mindepth 1 -maxdepth 1 -print0)
 [[ "${e[observations_sha256]}" =~ ^[a-fA-F0-9]{64}$ ]] || fail "observation binding is malformed"
 actual_observations_sha256="$(sha256sum "$observations" | cut -d' ' -f1)"; [[ "$actual_observations_sha256" == "${e[observations_sha256]}" ]] || fail "raw observations do not match summary binding"
 declare -A o=()
@@ -230,7 +238,7 @@ for key in roles_status memberships_status owners_status grants_status default_a
 for key in public_upload_file_count public_upload_byte_count private_upload_file_count private_upload_byte_count resource_peak_memory_kb resource_disk_bytes rpo_seconds rto_seconds extensions_count extensions_before_count quest_read_probe_count target_container_disk_bytes_before target_container_disk_bytes_after target_database_size_bytes target_port; do [[ "${e[$key]}" =~ ^[0-9]+$ ]] || fail "numeric evidence is malformed: $key"; done
 [[ "${e[rpo_seconds]}" -gt 0 && "${e[rto_seconds]}" -gt 0 && "${e[resource_peak_memory_kb]}" -gt 0 && "${e[target_database_size_bytes]}" -gt 0 ]] || fail "RPO, RTO, or resource range is invalid"
 [[ "${e[rpo_decision]}" == met || "${e[rpo_decision]}" == not_met ]] || fail "RPO decision is missing"
-[[ "${e[upload_checksum_scope]}" == post_restore_tree && "${e[upload_source_equivalence]}" == not_claimed_without_source_inventory ]] || fail "upload checksum scope is overclaimed"
+[[ "${e[upload_checksum_scope]}" == post_restore_tree && "${e[upload_source_equivalence]}" == verified:public,private ]] || fail "upload source equivalence is not proven for both roots"
 for key in public_upload_checksum private_upload_checksum; do [[ "${e[$key]}" =~ ^[a-fA-F0-9]{64}$ ]] || fail "upload checksum is malformed: $key"; done
 for key in quest_liveness_status quest_readiness_status valorant_health_status; do [[ "${e[$key]}" == ok ]] || fail "health status is not ok: $key"; done
 [[ "${e[quest_database_status]}" == up && "${e[valorant_database_status]}" == up ]] || fail "database health is not up"
