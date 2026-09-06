@@ -27,8 +27,9 @@ set +a
 
 if [[ "$backup_test_fixture" == false ]]; then
   [[ "$(realpath "$config_file" 2>/dev/null)" == /etc/quest-esports-backup.env &&
-     "$(stat -c '%u %a' "$config_file" 2>/dev/null)" =~ ^0\ (600|640)$ ]] || {
-    echo "Production backup configuration is not canonical or private." >&2
+      "$(id -g deploy 2>/dev/null)" =~ ^[0-9]+$ &&
+      "$(stat -c '%u:%g %a' "$config_file" 2>/dev/null)" == "0:$(id -g deploy) 640" ]] || {
+    echo "Production backup configuration must be root:deploy mode 0640." >&2
     exit 1
   }
 fi
@@ -40,6 +41,16 @@ for name in "${required[@]}"; do
     exit 1
   fi
 done
+
+backup_release_sha="${BACKUP_RELEASE_SHA:-}"
+if [[ "$backup_test_fixture" == true ]]; then
+  backup_release_sha="${backup_release_sha:-fixture}"
+else
+  [[ "$backup_release_sha" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "BACKUP_RELEASE_SHA must identify the exact lowercase release commit." >&2
+    exit 1
+  }
+fi
 
 # The PostgreSQL server key/certificate are container-only identities. Backups
 # use the separate client certificate/key pair, while POSTGRES_CA_FILE is a
@@ -235,6 +246,10 @@ for setting in POSTGRES_CA_FILE; do
     echo "Required PostgreSQL TLS material is missing or unsafe: $setting" >&2
     exit 1
   }
+  [[ -r "${!setting}" ]] || {
+    echo "Required PostgreSQL TLS material is not readable: $setting" >&2
+    exit 1
+  }
 done
 [[ "$POSTGRES_CA_FILE" != "$backup_client_cert_file" &&
    "$POSTGRES_CA_FILE" != "$backup_client_key_file" ]] || {
@@ -412,15 +427,42 @@ if [[ "$BACKUP_ROOT" == "/" || -L "$BACKUP_ROOT" ]]; then
   echo "BACKUP_ROOT must not be the filesystem root or a symbolic link." >&2
   exit 1
 fi
-for command in age basename cat chmod date find flock hostname mkdir mktemp realpath rm rclone rsync sha256sum stat tar; do
+for command in age basename cat chmod date find flock hostname mkdir mktemp realpath rm rclone rsync sed sha256sum stat tar; do
   command -v "$command" >/dev/null || {
     echo "Required backup command is unavailable: $command" >&2
     exit 1
   }
 done
 
+# A result record is created before any target, archive, or remote operation.
+# The EXIT trap converts every later failure to a terminal record; no failed run
+# can leave a misleading pending status behind.
 mkdir -p "$BACKUP_ROOT"
 chmod 700 "$BACKUP_ROOT"
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+hostname_value="$(hostname -f 2>/dev/null || hostname)"
+archive_name="quest-production-${timestamp}.tar.gz.enc"
+archive_path="$BACKUP_ROOT/$archive_name"
+checksum_path="$archive_path.sha256"
+result_path="$BACKUP_ROOT/$archive_name.results"
+printf 'archive=%s\nrelease_sha=%s\nstatus=running\nexit_status=running\nremote_label\tstatus\n' "$archive_name" "$backup_release_sha" > "$result_path"
+chmod 600 "$result_path"
+finalize_result() {
+  local status=$?
+  trap - EXIT
+  set +e
+  [[ -z "${work_directory:-}" ]] || rm -rf -- "$work_directory"
+  if [[ -f "${result_path:-}" && ! -L "${result_path:-}" ]]; then
+    if (( status == 0 )); then
+      sed -i 's/^status=running$/status=success/; s/^exit_status=running$/exit_status=0/' "$result_path"
+    else
+      sed -i "s/^status=running$/status=failed/; s/^exit_status=running$/exit_status=$status/" "$result_path"
+    fi
+  fi
+  exit "$status"
+}
+trap finalize_result EXIT
+
 exec 9>"$BACKUP_ROOT/.quest-backup.lock"
 if ! flock -n 9; then
   echo "Another production backup is already running." >&2
@@ -452,14 +494,7 @@ private_event_album_original_root="$resolved_private_root/event-album-originals"
 mkdir -p "$public_event_album_preview_root" "$private_event_album_original_root"
 chmod 700 "$resolved_private_root" "$private_event_album_original_root"
 
-timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-hostname_value="$(hostname -f 2>/dev/null || hostname)"
-archive_name="quest-production-${timestamp}.tar.gz.enc"
-archive_path="$BACKUP_ROOT/$archive_name"
-checksum_path="$archive_path.sha256"
-result_path="$BACKUP_ROOT/$archive_name.results"
 work_directory="$(mktemp -d "$BACKUP_ROOT/.quest-backup-${timestamp}-XXXXXX")"
-trap 'rm -rf -- "$work_directory"' EXIT
 
 psql_target() {
   PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$backup_client_cert_file" PGSSLKEY="$backup_client_key_file" PGAPPNAME=quest-backup-target \
@@ -490,6 +525,36 @@ mkdir -p "$work_directory/$public_name" "$work_directory/$private_name"
 rsync -a "$resolved_upload_root/" "$work_directory/$public_name/"
 rsync -a "$resolved_private_root/" "$work_directory/$private_name/"
 
+inventory_tree() {
+  local root="$1" output="$2" entry relative digest bytes
+  : > "$output"
+  while IFS= read -r -d '' entry; do
+    relative="${entry#"$root"/}"
+    [[ "$relative" != *$'\n'* && "$relative" != *$'\r'* && "$relative" != *$'\t'* ]] || {
+      echo "Upload tree contains an unsupported filename." >&2
+      exit 1
+    }
+    if [[ -L "$entry" ]]; then
+      echo "Upload tree contains a symbolic link." >&2
+      exit 1
+    elif [[ -d "$entry" ]]; then
+      printf 'directory\t%s\n' "$relative" >> "$output"
+    elif [[ -f "$entry" ]]; then
+      digest="$(sha256sum -- "$entry" | awk '{print $1}')"
+      bytes="$(stat -c '%s' -- "$entry")"
+      printf 'file\t%s\t%s\t%s\n' "$relative" "$bytes" "$digest" >> "$output"
+    else
+      echo "Upload tree contains an unsupported filesystem entry." >&2
+      exit 1
+    fi
+  done < <(find -P "$root" -mindepth 1 -print0 | sort -z)
+}
+
+inventory_tree "$work_directory/$public_name" "$work_directory/public-upload-inventory.tsv"
+inventory_tree "$work_directory/$private_name" "$work_directory/private-upload-inventory.tsv"
+public_upload_inventory_sha256="$(sha256sum "$work_directory/public-upload-inventory.tsv" | awk '{print $1}')"
+private_upload_inventory_sha256="$(sha256sum "$work_directory/private-upload-inventory.tsv" | awk '{print $1}')"
+
 PGSSLMODE=verify-full PGSSLROOTCERT="$POSTGRES_CA_FILE" PGSSLCERT="$backup_client_cert_file" PGSSLKEY="$backup_client_key_file" PGAPPNAME=quest-backup-dump \
   "$pg_dump_bin" "$DIRECT_URL" --format=custom --schema=public --schema=valorant \
   --no-owner --no-acl --file="$work_directory/database.dump" 2>/dev/null
@@ -503,6 +568,7 @@ else
 fi
 {
   printf 'created_at_utc=%s\n' "$timestamp"
+  printf 'release_sha=%s\n' "$backup_release_sha"
   printf 'source_host=%s\n' "$hostname_value"
   printf 'database_format=postgres_custom\n'
   printf 'database_scope=%s\n' "$database_scope"
@@ -513,16 +579,19 @@ fi
   printf 'file_snapshot_strategy=two_pass_union_around_database_dump\n'
   printf 'public_event_album_preview_root=%s\n' "$public_event_album_preview_root"
   printf 'private_event_album_original_root=%s\n' "$private_event_album_original_root"
+  printf 'public_upload_inventory=public-upload-inventory.tsv\n'
+  printf 'public_upload_inventory_sha256=%s\n' "$public_upload_inventory_sha256"
+  printf 'private_upload_inventory=private-upload-inventory.tsv\n'
+  printf 'private_upload_inventory_sha256=%s\n' "$private_upload_inventory_sha256"
 } > "$work_directory/manifest.txt"
 
 tar --create --gzip --file="$work_directory/payload.tar.gz" \
-  -C "$work_directory" database.dump manifest.txt "$public_name" "$private_name"
+  -C "$work_directory" database.dump manifest.txt public-upload-inventory.tsv private-upload-inventory.tsv "$public_name" "$private_name"
 age --recipient "$BACKUP_AGE_RECIPIENT" --output "$archive_path" \
   "$work_directory/payload.tar.gz" 2>/dev/null
 (cd "$BACKUP_ROOT" && sha256sum "$archive_name" > "$archive_name.sha256")
 
 # This record intentionally contains labels and outcomes, never destinations or configs.
-printf 'archive=%s\nremote_label\tstatus\n' "$archive_name" > "$result_path"
 remote_failures=0
 for remote_index in "${!remote_labels[@]}"; do
   label="${remote_labels[$remote_index]}"
@@ -561,4 +630,4 @@ if (( remote_failures > 0 )); then
   echo "Production backup was created but one or more required remotes failed; see the per-run result record." >&2
   exit 1
 fi
-echo "Encrypted production backup uploaded successfully: $archive_name"
+echo "Encrypted production backup uploaded successfully: $archive_name (ScriptResult=success ScriptExitStatus=0)"

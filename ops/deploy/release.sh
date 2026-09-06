@@ -1063,9 +1063,17 @@ if [[ "$quest_migration_pending" == true || "$valorant_migration_pending" == tru
     [[ "${VALORANT_MIGRATION_OWNER_APPROVAL_SHA:-}" == "$release_sha" ]] || die 'VALORANT migration owner approval does not name this exact SHA.'
   fi
   command_setting BACKUP_COMMAND
-  BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}" BACKUP_RELEASE_LOCK_PATH="$release_lock_path" BACKUP_RELEASE_LOCK_HELD=1 "$BACKUP_COMMAND" >/dev/null 2>&1 8>&9 || die 'backup before migration failed.'
-  command_setting BACKUP_EVIDENCE_COMMAND
-  backup_evidence="$(BACKUP_RELEASE_SHA="$release_sha" "$BACKUP_EVIDENCE_COMMAND" 2>/dev/null)" || die 'backup evidence command failed.'
+  BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/etc/quest-esports-backup.env}" BACKUP_RELEASE_SHA="$release_sha" BACKUP_RELEASE_LOCK_PATH="$release_lock_path" BACKUP_RELEASE_LOCK_HELD=1 "$BACKUP_COMMAND" >/dev/null 2>&1 8>&9 || die 'backup before migration failed.'
+  backup_evidence_consumer="${BACKUP_EVIDENCE_CONSUMER:-}"
+  if [[ "$fixture_mode" == 1 ]]; then
+    backup_evidence_consumer="${backup_evidence_consumer:-${BACKUP_EVIDENCE_COMMAND:-}}"
+  else
+    command_setting BACKUP_EVIDENCE_CONSUMER
+    [[ "$backup_evidence_consumer" == /var/www/QuestEsports/ops/deploy/verify-backup-evidence.sh ]] || die 'release-bound backup evidence consumer is not canonical.'
+    root_file "$backup_evidence_consumer"
+  fi
+  [[ -n "$backup_evidence_consumer" && -x "$backup_evidence_consumer" ]] || die 'release-bound backup evidence consumer is unavailable.'
+  backup_evidence="$(BACKUP_RELEASE_SHA="$release_sha" "$backup_evidence_consumer" --release-sha "$release_sha" 2>/dev/null)" || die 'backup evidence consumer failed.'
   [[ "$backup_evidence" =~ ^verified-complete\ release_sha=${release_sha}\ schemas=verified:public,valorant\ uploads=verified:public,private\ archive=verified\ checksum=verified\ remote=verified$ ]] || die 'backup evidence did not prove the exact release-bound archive, checksum, schemas, uploads, and remote verification contract.'
 fi
 

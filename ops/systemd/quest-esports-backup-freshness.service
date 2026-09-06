@@ -12,6 +12,8 @@ Group=deploy
 # server issuer; the client certificate/key remain separate identity material.
 Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env
 WorkingDirectory=/var/www/QuestEsports
+ExecStartPre=/usr/bin/test -d /var/www/QuestEsports
+ExecStartPre=/usr/bin/test -r /var/www/QuestEsports/ops/check-backup-freshness.sh
 ExecStart=/usr/bin/bash /var/www/QuestEsports/ops/check-backup-freshness.sh
 PrivateTmp=true
 NoNewPrivileges=true

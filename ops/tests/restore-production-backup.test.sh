@@ -53,17 +53,19 @@ done
 printf 'fixture payload\n' > "$output"
 EOF
 
+REAL_SHA256SUM="$(command -v sha256sum)"
+export REAL_SHA256SUM
 cat > "$test_root/bin/sha256sum" <<'EOF'
 #!/usr/bin/env bash
 [[ "${1:-}" == --check ]] && exit 0
-exit 1
+exec "$REAL_SHA256SUM" "$@"
 EOF
 
 cat > "$test_root/bin/tar" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == --list ]]; then
-  printf '%s\n' public/ public/poster-images/ private/ private/event-album-originals/ database.dump manifest.txt
+  printf '%s\n' public/ public/poster-images/ private/ private/event-album-originals/ database.dump manifest.txt public-upload-inventory.tsv private-upload-inventory.tsv
   exit 0
 fi
 directory=''
@@ -73,9 +75,13 @@ done
 mkdir -p "$directory/public/poster-images" "$directory/private/event-album-originals"
 printf 'fixture public file\n' > "$directory/public/file.txt"
 printf 'fixture private file\n' > "$directory/private/file.txt"
+printf 'fixture private original\n' > "$directory/private/event-album-originals/file"
 printf 'fixture dump\n' > "$directory/database.dump"
+printf 'file\tfile.txt\t%s\t%s\ndirectory\tposter-images\n' "$(wc -c < "$directory/public/file.txt" | tr -d ' ')" "$(sha256sum "$directory/public/file.txt" | cut -d' ' -f1)" > "$directory/public-upload-inventory.tsv"
+printf 'directory\tevent-album-originals\nfile\tevent-album-originals/file\t%s\t%s\nfile\tfile.txt\t%s\t%s\n' "$(wc -c < "$directory/private/event-album-originals/file" | tr -d ' ')" "$(sha256sum "$directory/private/event-album-originals/file" | cut -d' ' -f1)" "$(wc -c < "$directory/private/file.txt" | tr -d ' ')" "$(sha256sum "$directory/private/file.txt" | cut -d' ' -f1)" > "$directory/private-upload-inventory.tsv"
 printf 'database_scope=application_public_and_valorant_schemas\nvalorant_schema_included=true\npublic_upload_root=%s\nprivate_upload_root=%s\npublic_event_album_preview_root=%s\nprivate_event_album_original_root=%s\n' \
   "$TEST_ROOT/public" "$TEST_ROOT/private" "$TEST_ROOT/public/poster-images" "$TEST_ROOT/private/event-album-originals" > "$directory/manifest.txt"
+printf 'public_upload_inventory=public-upload-inventory.tsv\npublic_upload_inventory_sha256=%s\nprivate_upload_inventory=private-upload-inventory.tsv\nprivate_upload_inventory_sha256=%s\n' "$(sha256sum "$directory/public-upload-inventory.tsv" | cut -d' ' -f1)" "$(sha256sum "$directory/private-upload-inventory.tsv" | cut -d' ' -f1)" >> "$directory/manifest.txt"
 EOF
 
 cat > "$test_root/bin/pg_restore" <<'EOF'
@@ -194,6 +200,91 @@ for expected in \
 done
 grep -F -- 'REVOKE ALL ON SCHEMA valorant FROM quest_runtime' "$test_root/psql.log" >/dev/null
 grep -F -- 'REVOKE ALL ON SCHEMA public FROM val_runtime' "$test_root/psql.log" >/dev/null
+
+# The scheduled units must establish a deploy-readable working directory and
+# canonical client TLS paths before invoking their wrappers. Starting systemd
+# is intentionally outside this disposable test.
+backup_service="$root/ops/systemd/quest-esports-backup.service"
+freshness_service="$root/ops/systemd/quest-esports-backup-freshness.service"
+grep -Fx 'Environment=BACKUP_ENV_FILE=/etc/quest-esports-backup.env' "$backup_service" >/dev/null
+grep -Fx 'Environment=POSTGRES_CA_FILE=/etc/quest-esports-backup/backup-client-ca.crt' "$backup_service" >/dev/null
+grep -Fx 'Environment=BACKUP_CLIENT_CERT_FILE=/etc/quest-esports-backup/backup-client.crt' "$backup_service" >/dev/null
+grep -Fx 'Environment=BACKUP_CLIENT_KEY_FILE=/etc/quest-esports-backup/backup-client.key' "$backup_service" >/dev/null
+grep -Fx 'WorkingDirectory=/var/www/QuestEsports' "$backup_service" >/dev/null
+grep -Fx 'WorkingDirectory=/var/www/QuestEsports' "$freshness_service" >/dev/null
+grep -Fx 'ExecStartPre=/usr/bin/test -d /var/www/QuestEsports' "$backup_service" >/dev/null
+grep -Fx 'ExecStartPre=/usr/bin/test -r /var/www/QuestEsports/ops/backup-production.sh' "$backup_service" >/dev/null
+grep -Fx 'ExecStartPre=/usr/bin/test -r /var/www/QuestEsports/ops/check-backup-freshness.sh' "$freshness_service" >/dev/null
+! grep -Eq '^(WorkingDirectory|ExecStart|ExecStartPre)=.*/root' "$backup_service" "$freshness_service" >/dev/null
+grep -F 'ScriptResult=success ScriptExitStatus=0' "$root/ops/backup-production-multi-remote.sh" >/dev/null
+
+# Missing backup prerequisites must fail before any source tree or output file
+# is removed. The fixture intentionally stops before remotes are configured,
+# so no credential-bearing command can be reached.
+backup_source_public="$test_root/backup-source-public"
+backup_source_private="$test_root/backup-source-private"
+backup_output="$test_root/backup-output"
+backup_tls="$test_root/backup-tls"
+mkdir -p "$backup_source_public" "$backup_source_private" "$backup_output" "$backup_tls"
+printf 'backup source public\n' > "$backup_source_public/file.txt"
+printf 'backup source private\n' > "$backup_source_private/file.txt"
+printf 'backup ca\n' > "$backup_tls/backup-client-ca.crt"
+printf 'backup cert\n' > "$backup_tls/backup-client.crt"
+printf 'backup key\n' > "$backup_tls/backup-client.key"
+chmod 750 "$backup_tls"
+chmod 640 "$backup_tls"/*
+real_backup_stat="$(command -v stat)"
+cat > "$test_root/bin/stat" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *backup-tls) printf '750\n'; exit 0 ;;
+  *backup-client-ca.crt|*backup-client.crt|*backup-client.key) printf '640\n'; exit 0 ;;
+esac
+exec "$REAL_BACKUP_STAT" "$@"
+EOF
+chmod 700 "$test_root/bin/stat"
+export REAL_BACKUP_STAT="$real_backup_stat"
+cat > "$test_root/backup-prerequisites.env" <<EOF
+DIRECT_URL=postgresql://quest_backup:fixture@127.0.0.1:55432/quest
+UPLOAD_ROOT=$backup_source_public
+PRIVATE_UPLOAD_ROOT=$backup_source_private
+BACKUP_ROOT=$backup_output
+BACKUP_AGE_RECIPIENT=age1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+POSTGRES17_BIN=$test_root/bin
+BACKUP_CLIENT_TLS_DIR=$backup_tls
+BACKUP_CLIENT_CERT_FILE=$backup_tls/backup-client.crt
+BACKUP_CLIENT_KEY_FILE=$backup_tls/backup-client.key
+EOF
+chmod 600 "$test_root/backup-prerequisites.env"
+source_snapshot="$(sha256sum "$backup_source_public/file.txt" "$backup_source_private/file.txt")"
+if PATH="$test_root/bin:$PATH" BACKUP_ENV_FILE="$test_root/backup-prerequisites.env" \
+    BACKUP_RELEASE_LOCK_PATH="$test_root/missing-tls.lock" \
+    bash "$root/ops/backup-production-multi-remote.sh" --test-fixture \
+    >"$test_root/missing-tls.out" 2>&1; then
+  echo 'backup accepted missing TLS settings' >&2
+  exit 1
+fi
+grep -F 'Required PostgreSQL TLS material is missing or unsafe: POSTGRES_CA_FILE' "$test_root/missing-tls.out" >/dev/null
+! grep -Eq 'postgresql://|fixture' "$test_root/missing-tls.out" >/dev/null
+cp "$test_root/backup-prerequisites.env" "$test_root/missing-target.env"
+printf 'POSTGRES_CA_FILE=%s\n' "$backup_tls/backup-client-ca.crt" >> "$test_root/missing-target.env"
+if PATH="$test_root/bin:$PATH" BACKUP_ENV_FILE="$test_root/missing-target.env" \
+    BACKUP_RELEASE_LOCK_PATH="$test_root/missing-target.lock" \
+    bash "$root/ops/backup-production-multi-remote.sh" --test-fixture \
+    >"$test_root/missing-target.out" 2>&1; then
+  echo 'backup accepted missing PostgreSQL target settings' >&2
+  exit 1
+fi
+grep -F 'Explicit PostgreSQL target settings are required.' "$test_root/missing-target.out" >/dev/null
+! grep -Eq 'postgresql://|fixture' "$test_root/missing-target.out" >/dev/null
+[[ "$source_snapshot" == "$(sha256sum "$backup_source_public/file.txt" "$backup_source_private/file.txt")" ]] || {
+  echo 'backup prerequisite refusal changed source data' >&2
+  exit 1
+}
+[[ -z "$(find "$backup_output" -mindepth 1 -print -quit)" ]] || {
+  echo 'backup prerequisite refusal created output data' >&2
+  exit 1
+}
 
 # Refusal assertions must prove that the activation primitive was never
 # reached, rather than relying only on rollback leaving identical trees.
