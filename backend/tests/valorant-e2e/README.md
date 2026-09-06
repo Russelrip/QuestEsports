@@ -8,7 +8,7 @@ Boots the Henrik fixture mock (:18000), `valorant-platform-backend` (:8000) and
 Quest Express (:5001) against one dedicated Supabase test project, then drives
 the design §11.4 journey through Quest admin routes. Requires:
 
-1. The FastAPI repo checked out; `VALORANT_PLATFORM_REPO` points at it.
+1. The monorepo `valorant-platform-backend/` directory; `VALORANT_PLATFORM_REPO` points at it.
 2. A dedicated test project prepared per docs/setup-and-deployment.md
    (Task 3): FastAPI migrations applied with `--runtime-role val_runtime`,
    Quest Prisma migrations applied, an admin user + two SavedTeams seeded, and
@@ -18,7 +18,7 @@ the design §11.4 journey through Quest admin routes. Requires:
 
 | Var | Purpose |
 |---|---|
-| `VALORANT_PLATFORM_REPO` | absolute path to the FastAPI repo checkout |
+| `VALORANT_PLATFORM_REPO` | absolute path to the monorepo FastAPI directory |
 | `E2E_VAL_DATABASE_URL` | FastAPI `DATABASE_URL` on the shared test project (`valorant` schema, runtime role) |
 | `E2E_QUEST_DATABASE_URL` | Quest `DATABASE_URL`/`DIRECT_URL` on the same project (`public`) |
 | `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` | admin login for the session cookie |
@@ -47,3 +47,8 @@ secret is committed.)
 Expected: all journey assertions pass; the test prints the FastAPI and Quest
 startup logs with `[fastapi]`/`[quest]` prefixes. Teardown kills all three child
 processes (mock, FastAPI, Quest).
+
+The independent auth-boundary test needs no database: set `PYTHON_BIN` to the managed
+VALORANT interpreter and run `node --test tests/valorant-e2e/valorant-auth-boundary.test.js`.
+Windows uses `.venv/Scripts/python.exe`; Linux uses `.venv/bin/python`. The full
+journey still requires the isolated fixture environment above.

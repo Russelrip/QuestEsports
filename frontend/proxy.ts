@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { parseApiOrigin } from "./lib/api";
 import { readSiteMaintenanceConfig } from "./lib/maintenance";
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -23,8 +24,8 @@ export function proxy(request: NextRequest) {
 
   const maintenance = readSiteMaintenanceConfig();
   const nonce = Buffer.from(randomUUID()).toString("base64");
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  const apiOrigin = apiUrl ? new URL(apiUrl).origin : null;
+  // CSP is consumed by browsers, even when this proxy runs inside Docker.
+  const apiOrigin = parseApiOrigin(process.env.NEXT_PUBLIC_API_URL);
   const connectSources = ["'self'", ...(apiOrigin ? [apiOrigin] : [])];
   const imageSources = [
     "'self'",

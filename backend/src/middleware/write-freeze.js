@@ -7,7 +7,6 @@ const CALLBACK_PATHS = new Set([
   "/api/auth/discord/callback",
   "/api/v1/auth/oauth/google/link/callback",
   "/api/v1/auth/oauth/discord/link/callback",
-  "/api/v1/valorant/leaderboard/register/discord/callback",
   "/api/payments/payhere/notify",
 ]);
 const WRITE_FREEZE_HEADER = "X-Write-Freeze";

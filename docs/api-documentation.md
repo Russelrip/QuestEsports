@@ -1506,11 +1506,40 @@ returning traffic; never attempt an ad-hoc `DROP`/down migration in production.
 
 ## VALORANT Leaderboard (public)
 
-Public, unauthenticated read-only player leaderboard sourced from `valorantsl-new` (the Sri Lankan player leaderboard service). Routes live under `/api/v1/valorant/*`, are cached for 60 seconds, and proxy the `valorantsl-new` anonymous leaderboard API server-to-server. Registration remains in `valorantsl-new` — Quest does not host it. Spec: `docs/superpowers/specs/2026-08-14-valorant-player-leaderboard-design.md` §4.
+Quest proxies the monorepo VALORANT service server-to-server using a service token.
+Public reads require no Quest session. `GET /api/v1/valorant/leaderboard?page=&per_page=`
+returns `{ entries, total, page, perPage, totalPages }` in the standard success envelope.
+Entries contain `puuid`, `name`, `tag`, `currentTier`, `elo`, `rankInTier`, `peakRank`,
+`peakSeason`, and `lastPlayed`. Discord IDs and usernames are excluded.
+`GET /api/v1/valorant/leaderboard/search?q=` returns `{ entries, entry }` (legacy first-result alias) with ranked Riot
+name/tag matches; Discord-only searches produce no match, including legacy fallback.
+Reads use a 60-second cache. An unavailable upstream returns `503`.
 
-| Method | Quest route | Backing upstream call |
-|---|---|---|
-| `GET` | `/api/v1/valorant/leaderboard?page=&per_page=` | `GET /api/v1/leaderboard?page=&per_page=` |
-| `GET` | `/api/v1/valorant/leaderboard/search?q=` | `GET /api/v1/leaderboard/search/{discord_username}` |
+### Authenticated VALORANT registration
 
-Responses follow the standard envelope `{ success: true, data: <payload>, meta: { serverNow } }`. The list payload is `{ entries, total, page, perPage, totalPages }`; each entry is `{ puuid, name, tag, discordUsername, currentTier, elo, rankInTier, peakRank, peakSeason, lastPlayed }`. The search payload is `{ entry: <entry | null> }`. When `VALORANT_SL_API_URL` is unset or upstream is unreachable, both routes return `503`.
+All three routes require a Quest session and linked Discord OAuth:
+
+| Method | Path | Input |
+| --- | --- | --- |
+| POST | `/api/v1/valorant/leaderboard/register/check-puuid` | PUUID-only JSON |
+| POST | `/api/v1/valorant/leaderboard/register/preview` | PUUID-only JSON |
+| POST | `/api/v1/valorant/leaderboard/register/submit` | PUUID-only JSON |
+
+```json
+{ "puuid": "<VALORANT PUUID>" }
+```
+
+Anonymous requests return `401`; signed-in users without Discord receive `403`
+with code `DISCORD_LINK_REQUIRED`. The server resolves `OAuthAccount` for the
+session user and provider `discord`, using `providerUserId` as the canonical ID
+and stored display data for username. Client identity fields cannot override it.
+
+Discord identity is private, read-only profile/registration data, also available
+to authorized administrators. The existing Quest account-link flow refreshes
+session state after link/unlink and retains OAuth state, nonce, PKCE, CSRF, origin,
+and session protections. Unlinking blocks new registrations without deleting
+existing entries. The browser sends credentials and only PUUID; leaderboard-specific
+Discord OAuth callbacks are retired. Existing duplicate handling remains authoritative.
+
+PUUID existence checks return only Riot name/tag for a match, even when the
+caller has linked Discord; they cannot disclose another player's Discord identity.

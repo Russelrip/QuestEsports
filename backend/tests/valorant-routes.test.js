@@ -169,18 +169,15 @@ test("v1 tournament detail mutations invalidate both foundation and tournament c
 });
 
 
-// Section 1 (2026-08-23 identity plan): the five /valorant/leaderboard/register/*
-// routes are the only PUBLIC path into the Henrik-backed upstream, and they
-// stay public — the community signup authenticates with Discord, not with a
-// Quest account. They must therefore carry a per-IP limiter so an anonymous
-// caller cannot burn the shared upstream budget or enumerate registered
-// PUUID/Discord accounts.
-test("v1 rate limits every public VALORANT leaderboard registration proxy route", () => {
+// VALORANT leaderboard registration is a Quest-account flow. The three
+// stateful routes require a Quest session before they can reach the upstream.
+test("v1 authenticates and rate limits every VALORANT leaderboard registration route", () => {
   const limiters = new Map();
   const configs = [];
+  const requireAuth = function requireAuthMarker(_req, _res, next) { next(); };
   const { module: router, restore } = loadModuleWithMocks(v1Path, {
     [envPath]: { env: { CACHE_TTL_SECONDS: 300, CHALLONGE_BRACKET_CACHE_SECONDS: 30 } },
-    [authPath]: { attachSession: passMiddleware, requireAuth: passMiddleware, requireAdmin: requireAdminMock },
+    [authPath]: { attachSession: passMiddleware, requireAuth, requireAdmin: requireAdminMock },
     [asyncHandlerPath]: { asyncHandler: (handler) => handler },
     [cacheControlPath]: { cachePublicData: () => passMiddleware },
     [responseCachePath]: { cacheJson: () => passMiddleware, invalidateCache: () => passMiddleware },
@@ -218,9 +215,10 @@ test("v1 rate limits every public VALORANT leaderboard registration proxy route"
     const routeFor = (path) =>
       router.stack.find((layer) => layer.route && layer.route.path === path);
 
+    assert.equal(routeFor("/valorant/leaderboard/register/discord/login"), undefined);
+    assert.equal(routeFor("/valorant/leaderboard/register/discord/callback"), undefined);
+
     const guarded = [
-      ["/valorant/leaderboard/register/discord/login", lookupLimiter],
-      ["/valorant/leaderboard/register/discord/callback", lookupLimiter],
       ["/valorant/leaderboard/register/check-puuid", lookupLimiter],
       ["/valorant/leaderboard/register/preview", lookupLimiter],
       ["/valorant/leaderboard/register/submit", submitLimiter],
@@ -237,9 +235,15 @@ test("v1 rate limits every public VALORANT leaderboard registration proxy route"
       // The limiter has to run before the controller, or the upstream call
       // happens regardless of the limit.
       assert.equal(
-        layer.route.stack.findIndex((entry) => entry.handle === limiter),
-        0,
-        `${routePath} must apply its limiter first`,
+        layer.route.stack.some((entry) => entry.handle === requireAuth),
+        true,
+        `${routePath} must require authentication`,
+      );
+      assert.equal(
+        layer.route.stack.findIndex((entry) => entry.handle === limiter) >
+          layer.route.stack.findIndex((entry) => entry.handle === requireAuth),
+        true,
+        `${routePath} must authenticate before applying the upstream limiter`,
       );
     }
 

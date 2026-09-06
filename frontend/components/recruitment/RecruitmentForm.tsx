@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ResendVerificationButton from "@/components/auth/ResendVerificationButton";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -50,10 +50,10 @@ export default function RecruitmentForm() {
     }));
   }, [user]);
 
-  const updateField = <Key extends keyof RecruitmentFields>(
+  const updateField = useCallback(<Key extends keyof RecruitmentFields>(
     key: Key,
     value: RecruitmentFields[Key]
-  ) => setFields((current) => ({ ...current, [key]: value }));
+  ) => setFields((current) => ({ ...current, [key]: value })), []);
 
   const updateMember = (index: number, key: RecruitmentMemberTextField, value: string) => {
     setMembers((current) =>
@@ -71,7 +71,7 @@ export default function RecruitmentForm() {
     );
   };
 
-  const setApplicationType = (applicationType: ApplicationType) => {
+  const setApplicationType = useCallback((applicationType: ApplicationType) => {
     updateField("applicationType", applicationType);
     setMembers(
       applicationType === "existing_team"
@@ -80,16 +80,15 @@ export default function RecruitmentForm() {
           ? [createEmptyRecruitmentMember()]
           : []
     );
-  };
+  }, [updateField]);
 
   useEffect(() => {
     const requested = searchParams.get("type");
     if (requested === "solo_player" || requested === "existing_team" || requested === "incomplete_team") {
       setApplicationType(requested);
     }
-  // Initialize once from the Contact recruitment deep link.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  // Initialize from the Contact recruitment deep link.
+  }, [searchParams, setApplicationType]);
 
   const toggleGame = (game: string) => {
     updateField(

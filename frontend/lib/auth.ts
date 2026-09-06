@@ -9,6 +9,7 @@ export type AuthUser = {
   email: string;
   username: string;
   phone?: string | null;
+  discordId?: string | null;
   discordTag?: string | null;
   role: "admin" | "user";
   pendingEmail?: string | null;

@@ -16,7 +16,6 @@ import type {
   SeriesPreview,
   SeriesViewLite,
   ValorantCheckPuuidResult,
-  ValorantDiscordCallbackResult,
   ValorantFormat,
   ValorantMatchSummary,
   ValorantPlayerLeaderboardPage,
@@ -242,7 +241,7 @@ const registrationRequest = async <T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> => {
-  const response = await fetch(buildApiUrl(path), options);
+  const response = await fetch(buildApiUrl(path), { credentials: "include", ...options });
   const payload = (await response
     .json()
     .catch(() => null)) as
@@ -259,16 +258,6 @@ const registrationRequest = async <T>(
 
   return payload?.data as T;
 };
-
-export const requestDiscordLogin = () =>
-  registrationRequest<{ url: string }>(
-    "/api/v1/valorant/leaderboard/register/discord/login",
-  );
-
-export const requestDiscordCallback = (code: string) =>
-  registrationRequest<ValorantDiscordCallbackResult>(
-    `/api/v1/valorant/leaderboard/register/discord/callback?code=${encodeURIComponent(code)}`,
-  );
 
 export const checkPuuidRegistered = (puuid: string) =>
   registrationRequest<ValorantCheckPuuidResult>(
@@ -290,16 +279,14 @@ export const previewValorantRegistration = (puuid: string) =>
     },
   );
 
-export const submitValorantRegistration = (input: {
-  discord_id: string;
-  discord_username: string;
-  puuid: string;
-}) =>
+export type ValorantRegistrationSubmitInput = { puuid: string };
+
+export const submitValorantRegistration = (input: ValorantRegistrationSubmitInput) =>
   registrationRequest<ValorantRegistrationSubmitResult>(
     "/api/v1/valorant/leaderboard/register/submit",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ puuid: input.puuid }),
     },
   );

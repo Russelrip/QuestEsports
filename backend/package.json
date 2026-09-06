@@ -14,7 +14,7 @@
     "test": "node --test",
     "test:integration": "node scripts/run-database-integration-tests.js",
     "test:oauth:e2e:fixtures": "node --test tests/oauth-e2e-fixtures.test.js",
-    "test:valorant:e2e": "node --test tests/valorant-e2e/valorant-e2e.test.js",
+    "test:valorant:e2e": "node --test tests/valorant-e2e/valorant-e2e.test.js tests/valorant-e2e/valorant-auth-boundary.test.js",
     "test:valorant:smoke": "bash scripts/valorant-local-smoke.sh",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js --test-coverage-exclude=src/generated/** --test-coverage-lines=80 --test-coverage-branches=70 --test-coverage-functions=77",
     "prisma:generate": "prisma generate",

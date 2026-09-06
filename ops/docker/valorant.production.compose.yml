@@ -40,11 +40,16 @@ services:
       test:
         - CMD-SHELL
         - >-
-          curl --fail --silent --show-error --max-time 5
-          --cacert /run/secrets/quest-private-ca.crt
-          --resolve valorant-platform:8000:127.0.0.1
-          https://valorant-platform:8000/api/v1/health
-          | /app/.venv/bin/python -c 'import json,sys; d=json.load(sys.stdin); raise SystemExit(0 if d.get("status") == "ok" and d.get("db") == "up" else 1)'
+          for token in $(/app/.venv/bin/python -c 'from app.api.service_token import parse_secrets_map, sign_service_token; from app.config import Settings; s=Settings(); [print(sign_service_token(secret=secret, kid=kid, issuer=s.quest_service_issuer, audience=s.quest_service_audience, subject="quest-health")) for kid, secret in parse_secrets_map(s.quest_service_shared_secrets).items()]'); do
+            curl --fail --silent --show-error --max-time 5
+            --cacert /run/secrets/quest-private-ca.crt
+            --resolve valorant-platform:8000:127.0.0.1
+            -H "Authorization: Bearer $token"
+            https://valorant-platform:8000/api/v1/health
+            | /app/.venv/bin/python -c 'import json,sys; d=json.load(sys.stdin); c=d.get("checks", {}); required={"service_token", "henrik", "discord_oauth", "oauth_redirect", "discord_workers", "tls"}; raise SystemExit(0 if d.get("status") == "ok" and d.get("db") == "up" and d.get("integration") == "ready" and set(c) == required and all(v == "ready" for v in c.values()) else 1)';
+            if [ "$?" -eq 0 ]; then exit 0; fi
+          done;
+          exit 1
       interval: 30s
       timeout: 10s
       retries: 3

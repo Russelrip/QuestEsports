@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   apiFetchJson: vi.fn(), apiFetch: vi.fn(),
   fetchAccountDashboard: vi.fn(),
   router: { replace: vi.fn(), push: vi.fn() },
-  auth: { user: { id: "user-1", firstName: "Player", lastName: "One", username: "player", email: "player@example.com", emailVerified: true, role: "user" as const }, refreshUser: vi.fn(), refreshSession: vi.fn(), logout: vi.fn(), isLoading: false },
+  auth: { user: { id: "user-1", firstName: "Player", lastName: "One", username: "player", email: "player@example.com", emailVerified: true, role: "user" as const, discordId: null as string | null, discordTag: null as string | null }, refreshUser: vi.fn(), refreshSession: vi.fn(), logout: vi.fn(), isLoading: false },
 }));
 vi.mock("@/lib/account-linking", () => mocks);
 vi.mock("@/lib/auth", () => ({ apiFetchJson: mocks.apiFetchJson, apiFetch: mocks.apiFetch, getApiErrorMessage: (response: Response, data: { success?: boolean; message?: string }, fallback: string) => response.ok && data.success !== false ? "" : data.message || fallback }));
@@ -87,6 +87,7 @@ describe("AccountLinkingPanel", () => {
     render(<AccountLinkingPanel />);
     expect(await screen.findByRole("status")).toHaveTextContent("Account linked successfully");
     await waitFor(() => expect(mocks.getLinkedProviders).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.auth.refreshSession).toHaveBeenCalled());
     expect(window.location.search).toBe("?keep=1");
     expect(window.location.hash).toBe("#account");
     expect(window.history.state).toEqual({ preserved: true });
@@ -116,6 +117,33 @@ describe("ProfileView OAuth callback integration", () => {
     expect(await screen.findByRole(result === "linked" ? "status" : "alert")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Linked accounts" })).toBeInTheDocument();
     expect(window.location.search).toBe("");
+  });
+});
+
+describe("ProfileView private Discord projection", () => {
+  beforeEach(() => {
+    mocks.getLinkedProviders.mockResolvedValue(linked(true, true));
+    mocks.fetchAccountDashboard.mockResolvedValue({ currentRegistrations: [], pastRegistrations: [], teams: [], recruitmentApplications: [], orders: [] });
+    window.history.pushState({}, "", "/profile?tab=account");
+  });
+
+  it("renders the linked Discord username and ID as private read-only text", async () => {
+    mocks.auth.user = { ...mocks.auth.user, discordId: "1134567890123456789", discordTag: "player#1234" };
+    render(<ProfileView />);
+
+    expect(await screen.findByText("player#1234")).toBeInTheDocument();
+    expect(screen.getByText("1134567890123456789")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /discord/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/discord id/i)).not.toBeInTheDocument();
+  });
+
+  it("treats a Discord tag without the canonical ID as unlinked", async () => {
+    mocks.auth.user = { ...mocks.auth.user, discordId: null, discordTag: "tag-only" };
+    render(<ProfileView />);
+
+    expect(await screen.findByText("Connect Discord under Linked accounts to display your private connected-account details.")).toBeInTheDocument();
+    expect(screen.queryByText("tag-only")).not.toBeInTheDocument();
+    expect(screen.queryByText("Discord ID")).not.toBeInTheDocument();
   });
 });
 

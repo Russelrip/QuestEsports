@@ -109,3 +109,36 @@ $env:CI='1'; npm run prebuild:android
 ```
 
 The generated `android/` directory is intentionally ignored. Release builds regenerate it from `app.json` and the local config plugin.
+
+
+## Dependency and native validation
+
+Keep Expo packages aligned to SDK 57; do not use `npm audit fix --force` or
+replace Expo Router with an older incompatible major. `query-string@7.1.3`
+expects a CommonJS decoder. A scoped local adapter in `vendor/decode-uri-component`
+exports the default function from the pinned `decode-uri-component@0.5.0` npm
+alias, preserving the parser contract while using the fixed upstream algorithm.
+The adapter contains no copied decoding algorithm. Remove it when an Expo-compatible
+Router graph natively consumes the fixed decoder. The
+[upstream advisory](https://github.com/SamVerschueren/decode-uri-component/security/advisories/GHSA-vcc3-ghjq-m6fr)
+recommends 0.5.0. Dependency tests exercise deep-link encoding, malformed input
+with a process timeout, the lockfile and the Android CI job.
+
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run audit:ci
+npm run doctor
+CI=1 npm run prebuild:android -- --no-install
+cd android
+./gradlew --no-daemon --max-workers=1 :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
+```
+
+Use Java 21 and Android SDK. Clean prebuild regenerates `android/`; preserve any
+intentional local native changes first. On Windows use `$env:CI='1'` and
+`gradlew.bat`. Debug compilation checks native integration without release credentials;
+APK signing/distribution remains in the protected release workflow.
+
+Android CI also runs `npx --no-install expo export --platform android` to validate
+the production Metro/Hermes bundle; debug native compilation alone does not bundle JavaScript.

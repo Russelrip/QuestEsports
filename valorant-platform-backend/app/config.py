@@ -1,9 +1,13 @@
 from decimal import Decimal
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.api.service_token import parse_secrets_map
 
 # The private application schema the migration runner creates and the backend
 # connects against (ADR-001; Task 17 fix round 1). Deliberately NOT an env
@@ -15,6 +19,7 @@ APP_DB_SCHEMA = "valorant"
 class Settings(BaseSettings):
     app_env: str = "development"  # development | local | test | production
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/valorant_platform"
+    direct_url: str | None = None
     valorant_database_ssl_verify: Literal["off", "full"] = "off"
     valorant_database_ssl_ca_file: str | None = None
     valorant_database_ssl_server_hostname: str | None = None
@@ -85,8 +90,138 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    def production_validation_errors(self) -> tuple[str, ...]:
+        """Return non-secret production configuration errors.
+
+        Construction remains permissive for local unit tests and development
+        tooling.  ``get_settings`` invokes this method before application
+        startup, which makes a real production process fail closed without
+        putting credential values in an exception or log message.
+        """
+        if self.app_env != "production":
+            return ()
+
+        errors: list[str] = []
+
+        def required(name: str, value: object) -> None:
+            if not isinstance(value, str) or not value.strip():
+                errors.append(name)
+
+        for name in (
+            "HENRIK_API_KEY",
+            "QUEST_SERVICE_SHARED_SECRETS",
+            "DISCORD_CLIENT_ID",
+            "DISCORD_CLIENT_SECRET",
+            "DISCORD_TOKEN_1",
+            "DISCORD_TOKEN_2",
+            "ADMIN_API_KEY",
+        ):
+            required(name, getattr(self, name.lower()))
+
+        try:
+            secrets = parse_secrets_map(self.quest_service_shared_secrets)
+        except ValueError:
+            secrets = {}
+            errors.append("QUEST_SERVICE_SHARED_SECRETS_FORMAT")
+        if not secrets:
+            errors.append("QUEST_SERVICE_SHARED_SECRETS")
+
+        if self.discord_guild_id <= 0:
+            errors.append("DISCORD_GUILD_ID")
+        if not self.quest_service_issuer.strip():
+            errors.append("QUEST_SERVICE_ISSUER")
+        if not self.quest_service_audience.strip():
+            errors.append("QUEST_SERVICE_AUDIENCE")
+
+        try:
+            redirect = urlsplit(self.discord_redirect_uri)
+            redirect_port = redirect.port
+            redirect_hostname = redirect.hostname
+        except ValueError:
+            redirect = None
+            redirect_port = None
+            redirect_hostname = None
+        if (
+            redirect is None
+            or redirect.scheme != "https"
+            or not redirect_hostname
+            or redirect.username
+            or redirect.password
+            or redirect.query
+            or redirect.fragment
+            or redirect_port not in (None, 443)
+        ):
+            errors.append("DISCORD_REDIRECT_URI")
+
+        try:
+            henrik_url = urlsplit(self.henrik_base_url)
+            henrik_port = henrik_url.port
+        except ValueError:
+            henrik_url = None
+            henrik_port = None
+        if (
+            henrik_url is None
+            or henrik_url.scheme != "https"
+            or not henrik_url.hostname
+            or henrik_url.username
+            or henrik_url.password
+            or henrik_url.query
+            or henrik_url.fragment
+            or henrik_port not in (None, 443)
+        ):
+            errors.append("HENRIK_BASE_URL")
+        if self.henrik_auth_scheme not in {"bare", "Bearer"}:
+            errors.append("HENRIK_AUTH_SCHEME")
+
+        if self.valorant_database_ssl_verify != "full":
+            errors.append("VALORANT_DATABASE_SSL_VERIFY")
+        if self.valorant_database_ssl_server_hostname != "quest-postgres":
+            errors.append("VALORANT_DATABASE_SSL_SERVER_HOSTNAME")
+        ca_file = self.valorant_database_ssl_ca_file
+        if (
+            not ca_file
+            or not Path(ca_file).is_absolute()
+            or not Path(ca_file).is_file()
+            or Path(ca_file).is_symlink()
+        ):
+            errors.append("VALORANT_DATABASE_SSL_CA_FILE")
+
+        for name, value in (("DATABASE_URL", self.database_url), ("DIRECT_URL", self.direct_url)):
+            if not value:
+                errors.append(name)
+                continue
+            try:
+                parsed = urlsplit(value)
+                port = parsed.port
+            except ValueError:
+                errors.append(name)
+                continue
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            if (
+                parsed.scheme != "postgresql+asyncpg"
+                or parsed.hostname != "quest-postgres"
+                or port != 5432
+                or parsed.path != "/quest"
+                or parsed.username != "val_runtime"
+                or parsed.password is None
+                or parsed.password == ""
+                or query != {"ssl": ["require"]}
+                or parsed.fragment
+            ):
+                errors.append(name)
+
+        return tuple(dict.fromkeys(errors))
+
+    def validate_production(self) -> None:
+        """Raise a secret-free error when production settings are incomplete."""
+        errors = self.production_validation_errors()
+        if errors:
+            raise ValueError("invalid production settings: " + ", ".join(errors))
+
 
 @lru_cache
 def get_settings() -> Settings:
     """Return the module-level cached Settings instance."""
-    return Settings()
+    settings = Settings()
+    settings.validate_production()
+    return settings

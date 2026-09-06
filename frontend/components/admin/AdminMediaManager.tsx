@@ -1,6 +1,6 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
+import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import MediaModal from "@/components/posters/MediaModal";
@@ -326,7 +326,7 @@ export default function AdminMediaManager() {
             {uploadPreviews.length ? (
               <div className="grid grid-cols-3 gap-2">
                 {uploadPreviews.slice(0, 6).map((item) => (
-                  <img key={`${item.file.name}-${item.file.size}`} src={item.previewUrl} alt={item.file.name} className="aspect-square w-full border border-white/10 object-cover" />
+                  <Image key={`${item.file.name}-${item.file.size}`} src={item.previewUrl} alt={item.file.name} width={400} height={400} unoptimized className="aspect-square w-full border border-white/10 object-cover" />
                 ))}
               </div>
             ) : null}
@@ -385,7 +385,7 @@ export default function AdminMediaManager() {
                 return (
                   <Card key={asset.id} className="overflow-hidden">
                     <button type="button" className="relative block aspect-[4/3] w-full bg-black/30" onClick={() => setSelected(asset)}>
-                      <img src={resolveImageAssetUrl(asset) || "/images/logo.png"} alt={asset.title} loading="lazy" className="h-full w-full object-contain" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, asset)) event.currentTarget.style.display = "none"; }} />
+                      <Image src={resolveImageAssetUrl(asset) || "/images/logo.png"} alt={asset.title} width={800} height={600} unoptimized className="h-full w-full object-contain" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, asset)) event.currentTarget.style.display = "none"; }} />
                     </button>
                     <div className="grid gap-3 p-4">
                       <div className="min-w-0">
@@ -460,7 +460,7 @@ export default function AdminMediaManager() {
                 return (
                   <Card key={key} className="overflow-hidden">
                     <button type="button" className="block aspect-[4/3] w-full bg-black/30" onClick={() => setSelectedStorageFile(file)}>
-                      <img src={resolveImageUrl(file.imageUrl) || "/images/logo.png"} alt={file.filename} loading="lazy" className="h-full w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} />
+                      <Image src={resolveImageUrl(file.imageUrl) || "/images/logo.png"} alt={file.filename} width={800} height={600} unoptimized className="h-full w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} />
                     </button>
                     <div className="grid gap-3 p-4">
                       <div className="min-w-0">
@@ -493,7 +493,7 @@ export default function AdminMediaManager() {
       {selected ? (
         <MediaModal ariaLabel="Image details" onClose={() => setSelected(null)}>
           <div className="flex min-h-0 flex-1 items-center justify-center bg-black/35 p-2 sm:p-6">
-            <img src={resolveImageAssetUrl(selected) || "/images/logo.png"} alt={selected.title} className="max-h-full max-w-full object-contain" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, selected)) event.currentTarget.style.display = "none"; }} />
+            <Image src={resolveImageAssetUrl(selected) || "/images/logo.png"} alt={selected.title} width={1600} height={1200} unoptimized className="max-h-full max-w-full object-contain" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, selected)) event.currentTarget.style.display = "none"; }} />
           </div>
           <div className="grid shrink-0 gap-3 pt-4 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="min-w-0">
@@ -517,7 +517,7 @@ export default function AdminMediaManager() {
       {selectedStorageFile ? (
         <MediaModal ariaLabel="Stored file preview" onClose={() => setSelectedStorageFile(null)}>
           <div className="flex min-h-0 flex-1 items-center justify-center bg-black/35 p-2 sm:p-6">
-            <img src={resolveImageUrl(selectedStorageFile.imageUrl) || "/images/logo.png"} alt={selectedStorageFile.filename} className="max-h-full max-w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} />
+            <Image src={resolveImageUrl(selectedStorageFile.imageUrl) || "/images/logo.png"} alt={selectedStorageFile.filename} width={1600} height={1200} unoptimized className="max-h-full max-w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} />
           </div>
           <div className="flex shrink-0 flex-col gap-3 pt-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">

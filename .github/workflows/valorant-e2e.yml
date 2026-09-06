@@ -87,6 +87,7 @@ jobs:
         working-directory: backend
         env:
           VALORANT_PLATFORM_REPO: ${{ github.workspace }}/valorant-platform-backend
+          PYTHON_BIN: ${{ github.workspace }}/valorant-platform-backend/.venv/bin/python
           E2E_VAL_DATABASE_URL: ${{ secrets.E2E_VAL_DATABASE_URL }}
           E2E_QUEST_DATABASE_URL: ${{ secrets.E2E_QUEST_DATABASE_URL }}
           E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}

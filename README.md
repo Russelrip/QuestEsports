@@ -8,7 +8,7 @@ Quest Esports is a tournament, team, commerce, and event-operations platform. Th
 | ----------------- | ----------------------------------------------------------- | ------------------------- |
 | `frontend/`     | Next.js public site, account area, and web admin            | `http://localhost:3000` |
 | `backend/`      | Express API, Prisma, jobs, uploads, and integrations        | `http://localhost:5001` |
-| `valorant-platform-backend/` | FastAPI VALORANT API, updater, Discord bot, and rating workers | `https://localhost:8000` |
+| `valorant-platform-backend/` | FastAPI VALORANT API, updater, Discord bot, and rating workers | `http://localhost:8000` |
 | `mobile-admin/` | Private Expo/Android operations client                      | Expo development server   |
 | `ops/`          | Production backup, restore, retention, and recovery scripts | Not applicable            |
 
@@ -16,7 +16,7 @@ Quest Esports is a tournament, team, commerce, and event-operations platform. Th
 
 - Node.js 24.x (backend and frontend declare `24.x`; mobile-admin follows the project Node 24 guidance and has no `engines` field)
 - npm 10 or newer
-- Python 3.12 and uv (VALORANT backend)
+- Python 3.11+ and uv (CI and production images use Python 3.12) (VALORANT backend)
 - PostgreSQL 15 or newer, or a Supabase PostgreSQL project
 - Android Studio/SDK only when working on `mobile-admin/`
 
@@ -117,7 +117,7 @@ VALORANT backend:
 
 ```powershell
 Set-Location valorant-platform-backend
-uv run ruff check app tests scripts
+uv run ruff check app workers tests scripts
 uv run pytest -m "not live" -q
 ```
 
@@ -246,3 +246,16 @@ Contributors work on branches and submit pull requests. CODEOWNERS requests revi
 Because this private personal repository is on GitHub Free, branch protection is not enforceable. Production backend deployment is therefore manual and restricted in the workflow to the repository owner. A collaborator must never receive production database, VPS, payment, OAuth, mail, or signing credentials.
 
 See [Collaboration and Staging](./docs/collaboration-and-staging.md) before granting access. -Russel
+
+## Production and registration contracts
+
+Production uses immutable Docker Compose on the Quest VPS, with digest-pinned
+Quest frontend/API/migrator and VALORANT API/worker images, private PostgreSQL 17,
+loopback application ports, and host Nginx. Vercel, PM2 and standalone `npm start`
+examples are historical or non-production. Follow the [production runbook](docs/production-runbook.md).
+
+VALORANT registration requires a signed-in Quest account with linked Discord OAuth.
+The private profile and registration form show read-only Discord identity; the
+browser submits only `{ "puuid": "<VALORANT PUUID>" }`. The server resolves the
+linked account again. Public leaderboard responses and search use Riot identity,
+never Discord IDs or usernames. See the [API contract](docs/api-documentation.md).

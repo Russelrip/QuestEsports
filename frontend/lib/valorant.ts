@@ -224,7 +224,6 @@ export type ValorantPlayerLeaderboardEntry = {
   puuid: string;
   name: string;
   tag: string;
-  discordUsername: string;
   currentTier: string | null;
   elo: number | null;
   rankInTier: number | null;
@@ -246,16 +245,6 @@ export type ValorantPlayerLeaderboardPage = {
   page: number;
   perPage: number;
   totalPages: number;
-};
-
-// Registration flow types — snake_case, consumed as-is from the Quest backend.
-export type ValorantRegistrationDiscordUser = {
-  discord_id: string;
-  discord_username: string;
-  discord_discriminator: string | null;
-  discord_avatar: string | null;
-  discord_email: string | null;
-  access_token: string | null;
 };
 
 export type ValorantRegistrationPreview = {
@@ -283,18 +272,7 @@ export type ValorantRegistrationSubmitResult = {
 
 export type ValorantCheckPuuidResult = {
   exists: boolean;
-  user: { name: string; tag: string; discord_username: string } | null;
-};
-
-export type ValorantDiscordCallbackResult = {
-  user: ValorantRegistrationDiscordUser | null;
-  exists: boolean;
-  existing_data: {
-    puuid: string;
-    name: string;
-    tag: string;
-    current_rank: string | null;
-  } | null;
+  user: { name: string; tag: string } | null;
 };
 
 export const VALORANT_SL_REGISTER_URL =

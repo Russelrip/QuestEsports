@@ -4,6 +4,7 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
+    "decode-uri-component": "file:./vendor/decode-uri-component",
     "expo": "~57.0.20",
     "expo-camera": "~57.0.4",
     "expo-constants": "~57.0.17",
@@ -26,6 +27,7 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "@types/react": "~19.2.2",
     "expo-doctor": "^1.20.1",
     "typescript": "~6.0.3",
@@ -43,7 +45,8 @@
     "prebuild:android": "expo prebuild --platform android --clean"
   },
   "overrides": {
-    "uuid": "11.1.1"
+    "uuid": "11.1.1",
+    "decode-uri-component": "$decode-uri-component"
   },
   "private": true
 }

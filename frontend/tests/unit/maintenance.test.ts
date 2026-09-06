@@ -96,4 +96,13 @@ describe("maintenance proxy", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1");
     expect(response.headers.get("x-maintenance-mode")).toBeNull();
   });
+
+  it("fails safely when the runtime API URL is malformed", () => {
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "not a URL");
+
+    expect(() => proxy(new NextRequest("https://questesports.lk/"))).not.toThrow();
+    const response = proxy(new NextRequest("https://questesports.lk/"));
+
+    expect(response.headers.get("content-security-policy")).not.toContain("not a URL");
+  });
 });

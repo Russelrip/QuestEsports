@@ -6,6 +6,7 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 const servicePath = path.join(__dirname, "../src/modules/game-accounts/game-account.service.js");
 const clientPath = path.join(__dirname, "../src/modules/game-accounts/game-account.client.js");
 const leaderboardServicePath = path.join(__dirname, "../src/modules/valorant-leaderboard/service.js");
+const leaderboardClientPath = path.join(__dirname, "../src/modules/valorant-leaderboard/client.js");
 const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
 const cachePath = path.join(__dirname, "../src/lib/cache.js");
 const loggerPath = path.join(__dirname, "../src/lib/logger.js");
@@ -27,6 +28,7 @@ const loadService = ({
   checkDiscord = async () => ({ exists: false }),
   existingPlayer = null,
   createFails = null,
+  leaderboardServiceOverride = null,
 } = {}) => {
   const state = { created: [], players: [], audits: [] };
 
@@ -55,7 +57,7 @@ const loadService = ({
       FastApiError: class FastApiError extends Error {},
       InternalServiceError: class InternalServiceError extends Error {},
     },
-    [leaderboardServicePath]: { checkDiscord },
+    [leaderboardServicePath]: leaderboardServiceOverride || { checkDiscord },
     [prismaPath]: {
       prisma: {
         gameAccount: { findUnique: async () => existingAccount },
@@ -77,6 +79,22 @@ const loadService = ({
 
   return { ...loaded, state };
 };
+
+const loadRealLeaderboardService = (checkDiscord) => loadModuleWithMocks(leaderboardServicePath, {
+  [leaderboardClientPath]: {
+    getLeaderboard: async () => ({}),
+    searchLeaderboard: async () => null,
+    checkPuuid: async () => null,
+    checkDiscord,
+    previewRegistration: async () => null,
+    submitRegistration: async () => null,
+  },
+  [prismaPath]: {
+    prisma: {
+      oAuthAccount: { findFirst: async () => null },
+    },
+  },
+});
 
 test("a confirmed link records only what the user actually established", async () => {
   const { module: service, state, restore } = loadService();
@@ -115,6 +133,31 @@ test("an upstream Discord pairing upgrades the link, but only to corroboration",
     assert.equal(state.created[0].verificationStatus, "discord_corroborated");
   } finally {
     restore();
+  }
+});
+
+test("game-account linking uses the real leaderboard service checkDiscord export", async () => {
+  const checkDiscordCalls = [];
+  const leaderboard = loadRealLeaderboardService(async (discordId) => {
+    checkDiscordCalls.push(discordId);
+    return { exists: true, user: { puuid: "PUUID-ABC" } };
+  });
+  const { module: service, state, restore } = loadService({
+    leaderboardServiceOverride: leaderboard.module,
+  });
+
+  try {
+    await service.linkValorantAccount({
+      riotId: "Russel#1234",
+      userId: "user-1",
+      displayName: "Russel",
+      audit: AUDIT,
+    });
+    assert.deepEqual(checkDiscordCalls, ["discord-123"]);
+    assert.equal(state.created[0].verificationStatus, "discord_corroborated");
+  } finally {
+    restore();
+    leaderboard.restore();
   }
 });
 

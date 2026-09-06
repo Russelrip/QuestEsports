@@ -42,6 +42,22 @@ test("OpenAPI documents every mounted API route and method", () => {
   assert.deepEqual(missing, []);
 });
 
+test("OpenAPI documents the authenticated PUUID-only leaderboard registration contract", () => {
+  const paths = openApiDocument.paths;
+  assert.equal(paths["/api/v1/valorant/leaderboard/register/discord/login"], undefined);
+  assert.equal(paths["/api/v1/valorant/leaderboard/register/discord/callback"], undefined);
+  for (const path of [
+    "/api/v1/valorant/leaderboard/register/check-puuid",
+    "/api/v1/valorant/leaderboard/register/preview",
+    "/api/v1/valorant/leaderboard/register/submit",
+  ]) {
+    const operation = paths[path].post;
+    assert.deepEqual(operation.security, [{ sessionCookie: [] }, { mobileBearer: [] }]);
+    assert.match(operation.summary, /PUUID/);
+    assert.ok(operation.responses[401]);
+  }
+});
+
 test("OpenAPI declares the session-cookie authentication scheme", () => {
   assert.deepEqual(openApiDocument.components.securitySchemes.sessionCookie, {
     type: "apiKey",

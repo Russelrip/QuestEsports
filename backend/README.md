@@ -164,3 +164,10 @@ Run `npm run test:integration` only with an isolated test database; its owning
 script sets the internal `RUN_DATABASE_INTEGRATION_TESTS` flag automatically.
 Run k6 profiles only against local or dedicated test infrastructure, never
 production.
+
+
+## Production hardening verification
+
+VALORANT registration routes require the Quest session and linked Discord OAuth; the server resolves canonical identity and accepts PUUID-only input. Public leaderboard responses and search exclude Discord identity. Run `npm run test:coverage` and the isolated protected VALORANT E2E workflow.
+
+Production uses the immutable Compose release; standalone `npm start`, Vercel and PM2 instructions apply only to development or historical deployments.

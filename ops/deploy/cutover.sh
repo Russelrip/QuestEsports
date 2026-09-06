@@ -589,6 +589,26 @@ run_database_readiness() {
   [[ "$output" =~ ^ready[[:space:]]+target=quest-postgres[[:space:]]+schemas=public,valorant([[:space:]]|$) ]] || die 'PostgreSQL 17 database readiness did not identify both target schemas.'
 }
 
+verify_valorant_integration_response() {
+  local response="$1"
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for exact VALORANT integration validation.'
+  python3 - "$response" <<'PY' || die 'VALORANT integration readiness was not the exact supported success shape.'
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (TypeError, ValueError):
+    raise SystemExit(1)
+if not isinstance(payload, dict) or payload.get("status") != "ok" or payload.get("db") != "up" or payload.get("integration") != "ready":
+    raise SystemExit(1)
+checks = payload.get("checks")
+required = {"service_token", "henrik", "discord_oauth", "oauth_redirect", "discord_workers", "tls"}
+if not isinstance(checks, dict) or set(checks) != required or any(value != "ready" for value in checks.values()):
+    raise SystemExit(1)
+PY
+}
+
 verify_quest_readiness_response() {
   local response="$1"
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for exact Quest readiness validation.'
@@ -1009,7 +1029,7 @@ grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]
 quest_ready="$("$CURL_BIN" --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" 2>/dev/null)" || die 'Quest readiness failed.'
 verify_quest_readiness_response "$quest_ready"
 valorant_health="$(VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$VALORANT_CA_FILE" "$VALORANT_CONTAINER_HEALTH_COMMAND" 2>/dev/null)" || die 'VALORANT HTTPS health failed from the Quest network boundary.'
-grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$valorant_health" && grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' <<< "$valorant_health" || die 'VALORANT health was not status ok/db up.'
+verify_valorant_integration_response "$valorant_health"
 validate_active_project "$stage_dir/compose.production.yml" "$quest_project" "$compose_env_file" \
   "frontend=${manifest[frontend_image]}" "backend=${manifest[backend_image]}" "postgres=${manifest[postgres_image]}"
 validate_active_project "$stage_dir/valorant.compose.yml" "$valorant_project" "$compose_env_file" \

@@ -11,6 +11,61 @@ const staleBackupVariablePattern = /\bBACKUP_CLIENT_TLS_(?:CA|CERT|KEY)_FILE\b/;
 const read = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8").replace(/\r\n/g, "\n");
 
+test("production hardening documentation pins registration, runtime, and release boundaries", () => {
+  const root = read("README.md");
+  const setup = read("docs/setup-and-deployment.md");
+  const api = read("docs/api-documentation.md");
+  const runbook = read("docs/production-runbook.md");
+  const environment = read("docs/environment-reference.md");
+  assert.match(root, /http:\/\/localhost:8000/);
+  assert.doesNotMatch(root, /https:\/\/localhost:8000/);
+  assert.match(root, /Python 3\.11\+/);
+  assert.match(setup, /Production uses immutable Docker Compose/);
+  assert.match(setup, /Generic non-production deployment steps/);
+  for (const endpoint of ["check-puuid", "preview", "submit"]) {
+    assert.ok(api.includes(`/api/v1/valorant/leaderboard/register/${endpoint}`));
+  }
+  assert.match(api, /\{ "puuid": "<VALORANT PUUID>" \}/);
+  assert.match(api, /401[\s\S]*403[\s\S]*DISCORD_LINK_REQUIRED/);
+  assert.match(api, /OAuthAccount[\s\S]*providerUserId/);
+  assert.match(api, /private[\s\S]*read-only/);
+  assert.doesNotMatch(api, /Quest does not host it/);
+  for (const key of ["service_token", "henrik", "discord_oauth", "oauth_redirect", "discord_workers", "tls"]) {
+    assert.ok(runbook.includes(`\`${key}\``), `runbook must document readiness check ${key}`);
+  }
+  assert.match(runbook, /three consecutive[\s\S]*two seconds/);
+  assert.match(runbook, /Quest JavaScript service-token signer/);
+  assert.match(environment, /APP_ENV=production[\s\S]*fail.closed/i);
+  assert.match(read("docs/ci-cd.md"), /uv sync --extra dev --locked/);
+  assert.match(read("mobile-admin/README.md"), /npm run prebuild:android -- --no-install/);
+});
+
+test("active hardening guides have valid repository-relative Markdown file links", () => {
+  const documents = [
+    "README.md", "codemap.md", "docs/setup-and-deployment.md", "docs/ci-cd.md",
+    "docs/production-runbook.md", "docs/environment-reference.md", "docs/api-documentation.md",
+    "backend/README.md", "frontend/README.md", "mobile-admin/README.md",
+    "valorant-platform-backend/README.md", "valorant-platform-backend/codemap.md",
+    "backend/tests/valorant-e2e/README.md",
+  ];
+  const failures = [];
+  for (const document of documents) {
+    // Ignore examples inside code fences and inline code; inspect links in prose.
+    const source = read(document).replace(/^```[^\n]*\n[\s\S]*?^```/gm, "").replace(/`[^`]*`/g, "");
+    for (const match of source.matchAll(/\[[^\]]*\]\((<[^>]+>|[^\s)]+)(?:\s+"[^"]*")?\)/g)) {
+      const target = match[1].replace(/^<|>$/g, "");
+      if (/^(?:[a-z][a-z\d+.-]*:|#|\/)/i.test(target)) continue;
+      const file = decodeURIComponent(target.split(/[?#]/)[0]);
+      const resolved = path.resolve(repoRoot, path.dirname(document), file);
+      const relative = path.relative(repoRoot, resolved);
+      if (relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || !fs.existsSync(resolved)) {
+        failures.push(`${document}: ${target}`);
+      }
+    }
+  }
+  assert.deepEqual(failures, [], "broken repository-relative Markdown links");
+});
+
 const workflowPaths = fs
   .readdirSync(workflowDirectory)
   .filter((name) => /\.ya?ml$/i.test(name))

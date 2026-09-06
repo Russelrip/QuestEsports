@@ -6,8 +6,10 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const servicePath = path.join(__dirname, "../src/modules/valorant-leaderboard/service.js");
 const clientPath = path.join(__dirname, "../src/modules/valorant-leaderboard/client.js");
+const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
 
-const loadService = (clientMock) => loadModuleWithMocks(servicePath, { [clientPath]: clientMock });
+const loadService = (clientMock, prismaMock = { oAuthAccount: { findFirst: async () => null } }) =>
+  loadModuleWithMocks(servicePath, { [clientPath]: clientMock, [prismaPath]: { prisma: prismaMock } });
 
 test("listLeaderboard maps the paginated upstream payload to camelCase", async () => {
   const clientMock = {
@@ -22,7 +24,7 @@ test("listLeaderboard maps the paginated upstream payload to camelCase", async (
   const { module: service } = loadService(clientMock);
   const result = await service.listLeaderboard({ page: 1, perPage: 50 });
   assert.deepEqual(result.entries[0], {
-    puuid: "p-1", name: "Sahan", tag: "QST", discordUsername: "sahan", currentTier: "Diamond 2",
+    puuid: "p-1", name: "Sahan", tag: "QST", currentTier: "Diamond 2",
     elo: 1520, rankInTier: 40, peakRank: "Ascendant 1", peakSeason: "e10a1", lastPlayed: "2026-08-10T00:00:00Z",
   });
   assert.equal(result.perPage, 50);
@@ -36,7 +38,7 @@ test("searchLeaderboardPlayer maps a found entry", async () => {
   };
   const { module: service } = loadService(clientMock);
   const result = await service.searchLeaderboardPlayer("russel");
-  assert.equal(result.discordUsername, "russel");
+  assert.equal(result.discordUsername, undefined);
   assert.equal(result.peakRank, "Diamond 1");
   assert.equal(result.lastPlayed, null);
 });
@@ -69,15 +71,16 @@ const player = (name, tag, discord) => ({
   peak_rank: null, peak_season: null, last_played_match: null,
 });
 
-test("searchLeaderboardPlayers matches a partial Discord username and keeps the real rank", async () => {
+test("searchLeaderboardPlayers matches a partial Riot name and keeps the real rank", async () => {
   const { module: service } = loadService(snapshotClient([
     player("Alpha", "QST", "alpha"),
-    player("Bravo", "QST", "sahanx"),
+    player("SahanX", "QST", "private-handle"),
     player("Charlie", "QST", "charlie"),
   ]));
   const results = await service.searchLeaderboardPlayers("sahan");
   assert.equal(results.length, 1);
-  assert.equal(results[0].discordUsername, "sahanx");
+  assert.equal(results[0].name, "SahanX");
+  assert.equal(results[0].discordUsername, undefined);
   assert.equal(results[0].rank, 2);
 });
 
@@ -92,21 +95,21 @@ test("searchLeaderboardPlayers matches Riot name, tag, and full name#tag", async
   assert.deepEqual((await service.searchLeaderboardPlayers("Russel#QST")).map((e) => e.name), ["Russel"]);
 });
 
-test("searchLeaderboardPlayers is case-insensitive and tolerates a leading @", async () => {
+test("searchLeaderboardPlayers is case-insensitive", async () => {
   const { module: service } = loadService(snapshotClient([player("Sahan", "QST", "Sahan_G")]));
-  const results = await service.searchLeaderboardPlayers("@SAHAN_g");
+  const results = await service.searchLeaderboardPlayers("SAHAN");
   assert.equal(results.length, 1);
-  assert.equal(results[0].discordUsername, "Sahan_G");
+  assert.equal(results[0].name, "Sahan");
 });
 
 test("searchLeaderboardPlayers ranks exact over prefix over substring", async () => {
   const { module: service } = loadService(snapshotClient([
-    player("A", "AAA", "xxnovaxx"),
-    player("B", "BBB", "novaking"),
-    player("C", "CCC", "nova"),
+    player("xxnovaxx", "AAA", "private-a"),
+    player("novaking", "BBB", "private-b"),
+    player("nova", "CCC", "private-c"),
   ]));
   const results = await service.searchLeaderboardPlayers("nova");
-  assert.deepEqual(results.map((e) => e.discordUsername), ["nova", "novaking", "xxnovaxx"]);
+  assert.deepEqual(results.map((e) => e.name), ["nova", "novaking", "xxnovaxx"]);
 });
 
 test("searchLeaderboardPlayers ignores queries shorter than two characters", async () => {
@@ -121,7 +124,7 @@ test("searchLeaderboardPlayers ignores queries shorter than two characters", asy
 test("searchLeaderboardPlayers pages the whole leaderboard for the snapshot", async () => {
   const roster = Array.from({ length: 450 }, (_, index) => player(`P${index}`, "QST", `player${index}`));
   const { module: service } = loadService(snapshotClient(roster));
-  const results = await service.searchLeaderboardPlayers("player420");
+  const results = await service.searchLeaderboardPlayers("P420");
   assert.equal(results.length, 1);
   assert.equal(results[0].rank, 421);
 });
@@ -146,7 +149,7 @@ test("searchLeaderboardPlayers falls back to the exact lookup when the snapshot 
   const results = await service.searchLeaderboardPlayers("ghost");
   assert.equal(searched, "ghost");
   assert.equal(results.length, 1);
-  assert.equal(results[0].discordUsername, "ghost");
+  assert.equal(results[0].name, "Ghost");
   assert.equal(results[0].rank, null);
 });
 
@@ -157,7 +160,7 @@ test("searchLeaderboardPlayers falls back to the exact lookup when the snapshot 
   });
   const results = await service.searchLeaderboardPlayers("sahan");
   assert.equal(results.length, 1);
-  assert.equal(results[0].discordUsername, "sahan");
+  assert.equal(results[0].name, "Sahan");
 });
 
 test("searchLeaderboardPlayers returns an empty list when nothing matches anywhere", async () => {
@@ -167,7 +170,77 @@ test("searchLeaderboardPlayers returns an empty list when nothing matches anywhe
 });
 
 test("searchLeaderboardPlayers caps the result list at the requested limit", async () => {
-  const roster = Array.from({ length: 40 }, (_, index) => player(`P${index}`, "QST", `nova${index}`));
+  const roster = Array.from({ length: 40 }, (_, index) => player(`nova${index}`, "QST", `private${index}`));
   const { module: service } = loadService(snapshotClient(roster));
   assert.equal((await service.searchLeaderboardPlayers("nova", { limit: 5 })).length, 5);
+});
+
+test("registration derives the canonical Discord identity from the authenticated user's linked account", async () => {
+  let seenInput;
+  const client = {
+    getLeaderboard: async () => ({}),
+    searchLeaderboard: async () => null,
+    submitRegistration: async (input) => {
+      seenInput = input;
+      return { success: true };
+    },
+  };
+  const { module: service } = loadService(client, {
+    oAuthAccount: {
+      findFirst: async (args) => {
+        assert.deepEqual(args.where, { userId: "user-1", provider: "discord" });
+        return {
+          providerUserId: "discord-snowflake",
+          user: { discordTag: "current-name" },
+        };
+      },
+    },
+  });
+
+  await service.submitRegistration({
+    userId: "user-1",
+    puuid: "p-1",
+    discord_id: "forged-id",
+    discord_username: "forged-name",
+  });
+
+  assert.deepEqual(seenInput, {
+    puuid: "p-1",
+    discord_id: "discord-snowflake",
+    discord_username: "current-name",
+  });
+});
+
+test("registration rejects an authenticated user without a linked Discord account", async () => {
+  const client = {
+    getLeaderboard: async () => ({}),
+    searchLeaderboard: async () => null,
+    submitRegistration: async () => {
+      throw new Error("must not call upstream");
+    },
+  };
+  const { module: service } = loadService(client);
+
+  await assert.rejects(
+    service.submitRegistration({ userId: "user-1", puuid: "p-1" }),
+    (error) => error.statusCode === 403 && error.code === "DISCORD_LINK_REQUIRED",
+  );
+});
+
+ test("public search never discloses a Discord-only match, including fallback", async () => {
+  const secret = player("PublicRiot", "TAG", "private-discord");
+  for (const getLeaderboard of [async () => ({entries: [secret], total_pages: 1}), async () => { throw new Error("unavailable"); }]) {
+    const { module: service } = loadService({getLeaderboard, searchLeaderboard: async () => secret});
+    assert.deepEqual(await service.searchLeaderboardPlayers("private-discord"), []);
+    assert.equal(await service.searchLeaderboardPlayer("private-discord"), null);
+  }
+});
+
+test("linked users checking another PUUID receive only public Riot fields", async () => {
+  const { module: service } = loadService({
+    checkPuuid: async () => ({ exists: true, user: {name: "Riot", tag: "TAG", discord_username: "private", discord_id: "private-id"} }),
+  }, {oAuthAccount: {findFirst: async () => ({providerUserId: "caller-id", user: {discordTag: "caller"}})}});
+  assert.deepEqual(await service.checkPuuid({userId: "caller", puuid: "someone-else"}), {
+    exists: true, user: {name: "Riot", tag: "TAG"},
+  });
 });

@@ -365,3 +365,26 @@ Backend values are read at process startup, so restart the backend after
 changing them. Frontend `NEXT_PUBLIC_*` values are build-time inputs, so
 rebuild/redeploy after changing them. Frontend server-only maintenance values
 also require a redeploy in hosted environments.
+
+
+## VALORANT production hardening
+
+With `APP_ENV=production`, startup is fail-closed. Use the safe
+[production template](../ops/docker/valorant.production.env.example); inject values
+out of band into the protected host environment file. Required categories:
+
+- `DATABASE_URL` and `DIRECT_URL`: runtime-role asyncpg URLs with nonempty password,
+  stable database hostname and TLS; migration credentials belong only in one-shot jobs.
+- `VALORANT_DATABASE_SSL_CA_FILE`, `VALORANT_DATABASE_SSL_SERVER_HOSTNAME`,
+  `VALORANT_DATABASE_SSL_VERIFY=full`: mounted CA and verified hostname contract.
+- `HENRIK_API_KEY`, HTTPS `HENRIK_BASE_URL`, valid `HENRIK_AUTH_SCHEME`.
+- `QUEST_SERVICE_SHARED_SECRETS` (key-ID/secret map), `QUEST_SERVICE_ISSUER`,
+  `QUEST_SERVICE_AUDIENCE`, `SERVICE_TOKEN_MAX_SKEW_SECONDS`; these must agree with
+  Quest's `VALORANT_SERVICE_SECRET`, key ID, issuer and audience.
+- `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, HTTPS `DISCORD_REDIRECT_URI`,
+  `DISCORD_TOKEN_1`, `DISCORD_TOKEN_2`, positive `DISCORD_GUILD_ID`, `ADMIN_API_KEY`.
+
+The worker platform retains its required Discord configuration; Quest registration
+uses Quest's existing account-link OAuth callback rather than the retired
+leaderboard-specific flow. Never put secrets into frontend or Expo public variables.
+Browser CSP uses `NEXT_PUBLIC_API_URL`; server fetches may use `INTERNAL_API_URL`.

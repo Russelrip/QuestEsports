@@ -18,6 +18,104 @@ ROOT = Path(__file__).resolve().parents[1]
 RELEASE_IMAGE = "example.invalid/valorant-platform@sha256:" + "1" * 64
 
 
+def _production_settings(ca_file: Path, **overrides: object):
+    from app.config import Settings
+
+    values: dict[str, object] = {
+        "app_env": "production",
+        "database_url": "postgresql+asyncpg://val_runtime:placeholder@quest-postgres:5432/quest?ssl=require",
+        "direct_url": "postgresql+asyncpg://val_runtime:placeholder@quest-postgres:5432/quest?ssl=require",
+        "valorant_database_ssl_verify": "full",
+        "valorant_database_ssl_ca_file": str(ca_file),
+        "valorant_database_ssl_server_hostname": "quest-postgres",
+        "henrik_api_key": "placeholder",
+        "quest_service_shared_secrets": "current=placeholder",
+        "discord_client_id": "placeholder",
+        "discord_client_secret": "placeholder",
+        "discord_redirect_uri": "https://questesports.lk/register",
+        "discord_token_1": "placeholder",
+        "discord_token_2": "placeholder",
+        "discord_guild_id": 123,
+        "admin_api_key": "placeholder",
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+@pytest.mark.parametrize(
+    ("label", "overrides", "expected_errors"),
+    [
+        (
+            "missing Quest service-secret map",
+            {"quest_service_shared_secrets": None},
+            {"QUEST_SERVICE_SHARED_SECRETS"},
+        ),
+        (
+            "malformed Quest service-secret map",
+            {"quest_service_shared_secrets": "malformed"},
+            {"QUEST_SERVICE_SHARED_SECRETS", "QUEST_SERVICE_SHARED_SECRETS_FORMAT"},
+        ),
+        ("missing Quest issuer", {"quest_service_issuer": ""}, {"QUEST_SERVICE_ISSUER"}),
+        ("missing Quest audience", {"quest_service_audience": ""}, {"QUEST_SERVICE_AUDIENCE"}),
+        ("missing Henrik API key", {"henrik_api_key": ""}, {"HENRIK_API_KEY"}),
+        ("invalid Henrik base URL", {"henrik_base_url": "http://api.henrikdev.xyz"}, {"HENRIK_BASE_URL"}),
+        ("invalid Henrik auth scheme", {"henrik_auth_scheme": "token"}, {"HENRIK_AUTH_SCHEME"}),
+        ("missing Discord OAuth client ID", {"discord_client_id": ""}, {"DISCORD_CLIENT_ID"}),
+        ("missing Discord OAuth client secret", {"discord_client_secret": ""}, {"DISCORD_CLIENT_SECRET"}),
+        ("missing Discord worker token 1", {"discord_token_1": ""}, {"DISCORD_TOKEN_1"}),
+        ("missing Discord worker token 2", {"discord_token_2": ""}, {"DISCORD_TOKEN_2"}),
+        ("missing admin API key", {"admin_api_key": ""}, {"ADMIN_API_KEY"}),
+        ("missing Discord guild ID", {"discord_guild_id": 0}, {"DISCORD_GUILD_ID"}),
+        (
+            "invalid OAuth redirect",
+            {"discord_redirect_uri": "http://localhost:3000/register"},
+            {"DISCORD_REDIRECT_URI"},
+        ),
+        ("missing database URL", {"database_url": ""}, {"DATABASE_URL"}),
+        ("missing direct URL", {"direct_url": None}, {"DIRECT_URL"}),
+        (
+            "empty database password",
+            {"database_url": "postgresql+asyncpg://val_runtime:@quest-postgres:5432/quest?ssl=require"},
+            {"DATABASE_URL"},
+        ),
+        (
+            "empty direct URL password",
+            {"direct_url": "postgresql+asyncpg://val_runtime:@quest-postgres:5432/quest?ssl=require"},
+            {"DIRECT_URL"},
+        ),
+        (
+            "non-strict TLS verification",
+            {"valorant_database_ssl_verify": "off"},
+            {"VALORANT_DATABASE_SSL_VERIFY"},
+        ),
+        (
+            "missing TLS CA",
+            {"valorant_database_ssl_ca_file": "missing-ca.pem"},
+            {"VALORANT_DATABASE_SSL_CA_FILE"},
+        ),
+        (
+            "wrong TLS hostname",
+            {"valorant_database_ssl_server_hostname": "localhost"},
+            {"VALORANT_DATABASE_SSL_SERVER_HOSTNAME"},
+        ),
+    ],
+)
+def test_production_settings_fail_closed_by_required_category(
+    tmp_path: Path,
+    label: str,
+    overrides: dict[str, object],
+    expected_errors: set[str],
+) -> None:
+    ca_file = tmp_path / "ca.pem"
+    ca_file.write_text("placeholder", encoding="utf-8")
+    settings = _production_settings(ca_file, **overrides)
+
+    errors = settings.production_validation_errors()
+
+    assert expected_errors <= set(errors), label
+    assert not any("placeholder" in error for error in errors)
+
+
 def _compose_config() -> dict:
     if shutil.which("docker") is None:
         pytest.skip("docker is unavailable")

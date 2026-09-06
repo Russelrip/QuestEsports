@@ -37,7 +37,6 @@ const profileSchema = z.object({
   username: z.string().min(1, "Username is required."),
   email: z.string(),
   phone: z.string().optional(),
-  discordTag: z.string().optional(),
 });
 
 const emailChangeSchema = z.object({
@@ -113,7 +112,6 @@ export default function ProfileView() {
       username: "",
       email: "",
       phone: "",
-      discordTag: "",
     },
   });
 
@@ -149,7 +147,6 @@ export default function ProfileView() {
         username: user.username || "",
         email: user.email || "",
         phone: user.phone || "",
-        discordTag: user.discordTag || "",
       });
     }
   }, [isLoading, profileForm, router, user]);
@@ -224,7 +221,6 @@ export default function ProfileView() {
           lastName: values.lastName,
           username: values.username,
           phone: values.phone,
-          discordTag: values.discordTag,
         },
       });
 
@@ -467,17 +463,16 @@ export default function ProfileView() {
                       <FormField label="Phone" htmlFor="phone">
                         <Input id="phone" {...profileForm.register("phone")} />
                       </FormField>
-                      {/* Derived from the connected Discord account, never
-                          typed. A tag anyone can retype is not an identity, and
-                          the server ignores edits to it once Discord is linked. */}
-                      <FormField label="Discord Tag" htmlFor="discordTag">
-                        <Input id="discordTag" disabled {...profileForm.register("discordTag")} />
-                        <p className="mt-2 text-xs leading-5 text-slate-500">
-                          {user?.discordTag
-                            ? "From your connected Discord account."
-                            : "Connect Discord under Linked accounts to fill this in."}
-                        </p>
-                      </FormField>
+                      <div className="rounded-xl border border-white/8 bg-white/[.02] p-4 sm:col-span-2">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-200/70">Connected Discord</p>
+                        {user.discordId ? (
+                          <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <div><dt className="text-xs text-slate-500">Username</dt><dd className="mt-1 text-sm font-medium text-white">{user.discordTag || "Not available"}</dd></div>
+                            <div><dt className="text-xs text-slate-500">Discord ID</dt><dd className="mt-1 break-all font-mono text-sm text-slate-200">{user.discordId || "Not available"}</dd></div>
+                          </dl>
+                        ) : <p className="mt-2 text-sm leading-6 text-slate-500">Connect Discord under Linked accounts to display your private connected-account details.</p>}
+                        <p className="mt-3 text-xs leading-5 text-slate-500">These details come from Discord and cannot be edited here.</p>
+                      </div>
                     </div>
                     {profileForm.formState.errors.root?.message ? <p className="text-sm text-slate-300">{profileForm.formState.errors.root.message}</p> : null}
                     <Button type="submit" disabled={profileForm.formState.isSubmitting}>

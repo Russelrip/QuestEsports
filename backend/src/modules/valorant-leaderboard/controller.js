@@ -2,8 +2,6 @@ const { asyncHandler } = require("../../lib/async-handler");
 const {
   listLeaderboard,
   searchLeaderboardPlayers,
-  getDiscordLogin: serviceGetDiscordLogin,
-  getDiscordCallback: serviceGetDiscordCallback,
   checkPuuid: serviceCheckPuuid,
   previewRegistration: servicePreviewRegistration,
   submitRegistration: serviceSubmitRegistration,
@@ -37,36 +35,33 @@ const searchLeaderboard = asyncHandler(async (req, res) => {
   respond(res, { entries, entry: entries[0] ?? null });
 });
 
-const getDiscordLogin = asyncHandler(async (req, res) => {
-  const data = await serviceGetDiscordLogin();
-  respond(res, data);
-});
-
-const getDiscordCallback = asyncHandler(async (req, res) => {
-  const data = await serviceGetDiscordCallback(String(req.query.code || ""));
-  respond(res, data);
-});
-
 const checkPuuid = asyncHandler(async (req, res) => {
-  const data = await serviceCheckPuuid(String(req.body?.puuid || ""));
+  const data = await serviceCheckPuuid({
+    userId: req.user.id,
+    puuid: String(req.body?.puuid || ""),
+  });
   respond(res, data);
 });
 
 const previewRegistration = asyncHandler(async (req, res) => {
-  const data = await servicePreviewRegistration(String(req.body?.puuid || ""));
+  const data = await servicePreviewRegistration({
+    userId: req.user.id,
+    puuid: String(req.body?.puuid || ""),
+  });
   respond(res, data);
 });
 
 const submitRegistration = asyncHandler(async (req, res) => {
-  const data = await serviceSubmitRegistration(req.body || {});
+  const data = await serviceSubmitRegistration({
+    userId: req.user.id,
+    puuid: String(req.body?.puuid || ""),
+  });
   respond(res, data);
 });
 
 module.exports = {
   getLeaderboard,
   searchLeaderboard,
-  getDiscordLogin,
-  getDiscordCallback,
   checkPuuid,
   previewRegistration,
   submitRegistration,

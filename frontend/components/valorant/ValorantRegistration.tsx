@@ -1,38 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { Input } from "@/components/ui/input";
+import { LoadingState } from "@/components/ui/loading-state";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { getProviderLinkUrl } from "@/lib/account-linking";
 import type {
-  ValorantRegistrationDiscordUser,
   ValorantRegistrationPreview,
 } from "@/lib/valorant";
 import {
   checkPuuidRegistered,
   previewValorantRegistration,
-  requestDiscordCallback,
-  requestDiscordLogin,
   submitValorantRegistration,
 } from "@/lib/valorant-api";
-
-const DISCORD_USER_STORAGE_KEY = "discord_user";
-
-const readStoredDiscordUser = (): ValorantRegistrationDiscordUser | null => {
-  const stored = sessionStorage.getItem(DISCORD_USER_STORAGE_KEY);
-  if (!stored) return null;
-  try {
-    return JSON.parse(stored) as ValorantRegistrationDiscordUser;
-  } catch {
-    sessionStorage.removeItem(DISCORD_USER_STORAGE_KEY);
-    return null;
-  }
-};
 
 const STEPS = ["Discord", "PUUID", "Confirm"];
 
@@ -110,18 +98,25 @@ const messageForRegistrationError = (error: unknown, fallback: string): string =
 
 export default function ValorantRegistration() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { user, isLoading: authLoading } = useAuth();
 
   const [step, setStep] = useState(0);
-  const [discordUser, setDiscordUser] = useState<ValorantRegistrationDiscordUser | null>(null);
+  const discordId = user?.discordId?.trim() || null;
+  const discordUser = useMemo(() => discordId
+    ? { discord_username: user?.discordTag || "Discord user" }
+    : null, [discordId, user?.discordTag]);
   const [puuid, setPuuid] = useState("");
   const [preview, setPreview] = useState<ValorantRegistrationPreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [processedCode, setProcessedCode] = useState<string | null>(null);
 
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const successHeadingRef = useRef<HTMLHeadingElement>(null);
+  const discordIdRef = useRef<string | null>(discordId);
+  const previewDiscordIdRef = useRef<string | null>(null);
+  const requestRef = useRef(0);
+  discordIdRef.current = discordId;
 
   // Clear the pending redirect timer if the component unmounts.
   useEffect(() => {
@@ -130,99 +125,41 @@ export default function ValorantRegistration() {
     };
   }, []);
 
-  // Restore a previously connected Discord user from sessionStorage.
   useEffect(() => {
-    const restored = readStoredDiscordUser();
-    if (restored) {
-      setDiscordUser(restored);
-      setStep(1);
-    }
-  }, []);
-
-  const handleDiscordCallback = useCallback(async (code: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await requestDiscordCallback(code);
-      if (data.exists && data.existing_data) {
-        setError(
-          `This Discord account is already registered as ${data.existing_data.name}#${data.existing_data.tag}. Each Discord account can only be linked to one Valorant account. If you need to update your PUUID or have issues with your registration, please contact an administrator.`,
-        );
-        return;
-      }
-      if (data.user) {
-        setDiscordUser(data.user);
-        setStep(1);
-        sessionStorage.setItem(DISCORD_USER_STORAGE_KEY, JSON.stringify(data.user));
-      } else {
-        setError("No user data received from Discord");
-      }
-    } catch (callbackError) {
-      const status =
-        callbackError instanceof Error && "status" in callbackError
-          ? (callbackError as { status?: number }).status
-          : undefined;
-      if (status === 409) {
-        // The OAuth code was already consumed — a replayed/duplicate callback
-        // (e.g. React StrictMode double-mount or a refresh of the ?code= URL).
-        // The winning request already stored the Discord user, so silently
-        // restore it and clear the URL instead of alarming the user.
-        const restored = readStoredDiscordUser();
-        if (restored) {
-          setDiscordUser(restored);
-          setStep(1);
-        }
-        return;
-      }
-      setError(messageForRegistrationError(callbackError, "Failed to authenticate with Discord"));
-    } finally {
+    if (!discordId) {
+      requestRef.current += 1;
+      previewDiscordIdRef.current = null;
+      setPreview(null);
+      setStep(0);
+      setSuccess(false);
       setLoading(false);
-      // Remove the one-time OAuth code from the URL.
-      window.history.replaceState({}, document.title, window.location.pathname);
+      setError(null);
+      return;
     }
-  }, []);
 
-  // Handle the Discord OAuth redirect (?code=...) exactly once.
+    if (step === 0) setStep(1);
+  }, [discordId, step]);
+
   useEffect(() => {
-    const code = searchParams.get("code");
-    if (code && step === 0 && !discordUser && !loading && processedCode !== code) {
-      setProcessedCode(code);
-      void handleDiscordCallback(code);
-    }
-  }, [searchParams, step, discordUser, loading, processedCode, handleDiscordCallback]);
+    if (success) successHeadingRef.current?.focus();
+  }, [success]);
 
-  const handleDiscordLogin = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await requestDiscordLogin();
-      if (data.url) window.location.href = data.url;
-    } catch (loginError) {
-      setError(messageForRegistrationError(loginError, "Failed to initiate Discord login"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleChangeAccount = () => {
-    sessionStorage.removeItem(DISCORD_USER_STORAGE_KEY);
-    setDiscordUser(null);
-    setPreview(null);
-    setPuuid("");
-    setStep(0);
-    setError(null);
-  };
+  const handleDiscordLogin = () => window.location.assign(getProviderLinkUrl("discord"));
 
   const handlePuuidSubmit = async () => {
+    const linkedDiscordId = discordIdRef.current;
     const value = puuid.trim();
+    if (!linkedDiscordId) return;
     if (!value) {
       setError("Please enter your PUUID");
       return;
     }
+    const requestId = ++requestRef.current;
     setLoading(true);
     setError(null);
     try {
       const check = await checkPuuidRegistered(value);
+      if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       if (check.exists && check.user) {
         setError(
           `This PUUID is already registered to ${check.user.name}#${check.user.tag}. Each player can only register once. If this is your account and you need to update your Discord connection, please contact an administrator.`,
@@ -230,41 +167,54 @@ export default function ValorantRegistration() {
         return;
       }
       const playerPreview = await previewValorantRegistration(value);
+      if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
+      previewDiscordIdRef.current = linkedDiscordId;
       setPreview(playerPreview);
       setStep(2);
     } catch (previewError) {
+      if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       setError(messageForRegistrationError(previewError, "Failed to fetch player data. Please try again later."));
     } finally {
-      setLoading(false);
+      if (requestId === requestRef.current) setLoading(false);
     }
   };
 
   const handleDifferentPuuid = () => {
+    previewDiscordIdRef.current = null;
     setPreview(null);
     setPuuid("");
     setStep(1);
     setError(null);
   };
 
+  if (authLoading) {
+    return <div role="status" aria-live="polite"><Container className="py-10 sm:py-14"><LoadingState title="Loading registration" description="Checking your Quest account and connected Discord." /></Container></div>;
+  }
+
+  if (!user) {
+    return <Container className="py-10 sm:py-14"><Card className="mx-auto max-w-xl p-8 text-center"><h2 className="text-xl font-semibold text-white">Sign in to register</h2><p className="mt-2 text-sm text-slate-400">A Quest account is required before you can add a player to the leaderboard.</p><Link href="/login?redirect=%2Fvalorant-leaderboard%2Fregister" className={buttonClassName({ variant: "primary", size: "lg" })}>Sign in to continue</Link></Card></Container>;
+  }
+
   const handleFinalSubmit = async () => {
-    if (!discordUser || !preview) return;
+    const linkedDiscordId = discordIdRef.current;
+    if (!user || !linkedDiscordId || !preview || previewDiscordIdRef.current !== linkedDiscordId) return;
+    const requestId = ++requestRef.current;
     setLoading(true);
     setError(null);
     try {
       await submitValorantRegistration({
-        discord_id: discordUser.discord_id,
-        discord_username: discordUser.discord_username,
         puuid: preview.puuid,
       });
-      sessionStorage.removeItem(DISCORD_USER_STORAGE_KEY);
+      if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       setSuccess(true);
       redirectTimerRef.current = setTimeout(() => {
         router.push("/valorant-leaderboard");
       }, 3000);
     } catch (submitError) {
+      if (requestId !== requestRef.current || discordIdRef.current !== linkedDiscordId) return;
       setError(messageForRegistrationError(submitError, "Registration failed. Please try again."));
     } finally {
-      setLoading(false);
+      if (requestId === requestRef.current) setLoading(false);
     }
   };
 
@@ -272,7 +222,7 @@ export default function ValorantRegistration() {
     return (
       <Container className="py-10 sm:py-14">
         <div className="mx-auto w-full max-w-xl">
-          <Card className="p-10 text-center">
+          <Card className="p-10 text-center" role="status" aria-live="polite">
             <svg
               viewBox="0 0 24 24"
               className="mx-auto mb-5 size-14 text-emerald-400"
@@ -283,7 +233,7 @@ export default function ValorantRegistration() {
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
             </svg>
-            <h2 className="text-2xl font-semibold text-white">Registration Successful!</h2>
+            <h2 ref={successHeadingRef} tabIndex={-1} className="text-2xl font-semibold text-white">Registration Successful!</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-slate-400">
               Welcome to the Quest E-sports Valorant leaderboard — you&apos;ve been added.
             </p>
@@ -332,7 +282,7 @@ export default function ValorantRegistration() {
         <Card className="p-6 sm:p-10">
           <div className="space-y-6">
             {error && (
-              <div className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-200">
+              <div role="alert" aria-live="assertive" className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-200">
                 {error}
               </div>
             )}
@@ -345,7 +295,7 @@ export default function ValorantRegistration() {
                 <div>
                   <h2 className="text-xl font-semibold text-white">Connect Your Discord Account</h2>
                   <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
-                    We use Discord for authentication and to display your username on the leaderboard.
+                    Connect Discord to your Quest account before entering a Riot PUUID. Your identity stays private.
                   </p>
                 </div>
                 <button
@@ -355,7 +305,7 @@ export default function ValorantRegistration() {
                   disabled={loading}
                 >
                   <DiscordIcon className="size-5" />
-                  {loading ? "Connecting..." : "Login with Discord"}
+                  {loading ? "Connecting..." : "Connect Discord"}
                 </button>
               </div>
             )}
@@ -364,20 +314,17 @@ export default function ValorantRegistration() {
               <div className="space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="text-lg font-semibold text-white">
-                      Welcome, {discordUser.discord_username}
-                    </span>
+                    <div>
+                      <span className="text-lg font-semibold text-white">Welcome, {discordUser.discord_username}</span>
+                      <p className="mt-1 font-mono text-xs text-slate-500">Discord ID: {user.discordId || "Not available"}</p>
+                    </div>
                     <Badge className="border-emerald-300/25 bg-emerald-400/10 text-emerald-200">
                       Discord Connected
                     </Badge>
                   </div>
-                  <button
-                    type="button"
-                    className={buttonClassName({ variant: "ghost", size: "sm" })}
-                    onClick={handleChangeAccount}
-                  >
-                    Change account
-                  </button>
+                  <Link href="/profile?tab=account" className={buttonClassName({ variant: "ghost", size: "sm" })}>
+                    Manage connection
+                  </Link>
                 </div>
 
                 <div>

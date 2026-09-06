@@ -1,6 +1,6 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
+import Image from "next/image";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import EmptyState from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -94,7 +94,7 @@ export default function AdminPosterStudio({
                 <div className="grid gap-3 sm:grid-cols-2">
                   {uploadPreviews.map((item) => (
                     <div key={`${item.file.name}-${item.file.size}`} className="rounded-none border border-white/8 bg-white/5 p-3">
-                      <img src={item.previewUrl} alt={item.file.name} className="aspect-square w-full rounded-none object-cover" />
+                      <Image src={item.previewUrl} alt={item.file.name} width={800} height={800} unoptimized className="aspect-square w-full rounded-none object-cover" />
                       <p className="mt-3 text-sm text-slate-300">{item.file.name}</p>
                     </div>
                   ))}
@@ -142,7 +142,7 @@ export default function AdminPosterStudio({
 
               {selectedDraftAsset ? (
                 <div className="overflow-hidden rounded-none border border-white/8 bg-white/5 p-3">
-                  <img src={resolveImageAssetUrl(selectedDraftAsset) || "/images/logo.png"} alt={selectedDraftAsset.title} className="w-full rounded-none object-cover" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, selectedDraftAsset)) event.currentTarget.style.display = "none"; }} />
+                  <Image src={resolveImageAssetUrl(selectedDraftAsset) || "/images/logo.png"} alt={selectedDraftAsset.title} width={1200} height={900} unoptimized className="w-full rounded-none object-cover" onError={(event) => { if (!applyLegacyImageFallback(event.currentTarget, selectedDraftAsset)) event.currentTarget.style.display = "none"; }} />
                 </div>
               ) : (
                 <EmptyState description="Upload or select an image to preview the gallery entry." />

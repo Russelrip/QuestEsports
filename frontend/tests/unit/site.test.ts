@@ -1,6 +1,9 @@
+import { createElement } from "react";
+import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Product } from "../../lib/shop";
 import type { TicketedEvent } from "../../lib/tickets";
+import StructuredData from "../../components/StructuredData";
 import {
   absoluteUrl,
   buildBreadcrumbStructuredData,
@@ -154,5 +157,22 @@ describe("site structured data helpers", () => {
     ]);
 
     expect(data.itemListElement.map((item) => item.position)).toEqual([1, 2]);
+  });
+
+  it("serializes hostile JSON-LD strings without closing the script element", () => {
+    const view = render(
+      createElement(StructuredData, {
+        data: {
+          name: '</script><script>alert("xss")</script>',
+          line: "first\u2028second\u2029third",
+        },
+      }),
+    );
+
+    const script = view.container.querySelector("script");
+    expect(script?.textContent).not.toContain("</script>");
+    expect(script?.textContent).toContain("\\u003c/script\\u003e");
+    expect(script?.textContent).toContain("\\u2028");
+    expect(script?.textContent).toContain("\\u2029");
   });
 });

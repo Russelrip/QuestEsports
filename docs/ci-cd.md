@@ -206,3 +206,31 @@ See [Production Operations Runbook](production-runbook.md),
 [Environment Reference](environment-reference.md), and
 [Deployment Safety](DEPLOYMENT_SAFETY.md) for host, configuration, and recovery
 details.
+
+
+## Reproducing application checks
+
+From each workspace, install the lockfile (`npm ci`, or in VALORANT
+`uv sync --extra dev --locked`). Backend: `npm run lint`, `npm run test:coverage`.
+Frontend: `npm run lint`, `npm run typecheck`, `npm test -- --coverage`, and
+`npm run build` with valid HTTPS public API/site build variables.
+VALORANT supports Python 3.11+ (CI/image: 3.12): `uv run ruff check app workers tests scripts`
+and `uv run pytest -m "not live" -q`. Windows without an IANA timezone database
+can use `uv run --with tzdata pytest -m "not live" -q` without changing the lockfile.
+
+The protected two-service E2E command is `npm run test:valorant:e2e` in backend;
+follow its [fixture guide](../backend/tests/valorant-e2e/README.md) and use only an
+isolated test database. The auth-boundary test uses the real Quest signer against
+FastAPI health verification; set `VALORANT_PLATFORM_REPO` to the monorepo service
+and `PYTHON_BIN` to its managed interpreter (Windows: `.venv/Scripts/python.exe`).
+Database/container-dependent checks remain separate from unit-only evidence.
+
+Mobile CI runs `npm ci`, `npm run audit:ci`, `npm test`, `npm run typecheck`, and
+`npm run doctor`. The dependent Android job repeats `npm ci`, generates a clean
+native project with `npm run prebuild:android -- --no-install` under `CI=1`, then
+runs `./gradlew --no-daemon --max-workers=1 :app:assembleDebug -PreactNativeArchitectures=arm64-v8a`
+with Java 21 and Android SDK. It needs no release signing secrets. See the
+[mobile guide](../mobile-admin/README.md) for the fixed decoder compatibility path.
+
+Android CI also runs `npx --no-install expo export --platform android` to validate
+the production Metro/Hermes bundle; debug native compilation alone does not bundle JavaScript.

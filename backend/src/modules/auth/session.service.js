@@ -21,6 +21,7 @@ const mapUserForSession = (record) => ({
   username: record.username,
   phone: record.phone,
   discordTag: record.discordTag,
+  discordId: record.oauthAccounts?.[0]?.providerUserId || null,
   avatarUrl: record.avatarImageName
     ? `/api/uploads/avatars/${record.avatarImageName}`
     : null,
@@ -209,7 +210,13 @@ const getSessionFromRequest = async (req) => {
       ipAddress: true,
       rememberMe: true,
       user: {
-        select: PUBLIC_USER_SELECT,
+        select: {
+          ...PUBLIC_USER_SELECT,
+          oauthAccounts: {
+            where: { provider: "discord" },
+            select: { providerUserId: true },
+          },
+        },
       },
     },
   });
