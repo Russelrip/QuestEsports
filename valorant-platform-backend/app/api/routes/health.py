@@ -105,6 +105,17 @@ async def health(authorization: str | None = Header(default=None, alias="Authori
     db = await _db_status()
     if db != "up":
         return JSONResponse(status_code=503, content={"status": "degraded", "db": db})
+    # An unauthenticated request is a liveness probe. The container healthcheck
+    # has no Quest service token and must still be able to prove that the API
+    # answers over TLS with a reachable database; failing it closed leaves the
+    # container permanently unhealthy and no release can start a candidate.
+    #
+    # Integration readiness is reported only to an authenticated Quest caller.
+    # That is the boundary release.sh and cutover.sh verify through
+    # VALORANT_CONTAINER_HEALTH_COMMAND before admitting any writer, and it also
+    # keeps configuration-readiness detail away from unauthenticated callers.
+    if not authorization:
+        return {"status": "ok", "db": "up"}
     checks = _integration_checks(authorization)
     if not checks:
         # Keep development and test behavior intentionally unchanged. In

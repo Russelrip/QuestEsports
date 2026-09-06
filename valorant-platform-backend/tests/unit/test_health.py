@@ -160,3 +160,77 @@ def test_production_health_requires_a_quest_compatible_service_token(monkeypatch
     )
     assert rejected.status_code == 503
     assert rejected.json()["checks"]["service_token"] == "not_ready"
+
+
+def test_production_health_serves_liveness_without_a_service_token(monkeypatch) -> None:
+    """An unauthenticated probe must prove liveness, not integration readiness.
+
+    The container healthcheck holds no Quest service token. When production
+    health answered 503 for every unauthenticated caller the container could
+    never become healthy, so no release could start a candidate.
+    """
+    settings = SimpleNamespace(
+        app_env="production",
+        quest_service_shared_secrets="current=shared-secret",
+        quest_service_issuer="quest-esports",
+        quest_service_audience="valorant-platform",
+        service_token_max_skew_seconds=30,
+        production_validation_errors=lambda: (),
+    )
+    monkeypatch.setattr(health_routes, "get_settings", lambda: settings)
+    _install_fake_db(monkeypatch, engine=_FakeEngine(ok=True))
+
+    resp = TestClient(create_app()).get("/api/v1/health")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok", "db": "up"}
+
+
+def test_production_liveness_still_fails_closed_when_the_database_is_down(monkeypatch) -> None:
+    """Liveness is not unconditional: an unreachable database is still degraded."""
+    settings = SimpleNamespace(
+        app_env="production",
+        quest_service_shared_secrets="current=shared-secret",
+        quest_service_issuer="quest-esports",
+        quest_service_audience="valorant-platform",
+        service_token_max_skew_seconds=30,
+        production_validation_errors=lambda: (),
+    )
+    monkeypatch.setattr(health_routes, "get_settings", lambda: settings)
+    _install_fake_db(monkeypatch, engine=_FakeEngine(ok=False))
+
+    resp = TestClient(create_app()).get("/api/v1/health")
+
+    assert resp.status_code == 503
+    assert resp.json() == {"status": "degraded", "db": "down"}
+
+
+def test_production_health_still_reports_integration_to_an_authenticated_caller(monkeypatch) -> None:
+    """Misconfiguration must still fail the authenticated release gate."""
+    settings = SimpleNamespace(
+        app_env="production",
+        quest_service_shared_secrets="current=shared-secret",
+        quest_service_issuer="quest-esports",
+        quest_service_audience="valorant-platform",
+        service_token_max_skew_seconds=30,
+        production_validation_errors=lambda: ("HENRIK_API_KEY",),
+    )
+    monkeypatch.setattr(health_routes, "get_settings", lambda: settings)
+    _install_fake_db(monkeypatch, engine=_FakeEngine(ok=True))
+    token = sign_service_token(
+        secret="shared-secret",
+        kid="current",
+        issuer="quest-esports",
+        audience="valorant-platform",
+        subject="quest-health",
+    )
+
+    resp = TestClient(create_app()).get(
+        "/api/v1/health", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert resp.status_code == 503
+    assert resp.json()["integration"] == "not_ready"
+    assert resp.json()["checks"]["henrik"] == "not_ready"
+    # The same misconfiguration must not be visible to an unauthenticated probe.
+    assert TestClient(create_app()).get("/api/v1/health").status_code == 200
