@@ -11,8 +11,11 @@ the API owns Prisma/PostgreSQL access and public/private upload boundaries.
 Quest Ascension models an event identity with `EventSeries`. A tournament may
 refer to it through nullable `Tournament.seriesId`; child tournaments keep
 their own registration, capacity, payment, schedule, and bracket lifecycle.
-The public event route is [`frontend/app/events/[slug]/page.tsx`](frontend/app/events/[slug]/page.tsx),
-and the admin workspace is under [`frontend/app/admin/events`](frontend/app/admin/events).
+The public event route is
+[`frontend/app/tournaments/events/[slug]/page.tsx`](frontend/app/tournaments/events/[slug]/page.tsx),
+reached from the merged `/tournaments` listing that carries both event and
+tournament cards; the admin workspace is under
+[`frontend/app/admin/events`](frontend/app/admin/events).
 The API routes and aggregate definitions are mapped in
 [`backend/src/modules/series/codemap.md`](backend/src/modules/series/codemap.md).
 
