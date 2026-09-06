@@ -428,7 +428,7 @@ jobs:
               'tests/valorant-e2e/valorant-auth-boundary.test.js'
           )
           assert run_step['env']['PYTHON_BIN'] == (
-              '${{ github.workspace }}/valorant-platform-backend/.venv/bin/python'
+              expression(' github.workspace ') + '/valorant-platform-backend/.venv/bin/python'
           )
           print('VALORANT E2E secret boundary contracts passed')
           PY
