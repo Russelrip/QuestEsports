@@ -453,14 +453,6 @@ archive_name="quest-production-${timestamp}.tar.gz.enc"
 archive_path="$BACKUP_ROOT/$archive_name"
 checksum_path="$archive_path.sha256"
 result_path="$BACKUP_ROOT/$archive_name.results"
-# Sequential runs inside one second would still agree on the name after the lock
-# is released. Refuse rather than silently overwrite an existing recovery point.
-for existing_artifact in "$archive_path" "$checksum_path" "$result_path"; do
-  [[ ! -e "$existing_artifact" ]] || {
-    echo "A backup already exists for this second; refusing to overwrite it." >&2
-    exit 1
-  }
-done
 # A result record is created before any target, archive, or remote operation.
 # The EXIT trap converts every later failure to a terminal record; no failed run
 # can leave a misleading pending status behind.
