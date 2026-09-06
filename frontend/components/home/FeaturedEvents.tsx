@@ -25,7 +25,7 @@ export default async function FeaturedEvents({ limit = 3 }: { limit?: number }) 
           <h2 className="text-3xl text-white sm:text-4xl">Events</h2>
           <p className="mt-3 text-sm text-slate-400">One banner, several games. Each event carries its own lineup and registration windows.</p>
         </div>
-        <Link href="/events" className={`${buttonClassName({ variant: "secondary" })} hidden sm:inline-flex`}>
+        <Link href="/tournaments" className={`${buttonClassName({ variant: "secondary" })} hidden sm:inline-flex`}>
           View all
         </Link>
       </div>

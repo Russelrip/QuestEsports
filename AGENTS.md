@@ -12,8 +12,8 @@ Quest Ascension event paths:
   — nullable child relation, registration capacity, and waitlist rules.
 - [`backend/prisma/codemap.md`](backend/prisma/codemap.md) — additive schema
   migrations and deployment safety.
-- [`frontend/app/events/codemap.md`](frontend/app/events/codemap.md) — public
-  event route.
+- [`frontend/app/tournaments/codemap.md`](frontend/app/tournaments/codemap.md)
+  — merged public tournament and event routes.
 - [`frontend/app/admin/codemap.md`](frontend/app/admin/codemap.md) — admin event
   routes.
 - [`frontend/components/tournaments/event/codemap.md`](frontend/components/tournaments/event/codemap.md)

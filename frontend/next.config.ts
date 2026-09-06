@@ -60,6 +60,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   async redirects() {
     return [
+      // /events folded into /tournaments: keep existing links and search results
+      // pointing at the merged listing and the moved event detail route.
+      { source: "/events", destination: "/tournaments", permanent: true },
+      { source: "/events/:slug", destination: "/tournaments/events/:slug", permanent: true },
       { source: "/admin/valorant/teams", destination: "/admin/valorant", permanent: false },
       { source: "/admin/valorant/discover", destination: "/admin/valorant", permanent: false },
       { source: "/admin/valorant/series/new", destination: "/admin/valorant", permanent: false },

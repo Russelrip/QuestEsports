@@ -1,14 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import TournamentBannerImage from "@/components/tournaments/TournamentBannerImage";
+import TournamentCard from "@/components/tournaments/TournamentCard";
+import EventCard from "@/components/tournaments/event/EventCard";
 import EmptyState from "@/components/ui/empty-state";
 import { Section } from "@/components/ui/section";
 import { resolveImageUrl } from "@/lib/media";
-import { getTournamentRegistrationPresentation, type GameCategory, type Tournament } from "@/lib/tournaments";
-import { formatTournamentDate } from "@/lib/utils";
+import { composeTournamentListing, normalizeGameSlug } from "@/lib/tournament-listing";
+import type { EventSeries, GameCategory, Tournament } from "@/lib/tournaments";
 
 const gameIconBySlug: Record<string, string> = {
   "assetto-corsa": "/game-icon-images/assetto corsa.png",
@@ -66,33 +66,6 @@ const localGameFilters: GameCategory[] = [
   logoUrl: null,
 }));
 
-const gameSlugAliases: Record<string, string> = {
-  chess: "e-chess",
-  cod: "call-of-duty",
-  "call-of-duty-mobile": "codm",
-  "cod-mobile": "codm",
-  "counter-strike": "counter-strike-2",
-  cs2: "counter-strike-2",
-  dota: "dota-2",
-  dota2: "dota-2",
-  "ea-fc": "fc",
-  "ea-sports-fc": "fc",
-  lol: "league-of-legends",
-  "mobile-legends": "mlbb",
-  "mobile-legends-bang-bang": "mlbb",
-  mk11: "mortal-kombat-11",
-  "mortal-kombat": "mortal-kombat-11",
-  pubgm: "pubg-mobile",
-};
-
-function normalizeGameSlug(value: string) {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return gameSlugAliases[slug] || slug;
-}
-
 function getGameIcon(category: GameCategory) {
   const categorySlug = normalizeGameSlug(category.slug);
   const displayNameSlug = normalizeGameSlug(category.displayName);
@@ -114,22 +87,13 @@ function getUniqueGameFilters(categories: GameCategory[]) {
   });
 }
 
-export default function TournamentsContent({ tournaments, categories = [], initialGameFilter = "all" }: { tournaments: Tournament[]; categories?: GameCategory[]; initialGameFilter?: string }) {
+export default function TournamentsContent({ tournaments, events = [], categories = [], initialGameFilter = "all" }: { tournaments: Tournament[]; events?: EventSeries[]; categories?: GameCategory[]; initialGameFilter?: string }) {
   const [gameFilter, setGameFilter] = useState(() => normalizeGameSlug(initialGameFilter) || "all");
   const gameScrollerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const gameFilters = getUniqueGameFilters(categories);
-  const matches = (tournament: Tournament) => gameFilter === "all" || normalizeGameSlug(tournament.gameCategory?.slug || tournament.game) === gameFilter;
-  const active = tournaments.filter((item) => !item.isCompleted && matches(item));
-  const past = tournaments
-    .filter((item) => item.isCompleted && matches(item))
-    .sort((left, right) => {
-      const leftDate = new Date(left.endDate || left.startDate || left.createdAt || 0).getTime();
-      const rightDate = new Date(right.endDate || right.startDate || right.createdAt || 0).getTime();
-      return rightDate - leftDate;
-    });
-  const listedTournaments = [...active, ...past];
+  const listing = composeTournamentListing({ tournaments, events, gameFilter });
 
   useEffect(() => {
     const scroller = gameScrollerRef.current;
@@ -180,28 +144,9 @@ export default function TournamentsContent({ tournaments, categories = [], initi
     </div>
 
 
-    {listedTournaments.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{listedTournaments.map((tournament, index) => <TournamentCard key={tournament.id} tournament={tournament} preload={index === 0} eager={index < 4} />)}</div> : <EmptyState title="No tournaments match this game" description="Choose another game, or browse the events page." />}
+    {listing.isEmpty ? <EmptyState title="No tournaments match this game" description="Choose another game, or view all games to see everything Quest is running." /> : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {listing.events.map((event, index) => <EventCard key={event.id} event={event} preload={index === 0} eager={index < 4} />)}
+      {listing.tournaments.map((tournament, index) => { const position = listing.events.length + index; return <TournamentCard key={tournament.id} tournament={tournament} preload={position === 0} eager={position < 4} />; })}
+    </div>}
   </Section>;
 }
-
-function TournamentCard({ tournament, preload = false, eager = false }: { tournament: Tournament; preload?: boolean; eager?: boolean }) {
-  const registrationPresentation = getTournamentRegistrationPresentation(tournament);
-  const statusLabel = tournament.isCompleted ? "Completed" : registrationPresentation.label;
-  const statusClassName = tournament.isCompleted
-    ? "text-rose-400"
-    : registrationPresentation.isActionable
-      ? "text-emerald-300"
-      : "text-slate-300";
-
-  return <Link href={`/tournaments/${tournament.slug}`} prefetch={false} className="group relative flex h-full flex-col overflow-hidden border border-white/10 bg-[#0d0c13]">
-    <div className="relative aspect-[4/3] overflow-hidden bg-[#09080e]">
-      <TournamentBannerImage bannerUrl={tournament.bannerUrl} title={tournament.title} rounded={false} showFallbackTitle={false} preload={preload} loading={eager ? "eager" : "lazy"} className="h-full w-full object-cover transition-opacity duration-300 group-hover:opacity-85 motion-reduce:transition-none" />
-      <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity duration-300 group-hover:opacity-100 motion-reduce:transition-none" />
-    </div>
-    <div className="bg-[#0d0c13] px-5 py-5"><h3 className="line-clamp-2 min-h-16 text-xl font-bold uppercase leading-8 text-white transition-colors group-hover:text-[var(--interactive-text)]">{tournament.title}</h3></div>
-    <dl className="grid flex-1 grid-cols-2 bg-[#0d0c13] text-xs [&>div:nth-child(-n+2)]:bg-white/[0.025]"><Meta label="Organizer" value={tournament.organizer} /><Meta label="Location" value={tournament.location} /><Meta label="Registration Closing Date" value={formatTournamentDate(tournament.registrationDeadline, tournament.registrationDeadlineStatus)} /><Meta label="Event Start Date" value={formatTournamentDate(tournament.startDate, tournament.startDateStatus)} /></dl>
-    <div className="flex items-center justify-center bg-black/25 px-4 py-3 text-center text-[11px] font-bold uppercase tracking-[0.1em]"><span className={`whitespace-nowrap ${statusClassName}`}>{statusLabel}</span></div>
-  </Link>;
-}
-
-function Meta({ label, value }: { label: string; value: string }) { return <div className="min-w-0 px-5 py-4"><dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</dt><dd className="mt-2 line-clamp-1 text-[15px] font-semibold text-white">{value}</dd></div>; }

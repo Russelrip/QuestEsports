@@ -466,7 +466,6 @@ export const siteNavLabel = (item: { label: string; fullLabel?: string }) =>
 export const primaryNavItems: ReadonlyArray<SiteNavItem> = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/tournaments", label: "Tournaments", icon: "trophy" },
-  { href: "/events", label: "Events", icon: "calendar" },
   {
     href: "/valorant-leaderboard",
     label: "Leaderboard",
