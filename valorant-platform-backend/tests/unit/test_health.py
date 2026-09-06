@@ -14,6 +14,8 @@ from typing import Self
 
 from fastapi.testclient import TestClient
 
+from app.api.routes import health as health_routes
+from app.api.service_token import sign_service_token
 from app.main import create_app
 
 _MISSING = object()
@@ -126,3 +128,35 @@ def test_health_db_down_is_degraded(monkeypatch) -> None:
     assert resp.status_code == 503
     assert body == {"status": "degraded", "db": "down"}
     assert resp.headers["x-request-id"]
+
+
+def test_production_health_requires_a_quest_compatible_service_token(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        app_env="production",
+        quest_service_shared_secrets="current=shared-secret",
+        quest_service_issuer="quest-esports",
+        quest_service_audience="valorant-platform",
+        service_token_max_skew_seconds=30,
+        production_validation_errors=lambda: (),
+    )
+    monkeypatch.setattr(health_routes, "get_settings", lambda: settings)
+    _install_fake_db(monkeypatch, engine=_FakeEngine(ok=True))
+    token = sign_service_token(
+        secret="shared-secret",
+        kid="current",
+        issuer="quest-esports",
+        audience="valorant-platform",
+        subject="quest-health",
+    )
+
+    accepted = TestClient(create_app()).get(
+        "/api/v1/health", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["checks"]["service_token"] == "ready"
+
+    rejected = TestClient(create_app()).get(
+        "/api/v1/health", headers={"Authorization": "Bearer not-a-valid-quest-token"}
+    )
+    assert rejected.status_code == 503
+    assert rejected.json()["checks"]["service_token"] == "not_ready"

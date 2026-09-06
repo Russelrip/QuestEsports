@@ -40,6 +40,102 @@ dispatch="$(sed -n '/^case "\$wrapper" in$/,/^esac$/p' "$hooks")"
 
 bash -n "$hooks" || fail 'host-hooks.sh is not valid bash'
 
+# Regression for the health-status/lifecycle-status split in wait_container.
+# An API container with a healthcheck must use `.State.Health.Status`, while a
+# worker admission must use `.State.Status`; the old single formatter returned
+# `healthy` for both and could never admit a running worker.
+wait_container_body="$(sed -n '/^wait_container() {/,/^}/p' "$hooks")"
+eval "$wait_container_body"
+docker_bin="$sandbox/fake-docker"
+cat > "$docker_bin" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *'.State.Health'* ]]; then
+  printf 'healthy\n'
+else
+  printf 'running\n'
+fi
+EOF
+chmod 755 "$docker_bin"
+die() { printf 'wait_container test failed: %s\n' "$*" >&2; return 1; }
+if wait_container api healthy 1 && wait_container worker running 1; then
+  pass 'API health status and worker lifecycle status use distinct Docker fields'
+else
+  fail 'wait_container confused health status with lifecycle status'
+fi
+
+# Exercise the actual stability counter with sequenced Docker observations. The
+# API path must continue to read .State.Health.Status, while each VALORANT
+# writer path must read .State.Status and reset its counter after an interruption.
+sleep() { :; }
+sequence_root="$sandbox/wait-sequences"
+mkdir -p "$sequence_root"
+cat > "$docker_bin" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == inspect ]] || exit 1
+format="$3"
+container="$4"
+case "$container" in
+  api) sequence_name=api ;;
+  worker) sequence_name=worker ;;
+  updater) sequence_name=updater ;;
+  bot) sequence_name=bot ;;
+  *) exit 1 ;;
+esac
+count_file="$WAIT_SEQUENCE_ROOT/$sequence_name.count"
+sequence_file="$WAIT_SEQUENCE_ROOT/$sequence_name.states"
+count=0
+[[ -f "$count_file" ]] && count="$(<"$count_file")"
+count=$((count + 1))
+printf '%s\n' "$count" > "$count_file"
+mapfile -t states < "$sequence_file"
+index=$((count - 1))
+(( index >= ${#states[@]} )) && index=$((${#states[@]} - 1))
+[[ "$format" == *'.State.Health'* ]] && printf 'health api\n' >> "$WAIT_OBSERVATIONS_LOG" || printf 'lifecycle %s\n' "$sequence_name" >> "$WAIT_OBSERVATIONS_LOG"
+printf '%s\n' "${states[$index]}"
+EOF
+chmod 755 "$docker_bin"
+export WAIT_SEQUENCE_ROOT="$sequence_root" WAIT_OBSERVATIONS_LOG="$sandbox/wait-observations.log"
+
+printf '%s\n' healthy healthy > "$sequence_root/api.states"
+: > "$sequence_root/api.count"
+if wait_container api healthy 5 2 && [[ "$(<"$sequence_root/api.count")" == 2 ]] \
+    && grep -Fqx 'health api' "$sandbox/wait-observations.log"; then
+  pass 'API healthcheck admission uses the health-state path'
+else
+  fail 'API healthcheck admission did not use the health-state path'
+fi
+
+printf '%s\n' running running running > "$sequence_root/worker.states"
+: > "$sequence_root/worker.count"
+if wait_container worker running 5 3 && [[ "$(<"$sequence_root/worker.count")" == 3 ]]; then
+  pass 'a worker is admitted only after three consecutive running observations'
+else
+  fail 'a worker was not held to three consecutive running observations'
+fi
+
+printf '%s\n' running exited running running running > "$sequence_root/worker.states"
+: > "$sequence_root/worker.count"
+if wait_container worker running 5 3 && [[ "$(<"$sequence_root/worker.count")" == 5 ]]; then
+  pass 'a worker stability counter resets after an interruption'
+else
+  fail 'a worker stability counter did not reset after an interruption'
+fi
+
+for failed_worker in updater bot; do
+  printf '%s\n' running exited exited > "$sequence_root/$failed_worker.states"
+  : > "$sequence_root/$failed_worker.count"
+  if (wait_container "$failed_worker" running 3 3) >/dev/null 2>"$sandbox/$failed_worker.failure"; then
+    fail "$failed_worker failure was admitted as a running writer"
+  elif [[ "$(<"$sequence_root/$failed_worker.count")" == 3 ]] \
+      && grep -Fq 'did not reach running' "$sandbox/$failed_worker.failure"; then
+    pass "$failed_worker failure prevents writer admission"
+  else
+    fail "$failed_worker failure did not fail closed"
+  fi
+done
+
 setting_value() { grep -E "^$1=" "$example" | head -n1 | cut -d= -f2- || true; }
 
 # 1. Every alias is dispatched, and every dispatched name is a declared alias.

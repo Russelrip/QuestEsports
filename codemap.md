@@ -76,3 +76,14 @@ validated against the stable `quest-postgres` alias.
 - [Admin workflows](docs/admin-operations.md)
 - [Commerce and tournament operations](docs/commerce-and-tournament-operations.md)
 - [Deployment and rollback](docs/production-runbook.md)
+
+
+## Account and VALORANT privacy boundary
+
+Quest `OAuthAccount(provider=discord)` owns registration identity. Private session
+and profile projections expose read-only ID/display data. Authenticated registration
+accepts only PUUID, resolving Discord server-side on every request. The public
+leaderboard mapper and Riot-only search remove Discord fields, including legacy
+exact-search fallback. Browser CSP uses only the public API origin; server fetches
+may use the internal Docker origin. Mobile URI decoding uses a local CommonJS
+adapter to the pinned fixed upstream decoder, verified by dependency/native CI.

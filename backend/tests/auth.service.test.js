@@ -328,6 +328,19 @@ test("mapUserForResponse preserves an avatar URL from an already-mapped session 
   }
 });
 
+test("mapUserForResponse preserves nullable private Discord identity", () => {
+  const { module: authService, restore } = loadAuthService();
+  try {
+    assert.equal(
+      authService.mapUserForResponse({ ...user, discordId: "discord-snowflake" }).discordId,
+      "discord-snowflake",
+    );
+    assert.equal(authService.mapUserForResponse(user).discordId, null);
+  } finally {
+    restore();
+  }
+});
+
 test("createSignup writes passwordSetAt for a local-password account", async () => {
   let createArgs;
   const tx = {

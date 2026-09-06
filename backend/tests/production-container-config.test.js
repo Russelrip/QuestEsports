@@ -804,6 +804,26 @@ test("Nginx keeps public ingress on loopback and preserves SSE", () => {
   assert.doesNotMatch(nginxConfig, /\/srv\/quest-esports/);
 });
 
+test("Nginx preserves ACME exceptions before HTTP redirects", () => {
+  assert.ok(nginxConfig, "production Nginx configuration is required");
+  const acmeLocations = nginxConfig.match(/location \^~ \/\.well-known\/acme-challenge\//g) || [];
+  const redirects = nginxConfig.match(/return 301 https:\/\/\$host\$request_uri;/g) || [];
+  assert.equal(acmeLocations.length, 6, "each HTTP and HTTPS vhost serves ACME challenges");
+  assert.equal(redirects.length, 3, "each plaintext vhost redirects to HTTPS");
+
+  for (const host of ["questesports.lk", "api.questesports.lk", "api.valorantsl.com"]) {
+    const block = nginxConfig
+      .split("server {\n")
+      .map((part) => `server {\n${part}`)
+      .find((part) => part.includes("listen 80;") && part.includes(`server_name ${host}`));
+    assert.ok(block?.includes(`server_name ${host}`), `plaintext vhost exists for ${host}`);
+    assert.ok(
+      block.indexOf("location ^~ /.well-known/acme-challenge/") < block.indexOf("return 301 https://$host$request_uri;"),
+      `ACME is not swallowed by the ${host} redirect`,
+    );
+  }
+});
+
 test("production Compose uses stable aliases and durable, non-source mounts", () => {
   const backend = serviceBlock("backend");
   const postgres = serviceBlock("postgres");
@@ -1234,6 +1254,14 @@ test("CI and deployment tooling use immutable infrastructure and locked CLIs", (
     e2eStep.env.VALORANT_PLATFORM_REPO,
     "${{ github.workspace }}/valorant-platform-backend",
   );
+  assert.equal(
+    e2eStep.env.PYTHON_BIN,
+    "${{ github.workspace }}/valorant-platform-backend/.venv/bin/python",
+  );
+  assert.equal(
+    JSON.parse(read("backend/package.json")).scripts["test:valorant:e2e"],
+    "node --test tests/valorant-e2e/valorant-e2e.test.js tests/valorant-e2e/valorant-auth-boundary.test.js",
+  );
   assert.doesNotMatch(valorantE2eWorkflow, /VALORANT_PLATFORM_ACCESS_TOKEN/);
   assert.match(
     ciWorkflow,
@@ -1442,7 +1470,6 @@ test(
       assert.equal(publishedPort.status, 0, `could not determine fixture port:\n${publishedPort.stdout}\n${publishedPort.stderr}`);
       const portMatch = publishedPort.stdout.match(/:(\d+)\s*$/m);
       assert.ok(portMatch, `fixture port was not published:\n${publishedPort.stdout}`);
-      const databaseUrl = `postgresql://quest_migrator@127.0.0.1:${portMatch[1]}/quest?schema=public`;
       const runVerifier = () =>
         spawnSync(process.execPath, [path.join(repoRoot, "backend/scripts/verify-database-security.js")], {
           cwd: path.join(repoRoot, "backend"),

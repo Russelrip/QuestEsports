@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VetoRoomView from "@/components/veto/VetoRoomView";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,39 +51,91 @@ export default function MatchRoomView({ code }: { code: string }) {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [vetoAccessKind, setVetoAccessKind] = useState<VetoRoom["access"]["kind"] | null>(null);
+  const [renderedCode, setRenderedCode] = useState(code);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+
+  if (renderedCode !== code) {
+    // Discard the previous room in the same render so a new code never shows
+    // the old room's header, roster, chat, support, or error banner.
+    setRenderedCode(code);
+    setRoom(null);
+    setMessages([]);
+    setSupport([]);
+    setTab("overview");
+    setMessage("");
+    setOfficial(false);
+    setSupportSubject("");
+    setSupportBody("");
+    setReplyByRequest({});
+    setBusy("");
+    setError("");
+    setCopied(false);
+    setVetoAccessKind(null);
+  }
   const roomReady = Boolean(room?.id);
   const isCasterVeto = vetoAccessKind === "caster";
   const handleVetoRoomChange = useCallback((nextRoom: VetoRoom) => {
     setVetoAccessKind(nextRoom.access.kind);
   }, []);
 
-  const loadRoom = useCallback(async () => {
-    try {
-      setRoom(await roomRequest<MatchRoom>(`/api/v1/match-rooms/${encodeURIComponent(code)}`));
-      setError("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to open this match room.");
-    }
+  const loadRoom = useCallback(async (signal?: AbortSignal) => {
+    const nextRoom = await roomRequest<MatchRoom>(`/api/v1/match-rooms/${encodeURIComponent(code)}`, { signal });
+    if (!signal?.aborted) setRoom(nextRoom);
   }, [code]);
-  const loadMessages = useCallback(async () => {
-    const data = await roomRequest<{ items: RoomMessage[] }>(`/api/v1/match-rooms/${encodeURIComponent(code)}/messages`);
-    setMessages(data.items);
+  const loadMessages = useCallback(async (signal?: AbortSignal) => {
+    const data = await roomRequest<{ items: RoomMessage[] }>(`/api/v1/match-rooms/${encodeURIComponent(code)}/messages`, { signal });
+    if (!signal?.aborted) setMessages(data.items);
   }, [code]);
-  const loadSupport = useCallback(async () => setSupport(await roomRequest<SupportRequest[]>(`/api/v1/match-rooms/${encodeURIComponent(code)}/support`)), [code]);
+  const loadSupport = useCallback(async (signal?: AbortSignal) => {
+    const nextSupport = await roomRequest<SupportRequest[]>(`/api/v1/match-rooms/${encodeURIComponent(code)}/support`, { signal });
+    if (!signal?.aborted) setSupport(nextSupport);
+  }, [code]);
 
-  useEffect(() => { void loadRoom(); }, [loadRoom]);
-  useEffect(() => { setVetoAccessKind(null); }, [code]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadRoom(controller.signal).then(() => {
+      if (!controller.signal.aborted) setError("");
+    }).catch((caught) => {
+      if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : "Unable to open this match room.");
+    });
+    return () => controller.abort();
+  }, [loadRoom]);
   useEffect(() => {
     if (!roomReady) return;
-    void Promise.all([loadMessages(), loadSupport()]).catch(() => undefined);
+    const controller = new AbortController();
+    const refresh = () => {
+      if (controller.signal.aborted || document.visibilityState !== "visible") return;
+      if (refreshInFlight.current) return refreshInFlight.current;
+      const request = Promise.allSettled([
+        loadRoom(controller.signal),
+        loadMessages(controller.signal),
+        loadSupport(controller.signal),
+      ]).then((results) => {
+        if (controller.signal.aborted) return;
+        const failure = results.find((result) => result.status === "rejected");
+        setError(failure ? failure.reason instanceof Error ? failure.reason.message : "Unable to refresh this match room." : "");
+      });
+      refreshInFlight.current = request;
+      void request.finally(() => {
+        if (refreshInFlight.current === request) refreshInFlight.current = null;
+      });
+      return request;
+    };
+    void refresh();
     const closeRealtime = subscribeToRealtimeUpdates(
       `match-room:${code}`,
-      () => void Promise.all([loadRoom(), loadMessages(), loadSupport()]).catch(() => undefined),
+      refresh,
     );
-    const poll = window.setInterval(() => {
-      if (document.visibilityState === "visible") void Promise.all([loadRoom(), loadMessages(), loadSupport()]).catch(() => undefined);
-    }, 5_000);
-    return () => { closeRealtime(); window.clearInterval(poll); };
+    const poll = window.setInterval(refresh, 5_000);
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      controller.abort();
+      refreshInFlight.current = null;
+      closeRealtime();
+      window.clearInterval(poll);
+    };
   }, [code, loadMessages, loadRoom, loadSupport, roomReady]);
   useEffect(() => {
     if (tab !== "chat" || !room) return;

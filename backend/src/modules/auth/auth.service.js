@@ -48,6 +48,7 @@ const mapUserForResponse = (user) => ({
   username: user.username,
   phone: user.phone,
   discordTag: user.discordTag,
+  discordId: user.discordId || null,
   avatarUrl: user.avatarImageName
     ? `/api/uploads/avatars/${user.avatarImageName}`
     : typeof user.avatarUrl === "string" && user.avatarUrl.startsWith("/api/uploads/avatars/")

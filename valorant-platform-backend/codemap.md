@@ -23,3 +23,10 @@ Quest images. The resulting digest is included in the same release manifest and
 deployed by the shared Compose controller. The distinct package name prevents
 the archived standalone repository's GHCR permissions from controlling
 monorepo releases.
+
+
+Production configuration fails closed before startup. Health performs a DB read,
+checks required configuration and verifies a Quest-signed service token without
+writes. The release controller admits workers only after sustained liveness.
+Discord reconciliation mutates only explicit rank/Unverified roles, preserves
+unrelated roles, and skips bots and Manual members before nickname/role changes.

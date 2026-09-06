@@ -51,6 +51,16 @@ describe("tournament participant images", () => {
     expect(files.some((file) => /src=\{\s*buildApiUrl/.test(readFileSync(resolve(componentsRoot, file), "utf8")))).toBe(false);
   });
 
+  it("keeps admin media previews on the Next image component", () => {
+    const componentsRoot = resolve(process.cwd(), "components");
+    for (const file of ["posters/AdminPosterStudio.tsx", "admin/AdminMediaManager.tsx"]) {
+      const component = readFileSync(resolve(componentsRoot, file), "utf8");
+      expect(component).toContain('import Image from "next/image"');
+      expect(component).not.toContain("<img");
+      expect(component).not.toContain("@next/next/no-img-element");
+    }
+  });
+
   it("shows completed tournament posters in full within dark image frames", () => {
     const component = readFileSync(
       resolve(process.cwd(), "components/tournaments/TournamentDetailsContent.tsx"),

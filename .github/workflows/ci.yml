@@ -368,6 +368,7 @@ jobs:
           run_step = next(step for step in run_e2e['steps'] if step.get('name') == 'Run two-service E2E')
           expected_run_env = {
               'VALORANT_PLATFORM_REPO',
+              'PYTHON_BIN',
               'E2E_VAL_DATABASE_URL',
               'E2E_QUEST_DATABASE_URL',
               'E2E_ADMIN_EMAIL',
@@ -421,6 +422,14 @@ jobs:
               assert not any(name.startswith('VALORANT_') or name.startswith('E2E_') for name in references), path.name
           assert 'npm ci' in e2e_source
           assert 'npm run test:valorant:e2e' in e2e_source
+          backend_package = __import__('json').loads((Path('backend') / 'package.json').read_text(encoding='utf-8'))
+          assert backend_package['scripts']['test:valorant:e2e'] == (
+              'node --test tests/valorant-e2e/valorant-e2e.test.js '
+              'tests/valorant-e2e/valorant-auth-boundary.test.js'
+          )
+          assert run_step['env']['PYTHON_BIN'] == (
+              '${{ github.workspace }}/valorant-platform-backend/.venv/bin/python'
+          )
           print('VALORANT E2E secret boundary contracts passed')
           PY
 
@@ -892,7 +901,7 @@ jobs:
         run: uv sync --extra dev --locked
 
       - name: Run Ruff
-        run: uv run ruff check app tests scripts
+        run: uv run ruff check app workers tests scripts
 
       - name: Guard the VALORANT schema boundary
         shell: bash
@@ -981,3 +990,45 @@ jobs:
 
       - name: Validate Expo dependencies and configuration
         run: npm run doctor
+
+
+  mobile-admin-android:
+    name: Mobile Android native validation
+    needs: mobile-admin
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile-admin
+    env:
+      CI: "1"
+      NODE_ENV: production
+      EXPO_PUBLIC_API_URL: https://api.questesports.lk
+      EXPO_PUBLIC_SITE_URL: https://questesports.lk
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: mobile-admin/package-lock.json
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Generate clean Android project
+        run: npm run prebuild:android -- --no-install
+      - name: Validate Metro and Hermes production bundle
+        run: npx --no-install expo export --platform android
+      - name: Compile Android debug application
+        working-directory: mobile-admin/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --max-workers=1 :app:assembleDebug -PreactNativeArchitectures=arm64-v8a

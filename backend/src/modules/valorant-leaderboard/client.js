@@ -4,9 +4,6 @@ const { HttpError } = require("../../lib/http-error");
 const { buildServiceAuthHeaders } = require("../valorant/valorant.auth");
 
 const TIMEOUT_MS = 5000;
-// preview/submit and the Discord callback hit Henrik/Discord upstream, which is
-// slower and rate-limited — a 5s abort would cause spurious 503s. Matches the
-// admin client's CONNECT_TIMEOUT_MS.
 const REGISTRATION_TIMEOUT_MS = 60000;
 
 const getBaseUrl = () => {
@@ -115,23 +112,11 @@ const searchLeaderboard = async (query) => {
   throw new HttpError(502, "VALORANT leaderboard is unavailable.");
 };
 
-// Registration + auth proxy endpoints (valorant-platform-backend).
-const getDiscordLogin = async () =>
-  requestJson({ path: "/api/v1/auth/discord/login", timeoutMs: REGISTRATION_TIMEOUT_MS });
-
-const getDiscordCallback = async (code) =>
-  requestJson({
-    path: `/api/v1/auth/discord/callback?code=${encodeURIComponent(code)}`,
-    timeoutMs: REGISTRATION_TIMEOUT_MS,
-  });
-
 const checkPuuid = async (puuid) =>
   post("/api/v1/auth/check-puuid", { puuid }, REGISTRATION_TIMEOUT_MS);
 
-// Stable Discord account id -> upstream leaderboard registration, if any. The
-// upstream keeps `leaderboard_players.discord_id` under a partial-unique index,
-// which is what makes this usable as a corroborating signal for account
-// linking. Never keyed on the mutable Discord username.
+// Used by Quest game-account linking as a corroborating signal. This is an
+// internal upstream lookup, not a public leaderboard registration route.
 const checkDiscord = async (discordId) =>
   post("/api/v1/auth/check-discord", { discord_id: discordId }, REGISTRATION_TIMEOUT_MS);
 
@@ -144,8 +129,6 @@ const submitRegistration = async (input) =>
 module.exports = {
   getLeaderboard,
   searchLeaderboard,
-  getDiscordLogin,
-  getDiscordCallback,
   checkPuuid,
   checkDiscord,
   previewRegistration,

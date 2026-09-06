@@ -208,34 +208,6 @@ describe("VALORANT registration API client", () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("requests the Discord login URL via the public register endpoint", async () => {
-    const mockFetch = vi
-      .fn()
-      .mockResolvedValue(jsonResponse({ success: true, data: { url: "https://discord.com/oauth2/authorize?..." }, meta: { serverNow: "2026-08-15T00:00:00.000Z" } }));
-    vi.stubGlobal("fetch", mockFetch);
-    const { requestDiscordLogin } = await import("../../lib/valorant-api");
-    const result = await requestDiscordLogin();
-    expect(result.url).toBe("https://discord.com/oauth2/authorize?...");
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/v1/valorant/leaderboard/register/discord/login",
-      {},
-    );
-  });
-
-  it("exchanges the OAuth code via the callback endpoint", async () => {
-    const mockFetch = vi
-      .fn()
-      .mockResolvedValue(jsonResponse({ success: true, data: { user: { discord_id: "1" }, exists: false, existing_data: null }, meta: { serverNow: "2026-08-15T00:00:00.000Z" } }));
-    vi.stubGlobal("fetch", mockFetch);
-    const { requestDiscordCallback } = await import("../../lib/valorant-api");
-    const result = await requestDiscordCallback("abc123");
-    expect(result.exists).toBe(false);
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/v1/valorant/leaderboard/register/discord/callback?code=abc123",
-      {},
-    );
-  });
-
   it("posts the PUUID check with a JSON body", async () => {
     const mockFetch = vi
       .fn()
@@ -247,6 +219,7 @@ describe("VALORANT registration API client", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "/api/v1/valorant/leaderboard/register/check-puuid",
       {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ puuid: "p-1" }),
@@ -265,6 +238,7 @@ describe("VALORANT registration API client", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "/api/v1/valorant/leaderboard/register/preview",
       {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ puuid: "p-1" }),
@@ -272,40 +246,40 @@ describe("VALORANT registration API client", () => {
     );
   });
 
-  it("submits registration with the discord id, username, and puuid", async () => {
+  it("submits registration with only the puuid", async () => {
     const mockFetch = vi
       .fn()
       .mockResolvedValue(jsonResponse({ success: true, data: { success: true, message: "Registered", player: { puuid: "p-1", name: "Sahan", tag: "QST" } }, meta: { serverNow: "2026-08-15T00:00:00.000Z" } }));
     vi.stubGlobal("fetch", mockFetch);
     const { submitValorantRegistration } = await import("../../lib/valorant-api");
-    const result = await submitValorantRegistration({ discord_id: "12345", discord_username: "sahan", puuid: "p-1" });
+    const result = await submitValorantRegistration({ puuid: "p-1" });
     expect(result.success).toBe(true);
     expect(mockFetch).toHaveBeenCalledWith(
       "/api/v1/valorant/leaderboard/register/submit",
       {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ discord_id: "12345", discord_username: "sahan", puuid: "p-1" }),
+        body: JSON.stringify({ puuid: "p-1" }),
       },
     );
   });
 
-  it("preserves a Discord snowflake as an exact string beyond Number.MAX_SAFE_INTEGER", async () => {
+  it("does not accept client-supplied Discord identity fields", async () => {
     const mockFetch = vi
       .fn()
       .mockResolvedValue(jsonResponse({ success: true, data: { success: true, message: "Registered", player: { puuid: "p-1", name: "Sahan", tag: "QST" } }, meta: { serverNow: "2026-08-15T00:00:00.000Z" } }));
     vi.stubGlobal("fetch", mockFetch);
     const { submitValorantRegistration } = await import("../../lib/valorant-api");
-    const discordId = "1134567890123456789";
-
-    await submitValorantRegistration({ discord_id: discordId, discord_username: "sahan", puuid: "p-1" });
+    await submitValorantRegistration({ puuid: "p-1", discord_id: "forged", discord_username: "forged" } as never);
 
     expect(mockFetch).toHaveBeenCalledWith(
       "/api/v1/valorant/leaderboard/register/submit",
       {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ discord_id: discordId, discord_username: "sahan", puuid: "p-1" }),
+        body: JSON.stringify({ puuid: "p-1" }),
       },
     );
   });
@@ -317,7 +291,7 @@ describe("VALORANT registration API client", () => {
     vi.stubGlobal("fetch", mockFetch);
     const { submitValorantRegistration } = await import("../../lib/valorant-api");
     await expect(
-      submitValorantRegistration({ discord_id: "1", discord_username: "sahan", puuid: "p-1" }),
+      submitValorantRegistration({ puuid: "p-1" }),
     ).rejects.toMatchObject({ status: 409, message: "Player already registered" });
   });
 

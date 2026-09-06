@@ -6,6 +6,7 @@ import {
   readApiResponse,
   withServerOriginHeader,
 } from "../../lib/api";
+import { getProviderLinkUrl } from "../../lib/account-linking";
 
 const originalApiUrl = process.env.NEXT_PUBLIC_API_URL;
 const originalInternalApiUrl = process.env.INTERNAL_API_URL;
@@ -30,6 +31,12 @@ describe("API helpers", () => {
     process.env.NEXT_PUBLIC_API_URL = "https://api.example.com///";
 
     expect(buildApiUrl("/api/health")).toBe("https://api.example.com/api/health");
+  });
+
+  it("composes account-link URLs against the configured cross-origin API", () => {
+    process.env.NEXT_PUBLIC_API_URL = "https://api.example.com/";
+
+    expect(getProviderLinkUrl("discord")).toBe("https://api.example.com/api/v1/auth/oauth/discord/link");
   });
 
   it("uses the internal origin for SSR event-album and health requests", () => {

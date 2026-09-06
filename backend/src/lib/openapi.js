@@ -1361,22 +1361,16 @@ const additionalPaths = {
     get: createOperation("valorant", "List the public VALORANT player leaderboard (paginated, ELO-desc)"),
   },
   "/api/v1/valorant/leaderboard/search": {
-    get: createOperation("valorant", "Search the public VALORANT player leaderboard by Discord username, Riot name, tag, or name#tag"),
-  },
-  "/api/v1/valorant/leaderboard/register/discord/login": {
-    get: createOperation("valorant", "Get the Discord OAuth login URL for leaderboard registration"),
-  },
-  "/api/v1/valorant/leaderboard/register/discord/callback": {
-    get: createOperation("valorant", "Complete the Discord OAuth callback for leaderboard registration"),
+    get: createOperation("valorant", "Search the public VALORANT player leaderboard by Riot name, tag, or name#tag"),
   },
   "/api/v1/valorant/leaderboard/register/check-puuid": {
-    post: createOperation("valorant", "Check whether a PUUID is already registered for the leaderboard"),
+    post: createOperation("valorant", "Check whether a PUUID is already registered for the leaderboard", { authenticated: true }),
   },
   "/api/v1/valorant/leaderboard/register/preview": {
-    post: createOperation("valorant", "Preview leaderboard registration for a PUUID"),
+    post: createOperation("valorant", "Preview leaderboard registration for a PUUID-only request", { authenticated: true }),
   },
   "/api/v1/valorant/leaderboard/register/submit": {
-    post: createOperation("valorant", "Submit leaderboard registration for a PUUID"),
+    post: createOperation("valorant", "Submit leaderboard registration for a PUUID-only request; Discord identity comes from the session", { authenticated: true }),
   },
   "/api/v1/game-accounts/valorant/resolve": {
     post: createOperation(

@@ -20,6 +20,7 @@ assert_failed() {
   fi
 }
 assert_contains() { grep -Fq -- "$2" "$1" || { printf 'FAIL: %s lacks %s\n' "$1" "$2" >&2; printf '%s\n' '--- log ---' >&2; sed -n '1,120p' "$1" >&2; printf '%s\n' '--- failure output ---' >&2; sed -n '1,120p' "$failure_output" >&2; return 1; }; }
+assert_exact_line() { grep -Fxq -- "$2" "$1" || { printf 'FAIL: %s lacks exact line %s\n' "$1" "$2" >&2; printf '%s\n' '--- log ---' >&2; sed -n '1,120p' "$1" >&2; printf '%s\n' '--- failure output ---' >&2; sed -n '1,120p' "$failure_output" >&2; return 1; }; }
 new_gate_failures=0
 gate_failure() { printf 'FAIL: %s\n' "$1" >&2; new_gate_failures=$((new_gate_failures + 1)); }
 gate_log_contains() { grep -Fq -- "$2" "$1" || gate_failure "$3"; }
@@ -39,7 +40,7 @@ setup_fixture() {
   local case_name="$1"
   unset BAD_VALORANT_ALIASES QUEST_DEPLOY_FIXTURE_ENFORCE_BACKUP_CA_CHAIN || true
   unset BACKUP_CLIENT_DIR_MODE || true
-  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP INCOMPLETE_BACKUP FAIL_FREEZE FAIL_QUEST_FREEZE FAIL_VALORANT_FREEZE FAIL_SECURITY_VERIFY MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_CANDIDATE_START FAIL_VALORANT_CANDIDATE_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL SUPABASE_RECONCILIATION_DECISION SUPABASE_URL_ROLLBACK_COMMAND TRY_SUPABASE_URL_ROLLBACK DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP FAIL_QUEST_URL_SWITCH FAIL_VALORANT_URL_SWITCH NOOP_VALORANT_URL_SWITCH FAIL_QUEST_SERVICE_RESTART FAIL_VALORANT_SERVICE_RESTART FAIL_QUEST_READINESS_ACK FAIL_VALORANT_READINESS_ACK FAIL_QUEST_FROZEN_ACK FAIL_VALORANT_FROZEN_ACK FAIL_QUEST_URL_EFFECTIVE FAIL_VALORANT_URL_EFFECTIVE || true
+  unset WRONG_PROJECT DUPLICATE_ALIASES BAD_ALIAS_BINDING FAIL_SERVICE_OWNERSHIP FAIL_CAPTURE STALE_BACKUP INCOMPLETE_BACKUP FAIL_FREEZE FAIL_QUEST_FREEZE FAIL_VALORANT_FREEZE FAIL_SECURITY_VERIFY MIGRATION_PENDING FAIL_QUEST_HEALTH FAIL_VALORANT_HEALTH BAD_VALORANT_HEALTH DB_ONLY_VALORANT_HEALTH MALFORMED_VALORANT_HEALTH BAD_VALORANT_DIGEST BAD_MIGRATOR FAIL_REGISTRY FAIL_QUEST_WRITER_ENABLE FAIL_VALORANT_WRITER_ENABLE FAIL_WRITER_ENABLE FAIL_START FAIL_QUEST_CANDIDATE_START FAIL_VALORANT_CANDIDATE_START FAIL_QUEST_WRITER_STOP FAIL_VALORANT_WRITER_STOP FAIL_OLD_QUEST_STOP FAIL_OLD_VALORANT_STOP FAIL_REBOOT_PERSISTENCE BAD_LEGACY_STATE DATABASE_AUTHORITY REQUIRE_ARTIFACT_TRUST_POLICY REQUIRE_MIGRATION_RECHECK TARGET_ACK_MODE TARGET_ACK_LIES TOPOLOGY_STRUCTURED TOPOLOGY_STALE TOPOLOGY_MISSING BACKUP_APPROVAL QUEST_MIGRATION_OWNER_APPROVAL_SHA VALORANT_MIGRATION_OWNER_APPROVAL_SHA OLD_VALORANT_WAS_STOPPED ROLLBACK_RELEASE_DIR EXPECTED_LOSS_RPO INCIDENT_OWNER_APPROVAL SUPABASE_RECONCILIATION_DECISION SUPABASE_URL_ROLLBACK_COMMAND TRY_SUPABASE_URL_ROLLBACK DATABASE_URL DIRECT_URL SENTINEL_FAIL SENTINEL_MALFORMED SENTINEL_MISMATCH SENTINEL_WRITABLE TLS_KEY_WORLD_READABLE QUEST_DEPLOY_FIXTURE_ENFORCE_TLS_OWNERSHIP FAIL_QUEST_URL_SWITCH FAIL_VALORANT_URL_SWITCH NOOP_VALORANT_URL_SWITCH FAIL_QUEST_SERVICE_RESTART FAIL_VALORANT_SERVICE_RESTART FAIL_QUEST_READINESS_ACK FAIL_VALORANT_READINESS_ACK FAIL_QUEST_FROZEN_ACK FAIL_VALORANT_FROZEN_ACK FAIL_QUEST_URL_EFFECTIVE FAIL_VALORANT_URL_EFFECTIVE || true
   fixture="$work_directory/$case_name"
   previous_sha=0000000000000000000000000000000000000000
   mkdir -p "$fixture/bin" "$fixture/releases/$previous_sha" "$fixture/uploads" "$fixture/private" "$fixture/postgres/17/data"
@@ -363,8 +364,8 @@ printf 'smoke url=%s\n' "${!#}" >> "${TEST_LOG:?}"
 url="${!#}"
 if [[ "${FAIL_QUEST_HEALTH:-0}" == 1 && "$url" == *127.0.0.1:5001/api/health/live* ]]; then exit 1; fi
 if [[ "${FAIL_VALORANT_HEALTH:-0}" == 1 && "$url" == *valorant-platform* ]]; then exit 1; fi
-if [[ "$url" == *valorant-platform* && "${BAD_VALORANT_HEALTH:-0}" == 1 ]]; then printf '{"status":"ok","db":"down"}\n'; exit 0; fi
-if [[ "$url" == *valorant-platform* ]]; then printf '{"status":"ok","db":"up"}\n'; exit 0; fi
+if [[ "$url" == *valorant-platform* && "${BAD_VALORANT_HEALTH:-0}" == 1 ]]; then printf '{"status":"ok","db":"down","integration":"not_ready"}\n'; exit 0; fi
+if [[ "$url" == *valorant-platform* ]]; then printf '{"status":"ok","db":"up","integration":"ready","checks":{"service_token":"ready","henrik":"ready","discord_oauth":"ready","oauth_redirect":"ready","discord_workers":"ready","tls":"ready"}}\n'; exit 0; fi
 if [[ "$url" == *ready* ]]; then printf '{"success":true,"message":"Quest E-sports API is healthy.","timestamp":"2026-08-28T12:00:00.000Z","readiness":{"database":"ready","storage":"ready"}}\n'; exit 0; fi
 printf '{"status":"ok"}\n'
 EOF
@@ -403,7 +404,7 @@ EOF
 set -euo pipefail
 printf 'valorant-health\n' >> "${TEST_LOG:?}"
 [[ "${FAIL_VALORANT_HEALTH:-0}" == 1 ]] && exit 1
-if [[ "${BAD_VALORANT_HEALTH:-0}" == 1 ]]; then printf '{"status":"ok","db":"down"}\n'; else printf '{"status":"ok","db":"up"}\n'; fi
+if [[ "${MALFORMED_VALORANT_HEALTH:-0}" == 1 ]]; then printf '{"status":"ok","db":"up","integration":"ready"}\n'; elif [[ "${DB_ONLY_VALORANT_HEALTH:-0}" == 1 ]]; then printf '{"status":"ok","db":"up"}\n'; elif [[ "${BAD_VALORANT_HEALTH:-0}" == 1 ]]; then printf '{"status":"ok","db":"down","integration":"not_ready"}\n'; else printf '{"status":"ok","db":"up","integration":"ready","checks":{"service_token":"ready","henrik":"ready","discord_oauth":"ready","oauth_redirect":"ready","discord_workers":"ready","tls":"ready"}}\n'; fi
 EOF
   make_executable "$fixture/bin/valorant-health"
 
@@ -750,6 +751,30 @@ assert_contains "$TEST_LOG" 'action=compose --env-file'
 setup_fixture failed-valorant-health
 export BAD_VALORANT_HEALTH=1
 assert_failed failed-valorant-health run_release
+
+setup_fixture release-rejects-db-only-valorant-health
+export DB_ONLY_VALORANT_HEALTH=1
+assert_failed release-rejects-db-only-valorant-health run_release
+assert_exact_line "$failure_output" 'release refused: VALORANT integration readiness was not the exact supported success shape.'
+assert_contains "$TEST_LOG" 'valorant-health'
+
+setup_fixture cutover-rejects-db-only-valorant-health
+export DB_ONLY_VALORANT_HEALTH=1
+assert_failed cutover-rejects-db-only-valorant-health env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+assert_exact_line "$failure_output" 'cutover refused: VALORANT integration readiness was not the exact supported success shape.'
+assert_contains "$TEST_LOG" 'valorant-health'
+
+setup_fixture release-rejects-malformed-valorant-health
+export MALFORMED_VALORANT_HEALTH=1
+assert_failed release-rejects-malformed-valorant-health run_release
+assert_exact_line "$failure_output" 'release refused: VALORANT integration readiness was not the exact supported success shape.'
+assert_contains "$TEST_LOG" 'valorant-health'
+
+setup_fixture cutover-rejects-malformed-valorant-health
+export MALFORMED_VALORANT_HEALTH=1
+assert_failed cutover-rejects-malformed-valorant-health env DATABASE_AUTHORITY=supabase bash "$cutover_script" 1111111111111111111111111111111111111111 "$fixture/manifest.txt"
+assert_exact_line "$failure_output" 'cutover refused: VALORANT integration readiness was not the exact supported success shape.'
+assert_contains "$TEST_LOG" 'valorant-health'
 
 setup_fixture standalone-rollback-consumes-record
 make_failed_bundle 5555555555555555555555555555555555555555

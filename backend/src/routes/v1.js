@@ -41,13 +41,10 @@ const bracketResponseCache = cacheJson({
 });
 const leaderboardPublicCache = cachePublicData({ browserSeconds: 0, sharedSeconds: 60 });
 const leaderboardCache = cacheJson({ ttlSeconds: 60, tags: ["foundation"] });
-// The leaderboard registration proxy is the only PUBLIC path into the
-// Henrik-backed upstream (`valorant-platform-backend`), and it stays public on
-// purpose: this is the community VALORANT-SL signup, which authenticates with
-// Discord and does not require a Quest account. Authentication would break it,
-// so the abuse surface — burning the shared upstream Henrik budget, and
-// enumerating which PUUIDs/Discord accounts are registered — is closed with
-// per-IP limits instead.
+// The leaderboard registration proxy reaches the Henrik-backed upstream
+// (`valorant-platform-backend`). Registration is a Quest-account flow: the
+// session and linked Discord account are authoritative, while per-IP limits
+// bound the shared upstream budget.
 const leaderboardRegisterLookupLimiter = createRateLimiter({
   name: "valorant-leaderboard-register-lookup",
   windowMs: 15 * 60 * 1000,
@@ -172,13 +169,12 @@ router.post("/admin/veto-rooms/:roomId/rotate-link", requireAuth, requirePermiss
 router.get("/valorant/leaderboard", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.getLeaderboard);
 router.get("/valorant/leaderboard/search", leaderboardPublicCache, leaderboardCache, valorantLeaderboardController.searchLeaderboard);
 
-// Quest-hosted leaderboard registration/auth proxy (HMAC service-token
-// upstream). No cache middleware — these are stateful/live calls.
-router.get("/valorant/leaderboard/register/discord/login", leaderboardRegisterLookupLimiter, valorantLeaderboardController.getDiscordLogin);
-router.get("/valorant/leaderboard/register/discord/callback", leaderboardRegisterLookupLimiter, valorantLeaderboardController.getDiscordCallback);
-router.post("/valorant/leaderboard/register/check-puuid", leaderboardRegisterLookupLimiter, valorantLeaderboardController.checkPuuid);
-router.post("/valorant/leaderboard/register/preview", leaderboardRegisterLookupLimiter, valorantLeaderboardController.previewRegistration);
-router.post("/valorant/leaderboard/register/submit", leaderboardRegisterSubmitLimiter, valorantLeaderboardController.submitRegistration);
+// Quest-hosted leaderboard registration proxy (HMAC service-token upstream).
+// No cache middleware — these are stateful/live calls and all require the
+// authenticated Quest user's linked Discord identity.
+router.post("/valorant/leaderboard/register/check-puuid", requireAuth, leaderboardRegisterLookupLimiter, valorantLeaderboardController.checkPuuid);
+router.post("/valorant/leaderboard/register/preview", requireAuth, leaderboardRegisterLookupLimiter, valorantLeaderboardController.previewRegistration);
+router.post("/valorant/leaderboard/register/submit", requireAuth, leaderboardRegisterSubmitLimiter, valorantLeaderboardController.submitRegistration);
 
 // Quest player identity. Resolution proves a Riot account EXISTS; it never
 // proves the signed-in user owns it, so it is a lookup behind the session and

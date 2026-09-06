@@ -164,50 +164,6 @@ const upstreamErrorResponse = (status, body) => ({
   json: async () => body,
 });
 
-test("getDiscordLogin hits GET /api/v1/auth/discord/login with signed headers and returns the url payload", async () => {
-  const originalFetch = globalThis.fetch;
-  let capturedUrl;
-  let capturedOptions;
-  globalThis.fetch = async (url, options) => {
-    capturedUrl = url;
-    capturedOptions = options;
-    return jsonResponse(200, { url: "https://discord.com/api/oauth2/authorize?client_id=1" });
-  };
-  try {
-    const { module: client } = loadClient(envWithConfig);
-    const result = await client.getDiscordLogin();
-    assert.equal(capturedUrl, `${INTERNAL_BASE_URL}/api/v1/auth/discord/login`);
-    assert.equal(capturedOptions.method, "GET");
-    assert.match(capturedOptions.headers.Authorization, /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
-    assert.equal(
-      decodeJwtPayload(capturedOptions.headers.Authorization.replace(/^Bearer /, "")).sub,
-      SYSTEM_ACTOR,
-    );
-    assert.equal(typeof capturedOptions.headers["X-Quest-Operation-Id"], "string");
-    assert.equal(result.url, "https://discord.com/api/oauth2/authorize?client_id=1");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("getDiscordCallback passes the code as a URL-encoded query param", async () => {
-  const originalFetch = globalThis.fetch;
-  let capturedUrl;
-  globalThis.fetch = async (url) => {
-    capturedUrl = url;
-    return jsonResponse(200, { user: { discord_id: "123", discord_username: "sahan" }, exists: true, existing_data: null });
-  };
-  try {
-    const { module: client } = loadClient(envWithConfig);
-    const result = await client.getDiscordCallback("abc&def");
-    assert.equal(capturedUrl, `${INTERNAL_BASE_URL}/api/v1/auth/discord/callback?code=abc%26def`);
-    assert.equal(result.exists, true);
-    assert.equal(result.user.discord_username, "sahan");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 test("checkPuuid POSTs { puuid } to /api/v1/auth/check-puuid with JSON headers", async () => {
   const originalFetch = globalThis.fetch;
   let capturedUrl;
@@ -226,6 +182,27 @@ test("checkPuuid POSTs { puuid } to /api/v1/auth/check-puuid with JSON headers",
     assert.deepEqual(JSON.parse(capturedOptions.body), { puuid: "p-1" });
     assert.equal(typeof capturedOptions.headers["X-Quest-Operation-Id"], "string");
     assert.equal(result.exists, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("checkDiscord preserves the internal corroboration lookup path", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl;
+  let capturedOptions;
+  globalThis.fetch = async (url, options) => {
+    capturedUrl = url;
+    capturedOptions = options;
+    return jsonResponse(200, { exists: true, user: { puuid: "p-1" } });
+  };
+  try {
+    const { module: client } = loadClient(envWithConfig);
+    const result = await client.checkDiscord("discord-1");
+    assert.equal(capturedUrl, `${INTERNAL_BASE_URL}/api/v1/auth/check-discord`);
+    assert.equal(capturedOptions.method, "POST");
+    assert.deepEqual(JSON.parse(capturedOptions.body), { discord_id: "discord-1" });
+    assert.equal(result.user.puuid, "p-1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -331,25 +308,6 @@ test("throws 503 on transport failure for registration POSTs", async () => {
   try {
     const { module: client } = loadClient(envWithConfig);
     await assert.rejects(client.checkPuuid("p-1"), (e) => e.statusCode === 503);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("propagates a 401 wrapped in detail.error with its real status and message", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () =>
-    upstreamErrorResponse(401, {
-      detail: {
-        error: { code: "INVALID_SERVICE_TOKEN", message: "Invalid service token.", request_id: "req-3" },
-      },
-    });
-  try {
-    const { module: client } = loadClient(envWithConfig);
-    await assert.rejects(
-      client.getDiscordLogin(),
-      (e) => e.statusCode === 401 && e.message === "Invalid service token.",
-    );
   } finally {
     globalThis.fetch = originalFetch;
   }

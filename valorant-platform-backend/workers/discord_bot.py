@@ -172,9 +172,18 @@ class DiscordBotRunner:
             self.logger.exception("error updating nickname for %s", member.name)
 
     async def update_roles(self, member, new_roles: list) -> None:
-        """Replace the member's roles with ``new_roles`` (removes everything but @everyone)."""
+        """Reconcile bot-managed roles while preserving unrelated member roles."""
         try:
-            roles_to_remove = [role for role in member.roles if role.name != "@everyone"]
+            managed_role_names = {
+                "Unverified",
+                *(
+                    role_name
+                    for tier in (*ALPHA_RANKS, *OMEGA_RANKS)
+                    for role_name in rank_role_names(tier)
+                    if role_name is not None
+                ),
+            }
+            roles_to_remove = [role for role in member.roles if role.name in managed_role_names]
             if roles_to_remove:
                 await member.remove_roles(*roles_to_remove)
                 self.logger.info(
@@ -185,12 +194,13 @@ class DiscordBotRunner:
             else:
                 self.logger.info("%s: no roles to remove", member.name)
 
-            if new_roles:
-                await member.add_roles(*new_roles)
+            roles_to_add = [role for role in new_roles if role.name in managed_role_names]
+            if roles_to_add:
+                await member.add_roles(*roles_to_add)
                 self.logger.info(
                     "%s: added roles: %s",
                     member.name,
-                    ", ".join(role.name for role in new_roles),
+                    ", ".join(role.name for role in roles_to_add),
                 )
         except discord.errors.Forbidden:
             self.logger.warning("bot lacks permissions to update roles for %s", member.name)
@@ -210,6 +220,15 @@ class DiscordBotRunner:
 
     async def update_discord_roles(self, member, players) -> None:
         """Update one member's nickname + roles from their stored rank (source ``update_discord_roles``)."""
+        if member.bot:
+            self.logger.info("skipping Discord bot member %s", member.name)
+            return
+
+        manual_role = discord.utils.get(member.guild.roles, name="Manual")
+        if manual_role in member.roles:
+            self.logger.info("skipping update for %s: has 'Manual' role", member.name)
+            return
+
         global_name = member.global_name or member.name
         discord_id = str(member.id)
 
@@ -230,11 +249,6 @@ class DiscordBotRunner:
         rank = get_rank_field(player.rank_details, "currenttierpatched", "Unknown") or "Unknown"
         rank_tier = extract_rank_tier(str(rank))
         await self.update_nickname(member, global_name, rank_tier)
-
-        manual_role = discord.utils.get(member.guild.roles, name="Manual")
-        if manual_role in member.roles:
-            self.logger.info("skipping role update for %s: has 'Manual' role", member.name)
-            return
 
         await self.update_roles(member, await self.get_new_roles(member, rank_tier))
 

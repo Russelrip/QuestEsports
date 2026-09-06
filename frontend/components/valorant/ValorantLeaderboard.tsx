@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { buttonClassName } from "@/components/ui/button";
@@ -32,9 +32,7 @@ const BASE_PATH = "/valorant-leaderboard";
 const MIN_QUERY_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 350;
 
-// Discord handles are often pasted with a leading @; the backend strips it too,
-// so strip it here as well or the highlight would never line up.
-const normalizeQuery = (value: string) => value.trim().replace(/^@+/, "");
+const normalizeQuery = (value: string) => value.trim();
 
 const buildSearchHref = (query: string) =>
   query ? `${BASE_PATH}?q=${encodeURIComponent(query)}` : BASE_PATH;
@@ -105,9 +103,6 @@ const LeaderboardRow = ({
             <span aria-hidden="true">↗</span>
           </a>
         ) : null}
-        <span className="ml-2 text-xs text-slate-500">
-          <Highlight text={entry.discordUsername} term={term} />
-        </span>
       </td>
       <td className="px-4 py-4">
         {entry.currentTier ? <Badge>{entry.currentTier}</Badge> : <span className="text-slate-500">—</span>}
@@ -162,8 +157,8 @@ const SearchForm = ({
           enterKeyHint="search"
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search by Discord username or Riot ID"
-          aria-label="Search by Discord username or Riot ID"
+          placeholder="Search by Riot ID"
+          aria-label="Search by Riot ID"
           aria-describedby="leaderboard-search-hint"
           className="max-w-full pl-11 pr-10 [&::-webkit-search-cancel-button]:hidden"
         />
@@ -185,7 +180,7 @@ const SearchForm = ({
     <p id="leaderboard-search-hint" aria-live="polite" className="text-xs text-slate-500">
       {busy
         ? "Searching…"
-        : "Partial matches work — try a Discord name, a Riot name, a tag, or a full name#tag."}
+        : "Partial matches work — try a Riot name, a tag, or a full name#tag."}
     </p>
   </form>
 );
@@ -255,10 +250,10 @@ export default function ValorantLeaderboard({
   // back/forward navigation apart from one we made ourselves.
   const navigatedQuery = useRef(query);
 
-  const navigate = (next: string) => {
+  const navigate = useCallback((next: string) => {
     navigatedQuery.current = next;
     startTransition(() => router.replace(buildSearchHref(next), { scroll: false }));
-  };
+  }, [router, startTransition]);
 
   // Search as you type: one debounced navigation instead of a button press.
   useEffect(() => {
@@ -267,14 +262,14 @@ export default function ValorantLeaderboard({
     if (target === navigatedQuery.current) return;
     const timer = setTimeout(() => navigate(target), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [navigate, search]);
 
   // Back/forward changes the query under us — follow it into the input.
   useEffect(() => {
     if (query !== navigatedQuery.current) {
       navigatedQuery.current = query;
-      setSearch(query);
+      const timer = window.setTimeout(() => setSearch(query), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [query]);
 
@@ -341,7 +336,7 @@ export default function ValorantLeaderboard({
         ) : (
           <EmptyState
             title="No player found"
-            description={`No player matches "${query}". Searches cover Discord usernames and Riot IDs, including partial matches — check the spelling, or register the account to appear here.`}
+            description={`No player matches "${query}". Searches cover Riot IDs, including partial matches — check the spelling, or register the account to appear here.`}
           />
         )}
         <RegisterCta />

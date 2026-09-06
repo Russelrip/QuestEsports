@@ -292,3 +292,10 @@ the full code → HTTP table is in Appendix B of the implementation plan and in
 | [`docs/tournament-future-extension-notes.md`](docs/tournament-future-extension-notes.md) | Phase-3/tournament TODOs and deliberate extension points |
 | `docs/superpowers/specs/2026-08-13-valorant-platform-backend-design.md` | Approved architecture design |
 | `docs/superpowers/plans/2026-08-13-valorant-platform-backend-implementation.md` | Approved implementation plan |
+
+
+## Production hardening verification
+
+Python 3.11+ is supported (CI and runtime image use 3.12). Run `uv sync --extra dev --locked`, `uv run ruff check app workers tests scripts`, and `uv run pytest -m "not live" -q`. Windows without IANA zones can add `--with tzdata` to `uv run`. Production readiness verifies the Quest-signed health token and configuration without writes; see the monorepo production runbook.
+
+Production uses the immutable Compose release; standalone `npm start`, Vercel and PM2 instructions apply only to development or historical deployments.

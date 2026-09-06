@@ -82,7 +82,7 @@ const buildRequest = (token) => ({
   },
 });
 
-const buildSessionRecord = ({ expiresAt, lastSeenAt }) => ({
+const buildSessionRecord = ({ expiresAt, lastSeenAt, discordId = null }) => ({
   id: "session-1",
   createdAt: new Date("2026-05-01T00:00:00.000Z"),
   expiresAt,
@@ -104,6 +104,7 @@ const buildSessionRecord = ({ expiresAt, lastSeenAt }) => ({
     emailVerifiedAt: new Date("2026-05-01T00:00:00.000Z"),
     lastLoginAt: new Date("2026-05-02T00:00:00.000Z"),
     createdAt: new Date("2026-04-01T00:00:00.000Z"),
+    oauthAccounts: discordId ? [{ providerUserId: discordId }] : [],
   },
 });
 
@@ -206,6 +207,24 @@ test("getSessionFromRequest accepts a native bearer session without a cookie", a
     assert.equal(session?.source, "bearer");
     assert.equal(session?.token, token);
     assert.equal(sessionModel.findUniqueCalls.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("getSessionFromRequest projects the linked Discord provider id privately", async () => {
+  const now = Date.now();
+  const { service, restore } = buildService({
+    findUniqueResult: buildSessionRecord({
+      expiresAt: new Date(now + 60_000),
+      lastSeenAt: new Date(now - 60_000),
+      discordId: "discord-snowflake",
+    }),
+  });
+
+  try {
+    const session = await service.getSessionFromRequest(buildRequest("token-discord"));
+    assert.equal(session.user.discordId, "discord-snowflake");
   } finally {
     restore();
   }

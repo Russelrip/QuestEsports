@@ -174,6 +174,25 @@ if not __import__("re").fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"
     raise SystemExit(1)
 PY
 }
+verify_valorant_integration_response() {
+  local response="$1"
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for exact VALORANT integration validation.'
+  python3 - "$response" <<'PY' || die 'VALORANT integration readiness was not the exact supported success shape.'
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except (TypeError, ValueError):
+    raise SystemExit(1)
+if not isinstance(payload, dict) or payload.get("status") != "ok" or payload.get("db") != "up" or payload.get("integration") != "ready":
+    raise SystemExit(1)
+checks = payload.get("checks")
+required = {"service_token", "henrik", "discord_oauth", "oauth_redirect", "discord_workers", "tls"}
+if not isinstance(checks, dict) or set(checks) != required or any(value != "ready" for value in checks.values()):
+    raise SystemExit(1)
+PY
+}
 current_link="${CURRENT_LINK:-$RELEASE_ROOT/current}"
 current_target="$(realpath "$current_link" 2>/dev/null || true)"
 release_dir="${1:-$current_target}"
@@ -374,7 +393,7 @@ grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"|"success"[[:space:]]*:[[:space:]
 quest_readiness="$($CURL_BIN --fail --silent --show-error --max-time 10 "$QUEST_READINESS_URL" 2>/dev/null)" || die 'Quest readiness failed.'
 verify_quest_readiness_response "$quest_readiness"
 valorant_json="$(VALORANT_HEALTH_URL="$VALORANT_HEALTH_URL" VALORANT_CA_FILE="$VALORANT_CA_FILE" "$VALORANT_CONTAINER_HEALTH_COMMAND" 2>/dev/null)" || die 'VALORANT HTTPS health failed from the Quest network boundary.'
-grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<< "$valorant_json" && grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' <<< "$valorant_json" || die 'VALORANT health JSON was not status ok/db up.'
+verify_valorant_integration_response "$valorant_json"
 database_readiness_output="$(TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres "$DATABASE_READINESS_COMMAND" 2>/dev/null)" || die 'database readiness failed.'
 [[ "$database_readiness_output" =~ ^ready[[:space:]]+target=quest-postgres[[:space:]]+schemas=public,valorant([[:space:]]|$) ]] || die 'database readiness did not identify both target schemas.'
 security_output="$(SECURITY_VERIFY_TARGET=quest-postgres TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres TARGET_DATABASE_PORT=5432 TARGET_DATABASE_NAME=quest TARGET_POSTGRES_MAJOR=17 SECURITY_VERIFY_DATABASE_URL_FILE="$RECOVERY_ADMIN_URL_FILE" DATABASE_URL_FILE="$RECOVERY_ADMIN_URL_FILE" RELEASE_SHA="$(basename "$release_dir")" "$SECURITY_VERIFY_COMMAND" 2>/dev/null)" || die 'database security verification failed.'

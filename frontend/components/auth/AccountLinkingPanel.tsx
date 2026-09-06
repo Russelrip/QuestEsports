@@ -72,8 +72,8 @@ export default function AccountLinkingPanel({ className = "" }: AccountLinkingPa
       const query = params.toString();
       window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
     }
-    void refresh();
-  }, [refresh]);
+    void Promise.all([refresh(), oauthResult === "linked" ? refreshSession() : Promise.resolve()]);
+  }, [refresh, refreshSession]);
 
   const providerState = (provider: OAuthProvider) => providers?.find((entry) => entry.provider === provider);
 

@@ -74,3 +74,16 @@ and `PLAYWRIGHT_MOCK_API_PORT=5011` before starting the deterministic local mock
 API and Playwright. Use direct `npm run test:e2e` only against an existing build
 created with those same mock values. Performance-budget overrides require an
 approved, recorded reason.
+
+
+## Production hardening verification
+
+Frontend browser CSP admits only the configured public API origin; internal Docker API addresses are server-only. Unit workers are bounded to one. Run `npm test -- --coverage` using the installed V8 provider, plus lint, typecheck and an HTTPS-configured build. Discord profile/registration data is private and read-only; public leaderboard display/search uses Riot identity.
+
+Production uses the immutable Compose release; standalone `npm start`, Vercel and PM2 instructions apply only to development or historical deployments.
+
+The initial V8 gate is based on the measured full-suite baseline: lines 60%,
+statements 55%, functions 45%, branches 45%. The earlier proposed 50% function/branch
+and 60% statement targets were never verified and exceeded existing suite coverage.
+Raise these floors as behavioral coverage grows; do not exclude application files
+merely to meet a target.

@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SupportComposer from "../../components/support/SupportComposer";
@@ -211,4 +211,106 @@ describe("support inbox rendered states", () => {
 describe("support notifications", () => {
   it("navigates support notifications to the conversation thread", async () => { const user = userEvent.setup(); apiFetchJson.mockResolvedValue({ response: new Response(null, { status: 200 }), data: { success: true, data: { items: [{ id: "notification-1", type: "support_message", title: "New support message", body: "A reply is waiting", actionUrl: "/support/conversation-1", readAt: null, createdAt: "2026-08-19T12:00:00.000Z" }], unreadCount: 1, push: { enabled: false, publicKey: null }, preference: { matchPushEnabled: true, soundEnabled: true, matchEmailEnabled: false } } } }); render(<NotificationBell user={{ id: "user-1", firstName: "Player", lastName: "One", email: "player@example.com", username: "player", role: "user", emailVerified: true }} />); await waitFor(() => expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument()); await user.click(screen.getByRole("button", { name: "1 unread notifications" })); expect(screen.getByRole("link", { name: /New support message/ })).toHaveAttribute("href", "/support/conversation-1"); });
   it("navigates staff support notifications to the admin conversation query", async () => { const user = userEvent.setup(); apiFetchJson.mockResolvedValue({ response: new Response(null, { status: 200 }), data: { success: true, data: { items: [{ id: "notification-2", type: "support_message", title: "New support message", body: "A player is waiting", actionUrl: "/admin/support?conversationId=conversation-1", readAt: null, createdAt: "2026-08-19T12:00:00.000Z" }], unreadCount: 1, push: { enabled: false, publicKey: null }, preference: { matchPushEnabled: true, soundEnabled: true, matchEmailEnabled: false } } } }); render(<NotificationBell user={{ id: "staff-1", firstName: "Quest", lastName: "Staff", email: "staff@example.com", username: "staff", role: "admin", emailVerified: true }} />); await waitFor(() => expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument()); await user.click(screen.getByRole("button", { name: "1 unread notifications" })); expect(screen.getByRole("link", { name: /New support message/ })).toHaveAttribute("href", "/admin/support?conversationId=conversation-1"); });
+  it("shows a retryable polling failure without replacing existing notifications", async () => {
+    apiFetchJson.mockRejectedValueOnce(new Error("Notification service unavailable")).mockResolvedValueOnce({
+      response: new Response(null, { status: 200 }),
+      data: { success: true, data: { items: [], unreadCount: 0, push: { enabled: false, publicKey: null }, preference: { matchPushEnabled: true, soundEnabled: true, matchEmailEnabled: false } } },
+    });
+    const user = userEvent.setup();
+    render(<NotificationBell user={{ id: "user-1", firstName: "Player", lastName: "One", email: "player@example.com", username: "player", role: "user", emailVerified: true }} />);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Notification service unavailable"));
+    await user.click(screen.getByRole("button", { name: "0 unread notifications" }));
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  const bellUser = { id: "user-1", firstName: "Player", lastName: "One", email: "player@example.com", username: "player", role: "user" as const, emailVerified: true };
+  const unreadItem = { id: "notification-1", type: "match", title: "Match ready", body: "Join now", actionUrl: null, readAt: null, createdAt: "2026-08-19T12:00:00.000Z" };
+  const bellPayload = (items: Array<typeof unreadItem>, unreadCount: number) => ({
+    response: new Response(null, { status: 200 }),
+    data: { success: true, data: { items, unreadCount, push: { enabled: false, publicKey: null }, preference: { matchPushEnabled: true, soundEnabled: true, matchEmailEnabled: false } } },
+  });
+  const signalOf = (path: string) => {
+    const call = apiFetchJson.mock.calls.find(([requested]) => String(requested).endsWith(path));
+    expect(call, `no request for ${path}`).toBeDefined();
+    return call![1] as { method?: string; signal?: AbortSignal };
+  };
+
+  it("aborts an in-flight read mutation and ignores it once the account changes", async () => {
+    apiFetchJson.mockImplementation((path: string) => path.endsWith("/read")
+      ? new Promise(() => {})
+      : Promise.resolve(bellPayload([unreadItem], 1)));
+
+    const view = render(<NotificationBell user={bellUser} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument());
+    await userEvent.setup().click(screen.getByRole("button", { name: "1 unread notifications" }));
+    fireEvent.click(screen.getByRole("link", { name: /Match ready/ }));
+
+    const readOptions = signalOf("/read");
+    expect(readOptions.method).toBe("PATCH");
+    expect(readOptions.signal).toBeInstanceOf(AbortSignal);
+    expect(readOptions.signal!.aborted).toBe(false);
+
+    apiFetchJson.mockImplementation(() => Promise.resolve(bellPayload([], 0)));
+    view.rerender(<NotificationBell user={{ ...bellUser, id: "user-2" }} />);
+
+    await waitFor(() => expect(readOptions.signal!.aborted).toBe(true));
+    await waitFor(() => expect(screen.getByRole("button", { name: "0 unread notifications" })).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("sends mark-all-read with an abort signal and refreshes afterwards", async () => {
+    apiFetchJson.mockImplementation((path: string) => path.endsWith("/read-all")
+      ? Promise.resolve({ response: new Response(null, { status: 200 }), data: { success: true } })
+      : Promise.resolve(bellPayload([unreadItem], 1)));
+
+    const user = userEvent.setup();
+    render(<NotificationBell user={bellUser} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "1 unread notifications" }));
+    await user.click(screen.getByRole("button", { name: "Mark all read" }));
+
+    const readAllOptions = signalOf("/read-all");
+    expect(readAllOptions.method).toBe("PATCH");
+    expect(readAllOptions.signal).toBeInstanceOf(AbortSignal);
+    await waitFor(() => expect(apiFetchJson.mock.calls.filter(([path]) => String(path).startsWith("/api/v1/notifications?")).length).toBeGreaterThan(1));
+  });
+
+  it("surfaces a failed mark-all-read instead of rejecting silently", async () => {
+    apiFetchJson.mockImplementation((path: string) => path.endsWith("/read-all")
+      ? Promise.reject(new Error("Mark all read failed."))
+      : Promise.resolve(bellPayload([unreadItem], 1)));
+
+    const user = userEvent.setup();
+    render(<NotificationBell user={bellUser} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "1 unread notifications" }));
+    await user.click(screen.getByRole("button", { name: "Mark all read" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Mark all read failed.");
+  });
+
+  it("drops a stale notification response when the signed-in user changes", async () => {
+    let resolveOld!: (value: unknown) => void;
+    const oldRequest = new Promise((resolve) => { resolveOld = resolve; });
+    const response = (title: string) => ({
+      response: new Response(null, { status: 200 }),
+      data: { success: true, data: {
+        items: [{ id: title, type: "match", title, body: "body", actionUrl: null, readAt: null, createdAt: "2026-08-19T12:00:00.000Z" }],
+        unreadCount: 1,
+        push: { enabled: false, publicKey: null },
+        preference: { matchPushEnabled: true, soundEnabled: true, matchEmailEnabled: false },
+      } },
+    });
+    apiFetchJson.mockReturnValueOnce(oldRequest).mockResolvedValueOnce(response("New account alert"));
+
+    const view = render(<NotificationBell user={{ id: "user-1", firstName: "Old", lastName: "User", email: "old@example.com", username: "old", role: "user", emailVerified: true }} />);
+    view.rerender(<NotificationBell user={{ id: "user-2", firstName: "New", lastName: "User", email: "new@example.com", username: "new", role: "user", emailVerified: true }} />);
+    await waitFor(() => expect(apiFetchJson).toHaveBeenCalledTimes(2));
+    await act(async () => { resolveOld(response("Old account alert")); });
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "1 unread notifications" }));
+    expect(await screen.findByText("New account alert")).toBeInTheDocument();
+    expect(screen.queryByText("Old account alert")).not.toBeInTheDocument();
+  });
 });

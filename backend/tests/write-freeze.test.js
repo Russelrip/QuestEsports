@@ -126,7 +126,6 @@ test("the app freezes malformed, unauthorized, normalized, and real callback mut
           request(server, "GET", "/api/payments/payment-1"),
           request(server, "GET", "/api/v1/match-rooms/mine"),
           request(server, "GET", "/api/v1/veto-rooms/mine"),
-          request(server, "GET", "/api/v1/valorant/leaderboard/register/discord/login"),
         ]);
         console.log(JSON.stringify({ health, status, safeReads, methods, exposed, payHere, callbacks, writeShapedReads }));
         setTimeout(() => server.close(), 50);

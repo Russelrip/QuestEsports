@@ -9,7 +9,15 @@ vi.mock("@/lib/veto", async () => {
   return { ...actual, vetoRequest: mocks.request, readVetoToken: () => "", vetoTokenHeaders: () => ({}) };
 });
 vi.mock("@/lib/realtime", () => ({ subscribeToRealtimeUpdates: () => () => undefined }));
-vi.mock("next/image", () => ({ default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} /> }));
+vi.mock("next/image", () => ({
+  default: (props: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean; unoptimized?: boolean }) => {
+    const { fill: _fill, unoptimized: _unoptimized, ...imageProps } = props;
+    void _fill;
+    void _unoptimized;
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img {...imageProps} alt={imageProps.alt ?? ""} />;
+  },
+}));
 
 const makeRoom = (kind: "caster" | "team", logoUrl: string | null = null) => ({
   id: "room-1", code: "ASCENT", title: "Alpha vs Bravo", format: "bo3" as const, status: "in_progress" as const,

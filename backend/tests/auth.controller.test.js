@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
+const express = require("express");
+const http = require("node:http");
 
 const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
@@ -23,6 +25,16 @@ const authServicePath = path.join(
   __dirname,
   "../src/modules/auth/auth.service.js"
 );
+const authRoutesPath = path.join(
+  __dirname,
+  "../src/modules/auth/auth.routes.js"
+);
+const middlewarePath = path.join(
+  __dirname,
+  "../src/modules/auth/auth.middleware.js"
+);
+const rateLimitPath = path.join(__dirname, "../src/middleware/rate-limit.js");
+const validationPath = path.join(__dirname, "../src/lib/validation.js");
 
 const buildResponse = () => {
   const headers = new Map();
@@ -489,6 +501,91 @@ test("OAuth account-link handlers use the authenticated user and a fixed profile
     });
   } finally {
     restore();
+  }
+});
+
+test("current-session responses retain the private Discord ID projection", async () => {
+  const { module: controller, restore } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: {} },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {},
+    [sessionPath]: {},
+    [authServicePath]: {
+      mapUserForResponse: (value) => ({ ...value }),
+    },
+  });
+
+  try {
+    const linkedResponse = buildResponse();
+    await invoke(
+      controller.getCurrentSession,
+      { user: { id: "user-1", discordId: "discord-snowflake" } },
+      linkedResponse,
+    );
+    assert.equal(linkedResponse.body.user.discordId, "discord-snowflake");
+
+    const unlinkedResponse = buildResponse();
+    await invoke(
+      controller.getCurrentSession,
+      { user: { id: "user-2", discordId: null } },
+      unlinkedResponse,
+    );
+    assert.equal(unlinkedResponse.body.user.discordId, null);
+  } finally {
+    restore();
+  }
+});
+
+test("mounted /api/me and /api/mobile/auth/me responses expose private Discord ID", async () => {
+  const { module: controller, restore: restoreController } = loadModuleWithMocks(controllerPath, {
+    [envPath]: { env: {} },
+    [loggerPath]: { logger: { info: () => {}, error: () => {} } },
+    [oauthPath]: {},
+    [sessionPath]: {},
+    [authServicePath]: {
+      mapUserForResponse: (value) => ({ ...value }),
+    },
+  });
+  const { module: routes, restore: restoreRoutes } = loadModuleWithMocks(authRoutesPath, {
+    [controllerPath]: controller,
+    [middlewarePath]: { requireAuth: (_req, _res, next) => next() },
+    [rateLimitPath]: { createRateLimiter: () => (_req, _res, next) => next(), getClientIp: () => "127.0.0.1" },
+    [validationPath]: { normalizeEmail: (value) => value, normalizeUsername: (value) => value },
+  });
+  const app = express();
+  app.use((req, _res, next) => {
+    req.user = { id: "user-1", discordId: "discord-snowflake" };
+    next();
+  });
+  app.use("/api", routes);
+  const server = app.listen(0, "127.0.0.1");
+
+  const request = (requestPath) => new Promise((resolve, reject) => {
+    const clientRequest = http.request({
+      hostname: "127.0.0.1",
+      port: server.address().port,
+      path: requestPath,
+      method: "GET",
+    }, (response) => {
+      let body = "";
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolve({ status: response.statusCode, body: JSON.parse(body) }));
+    });
+    clientRequest.on("error", reject);
+    clientRequest.end();
+  });
+
+  try {
+    await new Promise((resolve) => server.once("listening", resolve));
+    for (const requestPath of ["/api/me", "/api/mobile/auth/me"]) {
+      const response = await request(requestPath);
+      assert.equal(response.status, 200);
+      assert.equal(response.body.user.discordId, "discord-snowflake");
+    }
+  } finally {
+    server.close();
+    restoreRoutes();
+    restoreController();
   }
 });
 

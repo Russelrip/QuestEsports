@@ -1,13 +1,13 @@
 const {
   getLeaderboard,
   searchLeaderboard,
-  getDiscordLogin: fetchDiscordLogin,
-  getDiscordCallback: fetchDiscordCallback,
   checkPuuid: fetchCheckPuuid,
   checkDiscord: fetchCheckDiscord,
   previewRegistration: fetchPreviewRegistration,
   submitRegistration: fetchSubmitRegistration,
 } = require("./client");
+const { prisma } = require("../../lib/prisma");
+const { HttpError } = require("../../lib/http-error");
 
 // valorantsl-new LeaderboardEntry (snake_case) -> Quest projection (camelCase).
 // Field names come from valorantsl-new backend/app/models/user.py LeaderboardEntry.
@@ -15,7 +15,6 @@ const mapLeaderboardEntry = (entry) => ({
   puuid: entry.puuid,
   name: entry.name,
   tag: entry.tag,
-  discordUsername: entry.discord_username,
   currentTier: entry.current_tier ?? null,
   elo: entry.elo ?? null,
   rankInTier: entry.rank_in_tier ?? null,
@@ -37,14 +36,16 @@ const listLeaderboard = async ({ page = 1, perPage = 50 } = {}) => {
 
 const searchLeaderboardPlayer = async (query) => {
   const raw = await searchLeaderboard(query);
-  return raw ? mapLeaderboardEntry(raw) : null;
+  const entry = raw ? mapLeaderboardEntry(raw) : null;
+  // The legacy exact lookup must never reveal a private Discord-only match.
+  return entry && scoreEntry(entry, normalize(query)) !== null ? entry : null;
 };
 
 // --- Ranked partial search -------------------------------------------------
 // The upstream only offers an EXACT Discord-username lookup, which makes the
 // public search box unusable unless you already know the username character for
 // character. We page the whole leaderboard into a short-lived snapshot once and
-// match against it locally, so a partial Discord name, a Riot name, a tag, or a
+// match against public Riot fields locally, so a Riot name, a tag, or a
 // full `name#tag` all find the player - and every hit keeps its real
 // leaderboard rank instead of rendering as an em dash.
 
@@ -101,12 +102,11 @@ const matchScore = (haystack, needle) => {
 };
 
 // Riot tags are 3-5 characters, so a bare substring hit on one is mostly noise -
-// it still matches, but always sorts below a name or Discord hit.
+// it still matches, but always sorts below a name hit.
 const TAG_PENALTY = 3;
 
 const scoreEntry = (entry, needle) => {
   const candidates = [
-    matchScore(normalize(entry.discordUsername), needle),
     matchScore(normalize(entry.name), needle),
     matchScore(normalize(`${entry.name}#${entry.tag}`), needle),
   ];
@@ -117,8 +117,7 @@ const scoreEntry = (entry, needle) => {
 };
 
 const searchLeaderboardPlayers = async (query, { limit = SEARCH_RESULT_LIMIT } = {}) => {
-  // Discord handles are often pasted with a leading @.
-  const needle = normalize(query).replace(/^@+/, "");
+  const needle = normalize(query);
   if (needle.length < MIN_QUERY_LENGTH) return [];
 
   let complete = false;
@@ -152,24 +151,70 @@ const searchLeaderboardPlayers = async (query, { limit = SEARCH_RESULT_LIMIT } =
 
 // Registration/auth flow: pass the upstream payload through UNCHANGED
 // (snake_case — the Quest frontend consumes it as-is for this flow).
-const getDiscordLogin = async () => fetchDiscordLogin();
+const createDiscordLinkRequiredError = () => {
+  const error = new HttpError(403, "Link a Discord account before registering for the VALORANT leaderboard.");
+  error.code = "DISCORD_LINK_REQUIRED";
+  return error;
+};
 
-const getDiscordCallback = async (code) => fetchDiscordCallback(code);
+const resolveLinkedDiscordIdentity = async (userId) => {
+  const normalizedUserId = String(userId || "").trim();
+  const account = normalizedUserId
+    ? await prisma.oAuthAccount.findFirst({
+      where: { userId: normalizedUserId, provider: "discord" },
+      select: {
+        providerUserId: true,
+        user: {
+          select: { discordTag: true },
+        },
+      },
+    })
+    : null;
 
-const checkPuuid = async (puuid) => fetchCheckPuuid(puuid);
+  if (!account) {
+    throw createDiscordLinkRequiredError();
+  }
 
+  return {
+    discordId: account.providerUserId,
+    discordUsername: account.user?.discordTag || "",
+  };
+};
+
+const checkPuuid = async ({ userId, puuid }) => {
+  await resolveLinkedDiscordIdentity(userId);
+  const result = await fetchCheckPuuid(puuid);
+  // A linked caller may query another player's PUUID. Keep that identity private.
+  return {
+    exists: result.exists,
+    user: result.user ? { name: result.user.name, tag: result.user.tag } : null,
+  };
+};
+
+// Kept for game-account linking corroboration. It is deliberately separate
+// from the authenticated leaderboard registration identity resolver.
 const checkDiscord = async (discordId) => fetchCheckDiscord(discordId);
 
-const previewRegistration = async (puuid) => fetchPreviewRegistration(puuid);
+const previewRegistration = async ({ userId, puuid }) => {
+  // Preview is PUUID-only upstream, but still requires the same linked Discord
+  // authorization as submission so it cannot be used as an anonymous probe.
+  await resolveLinkedDiscordIdentity(userId);
+  return fetchPreviewRegistration(puuid);
+};
 
-const submitRegistration = async (input) => fetchSubmitRegistration(input);
+const submitRegistration = async ({ userId, puuid }) => {
+  const { discordId, discordUsername } = await resolveLinkedDiscordIdentity(userId);
+  return fetchSubmitRegistration({
+    puuid,
+    discord_id: discordId,
+    discord_username: discordUsername,
+  });
+};
 
 module.exports = {
   listLeaderboard,
   searchLeaderboardPlayer,
   searchLeaderboardPlayers,
-  getDiscordLogin,
-  getDiscordCallback,
   checkPuuid,
   checkDiscord,
   previewRegistration,

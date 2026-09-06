@@ -1224,3 +1224,28 @@ that state during CI and deployment.
 - PayHere may remain completely unconfigured. Free registrations and bank-transfer tournaments continue to work; PayHere tournament checkout and merchandise checkout remain unavailable until all PayHere values are configured.
 - The frontend is deployed as part of the protected immutable Compose release; there is no separate Vercel promotion workflow.
 - The sitemap and crawler configuration are managed by the frontend deploy. After public-route or metadata changes, follow [Google Search Console and Sitemap Operations](./search-console-and-sitemap.md) and confirm the existing Search Console submission remains healthy.
+
+
+### VALORANT production integration gate
+
+`APP_ENV=production` fails closed on missing service credentials, Henrik settings,
+Discord OAuth/worker settings, admin key, malformed redirects or invalid database
+TLS settings. `/api/v1/health` performs non-mutating checks and a database read.
+Production admission requires `status=ok`, `db=up`, `integration=ready`, and every
+check (`service_token`, `henrik`, `discord_oauth`, `oauth_redirect`,
+`discord_workers`, `tls`) equal to `ready`. Missing/malformed/DB-only responses
+are rejected by release and cutover controllers.
+
+The Quest JavaScript service-token signer signs the health request and FastAPI
+verifies its key ID, HMAC, issuer, audience and clock contract. The other checks
+validate configuration; they do not prove external Henrik/Discord availability.
+No health probe registers a player, writes data, or mutates Discord roles.
+
+API admission inspects Docker health status; each required worker must have
+three consecutive running observations separated by two seconds. Interruption
+resets the counter and updater/bot failure prevents writer admission. This is
+sustained process liveness, not proof of completed external work. Keep coordinated
+freeze and release rollback gates enabled.
+
+Nginx preserves ACME HTTP challenge handling and redirects other HTTP requests
+to HTTPS. Cloudflare must use Full (strict) with valid origin TLS before cutover.

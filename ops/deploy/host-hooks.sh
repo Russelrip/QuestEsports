@@ -128,10 +128,20 @@ valorant_compose() {
 }
 
 wait_container() {
-  local container="$1" expected="${2:-healthy}" attempts="${3:-60}" state
+  local container="$1" expected="${2:-healthy}" attempts="${3:-60}" stable_required="${4:-1}" state stable=0
+  [[ "$stable_required" =~ ^[1-9][0-9]*$ ]] || die 'container admission stability count is invalid.'
   for _ in $(seq 1 "$attempts"); do
-    state="$("$docker_bin" inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
-    [[ "$state" == "$expected" ]] && return 0
+    if [[ "$expected" == running ]]; then
+      state="$("$docker_bin" inspect --format '{{.State.Status}}' "$container" 2>/dev/null || true)"
+    else
+      state="$("$docker_bin" inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+    fi
+    if [[ "$state" == "$expected" ]]; then
+      stable=$((stable + 1))
+      (( stable >= stable_required )) && return 0
+    else
+      stable=0
+    fi
     sleep 2
   done
   die "$container did not reach $expected."
@@ -508,9 +518,11 @@ case "$wrapper" in
 
   quest-release-valorant-health)
     # Proves the private HTTPS boundary from inside the Quest network, using the
-    # backend's own trusted CA rather than a host-side shortcut.
+    # backend's own trusted CA and the existing Quest service-token signer rather
+    # than a host-side shortcut. The health route is non-mutating but validates
+    # the real cross-service HMAC contract in production.
     "$docker_bin" exec -e "VALORANT_HEALTH_URL=${VALORANT_HEALTH_URL:?}" "$quest_backend_container" node -e \
-      'fetch(process.env.VALORANT_HEALTH_URL).then(async (response) => { const body = await response.text(); if (!response.ok) process.exit(1); process.stdout.write(body); }).catch(() => process.exit(1))' \
+      'const crypto = require("node:crypto"); const { buildServiceAuthHeaders } = require("/app/src/modules/valorant/valorant.auth"); fetch(process.env.VALORANT_HEALTH_URL, { headers: buildServiceAuthHeaders({ actorUserId: "quest-release-health", operationId: crypto.randomUUID() }) }).then(async (response) => { const body = await response.text(); if (!response.ok) process.exit(1); process.stdout.write(body); }).catch(() => process.exit(1))' \
       || die 'the VALORANT HTTPS health gate failed from the Quest network boundary.'
     ;;
 
@@ -533,10 +545,14 @@ case "$wrapper" in
     set_env_value "$valorant_runtime_env" WRITE_FREEZE_MODE off
     run_quiet valorant_compose "$bundle" up -d --no-deps --force-recreate valorant-platform valorant-updater valorant-discord-bot
     wait_container "$valorant_api_container" healthy
-    # The workers exit 0 while frozen, so admission is proven by the flag they
-    # were recreated with rather than by a transient running state.
+    # Admission must prove every long-lived VALORANT writer is actually running
+    # with writes enabled. A matching environment flag alone would incorrectly
+    # admit a worker that exited immediately because a credential is missing.
     for container in "$valorant_api_container" "$valorant_updater_container" "$valorant_bot_container"; do
       container_freeze "$container" off || die 'VALORANT writer admission failed.'
+      # Require three consecutive lifecycle observations to catch an immediate
+      # credential failure without adding a fixed delay to healthy admissions.
+      wait_container "$container" running 30 3
     done
     printf '%s\n' admitted
     ;;

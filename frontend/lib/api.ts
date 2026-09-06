@@ -20,11 +20,8 @@ export class ApiRequestError extends Error {
   }
 }
 
-const getConfiguredApiOrigin = () => {
-  const configuredApiUrl =
-    typeof window === "undefined"
-      ? process.env.INTERNAL_API_URL?.trim() || process.env.NEXT_PUBLIC_API_URL?.trim()
-      : process.env.NEXT_PUBLIC_API_URL?.trim();
+export const parseApiOrigin = (value?: string) => {
+  const configuredApiUrl = value?.trim();
   if (!configuredApiUrl) return null;
 
   // Permit harmless trailing slashes, but reject anything that is not an
@@ -48,6 +45,12 @@ const getConfiguredApiOrigin = () => {
     return null;
   }
 };
+
+const getConfiguredApiOrigin = () => parseApiOrigin(
+  typeof window === "undefined"
+    ? process.env.INTERNAL_API_URL?.trim() || process.env.NEXT_PUBLIC_API_URL?.trim()
+    : process.env.NEXT_PUBLIC_API_URL?.trim()
+);
 
 export const buildApiUrl = (path: string) => {
   if (

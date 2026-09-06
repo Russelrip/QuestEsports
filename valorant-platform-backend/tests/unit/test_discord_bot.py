@@ -1,25 +1,59 @@
-"""Discord-bot worker tests (SDD 2026-08-14 leaderboard standardization, task 9).
+"""Discord worker helpers and async role/nickname interactions with fake members.
 
-The PURE module-level functions are tested directly — no Discord connection is
-ever made (R37's "thin Discord interaction" lives in ``DiscordBotRunner`` and is
-deliberately not exercised here). ``sync_discord_identity`` (the bot-1
-write-back decision) is tested with a fake repo asserting
-``update_discord_identity`` is called with the member's current
-discord_id/username only when the stored identity drifted.
+No Discord connection is made; identity write-back uses a fake repository.
 """
 
 from __future__ import annotations
+
+from unittest.mock import AsyncMock, Mock
 
 from workers.discord_bot import (
     ALPHA_RANKS,
     OMEGA_RANKS,
     RANK_NAMES_MAPPER,
+    DiscordBotRunner,
     build_nickname,
     extract_rank_tier,
     map_rank_nickname,
     rank_role_names,
     sync_discord_identity,
 )
+
+
+class _Role:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _Guild:
+    def __init__(self, *role_names: str) -> None:
+        self.roles = [_Role(name) for name in role_names]
+
+
+class _Member:
+    def __init__(self, *, member_id: str, roles: list[_Role], guild: _Guild, bot: bool = False) -> None:
+        self.id = member_id
+        self.name = "discord-name"
+        self.global_name = "Global Name"
+        self.roles = roles
+        self.guild = guild
+        self.bot = bot
+        self.edit = AsyncMock()
+        self.add_roles = AsyncMock()
+        self.remove_roles = AsyncMock()
+
+
+def _runner() -> DiscordBotRunner:
+    runner = object.__new__(DiscordBotRunner)
+    runner.logger = Mock()
+    return runner
+
+
+def _player(*, discord_id: str, rank: str) -> Mock:
+    player = Mock()
+    player.discord_id = discord_id
+    player.rank_details = {"currenttierpatched": rank}
+    return player
 
 
 class _Player:
@@ -208,3 +242,91 @@ async def test_write_back_uses_first_matching_row():
 
     assert ok is True
     assert repo.calls == [("p1", "111", "new-name")]
+
+
+# ---------------------------------------------------------- Discord interactions
+
+
+async def test_registered_member_updates_rank_roles_and_preserves_unrelated_roles():
+    guild = _Guild("@everyone", "Alpha", "Omega", "Diamond", "Verified", "Unverified", "Tournament Staff")
+    everyone, alpha, omega, diamond, verified, unverified, unrelated = guild.roles
+    member = _Member(
+        member_id="111",
+        roles=[everyone, unrelated, omega, unverified],
+        guild=guild,
+    )
+
+    await _runner().update_discord_roles(member, [_player(discord_id="111", rank="Diamond 3")])
+
+    assert member.edit.await_args.kwargs == {"nick": "Global Name (Dia)"}
+    assert member.remove_roles.await_args.args == (omega, unverified)
+    assert member.add_roles.await_args.args == (alpha, diamond, verified)
+    assert unrelated in member.roles
+
+
+async def test_unregistered_member_gets_unverified_without_removing_unrelated_roles():
+    guild = _Guild("@everyone", "Diamond", "Unverified", "Tournament Staff")
+    everyone, diamond, unverified, unrelated = guild.roles
+    member = _Member(
+        member_id="999",
+        roles=[everyone, diamond, unrelated],
+        guild=guild,
+    )
+
+    await _runner().update_discord_roles(member, [])
+
+    assert member.edit.await_args.kwargs == {"nick": "Global Name (Unverified)"}
+    assert member.remove_roles.await_args.args == (diamond,)
+    assert member.add_roles.await_args.args == (unverified,)
+    assert unrelated in member.roles
+
+
+async def test_manual_member_skips_nickname_and_role_mutation():
+    guild = _Guild("@everyone", "Manual", "Diamond", "Tournament Staff")
+    everyone, manual, diamond, unrelated = guild.roles
+    member = _Member(
+        member_id="111",
+        roles=[everyone, manual, diamond, unrelated],
+        guild=guild,
+    )
+
+    await _runner().update_discord_roles(member, [_player(discord_id="111", rank="Diamond 3")])
+
+    member.edit.assert_not_awaited()
+    member.remove_roles.assert_not_awaited()
+    member.add_roles.assert_not_awaited()
+    assert member.roles == [everyone, manual, diamond, unrelated]
+
+
+async def test_update_roles_only_removes_and_adds_explicit_managed_roles():
+    guild = _Guild("@everyone", "Omega", "Iron", "Verified", "Tournament Staff", "External Role")
+    everyone, omega, iron, verified, unrelated, external = guild.roles
+    member = _Member(
+        member_id="111",
+        roles=[everyone, omega, unrelated],
+        guild=guild,
+    )
+
+    await _runner().update_roles(member, [iron, verified, external])
+
+    assert member.remove_roles.await_args.args == (omega,)
+    assert member.add_roles.await_args.args == (iron, verified)
+    assert unrelated in member.roles
+
+
+async def test_bot_member_is_skipped_even_when_called_directly():
+    guild = _Guild("@everyone", "Manual", "Unverified", "Tournament Staff")
+    everyone, manual, unverified, unrelated = guild.roles
+    member = _Member(
+        member_id="222",
+        roles=[everyone, manual, unverified, unrelated],
+        guild=guild,
+        bot=True,
+    )
+
+    await _runner().update_discord_roles(member, [])
+
+    member.edit.assert_not_awaited()
+    member.remove_roles.assert_not_awaited()
+    member.add_roles.assert_not_awaited()
+    assert member.roles == [everyone, manual, unverified, unrelated]
