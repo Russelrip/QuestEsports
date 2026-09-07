@@ -626,6 +626,7 @@ const mapTournament = (tournament, { parentWindow } = {}) => {
 
 const mapAdminTournament = (tournament) => ({
   ...mapTournament(tournament),
+  discordRequired: Boolean(tournament.discordRequired),
   bankName: tournament.bankName,
   bankBranch: tournament.bankBranch,
   bankAccountName: tournament.bankAccountName,
@@ -835,6 +836,9 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
   );
   const coachRequired = normalizeBooleanFlag(
     body.coachRequired ?? existingTournament?.coachRequired
+  );
+  const discordRequired = normalizeBooleanFlag(
+    body.discordRequired ?? existingTournament?.discordRequired
   );
   const showBracketPublicly = normalizeBooleanFlag(
     body.showBracketPublicly ?? existingTournament?.showBracketPublicly ?? true
@@ -1113,6 +1117,7 @@ const normalizeTournamentInput = ({ body, existingTournament }) => {
     maxSubstitutes,
     allowCoach,
     coachRequired,
+    discordRequired,
     registrationFields: normalizedRegistrationFields,
     paymentMethod,
     registrationFeeAmount,

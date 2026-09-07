@@ -51,6 +51,7 @@ export const mapTournamentToFormValues = (
   maxSubstitutes: String(tournament.maxSubstitutes || 0),
   allowCoach: Boolean(tournament.allowCoach),
   coachRequired: Boolean(tournament.allowCoach && tournament.coachRequired),
+  discordRequired: Boolean(tournament.discordRequired),
   waitlistEnabled: Boolean(tournament.waitlistEnabled),
   registrationFields: JSON.stringify(tournament.registrationFields || [], null, 2),
   paymentMethod: tournament.paymentMethod ||

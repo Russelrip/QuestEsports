@@ -77,6 +77,7 @@ const tournament = {
   maxSubstitutes: 0,
   allowCoach: true,
   coachRequired: false,
+  discordRequired: false,
   waitlistEnabled: false,
   registrationFields: [],
   paymentMethod: "bank_transfer",

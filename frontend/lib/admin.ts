@@ -520,6 +520,7 @@ export type TournamentFormValues = {
   maxSubstitutes: string;
   allowCoach: boolean;
   coachRequired: boolean;
+  discordRequired: boolean;
   waitlistEnabled: boolean;
   showBracketPublicly: boolean;
   registrationFields: string;
@@ -612,6 +613,7 @@ export const initialTournamentFormValues: TournamentFormValues = {
   maxSubstitutes: "2",
   allowCoach: false,
   coachRequired: false,
+  discordRequired: false,
   waitlistEnabled: false,
   registrationFields: "[]",
   paymentMethod: "free",
