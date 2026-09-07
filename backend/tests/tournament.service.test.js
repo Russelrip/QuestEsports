@@ -415,6 +415,96 @@ test("coach settings persist through admin create and update responses", async (
   }
 });
 
+test("admin tournament discord requirement normalizes, persists, preserves, and maps", async () => {
+  let createdData;
+  let updatedData;
+  const existingTournament = {
+    id: "tournament-discord",
+    ...buildAdminTournamentBody(),
+    discordRequired: true,
+  };
+  const prismaMock = {
+    prisma: {
+      tournament: {
+        findFirst: async () => null,
+        findUnique: async () => existingTournament,
+        create: async ({ data }) => {
+          createdData = data;
+          return {
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+            sponsors: [],
+          };
+        },
+        update: async ({ data }) => {
+          updatedData = data;
+          return {
+            ...existingTournament,
+            ...data,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            _count: { teamRegistrations: 0 },
+            sponsors: [],
+          };
+        },
+      },
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: prismaMock,
+    [uploadModulePath]: {
+      persistTournamentBannerUpload: async () => null,
+      persistTournamentScheduleUpload: async () => null,
+      removeUploadFiles: async () => undefined,
+    },
+    [teamServiceModulePath]: {},
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [loggerModulePath]: {},
+  });
+
+  try {
+    assert.equal(
+      tournamentService.normalizeTournamentInput({ body: buildAdminTournamentBody() }).discordRequired,
+      false
+    );
+    for (const value of [true, "true", "on", 1, "1"]) {
+      assert.equal(
+        tournamentService.normalizeTournamentInput({
+          body: buildAdminTournamentBody({ discordRequired: value }),
+        }).discordRequired,
+        true
+      );
+    }
+    assert.equal(
+      tournamentService.normalizeTournamentInput({
+        body: buildAdminTournamentBody(),
+        existingTournament,
+      }).discordRequired,
+      true
+    );
+
+    const created = await tournamentService.createAdminTournament({
+      body: buildAdminTournamentBody({ discordRequired: "on" }),
+      files: {},
+    });
+    assert.equal(createdData.discordRequired, true);
+    assert.equal(created.discordRequired, true);
+
+    const updated = await tournamentService.updateAdminTournament({
+      tournamentId: existingTournament.id,
+      body: buildAdminTournamentBody(),
+      files: {},
+    });
+    assert.equal(updatedData.discordRequired, true);
+    assert.equal(updated.discordRequired, true);
+  } finally {
+    restore();
+  }
+});
+
 test("child tournament create and attachment audit series relationship evidence transactionally", async () => {
   const audits = [];
   const existing = { id: "tournament-1", ...buildAdminTournamentBody(), seriesId: null, seriesOrder: null };
