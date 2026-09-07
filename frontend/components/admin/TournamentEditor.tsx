@@ -343,7 +343,9 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.coachRequired} disabled={!formValues.allowCoach} onChange={(event) => updateField("coachRequired", event.target.checked)} /> Coach required</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.waitlistEnabled} onChange={(event) => updateField("waitlistEnabled", event.target.checked)} /> Enable waitlist when full</label>
               </div>
-              <FormField label="Payment Method" htmlFor="paymentMethod" required>
+                 <label htmlFor="discordRequired" className="flex items-center gap-2"><input id="discordRequired" type="checkbox" checked={formValues.discordRequired} onChange={(event) => updateField("discordRequired", event.target.checked)} /> Require connected Discord identities</label>
+                 <p className="pl-6 text-xs text-slate-500">Every roster member, including a coach, must connect Discord before registration.</p>
+               <FormField label="Payment Method" htmlFor="paymentMethod" required>
                 <Select
                   id="paymentMethod"
                   value={formValues.paymentMethod}

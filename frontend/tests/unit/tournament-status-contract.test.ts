@@ -41,6 +41,7 @@ const tournament = (overrides: Partial<Tournament> = {}): Tournament => ({
   maxSubstitutes: 0,
   allowCoach: false,
   coachRequired: false,
+  discordRequired: false,
   waitlistEnabled: true,
   registrationFields: [],
   paymentMethod: "free",

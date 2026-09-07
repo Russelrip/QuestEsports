@@ -275,6 +275,7 @@ export type Tournament = {
   maxSubstitutes: number;
   allowCoach: boolean;
   coachRequired: boolean;
+  discordRequired: boolean;
   waitlistEnabled: boolean;
   registrationFields: TournamentRegistrationField[];
   paymentMethod: TournamentPaymentMethod;
