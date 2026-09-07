@@ -71,6 +71,52 @@ test("admin tournament listing rejects unsupported status filters", async () => 
   }
 });
 
+test("admin tournament listing exposes Discord requirement defaults and stored values", async () => {
+  const tournaments = [
+    { id: "tournament-true", discordRequired: true },
+    { id: "tournament-false", discordRequired: false },
+    { id: "tournament-default", discordRequired: undefined },
+  ].map((tournament) => ({
+    slug: tournament.id,
+    title: tournament.id,
+    game: "valorant",
+    status: "draft",
+    maxTeams: 16,
+    sponsors: [],
+    ...tournament,
+  }));
+  const prisma = {
+    $transaction: async ([count, findMany]) => [await count, await findMany],
+    tournament: {
+      count: async () => tournaments.length,
+      findMany: async () => tournaments,
+    },
+  };
+  const { module: tournamentService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {},
+    [teamServiceModulePath]: {},
+    [paymentServiceModulePath]: { isPayHereConfigured: () => false },
+    [bracketServiceModulePath]: { buildShortCode: (name) => name, mapPublicBracket: () => null },
+    [loggerModulePath]: {},
+  });
+
+  try {
+    const result = await tournamentService.listAdminTournaments();
+
+    assert.deepEqual(
+      result.items.map(({ id, discordRequired }) => ({ id, discordRequired })),
+      [
+        { id: "tournament-true", discordRequired: true },
+        { id: "tournament-false", discordRequired: false },
+        { id: "tournament-default", discordRequired: false },
+      ],
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("registration status includes coach invitations in verification and payment gating", async () => {
   let repairedRegistrationId = null;
   const prisma = {

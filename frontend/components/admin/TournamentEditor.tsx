@@ -345,7 +345,7 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
               </div>
               <div className="grid gap-1 self-end pb-1 text-sm text-slate-300">
                 <label htmlFor="discordRequired" className="flex items-center gap-2"><input id="discordRequired" type="checkbox" aria-describedby="discordRequired-help" checked={formValues.discordRequired} onChange={(event) => updateField("discordRequired", event.target.checked)} /> Require connected Discord identities</label>
-                <p id="discordRequired-help" className="pl-6 text-xs text-slate-500">Every roster member, including a coach, must connect Discord before registration.</p>
+                <p id="discordRequired-help" className="pl-6 text-xs text-slate-400">Every roster member, including a coach, must connect Discord before registration.</p>
               </div>
               <FormField label="Payment Method" htmlFor="paymentMethod" required>
                 <Select

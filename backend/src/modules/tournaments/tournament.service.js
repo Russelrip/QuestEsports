@@ -633,6 +633,11 @@ const mapAdminTournament = (tournament) => ({
   bankAccountNumber: tournament.bankAccountNumber,
 });
 
+const mapAdminTournamentListItem = (tournament) => ({
+  ...mapTournament(tournament),
+  discordRequired: Boolean(tournament.discordRequired),
+});
+
 const mapTournamentWithRegistrations = (
   tournament,
   registrations = tournament.teamRegistrations || []
@@ -1378,7 +1383,7 @@ const listAdminTournaments = async ({ page, pageSize, search, status, isPublishe
   ]);
 
   return buildPagedResponse({
-    items: tournaments.map(mapTournament),
+    items: tournaments.map(mapAdminTournamentListItem),
     total,
     page: pagination.page,
     pageSize: pagination.pageSize,

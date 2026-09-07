@@ -15,8 +15,10 @@ copying or deleting its registrations. The projected `series` carries the
 parent's `isPublished` so a public listing can tell whether an event card
 already stands in for the child; a child of a draft event stays listed on its
 own. `mapTournament` is the public-safe child projection used inside event
-responses; `mapAdminTournament` adds only admin configuration fields needed
-by the editor. `showBracketPublicly` is
+responses; `mapAdminTournamentListItem` adds the admin-only
+`discordRequired` setting to list rows without exposing detail-only bank
+fields, while `mapAdminTournament` adds the remaining admin configuration
+fields needed by the editor. `showBracketPublicly` is
 persisted per tournament and exposed by both mappings with a legacy `true`
 fallback; public bracket consumers require that setting plus a published,
 non-empty native or Challonge source.
