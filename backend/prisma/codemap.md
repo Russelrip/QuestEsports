@@ -259,6 +259,14 @@ login method from OAuth-only random password hashes.
 
 ## Deployment boundary
 
+The release controller applies migrations as part of the release: it compares
+the migrator image's migration files against `public._prisma_migrations` and,
+when they differ, requires owner approval and a release-bound backup before
+running them. That comparison must name the release being deployed --
+`RELEASE_DIR` -- because the current release always matches the ledger, so a
+status check without it reports a clean database and ships code against a
+schema that lacks its columns. `docs/ci-cd.md` describes the gate.
+
 Use generated Prisma output and `prisma migrate deploy` against an isolated
 verification database before a shared deployment. Back up PostgreSQL and both
 upload roots first; check migration status, schema/security verification, and

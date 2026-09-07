@@ -423,7 +423,7 @@ case "$(basename "$0")" in
     if [[ "${MIGRATION_PENDING:-0}" == 1 && ( "${REQUIRE_MIGRATION_RECHECK:-0}" != 1 || "$status_count" -le 2 ) ]]; then migration_state=pending; fi
     ack_target="${TARGET_AUTHORITY:-none}"
     [[ "${TARGET_ACK_LIES:-0}" == 1 ]] && ack_target=wrong-postgres
-    printf 'migration-status repo=%s target=%s state=%s\n' "${CHECK_REPOSITORY:-unknown}" "$ack_target" "$migration_state" >> "$TEST_LOG"
+    printf 'migration-status repo=%s target=%s state=%s release_dir=%s\n' "${CHECK_REPOSITORY:-unknown}" "$ack_target" "$migration_state" "${RELEASE_DIR:-unset}" >> "$TEST_LOG"
     if [[ "${TARGET_ACK_MODE:-0}" == 1 ]]; then
       schema=public; [[ "${CHECK_REPOSITORY:-}" == valorant ]] && schema=valorant
       printf '%s target=%s schema=%s repository=%s\n' "$migration_state" "$ack_target" "$schema" "${CHECK_REPOSITORY:-unknown}"
@@ -1673,6 +1673,15 @@ check_migration_contract() {
   migration_count="$(grep -c '^migration-status ' "$TEST_LOG" || true)"
   [[ "$migration_count" -ge 4 ]] || gate_failure "$label did not recheck migration status after migration"
   gate_log_contains "$TEST_LOG" 'migration-status repo=quest target=quest-postgres state=pending' "$label did not pass the explicit target authority to Quest migration status"
+  # The status check decides whether the migrator runs at all, so it has to
+  # inspect the release being deployed. Given no bundle the hook resolves the
+  # CURRENT release, whose migrations always match the database, so a release
+  # that adds a migration is waved through and starts against a schema without
+  # it. Assert the staged bundle by name so that fallback cannot creep back.
+  if grep -q 'release_dir=unset$' "$TEST_LOG"; then
+    gate_failure "$label checked migration status without naming the release under deployment"
+  fi
+  gate_log_contains "$TEST_LOG" "release_dir=$fixture/releases/1111111111111111111111111111111111111111" "$label did not check migration status against the staged release bundle"
   gate_log_contains "$TEST_LOG" 'migration-status repo=valorant target=quest-postgres state=pending' "$label did not pass the explicit target authority to VALORANT migration status"
   gate_log_contains "$TEST_LOG" 'migration-status repo=quest target=quest-postgres state=none' "$label did not observe the post-migration Quest status"
   gate_log_contains "$TEST_LOG" 'migration-status repo=valorant target=quest-postgres state=none' "$label did not observe the post-migration VALORANT status"

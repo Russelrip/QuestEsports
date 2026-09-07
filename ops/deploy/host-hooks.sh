@@ -211,6 +211,15 @@ backup_setting() {
   printf '%s\n' "$value"
 }
 
+# "Pending" is only meaningful relative to a specific release. RELEASE_DIR names
+# the bundle being deployed; without it release_bundle() answers for the CURRENT
+# release, whose migrations match the database by definition, so every genuinely
+# pending migration reads as none. That silence is indistinguishable from a
+# clean database, so refuse to answer rather than answer about the wrong bundle.
+require_release_under_deployment() {
+  [[ -n "${RELEASE_DIR:-}" ]] || die 'migration status requires RELEASE_DIR to name the release under deployment.'
+}
+
 # Compares the migrations shipped in the release image against the durable
 # ledger in the production database. Prisma and the VALORANT runner both record
 # the sha256 of the migration file, so the two inventories are directly
@@ -351,11 +360,13 @@ case "$wrapper" in
     ;;
 
   quest-release-quest-migration-status)
+    require_release_under_deployment
     if migration_inventory quest; then state=none; else state=pending; fi
     printf '%s target=quest-postgres schema=public repository=quest\n' "$state"
     ;;
 
   quest-release-valorant-migration-status)
+    require_release_under_deployment
     if migration_inventory valorant; then state=none; else state=pending; fi
     printf '%s target=quest-postgres schema=valorant repository=valorant\n' "$state"
     ;;
