@@ -304,7 +304,6 @@ const createSignup = async ({ body }) => {
   const confirmPassword = String(body.confirmPassword || "");
   const terms = body.terms === true;
   const phone = normalizeText(body.phone) || null;
-  const discordTag = normalizeText(body.discordTag) || null;
 
   const fieldErrors = getSignupFieldErrors({
     firstName,
@@ -316,7 +315,6 @@ const createSignup = async ({ body }) => {
     terms,
   });
   if (phone && phone.length > 50) fieldErrors.phone = "Phone must be 50 characters or fewer.";
-  if (discordTag && discordTag.length > 100) fieldErrors.discordTag = "Discord username must be 100 characters or fewer.";
 
   if (Object.keys(fieldErrors).length > 0) {
     throw new HttpError(400, "Please correct the highlighted fields.", {
@@ -359,7 +357,10 @@ const createSignup = async ({ body }) => {
         passwordSetAt,
         role: "user",
         phone,
-        discordTag,
+        // Signup never sets a Discord handle. The account gets one by
+        // completing the OAuth link, which is the only thing that proves the
+        // person controls it; until then the column stays null and the login
+        // gate routes them into connecting.
         emailVerified: false,
       },
       select: PUBLIC_USER_SELECT,
@@ -502,9 +503,7 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
 
   const existingUser = await prisma.user.findUnique({
     where: { id: requestedUserId },
-    // `discordTag` is read so a linked account's verified value can be
-    // preserved against a client that tries to overwrite it.
-    select: { id: true, email: true, discordTag: true },
+    select: { id: true, email: true },
   });
 
   if (!existingUser) {
@@ -516,7 +515,6 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
   const username = normalizeText(body.username);
   const usernameNormalized = normalizeUsername(username);
   const phone = normalizeText(body.phone) || null;
-  const discordTag = normalizeText(body.discordTag) || null;
 
   if (
     !isNonEmptyString(firstName) ||
@@ -532,7 +530,6 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
     username,
   });
   if (phone && phone.length > 50) profileErrors.phone = "Phone must be 50 characters or fewer.";
-  if (discordTag && discordTag.length > 100) profileErrors.discordTag = "Discord username must be 100 characters or fewer.";
   if (Object.keys(profileErrors).length) {
     throw new HttpError(400, "Please correct the highlighted fields.", { fieldErrors: profileErrors });
   }
@@ -549,16 +546,11 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
     throw new HttpError(400, "Username already exists.");
   }
 
-  // Once Discord is connected, the tag comes from that connection and a profile
-  // edit cannot change it. Locking the input alone would be cosmetic — the
+  // The tag comes from the Discord connection and a profile edit cannot change
+  // it, connected or not. Locking the input alone would be cosmetic — the
   // client can post whatever it likes, and an identity field anyone can retype
-  // is not an identity.
-  const linkedDiscord = await prisma.oAuthAccount.findFirst({
-    where: { userId: requestedUserId, provider: "discord" },
-    select: { id: true },
-  });
-  const nextDiscordTag = linkedDiscord ? existingUser.discordTag : discordTag;
-
+  // is not an identity. `discordTag` is simply not a writable profile field
+  // any more, so it is absent from the update entirely.
   const user = await prisma.user.update({
     where: { id: requestedUserId },
     data: {
@@ -567,7 +559,6 @@ const updateUserProfile = async ({ requestedUserId, currentUser, body }) => {
       username,
       usernameNormalized,
       phone,
-      discordTag: nextDiscordTag,
     },
     select: PUBLIC_USER_SELECT,
   });

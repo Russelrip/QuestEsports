@@ -50,29 +50,23 @@ test("unlinking Discord clears the tag", () => {
   assert.match(unlink[0], /discordTag: null/);
 });
 
-test("a profile edit cannot overwrite a linked Discord tag", () => {
+test("no auth flow reads a Discord tag off the request body", () => {
   // Disabling the input is cosmetic: the client can post whatever it likes, so
-  // the server has to be the authority.
-  assert.match(
-    authSource,
-    /const linkedDiscord = await prisma\.oAuthAccount\.findFirst\(\{\s*where: \{ userId: requestedUserId, provider: "discord" \}/,
-  );
-  assert.match(
-    authSource,
-    /const nextDiscordTag = linkedDiscord \? existingUser\.discordTag : discordTag;/,
-  );
-  assert.match(authSource, /discordTag: nextDiscordTag,/);
-  // And the raw client value must no longer reach the update directly.
-  const updateBlock = /const user = await prisma\.user\.update\(\{[\s\S]*?\}\);/.exec(authSource)[0];
-  assert.doesNotMatch(updateBlock, /^\s*discordTag,\s*$/m);
+  // the server has to be the authority. Neither signup nor a profile edit reads
+  // `body.discordTag` any more — there is no branch left that accepts a client
+  // value, verified or otherwise.
+  assert.doesNotMatch(authSource, /body\.discordTag/);
 });
 
-test("a user without a linked Discord can still set a tag manually", () => {
-  // Legacy rosters and users who have not connected yet must not lose the
-  // ability to record one; the value is simply not claimed to be verified.
-  assert.match(
-    authSource,
-    /linkedDiscord \? existingUser\.discordTag : discordTag/,
-    "the unlinked branch must fall back to the submitted value",
-  );
+test("the profile update does not write the tag at all", () => {
+  // An account starts with no handle and earns one by completing the OAuth
+  // link, which is the only writer. A profile edit that touched the column
+  // would put an unverified string in the field match communication now trusts.
+  const updateBlock = /const user = await prisma\.user\.update\(\{[\s\S]*?\}\);/.exec(authSource)[0];
+  assert.doesNotMatch(updateBlock, /discordTag/);
+});
+
+test("signup creates the user without a tag", () => {
+  const createBlock = /const createdUser = await tx\.user\.create\(\{[\s\S]*?\}\);/.exec(authSource)[0];
+  assert.doesNotMatch(createBlock, /discordTag/);
 });

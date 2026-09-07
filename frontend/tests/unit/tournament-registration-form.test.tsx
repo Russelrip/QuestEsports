@@ -147,7 +147,9 @@ describe("ConfiguredTournamentRegistrationForm", () => {
     expect(within(coachGroup).getByDisplayValue("Saved Coach")).toBeInTheDocument();
     expect(within(coachGroup).getByDisplayValue("coach@example.com")).toBeInTheDocument();
     expect(within(coachGroup).getByDisplayValue("0771111111")).toBeInTheDocument();
-    expect(within(coachGroup).getByDisplayValue("coach-discord")).toBeInTheDocument();
+    // The coach's Discord is resolved from their connected account at
+    // submission, so the form offers nothing to type it into.
+    expect(within(coachGroup).queryByDisplayValue("coach-discord")).toBeNull();
     expect(within(coachGroup).getByDisplayValue("Coach#001")).toBeInTheDocument();
     expect(screen.getAllByDisplayValue("Saved Coach")).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Roster member 2" })).toBeInTheDocument();

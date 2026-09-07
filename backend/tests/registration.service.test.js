@@ -257,6 +257,16 @@ test("paid direct team registration saves the team and dispatches player invites
     },
   };
   const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
     tournament: {
       findFirst: async () => {
         tournamentLookupAttempts += 1;
@@ -449,6 +459,14 @@ test("registration service enforces a parent close observed by the transaction r
       prisma: {
         tournament: { findFirst: async () => ({ ...tournament, series: initialSeries }) },
         teamRegistration: { findFirst: async () => existing },
+        oAuthAccount: {
+          findFirst: async () => ({
+            providerUserId: "900000000000000001",
+            user: { discordTag: "captain-discord" },
+          }),
+          findMany: async () => [],
+        },
+        user: { findMany: async () => [] },
         $transaction: async (work) => work(tx),
       },
     },
@@ -502,6 +520,16 @@ test("a pending coach blocks team verification and payment", async () => {
     },
   };
   const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
     tournament: { findFirst: async () => tournament },
     teamRegistration: { findFirst: async () => pendingRegistration },
     $transaction: async (work) => work(tx),
@@ -582,6 +610,16 @@ test("captain-only direct registration repairs stale verification and starts pay
     },
   };
   const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
     tournament: { findFirst: async () => tournament },
     teamRegistration: { findFirst: async () => verifiedRegistration },
     $transaction: async (work) => work(tx),
@@ -674,6 +712,16 @@ test("createConfiguredRegistration lets an active payment reservation retry afte
     },
   };
   const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
     tournament: { findFirst: async () => retryTournament },
     teamRegistration: {
       findFirst: async () => existing,
@@ -748,6 +796,16 @@ test("createConfiguredRegistration removes a newly persisted retry logo when the
     payments: [{ provider: "payhere", status: "failed", providerOrderId: "old-order" }],
   };
   const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
     tournament: { findFirst: async () => tournament },
     teamRegistration: { findFirst: async () => existing },
     $transaction: async () => {
@@ -836,6 +894,16 @@ test("public waitlist retry releases a stale admin hold before clearing the slot
     },
   };
   const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
     tournament: { findFirst: async () => waitlistTournament },
     teamRegistration: { findFirst: async () => currentRegistration },
     $transaction: async (work) => work(tx),
@@ -998,6 +1066,16 @@ test("active same-tournament registrations enforce coach/player identity separat
       registrationMember: { createMany: async () => ({ count: 1 }) },
     };
     const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
       tournament: { findFirst: async () => conflictTournament },
       teamRegistration: { findFirst: async () => null },
       $transaction: async (work) => work(tx),
@@ -1083,6 +1161,16 @@ test("rejected and different-tournament registrations do not block coach/player 
       registrationMember: { createMany: async () => ({ count: 1 }) },
     };
     const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
       tournament: { findFirst: async () => reusableTournament },
       teamRegistration: { findFirst: async () => null },
       $transaction: async (work) => work(tx),
@@ -1217,6 +1305,16 @@ test("retry and payment continuation recheck same-tournament role conflicts", as
       },
     };
     const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
       tournament: { findFirst: async () => conflictTournament },
       teamRegistration: { findFirst: async () => testCase.existing },
       $transaction: async (work) => work(tx),
@@ -1292,6 +1390,16 @@ test("active bank-transfer continuation checks role conflicts before returning i
     },
   };
   const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
     tournament: { findFirst: async () => bankTournament },
     teamRegistration: { findFirst: async () => existing },
     $transaction: async (work) => work(tx),
@@ -1365,6 +1473,16 @@ test("active explicit payment resume checks role conflicts before reusing the pa
     },
   };
   const prisma = {
+    // Registration resolves every roster Discord handle from connected
+    // accounts now, so the captain's link has to exist for the flow to run.
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
     tournament: { findFirst: async () => payHereTournament },
     teamRegistration: { findFirst: async () => existing },
     $transaction: async (work) => work(tx),

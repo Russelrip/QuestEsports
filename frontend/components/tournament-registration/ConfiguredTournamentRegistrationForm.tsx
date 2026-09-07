@@ -29,7 +29,6 @@ import type { Tournament, TournamentRegistrationField } from "@/lib/tournaments"
 type MemberDraft = {
   name: string;
   email: string;
-  discord: string;
   gameId: string;
   role: "PLAYER" | "SUBSTITUTE";
   additionalData: Record<string, string | boolean>;
@@ -87,7 +86,7 @@ export function getRegistrationSubmissionError(status: number, message?: string)
   return message || "Registration could not be submitted.";
 }
 
-const emptyMember = (): MemberDraft => ({ name: "", email: "", discord: "", gameId: "", role: "PLAYER", additionalData: {} });
+const emptyMember = (): MemberDraft => ({ name: "", email: "", gameId: "", role: "PLAYER", additionalData: {} });
 
 export default function ConfiguredTournamentRegistrationForm({ tournament }: { tournament: Tournament }) {
   const router = useRouter();
@@ -96,7 +95,6 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
   const [form, setForm] = useState({
     fullName: "",
     phone: "",
-    discord: "",
     gameId: "",
     teamName: "",
     teamTag: "",
@@ -160,7 +158,6 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
         ...current,
         fullName: current.fullName || `${user.firstName} ${user.lastName}`.trim(),
         phone: current.phone || user.phone || "",
-        discord: current.discord || user.discordTag || "",
         contactEmail: user.email,
       }));
     }
@@ -518,7 +515,7 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           <FormField label="Full name" required><Input required value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))} /></FormField>
           <FormField label="Email"><Input disabled value={form.contactEmail} /></FormField>
           <FormField label="WhatsApp number" required><Input required value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
-          <FormField label="Discord"><Input value={form.discord} onChange={(event) => setForm((current) => ({ ...current, discord: event.target.value }))} /></FormField>
+          <FormField label="Discord" hint={user?.discordId ? "From your connected account" : "Not connected"}><Input disabled value={user?.discordTag || (user?.discordId ? "Connected" : "Not connected")} /></FormField>
           <FormField label={gameIdentity.label} required hint={gameIdentity.hint}><Input required value={form.gameId} placeholder={gameIdentity.placeholder} pattern={gameIdentity.pattern} title={gameIdentity.title} autoCapitalize="none" spellCheck={false} onChange={(event) => setForm((current) => ({ ...current, gameId: event.target.value }))} /></FormField>
           {visibleMemberFields.map((field) => <ConfiguredField key={field.key} field={field} value={captainAdditionalData[field.key] || ""} onChange={(value) => setCaptainAdditionalData((current) => ({ ...current, [field.key]: value }))} />)}
         </fieldset>
@@ -541,7 +538,6 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label="Name" required><Input required value={member.name} onChange={(event) => updateMember(index, { name: event.target.value })} /></FormField>
                   <FormField label="Email" required><Input type="email" required value={member.email} onChange={(event) => updateMember(index, { email: event.target.value })} /></FormField>
-                  <FormField label="Discord"><Input value={member.discord} onChange={(event) => updateMember(index, { discord: event.target.value })} /></FormField>
                   <FormField label={gameIdentity.label} required hint={gameIdentity.hint}><Input required value={member.gameId} placeholder={gameIdentity.placeholder} pattern={gameIdentity.pattern} title={gameIdentity.title} autoCapitalize="none" spellCheck={false} onChange={(event) => updateMember(index, { gameId: event.target.value })} /></FormField>
                   <FormField label="Role"><Select value={member.role} onChange={(event) => updateMember(index, { role: event.target.value as MemberDraft["role"] })}><option value="PLAYER">Player</option><option value="SUBSTITUTE">Substitute</option></Select></FormField>
                   {visibleMemberFields.map((field) => <ConfiguredField key={field.key} field={field} value={member.additionalData[field.key] || ""} onChange={(value) => updateMember(index, { additionalData: { ...member.additionalData, [field.key]: value } })} />)}
@@ -570,7 +566,6 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           <FormField label="Full Name" required><Input required value={coach.name} onChange={(event) => setCoach((current) => ({ ...current, name: event.target.value }))} /></FormField>
           <FormField label="Email" required><Input type="email" required value={coach.email} onChange={(event) => setCoach((current) => ({ ...current, email: event.target.value }))} /></FormField>
           <FormField label="Contact Number" required><Input required value={coach.phone} onChange={(event) => setCoach((current) => ({ ...current, phone: event.target.value }))} /></FormField>
-          <FormField label="Discord Username" required><Input required value={coach.discord} onChange={(event) => setCoach((current) => ({ ...current, discord: event.target.value }))} /></FormField>
           <FormField label="Riot ID/IGN" required><Input required value={coach.gameId} onChange={(event) => setCoach((current) => ({ ...current, gameId: event.target.value }))} /></FormField>
         </fieldset> : null}
       </Card> : null}

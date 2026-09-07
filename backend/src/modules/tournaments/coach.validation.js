@@ -53,18 +53,20 @@ const normalizeCoachSubmission = ({ tournament, body = {}, coachInput = parseCoa
     name: normalizeText(coachInput.name),
     email: normalizeEmail(coachInput.email),
     phone: normalizeText(coachInput.phone),
-    discord: normalizeText(coachInput.discord),
+    // Filled from the coach's connected Discord account during submission, not
+    // from the request. A coach is on the roster to be reachable during an
+    // event, and a handle somebody typed for them does not establish that.
+    discord: null,
     riotId: normalizeText(coachInput.gameId || coachInput.riotId),
   };
 
-  if (!coach.name || !isValidEmail(coach.email) || !coach.phone || !coach.discord || !coach.riotId) {
-    throw new HttpError(400, "Every coach needs a name, valid email, contact number, Discord, and Riot ID or IGN.");
+  if (!coach.name || !isValidEmail(coach.email) || !coach.phone || !coach.riotId) {
+    throw new HttpError(400, "Every coach needs a name, valid email, contact number, and Riot ID or IGN.");
   }
   if (
     coach.name.length > 100 ||
     coach.email.length > 254 ||
     coach.phone.length > 50 ||
-    coach.discord.length > 100 ||
     coach.riotId.length > 100
   ) {
     throw new HttpError(400, "One or more coach fields exceed the allowed length.");

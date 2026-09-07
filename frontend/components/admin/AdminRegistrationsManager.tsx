@@ -39,7 +39,10 @@ type RegistrationCoach = {
   name: string;
   email: string;
   phone: string;
-  discord: string;
+  // Null when the coach had no connected Discord at submission time. It is
+  // read-only here either way: the value is resolved from their account, never
+  // typed by an admin.
+  discord: string | null;
   riotId: string;
 };
 
@@ -508,7 +511,6 @@ function RegistrationDetail({
             name: registration.coach.name || "",
             email: registration.coach.email || "",
             phone: registration.coach.phone || "",
-            discord: registration.coach.discord || "",
             gameId: registration.coach.riotId || "",
           }
         : null,
@@ -523,7 +525,10 @@ function RegistrationDetail({
         name: coachDraft.name.trim(),
         email: coachDraft.email.trim(),
         phone: coachDraft.phone.trim(),
-        discord: coachDraft.discord.trim(),
+        // Carried through untouched. The handle was resolved from the coach's
+        // connected account when the registration was submitted, and an admin
+        // retyping it here would replace a verified value with a typed one.
+        discord: registration?.coach?.discord || null,
         riotId: coachDraft.gameId.trim(),
       };
     }
@@ -990,7 +995,6 @@ function RegistrationDetail({
                   ["name", "Full name", "text"],
                   ["email", "Email", "email"],
                   ["phone", "Contact number", "tel"],
-                  ["discord", "Discord", "text"],
                   ["gameId", "Riot ID / IGN", "text"],
                 ] as const).map(([field, label, type]) => (
                   <label key={field} className="grid gap-1 text-sm text-slate-300">
@@ -1004,7 +1008,6 @@ function RegistrationDetail({
                           name: current?.name || "",
                           email: current?.email || "",
                           phone: current?.phone || "",
-                          discord: current?.discord || "",
                           gameId: current?.gameId || "",
                           [field]: event.target.value,
                         }));

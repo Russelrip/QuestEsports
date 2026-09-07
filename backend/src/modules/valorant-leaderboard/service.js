@@ -6,8 +6,7 @@ const {
   previewRegistration: fetchPreviewRegistration,
   submitRegistration: fetchSubmitRegistration,
 } = require("./client");
-const { prisma } = require("../../lib/prisma");
-const { HttpError } = require("../../lib/http-error");
+const { requireLinkedDiscord } = require("../auth/discord-link.service");
 
 // valorantsl-new LeaderboardEntry (snake_case) -> Quest projection (camelCase).
 // Field names come from valorantsl-new backend/app/models/user.py LeaderboardEntry.
@@ -151,35 +150,14 @@ const searchLeaderboardPlayers = async (query, { limit = SEARCH_RESULT_LIMIT } =
 
 // Registration/auth flow: pass the upstream payload through UNCHANGED
 // (snake_case — the Quest frontend consumes it as-is for this flow).
-const createDiscordLinkRequiredError = () => {
-  const error = new HttpError(403, "Link a Discord account before registering for the VALORANT leaderboard.");
-  error.code = "DISCORD_LINK_REQUIRED";
-  return error;
-};
-
-const resolveLinkedDiscordIdentity = async (userId) => {
-  const normalizedUserId = String(userId || "").trim();
-  const account = normalizedUserId
-    ? await prisma.oAuthAccount.findFirst({
-      where: { userId: normalizedUserId, provider: "discord" },
-      select: {
-        providerUserId: true,
-        user: {
-          select: { discordTag: true },
-        },
-      },
-    })
-    : null;
-
-  if (!account) {
-    throw createDiscordLinkRequiredError();
-  }
-
-  return {
-    discordId: account.providerUserId,
-    discordUsername: account.user?.discordTag || "",
-  };
-};
+// Leaderboard registration is Discord-authorized: the upstream keys a player on
+// their snowflake, so an unlinked caller has nothing to register with. The
+// resolution itself lives in discord-link.service — this only names the reason
+// the caller sees.
+const resolveLinkedDiscordIdentity = (userId) => requireLinkedDiscord(
+  userId,
+  "Link a Discord account before registering for the VALORANT leaderboard."
+);
 
 const checkPuuid = async ({ userId, puuid }) => {
   await resolveLinkedDiscordIdentity(userId);

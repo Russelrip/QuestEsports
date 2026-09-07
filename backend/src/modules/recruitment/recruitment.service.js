@@ -8,6 +8,10 @@ const {
   normalizeInteger,
   normalizeText,
 } = require("../../lib/validation");
+const {
+  getLinkedDiscordForUsers,
+  requireLinkedDiscord,
+} = require("../auth/discord-link.service");
 
 const APPLICATION_TYPES = new Set(["solo_player", "existing_team", "incomplete_team"]);
 const MAX_MEMBERS = 20;
@@ -96,7 +100,10 @@ const normalizeMembers = (members, applicationType) => {
       name: requiredText(member.name, `Team member ${index + 1} name`),
       ign: requiredText(member.ign, `Team member ${index + 1} IGN`),
       idNumberCiphertext: encryptSecret(requiredText(member.nic, `Team member ${index + 1} NIC`)),
-      discord: requiredText(member.discord, `Team member ${index + 1} Discord username`),
+      // Resolved from the member's connected Discord account after
+      // normalization. A handle the applicant typed for somebody else proves
+      // nothing about who actually holds that account.
+      discord: null,
       email,
       phone: requiredText(member.phone, `Team member ${index + 1} WhatsApp number`, 50),
       role: MEMBER_ROLES.has(role) ? role : "player",
@@ -174,6 +181,41 @@ const createRecruitmentApplication = async ({ body, user }) => {
     throw new HttpError(400, "Previous organization or clan name is required.");
   }
 
+  const applicant = await requireLinkedDiscord(
+    user.id,
+    "Connect your Discord account before applying."
+  );
+  const applicantDiscord = applicant.discordUsername || applicant.discordId;
+
+  const memberAccounts = members.length > 0
+    ? await prisma.user.findMany({
+      where: {
+        emailNormalized: {
+          in: [...new Set(members.map((member) => normalizeEmail(member.email)))],
+        },
+      },
+      select: { id: true, emailNormalized: true },
+    })
+    : [];
+  const linkedByUserId = await getLinkedDiscordForUsers(
+    memberAccounts.map((account) => account.id)
+  );
+  const handleByEmail = new Map(
+    memberAccounts
+      .map((account) => {
+        const identity = linkedByUserId.get(account.id);
+        return [
+          account.emailNormalized,
+          identity ? identity.discordUsername || identity.discordId : null,
+        ];
+      })
+      .filter(([, handle]) => Boolean(handle))
+  );
+  const membersWithConnectedDiscord = members.map((member) => ({
+    ...member,
+    discord: handleByEmail.get(normalizeEmail(member.email)) || null,
+  }));
+
   return prisma.recruitmentApplication.create({
     data: {
       id: crypto.randomUUID(),
@@ -182,13 +224,13 @@ const createRecruitmentApplication = async ({ body, user }) => {
       fullName: requiredText(body.fullName, "Full name"),
       email: user.email,
       phone: requiredText(body.phone, "WhatsApp contact number", 50),
-      discord: requiredText(body.discord, "Discord username", 100),
+      discord: applicantDiscord,
       game: games.join(", "),
       playerId: null,
       applicantIdNumberCiphertext: encryptSecret(requiredText(body.nic, "NIC")),
       teamName: teamApplication ? requiredText(body.teamName, "Team name") : null,
       currentRosterSize,
-      members,
+      members: membersWithConnectedDiscord,
       details,
       notes: optionalText(body.notes),
       womensLeagueInterest: false,

@@ -29,7 +29,6 @@ describe("tournament coach validation", () => {
       name: "Coach",
       email: "coach@example.com",
       phone: "+94770000000",
-      discord: "coach#1234",
       gameId: "CoachIGN",
     }, true)).toBe("");
   });
@@ -51,13 +50,11 @@ describe("tournament coach validation", () => {
       name: " Coach ",
       email: "coach@example.com",
       phone: "+94770000000",
-      discord: "coach#1234",
       gameId: "CoachIGN",
     }, true, true)).toEqual({
       name: "Coach",
       email: "coach@example.com",
       phone: "+94770000000",
-      discord: "coach#1234",
       gameId: "CoachIGN",
     });
   });
