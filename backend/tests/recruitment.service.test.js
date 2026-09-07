@@ -6,6 +6,7 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 
 const servicePath = path.join(__dirname, "../src/modules/recruitment/recruitment.service.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
+const discordLinkPath = path.join(__dirname, "../src/modules/auth/discord-link.service.js");
 const secretBoxModulePath = path.join(__dirname, "../src/lib/secret-box.js");
 
 const validSoloBody = {
@@ -37,7 +38,18 @@ test("createRecruitmentApplication stores the expanded recruitment details", asy
             return { id: "application-1", status: "pending" };
           },
         },
+        user: { findMany: async () => [] },
       },
+    },
+    // The applicant's handle comes from their connected account, so the flow
+    // cannot run without one. Resolution itself is covered in
+    // discord-link.service.test.js.
+    [discordLinkPath]: {
+      requireLinkedDiscord: async () => ({
+        discordId: "900000000000000001",
+        discordUsername: "applicant-discord",
+      }),
+      getLinkedDiscordForUsers: async () => new Map(),
     },
     [secretBoxModulePath]: {
       encryptSecret: (value) => `encrypted:${value}`,
@@ -98,7 +110,18 @@ test("createRecruitmentApplication encrypts team member NICs", async () => {
             return { id: "application-1", status: "pending" };
           },
         },
+        user: { findMany: async () => [] },
       },
+    },
+    // The applicant's handle comes from their connected account, so the flow
+    // cannot run without one. Resolution itself is covered in
+    // discord-link.service.test.js.
+    [discordLinkPath]: {
+      requireLinkedDiscord: async () => ({
+        discordId: "900000000000000001",
+        discordUsername: "applicant-discord",
+      }),
+      getLinkedDiscordForUsers: async () => new Map(),
     },
     [secretBoxModulePath]: {
       encryptSecret: (value) => `encrypted:${value}`,

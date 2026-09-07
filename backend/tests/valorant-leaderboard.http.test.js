@@ -27,6 +27,7 @@ const leaderboardControllerPath = path.join(__dirname, "../src/modules/valorant-
 const leaderboardServicePath = path.join(__dirname, "../src/modules/valorant-leaderboard/service.js");
 const leaderboardClientPath = path.join(__dirname, "../src/modules/valorant-leaderboard/client.js");
 const prismaPath = path.join(__dirname, "../src/lib/prisma.js");
+const discordLinkPath = path.join(__dirname, "../src/modules/auth/discord-link.service.js");
 
 const pass = (_req, _res, next) => next();
 const controllerMock = new Proxy({}, { get: () => pass });
@@ -105,6 +106,26 @@ const buildMountedApp = () => {
             ? { providerUserId: "canonical-discord-id", user: { discordTag: "stored-discord-name" } }
             : null,
         },
+      },
+    },
+    // Mocked at the module boundary rather than through prisma. The resolver is
+    // shared by registration and recruitment now, so it is reachable through
+    // several parents in the router graph and the loader's cache clearing
+    // cannot guarantee which instance this build gets. Its own resolution is
+    // covered in discord-link.service.test.js; what matters here is that the
+    // route refuses an unlinked caller and forwards the stored identity rather
+    // than the forged one in the request body.
+    [discordLinkPath]: {
+      requireLinkedDiscord: async (_userId, message) => {
+        if (!discordLinked) {
+          const error = new HttpError(403, message);
+          error.code = "DISCORD_LINK_REQUIRED";
+          throw error;
+        }
+        return {
+          discordId: "canonical-discord-id",
+          discordUsername: "stored-discord-name",
+        };
       },
     },
   });
