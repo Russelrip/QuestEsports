@@ -201,16 +201,3 @@ test("the message carries no invite token", async () => {
     restore();
   }
 });
-
-test("the invite path sends email regardless of Discord", () => {
-  const teamService = fs.readFileSync(
-    path.join(__dirname, "../src/modules/teams/team.service.js"),
-    "utf8",
-  );
-  // The DM is fired without await and never inside the email's try block, so it
-  // cannot delay or fail an invitation.
-  assert.match(teamService, /void notifyInviteOnDiscord\(\{/);
-  const dmIndex = teamService.indexOf("void notifyInviteOnDiscord({");
-  const emailIndex = teamService.indexOf("await sendTeamInviteEmail({", dmIndex);
-  assert.ok(emailIndex > dmIndex, "the email must still be sent after the DM attempt");
-});

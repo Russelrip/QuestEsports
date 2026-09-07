@@ -402,6 +402,15 @@ const env = {
   SMTP_USER: optional("SMTP_USER"),
   SMTP_PASS: optional("SMTP_PASS"),
   MAIL_FROM: optional("MAIL_FROM"),
+  // The provider's daily allowance, and how much of it courtesy mail may use.
+  // The remainder is reserved for mail somebody is blocked on: a verification
+  // link or a password reset. See lib/mail/mail-budget.js.
+  MAIL_DAILY_LIMIT: normalizePositiveInteger(process.env.MAIL_DAILY_LIMIT, 100),
+  MAIL_COURTESY_CEILING: normalizePositiveInteger(process.env.MAIL_COURTESY_CEILING, 60),
+  MAIL_BUDGET_RESET_OFFSET_MINUTES: Number.parseInt(
+    process.env.MAIL_BUDGET_RESET_OFFSET_MINUTES || "0",
+    10
+  ) || 0,
   MAIL_DELIVERY_REQUIRED: normalizeBoolean(
     process.env.MAIL_DELIVERY_REQUIRED,
     normalizeNodeEnv(process.env.NODE_ENV) === "production",

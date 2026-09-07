@@ -1555,7 +1555,7 @@ const additionalPaths = {
     }),
   },
   "/api/me/invitations": {
-    get: createOperation("Teams", "List pending team invitations addressed to the signed-in user", {
+    get: createOperation("Teams", "List unanswered invitations addressed to the signed-in user", {
       authenticated: true,
     }),
   },
@@ -1574,18 +1574,18 @@ const additionalPaths = {
       parameters: idParameter("teamId"),
     }),
   },
-  "/api/teams/{teamId}/members/{memberId}/resend-invite": {
-    post: createOperation("Teams", "Resend a pending team invitation", {
+  "/api/teams/{teamId}/members/{memberId}/nudge": {
+    post: createOperation("Teams", "Remind a member about an unanswered invitation", {
       authenticated: true,
       parameters: [...idParameter("teamId"), ...idParameter("memberId")],
     }),
   },
-  "/api/team-invite": {
-    get: createOperation("Teams", "Preview a team invitation"),
-  },
-  "/api/team-invite/respond": {
-    post: createOperation("Teams", "Respond to a team invitation", {
+  // No anonymous preview: an invitation is answered by the identity of whoever
+  // signs in to claim it, so there is nothing to show before a session exists.
+  "/api/me/invitations/{invitationId}/respond": {
+    post: createOperation("Teams", "Accept or decline an invitation addressed to you", {
       authenticated: true,
+      parameters: idParameter("invitationId"),
     }),
   },
   "/api/payments/{orderId}/bank-transfer-proof": {

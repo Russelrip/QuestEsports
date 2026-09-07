@@ -258,6 +258,10 @@ enum TeamMemberInviteStatus {
   pending
   accepted
   declined
+  // Nobody answered before the deadline. A terminal state rather than the
+  // absence of a token: responding is authorized by the invitee's identity, so
+  // there is no longer a credential whose disappearance quietly enforces expiry.
+  expired
 }
 
 enum BackgroundJobStatus {

@@ -4,11 +4,13 @@ const {
   createSavedTeam,
   updateSavedTeam,
   deleteSavedTeam,
-  resendSavedTeamInvite,
-  getTeamInvitePreview,
-  respondToTeamInvite,
+  nudgeTeamInvite,
 } = require("./team.service");
-const { listInvitationsForUser } = require("./invitation-inbox.service");
+const {
+  listInvitationsForUser,
+  respondToInvitation,
+  getInvitationReadiness,
+} = require("./invitation.service");
 
 const getProfileTeams = asyncHandler(async (req, res) => {
   const teams = await listProfileTeams({
@@ -30,7 +32,7 @@ const createProfileTeam = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: "Team created successfully. Invitations have been sent to your members.",
+    message: "Team created. Your members can accept from their Quest invitations.",
     team,
   });
 });
@@ -44,7 +46,7 @@ const updateProfileTeam = asyncHandler(async (req, res) => {
   });
   res.status(200).json({
     success: true,
-    message: "Team updated successfully. New member invitations were sent when needed.",
+    message: "Team updated. New members can accept from their Quest invitations.",
     team,
   });
 });
@@ -54,33 +56,51 @@ const deleteProfileTeam = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "Team deleted successfully." });
 });
 
-const resendProfileTeamInvite = asyncHandler(async (req, res) => {
-  const result = await resendSavedTeamInvite({
+// The message names the channels that actually carried it. A captain deciding
+// whether to go and message someone needs to know that nothing reached them,
+// not a reassuring "invitation sent".
+const buildNudgeMessage = (delivery) => {
+  if (!delivery?.hasQuestAccount) {
+    return "This player does not have a Quest account yet. Send them the invitation link so they can sign in and accept.";
+  }
+  if (delivery.inApp && delivery.discord) {
+    return "Reminded in Quest and on Discord.";
+  }
+  if (delivery.discord) {
+    return "Reminded on Discord.";
+  }
+  if (delivery.inApp) {
+    return "Reminded in Quest. They will see it next time they sign in.";
+  }
+  return "The invitation is waiting in their Quest account, but we could not reach them. Send them the link.";
+};
+
+const nudgeProfileTeamInvite = asyncHandler(async (req, res) => {
+  const result = await nudgeTeamInvite({
     teamId: req.params.teamId,
     memberId: req.params.memberId,
     user: req.user,
   });
   res.status(200).json({
     success: true,
-    message: "A new team invitation has been sent.",
+    message: buildNudgeMessage(result.delivery),
     ...result,
   });
 });
 
-const previewTeamInvite = asyncHandler(async (req, res) => {
-  const invite = await getTeamInvitePreview({
-    token: req.query.token,
-  });
-
-  res.status(200).json({
-    success: true,
-    invite,
-  });
+// An invitation must be findable inside Quest, not only at the end of whatever
+// message happened to deliver it.
+const getMyInvitations = asyncHandler(async (req, res) => {
+  const [{ invitations }, readiness] = await Promise.all([
+    listInvitationsForUser({ user: req.user }),
+    getInvitationReadiness({ userId: req.user.id }),
+  ]);
+  res.status(200).json({ success: true, invitations, readiness });
 });
 
-const respondTeamInvite = asyncHandler(async (req, res) => {
-  const invite = await respondToTeamInvite({
-    token: req.body.token,
+const respondToMyInvitation = asyncHandler(async (req, res) => {
+  const result = await respondToInvitation({
+    invitationId: req.params.invitationId,
     decision: req.body.decision,
     user: req.user,
   });
@@ -88,27 +108,19 @@ const respondTeamInvite = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message:
-      invite.inviteStatus === "accepted"
-        ? "You have joined the team successfully."
-        : "You declined the team invite.",
-    invite,
+      result.inviteStatus === "accepted"
+        ? "You have joined the team."
+        : "You declined the invitation.",
+    ...result,
   });
-});
-
-// An invitation must be findable inside Quest, not only at the end of whatever
-// message happened to deliver it.
-const getMyInvitations = asyncHandler(async (req, res) => {
-  const { invitations } = await listInvitationsForUser({ user: req.user });
-  res.status(200).json({ success: true, invitations });
 });
 
 module.exports = {
   getProfileTeams,
   getMyInvitations,
+  respondToMyInvitation,
   createProfileTeam,
   updateProfileTeam,
   deleteProfileTeam,
-  resendProfileTeamInvite,
-  previewTeamInvite,
-  respondTeamInvite,
+  nudgeProfileTeamInvite,
 };
