@@ -811,7 +811,16 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
 
   const feeAmount = Number(tournament.registrationFeeAmount || 0);
   const paymentMethod = feeAmount > 0 ? tournament.paymentMethod || "payhere" : "free";
-  const requiresTeamVerification = tournament.entryType === "team" && feeAmount > 0;
+  // A team roster is confirmed by the people on it, and that is true whether or
+  // not the event charges anything. This condition used to carry two ideas under
+  // one name — "there is a roster to confirm" and "there is a fee to hold back
+  // until it is" — which was harmless while every team event charged. Free team
+  // events then inherited the payment half of the meaning, so their captains
+  // were told an outstanding roster was waiting on nothing.
+  const requiresTeamVerification = tournament.entryType === "team";
+  // The payment half, kept separate. No fee is quoted, reserved or collected
+  // while invitations are outstanding; with no fee there is nothing to hold.
+  const holdsPaymentForRoster = requiresTeamVerification && feeAmount > 0;
   if (paymentMethod === "payhere") assertPayHereConfigured();
   if (paymentMethod === "bank_transfer") assertBankTransferConfigured(tournament);
   if (feeAmount > 0 && !["payhere", "bank_transfer"].includes(paymentMethod)) {
@@ -857,7 +866,25 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         waitlisted: true,
       };
     }
-    if (existing.paymentStatus === "paid" || feeAmount === 0) {
+    const existingMembers = existing.members || [];
+    const effectiveVerificationStatus = getRosterVerificationStatus(
+      existingMembers,
+      existing.verificationStatus
+    );
+    const pendingInviteCount = existingMembers.filter(
+      (member) => member.role !== "CAPTAIN" && member.inviteStatus === "pending"
+    ).length;
+    // A free event stores its row as paid the moment it is created, because
+    // capacity counts paid rows. That made "you are already registered" the only
+    // answer a free captain with outstanding invitations could ever get back —
+    // no roster state, and no way to reach the resend controls from here. A
+    // roster that has not finished confirming itself is not a finished
+    // registration, so it falls through to the team block below instead.
+    const awaitingFreeRoster =
+      requiresTeamVerification &&
+      feeAmount === 0 &&
+      effectiveVerificationStatus !== "verified";
+    if ((existing.paymentStatus === "paid" || feeAmount === 0) && !awaitingFreeRoster) {
       throw new HttpError(409, "You are already registered for this tournament.");
     }
     const latestPayment = existing.payments[0];
@@ -867,14 +894,6 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         "This payment window expired and the slot was released. Contact an administrator to request a new slot."
       );
     }
-    const existingMembers = existing.members || [];
-    const effectiveVerificationStatus = getRosterVerificationStatus(
-      existingMembers,
-      existing.verificationStatus
-    );
-    const pendingInviteCount = existingMembers.filter(
-      (member) => member.role !== "CAPTAIN" && member.inviteStatus === "pending"
-    ).length;
 
     if (tournament.entryType === "team") {
       await ensureTeamRegistrationSaved(existing.id);
@@ -1231,10 +1250,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
 
   const persistedLogo = tournament.entryType === "team" ? await persistTeamLogoUpload(file) : null;
   const registrationId = crypto.randomUUID();
-  const reservedUntil = feeAmount > 0 && !requiresTeamVerification
+  const reservedUntil = feeAmount > 0 && !holdsPaymentForRoster
     ? new Date(Date.now() + tournament.reservationMinutes * 60 * 1000)
     : null;
-  const providerOrderId = feeAmount > 0 && !requiresTeamVerification
+  const providerOrderId = feeAmount > 0 && !holdsPaymentForRoster
     ? buildPaymentOrderId(paymentMethod)
     : null;
   let result;
@@ -1269,14 +1288,14 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         ? await getNextWaitlistPosition({ tx, tournamentId: currentTournament.id })
         : null;
 
-      const assignedSlotNumber = !isWaitlisted && paymentMethod === "bank_transfer" && !requiresTeamVerification
+      const assignedSlotNumber = !isWaitlisted && paymentMethod === "bank_transfer" && !holdsPaymentForRoster
         ? await allocateLowestAvailableSlot({
             tx,
             tournamentId: currentTournament.id,
             maxTeams: currentTournament.maxTeams,
           })
         : null;
-      const quotedFeeAmount = !isWaitlisted && paymentMethod === "bank_transfer" && !requiresTeamVerification
+      const quotedFeeAmount = !isWaitlisted && paymentMethod === "bank_transfer" && !holdsPaymentForRoster
         ? getBankTransferAmountForSlot(currentTournament, assignedSlotNumber)
         : feeAmount;
 
@@ -1314,7 +1333,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           teamLogoName: persistedLogo?.filename || null,
           status: isWaitlisted ? "waitlisted" : "pending",
           paymentStatus: isWaitlisted ? "unpaid" : feeAmount > 0
-            ? requiresTeamVerification ? "unpaid" : "pending"
+            ? holdsPaymentForRoster ? "unpaid" : "pending"
             : "paid",
           verificationStatus: persistedMembers.every((member) => member.role === "CAPTAIN")
             ? "verified"
@@ -1323,8 +1342,8 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           falsityWarningAccepted,
           additionalData: configuredEntryData,
           assignedSlotNumber,
-          quotedFeeAmount: feeAmount > 0 && !requiresTeamVerification ? quotedFeeAmount : null,
-          quotedFeeCurrency: feeAmount > 0 && !requiresTeamVerification
+          quotedFeeAmount: feeAmount > 0 && !holdsPaymentForRoster ? quotedFeeAmount : null,
+          quotedFeeCurrency: feeAmount > 0 && !holdsPaymentForRoster
             ? currentTournament.registrationFeeCurrency
             : null,
           reservedUntil: isWaitlisted ? null : reservedUntil,
@@ -1359,7 +1378,7 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
         registrationId,
       });
 
-      const payment = !isWaitlisted && feeAmount > 0 && !requiresTeamVerification
+      const payment = !isWaitlisted && feeAmount > 0 && !holdsPaymentForRoster
         ? await tx.paymentTransaction.create({
             data: {
               id: crypto.randomUUID(),
@@ -1418,10 +1437,13 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
           tournament: result.tournament,
         })
       : null,
+    // Whether anyone still has to accept is a fact about the roster, so a free
+    // event reports it too. Whether that unlocks a payment step is a separate
+    // question, and a free event has no such step to unlock.
     awaitingTeamVerification: !result.waitlisted && requiresTeamVerification && persistedMembers.some(
       (member) => member.role !== "CAPTAIN"
     ),
-    readyForPayment: !result.waitlisted && requiresTeamVerification && persistedMembers.every(
+    readyForPayment: !result.waitlisted && holdsPaymentForRoster && persistedMembers.every(
       (member) => member.role === "CAPTAIN"
     ),
     pendingInviteCount: requiresTeamVerification

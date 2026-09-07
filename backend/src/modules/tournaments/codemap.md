@@ -71,6 +71,23 @@ as the admin path — identity snapshot plus an audit row, written with no actor
 and source `system` — but never forces an outstanding invitation to accepted and
 never touches a waitlisted or rejected row, because nobody decided those.
 
+## Roster confirmation
+
+A team entry is confirmed by the people on it, independently of whether the
+event charges anything. `createConfiguredRegistration` keeps the two apart:
+`requiresTeamVerification` is true for every team entry and drives what the
+captain is told — `awaitingTeamVerification` and `pendingInviteCount` —
+while `holdsPaymentForRoster` adds the fee and drives what is withheld until the
+roster confirms: the slot number, the quote, the reservation window and the
+payment row. They were one condition spelled `entryType === "team" && fee > 0`,
+which read correctly only while every team event charged.
+
+A free entry's row is stored as `paid` on creation because capacity counts paid
+rows, so "already registered" cannot be decided on payment status alone. A free
+team registration whose roster has not finished accepting is answered with its
+roster state instead, which also gives the interrupted invitation dispatch
+another chance through `ensureTeamRegistrationSaved`.
+
 ## Saved-team registration flow
 
 Team registration may hydrate player/substitute drafts and a saved `COACH`
