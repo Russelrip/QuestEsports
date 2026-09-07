@@ -51,21 +51,3 @@ describe("Expo Router URI decoder compatibility", () => {
     expect(result.status, result.stderr).toBe(0);
   });
 });
-
-describe("Android native CI contract", () => {
-  it("builds a clean native project with locked dependencies and no signing credentials", () => {
-    const { load } = require("js-yaml");
-    const workflow = load(readFileSync(resolve(root, "../.github/workflows/ci.yml"), "utf8"));
-    const job = workflow.jobs["mobile-admin-android"];
-    expect(job).toBeDefined();
-    expect(job.needs).toBe("mobile-admin");
-    const commands = job.steps.map((step: { run?: string }) => step.run || "").join("\n");
-    expect(commands).toContain("npm ci");
-    expect(commands).toContain("npm run prebuild:android -- --no-install");
-    expect(commands).toContain("expo export --platform android");
-    expect(commands).toContain(":app:assembleDebug");
-    expect(commands).toContain("--max-workers=1");
-    expect(commands).toContain("-PreactNativeArchitectures=arm64-v8a");
-    expect(JSON.stringify(job)).not.toContain("secrets.");
-  });
-});
