@@ -8,9 +8,10 @@ registration state.
 - `EventCard.tsx` is the grid tile linking to `/tournaments/events/[slug]`,
   shared by the `/tournaments` listing and the home page's `FeaturedEvents`
   section. It renders through the shared `TournamentGridCard` chrome, so an
-  event and a tournament read as the same kind of tile; an `Event · N games`
-  badge is the only thing that separates them. It renders for any published
-  event with at least one published child. On `/tournaments` an event card
+  event and a tournament are the same tile with no marker separating them;
+  only the title and its `/tournaments/events/` destination say which is
+  which. It renders for any published event with at least one published
+  child. On `/tournaments` an event card
   replaces its children rather than sitting beside them — see
   `frontend/app/tournaments/codemap.md`.
 - `EventHero.tsx` displays event identity, public media, status, and timing.

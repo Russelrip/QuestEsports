@@ -24,7 +24,6 @@ export default function TournamentGridCard({
   meta,
   statusLabel,
   statusTone,
-  badge,
   preload = false,
   eager = false,
 }: {
@@ -34,7 +33,6 @@ export default function TournamentGridCard({
   meta: TournamentGridCardMeta[];
   statusLabel: string;
   statusTone: TournamentGridCardStatusTone;
-  badge?: string;
   preload?: boolean;
   eager?: boolean;
 }) {
@@ -42,7 +40,6 @@ export default function TournamentGridCard({
     <div className="relative aspect-[4/3] overflow-hidden bg-[#09080e]">
       <TournamentBannerImage bannerUrl={bannerUrl} title={title} rounded={false} showFallbackTitle={false} preload={preload} loading={eager ? "eager" : "lazy"} className="h-full w-full object-cover transition-opacity duration-300 group-hover:opacity-85 motion-reduce:transition-none" />
       <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-black/25 opacity-0 transition-opacity duration-300 group-hover:opacity-100 motion-reduce:transition-none" />
-      {badge ? <span className="absolute left-4 top-4 border border-purple-300/40 bg-black/70 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-purple-100 backdrop-blur">{badge}</span> : null}
     </div>
     <div className="bg-[#0d0c13] px-5 py-5"><h3 className="line-clamp-2 min-h-16 text-xl font-bold uppercase leading-8 text-white transition-colors group-hover:text-[var(--interactive-text)]">{title}</h3></div>
     <dl className="grid flex-1 grid-cols-2 bg-[#0d0c13] text-xs [&>div:nth-child(-n+2)]:bg-white/[0.025]">{meta.map((item) => <Meta key={item.label} label={item.label} value={item.value} />)}</dl>

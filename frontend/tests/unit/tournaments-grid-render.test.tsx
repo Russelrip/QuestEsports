@@ -59,12 +59,6 @@ describe("tournaments grid", () => {
     expect(html).toContain("Quest Ascension");
   });
 
-  it("marks an event card so it is distinguishable from a tournament in the same grid", () => {
-    const html = render({ tournaments: [], events: [event] });
-
-    expect(html).toContain("Event · 1 game");
-  });
-
   it("does not offer a covered child its own card alongside its event", () => {
     const html = render({ tournaments: [child, tournament()], events: [event] });
 

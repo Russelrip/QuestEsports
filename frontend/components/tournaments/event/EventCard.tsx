@@ -5,12 +5,10 @@ import { formatTournamentDate } from "@/lib/utils";
 
 export default function EventCard({ event, preload = false, eager = false }: { event: EventSeries; preload?: boolean; eager?: boolean }) {
   const presentation = getEventCardPresentation(event);
-  const games = event.tournaments.length;
   return <TournamentGridCard
     href={`/tournaments/events/${event.slug}`}
     bannerUrl={event.heroUrl || event.bannerUrl || presentation.child?.bannerUrl || null}
     title={event.title}
-    badge={`Event · ${games} ${games === 1 ? "game" : "games"}`}
     meta={[
       { label: "Organizer", value: event.organizer || "Quest E-sports" },
       { label: "Location", value: event.venue || event.location || "To be announced" },
