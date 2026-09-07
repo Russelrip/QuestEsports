@@ -616,7 +616,10 @@ export const initialTournamentFormValues: TournamentFormValues = {
   allowCoach: false,
   coachRequired: false,
   discordRequired: false,
-  autoApproveRegistrations: false,
+  // A new tournament starts as Open Entry, and open entry means anyone who
+  // submits is in. Starting the toggle off would show a form that contradicts
+  // the mode it is showing.
+  autoApproveRegistrations: true,
   waitlistEnabled: false,
   registrationFields: "[]",
   paymentMethod: "free",
