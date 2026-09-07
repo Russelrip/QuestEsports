@@ -19,3 +19,12 @@ Fix round 1:
 - Grouped the Discord checkbox and its existing helper text in one responsive-grid wrapper, added `aria-describedby="discordRequired-help"`, and corrected the JSX indentation without changing the copy or behavior.
 - Focused test, typecheck, and changed-file lint remain unavailable because the frontend dependency executables (`vitest`, `tsc`, and `eslint`) are not recognized.
 - `git diff --check` passed.
+
+Fix round 2:
+
+- Made `Tournament.discordRequired` optional to preserve compatibility with public API projections; `TournamentFormValues.discordRequired` remains required and defaults to `false`.
+- Kept the affected admin and registration fixtures complete and corrected the remaining one-space JSX indentation.
+- `npx vitest run tests/unit/admin-tournament-form.test.ts --maxWorkers=1` passed (5 tests).
+- `npm run typecheck` passed.
+- `npm run lint` passed.
+- `git diff --check` passed.

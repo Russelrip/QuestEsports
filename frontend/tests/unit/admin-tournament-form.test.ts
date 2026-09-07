@@ -29,6 +29,7 @@ describe("tournament admin coach settings", () => {
 
   it("maps the tournament Discord identity requirement into the editor", () => {
     const values = mapTournamentToFormValues({
+      id: "tournament-discord-cup",
       title: "Discord Cup",
       slug: "discord-cup",
       game: "valorant",
@@ -77,6 +78,18 @@ describe("tournament admin coach settings", () => {
       contactLink: null,
       isFeatured: false,
       scheduleData: null,
+      bannerUrl: null,
+      heroUrl: null,
+      registrationCount: 0,
+      capacityUsed: 0,
+      sponsors: [],
+      bracketSummary: null,
+      bracketData: null,
+      showcase: { posterUrl: null, firstPlaceUrl: null, secondPlaceUrl: null, thirdPlaceUrl: null },
+      eventMedia: [],
+      eventAlbums: [],
+      isCompleted: false,
+      registrationState: "registration_closed",
     } as Tournament);
 
     expect(values.discordRequired).toBe(true);

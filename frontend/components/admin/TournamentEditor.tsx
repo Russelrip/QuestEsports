@@ -343,11 +343,11 @@ export default function TournamentEditor({ tournamentId, initialSeriesId, initia
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.coachRequired} disabled={!formValues.allowCoach} onChange={(event) => updateField("coachRequired", event.target.checked)} /> Coach required</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formValues.waitlistEnabled} onChange={(event) => updateField("waitlistEnabled", event.target.checked)} /> Enable waitlist when full</label>
               </div>
-               <div className="grid gap-1 self-end pb-1 text-sm text-slate-300">
-                 <label htmlFor="discordRequired" className="flex items-center gap-2"><input id="discordRequired" type="checkbox" aria-describedby="discordRequired-help" checked={formValues.discordRequired} onChange={(event) => updateField("discordRequired", event.target.checked)} /> Require connected Discord identities</label>
-                 <p id="discordRequired-help" className="pl-6 text-xs text-slate-500">Every roster member, including a coach, must connect Discord before registration.</p>
-               </div>
-               <FormField label="Payment Method" htmlFor="paymentMethod" required>
+              <div className="grid gap-1 self-end pb-1 text-sm text-slate-300">
+                <label htmlFor="discordRequired" className="flex items-center gap-2"><input id="discordRequired" type="checkbox" aria-describedby="discordRequired-help" checked={formValues.discordRequired} onChange={(event) => updateField("discordRequired", event.target.checked)} /> Require connected Discord identities</label>
+                <p id="discordRequired-help" className="pl-6 text-xs text-slate-500">Every roster member, including a coach, must connect Discord before registration.</p>
+              </div>
+              <FormField label="Payment Method" htmlFor="paymentMethod" required>
                 <Select
                   id="paymentMethod"
                   value={formValues.paymentMethod}
