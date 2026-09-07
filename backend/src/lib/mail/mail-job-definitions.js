@@ -2,20 +2,31 @@ const {
   buildVerificationEmail,
   buildResetPasswordEmail,
   buildEmailChangeEmail,
-  buildTeamInviteEmail,
   buildRegistrationReceivedEmail,
   buildSecurityAlertEmail,
   buildTicketOrderEmail,
 } = require("./templates");
 const { buildActionUrl, sendMail } = require("./sendMail");
 const { decryptSecret } = require("../secret-box");
+const { logger } = require("../logger");
 
 const EMAIL_JOB_NAME = "email.send";
+// Mail nobody is blocked on. Held below a ceiling when the day's send allowance
+// is running down, so it cannot crowd out a verification or a password reset —
+// the two kinds of mail where not arriving means somebody cannot use their
+// account at all. Held, never dropped: see mail-budget.js.
+const COURTESY_TEMPLATE_TYPES = {
+  registrationReceived: "registrationReceived",
+};
+// Types no longer enqueued, kept only so jobs already in the queue at deploy
+// time drain instead of failing their way through every retry.
+const RETIRED_TEMPLATE_TYPES = {
+  teamInvite: "teamInvite",
+};
 const EMAIL_TEMPLATE_TYPES = {
   verification: "verification",
   resetPassword: "resetPassword",
   emailChange: "emailChange",
-  teamInvite: "teamInvite",
   registrationReceived: "registrationReceived",
   securityAlert: "securityAlert",
   ticketOrder: "ticketOrder",
@@ -76,22 +87,6 @@ const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
             ),
           }),
       });
-    case EMAIL_TEMPLATE_TYPES.teamInvite:
-      return sendMail({
-        deliveryId: jobId,
-        email: payload.email,
-        subject: "Quest E-sports team invitation",
-        skippedLogMessage:
-          "Team invitation email skipped because mail delivery is not configured.",
-        templateBuilder: () =>
-          buildTeamInviteEmail({
-            recipientName: payload.recipientName,
-            teamName: payload.teamName,
-            captainName: payload.captainName,
-            tournamentTitle: payload.tournamentTitle,
-            inviteUrl: buildActionUrl("/team-invite", getRawToken(payload)),
-          }),
-      });
     case EMAIL_TEMPLATE_TYPES.registrationReceived:
       return sendMail({
         deliveryId: jobId,
@@ -139,6 +134,15 @@ const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
             orderUrl: buildActionUrl("/tickets/order", getRawToken(payload)),
           }),
       });
+    // A retired template, drained rather than retried. `teamInvite` was one:
+    // its whole payload was a token pointing at a page that no longer exists,
+    // so a job queued just before the deploy has nothing left to deliver and
+    // failing it five times would only be noise. An invitation is not lost by
+    // this — it is a row the invitee can find by signing in, which is the
+    // reason the email stopped being sent.
+    case RETIRED_TEMPLATE_TYPES.teamInvite:
+      logger.info("Queued mail skipped for a retired template.", { jobId, type });
+      return { skipped: true, retired: true };
     default:
       throw new Error(`Unsupported queued mail type: ${type || "unknown"}`);
   }
@@ -147,5 +151,7 @@ const processQueuedMailJob = async (payload = {}, { jobId } = {}) => {
 module.exports = {
   EMAIL_JOB_NAME,
   EMAIL_TEMPLATE_TYPES,
+  COURTESY_TEMPLATE_TYPES,
+  RETIRED_TEMPLATE_TYPES,
   processQueuedMailJob,
 };

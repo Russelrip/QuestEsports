@@ -94,27 +94,6 @@ const buildEmailChangeEmail = ({ firstName, nextEmail, confirmUrl }) =>
       "This confirmation link expires in 24 hours. If you did not request this change, you can ignore this email and keep your current address.",
   });
 
-const buildTeamInviteEmail = ({
-  recipientName,
-  teamName,
-  captainName,
-  tournamentTitle,
-  inviteUrl,
-}) =>
-  renderEmailLayout({
-    title: "Confirm your Quest E-sports team invite",
-    intro: buildGreeting(
-      recipientName,
-      `you have been invited by ${captainName} to join ${teamName}${
-        tournamentTitle ? ` for ${tournamentTitle}` : ""
-      }.`,
-    ),
-    actionLabel: "Review Invite",
-    actionUrl: inviteUrl,
-    outro:
-      "Open the invite to accept or decline your place on the roster. If you were not expecting this, you can safely ignore the email.",
-  });
-
 const buildRegistrationReceivedEmail = ({
   recipientName,
   teamName,
@@ -171,7 +150,6 @@ module.exports = {
   buildVerificationEmail,
   buildResetPasswordEmail,
   buildEmailChangeEmail,
-  buildTeamInviteEmail,
   buildRegistrationReceivedEmail,
   buildSecurityAlertEmail,
   buildTicketOrderEmail,

@@ -16,6 +16,7 @@ import SessionList from "@/components/auth/SessionList";
 import AccountLinkingPanel from "@/components/auth/AccountLinkingPanel";
 import GameAccountsPanel from "@/components/auth/GameAccountsPanel";
 import TeamManagementPanel, { TeamSummaryGrid } from "@/components/auth/TeamManagementPanel";
+import { InvitationsPanel } from "@/components/auth/InvitationsPanel";
 import { Button, buttonClassName } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
@@ -95,7 +96,7 @@ function RegistrationCards({ entries, empty }: { entries: DashboardRegistration[
 export default function ProfileView() {
   const router = useRouter();
   const { user, refreshUser, logout, isLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<"dashboard" | "account" | "security" | "teams">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "account" | "security" | "teams" | "invitations">("dashboard");
   const [dashboard, setDashboard] = useState<AccountDashboard | null>(null);
   const [dashboardError, setDashboardError] = useState("");
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -131,6 +132,10 @@ export default function ProfileView() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("tab") === "account") {
       setActiveTab("account");
+    } else if (params.get("tab") === "invitations") {
+      // Every invitation notice points here, and so does the redirect from the
+      // old emailed invite links.
+      setActiveTab("invitations");
     } else if (params.get("tab") === "teams") {
       setActiveTab("teams");
       setSelectedTeamId(params.get("team"));
@@ -367,6 +372,15 @@ export default function ProfileView() {
               <button
                 type="button"
                 role="tab"
+                aria-selected={activeTab === "invitations"}
+                className={`min-w-0 border-b-2 px-2 py-3 text-sm font-medium transition sm:px-4 ${activeTab === "invitations" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
+                onClick={() => setActiveTab("invitations")}
+              >
+                Invitations
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={activeTab === "security"}
                 className={`min-w-0 border-b-2 px-2 py-3 text-sm font-medium transition sm:px-4 ${activeTab === "security" ? "border-purple-300 text-white" : "border-transparent text-slate-400 hover:text-white"}`}
                 onClick={() => setActiveTab("security")}
@@ -441,6 +455,10 @@ export default function ProfileView() {
                     )}
                   </section>
                 </> : null}
+              </div>
+            ) : activeTab === "invitations" ? (
+              <div className="grid min-w-0 gap-8">
+                <InvitationsPanel />
               </div>
             ) : activeTab === "account" ? (
               <div className="grid min-w-0 gap-8">

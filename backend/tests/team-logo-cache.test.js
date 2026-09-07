@@ -132,7 +132,9 @@ test("team mutation routes all carry foundation invalidation middleware", () => 
       "POST /teams",
       "PATCH /teams/:teamId",
       "DELETE /teams/:teamId",
-      "POST /team-invite/respond",
+      // Answering an invitation changes a roster, and a roster is projected
+      // into the foundation and tournament caches like any other team edit.
+      "POST /me/invitations/:invitationId/respond",
     ]) {
       assert.ok(routes.get(route)?.includes(invalidationMiddleware), `${route} should invalidate foundation`);
     }

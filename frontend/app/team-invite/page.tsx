@@ -1,24 +1,12 @@
-import { Suspense } from "react";
-import PageLayout from "@/components/PageLayout";
-import TeamInviteContent from "@/components/auth/TeamInviteContent";
-import { buildNoIndexMetadata } from "@/lib/site";
+import { redirect } from "next/navigation";
 
-export const metadata = buildNoIndexMetadata(
-  "Team Invite",
-  "Review and respond to your Quest E-sports team invitation.",
-  "/team-invite"
-);
-
+// Kept only to catch links that are already out there.
+//
+// An invitation used to be answered by presenting the token in this URL. It is
+// answered by the invitee's identity now, so there is nothing for a token to
+// unlock and nothing to render here — but people still have these links in old
+// emails and forwarded chats, and a dead page is a worse answer than the page
+// their invitation is actually on. Anyone signing in from here finds it waiting.
 export default function TeamInvitePage() {
-  return (
-    <PageLayout
-      title="Team Invite"
-      description="Accept or decline your Quest E-sports team invitation."
-      showEyebrow={false}
-    >
-      <Suspense fallback={null}>
-        <TeamInviteContent />
-      </Suspense>
-    </PageLayout>
-  );
+  redirect("/profile?tab=invitations");
 }

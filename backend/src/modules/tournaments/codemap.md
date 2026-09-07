@@ -73,6 +73,14 @@ never touches a waitlisted or rejected row, because nobody decided those.
 
 ## Roster confirmation
 
+The Discord requirement is no longer checked here. `discordRequired` briefly
+refused a submission whose roster had an unconnected member, which refused the
+captain for a gap only the invitee could close. It is enforced when an
+invitation is accepted instead, universally — see `modules/teams/codemap.md`.
+The captain's own link is still required by `attachConnectedDiscordIdentities`,
+for every tournament, because that one they can fix.
+
+
 A team entry is confirmed by the people on it, independently of whether the
 event charges anything. `createConfiguredRegistration` keeps the two apart:
 `requiresTeamVerification` is true for every team entry and drives what the

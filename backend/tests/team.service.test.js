@@ -7,28 +7,25 @@ const { loadModuleWithMocks } = require("./helpers/load-module-with-mocks");
 const servicePath = path.join(__dirname, "../src/modules/teams/team.service.js");
 const prismaModulePath = path.join(__dirname, "../src/lib/prisma.js");
 const generatedPrismaModulePath = path.join(__dirname, "../src/generated/prisma/index.js");
-const mailModulePath = path.join(__dirname, "../src/lib/mail/sendTeamInviteEmail.js");
+const noticeModulePath = path.join(__dirname, "../src/modules/teams/invite-notice.service.js");
+
+// Invitations are announced now, not delivered: the row is the invitation and
+// these channels only point at it. The mock records what each dispatch asked
+// for and reports a reachable invitee, which is the case every test here is
+// about — the unreachable one is covered in invite-notice.test.js.
+const noticeMock = (collect) => ({
+  notifyInvite: async (invite) => {
+    if (collect) collect.push(invite);
+    return { inApp: true, discord: false, hasQuestAccount: true, invitationUrl: "https://quest.test/profile?tab=invitations" };
+  },
+  notifyInvites: async (invites = []) => {
+    if (collect) invites.forEach((invite) => collect.push(invite));
+    return invites.map(() => ({ inApp: true, discord: false, hasQuestAccount: true }));
+  },
+});
 const uploadModulePath = path.join(__dirname, "../src/middleware/upload.js");
 const uploadCleanupModulePath = path.join(__dirname, "../src/lib/upload-cleanup.js");
 
-const buildPendingInvite = () => ({
-  id: "registration-member-1",
-  role: "PLAYER",
-  memberOrder: 2,
-  name: "Player Two",
-  email: "player2@example.com",
-  emailNormalized: "player2@example.com",
-  inviteStatus: "pending",
-  registration: {
-    id: "registration-1",
-    teamName: "Quest Five",
-    captainName: "Quest Captain",
-    savedTeamId: "saved-team-1",
-    tournament: {
-      title: "Quest Cup",
-    },
-  },
-});
 
 test("createSavedTeam stores the captain and sends standalone member invites", async () => {
   const createdMembers = [];
@@ -76,9 +73,7 @@ test("createSavedTeam stores the captain and sends standalone member invites", a
       persistTeamLogoUpload: async () => null,
       teamLogoDirectory: "uploads/team-logos",
     },
-    [mailModulePath]: {
-      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
-    },
+    [noticeModulePath]: noticeMock(sentInvites),
   });
 
   try {
@@ -118,10 +113,22 @@ test("createSavedTeam stores the captain and sends standalone member invites", a
     assert.equal(createdCoach.discord, "coach-discord");
     assert.equal(createdCoach.riotId, "CoachName#123");
     assert.equal(createdCoach.inviteStatus, "pending");
-    assert.ok(createdCoach.inviteTokenHash);
+    // No token is minted any more: the row is the invitation, and it is
+    // answered by the identity of whoever signs in to claim it.
+    assert.equal(createdCoach.inviteTokenHash, null);
     assert.equal(createdSubstitute.memberOrder, 1);
     assert.equal(sentInvites.length, 3);
     assert.equal(sentInvites[0].tournamentTitle, null);
+    // Each notice points at the row it belongs to, so the invitee lands on the
+    // invitation itself rather than on a page asking them which one they mean.
+    assert.deepEqual(
+      sentInvites.map((invite) => invite.invitationId).sort(),
+      createdMembers
+        .filter((member) => member.role !== "CAPTAIN")
+        .map((member) => member.id)
+        .sort(),
+    );
+    assert.ok(sentInvites.every((invite) => invite.rawToken === undefined));
   } finally {
     restore();
   }
@@ -230,9 +237,7 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
       persistTeamLogoUpload: async () => null,
       teamLogoDirectory: "uploads/team-logos",
     },
-    [mailModulePath]: {
-      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
-    },
+    [noticeModulePath]: noticeMock(sentInvites),
   });
 
   try {
@@ -270,12 +275,16 @@ test("updateSavedTeam lets the captain replace roster details and preserves acce
     assert.equal(createdMembers[0].riotId, "CoachName#123");
     assert.equal(createdMembers[0].inviteStatus, "accepted");
     assert.equal(createdMembers[1].inviteStatus, "pending");
-    assert.equal(createdMembers[1].inviteTokenHash, "existing-pending-token");
+    // An outstanding invitation survives the edit, but the stale token on it
+    // does not: it authorizes nothing now that invitations are answered by
+    // identity, so it is not worth keeping a copy of.
+    assert.equal(createdMembers[1].inviteTokenHash, null);
     assert.equal(createdMembers[2].role, "PLAYER");
     assert.equal(createdMembers[2].inviteStatus, "pending");
-    assert.ok(createdMembers[2].inviteTokenHash);
+    assert.equal(createdMembers[2].inviteTokenHash, null);
     assert.equal(sentInvites.length, 1);
-    assert.equal(sentInvites[0].email, "coach@example.com");
+    assert.equal(sentInvites[0].emailNormalized, "coach@example.com");
+    assert.equal(sentInvites[0].invitationId, createdMembers[2].id);
     assert.equal(transactionAttempts, 2);
     assert.equal(registrationMemberUpdates.length, 0);
   } finally {
@@ -357,7 +366,7 @@ test("updateSavedTeam propagates a replacement logo to paid and unpaid registrat
         scheduledLogo = filename;
       },
     },
-    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -454,7 +463,7 @@ test("updateSavedTeam removes a logo without resurrecting a stale snapshot", asy
         scheduledLogo = filename;
       },
     },
-    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -542,7 +551,7 @@ test("updateSavedTeam omits logoName and registration propagation for metadata-o
     [uploadCleanupModulePath]: {
       scheduleTeamLogoCleanup: async ({ filename }) => scheduledLogos.push(filename),
     },
-    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -607,7 +616,7 @@ test("updateSavedTeam removes a newly persisted upload when the transaction fail
       removeUploadsQuietly: async (uploads) => removedUploads.push(...uploads),
       scheduleTeamLogoCleanup: async ({ filename }) => scheduledLogos.push(filename),
     },
-    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -674,7 +683,7 @@ test("updateSavedTeam preserves its P2002 conflict mapping", async () => {
       },
     },
     [uploadModulePath]: { persistTeamLogoUpload: async () => null },
-    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -710,7 +719,7 @@ test("saved-team parsers reject duplicate coach members", async () => {
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
     [uploadModulePath]: {},
-    [mailModulePath]: {},
+    [noticeModulePath]: {},
   });
   const duplicateCoaches = JSON.stringify([
     { role: "COACH", name: "Coach One", email: "coach-one@example.com" },
@@ -789,7 +798,7 @@ test("registration coach sync persists a pending invite and dispatches the norma
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
     [uploadModulePath]: {},
-    [mailModulePath]: {},
+    [noticeModulePath]: {},
   });
 
   try {
@@ -826,20 +835,26 @@ test("registration coach sync persists a pending invite and dispatches the norma
     const coach = savedMembers.find((member) => member.role === "COACH");
     assert.equal(coach.phone, null);
     assert.equal(coach.inviteStatus, "pending");
-    assert.ok(coach.inviteTokenHash);
+    assert.equal(coach.inviteTokenHash, null);
+    // The deadline outlives the token. An invitation still runs out; what
+    // changed is that running out is now a state rather than the quiet
+    // disappearance of the only thing that could answer it.
     assert.ok(coach.inviteSentAt instanceof Date);
     assert.ok(coach.inviteExpiresAt instanceof Date);
     assert.equal(registrationUpdates[1].inviteStatus, "pending");
-    assert.ok(registrationUpdates[1].inviteTokenHash);
+    assert.equal(registrationUpdates[1].inviteTokenHash, null);
     assert.equal(invites.length, 1);
-    assert.equal(invites[0].email, "coach@example.com");
+    assert.equal(invites[0].emailNormalized, "coach@example.com");
+    // A coach is on the roster to be reachable during an event, so they are
+    // invited and must accept exactly like a player.
+    assert.equal(invites[0].invitationId, coach.id);
     assert.equal(teamRegistrationUpdates[0].savedTeamId, "saved-team-1");
   } finally {
     restore();
   }
 });
 
-test("resendSavedTeamInvite renews pending or declined invites and enforces its cooldown", async () => {
+test("nudgeTeamInvite reopens an unanswered invitation and enforces its cooldown", async () => {
   const now = new Date("2026-07-17T10:00:00.000Z");
   const sentInvites = [];
   const member = {
@@ -884,21 +899,26 @@ test("resendSavedTeamInvite renews pending or declined invites and enforces its 
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
     [uploadModulePath]: {},
-    [mailModulePath]: {
-      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
-    },
+    [noticeModulePath]: noticeMock(sentInvites),
   });
 
   try {
-    const result = await teamService.resendSavedTeamInvite({
+    const result = await teamService.nudgeTeamInvite({
       teamId: "saved-team-1",
       memberId: member.id,
       user: { id: "user-1" },
       now,
     });
     assert.equal(sentInvites.length, 1);
-    assert.equal(sentInvites[0].email, member.email);
-    assert.notEqual(updatedMember.inviteTokenHash, "old-token");
+    assert.equal(sentInvites[0].emailNormalized, member.emailNormalized);
+    assert.equal(sentInvites[0].invitationId, member.id);
+    // Nothing is minted to replace it, and the stale hash goes: a nudge points
+    // at an invitation that already exists rather than issuing a new one.
+    assert.equal(updatedMember.inviteTokenHash, null);
+    // What the nudge actually reached, so the captain can be told the truth
+    // rather than "invitation sent".
+    assert.equal(result.delivery.hasQuestAccount, true);
+    assert.equal(result.delivery.inApp, true);
     assert.equal(result.member.inviteSentAt.getTime(), now.getTime());
     assert.equal(
       result.resendAvailableAt.getTime(),
@@ -907,7 +927,7 @@ test("resendSavedTeamInvite renews pending or declined invites and enforces its 
 
     member.inviteStatus = "declined";
     member.inviteSentAt = new Date(now.getTime() - 2 * 60 * 1000);
-    const renewedDecline = await teamService.resendSavedTeamInvite({
+    const renewedDecline = await teamService.nudgeTeamInvite({
       teamId: "saved-team-1",
       memberId: member.id,
       user: { id: "user-1" },
@@ -915,10 +935,36 @@ test("resendSavedTeamInvite renews pending or declined invites and enforces its 
     });
     assert.equal(renewedDecline.member.inviteStatus, "pending");
 
+    // An invitation that ran out is reopened the same way a declined one is.
+    // Both are unanswered spots, and neither is the captain's fault.
+    member.inviteStatus = "expired";
+    member.inviteSentAt = new Date(now.getTime() - 2 * 60 * 1000);
+    const renewedExpiry = await teamService.nudgeTeamInvite({
+      teamId: "saved-team-1",
+      memberId: member.id,
+      user: { id: "user-1" },
+      now,
+    });
+    assert.equal(renewedExpiry.member.inviteStatus, "pending");
+
+    // Accepted is not reopenable: that spot is taken, and a captain must not be
+    // able to unseat someone who already said yes by clicking a reminder.
+    member.inviteStatus = "accepted";
+    member.inviteSentAt = new Date(now.getTime() - 2 * 60 * 1000);
+    await assert.rejects(
+      teamService.nudgeTeamInvite({
+        teamId: "saved-team-1",
+        memberId: member.id,
+        user: { id: "user-1" },
+        now,
+      }),
+      (error) => error.statusCode === 409,
+    );
+
     member.inviteStatus = "pending";
     member.inviteSentAt = new Date(now.getTime() - 30 * 1000);
     await assert.rejects(
-      teamService.resendSavedTeamInvite({
+      teamService.nudgeTeamInvite({
         teamId: "saved-team-1",
         memberId: member.id,
         user: { id: "user-1" },
@@ -942,7 +988,7 @@ test("deleteSavedTeam refuses members who are not the captain", async () => {
         },
       },
     },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -971,7 +1017,7 @@ test("deleteSavedTeam refuses to delete a registered team", async () => {
         },
       },
     },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -1011,7 +1057,7 @@ test("deleteSavedTeam preserves a logo referenced by an unrelated tournament reg
       removeUploadFiles: async (uploads) => removedUploads.push(...uploads),
       teamLogoDirectory: "uploads/team-logos",
     },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -1020,151 +1066,6 @@ test("deleteSavedTeam preserves a logo referenced by an unrelated tournament reg
       user: { id: "captain-user" },
     });
     assert.deepEqual(removedUploads, []);
-  } finally {
-    restore();
-  }
-});
-
-test("getTeamInvitePreview rejects expired or invalid registration invite tokens", async () => {
-  const findFirstCalls = [];
-  const prismaMock = {
-    prisma: {
-      registrationMember: {
-        findFirst: async (args) => {
-          findFirstCalls.push(args);
-          return null;
-        },
-      },
-    },
-  };
-
-  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
-  });
-
-  try {
-    await assert.rejects(
-      () => teamService.getTeamInvitePreview({ token: "expired-token" }),
-      (error) =>
-        error.statusCode === 400 &&
-        error.message === "This team invite link is invalid or has expired."
-    );
-
-    assert.equal(findFirstCalls.length, 1);
-    assert.equal(findFirstCalls[0].where.inviteStatus, "pending");
-    assert.ok(findFirstCalls[0].where.inviteExpiresAt.gt instanceof Date);
-  } finally {
-    restore();
-  }
-});
-
-test("respondToTeamInvite requires a verified account using the invited email", async () => {
-  const invite = buildPendingInvite();
-  const prismaMock = {
-    prisma: {
-      registrationMember: {
-        findFirst: async () => invite,
-      },
-    },
-  };
-
-  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
-  });
-
-  try {
-    await assert.rejects(
-      () =>
-        teamService.respondToTeamInvite({
-          token: "valid-token",
-          decision: "accept",
-          user: {
-            id: "wrong-user",
-            email: "someone-else@example.com",
-            emailVerified: true,
-          },
-        }),
-      (error) =>
-        error.statusCode === 403 &&
-        error.message.includes("player2@example.com")
-    );
-  } finally {
-    restore();
-  }
-});
-
-test("respondToTeamInvite links the account and verifies a fully accepted registration", async () => {
-  const invite = buildPendingInvite();
-  const registrationUpdateCalls = [];
-  const savedMemberUpdateCalls = [];
-  const teamRegistrationUpdateCalls = [];
-  const tx = {
-    registrationMember: {
-      updateMany: async (args) => {
-        registrationUpdateCalls.push(args);
-        return { count: 1 };
-      },
-      findUnique: async () => {
-        return {
-          ...invite,
-          inviteStatus: "accepted",
-        };
-      },
-      findMany: async () => [
-        { inviteStatus: "accepted" },
-        { inviteStatus: "accepted" },
-      ],
-    },
-    savedTeamMember: {
-      updateMany: async (args) => {
-        savedMemberUpdateCalls.push(args);
-        return { count: 1 };
-      },
-    },
-    teamRegistration: {
-      update: async (args) => {
-        teamRegistrationUpdateCalls.push(args);
-        return args.data;
-      },
-    },
-  };
-  const prismaMock = {
-    prisma: {
-      registrationMember: {
-        findFirst: async () => invite,
-      },
-      $transaction: async (callback) => callback(tx),
-    },
-  };
-
-  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
-    [prismaModulePath]: prismaMock,
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
-  });
-
-  try {
-    const result = await teamService.respondToTeamInvite({
-      token: "valid-token",
-      decision: "accept",
-      user: {
-        id: "user-2",
-        email: "player2@example.com",
-        emailVerified: true,
-      },
-    });
-
-    assert.equal(result.inviteStatus, "accepted");
-    assert.equal(registrationUpdateCalls[0].data.userId, "user-2");
-    assert.equal(registrationUpdateCalls[0].data.inviteTokenHash, null);
-    assert.equal(registrationUpdateCalls[0].data.inviteExpiresAt, null);
-    assert.ok(registrationUpdateCalls[0].data.inviteRespondedAt instanceof Date);
-    assert.equal(savedMemberUpdateCalls[0].data.userId, "user-2");
-    assert.equal(savedMemberUpdateCalls[0].data.inviteStatus, "accepted");
-    assert.deepEqual(teamRegistrationUpdateCalls.at(-1).data, {
-      verificationStatus: "verified",
-    });
   } finally {
     restore();
   }
@@ -1188,7 +1089,7 @@ test("refreshRegistrationVerificationStatus flags registrations with a declined 
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -1231,7 +1132,7 @@ test("the last accepted invite approves a free registration when the tournament 
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -1275,7 +1176,7 @@ test("a verified roster with an outstanding fee is left for the payment to appro
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -1320,7 +1221,7 @@ test("listProfileTeams returns accepted memberships as non-captain teams", async
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: prismaMock,
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -1344,31 +1245,51 @@ test("listProfileTeams returns accepted memberships as non-captain teams", async
   }
 });
 
-test("sendTeamInvites queues the roster in one batch", async () => {
+test("sendTeamInvites announces the roster in one batch and never fails the caller", async () => {
   const batches = [];
-  let singleInviteCalls = 0;
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: {
-      sendTeamInviteEmail: async () => {
-        singleInviteCalls += 1;
-      },
-      sendTeamInviteEmails: async (invites) => {
+    [noticeModulePath]: {
+      notifyInvite: async () => { throw new Error("the batch path must not fall back to one at a time"); },
+      notifyInvites: async (invites) => {
         batches.push(invites);
+        return invites.map(() => ({ inApp: true, discord: false, hasQuestAccount: true }));
       },
     },
   });
 
   try {
     const invites = [
-      { email: "player1@example.com", rawToken: "token-one" },
-      { email: "player2@example.com", rawToken: "token-two" },
+      { invitationId: "invite-1", emailNormalized: "player1@example.com" },
+      { invitationId: "invite-2", emailNormalized: "player2@example.com" },
     ];
-    await teamService.sendTeamInvites(invites);
+    const delivered = await teamService.sendTeamInvites(invites);
 
-    assert.equal(singleInviteCalls, 0);
     assert.equal(batches.length, 1);
     assert.deepEqual(batches[0], invites);
+    assert.equal(delivered.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+// The invitation is already written down by the time the notice goes out, so a
+// channel that falls over costs a nudge rather than a roster spot. Letting it
+// throw would roll back a team that was created successfully.
+test("sendTeamInvites swallows a notice failure", async () => {
+  const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma: {} },
+    [noticeModulePath]: {
+      notifyInvite: async () => undefined,
+      notifyInvites: async () => { throw new Error("discord is down"); },
+    },
+  });
+
+  try {
+    assert.deepEqual(
+      await teamService.sendTeamInvites([{ invitationId: "invite-1" }]),
+      [],
+    );
   } finally {
     restore();
   }
@@ -1414,7 +1335,7 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
 
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -1468,14 +1389,16 @@ test("syncSavedTeamFromRegistration links the registration and creates account-b
     assert.equal(captainRecord.inviteStatus, "accepted");
     assert.equal(playerRecord.userId, undefined);
     assert.equal(playerRecord.inviteStatus, "pending");
-    assert.ok(playerRecord.inviteTokenHash);
+    assert.equal(playerRecord.inviteTokenHash, null);
+    assert.equal(inviteDispatches[0].invitationId, playerRecord.id);
     assert.ok(playerRecord.inviteSentAt instanceof Date);
     assert.ok(playerRecord.inviteExpiresAt instanceof Date);
     assert.equal(coachRecord.role, "COACH");
     assert.equal(coachRecord.memberOrder, 1);
     assert.equal(coachRecord.phone, "0771111111");
     assert.equal(coachRecord.inviteStatus, "pending");
-    assert.ok(coachRecord.inviteTokenHash);
+    assert.equal(coachRecord.inviteTokenHash, null);
+    assert.equal(inviteDispatches[1].invitationId, coachRecord.id);
     assert.ok(coachRecord.inviteSentAt instanceof Date);
     assert.ok(coachRecord.inviteExpiresAt instanceof Date);
 
@@ -1540,7 +1463,7 @@ test("syncSavedTeamFromRegistration schedules a newly persisted retry logo for a
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
     [uploadCleanupModulePath]: {
       scheduleTeamLogoCleanup: async ({ filename, tx: scheduledTx }) => {
         scheduledLogos.push({ filename, tx: scheduledTx });
@@ -1588,7 +1511,7 @@ test("syncSavedTeamFromRegistration keeps a newer canonical logo over an older r
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
     [uploadCleanupModulePath]: {
       scheduleTeamLogoCleanup: async ({ filename, tx: scheduledTx }) => {
         scheduledLogos.push({ filename, tx: scheduledTx });
@@ -1640,7 +1563,7 @@ test("syncSavedTeamFromRegistration aborts relinking when retry-logo cleanup enq
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
     [uploadCleanupModulePath]: {
       scheduleTeamLogoCleanup: async () => {
         throw new Error("cleanup queue unavailable");
@@ -1667,7 +1590,7 @@ test("syncSavedTeamFromRegistration aborts relinking when retry-logo cleanup enq
   }
 });
 
-test("syncSavedTeamFromRegistration preserves an active pending invite without emailing twice", async () => {
+test("syncSavedTeamFromRegistration leaves a live invitation alone instead of announcing it twice", async () => {
   const inviteSentAt = new Date();
   const inviteExpiresAt = new Date(inviteSentAt.getTime() + 60 * 60 * 1000);
   const savedRows = [];
@@ -1701,7 +1624,7 @@ test("syncSavedTeamFromRegistration preserves an active pending invite without e
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -1722,8 +1645,13 @@ test("syncSavedTeamFromRegistration preserves an active pending invite without e
 
     assert.deepEqual(dispatches, []);
     assert.equal(savedRows[0].phone, null);
-    assert.equal(savedRows[0].inviteTokenHash, "existing-token-hash");
-    assert.equal(registrationUpdates[0].inviteTokenHash, "existing-token-hash");
+    // Outstanding because nobody answered it and it has not run out — the
+    // deadline is what says so, not a token. Any hash left on the old row is
+    // dropped, because it can no longer authorize anything.
+    assert.equal(savedRows[0].inviteTokenHash, null);
+    assert.equal(registrationUpdates[0].inviteTokenHash, null);
+    assert.equal(savedRows[0].inviteStatus, "pending");
+    assert.equal(savedRows[0].inviteSentAt, inviteSentAt);
     assert.equal(registrationUpdates[0].inviteExpiresAt, inviteExpiresAt);
   } finally {
     restore();
@@ -1759,9 +1687,7 @@ test("syncSavedTeamFromRegistration preserves an unlinked accepted source member
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: {
-      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
-    },
+    [noticeModulePath]: noticeMock(sentInvites),
   });
 
   try {
@@ -1837,9 +1763,7 @@ test("syncSavedTeamFromRegistration preserves a declined source member without r
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: {
-      sendTeamInviteEmail: async (invite) => sentInvites.push(invite),
-    },
+    [noticeModulePath]: noticeMock(sentInvites),
   });
 
   try {
@@ -1918,7 +1842,7 @@ test("syncSavedTeamFromRegistration gives an accepted source member precedence o
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma: {} },
-    [mailModulePath]: { sendTeamInviteEmail: async () => undefined },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -2005,7 +1929,7 @@ test("ensureTeamRegistrationSaved retries a transient database-pool timeout", as
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -2094,9 +2018,11 @@ test("activatePaidTeamRegistration uses the current transaction roster invite st
         $transaction: async (work) => work(tx),
       },
     },
-    [mailModulePath]: {
-      sendTeamInviteEmail: async () => {
-        throw new Error("stale pending roster should not send an invite");
+    [noticeModulePath]: {
+      notifyInvite: async () => { throw new Error("stale pending roster should not be announced"); },
+      notifyInvites: async (invites = []) => {
+        if (invites.length > 0) throw new Error("stale pending roster should not be announced");
+        return [];
       },
     },
   });
@@ -2132,7 +2058,7 @@ test("deleteSavedTeam rejects 409 when the team has an active VALORANT binding",
       persistTeamLogoUpload: async () => null,
       teamLogoDirectory: "uploads/team-logos",
     },
-    [mailModulePath]: { sendTeamInviteEmail: async () => {} },
+    [noticeModulePath]: noticeMock(),
   });
 
   try {
@@ -2171,7 +2097,7 @@ const buildAdoptionHarness = (existingTeam) => {
 
 const loadAdoptionService = (harness) => loadModuleWithMocks(servicePath, {
   [prismaModulePath]: { prisma: {} },
-  [mailModulePath]: { sendTeamInviteEmail: async () => true },
+  [noticeModulePath]: noticeMock(),
   [uploadCleanupModulePath]: {
     scheduleTeamLogoCleanup: async ({ filename }) => { harness.scheduledLogos.push(filename); },
   },
@@ -2299,7 +2225,7 @@ test("removing a saved team logo records the removal so it cannot be resurrected
   };
   const { module: teamService, restore } = loadModuleWithMocks(servicePath, {
     [prismaModulePath]: { prisma },
-    [mailModulePath]: { sendTeamInviteEmail: async () => true },
+    [noticeModulePath]: noticeMock(),
     [uploadModulePath]: {},
     [uploadCleanupModulePath]: {
       scheduleTeamLogoCleanup: async () => undefined,

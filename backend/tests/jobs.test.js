@@ -183,6 +183,7 @@ test("enqueueJob persists a queued background job without raw sensitive tokens",
     [monitoringPath]: { captureException: () => {} },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
+      COURTESY_TEMPLATE_TYPES: { registrationReceived: "registrationReceived" },
       processQueuedMailJob: async () => true,
     },
   });
@@ -253,6 +254,7 @@ test("enqueueJobs persists invitation jobs in one batch without raw tokens", asy
     [monitoringPath]: { captureException: () => {} },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
+      COURTESY_TEMPLATE_TYPES: { registrationReceived: "registrationReceived" },
       processQueuedMailJob: async () => true,
     },
   });
@@ -295,6 +297,7 @@ test("runJobWorkerTick protects legacy raw tokens before processing queued jobs"
     [monitoringPath]: { captureException: () => {} },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
+      COURTESY_TEMPLATE_TYPES: { registrationReceived: "registrationReceived" },
       processQueuedMailJob: async (payload) => {
         processedPayloads.push(payload);
         return true;
@@ -369,6 +372,7 @@ test("runJobWorkerTick retries transient job claim transaction timeouts", async 
     [monitoringPath]: { captureException: () => {} },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
+      COURTESY_TEMPLATE_TYPES: { registrationReceived: "registrationReceived" },
       processQueuedMailJob: async () => {
         processedCount += 1;
         return true;
@@ -411,6 +415,7 @@ test("runJobWorkerTick retries failed jobs until the max attempt threshold", asy
     [monitoringPath]: { captureException: (error) => capturedExceptions.push(error) },
     [mailDefinitionsPath]: {
       EMAIL_JOB_NAME: "email.send",
+      COURTESY_TEMPLATE_TYPES: { registrationReceived: "registrationReceived" },
       processQueuedMailJob: async () => {
         throw new Error("SMTP down for /verify-email?token=raw-verification-token");
       },
