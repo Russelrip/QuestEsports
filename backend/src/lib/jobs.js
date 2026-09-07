@@ -6,6 +6,7 @@ const { logger, redact } = require("./logger");
 const { captureException } = require("./monitoring");
 const { encryptSecret } = require("./secret-box");
 const { processQueuedMailJob, EMAIL_JOB_NAME } = require("./mail/mail-job-definitions");
+const { getMailDeferral } = require("./mail/mail-budget");
 const {
   FILE_CLEANUP_JOB_NAME,
   TEAM_LOGO_CLEANUP_JOB_NAME,
@@ -302,10 +303,37 @@ const markJobFailed = async (job) => {
   });
 };
 
+// Held rather than sent, and put back in the queue with its payload intact.
+// Not a failure: nothing went wrong and nothing is lost, so it must not consume
+// an attempt or leave an error on the row.
+const deferJob = async (job, availableAt) => {
+  await prisma.backgroundJob.update({
+    where: { id: job.id },
+    data: {
+      status: "queued",
+      lockedAt: null,
+      availableAt,
+      attempts: Math.max(job.attempts - 1, 0),
+    },
+  });
+};
+
 const processJobByName = async (job) => {
   switch (job.name) {
-    case EMAIL_JOB_NAME:
+    case EMAIL_JOB_NAME: {
+      const deferral = await getMailDeferral({ payload: job.payload });
+      if (deferral) {
+        logger.info("Courtesy mail held until the send allowance resets", {
+          jobId: job.id,
+          sentToday: deferral.sentToday,
+          ceiling: deferral.ceiling,
+          availableAt: deferral.availableAt,
+        });
+        await deferJob(job, deferral.availableAt);
+        return { deferred: true };
+      }
       return processQueuedMailJob(job.payload, { jobId: job.id });
+    }
     case FILE_CLEANUP_JOB_NAME:
       return processFileCleanupJob(job.payload);
     case TEAM_LOGO_CLEANUP_JOB_NAME:
@@ -341,6 +369,13 @@ const runJobWorkerTick = async () => {
       const processed = await processJobByName(job);
       if (processed === false) {
         throw new Error(`Background job ${job.name} did not complete.`);
+      }
+      // A deferred job has already been put back in the queue. Marking it
+      // succeeded would both lose the work and count a send that never
+      // happened — and the ledger this defers against is that same count.
+      if (processed && processed.deferred) {
+        processedCount += 1;
+        continue;
       }
       await markJobSucceeded(job);
       logger.info("Background job completed", {

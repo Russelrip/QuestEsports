@@ -10,10 +10,17 @@ const teamServicePath = path.join(__dirname, "../src/modules/teams/team.service.
 const paymentServicePath = path.join(__dirname, "../src/modules/payments/payment.service.js");
 const bankTransferServicePath = path.join(__dirname, "../src/modules/payments/bank-transfer.service.js");
 
-// `discordRequired` used to be reported by the readiness endpoint and by
-// nothing else, which made it advice: the registrations endpoint accepted a
-// POST whether or not anyone had asked the panel what it would have said.
-// These cover the server-side half.
+// Where the Discord requirement is enforced, and where it deliberately is not.
+//
+// It was briefly enforced when the captain submitted, over the whole roster.
+// That could not work: the handles are resolved from the invitees' own linked
+// accounts, so the captain was refused for a gap only somebody else could
+// close, and had no way to close it on their behalf. The roster half now lives
+// on accepting an invitation — see invitation.service.test.js — where the
+// person being asked is the person who can act.
+//
+// What stays here is the captain's own link, which they can always fix, and is
+// required for every tournament rather than only the ones that ask.
 
 const tournament = {
   id: "tournament-1",
@@ -105,24 +112,6 @@ const load = ({ linkedEmails = [], discordRequired = true } = {}) => {
   });
 };
 
-test("a roster member with no connected Discord is refused, by name", async () => {
-  const { module: service, restore } = load({ linkedEmails: [] });
-
-  try {
-    await assert.rejects(
-      () => service.createConfiguredRegistration({ slug: tournament.slug, body, user }),
-      (error) => {
-        assert.equal(error.statusCode, 409);
-        // The captain cannot fix this themselves and has to go ask specific
-        // people to connect, so the message has to say who.
-        assert.match(error.message, /Player Two/);
-        assert.match(error.message, /connected Discord account/);
-        return true;
-      },
-    );
-  } finally { restore(); }
-});
-
 test("the same roster passes once that member has connected", async () => {
   const { module: service, restore } = load({ linkedEmails: ["player@example.com"] });
 
@@ -147,61 +136,60 @@ test("the rule is off unless the tournament asks for it", async () => {
   } finally { restore(); }
 });
 
-test("the guard covers the coach, and reports everyone at once", () => {
-  const { module: service, restore } = load();
+test("a captain without a connected Discord cannot register at all", async () => {
+  const { module: service, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: {
+      prisma: {
+        tournament: { findFirst: async () => ({ ...tournament, discordRequired: false, series: null }) },
+        teamRegistration: { findFirst: async () => null },
+        // No linked account for the captain.
+        oAuthAccount: { findFirst: async () => null, findMany: async () => [] },
+        user: { findMany: async () => [] },
+        $transaction: async () => { throw new Error("REACHED_TRANSACTION"); },
+      },
+    },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [teamServicePath]: { ensureTeamRegistrationSaved: async () => undefined },
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {},
+  });
 
   try {
-    assert.throws(
-      () => service.assertConnectedDiscordWhenRequired({
-        tournament: { discordRequired: true },
-        members: [
-          { name: "Captain", role: "CAPTAIN", discord: "captain-discord" },
-          { name: "Player Two", role: "PLAYER", discord: null },
-          // A coach is on the roster to be reachable during an event, which is
-          // the whole point of the requirement.
-          { name: "Coach Example", role: "COACH", discord: null },
-        ],
-      }),
+    // Their own link, on a tournament that does not even ask for one: a roster
+    // Quest cannot reach during an event is not a roster, and unlike their
+    // teammates' links this is one the captain can go and fix right now.
+    await assert.rejects(
+      () => service.createConfiguredRegistration({ slug: tournament.slug, body, user }),
       (error) => {
-        assert.equal(error.statusCode, 409);
-        assert.match(error.message, /Player Two, Coach Example/);
-        // Naming one at a time would make a five-person roster five attempts.
-        assert.doesNotMatch(error.message, /Captain,/);
+        assert.equal(error.statusCode, 403);
+        assert.match(error.message, /Connect your Discord account/);
         return true;
       },
     );
   } finally { restore(); }
 });
 
-test("a fully connected roster raises nothing", () => {
-  const { module: service, restore } = load();
+// The captain cannot connect Discord for anyone else, so being refused for a
+// teammate's missing link left them with a registration they had no way to
+// complete. The requirement is enforced when that teammate accepts instead.
+test("a roster member with no connected Discord no longer blocks the captain", async () => {
+  const { module: service, restore } = load({ linkedEmails: [] });
 
   try {
-    assert.equal(
-      service.assertConnectedDiscordWhenRequired({
-        tournament: { discordRequired: true },
-        members: [
-          { name: "Captain", role: "CAPTAIN", discord: "captain-discord" },
-          { name: "Coach Example", role: "COACH", discord: "coach-discord" },
-        ],
-      }),
-      undefined,
+    await assert.rejects(
+      () => service.createConfiguredRegistration({ slug: tournament.slug, body, user }),
+      /REACHED_TRANSACTION/,
     );
   } finally { restore(); }
 });
 
-test("an absent flag is treated as off, not as truthy", () => {
+test("the roster gate is gone from submission entirely, asked for or not", () => {
   const { module: service, restore } = load();
 
   try {
-    for (const discordRequired of [false, undefined, null]) {
-      assert.equal(
-        service.assertConnectedDiscordWhenRequired({
-          tournament: { discordRequired },
-          members: [{ name: "Player Two", role: "PLAYER", discord: null }],
-        }),
-        undefined,
-      );
-    }
+    assert.equal(service.assertConnectedDiscordWhenRequired, undefined);
   } finally { restore(); }
 });

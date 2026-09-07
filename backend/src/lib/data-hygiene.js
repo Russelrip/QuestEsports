@@ -25,8 +25,13 @@ const buildFilters = (now = new Date()) => ({
   oldNotifications: { createdAt: { lt: cutoff(90, now) } },
   oldReadRecipients: { readAt: { lt: cutoff(60, now) } },
   revokedPushSubscriptions: { revokedAt: { lt: cutoff(30, now) } },
-  expiredRegistrationInvites: { inviteStatus: "pending", inviteExpiresAt: { lt: now }, inviteTokenHash: { not: null } },
-  expiredSavedTeamInvites: { inviteStatus: "pending", inviteExpiresAt: { lt: now }, inviteTokenHash: { not: null } },
+  // An unanswered invitation past its deadline. This used to require a token to
+  // still be present, because clearing the token was what expiry meant; an
+  // invitation is answered by identity now, so expiry has to be written down as
+  // a state instead. The timestamps are kept so a captain can see when it ran
+  // out rather than only that it did.
+  expiredRegistrationInvites: { inviteStatus: "pending", inviteExpiresAt: { lt: now } },
+  expiredSavedTeamInvites: { inviteStatus: "pending", inviteExpiresAt: { lt: now } },
 });
 
 const previewDataHygiene = async ({ database = prisma, now = new Date() } = {}) => {
@@ -91,11 +96,11 @@ const applyDataHygiene = async ({ database = prisma, now = new Date(), batchSize
   deleted.revokedPushSubscriptions = await deleteInBatches(database.webPushSubscription, filters.revokedPushSubscriptions, batchSize);
   deleted.expiredRegistrationInvites = (await database.registrationMember.updateMany({
     where: filters.expiredRegistrationInvites,
-    data: { inviteTokenHash: null, inviteSentAt: null, inviteExpiresAt: null },
+    data: { inviteStatus: "expired", inviteTokenHash: null },
   })).count;
   deleted.expiredSavedTeamInvites = (await database.savedTeamMember.updateMany({
     where: filters.expiredSavedTeamInvites,
-    data: { inviteTokenHash: null, inviteSentAt: null, inviteExpiresAt: null },
+    data: { inviteStatus: "expired", inviteTokenHash: null },
   })).count;
   return deleted;
 };

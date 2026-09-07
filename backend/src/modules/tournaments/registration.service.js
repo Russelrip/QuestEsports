@@ -468,39 +468,6 @@ const assertRegistrationStillOpen = (tournament, now, statusCode = 400) => {
   }
 };
 
-// The server half of `discordRequired`. The readiness endpoint reports the same
-// rule so a captain can see it before submitting, but a check that only the
-// readiness panel performs is advice: the registrations endpoint accepts a POST
-// whether or not anyone asked it what the panel would have said.
-//
-// Runs over the persisted roster, so the coach is covered by construction —
-// they are on the roster to be reachable during an event, which is the whole
-// point of the requirement.
-//
-// Handles are already resolved from connected accounts by
-// attachConnectedDiscordIdentities, so a null here means exactly one thing:
-// that person has no Quest account, or their account has no Discord link.
-const assertConnectedDiscordWhenRequired = ({ tournament, members }) => {
-  if (tournament?.discordRequired !== true) {
-    return;
-  }
-
-  const missing = members.filter((member) => !member.discord);
-
-  if (missing.length === 0) {
-    return;
-  }
-
-  // Naming them matters: the captain cannot fix this themselves and has to go
-  // ask specific people to connect, so "someone on your roster" would just
-  // start a round of guessing.
-  const names = missing.map((member) => member.name).join(", ");
-  throw new HttpError(
-    409,
-    `This tournament requires every roster member to have a connected Discord account. Still missing: ${names}.`
-  );
-};
-
 const buildPersistedRegistrationMembers = ({ members, coach }) => coach
   ? [
       ...members,
@@ -1019,7 +986,13 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     coach,
   } = submission;
   const persistedMembers = buildPersistedRegistrationMembers({ members, coach });
-  assertConnectedDiscordWhenRequired({ tournament, members: persistedMembers });
+  // The roster's Discord requirement is not checked here any more. It used to
+  // refuse the captain for a gap only the invitee could close — a captain
+  // cannot connect Discord on someone else's behalf — which made the rule
+  // unsatisfiable by the person it was being enforced against. It is enforced
+  // where it can be acted on instead: accepting an invitation requires a
+  // connected Discord account, for every roster on Quest. The captain's own
+  // link is still required, by attachConnectedDiscordIdentities above.
 
   if (existing) {
     const providerOrderId = buildPaymentOrderId(paymentMethod);
@@ -1500,7 +1473,6 @@ module.exports = {
   createConfiguredRegistration,
   cancelUnpaidRegistration,
   normalizeRegistrationSubmission,
-  assertConnectedDiscordWhenRequired,
   normalizeCoachSubmission,
   validateConfiguredFields,
   validateGameIdentities,

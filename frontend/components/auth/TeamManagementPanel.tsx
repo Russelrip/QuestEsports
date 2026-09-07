@@ -13,18 +13,44 @@ import { teamCountries } from "@/lib/countries";
 import {
   deleteSavedTeam,
   type ManageTeamMemberInput,
-  resendSavedTeamInvite,
+  nudgeTeamInvite,
   type SavedTeam,
+  type TeamInviteStatus,
   updateSavedTeam,
 } from "@/lib/teams";
 import { getInitials } from "@/lib/utils";
 
 type EditableMember = ManageTeamMemberInput & {
   key: string;
-  inviteStatus?: "pending" | "accepted" | "declined";
+  inviteStatus?: TeamInviteStatus;
   originalEmail?: string;
   inviteSentAt?: string | null;
   inviteRespondedAt?: string | null;
+  // Why this member has not accepted yet, when the answer is not "they have not
+  // got round to it". A captain chasing a roster needs to know which of the two
+  // problems they actually have.
+  hasQuestAccount?: boolean;
+  hasDiscord?: boolean;
+};
+
+const INVITE_STATUS_LABELS: Record<TeamInviteStatus, string> = {
+  pending: "Waiting",
+  accepted: "Accepted",
+  declined: "Declined",
+  expired: "Expired",
+};
+
+// What is standing between this person and accepting. Ordered by what the
+// captain would have to do about it first.
+const describeBlocker = (member: EditableMember) => {
+  if (member.inviteStatus !== "pending") return null;
+  if (member.hasQuestAccount === false) {
+    return "No Quest account yet — send them the invitation link.";
+  }
+  if (member.hasDiscord === false) {
+    return "Signed up, but has not connected Discord. They cannot accept until they do.";
+  }
+  return null;
 };
 
 const INVITE_RESEND_COOLDOWN_MS = 60 * 1000;
@@ -116,7 +142,8 @@ export default function TeamManagementPanel({
   const [members, setMembers] = useState<EditableMember[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [resendingMemberId, setResendingMemberId] = useState<string | null>(null);
+  const [nudgingMemberId, setNudgingMemberId] = useState<string | null>(null);
+  const [copiedMemberKey, setCopiedMemberKey] = useState<string | null>(null);
   const [inviteClock, setInviteClock] = useState(() => Date.now());
   const [error, setError] = useState("");
 
@@ -143,6 +170,8 @@ export default function TeamManagementPanel({
           originalEmail: member.email,
           inviteSentAt: member.inviteSentAt,
           inviteRespondedAt: member.inviteRespondedAt,
+          hasQuestAccount: member.hasQuestAccount,
+          hasDiscord: member.hasDiscord,
         }))
     );
   }, [selectedTeam]);
@@ -210,12 +239,15 @@ export default function TeamManagementPanel({
     }
   };
 
-  const resendInvite = async (member: EditableMember) => {
-    if (!selectedTeam?.isCaptain || !member.inviteStatus || member.inviteStatus !== "pending") return;
-    setResendingMemberId(member.key);
+  // A reminder, not a delivery. The invitation is already sitting in their Quest
+  // account; this reopens the window and says so again over the channels that
+  // cost nothing, then reports which of them actually reached anybody.
+  const nudgeInvite = async (member: EditableMember) => {
+    if (!selectedTeam?.isCaptain || !member.inviteStatus || member.inviteStatus === "accepted") return;
+    setNudgingMemberId(member.key);
     setError("");
     try {
-      const result = await resendSavedTeamInvite(selectedTeam.id, member.key);
+      const result = await nudgeTeamInvite(selectedTeam.id, member.key);
       setMembers((current) => current.map((candidate) => candidate.key === member.key
         ? {
             ...candidate,
@@ -225,13 +257,35 @@ export default function TeamManagementPanel({
           }
         : candidate));
       setInviteClock(Date.now());
-      showToast({ tone: "success", title: "Invitation resent", description: result.message });
+      showToast({
+        // Never "invitation sent": the captain is the fallback channel, and
+        // they can only be that if they are told the truth about what landed.
+        tone: result.delivery?.hasQuestAccount ? "success" : "error",
+        title: result.delivery?.hasQuestAccount ? "Reminder sent" : "Could not reach them",
+        description: result.message,
+      });
     } catch (nextError) {
-      const message = nextError instanceof Error ? nextError.message : "Could not resend this invitation.";
+      const message = nextError instanceof Error ? nextError.message : "Could not send this reminder.";
       setError(message);
-      showToast({ tone: "error", title: "Invite not sent", description: message });
+      showToast({ tone: "error", title: "Reminder not sent", description: message });
     } finally {
-      setResendingMemberId(null);
+      setNudgingMemberId(null);
+    }
+  };
+
+  // The channel that always works: the captain already talks to these people.
+  const copyInvitationLink = async (member: EditableMember) => {
+    const url = `${window.location.origin}/profile?tab=invitations`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedMemberKey(member.key);
+      window.setTimeout(() => setCopiedMemberKey(null), 2000);
+    } catch {
+      showToast({
+        tone: "error",
+        title: "Could not copy the link",
+        description: url,
+      });
     }
   };
 
@@ -266,7 +320,7 @@ export default function TeamManagementPanel({
           </div>
 
           <section className="grid gap-4">
-            <div className="flex flex-wrap items-end justify-between gap-3"><div><h4 className="text-xl text-white">Roster</h4><p className="mt-1 text-sm text-slate-400">Changing an email sends a new invitation. Accepted members with unchanged emails remain linked.</p></div><Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])} disabled={members.length >= 20}>Add player</Button></div>
+            <div className="flex flex-wrap items-end justify-between gap-3"><div><h4 className="text-xl text-white">Roster</h4><p className="mt-1 text-sm text-slate-400">Changing an email creates a new invitation. Accepted members with unchanged emails remain linked. Everyone must connect Discord before they can accept.</p></div><Button type="button" variant="secondary" onClick={() => setMembers((current) => [...current, emptyMember()])} disabled={members.length >= 20}>Add player</Button></div>
             <div className="grid gap-3 border border-purple-300/15 bg-purple-400/[0.03] p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-white">{captain?.name || selectedTeam.captainName}</p><p className="text-sm text-slate-400">{captain?.email || "Captain account"}</p></div><Badge>Captain</Badge></div></div>
             {members.map((member, index) => {
               const resendAvailableAt = member.inviteSentAt
@@ -276,7 +330,8 @@ export default function TeamManagementPanel({
                 Math.ceil((resendAvailableAt - inviteClock) / 1000),
                 0
               );
-              const canResend = ["pending", "declined"].includes(member.inviteStatus || "") && resendWaitSeconds === 0;
+              const canNudge = ["pending", "declined", "expired"].includes(member.inviteStatus || "") && resendWaitSeconds === 0;
+              const blocker = describeBlocker(member);
               const emailChanged = Boolean(
                 member.originalEmail &&
                 member.email.trim().toLowerCase() !== member.originalEmail.trim().toLowerCase()
@@ -286,23 +341,35 @@ export default function TeamManagementPanel({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex min-w-0 flex-wrap items-center gap-3">
                       <p className="text-sm font-semibold text-white">Roster member {index + 1}</p>
-                      {member.inviteStatus ? <Badge>{member.inviteStatus}</Badge> : <Badge>Not invited yet</Badge>}
+                      {member.inviteStatus ? <Badge>{INVITE_STATUS_LABELS[member.inviteStatus]}</Badge> : <Badge>Not invited yet</Badge>}
                     </div>
                     <button type="button" className="text-sm text-rose-300 hover:text-rose-200" onClick={() => setMembers((current) => current.filter((item) => item.key !== member.key))}>Remove</button>
                   </div>
                   {member.inviteStatus ? (
-                    <div className="flex flex-wrap items-center justify-between gap-3 border border-white/8 bg-black/15 px-3 py-2 text-xs text-slate-400">
-                      <span>
-                        {member.inviteStatus === "pending"
-                          ? `Invitation pending${member.inviteSentAt ? ` · sent ${new Date(member.inviteSentAt).toLocaleString()}` : ""}`
-                          : member.inviteStatus === "accepted"
-                            ? "Invitation accepted"
-                            : "Invitation declined"}
-                      </span>
-                      {["pending", "declined"].includes(member.inviteStatus) ? (
-                        <Button type="button" variant="secondary" disabled={!canResend || emailChanged || Boolean(resendingMemberId) || saving} onClick={() => void resendInvite(member)}>
-                          {resendingMemberId === member.key ? "Sending..." : emailChanged ? "Save email change first" : resendWaitSeconds > 0 ? `Send again in ${resendWaitSeconds}s` : member.inviteStatus === "declined" ? "Send invitation again" : "Resend invite"}
-                        </Button>
+                    <div className="grid gap-2 border border-white/8 bg-black/15 px-3 py-2 text-xs text-slate-400">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span>
+                          {member.inviteStatus === "pending"
+                            ? `Waiting for them to accept${member.inviteSentAt ? ` · invited ${new Date(member.inviteSentAt).toLocaleString()}` : ""}`
+                            : member.inviteStatus === "accepted"
+                              ? "Accepted"
+                              : member.inviteStatus === "expired"
+                                ? "Nobody answered before the deadline"
+                                : "Declined"}
+                        </span>
+                        {["pending", "declined", "expired"].includes(member.inviteStatus) ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button type="button" variant="secondary" disabled={!canNudge || emailChanged || Boolean(nudgingMemberId) || saving} onClick={() => void nudgeInvite(member)}>
+                              {nudgingMemberId === member.key ? "Sending..." : emailChanged ? "Save email change first" : resendWaitSeconds > 0 ? `Remind again in ${resendWaitSeconds}s` : member.inviteStatus === "pending" ? "Remind" : "Invite again"}
+                            </Button>
+                            <Button type="button" variant="secondary" onClick={() => void copyInvitationLink(member)}>
+                              {copiedMemberKey === member.key ? "Link copied" : "Copy invite link"}
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                      {blocker ? (
+                        <p className="text-amber-200/90">{blocker}</p>
                       ) : null}
                     </div>
                   ) : null}

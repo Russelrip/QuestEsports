@@ -10,9 +10,8 @@ const {
   createProfileTeam,
   updateProfileTeam,
   deleteProfileTeam,
-  resendProfileTeamInvite,
-  previewTeamInvite,
-  respondTeamInvite,
+  nudgeProfileTeamInvite,
+  respondToMyInvitation,
 } = require("./team.controller");
 const { imageUpload } = require("../../middleware/upload");
 const { invalidateCache } = require("../../middleware/response-cache");
@@ -36,11 +35,11 @@ const manageTeamRateLimiter = createRateLimiter({
   maxRequests: 60,
   message: "Too many team changes. Please try again later.",
 });
-const resendTeamInviteRateLimiter = createRateLimiter({
-  name: "resend-team-invite",
+const nudgeTeamInviteRateLimiter = createRateLimiter({
+  name: "nudge-team-invite",
   windowMs: 60 * 60 * 1000,
   maxRequests: 30,
-  message: "Too many team invitation emails. Please try again later.",
+  message: "Too many invitation reminders. Please try again later.",
 });
 
 router.get("/teams/profile", requireAuth, getProfileTeams);
@@ -72,20 +71,21 @@ router.delete(
   deleteProfileTeam
 );
 router.post(
-  "/teams/:teamId/members/:memberId/resend-invite",
+  "/teams/:teamId/members/:memberId/nudge",
   requireAuth,
   requireVerifiedEmail,
-  resendTeamInviteRateLimiter,
-  resendProfileTeamInvite
+  nudgeTeamInviteRateLimiter,
+  nudgeProfileTeamInvite
 );
-router.get("/team-invite", previewTeamInvite);
+// Answered by the invitee's identity rather than by a token they were sent, so
+// there is nothing to preview anonymously and nothing to present but a session.
 router.post(
-  "/team-invite/respond",
+  "/me/invitations/:invitationId/respond",
   requireAuth,
   requireVerifiedEmail,
   teamInviteRateLimiter,
   invalidateCache("tournaments", "foundation"),
-  respondTeamInvite
+  respondToMyInvitation
 );
 
 module.exports = router;

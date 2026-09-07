@@ -3,15 +3,10 @@ const { Prisma } = require("../../generated/prisma");
 const { prisma } = require("../../lib/prisma");
 const { HttpError } = require("../../lib/http-error");
 const { logger } = require("../../lib/logger");
-const { createTokenPair, hashToken } = require("../../lib/tokens");
+const { notifyInvite, notifyInvites } = require("./invite-notice.service");
 const {
-  sendTeamInviteEmail,
-  sendTeamInviteEmails,
-} = require("../../lib/mail/sendTeamInviteEmail");
-const { notifyInviteOnDiscord } = require("./invite-discord-notice");
-const {
-  maybeAutoApproveRegistration,
-} = require("../tournaments/auto-approval.service");
+  refreshRegistrationVerificationStatus,
+} = require("./registration-verification");
 const {
   removeUploadsQuietly,
   removeTeamLogoIfUnreferenced,
@@ -27,50 +22,6 @@ const {
   normalizeText,
 } = require("../../lib/validation");
 
-const invitePreviewSelect = {
-  id: true,
-  role: true,
-  memberOrder: true,
-  name: true,
-  email: true,
-  emailNormalized: true,
-  inviteStatus: true,
-  registration: {
-    select: {
-      id: true,
-      teamName: true,
-      captainName: true,
-      savedTeamId: true,
-      tournament: {
-        select: {
-          title: true,
-        },
-      },
-    },
-  },
-};
-
-const savedTeamInviteSelect = {
-  id: true,
-  name: true,
-  email: true,
-  emailNormalized: true,
-  inviteStatus: true,
-  team: {
-    select: {
-      id: true,
-      name: true,
-      captainUser: {
-        select: {
-          firstName: true,
-          lastName: true,
-          username: true,
-        },
-      },
-    },
-  },
-};
-
 const ROLE_SORT_ORDER = {
   CAPTAIN: 0,
   PLAYER: 1,
@@ -78,6 +29,9 @@ const ROLE_SORT_ORDER = {
   COACH: 3,
 };
 const TEAM_INVITE_TTL_HOURS = 72;
+// What a captain may send again. Accepted is deliberately absent: that spot is
+// taken, and reopening it would unseat someone who already said yes.
+const NUDGEABLE_INVITE_STATUSES = ["pending", "declined", "expired"];
 const TEAM_INVITE_RESEND_COOLDOWN_SECONDS = 60;
 const TEAM_SYNC_TRANSACTION_MAX_RETRIES = 4;
 const TEAM_SYNC_TRANSACTION_MAX_WAIT_MS = 15 * 1000;
@@ -160,37 +114,59 @@ const mapSavedTeam = (team, userId) => ({
     .map(mapSavedTeamMember),
 });
 
-const mapInvitePreview = (member) => {
-  return {
-    memberName: member.name,
-    email: member.email,
-    inviteStatus: member.inviteStatus,
-    registrationId: member.registration.id,
-    team: {
-      id: member.registration.savedTeamId || member.registration.id,
-      name: member.registration.teamName,
-      captainName: member.registration.captainName,
-      tournamentTitle: member.registration.tournament.title,
-    },
-  };
-};
-
-const mapSavedTeamInvitePreview = (member) => ({
-  memberName: member.name,
-  email: member.email,
-  inviteStatus: member.inviteStatus,
-  registrationId: null,
-  team: {
-    id: member.team.id,
-    name: member.team.name,
-    captainName:
-      [member.team.captainUser.firstName, member.team.captainUser.lastName]
+// Why a roster is not confirming yet, resolved for every member at once.
+//
+// A captain whose registration will not go through can otherwise only see that
+// somebody has not accepted — not that the person has no Quest account, or has
+// one but has never connected Discord and so cannot accept even if they wanted
+// to. Those are different problems with different fixes, and only the captain
+// is in a position to go and chase either of them.
+//
+// Resolved by verified address, the same rule the invitation itself uses: an
+// unverified address proves nothing about who controls it.
+const attachRosterReadiness = async (teams) => {
+  const emails = [
+    ...new Set(
+      teams
+        .flatMap((team) => team.members || [])
+        .map((member) => normalizeEmail(member.email))
         .filter(Boolean)
-        .join(" ")
-        .trim() || member.team.captainUser.username,
-    tournamentTitle: null,
-  },
-});
+    ),
+  ];
+
+  // Narrow client projections cannot read accounts back. Readiness is an
+  // addition to the roster, never a precondition for returning it, so a scope
+  // that cannot look one up reports nothing rather than failing the caller —
+  // the same pattern the registration-member lookups here already use.
+  if (emails.length === 0 || typeof prisma.user?.findMany !== "function") return teams;
+
+  const users = await prisma.user.findMany({
+    where: { emailNormalized: { in: emails }, emailVerified: true },
+    select: { id: true, emailNormalized: true },
+  });
+  const discordLinked = users.length > 0 && typeof prisma.oAuthAccount?.findMany === "function"
+    ? await prisma.oAuthAccount.findMany({
+      where: { userId: { in: users.map((account) => account.id) }, provider: "discord" },
+      select: { userId: true },
+    })
+    : [];
+  const discordUserIds = new Set(discordLinked.map((account) => account.userId));
+  const readinessByEmail = new Map(
+    users.map((account) => [
+      account.emailNormalized,
+      { hasQuestAccount: true, hasDiscord: discordUserIds.has(account.id) },
+    ])
+  );
+
+  return teams.map((team) => ({
+    ...team,
+    members: (team.members || []).map((member) => ({
+      ...member,
+      ...(readinessByEmail.get(normalizeEmail(member.email))
+        || { hasQuestAccount: false, hasDiscord: false }),
+    })),
+  }));
+};
 
 const listProfileTeams = async ({ user }) => {
   const teams = await prisma.savedTeam.findMany({
@@ -225,7 +201,7 @@ const listProfileTeams = async ({ user }) => {
     },
   });
 
-  return teams.map((team) => mapSavedTeam(team, user.id));
+  return attachRosterReadiness(teams.map((team) => mapSavedTeam(team, user.id)));
 };
 
 const MANAGEABLE_TEAM_MEMBER_ROLES = new Set(["PLAYER", "SUBSTITUTE", "COACH"]);
@@ -342,18 +318,21 @@ const createSavedTeam = async ({ user, body, file }) => {
         },
         ...members.map((member) => {
           memberOrders[member.role] += 1;
-          const token = createTokenPair({ hours: TEAM_INVITE_TTL_HOURS });
+          // The row id is the invitation. Generated here rather than by the
+          // database so the notice can name the thing it is pointing at.
+          const memberId = crypto.randomUUID();
           inviteDispatches.push({
-            email: member.email,
+            invitationId: memberId,
+            emailNormalized: member.email,
             recipientName: member.name,
             teamName: name,
             captainName,
             tournamentTitle: null,
-            rawToken: token.rawToken,
+            sentAt: inviteSentAt,
           });
 
           return {
-            id: crypto.randomUUID(),
+            id: memberId,
             teamId: createdTeam.id,
             role: member.role,
             memberOrder: memberOrders[member.role],
@@ -364,7 +343,7 @@ const createSavedTeam = async ({ user, body, file }) => {
             discord: member.discord,
             riotId: member.riotId,
             inviteStatus: "pending",
-            inviteTokenHash: token.tokenHash,
+            inviteTokenHash: null,
             inviteSentAt,
             inviteExpiresAt,
           };
@@ -388,7 +367,8 @@ const createSavedTeam = async ({ user, body, file }) => {
     });
 
     await sendTeamInvites(inviteDispatches);
-    return mapSavedTeam(team, user.id);
+    const [readyTeam] = await attachRosterReadiness([mapSavedTeam(team, user.id)]);
+    return readyTeam;
   } catch (error) {
     await removeUploadsQuietly(
       persistedLogo
@@ -532,29 +512,33 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
         ...member,
         emailNormalized: member.email,
         inviteStatus: existingMember.inviteStatus,
-        inviteTokenHash: existingMember.inviteTokenHash,
+        // Dropped rather than carried over. Any hash still on an old row
+        // authorizes nothing now, and a secret that has stopped meaning
+        // anything is not worth keeping a copy of.
+        inviteTokenHash: null,
         inviteSentAt: existingMember.inviteSentAt,
         inviteExpiresAt: existingMember.inviteExpiresAt,
         inviteRespondedAt: existingMember.inviteRespondedAt,
       };
     }
 
-    const token = createTokenPair({ hours: TEAM_INVITE_TTL_HOURS });
+    const memberId = crypto.randomUUID();
     inviteDispatches.push({
-      email: member.email,
+      invitationId: memberId,
+      emailNormalized: member.email,
       recipientName: member.name,
       teamName: name,
       captainName,
       tournamentTitle: null,
-      rawToken: token.rawToken,
+      sentAt: inviteSentAt,
     });
     return {
-      id: crypto.randomUUID(),
+      id: memberId,
       teamId,
       ...member,
       emailNormalized: member.email,
       inviteStatus: "pending",
-      inviteTokenHash: token.tokenHash,
+      inviteTokenHash: null,
       inviteSentAt,
       inviteExpiresAt,
     };
@@ -613,7 +597,8 @@ const updateSavedTeam = async ({ teamId, user, body, file }) => {
 
     const { team } = transactionResult;
     await sendTeamInvites(inviteDispatches);
-    return mapSavedTeam(team, user.id);
+    const [readyTeam] = await attachRosterReadiness([mapSavedTeam(team, user.id)]);
+    return readyTeam;
   } catch (error) {
     if (persistedLogo) {
       await removeUploadsQuietly(
@@ -671,7 +656,18 @@ const deleteSavedTeam = async ({ teamId, user }) => {
   }
 };
 
-const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() }) => {
+// A captain nudging someone who has not answered yet.
+//
+// This used to mint a fresh token and send an email, which made it the only way
+// to repair an invitation that had gone astray — and made every repair cost a
+// delivery. There is nothing to repair now: the invitation is a row the invitee
+// can already find. So this reopens the window and says so again over the free
+// channels, and reports what it actually reached rather than claiming it sent
+// something.
+//
+// A captain who cannot be reached any of those ways is told to send the link
+// themselves. They are teammates; they already have a way to talk.
+const nudgeTeamInvite = async ({ teamId, memberId, user, now = new Date() }) => {
   const member = await prisma.savedTeamMember.findFirst({
     where: {
       id: memberId,
@@ -693,8 +689,8 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
   if (!member) {
     throw new HttpError(404, "Team member not found or you do not have permission to manage this invite.");
   }
-  if (member.role === "CAPTAIN" || !["pending", "declined"].includes(member.inviteStatus)) {
-    throw new HttpError(409, "Only pending or declined team invitations can be sent again.");
+  if (member.role === "CAPTAIN" || !NUDGEABLE_INVITE_STATUSES.includes(member.inviteStatus)) {
+    throw new HttpError(409, "Only an unanswered invitation can be sent again.");
   }
 
   const nextAllowedAt = member.inviteSentAt
@@ -702,12 +698,11 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
     : 0;
   if (nextAllowedAt > now.getTime()) {
     const retryAfterSeconds = Math.max(Math.ceil((nextAllowedAt - now.getTime()) / 1000), 1);
-    throw new HttpError(429, `Wait ${retryAfterSeconds} seconds before resending this invitation.`, {
+    throw new HttpError(429, `Wait ${retryAfterSeconds} seconds before sending this invitation again.`, {
       retryAfterSeconds,
     });
   }
 
-  const token = createTokenPair({ hours: TEAM_INVITE_TTL_HOURS });
   const inviteExpiresAt = new Date(
     now.getTime() + TEAM_INVITE_TTL_HOURS * 60 * 60 * 1000
   );
@@ -715,7 +710,7 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
     ? await prisma.registrationMember.findFirst({
         where: {
           emailNormalized: member.emailNormalized,
-          inviteStatus: { in: ["pending", "declined"] },
+          inviteStatus: { in: NUDGEABLE_INVITE_STATUSES },
           registration: { savedTeamId: teamId },
         },
         orderBy: { createdAt: "desc" },
@@ -729,7 +724,7 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
       data: {
         userId: null,
         inviteStatus: "pending",
-        inviteTokenHash: token.tokenHash,
+        inviteTokenHash: null,
         inviteSentAt: now,
         inviteExpiresAt,
         inviteRespondedAt: null,
@@ -737,7 +732,7 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
     });
     if (relatedRegistrationMember) {
       await tx.registrationMember.updateMany({
-        where: { id: relatedRegistrationMember.id, inviteStatus: { in: ["pending", "declined"] } },
+        where: { id: relatedRegistrationMember.id, inviteStatus: { in: NUDGEABLE_INVITE_STATUSES } },
         data: {
           userId: null,
           inviteStatus: "pending",
@@ -760,349 +755,34 @@ const resendSavedTeamInvite = async ({ teamId, memberId, user, now = new Date() 
     member.team.captainUser.lastName,
   ].filter(Boolean).join(" ").trim() || member.team.captainUser.username;
 
-  // Best effort, after the email is queued and never in its way: a DM that
-  // cannot be delivered must not cost anyone their roster spot.
-  void notifyInviteOnDiscord({
+  // Awaited, unlike the old fire-and-forget DM, because what it reached is the
+  // answer the captain is waiting for. It still cannot fail the nudge: the
+  // window has already been reopened and the invitation is already findable.
+  const delivery = await notifyInvite({
+    invitationId: member.id,
     userId: member.userId || null,
     emailNormalized: member.emailNormalized || null,
     recipientName: member.name,
     teamName: member.team.name,
     captainName,
     tournamentTitle: relatedRegistrationMember?.registration?.tournament?.title || null,
-  }).then((result) => {
-    logger.info("Discord invite notice attempted.", {
-      teamId,
-      memberId,
-      delivered: result.delivered,
-      reason: result.reason,
-    });
+    sentAt: now,
   });
 
-  try {
-    await sendTeamInviteEmail({
-      email: member.email,
-      recipientName: member.name,
-      teamName: member.team.name,
-      captainName,
-      tournamentTitle: relatedRegistrationMember?.registration?.tournament?.title || null,
-      rawToken: token.rawToken,
-    });
-  } catch (error) {
-    logger.error("Failed to resend team invite email.", {
-      teamId,
-      memberId,
-      error,
-    });
-    try {
-      await prisma.$transaction(async (tx) => {
-        await tx.savedTeamMember.updateMany({
-          where: { id: member.id, inviteTokenHash: token.tokenHash },
-          data: {
-            userId: member.userId,
-            inviteStatus: member.inviteStatus,
-            inviteTokenHash: member.inviteTokenHash,
-            inviteSentAt: member.inviteSentAt,
-            inviteExpiresAt: member.inviteExpiresAt,
-            inviteRespondedAt: member.inviteRespondedAt,
-          },
-        });
-        if (relatedRegistrationMember) {
-          await tx.registrationMember.updateMany({
-            where: {
-              id: relatedRegistrationMember.id,
-              inviteTokenHash: token.tokenHash,
-            },
-            data: {
-              userId: relatedRegistrationMember.userId,
-              inviteStatus: relatedRegistrationMember.inviteStatus,
-              inviteTokenHash: relatedRegistrationMember.inviteTokenHash,
-              inviteSentAt: relatedRegistrationMember.inviteSentAt,
-              inviteExpiresAt: relatedRegistrationMember.inviteExpiresAt,
-              inviteRespondedAt: relatedRegistrationMember.inviteRespondedAt,
-            },
-          });
-          await refreshRegistrationVerificationStatus({
-            tx,
-            registrationId: relatedRegistrationMember.registration.id,
-          });
-        }
-      });
-    } catch (rollbackError) {
-      logger.error("Failed to restore a team invite after email dispatch failed.", {
-        teamId,
-        memberId,
-        rollbackError,
-      });
-    }
-    throw new HttpError(503, "The invitation could not be sent right now. Please try again later.");
-  }
+  logger.info("Team invite nudge sent.", {
+    teamId,
+    memberId,
+    inApp: delivery.inApp,
+    discord: delivery.discord,
+    hasQuestAccount: delivery.hasQuestAccount,
+  });
 
   return {
     member: mapSavedTeamMember(updatedMember),
+    delivery,
     resendAvailableAt: new Date(
       now.getTime() + TEAM_INVITE_RESEND_COOLDOWN_SECONDS * 1000
     ),
-  };
-};
-
-const refreshRegistrationVerificationStatus = async ({ tx, registrationId }) => {
-  const members = await tx.registrationMember.findMany({
-    where: { registrationId, role: { not: "CAPTAIN" } },
-    select: { inviteStatus: true },
-  });
-  const verificationStatus = members.some((member) => member.inviteStatus === "declined")
-    ? "flagged"
-    : members.every((member) => member.inviteStatus === "accepted")
-      ? "verified"
-      : "pending";
-
-  await tx.teamRegistration.update({
-    where: { id: registrationId },
-    data: { verificationStatus },
-  });
-
-  if (verificationStatus === "verified") {
-    // The last outstanding invitation was the only thing this registration was
-    // waiting on. A tournament that does not review registrations approves it
-    // here; one that does is left untouched.
-    await maybeAutoApproveRegistration({ tx, registrationId });
-  }
-
-  return verificationStatus;
-};
-
-const getTeamInvitePreview = async ({ token }) => {
-  const normalizedToken = normalizeText(token);
-  const now = new Date();
-
-  if (!normalizedToken) {
-    throw new HttpError(400, "Team invite token is required.");
-  }
-
-  const member = await prisma.registrationMember.findFirst({
-    where: {
-      inviteTokenHash: hashToken(normalizedToken),
-      inviteStatus: "pending",
-      inviteExpiresAt: {
-        gt: now,
-      },
-    },
-    select: invitePreviewSelect,
-  });
-
-  if (member) {
-    return mapInvitePreview(member);
-  }
-
-  const savedTeamMember = prisma.savedTeamMember?.findFirst
-    ? await prisma.savedTeamMember.findFirst({
-        where: {
-          inviteTokenHash: hashToken(normalizedToken),
-          inviteStatus: "pending",
-          inviteExpiresAt: { gt: now },
-        },
-        select: savedTeamInviteSelect,
-      })
-    : null;
-
-  if (!savedTeamMember) {
-    throw new HttpError(400, "This team invite link is invalid or has expired.");
-  }
-
-  return mapSavedTeamInvitePreview(savedTeamMember);
-};
-
-const respondToTeamInvite = async ({ token, decision, user }) => {
-  const normalizedToken = normalizeText(token);
-  const tokenHash = normalizedToken ? hashToken(normalizedToken) : "";
-  const normalizedDecision = normalizeText(decision).toLowerCase();
-  const now = new Date();
-
-  if (!normalizedToken) {
-    throw new HttpError(400, "Team invite token is required.");
-  }
-
-  if (!["accept", "decline"].includes(normalizedDecision)) {
-    throw new HttpError(400, "A valid invite decision is required.");
-  }
-
-  if (!user) {
-    throw new HttpError(401, "Create an account or sign in before responding to this invite.");
-  }
-
-  if (!user.emailVerified) {
-    throw new HttpError(403, "Verify your account email before responding to this invite.");
-  }
-
-  const member = await prisma.registrationMember.findFirst({
-    where: {
-      inviteTokenHash: tokenHash,
-      inviteStatus: "pending",
-      inviteExpiresAt: {
-        gt: now,
-      },
-    },
-    select: invitePreviewSelect,
-  });
-
-  if (!member) {
-    const savedTeamMember = prisma.savedTeamMember?.findFirst
-      ? await prisma.savedTeamMember.findFirst({
-          where: {
-            inviteTokenHash: tokenHash,
-            inviteStatus: "pending",
-            inviteExpiresAt: { gt: now },
-          },
-          select: savedTeamInviteSelect,
-        })
-      : null;
-
-    if (!savedTeamMember) {
-      throw new HttpError(400, "This team invite link is invalid or has expired.");
-    }
-
-    if (normalizeEmail(user.email) !== savedTeamMember.emailNormalized) {
-      throw new HttpError(
-        403,
-        `Sign in with the invited email address (${savedTeamMember.email}) to respond to this invite.`
-      );
-    }
-
-    const inviteStatus = normalizedDecision === "accept" ? "accepted" : "declined";
-    const inviteRespondedAt = new Date();
-    const linkedUserId = inviteStatus === "accepted" ? user.id : null;
-    const updatedMember = await prisma.$transaction(async (tx) => {
-      const consumedInvite = await tx.savedTeamMember.updateMany({
-        where: {
-          id: savedTeamMember.id,
-          inviteTokenHash: tokenHash,
-          inviteStatus: "pending",
-          inviteExpiresAt: { gt: new Date() },
-        },
-        data: {
-          userId: linkedUserId,
-          inviteStatus,
-          inviteRespondedAt,
-          inviteTokenHash: null,
-          inviteExpiresAt: null,
-        },
-      });
-
-      if (consumedInvite.count === 0) {
-        throw new HttpError(400, "This team invite link is invalid or has expired.");
-      }
-
-      const linkedRegistrations = await tx.teamRegistration.findMany({
-        where: { savedTeamId: savedTeamMember.team.id, paymentStatus: "unpaid" },
-        select: { id: true },
-      });
-      await tx.registrationMember.updateMany({
-        where: {
-          emailNormalized: savedTeamMember.emailNormalized,
-          inviteStatus: "pending",
-          registration: {
-            savedTeamId: savedTeamMember.team.id,
-            paymentStatus: "unpaid",
-          },
-        },
-        data: {
-          userId: linkedUserId,
-          inviteStatus,
-          inviteRespondedAt,
-          inviteTokenHash: null,
-          inviteExpiresAt: null,
-        },
-      });
-      for (const registration of linkedRegistrations) {
-        await refreshRegistrationVerificationStatus({
-          tx,
-          registrationId: registration.id,
-        });
-      }
-
-      return tx.savedTeamMember.findUnique({
-        where: { id: savedTeamMember.id },
-        select: savedTeamInviteSelect,
-      });
-    });
-
-    return {
-      ...mapSavedTeamInvitePreview(updatedMember),
-      inviteStatus,
-    };
-  }
-
-  if (normalizeEmail(user.email) !== member.emailNormalized) {
-    throw new HttpError(
-      403,
-      `Sign in with the invited email address (${member.email}) to respond to this invite.`
-    );
-  }
-
-  const inviteStatus = normalizedDecision === "accept" ? "accepted" : "declined";
-  const inviteRespondedAt = new Date();
-  const linkedUserId = inviteStatus === "accepted" ? user.id : null;
-  const updatedMember = await prisma.$transaction(async (tx) => {
-    const consumedInvite = await tx.registrationMember.updateMany({
-      where: {
-        id: member.id,
-        inviteTokenHash: tokenHash,
-        inviteStatus: "pending",
-        inviteExpiresAt: {
-          gt: new Date(),
-        },
-      },
-      data: {
-        userId: linkedUserId,
-        inviteStatus,
-        inviteRespondedAt,
-        inviteTokenHash: null,
-        inviteExpiresAt: null,
-      },
-    });
-
-    if (consumedInvite.count === 0) {
-      throw new HttpError(400, "This team invite link is invalid or has expired.");
-    }
-
-    if (member.registration.savedTeamId) {
-      await tx.savedTeamMember.updateMany({
-        where: {
-          teamId: member.registration.savedTeamId,
-          role: member.role,
-          memberOrder: member.memberOrder,
-          emailNormalized: member.emailNormalized,
-        },
-        data: {
-          userId: linkedUserId,
-          inviteStatus,
-          inviteRespondedAt,
-          inviteTokenHash: null,
-          inviteExpiresAt: null,
-        },
-      });
-    }
-
-    await refreshRegistrationVerificationStatus({
-      tx,
-      registrationId: member.registration.id,
-    });
-
-    const updatedRegistrationMember = await tx.registrationMember.findUnique({
-      where: { id: member.id },
-      select: invitePreviewSelect,
-    });
-
-    if (!updatedRegistrationMember) {
-      throw new HttpError(400, "This team invite link is invalid or has expired.");
-    }
-
-    return updatedRegistrationMember;
-  });
-
-  return {
-    ...mapInvitePreview(updatedMember),
-    inviteStatus,
   };
 };
 
@@ -1205,6 +885,10 @@ const syncSavedTeamFromRegistration = async ({
       const existingMember = existingMembersByRosterPosition.get(
         `${member.role}:${member.order}:${email}`
       );
+      // These rows are deleted and recreated on every sync. Carrying the id
+      // over keeps an outstanding invitation the same invitation, rather than
+      // one that changes identity underneath the notices pointing at it.
+      const memberId = existingMember?.id || crypto.randomUUID();
       const acceptedMember =
         member.inviteStatus === "accepted"
           ? member
@@ -1213,9 +897,11 @@ const syncSavedTeamFromRegistration = async ({
             : existingMember?.inviteStatus === "accepted" && existingMember.userId
               ? existingMember
               : null;
+      // Still outstanding because nobody answered it and it has not run out
+      // — not because a token still exists for it. Reissuing an invitation that
+      // is already live would only re-notify someone already told.
       const activePendingMember =
         existingMember?.inviteStatus === "pending" &&
-        existingMember.inviteTokenHash &&
         existingMember.inviteExpiresAt &&
         existingMember.inviteExpiresAt > inviteSentAt
           ? existingMember
@@ -1238,7 +924,7 @@ const syncSavedTeamFromRegistration = async ({
         });
 
         return {
-          id: crypto.randomUUID(),
+          id: memberId,
           teamId: team.id,
           userId: linkedUserId,
           role: member.role,
@@ -1273,7 +959,7 @@ const syncSavedTeamFromRegistration = async ({
         });
 
         return {
-          id: crypto.randomUUID(),
+          id: memberId,
           teamId: team.id,
           userId: null,
           role: member.role,
@@ -1299,7 +985,7 @@ const syncSavedTeamFromRegistration = async ({
           data: {
             userId: null,
             inviteStatus: "pending",
-            inviteTokenHash: activePendingMember.inviteTokenHash,
+            inviteTokenHash: null,
             inviteSentAt: activePendingMember.inviteSentAt,
             inviteExpiresAt: activePendingMember.inviteExpiresAt,
             inviteRespondedAt: null,
@@ -1307,7 +993,7 @@ const syncSavedTeamFromRegistration = async ({
         });
 
         return {
-          id: crypto.randomUUID(),
+          id: memberId,
           teamId: team.id,
           role: member.role,
           memberOrder: member.order,
@@ -1318,36 +1004,36 @@ const syncSavedTeamFromRegistration = async ({
           discord: member.discord,
           riotId: member.riotId,
           inviteStatus: "pending",
-          inviteTokenHash: activePendingMember.inviteTokenHash,
+          inviteTokenHash: null,
           inviteSentAt: activePendingMember.inviteSentAt,
           inviteExpiresAt: activePendingMember.inviteExpiresAt,
         };
       }
 
-      const token = createTokenPair({ hours: 72 });
       registrationMemberUpdates.push({
         role: member.role,
         memberOrder: member.order,
         data: {
           userId: null,
           inviteStatus: "pending",
-          inviteTokenHash: token.tokenHash,
+          inviteTokenHash: null,
           inviteSentAt,
           inviteExpiresAt,
           inviteRespondedAt: null,
         },
       });
       inviteDispatches.push({
-        email,
+        invitationId: memberId,
+        emailNormalized: email,
         recipientName: member.name,
         teamName: normalizedTeamName,
         captainName,
         tournamentTitle,
-        rawToken: token.rawToken,
+        sentAt: inviteSentAt,
       });
 
       return {
-        id: crypto.randomUUID(),
+        id: memberId,
         teamId: team.id,
         role: member.role,
         memberOrder: member.order,
@@ -1358,7 +1044,7 @@ const syncSavedTeamFromRegistration = async ({
         discord: member.discord,
         riotId: member.riotId,
         inviteStatus: "pending",
-        inviteTokenHash: token.tokenHash,
+        inviteTokenHash: null,
         inviteSentAt,
         inviteExpiresAt,
       };
@@ -1400,34 +1086,22 @@ const syncSavedTeamFromRegistration = async ({
   return inviteDispatches;
 };
 
+// Tell each invitee their invitation is waiting. The invitation itself is
+// already written down by the time this runs, so every channel here is best
+// effort and none of them is the invitation: a notice that reaches nobody costs
+// a nudge, not a roster spot.
 const sendTeamInvites = async (inviteDispatches) => {
-  if (inviteDispatches.length === 0) return;
+  if (!Array.isArray(inviteDispatches) || inviteDispatches.length === 0) return [];
 
-  if (typeof sendTeamInviteEmails === "function") {
-    try {
-      await sendTeamInviteEmails(inviteDispatches);
-    } catch (error) {
-      logger.error("Failed to queue team invite emails.", {
-        inviteCount: inviteDispatches.length,
-        error,
-      });
-    }
-    return;
+  try {
+    return await notifyInvites(inviteDispatches);
+  } catch (error) {
+    logger.error("Failed to send team invite notices.", {
+      inviteCount: inviteDispatches.length,
+      error,
+    });
+    return [];
   }
-
-  await Promise.allSettled(
-    inviteDispatches.map(async (invite) => {
-      try {
-        await sendTeamInviteEmail(invite);
-      } catch (error) {
-        logger.error("Failed to send team invite email.", {
-          email: invite.email,
-          teamName: invite.teamName,
-          error,
-        });
-      }
-    })
-  );
 };
 
 const syncTeamRegistrationToProfile = async ({ registrationId, requirePaid }) => {
@@ -1517,9 +1191,7 @@ module.exports = {
   createSavedTeam,
   updateSavedTeam,
   deleteSavedTeam,
-  resendSavedTeamInvite,
-  getTeamInvitePreview,
-  respondToTeamInvite,
+  nudgeTeamInvite,
   syncSavedTeamFromRegistration,
   sendTeamInvites,
   ensureTeamRegistrationSaved,
