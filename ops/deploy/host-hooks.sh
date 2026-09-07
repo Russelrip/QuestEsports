@@ -540,7 +540,12 @@ case "$wrapper" in
     # backend's own trusted CA and the existing Quest service-token signer rather
     # than a host-side shortcut. The health route is non-mutating but validates
     # the real cross-service HMAC contract in production.
-    "$docker_bin" exec -e "VALORANT_HEALTH_URL=${VALORANT_HEALTH_URL:?}" "$quest_backend_container" node -e \
+    # dotenv announces itself on STDOUT ("[dotenv@17.3.1] injecting env ..."),
+    # which lands ahead of the JSON body and makes the response unparseable to
+    # the exact-shape verifier in release.sh -- a healthy integration then reads
+    # as a malformed one and refuses the release. The probe must emit the
+    # response and nothing else.
+    "$docker_bin" exec -e DOTENV_CONFIG_QUIET=true -e "VALORANT_HEALTH_URL=${VALORANT_HEALTH_URL:?}" "$quest_backend_container" node -e \
       'const crypto = require("node:crypto"); const { buildServiceAuthHeaders } = require("/app/src/modules/valorant/valorant.auth"); fetch(process.env.VALORANT_HEALTH_URL, { headers: buildServiceAuthHeaders({ actorUserId: "quest-release-health", operationId: crypto.randomUUID() }) }).then(async (response) => { const body = await response.text(); if (!response.ok) process.exit(1); process.stdout.write(body); }).catch(() => process.exit(1))' \
       || die 'the VALORANT HTTPS health gate failed from the Quest network boundary.'
     ;;

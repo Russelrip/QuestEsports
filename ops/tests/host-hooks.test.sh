@@ -235,6 +235,17 @@ for branch in quest-release-quest-migration-status quest-release-valorant-migrat
 done
 (( failures == 0 )) && pass 'migration status hooks report pending without failing'
 
+# 7. The VALORANT health probe is parsed as exact JSON by release.sh, so its
+#    stdout must carry the response and nothing else. dotenv prints a banner
+#    there on load, which turns a healthy integration into a refused release.
+health_body="$(awk -v want='  quest-release-valorant-health)' '$0 == want { capture = 1; next } capture && /^    ;;$/ { exit } capture' <<< "$dispatch")"
+if [[ -z "$health_body" ]]; then
+  fail 'quest-release-valorant-health has no dispatch body'
+elif ! grep -q 'DOTENV_CONFIG_QUIET=true' <<< "$health_body"; then
+  fail 'the VALORANT health probe does not silence the dotenv banner on stdout'
+fi
+(( failures == 0 )) && pass 'the VALORANT health probe emits only its response'
+
 if (( failures > 0 )); then
   printf '%s host hook contract check(s) failed.\n' "$failures" >&2
   exit 1
