@@ -13,3 +13,9 @@ Validation:
 - Frontend typecheck could not run because `tsc` was not recognized.
 - Changed-file lint could not run because `eslint` was not recognized.
 - `git diff --check` passed.
+
+Fix round 1:
+
+- Grouped the Discord checkbox and its existing helper text in one responsive-grid wrapper, added `aria-describedby="discordRequired-help"`, and corrected the JSX indentation without changing the copy or behavior.
+- Focused test, typecheck, and changed-file lint remain unavailable because the frontend dependency executables (`vitest`, `tsc`, and `eslint`) are not recognized.
+- `git diff --check` passed.
