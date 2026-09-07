@@ -474,6 +474,263 @@ test("a free open-entry registration is approved on submission when the tourname
   }
 });
 
+// The free-event case above is a captain who is the whole roster. A free event
+// with someone else on the roster is the case that was missing, and the one that
+// was wrong: the roster gate used to be spelled `entryType === "team" && fee > 0`,
+// so a free team event reported no outstanding invitations at all and its captain
+// was handed a plain "registration submitted" for a roster nobody had accepted.
+test("a free team event reports its outstanding invitations to the captain", async () => {
+  let createdRegistration;
+  let createdMembers;
+  const registrationUpdates = [];
+  const freeTournament = {
+    ...tournament,
+    game: "Valorant",
+    registrationFeeAmount: 0,
+    paymentMethod: "free",
+    autoApproveRegistrations: true,
+    maxTeams: null,
+  };
+  let storedRegistration = null;
+  const tx = {
+    tournament: { findUnique: async () => freeTournament },
+    teamRegistration: {
+      count: async () => 0,
+      findMany: async () => [],
+      findFirst: async () => null,
+      create: async ({ data }) => {
+        createdRegistration = data;
+        storedRegistration = { ...data, tournament: freeTournament };
+        return { ...data };
+      },
+      findUnique: async () => storedRegistration,
+      update: async (args) => {
+        registrationUpdates.push(args);
+        storedRegistration = { ...storedRegistration, ...args.data };
+        return { ...storedRegistration };
+      },
+    },
+    registrationMember: {
+      createMany: async ({ data }) => {
+        createdMembers = data;
+        return { count: data.length };
+      },
+      findMany: async () => [],
+    },
+    paymentTransaction: { create: async ({ data }) => data },
+    auditLog: { create: async ({ data }) => data },
+  };
+  const prisma = {
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
+    tournament: { findFirst: async () => freeTournament },
+    teamRegistration: { findFirst: async () => null },
+    $transaction: async (work) => work(tx),
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
+      sendTeamInvites: async () => undefined,
+    },
+    [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {
+      assertBankTransferConfigured: () => undefined,
+      buildBankTransferInstructions: () => ({}),
+      getBankTransferAmountForSlot: () => 0,
+    },
+  });
+
+  try {
+    const result = await registrationService.createConfiguredRegistration({
+      slug: freeTournament.slug,
+      body: {
+        ...body,
+        members: JSON.stringify([
+          { name: "Player Two", email: "player@example.com", gameId: "PlayerTwo#456", role: "PLAYER" },
+        ]),
+      },
+      user,
+    });
+
+    // The row was already right: an unaccepted roster is not verified, and
+    // nothing auto-approves it.
+    assert.equal(createdRegistration.verificationStatus, "pending");
+    assert.equal(createdRegistration.status, "pending");
+    assert.deepEqual(registrationUpdates, []);
+    assert.equal(
+      createdMembers.find((member) => member.role === "PLAYER").inviteStatus,
+      "pending",
+    );
+
+    // What the captain is told about it is the part that was not.
+    assert.equal(result.awaitingTeamVerification, true);
+    assert.equal(result.pendingInviteCount, 1);
+    // A free event has no payment step behind the confirmation, so confirming
+    // the roster must not be reported as unlocking one.
+    assert.equal(result.readyForPayment, false);
+    assert.equal(createdRegistration.quotedFeeAmount, null);
+    assert.equal(createdRegistration.reservedUntil, null);
+  } finally {
+    restore();
+  }
+});
+
+// A free row is stored as paid the moment it is created, because capacity counts
+// paid rows. That made "you are already registered" the only answer a free
+// captain could get back while invitations were still outstanding — no roster
+// state, and no route to the resend controls from the page they were on.
+test("a free team captain can return to a roster that has not finished accepting", async () => {
+  let repaired = null;
+  const existing = {
+    id: "registration-1",
+    entryType: "team",
+    teamName: "Quest Five",
+    status: "pending",
+    paymentStatus: "paid",
+    verificationStatus: "pending",
+    reservedUntil: null,
+    assignedSlotNumber: null,
+    members: [
+      { role: "CAPTAIN", inviteStatus: "accepted" },
+      { role: "PLAYER", inviteStatus: "pending" },
+    ],
+    payments: [],
+  };
+  const freeTournament = {
+    ...tournament,
+    registrationFeeAmount: 0,
+    paymentMethod: "free",
+    maxTeams: null,
+  };
+  const prisma = {
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
+    tournament: { findFirst: async () => freeTournament },
+    teamRegistration: { findFirst: async () => existing },
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [teamServicePath]: {
+      // The same repair the paid path relies on: a registration whose invitation
+      // dispatch was interrupted gets another chance at it here.
+      ensureTeamRegistrationSaved: async (registrationId) => { repaired = registrationId; },
+      sendTeamInvites: async () => undefined,
+    },
+    [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {
+      assertBankTransferConfigured: () => undefined,
+      buildBankTransferInstructions: () => ({}),
+      getBankTransferAmountForSlot: () => 0,
+    },
+  });
+
+  try {
+    const result = await registrationService.createConfiguredRegistration({
+      slug: freeTournament.slug,
+      body,
+      user,
+    });
+
+    assert.equal(result.awaitingTeamVerification, true);
+    assert.equal(result.pendingInviteCount, 1);
+    assert.equal(result.registration.verificationStatus, "pending");
+    assert.equal(repaired, existing.id);
+  } finally {
+    restore();
+  }
+});
+
+test("a free team registration everyone has accepted is still answered as already registered", async () => {
+  const existing = {
+    id: "registration-1",
+    entryType: "team",
+    teamName: "Quest Five",
+    status: "approved",
+    paymentStatus: "paid",
+    verificationStatus: "verified",
+    reservedUntil: null,
+    assignedSlotNumber: null,
+    members: [
+      { role: "CAPTAIN", inviteStatus: "accepted" },
+      { role: "PLAYER", inviteStatus: "accepted" },
+    ],
+    payments: [],
+  };
+  const freeTournament = {
+    ...tournament,
+    registrationFeeAmount: 0,
+    paymentMethod: "free",
+    maxTeams: null,
+  };
+  const prisma = {
+    oAuthAccount: {
+      findFirst: async () => ({
+        providerUserId: "900000000000000001",
+        user: { discordTag: "captain-discord" },
+      }),
+      findMany: async () => [],
+    },
+    user: { findMany: async () => [] },
+    tournament: { findFirst: async () => freeTournament },
+    teamRegistration: { findFirst: async () => existing },
+  };
+  const { module: registrationService, restore } = loadModuleWithMocks(servicePath, {
+    [prismaModulePath]: { prisma },
+    [uploadModulePath]: {
+      persistTeamLogoUpload: async () => null,
+      teamLogoDirectory: "uploads/team-logos",
+    },
+    [teamServicePath]: {
+      ensureTeamRegistrationSaved: async () => undefined,
+      sendTeamInvites: async () => undefined,
+    },
+    [registrationMailModulePath]: { sendRegistrationReceivedEmail: async () => undefined },
+    [paymentServicePath]: { assertPayHereConfigured: () => undefined },
+    [bankTransferServicePath]: {
+      assertBankTransferConfigured: () => undefined,
+      buildBankTransferInstructions: () => ({}),
+      getBankTransferAmountForSlot: () => 0,
+    },
+  });
+
+  try {
+    // Reopening is for a roster that has not finished, not a second entry.
+    await assert.rejects(
+      () => registrationService.createConfiguredRegistration({
+        slug: freeTournament.slug,
+        body,
+        user,
+      }),
+      (error) => error.statusCode === 409 && /already registered/.test(error.message),
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("a reviewed tournament still submits its registration for approval", async () => {
   let createdRegistration;
   const registrationUpdates = [];

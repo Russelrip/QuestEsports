@@ -232,7 +232,11 @@ export default function RegisterTournamentButton({
           <ReservationCountdown expiresAt={registration?.reservedUntil} compact onExpire={() => setDeadlineReached(true)} />
         </div>
       ) : awaitingRoster ? (
-        <p className="mt-2 max-w-sm text-xs leading-5 text-amber-100">Every invited player must accept before payment and slot reservation are unlocked.</p>
+        <p className="mt-2 max-w-sm text-xs leading-5 text-amber-100">
+          {(tournament.registrationFee?.amount || 0) > 0
+            ? "Every invited player must accept before payment and slot reservation are unlocked."
+            : "Every invited player must accept before your entry is complete."}
+        </p>
       ) : readyForPayment ? (
         <p className="mt-2 max-w-sm text-xs leading-5 text-emerald-200">Your full roster is confirmed. Continue to reserve the slot and pay.</p>
       ) : isRegistered ? (

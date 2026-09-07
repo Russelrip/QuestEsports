@@ -386,7 +386,12 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
       </Card>
     );
   }
-  if (existingRegistration && tournament.entryType === "team" && (tournament.registrationFee?.amount || 0) > 0) {
+  // A free team event has a roster to confirm just like a paid one; it simply
+  // has no payment step waiting behind the confirmation. Gating this panel on a
+  // fee left free captains with a bare success message and no way back to their
+  // outstanding invitations.
+  if (existingRegistration && tournament.entryType === "team") {
+    const chargesFee = (tournament.registrationFee?.amount || 0) > 0;
     const rosterPending = existingRegistration.verificationStatus !== "verified";
     const bankPayment = existingRegistration.payment?.provider === "bank_transfer"
       ? existingRegistration.payment
@@ -397,14 +402,20 @@ export default function ConfiguredTournamentRegistrationForm({ tournament }: { t
           {rosterPending ? "Roster confirmation required" : "Roster confirmed"}
         </p>
         <h2 className="mt-4 text-3xl text-white">
-          {rosterPending ? "Payment is locked until every roster member accepts" : `Your team is ready for ${tournament.title}`}
+          {rosterPending
+            ? chargesFee
+              ? "Payment is locked until every roster member accepts"
+              : "Your entry is not complete until every roster member accepts"
+            : `Your team is ready for ${tournament.title}`}
         </h2>
         <p className="mt-4 text-sm leading-7 text-slate-300">
           {existingRegistration.verificationStatus === "flagged"
             ? "A roster member declined the invitation. Open the saved team and send that roster member’s invitation again before continuing."
             : rosterPending
-              ? `${existingRegistration.pendingInviteCount} roster invitation${existingRegistration.pendingInviteCount === 1 ? " is" : "s are"} still pending. No payment or slot reservation will be created until the full roster is confirmed.`
-              : "Every roster member has accepted. You can now reserve the slot and continue to payment."}
+              ? `${existingRegistration.pendingInviteCount} roster invitation${existingRegistration.pendingInviteCount === 1 ? " is" : "s are"} still pending. ${chargesFee ? "No payment or slot reservation will be created until the full roster is confirmed." : "Your entry is held until the full roster is confirmed."}`
+              : chargesFee
+                ? "Every roster member has accepted. You can now reserve the slot and continue to payment."
+                : "Every roster member has accepted. Your entry is confirmed."}
         </p>
         {existingRegistration.reservedUntil && existingRegistration.paymentStatus === "pending" ? (
           <div className="mt-6 text-left">
