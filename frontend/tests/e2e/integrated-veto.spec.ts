@@ -373,6 +373,15 @@ const refreshVeto = async (page: Page) => {
   ]);
 };
 
+// VetoRoomView polls its room every 5s. Playwright stops honouring
+// context.route once a context begins closing, so a poll firing in that window
+// can escape to the mock API and be recorded as an unexpected request. Parking
+// the fixture page destroys the timer while routing is still active, wherever
+// in the spec a failure lands.
+test.afterEach(async ({ page }) => {
+  await page.goto("about:blank").catch(() => {});
+});
+
 test("staff launches an integrated BO3 veto and role views stay correctly isolated", async ({ page, browser }, testInfo: TestInfo) => {
   test.setTimeout(120_000);
   const state = makeFixtureState();
@@ -556,6 +565,10 @@ test("staff launches an integrated BO3 veto and role views stay correctly isolat
     else expect(viewport?.width).toBeGreaterThanOrEqual(700);
     await expectNoHorizontalOverflow(casterPage);
   } finally {
+    // Same reason as the afterEach hook: stop the pollers before the close.
+    await Promise.allSettled(
+      [teamPage, teamTwoPage, viewerPage, casterPage].map((target) => target.goto("about:blank")),
+    );
     await Promise.allSettled([teamPage.close(), teamTwoPage.close(), viewerPage.close(), casterPage.close()]);
     await Promise.allSettled([casterContext.close(), viewerContext.close(), teamTwoContext.close(), teamContext.close()]);
   }
