@@ -147,8 +147,11 @@ export default function AdminUsersManager() {
           <FormField label="Phone" htmlFor="phone">
             <Input id="phone" value={formValues.phone} onChange={(event) => updateField("phone", event.target.value)} />
           </FormField>
-          <FormField label="Discord Tag" htmlFor="discordTag">
-            <Input id="discordTag" value={formValues.discordTag} onChange={(event) => updateField("discordTag", event.target.value)} />
+          {/* Read-only. The tag is written by the user's OAuth link and cleared
+              when they unlink; an admin typing one here would produce a handle
+              that looks verified to every flow that now trusts it. */}
+          <FormField label="Discord Tag" htmlFor="discordTag" hint="From the user's connected account">
+            <Input id="discordTag" disabled value={formValues.discordTag || "Not connected"} />
           </FormField>
           <FormField label="Role" htmlFor="role" required>
             <Select id="role" value={formValues.role} onChange={(event) => updateField("role", event.target.value as UserFormValues["role"])}>

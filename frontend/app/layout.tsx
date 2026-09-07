@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Viewport } from "next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import DiscordConnectionGate from "@/components/auth/DiscordConnectionGate";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { ToastProvider } from "@/components/ui/toast-provider";
@@ -41,7 +42,9 @@ export default function RootLayout({
         <style>{"body:has([data-admin-route]) > header, body:has([data-admin-route]) > footer { display: none; } body:has([data-admin-route]) > main { margin: 0; }"}</style>
         <AuthProvider>
           <Navbar />
-          <main>{children}</main>
+          <main>
+            <DiscordConnectionGate>{children}</DiscordConnectionGate>
+          </main>
           <Footer />
           <ToastProvider />
         </AuthProvider>

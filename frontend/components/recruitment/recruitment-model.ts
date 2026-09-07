@@ -3,11 +3,13 @@ export type ApplicationType =
   | "existing_team"
   | "incomplete_team";
 
+// No `discord`. An applicant cannot connect Discord on a team-mate's behalf,
+// so the handle is resolved from each member's own connected account when the
+// application is submitted.
 export type RecruitmentMember = {
   name: string;
   ign: string;
   nic: string;
-  discord: string;
   email: string;
   phone: string;
   role: "player" | "substitute";
@@ -26,7 +28,6 @@ export type RecruitmentFields = {
   birthday: string;
   gender: string;
   phone: string;
-  discord: string;
   games: string[];
   otherGame: string;
   peakAndCurrentRank: string;
@@ -70,7 +71,6 @@ export const createEmptyRecruitmentMember = (): RecruitmentMember => ({
   name: "",
   ign: "",
   nic: "",
-  discord: "",
   email: "",
   phone: "",
   role: "player",
@@ -84,7 +84,6 @@ export const initialRecruitmentFields: RecruitmentFields = {
   birthday: "",
   gender: "",
   phone: "",
-  discord: "",
   games: [],
   otherGame: "",
   peakAndCurrentRank: "",

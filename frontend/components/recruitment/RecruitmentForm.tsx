@@ -46,7 +46,6 @@ export default function RecruitmentForm() {
       ...current,
       fullName: current.fullName || [user.firstName, user.lastName].filter(Boolean).join(" "),
       phone: current.phone || user.phone || "",
-      discord: current.discord || user.discordTag || "",
     }));
   }, [user]);
 
@@ -217,9 +216,6 @@ export default function RecruitmentForm() {
                     <option value="other">Other</option>
                   </Select>
                 </FormField>
-                <FormField label="Discord Username" htmlFor="discord" required>
-                  <Input id="discord" required value={fields.discord} onChange={(event) => updateField("discord", event.target.value)} />
-                </FormField>
                 <FormField label="Contact Number" htmlFor="phone" required>
                   <Input id="phone" type="tel" required value={fields.phone} onChange={(event) => updateField("phone", event.target.value)} />
                 </FormField>
@@ -370,7 +366,6 @@ function MemberFields({ member, number, canRemove, onUpdate, onPrivacyAccepted, 
         <FormField label="Full Name" required><Input required value={member.name} onChange={(event) => onUpdate("name", event.target.value)} /></FormField>
         <FormField label="In-Game Name (IGN)" required><Input required value={member.ign} onChange={(event) => onUpdate("ign", event.target.value)} /></FormField>
         <FormField label="NIC" required hint="Stored encrypted."><Input required value={member.nic} onChange={(event) => onUpdate("nic", event.target.value)} /></FormField>
-        <FormField label="Discord Username" required><Input required value={member.discord} onChange={(event) => onUpdate("discord", event.target.value)} /></FormField>
         <FormField label="Email Address" required><Input required type="email" value={member.email} onChange={(event) => onUpdate("email", event.target.value)} /></FormField>
         <FormField label="WhatsApp Number" required><Input required type="tel" value={member.phone} onChange={(event) => onUpdate("phone", event.target.value)} /></FormField>
         <FormField label="Roster Role">

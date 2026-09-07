@@ -596,7 +596,6 @@ const createAdminUser = async ({ body }) => {
   const password = String(body.password || "");
   const confirmPassword = String(body.confirmPassword || "");
   const phone = normalizeText(body.phone) || null;
-  const discordTag = normalizeText(body.discordTag) || null;
   const role = USER_ROLES.has(normalizeText(body.role).toLowerCase())
     ? normalizeText(body.role).toLowerCase()
     : "user";
@@ -608,7 +607,6 @@ const createAdminUser = async ({ body }) => {
     username,
   });
   if (phone && phone.length > 50) fieldErrors.phone = "Phone must be 50 characters or fewer.";
-  if (discordTag && discordTag.length > 100) fieldErrors.discordTag = "Discord username must be 100 characters or fewer.";
 
   if (!isValidEmail(email)) {
     fieldErrors.email = "Please enter a valid email address.";
@@ -664,7 +662,6 @@ const createAdminUser = async ({ body }) => {
       passwordSetAt,
       role,
       phone,
-      discordTag,
     },
     select: ADMIN_USER_SELECT,
   });
@@ -691,7 +688,6 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
   const username = normalizeText(body.username);
   const usernameNormalized = normalizeUsername(username);
   const phone = normalizeText(body.phone) || null;
-  const discordTag = normalizeText(body.discordTag) || null;
   const password = String(body.password || "");
   const confirmPassword = String(body.confirmPassword || "");
   const role = USER_ROLES.has(normalizeText(body.role).toLowerCase())
@@ -705,7 +701,6 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
     username,
   });
   if (phone && phone.length > 50) fieldErrors.phone = "Phone must be 50 characters or fewer.";
-  if (discordTag && discordTag.length > 100) fieldErrors.discordTag = "Discord username must be 100 characters or fewer.";
 
   if (!isValidEmail(email)) {
     fieldErrors.email = "Please enter a valid email address.";
@@ -766,7 +761,9 @@ const updateAdminUser = async ({ userId, body, currentUser }) => {
         username,
         usernameNormalized,
         phone,
-        discordTag,
+        // Not settable by an admin either. The tag is written by the OAuth link
+        // and cleared by unlinking; an admin typing one here would produce a
+        // handle that looks verified to every flow that now trusts it.
         role,
         ...(nextPasswordHash
           ? { passwordHash: nextPasswordHash, passwordSetAt: nextPasswordSetAt }
