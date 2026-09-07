@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   formatEventCountdown,
   getCountdownTarget,
-  getEventRegistrationSummary,
   getEventStatus,
 } from "@/lib/event-utils";
 import type { EventSeries } from "@/lib/tournaments";
@@ -60,34 +59,5 @@ describe("event utils", () => {
     expect(getEventStatus(event({ isPublished: false }))).toEqual({ key: "draft", label: "Coming soon" });
     expect(getEventStatus(event({ eventStatus: "open" }))).toEqual({ key: "open", label: "Registration open" });
     expect(formatEventCountdown(new Date("2026-08-20T10:00:00Z"), new Date("2026-08-19T10:00:00Z"))).toBe("1d 0h");
-  });
-
-  it("formats aggregate counts and meaningful zero states", () => {
-    expect(getEventRegistrationSummary(event())).toMatchObject({ games: "3 games", teams: "12 teams", players: "48 players", slots: "8 slots available", isOpen: false });
-    expect(getEventRegistrationSummary(event({
-      games: 0,
-      teamsRegistered: 0,
-      playersRegistered: 0,
-      availableSlots: 0,
-      registrationState: "closed",
-      aggregate: {
-        games: 0,
-        teamsRegistered: 0,
-        playersRegistered: 0,
-        availableSlots: 0,
-        registrationState: "closed",
-      },
-    }))).toMatchObject({ games: "No games announced", teams: "No teams registered", players: "No players registered", slots: "No slots available", isOpen: false });
-    expect(getEventRegistrationSummary(event({
-      registrationState: "open",
-      eventStatus: "open",
-      aggregate: {
-        games: 3,
-        teamsRegistered: 12,
-        playersRegistered: 48,
-        availableSlots: 8,
-        registrationState: "open",
-      },
-    }))).toMatchObject({ isOpen: true });
   });
 });

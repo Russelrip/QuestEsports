@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import PageLayout from "@/components/PageLayout";
 import { PageTransition } from "@/components/ui/page-transition";
 import EventHero from "@/components/tournaments/event/EventHero";
-import EventOverview from "@/components/tournaments/event/EventOverview";
 import EventTournamentList from "@/components/tournaments/event/EventTournamentList";
 import { ApiRequestError } from "@/lib/api";
 import { fetchPublicEventBySlug } from "@/lib/tournaments";
@@ -42,8 +41,6 @@ export default async function EventPage({ params }: { params: Promise<{ slug: st
     <PageLayout title={event.title} description={event.shortDescription || event.description}>
       <PageTransition>
         <EventHero event={event} />
-        <nav aria-label="Event sections" className="border-b border-white/10 bg-[#0d0c13]"><div className="mx-auto flex max-w-7xl gap-6 px-5 py-4 text-sm sm:px-8"><a className="text-purple-200 underline-offset-4 hover:underline" href="#overview">Overview</a><a className="text-purple-200 underline-offset-4 hover:underline" href="#tournaments">Games</a></div></nav>
-        <EventOverview event={event} />
         <EventTournamentList event={event} />
       </PageTransition>
     </PageLayout>

@@ -4,7 +4,6 @@ import TicketCheckout from "@/components/tickets/TicketCheckout";
 import { Container } from "@/components/ui/container";
 import { PageTransition } from "@/components/ui/page-transition";
 import EventHero from "@/components/tournaments/event/EventHero";
-import EventOverview from "@/components/tournaments/event/EventOverview";
 import EventTournamentList from "@/components/tournaments/event/EventTournamentList";
 import { fetchPublicEventSeriesBySlug } from "@/lib/tournaments";
 import { ApiRequestError } from "@/lib/api";
@@ -43,7 +42,6 @@ export default async function EventSeriesPage({ params }: { params: Promise<{ sl
   return (
     <PageTransition>
       <EventHero event={series} />
-      <EventOverview event={series} />
 
       {series.ticketEvent ? (
         <section className="border-b border-white/10 bg-white/[0.02] py-10 sm:py-14">
