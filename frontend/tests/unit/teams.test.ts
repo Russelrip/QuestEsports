@@ -12,11 +12,13 @@ describe("saved team registration mapping", () => {
       ],
     });
 
+    // The saved team still carries the handle it was registered with, but the
+    // draft deliberately drops it: a re-registration resolves every roster
+    // Discord from connected accounts rather than replaying a stored string.
     expect(draft.coach).toEqual({
       name: "Coach",
       email: "coach@example.com",
       phone: "0771111111",
-      discord: "coach-discord",
       gameId: "Coach#001",
     });
     expect(draft.coachSelected).toBe(true);

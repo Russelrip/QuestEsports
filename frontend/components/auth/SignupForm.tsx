@@ -33,7 +33,6 @@ const signupSchema = z
     password: z.string().min(8, "Password must be at least 8 characters long.").refine(passwordFitsBcrypt, passwordByteLimitMessage),
     confirmPassword: z.string().min(1, "Please confirm your password."),
     phone: z.string().optional(),
-    discordTag: z.string().optional(),
     terms: z.boolean().refine((value) => value, {
       message: "You must agree before continuing.",
     }),
@@ -72,7 +71,6 @@ export default function SignupForm() {
       password: "",
       confirmPassword: "",
       phone: "",
-      discordTag: "",
       terms: true,
     },
   });
@@ -105,7 +103,6 @@ export default function SignupForm() {
         password: "",
         confirmPassword: "",
         phone: "",
-        discordTag: "",
         terms: true,
       });
     } catch (error) {
@@ -180,12 +177,12 @@ export default function SignupForm() {
           </FormField>
         </div>
 
+        {/* Discord is not asked for here. A handle is only worth anything once
+            the account is connected, so it is collected by the Connect Discord
+            step after signup rather than typed into a field nobody verifies. */}
         <div className="grid gap-5 sm:grid-cols-2">
           <FormField label="Phone Number" htmlFor="phone" hint="Optional">
             <AuthInput id="phone" placeholder="+94 77 123 4567" autoComplete="tel" icon={<PhoneIcon />} {...form.register("phone")} />
-          </FormField>
-          <FormField label="Discord Tag" htmlFor="discordTag" hint="Optional">
-            <AuthInput id="discordTag" placeholder="username#1234" icon={<ShieldIcon />} {...form.register("discordTag")} />
           </FormField>
         </div>
 

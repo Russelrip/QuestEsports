@@ -19,10 +19,12 @@ export type SavedTeamMember = {
   inviteRespondedAt?: string | null;
 };
 
+// Mirrors MemberDraft in the registration form: no `discord`, because a roster
+// member's handle comes from their own connected account rather than from
+// whatever a captain saved on a previous team.
 export type SavedTeamRegistrationMemberDraft = {
   name: string;
   email: string;
-  discord: string;
   gameId: string;
   role: "PLAYER" | "SUBSTITUTE";
   additionalData: Record<string, string | boolean>;
@@ -44,7 +46,6 @@ export function mapSavedTeamToRegistrationDraft(
       .map((member) => ({
         name: member.name,
         email: member.email,
-        discord: member.discord || "",
         gameId: member.riotId || "",
         role: member.role === "SUBSTITUTE" ? "SUBSTITUTE" : "PLAYER",
         additionalData: {},
@@ -53,7 +54,6 @@ export function mapSavedTeamToRegistrationDraft(
       name: savedCoach.name,
       email: savedCoach.email,
       phone: savedCoach.phone || "",
-      discord: savedCoach.discord || "",
       gameId: savedCoach.riotId || "",
     } : { ...emptyCoachDraft },
     coachSelected: Boolean(savedCoach),
