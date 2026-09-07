@@ -423,11 +423,12 @@ test("admin tournament discord requirement normalizes, persists, preserves, and 
     ...buildAdminTournamentBody(),
     discordRequired: true,
   };
+  let storedTournament = { ...existingTournament };
   const prismaMock = {
     prisma: {
       tournament: {
         findFirst: async () => null,
-        findUnique: async () => existingTournament,
+        findUnique: async () => storedTournament,
         create: async ({ data }) => {
           createdData = data;
           return {
@@ -440,15 +441,18 @@ test("admin tournament discord requirement normalizes, persists, preserves, and 
         },
         update: async ({ data }) => {
           updatedData = data;
+          storedTournament = { ...storedTournament, ...data };
           return {
-            ...existingTournament,
-            ...data,
+            ...storedTournament,
             createdAt: new Date(),
             updatedAt: new Date(),
             _count: { teamRegistrations: 0 },
             sponsors: [],
           };
         },
+      },
+      teamRegistration: {
+        findMany: async () => [],
       },
     },
   };
@@ -485,6 +489,15 @@ test("admin tournament discord requirement normalizes, persists, preserves, and 
       }).discordRequired,
       true
     );
+    for (const value of [false, "false", "off", 0, "0"]) {
+      assert.equal(
+        tournamentService.normalizeTournamentInput({
+          body: buildAdminTournamentBody({ discordRequired: value }),
+          existingTournament,
+        }).discordRequired,
+        false
+      );
+    }
 
     const created = await tournamentService.createAdminTournament({
       body: buildAdminTournamentBody({ discordRequired: "on" }),
@@ -493,13 +506,20 @@ test("admin tournament discord requirement normalizes, persists, preserves, and 
     assert.equal(createdData.discordRequired, true);
     assert.equal(created.discordRequired, true);
 
-    const updated = await tournamentService.updateAdminTournament({
-      tournamentId: existingTournament.id,
-      body: buildAdminTournamentBody(),
-      files: {},
-    });
-    assert.equal(updatedData.discordRequired, true);
-    assert.equal(updated.discordRequired, true);
+    for (const value of [false, "false", "off", 0, "0"]) {
+      storedTournament = { ...storedTournament, discordRequired: true };
+      const updated = await tournamentService.updateAdminTournament({
+        tournamentId: existingTournament.id,
+        body: buildAdminTournamentBody({ discordRequired: value }),
+        files: {},
+      });
+      assert.equal(updatedData.discordRequired, false);
+      assert.equal(storedTournament.discordRequired, false);
+      assert.equal(updated.discordRequired, false);
+    }
+
+    const adminDetail = await tournamentService.getAdminTournamentById(existingTournament.id);
+    assert.equal(adminDetail.discordRequired, false);
   } finally {
     restore();
   }
