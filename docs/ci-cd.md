@@ -166,6 +166,44 @@ image build, and an unexpired release manifest. Rollback never rebuilds an image
 from a moving tag and does not reverse database migrations. Production migrations
 must therefore remain backward-compatible with the previous application release.
 
+## Database migrations during a release
+
+The release controller applies migrations itself; there is no separate manual
+step and no migration step in the workflow. Before it swaps any service,
+`ops/deploy/release.sh` asks the host adapter whether migrations are pending,
+and `ops/deploy/host-hooks.sh` answers by comparing two inventories: the
+`sha256` of every `prisma/migrations/*/migration.sql` inside the release's
+**migrator image**, and the checksums recorded in `public._prisma_migrations`.
+Comparing files against the ledger this way means neither Prisma nor the
+VALORANT runner is trusted to report its own "already up to date".
+
+When they differ, the release requires `BACKUP_APPROVAL` and a
+`*_MIGRATION_OWNER_APPROVAL_SHA` naming the exact release, takes a
+release-bound backup with evidence, runs the migrator, and re-checks status
+before continuing. A release with no pending migrations skips all of that.
+
+That comparison is only meaningful against the release **being deployed**, so
+the controller passes `RELEASE_DIR` -- the staged bundle -- to the status hook,
+and the hook refuses to answer without it. This is not a formality: the hook
+otherwise resolves the *current* release, whose migrations match the database
+by definition, so a release that adds a migration reports `none`, the migrator
+never runs, and the new code starts against a schema that does not have its
+column. That is what happened on 2026-09-07, and
+`ops/tests/deploy-release.test.sh` now pins the staged bundle by name.
+
+Both scripts run as installed copies. After changing `ops/deploy/release.sh` or
+`ops/deploy/host-hooks.sh`, reinstall them on the host or the deployed
+behaviour does not change. Install the two **together**: the hook now refuses
+a status check that does not name a bundle, so a host with the new hook and an
+old controller fails every release until the controller is updated too. That
+is the intended direction of failure -- a refused release, not a silent one.
+
+```bash
+sudo install -o root -g root -m 0755 ops/deploy/release.sh /usr/local/sbin/quest-esports-release
+sudo install -o root -g root -m 0755 ops/deploy/host-hooks.sh /usr/local/sbin/quest-release-hooks
+grep -oE '^quest-release-[a-z0-9-]+' ops/deploy/host-hooks.aliases | xargs -I{} sudo ln -f /usr/local/sbin/quest-release-hooks /usr/local/sbin/{}
+```
+
 ## VALORANT E2E
 
 The protected E2E workflow accepts the exact current `main` SHA and uses the

@@ -536,7 +536,13 @@ run_migration_status() {
   command_setting "$variable"
   [[ "$target_authority" == quest-postgres ]] || die 'migration target authority is not the fixed Quest PostgreSQL target.'
   [[ "$schema" == public || "$schema" == valorant ]] || die 'migration schema is not an approved service schema.'
-  output="$(CHECK_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" "${!variable}" 2>/dev/null)" || die "$variable failed."
+  # The status check must inspect the release being deployed. Without an
+  # explicit bundle the hook resolves the CURRENT release instead, and the
+  # current release's migrations always match the database by definition -- so
+  # a release that adds a migration reads as `none`, the migrator never runs,
+  # and the new code starts against a schema that does not have its column.
+  [[ -n "$stage_dir" ]] || die 'migration status cannot be checked before the release bundle is staged.'
+  output="$(CHECK_REPOSITORY="$repository" TARGET_AUTHORITY=quest-postgres TARGET_DATABASE_HOST=quest-postgres RELEASE_SHA="$release_sha" RELEASE_DIR="$stage_dir" "${!variable}" 2>/dev/null)" || die "$variable failed."
   [[ "$output" =~ ^(none|pending)[[:space:]]+target=quest-postgres[[:space:]]+schema=${schema}[[:space:]]+repository=$repository$ ]] || die "$variable returned an ambiguous target/schema/status acknowledgement."
   [[ "$output" == none* ]] && return 0
   return 1
