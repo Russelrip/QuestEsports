@@ -107,7 +107,11 @@ test("coach normalization omits empty optional coaches and normalizes complete c
         name: "Coach Example",
         email: "coach@example.com",
         phone: "0770000000",
-        discord: "coach-example",
+        // A typed handle is discarded here on purpose. The coach's Discord is
+        // resolved from their connected account at submission time, so
+        // normalization deliberately leaves the field empty rather than
+        // carrying an unverified string forward.
+        discord: null,
         riotId: "CoachName#123",
       }
     );
@@ -233,7 +237,8 @@ test("a complete coach does not change configured player roster counts", () => {
     assert.equal(submission.members.some((member) => member.role === "COACH"), false);
     assert.equal(submission.coach.name, "Coach Example");
     assert.equal(submission.coach.phone, "0771111111");
-    assert.equal(submission.coach.discord, "coach-discord");
+    // Left empty by normalization; filled from the coach's connected account.
+    assert.equal(submission.coach.discord, null);
     assert.equal(submission.coach.riotId, "CoachName#123");
   } finally { restore(); }
 });

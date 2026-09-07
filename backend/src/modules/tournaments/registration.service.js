@@ -33,6 +33,10 @@ const {
 } = require("../../lib/upload-cleanup");
 const { normalizeCoachSubmission, parseCoachInput } = require("./coach.validation");
 const {
+  getLinkedDiscordForUsers,
+  requireLinkedDiscord,
+} = require("../auth/discord-link.service");
+const {
   assertNoLocalCoachPlayerRoleConflict,
   assertNoCoachPlayerRoleConflict,
 } = require("./role-conflict.service");
@@ -541,6 +545,67 @@ const getCurrentTournamentForRegistration = async ({
   return current;
 };
 
+// Roster Discord handles are never typed in. The captain's comes from their own
+// linked account; everyone else's is resolved from the Quest account that owns
+// their roster email.
+//
+// A roster member with no Quest account, or one whose account has no link, ends
+// up with no handle at all, and that is correct rather than a failure: a captain
+// registering a LAN entrant cannot connect Discord on their behalf. The
+// tournament's `discordRequired` flag stays the single place that decides
+// whether a missing link blocks registration, which is what keeps this resolver
+// from quietly becoming a second, competing gate.
+const attachConnectedDiscordIdentities = async ({ user, submission }) => {
+  const captain = await requireLinkedDiscord(
+    user.id,
+    "Connect your Discord account before registering for a tournament."
+  );
+  // The snowflake is the fallback because it always exists and always resolves
+  // to the right person; a blank cached username would leave an organiser with
+  // nothing to search for.
+  const captainHandle = captain.discordUsername || captain.discordId;
+
+  const rosterEmails = [
+    ...submission.members.map((member) => member.email),
+    submission.coach?.email,
+  ]
+    .filter(Boolean)
+    .map((email) => normalizeEmail(email));
+
+  const accounts = rosterEmails.length > 0
+    ? await prisma.user.findMany({
+      where: { emailNormalized: { in: [...new Set(rosterEmails)] } },
+      select: { id: true, emailNormalized: true },
+    })
+    : [];
+  const linkedByUserId = await getLinkedDiscordForUsers(
+    accounts.map((account) => account.id)
+  );
+  const handleByEmail = new Map(
+    accounts
+      .map((account) => {
+        const identity = linkedByUserId.get(account.id);
+        return [
+          account.emailNormalized,
+          identity ? identity.discordUsername || identity.discordId : null,
+        ];
+      })
+      .filter(([, handle]) => Boolean(handle))
+  );
+  const handleFor = (email) => handleByEmail.get(normalizeEmail(email)) || null;
+
+  return {
+    ...submission,
+    discord: captainHandle,
+    members: submission.members.map((member) => (member.role === "CAPTAIN"
+      ? { ...member, discord: captainHandle }
+      : { ...member, discord: handleFor(member.email) })),
+    coach: submission.coach
+      ? { ...submission.coach, discord: handleFor(submission.coach.email) }
+      : submission.coach,
+  };
+};
+
 const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
   const fullName = normalizeText(body.fullName || body.captainName) ||
     [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
@@ -548,7 +613,9 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     ? fullName
     : normalizeText(body.teamName);
   const phone = normalizeText(body.phone || body.captainPhone || user.phone);
-  const discord = normalizeText(body.discord || body.captainDiscord || user.discordTag) || "N/A";
+  // Deliberately not read from the body. Roster Discord handles come from
+  // connected accounts and are filled in by attachConnectedDiscordIdentities.
+  const discord = null;
   const contactEmail = normalizeEmail(body.contactEmail || user.email);
   const country = normalizeText(body.country) || "Sri Lanka";
   const teamTag = tournament.entryType === "solo"
@@ -573,7 +640,6 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     displayName.length > 100 ||
     fullName.length > 100 ||
     phone.length > 50 ||
-    discord.length > 100 ||
     contactEmail.length > 254 ||
     (teamTag && teamTag.length > 12) ||
     country.length > 100
@@ -601,7 +667,8 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
     order: index + 1,
     name: normalizeText(member.name),
     email: normalizeEmail(member.email),
-    discord: normalizeText(member.discord) || null,
+    // Resolved from the member's connected account at submission time.
+    discord: null,
     riotId: normalizeText(member.gameId || member.riotId) || null,
     additionalData: {
       ...(member.additionalData || {}),
@@ -618,7 +685,6 @@ const normalizeRegistrationSubmission = ({ tournament, body, user }) => {
   if (normalizedMembers.some((member) =>
     member.name.length > 100 ||
     member.email.length > 254 ||
-    (member.discord && member.discord.length > 100) ||
     (member.riotId && member.riotId.length > 100)
   )) {
     throw new HttpError(400, "One or more roster fields exceed the allowed length.");
@@ -879,7 +945,10 @@ const createConfiguredRegistration = async ({ slug, body, file, user }) => {
     assertRegistrationStillOpen(tournament, now);
   }
 
-  const submission = normalizeRegistrationSubmission({ tournament, body, user });
+  const submission = await attachConnectedDiscordIdentities({
+    user,
+    submission: normalizeRegistrationSubmission({ tournament, body, user }),
+  });
   const {
     fullName,
     displayName,

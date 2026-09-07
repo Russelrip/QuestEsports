@@ -1,5 +1,8 @@
 const express = require("express");
-const { attachSession } = require("../modules/auth/auth.middleware");
+const {
+  attachSession,
+  requireDiscordLinked,
+} = require("../modules/auth/auth.middleware");
 const adminRoutes = require("../modules/admin/admin.routes");
 const authRoutes = require("../modules/auth/auth.routes");
 const contactRoutes = require("../modules/contact/contact.routes");
@@ -22,8 +25,13 @@ const expenseRoutes = require("../modules/expenses/expense.routes");
 const router = express.Router();
 
 router.use(attachSession);
+// Mounted ahead of the gate so a user without a linked Discord can still sign
+// in, read their session, complete the OAuth link, and sign out. Gating these
+// would make the requirement unsatisfiable: the only way to connect Discord
+// runs through the routes that would be blocked.
 router.use(authRoutes);
 router.use(accountRoutes);
+router.use(requireDiscordLinked);
 router.use(seriesRoutes);
 router.use(gameCategoryRoutes);
 router.use(gameRoutes);
