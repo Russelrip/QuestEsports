@@ -1,4 +1,4 @@
-import { buildApiUrl, fetchWithTimeout, parseApiResponse, withServerOriginHeader } from "@/lib/api";
+import { buildPublicApiUrl, fetchWithTimeout, parseApiResponse, withServerOriginHeader } from "@/lib/api";
 
 export type VideoItem = {
   title: string;
@@ -466,7 +466,7 @@ const resolvePublicUploadPath = (segments: string[]) => {
   }
 
   const publicPath = `/api/uploads/${directory}/${filenameSegments.join("/")}`;
-  return buildApiUrl(publicPath);
+  return buildPublicApiUrl(publicPath);
 };
 
 const filesystemPathPrefixes = [
@@ -543,7 +543,7 @@ export const resolveImageUrl = (
 
   if (!trimmedValue.startsWith("/")) return null;
   return trimmedValue.startsWith("/api/") || trimmedValue === "/api"
-    ? buildApiUrl(trimmedValue)
+    ? buildPublicApiUrl(trimmedValue)
     : trimmedValue;
 };
 

@@ -52,16 +52,22 @@ const getConfiguredApiOrigin = () => parseApiOrigin(
     : process.env.NEXT_PUBLIC_API_URL?.trim()
 );
 
-export const buildApiUrl = (path: string) => {
+const getPublicApiOrigin = () => parseApiOrigin(process.env.NEXT_PUBLIC_API_URL?.trim());
+
+const buildConfiguredApiUrl = (path: string, getApiOrigin: () => string | null) => {
   if (
     /^(?:https?|data|blob):/i.test(path)
   ) {
     return path;
   }
 
-  const apiOrigin = getConfiguredApiOrigin();
+  const apiOrigin = getApiOrigin();
   return apiOrigin ? new URL(path, `${apiOrigin}/`).toString() : path;
 };
+
+export const buildApiUrl = (path: string) => buildConfiguredApiUrl(path, getConfiguredApiOrigin);
+
+export const buildPublicApiUrl = (path: string) => buildConfiguredApiUrl(path, getPublicApiOrigin);
 
 const getServerSiteOrigin = () => {
   if (typeof window !== "undefined") {

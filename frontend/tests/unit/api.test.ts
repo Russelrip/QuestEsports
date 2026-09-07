@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildApiUrl,
+  buildPublicApiUrl,
   fetchWithTimeout,
   parseApiResponse,
   readApiResponse,
@@ -50,6 +51,22 @@ describe("API helpers", () => {
         "http://backend:5001/api/event-albums/quest-finals-2026"
       );
       expect(buildApiUrl("/api/health/ready")).toBe("http://backend:5001/api/health/ready");
+    } finally {
+      if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
+      else delete (globalThis as { window?: unknown }).window;
+    }
+  });
+
+  it("uses the public origin for browser-facing media during SSR", () => {
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+    try {
+      Object.defineProperty(globalThis, "window", { value: undefined, configurable: true });
+      process.env.INTERNAL_API_URL = "http://backend:5001";
+      process.env.NEXT_PUBLIC_API_URL = "https://api.example.com";
+
+      expect(buildPublicApiUrl("/api/uploads/tournament-banners/banner.webp")).toBe(
+        "https://api.example.com/api/uploads/tournament-banners/banner.webp"
+      );
     } finally {
       if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
       else delete (globalThis as { window?: unknown }).window;
