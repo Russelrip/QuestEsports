@@ -14,8 +14,9 @@ registration state.
   replaces its children rather than sitting beside them — see
   `frontend/app/tournaments/codemap.md`.
 - `EventHero.tsx` displays event identity, public media, status, and timing.
-- `EventOverview.tsx` displays dates, venue, and the aggregate games/teams/
-  players/available-capacity projection.
+  It is the only place the event's own dates and aggregate counts surface; the
+  separate overview section that repeated them was removed, so the event page
+  goes straight from the hero to the game lineup.
 - `EventTournamentList.tsx` lists published child tournaments as the same
   `TournamentCard` grid used by `/tournaments`, behind per-game filter chips.
   Each card links to the tournament detail route; registration is reached from

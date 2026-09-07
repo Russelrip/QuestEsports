@@ -54,22 +54,3 @@ export const formatEventCountdown = (target: Date | null, now = new Date()) => {
   const hours = totalHours % 24;
   return `${days}d ${hours}h`;
 };
-
-const countLabel = (count: number, singular: string, empty: string) =>
-  count > 0 ? `${count} ${count === 1 ? singular : `${singular}s`}` : empty;
-
-export const getEventRegistrationSummary = (event: EventSeries) => {
-  const aggregate = event.aggregate;
-  const games = aggregate?.games ?? event.games ?? 0;
-  const teams = aggregate?.teamsRegistered ?? event.teamsRegistered ?? 0;
-  const players = aggregate?.playersRegistered ?? event.playersRegistered ?? 0;
-  const slots = aggregate?.availableSlots ?? event.availableSlots ?? 0;
-  const state = aggregate?.registrationState ?? event.registrationState ?? event.eventStatus;
-  return {
-    games: countLabel(games, "game", "No games announced"),
-    teams: countLabel(teams, "team", "No teams registered"),
-    players: countLabel(players, "player", "No players registered"),
-    slots: slots > 0 ? `${slots} slot${slots === 1 ? "" : "s"} available` : "No slots available",
-    isOpen: state === "open",
-  };
-};
