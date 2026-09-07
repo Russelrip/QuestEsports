@@ -151,7 +151,10 @@ describe("tournament admin coach settings", () => {
   });
 
   it("carries the automatic approval setting through the editor and the request", () => {
-    expect(initialTournamentFormValues.autoApproveRegistrations).toBe(false);
+    // A new tournament starts as Open Entry, so it starts approving on
+    // submission; the editor's mode selector keeps the two in step.
+    expect(initialTournamentFormValues.registrationMode).toBe("open_entry");
+    expect(initialTournamentFormValues.autoApproveRegistrations).toBe(true);
     expect(
       buildTournamentFormData({
         ...initialTournamentFormValues,
